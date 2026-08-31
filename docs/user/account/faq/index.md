@@ -86,7 +86,7 @@ When EasyCLA recorded the account used to sign, the **Signed** column adds a sec
 
 ## Can I download my signed CLA PDF?
 
-You can download a signed **ICLA** (Individual CLA) when EasyCLA has the file — open the **⋮** menu on that row and choose **Download PDF**. If EasyCLA does not have the file, the row offers no download. There is no PDF for an **ECLA** (Employee CLA), because your coverage sits under your employer's Corporate CLA (CCLA) rather than an agreement of your own; where such a row has a **⋮** menu, **Download PDF** appears greyed out and annotated _Covered by Corporate CLA (CCLA)_, and a **Revoked** ECLA has no menu at all. See [Can I download my signed CLA PDF?](../my-clas/#can-i-download-my-signed-cla-pdf).
+You can download a signed **ICLA** (Individual CLA) when EasyCLA has the file — open the **⋮** menu on that row and choose **Download PDF**. If EasyCLA does not have the file, the row offers no download. An **Invalidated** ICLA carries no **⋮** menu at all, so there is nothing to download from it even when the signed file still exists. There is no PDF for an **ECLA** (Employee CLA), because your coverage sits under your employer's Corporate CLA (CCLA) rather than an agreement of your own; where such a row has a **⋮** menu, **Download PDF** appears greyed out and annotated _Covered by Corporate CLA (CCLA)_, and a **Revoked** ECLA has no menu at all. See [Can I download my signed CLA PDF?](../my-clas/#can-i-download-my-signed-cla-pdf).
 
 ## How do I ask my employer's CLA manager to approve or remove my ECLA?
 

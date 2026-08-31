@@ -163,7 +163,7 @@ The info banner on the CLAs tab also points to the Identities flow (_Link your E
 
 ## Can I download my signed CLA PDF?
 
-Yes for an **ICLA**, when EasyCLA has the signed file — choose **Download PDF** from the row's **⋮** menu. When EasyCLA does not have the file, the row offers no download.
+Yes for an **ICLA**, when EasyCLA has the signed file — choose **Download PDF** from the row's **⋮** menu. When EasyCLA does not have the file, the row offers no download. An **Invalidated** ICLA is the exception: the row carries no **⋮** menu at all, so there is nothing to download from it even when EasyCLA still holds the signed file.
 
 No for an **ECLA**. Employee coverage is under your company's Corporate CLA (CCLA), so there is no individual PDF to download. On an ECLA that has a **⋮** menu, the menu shows **Download PDF** greyed out and annotated _Covered by Corporate CLA (CCLA)_. A **Revoked** ECLA has no menu at all, so it shows nothing.
 
