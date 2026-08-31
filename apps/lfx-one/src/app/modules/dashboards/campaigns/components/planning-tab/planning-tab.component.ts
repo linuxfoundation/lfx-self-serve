@@ -603,11 +603,19 @@ export class PlanningTabComponent implements OnInit {
     const url = this.briefForm.controls.url.value.trim();
     const fallbackName = this.extractEventName(url);
     const fallbackSlug = this.extractSlug(url);
+    // Every field here is EMPTY except the name and slug, which are derived from the URL the user
+    // typed. `countryCode` was 'US' -- the one invented value in an otherwise honest blank record,
+    // and the one that does damage: it reaches campaign-service's audience builder as `country`,
+    // so a failed extraction for a Nairobi event built a United States audience. Real, plausible,
+    // and wrong, which is worse than an audience that refuses to build.
+    //
+    // Empty instead. `countryNameFor` maps an unknown code to '' rather than a raw code, so the
+    // builder receives no country filter rather than the wrong one.
     const details: CampaignEventDetails = this.eventDetails() ?? {
       name: fallbackName,
       dates: '',
       city: '',
-      countryCode: 'US',
+      countryCode: '',
       audience: '',
       themes: [],
       registrationUrl: url,

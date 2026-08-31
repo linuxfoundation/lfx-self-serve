@@ -1150,6 +1150,38 @@ describe('PlanningTabComponent email brief editing', () => {
     expect((emitted[0] as { eventDetails: { dates: string } }).eventDetails.dates).toBe('March 10-11, 2026');
   });
 
+  /**
+   * A failed extraction must not INVENT a country.
+   *
+   * The fallback record is empty in every field except the name and slug, which are derived from
+   * the URL the user typed -- but `countryCode` was hardcoded `'US'`, and it does not stay in the
+   * UI: it reaches campaign-service's audience builder as `country`. So a failed scrape for a
+   * Nairobi event built a UNITED STATES audience. Real, plausible and wrong, which is worse than
+   * an audience that refuses to build.
+   */
+  it('does not invent a country when event extraction produced nothing', async () => {
+    // Built WITHOUT a scrape, so `eventDetails()` is null and the fallback record is what gets
+    // emitted -- the state this test is about. `buildWithScrape` would set it and hide the case.
+    fixture = TestBed.createComponent(PlanningTabComponent);
+    fixture.componentRef.setInput('programTypeConfig', programTypeConfig);
+    fixture.componentRef.setInput('deliveryType', 'email');
+    fixture.detectChanges();
+    await fixture.whenStable();
+
+    const emitted: unknown[] = [];
+    (fixture.componentInstance as unknown as { proceedToImplementation: { subscribe(f: (v: unknown) => void): void } }).proceedToImplementation.subscribe((v) =>
+      emitted.push(v)
+    );
+
+    // No scrape: `eventDetails()` is null, so the fallback record is what gets emitted.
+    (fixture.componentInstance as unknown as { briefForm: { controls: { url: { setValue(v: string): void } } } }).briefForm.controls.url.setValue(
+      'https://events.example.com/mcp-dev-summit-nairobi'
+    );
+    (fixture.componentInstance as unknown as { onProceedToImplementation(): void }).onProceedToImplementation();
+
+    expect((emitted[0] as { eventDetails: { countryCode: string } }).eventDetails.countryCode).toBe('');
+  });
+
   it('closes the editor when a new brief is generated', async () => {
     await buildWithScrape();
     internals().enterEmailEditMode();
