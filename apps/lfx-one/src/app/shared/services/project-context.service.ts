@@ -281,10 +281,15 @@ export class ProjectContextService {
             return of(null);
           }
           // getProject already catches its own errors and logs, resolving to null — no outer catchError needed.
-          // startWith(null) clears the previous project immediately on switch, so canWrite/Formation
-          // signals don't briefly read the prior project while the new fetch is in flight (matches
-          // initSelectedFoundationSfid's pattern below).
-          return this.projectService.getProject(ctx.slug, false).pipe(startWith(null));
+          //
+          // Deliberately no startWith(null) here, unlike initSelectedFoundationSfid below: canWrite
+          // reads this signal, and evictOnWriteAccessLoss() (vote/survey/mailing-list manage pages)
+          // takes the *first* true→false transition as a genuine access loss and navigates away. A
+          // transient null on every project switch — not just a real loss of access — would evict an
+          // organizer mid-edit. Formation's badge/card briefly showing the previous project's stage
+          // during a switch is an accepted, pre-existing trade-off (this is the same staleness
+          // canWrite itself already had before this ticket).
+          return this.projectService.getProject(ctx.slug, false);
         })
       ),
       { initialValue: null }
