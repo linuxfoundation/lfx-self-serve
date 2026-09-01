@@ -74,11 +74,12 @@ export class FormationItemDrawerComponent {
    * Item uids Mark complete/Save is currently writing — a set, not a single slot, since this drawer
    * component instance is reused across every item it ever opens and two of its own writes (e.g.
    * Mark complete on A, then Mark complete on a different item B before A's response lands) can be
-   * in flight at once. A single `string | null` slot would let the second write's own uid clobber the
-   * first, and the first write's `finalize` would then incorrectly clear the second's flag.
-   * `completing`/`savingDetails` below derive from these against the currently-open item, so
-   * switching items automatically (not via an explicit reset) scopes each flag to the write it
-   * actually belongs to.
+   * in flight at once. A single `string | null` slot would let starting B's write immediately
+   * overwrite A's uid, silently losing A's own tracking (and its `[loading]` spinner, if A's drawer
+   * were reopened) while A's write is still genuinely in flight — even though the slot's own
+   * uid-guarded `finalize` correctly avoided clearing B's tracking once A's write resolved. `completing`
+   * /`savingDetails` below derive from these against the currently-open item, so switching items
+   * automatically (not via an explicit reset) scopes each flag to the write it actually belongs to.
    */
   protected readonly completingUids: WritableSignal<ReadonlySet<string>> = signal(new Set());
   protected readonly savingDetailsUids: WritableSignal<ReadonlySet<string>> = signal(new Set());
@@ -115,7 +116,7 @@ export class FormationItemDrawerComponent {
   protected onMarkComplete(): void {
     const item = this.item();
     if (!item || this.busy()) return;
-    this.completingUids.update((uids) => new Set(uids).add(item.uid));
+    this.beginWrite(this.completingUids, item.uid);
     this.writeStarted.emit(item.uid);
 
     this.formationService
@@ -123,11 +124,7 @@ export class FormationItemDrawerComponent {
       .pipe(
         take(1),
         finalize(() => {
-          this.completingUids.update((uids) => {
-            const next = new Set(uids);
-            next.delete(item.uid);
-            return next;
-          });
+          this.endWrite(this.completingUids, item.uid);
           this.writeEnded.emit(item.uid);
         })
       )
@@ -152,7 +149,7 @@ export class FormationItemDrawerComponent {
   protected onSaveDetails(): void {
     const item = this.item();
     if (!item || this.busy()) return;
-    this.savingDetailsUids.update((uids) => new Set(uids).add(item.uid));
+    this.beginWrite(this.savingDetailsUids, item.uid);
     this.writeStarted.emit(item.uid);
 
     this.formationService
@@ -164,11 +161,7 @@ export class FormationItemDrawerComponent {
       .pipe(
         take(1),
         finalize(() => {
-          this.savingDetailsUids.update((uids) => {
-            const next = new Set(uids);
-            next.delete(item.uid);
-            return next;
-          });
+          this.endWrite(this.savingDetailsUids, item.uid);
           this.writeEnded.emit(item.uid);
         })
       )
@@ -247,6 +240,19 @@ export class FormationItemDrawerComponent {
       notes: item.notes ?? '',
       ownerUsername: item.owner?.username ?? '',
       dueDate: item.due_date ? new Date(item.due_date) : null,
+    });
+  }
+
+  /** Shared by completingUids/savingDetailsUids — mirrors the section's own beginSubmitting/endSubmitting pair. */
+  private beginWrite(tracker: WritableSignal<ReadonlySet<string>>, uid: string): void {
+    tracker.update((uids) => new Set(uids).add(uid));
+  }
+
+  private endWrite(tracker: WritableSignal<ReadonlySet<string>>, uid: string): void {
+    tracker.update((uids) => {
+      const next = new Set(uids);
+      next.delete(uid);
+      return next;
     });
   }
 }
