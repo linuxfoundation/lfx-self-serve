@@ -140,6 +140,9 @@ describe('ProjectPickerComponent', () => {
       searchProjects.mockReturnValueOnce(of([project]));
       instance().searchForm.controls.query.setValue('my');
       await vi.advanceTimersByTimeAsync(300);
+      // detectChanges(), not whenStable(): every test in this file flushes this way under
+      // vi.useFakeTimers() — whenStable() can stall waiting on a scheduler tick that fake timers
+      // never fire. Consistent with the rest of the file, not the file's own general convention.
       fixture.detectChanges();
 
       const option: HTMLElement | null = fixture.nativeElement.querySelector(`[data-testid="propose-project-picker-option-${project.slug}"]`);
