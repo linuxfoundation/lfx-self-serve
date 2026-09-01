@@ -35,19 +35,19 @@
   <div class="shrink-0" [attr.data-testid]="'formation-checklist-row-action-' + item().uid">
     @switch (item().action) {
       @case ('link') {
-        <ng-container *ngTemplateOutlet="externalLinkAction; context: { $implicit: 'link' }" />
+        <ng-container *ngTemplateOutlet="externalLinkAction; context: { $implicit: 'formation-checklist-row-link' }" />
       }
       @case ('status_only') {
-        <ng-container *ngTemplateOutlet="externalLinkAction; context: { $implicit: 'status-only' }" />
+        <ng-container *ngTemplateOutlet="externalLinkAction; context: { $implicit: 'formation-checklist-row-status-only' }" />
       }
       @case ('provisionable') {
         @if (isActionable()) {
-          <ng-container *ngTemplateOutlet="gatedAction; context: { $implicit: 'provision', label: 'Set up', severity: 'primary', outlined: false }" />
+          <ng-container *ngTemplateOutlet="gatedAction; context: gatedActions.provisionable" />
         }
       }
       @case ('request') {
         @if (isActionable()) {
-          <ng-container *ngTemplateOutlet="gatedAction; context: { $implicit: 'request', label: 'Request', severity: 'secondary', outlined: true }" />
+          <ng-container *ngTemplateOutlet="gatedAction; context: gatedActions.request" />
         }
       }
       @case ('manual') {
@@ -63,8 +63,8 @@
   </div>
 </div>
 
-<!-- `link`/`status_only`: open an external href, or a disabled button when the href is missing/unsafe. -->
-<ng-template #externalLinkAction let-testidSuffix>
+<!-- `link`/`status_only`: open an external href, or a disabled button when the href is missing/unsafe. `testidPrefix` is the full data-testid prefix (not a bare suffix), so it stays greppable from the literal that produces it. -->
+<ng-template #externalLinkAction let-testidPrefix>
   @if (safeActionHref(); as href) {
     <lfx-button
       label="Open"
@@ -74,24 +74,18 @@
       [href]="href"
       target="_blank"
       rel="noopener noreferrer"
-      [attr.data-testid]="'formation-checklist-row-' + testidSuffix + '-' + item().uid" />
+      [attr.data-testid]="testidPrefix + '-' + item().uid" />
   } @else {
     <!-- A disabled button isn't focusable, so a hover-only `tooltip` would never reach a keyboard/screen-reader user — render the reason as visible text instead. -->
     <div class="flex items-center gap-2">
-      <lfx-button
-        label="Open"
-        size="small"
-        severity="secondary"
-        [outlined]="true"
-        [disabled]="true"
-        [attr.data-testid]="'formation-checklist-row-' + testidSuffix + '-' + item().uid" />
+      <lfx-button label="Open" size="small" severity="secondary" [outlined]="true" [disabled]="true" [attr.data-testid]="testidPrefix + '-' + item().uid" />
       <span class="text-xs text-gray-500">Link unavailable</span>
     </div>
   }
 </ng-template>
 
-<!-- `provisionable`/`request`: fires `onAction()`, or a disabled button when `can_complete` is false. -->
-<ng-template #gatedAction let-testidSuffix let-label="label" let-severity="severity" let-outlined="outlined">
+<!-- `provisionable`/`request`: fires `onAction()`, or a disabled button when `can_complete` is false. Context is `gatedActions.provisionable`/`.request` (see `FORMATION_GATED_ROW_ACTIONS`) — typed at the definition site, not inline here. -->
+<ng-template #gatedAction let-testidPrefix="testidPrefix" let-label="label" let-severity="severity" let-outlined="outlined">
   @if (item().can_complete) {
     <lfx-button
       [label]="label"
@@ -99,7 +93,7 @@
       [severity]="severity"
       [outlined]="outlined"
       (onClick)="onAction()"
-      [attr.data-testid]="'formation-checklist-row-' + testidSuffix + '-' + item().uid" />
+      [attr.data-testid]="testidPrefix + '-' + item().uid" />
   } @else {
     <!-- A disabled button isn't focusable, so a hover-only `tooltip` would never reach a keyboard/screen-reader user — render the reason as visible text instead. -->
     <div class="flex items-center gap-2">
@@ -109,7 +103,7 @@
         [severity]="severity"
         [outlined]="outlined"
         [disabled]="true"
-        [attr.data-testid]="'formation-checklist-row-' + testidSuffix + '-' + item().uid" />
+        [attr.data-testid]="testidPrefix + '-' + item().uid" />
       <span class="text-xs text-gray-500">Requires gate_writer access</span>
     </div>
   }

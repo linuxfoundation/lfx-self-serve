@@ -1,6 +1,7 @@
 // Copyright The Linux Foundation and each contributor to LFX.
 // SPDX-License-Identifier: MIT
 
+import type { ButtonProps } from './components.interface';
 import type { FormationActivity, FormationItem, FormationItemStatus, FormationSubStage, FormationTemplateSection } from './formation.interface';
 
 /**
@@ -40,4 +41,16 @@ export type FormationChecklistPageState = 'loading' | 'error' | 'no-template' | 
 export interface FormationRenderedSection {
   section: FormationTemplateSection;
   items: FormationItem[];
+}
+
+/**
+ * `FormationChecklistRowComponent`'s `#gatedAction` `&lt;ng-template&gt;` context — one entry per
+ * `provisionable`/`request` action kind. `testidPrefix` carries the full `data-testid` prefix (not
+ * a bare suffix) so it stays greppable from the value that produces it, per GH-1958 review.
+ */
+export interface FormationRowActionConfig {
+  testidPrefix: string;
+  label: string;
+  severity: ButtonProps['severity'];
+  outlined: boolean;
 }

@@ -6,6 +6,7 @@ import { toObservable, toSignal } from '@angular/core/rxjs-interop';
 import { StatCardGridComponent } from '@components/stat-card-grid/stat-card-grid.component';
 import { FormationService } from '@services/formation.service';
 import type { Formation, FormationsQueueFilterState, FormationsQueueResponse, ReasonPromptDialogResult, StatCardItem } from '@lfx-one/shared/interfaces';
+import { FORMATION_EMPTY_QUEUE_RESPONSE } from '@lfx-one/shared/constants';
 import { isValidUrl } from '@lfx-one/shared/utils';
 import { MessageService } from 'primeng/api';
 import { DialogService } from 'primeng/dynamicdialog';
@@ -14,20 +15,6 @@ import { BehaviorSubject, catchError, combineLatest, finalize, of, switchMap, ta
 import { ReasonPromptDialogComponent } from '@components/reason-prompt-dialog/reason-prompt-dialog.component';
 
 import { FormationsTableComponent } from '../components/formations-table/formations-table.component';
-
-const EMPTY_TILES: FormationsQueueResponse['tiles'] = {
-  proposed: 0,
-  exploratory: 0,
-  engaged: 0,
-  on_hold: 0,
-  activating: 0,
-  withdrawn: 0,
-  total: 0,
-  foundations: 0,
-  subprojects: 0,
-  mine: 0,
-};
-const EMPTY_RESPONSE: FormationsQueueResponse = { tiles: EMPTY_TILES, rows: [], data_source: 'fixture' };
 
 @Component({
   selector: 'lfx-formations-queue',
@@ -157,13 +144,13 @@ export class FormationsQueueComponent {
             catchError((error: unknown) => {
               console.error('[FormationsQueue] Failed to load Formations queue', error);
               this.loadFailed.set(true);
-              return of(EMPTY_RESPONSE);
+              return of(FORMATION_EMPTY_QUEUE_RESPONSE);
             }),
             finalize(() => this.loading.set(false))
           );
         })
       ),
-      { initialValue: EMPTY_RESPONSE }
+      { initialValue: FORMATION_EMPTY_QUEUE_RESPONSE }
     );
   }
 }
