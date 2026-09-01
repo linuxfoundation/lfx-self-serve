@@ -125,12 +125,11 @@
             default — omitting `platforms` alone does not achieve that, because the generator
             reads an absent list as `['google-ads']`.
 
-            STILL OPEN: an email brief generates NO copy at all today — the scrape, event details
-            and HubSpot UTM are what it comes back with, and Refine is refused with a message
-            saying so. Subject, preview text and sender arrive with the `email-copy` endpoint
-            under LFXV2-3198, together with the template picker the Implement panel needs. Until
-            then `onEmailProceedToImplementation` stores the brief for EXISTENCE only; the panel
-            does not read the payload.
+            The brief stream itself still returns no ad copy for email — the scrape, event
+            details and HubSpot UTM are what it comes back with, and Refine is refused with a
+            message saying so. Subject and body now come from campaign-service's `email-copy`
+            endpoint, generated from the PERSISTED brief, which is why the Implement panel
+            persists before it generates.
           -->
         <!-- Keyed on the program type for the same reason the paid side is: the component
                holds its brief state locally and does not reset on input change. -->
@@ -194,18 +193,104 @@
             emails, and `sourceEmailId` has no default, so a chosen template is REQUIRED before a
             send can be staged.
 
-            It is not yet SUFFICIENT, and an earlier version of this comment wrongly said it was.
-            There is no create trigger on the email side at all: the only `createCampaign` call
-            site is in the implementation tab, which renders solely under Paid, and
-            `CampaignPlatform` has no `hubspot` member — so the type system forbids this path from
-            reaching create even if a button existed. The selection is threaded through to
-            `hubspotConfig.sourceEmailId` so it flows the moment a trigger lands; wiring that
-            trigger is LFXV2-3201.
+            It is not SUFFICIENT on its own. Staging also needs a brief, a project, and a BUILT
+            audience — campaign-service's `resolveBuiltAudience` refuses a brief whose newest
+            HubSpot audience is missing, still building, or failed, so `canStageEmail` checks the
+            audience's status rather than merely its presence. The selection is threaded through
+            to `hubspotConfig.sourceEmailId`.
 
             Four states, kept distinct because collapsing any pair states something false:
             channel not connected, search failed, searched-and-empty, and results.
           -->
             <div class="flex flex-col gap-4" data-testid="campaigns-email-implementation">
+              <!--
+                Email content generation — LFXV2-3198. Sits ABOVE the template picker because it
+                is the first thing an operator does: write the email, then choose what to clone it
+                into. The picker's "not connected" state does not block generation, so copy can be
+                drafted before HubSpot is wired up.
+              -->
+              <div class="flex flex-col gap-3" data-testid="campaigns-email-content">
+                <div class="flex flex-col gap-1">
+                  <h2 class="text-base font-semibold text-gray-900">Email content</h2>
+                  <p class="text-sm text-gray-500">Generated from the brief by campaign-service. Regenerate to get a fresh draft.</p>
+                </div>
+
+                @if (emailCopy(); as copy) {
+                  <div class="flex flex-col gap-3 rounded-lg border border-gray-200 bg-white p-4" data-testid="campaigns-email-copy">
+                    <div class="flex flex-col gap-1">
+                      <span class="font-mono text-xs uppercase tracking-wide text-gray-400">Subject</span>
+                      <p class="text-sm font-medium text-gray-900" data-testid="campaigns-email-copy-subject">{{ copy.subject }}</p>
+                    </div>
+                    <div class="flex flex-col gap-1">
+                      <span class="font-mono text-xs uppercase tracking-wide text-gray-400">Preview text</span>
+                      <p class="text-sm text-gray-600" data-testid="campaigns-email-copy-preview">{{ copy.preheader }}</p>
+                    </div>
+                    <div class="flex flex-col gap-1">
+                      <span class="font-mono text-xs uppercase tracking-wide text-gray-400">Body</span>
+                      <!--
+                        innerHTML is the point: the generator returns HTML sections and the operator
+                        needs to see the rendered email, not its markup.
+
+                        Safe because NOTHING here bypasses Angular's sanitiser -- there is no
+                        `bypassSecurityTrustHtml` anywhere in this module, so the default
+                        DomSanitizer strips scripts and event handlers on this binding.
+
+                        That is the load-bearing fact, NOT "we wrote the prompt": the model is fed
+                        scraped third-party event-page HTML, so `copy.body` is not purely
+                        first-party content. If a `bypassSecurityTrust*` is ever added to this
+                        module, this binding must be re-reviewed before it lands.
+                      -->
+                      <div class="prose prose-sm max-w-none text-sm text-gray-800" [innerHTML]="copy.body" data-testid="campaigns-email-copy-body"></div>
+                    </div>
+                  </div>
+                }
+
+                <!--
+                  The email TYPE, above the generate control because it changes what generation
+                  produces. Twelve types map onto six stages: a CFP launch and a co-located CFP
+                  reminder are the same stage, sent at different times, so the operator picks the
+                  type they recognise and the stage is derived.
+                -->
+                <div class="flex flex-col gap-1">
+                  <label for="email-type" class="font-mono text-xs uppercase tracking-wide text-gray-400">Email type</label>
+                  <!--
+                    A FORM CONTROL, not a native <select> with `selected` on each option. The raw
+                    control ignored a `[value]` binding applied before its options existed and fell
+                    back to the FIRST option -- CFP Launch -- while the signal held the Main
+                    Registration Push default, so every operator who ignored the selector silently
+                    got CFP copy. A form-driven wrapper has no such ordering hazard, and
+                    `frontend-checklist.md` 14.1 requires it for a changed control.
+                  -->
+                  <lfx-select
+                    [form]="selectorForm"
+                    control="emailType"
+                    [options]="emailTypes"
+                    optionLabel="label"
+                    optionValue="id"
+                    inputId="email-type"
+                    styleClass="w-full max-w-md"
+                    dataTest="campaigns-email-type-select" />
+                </div>
+
+                <div class="flex items-center gap-3">
+                  <lfx-button
+                    [label]="emailCopy() ? 'Regenerate' : 'Generate email content'"
+                    icon="fa-light fa-wand-magic-sparkles"
+                    severity="primary"
+                    [disabled]="!canGenerateEmailCopy()"
+                    [loading]="emailCopyState() === 'generating'"
+                    (onClick)="onGenerateEmailCopy()"
+                    data-testid="campaigns-email-generate-btn" />
+                  @if (emailBriefOutput() === null) {
+                    <span class="text-sm text-gray-500" data-testid="campaigns-email-generate-hint">{{ briefRequiredHint }}</span>
+                  }
+                </div>
+
+                @if (emailCopyError(); as message) {
+                  <p class="text-sm text-red-700" role="alert" data-testid="campaigns-email-copy-error">{{ message }}</p>
+                }
+              </div>
+
               <div class="flex flex-col gap-1">
                 <h2 class="text-base font-semibold text-gray-900">Choose a template to clone</h2>
                 <p class="text-sm text-gray-500">The send is created as a clone of one of your HubSpot marketing emails.</p>
@@ -330,6 +415,177 @@
                   </ul>
                 }
               }
+
+              <!--
+                The create trigger LFXV2-3201 called for. Disabled rather than hidden when it
+                cannot fire, so the reason stays visible next to it — a button that vanishes when
+                no template is picked reads as a broken panel.
+
+                No campaign-row table follows, unlike the paid side: staging produces ONE HubSpot
+                draft with nothing left running, so rows would imply pause/resume controls that
+                `HubSpotDispatcher` does not implement.
+              -->
+
+              <!--
+                Audience. A SEPARATE action from staging, not folded into it, for two reasons: the
+                build is expensive (Snowflake plus several HubSpot creates), and the operator needs
+                to read the provenance before sending to a list they did not assemble by hand.
+              -->
+              <div class="flex flex-col gap-2 border-t border-gray-200 pt-4" data-testid="campaigns-email-audience">
+                <div class="flex flex-col gap-1">
+                  <h2 class="text-base font-semibold text-gray-900">Send audience</h2>
+                  <p class="text-sm text-gray-500">Built from the brief's event details. Required before an email can be staged.</p>
+                </div>
+
+                @if (emailAudience(); as audience) {
+                  <div class="flex flex-col gap-2 rounded-lg border border-gray-200 bg-white p-4" data-testid="campaigns-email-audience-built">
+                    <!--
+                      Branch on the STATUS rather than announcing success for any row: a build
+                      that ends in `failed` still returns an audience, and a green check beside
+                      the word "failed" tells the operator the opposite of what happened.
+                    -->
+                    <div class="flex items-center gap-2">
+                      @if (audience.status === 'built') {
+                        <i class="fa-light fa-check text-green-600"></i>
+                        <span class="text-sm font-medium text-gray-900">Audience built</span>
+                      } @else if (audience.status === 'failed') {
+                        <i class="fa-light fa-circle-exclamation text-red-600"></i>
+                        <span class="text-sm font-medium text-gray-900">Audience build failed</span>
+                      } @else {
+                        <!--
+                          `building` is also where an UNCONFIRMED build lands, not just an
+                          in-flight one, and the two are indistinguishable from here. The copy has
+                          to hold for both, and the summary below carries the ids to reconcile.
+                        -->
+                        <i class="fa-light fa-spinner text-gray-500"></i>
+                        <span class="text-sm font-medium text-gray-900">Audience build unconfirmed</span>
+                      }
+                      <span class="font-mono text-xs text-gray-500">{{ audience.status }}</span>
+                    </div>
+                    @if (audience.inclusionSummary; as summary) {
+                      <p class="text-sm text-gray-600" data-testid="campaigns-email-audience-summary">{{ summary }}</p>
+                    }
+                    @if (audience.suppressionListIds?.length) {
+                      <p class="text-xs text-gray-500">{{ audience.suppressionListIds?.length }} suppression list(s) applied</p>
+                    }
+                  </div>
+                }
+
+                <!--
+                  Offered on `failed` and on absence, but NOT on `building`.
+                
+                  Gating on presence alone made a non-built row terminal: the status card replaced
+                  the button, `canStageEmail` refuses anything but `built`, and there is no poll,
+                  so a failed build stranded the operator with no way back but re-running the
+                  Plan-tab scrape.
+                
+                  `building` is deliberately excluded, and it is not merely "in flight". Upstream
+                  keeps a row BUILDING when the outcome is UNCONFIRMED -- a HubSpot list may
+                  already exist -- and records the ids it created so the row can be reconciled.
+                  Observed live: a build left `HubSpot lists ALREADY CREATED (reconcile these
+                  before retrying): 30779`. Offering Retry there invites the duplicate contact
+                  list that state exists to prevent.
+                -->
+                @if (emailAudience() === null || emailAudience()?.status === 'failed') {
+                  <div class="flex items-center gap-3">
+                    <lfx-button
+                      [label]="emailAudience() === null ? 'Build audience' : 'Retry build'"
+                      icon="fa-light fa-users"
+                      severity="secondary"
+                      [disabled]="emailBriefOutput() === null || emailAudienceState() === 'building'"
+                      [loading]="emailAudienceState() === 'building'"
+                      (onClick)="onBuildAudience()"
+                      data-testid="campaigns-email-audience-btn" />
+                    @if (emailBriefOutput() === null) {
+                      <span class="text-sm text-gray-500">{{ briefRequiredHint }}</span>
+                    }
+                  </div>
+                }
+
+                @if (emailAudienceMessage(); as message) {
+                  <p
+                    class="text-sm"
+                    [class.text-red-700]="emailAudienceState() === 'error'"
+                    [class.text-gray-500]="emailAudienceState() !== 'error'"
+                    [attr.role]="emailAudienceState() === 'error' ? 'alert' : 'status'"
+                    data-testid="campaigns-email-audience-message">
+                    {{ message }}
+                  </p>
+                }
+              </div>
+
+              <!--
+                Final preview — the email as the recipient receives it, assembled from the parts
+                above rather than re-fetched, so what is shown is exactly what was generated.
+
+                Shown only once there is copy: an empty frame before generation would suggest the
+                email exists and is blank.
+              -->
+              @if (emailCopy(); as copy) {
+                <div class="flex flex-col gap-2 border-t border-gray-200 pt-4" data-testid="campaigns-email-preview">
+                  <h2 class="text-base font-semibold text-gray-900">Preview</h2>
+                  <div class="overflow-hidden rounded-lg border border-gray-200 bg-white">
+                    <div class="flex flex-col gap-1 border-b border-gray-200 bg-gray-50 px-4 py-3">
+                      <p class="text-sm font-semibold text-gray-900">{{ copy.subject }}</p>
+                      <p class="text-xs text-gray-500">{{ copy.preheader }}</p>
+                    </div>
+                    <div
+                      class="prose prose-sm max-w-none px-4 py-4 text-sm text-gray-800"
+                      [innerHTML]="copy.body"
+                      data-testid="campaigns-email-preview-body"></div>
+                  </div>
+                  <!--
+                    Stated rather than implied: the body is applied upstream ONLY when the cloned
+                    draft has exactly one rich-text widget. A template with several (header blurb,
+                    body, footer note) is left alone rather than guessed at, because writing the
+                    wrong widget destroys content the operator did not choose to replace. So this
+                    is a request, not a guarantee, and saying so is cheaper than an operator
+                    discovering it on a send.
+                  -->
+                  <p class="text-xs text-gray-500" data-testid="campaigns-email-preview-note">
+                    Staging clones the selected template and applies this subject and body. A template with more than one text block keeps its own body — check
+                    the draft in HubSpot before sending.
+                  </p>
+                </div>
+              }
+
+              <div class="flex flex-col gap-2 border-t border-gray-200 pt-4" data-testid="campaigns-email-stage">
+                <div class="flex items-center gap-3">
+                  <lfx-button
+                    label="Stage Email Draft"
+                    icon="fa-light fa-paper-plane"
+                    severity="primary"
+                    [disabled]="!canStageEmail()"
+                    [loading]="emailStaging() === 'staging'"
+                    (onClick)="onStageEmailSend()"
+                    data-testid="campaigns-email-stage-btn" />
+                  @if (!canStageEmail() && emailStaging() !== 'staging') {
+                    <span class="text-sm text-gray-500" data-testid="campaigns-email-stage-hint">
+                      @if (emailBriefOutput() === null) {
+                        {{ briefRequiredHint }}
+                      } @else if (selectedEmailTemplateId() === '') {
+                        Choose a template to clone.
+                      } @else if (emailAudience() === null) {
+                        Build the send audience first.
+                      } @else if (emailAudience()?.status === 'building') {
+                        The audience build is unconfirmed — reconcile the lists it created before staging.
+                      } @else if (emailAudience()?.status !== 'built') {
+                        The audience build failed — rebuild it before staging.
+                      }
+                    </span>
+                  }
+                </div>
+                @if (emailStagingMessage(); as message) {
+                  <p
+                    class="text-sm"
+                    [class.text-green-700]="emailStaging() === 'done'"
+                    [class.text-red-700]="emailStaging() === 'error'"
+                    [attr.role]="emailStaging() === 'error' ? 'alert' : 'status'"
+                    data-testid="campaigns-email-stage-message">
+                    {{ message }}
+                  </p>
+                }
+              </div>
             </div>
           </div>
         }

@@ -503,6 +503,77 @@ export class CampaignController {
   }
 
   /**
+   * Build the brief's send audience — the prerequisite the email channel cannot dispatch without.
+   *
+   * `project` and `brief_id` travel as query params: both are PATH segments upstream.
+   */
+  public async buildAudience(req: Request, res: Response, next: NextFunction): Promise<void> {
+    const projectSlug = typeof req.query['project'] === 'string' ? req.query['project'].trim() : '';
+    const briefId = typeof req.query['brief_id'] === 'string' ? req.query['brief_id'].trim() : '';
+
+    if (projectSlug === '' || briefId === '') {
+      next(
+        ServiceValidationError.forField('project', 'project and brief_id are required', {
+          operation: 'build_audience',
+          service: 'campaign_controller',
+        })
+      );
+      return;
+    }
+
+    const startTime = logger.startOperation(req, 'build_audience', { projectSlug });
+
+    try {
+      const result = await this.campaignServiceClient.buildAudience(req, projectSlug, briefId);
+      logger.success(req, 'build_audience', startTime, { enabled: result.enabled });
+      res.json(result);
+    } catch (error) {
+      next(error);
+    }
+  }
+
+  /**
+   * Generate email copy for a brief.
+   *
+   * A thin proxy to campaign-service, which owns generation (LFXV2-2775). `project` and
+   * `brief_id` travel as query params because both are PATH segments upstream.
+   */
+  public async generateEmailCopy(req: Request, res: Response, next: NextFunction): Promise<void> {
+    const projectSlug = typeof req.query['project'] === 'string' ? req.query['project'].trim() : '';
+    const briefId = typeof req.query['brief_id'] === 'string' ? req.query['brief_id'].trim() : '';
+
+    if (projectSlug === '' || briefId === '') {
+      next(
+        ServiceValidationError.forField('project', 'project and brief_id are required', {
+          operation: 'generate_email_copy',
+          service: 'campaign_controller',
+        })
+      );
+      return;
+    }
+
+    const startTime = logger.startOperation(req, 'generate_email_copy', { projectSlug });
+
+    try {
+      // Forwarded, NOT validated here. Duplicating the stage's valid set in this layer would give
+      // two sources of truth that drift -- the BFF is a thin proxy.
+      //
+      // An unknown stage is NOT rejected: LFXV2-1940 specifies a fallback, and the Goa enum that
+      // would have refused a typo was removed for it, so campaign-service resolves an
+      // unrecognised value to Registration Push and answers 200. This comment previously said it
+      // "comes back as upstream's 400 naming the valid values", which contradicted the frontend's
+      // comment on the same path and is no longer true of the contract.
+      const rawStage = (req.body as { stage?: unknown } | undefined)?.stage;
+      const stage = typeof rawStage === 'string' && rawStage.trim() !== '' ? rawStage.trim() : undefined;
+      const result = await this.campaignServiceClient.generateEmailCopy(req, projectSlug, briefId, stage);
+      logger.success(req, 'generate_email_copy', startTime, { enabled: result.enabled });
+      res.json(result);
+    } catch (error) {
+      next(error);
+    }
+  }
+
+  /**
    * Persist the generated brief so it outlives the browser tab.
    *
    * Today the approved brief lives only in a `CampaignsComponent` signal: a reload loses it and
@@ -1762,6 +1833,28 @@ export class CampaignController {
 
     const rawUtm = body.hubspotConfig?.utmCampaign;
     const utmCampaign = typeof rawUtm === 'string' ? rawUtm.trim() : '';
-    return utmCampaign ? { sourceEmailId, utmCampaign } : { sourceEmailId };
+
+    // The generated copy, forwarded rather than dropped. This mapper is an ALLOW-LIST -- anything
+    // it does not name never reaches campaign-service -- and it named only the two original
+    // fields, so a staged draft silently kept the cloned template's own subject and body while
+    // the UI showed the generated ones. Observed live: draft 220597885197 went out with the
+    // template's "Reminder: Complete your OpenSearch Ambassador application".
+    //
+    // Same runtime type check as `sourceEmailId` above, for the same reason: this route has no
+    // body validator, so a non-string must take the "absent" exit rather than throw.
+    const rawSubject = body.hubspotConfig?.subject;
+    const subject = typeof rawSubject === 'string' ? rawSubject.trim() : '';
+    const rawBody = body.hubspotConfig?.bodyHtml;
+    const bodyHtml = typeof rawBody === 'string' ? rawBody.trim() : '';
+
+    // Each field is included only when set. Upstream treats both as OPTIONAL and leaves the
+    // template's own value in place when a field is absent, so sending "" would be a request to
+    // blank the draft's subject rather than to leave it alone.
+    return {
+      sourceEmailId,
+      ...(utmCampaign ? { utmCampaign } : {}),
+      ...(subject ? { subject } : {}),
+      ...(bodyHtml ? { bodyHtml } : {}),
+    };
   }
 }

@@ -6,26 +6,20 @@ import { signal } from '@angular/core';
 import { TestBed } from '@angular/core/testing';
 import { ActivatedRouteSnapshot, convertToParamMap, Router, RouterStateSnapshot, UrlTree } from '@angular/router';
 import { CommitteeService } from '@shared/services/committee.service';
+import { MailingListService } from '@shared/services/mailing-list.service';
 import { MeetingService } from '@shared/services/meeting.service';
 import { PersonaService } from '@shared/services/persona.service';
 import { ProjectContextService } from '@shared/services/project-context.service';
 import { ProjectService } from '@shared/services/project.service';
 import { VoteService } from '@shared/services/vote.service';
-import { Committee, Meeting, Vote } from '@lfx-one/shared/interfaces';
+import { Committee, GroupsIOMailingList, Meeting, Vote } from '@lfx-one/shared/interfaces';
 import { firstValueFrom, of, throwError } from 'rxjs';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 
 import { writerGuard } from './writer.guard';
 
-// Pins the fail-closed contract of the meeting edit slug resolution (GH-1579): only a 404
-// on the meeting read may fall back to the stale active context — every other failure must
-// resolve no slug at all so the guard redirects instead of authorizing against an unrelated
-// project. A future broadened catch would silently restore the cross-project authorization bug.
-// The committee edit route (GH-1566) shares the same entity-scoped resolution through
-// fetchCommittee, so its cases pin the identical contract for the committees branch.
-// Also covers the non-meetings early-returns (ED fast path, non-entity-scoped features) so the
-// file isn't a false sense of coverage for the guard's default flow.
-// The vote edit route (GH-1568) shares the same resolution through fetchVote — pinned identically.
+// Pins the fail-closed entity-scoped slug contract (GH-1579/GH-1566/GH-1567/GH-1568): only a 404 probe read
+// falls back to the stale context — anything else resolves no slug. Also covers the ED fast path and non-entity-scoped features.
 describe('writerGuard', () => {
   const MEETING_UID = 'meeting-uid-1';
   const MEETING_SLUG = 'meeting-project';
@@ -33,6 +27,8 @@ describe('writerGuard', () => {
   const COMMITTEE_SLUG = 'committee-project';
   const VOTE_UID = 'vote-uid-1';
   const VOTE_SLUG = 'vote-project';
+  const MAILING_LIST_UID = 'mailing-list-uid-1';
+  const MAILING_LIST_SLUG = 'mailing-list-project';
   const STALE_SLUG = 'stale-project';
 
   let getMeetingDetail: ReturnType<typeof vi.fn>;
@@ -40,6 +36,7 @@ describe('writerGuard', () => {
   let getCommittee: ReturnType<typeof vi.fn>;
   let fetchCommittee: ReturnType<typeof vi.fn>;
   let fetchVote: ReturnType<typeof vi.fn>;
+  let getMailingList: ReturnType<typeof vi.fn>;
   let router: { parseUrl: ReturnType<typeof vi.fn>; createUrlTree: ReturnType<typeof vi.fn> };
   let currentPersona: ReturnType<typeof signal<string>>;
 
@@ -69,6 +66,14 @@ describe('writerGuard', () => {
       parent: null,
     }) as unknown as ActivatedRouteSnapshot;
 
+  const mailingListRoute = (): ActivatedRouteSnapshot =>
+    ({
+      queryParamMap: convertToParamMap({}),
+      paramMap: convertToParamMap({ id: MAILING_LIST_UID }),
+      data: { writeFeature: 'mailing-lists', entityScopedSlug: true },
+      parent: null,
+    }) as unknown as ActivatedRouteSnapshot;
+
   const runGuard = async (route: ActivatedRouteSnapshot = meetingRoute()) => {
     // The guard returns `true` synchronously for the ED fast path, an Observable otherwise —
     // never a bare UrlTree (redirects are always wrapped in `of(...)`).
@@ -82,6 +87,7 @@ describe('writerGuard', () => {
     getCommittee = vi.fn();
     fetchCommittee = vi.fn();
     fetchVote = vi.fn();
+    getMailingList = vi.fn();
     currentPersona = signal('maintainer');
     router = {
       parseUrl: vi.fn().mockImplementation((url: string) => ({ redirect: url }) as unknown as UrlTree),
@@ -94,6 +100,7 @@ describe('writerGuard', () => {
         { provide: ProjectContextService, useValue: { activeContext: () => ({ uid: 'stale-uid', slug: STALE_SLUG, name: 'Stale' }) } },
         { provide: ProjectService, useValue: { getProject } },
         { provide: CommitteeService, useValue: { getCommittee, fetchCommittee } },
+        { provide: MailingListService, useValue: { getMailingList } },
         { provide: MeetingService, useValue: { getMeetingDetail } },
         { provide: VoteService, useValue: { fetchVote } },
         { provide: Router, useValue: router },
@@ -213,6 +220,49 @@ describe('writerGuard', () => {
     fetchVote.mockReturnValue(throwError(() => httpError(500)));
 
     const result = await runGuard(voteRoute());
+
+    expect(router.parseUrl).toHaveBeenCalledWith('/project/overview');
+    expect(result).toEqual({ redirect: '/project/overview' });
+    expect(getProject).not.toHaveBeenCalled();
+    expect(getCommittee).not.toHaveBeenCalled();
+  });
+
+  it('authorizes mailing-list edit against the list’s own project when the read succeeds', async () => {
+    getMailingList.mockReturnValue(of({ uid: MAILING_LIST_UID, project_uid: 'ml-uid', project_slug: MAILING_LIST_SLUG } as unknown as GroupsIOMailingList));
+    getProject.mockReturnValue(of({ uid: 'ml-uid', slug: MAILING_LIST_SLUG, writer: true }));
+
+    const result = await runGuard(mailingListRoute());
+
+    expect(result).toBe(true);
+    expect(getMailingList).toHaveBeenCalledWith(MAILING_LIST_UID);
+    expect(getMeetingDetail).not.toHaveBeenCalled();
+    expect(getProject).toHaveBeenCalledWith(MAILING_LIST_SLUG, false, { meetingCoordinator: false });
+  });
+
+  it('resolves the uid when the list payload carries the v1-sync empty-string slug, never the stale context', async () => {
+    getMailingList.mockReturnValue(of({ uid: MAILING_LIST_UID, project_uid: 'ml-uid', project_slug: '' } as unknown as GroupsIOMailingList));
+    getProject.mockReturnValue(of({ uid: 'ml-uid', slug: MAILING_LIST_SLUG, writer: true }));
+
+    const result = await runGuard(mailingListRoute());
+
+    expect(result).toBe(true);
+    expect(getProject).toHaveBeenCalledWith('ml-uid', false, { meetingCoordinator: false });
+  });
+
+  it('falls back to the active context only on a 404 mailing-list read', async () => {
+    getMailingList.mockReturnValue(throwError(() => httpError(404)));
+    getProject.mockReturnValue(of({ uid: 'stale-uid', slug: STALE_SLUG, writer: true }));
+
+    const result = await runGuard(mailingListRoute());
+
+    expect(result).toBe(true);
+    expect(getProject).toHaveBeenCalledWith(STALE_SLUG, false, { meetingCoordinator: false });
+  });
+
+  it('fails closed on a 500 mailing-list read without probing the stale project', async () => {
+    getMailingList.mockReturnValue(throwError(() => httpError(500)));
+
+    const result = await runGuard(mailingListRoute());
 
     expect(router.parseUrl).toHaveBeenCalledWith('/project/overview');
     expect(result).toEqual({ redirect: '/project/overview' });

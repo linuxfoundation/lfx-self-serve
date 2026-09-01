@@ -19,7 +19,8 @@ vi.mock('@lfx-one/shared/utils', () => ({
   buildRecurrenceNeverEndDate: vi.fn(),
   getPastMeetingTranscriptUrl: vi.fn(),
   mapITXResponseToMeetingRsvp: vi.fn(),
-  normalizeIndexedMeetingAiSummary: vi.fn(),
+  normalizeIndexedMeetingAiSummary: vi.fn((meeting) => meeting),
+  normalizeIndexedMeetingInviteResponses: vi.fn((meeting) => meeting),
   selectPrimaryPastMeetingSummary: vi.fn(),
   // getMeetingRsvps / getMeetingRegistrants(includeRsvp) delegate occurrence selection to the real
   // resolver — stubbed here to the "most recent rsvp" since these tests cover roster/page-walk

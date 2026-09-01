@@ -4,14 +4,16 @@
 import { describe, expect, it } from 'vitest';
 
 import { PROFILE_TABS } from '../constants/profile.constants';
-import { ClaSignedVia, ClaStatus, MyClaAgreement, MyClasIdentitySummary } from '../interfaces/cla.interface';
+import { ClaGroupOrg, ClaGroupOrgSource, ClaSignedVia, ClaStatus, MyClaAgreement, MyClasIdentitySummary } from '../interfaces/cla.interface';
 import {
   buildProfileTabs,
   claGroupPrimaryName,
   claGroupSecondaryName,
   claKindSeverity,
+  claSignRoute,
   claStatusLabel,
   claStatusSeverity,
+  gerritSignUrl,
   isMyClasEmpty,
   shouldShowGithubCta,
   signedAsLine,
@@ -197,5 +199,108 @@ describe('toClaGroupOptionView', () => {
     expect(view.matchTypeLabels).toEqual(['Project name']);
     expect(view.orgViews[0]).toEqual({ name: 'cncf', source: 'github', sourceLabel: 'GitHub', sourceIcon: 'fa-brands fa-github' });
     expect(view.expanded).toBe(false);
+  });
+});
+
+/**
+ * The routing table of #2002, row by row.
+ *
+ * What these protect is not "the right branch runs" so much as the rule the branches encode:
+ * a route is chosen on a source being present, never on one being absent. The empty-list case
+ * is the one to read first: an empty list means nothing is linked or nothing resolved rather
+ * than "not GitHub", those groups are signable today, and a rule that inferred anything from
+ * that would misroute them.
+ */
+describe('claSignRoute', () => {
+  function orgs(...sources: ClaGroupOrgSource[]): ClaGroupOrg[] {
+    return sources.map((source, index) => ({ name: `org-${index}`, source }));
+  }
+
+  it('keeps an empty organization list on the GitHub path', () => {
+    // Not an edge case. A CLA group with nothing linked is still searchable by name and still
+    // signable; treating "nothing linked" as "not GitHub" would strand every one of them.
+    expect(claSignRoute([])).toBe('github');
+  });
+
+  it('routes a GitHub-only group to GitHub', () => {
+    expect(claSignRoute(orgs('github'))).toBe('github');
+  });
+
+  it('routes a Gerrit-only group to Gerrit', () => {
+    expect(claSignRoute(orgs('gerrit'))).toBe('gerrit');
+  });
+
+  it('routes a GitLab-only group to the unsupported block', () => {
+    expect(claSignRoute(orgs('gitlab'))).toBe('gitlab-unsupported');
+  });
+
+  it('ignores GitLab on a group that is also linked to GitHub', () => {
+    // Signable through GitHub, so there is nothing to block and nothing to explain.
+    expect(claSignRoute(orgs('github', 'gitlab'))).toBe('github');
+  });
+
+  it('ignores GitLab on a group that is also linked to Gerrit', () => {
+    expect(claSignRoute(orgs('gitlab', 'gerrit'))).toBe('gerrit');
+  });
+
+  it('offers both identities on a group linked to GitHub and Gerrit', () => {
+    expect(claSignRoute(orgs('github', 'gerrit'))).toBe('github-or-gerrit');
+  });
+
+  it('offers both identities on a group linked to all three, and never GitLab', () => {
+    expect(claSignRoute(orgs('github', 'gitlab', 'gerrit'))).toBe('github-or-gerrit');
+  });
+
+  it('does not let source order decide a mixed group', () => {
+    // The mixed test has to run before the single-source ones. If it did not, whichever source
+    // came first in the list would silently win and the contributor would never be asked.
+    expect(claSignRoute(orgs('gerrit', 'github'))).toBe('github-or-gerrit');
+    expect(claSignRoute(orgs('github', 'gerrit'))).toBe('github-or-gerrit');
+  });
+
+  it('falls back to GitHub for a non-empty list carrying no recognised source', () => {
+    // Unreachable through the search mapper, which drops unknown sources. It carries no
+    // positive evidence either way, so it lands on today's behaviour rather than on a block.
+    expect(claSignRoute([{ name: 'somewhere', source: 'bitbucket' as ClaGroupOrgSource }])).toBe('github');
+  });
+});
+
+describe('gerritSignUrl', () => {
+  const RETURN_URL = 'https://app.dev.lfx.dev/profile/clas';
+
+  it('composes the Console Gerrit route for the individual agreement', () => {
+    expect(gerritSignUrl('https://easycla.example.org', 'cg-1', RETURN_URL)).toBe(
+      'https://easycla.example.org/#/cla/gerrit/project/cg-1/individual?redirect=https%3A%2F%2Fapp.dev.lfx.dev%2Fprofile%2Fclas'
+    );
+  });
+
+  it('tolerates a base with trailing slashes, as every configured one has', () => {
+    expect(gerritSignUrl('https://easycla.example.org//', 'cg-1', RETURN_URL)).toBe(
+      'https://easycla.example.org/#/cla/gerrit/project/cg-1/individual?redirect=https%3A%2F%2Fapp.dev.lfx.dev%2Fprofile%2Fclas'
+    );
+  });
+
+  it('encodes the return address so its own query string cannot escape into ours', () => {
+    const url = gerritSignUrl('https://easycla.example.org', 'cg-1', 'https://app.example.org/profile/clas?a=1&b=2');
+
+    expect(url).toContain('redirect=https%3A%2F%2Fapp.example.org%2Fprofile%2Fclas%3Fa%3D1%26b%3D2');
+    // One query parameter, not three: an unencoded return address would have added two more.
+    expect(url?.split('?')).toHaveLength(2);
+  });
+
+  it('returns nothing when the Console base is unset', () => {
+    // The caller reports a failure instead. Navigating to a relative address would resolve it
+    // against our own origin and land the contributor on a page that cannot sign anything.
+    expect(gerritSignUrl('', 'cg-1', RETURN_URL)).toBeNull();
+    expect(gerritSignUrl('   ', 'cg-1', RETURN_URL)).toBeNull();
+  });
+
+  it('returns nothing when the Console base is not an absolute address', () => {
+    expect(gerritSignUrl('easycla.example.org', 'cg-1', RETURN_URL)).toBeNull();
+  });
+
+  it('returns nothing when the CLA group id is missing', () => {
+    expect(gerritSignUrl('https://easycla.example.org', '', RETURN_URL)).toBeNull();
+    expect(gerritSignUrl('https://easycla.example.org', '  ', RETURN_URL)).toBeNull();
   });
 });

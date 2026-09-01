@@ -346,7 +346,7 @@
           }
         } @else if (!pastMeeting()) {
           <!-- Show RSVP Selection for authenticated invited non-organizers (upcoming meetings only) -->
-          @if (effectivelyInvited()) {
+          @if (effectivelyInvited() && inviteResponsesEnabled()) {
             @defer (on viewport) {
               <lfx-rsvp-button-group [meeting]="meeting()" [occurrenceId]="occurrence()?.occurrence_id"> </lfx-rsvp-button-group>
             } @placeholder {

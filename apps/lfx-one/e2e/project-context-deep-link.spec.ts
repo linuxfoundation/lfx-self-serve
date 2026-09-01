@@ -15,6 +15,12 @@
  *     `?project=`) resolves context from the loaded meeting — via the BFF-enriched project
  *     fields, or via the component's resolve-by-uid fallback when enrichment failed — instead
  *     of the stale cookie-restored context.
+ *   - The same for a context-less mailing-list EDIT link (`/project/mailing-lists/:uid/edit`,
+ *     GH-1567): context syncs from the loaded list (enriched payload or uid fallback), and
+ *     writerGuard authorizes against the list's own project via its entity probe.
+ *   - The same for a context-less vote EDIT link (`/project/votes/:uid/edit`, GH-1568):
+ *     context syncs from the loaded vote (enriched payload or uid fallback), and writerGuard
+ *     authorizes against the vote's own project via its entity probe.
  *
  * Prerequisites:
  *   - Dev server reachable at the Playwright baseURL (default http://localhost:4200)
@@ -39,6 +45,7 @@ const OTHER_PROJECT_SLUG = 'other-project';
 const OTHER_PROJECT_UID = 'p0000000-0000-0000-0000-00000000d003';
 const MOCK_MEETING_UID = 'm0000000-0000-0000-0000-00000000d001';
 const MOCK_VOTE_UID = 'v0000000-0000-0000-0000-00000000d001';
+const MOCK_MAILING_LIST_UID = 'l1000000-0000-0000-0000-00000000d001';
 
 function buildProjectStub(uid: string, slug: string, name: string) {
   return {
@@ -302,6 +309,47 @@ async function stubVoteEditDetail(page: Page, vote: ReturnType<typeof buildVoteS
   await page.route(`**/api/votes/${MOCK_VOTE_UID}`, (route) => {
     if (route.request().method() !== 'GET') return route.fallback();
     return route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify(vote) });
+  });
+}
+
+/**
+ * Edit-page detail payload; `enriched: false` mirrors the v1-sync gap (empty slug/name, no
+ * is_foundation) so the component's resolve-by-uid fallback runs (GH-1567).
+ */
+function buildMailingListStub(enriched: boolean) {
+  return {
+    uid: MOCK_MAILING_LIST_UID,
+    title: 'Test Foundation Announcements',
+    group_name: 'announce',
+    description: 'Mailing list stub for project-context deep-link specs',
+    project_uid: MOCK_FOUNDATION_UID,
+    project_slug: enriched ? MOCK_FOUNDATION_SLUG : '',
+    project_name: enriched ? 'Test Foundation' : '',
+    ...(enriched ? { is_foundation: true } : {}),
+    source: 'api',
+    type: 'discussion_open',
+    audience_access: 'public',
+    service_uid: 'svc-1',
+    public: true,
+    committees: [],
+    subscriber_count: 12,
+    writer: true,
+    created_at: '2025-01-15T00:00:00Z',
+    updated_at: '2025-06-01T00:00:00Z',
+  };
+}
+
+async function stubMailingListEditDetail(page: Page, list: ReturnType<typeof buildMailingListStub>): Promise<void> {
+  // Catch-all registered FIRST (Playwright matches in reverse registration order); `*` doesn't
+  // cross `/`, so the services and detail routes need their own patterns.
+  await page.route('**/api/mailing-lists*', (route) => {
+    if (route.request().method() !== 'GET') return route.fallback();
+    return route.fulfill({ status: 200, contentType: 'application/json', body: '[]' });
+  });
+  await page.route('**/api/mailing-lists/services*', (route) => route.fulfill({ status: 200, contentType: 'application/json', body: '[]' }));
+  await page.route(`**/api/mailing-lists/${MOCK_MAILING_LIST_UID}`, (route) => {
+    if (route.request().method() !== 'GET') return route.fallback();
+    return route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify(list) });
   });
 }
 
@@ -629,5 +677,137 @@ test.describe('Vote edit deep-link resolves the vote’s project context (GH-156
 
     await page.waitForTimeout(500);
     expect(new URL(page.url()).searchParams.has('project')).toBe(false);
+  });
+});
+
+test.describe('Mailing list edit deep-link resolves the list’s project context (GH-1567)', () => {
+  test.beforeEach(async ({ page }) => {
+    // Mirror the issue: the user was last working in an unrelated PROJECT (cookie-restored),
+    // then opens a context-less edit link for a mailing list owned by Test Foundation.
+    await setPersonaAndLensCookies(page, ['executive-director'], 'project');
+    await setProjectCookie(page, OTHER_PROJECT_UID, OTHER_PROJECT_SLUG, 'Other Project');
+    await stubPersona(page, ['executive-director']);
+    await stubProjectApi(page);
+    await stubCommittees(page, buildCommittees());
+    await stubLensItems(page);
+    await page.route(`**/api/projects/${OTHER_PROJECT_SLUG}*`, (route) =>
+      route.fulfill({
+        status: 200,
+        contentType: 'application/json',
+        body: JSON.stringify(buildProjectStub(OTHER_PROJECT_UID, OTHER_PROJECT_SLUG, 'Other Project')),
+      })
+    );
+  });
+
+  test('edit link without ?project= switches context to the list’s foundation (BFF-enriched payload)', async ({ page }) => {
+    await stubMailingListEditDetail(page, buildMailingListStub(true));
+
+    await gotoSpa(page, `/project/mailing-lists/${MOCK_MAILING_LIST_UID}/edit`, {
+      uid: OTHER_PROJECT_UID,
+      slug: OTHER_PROJECT_SLUG,
+      name: 'Other Project',
+      foundation: false,
+    });
+    await expect(page.getByTestId('mailing-list-manage-title')).toBeVisible({ timeout: PAGE_LOAD_TIMEOUT });
+
+    // The sync derives context from the loaded list (Test Foundation), replacing the
+    // cookie-restored Other Project — the selector and sidebar links follow the correction.
+    await expect(page.getByTestId('project-selector')).toContainText('Test Foundation', { timeout: ELEMENT_TIMEOUT });
+    await expect(page.getByTestId('sidebar-item-mailing-lists')).toHaveAttribute('href', /[?&]project=test-foundation/, {
+      timeout: ELEMENT_TIMEOUT,
+    });
+
+    // The route itself canonicalizes to the list's foundation tier once the payload lands (GH-1567).
+    await expect(page).toHaveURL(new RegExp(`/foundation/mailing-lists/${MOCK_MAILING_LIST_UID}/edit`), { timeout: ELEMENT_TIMEOUT });
+
+    // The context correction must NOT inject ?project= into the entity URL (syncUrl guard) —
+    // give any NavigationEnd-driven backfill a tick to (not) fire before asserting absence.
+    await page.waitForTimeout(500);
+    expect(new URL(page.url()).searchParams.has('project')).toBe(false);
+  });
+
+  test('writerGuard authorizes the edit page against the list’s project, not the stale context (GH-1567)', async ({ page }) => {
+    // Non-ED persona: the guard must probe the list for its project slug; the stale cookie
+    // context (Other Project) is intentionally NOT writable — it would redirect to /project/overview.
+    await setPersonaAndLensCookies(page, ['maintainer'], 'project');
+    await stubPersona(page, ['maintainer']);
+    await page.route(`**/api/projects/${OTHER_PROJECT_SLUG}*`, (route) =>
+      route.fulfill({
+        status: 200,
+        contentType: 'application/json',
+        body: JSON.stringify({ ...buildProjectStub(OTHER_PROJECT_UID, OTHER_PROJECT_SLUG, 'Other Project'), writer: false }),
+      })
+    );
+    await stubMailingListEditDetail(page, buildMailingListStub(true));
+
+    await gotoSpa(page, `/project/mailing-lists/${MOCK_MAILING_LIST_UID}/edit`, {
+      uid: OTHER_PROJECT_UID,
+      slug: OTHER_PROJECT_SLUG,
+      name: 'Other Project',
+      foundation: false,
+    });
+    await expect(page.getByTestId('mailing-list-manage-title')).toBeVisible({ timeout: PAGE_LOAD_TIMEOUT });
+
+    // Still on the edit page (no access-denied redirect): the URL canonicalizes to the owning
+    // foundation tier once the list loads, and the context follows the list.
+    await expect(page).toHaveURL(new RegExp(`/foundation/mailing-lists/${MOCK_MAILING_LIST_UID}/edit`), { timeout: ELEMENT_TIMEOUT });
+    await expect(page.getByTestId('project-selector')).toContainText('Test Foundation', { timeout: ELEMENT_TIMEOUT });
+  });
+
+  test('edit link without ?project= falls back to resolving the project by uid when enrichment is absent', async ({ page }) => {
+    // Enrichment-failed payload (project_uid only, v1-sync empty-string slug): the fallback
+    // fetches the project by uid — this stub satisfies computeIsFoundation, landing the foundation slot.
+    await stubMailingListEditDetail(page, buildMailingListStub(false));
+    await page.route(`**/api/projects/${MOCK_FOUNDATION_UID}*`, (route) =>
+      route.fulfill({
+        status: 200,
+        contentType: 'application/json',
+        body: JSON.stringify({
+          ...buildProjectStub(MOCK_FOUNDATION_UID, MOCK_FOUNDATION_SLUG, 'Test Foundation'),
+          funding: 'Funded',
+          funding_model: ['Membership'],
+          legal_entity_type: 'Series LLC',
+        }),
+      })
+    );
+
+    await gotoSpa(page, `/project/mailing-lists/${MOCK_MAILING_LIST_UID}/edit`, {
+      uid: OTHER_PROJECT_UID,
+      slug: OTHER_PROJECT_SLUG,
+      name: 'Other Project',
+      foundation: false,
+    });
+    await expect(page.getByTestId('mailing-list-manage-title')).toBeVisible({ timeout: PAGE_LOAD_TIMEOUT });
+
+    await expect(page.getByTestId('project-selector')).toContainText('Test Foundation', { timeout: ELEMENT_TIMEOUT });
+    await expect(page.getByTestId('sidebar-item-mailing-lists')).toHaveAttribute('href', /[?&]project=test-foundation/, {
+      timeout: ELEMENT_TIMEOUT,
+    });
+
+    // The uid fallback canonicalizes the route to the list's foundation tier too (GH-1567).
+    await expect(page).toHaveURL(new RegExp(`/foundation/mailing-lists/${MOCK_MAILING_LIST_UID}/edit`), { timeout: ELEMENT_TIMEOUT });
+
+    await page.waitForTimeout(500);
+    expect(new URL(page.url()).searchParams.has('project')).toBe(false);
+  });
+
+  test('view deep link under the wrong tier canonicalizes to the list’s foundation (GH-1567)', async ({ page }) => {
+    await stubMailingListEditDetail(page, buildMailingListStub(true));
+    // The view page's members child fetches /members — keep it from escaping to the real BFF.
+    await page.route(`**/api/mailing-lists/${MOCK_MAILING_LIST_UID}/members*`, (route) =>
+      route.fulfill({ status: 200, contentType: 'application/json', body: '[]' })
+    );
+
+    await gotoSpa(page, `/project/mailing-lists/${MOCK_MAILING_LIST_UID}`, {
+      uid: OTHER_PROJECT_UID,
+      slug: OTHER_PROJECT_SLUG,
+      name: 'Other Project',
+      foundation: false,
+    });
+    await expect(page.getByTestId('mailing-list-view-title')).toHaveText('Test Foundation Announcements', { timeout: PAGE_LOAD_TIMEOUT });
+
+    // Context syncs from the loaded list and the route rewrites to its owning tier (GH-1567).
+    await expect(page).toHaveURL(new RegExp(`/foundation/mailing-lists/${MOCK_MAILING_LIST_UID}$`), { timeout: ELEMENT_TIMEOUT });
+    await expect(page.getByTestId('project-selector')).toContainText('Test Foundation', { timeout: ELEMENT_TIMEOUT });
   });
 });
