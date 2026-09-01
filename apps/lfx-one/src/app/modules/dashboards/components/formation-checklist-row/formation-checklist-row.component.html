@@ -36,12 +36,46 @@
     @switch (item().action) {
       @case ('link') {
         @if (safeActionHref(); as href) {
-          <lfx-button label="Open" size="small" severity="secondary" [outlined]="true" [href]="href" target="_blank" rel="noopener noreferrer" />
+          <lfx-button
+            label="Open"
+            size="small"
+            severity="secondary"
+            [outlined]="true"
+            [href]="href"
+            target="_blank"
+            rel="noopener noreferrer"
+            [attr.data-testid]="'formation-checklist-row-link-' + item().uid" />
+        } @else {
+          <lfx-button
+            label="Open"
+            size="small"
+            severity="secondary"
+            [outlined]="true"
+            [disabled]="true"
+            tooltip="Link unavailable"
+            [attr.data-testid]="'formation-checklist-row-link-' + item().uid" />
         }
       }
       @case ('status_only') {
         @if (safeActionHref(); as href) {
-          <lfx-button label="Open" size="small" severity="secondary" [outlined]="true" [href]="href" target="_blank" rel="noopener noreferrer" />
+          <lfx-button
+            label="Open"
+            size="small"
+            severity="secondary"
+            [outlined]="true"
+            [href]="href"
+            target="_blank"
+            rel="noopener noreferrer"
+            [attr.data-testid]="'formation-checklist-row-status-only-' + item().uid" />
+        } @else {
+          <lfx-button
+            label="Open"
+            size="small"
+            severity="secondary"
+            [outlined]="true"
+            [disabled]="true"
+            tooltip="Link unavailable"
+            [attr.data-testid]="'formation-checklist-row-status-only-' + item().uid" />
         }
       }
       @case ('provisionable') {
@@ -70,7 +104,13 @@
         }
       }
       @case ('manual') {
-        <lfx-button label="View details" size="small" severity="secondary" [outlined]="true" (onClick)="onOpenDrawer()" />
+        <lfx-button
+          label="View details"
+          size="small"
+          severity="secondary"
+          [outlined]="true"
+          (onClick)="onOpenDrawer()"
+          [attr.data-testid]="'formation-checklist-row-manual-' + item().uid" />
       }
     }
   </div>

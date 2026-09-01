@@ -44,6 +44,28 @@ export interface FeatureConfig {
 }
 
 /**
+ * Reason-prompt dialog config
+ * @description `DynamicDialogConfig.data` shape for `ReasonPromptDialogComponent`, the generic
+ * "confirm with a required reason" modal (skip a formation item, decline a formation, etc.)
+ */
+export interface ReasonPromptDialogData {
+  /** e.g. "Skip {{title}}" — rendered as the body's leading sentence. */
+  prompt: string;
+  placeholder: string;
+  confirmLabel: string;
+  /** Defaults to `'danger'`. */
+  confirmSeverity?: 'danger' | 'primary';
+}
+
+/**
+ * Reason-prompt dialog result
+ * @description `DynamicDialogRef.onClose` payload for `ReasonPromptDialogComponent`
+ */
+export interface ReasonPromptDialogResult {
+  reason: string;
+}
+
+/**
  * Card selector option info
  * @description Information displayed for each card option in card selector
  */
