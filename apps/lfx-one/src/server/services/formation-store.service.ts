@@ -101,7 +101,11 @@ export function putStoredItem(item: FormationItem): void {
 }
 
 export function putStoredFormation(formation: Formation): void {
+  const isNew = !formationStore.has(formation.uid);
   formationStore.set(formation.uid, formation);
+  // A queue-sourced formation (declineFormation) never goes through seedFormation, so the cap must
+  // also be enforced here — otherwise MAX_FORMATIONS_TRACKED only bounds project-checklist writes.
+  if (isNew) evictOldestFormationIfOverCapacity();
 }
 
 export function appendActivity(activity: FormationActivity): void {

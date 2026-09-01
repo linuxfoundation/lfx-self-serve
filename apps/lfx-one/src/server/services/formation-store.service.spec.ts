@@ -2,7 +2,7 @@
 // SPDX-License-Identifier: MIT
 
 import type { Formation, FormationActivity, FormationItem } from '@lfx-one/shared/interfaces';
-import { describe, expect, it } from 'vitest';
+import { beforeEach, describe, expect, it } from 'vitest';
 
 import {
   appendActivity,
@@ -76,6 +76,10 @@ function buildItem(formationUid: string, overrides: Partial<FormationItem> = {})
 }
 
 describe('formation-store.service', () => {
+  beforeEach(() => {
+    resetFormationStoreForTests();
+  });
+
   describe('seedFormation', () => {
     it('is idempotent — a second seed for the same keys does not overwrite prior writes', () => {
       const formation = buildFormation();
@@ -166,8 +170,6 @@ describe('formation-store.service', () => {
 
   describe('formation capacity', () => {
     it('evicts the oldest formation (FIFO) once MAX_FORMATIONS_TRACKED is exceeded, cleaning up its items and activity too', () => {
-      resetFormationStoreForTests();
-
       const oldest = buildFormation();
       const oldestItem = buildItem(oldest.uid);
       seedFormation(oldest, [oldestItem]);
@@ -191,8 +193,18 @@ describe('formation-store.service', () => {
       expect(getStoredItem(oldestItem.uid)).toBeUndefined();
       expect(getStoredItemsForFormation(oldest.uid)).toEqual([]);
       expect(getActivityForFormation(oldest.uid)).toEqual([]);
+    });
 
-      resetFormationStoreForTests();
+    it('also enforces the cap on a formation written only through putStoredFormation (never seeded) — the declineFormation path', () => {
+      const oldest = buildFormation();
+      putStoredFormation(oldest);
+
+      // One more than capacity via the same putStoredFormation path — pushes the oldest formation out.
+      for (let i = 0; i < MAX_FORMATIONS_TRACKED; i += 1) {
+        putStoredFormation(buildFormation());
+      }
+
+      expect(getStoredFormation(oldest.uid)).toBeUndefined();
     });
   });
 

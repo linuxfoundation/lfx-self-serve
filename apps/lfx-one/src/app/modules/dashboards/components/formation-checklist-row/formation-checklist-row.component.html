@@ -92,6 +92,7 @@
       size="small"
       [severity]="severity"
       [outlined]="outlined"
+      [loading]="submitting()"
       (onClick)="onAction()"
       [attr.data-testid]="testidPrefix + '-' + item().uid" />
   } @else {

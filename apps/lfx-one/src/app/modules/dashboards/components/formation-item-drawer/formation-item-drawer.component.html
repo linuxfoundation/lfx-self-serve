@@ -53,7 +53,7 @@
               size="small"
               severity="primary"
               [disabled]="!currentItem.can_complete"
-              [loading]="submitting()"
+              [loading]="completing()"
               (onClick)="onMarkComplete()"
               data-testid="formation-item-drawer-mark-complete" />
             @if (currentItem.is_gating) {
@@ -63,6 +63,7 @@
                 severity="secondary"
                 [outlined]="true"
                 [disabled]="!currentItem.can_complete"
+                [loading]="skipInFlight()"
                 (onClick)="onSkip()"
                 data-testid="formation-item-drawer-skip" />
             }
@@ -95,7 +96,7 @@
           label="Save"
           size="small"
           severity="secondary"
-          [loading]="submitting()"
+          [loading]="savingDetails()"
           (onClick)="onSaveDetails()"
           data-testid="formation-item-drawer-save" />
       </div>

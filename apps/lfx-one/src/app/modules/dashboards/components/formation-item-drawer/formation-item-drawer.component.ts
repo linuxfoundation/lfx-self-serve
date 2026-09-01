@@ -29,6 +29,8 @@ export class FormationItemDrawerComponent {
   private readonly messageService = inject(MessageService);
 
   public readonly itemUid = input<string | null>(null);
+  /** True while the parent's skip-reason dialog flow has actually submitted the skip for this item — the section owns that mutation, not this drawer, so it must tell this drawer when to show the Skip button's `[loading]` state. */
+  public readonly skipInFlight = input<boolean>(false);
 
   /** Fired for a status-changing action (Mark complete) — the section closes the drawer and refreshes the row list. */
   public readonly itemChanged = output<FormationItem>();
@@ -48,8 +50,14 @@ export class FormationItemDrawerComponent {
 
   protected readonly loading: WritableSignal<boolean> = signal(false);
   protected readonly loadFailed: WritableSignal<boolean> = signal(false);
-  /** Guards onMarkComplete/onSaveDetails against a double-click issuing two writes (and, for Mark complete, two history entries). */
-  protected readonly submitting: WritableSignal<boolean> = signal(false);
+  /**
+   * Separate per-action flags, each driving only its own button's `[loading]` — a single shared
+   * flag would spin the Save button while Mark complete is in flight (and vice versa), a spinner on
+   * a button the user never pressed. Both are still checked in each handler's guard, not just their
+   * own, since the two write the same item and must not run concurrently.
+   */
+  protected readonly completing: WritableSignal<boolean> = signal(false);
+  protected readonly savingDetails: WritableSignal<boolean> = signal(false);
   protected readonly drawerData: Signal<FormationDrawerData> = this.initDrawerData();
   protected readonly item = computed(() => this.drawerData().item);
   protected readonly history = computed(() => this.drawerData().history);
@@ -62,14 +70,14 @@ export class FormationItemDrawerComponent {
 
   protected onMarkComplete(): void {
     const item = this.item();
-    if (!item || this.submitting()) return;
-    this.submitting.set(true);
+    if (!item || this.completing() || this.savingDetails()) return;
+    this.completing.set(true);
 
     this.formationService
       .completeFormationItem(item.uid)
       .pipe(
         take(1),
-        finalize(() => this.submitting.set(false))
+        finalize(() => this.completing.set(false))
       )
       .subscribe({
         next: (updated) => {
@@ -90,8 +98,8 @@ export class FormationItemDrawerComponent {
 
   protected onSaveDetails(): void {
     const item = this.item();
-    if (!item || this.submitting()) return;
-    this.submitting.set(true);
+    if (!item || this.completing() || this.savingDetails()) return;
+    this.savingDetails.set(true);
 
     this.formationService
       .updateFormationItem(item.uid, {
@@ -101,7 +109,7 @@ export class FormationItemDrawerComponent {
       })
       .pipe(
         take(1),
-        finalize(() => this.submitting.set(false))
+        finalize(() => this.savingDetails.set(false))
       )
       .subscribe({
         next: (updated) => {

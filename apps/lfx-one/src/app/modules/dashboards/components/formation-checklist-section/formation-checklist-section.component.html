@@ -48,7 +48,11 @@
               <span class="text-[11px] font-medium tracking-wide uppercase text-gray-500">{{ rendered.section.title }}</span>
             </div>
             @for (item of rendered.items; track item.uid) {
-              <lfx-formation-checklist-row [item]="item" (openDrawer)="onOpenDrawer($event)" (actionTriggered)="onRowAction($event)" />
+              <lfx-formation-checklist-row
+                [item]="item"
+                [submitting]="submittingItemUids().has(item.uid)"
+                (openDrawer)="onOpenDrawer($event)"
+                (actionTriggered)="onRowAction($event)" />
             }
           </div>
         }
@@ -59,6 +63,7 @@
 
 <lfx-formation-item-drawer
   [itemUid]="drawerItemUid()"
+  [skipInFlight]="submittingItemUids().has(drawerItemUid() ?? '')"
   [(visible)]="drawerVisible"
   (itemChanged)="onDrawerItemChanged()"
   (itemUpdated)="onDrawerItemUpdated()"
