@@ -98,10 +98,16 @@ export class ProjectService {
    * Note the two identifiers cache under separate keys for the same project.
    */
   public getProject(slugOrUid: string, current: boolean = true, options?: { meetingCoordinator?: boolean }): Observable<Project | null> {
+    // Cache key stays on the raw slugOrUid (not the encoded form) so callers share one cache
+    // entry regardless of whether they pre-encode.
     const cacheKey = `${slugOrUid}:${current}${options?.meetingCoordinator ? ':mc' : ''}`;
     if (!this.projectCache.has(cacheKey)) {
       const params = options?.meetingCoordinator ? new HttpParams().set('meeting_coordinator', 'true') : undefined;
-      const project$ = this.http.get<Project>(`/api/projects/${slugOrUid}`, { params }).pipe(
+      // encodeURIComponent: unlike getProjectStrict/getProjectSfid below, this method has callers
+      // that pass a raw, attacker-influenced query param (e.g. propose.component.ts's ?parent=,
+      // project-query-param.guard.ts's ?project=) — an unescaped `/` or `..` segment would
+      // otherwise resolve outside `/api/projects/:slug`.
+      const project$ = this.http.get<Project>(`/api/projects/${encodeURIComponent(slugOrUid)}`, { params }).pipe(
         catchError((error) => {
           console.error('Failed to fetch project:', error);
           return of(null);

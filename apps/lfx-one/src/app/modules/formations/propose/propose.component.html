@@ -185,61 +185,61 @@
         @for (contact of additionalContacts(); track contact.email; let i = $index) {
           <div
             class="flex items-center justify-between gap-2 rounded-md border border-gray-200 px-3 py-2"
-            [attr.data-testid]="'propose-additional-contact-row-' + contact.email">
+            [attr.data-testid]="'propose-additional-contact-row-' + i">
             <span class="text-sm text-gray-900">{{ contact.first_name }} {{ contact.last_name }} ({{ contact.email }})</span>
             <button
               type="button"
               class="text-xs text-red-600 hover:text-red-800"
               (click)="removeContact(i)"
-              [attr.data-testid]="'propose-additional-contact-remove-' + contact.email">
+              [attr.data-testid]="'propose-additional-contact-remove-' + i">
               Remove
             </button>
           </div>
         }
         @if (additionalContactsAtLimit()) {
-          <p class="text-xs text-gray-500" data-testid="propose-additional-contact-limit">
+          <p class="text-xs text-gray-500" role="status" data-testid="propose-additional-contact-limit">
             You've reached the limit of {{ maxAdditionalContacts }} additional contacts.
           </p>
-        } @else {
-          <div class="grid grid-cols-1 gap-2 md:grid-cols-4" [formGroup]="newContactForm">
-            <label for="new-contact-first-name" class="sr-only">New contact first name</label>
-            <lfx-input-text
-              size="small"
-              [form]="newContactForm"
-              control="first_name"
-              [id]="'new-contact-first-name'"
-              placeholder="First name"
-              styleClass="w-full"
-              data-testid="propose-new-contact-first-name"></lfx-input-text>
-            <label for="new-contact-last-name" class="sr-only">New contact last name</label>
-            <lfx-input-text
-              size="small"
-              [form]="newContactForm"
-              control="last_name"
-              [id]="'new-contact-last-name'"
-              placeholder="Last name"
-              styleClass="w-full"
-              data-testid="propose-new-contact-last-name"></lfx-input-text>
-            <label for="new-contact-email" class="sr-only">New contact email</label>
-            <lfx-input-text
-              size="small"
-              [form]="newContactForm"
-              control="email"
-              [id]="'new-contact-email'"
-              placeholder="Email"
-              styleClass="w-full"
-              data-testid="propose-new-contact-email"></lfx-input-text>
-            <lfx-button
-              label="Add"
-              severity="secondary"
-              [outlined]="true"
-              size="small"
-              type="button"
-              (onClick)="addContact()"
-              data-testid="propose-add-contact">
-            </lfx-button>
-          </div>
         }
+        <div class="grid grid-cols-1 gap-2 md:grid-cols-4" [formGroup]="newContactForm">
+          <label for="new-contact-first-name" class="sr-only">New contact first name</label>
+          <lfx-input-text
+            size="small"
+            [form]="newContactForm"
+            control="first_name"
+            [id]="'new-contact-first-name'"
+            placeholder="First name"
+            styleClass="w-full"
+            data-testid="propose-new-contact-first-name"></lfx-input-text>
+          <label for="new-contact-last-name" class="sr-only">New contact last name</label>
+          <lfx-input-text
+            size="small"
+            [form]="newContactForm"
+            control="last_name"
+            [id]="'new-contact-last-name'"
+            placeholder="Last name"
+            styleClass="w-full"
+            data-testid="propose-new-contact-last-name"></lfx-input-text>
+          <label for="new-contact-email" class="sr-only">New contact email</label>
+          <lfx-input-text
+            size="small"
+            [form]="newContactForm"
+            control="email"
+            [id]="'new-contact-email'"
+            placeholder="Email"
+            styleClass="w-full"
+            data-testid="propose-new-contact-email"></lfx-input-text>
+          <lfx-button
+            label="Add"
+            severity="secondary"
+            [outlined]="true"
+            size="small"
+            type="button"
+            [disabled]="additionalContactsAtLimit()"
+            (onClick)="addContact()"
+            data-testid="propose-add-contact">
+          </lfx-button>
+        </div>
         @if (newContactForm.get('email')?.errors?.['duplicateEmail']) {
           <p class="text-xs text-red-600" data-testid="propose-new-contact-duplicate-email">That email is already on this proposal.</p>
         } @else if (newContactForm.invalid && newContactAttempted()) {

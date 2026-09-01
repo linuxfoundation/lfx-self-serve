@@ -132,3 +132,43 @@ describe('ProjectService.searchProjects', () => {
     expect(errorSpy).toHaveBeenCalled();
   });
 });
+
+describe('ProjectService.getProject', () => {
+  let service: ProjectService;
+  let httpGet: ReturnType<typeof vi.fn>;
+
+  beforeEach(() => {
+    httpGet = vi.fn().mockReturnValue(of(null));
+    TestBed.configureTestingModule({
+      providers: [
+        {
+          provide: HttpClient,
+          useValue: { get: httpGet, post: vi.fn(), put: vi.fn(), patch: vi.fn(), delete: vi.fn() },
+        },
+      ],
+    });
+    service = TestBed.inject(ProjectService);
+  });
+
+  afterEach(() => {
+    TestBed.resetTestingModule();
+  });
+
+  /**
+   * Several callers (propose.component.ts's ?parent=, project-query-param.guard.ts's ?project=)
+   * hand this method a raw query-param value. Encoding must happen here, not per-caller, since
+   * every existing call site already assumes it does — a path segment like `../..` must not
+   * resolve outside /api/projects/:slug.
+   */
+  it('encodes slugOrUid into the request path, so a path segment like ../.. cannot escape /api/projects/:slug', () => {
+    service.getProject('../../other-route', false).subscribe();
+
+    expect(httpGet).toHaveBeenCalledWith('/api/projects/..%2F..%2Fother-route', { params: undefined });
+  });
+
+  it('leaves an ordinary slug unchanged', () => {
+    service.getProject('my-foundation', false).subscribe();
+
+    expect(httpGet).toHaveBeenCalledWith('/api/projects/my-foundation', { params: undefined });
+  });
+});

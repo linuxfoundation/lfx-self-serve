@@ -113,19 +113,17 @@ export class ProposeComponent {
 
     this.submitting.set(true);
 
-    // Manual-entry mode ("I want to create X") never emits onOrganizationResolved on its own —
-    // that only fires from the autocomplete-selection path — so a manually-created org would
-    // otherwise submit with contributing_org_id: null and never actually reach CDP. Only resolve
-    // here, not unconditionally on every submit: a search-mode pick has already resolved via
-    // onOrgResolved, and resolveCurrentEntry() would just re-issue the same CDP call for no gain.
+    // Manual-entry mode ("I want to create X") never reaches CDP on its own — onOrganizationResolved
+    // only fires from resolveCurrentEntry() (called here) or the autocomplete-selection path, so a
+    // manually-created org would otherwise submit with contributing_org_id: null and never actually
+    // register. Only resolve here, not unconditionally on every submit: a search-mode pick has
+    // already resolved via onOrgResolved, and resolveCurrentEntry() would just re-issue the same
+    // CDP call for no gain. resolveCurrentEntry()'s onOrganizationResolved emits synchronously
+    // inside its own map(), so onOrgResolved (bound in the template) has already patched
+    // contributing_org_id by the time this subscriber runs — no need to patch it again here.
     const orgSearch = this.organizationSearch();
     const resolve$ = orgSearch?.manualMode() ? orgSearch.resolveCurrentEntry() : of(null);
-    resolve$.pipe(take(1), takeUntilDestroyed(this.destroyRef)).subscribe((result) => {
-      if (result) {
-        this.form.patchValue({ contributing_org_id: result.id || null });
-      }
-      this.submitFormation();
-    });
+    resolve$.pipe(take(1), takeUntilDestroyed(this.destroyRef)).subscribe(() => this.submitFormation());
   }
 
   public addContact(): void {
@@ -247,13 +245,9 @@ export class ProposeComponent {
     if (!parentSlug) {
       return;
     }
-    // encodeURIComponent: the `?parent=` slug is attacker-influenced (it's a raw query param, not
-    // an already-resolved project reference like this method's other call sites), and getProject
-    // interpolates it into the request path unencoded — an unescaped `/` or `..` segment would
-    // otherwise resolve outside `/api/projects/:slug`, matching the encoding getProjectStrict and
-    // getProjectSfid already apply to their own path segments.
+    // getProject itself encodes slugOrUid into the request path — no need to pre-encode here.
     this.projectService
-      .getProject(encodeURIComponent(parentSlug), false)
+      .getProject(parentSlug, false)
       .pipe(takeUntilDestroyed(this.destroyRef))
       .subscribe((project) => {
         // Gated on `dirty`, not the control's value: a value-only check can't tell "never
@@ -287,28 +281,31 @@ export class ProposeComponent {
   private submitFormation(): void {
     const intake = this.buildIntakePayload();
 
-    this.formationService.createFormation(intake).subscribe({
-      next: (formation) => {
-        this.submitting.set(false);
-        // Pass the created Formation via router state so the confirmation page renders it without
-        // a second request — the fixture store is per-pod (multiple replicas), so a follow-up GET
-        // can land on a pod that never saw this POST. State is the primary path; the confirmation
-        // page's GET is a best-effort fallback for a direct or refreshed link only.
-        this.router.navigate(['/propose/confirmation', formation.uid], { state: { formation } });
-      },
-      error: (error: HttpErrorResponse) => {
-        this.submitting.set(false);
-        // ServiceValidationError.toResponse() is the only error shape carrying `errors[]`; every
-        // other error class (e.g. the AuthorizationError blockDuringImpersonation raises on this
-        // route) returns the unified { error, code, service } shape instead — fall through to
-        // `.error` before the generic string, or a real server message (like the impersonation
-        // block) would be swallowed and replaced with an unhelpful retry prompt.
-        this.messageService.add({
-          severity: 'error',
-          summary: 'Error',
-          detail: error.error?.errors?.[0]?.message || error.error?.error || 'Failed to submit the proposal. Please try again.',
-        });
-      },
-    });
+    this.formationService
+      .createFormation(intake)
+      .pipe(takeUntilDestroyed(this.destroyRef))
+      .subscribe({
+        next: (formation) => {
+          this.submitting.set(false);
+          // Pass the created Formation via router state so the confirmation page renders it without
+          // a second request — the fixture store is per-pod (multiple replicas), so a follow-up GET
+          // can land on a pod that never saw this POST. State is the primary path; the confirmation
+          // page's GET is a best-effort fallback for a direct or refreshed link only.
+          this.router.navigate(['/propose/confirmation', formation.uid], { state: { formation } });
+        },
+        error: (error: HttpErrorResponse) => {
+          this.submitting.set(false);
+          // ServiceValidationError.toResponse() is the only error shape carrying `errors[]`; every
+          // other error class (e.g. the AuthorizationError blockDuringImpersonation raises on this
+          // route) returns the unified { error, code, service } shape instead — fall through to
+          // `.error` before the generic string, or a real server message (like the impersonation
+          // block) would be swallowed and replaced with an unhelpful retry prompt.
+          this.messageService.add({
+            severity: 'error',
+            summary: 'Error',
+            detail: error.error?.errors?.[0]?.message || error.error?.error || 'Failed to submit the proposal. Please try again.',
+          });
+        },
+      });
   }
 }

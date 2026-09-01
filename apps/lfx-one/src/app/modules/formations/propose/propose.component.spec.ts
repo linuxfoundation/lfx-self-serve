@@ -122,9 +122,15 @@ describe('ProposeComponent', () => {
     fillRequiredFields(component);
     const orgSearch = (component as any).organizationSearch();
     orgSearch.manualMode.set(true);
-    const resolveCurrentEntry = vi
-      .spyOn(orgSearch, 'resolveCurrentEntry')
-      .mockReturnValue(of({ id: 'cdp-org-1', name: 'Example Org', logo: '', originalName: 'Example Org', nameChanged: false } as OrganizationResolveResult));
+    const result = { id: 'cdp-org-1', name: 'Example Org', logo: '', originalName: 'Example Org', nameChanged: false } as OrganizationResolveResult;
+    // resolveCurrentEntry's real implementation emits onOrganizationResolved synchronously inside
+    // its own map() before this mock's Observable reaches onSubmit's subscriber — replicate that
+    // here, since onSubmit relies on the template's (onOrganizationResolved)="onOrgResolved($event)"
+    // binding to patch contributing_org_id, not on this method's return value directly.
+    const resolveCurrentEntry = vi.spyOn(orgSearch, 'resolveCurrentEntry').mockImplementation(() => {
+      orgSearch.onOrganizationResolved.emit(result);
+      return of(result);
+    });
     const formation = { uid: 'formation-1' } as Formation;
     createFormation.mockReturnValue(of(formation));
 
@@ -167,14 +173,6 @@ describe('ProposeComponent', () => {
 
     expect(getProject).toHaveBeenCalledWith('my-foundation', false);
     expect(component.form.get('parent_project_uid')?.value).toBe('parent-uid-1');
-  });
-
-  it("encodes the ?parent= slug before handing it to getProject, so a path segment like ../.. can't escape /api/projects/:slug", async () => {
-    getProject.mockReturnValue(of(null));
-
-    await createComponent({ parent: '../../other-route' });
-
-    expect(getProject).toHaveBeenCalledWith('..%2F..%2Fother-route', false);
   });
 
   it('does not let a slow ?parent= prefill overwrite a parent the user already picked by hand', async () => {
@@ -273,6 +271,23 @@ describe('ProposeComponent', () => {
     component.addContact();
 
     expect(component.additionalContacts()).toHaveLength(FORMATION_MAX_ADDITIONAL_CONTACTS);
+  });
+
+  it('disables the Add button at the contact limit rather than removing the fields — keeps focus/context stable instead of yanking the just-clicked control out of the DOM', async () => {
+    const { component, fixture } = await createComponentWithFixture();
+    const applicationRef = TestBed.inject(ApplicationRef);
+    for (let i = 0; i < FORMATION_MAX_ADDITIONAL_CONTACTS; i++) {
+      component.newContactForm.setValue({ first_name: 'Sam', last_name: 'Lee', email: `sam${i}@example.test` });
+      component.addContact();
+    }
+    await applicationRef.whenStable();
+
+    const el: HTMLElement = fixture.nativeElement;
+    expect(el.querySelector('[data-testid="propose-additional-contact-limit"]')).not.toBeNull();
+    expect(el.querySelector('[data-testid="propose-new-contact-first-name"]')).not.toBeNull();
+    const addButton = el.querySelector('[data-testid="propose-add-contact"] button');
+    expect(addButton).not.toBeNull();
+    expect((addButton as HTMLButtonElement).disabled).toBe(true);
   });
 
   it('rejects a duplicate email in "who else" — @for tracks by email, so a duplicate would break the track key', async () => {
