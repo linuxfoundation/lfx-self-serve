@@ -26,6 +26,10 @@
  *   S6  Flag ON  — contributor without campaign_manager is redirected off /foundation/campaigns
  *   S7  Flag ON  — LF Staff stays Social-Listening-only on Marketing Impact even with marketing_auditor-equivalent access already granted via canViewExecutiveDashboards
  *   S8  Flag OFF (default) — grants present on the API response are ignored; behavior is byte-identical to pre-LFXV2-2236 ED/LF-staff-only gating
+ *   S9  Flag ON  — marketing_auditor + campaign_manager grants do not unlock Health Metrics (ED/LF-Staff-only, LFXV2-2237)
+ *   S10 Flag ON  — hybrid marketing_auditor (contributor + marketing grant) sees Marketing section under Project lens too, not just Foundation (LFXV2-2235)
+ *   S11 Flag ON  — marketing_auditor confirmed on project A, client-side switch to ungranted project B
+ *                  hides the Marketing section without a full page reload (PR #2028 review finding)
  *
  * This suite does NOT flip the server `LFX_MARKETING_OPS_FGA_ENABLED` env var or hit protected
  * analytics/campaigns routes directly — see `require-marketing-access.middleware.spec.ts` for
@@ -37,7 +41,7 @@
  *   - apps/lfx-one/.env populated with TEST_USERNAME / TEST_PASSWORD (tests skip otherwise)
  */
 
-import type { LensItem, PersistedPersonaState, PersonaType } from '@lfx-one/shared/interfaces';
+import type { LensItem, NavLens, PersistedPersonaState, PersonaType } from '@lfx-one/shared/interfaces';
 import { FEATURE_FLAG_OVERRIDE_STORAGE_KEY, MARKETING_OPS_FGA_ENABLED_FLAG, PERSONA_COOKIE_KEY } from '@lfx-one/shared/constants';
 import { expect, Page, test } from '@playwright/test';
 
@@ -56,10 +60,28 @@ const MOCK_FOUNDATION_ITEM: LensItem = {
   isFoundation: true,
 };
 
+/** Project-lens flavor of the mock item — `isFoundation: false` so a hybrid persona's `applyVisibilityFilters` doesn't strip it. */
+const MOCK_PROJECT_ITEM: LensItem = {
+  ...MOCK_FOUNDATION_ITEM,
+  isFoundation: false,
+};
+
+/** A second, distinct project — used by S11 to switch scope client-side away from a granted project. */
+const MOCK_PROJECT_SLUG_B = 'test-project-b';
+
+const MOCK_PROJECT_ITEM_B: LensItem = {
+  uid: 'f0000000-0000-0000-0000-000000000002',
+  slug: MOCK_PROJECT_SLUG_B,
+  name: 'Test Project B',
+  logoUrl: null,
+  isFoundation: false,
+};
+
 const SIDEBAR = {
   marketingSection: 'sidebar-item-marketing',
   marketingImpact: 'sidebar-marketing-impact',
   campaigns: 'sidebar-marketing-campaigns',
+  healthMetrics: 'sidebar-metrics-health-metrics',
 };
 
 const CAMPAIGNS_PAGE = 'campaigns-page';
@@ -118,11 +140,39 @@ async function stubPersona(page: Page, personas: string[], options: StubPersonaO
   );
 }
 
-async function stubNavLensItems(page: Page, items: LensItem[] = [MOCK_FOUNDATION_ITEM]): Promise<void> {
+/**
+ * Slug-aware variant of {@link stubPersona} — returns different grants depending on the `?project=`
+ * query param `PersonaService.refreshEnrichedPersonas` sends per scope (persona.service.ts:198).
+ * Needed for S11: the plain `stubPersona` stub is static regardless of which slug is probed, so it
+ * can't reproduce a confirmed-on-A / denied-on-B scope switch.
+ */
+async function stubPersonaByProject(page: Page, personas: string[], grantsBySlug: Record<string, StubPersonaOptions>): Promise<void> {
+  await page.route('**/api/user/personas*', (route) => {
+    const url = route.request().url();
+    const slug = new URL(url).searchParams.get('project');
+    const { isLFStaff = false, isMarketingAuditor = false, isCampaignManager = false } = (slug && grantsBySlug[slug]) || {};
+    return route.fulfill({
+      status: 200,
+      contentType: 'application/json',
+      body: JSON.stringify({
+        personas,
+        personaProjects: {},
+        projects: [],
+        organizations: [],
+        isRootWriter: false,
+        isLFStaff,
+        isMarketingAuditor,
+        isCampaignManager,
+      }),
+    });
+  });
+}
+
+async function stubNavLensItems(page: Page, items: LensItem[] = [MOCK_FOUNDATION_ITEM], targetLens: NavLens = 'foundation'): Promise<void> {
   await page.route('**/api/nav/lens-items*', (route) => {
     const url = route.request().url();
     const requestedLens = new URL(url).searchParams.get('lens') ?? 'foundation';
-    if (requestedLens !== 'foundation') {
+    if (requestedLens !== targetLens) {
       return route.fulfill({
         status: 200,
         contentType: 'application/json',
@@ -132,7 +182,7 @@ async function stubNavLensItems(page: Page, items: LensItem[] = [MOCK_FOUNDATION
     return route.fulfill({
       status: 200,
       contentType: 'application/json',
-      body: JSON.stringify({ items, next_page_token: null, upstream_failed: false, lens: 'foundation' }),
+      body: JSON.stringify({ items, next_page_token: null, upstream_failed: false, lens: targetLens }),
     });
   });
 }
@@ -349,5 +399,99 @@ test.describe('S8: Foundation lens — flag OFF (default) ignores marketing_audi
     await expect(page.getByTestId('marketing-impact-social-listening-only'), 'flag=off marketing_auditor grant should not unlock full tabs').toBeVisible({
       timeout: ELEMENT_TIMEOUT,
     });
+  });
+});
+
+// ─── S9: marketing_auditor/campaign_manager grants do not unlock Health Metrics ──
+
+test.describe('S9: Foundation lens — marketing_auditor + campaign_manager grants do not unlock Health Metrics (flag ON)', () => {
+  test.beforeEach(async ({ page }) => {
+    await stubMarketingOpsFlag(page, true);
+    await stubPersona(page, ['contributor'], { isMarketingAuditor: true, isCampaignManager: true });
+    await setPersonaCookie(page, ['contributor']);
+    await stubNavLensItems(page);
+    await stubProjectApi(page, MOCK_FOUNDATION_SLUG, false);
+  });
+
+  test('sidebar hides Health Metrics despite marketing_auditor/campaign_manager grants', async ({ page }) => {
+    await gotoAndWaitForSidebar(page, `/foundation/overview?project=${MOCK_FOUNDATION_SLUG}`);
+    await expect(
+      page.getByTestId(SIDEBAR.healthMetrics),
+      'persona=marketing_auditor+campaign_manager item=health-metrics should be hidden (ED/LF-Staff-only)'
+    ).toHaveCount(0);
+  });
+
+  test('is redirected off /foundation/health-metrics to /foundation/overview', async ({ page }) => {
+    await page.goto('/', { waitUntil: 'domcontentloaded' });
+    skipWhenAuthMissing(page);
+    await page.goto(`/foundation/health-metrics?project=${MOCK_FOUNDATION_SLUG}`, { waitUntil: 'domcontentloaded' });
+    skipWhenAuthMissing(page);
+
+    await expect(page, 'persona=marketing_auditor+campaign_manager should be redirected away from health-metrics').toHaveURL(/\/foundation\/overview/, {
+      timeout: ELEMENT_TIMEOUT,
+    });
+  });
+});
+
+// ─── S10: hybrid marketing_auditor also sees Marketing under Project lens ─────
+
+test.describe('S10: Project lens — hybrid marketing_auditor (flag ON, contributor + marketing grant)', () => {
+  test.beforeEach(async ({ page }) => {
+    await stubMarketingOpsFlag(page, true);
+    // A 'contributor' persona alone grants the project lens (project-scoped role); adding
+    // isMarketingAuditor also grants the foundation lens via hasMarketingGrant — together these
+    // make the user hybrid, reproducing the bug: the Marketing section must still surface from
+    // Project lens, not just Foundation lens.
+    await stubPersona(page, ['contributor'], { isMarketingAuditor: true });
+    await setPersonaCookie(page, ['contributor']);
+    await stubNavLensItems(page, [MOCK_PROJECT_ITEM], 'project');
+    await stubProjectApi(page, MOCK_FOUNDATION_SLUG, false);
+    await gotoAndWaitForSidebar(page, `/project/overview?project=${MOCK_FOUNDATION_SLUG}`);
+  });
+
+  test('sees Marketing section with Marketing Impact under Project lens', async ({ page }) => {
+    await expect(page.getByTestId(SIDEBAR.marketingSection), 'persona=hybrid-marketing_auditor lens=project section=marketing').toBeVisible({
+      timeout: ELEMENT_TIMEOUT,
+    });
+    await expect(page.getByTestId(SIDEBAR.marketingImpact), 'persona=hybrid-marketing_auditor lens=project item=marketing-impact').toBeVisible({
+      timeout: ELEMENT_TIMEOUT,
+    });
+    await expect(page.getByTestId(SIDEBAR.campaigns), 'persona=hybrid-marketing_auditor lens=project item=campaigns should be hidden').toHaveCount(0);
+  });
+});
+
+// ─── S11: scope switch A (granted) → B (ungranted) hides Marketing without a full reload ──
+
+test.describe('S11: Project lens — marketing_auditor confirmed on project A, switches to ungranted project B', () => {
+  test.beforeEach(async ({ page }) => {
+    await stubMarketingOpsFlag(page, true);
+    await stubPersonaByProject(page, ['contributor'], {
+      [MOCK_PROJECT_ITEM.slug]: { isMarketingAuditor: true },
+      [MOCK_PROJECT_SLUG_B]: {},
+    });
+    await setPersonaCookie(page, ['contributor']);
+    await stubNavLensItems(page, [MOCK_PROJECT_ITEM, MOCK_PROJECT_ITEM_B], 'project');
+    await stubProjectApi(page, MOCK_PROJECT_ITEM.slug, false);
+    await stubProjectApi(page, MOCK_PROJECT_SLUG_B, false);
+    await gotoAndWaitForSidebar(page, `/project/overview?project=${MOCK_PROJECT_ITEM.slug}`);
+  });
+
+  test('Marketing section disappears after switching to project B via the project selector', async ({ page }) => {
+    await expect(page.getByTestId(SIDEBAR.marketingSection), 'persona=marketing_auditor project=A section=marketing').toBeVisible({
+      timeout: ELEMENT_TIMEOUT,
+    });
+
+    // Client-side scope switch — the project selector popover, not page.goto, so this exercises the
+    // reactive marketingPersonaSlug -> grantsByScope -> marketingSectionItem chain rather than a fresh SSR load.
+    await page.getByTestId('project-selector').click();
+    await page.getByTestId(`lens-item-${MOCK_PROJECT_SLUG_B}`).click();
+
+    await expect(page, 'switching to project B should update the URL').toHaveURL(new RegExp(`project=${MOCK_PROJECT_SLUG_B}`), {
+      timeout: ELEMENT_TIMEOUT,
+    });
+    await expect(page.getByTestId(SIDEBAR.marketingSection), 'persona=marketing_auditor project=B(no-grant) section=marketing should be hidden').toHaveCount(
+      0,
+      { timeout: ELEMENT_TIMEOUT }
+    );
   });
 });

@@ -188,7 +188,51 @@ export class CommitteeActivityService {
     this.voteService = new VoteService();
   }
 
-  public async getCommitteeActivity(req: Request, committeeUid: string, options: CommitteeActivityQuery): Promise<CommitteeActivityResponse> {
+  /**
+   * `knownCommittee` (optional): a caller that already fetched this committee for its own reasons
+   * (e.g. weekly-brief.service.ts's `buildCurrentActivity`, which must read `category` before it
+   * can even decide whether to call this method) can pass it here to skip this method's own
+   * `fetchCommittee` — otherwise every caller pays that GET twice for a committee it already had in
+   * hand. Only an optimization: omitting it costs one extra upstream call, not a correctness
+   * difference — this method still trusts a caller-supplied committee exactly as it would trust its
+   * own fetch, with the same fail-closed contract (see fetchCommittee's doc comment) resting on the
+   * caller instead when this parameter is used. Not inert data, so a mismatched `uid` is rejected
+   * rather than silently trusted: `committee.enable_voting` (read below) decides whether the
+   * entire vote leg is surfaced, so passing the wrong committee here would otherwise silently add
+   * or hide a committee's votes. This rejection is loud to a direct caller (throws
+   * `ServiceValidationError`) — this method's other production caller, `committee-activity.controller.ts`'s
+   * "Recent Activity" feed endpoint, never passes `knownCommittee` at all, so the guard is
+   * unreachable on that path — but the one caller that DOES pass it, `weekly-brief.service.ts`'s
+   * `buildCurrentActivity`, wraps the whole call in a try/catch that degrades ANY thrown error the
+   * same way (log a warning, omit the tally, let the poll retry), so in production this specific
+   * bug wouldn't surface there as a distinguishable failure either — the guard's real value is as
+   * a tripwire for a caller reachable directly (tests, or a future `knownCommittee` caller that
+   * doesn't degrade the way `buildCurrentActivity` does), and as a precondition the type signature
+   * alone can't express.
+   *
+   * `quietAggregationLog` (optional, default `false`): deliberately independent of `knownCommittee`
+   * — passing a known committee only skips a redundant fetch and implies nothing about how often
+   * this method is called, so it must not double as a logging-verbosity switch. Set `true` for a
+   * caller invoked at higher-than-once-per-request frequency (currently only
+   * `weekly-brief.service.ts`'s per-poll-tick tally) to log the aggregation start/completion at
+   * DEBUG instead of INFO — see those two log call sites' own comments for the full rationale.
+   *
+   * Both of the above live in `callerOptions`, a bag kept deliberately separate from
+   * `options: CommitteeActivityQuery` — that type is also the parsed, validated shape of
+   * `GET /api/committees/:uid/activity`'s query string (see its own doc comment), and neither
+   * `knownCommittee` nor `quietAggregationLog` is ever HTTP-parsed; mixing an internal
+   * caller-intent flag into a wire-query type would blur that boundary for no benefit.
+   */
+  public async getCommitteeActivity(
+    req: Request,
+    committeeUid: string,
+    options: CommitteeActivityQuery,
+    callerOptions: { knownCommittee?: Committee; quietAggregationLog?: boolean } = {}
+  ): Promise<CommitteeActivityResponse> {
+    const { knownCommittee, quietAggregationLog = false } = callerOptions;
+    if (knownCommittee && knownCommittee.uid !== committeeUid) {
+      throw ServiceValidationError.forField('knownCommittee', 'knownCommittee.uid must match committeeUid', { operation: 'get_committee_activity' });
+    }
     const { since: rawSince, cursor, limit } = options;
     // Same reject-not-degrade policy as the cursor/since checks below, for the same reason:
     // parseCommitteeActivityQuery already bounds page_size on the HTTP path, but this method is
@@ -350,8 +394,19 @@ export class CommitteeActivityService {
     // (the closest precedent in this repo: a comparable multi-source read aggregation), not the
     // single-source enrichment services that stay at DEBUG throughout. A merge across 5
     // independently-paginated upstream sources with cursor/saturation logic is exactly the
-    // "complex multi-step orchestration" case logging-patterns.md reserves INFO for.
-    logger.info(req, 'get_committee_activity', 'Starting committee activity aggregation', { committee_uid: committeeUid, fetch_size: fetchSize });
+    // "complex multi-step orchestration" case logging-patterns.md reserves INFO for — but only for
+    // a call at that frequency. `quietAggregationLog` (an explicit intent flag, deliberately NOT
+    // inferred from `knownCommittee` — that param exists only to skip a redundant committee fetch
+    // and says nothing about call frequency, so a future caller passing it purely for that saving
+    // must not silently lose its INFO logs) is set by `weekly-brief.service.ts#buildCurrentActivity`
+    // (GH-1922): a per-poll-tick tally fan-out that can run up to
+    // `WEEKLY_BRIEF_CURRENT_ACTIVITY_MAX_ASK_ATTEMPTS` times per generate cycle, well past
+    // "significant business operation" frequency — DEBUG there instead, same call, same shape.
+    const aggregationLogLevel = quietAggregationLog ? 'debug' : 'info';
+    logger[aggregationLogLevel](req, 'get_committee_activity', 'Starting committee activity aggregation', {
+      committee_uid: committeeUid,
+      fetch_size: fetchSize,
+    });
 
     // Tracked via closure side-effect (not folded into each leg's own resolved shape) so a failed
     // leg's `{events: [], saturated: false}` return keeps the exact type each fetch* method already
@@ -365,7 +420,7 @@ export class CommitteeActivityService {
     let notesFailed = false;
 
     const [committee, pastMeetingResult, voteResult, surveyResult, documentResult, notesResult] = await Promise.all([
-      this.fetchCommittee(req, committeeUid),
+      knownCommittee ? Promise.resolve(knownCommittee) : this.fetchCommittee(req, committeeUid),
       this.fetchPastMeetingEvents(req, committeeUid, since, before, fetchSize).catch((err) => {
         logger.warning(req, 'get_committee_activity', 'Failed to fetch past-meeting activity, continuing without it', { committee_uid: committeeUid, err });
         pastMeetingFailed = true;
@@ -401,7 +456,9 @@ export class CommitteeActivityService {
     const anyLegFailed = pastMeetingFailed || voteFailed || surveyFailed || documentFailed || notesFailed;
 
     // A committee-lookup failure already rejected the whole Promise.all above (see fetchCommittee's
-    // doc comment) — by this line `committee` is always a resolved Committee.
+    // doc comment), or `committee` came from a caller-supplied `knownCommittee` — validated against
+    // `committeeUid` above and carrying the same fail-closed contract per this method's own doc
+    // comment. Either way, by this line `committee` is always a resolved, trustworthy Committee.
     const votingEnabled = committee.enable_voting;
     const sources: ActivityEvent[][] = [
       pastMeetingResult.events,
@@ -483,7 +540,8 @@ export class CommitteeActivityService {
     const hasMore = (windowed.length > limit || anyLegSaturated) && !!lastPageItem;
     const pageToken = hasMore && lastPageItem ? encodeActivityPageToken({ before: lastPageItem.event.occurred_at, key: lastPageItem.key }) : undefined;
 
-    logger.info(req, 'get_committee_activity', 'Completed committee activity aggregation', {
+    // Same quietAggregationLog-gated level as the "Starting" log above — see that call's comment.
+    logger[aggregationLogLevel](req, 'get_committee_activity', 'Completed committee activity aggregation', {
       committee_uid: committeeUid,
       meeting_count: pastMeetingResult.events.length,
       vote_count: voteResult.events.length,
