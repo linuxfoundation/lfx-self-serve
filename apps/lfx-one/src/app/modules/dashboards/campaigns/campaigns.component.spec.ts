@@ -2970,14 +2970,48 @@ describe('CampaignsComponent — email delivery channel', () => {
     });
 
     /**
-     * Reranking must never HIDE the operator's current choice.
+     * Name and subject are searched INDEPENDENTLY, never concatenated.
      *
-     * Ranking depends on the chosen type, so switching type reorders the list under a selection
-     * already made: with enough matches for the new type the selected row drops below the render
-     * cap and disappears. Nothing else notices — `canStageEmail` stays enabled and staging still
-     * clones that now-invisible template, so the operator stages a clone of something they can no
-     * longer see or change.
+     * Every other fixture puts each keyword wholly inside one field, so an implementation that
+     * joined the two would score identically and pass them all. This is the case that separates
+     * them: `thank you` is a multi-word type keyword, and a template whose name ends "Thank" and
+     * whose subject begins "you" must NOT score for it -- a match across the boundary between two
+     * unrelated fields is a coincidence of adjacency, not a description of the template.
      */
+    it('does not score a keyword split across the name and subject boundary', () => {
+      selectEmail();
+      internals().emailTemplates.set([
+        // A REAL match, listed second by the server -- it must rise to the top on score alone.
+        { id: 'real', name: 'Post-event survey', subject: 'Share feedback' },
+        // Splits `thank you` across the two fields. Scores 0 independently, 1 under concatenation.
+        { id: 'split', name: 'Speaker Thank', subject: 'you are invited' },
+      ] as never);
+      (internals() as unknown as { onSelectEmailType(id: string): void }).onSelectEmailType('thank-you-survey');
+
+      // ORDER is the observable, and the fixture is built so it changes: 'real' matches three
+      // keywords, 'split' matches none -- unless the fields are joined, when it matches one. Two
+      // rows that both score 0 would keep the server's order under either implementation, which
+      // is why an earlier version of this test could not fail.
+      expect(
+        internals()
+          .emailTemplatesRendered()
+          .map((t) => t.id)
+      ).toEqual(['real', 'split']);
+      // The split row must not have scored at all. With a concatenating scorer it scores 1, and
+      // a row scoring 1 sorts above every 0-scoring row -- so a THIRD, unmatched row makes the
+      // difference visible in the ordering rather than only in an internal number.
+      internals().emailTemplates.set([
+        { id: 'zero', name: 'Quarterly update', subject: 'Newsletter' },
+        { id: 'split', name: 'Speaker Thank', subject: 'you are invited' },
+      ] as never);
+      expect(
+        internals()
+          .emailTemplatesRendered()
+          .map((t) => t.id),
+        'the split phrase scored, so the fields were concatenated'
+      ).toEqual(['zero', 'split']);
+    });
+
     /**
      * The type score must COUNT matched keywords, not merely report that one matched.
      *
@@ -3047,6 +3081,15 @@ describe('CampaignsComponent — email delivery channel', () => {
       expect(internals().emailTemplatesRenderCapMessage()).not.toContain('first');
     });
 
+    /**
+     * Reranking must never HIDE the operator's current choice.
+     *
+     * Ranking depends on the chosen type, so switching type reorders the list under a selection
+     * already made: with enough matches for the new type the selected row drops below the render
+     * cap and disappears. Nothing else notices — `canStageEmail` stays enabled and staging still
+     * clones that now-invisible template, so the operator stages a clone of something they can no
+     * longer see or change.
+     */
     it('keeps the selected template visible after a type change reranks the list', () => {
       selectEmail();
       // The operator's pick names no type keyword, so reranking sinks it; the 600 rows that follow
