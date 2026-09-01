@@ -79,9 +79,13 @@ export type ButtonSeverity = 'success' | 'info' | 'warn' | 'danger' | 'help' | '
 
 /**
  * Tag severity type
- * @description Severity levels for Tag component
+ * @description Severity levels for Tag component. `'accent'` (violet) is handled entirely inside
+ * `TagComponent` — it is not a PrimeNG `p-tag` severity, so it never reaches the `<p-tag>` binding;
+ * `TagComponent` renders its own violet-styled element for it, the same way it already hand-rolls
+ * the `outlined` variant. Used for states with no good fit among PrimeNG's built-in severities
+ * (e.g. a "Waiting on partner" formation-item status, GH-1958).
  */
-export type TagSeverity = 'success' | 'info' | 'warn' | 'danger' | 'secondary' | 'contrast';
+export type TagSeverity = 'success' | 'info' | 'warn' | 'danger' | 'secondary' | 'contrast' | 'accent';
 
 /**
  * Badge severity type

@@ -3,16 +3,12 @@
 
 import type { FormationSubStage } from '../interfaces/formation.interface';
 
+/** Queue filter-pill order (`All` is derived, not listed) — includes `withdrawn` per GH-1958. */
+export const FORMATION_QUEUE_SUB_STAGES: FormationSubStage[] = ['proposed', 'exploratory', 'engaged', 'on_hold', 'activating', 'withdrawn'];
+
 /**
- * Display labels for the canonical {@link FormationSubStage} union (GH-2163) — the Formations
- * queue's stage column and stage-filter pills. This is the one label map for that union; it does
- * not cover `ProjectStage`'s separate 5-value Formation taxonomy (which includes `Disengaged` and
- * `Confidential`, neither a `FormationSubStage` member, and backs `isFormationStage`/
- * `getFormationSubStageLabel` in `project.utils.ts`) — that map is project-domain data and is named
- * distinctly to avoid colliding with this one.
+ * The single Epic-1 seeded template's fixture UID (#1959 owns the real seed content). Shared
+ * between the BFF fixture generator (`formation-fixture.helper.ts`) and e2e fixtures so they can't
+ * drift out of sync.
  */
-export const FORMATION_SUB_STAGE_LABELS = {
-  exploratory: 'Formation · Exploratory',
-  engaged: 'Formation · Engaged',
-  on_hold: 'Formation · On Hold',
-} as const satisfies Record<FormationSubStage, string>;
+export const SEEDED_FORMATION_TEMPLATE_UID = 'formation-template-seed-v1';

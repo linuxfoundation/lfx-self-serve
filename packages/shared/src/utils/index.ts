@@ -72,3 +72,5 @@ export * from './event.utils';
 export * from './social-listening.utils';
 export * from './social-listening-filter.utils';
 export * from './formation.utils';
+export * from './project-stage.utils';
+export * from './formation-checklist.utils';
