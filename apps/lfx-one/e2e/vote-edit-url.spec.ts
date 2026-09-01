@@ -205,16 +205,17 @@ test.describe('Vote edit-link canonical URLs (GH-1568)', () => {
   test('each row derives its edit link from its own project tier and slug', async ({ page }) => {
     await gotoVotesDashboard(page);
 
-    const foundationEdit = page.getByTestId(`votes-edit-${FOUNDATION_VOTE_UID}`);
+    // lfx-button keeps the testid on its host; the href lives on the anchor it renders.
+    const foundationEdit = page.getByTestId(`votes-edit-${FOUNDATION_VOTE_UID}`).locator('a');
     await expect(foundationEdit).toHaveAttribute('href', new RegExp(`^/foundation/votes/${FOUNDATION_VOTE_UID}/edit\\?`));
     await expect(foundationEdit).toHaveAttribute('href', /[?&]project=test-foundation/);
     await expect(foundationEdit).toHaveAttribute('href', new RegExp(`[?&]committee_uid=${COMMITTEE_UID}`));
 
-    const projectEdit = page.getByTestId(`votes-edit-${PROJECT_VOTE_UID}`);
+    const projectEdit = page.getByTestId(`votes-edit-${PROJECT_VOTE_UID}`).locator('a');
     await expect(projectEdit).toHaveAttribute('href', new RegExp(`^/project/votes/${PROJECT_VOTE_UID}/edit\\?project=${PROJECT_SLUG}$`));
 
     // Tier unknown (unenriched row) → flat path, the lensRedirectGuard fallback contract.
-    await expect(page.getByTestId(`votes-edit-${UNENRICHED_VOTE_UID}`)).toHaveAttribute('href', `/votes/${UNENRICHED_VOTE_UID}/edit`);
+    await expect(page.getByTestId(`votes-edit-${UNENRICHED_VOTE_UID}`).locator('a')).toHaveAttribute('href', `/votes/${UNENRICHED_VOTE_UID}/edit`);
   });
 
   test('clicking a foundation-owned row’s edit link lands on the foundation-tier edit page', async ({ page }) => {
@@ -234,7 +235,8 @@ test.describe('Vote edit-link canonical URLs (GH-1568)', () => {
 
     await page.getByTestId(`votes-edit-${PROJECT_VOTE_UID}`).click();
 
-    await expect(page).toHaveURL(new RegExp(`^/project/votes/${PROJECT_VOTE_UID}/edit\\?project=${PROJECT_SLUG}$`), { timeout: ELEMENT_TIMEOUT });
+    // toHaveURL matches the ABSOLUTE URL — a leading ^ would anchor past the origin.
+    await expect(page).toHaveURL(new RegExp(`/project/votes/${PROJECT_VOTE_UID}/edit\\?project=${PROJECT_SLUG}$`), { timeout: ELEMENT_TIMEOUT });
     await expect(page.getByTestId('vote-manage-title')).toBeVisible({ timeout: PAGE_LOAD_TIMEOUT });
     await expect(page.getByTestId('project-selector')).toContainText('Other Project', { timeout: ELEMENT_TIMEOUT });
   });
