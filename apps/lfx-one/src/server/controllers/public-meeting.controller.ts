@@ -109,9 +109,9 @@ export class PublicMeetingController {
       }
 
       // Apply organizer + host-key resolution. meeting.organizer is used by the private-meeting
-      // access gate and the organizer-only registrant count below; meeting.host_key /
-      // can_view_host_key are the response-side host-key surface. When we couldn't run the user
-      // access check (anonymous or missing user token), fail closed: no organizer, no host key.
+      // access gate; meeting.host_key / can_view_host_key are the response-side host-key surface.
+      // When we couldn't run the user access check (anonymous or missing user token), fail closed:
+      // no organizer, no host key.
       applyOrganizerAndHostKeyResult(meeting, organizerAndHostKey);
 
       // Resolves the foundation project server-side (LFXV2-3266) so anonymous visitors get
@@ -119,25 +119,8 @@ export class PublicMeetingController {
       // client. m2mToken is still active on req.bearerToken.
       const parent = await this.resolveParentProject(req, project);
 
-      // Fetch registrant counts for organizers, otherwise default to 0
-      if (meeting.organizer) {
-        try {
-          const registrants = await this.meetingService.getMeetingRegistrants(req, id);
-          const committeeMembers = registrants.filter((r) => r.type === 'committee').length;
-          meeting.individual_registrants_count = registrants.length - committeeMembers;
-          meeting.committee_members_count = committeeMembers;
-        } catch (error) {
-          logger.warning(req, 'get_public_meeting_by_id', 'Failed to fetch registrant counts for organizer', {
-            meeting_id: id,
-            err: error,
-          });
-          meeting.individual_registrants_count = 0;
-          meeting.committee_members_count = 0;
-        }
-      } else {
-        meeting.individual_registrants_count = 0;
-        meeting.committee_members_count = 0;
-      }
+      // Registrant counts are no longer derived here — the full roster read was purely to derive
+      // two integers with no consumer once the join page holds its own roster (GH-1731).
 
       // The organizer is authenticated-visible info (LFXV2-2802). For authenticated callers, enrich
       // created_by/owner from the live v1_meeting index (the ITX detail payload omits created_by);

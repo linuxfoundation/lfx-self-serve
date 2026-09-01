@@ -1441,3 +1441,44 @@ export function fromMeetingApiVotingStatuses(statuses: ReadonlyArray<string | nu
 export function normalizeMeetingApiVotingStatuses(statuses: ReadonlyArray<string | null | undefined> | null | undefined): MeetingAllowedVotingStatus[] {
   return toMeetingApiVotingStatuses(fromMeetingApiVotingStatuses(statuses));
 }
+
+/**
+ * Reconciles an optimistic "additional registrants" pad against a freshly-refetched roster.
+ *
+ * The join page bumps `pad` immediately when a guest is added (before query-service indexing has
+ * caught up) and snapshots the pre-add roster length as `before`. Once the roster refetch lands,
+ * only the rows it has actually absorbed (`current - before`) should come off the pad — clearing
+ * the whole pad whenever *any* growth is observed double-counts rows the refetch hasn't indexed
+ * yet (GH-1731). `before` is rebased to `current` so a still-pending remainder converges on the
+ * next refetch instead of comparing against a stale snapshot.
+ *
+ * `before === null` means the pad was added without a confirmed roster baseline (e.g. no
+ * successful fetch had landed yet for this meeting) — the caller couldn't tell how many of the
+ * added rows this fetch already reflects, so treat this fetch as establishing the baseline rather
+ * than as absorption. Comparing against an unconfirmed baseline (like 0) would otherwise credit an
+ * unrelated roster size to "absorbed" and zero out the pad before the added guests are indexed.
+ *
+ * Known limitation, both directions: this is a bare count-delta heuristic with no visibility into
+ * *which* rows a refetch actually contains, so the null-baseline path can misfire either way once
+ * this establishing fetch lands. If it already reflects the just-added guests, they get credited a
+ * second time and the pad never comes off (permanent overcount) until an unrelated roster change
+ * happens to absorb it. If it doesn't yet reflect them, nothing here schedules a follow-up refetch
+ * on its own — the pad only converges when some other user action (another add, a registration)
+ * re-triggers `registrantsRefresh$`. Fully resolving either requires reconciling against the
+ * identity of the specific rows this client added (e.g. by email/uid) rather than a count, which is
+ * a materially larger change to the add-guest event contract and out of scope here — the same
+ * trade-off already accepted for the confirmed-baseline path (see PR #1748 review thread on
+ * concurrent roster growth).
+ */
+export function reconcileOptimisticPad(state: { pad: number; before: number | null; current: number }): {
+  pad: number;
+  before: number | null;
+} {
+  if (state.before === null) {
+    return { pad: state.pad, before: state.pad > 0 ? state.current : null };
+  }
+
+  const absorbed = Math.max(0, state.current - state.before);
+  const pad = Math.max(0, state.pad - absorbed);
+  return { pad, before: pad === 0 ? null : state.current };
+}
