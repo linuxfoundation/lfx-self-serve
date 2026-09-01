@@ -3770,6 +3770,37 @@ describe('CampaignsComponent — HubSpot template picker', () => {
       fixture.detectChanges();
     };
 
+    /**
+     * The YEAR outranks the CITY, and a prior edition naming the city is the case that proves it.
+     *
+     * `eventRankBonus` summed the two into one scalar, so extra city tokens on a STALE edition
+     * beat the single year point on the current one: for "KubeCon North America 2026" in "Salt
+     * Lake City", the 2025 template scored salt+lake+city = 3 against the 2026 template's year =
+     * 1, and the PRIOR edition was pre-selected. Staging then clones last year's HubSpot draft --
+     * an edition-level wrong clone, which reads as decided and is unlikely to be re-checked.
+     *
+     * Both templates score identically on the decisive term, so only the tie-break can order them.
+     */
+    it('prefers the year-matching edition over a prior one that names the city', () => {
+      showPicker();
+      picker().emailBriefOutput.set(briefFor('KubeCon North America 2026', 'kubecon-north-america-2026', 'Salt Lake City'));
+      picker().searchEmailTemplates('');
+      respond({
+        enabled: true,
+        error: null,
+        possiblyTruncated: false,
+        emails: [
+          // Three city tokens, wrong year -- the row that used to win.
+          { id: 'stale', name: 'KubeCon Salt Lake City 2025 Registration' },
+          // No city tokens, right year.
+          { id: 'current', name: 'KubeCon NA 2026 Registration' },
+        ] as HubSpotMarketingEmail[],
+      });
+
+      expect(picker().emailTemplateSuggestionId(), 'the prior edition outranked the year-matching one').toBe('current');
+      expect(picker().selectedEmailTemplateId()).toBe('current');
+    });
+
     it('pre-selects the template whose name carries the event, and says what it matched', () => {
       showPicker();
       picker().emailBriefOutput.set(briefFor('MCP Dev Summit Nairobi', 'mcp-dev-summit-nairobi'));

@@ -2543,7 +2543,16 @@ export class CampaignsComponent {
     const scored = templates.map((template, index) => ({
       template,
       index,
-      score: this.templateKeywordScore(template, keywords) + this.eventMatchScore(template, eventTerms) + this.eventRankBonus(template, eventTerms),
+      // The rank bonus is CLAMPED here, unlike at the suggestion tie-break. There it only
+      // separates templates whose decisive scores already tie, so its magnitude is free; here it
+      // is SUMMED into the ordering, where an unclamped year weight (year * (cities+1)) could
+      // reach 7 and lift a template matching no decisive term above one that does. Capping it
+      // below EVENT_TERM_WEIGHT keeps the docblock's promise -- city and year sharpen the choice
+      // among real matches, they never manufacture one.
+      score:
+        this.templateKeywordScore(template, keywords) +
+        this.eventMatchScore(template, eventTerms) +
+        Math.min(this.eventRankBonus(template, eventTerms), EVENT_TERM_WEIGHT - 1),
     }));
     // `index` breaks ties, which is what makes this stable across engines rather than relying on
     // Array.prototype.sort's stability guarantee holding for every input shape.
@@ -2691,13 +2700,28 @@ export class CampaignsComponent {
    *
    * City terms and the year live here rather than in the decisive score: they sharpen the choice
    * between templates that all name the event, and are not evidence of the event themselves.
-   * Weighted below a single decisive term so they can never reorder a real match beneath a weak
-   * one.
+   *
+   * The RETURN VALUE is not bounded below a decisive term -- `year * (cities + 1)` is deliberately
+   * large so the year outranks any number of city tokens. That is safe at the suggestion
+   * tie-break, which consults it only after decisive scores have already tied. The ranking sum in
+   * `rankTemplatesForSelectedType` CLAMPS it instead, because there it is added to the score and
+   * an unclamped value could lift a template matching no decisive term above one that does. An
+   * earlier version of this note claimed the value itself was weighted below a decisive term;
+   * it is the CALLER that has to hold that line.
    */
   private eventRankBonus(template: HubSpotMarketingEmail, terms: EventTemplateTerms): number {
     const city = this.matchedEventTerms(template, terms.ranking).length;
     const year = terms.year !== '' && this.matchedEventTerms(template, [terms.year]).length > 0 ? 1 : 0;
-    return city + year;
+    // YEAR STRICTLY ABOVE CITY, not summed with it. `city + year` let extra city tokens on a
+    // STALE edition outrank the year bit on the current one: for "KubeCon North America 2026" in
+    // "Salt Lake City", the 2025 template scored salt+lake+city = 3 against the 2026 template's
+    // year = 1, so the PRIOR edition was pre-selected and its HubSpot draft staged. That is the
+    // exact failure the year tie-break was added to prevent, and the comment above this method
+    // promised an ordered year-then-city tie-break a sum cannot express.
+    //
+    // Multiplying by `ranking.length + 1` makes one year match worth more than every city token
+    // combined, so year decides first and city only orders within the same year outcome.
+    return year * (terms.ranking.length + 1) + city;
   }
 
   /** The cached boundary matcher for one term, compiled on first use. */
@@ -2743,7 +2767,9 @@ export class CampaignsComponent {
    * the names its operators gave those templates. Rather than storing a per-event mapping of our
    * own, this reads the event off the brief and asks HubSpot which templates look like it.
    *
-   * The slug is split on its separators and the name on whitespace, then both are filtered:
+   * Slug and name are tokenized the SAME way -- one `split(/[^\p{L}\p{N}]+/u)` over both, on any
+   * non-alphanumeric run -- rather than separators for one and whitespace for the other, which is
+   * what an earlier version of this note claimed. Both are then filtered:
    * stopwords out (they match everything), tokens under three characters out (too weak to
    * identify an event on their own). What survives is the distinctive part of the event's
    * identity -- "kubecon", "nairobi", "pytorch".
