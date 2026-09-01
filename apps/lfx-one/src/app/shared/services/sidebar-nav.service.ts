@@ -89,7 +89,13 @@ export class SidebarNavService {
         // Documents (last of projectLensItems) and the Governance section in the project sidebar.
         const mktgOsItems = this.isMktgOsAgentsEnabled() ? [this.mktgOsAgentsNavItem] : [];
         const base = [...this.projectLensItems, ...mktgOsItems, this.projectGovernanceSection];
-        return this.canSeeNewsletters() ? [...base, this.projectCommunicationsSection] : base;
+        const withComms = this.canSeeNewsletters() ? [...base, this.projectCommunicationsSection] : base;
+        // Marketing-only FGA users who are also hybrid personas (e.g. a project role plus a
+        // marketing_auditor/campaign_manager grant) land here via getAllowedLensIds()/isHybridPersona
+        // rather than the foundation lens — they must still reach Campaign Impact/Campaigns
+        // (LFXV2-2235 review finding: hybrid marketing users lost the Marketing section in project lens).
+        const marketingSection = this.marketingSectionItem();
+        return marketingSection ? [...withComms, marketingSection] : withComms;
       }
       case 'org':
         return this.isOrgLensEnabled() ? this.visibleOrgLensItems() : this.visibleMeLensItems();
@@ -410,13 +416,24 @@ export class SidebarNavService {
       }
     }
 
-    // Marketing section visibility is independent of Metrics: while marketing-ops-fga-enabled is
-    // on, a root/project-scoped marketing_auditor grant also unlocks Campaign Impact, and a
-    // campaign_manager grant unlocks Campaigns — neither implies the other, so each item is built
-    // independently and the section itself only appears once it has at least one item. LF Staff see
-    // Campaign Impact via canViewExecutiveDashboards() the same as Metrics, but are restricted to the
-    // Social Listening tab once inside — full Marketing Impact access is ED/marketing_auditor only
-    // (LFXV2-2236 gap-analysis G4). Never widen the Metrics section itself for marketing_auditor.
+    const marketingSection = this.marketingSectionItem();
+    if (marketingSection) {
+      items.push(marketingSection);
+    }
+
+    return items;
+  });
+
+  // Marketing section visibility is independent of Metrics: while marketing-ops-fga-enabled is
+  // on, a root/project-scoped marketing_auditor grant also unlocks Campaign Impact, and a
+  // campaign_manager grant unlocks Campaigns — neither implies the other, so each item is built
+  // independently and the section itself only appears once it has at least one item. LF Staff see
+  // Campaign Impact via canViewExecutiveDashboards() the same as Metrics, but are restricted to the
+  // Social Listening tab once inside — full Marketing Impact access is ED/marketing_auditor only
+  // (LFXV2-2236 gap-analysis G4). Never widen the Metrics section itself for marketing_auditor.
+  // Extracted so both foundationLensItems and the project-lens branch of sidebarItems (hybrid
+  // marketing users) can surface the same section (LFXV2-2235 review finding).
+  private readonly marketingSectionItem = computed((): SidebarMenuItem | null => {
     this.marketingPersonaSlug();
     const marketingItems: SidebarMenuItem[] = [];
 
@@ -445,16 +462,16 @@ export class SidebarNavService {
       });
     }
 
-    if (marketingItems.length > 0) {
-      items.push({
-        label: 'Marketing',
-        isSection: true,
-        expanded: true,
-        items: marketingItems,
-      });
+    if (marketingItems.length === 0) {
+      return null;
     }
 
-    return items;
+    return {
+      label: 'Marketing',
+      isSection: true,
+      expanded: true,
+      items: marketingItems,
+    };
   });
 
   // --- Project Lens Items (base) ---
