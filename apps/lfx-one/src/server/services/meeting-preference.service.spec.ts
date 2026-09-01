@@ -198,6 +198,19 @@ describe('MeetingPreferenceService', () => {
         error: 'Service temporarily unavailable',
       });
     });
+
+    // A resolved reply that fails to parse or has the wrong shape is an upstream contract
+    // failure, not a dropped request — it must not be folded into the transport catch and
+    // mislabeled `unavailable` (retryable) instead of `upstream`.
+    it('classifies a malformed resolved reply as upstream, not a transport failure', async () => {
+      natsRequest.mockResolvedValue({ data: new TextEncoder().encode('not json') });
+
+      await expect(service.setMeetingInviteEmail(req, V1_TOKEN, ALTERNATE_EMAIL)).resolves.toEqual({
+        success: false,
+        reason: 'upstream',
+        error: 'Internal server error',
+      });
+    });
   });
 
   // `data.email` is not covered by the Pino redact paths, so the address must never reach the

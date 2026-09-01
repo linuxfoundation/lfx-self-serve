@@ -81,14 +81,27 @@ export class MeetingPreferenceService {
       is_reset: isMeetingInvitePrimarySentinel(email),
     });
 
+    // A rejected NATS request (timeout, no responder, connection refused, ...) is always a
+    // transport failure — retryable. A resolved reply that fails to decode/parse, or has the
+    // wrong shape, is an upstream contract failure instead, so it's kept in its own try/catch
+    // rather than folded into the transport one, which would mislabel it as retryable.
+    let response: { data: Uint8Array };
     try {
       const payload = JSON.stringify({ token: v1Token, email });
       // Outlast the responder's own 15s deadline. Giving up first would surface a 503 while the
       // mutation still completes upstream, leaving the preference changed behind an error message.
-      const response = await this.natsService.request(NatsSubjects.MEETING_PREFERRED_EMAIL_SET, codec.encode(payload), {
+      response = await this.natsService.request(NatsSubjects.MEETING_PREFERRED_EMAIL_SET, codec.encode(payload), {
         timeout: NATS_CONFIG.MEETING_PREFERENCE_SET_TIMEOUT,
       });
+    } catch (error) {
+      // Warning-level logs are emitted in production; omit the raw email to avoid persisting PII.
+      logger.warning(req, 'set_meeting_invite_email', 'NATS set meeting-invite email failed', {
+        err: error,
+      });
+      return { success: false, reason: 'unavailable', error: 'Service temporarily unavailable' };
+    }
 
+    try {
       const parsed = JSON.parse(codec.decode(response.data));
 
       if (parsed.error) {
@@ -103,17 +116,10 @@ export class MeetingPreferenceService {
 
       return { success: true, data: { email_id: parsed.email_id ?? null, email: parsed.email ?? null } };
     } catch (error) {
-      // Warning-level logs are emitted in production; omit the raw email to avoid persisting PII.
-      logger.warning(req, 'set_meeting_invite_email', 'NATS set meeting-invite email failed', {
+      logger.warning(req, 'set_meeting_invite_email', 'Failed to parse NATS preferred_email.set reply', {
         err: error,
       });
-
-      // This catch only runs when the NATS request itself was rejected (timeout, no responder,
-      // connection refused, etc.) — an application-level failure comes back as a resolved reply
-      // with `{ error }` and is handled by classifyPreferredEmailError instead. Every rejection
-      // here is a transport failure, so it's always retryable — no need to pattern-match the
-      // message to decide.
-      return { success: false, reason: 'unavailable', error: 'Service temporarily unavailable' };
+      return { success: false, reason: 'upstream', error: 'Internal server error' };
     }
   }
 
