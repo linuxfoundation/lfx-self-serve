@@ -105,6 +105,7 @@ describe('FormationService', () => {
     resetFormationStoreForTests();
     getProjectById.mockReset();
     canComplete.mockReset();
+    vi.mocked(logger.info).mockClear();
   });
 
   describe('getFormationItemOrThrow — project-scoped read access', () => {
@@ -388,6 +389,7 @@ describe('FormationService', () => {
 
       const infoCalls = vi.mocked(logger.info).mock.calls;
       const declineCall = infoCalls.find((call) => call[1] === 'decline_formation');
+      expect(declineCall).toBeDefined();
       expect(declineCall?.[3]).not.toHaveProperty('proposer');
     });
 
