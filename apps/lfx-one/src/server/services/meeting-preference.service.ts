@@ -108,16 +108,12 @@ export class MeetingPreferenceService {
         err: error,
       });
 
-      // The installed NATS 2.x client reports a request expiry as a NatsError with an uppercase
-      // `code`/`message` of "TIMEOUT" — check both, case-insensitively, so a real timeout isn't
-      // misclassified as `upstream` (502) instead of the intended retryable `unavailable` (503).
-      const message = error instanceof Error ? error.message.toLowerCase() : '';
-      const code = String((error as { code?: unknown })?.code ?? '').toUpperCase();
-      if (code === 'TIMEOUT' || message.includes('timeout') || message.includes('503')) {
-        return { success: false, reason: 'unavailable', error: 'Service temporarily unavailable' };
-      }
-
-      return { success: false, reason: 'upstream', error: 'Internal server error' };
+      // This catch only runs when the NATS request itself was rejected (timeout, no responder,
+      // connection refused, etc.) — an application-level failure comes back as a resolved reply
+      // with `{ error }` and is handled by classifyPreferredEmailError instead. Every rejection
+      // here is a transport failure, so it's always retryable — no need to pattern-match the
+      // message to decide.
+      return { success: false, reason: 'unavailable', error: 'Service temporarily unavailable' };
     }
   }
 

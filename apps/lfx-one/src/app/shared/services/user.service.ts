@@ -214,10 +214,13 @@ export class UserService {
 
   /**
    * Get the user's preferred meeting-invitation email from meeting-service via NATS.
-   * Null fields mean no override (invitations fall back to the primary email).
+   * Null fields mean no override (invitations fall back to the primary email). Lets a request
+   * failure propagate as an error rather than swallowing it into the same shape as "no override" —
+   * callers that gate delete/remove actions on this value must be able to tell "confirmed none"
+   * from "unknown" and fail closed on the latter.
    */
   public getMeetingInviteEmail(): Observable<MeetingInviteEmail> {
-    return this.http.get<MeetingInviteEmail>('/api/profile/emails/meeting-invite').pipe(catchError(() => of({ email_id: null, email: null })));
+    return this.http.get<MeetingInviteEmail>('/api/profile/emails/meeting-invite');
   }
 
   /**

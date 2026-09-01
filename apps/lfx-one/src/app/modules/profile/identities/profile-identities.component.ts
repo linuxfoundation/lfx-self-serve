@@ -35,6 +35,9 @@ interface IdentitiesState {
   identities: EnrichedIdentity[];
   // Loaded alongside the identities so the Remove guard is never evaluated against a stale value.
   inviteEmail: string | null;
+  // True when the invite fetch itself failed — distinct from `inviteEmail === null` (confirmed no
+  // override). Which identity is protected is unknown in that case, so the Remove guard fails closed.
+  inviteLoadFailed: boolean;
   loaded: boolean;
 }
 
@@ -145,7 +148,9 @@ export class ProfileIdentitiesComponent implements OnInit {
       this.messageService.add({
         severity: 'info',
         summary: 'Meeting invitation email',
-        detail: 'This email is set for meeting invitations. Choose a different meeting-invitation email in Account Settings before removing it.',
+        detail: this.identitiesState().inviteLoadFailed
+          ? 'Could not confirm your meeting-invitation email. Reload the page before removing an email address.'
+          : 'This email is set for meeting invitations. Choose a different meeting-invitation email in Account Settings before removing it.',
       });
       return;
     }
@@ -238,14 +243,17 @@ export class ProfileIdentitiesComponent implements OnInit {
       const map = new Map<string, MenuItem[]>();
       for (const identity of this.identities()) {
         if (this.isMeetingInviteIdentity(identity)) {
-          // Blocked: removing the meeting-invitation email would orphan the meeting-service preference.
+          // Blocked: removing the meeting-invitation email would orphan the meeting-service preference
+          // (or, when the invite fetch failed, we can't tell which identity that is).
           map.set(identity.id, [
             {
               label: 'Remove',
               icon: 'fa-light fa-trash',
               styleClass: 'text-red-500',
               disabled: true,
-              title: 'This email is set for meeting invitations. Choose a different meeting-invitation email in Account Settings before removing it.',
+              title: this.identitiesState().inviteLoadFailed
+                ? 'Could not confirm your meeting-invitation email. Reload the page before removing an email address.'
+                : 'This email is set for meeting invitations. Choose a different meeting-invitation email in Account Settings before removing it.',
             },
           ]);
         } else {
@@ -257,7 +265,15 @@ export class ProfileIdentitiesComponent implements OnInit {
   }
 
   private isMeetingInviteIdentity(identity: ConnectedIdentityFull): boolean {
-    return identity.provider === 'email' && emailsEqual(identity.identifier, this.meetingInviteEmail());
+    if (identity.provider !== 'email') {
+      return false;
+    }
+    // Which identity is protected can't be determined when the invite fetch failed — fail closed
+    // and treat every email identity as protected rather than letting the guard silently open up.
+    if (this.identitiesState().inviteLoadFailed) {
+      return true;
+    }
+    return emailsEqual(identity.identifier, this.meetingInviteEmail());
   }
 
   /**
@@ -272,7 +288,7 @@ export class ProfileIdentitiesComponent implements OnInit {
     // banner into the SSR HTML — producing a red-banner flash on hydration
     // before the browser's authenticated fetch resolves.
     if (!isPlatformBrowser(this.platformId)) {
-      return signal({ identities: [] as EnrichedIdentity[], inviteEmail: null, loaded: false });
+      return signal({ identities: [] as EnrichedIdentity[], inviteEmail: null, inviteLoadFailed: false, loaded: false });
     }
     return toSignal(
       this.userService.identitiesRefresh$.pipe(
@@ -288,12 +304,17 @@ export class ProfileIdentitiesComponent implements OnInit {
                 return of([] as EnrichedIdentity[]);
               })
             ),
-            invite: this.userService.getMeetingInviteEmail(),
+            // A failed invite fetch must not collapse into "no override" — that would silently
+            // remove the Remove guard for the user's actual meeting-invite identity.
+            invite: this.userService.getMeetingInviteEmail().pipe(
+              map((invite) => ({ email: invite.email, inviteLoadFailed: false })),
+              catchError(() => of({ email: null, inviteLoadFailed: true }))
+            ),
           });
         }),
-        map(({ identities, invite }): IdentitiesState => ({ identities, inviteEmail: invite.email, loaded: true }))
+        map(({ identities, invite }): IdentitiesState => ({ identities, inviteEmail: invite.email, inviteLoadFailed: invite.inviteLoadFailed, loaded: true }))
       ),
-      { initialValue: { identities: [] as EnrichedIdentity[], inviteEmail: null, loaded: false } }
+      { initialValue: { identities: [] as EnrichedIdentity[], inviteEmail: null, inviteLoadFailed: false, loaded: false } }
     );
   }
 }

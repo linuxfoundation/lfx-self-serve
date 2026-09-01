@@ -179,38 +179,23 @@ describe('MeetingPreferenceService', () => {
       });
     });
 
-    it.each([['request timeout'], ['upstream returned 503']])('maps the transport failure %j to unavailable', async (message) => {
-      natsRequest.mockRejectedValue(new Error(message));
-
-      await expect(service.setMeetingInviteEmail(req, V1_TOKEN, ALTERNATE_EMAIL)).resolves.toEqual({
-        success: false,
-        reason: 'unavailable',
-        error: 'Service temporarily unavailable',
-      });
-    });
-
-    // The installed NATS 2.x client reports a real request expiry as a NatsError with an
-    // uppercase `code`/`message` of "TIMEOUT" — must not be misclassified as `upstream` (502).
+    // A rejected NATS request is always a transport failure (timeout, no responder, connection
+    // refused, ...) — application-level errors instead come back as a resolved `{ error }` reply
+    // and go through classifyPreferredEmailError. So every rejection here maps to `unavailable`,
+    // regardless of the error's message or shape.
     it.each([
+      ['request timeout', new Error('request timeout')],
       ['uppercase TIMEOUT message', new Error('TIMEOUT')],
       ['NatsError-shaped code', Object.assign(new Error('some transport message'), { code: 'TIMEOUT' })],
-    ])('maps a %s to unavailable', async (_label, natsError) => {
+      ['connection refused', new Error('connection refused')],
+      ['non-Error rejection', 'some string rejection'],
+    ])('maps the transport failure %j to unavailable', async (_label, natsError) => {
       natsRequest.mockRejectedValue(natsError);
 
       await expect(service.setMeetingInviteEmail(req, V1_TOKEN, ALTERNATE_EMAIL)).resolves.toEqual({
         success: false,
         reason: 'unavailable',
         error: 'Service temporarily unavailable',
-      });
-    });
-
-    it('maps any other transport failure to upstream', async () => {
-      natsRequest.mockRejectedValue(new Error('connection refused'));
-
-      await expect(service.setMeetingInviteEmail(req, V1_TOKEN, ALTERNATE_EMAIL)).resolves.toEqual({
-        success: false,
-        reason: 'upstream',
-        error: 'Internal server error',
       });
     });
   });

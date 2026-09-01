@@ -27,7 +27,7 @@ import { DialogService, DynamicDialogModule } from 'primeng/dynamicdialog';
 import { ToastModule } from 'primeng/toast';
 import { TooltipModule } from 'primeng/tooltip';
 import { HttpErrorResponse } from '@angular/common/http';
-import { BehaviorSubject, catchError, finalize, forkJoin, Observable, of, switchMap, take } from 'rxjs';
+import { BehaviorSubject, catchError, finalize, forkJoin, map, Observable, of, switchMap, take } from 'rxjs';
 
 @Component({
   selector: 'lfx-account-settings',
@@ -384,8 +384,9 @@ export class AccountSettingsComponent {
     }
 
     // Never delete the meeting-invitation address — and never delete anything mid-write, since
-    // meetingInviteEmail() still holds the old selection until the refresh lands.
-    if (this.savingMeetingInvite() || emailsEqual(email.email, this.meetingInviteEmail())) {
+    // meetingInviteEmail() still holds the old selection until the refresh lands. When the invite
+    // fetch itself failed, which address is protected is unknown — fail closed and block every row.
+    if (this.savingMeetingInvite() || this.emailState().inviteLoadFailed || emailsEqual(email.email, this.meetingInviteEmail())) {
       return;
     }
 
@@ -411,13 +412,16 @@ export class AccountSettingsComponent {
           rejectButtonStyleClass: 'p-button-outlined p-button-sm',
           accept: () => {
             // Re-check: the user may have picked this same address as the meeting-invite
-            // override while the auth-status lookup/confirm dialog was pending.
-            if (emailsEqual(email.email, this.meetingInviteEmail())) {
+            // override — or the invite fetch may have started failing — while the auth-status
+            // lookup/confirm dialog was pending.
+            if (this.emailState().inviteLoadFailed || emailsEqual(email.email, this.meetingInviteEmail())) {
               this.deletingEmailAddress.set(null);
               this.messageService.add({
                 severity: 'error',
                 summary: 'Error',
-                detail: 'This email is now set for meeting invitations — choose a different one before deleting it.',
+                detail: this.emailState().inviteLoadFailed
+                  ? 'Could not confirm your meeting-invitation email. Please try again.'
+                  : 'This email is now set for meeting invitations — choose a different one before deleting it.',
               });
               return;
             }
@@ -593,11 +597,20 @@ export class AccountSettingsComponent {
           this.emailLoading.set(true);
           return forkJoin({
             emails: this.userService.getUserEmails().pipe(catchError(() => of(null))),
-            invite: this.userService.getMeetingInviteEmail(),
-          }).pipe(finalize(() => this.emailLoading.set(false)));
+            // A failed invite fetch must not collapse into "no override" — that would silently
+            // remove the delete guard for the user's actual meeting-invite address. Track the
+            // failure explicitly so callers can fail closed instead.
+            invite: this.userService.getMeetingInviteEmail().pipe(
+              map((invite) => ({ invite, inviteLoadFailed: false })),
+              catchError(() => of({ invite: null, inviteLoadFailed: true }))
+            ),
+          }).pipe(
+            map(({ emails, invite }) => ({ emails, invite: invite.invite, inviteLoadFailed: invite.inviteLoadFailed })),
+            finalize(() => this.emailLoading.set(false))
+          );
         })
       ),
-      { initialValue: { emails: null, invite: null } }
+      { initialValue: { emails: null, invite: null, inviteLoadFailed: false } }
     );
   }
 
@@ -624,7 +637,7 @@ export class AccountSettingsComponent {
           });
         }
         if (email.canDelete) {
-          const blockedReason = this.getDeleteBlockedReason(email.isMeetingInvite, savingInvite);
+          const blockedReason = this.getDeleteBlockedReason(email.isMeetingInvite, savingInvite, this.emailState().inviteLoadFailed);
           if (blockedReason) {
             items.push({ label: 'Delete', icon: 'fa-light fa-trash', styleClass: 'text-red-500', disabled: true, title: blockedReason });
           } else {
@@ -641,8 +654,12 @@ export class AccountSettingsComponent {
    * Why deleting is blocked, or null when it's allowed. `isMeetingInvite` still reflects the
    * previous selection until the refresh lands, so an in-flight write has to block every row —
    * otherwise the address just picked stays deletable for the whole SET and orphans the preference.
+   * `inviteLoadFailed` means which address is protected is unknown, so every row blocks.
    */
-  private getDeleteBlockedReason(isMeetingInvite: boolean, savingInvite: boolean): string | null {
+  private getDeleteBlockedReason(isMeetingInvite: boolean, savingInvite: boolean, inviteLoadFailed: boolean): string | null {
+    if (inviteLoadFailed) {
+      return 'Could not confirm your meeting-invitation email. Reload the page before deleting an address.';
+    }
     if (savingInvite) {
       return 'Updating the meeting-invitation email. Wait for it to finish before deleting an address.';
     }

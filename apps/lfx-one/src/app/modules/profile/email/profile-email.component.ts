@@ -18,7 +18,7 @@ import { ConfirmDialogModule } from 'primeng/confirmdialog';
 import { ToastModule } from 'primeng/toast';
 import { TooltipModule } from 'primeng/tooltip';
 import { HttpErrorResponse } from '@angular/common/http';
-import { BehaviorSubject, catchError, finalize, forkJoin, Observable, of, switchMap, take } from 'rxjs';
+import { BehaviorSubject, catchError, finalize, forkJoin, map, Observable, of, switchMap, take } from 'rxjs';
 
 @Component({
   selector: 'lfx-profile-email',
@@ -84,6 +84,9 @@ export class ProfileEmailComponent {
   public emailsWithMetadata = computed(() => {
     const inviteEmail = this.meetingInviteEmail();
     const primaryEmail = this.emailData()?.primary_email;
+    // Which address (if any) is protected can't be determined when the invite fetch failed —
+    // block delete on every row rather than only the last-known one.
+    const inviteLoadFailed = this.emailState().inviteLoadFailed;
     return this.allEmails().map((email) => {
       // The invite address comes from the meeting-service (v1/SFDC), a different source than this
       // Auth0-backed list, so casing can legitimately differ — compare case-insensitively.
@@ -93,7 +96,7 @@ export class ProfileEmailComponent {
         ...email,
         isPrimary,
         isMeetingInvite,
-        canDelete: this.allEmails().length > 1 && !isPrimary && !!email.user_id && !isMeetingInvite,
+        canDelete: this.allEmails().length > 1 && !isPrimary && !!email.user_id && !isMeetingInvite && !inviteLoadFailed,
         canSetPrimary: !isPrimary && email.verified,
       };
     });
@@ -209,9 +212,11 @@ export class ProfileEmailComponent {
       return;
     }
 
-    // Defensive guard: never delete the email selected as the meeting-invitation preference.
-    // The button is already hidden for it; this covers any programmatic call path.
-    if (emailsEqual(email.email, this.meetingInviteEmail())) {
+    // Defensive guard: never delete the email selected as the meeting-invitation preference —
+    // and never delete anything when the invite fetch failed, since which address is actually
+    // protected is then unknown. The button is already hidden for both cases; this covers any
+    // programmatic call path.
+    if (this.emailState().inviteLoadFailed || emailsEqual(email.email, this.meetingInviteEmail())) {
       return;
     }
 
@@ -271,11 +276,19 @@ export class ProfileEmailComponent {
           this.loading.set(true);
           return forkJoin({
             emails: this.userService.getUserEmails().pipe(catchError(() => of(null))),
-            invite: this.userService.getMeetingInviteEmail(),
-          }).pipe(finalize(() => this.loading.set(false)));
+            // A failed invite fetch must not collapse into "no override" — that would silently
+            // remove the delete guard for the user's actual meeting-invite address.
+            invite: this.userService.getMeetingInviteEmail().pipe(
+              map((invite) => ({ invite, inviteLoadFailed: false })),
+              catchError(() => of({ invite: null, inviteLoadFailed: true }))
+            ),
+          }).pipe(
+            map(({ emails, invite }) => ({ emails, invite: invite.invite, inviteLoadFailed: invite.inviteLoadFailed })),
+            finalize(() => this.loading.set(false))
+          );
         })
       ),
-      { initialValue: { emails: null, invite: null } }
+      { initialValue: { emails: null, invite: null, inviteLoadFailed: false } }
     );
   }
 }

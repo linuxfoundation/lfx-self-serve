@@ -59,10 +59,16 @@ export interface MeetingInviteEmail {
  * Email-settings state loaded as one unit. The address list and the meeting-invitation
  * preference must land together — a partially-loaded pair briefly guards the wrong
  * address (stale badge, stale delete guard).
+ *
+ * `invite: null` covers both "not loaded yet" and "confirmed no override" — `inviteLoadFailed`
+ * is what distinguishes "unknown" from "confirmed none". Consumers must fail closed (block
+ * delete/remove of any address) when `inviteLoadFailed` is true, since which address is actually
+ * protected can't be determined.
  */
 export interface EmailSettingsState {
   emails: EmailManagementData | null;
   invite: MeetingInviteEmail | null;
+  inviteLoadFailed: boolean;
 }
 
 // Result of setting the preferred meeting-invitation email. `reason` maps a failure to an HTTP status:
