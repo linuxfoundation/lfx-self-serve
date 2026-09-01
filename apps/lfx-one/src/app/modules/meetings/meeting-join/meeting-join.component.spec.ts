@@ -281,10 +281,18 @@ describe('MeetingJoinComponent', () => {
         project: buildProject(),
       })
     );
-    getMyMeetingRegistrants.mockReturnValueOnce(of(buildRegistrants(10))).mockReturnValueOnce(throwError(() => new Error('roster fetch failed')));
+    // The recurring meeting's `currentOccurrence` computed settles from `null` to occurrence A in a
+    // separate reactive tick from `meeting` itself resolving, so setup can issue more than one
+    // registrant fetch before things settle. Keep every setup-phase fetch successful and queue the
+    // failure only for the deliberate occurrence switch below, so the failure lands exactly where
+    // the test means it to (a fixed once/once pairing here previously let setup silently consume
+    // both mocks, leaving the switch to fall through to the default `of([])` mock instead).
+    getMyMeetingRegistrants.mockReturnValue(of(buildRegistrants(10)));
 
     const component = await createComponent();
     expect((component as unknown as { registrants: () => MeetingRegistrant[] }).registrants()).toHaveLength(10);
+
+    getMyMeetingRegistrants.mockReturnValueOnce(throwError(() => new Error('roster fetch failed')));
 
     // Select the second occurrence in the series — same meeting, different `occurrence_id` —
     // so a regression that dropped the occurrence segment from `buildRegistrantsRosterKey` would
