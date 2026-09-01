@@ -2,6 +2,7 @@
 // SPDX-License-Identifier: MIT
 
 import { AI_MODEL, CAMPAIGN_DELIVERY_TYPES, JOB_LOST_MESSAGE, META_CHAR_LIMITS } from '@lfx-one/shared/constants';
+import { scoreCampaignName } from './campaign-utm-mapper';
 
 import type {
   BulkKeywordActionRequest,
@@ -209,15 +210,15 @@ async function hubspotSearchCampaign(eventName: string): Promise<HubSpotUtmResul
     return { found: false, hsUtm: null, campaignName: '', campaignId: null, allMatches: [], capped, inconclusive: capped };
   }
 
-  const queryLower = eventName.toLowerCase();
   const scored = results.map((c) => {
     const name = c.properties['hs_name'] || '';
     const hsUtm = hsUtmOrNull(c.properties);
-    const nameLower = name.toLowerCase();
-    const score =
-      (nameLower === queryLower ? 1 : 0) +
-      (queryLower.includes(nameLower) || nameLower.includes(queryLower) ? 1 : 0) +
-      (queryLower.split(' ').filter((w) => w.length > 3 && nameLower.includes(w)).length > 0 ? 1 : 0);
+    // ONE scorer, shared with the campaign-service path. These were separate copies and had
+    // already diverged: this one carried no blank-name guard, so a campaign with an empty name
+    // scored 1 — every string contains '' — and could beat a genuinely unrelated named campaign,
+    // applying its UTM to this event. Sharing the function fixes that here and stops the two
+    // paths ranking the same candidates differently.
+    const score = scoreCampaignName(name, eventName);
     return { id: c.id, name, hsUtm, score };
   });
 

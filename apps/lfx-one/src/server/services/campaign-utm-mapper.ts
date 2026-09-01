@@ -36,14 +36,14 @@ import type {
 /**
  * The lowest score that may be applied without a human choosing it.
  *
- * score() adds three independent signals: exact name, containment either way, and a shared word
+ * scoreCampaignName() adds three independent signals: exact name, containment either way, and a shared word
  * longer than three characters. A score of 1 is a SINGLE weak signal — "KubeCon Europe 2026"
  * earns it against "KubeCon NA 2026" purely by sharing one word — so requiring 2 means at least
  * two signals agree before a token is applied to an event without anyone looking at it.
  */
 const MIN_CONFIDENT_SCORE = 2;
 
-function score(name: string, query: string): number {
+export function scoreCampaignName(name: string, query: string): number {
   const nameLower = name.toLowerCase();
   const queryLower = query.toLowerCase();
   // A blank name cannot match anything, and must be refused BEFORE the containment test:
@@ -92,7 +92,7 @@ function utmTokenOf(c: CampaignServiceHubSpotCampaign): string | null {
  */
 export function toUtmLookupResult(payload: CampaignServiceHubSpotCampaigns, query: string): HubSpotUtmLookupResult {
   const scored = payload.campaigns
-    .map((c) => ({ campaign: c, score: score(c.name, query) }))
+    .map((c) => ({ campaign: c, score: scoreCampaignName(c.name, query) }))
     .filter((s) => s.score > 0)
     // Stable descending sort. Within a score band this preserves the order upstream returned,
     // which is HubSpot's OBJECT-CREATION order — not a ranking. campaign-service documents that
