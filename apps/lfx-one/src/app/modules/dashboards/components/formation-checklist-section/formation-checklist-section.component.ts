@@ -130,15 +130,24 @@ export class FormationChecklistSectionComponent {
     this.refresh$.next();
   }
 
-  /** The drawer's own Mark complete/Save has started a write against the open item — register it so a row action for the same item is guarded too. */
-  protected onDrawerWriteStarted(): void {
-    const uid = this.drawerItemUid();
-    if (uid !== null) this.beginSubmitting(uid, 'drawer');
+  /**
+   * The drawer's own Mark complete/Save has started/finished a write — register/release it under the
+   * uid the drawer emits (the item the write is actually *for*), not `drawerItemUid()`'s current
+   * value: the drawer can switch to a different item (or close) before this write's response comes
+   * back, and reading the section's current signal at that point would guard/release the wrong item.
+   */
+  protected onDrawerWriteStarted(uid: string): void {
+    this.beginSubmitting(uid, 'drawer');
   }
 
-  protected onDrawerWriteEnded(): void {
-    const uid = this.drawerItemUid();
-    if (uid !== null) this.endSubmitting(uid);
+  /**
+   * `beginSubmitting` above can no-op (uid already claimed by a 'row'/'skip' write — the drawer's own
+   * `busy()` should already have blocked this, but nothing enforces that from this side), so ending
+   * must only retire an entry this drawer write actually registered — an unconditional `endSubmitting`
+   * here would drop a different mutation's guard out from under it.
+   */
+  protected onDrawerWriteEnded(uid: string): void {
+    if (this.submittingItemUids().get(uid) === 'drawer') this.endSubmitting(uid);
   }
 
   protected onSkipRequested(item: FormationItem): void {
@@ -173,21 +182,6 @@ export class FormationChecklistSectionComponent {
             this.messageService.add({ severity: 'error', summary: 'Error', detail: 'Could not skip this item.' });
           },
         });
-    });
-  }
-
-  /** Returns false (a no-op guard) if `uid` already has a mutation in flight. */
-  private beginSubmitting(uid: string, kind: 'row' | 'skip' | 'drawer'): boolean {
-    if (this.submittingItemUids().has(uid)) return false;
-    this.submittingItemUids.update((uids) => new Map(uids).set(uid, kind));
-    return true;
-  }
-
-  private endSubmitting(uid: string): void {
-    this.submittingItemUids.update((uids) => {
-      const next = new Map(uids);
-      next.delete(uid);
-      return next;
     });
   }
 
@@ -243,5 +237,20 @@ export class FormationChecklistSectionComponent {
     if (orphans.length > 0) {
       console.error('[FormationChecklistSection] Items with an unrecognized section_key', { sectionKeys: orphans.map((item) => item.section_key) });
     }
+  }
+
+  /** Returns false (a no-op guard) if `uid` already has a mutation in flight. */
+  private beginSubmitting(uid: string, kind: 'row' | 'skip' | 'drawer'): boolean {
+    if (this.submittingItemUids().has(uid)) return false;
+    this.submittingItemUids.update((uids) => new Map(uids).set(uid, kind));
+    return true;
+  }
+
+  private endSubmitting(uid: string): void {
+    this.submittingItemUids.update((uids) => {
+      const next = new Map(uids);
+      next.delete(uid);
+      return next;
+    });
   }
 }

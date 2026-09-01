@@ -22,7 +22,13 @@ import { isValidUrl } from '@lfx-one/shared/utils';
 })
 export class FormationChecklistRowComponent {
   public readonly item = input.required<FormationItem>();
-  /** True while a provisionable/request action for this item is in flight — drives the gated action button's `[loading]` state. */
+  /**
+   * True while *any* mutation for this item is in flight — a row action (provisionable/request), a
+   * skip, or a drawer write (Mark complete/Save) started while this item was open in the drawer.
+   * Drives the gated action button's `[loading]`, which also blocks re-entry — see
+   * `ButtonComponent.handleClick`. Deliberately broad rather than row-action-only: this button must
+   * stay non-actionable for the duration of any write against the same item, not just its own.
+   */
   public readonly submitting = input<boolean>(false);
 
   public readonly openDrawer = output<FormationItem>();
