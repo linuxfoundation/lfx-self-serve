@@ -73,3 +73,59 @@ describe('ProjectService.getProjectSlugs', () => {
     expect(result).toBeNull();
   });
 });
+
+describe('ProjectService.searchProjects', () => {
+  let service: ProjectService;
+  let httpGet: ReturnType<typeof vi.fn>;
+  let errorSpy: ReturnType<typeof vi.spyOn>;
+
+  beforeEach(() => {
+    httpGet = vi.fn().mockReturnValue(of([]));
+    errorSpy = vi.spyOn(console, 'error').mockImplementation(() => {});
+    TestBed.configureTestingModule({
+      providers: [
+        {
+          provide: HttpClient,
+          useValue: { get: httpGet, post: vi.fn(), put: vi.fn(), patch: vi.fn(), delete: vi.fn() },
+        },
+      ],
+    });
+    service = TestBed.inject(ProjectService);
+  });
+
+  afterEach(() => {
+    TestBed.resetTestingModule();
+    errorSpy.mockRestore();
+  });
+
+  it('issues GET /api/projects/search with the query param and returns the results', () => {
+    httpGet.mockReturnValueOnce(of([{ uid: 'p1', name: 'Example' }]));
+    let result: unknown[] = [];
+    service.searchProjects('example').subscribe((projects) => (result = projects));
+
+    expect(httpGet).toHaveBeenCalledWith('/api/projects/search', expect.anything());
+    expect(result).toEqual([{ uid: 'p1', name: 'Example' }]);
+  });
+
+  /**
+   * This is the degradation contract `ProposeComponent.initDuplicateNameMatch` and
+   * `ProjectPickerComponent.initResults` both rely on instead of a local `catchError` — see
+   * those components' specs, and the doc comments on the `toSignal` streams that name this
+   * behavior. Covered here, at the layer that actually implements it, rather than only asserted
+   * indirectly through a component-level mock that could drift from the real service.
+   */
+  it('degrades to an empty array (and logs) on a failed search, rather than erroring the stream', () => {
+    httpGet.mockReturnValueOnce(throwError(() => new Error('network-error')));
+    let result: unknown[] | null = null;
+    let errored = false;
+
+    service.searchProjects('example').subscribe({
+      next: (projects) => (result = projects),
+      error: () => (errored = true),
+    });
+
+    expect(errored).toBe(false);
+    expect(result).toEqual([]);
+    expect(errorSpy).toHaveBeenCalled();
+  });
+});

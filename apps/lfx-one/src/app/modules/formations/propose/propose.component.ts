@@ -175,10 +175,7 @@ export class ProposeComponent {
           // handler on the same call would be dead code per frontend-checklist.md §14.6.
           return this.projectService.searchProjects(trimmed).pipe(
             map((projects) => {
-              // Optional chaining: this projection runs downstream of searchProjects' own
-              // catchError (which only guards its http.get, not this map), so an unexpectedly
-              // nullish `name` here must degrade to "no match" rather than throw into toSignal.
-              const match = projects.find((project) => project.name?.trim().toLowerCase() === trimmed.toLowerCase());
+              const match = projects.find((project) => project.name.trim().toLowerCase() === trimmed.toLowerCase());
               return match ? match.name : null;
             })
           );

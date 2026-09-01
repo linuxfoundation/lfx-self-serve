@@ -106,7 +106,7 @@ describe('ProjectPickerComponent', () => {
     }
   });
 
-  it('degrades to an empty result on a failed search and stays usable for the next one — there is no local catchError, so this depends on ProjectService.searchProjects never erroring', async () => {
+  it('reports an empty result set, then stays usable for a search that finds a match', async () => {
     vi.useFakeTimers();
     try {
       fixture = TestBed.createComponent(ProjectPickerComponent);
@@ -114,11 +114,10 @@ describe('ProjectPickerComponent', () => {
       fixture.componentRef.setInput('uidControl', 'parent_project_uid');
       fixture.detectChanges();
 
-      // ProjectService.searchProjects' own contract: it never emits an error, it degrades to
-      // of([]) internally on failure — simulated here directly, matching that contract.
       searchProjects.mockReturnValueOnce(of([]));
       instance().searchForm.controls.query.setValue('ab');
       await vi.advanceTimersByTimeAsync(300);
+      expect(searchProjects).toHaveBeenCalledWith('ab');
       expect(instance().results()).toEqual([]);
 
       searchProjects.mockReturnValueOnce(of([project]));

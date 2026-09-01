@@ -168,25 +168,24 @@ describe('ProposeComponent', () => {
   // that stray timer from firing mid-assertion and clobbering the signal back to null.
   const settleConstructionDebounce = () => new Promise((resolve) => setTimeout(resolve, 450));
 
-  it('the duplicate-name signal degrades to null on a failed search — there is no local catchError, so this depends on ProjectService.searchProjects never erroring', async () => {
+  it('reports no duplicate when the search returns no results', async () => {
     const component = await createComponent();
     const protectedAccess = component as any;
     await settleConstructionDebounce();
 
     vi.useFakeTimers();
     try {
-      // ProjectService.searchProjects' own contract: it never emits an error, it degrades to
-      // of([]) internally on failure — simulated here directly, matching that contract.
       searchProjects.mockReturnValueOnce(of([]));
       component.form.get('project_name')?.setValue('Example Proj');
       await vi.advanceTimersByTimeAsync(400);
+      expect(searchProjects).toHaveBeenCalledWith('Example Proj');
       expect(protectedAccess.duplicateNameMatch()).toBeNull();
     } finally {
       vi.useRealTimers();
     }
   });
 
-  it('the duplicate-name signal reports a real match — proving the stream stays alive, not just that it can return null', async () => {
+  it('reports a matching existing project name', async () => {
     const component = await createComponent();
     const protectedAccess = component as any;
     await settleConstructionDebounce();
