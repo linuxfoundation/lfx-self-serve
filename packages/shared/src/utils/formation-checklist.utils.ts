@@ -24,8 +24,9 @@ export function deriveFormationReadinessSummary(items: FormationItem[]): Formati
 
   for (const item of items) {
     // Items cross a wire boundary (see TODO(#1957) on FormationChecklistResponse) — a status value
-    // the frontend doesn't know yet must not corrupt the tally into NaN.
-    if (item.status in counts) {
+    // the frontend doesn't know yet must not corrupt the tally into NaN. `in` would also match
+    // inherited Object.prototype keys (e.g. a status of "toString"); hasOwnProperty doesn't.
+    if (Object.prototype.hasOwnProperty.call(counts, item.status)) {
       counts[item.status] += 1;
     }
     if (item.is_gating) {

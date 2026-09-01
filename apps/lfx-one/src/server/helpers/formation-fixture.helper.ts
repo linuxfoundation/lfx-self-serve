@@ -5,7 +5,6 @@ import { ProjectStage } from '@lfx-one/shared/enums';
 import { SEEDED_FORMATION_TEMPLATE_UID } from '@lfx-one/shared/constants';
 import type {
   Formation,
-  FormationActivity,
   FormationEntityType,
   FormationItem,
   FormationItemStatus,
@@ -16,8 +15,9 @@ import type {
 import crypto from 'crypto';
 
 /**
- * Fixture data for the Formation Checklist section and Formations queue (GH-1958), ahead of the
- * real `lfx-v2-formation-service` (#1957). TODO(#1957): every generator/store here is the fixture
+ * Fixture data generators for the Formation Checklist section and Formations queue (GH-1958),
+ * ahead of the real `lfx-v2-formation-service` (#1957). Pure — the mutable write store this data
+ * feeds lives in `formation-store.service.ts`. TODO(#1957): every generator here is the fixture
  * side of `formation.service.ts`'s `isFormationServiceLive()` branch — swap the service's fixture
  * calls for real proxy calls once that ships; this file's shapes already match the shared
  * `Formation`/`FormationItem` interfaces, so downstream code needs no change.
@@ -42,7 +42,6 @@ interface SeedTemplateItem {
   is_gating: boolean;
   owner_team: string;
   action: FormationItem['action'];
-  status_only: boolean;
 }
 
 interface SeedSection {
@@ -56,15 +55,14 @@ const SEED_SECTIONS: SeedSection[] = [
     key: 'legal-and-entity',
     title: 'Legal and entity',
     items: [
-      { key: 'draft-project-record', title: 'Draft project record (Prospect)', is_gating: true, owner_team: 'PMO', action: 'link', status_only: false },
-      { key: 'intake-form-submitted', title: 'Intake form submitted', is_gating: true, owner_team: 'Community', action: 'link', status_only: false },
+      { key: 'draft-project-record', title: 'Draft project record (Prospect)', is_gating: true, owner_team: 'PMO', action: 'link' },
+      { key: 'intake-form-submitted', title: 'Intake form submitted', is_gating: true, owner_team: 'Community', action: 'link' },
       {
         key: 'formation-review-packet',
         title: 'Formation review and instruction packet',
         is_gating: true,
         owner_team: 'Formation',
         action: 'link',
-        status_only: false,
       },
       {
         key: 'preliminary-trademark-search',
@@ -72,7 +70,6 @@ const SEED_SECTIONS: SeedSection[] = [
         is_gating: false,
         owner_team: 'Brand Counsel',
         action: 'link',
-        status_only: false,
       },
       {
         key: 'technical-charter-agreed',
@@ -80,7 +77,6 @@ const SEED_SECTIONS: SeedSection[] = [
         is_gating: true,
         owner_team: 'Community',
         action: 'link',
-        status_only: false,
       },
       {
         key: 'contribution-agreement-executed',
@@ -88,7 +84,6 @@ const SEED_SECTIONS: SeedSection[] = [
         is_gating: true,
         owner_team: 'Formation',
         action: 'link',
-        status_only: false,
       },
       {
         key: 'in-depth-trademark-series-llc',
@@ -96,7 +91,6 @@ const SEED_SECTIONS: SeedSection[] = [
         is_gating: true,
         owner_team: 'Formation',
         action: 'manual',
-        status_only: false,
       },
     ],
   },
@@ -110,19 +104,17 @@ const SEED_SECTIONS: SeedSection[] = [
         is_gating: false,
         owner_team: 'Community',
         action: 'provisionable',
-        status_only: false,
       },
-      { key: 'domain-and-dns-transfer', title: 'Domain and DNS transfer', is_gating: false, owner_team: 'Community', action: 'request', status_only: false },
-      { key: 'website-logo-footer', title: 'Website, logo and entity footer', is_gating: false, owner_team: 'PMO', action: 'link', status_only: false },
-      { key: 'mailing-lists', title: 'Mailing lists', is_gating: false, owner_team: 'PMO', action: 'provisionable', status_only: false },
-      { key: 'chat-workspace', title: 'Chat workspace (Slack)', is_gating: false, owner_team: 'IT', action: 'provisionable', status_only: false },
+      { key: 'domain-and-dns-transfer', title: 'Domain and DNS transfer', is_gating: false, owner_team: 'Community', action: 'request' },
+      { key: 'website-logo-footer', title: 'Website, logo and entity footer', is_gating: false, owner_team: 'PMO', action: 'link' },
+      { key: 'mailing-lists', title: 'Mailing lists', is_gating: false, owner_team: 'PMO', action: 'provisionable' },
+      { key: 'chat-workspace', title: 'Chat workspace (Slack)', is_gating: false, owner_team: 'IT', action: 'provisionable' },
       {
         key: 'insights-onboarding',
         title: 'LFX Insights onboarding and project lead access',
         is_gating: false,
         owner_team: 'PMO',
         action: 'request',
-        status_only: false,
       },
       {
         key: 'asset-transfers',
@@ -130,18 +122,16 @@ const SEED_SECTIONS: SeedSection[] = [
         is_gating: false,
         owner_team: 'PMO',
         action: 'manual',
-        status_only: false,
       },
-      { key: 'tsc-formed', title: 'TSC formed and kickoff scheduled', is_gating: false, owner_team: 'PMO', action: 'provisionable', status_only: false },
-      { key: 'member-join-page', title: 'Member join page', is_gating: false, owner_team: 'Product', action: 'provisionable', status_only: false },
-      { key: 'launch-communications', title: 'Launch communications', is_gating: false, owner_team: 'Marketing', action: 'link', status_only: false },
+      { key: 'tsc-formed', title: 'TSC formed and kickoff scheduled', is_gating: false, owner_team: 'PMO', action: 'provisionable' },
+      { key: 'member-join-page', title: 'Member join page', is_gating: false, owner_team: 'Product', action: 'provisionable' },
+      { key: 'launch-communications', title: 'Launch communications', is_gating: false, owner_team: 'Marketing', action: 'link' },
       {
         key: 'formation-sets-active',
         title: 'Formation sets stage to Active',
         is_gating: false,
         owner_team: 'Formation',
         action: 'status_only',
-        status_only: true,
       },
     ],
   },
@@ -212,7 +202,7 @@ export function generateMockFormation(input: GenerateFormationInput): { formatio
 
   const items: FormationItem[] = flatItems.map(({ section, item }, index) => {
     const seed = `${input.projectUid}:${item.key}`;
-    const status: FormationItemStatus = item.status_only ? deriveItemStatus(seed, index, total) : deriveItemStatus(seed, index, total);
+    const status: FormationItemStatus = deriveItemStatus(seed, index, total);
     const owner = pickFromPool(SYNTHETIC_STAFF, `${seed}:owner`);
 
     return {
@@ -227,13 +217,14 @@ export function generateMockFormation(input: GenerateFormationInput): { formatio
       owner_team: item.owner_team,
       owner,
       due_date: null,
-      action: item.status_only ? 'status_only' : item.action,
-      action_href: item.action === 'link' || item.status_only ? '#' : null,
+      action: item.action,
+      action_href: item.action === 'link' || item.action === 'status_only' ? '#' : null,
       detail: null,
       notes: null,
       links: [],
       sub_items: [],
-      skip_reason: status === 'skipped' ? 'Skipped in fixture seed' : null,
+      // deriveItemStatus never returns 'skipped' for a freshly generated item — only skipFormationItem sets it, after generation.
+      skip_reason: null,
       // Overwritten by FormationItemAccessService.canComplete before the response leaves formation.service.ts.
       can_complete: false,
       created_at: new Date(0).toISOString(),
@@ -429,60 +420,7 @@ export const STATIC_QUEUE_FORMATIONS: Formation[] = [
   },
 ];
 
-// ---- In-memory write store — fixture-only, deliberately not Valkey/durable-cache-backed (see
-// `formation-backend.helper.ts`). Seeded lazily on first read per key.
-
-const itemStore = new Map<string, FormationItem>();
-const formationStore = new Map<string, Formation>();
-const activityStore = new Map<string, FormationActivity[]>();
-
-export function seedFormation(formation: Formation, items: FormationItem[]): void {
-  if (!formationStore.has(formation.uid)) {
-    formationStore.set(formation.uid, formation);
-  }
-  for (const item of items) {
-    if (!itemStore.has(item.uid)) {
-      itemStore.set(item.uid, item);
-    }
-  }
-}
-
-export function getStoredFormation(uid: string): Formation | undefined {
-  return formationStore.get(uid);
-}
-
-export function getStoredItem(uid: string): FormationItem | undefined {
-  return itemStore.get(uid);
-}
-
-export function getStoredItemsForFormation(formationUid: string): FormationItem[] {
-  return [...itemStore.values()].filter((item) => item.formation_uid === formationUid);
-}
-
-export function putStoredItem(item: FormationItem): void {
-  itemStore.set(item.uid, item);
-}
-
-export function putStoredFormation(formation: Formation): void {
-  formationStore.set(formation.uid, formation);
-}
-
-export function appendActivity(activity: FormationActivity): void {
-  const existing = activityStore.get(activity.formation_uid) ?? [];
-  activityStore.set(activity.formation_uid, [activity, ...existing]);
-}
-
-export function getActivityForFormation(formationUid: string): FormationActivity[] {
-  return activityStore.get(formationUid) ?? [];
-}
-
-export function getActivityForItem(formationUid: string, itemUid: string): FormationActivity[] {
-  return getActivityForFormation(formationUid).filter((activity) => activity.formation_item_uid === itemUid);
-}
-
-let activityCounter = 0;
-
-export function nextActivityUid(): string {
-  activityCounter += 1;
-  return `formation-activity:${Date.now()}:${activityCounter}`;
-}
+// The write store (seedFormation/getStoredFormation/putStoredItem/appendActivity/etc.) lives in
+// `formation-store.service.ts`, not here — this file stays pure generators, matching every other
+// file in `helpers/` (see `docs/architecture/backend/server-helpers.md`: "Keep helpers pure — no
+// shared mutable state").

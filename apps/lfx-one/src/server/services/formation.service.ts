@@ -12,11 +12,13 @@ import type {
 import { FORMATION_QUEUE_SUB_STAGES } from '@lfx-one/shared/constants';
 import { Request } from 'express';
 
-import { ResourceNotFoundError, ServiceValidationError } from '../errors';
+import { AuthorizationError, ResourceNotFoundError, ServiceValidationError } from '../errors';
 import { isFormationServiceLive } from '../helpers/formation-backend.helper';
+import { generateMockFormation, SEEDED_FORMATION_TEMPLATE, STATIC_QUEUE_FORMATIONS } from '../helpers/formation-fixture.helper';
+import { getEffectiveUsername } from '../utils/auth-helper';
+import { formationItemAccessService } from './formation-item-access.service';
 import {
   appendActivity,
-  generateMockFormation,
   getActivityForItem,
   getStoredFormation,
   getStoredItem,
@@ -25,11 +27,7 @@ import {
   putStoredFormation,
   putStoredItem,
   seedFormation,
-  SEEDED_FORMATION_TEMPLATE,
-  STATIC_QUEUE_FORMATIONS,
-} from '../helpers/formation-fixture.helper';
-import { getEffectiveEmail, getEffectiveUsername } from '../utils/auth-helper';
-import { formationItemAccessService } from './formation-item-access.service';
+} from './formation-store.service';
 import { logger } from './logger.service';
 import { ProjectService } from './project.service';
 
@@ -82,11 +80,18 @@ export class FormationService {
     throw new ResourceNotFoundError('Formation', projectSlug, { operation: 'get_project_formation', service: 'formation_service', path: req.path });
   }
 
+  /**
+   * Every `/formation-items/:uid` caller goes through this, which is the sole enforcement point
+   * for per-item project visibility (fixes a real gap: the fixture item store is a flat, guessable-uid
+   * lookup with no access check of its own — see `assertItemProjectAccess`). Do not add a new
+   * `/formation-items/:uid` code path that resolves an item any other way.
+   */
   public async getFormationItemOrThrow(req: Request, itemUid: string): Promise<FormationItem> {
     const item = getStoredItem(itemUid);
     if (!item) {
       throw new ResourceNotFoundError('FormationItem', itemUid, { operation: 'get_formation_item', service: 'formation_service', path: req.path });
     }
+    await this.assertItemProjectAccess(req, item);
     return item;
   }
 
@@ -98,6 +103,7 @@ export class FormationService {
 
   public async completeFormationItem(req: Request, itemUid: string, notes?: string): Promise<FormationItem> {
     const item = await this.getFormationItemOrThrow(req, itemUid);
+    await this.assertCanComplete(req, item, 'complete_formation_item');
     const updated: FormationItem = { ...item, status: 'done', skip_reason: null, notes: notes ?? item.notes, updated_at: new Date().toISOString() };
     putStoredItem(updated);
     this.recordActivity(req, updated, 'item_completed', `marked "${updated.title}" done`);
@@ -117,6 +123,7 @@ export class FormationService {
     }
 
     const item = await this.getFormationItemOrThrow(req, itemUid);
+    await this.assertCanComplete(req, item, 'skip_formation_item');
     const updated: FormationItem = { ...item, status: 'skipped', skip_reason: reason, updated_at: new Date().toISOString() };
     putStoredItem(updated);
     this.recordActivity(req, updated, 'item_skipped', `skipped "${updated.title}"`, { skip_reason: reason });
@@ -132,6 +139,9 @@ export class FormationService {
    */
   public async requestFormationItem(req: Request, itemUid: string): Promise<FormationItem> {
     const item = await this.getFormationItemOrThrow(req, itemUid);
+    // Same gate as complete/skip: `request` also changes `status`, so a gating item's status must
+    // not be movable through this action by a caller `complete`/`skip` would deny.
+    await this.assertCanComplete(req, item, 'request_formation_item');
     const updated: FormationItem = { ...item, status: 'waiting_on_partner', updated_at: new Date().toISOString() };
     putStoredItem(updated);
     this.recordActivity(req, updated, 'item_requested', `requested "${updated.title}"`);
@@ -140,11 +150,45 @@ export class FormationService {
     return this.enrichSingle(req, updated);
   }
 
+  /**
+   * Notes/assignee/due-date are general drawer editors, not gate_writer-restricted — the ticket
+   * scopes `gate_writer` to completing/skipping a *gating* item specifically, not to editing its
+   * metadata. No `assertCanComplete` call here by design.
+   */
   public async updateFormationItem(
     req: Request,
     itemUid: string,
     patch: { notes?: string; owner_username?: string; due_date?: string | null }
   ): Promise<FormationItem> {
+    if (patch.notes !== undefined && typeof patch.notes !== 'string') {
+      throw ServiceValidationError.forField('notes', 'Notes must be a string', {
+        operation: 'update_formation_item',
+        service: 'formation_service',
+        path: req.path,
+      });
+    }
+    if (patch.notes !== undefined && patch.notes.length > 2000) {
+      throw ServiceValidationError.forField('notes', 'Notes must be 2000 characters or fewer', {
+        operation: 'update_formation_item',
+        service: 'formation_service',
+        path: req.path,
+      });
+    }
+    if (patch.owner_username !== undefined && patch.owner_username !== null && typeof patch.owner_username !== 'string') {
+      throw ServiceValidationError.forField('owner_username', 'owner_username must be a string', {
+        operation: 'update_formation_item',
+        service: 'formation_service',
+        path: req.path,
+      });
+    }
+    if (patch.due_date !== undefined && patch.due_date !== null && Number.isNaN(Date.parse(patch.due_date))) {
+      throw ServiceValidationError.forField('due_date', 'due_date must be a valid ISO date or null', {
+        operation: 'update_formation_item',
+        service: 'formation_service',
+        path: req.path,
+      });
+    }
+
     const item = await this.getFormationItemOrThrow(req, itemUid);
     const updated: FormationItem = { ...item, updated_at: new Date().toISOString() };
 
@@ -152,8 +196,9 @@ export class FormationService {
       updated.notes = patch.notes;
       this.recordActivity(req, updated, 'note_added', 'updated notes');
     }
-    if (patch.owner_username !== undefined) {
-      updated.owner = patch.owner_username ? { username: patch.owner_username, name: patch.owner_username } : null;
+    const nextOwnerUsername = patch.owner_username || null;
+    if (patch.owner_username !== undefined && nextOwnerUsername !== (item.owner?.username ?? null)) {
+      updated.owner = nextOwnerUsername ? { username: nextOwnerUsername, name: nextOwnerUsername } : null;
       this.recordActivity(req, updated, 'assignee_changed', 'changed the assignee');
     }
     if (patch.due_date !== undefined && patch.due_date !== item.due_date) {
@@ -170,8 +215,10 @@ export class FormationService {
     logger.debug(req, 'get_formations_queue', 'Fetching Formations queue', { subStage, search });
 
     // TODO(#1957): swap for a real query-service read once lfx-v2-formation-service ships;
-    // STATIC_QUEUE_FORMATIONS's shape already matches Formation[].
-    let rows = STATIC_QUEUE_FORMATIONS;
+    // STATIC_QUEUE_FORMATIONS's shape already matches Formation[]. Each row is read through the
+    // write store first — a prior Accept/Decline on this row must be reflected here, not just on
+    // its own response (declineFormation writes via putStoredFormation).
+    let rows = STATIC_QUEUE_FORMATIONS.map((row) => getStoredFormation(row.uid) ?? row);
     if (subStage) {
       rows = rows.filter((row) => row.sub_stage === subStage);
     }
@@ -238,19 +285,20 @@ export class FormationService {
   }
 
   private buildQueueTiles(req: Request): FormationsQueueResponse['tiles'] {
-    const rows = STATIC_QUEUE_FORMATIONS;
+    const rows = STATIC_QUEUE_FORMATIONS.map((row) => getStoredFormation(row.uid) ?? row);
     const bySubStage = Object.fromEntries(FORMATION_QUEUE_SUB_STAGES.map((stage) => [stage, 0])) as Record<FormationSubStage, number>;
     for (const row of rows) {
       bySubStage[row.sub_stage] = (bySubStage[row.sub_stage] ?? 0) + 1;
     }
 
-    const email = getEffectiveEmail(req);
+    // `lead`/`proposer` carry usernames, not emails — compare against the caller's username, not their email.
+    const username = getEffectiveUsername(req);
     return {
       ...bySubStage,
       total: rows.length,
       foundations: rows.filter((row) => row.entity_type === 'foundation').length,
       subprojects: rows.filter((row) => row.entity_type === 'subproject').length,
-      mine: rows.filter((row) => row.lead?.username === email || row.proposer?.username === email).length,
+      mine: rows.filter((row) => row.lead?.username === username || row.proposer?.username === username).length,
     };
   }
 
@@ -291,6 +339,39 @@ export class FormationService {
       blocking_item_title: openGatingItems[0]?.title ?? null,
       updated_at: new Date().toISOString(),
     });
+  }
+
+  /**
+   * The formation-item fixture store is a flat, guessable-uid lookup (`formation-item:<project
+   * uid>:<template key>`) with no access check of its own — resolving the item's parent project
+   * through the user's own bearer token is the actual enforcement point, mirroring the same
+   * upstream visibility check `GET /api/projects/:slug` already relies on. A project this caller
+   * can't see throws here (404/403 from the upstream project service) before any item data or
+   * mutation is returned.
+   */
+  private async assertItemProjectAccess(req: Request, item: Pick<FormationItem, 'formation_uid'>): Promise<void> {
+    const formation = getStoredFormation(item.formation_uid) ?? STATIC_QUEUE_FORMATIONS.find((row) => row.uid === item.formation_uid);
+    if (!formation) {
+      throw new ResourceNotFoundError('Formation', item.formation_uid, {
+        operation: 'assert_item_project_access',
+        service: 'formation_service',
+        path: req.path,
+      });
+    }
+    await this.projectService.getProjectById(req, formation.parent_project_uid, false);
+  }
+
+  /** Shared gate for every action that changes a gating item's status (complete/skip/request) — see `FormationItemAccessService.canComplete`. */
+  private async assertCanComplete(req: Request, item: FormationItem, operation: string): Promise<void> {
+    const canComplete = await formationItemAccessService.canComplete(req, item);
+    if (!canComplete) {
+      throw new AuthorizationError('gate_writer access required for this item', {
+        operation,
+        service: 'authorization',
+        path: req.path,
+        code: 'GATE_WRITER_REQUIRED',
+      });
+    }
   }
 
   private async enrichItems(req: Request, items: FormationItem[]): Promise<FormationItem[]> {
