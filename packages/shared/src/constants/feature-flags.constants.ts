@@ -69,6 +69,20 @@ export const ORG_LENS_PRIVATE_RELEASE_FLAG = 'org-lens-private-release';
 export const MARKETING_OPS_FGA_ENABLED_FLAG = 'marketing-ops-fga-enabled';
 
 /**
+ * Dark-launch gate for the Formation checklist section and the Formations queue (GH-1958,
+ * epic #1965) — also gates the Formation badge/card/nav item built by #1955. Default false:
+ * staged targeting (named users, then LF Staff, then all), same rule as
+ * MARKETING_OPS_FGA_ENABLED_FLAG — never "all users" in one step. The checklist and queue are
+ * built against fixtures ahead of the real backend (`lfx-v2-formation-service`, #1957); this flag
+ * is what keeps that fixture-backed UI dark until the pieces are ready together.
+ *
+ * **UI-only** — evaluated through `FeatureFlagService.getBooleanFlag`. The BFF's formation
+ * endpoints have no independent server-side kill switch (see `formation-backend.helper.ts`) since
+ * every write they perform is fixture-only and never reaches a real record.
+ */
+export const FORMATION_ENABLED_FLAG = 'formation-enabled';
+
+/**
  * `localStorage` key holding a `Record<string, boolean>` of locally-forced flag values, read by
  * `FeatureFlagService.getBooleanFlag` in **non-production builds only**.
  *

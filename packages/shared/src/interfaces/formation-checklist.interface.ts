@@ -1,0 +1,22 @@
+// Copyright The Linux Foundation and each contributor to LFX.
+// SPDX-License-Identifier: MIT
+
+import type { FormationItemStatus } from './formation.interface';
+
+/**
+ * Client-derived stand-in for the readiness strip. TODO(#1957): once the backend returns a
+ * pre-computed `readiness_summary` on `FormationChecklistResponse`, delete
+ * `deriveFormationReadinessSummary`'s call site and consume that field directly — every consumer
+ * is already typed against this interface, so the swap only touches `formation-checklist.utils.ts`
+ * and its one call site, never the components that read `FormationReadinessSummary`.
+ */
+export interface FormationReadinessSummary {
+  /** One entry per checklist item, in template order — the literal per-item segment bar (not a 2-color fill/total bar). */
+  segments: FormationItemStatus[];
+  totalItems: number;
+  counts: Record<FormationItemStatus, number>;
+  /** True once every gating item is `done` (mirrors `Formation.is_activating`). */
+  isActivating: boolean;
+  openGatingItems: number;
+  totalGatingItems: number;
+}

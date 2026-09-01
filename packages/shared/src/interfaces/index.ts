@@ -333,3 +333,7 @@ export * from './social-listening.interface';
 
 // Per-user preference store + BFF wire contracts (LFXV2-3002 Block 0)
 export * from './user-preference.interface';
+
+// Formation checklist + Formations queue interfaces (GH-1958)
+export * from './formation.interface';
+export * from './formation-checklist.interface';
