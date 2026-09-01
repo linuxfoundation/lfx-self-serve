@@ -4,9 +4,9 @@
 import { ChangeDetectionStrategy, Component, computed, inject, Signal, signal } from '@angular/core';
 import { takeUntilDestroyed } from '@angular/core/rxjs-interop';
 import { FormControl, FormGroup, ReactiveFormsModule } from '@angular/forms';
-import { ALREADY_SIGNED_CLA_LABEL, CLA_GROUP_SEARCH_DEBOUNCE_MS, CLA_GROUP_SEARCH_MIN_CHARS } from '@lfx-one/shared/constants';
+import { CLA_GROUP_SEARCH_DEBOUNCE_MS, CLA_GROUP_SEARCH_MIN_CHARS } from '@lfx-one/shared/constants';
 import type { ClaGroupOptionView, ClaGroupSearchResponse, ClaGroupSelectDialogData, MyClaAgreement } from '@lfx-one/shared/interfaces';
-import { alreadySignedClaTooltip, coveringAgreementForGroup, toClaGroupOptionView } from '@lfx-one/shared/utils';
+import { alreadySignedAgreementForGroup, alreadySignedChipLabel, alreadySignedGroupTooltip, toClaGroupOptionView } from '@lfx-one/shared/utils';
 import { MyClasService } from '@services/my-clas.service';
 import { DynamicDialogConfig, DynamicDialogRef } from 'primeng/dynamicdialog';
 import { TooltipModule } from 'primeng/tooltip';
@@ -14,6 +14,14 @@ import { catchError, debounceTime, map, of, Subject, switchMap } from 'rxjs';
 
 import { ButtonComponent } from '@components/button/button.component';
 import { InputTextComponent } from '@components/input-text/input-text.component';
+
+/** What a search result the contributor already holds a CLA for is annotated with. */
+interface AlreadySignedNote {
+  /** Inline tag, naming the identity that signed it. */
+  chip: string;
+  /** Fuller sentence: which kind, whose employer on an ECLA, and that another identity can sign. */
+  tooltip: string;
+}
 
 /**
  * "Sign a CLA" picker, opened via DialogService (#1251), following the approved M2 prototype:
@@ -27,8 +35,10 @@ import { InputTextComponent } from '@components/input-text/input-text.component'
  * resolves the hand-off URL. Searching happens here and upstream rather than by filtering a
  * fetched list, so #1250 can put the real four-source search behind the same route untouched.
  *
- * A group the contributor already holds a CLA for stays in the list, grayed out, with a
- * tooltip that says so (#1914). Hiding it would look like the project does not exist.
+ * A group the contributor already holds a CLA for is tagged with the identity that signed it,
+ * and stays selectable (#1914). It has to: one contributor can hold several identities, and an
+ * ICLA signed under one of them says nothing about whether another can still sign. The refusal
+ * therefore belongs to the identity step, which grays out the identity already on an agreement.
  */
 @Component({
   selector: 'lfx-cla-group-select',
@@ -41,12 +51,9 @@ export class ClaGroupSelectComponent {
   private readonly myClasService = inject(MyClasService);
   private readonly config = inject<DynamicDialogConfig<ClaGroupSelectDialogData>>(DynamicDialogConfig, { optional: true });
 
-  /** Chip on a grayed-out row. The tooltip sentence is computed per option. */
-  protected readonly alreadySignedLabel = ALREADY_SIGNED_CLA_LABEL;
-
   /**
    * The CLAs tab's loaded list. Optional so a test that never opens this through DialogService
-   * still constructs; no list means nothing is grayed out.
+   * still constructs; no list means nothing is tagged.
    */
   private readonly agreements: readonly MyClaAgreement[] = this.config?.data?.agreements ?? [];
 
@@ -73,6 +80,13 @@ export class ClaGroupSelectComponent {
    * going" from "that term matched nothing".
    */
   protected readonly queryBand: Signal<'empty' | 'short' | 'searchable'> = this.initQueryBand();
+
+  /**
+   * Tag and tooltip per CLA group the contributor already holds, keyed by group id (#1914).
+   * Informational only — every row stays selectable, because another of their identities may
+   * still be able to sign it. The identity step is what refuses.
+   */
+  protected readonly alreadySignedByGroupId: Signal<Map<string, AlreadySignedNote>> = this.initAlreadySignedByGroupId();
 
   private readonly search$ = new Subject<string>();
 
@@ -177,7 +191,7 @@ export class ClaGroupSelectComponent {
         break;
       case 'Enter': {
         const highlighted = options[this.highlightedIndex()];
-        if (!highlighted || this.alreadySignedTooltip(highlighted)) return;
+        if (!highlighted) return;
         event.preventDefault();
         this.onSelect(highlighted);
         break;
@@ -201,18 +215,7 @@ export class ClaGroupSelectComponent {
     this.pushSearch(this.searchForm.controls.query.value ?? '');
   }
 
-  /**
-   * Tooltip on a result the contributor already holds a CLA for. Undefined means the
-   * row is selectable. Kept as a method rather than precomputed onto the view model so
-   * a search-result update cannot drop the coverage the parent already loaded.
-   */
-  protected alreadySignedTooltip(option: ClaGroupOptionView): string | undefined {
-    const covering = coveringAgreementForGroup(this.agreements, option.claGroupId);
-    return covering ? alreadySignedClaTooltip(covering) : undefined;
-  }
-
   protected onSelect(option: ClaGroupOptionView): void {
-    if (this.alreadySignedTooltip(option)) return;
     this.selected.set(option);
     this.suppressNextEmit = true;
     const display = option.secondaryName ? `${option.primaryName} — ${option.secondaryName}` : option.primaryName;
@@ -241,6 +244,19 @@ export class ClaGroupSelectComponent {
     this.options.set([]);
     this.truncated.set(false);
     this.highlightedIndex.set(-1);
+  }
+
+  private initAlreadySignedByGroupId(): Signal<Map<string, AlreadySignedNote>> {
+    return computed(() => {
+      const notes = new Map<string, AlreadySignedNote>();
+      for (const option of this.options()) {
+        const held = alreadySignedAgreementForGroup(this.agreements, option.claGroupId);
+        if (held) {
+          notes.set(option.claGroupId, { chip: alreadySignedChipLabel(held), tooltip: alreadySignedGroupTooltip(held) });
+        }
+      }
+      return notes;
+    });
   }
 
   private initQueryBand(): Signal<'empty' | 'short' | 'searchable'> {

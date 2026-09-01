@@ -2,10 +2,12 @@
 // SPDX-License-Identifier: MIT
 
 import { ComponentFixture, TestBed } from '@angular/core/testing';
+import { By } from '@angular/platform-browser';
 import { provideNoopAnimations } from '@angular/platform-browser/animations';
 import { provideRouter } from '@angular/router';
-import type { GithubAccountOption, SignIdentityDialogData } from '@lfx-one/shared/interfaces';
+import type { GithubAccountOption, MyClaAgreement, SignIdentityDialogData } from '@lfx-one/shared/interfaces';
 import { DynamicDialogConfig, DynamicDialogRef } from 'primeng/dynamicdialog';
+import { Tooltip } from 'primeng/tooltip';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 
 import { SignIdentitySelectComponent } from './sign-identity-select.component';
@@ -276,5 +278,66 @@ describe('SignIdentitySelectComponent', () => {
     (fixture.componentInstance as any).onContinue();
 
     expect(close).not.toHaveBeenCalled();
+  });
+
+  // --- Identities that already signed this CLA group (#1914) -----------------
+
+  describe('already signed', () => {
+    function signedAs(signedAs: string, signedVia: 'github' | 'gerrit' = 'github'): MyClaAgreement[] {
+      return [{ id: 's1', kind: 'ICLA', claGroupName: 'Venus', claGroupId: 'cg-1', signedOn: '2022-01-01', status: 'valid', pdfAvailable: true, signedVia, signedAs }];
+    }
+
+    const REASON = 'You already have an ICLA for this CLA group signed with this account. Choose another identity to sign again.';
+
+    it('grays out the account that already signed, and only that account', async () => {
+      await setup({ claGroupAgreements: signedAs('octocat') });
+
+      expect(query('sign-identity-select-github-12345')?.getAttribute('aria-disabled')).toBe('true');
+      expect(query('sign-identity-select-github-67890')?.getAttribute('aria-disabled')).toBe('false');
+    });
+
+    it('says why, in the tooltip and to assistive tech', async () => {
+      await setup({ claGroupAgreements: signedAs('octocat') });
+
+      const card = fixture.debugElement.query(By.css('[data-testid="sign-identity-select-github-12345"]'));
+      expect(card.parent?.injector.get(Tooltip, null)?.content).toBe(REASON);
+      // A tooltip is hover-only, so the reason is repeated where a screen reader will reach it —
+      // after the handle, so which account is refused stays clear.
+      expect(card.nativeElement.textContent).toContain('octocat');
+      expect(card.nativeElement.textContent).toContain(REASON);
+    });
+
+    it('refuses to submit it even if the card is reached another way', async () => {
+      await setup({ claGroupAgreements: signedAs('octocat') });
+
+      await choose('sign-identity-select-github-12345');
+      (fixture.componentInstance as any).onContinue();
+
+      expect(close).not.toHaveBeenCalled();
+    });
+
+    it('still lets them sign with their other account', async () => {
+      await setup({ claGroupAgreements: signedAs('octocat') });
+
+      await choose('sign-identity-select-github-67890');
+      (fixture.componentInstance as any).onContinue();
+
+      expect(close).toHaveBeenCalledWith({ kind: 'github', githubId: '67890' });
+    });
+
+    it('grays out the Gerrit card when the group was signed under the LF identity', async () => {
+      await setup({ variant: 'github-or-gerrit', gerritUsername: GERRIT_USER, claGroupAgreements: signedAs('jdoe', 'gerrit') });
+
+      expect(query('sign-identity-select-gerrit')?.getAttribute('aria-disabled')).toBe('true');
+      // A Gerrit signature says nothing about their GitHub accounts.
+      expect(query('sign-identity-select-github-12345')?.getAttribute('aria-disabled')).toBe('false');
+    });
+
+    it('leaves every card selectable when the agreement is on another CLA group', async () => {
+      await setup({ claGroupAgreements: [] });
+
+      expect(query('sign-identity-select-github-12345')?.getAttribute('aria-disabled')).toBe('false');
+      expect(query('sign-identity-select-github-67890')?.getAttribute('aria-disabled')).toBe('false');
+    });
   });
 });

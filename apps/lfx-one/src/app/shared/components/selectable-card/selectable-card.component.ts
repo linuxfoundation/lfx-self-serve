@@ -19,6 +19,14 @@ export class SelectableCardComponent {
   public readonly value = input<string>();
   public readonly label = input.required<string>();
   public readonly toggle = input<boolean>(false);
+  /** Disables this card alone, leaving the rest of the group selectable. */
+  public readonly disabled = input<boolean>(false);
+  /**
+   * Why this card is disabled, for assistive tech. Rendered inside the card and visually hidden,
+   * so it is announced after the label rather than instead of it, and a reason that only exists
+   * in a hover tooltip is not lost to anyone who cannot hover.
+   */
+  public readonly assistiveNote = input<string>('');
   public readonly styleClass = input<string>('');
   public readonly testId = input<string>('');
 
@@ -85,6 +93,8 @@ export class SelectableCardComponent {
 
   private initIsDisabled(): Signal<boolean> {
     return computed(() => {
+      if (this.disabled()) return true;
+
       const formGroup = this.form();
       const controlName = this.control();
       return formGroup.get(controlName)?.disabled ?? false;

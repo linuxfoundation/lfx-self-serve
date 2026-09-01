@@ -251,6 +251,11 @@ export interface GithubAccountOption {
 export interface GithubAccountChoice extends GithubAccountOption {
   /** `githubUsername`, or a numbered fallback when the handle is blank. */
   label: string;
+  /**
+   * Why this account cannot sign the chosen CLA group, when it already has (#1914). Present
+   * ⇒ the card is grayed out and carries this as its tooltip.
+   */
+  alreadySignedTooltip?: string;
 }
 
 /**
@@ -282,6 +287,13 @@ export interface SignIdentityDialogData {
    * never submitted — see the step's own class doc before changing it.
    */
   gerritUsername?: string;
+  /**
+   * What the contributor already holds for the CLA group they picked, so the step can gray out
+   * the identity that signed it (#1914). This is where the already-signed block lives: one
+   * contributor can hold several identities, so the group itself stays selectable and only the
+   * identity already on an agreement is refused.
+   */
+  claGroupAgreements?: MyClaAgreement[];
 }
 
 /**

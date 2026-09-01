@@ -34,7 +34,7 @@ import { MyClasService } from '@services/my-clas.service';
 import { UserService } from '@services/user.service';
 import { MenuItem, MessageService } from 'primeng/api';
 import { DialogService } from 'primeng/dynamicdialog';
-import { EMPTY, Observable, of, Subject, throwError } from 'rxjs';
+import { EMPTY, NEVER, Observable, of, Subject, throwError } from 'rxjs';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 
 import { ClaGroupSelectComponent } from './cla-group-select.component';
@@ -566,6 +566,8 @@ describe('ProfileClasComponent — Sign CLA hand-off and identity selection (#12
       viewerUsername?: string | null;
       /** Loaded My CLAs list handed to the group picker (#1914). */
       agreements?: MyClaAgreement[];
+      /** Leaves the My CLAs request unresolved, so the loading state is assertable (#1914). */
+      pending?: boolean;
     } = {}
   ): Promise<ComponentFixture<ProfileClasComponent>> {
     location = { href: HOME, origin: ORIGIN };
@@ -632,7 +634,7 @@ describe('ProfileClasComponent — Sign CLA hand-off and identity selection (#12
         {
           provide: MyClasService,
           useValue: {
-            getMyClas: vi.fn(() => of(options.agreements ? { ...EMPTY_CLAS, agreements: options.agreements } : EMPTY_CLAS)),
+            getMyClas: vi.fn(() => (options.pending ? NEVER : of(options.agreements ? { ...EMPTY_CLAS, agreements: options.agreements } : EMPTY_CLAS))),
             getPdfUrl: vi.fn(),
             getClaGroupOptions: vi.fn(() => of({ ...SEARCH_RESULTS, results: [selectedGroup] })),
             getGithubAccounts,
@@ -747,8 +749,8 @@ describe('ProfileClasComponent — Sign CLA hand-off and identity selection (#12
     expect(fixture.nativeElement.querySelector('p-dialog')).toBeNull();
   });
 
-  it('hands the loaded agreements to the picker so it can gray out already-signed groups', async () => {
-    const covering: MyClaAgreement = {
+  it('hands the loaded agreements to the picker so it can tag already-signed groups', async () => {
+    const alreadyHeld: MyClaAgreement = {
       id: 's1',
       kind: 'ICLA',
       claGroupName: 'Venus',
@@ -757,31 +759,50 @@ describe('ProfileClasComponent — Sign CLA hand-off and identity selection (#12
       status: 'valid',
       pdfAvailable: true,
     };
-    const fixture = await setup({ agreements: [covering], dismissGroup: 'hold' });
+    const fixture = await setup({ agreements: [alreadyHeld], dismissGroup: 'hold' });
 
     await sign(fixture);
 
     const groupOpen = openedWith.find((entry) => entry.component === ClaGroupSelectComponent);
-    expect(groupOpen?.config.data).toEqual({ agreements: [covering] });
+    expect(groupOpen?.config.data).toEqual({ agreements: [alreadyHeld] });
   });
 
-  it('does not start a hand-off when the picker closes with an already-signed group', async () => {
-    const covering: MyClaAgreement = {
+  it('carries what they already hold for the chosen group into the identity step (#1914)', async () => {
+    const alreadyHeld: MyClaAgreement = {
       id: 's1',
       kind: 'ICLA',
       claGroupName: 'Venus',
-      claGroupId: 'cg-1',
+      claGroupId: CLA_GROUP.claGroupId,
       signedOn: '2022-01-01',
       status: 'valid',
       pdfAvailable: true,
+      signedVia: 'github',
+      signedAs: 'jellis',
     };
-    const fixture = await setup({ agreements: [covering] });
+    const otherGroup: MyClaAgreement = { ...alreadyHeld, id: 's2', claGroupId: 'cg-other' };
+    const fixture = await setup({ agreements: [alreadyHeld, otherGroup] });
 
     await sign(fixture);
 
-    expect(getGithubAccounts).not.toHaveBeenCalled();
-    expect(prepareSign).not.toHaveBeenCalled();
-    expect(location.href).toBe(HOME);
+    // The group they picked, not their whole list: the step grays out identities, and an
+    // agreement on a different CLA group says nothing about this one.
+    expect(identityStepData()?.claGroupAgreements).toEqual([alreadyHeld]);
+  });
+
+  it('leaves the identity step nothing to gray out when the group is new to them', async () => {
+    const fixture = await setup({ agreements: [] });
+
+    await sign(fixture);
+
+    expect(identityStepData()?.claGroupAgreements).toBeUndefined();
+  });
+
+  it('does not open the picker until the CLA list has loaded', async () => {
+    const fixture = await setup({ pending: true });
+
+    await sign(fixture);
+
+    expect(open).not.toHaveBeenCalled();
   });
 
   it('does nothing when the contributor backs out of the project picker', async () => {

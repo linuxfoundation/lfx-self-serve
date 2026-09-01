@@ -20,10 +20,10 @@ import type {
   SignIdentityVariant,
 } from '@lfx-one/shared/interfaces';
 import {
+  alreadySignedAgreementsForGroup,
   claSignRoute,
   claStatusLabel,
   claStatusSeverity,
-  coveringAgreementForGroup,
   downloadFromUrl,
   gerritSignUrl,
   isMyClasEmpty,
@@ -139,6 +139,20 @@ export class ProfileClasComponent {
 
   // --- Sign CLA hand-off (#1251) -------------------------------------------
 
+  /**
+   * Also disabled while the list is still loading (#1914). Both dialogs read the loaded
+   * agreements — the picker to tag a group they already signed, the identity step to gray out
+   * the identity that signed it — and an empty list is indistinguishable from having signed
+   * nothing, so a click landing first would offer a signature they already hold.
+   */
+  protected readonly signDisabled = computed(() => this.impersonating() || this.loading());
+
+  protected readonly signDisabledReason = computed<string | undefined>(() => {
+    if (this.impersonating()) return 'This action is unavailable while impersonating another user';
+    if (this.loading()) return 'Available once your CLAs have loaded';
+    return undefined;
+  });
+
   protected retry(): void {
     this.refresh$.next();
   }
@@ -166,7 +180,7 @@ export class ProfileClasComponent {
     // `impersonating()` is re-checked here and not only on the button: the button is now rendered
     // rather than withheld, so a keyboard or programmatic activation can reach this method, and
     // opening the picker would walk the administrator to a prepare the server refuses.
-    if (!this.myClasM2Enabled() || this.impersonating() || this.starting() || this.signDialogOpen()) return;
+    if (!this.myClasM2Enabled() || this.signDisabled() || this.starting() || this.signDialogOpen()) return;
     this.signDialogOpen.set(true);
 
     const dialogRef = this.dialogService.open(ClaGroupSelectComponent, {
@@ -181,12 +195,6 @@ export class ProfileClasComponent {
     this.whenDialogSettles<ClaGroupOption>(dialogRef, (option) => {
       this.signDialogOpen.set(false);
       if (!option) {
-        this.starting.set(false);
-        return;
-      }
-      // The picker refuses a click on an already-signed row. This is the same check
-      // in case a close value arrives another way — a second ceremony must not start.
-      if (coveringAgreementForGroup(this.agreements(), option.claGroupId)) {
         this.starting.set(false);
         return;
       }
@@ -327,7 +335,17 @@ export class ProfileClasComponent {
     this.starting.set(false);
     this.signDialogOpen.set(true);
 
-    const data: SignIdentityDialogData = { variant: effectiveVariant, accounts, ...(gerritUsername ? { gerritUsername } : {}) };
+    // What they already hold for *this* group, so the step can gray out the identity that signed
+    // it. Passed as agreements rather than a precomputed verdict because only the step knows
+    // which identities it ended up offering.
+    const claGroupAgreements = alreadySignedAgreementsForGroup(this.agreements(), option.claGroupId);
+
+    const data: SignIdentityDialogData = {
+      variant: effectiveVariant,
+      accounts,
+      ...(gerritUsername ? { gerritUsername } : {}),
+      ...(claGroupAgreements.length > 0 ? { claGroupAgreements } : {}),
+    };
 
     const dialogRef = this.dialogService.open(SignIdentitySelectComponent, {
       header: SIGN_IDENTITY_COPY[effectiveVariant].header,

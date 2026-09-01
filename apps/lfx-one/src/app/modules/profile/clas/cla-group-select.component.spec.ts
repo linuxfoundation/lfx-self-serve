@@ -400,7 +400,7 @@ describe('ClaGroupSelectComponent', () => {
   });
 
   describe('already signed (#1914)', () => {
-    const covering: MyClaAgreement = {
+    const alreadyHeld: MyClaAgreement = {
       id: 's1',
       kind: 'ICLA',
       claGroupName: 'Venus ICLA',
@@ -423,7 +423,7 @@ describe('ClaGroupSelectComponent', () => {
           provideRouter([]),
           provideNoopAnimations(),
           { provide: DynamicDialogRef, useValue: { close } },
-          { provide: DynamicDialogConfig, useValue: { data: { agreements: [covering] } } },
+          { provide: DynamicDialogConfig, useValue: { data: { agreements: [alreadyHeld] } } },
           { provide: MyClasService, useValue: { getClaGroupOptions } },
         ],
       });
@@ -433,20 +433,21 @@ describe('ClaGroupSelectComponent', () => {
       await fixture.whenStable();
     });
 
-    it('grays out a group the contributor already holds a CLA for, with a tooltip that says so', async () => {
+    it('tags a group the contributor already holds a CLA for with the identity that signed it', async () => {
       await type('venus');
 
       const row = fixture.debugElement.query(By.css('[data-testid="cla-group-select-cg-1"]'));
-      expect(row.nativeElement.getAttribute('aria-disabled')).toBe('true');
-      expect(state('already-signed-cg-1')?.textContent?.trim()).toBe(ALREADY_SIGNED_CLA_LABEL);
-      expect(row.injector.get(Tooltip, null)?.content).toBe('You already have an ICLA for this CLA group. Signed as jellis (GitHub).');
+      expect(state('already-signed-cg-1')?.textContent?.trim()).toBe(`${ALREADY_SIGNED_CLA_LABEL} as jellis (GitHub)`);
+      expect(row.injector.get(Tooltip, null)?.content).toBe(
+        'You already have an ICLA for this CLA group. Signed as jellis (GitHub). You can still sign it with a different identity.'
+      );
     });
 
-    it('announces the reason alongside the project name rather than in place of it', async () => {
+    it('announces the note alongside the project name rather than in place of it', async () => {
       await type('venus');
 
       // An aria-label here would win over the visible text, leaving a screen reader to read
-      // every grayed row as the same sentence with no way to tell the projects apart.
+      // every tagged row as the same sentence with no way to tell the projects apart.
       const row = fixture.debugElement.query(By.css('[data-testid="cla-group-select-cg-1"]'));
       expect(row.nativeElement.getAttribute('aria-label')).toBeNull();
       expect(row.nativeElement.textContent).toContain(VENUS_VIEW.primaryName);
@@ -454,19 +455,18 @@ describe('ClaGroupSelectComponent', () => {
       const describedBy = row.nativeElement.getAttribute('aria-describedby');
       expect(describedBy).toBe('cla-group-already-signed-cg-1');
       expect(fixture.nativeElement.querySelector(`#${describedBy}`)?.textContent?.trim()).toBe(
-        'You already have an ICLA for this CLA group. Signed as jellis (GitHub).'
+        'You already have an ICLA for this CLA group. Signed as jellis (GitHub). You can still sign it with a different identity.'
       );
     });
 
-    it('does not select a grayed-out row on click or Enter', async () => {
+    it('still lets them select it, because another of their identities may be able to sign', async () => {
       await type('venus');
 
-      (fixture.componentInstance as any).onSelect(VENUS_VIEW);
-      expect((fixture.componentInstance as any).selected()).toBeNull();
+      const row = fixture.debugElement.query(By.css('[data-testid="cla-group-select-cg-1"]'));
+      expect(row.nativeElement.getAttribute('aria-disabled')).toBeNull();
 
-      (fixture.componentInstance as any).highlightedIndex.set(0);
-      (fixture.componentInstance as any).onKeydown(new KeyboardEvent('keydown', { key: 'Enter' }));
-      expect((fixture.componentInstance as any).selected()).toBeNull();
+      (fixture.componentInstance as any).onSelect(VENUS_VIEW);
+      expect((fixture.componentInstance as any).selected()).toEqual(VENUS_VIEW);
     });
   });
 });

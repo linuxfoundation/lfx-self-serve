@@ -6,6 +6,7 @@
 // an Angular component-test harness.
 
 import {
+  ALREADY_SIGNED_CLA_LABEL,
   CLA_GROUP_MATCH_TYPE_LABELS,
   CLA_GROUP_ORG_SOURCE_ICONS,
   CLA_GROUP_ORG_SOURCE_LABELS,
@@ -127,15 +128,20 @@ export function claStatusSeverity(status: ClaStatus): TagSeverity {
 export function signedAsLine(signedVia: ClaSignedVia | undefined, signedAs: string | undefined): string | undefined {
   const identity = signedAs?.trim();
   if (!identity) return undefined;
+  return `Signed as ${identityWithPlatform(signedVia, identity)}`;
+}
+
+/** `<identity> (GitHub)`, or the bare identity when the platform is absent or unrecognised. */
+function identityWithPlatform(signedVia: ClaSignedVia | undefined, identity: string): string {
   switch (signedVia) {
     case 'github':
-      return `Signed as ${identity} (GitHub)`;
+      return `${identity} (GitHub)`;
     case 'gitlab':
-      return `Signed as ${identity} (GitLab)`;
+      return `${identity} (GitLab)`;
     case 'gerrit':
-      return `Signed as ${identity} (Gerrit)`;
+      return `${identity} (Gerrit)`;
     default:
-      return `Signed as ${identity}`;
+      return identity;
   }
 }
 
@@ -225,7 +231,7 @@ export function gerritSignUrl(consoleBaseUrl: string, claGroupId: string, return
 }
 
 /**
- * Statuses that mean signing again cannot produce a new agreement for this group (#1914).
+ * Statuses that mean signing again with the same identity cannot produce a new agreement (#1914).
  *
  * `invalidated` is excluded: that signature no longer covers contributions, so the
  * contributor may need to sign again. `unknown` is included — we cannot tell they are
@@ -234,33 +240,85 @@ export function gerritSignUrl(consoleBaseUrl: string, claGroupId: string, return
 const ALREADY_SIGNED_CLA_STATUSES: ReadonlySet<ClaStatus> = new Set(['valid', 'needs_attention', 'revoked', 'unknown', 'superseded']);
 
 /**
- * The in-force agreement that already covers this CLA group, if any. First match wins;
+ * The agreement that makes this CLA group already-signed, if any. First match wins;
  * the My CLAs list is already newest-first.
  *
- * Grain is the group, not the identity. The picker has not asked which identity they
- * will sign as yet, and the product call is to gray the group out rather than let them
- * continue into a second ceremony.
+ * Already-signed is not the same as covered: `needs_attention` and `revoked` do not cover
+ * contributions, but signing again cannot restore them either.
+ *
+ * Group grain is for the **tag** on a search result, not for blocking. One contributor can
+ * hold several identities and sign the same group again under a different one, so the group
+ * stays selectable and it is the identity picker that blocks — see
+ * `alreadySignedAgreementForIdentity`.
  */
-export function coveringAgreementForGroup(agreements: readonly MyClaAgreement[], claGroupId: string): MyClaAgreement | undefined {
+export function alreadySignedAgreementForGroup(agreements: readonly MyClaAgreement[], claGroupId: string): MyClaAgreement | undefined {
   const id = claGroupId.trim();
   if (!id) return undefined;
   return agreements.find((agreement) => agreement.claGroupId === id && ALREADY_SIGNED_CLA_STATUSES.has(agreement.status));
 }
 
+/** Every agreement already held for this CLA group, across identities. */
+export function alreadySignedAgreementsForGroup(agreements: readonly MyClaAgreement[], claGroupId: string): MyClaAgreement[] {
+  const id = claGroupId.trim();
+  if (!id) return [];
+  return agreements.filter((agreement) => agreement.claGroupId === id && ALREADY_SIGNED_CLA_STATUSES.has(agreement.status));
+}
+
 /**
- * Tooltip on a grayed-out Sign a CLA result (#1914). Names the kind they already hold
- * and, when EasyCLA recorded it, the identity it was signed as.
+ * Tag on a Sign a CLA search result the contributor already holds a CLA for (#1914). Names the
+ * identity, because that is what tells them which of their accounts is already covered and
+ * therefore which one the next step will gray out.
  */
-export function alreadySignedClaTooltip(agreement: MyClaAgreement): string {
+export function alreadySignedChipLabel(agreement: MyClaAgreement): string {
+  const identity = agreement.signedAs?.trim();
+  if (!identity) return ALREADY_SIGNED_CLA_LABEL;
+  return `${ALREADY_SIGNED_CLA_LABEL} as ${identityWithPlatform(agreement.signedVia, identity)}`;
+}
+
+/**
+ * Tooltip on a tagged Sign a CLA result (#1914). Names the kind they already hold, the employer
+ * covering an ECLA, and — since the row is still selectable — that another identity can sign it.
+ */
+export function alreadySignedGroupTooltip(agreement: MyClaAgreement): string {
   const kind = agreement.kind === 'ECLA' ? 'an ECLA' : 'an ICLA';
+  const company = agreement.kind === 'ECLA' ? agreement.companyName?.trim() : undefined;
+  const held = company ? `You already have ${kind} for this CLA group, covered by ${company}.` : `You already have ${kind} for this CLA group.`;
   const signed = signedAsLine(agreement.signedVia, agreement.signedAs);
-  if (signed) {
-    return `You already have ${kind} for this CLA group. ${signed}.`;
-  }
-  if (agreement.kind === 'ECLA' && agreement.companyName?.trim()) {
-    return `You already have ${kind} for this CLA group, covered by ${agreement.companyName.trim()}.`;
-  }
-  return `You already have ${kind} for this CLA group.`;
+
+  return `${signed ? `${held} ${signed}.` : held} You can still sign it with a different identity.`;
+}
+
+/** Which identity a card in the sign-identity step offers. */
+export type SignIdentityRef = { platform: 'github'; username: string } | { platform: 'gerrit' };
+
+/**
+ * The agreement this one identity already signed for the group, if any — the check that
+ * actually blocks (#1914).
+ *
+ * Matching is on the recorded **handle**, not the GitHub account number, because the My CLAs
+ * list carries no account number to compare. That is acceptable here and nowhere else: this
+ * decides whether to gray a card, while the hand-off still submits `githubId`, and EasyCLA
+ * re-derives the attested set from the caller's own token regardless of what is sent.
+ *
+ * An agreement with no recorded identity therefore matches nothing and blocks no card. Naming
+ * a card as already-signed on the strength of a blank is the worse error: it would strand a
+ * contributor whose only account is the one it grayed out.
+ */
+export function alreadySignedAgreementForIdentity(agreements: readonly MyClaAgreement[], identity: SignIdentityRef): MyClaAgreement | undefined {
+  return agreements.find((agreement) => {
+    if (!ALREADY_SIGNED_CLA_STATUSES.has(agreement.status)) return false;
+    if (identity.platform === 'gerrit') return agreement.signedVia === 'gerrit';
+    if (agreement.signedVia !== 'github') return false;
+
+    const signedAs = agreement.signedAs?.trim().toLowerCase();
+    return !!signedAs && signedAs === identity.username.trim().toLowerCase();
+  });
+}
+
+/** Tooltip on a grayed-out identity card: this account is the one already on the agreement. */
+export function alreadySignedIdentityTooltip(agreement: MyClaAgreement): string {
+  const kind = agreement.kind === 'ECLA' ? 'an ECLA' : 'an ICLA';
+  return `You already have ${kind} for this CLA group signed with this account. Choose another identity to sign again.`;
 }
 
 /** Maps a producer search result to the picker view model. */
