@@ -4,11 +4,11 @@
 import { Clipboard } from '@angular/cdk/clipboard';
 import { provideHttpClient } from '@angular/common/http';
 import { provideHttpClientTesting } from '@angular/common/http/testing';
-import { ApplicationRef, signal } from '@angular/core';
+import { ApplicationRef, makeStateKey, PLATFORM_ID, signal, TransferState } from '@angular/core';
 import { TestBed } from '@angular/core/testing';
 import { FormControl, FormGroup } from '@angular/forms';
 import { ActivatedRoute, convertToParamMap, ParamMap, Router } from '@angular/router';
-import { Meeting, MeetingOccurrence, MeetingRegistrant, PublicMeetingProject, User } from '@lfx-one/shared/interfaces';
+import { Meeting, MeetingJoinPageState, MeetingOccurrence, MeetingRegistrant, PublicMeetingProject, User } from '@lfx-one/shared/interfaces';
 import { MeetingService } from '@services/meeting.service';
 import { PlausibleService } from '@services/plausible.service';
 import { ProjectContextService } from '@services/project-context.service';
@@ -28,6 +28,7 @@ import { MeetingJoinComponent } from './meeting-join.component';
 describe('MeetingJoinComponent', () => {
   const MEETING_ID = 'meeting-1';
   const FUTURE_START_TIME = '2099-01-01T00:00:00.000Z';
+  const MEETING_JOIN_STATE_KEY = makeStateKey<MeetingJoinPageState>('meetingJoinState');
 
   let getPublicMeeting: ReturnType<typeof vi.fn>;
   let getMyMeetingRegistrants: ReturnType<typeof vi.fn>;
@@ -304,5 +305,73 @@ describe('MeetingJoinComponent', () => {
     await TestBed.inject(ApplicationRef).whenStable();
 
     expect((component as unknown as { registrants: () => MeetingRegistrant[] }).registrants()).toEqual([]);
+  });
+
+  // GH-2041: `meeting()` must resolve from `TransferState` at construction time (via `toSignal`'s
+  // `initialValue`), not on a later emission — `debounceTime(0)` in the pipeline defers every
+  // pipeline-driven emission, including a `startWith` seed, past Angular's first render pass.
+  describe('TransferState seeding (GH-2041)', () => {
+    it('paints synchronously from a browser TransferState seed with no blank flash', async () => {
+      const transferState = TestBed.inject(TransferState);
+      transferState.set(MEETING_JOIN_STATE_KEY, {
+        meeting: { ...buildMeeting(), project: buildProject() },
+        loadedViaPastMeetingId: false,
+        pastMeetingFullAccess: false,
+      });
+
+      await TestBed.compileComponents();
+      const fixture = TestBed.createComponent(MeetingJoinComponent);
+      const component = fixture.componentInstance;
+
+      // Assert before any stabilization — the regression this guards against only reproduces if
+      // the seed lands after the first CD pass.
+      expect(component.meeting()?.id).toBe(MEETING_ID);
+      expect(transferState.get(MEETING_JOIN_STATE_KEY, null)).toBeNull();
+
+      await TestBed.inject(ApplicationRef).whenStable();
+    });
+
+    it('restores the past-meeting branch synchronously from a seeded transfer state', async () => {
+      const transferState = TestBed.inject(TransferState);
+      transferState.set(MEETING_JOIN_STATE_KEY, {
+        meeting: { ...buildMeeting(), project: buildProject() },
+        loadedViaPastMeetingId: true,
+        pastMeetingFullAccess: true,
+      });
+
+      await TestBed.compileComponents();
+      const fixture = TestBed.createComponent(MeetingJoinComponent);
+      const component = fixture.componentInstance as unknown as {
+        loadedViaPastMeetingId: () => boolean;
+        pastMeetingFullAccess: () => boolean;
+      };
+
+      expect(component.loadedViaPastMeetingId()).toBe(true);
+      expect(component.pastMeetingFullAccess()).toBe(true);
+
+      await TestBed.inject(ApplicationRef).whenStable();
+    });
+
+    it('ignores TransferState and starts undefined when the server has not seeded anything', async () => {
+      const component = await createComponent();
+
+      // The mocked fetch resolves synchronously in this suite, so by the time `createComponent`
+      // returns the real (post-fetch) meeting is already in place — the assertion that matters is
+      // that it came from the fetch, not a stray seed leaking across tests.
+      expect(component.meeting()?.id).toBe(MEETING_ID);
+    });
+
+    it('persists the resolved meeting to TransferState on the server once the fetch settles', async () => {
+      TestBed.overrideProvider(PLATFORM_ID, { useValue: 'server' });
+
+      await createComponent();
+      await TestBed.inject(ApplicationRef).whenStable();
+
+      const transferState = TestBed.inject(TransferState);
+      const seeded = transferState.get(MEETING_JOIN_STATE_KEY, null);
+      expect(seeded?.meeting.id).toBe(MEETING_ID);
+      expect(seeded?.loadedViaPastMeetingId).toBe(false);
+      expect(seeded?.pastMeetingFullAccess).toBe(false);
+    });
   });
 });

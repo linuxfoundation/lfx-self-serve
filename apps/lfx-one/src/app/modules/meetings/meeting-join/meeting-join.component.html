@@ -854,5 +854,25 @@
         </lfx-meeting-materials-drawer>
       }
     </div>
+  } @else {
+    <!-- Skeleton shown only for client-side navigations with no SSR-transferred state (GH-2041) —
+         the seeded first paint in `initializeMeeting()` means this never flashes on a fresh load. -->
+    <div class="bg-gray-50 min-h-screen" data-testid="meeting-join-skeleton">
+      <div class="container mx-auto py-6 px-8">
+        <div class="max-w-[900px] mx-auto flex flex-col">
+          <div class="flex items-center justify-center mb-6">
+            <p-skeleton width="8rem" height="3.5rem" animation="wave" />
+          </div>
+          <lfx-card class="rounded-[12.75px] mb-6">
+            <div class="flex flex-col gap-4">
+              <p-skeleton width="10rem" height="1.5rem" borderRadius="9999px" animation="wave" />
+              <p-skeleton width="60%" height="2rem" animation="wave" />
+              <p-skeleton width="14rem" height="1.5rem" borderRadius="9999px" animation="wave" />
+              <p-skeleton width="100%" height="4rem" animation="wave" />
+            </div>
+          </lfx-card>
+        </div>
+      </div>
+    </div>
   }
 </div>
