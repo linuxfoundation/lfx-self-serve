@@ -16,13 +16,19 @@
          destroy and rebuild the subtree instead of hydrating it. [formGroup] binds to any element,
          not just <form> — but the search input's form OWNER is now unconditionally the outer
          proposal form (a <form> element, unlike this <div>, does scope form ownership), so Enter
-         here would submit the whole proposal without the explicit guard below. -->
-    <div [formGroup]="searchForm" class="relative" (keydown.enter)="$event.preventDefault()" data-testid="propose-project-picker-search-row">
+         in the search box would submit the whole proposal without the guard below. -->
+    <div [formGroup]="searchForm" class="relative" data-testid="propose-project-picker-search-row">
+      <!-- The guard binds here, not on the wrapper div: a search-result <button> below also sits
+           inside that div, and preventDefault() on a bubbled keydown cancels a button's own
+           Enter-activates-click default action too — scoping it to the input keeps Enter on a
+           result selectable while still blocking the outer form's implicit submit (keydown still
+           bubbles from the inner native <input> up to this host, so the guard still fires). -->
       <lfx-input-text
         size="small"
         [form]="searchForm"
         control="query"
         [id]="inputId()"
+        (keydown.enter)="$event.preventDefault()"
         placeholder="Search for a parent project or foundation..."
         styleClass="w-full"
         data-testid="propose-project-picker-search"></lfx-input-text>

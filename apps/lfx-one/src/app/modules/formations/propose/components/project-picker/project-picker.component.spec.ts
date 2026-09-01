@@ -129,6 +129,30 @@ describe('ProjectPickerComponent', () => {
     }
   });
 
+  it("does not swallow Enter on a rendered search-result option — the submit-guard on the search input must not bubble-cancel a result button's own activation", async () => {
+    vi.useFakeTimers();
+    try {
+      fixture = TestBed.createComponent(ProjectPickerComponent);
+      fixture.componentRef.setInput('form', form);
+      fixture.componentRef.setInput('uidControl', 'parent_project_uid');
+      fixture.detectChanges();
+
+      searchProjects.mockReturnValueOnce(of([project]));
+      instance().searchForm.controls.query.setValue('my');
+      await vi.advanceTimersByTimeAsync(300);
+      fixture.detectChanges();
+
+      const option: HTMLElement | null = fixture.nativeElement.querySelector(`[data-testid="propose-project-picker-option-${project.slug}"]`);
+      expect(option).not.toBeNull();
+      const event = new KeyboardEvent('keydown', { key: 'Enter', bubbles: true, cancelable: true });
+      option!.dispatchEvent(event);
+
+      expect(event.defaultPrevented).toBe(false);
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
   it('is "searching" while the HTTP round trip is in flight, so the empty state does not flash before real results arrive', async () => {
     vi.useFakeTimers();
     try {

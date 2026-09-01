@@ -450,10 +450,15 @@ describe('ProposeComponent', () => {
     createFormation.mockReturnValue(of({ uid: 'formation-1' } as Formation));
     await applicationRef.whenStable();
 
-    const row = (fixture.nativeElement as HTMLElement).querySelector('[data-testid="propose-project-picker-search-row"]');
-    expect(row).not.toBeNull();
+    // Dispatched from the actual native <input>, not the wrapper div: the guard lives on
+    // lfx-input-text (see that component's template comment for why — a search-result <button>
+    // also lives inside the wrapper, and a container-level guard would swallow Enter-to-select
+    // on those buttons too), so the real regression path is the keydown bubbling from the input
+    // up through lfx-input-text, not an event dispatched directly on some ancestor.
+    const input = (fixture.nativeElement as HTMLElement).querySelector('[data-testid="propose-project-picker-search"] input');
+    expect(input).not.toBeNull();
     const event = new KeyboardEvent('keydown', { key: 'Enter', bubbles: true, cancelable: true });
-    row!.dispatchEvent(event);
+    input!.dispatchEvent(event);
 
     // jsdom doesn't implement implicit form submission on Enter, so the only way to prove the
     // handler actually ran is to check the event itself was cancelled — see the sibling "who
