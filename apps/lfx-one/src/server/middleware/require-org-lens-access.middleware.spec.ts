@@ -105,6 +105,29 @@ describe('requireOrgLensAccess', () => {
     expect(statusOf(next)).toBe(503);
   });
 
+  it('allows LF staff on an organization they hold no direct grant on', async () => {
+    // Staff hold `auditor` on every b2b_org, so the per-org lookup is not the question for them.
+    // Pinning the bypass here matters because it is what makes a 200 the correct answer for a
+    // staff caller on an arbitrary org — behaviour that is easy to mistake for a missing gate.
+    getAccessAwareOrgs.mockResolvedValue({ resolved: new Map(), upstreamFailed: false, isStaff: true });
+
+    const { next } = await run(RED_HAT);
+
+    expect(statusOf(next)).toBe('allow');
+  });
+
+  it('allows LF staff even when the grant lookup degraded, because the two resolutions are independent', async () => {
+    // The staff check is deliberately ordered BEFORE the degraded branch: the staff entitlement
+    // and the per-org roster are separate upstream calls, so a roster outage must not withhold
+    // access the staff entitlement already established. A refactor that hoisted the degraded
+    // guard above it would answer 503 and lock staff out during any roster blip.
+    getAccessAwareOrgs.mockResolvedValue({ resolved: new Map(), upstreamFailed: true, isStaff: true });
+
+    const { next } = await run(RED_HAT);
+
+    expect(statusOf(next)).toBe('allow');
+  });
+
   it('refuses when no caller identity can be resolved', async () => {
     getEffectiveUsername.mockReturnValue(undefined);
 
