@@ -1316,23 +1316,25 @@ export class WeeklyBriefService {
    * notes/surveys, not whether THIS WEEK's activity was truncated. Gating on that would silently
    * hide the tally for exactly the long-lived, active committees it exists to help.
    *
-   * Gate on `sourceRefs.length + unmappedInWindow`, not the raw merged/capped `data.length` and
-   * not bare `sourceRefs.length` either — this method's body filters `data` to `occurred_at <=
-   * window_end` before the gate runs, specifically so a page saturated with administratively-
-   * closed, future-stamped votes (destined to be dropped anyway) can't settle a comfortably-
-   * under-the-cap committee to `null`. Only that window_end drop is safe to exclude, though:
-   * `unmappedInWindow` counts in-window events mapActivityEventToCurrentActivityRef doesn't
-   * recognize, which is NOT proof those events don't belong in the tally — just that this method
-   * can't render them yet — so the gate adds them back in rather than treating them the same as
-   * genuine out-of-window noise. When the sum fills the page (`>= limit`, which also implies
-   * nothing was dropped for the one proven-safe reason — window_end — since `sourceRefs.length +
-   * unmappedInWindow` can never exceed `data.length`), real in-window rows may have been cut, so
-   * this returns `null` (a settled "can't state a count as fact" answer, not a transient "couldn't
-   * determine") rather than a truncated count stated as fact — see
-   * `WeeklyBriefCurrentResponse.current_activity`'s doc comment for why `null` here, not
-   * `undefined`.
+   * Gate on the raw, unfiltered `data.length` hitting `limit` (Copilot review), NOT on
+   * `sourceRefs.length + unmappedInWindow` as this method originally did. That original gate
+   * assumed a page saturated with administratively-closed, future-stamped votes was always safe
+   * to treat as "not truncated", since those rows get dropped by the window_end filter below
+   * anyway. That assumption doesn't hold: `committee-activity.service.ts` sorts its merged pool
+   * *descending* by `occurred_at` before capping to `limit`, so future-stamped rows — having the
+   * largest timestamps — sort ABOVE real in-window rows and can occupy page slots a real event
+   * would otherwise have filled. A page full of nothing but soon-to-be-dropped future noise can
+   * therefore mean real in-window activity was pushed off the page entirely, before this method
+   * ever saw it — silently undercounting behind a gate that only looked at what survived the
+   * window_end filter. Gating on `data.length >= limit` instead catches that: a full raw page is
+   * treated as "possibly truncated" regardless of composition. The cost is the mirror-image false
+   * positive — a committee whose only this-week activity actually is `limit`-many future-stamped
+   * votes gets `null` instead of an honest small `sourceRefs`, since this method can't tell the two
+   * cases apart with the signal `getCommitteeActivity` exposes today. Consistent with this
+   * method's own bias (see `WeeklyBriefCurrentResponse.current_activity`'s doc comment): an
+   * unnecessary `null` is a safe, if slightly annoying, degradation; a false-complete count is not.
    *
-   * Known v1 residual (accepted, not solved): `sourceRefs.length + unmappedInWindow < limit` is a heuristic, not a
+   * Known v1 residual (accepted, not solved): `data.length < limit` is a heuristic, not a
    * proof of completeness. `committee-activity.service.ts` documents — in its own "Filter
    * dimension" (its exact label), sort-dimension ("Votes, surveys, files, and notes are all in a
    * different, genuinely-approximate bucket"), and FGA-post-filter comments — several ways an
@@ -1433,22 +1435,13 @@ export class WeeklyBriefService {
       // own terms if that ever changes, same rationale as mapActivityEventToCurrentActivityRef's
       // own "unreached in practice, not dead by construction" default branch.
       //
-      // Deliberately runs BEFORE the truncation gate below, not after: gating on the raw,
-      // unfiltered `data.length` would count a page saturated with administratively-closed,
-      // future-stamped votes as "possibly truncated" even when every one of those events is about
-      // to be dropped here anyway, settling a comfortably-under-the-cap committee to `null` for no
-      // real reason. Gating on the filtered count instead only trips when the events that actually
-      // make it into the tally themselves fill the page.
       // `unmappedInWindow` (events that pass the window_end filter but that
       // mapActivityEventToCurrentActivityRef's `default: return null` branch doesn't recognize —
       // unreached today, since CommitteeActivityService never constructs a DeferredActivityEvent,
-      // but type-legal) is tracked separately from droppedAfterWindowEnd and, unlike it, counts
-      // toward the truncation gate below. The two are NOT symmetric: a window-filtered event is
-      // *proven* not to belong in this week's tally (its occurred_at is after window_end), so
-      // excluding it from the gate is safe. An unmapped-but-in-window event is NOT proven
-      // irrelevant — it may well belong in the tally, this method just has no rendering for it —
-      // so a full raw page dominated by these must still be treated as possibly truncated, not
-      // waved through the way genuine future-noise is.
+      // but type-legal) and `droppedAfterWindowEnd` are tracked for the debug log below only — the
+      // truncation gate a few lines down no longer depends on either. See this method's own doc
+      // comment for why: it gates on the raw `data.length` instead, since a full raw page can mean
+      // real in-window events were pushed off before this loop ever saw them.
       const windowEndMs = Date.parse(window_end);
       let droppedAfterWindowEnd = 0;
       let unmappedInWindow = 0;
@@ -1474,15 +1467,16 @@ export class WeeklyBriefService {
       // already knows about and models on purpose, not a genuine data-quality problem worth an
       // operator's attention. Still logged (not silent) since a drop is still worth being able to
       // find while debugging a tally that looks short.
-      if (droppedAfterWindowEnd > 0) {
-        logger.debug(req, 'get_weekly_brief_current_activity', 'Dropped one or more events stamped after window_end', {
+      if (droppedAfterWindowEnd > 0 || unmappedInWindow > 0) {
+        logger.debug(req, 'get_weekly_brief_current_activity', 'Dropped or skipped one or more events while building source_refs', {
           committee_id: committeeId,
-          dropped_count: droppedAfterWindowEnd,
+          dropped_after_window_end: droppedAfterWindowEnd,
+          unmapped_in_window: unmappedInWindow,
           window_end,
         });
       }
 
-      if (sourceRefs.length + unmappedInWindow >= ACTIVITY_FEED_MAX_PAGE_SIZE) {
+      if (data.length >= ACTIVITY_FEED_MAX_PAGE_SIZE) {
         logger.warning(
           req,
           'get_weekly_brief_current_activity',

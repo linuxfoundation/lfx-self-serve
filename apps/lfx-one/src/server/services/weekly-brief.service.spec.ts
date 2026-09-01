@@ -922,7 +922,7 @@ describe('WeeklyBriefService', () => {
       );
     });
 
-    it('does NOT settle to null when a full raw page is mostly future-stamped noise the window_end filter drops — the gate must run on the filtered count, not the raw page size', async () => {
+    it('DOES settle to null when a full raw page is mostly future-stamped noise the window_end filter drops — the descending sort in CommitteeActivityService means those rows can crowd out real in-window events before this method ever sees them, so the gate must run on the raw page size, not the filtered count', async () => {
       delete process.env['WEEKLY_BRIEF_BACKEND'];
       getCommitteeBaseMock.mockResolvedValue({ uid: 'committee-1', category: 'Board' });
 
@@ -932,9 +932,12 @@ describe('WeeklyBriefService', () => {
 
         // A full raw page (ACTIVITY_FEED_MAX_PAGE_SIZE) where most rows are administratively-closed
         // votes stamped from a still-future end_time (see mapVoteToEvent) — the exact noise the
-        // window_end filter above the gate exists to drop. Only a handful are genuine in-window
-        // activity. If the gate ran on the raw page size (the bug this test pins the fix for), this
-        // committee would settle to null despite a comfortably-under-the-cap real count.
+        // window_end filter above the gate drops. Only a handful are genuine in-window activity.
+        // Pins the fix: CommitteeActivityService sorts its merged pool descending by occurred_at
+        // before capping to `limit`, so these future-stamped rows sort ABOVE real in-window rows
+        // and can occupy page slots a real event would otherwise have filled — a full raw page can
+        // mean real activity was pushed off before this method ever saw it, regardless of how much
+        // of what survived the window_end filter looks like a small, complete count.
         const futureNoise = Array.from({ length: ACTIVITY_FEED_MAX_PAGE_SIZE - 3 }, (_, i) => ({
           type: 'vote_closed' as const,
           occurred_at: '2026-01-14T13:00:00.000Z', // after window_end (2026-01-14T12:00:00.000Z)
@@ -951,32 +954,29 @@ describe('WeeklyBriefService', () => {
 
         const result = await service.getCurrentBrief(req, 'committee-1');
 
-        expect(result.current_activity).toEqual(expect.objectContaining({ source_refs: expect.any(Array) }));
-        expect(result.current_activity?.source_refs).toHaveLength(3);
-        expect(logger.warning).not.toHaveBeenCalledWith(
+        expect(result.current_activity).toBeNull();
+        expect(logger.warning).toHaveBeenCalledWith(
           req,
           'get_weekly_brief_current_activity',
           expect.stringContaining('fills a full page'),
-          expect.anything()
+          expect.objectContaining({ committee_id: 'committee-1' })
         );
       } finally {
         vi.useRealTimers();
       }
     });
 
-    it('DOES settle to null when a full raw page is mostly unrecognized-but-in-window event types — unlike window_end noise, an unmapped event is not proven irrelevant to the tally, so it must still count toward the truncation gate', async () => {
+    it('DOES settle to null when a full raw page is mostly unrecognized-but-in-window event types — an unmapped event is not proven irrelevant to the tally, so it must still count toward the truncation gate', async () => {
       delete process.env['WEEKLY_BRIEF_BACKEND'];
       getCommitteeBaseMock.mockResolvedValue({ uid: 'committee-1', category: 'Board' });
 
       // DeferredActivityEvent ('member_joined' et al.) is a real ActivityEvent union member —
       // type-legal, never actually constructed by CommitteeActivityService today (see that
       // interface's own doc comment) — that mapActivityEventToCurrentActivityRef's `default:
-      // return null` branch exists to handle. Unlike the window_end-future-noise case (sibling
-      // test above), these events are genuinely in-window — this method just has no rendering for
-      // them — so a full raw page dominated by them must still gate to null: excluding them from
-      // the truncation count the way window_end drops are excluded would risk publishing an
-      // undercounted tally as fact the moment CommitteeActivityService starts constructing one of
-      // these kinds.
+      // return null` branch exists to handle. These events are genuinely in-window — this method
+      // just has no rendering for them — so a full raw page dominated by them gates to null, same
+      // as the future-noise case above: the gate runs on the raw `data.length`, not on what
+      // survived mapping, so composition doesn't change the outcome.
       const unrecognized = Array.from({ length: ACTIVITY_FEED_MAX_PAGE_SIZE - 2 }, () => ({
         type: 'member_joined' as const,
         occurred_at: '2026-01-12T10:00:00Z',
@@ -1063,13 +1063,13 @@ describe('WeeklyBriefService', () => {
         expect(result.current_activity?.window_start).toBe('2026-01-11T00:00:00.000Z');
         expect(result.current_activity?.window_end).toBe('2026-01-14T12:00:00.000Z');
         expect(result.brief?.window_start).toBe('2026-01-04T00:00:00.000Z');
-        // The dropped-events log must stay off the healthy path — pins the
-        // droppedAfterWindowEnd > 0 guard itself, not just the log's payload shape (which
-        // the sibling "excludes an event..." test already covers).
+        // The dropped/skipped-events log must stay off the healthy path — pins the
+        // droppedAfterWindowEnd > 0 || unmappedInWindow > 0 guard itself, not just the log's
+        // payload shape (which the sibling "excludes an event..." test already covers).
         expect(logger.debug).not.toHaveBeenCalledWith(
           req,
           'get_weekly_brief_current_activity',
-          'Dropped one or more events stamped after window_end',
+          'Dropped or skipped one or more events while building source_refs',
           expect.anything()
         );
       } finally {
@@ -1126,11 +1126,17 @@ describe('WeeklyBriefService', () => {
         // DEBUG, not WARN — this is a modeled, expected shape for an administratively-closed
         // vote (see mapVoteToEvent), not a data-quality anomaly; still logged, just not at a
         // level that pages someone for something the system already understands.
-        expect(logger.debug).toHaveBeenCalledWith(req, 'get_weekly_brief_current_activity', 'Dropped one or more events stamped after window_end', {
-          committee_id: 'committee-1',
-          dropped_count: 1,
-          window_end: '2026-01-14T12:00:00.000Z',
-        });
+        expect(logger.debug).toHaveBeenCalledWith(
+          req,
+          'get_weekly_brief_current_activity',
+          'Dropped or skipped one or more events while building source_refs',
+          {
+            committee_id: 'committee-1',
+            dropped_after_window_end: 1,
+            unmapped_in_window: 0,
+            window_end: '2026-01-14T12:00:00.000Z',
+          }
+        );
       } finally {
         vi.useRealTimers();
       }
