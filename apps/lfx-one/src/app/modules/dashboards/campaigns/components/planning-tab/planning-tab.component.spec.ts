@@ -1691,21 +1691,24 @@ describe('PlanningTabComponent — HubSpot UTM states', () => {
 
   /**
    * campaign-service separates the create's outcomes by STATUS, and collapsing them here threw
-   * that away at the last step: a 400/404/500 all prove nothing was created, so telling the
-   * operator the campaign "may or may not" exist sends them to hunt for something never
-   * attempted -- and withdraws the offer they could have acted on.
+   * that away at the last step: a 400/404 proves nothing was created, so telling the operator the
+   * campaign "may or may not" exist sends them to hunt for something never attempted -- and
+   * withdraws the offer they could have acted on.
+   *
+   * The set stops at 400/404. Widening it to 500 overshot into the opposite and worse error: the
+   * BFF's own 500 covers faults at any position, including after the campaign exists.
    */
   it('distinguishes a definite create failure from an unconfirmed one', () => {
     for (const [status, offerStaysUp, expected] of [
       [400, true, /check the name/i],
       [404, true, /connect HubSpot/i],
-      // 500 is RESERVED for the pre-send position by campaign-service's own contract: "a fault
-      // discovered AFTER the create returned without error is a 503, because by then the campaign
-      // may exist and only this service's reading of the outcome failed" (design/connection.go).
-      // So 500 proves nothing reached HubSpot, and the contract says reporting it as unconfirmed
-      // "hides the remedy they actually need" -- reconnecting HubSpot, not hunting for a campaign
-      // that was never attempted.
-      [500, true, /reconnect HubSpot/i],
+      // 500 is UNCONFIRMED, not proof. campaign-service does reserve 500 for the pre-send
+      // position -- but this status is not read from campaign-service, it is read from our own
+      // BFF, which raises 500 for a fault at ANY position (error-handler.middleware.ts:92 for any
+      // non-BaseApiError; ApiClientService JSON.parses the body AFTER a 2xx). A malformed success
+      // body therefore arrives as 500 with the campaign ALREADY created, and re-offering Create
+      // there makes the duplicate this handler exists to prevent.
+      [500, false, /may or may not/i],
       [503, false, /may or may not/i],
       // Unclassifiable: a non-idempotent create must fail CLOSED, so it reads as unconfirmed.
       [0, false, /may or may not/i],
