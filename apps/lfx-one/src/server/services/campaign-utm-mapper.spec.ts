@@ -4,7 +4,7 @@
 import type { CampaignServiceHubSpotCampaigns } from '@lfx-one/shared/interfaces';
 import { describe, expect, it } from 'vitest';
 
-import { toUtmCreateResult, toUtmLookupResult } from './campaign-utm-mapper';
+import { scoreCampaignName, toUtmCreateResult, toUtmLookupResult } from './campaign-utm-mapper';
 
 // capped defaults to false so existing cases read as complete searches; the capped-specific
 // tests below pass it explicitly.
@@ -146,6 +146,18 @@ describe('toUtmLookupResult capped', () => {
     expect(res.found).toBe(false);
     expect(res.capped).toBe(false);
     expect(res.inconclusive).toBe(false);
+  });
+
+  it('scores a blank name at zero, however it is spelled', () => {
+    // Asserted on the SCORER directly, now that it is shared. Going through toUtmLookupResult
+    // no longer isolates this: the unambiguous-winner check refuses a blank match too, so the
+    // outer assertion passes with the guard removed and proves nothing. Both call sites depend
+    // on this — every string contains '', so an unguarded containment test scores a blank name
+    // 1 and beats a genuinely unrelated campaign at 0.
+    expect(scoreCampaignName('', 'KubeCon NA 2026')).toBe(0);
+    expect(scoreCampaignName('   ', 'KubeCon NA 2026')).toBe(0);
+    // A real name still scores normally.
+    expect(scoreCampaignName('KubeCon NA 2026', 'KubeCon NA 2026')).toBeGreaterThan(0);
   });
 
   it('never lets a blank-named campaign win the match', () => {
