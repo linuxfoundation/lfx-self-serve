@@ -233,4 +233,20 @@ describe('MeetingJoinComponent', () => {
 
     expect((component as unknown as { registrants: () => MeetingRegistrant[] }).registrants()).toEqual([]);
   });
+
+  it('preserves the roster and the optimistic pad when a refetch for the SAME meeting+occurrence fails', async () => {
+    getMyMeetingRegistrants.mockReturnValueOnce(of(buildRegistrants(10))).mockReturnValueOnce(throwError(() => new Error('roster fetch failed')));
+
+    const component = await createComponent();
+    expect((component as unknown as { registrants: () => MeetingRegistrant[] }).registrants()).toHaveLength(10);
+
+    component.onRegistrantsRefreshRequested(2);
+    await TestBed.inject(ApplicationRef).whenStable();
+
+    // The failed refetch belongs to the same meeting+occurrence as the last confirmed roster, so
+    // it must fall back to the existing `registrants()` snapshot rather than an empty list, and
+    // must not treat that fallback as a roster of length 0 that would zero out the pending pad.
+    expect((component as unknown as { registrants: () => MeetingRegistrant[] }).registrants()).toHaveLength(10);
+    expect(component.additionalRegistrantsCount()).toBe(2);
+  });
 });
