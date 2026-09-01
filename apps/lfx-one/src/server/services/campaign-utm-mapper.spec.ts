@@ -110,13 +110,19 @@ describe('toUtmCreateResult', () => {
 });
 
 describe('toUtmLookupResult capped', () => {
-  it('carries capped through on a found result', () => {
+  it('refuses to auto-apply from a capped search, even on an exact match', () => {
+    // A capped set is incomplete by definition, so an equal-or-better campaign may sit outside
+    // it. The planning tab applies a `found` token immediately and only consults `inconclusive`
+    // on the not-found path, so returning found:true here would silently pick a possibly-worse
+    // match. The candidates still travel; the operator picks. Same rule as the legacy path.
     const res = toUtmLookupResult(cappedPayload({ id: '1', name: 'KubeCon NA 2026', utm: 'kubecon-na-2026' }), 'KubeCon NA 2026');
 
-    expect(res.found).toBe(true);
+    expect(res.found).toBe(false);
+    expect(res.hs_utm).toBeNull();
     expect(res.capped).toBe(true);
-    // A truncated search is also inconclusive: capped is a subset of it.
     expect(res.inconclusive).toBe(true);
+    // The match is still offered for a human to choose.
+    expect(res.all_matches.map((m) => m.hs_utm)).toContain('kubecon-na-2026');
   });
 
   it('reports a scored-out but non-empty result as inconclusive WITHOUT claiming truncation', () => {

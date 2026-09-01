@@ -145,6 +145,22 @@ export function toUtmLookupResult(payload: CampaignServiceHubSpotCampaigns, quer
     };
   }
 
+  // A CAPPED search cannot auto-apply, even with an unambiguous local winner. The result set is
+  // incomplete by definition, so an equal-or-better campaign may sit outside it — and the
+  // planning tab applies a `found` token immediately, consulting `inconclusive` only on the
+  // not-found path. This is the same rule the legacy proxy path follows; leaving it out here
+  // meant the two producers disagreed about the same situation.
+  if (payload.capped) {
+    return {
+      found: false,
+      hs_utm: null,
+      campaign_name: '',
+      all_matches: candidates,
+      capped: true,
+      inconclusive: true,
+    };
+  }
+
   const best = scored[0].campaign;
   return {
     found: true,

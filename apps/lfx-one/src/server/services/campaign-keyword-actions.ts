@@ -307,7 +307,16 @@ export async function applyKeywordActionsViaCampaignService(
       // act on: campaign-service separates a DEFINITE failure from an UNCONFIRMED one where
       // the mutate may already have applied. Flattening that to a generic string would leave
       // someone retrying an irreversible REMOVE that already ran.
-      const message = error instanceof Error ? error.message : 'The keyword change could not be applied.';
+      // A transport failure is UNCONFIRMED, not failed. campaign-service marks its own ambiguous
+      // outcomes in the message, but a lost connection never reaches it to be marked — the BFF
+      // raises the error itself, and the raw text carries no marker for the client to classify.
+      // Reporting that as definite invites a retry of a mutate that may already have run, and a
+      // retried REMOVE is irreversible. Only a 4xx other than 408 is a boundary refusal that
+      // provably never dispatched.
+      const status = typeof (error as { status?: unknown })?.status === 'number' ? (error as { status: number }).status : 0;
+      const refusedAtBoundary = status >= 400 && status < 500 && status !== 408;
+      const raw = error instanceof Error ? error.message : 'The keyword change could not be applied.';
+      const message = refusedAtBoundary ? raw : `${CAMPAIGN_OUTCOME_UNCONFIRMED} (${raw})`;
       logger.warning(req, 'keyword_actions', 'Keyword action batch failed', {
         platformCampaignId: group.platformCampaignId,
         campaignId: ref.campaign_id,

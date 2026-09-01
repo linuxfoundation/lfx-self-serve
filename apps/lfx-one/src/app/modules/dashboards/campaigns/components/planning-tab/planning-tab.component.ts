@@ -456,6 +456,12 @@ export class PlanningTabComponent implements OnInit {
       this.hsStatus.set(null);
       this.hsSearching.set(false);
       this.hsCreating.set(false);
+      // INVALIDATE anything already in flight. Clearing hsCreating frees the button but leaves
+      // an in-flight create still matching createIsCurrent, so after an A -> B -> A switch its
+      // answer renders on a panel it was never asked about — and a stale not-found re-offers a
+      // create for a campaign that may exist. The lookup below advances lookupGeneration on its
+      // own; the create has no equivalent restart, so it is bumped here.
+      this.createGeneration++;
       // And RE-ASK the question under the new foundation. Clearing alone left the panel dead:
       // the component stays mounted and the url does not change, so `urlInput$` never fires and
       // nothing else starts a lookup — the whole HubSpot block stayed hidden, with no create and
