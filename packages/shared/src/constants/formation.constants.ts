@@ -23,8 +23,15 @@ export const SEEDED_FORMATION_TEMPLATE_UID = 'formation-template-seed-v1';
  */
 export const FORMATION_ORPHAN_SECTION = { key: '__orphan__', title: 'Other' } as const;
 
-/** `FormationItemDrawerComponent`'s sentinel for "closed" or "not yet loaded" — see `FormationDrawerData`. */
-export const FORMATION_EMPTY_DRAWER_DATA: FormationDrawerData = { item: null, history: [] };
+/**
+ * `FormationItemDrawerComponent`'s sentinel for "closed" or "not yet loaded" — a factory, not a
+ * shared object, for the same reason as `createEmptyFormationsQueueResponse`: `history` backs both
+ * a `toSignal` `initialValue` and a `catchError` fallback, which would otherwise alias one mutable
+ * array across every call site.
+ */
+export function createEmptyFormationDrawerData(): FormationDrawerData {
+  return { item: null, history: [] };
+}
 
 /**
  * `FormationChecklistRowComponent`'s `provisionable`/`request` action-button config, keyed by
@@ -61,7 +68,7 @@ export const FORMATION_EMPTY_QUEUE_TILES = {
  * shared object, so its `toSignal` `initialValue` use and its `catchError` fallback use each get
  * their own `tiles`/`rows`, never one singleton two call sites could mutate through each other.
  */
-export function emptyFormationsQueueResponse(): FormationsQueueResponse {
+export function createEmptyFormationsQueueResponse(): FormationsQueueResponse {
   return { tiles: { ...FORMATION_EMPTY_QUEUE_TILES }, rows: [], data_source: 'fixture' };
 }
 

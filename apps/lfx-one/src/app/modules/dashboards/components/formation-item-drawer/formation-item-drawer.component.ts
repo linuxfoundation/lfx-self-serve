@@ -12,7 +12,7 @@ import { TagComponent } from '@components/tag/tag.component';
 import { TextareaComponent } from '@components/textarea/textarea.component';
 import { FormationService } from '@services/formation.service';
 import type { FormationDrawerData, FormationItem, FormationItemLink } from '@lfx-one/shared/interfaces';
-import { FORMATION_EMPTY_DRAWER_DATA } from '@lfx-one/shared/constants';
+import { createEmptyFormationDrawerData } from '@lfx-one/shared/constants';
 import { isValidUrl } from '@lfx-one/shared/utils';
 import { MessageService } from 'primeng/api';
 import { DrawerModule } from 'primeng/drawer';
@@ -113,7 +113,7 @@ export class FormationItemDrawerComponent {
     // template to a full-body spinner/error state, which would blank a drawer the user just
     // successfully saved into. `lastData` lets a reload failure keep showing the pre-reload item
     // instead of falling back to empty.
-    let lastData: FormationDrawerData = FORMATION_EMPTY_DRAWER_DATA;
+    let lastData: FormationDrawerData = createEmptyFormationDrawerData();
     const openTrigger$ = toObservable(this.visible).pipe(
       skip(1),
       map(() => 'open' as const)
@@ -125,8 +125,8 @@ export class FormationItemDrawerComponent {
         switchMap((trigger) => {
           const uid = this.itemUid();
           if (!this.visible() || !uid) {
-            lastData = FORMATION_EMPTY_DRAWER_DATA;
-            return of(FORMATION_EMPTY_DRAWER_DATA);
+            lastData = createEmptyFormationDrawerData();
+            return of(lastData);
           }
 
           if (trigger === 'open') {
@@ -142,9 +142,9 @@ export class FormationItemDrawerComponent {
             catchError((error: unknown) => {
               console.error('[FormationItemDrawer] Failed to load formation item', error);
               if (trigger === 'open') {
-                lastData = FORMATION_EMPTY_DRAWER_DATA;
+                lastData = createEmptyFormationDrawerData();
                 this.loadFailed.set(true);
-                return of(FORMATION_EMPTY_DRAWER_DATA);
+                return of(lastData);
               }
               this.messageService.add({ severity: 'error', summary: 'Error', detail: 'Could not refresh this item.' });
               return of(lastData);
@@ -155,7 +155,7 @@ export class FormationItemDrawerComponent {
           );
         })
       ),
-      { initialValue: FORMATION_EMPTY_DRAWER_DATA }
+      { initialValue: createEmptyFormationDrawerData() }
     );
   }
 
