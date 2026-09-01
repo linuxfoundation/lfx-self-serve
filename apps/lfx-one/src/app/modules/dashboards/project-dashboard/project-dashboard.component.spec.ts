@@ -62,7 +62,7 @@ describe('ProjectDashboardComponent — Formation badge/subtitle (GH-1955)', () 
   let fixture: ComponentFixture<ProjectDashboardComponent>;
   let flagEnabled: WritableSignal<boolean>;
 
-  async function render(isFormation: boolean, settingsResult: Observable<ProjectSettings> = of(settings('2026-09-01'))): Promise<void> {
+  async function render(isFormation: boolean, settingsResult: Observable<ProjectSettings> = of(settings('2026-09-01')), subStage = 'Engaged'): Promise<void> {
     flagEnabled = signal(true);
     TestBed.resetTestingModule();
     await TestBed.configureTestingModule({
@@ -76,7 +76,7 @@ describe('ProjectDashboardComponent — Formation badge/subtitle (GH-1955)', () 
           useValue: {
             activeContext: signal(CONTEXT),
             isActiveProjectInFormation: signal(isFormation),
-            activeProjectFormationSubStage: signal(isFormation ? 'Engaged' : null),
+            activeProjectFormationSubStage: signal(isFormation ? subStage : null),
           },
         },
       ],
@@ -151,5 +151,25 @@ describe('ProjectDashboardComponent — Formation badge/subtitle (GH-1955)', () 
     const subtitle = () => fixture.nativeElement.querySelector('[data-testid="project-dashboard-formation-subtitle"]')?.textContent ?? '';
     expect(subtitle()).toContain('Stage Formation · Engaged');
     expect(subtitle()).not.toContain('Announcement date');
+  });
+
+  it('gives the Confidential sub-stage a distinct amber/lock tag and appends the visibility caption', async () => {
+    await render(true, of(settings('2026-09-01')), 'Confidential');
+
+    const tagEl = fixture.nativeElement.querySelector('.p-tag');
+    expect(tagEl.className).toContain('amber');
+    expect(tagEl.className).not.toContain('violet');
+    expect(fixture.nativeElement.querySelector('.fa-lock')).not.toBeNull();
+    expect(text()).toContain('Not visible outside LF Formation and LF Legal until invited');
+  });
+
+  it('keeps the violet tag and omits the caption for a non-Confidential sub-stage', async () => {
+    await render(true, of(settings('2026-09-01')), 'Engaged');
+
+    const tagEl = fixture.nativeElement.querySelector('.p-tag');
+    expect(tagEl.className).toContain('violet');
+    expect(tagEl.className).not.toContain('amber');
+    expect(fixture.nativeElement.querySelector('.fa-lock')).toBeNull();
+    expect(text()).not.toContain('Not visible outside LF Formation and LF Legal until invited');
   });
 });

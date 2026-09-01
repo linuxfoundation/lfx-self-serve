@@ -49,6 +49,8 @@ export class ProjectDashboardComponent {
   protected readonly formationFlagEnabled = this.featureFlagService.getBooleanFlag(FORMATION_ENABLED_FLAG, false);
   protected readonly isFormation = this.projectContextService.isActiveProjectInFormation;
   protected readonly formationSubStage = this.projectContextService.activeProjectFormationSubStage;
+  /** Confidential is its own `ProjectStage`, mutually exclusive with the other sub-stages — never layered on top of one. */
+  protected readonly isConfidential = computed(() => this.formationSubStage() === 'Confidential');
 
   /**
    * `announcementDateLoading`/`announcementDateHasError` gate the subtitle's date clause so it

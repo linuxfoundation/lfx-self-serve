@@ -7,7 +7,13 @@
       <div class="flex items-center gap-2">
         <h1 class="font-display font-light text-2xl">{{ selectedProject()?.name }} Overview</h1>
         @if (formationFlagEnabled() && isFormation()) {
-          <lfx-tag [value]="'FORMATION · ' + formationSubStage()" [rounded]="true" styleClass="!bg-violet-100 !text-violet-700 border border-violet-200" />
+          <lfx-tag
+            [value]="'FORMATION · ' + formationSubStage()"
+            [rounded]="true"
+            [icon]="isConfidential() ? 'fa-light fa-lock' : undefined"
+            [styleClass]="
+              isConfidential() ? '!bg-amber-100 !text-amber-700 border border-amber-200' : '!bg-violet-100 !text-violet-700 border border-violet-200'
+            " />
         }
       </div>
       @if (formationFlagEnabled() && isFormation()) {
@@ -17,6 +23,9 @@
             · Announcement date —
           } @else if (!announcementDateHasError()) {
             · Announcement date {{ announcementDateLabel() }}
+          }
+          @if (isConfidential()) {
+            · Not visible outside LF Formation and LF Legal until invited
           }
         </p>
       }
