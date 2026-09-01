@@ -280,18 +280,22 @@ export function alreadySignedChipLabel(agreement: MyClaAgreement): string {
  * Tooltip on a tagged Sign a CLA result (#1914). Names the kind they already hold, the employer
  * covering an ECLA, and — since the row is still selectable — that another identity may sign it.
  *
- * The closing sentence is conditional on purpose. All this has to work from is the agreements
- * list, which says nothing about how many identities are linked, so it cannot promise a second
- * one exists: a contributor with a single account would be told another identity can sign and
- * then reach a step offering only the card that already signed.
+ * The closing sentence is conditional on purpose. The agreements list says nothing about how
+ * many identities are linked, so it cannot promise a second one exists: a contributor with a
+ * single account would be told another identity can sign and then reach a step offering only
+ * the card that already signed.
+ *
+ * It is dropped altogether on a GitLab-only group, where the block is the route rather than the
+ * identity — Self Serve cannot sign one at all, so no identity they link would help.
  */
-export function alreadySignedGroupTooltip(agreement: MyClaAgreement): string {
+export function alreadySignedGroupTooltip(agreement: MyClaAgreement, route: ClaSignRoute): string {
   const kind = agreement.kind === 'ECLA' ? 'an ECLA' : 'an ICLA';
   const company = agreement.kind === 'ECLA' ? agreement.companyName?.trim() : undefined;
   const held = company ? `You already have ${kind} for this CLA group, covered by ${company}.` : `You already have ${kind} for this CLA group.`;
   const signed = signedAsLine(agreement.signedVia, agreement.signedAs);
+  const another = route === 'gitlab-unsupported' ? '' : ' If you have another identity linked, you can still sign with it.';
 
-  return `${signed ? `${held} ${signed}.` : held} If you have another identity linked, you can still sign with it.`;
+  return `${signed ? `${held} ${signed}.` : held}${another}`;
 }
 
 /**

@@ -469,5 +469,16 @@ describe('ClaGroupSelectComponent', () => {
       (fixture.componentInstance as any).onSelect(VENUS_VIEW);
       expect((fixture.componentInstance as any).selected()).toEqual(VENUS_VIEW);
     });
+
+    it('offers no other identity on a GitLab-only group, which no identity can sign', async () => {
+      // The tooltip has to read the group's own sources to know this, so exercise it through the
+      // component rather than the helper: a GitLab-only group is blocked by its route, and
+      // suggesting they link another identity would send them nowhere.
+      getClaGroupOptions.mockReturnValue(of(envelope([{ ...VENUS, organizations: [{ name: 'Venus', source: 'gitlab' }] }])));
+      await type('venus');
+
+      const row = fixture.debugElement.query(By.css('[data-testid="cla-group-select-cg-1"]'));
+      expect(row.injector.get(Tooltip, null)?.content).toBe('You already have an ICLA for this CLA group. Signed as jellis (GitHub).');
+    });
   });
 });

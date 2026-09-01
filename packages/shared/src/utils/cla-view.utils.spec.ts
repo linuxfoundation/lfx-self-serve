@@ -240,20 +240,28 @@ describe('alreadySignedChipLabel', () => {
 
 describe('alreadySignedGroupTooltip', () => {
   it('names the ICLA, the identity it was signed as, and that another identity may still sign', () => {
-    expect(alreadySignedGroupTooltip(agreement({ kind: 'ICLA', signedVia: 'github', signedAs: 'jellis' }))).toBe(
+    expect(alreadySignedGroupTooltip(agreement({ kind: 'ICLA', signedVia: 'github', signedAs: 'jellis' }), 'github')).toBe(
       'You already have an ICLA for this CLA group. Signed as jellis (GitHub). If you have another identity linked, you can still sign with it.'
     );
   });
 
   it('names the employer when an ECLA has no signed-as identity', () => {
-    expect(alreadySignedGroupTooltip(agreement({ kind: 'ECLA', companyName: 'Acme', pdfAvailable: false }))).toBe(
+    expect(alreadySignedGroupTooltip(agreement({ kind: 'ECLA', companyName: 'Acme', pdfAvailable: false }), 'github')).toBe(
       'You already have an ECLA for this CLA group, covered by Acme. If you have another identity linked, you can still sign with it.'
     );
   });
 
   it('falls back to the kind alone when there is nothing else to name', () => {
-    expect(alreadySignedGroupTooltip(agreement({ kind: 'ICLA' }))).toBe(
+    expect(alreadySignedGroupTooltip(agreement({ kind: 'ICLA' }), 'github')).toBe(
       'You already have an ICLA for this CLA group. If you have another identity linked, you can still sign with it.'
+    );
+  });
+
+  it('promises no other identity on a GitLab-only group, which no identity can sign', () => {
+    // The block there is the route, not the account: Self Serve cannot sign a GitLab-only group
+    // at all, so offering "link another identity" as the way out would be a dead end.
+    expect(alreadySignedGroupTooltip(agreement({ kind: 'ICLA', signedVia: 'gitlab', signedAs: 'jellis' }), 'gitlab-unsupported')).toBe(
+      'You already have an ICLA for this CLA group. Signed as jellis (GitLab).'
     );
   });
 });

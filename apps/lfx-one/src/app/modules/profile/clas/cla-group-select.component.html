@@ -81,7 +81,7 @@ SPDX-License-Identifier: MIT
                   <span class="block min-w-0 truncate text-sm font-medium text-slate-900">{{ option.primaryName }}</span>
                   @if (alreadySigned) {
                     <span
-                      class="shrink-0 rounded bg-slate-100 px-1.5 py-0.5 text-[0.65rem] font-medium text-slate-500"
+                      class="min-w-0 truncate rounded bg-slate-100 px-1.5 py-0.5 text-[0.65rem] font-medium text-slate-500"
                       [attr.data-testid]="'cla-group-select-already-signed-' + option.claGroupId">
                       {{ alreadySigned.chip }}
                     </span>

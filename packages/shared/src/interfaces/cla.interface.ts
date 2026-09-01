@@ -253,7 +253,12 @@ export interface ClaGroupOrgView {
 export interface GithubAccountOption {
   /** Immutable GitHub account number. Handles get renamed and reclaimed; this does not. */
   githubId: string;
-  /** Display handle. Never matched on. */
+  /**
+   * Display handle. Never matched on to decide identity or to address the hand-off — that is
+   * `githubId`'s job. It is compared against the handle recorded on an existing agreement, but
+   * only to decide whether to gray a card: renames and reclaims make it unreliable, and a wrong
+   * result there can only gray a card that should not have been, or miss one that should.
+   */
   githubUsername: string;
   avatarUrl?: string;
 }

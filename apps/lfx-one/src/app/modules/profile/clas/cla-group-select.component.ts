@@ -6,7 +6,7 @@ import { takeUntilDestroyed } from '@angular/core/rxjs-interop';
 import { FormControl, FormGroup, ReactiveFormsModule } from '@angular/forms';
 import { CLA_GROUP_SEARCH_DEBOUNCE_MS, CLA_GROUP_SEARCH_MIN_CHARS } from '@lfx-one/shared/constants';
 import type { AlreadySignedNote, ClaGroupOptionView, ClaGroupSearchResponse, ClaGroupSelectDialogData, MyClaAgreement } from '@lfx-one/shared/interfaces';
-import { alreadySignedAgreementForGroup, alreadySignedChipLabel, alreadySignedGroupTooltip, toClaGroupOptionView } from '@lfx-one/shared/utils';
+import { alreadySignedAgreementForGroup, alreadySignedChipLabel, alreadySignedGroupTooltip, claSignRoute, toClaGroupOptionView } from '@lfx-one/shared/utils';
 import { MyClasService } from '@services/my-clas.service';
 import { DynamicDialogConfig, DynamicDialogRef } from 'primeng/dynamicdialog';
 import { TooltipModule } from 'primeng/tooltip';
@@ -241,7 +241,10 @@ export class ClaGroupSelectComponent {
       for (const option of this.options()) {
         const held = alreadySignedAgreementForGroup(this.agreements, option.claGroupId);
         if (held) {
-          notes.set(option.claGroupId, { chip: alreadySignedChipLabel(held), tooltip: alreadySignedGroupTooltip(held) });
+          notes.set(option.claGroupId, {
+            chip: alreadySignedChipLabel(held),
+            tooltip: alreadySignedGroupTooltip(held, claSignRoute(option.organizations)),
+          });
         }
       }
       return notes;
