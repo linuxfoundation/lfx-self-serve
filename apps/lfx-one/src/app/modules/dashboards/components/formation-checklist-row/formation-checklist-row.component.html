@@ -1,0 +1,67 @@
+<!-- Copyright The Linux Foundation and each contributor to LFX. -->
+<!-- SPDX-License-Identifier: MIT -->
+
+<div class="flex items-center gap-4 py-3 px-4 border-b border-gray-200 last:border-b-0" [attr.data-testid]="'formation-checklist-row-' + item().uid">
+  <div class="w-40 shrink-0" [attr.data-testid]="'formation-checklist-row-status-chip-' + item().uid">
+    <lfx-tag [value]="statusLabel()" [severity]="statusSeverity()" [outlined]="statusOutlined()" />
+  </div>
+
+  <div class="flex-1 min-w-0 flex flex-col gap-1">
+    <div class="flex items-center gap-2 flex-wrap">
+      <button
+        type="button"
+        class="text-sm font-medium text-gray-900 bg-transparent border-none p-0 text-left hover:underline"
+        (click)="onOpenDrawer()"
+        [attr.aria-label]="'Open details for ' + item().title"
+        [attr.data-testid]="'formation-checklist-row-title-' + item().uid">
+        {{ item().title }}
+      </button>
+      @if (item().owner_team) {
+        <span [attr.data-testid]="'formation-checklist-row-owner-chip-' + item().uid">
+          <lfx-tag [value]="item().owner_team!" severity="secondary" />
+        </span>
+      }
+      @if (item().is_gating) {
+        <span [attr.data-testid]="'formation-checklist-row-gates-active-chip-' + item().uid">
+          <lfx-tag value="Gates Active" severity="warn" />
+        </span>
+      }
+    </div>
+    @if (item().detail) {
+      <span class="text-xs text-gray-500">{{ item().detail }}</span>
+    }
+  </div>
+
+  <div class="shrink-0" [attr.data-testid]="'formation-checklist-row-action-' + item().uid">
+    @switch (item().action) {
+      @case ('link') {
+        <lfx-button label="Open" size="small" severity="secondary" [outlined]="true" [href]="item().action_href ?? '#'" target="_blank" />
+      }
+      @case ('status_only') {
+        @if (item().action_href) {
+          <lfx-button label="Open" size="small" severity="secondary" [outlined]="true" [href]="item().action_href!" target="_blank" />
+        }
+      }
+      @case ('provisionable') {
+        <lfx-button
+          label="Set up"
+          size="small"
+          severity="primary"
+          (onClick)="onAction()"
+          [attr.data-testid]="'formation-checklist-row-provision-' + item().uid" />
+      }
+      @case ('request') {
+        <lfx-button
+          label="Request"
+          size="small"
+          severity="secondary"
+          [outlined]="true"
+          (onClick)="onAction()"
+          [attr.data-testid]="'formation-checklist-row-request-' + item().uid" />
+      }
+      @case ('manual') {
+        <lfx-button label="View details" size="small" severity="secondary" [outlined]="true" (onClick)="onOpenDrawer()" />
+      }
+    }
+  </div>
+</div>

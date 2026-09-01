@@ -8,6 +8,8 @@ import { authGuard } from './shared/guards/auth.guard';
 import { authenticatedMatchGuard } from './shared/guards/authenticated-match.guard';
 import { dashboardAccessGuard } from './shared/guards/dashboard-access.guard';
 import { campaignAccessGuard } from './shared/guards/campaign-access.guard';
+import { formationEnabledGuard } from './shared/guards/formation-enabled.guard';
+import { formationsQueueAuditorGuard } from './shared/guards/formations-queue-auditor.guard';
 import { lensRedirectGuard } from './shared/guards/lens-redirect.guard';
 import { marketingImpactAccessGuard } from './shared/guards/marketing-impact-access.guard';
 import { newsletterAccessGuard } from './shared/guards/newsletter-access.guard';
@@ -256,6 +258,17 @@ export const routes: Routes = [
         data: { lens: 'foundation' },
         canActivate: [projectQueryParamGuard],
         loadChildren: () => import('./modules/documents/documents.routes').then((m) => m.DOCUMENT_ROUTES),
+      },
+      // Formations queue (GH-1958) — dark-launched behind `formation-enabled` (CanMatch), auditor-only
+      // (CanActivate). Deliberately no projectQueryParamGuard and no `:id`/`:slug` child — the queue is
+      // locked to the LF root, not scoped by `?project=`, and has no nested per-formation drill-down.
+      // No nav item from this ticket either — a separate ticket (#1955) links here.
+      {
+        path: 'foundation/formations',
+        data: { lens: 'foundation' },
+        canMatch: [formationEnabledGuard],
+        canActivate: [formationsQueueAuditorGuard],
+        loadComponent: () => import('./modules/formations/formations-queue/formations-queue.component').then((m) => m.FormationsQueueComponent),
       },
       // Marketing OS agents — dark-launched behind `mktg-os-agents-enabled` (CanMatch); invisible when the flag is off.
       {
