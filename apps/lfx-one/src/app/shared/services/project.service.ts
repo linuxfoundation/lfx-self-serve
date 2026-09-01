@@ -98,8 +98,9 @@ export class ProjectService {
    * Note the two identifiers cache under separate keys for the same project.
    */
   public getProject(slugOrUid: string, current: boolean = true, options?: { meetingCoordinator?: boolean }): Observable<Project | null> {
-    // Cache key stays on the raw slugOrUid (not the encoded form) so callers share one cache
-    // entry regardless of whether they pre-encode.
+    // Cache key uses the raw slugOrUid — callers must pass the unencoded slug/uid (this method
+    // encodes on the way out, below); a pre-encoded value would both double-encode the request
+    // and cache under a key no other caller of the same project would hit.
     const cacheKey = `${slugOrUid}:${current}${options?.meetingCoordinator ? ':mc' : ''}`;
     if (!this.projectCache.has(cacheKey)) {
       const params = options?.meetingCoordinator ? new HttpParams().set('meeting_coordinator', 'true') : undefined;

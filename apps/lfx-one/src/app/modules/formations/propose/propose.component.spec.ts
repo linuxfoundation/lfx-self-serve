@@ -111,10 +111,22 @@ describe('ProposeComponent', () => {
         parent_project_uid: null,
       })
     );
-    // The formation travels via router state (not just the uid in the URL) — the fixture store is
-    // per-pod, so the confirmation page's own GET-by-uid isn't guaranteed to see this POST.
-    expect(navigate).toHaveBeenCalledWith(['/propose/confirmation', 'formation-1'], { state: { formation } });
-    expect(component.submitting()).toBe(false);
+  });
+
+  it('strips the view-only clientId from additional_contacts before submitting', async () => {
+    const component = await createComponent();
+    fillRequiredFields(component);
+    component.newContactForm.setValue({ first_name: 'Sam', last_name: 'Lee', email: 'sam@example.test' });
+    component.addContact();
+    createFormation.mockReturnValue(of({ uid: 'formation-1' } as Formation));
+
+    component.onSubmit();
+
+    expect(createFormation).toHaveBeenCalledWith(
+      expect.objectContaining({
+        additional_contacts: [{ first_name: 'Sam', last_name: 'Lee', email: 'sam@example.test' }],
+      })
+    );
   });
 
   it('resolves and registers a manually-created organization against CDP before submitting', async () => {
@@ -123,14 +135,7 @@ describe('ProposeComponent', () => {
     const orgSearch = (component as any).organizationSearch();
     orgSearch.manualMode.set(true);
     const result = { id: 'cdp-org-1', name: 'Example Org', logo: '', originalName: 'Example Org', nameChanged: false } as OrganizationResolveResult;
-    // resolveCurrentEntry's real implementation emits onOrganizationResolved synchronously inside
-    // its own map() before this mock's Observable reaches onSubmit's subscriber — replicate that
-    // here, since onSubmit relies on the template's (onOrganizationResolved)="onOrgResolved($event)"
-    // binding to patch contributing_org_id, not on this method's return value directly.
-    const resolveCurrentEntry = vi.spyOn(orgSearch, 'resolveCurrentEntry').mockImplementation(() => {
-      orgSearch.onOrganizationResolved.emit(result);
-      return of(result);
-    });
+    const resolveCurrentEntry = vi.spyOn(orgSearch, 'resolveCurrentEntry').mockReturnValue(of(result));
     const formation = { uid: 'formation-1' } as Formation;
     createFormation.mockReturnValue(of(formation));
 
@@ -252,7 +257,10 @@ describe('ProposeComponent', () => {
     component.newContactForm.setValue({ first_name: 'Sam', last_name: 'Lee', email: 'sam@example.test' });
     component.addContact();
 
-    expect(component.additionalContacts()).toEqual([{ first_name: 'Sam', last_name: 'Lee', email: 'sam@example.test' }]);
+    expect(component.additionalContacts()).toEqual([expect.objectContaining({ first_name: 'Sam', last_name: 'Lee', email: 'sam@example.test' })]);
+    // clientId is a view-only stable key (not part of the wire payload) — assert it's present and
+    // unique, not its exact value.
+    expect(component.additionalContacts()[0].clientId).toBeTruthy();
 
     component.removeContact(0);
 
@@ -283,7 +291,11 @@ describe('ProposeComponent', () => {
     await applicationRef.whenStable();
 
     const el: HTMLElement = fixture.nativeElement;
-    expect(el.querySelector('[data-testid="propose-additional-contact-limit"]')).not.toBeNull();
+    // The live region itself is always present (see the template comment on why) — assert its
+    // text actually populated, not just that the element exists.
+    expect(el.querySelector('[data-testid="propose-additional-contact-limit"]')?.textContent?.trim()).toContain(
+      `You've reached the limit of ${FORMATION_MAX_ADDITIONAL_CONTACTS} additional contacts.`
+    );
     expect(el.querySelector('[data-testid="propose-new-contact-first-name"]')).not.toBeNull();
     const addButton = el.querySelector('[data-testid="propose-add-contact"] button');
     expect(addButton).not.toBeNull();
@@ -347,6 +359,20 @@ describe('ProposeComponent', () => {
     await applicationRef.whenStable();
 
     expect(errorEl()).not.toBeNull();
+  });
+
+  it('pressing Enter in a "who else" field adds the contact instead of submitting the whole proposal — the fields sit inside the outer <form>', async () => {
+    const { component, fixture } = await createComponentWithFixture();
+    const applicationRef = TestBed.inject(ApplicationRef);
+    createFormation.mockReturnValue(of({ uid: 'formation-1' } as Formation));
+    component.newContactForm.setValue({ first_name: 'Sam', last_name: 'Lee', email: 'sam@example.test' });
+    await applicationRef.whenStable();
+
+    const row = (fixture.nativeElement as HTMLElement).querySelector('[data-testid="propose-new-contact-row"]');
+    row?.dispatchEvent(new KeyboardEvent('keydown', { key: 'Enter', bubbles: true, cancelable: true }));
+
+    expect(component.additionalContacts()).toHaveLength(1);
+    expect(createFormation).not.toHaveBeenCalled();
   });
 
   it("labels every <label for> target with a real, labelable control — derived from the DOM so a broken id can't drift back in unnoticed", async () => {

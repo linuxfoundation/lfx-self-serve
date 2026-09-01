@@ -182,26 +182,34 @@
 
       <div class="flex flex-col gap-2">
         <p class="text-sm font-medium text-gray-700">Who else should we loop in?</p>
-        @for (contact of additionalContacts(); track contact.email; let i = $index) {
+        @for (contact of additionalContacts(); track contact.clientId; let i = $index) {
           <div
             class="flex items-center justify-between gap-2 rounded-md border border-gray-200 px-3 py-2"
-            [attr.data-testid]="'propose-additional-contact-row-' + i">
+            [attr.data-testid]="'propose-additional-contact-row-' + contact.clientId">
             <span class="text-sm text-gray-900">{{ contact.first_name }} {{ contact.last_name }} ({{ contact.email }})</span>
             <button
               type="button"
               class="text-xs text-red-600 hover:text-red-800"
               (click)="removeContact(i)"
-              [attr.data-testid]="'propose-additional-contact-remove-' + i">
+              [attr.data-testid]="'propose-additional-contact-remove-' + contact.clientId">
               Remove
             </button>
           </div>
         }
-        @if (additionalContactsAtLimit()) {
-          <p class="text-xs text-gray-500" role="status" data-testid="propose-additional-contact-limit">
+        <!-- Rendered unconditionally (text toggles, not the element) so the live region is already
+             in the accessibility tree before its content changes — a region inserted already
+             populated is commonly missed by screen readers, since they announce mutations to an
+             existing region rather than a newly-added one. -->
+        <p class="text-xs text-gray-500" role="status" data-testid="propose-additional-contact-limit">
+          @if (additionalContactsAtLimit()) {
             You've reached the limit of {{ maxAdditionalContacts }} additional contacts.
-          </p>
-        }
-        <div class="grid grid-cols-1 gap-2 md:grid-cols-4" [formGroup]="newContactForm">
+          }
+        </p>
+        <div
+          class="grid grid-cols-1 gap-2 md:grid-cols-4"
+          [formGroup]="newContactForm"
+          (keydown.enter)="$event.preventDefault(); addContact()"
+          data-testid="propose-new-contact-row">
           <label for="new-contact-first-name" class="sr-only">New contact first name</label>
           <lfx-input-text
             size="small"

@@ -82,7 +82,10 @@ export class ProposeComponent {
 
   // Simple WritableSignals
   public submitting = signal(false);
-  public additionalContacts = signal<FormationContact[]>([]);
+  /** `clientId` is a view-only stable key (not part of the wire payload — buildIntakePayload
+   *  strips it), so the @for track and each row's data-testid survive a removal instead of
+   *  re-keying by array position, without putting the contact's email in a DOM attribute. */
+  public additionalContacts = signal<(FormationContact & { clientId: string })[]>([]);
   /** True only after a real "Add" click on `newContactForm` — distinct from that form's own
    *  `touched` state, which blurring through its fields (with no intent to add anyone) would
    *  also set, showing an "incomplete" error to a user who never asked to add a contact. */
@@ -118,12 +121,20 @@ export class ProposeComponent {
     // manually-created org would otherwise submit with contributing_org_id: null and never actually
     // register. Only resolve here, not unconditionally on every submit: a search-mode pick has
     // already resolved via onOrgResolved, and resolveCurrentEntry() would just re-issue the same
-    // CDP call for no gain. resolveCurrentEntry()'s onOrganizationResolved emits synchronously
-    // inside its own map(), so onOrgResolved (bound in the template) has already patched
-    // contributing_org_id by the time this subscriber runs — no need to patch it again here.
+    // CDP call for no gain.
     const orgSearch = this.organizationSearch();
     const resolve$ = orgSearch?.manualMode() ? orgSearch.resolveCurrentEntry() : of(null);
-    resolve$.pipe(take(1), takeUntilDestroyed(this.destroyRef)).subscribe(() => this.submitFormation());
+    resolve$.pipe(take(1), takeUntilDestroyed(this.destroyRef)).subscribe((result) => {
+      // Belt-and-braces: the template's (onOrganizationResolved)="onOrgResolved($event)" binding
+      // already patches this from the same emission (resolveCurrentEntry's emit happens
+      // synchronously inside its own map(), upstream of this subscriber) — but that's an
+      // implementation detail of organization-search.component.ts this file shouldn't have to
+      // trust staying true. Patching again here is idempotent and costs nothing.
+      if (result) {
+        this.form.patchValue({ contributing_org_id: result.id || null });
+      }
+      this.submitFormation();
+    });
   }
 
   public addContact(): void {
@@ -148,7 +159,10 @@ export class ProposeComponent {
       this.newContactForm.get('email')?.markAsTouched();
       return;
     }
-    this.additionalContacts.update((contacts) => [...contacts, { first_name: first_name.trim(), last_name: last_name.trim(), email: trimmedEmail }]);
+    this.additionalContacts.update((contacts) => [
+      ...contacts,
+      { clientId: crypto.randomUUID(), first_name: first_name.trim(), last_name: last_name.trim(), email: trimmedEmail },
+    ]);
     this.newContactForm.reset({ first_name: '', last_name: '', email: '' });
     this.newContactAttempted.set(false);
   }
@@ -228,7 +242,12 @@ export class ProposeComponent {
       contributing_org_id: value.contributing_org_id || null,
       contributing_org_website_url: value.contributing_org_website_url?.trim() || null,
       legal_contact: value.legal_contact,
-      additional_contacts: this.additionalContacts(),
+      // clientId is a view-only key (see additionalContacts' doc comment) — not part of the wire payload.
+      additional_contacts: this.additionalContacts().map((contact) => ({
+        first_name: contact.first_name,
+        last_name: contact.last_name,
+        email: contact.email,
+      })),
       license: value.license,
       chat_platform: value.chat_platform,
       mission_statement: value.mission_statement.trim(),
