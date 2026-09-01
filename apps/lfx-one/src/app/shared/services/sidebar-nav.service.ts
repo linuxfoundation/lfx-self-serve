@@ -432,7 +432,12 @@ export class SidebarNavService {
   // Social Listening tab once inside — full Marketing Impact access is ED/marketing_auditor only
   // (LFXV2-2236 gap-analysis G4). Never widen the Metrics section itself for marketing_auditor.
   // Extracted so both foundationLensItems and the project-lens branch of sidebarItems (hybrid
-  // marketing users) can surface the same section (LFXV2-2235 review finding).
+  // marketing users) can surface the same section (LFXV2-2235 review finding). Both items below
+  // route to /foundation/* paths tagged `lens: 'foundation'` in app.routes.ts, so a hybrid user
+  // clicking one from the project lens gets flipped into the foundation lens by
+  // MainLayoutComponent.syncLensFromRoute — the same lens-switch-on-navigate behavior the merged
+  // 'Projects' switcher entry already relies on (lens.service.ts switchLens/isHybridPersona), not
+  // an oversight introduced here.
   private readonly marketingSectionItem = computed((): SidebarMenuItem | null => {
     this.marketingPersonaSlug();
     const marketingItems: SidebarMenuItem[] = [];
