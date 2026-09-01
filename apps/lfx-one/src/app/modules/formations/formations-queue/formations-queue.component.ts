@@ -62,8 +62,15 @@ export class FormationsQueueComponent {
             return;
           }
 
-          const opened = window.open(result.deep_link_url, '_blank', 'noopener,noreferrer');
-          if (!opened) {
+          // Not `window.open(url, '_blank', 'noopener,noreferrer')` — per spec, `noopener` (which
+          // `noreferrer` also implies) makes window.open return null unconditionally, so that form
+          // can never distinguish "opened" from "blocked" and would show the blocked-popup warning
+          // on every successful Accept. Achieve the same reverse-tabnabbing protection by nulling
+          // `opener` manually on the window reference instead.
+          const opened = window.open(result.deep_link_url, '_blank');
+          if (opened) {
+            opened.opener = null;
+          } else {
             // Popup blocked — this fires from an async response callback, outside the click's
             // user-gesture window, so the browser can (and does, in some configurations) block it.
             this.messageService.add({

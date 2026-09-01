@@ -33,10 +33,14 @@ import { ProjectService } from './project.service';
 
 /**
  * BFF service for the Formation Checklist section and Formations queue (GH-1958). Only
- * {@link getProjectFormation} branches on {@link isFormationServiceLive} today; every other method
- * is fixture-only and carries its own `// TODO(#1957)` marking the real `lfx-v2-formation-service`
- * swap. The fixture generator's return shape already matches `Formation`/`FormationItem[]`, so
- * downstream code (controllers, Angular services) needs no change when that swap happens.
+ * {@link getProjectFormation} branches on {@link isFormationServiceLive} today; every mutating
+ * method (complete/skip/request/update an item, accept/decline a formation) is fixture-only and
+ * carries its own `// TODO(#1957)` marking the real `lfx-v2-formation-service` swap, as does the
+ * queue read {@link getFormationsQueue}. The two item-detail reads ({@link getFormationItemOrThrow},
+ * {@link getFormationItemDetail}) resolve against whatever the store already holds and need no
+ * marker of their own. The fixture generator's return shape already matches
+ * `Formation`/`FormationItem[]`, so downstream code (controllers, Angular services) needs no change
+ * when the swap happens.
  */
 export class FormationService {
   private readonly projectService = new ProjectService();

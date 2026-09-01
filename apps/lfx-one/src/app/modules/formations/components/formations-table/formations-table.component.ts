@@ -71,11 +71,7 @@ export class FormationsTableComponent {
   ]);
 
   protected readonly isFiltered = computed(() => this.statusTab() !== 'all' || !!this.searchValue().trim());
-
-  /** PrimeNG types the `#body` row context `any` — precomputing the chip label/severity here lets the template do a plain property read instead of a method call. */
-  protected readonly displayRows: Signal<FormationTableRow[]> = computed(() =>
-    this.rows().map((row) => ({ ...row, stageLabel: SUB_STAGE_LABEL[row.sub_stage], stageSeverity: SUB_STAGE_SEVERITY[row.sub_stage] }))
-  );
+  protected readonly displayRows: Signal<FormationTableRow[]> = this.initDisplayRows();
 
   public constructor() {
     // Search is debounced and only re-emits filtersChange from here — the status-tab tab click
@@ -110,5 +106,10 @@ export class FormationsTableComponent {
   private emitFilters(): void {
     const tab = this.statusTab();
     this.filtersChange.emit({ subStage: tab === 'all' ? undefined : (tab as FormationSubStage), search: this.searchValue() });
+  }
+
+  /** PrimeNG types the `#body` row context `any` — precomputing the chip label/severity here lets the template do a plain property read instead of a method call. */
+  private initDisplayRows(): Signal<FormationTableRow[]> {
+    return computed(() => this.rows().map((row) => ({ ...row, stageLabel: SUB_STAGE_LABEL[row.sub_stage], stageSeverity: SUB_STAGE_SEVERITY[row.sub_stage] })));
   }
 }

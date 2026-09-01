@@ -82,14 +82,18 @@ async function gotoFormationsQueue(page: Page): Promise<void> {
 }
 
 test.describe('Formations queue (GH-1958)', () => {
-  test('an auditor sees the tiles and table, with the withdrawn row already reflecting a past decline', async ({ page }) => {
+  // Default setup: an auditor, formation flag on, queue mocked with the standard 3-row fixture.
+  // Individual tests override a route registered here (last-registered handler wins) to change
+  // just the one thing they're testing.
+  test.beforeEach(async ({ page }) => {
     await stubFormationFlag(page, true);
     await stubPersona(page, true);
     await setPersonaCookie(page);
     await stubNavLensItems(page);
     await FormationApiMockHelper.setupFormationsQueueMock(page);
-    await FormationApiMockHelper.setupFormationQueueActionMock(page);
+  });
 
+  test('an auditor sees the tiles and table, with the withdrawn row already reflecting a past decline', async ({ page }) => {
     await gotoFormationsQueue(page);
 
     await expect(page.getByTestId('formations-queue-container')).toBeVisible({ timeout: SIDEBAR_LOAD_TIMEOUT });
@@ -104,11 +108,7 @@ test.describe('Formations queue (GH-1958)', () => {
   });
 
   test('a non-auditor contributor is redirected to /foundation/overview', async ({ page }) => {
-    await stubFormationFlag(page, true);
     await stubPersona(page, false);
-    await setPersonaCookie(page);
-    await stubNavLensItems(page);
-    await FormationApiMockHelper.setupFormationsQueueMock(page);
 
     await gotoFormationsQueue(page);
 
@@ -116,12 +116,6 @@ test.describe('Formations queue (GH-1958)', () => {
   });
 
   test('the status pills filter the table by sub_stage', async ({ page }) => {
-    await stubFormationFlag(page, true);
-    await stubPersona(page, true);
-    await setPersonaCookie(page);
-    await stubNavLensItems(page);
-    await FormationApiMockHelper.setupFormationsQueueMock(page);
-
     await gotoFormationsQueue(page);
     await expect(page.getByTestId('formations-table')).toBeVisible({ timeout: SIDEBAR_LOAD_TIMEOUT });
 
@@ -132,12 +126,14 @@ test.describe('Formations queue (GH-1958)', () => {
   });
 
   test('Accept opens the admin-tool deep link and Decline requires a reason', async ({ page }) => {
-    await stubFormationFlag(page, true);
-    await stubPersona(page, true);
-    await setPersonaCookie(page);
-    await stubNavLensItems(page);
-    await FormationApiMockHelper.setupFormationsQueueMock(page);
     await FormationApiMockHelper.setupFormationQueueActionMock(page);
+    // The deep link points at the real production admin host — stub it on the browser context (not
+    // just `page`) so the popup navigation never leaves the test sandbox to make a live request.
+    await page
+      .context()
+      .route('https://admin.linuxfoundation.org/**', (route) =>
+        route.fulfill({ status: 200, contentType: 'text/html', body: '<html><body>admin stub</body></html>' })
+      );
 
     await gotoFormationsQueue(page);
     await expect(page.getByTestId('formations-table')).toBeVisible({ timeout: SIDEBAR_LOAD_TIMEOUT });
@@ -148,6 +144,8 @@ test.describe('Formations queue (GH-1958)', () => {
       page.getByTestId('formations-table-accept-formation:harbor-data-exchange').locator('button').click(),
     ]);
     expect(popup.url()).toContain('admin.linuxfoundation.org');
+    // A successful open must not also show the "Pop-up blocked" warning.
+    await expect(page.getByText('Pop-up blocked')).toHaveCount(0);
     await popup.close();
 
     await page.getByTestId('formations-table-decline-formation:harbor-data-exchange').locator('button').click();
@@ -164,10 +162,6 @@ test.describe('Formations queue (GH-1958)', () => {
   });
 
   test('the inline error state renders on a 500 from the queue endpoint', async ({ page }) => {
-    await stubFormationFlag(page, true);
-    await stubPersona(page, true);
-    await setPersonaCookie(page);
-    await stubNavLensItems(page);
     await page.route('**/api/formations*', (route) =>
       route.request().method() === 'GET' ? route.fulfill({ status: 500, contentType: 'application/json', body: '{}' }) : route.fallback()
     );
