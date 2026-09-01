@@ -11,9 +11,16 @@ const snowflakeMocks = vi.hoisted(() => ({
 
 const pdfMocks = vi.hoisted(() => ({
   images: [] as { path: string; options: Record<string, unknown> | undefined }[],
+  texts: [] as { text: string; options: Record<string, unknown> | undefined }[],
 }));
 
 vi.mock('@lfx-one/shared/interfaces', () => ({}));
+vi.mock('@lfx-one/shared/utils', async () => {
+  const eventUtils = await vi.importActual<typeof import('../../../../../packages/shared/src/utils/event.utils')>(
+    '../../../../../packages/shared/src/utils/event.utils'
+  );
+  return { isBackfillEventSource: eventUtils.isBackfillEventSource };
+});
 vi.mock('./snowflake.service', () => ({
   SnowflakeService: { getInstance: () => ({ execute: snowflakeMocks.execute }) },
 }));
@@ -53,7 +60,11 @@ vi.mock('pdfkit', () => {
     public lineGap(): this {
       return this;
     }
-    public text(): this {
+    public text(text: unknown, ...rest: unknown[]): this {
+      if (typeof text === 'string') {
+        const options = rest.find((arg) => typeof arg === 'object' && arg !== null) as Record<string, unknown> | undefined;
+        pdfMocks.texts.push({ text, options });
+      }
       return this;
     }
     public moveDown(): this {
@@ -122,16 +133,22 @@ function drawnSignature(): { path: string; options: Record<string, unknown> | un
   return pdfMocks.images[1];
 }
 
+/** All strings passed to doc.text() across the letter, in draw order. */
+function drawnTexts(): string[] {
+  return pdfMocks.texts.map((t) => t.text);
+}
+
 describe('CertificateService', () => {
   let service: CertificateService;
 
   beforeEach(() => {
     vi.clearAllMocks();
     pdfMocks.images = [];
+    pdfMocks.texts = [];
     service = new CertificateService();
   });
 
-  describe('LF Open Source logo override', () => {
+  describe('LF Open Source identity override', () => {
     it('applies the LF Open Source logo for a backfill event in China', async () => {
       mockRow();
 
@@ -149,7 +166,21 @@ describe('CertificateService', () => {
       expect(drawnLogo().options?.['width']).toBe(240);
     });
 
-    it('overrides a project template logo but keeps that project name and signature', async () => {
+    it('replaces the link, name, description and on-behalf line', async () => {
+      mockRow();
+
+      await service.generateCertificate(req, { eventId: '-1', userEmail: 'attendee@example.com', userName: 'Test Attendee' });
+
+      const texts = drawnTexts();
+      expect(texts).toContain('https://lfopensource.cn/');
+      expect(texts.some((t) => t.startsWith('LF Open Source, LLC is pleased that you were able to attend'))).toBe(true);
+      expect(texts).toContain(
+        'LF Open Source, LLC is a nonprofit consortium dedicated to fostering the growth of the Linux operating system. LF Open Source, LLC promotes, protects and standardizes Linux by providing unified resources and services. It is supported by its members — the leading IT companies such as IBM, Intel, Hewlett Packard, etc.'
+      );
+      expect(texts).toContain('On behalf of LF Open Source, LLC, we are glad you were able to join us.');
+    });
+
+    it('overrides a project template logo, link, name, description and on-behalf line but keeps that project address and signature', async () => {
       // Real data: event -6, KubeCon + CloudNativeCon China 2026, owned by CNCF.
       mockRow({ PROJECT_ID: CNCF_PROJECT_ID });
 
@@ -157,6 +188,13 @@ describe('CertificateService', () => {
 
       expect(drawnLogo().path).toContain(LF_OPEN_SOURCE_LOGO);
       expect(drawnSignature().path).toContain('cncf-signature.png');
+
+      const texts = drawnTexts();
+      expect(texts).toContain('https://lfopensource.cn/');
+      expect(texts.some((t) => t.startsWith('LF Open Source, LLC is pleased that you were able to attend'))).toBe(true);
+      expect(texts.some((t) => t.includes('CNCF'))).toBe(false);
+      // CNCF's address block is untouched by the override.
+      expect(texts.some((t) => t.includes('2810 N Church St'))).toBe(true);
     });
 
     it.each([
@@ -173,7 +211,7 @@ describe('CertificateService', () => {
     });
   });
 
-  describe('events that must keep their existing logo', () => {
+  describe('events that must keep their existing identity', () => {
     it.each([
       // 84 China events come from Bevy and must not pick up the override.
       ['a bevy-sourced China event', { EVENT_SOURCE: 'bevy' }],
@@ -184,21 +222,25 @@ describe('CertificateService', () => {
       ['a Hong Kong event', { EVENT_COUNTRY: 'Hong Kong (SAR China)' }],
       ['a null source', { EVENT_SOURCE: null }],
       ['a null country', { EVENT_COUNTRY: null }],
-    ])('keeps the default logo for %s', async (_label, overrides) => {
+    ])('keeps the default logo and link for %s', async (_label, overrides) => {
       mockRow(overrides);
 
       await service.generateCertificate(req, { eventId: 'evt-1', userEmail: 'attendee@example.com', userName: 'Test Attendee' });
 
       expect(drawnLogo().path).toContain(TLF_LOGO);
       expect(drawnLogo().options?.['width']).toBe(145);
+      expect(drawnTexts()).toContain('https://www.linuxfoundation.org/');
+      expect(drawnTexts().some((t) => t.startsWith('The Linux Foundation is pleased'))).toBe(true);
     });
 
-    it('keeps the CNCF logo for a non-matching CNCF event', async () => {
+    it('keeps the CNCF logo, link and name for a non-matching CNCF event', async () => {
       mockRow({ PROJECT_ID: CNCF_PROJECT_ID, EVENT_SOURCE: 'cvent', EVENT_COUNTRY: 'United States' });
 
       await service.generateCertificate(req, { eventId: 'evt-2', userEmail: 'attendee@example.com', userName: 'Test Attendee' });
 
       expect(drawnLogo().path).toContain(CNCF_LOGO);
+      expect(drawnTexts()).toContain('https://www.cncf.io/');
+      expect(drawnTexts().some((t) => t.startsWith('Cloud Native Computing Foundation (CNCF) is pleased'))).toBe(true);
     });
   });
 
