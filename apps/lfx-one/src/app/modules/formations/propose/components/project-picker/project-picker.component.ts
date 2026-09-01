@@ -44,7 +44,10 @@ export class ProjectPickerComponent {
    * during either the `debounceTime` or the HTTP round trip. Set on the RAW (undebounced) query
    * change in the constructor, not inside the debounced pipe in `initResults` — setting it only
    * after `debounceTime(300)` would leave the debounce window itself unguarded, which is exactly
-   * the gap this signal exists to close. Cleared once `initResults`'s inner search completes.
+   * the gap this signal exists to close. Cleared once `initResults`'s inner search completes FOR
+   * THE TERM STILL IN THE BOX — a stale earlier search resolving late (the user kept typing before
+   * it returned) is ignored, so it can't clear the flag for a term the user has already left; see
+   * the `tap` guard in `initResults`.
    */
   protected readonly searching = signal(false);
 

@@ -30,7 +30,11 @@ describe('ProposeComponent', () => {
   let navigate: ReturnType<typeof vi.fn>;
   let messageAdd: ReturnType<typeof vi.fn>;
 
-  const createComponent = async (queryParams: Record<string, string> = {}) => {
+  /** Only the "who else" DOM-rendering test below needs the `ComponentFixture` — every other test
+   *  in this file only drives the component class, via the `createComponent` wrapper below. */
+  const createComponentWithFixture = async (
+    queryParams: Record<string, string> = {}
+  ): Promise<{ component: ProposeComponent; fixture: ComponentFixture<ProposeComponent> }> => {
     await TestBed.configureTestingModule({
       imports: [ProposeComponent],
       providers: [
@@ -46,30 +50,11 @@ describe('ProposeComponent', () => {
 
     const fixture = TestBed.createComponent(ProposeComponent);
     await TestBed.inject(ApplicationRef).whenStable();
-    return fixture.componentInstance;
-  };
-
-  /** Same setup as `createComponent`, but also hands back the `ComponentFixture` — only the
-   *  "who else" DOM-rendering test below needs to query `nativeElement`; every other test in this
-   *  file only drives the component class. */
-  const createComponentWithFixture = async (): Promise<{ component: ProposeComponent; fixture: ComponentFixture<ProposeComponent> }> => {
-    await TestBed.configureTestingModule({
-      imports: [ProposeComponent],
-      providers: [
-        provideHttpClient(),
-        provideHttpClientTesting(),
-        { provide: FormationService, useValue: { createFormation } },
-        { provide: ProjectService, useValue: { getProject, searchProjects } },
-        { provide: Router, useValue: { navigate } },
-        { provide: MessageService, useValue: { add: messageAdd } },
-        { provide: ActivatedRoute, useValue: { snapshot: { queryParamMap: convertToParamMap({}) } } },
-      ],
-    }).compileComponents();
-
-    const fixture = TestBed.createComponent(ProposeComponent);
-    await TestBed.inject(ApplicationRef).whenStable();
     return { component: fixture.componentInstance, fixture };
   };
+
+  const createComponent = async (queryParams: Record<string, string> = {}): Promise<ProposeComponent> =>
+    (await createComponentWithFixture(queryParams)).component;
 
   const validPayload = {
     project_name: 'Example Project',
