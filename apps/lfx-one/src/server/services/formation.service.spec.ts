@@ -139,6 +139,22 @@ describe('FormationService', () => {
       expect(getProjectById).not.toHaveBeenCalled();
     });
 
+    it('drops an item that fails can_complete enrichment instead of failing the whole read', async () => {
+      getProjectIdBySlug.mockResolvedValue({ uid: 'project-uid-3', exists: true });
+      getProjectById.mockResolvedValue({ slug: 'test-project-3', name: 'Test Project 3', parent_uid: null, stage: 'Formation - Engaged' });
+      canComplete.mockRejectedValueOnce(new Error('checkLFStaff unavailable')).mockResolvedValue(true);
+
+      const result = await service.getProjectFormation(buildReq(), 'test-project-3');
+
+      expect(result.items.every((item) => item.can_complete === true)).toBe(true);
+      expect(vi.mocked(logger.warning)).toHaveBeenCalledWith(
+        expect.anything(),
+        'enrich_formation_item',
+        expect.stringContaining('dropping from response'),
+        expect.objectContaining({ item_uid: expect.any(String), err: expect.any(Error) })
+      );
+    });
+
     it('returns the stored (mutated) items on a second read, not a freshly regenerated set', async () => {
       getProjectIdBySlug.mockResolvedValue({ uid: 'project-uid-2', exists: true });
       getProjectById.mockResolvedValue({ slug: 'test-project-2', name: 'Test Project 2', parent_uid: null, stage: 'Formation - Engaged' });

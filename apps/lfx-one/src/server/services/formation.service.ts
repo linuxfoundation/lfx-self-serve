@@ -496,8 +496,9 @@ export class FormationService {
 
   /**
    * `allSettled`, not `all` — a transient failure enriching one item (e.g. the `checkLFStaff` call
-   * behind `canComplete`) must not blank the entire checklist/queue response for items that resolved
-   * fine; a rejected item is logged and dropped rather than failing the whole read.
+   * behind `canComplete`) must not blank the entire checklist response for items that resolved fine;
+   * a rejected item is logged and dropped rather than failing the whole read. Only {@link getProjectFormation}
+   * calls this today — {@link getFormationsQueue} doesn't attach `can_complete` to queue rows at all.
    */
   private async enrichItems(req: Request, items: FormationItem[]): Promise<FormationItem[]> {
     const results = await Promise.allSettled(items.map((item) => this.enrichSingle(req, item)));
@@ -509,7 +510,7 @@ export class FormationService {
       }
       logger.warning(req, 'enrich_formation_item', 'Failed to enrich formation item with can_complete, dropping from response', {
         item_uid: items[index].uid,
-        error: result.reason instanceof Error ? result.reason.message : 'Unknown error',
+        err: result.reason,
       });
     });
     return enriched;
