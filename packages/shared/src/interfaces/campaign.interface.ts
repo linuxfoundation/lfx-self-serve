@@ -1401,10 +1401,21 @@ export interface CampaignServiceCampaignRef {
 /**
  * The answer to "which of my campaigns is this platform id?".
  *
- * `matches` is an array because nothing upstream constrains
- * `(project, platform, platform_campaign_id)` to be unique. An EMPTY array is a 200, not an
- * error: the project genuinely owns no campaign with that id, which is an answer a caller acts
- * on by refusing rather than retrying.
+ * An EMPTY array is a 200, not an error: the project genuinely owns no campaign with that id,
+ * which is an answer a caller acts on by refusing rather than retrying.
+ *
+ * `matches` is an array, but on the ONE platform that has a resolver today it should never hold
+ * more than one. campaign-service migration 000020 puts a unique index on
+ * `(platform, platform_campaign_id)` scoped `WHERE platform = 'google-ads'`, because Google Ads
+ * is a single shared customer id across every foundation — two bindings would fight over the
+ * same paid campaign. So a second google-ads match is an INVARIANT VIOLATION, not a normal
+ * state, and callers refuse it rather than designing around it.
+ *
+ * The array shape is still right, for two reasons. It makes that violation representable and
+ * therefore refusable instead of silently taking the first row. And the constraint is
+ * deliberately NOT global: Microsoft campaign ids are account-scoped and legitimately collide
+ * across per-project connections, so when a second platform gets a resolver, multiplicity there
+ * is real rather than a defect.
  */
 export interface CampaignServiceCampaignResolution {
   platform_campaign_id: string;
