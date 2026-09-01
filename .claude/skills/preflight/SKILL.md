@@ -11,7 +11,7 @@ allowed-tools: Bash, Read, Glob, Grep, AskUserQuestion
 
 # Pre-Submission Preflight Check
 
-You are running the mechanical pre-PR pipeline before the contributor submits a pull request. Every check here is shell-driven or hook-driven, no judgment calls. `CLAUDE.md`'s work cycle owns the review protocol and must be complete before this skill runs; this skill owns only the checks below.
+You are running the mechanical pre-PR pipeline before the contributor submits a pull request. Every check here is shell-driven or hook-driven, no judgment calls. `CLAUDE.md`'s **Pre-PR review** section owns the review protocol and must be complete before this skill runs; this skill owns only the checks below.
 
 Run each check in order, report results clearly, and help fix any issues found.
 

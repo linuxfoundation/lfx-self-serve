@@ -20,11 +20,11 @@ This project has guided skills for common workflows, plus two repo-owned Self Se
 
 ## Reviewer Children (skill-loading subagents)
 
-`CLAUDE.md`'s **Work cycle — post-commit and pre-PR reviews** section is the single owner of the canonical prompts, range pinning, coalescing, batch validation, final-commit optimization, and sweep rules. Do not restate or improvise that protocol here.
+`CLAUDE.md`'s **Pre-PR review** section is the single owner of the loading policies, the shared reviewer prompt, `reviewed_through_sha`, batch validation, and the two review modes. Do not restate or improvise that protocol here.
 
-The cycle launches one general child loading `lfx-skills:lfx-general-code-review` and two children loading the repo-owned `lfx-self-serve-code-review` and `lfx-self-serve-learnings-review` skills. The standard path-discovery aliases are `.claude/skills/local-code-review` and `.claude/skills/local-learnings-review`; they resolve to the same physical skill directories and are not separate reviewer identities.
+The cycle launches one general child loading `/lfx-skills:lfx-general-code-review` and two children loading `/lfx-self-serve-code-review` and `/lfx-self-serve-learnings-review`. `CLAUDE.md` owns the only allowed loading fallback; do not restate it here.
 
-**Guidance requirement:** when a post-commit or pre-PR review intent matches, follow the `CLAUDE.md` work cycle exactly. Once a PR is open, route ordinary iteration through CodeRabbit and Copilot instead of launching the pre-PR trio.
+**Guidance requirement:** when a post-commit or pre-PR review intent matches, follow `CLAUDE.md`'s **Pre-PR review** section exactly. Once a PR is open, follow `CLAUDE.md`'s **Post-PR review** section instead of launching the local pre-PR reviewers.
 
 ## Trigger Phrases
 
@@ -51,7 +51,7 @@ The cycle launches one general child loading `lfx-skills:lfx-general-code-review
 - "What would CodeRabbit flag?", "What would Copilot say?", "Post-commit review"
 - Any "is this ready" question where no PR number is given
 
-Follow `CLAUDE.md`'s work cycle exactly. It owns the required children, prompts, range validation, batching, exceptions, and PR-boundary behavior.
+Follow `CLAUDE.md`'s **Pre-PR review** section exactly. It owns the required reviewers, prompts, range validation, batching, modes, and PR-boundary behavior.
 
 **`/lfx-self-serve-pr-readiness`** — pre-PR, shape focus (run once, before opening the PR). Match any of these intents:
 
@@ -78,6 +78,6 @@ Non-developer contributors use these skills as guided workflows. Follow these ru
 
 - If the user describes a feature they want to build, suggest `/self-serve-dev` — it walks them through the full process step-by-step
 - If the user asks about setup or getting started, suggest `/setup`
-- For post-commit, pre-PR, and post-PR review behavior, follow `CLAUDE.md`'s work cycle exactly; do not reconstruct the protocol from this routing file.
+- For post-commit, pre-PR, and post-PR review behavior, follow `CLAUDE.md`'s **Pre-PR review** and **Post-PR review** sections exactly; do not reconstruct the protocol from this routing file.
 - If you are unsure which workflow applies, ask the user what they're trying to accomplish.
 - When a skill references architecture docs in `docs/`, read those docs before generating code — they are the source of truth.
