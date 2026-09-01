@@ -27,6 +27,7 @@
  *   S7  Flag ON  — LF Staff stays Social-Listening-only on Marketing Impact even with marketing_auditor-equivalent access already granted via canViewExecutiveDashboards
  *   S8  Flag OFF (default) — grants present on the API response are ignored; behavior is byte-identical to pre-LFXV2-2236 ED/LF-staff-only gating
  *   S9  Flag ON  — marketing_auditor + campaign_manager grants do not unlock Health Metrics (ED/LF-Staff-only, LFXV2-2237)
+ *   S10 Flag ON  — hybrid marketing_auditor (contributor + marketing grant) sees Marketing section under Project lens too, not just Foundation (LFXV2-2235)
  *
  * This suite does NOT flip the server `LFX_MARKETING_OPS_FGA_ENABLED` env var or hit protected
  * analytics/campaigns routes directly — see `require-marketing-access.middleware.spec.ts` for
@@ -380,6 +381,32 @@ test.describe('S9: Foundation lens — marketing_auditor + campaign_manager gran
     skipWhenAuthMissing(page);
 
     await expect(page, 'persona=marketing_auditor+campaign_manager should be redirected away from health-metrics').toHaveURL(/\/foundation\/overview/, {
+      timeout: ELEMENT_TIMEOUT,
+    });
+  });
+});
+
+// ─── S10: hybrid marketing_auditor also sees Marketing under Project lens ─────
+
+test.describe('S10: Project lens — hybrid marketing_auditor (flag ON, contributor + marketing grant)', () => {
+  test.beforeEach(async ({ page }) => {
+    await stubMarketingOpsFlag(page, true);
+    // A 'contributor' persona alone grants the project lens (project-scoped role); adding
+    // isMarketingAuditor also grants the foundation lens via hasMarketingGrant — together these
+    // make the user hybrid, reproducing the bug: the Marketing section must still surface from
+    // Project lens, not just Foundation lens.
+    await stubPersona(page, ['contributor'], { isMarketingAuditor: true });
+    await setPersonaCookie(page, ['contributor']);
+    await stubNavLensItems(page);
+    await stubProjectApi(page, MOCK_FOUNDATION_SLUG, false);
+    await gotoAndWaitForSidebar(page, `/project/overview?project=${MOCK_FOUNDATION_SLUG}`);
+  });
+
+  test('sees Marketing section with Marketing Impact under Project lens', async ({ page }) => {
+    await expect(page.getByTestId(SIDEBAR.marketingSection), 'persona=hybrid-marketing_auditor lens=project section=marketing').toBeVisible({
+      timeout: ELEMENT_TIMEOUT,
+    });
+    await expect(page.getByTestId(SIDEBAR.marketingImpact), 'persona=hybrid-marketing_auditor lens=project item=marketing-impact').toBeVisible({
       timeout: ELEMENT_TIMEOUT,
     });
   });
