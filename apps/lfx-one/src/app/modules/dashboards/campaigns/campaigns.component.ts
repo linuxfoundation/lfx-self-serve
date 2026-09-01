@@ -770,7 +770,12 @@ export class CampaignsComponent {
   protected readonly emailTemplatesRenderCapped = computed<boolean>(() => this.emailTemplateRenderTotal() > HUBSPOT_TEMPLATE_RENDER_LIMIT);
 
   /**
-   * The "showing the first N of M" line.
+   * The "showing N of M" line.
+   *
+   * NOT "the first N of M": when a selected template ranks past the cap it is spliced into the
+   * last drawn slot, so the rows on screen are the first N-1 ranked plus that one. The count and
+   * the total stay exact either way — only "first" would have been false, and false in precisely
+   * the case the splice exists for.
    *
    * States the cap as FACT, unlike the `possiblyTruncated` banner beside it, which says "may be"
    * because a capped 500 and a complete 500 are indistinguishable upstream. Here both numbers are

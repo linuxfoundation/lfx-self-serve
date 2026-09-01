@@ -2964,7 +2964,8 @@ describe('CampaignsComponent — email delivery channel', () => {
       internals().emailTemplates.set(templates as never);
       (internals() as unknown as { onSelectEmailType(id: string): void }).onSelectEmailType('thank-you-survey');
 
-      // Ranking AFTER the slice could only reorder the first 500 -- the one template the operator
+      // Ranking AFTER the slice could only reorder the first HUBSPOT_TEMPLATE_RENDER_LIMIT rows --
+      // the one template the operator
       // was looking for would have been cut before it could rise.
       expect(internals().emailTemplatesRendered()[0].id).toBe('match');
     });
