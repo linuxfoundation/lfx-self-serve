@@ -22,7 +22,12 @@
            inside that div, and preventDefault() on a bubbled keydown cancels a button's own
            Enter-activates-click default action too — scoping it to the input keeps Enter on a
            result selectable while still blocking the outer form's implicit submit (keydown still
-           bubbles from the inner native <input> up to this host, so the guard still fires). -->
+           bubbles from the inner native <input> up to this host, so the guard still fires).
+           Known gap, deliberately deferred rather than expanded here: Enter in the search box is
+           now a dead key (it neither submits nor selects), and the results list below has no
+           listbox/option roles, active-descendant, or arrow-key navigation — a keyboard user must
+           Tab into the list to pick a result. A full combobox pattern is a real feature addition,
+           not a fix, so it's out of scope for this change. -->
       <lfx-input-text
         size="small"
         [form]="searchForm"
