@@ -1,7 +1,8 @@
 // Copyright The Linux Foundation and each contributor to LFX.
 // SPDX-License-Identifier: MIT
 
-import { CommitteeReference } from './committee.interface';
+import type { CommitteeReference } from './committee.interface';
+import type { SurveyStatus } from '../enums/survey.enum';
 
 /**
  * Minimal shape required to evaluate the effective survey status.
@@ -96,15 +97,15 @@ export interface Survey {
   is_project_survey: boolean;
   /** Associated committees */
   committees: SurveyCommittee[];
-  /** Primary project UID (flattened from committees for filtering) */
+  /** Primary project UID (list rows: flattened from committees[0] by the BFF; detail: from the upstream payload) */
   project_uid?: string;
-  /** Project display name (enriched for filtering) */
+  /** Project display name (BFF-enriched on list rows and the authenticated detail response) */
   project_name?: string;
-  /** Project URL slug (enriched for filtering) */
+  /** Project URL slug (BFF-enriched on list rows and the authenticated detail response) */
   project_slug?: string;
-  /** Whether the project is a foundation (top-level entity) */
+  /** Whether the owning project is a foundation (BFF-enriched; absent when the lookup fails — consumers treat undefined as "tier unknown") */
   is_foundation?: boolean;
-  /** Parent project UID (for subprojects under a foundation) */
+  /** Parent project UID (BFF-enriched on list rows for Me-lens foundation filtering; not set on the detail response) */
   parent_project_uid?: string;
   /** Committee category */
   committee_category: string;
@@ -133,6 +134,21 @@ export interface Survey {
   /** survey_response UID — present only in the Me lens; identifies the specific response record this row was built from (one row per survey × committee) */
   response_uid?: string;
 }
+
+/**
+ * Surveys-table row view model: a `Survey` stamped with its display status and per-row canonical
+ * edit link (GH-1569). `editCommands`/`editQueryParams` derive from the survey's owning tier, not
+ * the viewer's active lens; unenriched rows (undefined `is_foundation`) carry the flat path,
+ * which `lensRedirectGuard` prefixes.
+ */
+export type SurveyTableRow = Survey & {
+  /** Cutoff/case-normalized status the badge, filter, and sort all agree on */
+  displayStatus: SurveyStatus;
+  /** Canonical edit-link commands (e.g. ['/', 'foundation', 'surveys', uid, 'edit']) */
+  editCommands: string[];
+  /** Edit-link query params: the row's own project slug + committee scope */
+  editQueryParams: Record<string, string>;
+};
 
 /**
  * A single choice/free-text answer selected by the respondent for a question.

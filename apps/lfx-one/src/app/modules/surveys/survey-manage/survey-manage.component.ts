@@ -1,10 +1,10 @@
 // Copyright The Linux Foundation and each contributor to LFX.
 // SPDX-License-Identifier: MIT
 
-import { Component, computed, inject, Signal, signal } from '@angular/core';
-import { toObservable, toSignal } from '@angular/core/rxjs-interop';
+import { Component, computed, DestroyRef, inject, Signal, signal } from '@angular/core';
+import { takeUntilDestroyed, toObservable, toSignal } from '@angular/core/rxjs-interop';
 import { FormControl, FormGroup, ReactiveFormsModule, Validators } from '@angular/forms';
-import { ActivatedRoute, Router, RouterLink } from '@angular/router';
+import { ActivatedRoute, NavigationEnd, Router, RouterLink } from '@angular/router';
 import { ButtonComponent } from '@components/button/button.component';
 import {
   SCHEDULE_SURVEY_CONFIRMATION,
@@ -14,17 +14,29 @@ import {
   SURVEY_LABEL,
   SURVEY_MANAGE_TOTAL_STEPS,
 } from '@lfx-one/shared/constants';
-import { Committee, CommitteeReference, CreateSurveyRequest, SurveyDistributionMethod, SurveyReminderType } from '@lfx-one/shared/interfaces';
+import {
+  Committee,
+  CommitteeReference,
+  CreateSurveyRequest,
+  EntityWithProject,
+  ProjectContext,
+  Survey,
+  SurveyDistributionMethod,
+  SurveyReminderType,
+} from '@lfx-one/shared/interfaces';
 import { CommitteeService } from '@services/committee.service';
+import { ProjectContextService } from '@services/project-context.service';
+import { ProjectService } from '@services/project.service';
 import { SurveyService } from '@services/survey.service';
+import { applyEntityProjectContext, syncEntityProjectContext } from '@shared/utils/entity-project-context.util';
 import { evictOnWriteAccessLoss } from '@shared/utils/evict-on-write-access-loss.util';
 import { MessageComponent } from '@components/message/message.component';
-import { markFormControlsAsTouched } from '@lfx-one/shared/utils';
+import { computeIsFoundation, markFormControlsAsTouched } from '@lfx-one/shared/utils';
 import { trimmedRequired } from '@lfx-one/shared/validators';
 import { ConfirmationService, MessageService } from 'primeng/api';
 import { ConfirmDialogModule } from 'primeng/confirmdialog';
 import { StepperModule } from 'primeng/stepper';
-import { catchError, combineLatest, distinctUntilChanged, filter, map, of, switchMap, take } from 'rxjs';
+import { catchError, combineLatest, distinctUntilChanged, filter, map, merge, of, switchMap, take } from 'rxjs';
 
 import { SurveyAudienceTypeComponent } from '../components/survey-audience-type/survey-audience-type.component';
 import { SurveyEmailDraftComponent } from '../components/survey-email-draft/survey-email-draft.component';
@@ -56,6 +68,9 @@ export class SurveyManageComponent {
   private readonly messageService = inject(MessageService);
   private readonly committeeService = inject(CommitteeService);
   private readonly surveyService = inject(SurveyService);
+  private readonly projectContextService = inject(ProjectContextService);
+  private readonly projectService = inject(ProjectService);
+  private readonly destroyRef = inject(DestroyRef);
 
   // Committee context — when navigated from a committee tab with ?committee_uid=
   public readonly committeeContext = signal<Committee | null>(null);
@@ -75,6 +90,10 @@ export class SurveyManageComponent {
 
   // Complex computed/toSignal signals
   public readonly isEditMode: Signal<boolean> = this.initIsEditMode();
+  public readonly survey: Signal<Survey | null> = this.initSurvey();
+  // Survey → EntityWithProject adapter so the active project context syncs from the loaded
+  // survey, not a stale cookie-restored context (GH-1569).
+  private readonly surveyEntityContext: Signal<EntityWithProject | null> = this.initSurveyEntityContext();
   public readonly formValue: Signal<Record<string, unknown>> = this.initFormValue();
   public readonly canGoPrevious: Signal<boolean> = this.initCanGoPrevious();
   public readonly canGoNext: Signal<boolean> = this.initCanGoNext();
@@ -84,6 +103,10 @@ export class SurveyManageComponent {
   public readonly submitButtonLabel: Signal<string> = this.initSubmitButtonLabel();
 
   public constructor() {
+    // Sync context from the loaded survey itself — an edit deep link can arrive with no
+    // `?project=` under a stale cookie-restored context (GH-1569). Mirrors meeting-manage (gh-1432).
+    syncEntityProjectContext(this.surveyEntityContext, this.projectContextService, this.router, this.destroyRef, { preferEntityKind: true });
+    this.initSurveyContextFallback();
     this.initCommitteeContext();
     evictOnWriteAccessLoss();
   }
@@ -92,7 +115,8 @@ export class SurveyManageComponent {
     const next = this.currentStep() + 1;
     if (next <= this.totalSteps && this.canNavigateToStep(next)) {
       if (this.isEditMode()) {
-        this.router.navigate([], { queryParams: { step: next } });
+        // Merge so the entity's `?project=` (context sync key) and `committee_uid` survive step changes (GH-1569).
+        this.router.navigate([], { queryParams: { step: next }, queryParamsHandling: 'merge' });
       } else {
         this.internalStep.set(next);
       }
@@ -103,7 +127,7 @@ export class SurveyManageComponent {
     const previous = this.currentStep() - 1;
     if (previous >= 1) {
       if (this.isEditMode()) {
-        this.router.navigate([], { queryParams: { step: previous } });
+        this.router.navigate([], { queryParams: { step: previous }, queryParamsHandling: 'merge' });
       } else {
         this.internalStep.set(previous);
       }
@@ -113,7 +137,7 @@ export class SurveyManageComponent {
   public goToStep(step: number | undefined): void {
     if (step !== undefined && step >= 1 && step <= this.totalSteps) {
       if (this.isEditMode()) {
-        this.router.navigate([], { queryParams: { step } });
+        this.router.navigate([], { queryParams: { step }, queryParamsHandling: 'merge' });
       } else {
         if (step <= this.currentStep() || this.canNavigateToStep(step)) {
           this.internalStep.set(step);
@@ -391,6 +415,97 @@ Thank you,
       }
     }
     return true;
+  }
+
+  /**
+   * Edit-mode entity fetch: loads the survey being edited so the project-context sync and the
+   * writerGuard probe derive from the entity itself, not a stale cookie-restored context
+   * (GH-1569). Shares the guard probe's short-TTL cached request via SurveyService.getSurvey.
+   * No form pre-population here — that's the edit-flow completion ticket.
+   */
+  private initSurvey(): Signal<Survey | null> {
+    return toSignal(
+      toObservable(this.surveyId).pipe(
+        switchMap((id) => {
+          if (!id) {
+            return of(null);
+          }
+          return this.surveyService.getSurvey(id).pipe(
+            catchError(() => {
+              this.messageService.add({
+                severity: 'error',
+                summary: 'Error',
+                detail: `${this.surveyLabel.singular} not found`,
+              });
+              this.router.navigate(['/surveys']);
+              return of(null);
+            })
+          );
+        })
+      ),
+      { initialValue: null }
+    );
+  }
+
+  /**
+   * Adapts the loaded survey to {@link EntityWithProject}; a falsy `project_slug` (absent or
+   * empty) reads as "unenriched" to both the sync and the uid fallback below.
+   */
+  private initSurveyEntityContext(): Signal<EntityWithProject | null> {
+    return computed(() => {
+      const survey = this.survey();
+      if (!survey) {
+        return null;
+      }
+      return {
+        uid: survey.uid,
+        project_uid: survey.project_uid ?? '',
+        project_slug: survey.project_slug,
+        project_name: survey.project_name,
+        is_foundation: survey.is_foundation ?? null,
+      };
+    });
+  }
+
+  /**
+   * Unenriched-payload fallback (project_uid but no usable project_slug): resolve the project by
+   * uid and set context from it; NavigationEnd re-applies it, mirroring syncEntityProjectContext
+   * (GH-1569). `getProject(uid, false)` — `current: false` so the fetch doesn't clobber
+   * ProjectService's shared state; a null result leaves the (stale) context untouched rather
+   * than erroring the page.
+   */
+  private initSurveyContextFallback(): void {
+    const unresolvedEntity$ = toObservable(this.surveyEntityContext).pipe(
+      distinctUntilChanged((a, b) => a?.uid === b?.uid && a?.project_uid === b?.project_uid)
+    );
+    const navigationReapply$ = this.router.events.pipe(
+      filter((event) => event instanceof NavigationEnd),
+      map(() => this.surveyEntityContext())
+    );
+    merge(unresolvedEntity$, navigationReapply$)
+      .pipe(
+        filter((entity): entity is EntityWithProject => !!entity?.project_uid && !entity.project_slug),
+        switchMap((entity) =>
+          this.projectService.getProject(entity.project_uid, false).pipe(
+            map((project) => {
+              if (!project) {
+                return null;
+              }
+              const context: ProjectContext = { uid: project.uid, name: project.name, slug: project.slug };
+              return { context, isFoundation: computeIsFoundation(project) };
+            })
+          )
+        ),
+        takeUntilDestroyed(this.destroyRef)
+      )
+      .subscribe((resolved) => {
+        if (!resolved) {
+          return;
+        }
+        // Mirror syncEntityProjectContext: only write ?project= to the URL when already present.
+        const syncUrl = 'project' in this.router.parseUrl(this.router.url).queryParams;
+        applyEntityProjectContext(this.projectContextService, resolved.context, resolved.isFoundation, syncUrl);
+      });
   }
 
   private isStepValid(step: number): boolean {

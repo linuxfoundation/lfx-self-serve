@@ -194,8 +194,8 @@
                       severity="primary"
                       size="small"
                       [text]="true"
-                      [routerLink]="['/surveys', survey.uid, 'edit']"
-                      [queryParams]="editQueryParams()"
+                      [routerLink]="survey.editCommands"
+                      [queryParams]="survey.editQueryParams"
                       (onClick)="$event.stopPropagation()"
                       [attr.data-testid]="'surveys-edit-' + rowId">
                     </lfx-button>

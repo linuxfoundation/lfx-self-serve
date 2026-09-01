@@ -13,6 +13,7 @@ import { MeetingService } from '../services/meeting.service';
 import { PersonaService } from '../services/persona.service';
 import { ProjectContextService } from '../services/project-context.service';
 import { ProjectService } from '../services/project.service';
+import { SurveyService } from '../services/survey.service';
 import { VoteService } from '../services/vote.service';
 import { hasMeetingWriteAccess, resolveEntityWriteSlug } from '../utils/write-access.util';
 
@@ -33,7 +34,7 @@ import { hasMeetingWriteAccess, resolveEntityWriteSlug } from '../utils/write-ac
  *    value wins when present). The backend ruleset allows committee:uid#writer to create
  *    resources associated with their committee.
  *
- * Slug resolution: on routes flagged `data.entityScopedSlug` (meeting/group/mailing-list/vote edit), resolves
+ * Slug resolution: on routes flagged `data.entityScopedSlug` (meeting/group/mailing-list/vote/survey edit), resolves
  * the slug from the entity itself first — the active context can belong to a different project
  * when the edit link carried no `?project=`. A non-404 failure on that read resolves no slug at all,
  * so the guard redirects instead of authorizing against a stale context; a flagged route with no
@@ -62,6 +63,7 @@ export const writerGuard: CanActivateFn = (route: ActivatedRouteSnapshot) => {
   const committeeService = inject(CommitteeService);
   const mailingListService = inject(MailingListService);
   const meetingService = inject(MeetingService);
+  const surveyService = inject(SurveyService);
   const voteService = inject(VoteService);
   const router = inject(Router);
 
@@ -87,6 +89,9 @@ export const writerGuard: CanActivateFn = (route: ActivatedRouteSnapshot) => {
     committees: (id) => committeeService.fetchCommittee(id),
     votes: (id) => voteService.fetchVote(id),
     'mailing-lists': (id) => mailingListService.getMailingList(id),
+    // Survey.project_uid is typed optional — map absent to '' so the probe satisfies the
+    // registry's Pick<EntityWithProject> shape; resolveEntityWriteSlug treats '' as absent.
+    surveys: (id) => surveyService.getSurvey(id).pipe(map((survey) => ({ project_slug: survey.project_slug, project_uid: survey.project_uid ?? '' }))),
   };
   const resolveSlug = (): Observable<{ slug: string | null; entityCommitteeUid: string | null }> => {
     const fromContext = route.queryParamMap.get('project') ?? projectContextService.activeContext()?.slug ?? null;

@@ -3,14 +3,16 @@
 
 import { HttpClient, HttpParams } from '@angular/common/http';
 import { inject, Injectable } from '@angular/core';
+import { SURVEY_DETAIL_CACHE_TTL_MS } from '@lfx-one/shared/constants';
 import { CreateSurveyRequest, MySurveyResponse, Survey, SurveyResponsesPage } from '@lfx-one/shared/interfaces';
-import { catchError, Observable, of, take, throwError } from 'rxjs';
+import { catchError, Observable, of, shareReplay, take, tap, throwError } from 'rxjs';
 
 @Injectable({
   providedIn: 'root',
 })
 export class SurveyService {
   private readonly http = inject(HttpClient);
+  private readonly surveyDetailCache = new Map<string, { observable: Observable<Survey>; cachedAt: number }>();
 
   public getSurveys(params?: HttpParams): Observable<Survey[]> {
     return this.http.get<Survey[]>('/api/surveys', { params });
@@ -57,18 +59,39 @@ export class SurveyService {
     );
   }
 
+  /**
+   * Survey-detail fetch with a short-TTL shared cache: the writerGuard slug probe and
+   * SurveyManageComponent's edit-mode fetch need the same payload within one navigation —
+   * sharing the request avoids a duplicate fetch on every edit-page load (GH-1569).
+   * Probe-friendly: no signal side-effects. Entries evict on error and on delete.
+   * Mirrors MailingListService.getMailingList.
+   */
   public getSurvey(surveyUid: string, projectId?: string): Observable<Survey> {
+    const cacheKey = `${surveyUid}:${projectId ?? ''}`;
+    const cached = this.surveyDetailCache.get(cacheKey);
+    if (cached && Date.now() - cached.cachedAt < SURVEY_DETAIL_CACHE_TTL_MS) {
+      return cached.observable;
+    }
+    if (cached) {
+      this.surveyDetailCache.delete(cacheKey);
+    }
+
     let params = new HttpParams();
     if (projectId) {
       params = params.set('project_id', projectId);
     }
 
-    return this.http.get<Survey>(`/api/surveys/${surveyUid}`, { params }).pipe(
+    const request$ = this.http.get<Survey>(`/api/surveys/${surveyUid}`, { params }).pipe(
+      tap({ error: () => this.surveyDetailCache.delete(cacheKey) }),
       catchError((error) => {
         console.error(`Failed to load survey ${surveyUid}:`, error);
         return throwError(() => error);
-      })
+      }),
+      shareReplay(1)
     );
+    this.pruneExpiredSurveyDetailCache();
+    this.surveyDetailCache.set(cacheKey, { observable: request$, cachedAt: Date.now() });
+    return request$;
   }
 
   /**
@@ -107,10 +130,29 @@ export class SurveyService {
   public deleteSurvey(surveyUid: string): Observable<void> {
     return this.http.delete<void>(`/api/surveys/${surveyUid}`).pipe(
       take(1),
+      tap(() => this.evictSurveyDetailCache(surveyUid)),
       catchError((error) => {
         console.error(`Failed to delete survey ${surveyUid}:`, error);
         return throwError(() => error);
       })
     );
+  }
+
+  /** Drops every cached detail entry for a survey (cache keys carry the project_id variant suffix). */
+  private evictSurveyDetailCache(surveyUid: string): void {
+    for (const key of this.surveyDetailCache.keys()) {
+      if (key.startsWith(`${surveyUid}:`)) {
+        this.surveyDetailCache.delete(key);
+      }
+    }
+  }
+
+  private pruneExpiredSurveyDetailCache(): void {
+    const now = Date.now();
+    for (const [key, entry] of this.surveyDetailCache) {
+      if (now - entry.cachedAt >= SURVEY_DETAIL_CACHE_TTL_MS) {
+        this.surveyDetailCache.delete(key);
+      }
+    }
   }
 }
