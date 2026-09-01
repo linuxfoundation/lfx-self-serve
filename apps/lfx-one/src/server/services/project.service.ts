@@ -1923,7 +1923,8 @@ export class ProjectService {
         d.MAINTAINERS_CURRENT_COUNT,
         d.STARS_YTD_COUNT,
         d.LAST_UPDATED_TS,
-        d.HEALTH_SCORE_CATEGORY_V2
+        d.HEALTH_SCORE_CATEGORY_V2,
+        d.COVERED_CATEGORY_COUNT_V2
       FROM ANALYTICS.PLATINUM_LFX_ONE.FOUNDATION_TOTAL_PROJECTS_DETAIL d
       WHERE d.FOUNDATION_SLUG = ?
       ORDER BY d.PROJECT_NAME ASC
@@ -1954,6 +1955,7 @@ export class ProjectService {
         // Normalize the upstream capitalized category to our lowercase union; guard
         // against unexpected strings so the interface's promise (FoundationHealthScore | null) holds.
         healthScoreCategory: normalizeHealthScoreCategoryV2(row.HEALTH_SCORE_CATEGORY_V2),
+        healthCoveredCategoryCount: row.COVERED_CATEGORY_COUNT_V2 ?? null,
       }));
 
       logger.debug(undefined, 'get_foundation_projects_detail', 'Fetched project detail rows', { count: projects.length });
