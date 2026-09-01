@@ -2,7 +2,7 @@
 // SPDX-License-Identifier: MIT
 
 import type { KeywordActionRequest } from '@lfx-one/shared/interfaces';
-import { describe, expect, it } from 'vitest';
+import { afterEach, describe, expect, it, vi } from 'vitest';
 
 import {
   appliedResults,
@@ -13,6 +13,7 @@ import {
   inRequestOrder,
   toBulkResponse,
   toUpstreamActions,
+  applyKeywordActionsViaCampaignService,
 } from './campaign-keyword-actions';
 import { MicroserviceError } from '../errors/microservice.error';
 
@@ -235,5 +236,36 @@ describe('classifyMutationFailure', () => {
 
   it('treats a transport failure with no status at all as unconfirmed', () => {
     expect(classifyMutationFailure(new Error('socket hang up'))).toContain(CAMPAIGN_OUTCOME_UNCONFIRMED);
+  });
+});
+
+describe('applyKeywordActionsViaCampaignService — the fan-out stop', () => {
+  afterEach(() => {
+    vi.restoreAllMocks();
+  });
+
+  it('reports groups it never reached instead of dropping them, once the service is unreachable', async () => {
+    // The defect: the loop is sequential and the controller admits up to MAX_BULK_KEYWORD_ACTIONS
+    // campaigns, so an outage sent 50 doomed probes at a 30s timeout each -- one HTTP request held
+    // open for ~25 minutes for a single user action. A transport failure means the NEXT lookup is
+    // doomed too, so the fan-out stops; a 4xx would not, because that is an answer about THIS
+    // request only.
+    const resolveGoogleAdsCampaign = vi
+      .fn()
+      .mockRejectedValue(new MicroserviceError('Request failed: fetch failed', 503, 'ECONNRESET', { originalError: new Error('fetch failed') }));
+    const applyKeywordActions = vi.fn();
+
+    const client = { resolveGoogleAdsCampaign, applyKeywordActions } as never;
+    const body = { action: 'pause' as const, keywords: [kw('camp-1', 'k-1'), kw('camp-2', 'k-2')] };
+    const req = { log: { warn: vi.fn(), info: vi.fn(), error: vi.fn(), debug: vi.fn() } } as never;
+
+    const res = await applyKeywordActionsViaCampaignService(req, client, 'aswf', body);
+
+    // Nothing dropped: the response is zipped onto the request BY INDEX in optimization-tab, so a
+    // short array would land a still-spending keyword on another row's outcome.
+    expect(res.results).toHaveLength(2);
+    // The second group was never probed -- that is the whole fix.
+    expect(resolveGoogleAdsCampaign).toHaveBeenCalledTimes(1);
+    expect(res.results[1].success).toBe(false);
   });
 });

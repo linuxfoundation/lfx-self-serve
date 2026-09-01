@@ -212,12 +212,6 @@ export const CAMPAIGN_OUTCOME_UNCONFIRMED =
   'The change was sent but the confirmation did not match the request. Check the campaign in Google Ads before retrying.';
 
 /**
- * Why a campaign could not be acted on, in words a user can act on.
- *
- * Both cases are refusals rather than errors upstream, so they arrive as ordinary answers and
- * have to be turned into per-keyword failures here.
- */
-/**
  * The message a failed keyword mutation reports, and whether it claims certainty.
  *
  * EXPORTED so it can be pinned. It lived inline and unexported, which is exactly how it shipped

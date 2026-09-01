@@ -25,15 +25,6 @@ import type {
 // ---------------------------------------------------------------------------
 
 /**
- * Score a candidate name against the query, exactly as the legacy path did.
- *
- * Three additive signals: an exact match, a containment either way, and a shared word longer
- * than three characters. Ported verbatim rather than improved: changing the ranking during a
- * backend cutover would make a behaviour change look like a backend bug, and this ordering is
- * what users have been choosing from.
- */
-
-/**
  * The lowest score that may be applied without a human choosing it.
  *
  * scoreCampaignName() adds three independent signals: exact name, containment either way, and a shared word
@@ -43,6 +34,16 @@ import type {
  */
 const MIN_CONFIDENT_SCORE = 2;
 
+/**
+ * Score a candidate campaign name against the query. SHARED by both lookup paths.
+ *
+ * Three additive signals: an exact match, a containment either way, and a shared word longer
+ * than three characters. The ranking is the legacy path's, deliberately — changing it during a
+ * backend cutover would make a behaviour change look like a backend bug, and this ordering is
+ * what users have been choosing from. It is no longer "ported verbatim": the blank-name guard
+ * below was added because the two copies had diverged without it, and the legacy path is now
+ * this function rather than a second copy of it.
+ */
 export function scoreCampaignName(name: string, query: string): number {
   const nameLower = name.toLowerCase();
   const queryLower = query.toLowerCase();

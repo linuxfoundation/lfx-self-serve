@@ -2058,7 +2058,13 @@ function upstreamMessageOr(error: unknown, fallback: string): string {
     return fallback;
   }
   // A BFF-raised transport failure is not an upstream message, whatever its status.
-  if (error.code === 'NETWORK_ERROR' || error.code === 'TIMEOUT') {
+  //
+  // Matched by ORIGIN, not by a code string. The first attempt keyed on 'NETWORK_ERROR', which
+  // executeRequest only emits as a fallback when `cause.code` is absent — real failures arrive
+  // as ECONNRESET, ENOTFOUND or UND_ERR_SOCKET, so the guard missed the common case and the
+  // leak it existed to stop was still live. Every transport site sets originalError; upstream
+  // errors relayed from campaign-service never do, which is the distinction that matters.
+  if (error.originalError !== undefined || error.code === 'TIMEOUT') {
     return fallback;
   }
   const controlled = error.statusCode === 503 || (error.statusCode >= 400 && error.statusCode < 500);

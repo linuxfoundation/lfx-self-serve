@@ -176,14 +176,18 @@ export class PlanningTabComponent implements OnInit {
    */
   protected readonly hsCreateSuppressed = signal(false);
   /**
-   * The narrower claim: HubSpot itself returned fewer campaigns than it matched.
+   * HubSpot itself returned fewer campaigns than it matched. Carries the wire field `capped`.
    *
-   * Separate from `hsCreateSuppressed` because only this one licenses the words "there are more it did
-   * not return". A result HubSpot returned in full, whose rows the local scorer rejected, is
-   * equally inconclusive but is NOT truncated — and telling an operator to narrow their search
-   * term there points them away from the actual remedy, which is to check the name.
+   * Named for truncation specifically, not for the weaker "completeness unproven", because only
+   * truncation licenses the words "there are more it did not return" that noMatchStatus() prints
+   * from it. An earlier name asserted the weaker claim while holding this stronger one, and read
+   * to a reviewer as the message fabricating a truncation it had not established.
+   *
+   * Separate from `hsCreateSuppressed` for that reason: a result HubSpot returned in FULL whose
+   * rows the local scorer rejected is equally inconclusive but is NOT truncated — and telling an
+   * operator to narrow their term there points away from the real remedy, checking the name.
    */
-  protected readonly hsCompletenessUnproven = signal(false);
+  protected readonly hsHubSpotTruncated = signal(false);
   protected readonly hsMatches = signal<{ name: string; hs_utm: string }[]>([]);
   /**
    * Whether the match picker has anything to offer.
@@ -452,7 +456,7 @@ export class PlanningTabComponent implements OnInit {
       this.hsMatches.set([]);
       this.hsNotFound.set(false);
       this.hsCreateSuppressed.set(false);
-      this.hsCompletenessUnproven.set(false);
+      this.hsHubSpotTruncated.set(false);
       this.hsUnconfirmed.set(false);
       this.hsStatus.set(null);
       this.hsSearching.set(false);
@@ -1381,7 +1385,7 @@ export class PlanningTabComponent implements OnInit {
     this.hsMatches.set([]);
     this.hsNotFound.set(false);
     this.hsCreateSuppressed.set(false);
-    this.hsCompletenessUnproven.set(false);
+    this.hsHubSpotTruncated.set(false);
     // The lookup is what RESOLVES the unknown, so the unconfirmed state clears when one starts.
     this.hsUnconfirmed.set(false);
     this.hsUtm.set(null);
@@ -1442,7 +1446,7 @@ export class PlanningTabComponent implements OnInit {
             // which includes HubSpot omitting `total` entirely, so "it matched more than it
             // could return" would be fabricated for a response that never said so, and would
             // send the operator to narrow a term when the remedy is to check the name.
-            this.hsCompletenessUnproven.set(result?.capped === true);
+            this.hsHubSpotTruncated.set(result?.capped === true);
             this.hsStatus.set(this.noMatchStatus(result?.capped === true, result?.inconclusive === true));
           }
         },

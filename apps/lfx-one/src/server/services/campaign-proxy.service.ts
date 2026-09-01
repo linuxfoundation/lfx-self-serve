@@ -2,6 +2,7 @@
 // SPDX-License-Identifier: MIT
 
 import { AI_MODEL, CAMPAIGN_DELIVERY_TYPES, JOB_LOST_MESSAGE, META_CHAR_LIMITS } from '@lfx-one/shared/constants';
+
 import { scoreCampaignName } from './campaign-utm-mapper';
 
 import type {

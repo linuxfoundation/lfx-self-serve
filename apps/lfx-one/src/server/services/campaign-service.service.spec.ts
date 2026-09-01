@@ -2142,7 +2142,12 @@ describe('CampaignServiceClient.buildAudience', () => {
     // connection is an unconfirmed outcome, not proof nothing happened — which would otherwise
     // make them "controlled" and put "Request failed: fetch failed" where an operator-facing
     // remedy belongs. The BFF tags its own transport errors NETWORK_ERROR.
-    proxyRequestWithResponse.mockRejectedValueOnce(new MicroserviceError('Request failed: fetch failed', 503, 'NETWORK_ERROR'));
+    // ECONNRESET, not NETWORK_ERROR: executeRequest emits `cause.code || 'NETWORK_ERROR'`, so a
+    // real fetch failure carries the OS code and the fallback string almost never appears. A
+    // spec built on the fallback passed while production still leaked.
+    proxyRequestWithResponse.mockRejectedValueOnce(
+      new MicroserviceError('Request failed: fetch failed', 503, 'ECONNRESET', { originalError: new Error('fetch failed') })
+    );
 
     const result = await new CampaignServiceClient().generateEmailCopy(req, 'tlf', 'b-1');
 
