@@ -49,8 +49,9 @@ export class FormationsQueueComponent {
     // The error state's @else branch (formations-queue.component.html) destroys FormationsTableComponent,
     // which resets its own statusTab/searchForm to defaults — reset filters() to match, or the retried
     // fetch would run with stale filter values the freshly re-created table no longer displays.
+    // filters.set() always allocates a fresh object, so it alone re-triggers initResponse()'s
+    // combineLatest via the filters branch — an additional refresh$.next() here would double-fire.
     this.filters.set({ subStage: undefined, search: '' });
-    this.refresh$.next();
   }
 
   protected onAccept(row: Formation): void {

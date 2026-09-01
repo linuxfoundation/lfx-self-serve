@@ -225,9 +225,11 @@ export class FormationService {
 
     // TODO(#1957): swap for a real query-service read once lfx-v2-formation-service ships;
     // STATIC_QUEUE_FORMATIONS's shape already matches Formation[]. Each row is read through the
-    // write store first via getQueueFormation — a prior Accept/Decline on this row must be
-    // reflected here, not just on its own response (declineFormation writes via putStoredFormation).
-    let rows = STATIC_QUEUE_FORMATIONS.map((row) => this.getQueueFormation(row.uid) ?? row);
+    // write store first — a prior Accept/Decline on this row must be reflected here, not just on
+    // its own response (declineFormation writes via putStoredFormation). getQueueFormation's
+    // queue-only scoping check is unnecessary here — every uid already came from
+    // STATIC_QUEUE_FORMATIONS itself, unlike Accept/Decline's caller-supplied uid.
+    let rows = STATIC_QUEUE_FORMATIONS.map((row) => getStoredFormation(row.uid) ?? row);
     if (subStage) {
       rows = rows.filter((row) => row.sub_stage === subStage);
     }
@@ -304,7 +306,9 @@ export class FormationService {
   }
 
   private buildQueueTiles(req: Request): FormationsQueueResponse['tiles'] {
-    const rows = STATIC_QUEUE_FORMATIONS.map((row) => this.getQueueFormation(row.uid) ?? row);
+    // Same rationale as getFormationsQueue — every uid here already came from
+    // STATIC_QUEUE_FORMATIONS, so getQueueFormation's scoping check is unnecessary.
+    const rows = STATIC_QUEUE_FORMATIONS.map((row) => getStoredFormation(row.uid) ?? row);
     const bySubStage = Object.fromEntries(FORMATION_QUEUE_SUB_STAGES.map((stage) => [stage, 0])) as Record<FormationSubStage, number>;
     for (const row of rows) {
       bySubStage[row.sub_stage] = (bySubStage[row.sub_stage] ?? 0) + 1;
