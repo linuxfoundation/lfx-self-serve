@@ -3,8 +3,8 @@
 
 /** Formation Checklist section E2E (GH-1958). Deterministic via route mocks. */
 
-import { expect, test } from '@playwright/test';
-
+import { getMockFormation, getMockFormationItems, mockFormationTemplate } from './fixtures/mock-data';
+import { FormationApiMockHelper } from './helpers/formation-api-mock.helper';
 import {
   buildBaseProject,
   DATA_LOAD_TIMEOUT,
@@ -13,6 +13,7 @@ import {
   mockFormationChecklistApis,
   stubFormationFlag,
 } from './helpers/formation-checklist.helper';
+import { expect, test } from '@playwright/test';
 
 test.setTimeout(120_000);
 
@@ -88,6 +89,41 @@ test.describe('Formation Checklist section (GH-1958)', () => {
     await gotoProjectOverview(page, FORMATION_PROJECT_SLUG);
 
     await expect(page.getByTestId('formation-checklist-inline-error')).toBeVisible({ timeout: DATA_LOAD_TIMEOUT });
-    await expect(page.getByTestId('formation-checklist-retry')).toBeVisible();
+    const retry = page.getByTestId('formation-checklist-retry');
+    await expect(retry).toBeVisible();
+
+    // Re-route to a working response before clicking, so this asserts Retry actually recovers —
+    // not just that the button is present.
+    await FormationApiMockHelper.setupProjectFormationMock(page, FORMATION_PROJECT_SLUG);
+    await retry.click();
+
+    await expect(page.getByTestId('formation-checklist-section')).toBeVisible({ timeout: DATA_LOAD_TIMEOUT });
+    await expect(page.getByTestId('formation-checklist-inline-error')).toHaveCount(0);
+  });
+
+  test('a link-action row with no safe action_href renders a disabled button and visible "Link unavailable" text', async ({ page }) => {
+    await stubFormationFlag(page, true);
+    const project = buildBaseProject(FORMATION_PROJECT_SLUG);
+    await mockFormationChecklistApis(page, { project });
+
+    const formation = getMockFormation(project['slug'] as string);
+    if (!formation) throw new Error('Expected a seeded mock formation for this slug.');
+    const items = getMockFormationItems(formation.uid).map((item) => (item.action === 'link' ? { ...item, action_href: null } : item));
+    const linkItem = items.find((item) => item.action === 'link');
+    if (!linkItem) throw new Error('Expected a seeded link-action item to null out for this test.');
+
+    await page.route('**/api/projects/*/formation', (route) =>
+      route.fulfill({
+        status: 200,
+        contentType: 'application/json',
+        body: JSON.stringify({ formation, template: mockFormationTemplate, items, data_source: 'fixture' }),
+      })
+    );
+    await gotoProjectOverview(page, FORMATION_PROJECT_SLUG);
+
+    const button = page.getByTestId(`formation-checklist-row-link-${linkItem.uid}`);
+    await expect(button).toBeVisible({ timeout: DATA_LOAD_TIMEOUT });
+    await expect(button).toBeDisabled();
+    await expect(page.getByTestId(`formation-checklist-row-action-${linkItem.uid}`)).toContainText('Link unavailable');
   });
 });

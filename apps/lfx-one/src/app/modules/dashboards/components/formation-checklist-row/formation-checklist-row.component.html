@@ -46,14 +46,17 @@
             rel="noopener noreferrer"
             [attr.data-testid]="'formation-checklist-row-link-' + item().uid" />
         } @else {
-          <lfx-button
-            label="Open"
-            size="small"
-            severity="secondary"
-            [outlined]="true"
-            [disabled]="true"
-            tooltip="Link unavailable"
-            [attr.data-testid]="'formation-checklist-row-link-' + item().uid" />
+          <!-- A disabled button isn't focusable, so a hover-only `tooltip` would never reach a keyboard/screen-reader user — render the reason as visible text instead. -->
+          <div class="flex items-center gap-2">
+            <lfx-button
+              label="Open"
+              size="small"
+              severity="secondary"
+              [outlined]="true"
+              [disabled]="true"
+              [attr.data-testid]="'formation-checklist-row-link-' + item().uid" />
+            <span class="text-xs text-gray-500">Link unavailable</span>
+          </div>
         }
       }
       @case ('status_only') {
@@ -68,14 +71,17 @@
             rel="noopener noreferrer"
             [attr.data-testid]="'formation-checklist-row-status-only-' + item().uid" />
         } @else {
-          <lfx-button
-            label="Open"
-            size="small"
-            severity="secondary"
-            [outlined]="true"
-            [disabled]="true"
-            tooltip="Link unavailable"
-            [attr.data-testid]="'formation-checklist-row-status-only-' + item().uid" />
+          <!-- A disabled button isn't focusable, so a hover-only `tooltip` would never reach a keyboard/screen-reader user — render the reason as visible text instead. -->
+          <div class="flex items-center gap-2">
+            <lfx-button
+              label="Open"
+              size="small"
+              severity="secondary"
+              [outlined]="true"
+              [disabled]="true"
+              [attr.data-testid]="'formation-checklist-row-status-only-' + item().uid" />
+            <span class="text-xs text-gray-500">Link unavailable</span>
+          </div>
         }
       }
       @case ('provisionable') {
