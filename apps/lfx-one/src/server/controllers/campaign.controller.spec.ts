@@ -2448,8 +2448,35 @@ describe('CampaignController.executeKeywordActions via campaign-service', () => 
   });
 
   // A failed LOOKUP is this campaign's problem, not the request's.
+  it('stops the fan-out after a transport failure instead of probing every campaign', async () => {
+    // The loop is sequential and the controller admits up to MAX_BULK_KEYWORD_ACTIONS distinct
+    // campaigns, each costing a lookup at the client's 30s default -- so an outage held ONE
+    // request open for ~25 minutes while sending 50 doomed probes for a single user action.
+    const rows = Array.from({ length: 5 }, (_, i) => keyword(String(24183781329 + i), String(i)));
+    // Every lookup fails the same way a dead service does: no status at all.
+    svcResolveCampaign.mockRejectedValue(new Error('socket hang up'));
+
+    await controller.executeKeywordActions(actionsReq(rows), res, next);
+
+    // ONE probe, not five. The remaining groups are reported without being attempted.
+    expect(svcResolveCampaign).toHaveBeenCalledTimes(1);
+    expect(svcApplyKeywordActions).not.toHaveBeenCalled();
+
+    const body = vi.mocked(res.json).mock.calls[0][0] as { failed: number; results: { success: boolean; message: string }[] };
+    // Every keyword still gets a result -- the client zips results onto the list it sent, so a
+    // short array would misalign a still-spending keyword onto another row's outcome.
+    expect(body.results).toHaveLength(5);
+    expect(body.failed).toBe(5);
+    // And they read as retryable, not as "not managed here": nothing was established about them.
+    expect(body.results.every((r) => /try again/i.test(r.message))).toBe(true);
+  });
+
   it('reports a failed resolution against that campaign and keeps going', async () => {
-    svcResolveCampaign.mockRejectedValueOnce(new Error('resolver down')).mockResolvedValueOnce(resolvedTo('c-2', 'b-2'));
+    // A 4xx: campaign-service ANSWERED and refused this campaign, which says nothing about the
+    // next one -- so the batch must keep going. A bare Error (no status) is a TRANSPORT failure
+    // and now deliberately stops the fan-out, so it can no longer stand in for this case.
+    const refused = Object.assign(new Error('resolver refused'), { statusCode: 422 });
+    svcResolveCampaign.mockRejectedValueOnce(refused).mockResolvedValueOnce(resolvedTo('c-2', 'b-2'));
     // Campaign 666 sends criterion 2, so its confirmation must name criterion 2 — the default
     // stub confirms criterion 1 and would now be rejected as a mismatch.
     svcApplyKeywordActions.mockResolvedValue({

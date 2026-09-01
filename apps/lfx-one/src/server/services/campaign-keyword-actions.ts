@@ -231,6 +231,24 @@ export const CAMPAIGN_OUTCOME_UNCONFIRMED =
  * Only a 4xx other than 408 is a boundary refusal that provably never dispatched. Transport, 408
  * and 5xx are UNCONFIRMED: the mutate may already have run, and a retried REMOVE is irreversible.
  */
+/**
+ * Whether an error means the request never got a reply, as opposed to being answered.
+ *
+ * Only this class justifies abandoning the remaining campaigns: a 4xx other than 408 is
+ * campaign-service refusing THIS request on its merits and says nothing about the next one.
+ * `statusCode` first, because that is the field `MicroserviceError` carries.
+ */
+export function isTransportFailure(error: unknown): boolean {
+  const e = error as { statusCode?: unknown; status?: unknown } | null | undefined;
+  let status = 0;
+  if (typeof e?.statusCode === 'number') {
+    status = e.statusCode;
+  } else if (typeof e?.status === 'number') {
+    status = e.status;
+  }
+  return !(status >= 400 && status < 500 && status !== 408);
+}
+
 export function classifyMutationFailure(error: unknown): string {
   const e = error as { statusCode?: unknown; status?: unknown } | null | undefined;
   // Not a nested ternary: `.claude/rules` forbids them, and this reads better as a fallback chain.
@@ -281,8 +299,24 @@ export async function applyKeywordActionsViaCampaignService(
   body: BulkKeywordActionRequest
 ): Promise<BulkKeywordActionResponse> {
   const results: OrderedKeywordResult[] = [];
+  // Stops the fan-out once the service is clearly unreachable. The loop is sequential and the
+  // controller admits up to MAX_BULK_KEYWORD_ACTIONS distinct campaigns, each costing a lookup at
+  // the client's 30s default timeout -- so a campaign-service outage held ONE request open for
+  // roughly 25 minutes while sending 50 doomed probes for a single user action.
+  //
+  // Only a TRANSPORT failure trips this. An unresolved or ambiguous campaign is an answer, and a
+  // rejected mutation is upstream working correctly; neither says anything about the next group.
+  // A lookup that never got a reply does.
+  let transportFailed = false;
 
   for (const group of groupByCampaign(body.keywords)) {
+    if (transportFailed) {
+      // Not attempted, and reported as such. Silently dropping these would leave the caller
+      // zipping results onto a shorter list; claiming they failed upstream would be a claim
+      // nobody established.
+      results.push(...failedResults(group, body.action, CAMPAIGN_LOOKUP_FAILED));
+      continue;
+    }
     let ref;
     try {
       const resolution = await client.resolveGoogleAdsCampaign(req, projectSlug, group.platformCampaignId);
@@ -313,6 +347,9 @@ export async function applyKeywordActionsViaCampaignService(
       // spending campaign they meant to pause keeps spending. The distinction is the whole
       // difference between "never going to work" and "try again".
       results.push(...failedResults(group, body.action, CAMPAIGN_LOOKUP_FAILED));
+      // A lookup that never reached campaign-service means the next 49 will not either. A 4xx
+      // other than 408 is the service answering, so it is not a transport failure.
+      transportFailed = isTransportFailure(error);
       continue;
     }
 
