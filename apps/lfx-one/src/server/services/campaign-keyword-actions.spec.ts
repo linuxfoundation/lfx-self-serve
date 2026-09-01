@@ -292,6 +292,38 @@ describe('applyKeywordActionsViaCampaignService — the fan-out stop', () => {
     vi.restoreAllMocks();
   });
 
+  it.each([
+    ['an empty matches array', { match_count: 1, matches: [] }],
+    ['a match missing its ids', { match_count: 1, matches: [{}] }],
+  ])('refuses %s rather than trusting match_count', async (_label, resolution) => {
+    // The COUNT is not the ARRAY. Reading matches[0] on the strength of match_count === 1 made
+    // `ref` undefined, so `ref.brief_id` threw a TypeError into the MUTATION catch -- which has
+    // no errorBody, so it reported "unconfirmed" AND stopped the fan-out, abandoning every
+    // remaining campaign over a response that never reached the ad platform.
+    const resolveGoogleAdsCampaign = vi
+      .fn()
+      .mockResolvedValueOnce(resolution)
+      .mockResolvedValueOnce({ match_count: 1, matches: [{ brief_id: 'b-2', campaign_id: 'c-2' }] });
+    const applyKeywordActions = vi
+      .fn()
+      .mockResolvedValue({ campaign_id: 'c-2', applied_count: 1, results: [{ ad_group_id: 'ag-1', criterion_id: 'k-2', action: 'PAUSE' }] });
+
+    const client = { resolveGoogleAdsCampaign, applyKeywordActions } as never;
+    const body = { action: 'pause' as const, keywords: [kw('camp-1', 'k-1'), kw('camp-2', 'k-2')] };
+    const req = { log: { warn: vi.fn(), info: vi.fn(), error: vi.fn(), debug: vi.fn() } } as never;
+
+    const res = await applyKeywordActionsViaCampaignService(req, client, 'aswf', body);
+
+    // Nothing was sent for the malformed one.
+    expect(applyKeywordActions).toHaveBeenCalledTimes(1);
+    expect(res.results[0].success).toBe(false);
+    // Reported as UNRESOLVED, not as an unconfirmed mutation: nothing reached the platform.
+    expect(res.results[0].message).not.toContain('unconfirmed');
+    // And the batch CONTINUED -- the second campaign is unaffected by the first's bad response.
+    expect(resolveGoogleAdsCampaign).toHaveBeenCalledTimes(2);
+    expect(res.results[1].success).toBe(true);
+  });
+
   it('does NOT stop the fan-out when campaign-service answers, even with a 500 or 503', async () => {
     // An ANSWER describes THIS campaign only. campaign-service returns 500 for a pre-mutate
     // credential fault and 503 for a definite platform refusal -- both prove it replied, so

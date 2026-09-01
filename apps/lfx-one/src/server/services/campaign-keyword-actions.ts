@@ -385,7 +385,20 @@ export async function applyKeywordActionsViaCampaignService(
         results.push(...failedResults(group, body.action, CAMPAIGN_AMBIGUOUS));
         continue;
       }
-      ref = resolution.matches[0];
+      // The COUNT is not the array. `match_count === 1` with an empty or malformed `matches` is
+      // an inconsistent 2xx, and reading matches[0] blindly made `ref` undefined -- so
+      // `ref.brief_id` below threw a TypeError into the MUTATION catch, which has no errorBody
+      // to classify and therefore reported "unconfirmed" and stopped the fan-out, abandoning
+      // every remaining campaign over a response that never reached the ad platform.
+      //
+      // Checked here instead, where it is still a resolution problem: the campaign cannot be
+      // identified, which is exactly CAMPAIGN_UNRESOLVED, and the other campaigns continue.
+      const match = resolution.matches?.[0];
+      if (!match?.brief_id || !match?.campaign_id) {
+        results.push(...failedResults(group, body.action, CAMPAIGN_UNRESOLVED));
+        continue;
+      }
+      ref = match;
     } catch (error) {
       // A failed LOOKUP is reported against this campaign's keywords rather than failing the
       // whole request: the other campaigns in the batch are unaffected and their actions
