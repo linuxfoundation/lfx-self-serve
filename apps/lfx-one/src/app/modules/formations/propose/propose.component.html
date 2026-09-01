@@ -13,7 +13,11 @@
       <h2 class="text-base font-semibold text-gray-900">Parent</h2>
       <div>
         <label for="parent-project-search" class="mb-1 block text-sm font-medium text-gray-700">Parent foundation</label>
-        <lfx-project-picker [form]="form" uidControl="parent_project_uid" [initialSelection]="prefilledParentProject()"></lfx-project-picker>
+        <lfx-project-picker
+          [form]="form"
+          uidControl="parent_project_uid"
+          [initialSelection]="prefilledParentProject()"
+          [inputId]="'parent-project-search'"></lfx-project-picker>
       </div>
     </section>
 
@@ -27,7 +31,7 @@
           size="small"
           [form]="form"
           control="project_name"
-          id="project-name"
+          [id]="'project-name'"
           styleClass="w-full"
           data-testid="propose-project-name"></lfx-input-text>
         @if (form.get('project_name')?.errors?.['trimmedRequired'] && form.get('project_name')?.touched) {
@@ -46,7 +50,7 @@
           size="small"
           [form]="form"
           control="project_repository_url"
-          id="project-repository"
+          [id]="'project-repository'"
           placeholder="https://github.com/..."
           styleClass="w-full"
           data-testid="propose-project-repository"></lfx-input-text>
@@ -85,7 +89,7 @@
           placeholder="Select trademark status"
           styleClass="w-full"
           appendTo="body"
-          id="trademark-status"
+          [id]="'trademark-status'"
           data-testid="propose-trademark-status"></lfx-select>
         @if (form.get('trademark_status')?.errors?.['required'] && form.get('trademark_status')?.touched) {
           <p class="mt-1 text-xs text-red-600">Trademark status is required</p>
@@ -123,7 +127,7 @@
               size="small"
               [form]="legalContact"
               control="first_name"
-              id="legal-contact-first-name"
+              [id]="'legal-contact-first-name'"
               placeholder="First name"
               styleClass="w-full"
               data-testid="propose-legal-contact-first-name"></lfx-input-text>
@@ -139,7 +143,7 @@
               size="small"
               [form]="legalContact"
               control="last_name"
-              id="legal-contact-last-name"
+              [id]="'legal-contact-last-name'"
               placeholder="Last name"
               styleClass="w-full"
               data-testid="propose-legal-contact-last-name"></lfx-input-text>
@@ -155,7 +159,7 @@
               size="small"
               [form]="legalContact"
               control="email"
-              id="legal-contact-email"
+              [id]="'legal-contact-email'"
               placeholder="Email"
               styleClass="w-full"
               data-testid="propose-legal-contact-email"></lfx-input-text>
@@ -187,7 +191,7 @@
             size="small"
             [form]="newContactForm"
             control="first_name"
-            id="new-contact-first-name"
+            [id]="'new-contact-first-name'"
             placeholder="First name"
             styleClass="w-full"
             data-testid="propose-new-contact-first-name"></lfx-input-text>
@@ -196,7 +200,7 @@
             size="small"
             [form]="newContactForm"
             control="last_name"
-            id="new-contact-last-name"
+            [id]="'new-contact-last-name'"
             placeholder="Last name"
             styleClass="w-full"
             data-testid="propose-new-contact-last-name"></lfx-input-text>
@@ -205,7 +209,7 @@
             size="small"
             [form]="newContactForm"
             control="email"
-            id="new-contact-email"
+            [id]="'new-contact-email'"
             placeholder="Email"
             styleClass="w-full"
             data-testid="propose-new-contact-email"></lfx-input-text>
@@ -235,7 +239,7 @@
             placeholder="Select license"
             styleClass="w-full"
             appendTo="body"
-            id="license"
+            [id]="'license'"
             data-testid="propose-license"></lfx-select>
           @if (form.get('license')?.errors?.['required'] && form.get('license')?.touched) {
             <p class="mt-1 text-xs text-red-600">License is required</p>
@@ -251,7 +255,7 @@
             placeholder="Select chat platform"
             styleClass="w-full"
             appendTo="body"
-            id="chat-platform"
+            [id]="'chat-platform'"
             data-testid="propose-chat-platform"></lfx-select>
           @if (form.get('chat_platform')?.errors?.['required'] && form.get('chat_platform')?.touched) {
             <p class="mt-1 text-xs text-red-600">Chat platform is required</p>
@@ -267,7 +271,7 @@
             placeholder="Select agreement type"
             styleClass="w-full"
             appendTo="body"
-            id="agreement-type"
+            [id]="'agreement-type'"
             data-testid="propose-agreement-type"></lfx-select>
           @if (form.get('agreement_type')?.errors?.['required'] && form.get('agreement_type')?.touched) {
             <p class="mt-1 text-xs text-red-600">CLA / DCO is required</p>
@@ -280,7 +284,13 @@
 
       <div>
         <label for="mission-statement" class="mb-1 block text-sm font-medium text-gray-700">Mission statement <span class="text-red-500">*</span></label>
-        <lfx-textarea [form]="form" control="mission_statement" id="mission-statement" [rows]="3" styleClass="w-full" data-testid="propose-mission-statement">
+        <lfx-textarea
+          [form]="form"
+          control="mission_statement"
+          [id]="'mission-statement'"
+          [rows]="3"
+          styleClass="w-full"
+          data-testid="propose-mission-statement">
         </lfx-textarea>
         <div class="mt-1 flex justify-between">
           @if (form.get('mission_statement')?.errors?.['trimmedRequired'] && form.get('mission_statement')?.touched) {
@@ -299,7 +309,7 @@
 
       <div>
         <label for="description" class="mb-1 block text-sm font-medium text-gray-700">Description <span class="text-red-500">*</span></label>
-        <lfx-textarea [form]="form" control="description" id="description" [rows]="5" styleClass="w-full" data-testid="propose-description"></lfx-textarea>
+        <lfx-textarea [form]="form" control="description" [id]="'description'" [rows]="5" styleClass="w-full" data-testid="propose-description"></lfx-textarea>
         <div class="mt-1 flex justify-between">
           @if (form.get('description')?.errors?.['trimmedRequired'] && form.get('description')?.touched) {
             <p class="text-xs text-red-600">Description is required</p>
@@ -316,7 +326,7 @@
           size="small"
           [form]="form"
           control="website_url"
-          id="website"
+          [id]="'website'"
           placeholder="https://..."
           styleClass="w-full"
           data-testid="propose-website"></lfx-input-text>

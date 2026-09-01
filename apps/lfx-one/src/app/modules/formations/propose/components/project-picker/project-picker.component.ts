@@ -32,6 +32,9 @@ export class ProjectPickerComponent {
    *  was already patched into `uidControl` before this component could reflect it in its own
    *  display — pass it through here so the picker shows the pick instead of an empty search box. */
   public readonly initialSelection = input<Project | null>(null);
+  /** id for the search input, so a caller's own `<label for>` can name this field without reaching
+   *  into this component's internal markup for the id string. */
+  public readonly inputId = input<string>();
 
   protected readonly searchForm = new FormGroup({ query: new FormControl('', { nonNullable: true }) });
 

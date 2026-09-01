@@ -279,4 +279,18 @@ describe('ProposeComponent', () => {
 
     expect(errorEl()).not.toBeNull();
   });
+
+  it('labels each field with a real <label for> association, not a static id that also lands on the lfx-* host and shadows it', async () => {
+    const { fixture } = await createComponentWithFixture();
+    const el: HTMLElement = fixture.nativeElement;
+    // Every id referenced by a <label for> must resolve to exactly one element, and that element
+    // must be the native, labelable control (not the custom <lfx-input-text>/<lfx-select>/
+    // <lfx-textarea> host a bound [id] avoids, but a static id="..." attribute does not).
+    const ids = ['project-name', 'legal-contact-first-name', 'new-contact-first-name', 'license', 'mission-statement', 'website'];
+    for (const id of ids) {
+      const matches = el.querySelectorAll(`[id="${id}"]`);
+      expect(matches).toHaveLength(1);
+      expect(matches[0].tagName).not.toMatch(/^LFX-/);
+    }
+  });
 });
