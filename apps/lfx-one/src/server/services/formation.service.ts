@@ -201,8 +201,13 @@ export class FormationService {
     await this.assertItemProjectWriteAccess(req, item);
     const updated: FormationItem = { ...item, updated_at: new Date().toISOString() };
 
-    if (patch.notes !== undefined && patch.notes !== item.notes) {
-      updated.notes = patch.notes;
+    // Normalized the same way owner_username is below: the drawer always sends '' for an empty
+    // textarea (formation-item-drawer.component.ts), while a freshly generated item has notes:
+    // null — without normalizing, '' !== null on every first save (even one that only touches
+    // due_date) would spuriously flip notes and record an "updated notes" activity that never happened.
+    const nextNotes = patch.notes || null;
+    if (patch.notes !== undefined && nextNotes !== (item.notes ?? null)) {
+      updated.notes = nextNotes;
       this.recordActivity(req, updated, 'note_added', 'updated notes');
     }
     const nextOwnerUsername = patch.owner_username || null;

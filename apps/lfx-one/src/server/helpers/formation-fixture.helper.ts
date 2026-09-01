@@ -210,7 +210,11 @@ export function generateMockFormation(input: GenerateFormationInput): { formatio
       owner,
       due_date: null,
       action: item.action,
-      action_href: item.action === 'link' || item.action === 'status_only' ? '#' : null,
+      // '#' isn't an absolute http(s) URL, so isValidUrl (the same guard action_href is checked
+      // against before it ever reaches [href]) rejects it — every generated link/status_only item
+      // would render the disabled "Link unavailable" fallback against a real dev server. A
+      // synthetic but valid absolute URL keeps the enabled path exercisable outside of e2e's mocks.
+      action_href: item.action === 'link' || item.action === 'status_only' ? `https://example.com/formation/${item.key}` : null,
       detail: null,
       notes: null,
       links: [],

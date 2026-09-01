@@ -126,6 +126,12 @@ export class PersonaDetectionService {
     // (bearer-token dependent) — resolve per-request and merge. The marketing-ops checks are
     // skipped entirely while their server flag is off, so this endpoint costs nothing extra
     // for the default (flag-off) case.
+    // isAuditor (GH-1958) is deliberately unconditional here too, grouped with isRootWriter/isLFStaff
+    // rather than gated behind marketingRelations like the marketing checks — its only consumer today
+    // is the dark-launched, auditor-only Formations queue guard, so this is a real (if small) per-request
+    // FGA call every caller of getPersonas now pays for, including the 'none'-relations middleware paths
+    // that never read it. Left this way rather than overload marketingRelations for an unrelated purpose;
+    // revisit if isAuditor gains enough narrow-purpose callers to justify its own opt-out.
     const marketingOpsFgaEnabled = isServerFeatureEnabled(ServerFeatureFlag.MarketingOpsFga);
     const needsMarketingAuditor = marketingOpsFgaEnabled && (marketingRelations === 'both' || marketingRelations === 'marketing_auditor');
     const needsCampaignManager = marketingOpsFgaEnabled && (marketingRelations === 'both' || marketingRelations === 'campaign_manager');
