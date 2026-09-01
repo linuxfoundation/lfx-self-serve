@@ -1,6 +1,7 @@
 // Copyright The Linux Foundation and each contributor to LFX.
 // SPDX-License-Identifier: MIT
 
+import { FORMATION_PROPOSAL_TYPE_OPTIONS } from '../constants/formation.constants';
 import { FormationState } from '../enums/formation.enum';
 
 /**
@@ -12,6 +13,13 @@ export interface FormationContact {
   last_name: string;
   email: string;
 }
+
+/**
+ * Orientation-only value backing `propose.component.ts`'s "What are you proposing?" segmented
+ * control (`FORMATION_PROPOSAL_TYPE_OPTIONS`). Not a `FormationIntake` field — see that
+ * interface's doc comment.
+ */
+export type FormationProposalType = (typeof FORMATION_PROPOSAL_TYPE_OPTIONS)[number]['value'];
 
 /**
  * The "Propose a project" intake payload (GH-1962). Deliberately flat — the field list is

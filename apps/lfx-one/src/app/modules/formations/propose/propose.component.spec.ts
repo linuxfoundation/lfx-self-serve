@@ -500,4 +500,56 @@ describe('ProposeComponent', () => {
       expect(combobox, `[role="combobox"][aria-labelledby="${labelId}"]`).not.toBeNull();
     }
   });
+
+  it('renders the scope-clarifying note distinguishing "propose a project" from "join a foundation as a member project"', async () => {
+    const { fixture } = await createComponentWithFixture();
+    const el: HTMLElement = fixture.nativeElement;
+
+    expect(el.querySelector('[data-testid="propose-scope-note"]')?.textContent).toContain(
+      'Proposing a new project or foundation, not affiliated with an existing one yet? This is the right form.'
+    );
+    expect(el.querySelector('[data-testid="propose-scope-note"]')?.textContent).toContain(
+      "That goes through the foundation's own application process, reviewed first by its TAC — not through here."
+    );
+  });
+
+  it('defaults the "What are you proposing?" selection to "A project or subproject"', async () => {
+    const component = await createComponent();
+
+    expect(component.proposalTypeForm.getRawValue().proposal_type).toBe('project');
+  });
+
+  it('renders the "What are you proposing?" control, labeled via role="group", with its helper text', async () => {
+    const { fixture } = await createComponentWithFixture();
+    const el: HTMLElement = fixture.nativeElement;
+
+    const group = el.querySelector('[data-testid="propose-section-proposal-type"] [role="group"]');
+    expect(group).not.toBeNull();
+    expect(group?.getAttribute('aria-labelledby')).toBe('proposal-type-label');
+    expect(el.querySelector('#proposal-type-label')?.textContent?.trim()).toBe('What are you proposing?');
+    expect(el.querySelector('[data-testid="propose-proposal-type"]')).not.toBeNull();
+    expect(el.querySelector('[data-testid="propose-section-proposal-type"]')?.textContent).toContain(
+      'A project keeps this to the basics below. A new foundation adds the contributor and governance sections, marked below.'
+    );
+  });
+
+  it('does not let the "What are you proposing?" selection leak into the submitted intake payload', async () => {
+    const component = await createComponent();
+    fillRequiredFields(component);
+    component.proposalTypeForm.patchValue({ proposal_type: 'foundation' });
+    createFormation.mockReturnValue(of({ uid: 'formation-1' } as Formation));
+
+    component.onSubmit();
+
+    const [intake] = createFormation.mock.calls[0];
+    expect(intake).not.toHaveProperty('proposal_type');
+  });
+
+  it('marks "Contributing organization" and "Governance and licensing" as "New foundation only"', async () => {
+    const { fixture } = await createComponentWithFixture();
+    const el: HTMLElement = fixture.nativeElement;
+
+    expect(el.querySelector('[data-testid="propose-section-org-scope-tag"]')?.textContent?.trim()).toBe('New foundation only');
+    expect(el.querySelector('[data-testid="propose-section-governance-scope-tag"]')?.textContent?.trim()).toBe('New foundation only');
+  });
 });

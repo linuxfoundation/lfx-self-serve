@@ -75,3 +75,14 @@ export const FORMATION_AGREEMENT_TYPE_OPTIONS = [
   { label: 'Both CLA and DCO', value: 'both' },
   { label: 'Not yet decided', value: 'undecided' },
 ] as const;
+
+/**
+ * "What are you proposing?" segmented control on `propose.component.ts` — orientation copy only
+ * (architecture review on #1957 flagged that the form read as if it only covered brand-new
+ * projects/foundations). There is no matching field on `FormationIntake`: the selection is never
+ * read by `buildIntakePayload` or sent to the server.
+ */
+export const FORMATION_PROPOSAL_TYPE_OPTIONS = [
+  { label: 'A project or subproject', value: 'project' },
+  { label: 'A new foundation', value: 'foundation' },
+] as const;

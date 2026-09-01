@@ -11,7 +11,9 @@ import { CheckboxComponent } from '@components/checkbox/checkbox.component';
 import { FileUploadComponent } from '@components/file-upload/file-upload.component';
 import { InputTextComponent } from '@components/input-text/input-text.component';
 import { OrganizationSearchComponent } from '@components/organization-search/organization-search.component';
+import { SelectButtonComponent } from '@components/select-button/select-button.component';
 import { SelectComponent } from '@components/select/select.component';
+import { TagComponent } from '@components/tag/tag.component';
 import { TextareaComponent } from '@components/textarea/textarea.component';
 import {
   FORMATION_AGREEMENT_TYPE_OPTIONS,
@@ -20,9 +22,10 @@ import {
   FORMATION_LICENSE_OPTIONS,
   FORMATION_MAX_ADDITIONAL_CONTACTS,
   FORMATION_MISSION_STATEMENT_MAX_LENGTH,
+  FORMATION_PROPOSAL_TYPE_OPTIONS,
   FORMATION_TRADEMARK_STATUS_OPTIONS,
 } from '@lfx-one/shared/constants';
-import { FormationContact, FormationIntake, OrganizationResolveResult, Project } from '@lfx-one/shared/interfaces';
+import { FormationContact, FormationIntake, FormationProposalType, OrganizationResolveResult, Project } from '@lfx-one/shared/interfaces';
 import { capCodePointEdit, codePointLength } from '@lfx-one/shared/utils';
 import { httpsUrlValidator, maxCodePointsValidator, strictEmailValidator, trimmedRequired } from '@lfx-one/shared/validators';
 import { FormationService } from '@services/formation.service';
@@ -41,6 +44,8 @@ import { WhatsNextPanelComponent } from '../components/whats-next-panel/whats-ne
     InputTextComponent,
     TextareaComponent,
     SelectComponent,
+    SelectButtonComponent,
+    TagComponent,
     CheckboxComponent,
     FileUploadComponent,
     OrganizationSearchComponent,
@@ -72,6 +77,13 @@ export class ProposeComponent {
     last_name: new FormControl('', { nonNullable: true, validators: [trimmedRequired()] }),
     email: new FormControl('', { nonNullable: true, validators: [Validators.required, strictEmailValidator()] }),
   });
+  /** "What are you proposing?" — orientation only. Deliberately a standalone FormGroup, not a
+   *  control on `form`: there's no `proposal_type`-shaped field on `FormationIntake` yet (see that
+   *  interface's doc comment on the pending field-list confirmation), so keeping it out of `form`
+   *  means `buildIntakePayload`'s explicit field-by-field mapping can't ever pick it up by accident. */
+  public readonly proposalTypeForm = new FormGroup({
+    proposal_type: new FormControl<FormationProposalType>('project', { nonNullable: true }),
+  });
   /** Typed reference to the nested legal-contact group, so the template can bind `[formGroup]`/
    *  `[form]` directly instead of `$any(form.get('legal_contact'))` at every use site. */
   protected readonly legalContact = this.form.get('legal_contact') as FormGroup;
@@ -81,6 +93,7 @@ export class ProposeComponent {
   protected readonly licenseOptions = [...FORMATION_LICENSE_OPTIONS];
   protected readonly chatPlatformOptions = [...FORMATION_CHAT_PLATFORM_OPTIONS];
   protected readonly agreementTypeOptions = [...FORMATION_AGREEMENT_TYPE_OPTIONS];
+  protected readonly proposalTypeOptions = [...FORMATION_PROPOSAL_TYPE_OPTIONS];
   protected readonly missionStatementMaxLength = FORMATION_MISSION_STATEMENT_MAX_LENGTH;
   protected readonly descriptionMaxLength = FORMATION_DESCRIPTION_MAX_LENGTH;
   protected readonly maxAdditionalContacts = FORMATION_MAX_ADDITIONAL_CONTACTS;

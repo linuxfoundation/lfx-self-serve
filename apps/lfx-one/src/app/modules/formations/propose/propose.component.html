@@ -5,9 +5,36 @@
   <div class="flex flex-col gap-1">
     <h1 class="text-xl font-semibold text-gray-900">Propose a project</h1>
     <p class="text-sm text-gray-500">Tell us about the project you'd like to bring under the Linux Foundation.</p>
+    <p class="text-sm text-gray-500" data-testid="propose-scope-note">
+      Proposing a new project or foundation, not affiliated with an existing one yet? This is the right form. Asking an existing project to join a foundation as
+      a member project instead? That goes through the foundation's own application process, reviewed first by its TAC — not through here.
+    </p>
   </div>
 
   <form [formGroup]="form" (ngSubmit)="onSubmit()" class="flex flex-col gap-8">
+    <!-- What are you proposing? — orientation only: proposalTypeForm is a standalone FormGroup,
+         never read by onSubmit/buildIntakePayload, since no proposal_type-shaped field exists on
+         FormationIntake yet (see that interface's doc comment on the pending field-list
+         confirmation). Purely UI-and-copy per #1962's follow-up scope, not a form behavior change. -->
+    <section class="flex flex-col gap-2" data-testid="propose-section-proposal-type" [formGroup]="proposalTypeForm">
+      <label id="proposal-type-label" class="text-sm font-medium text-gray-700">What are you proposing?</label>
+      <!-- lfx-select-button has no aria-labelledby passthrough (checked the wrapper — out of scope
+           to extend it here) — role="group" on this wrapping div gives the control set its
+           accessible name instead. -->
+      <div role="group" aria-labelledby="proposal-type-label">
+        <lfx-select-button
+          [form]="proposalTypeForm"
+          control="proposal_type"
+          [options]="proposalTypeOptions"
+          optionLabel="label"
+          optionValue="value"
+          data-testid="propose-proposal-type"></lfx-select-button>
+      </div>
+      <p class="text-xs text-gray-500">
+        A project keeps this to the basics below. A new foundation adds the contributor and governance sections, marked below.
+      </p>
+    </section>
+
     <!-- Parent -->
     <section class="flex flex-col gap-3" data-testid="propose-section-parent">
       <h2 class="text-base font-semibold text-gray-900">Parent</h2>
@@ -103,7 +130,10 @@
 
     <!-- Contributing organization -->
     <section class="flex flex-col gap-3" data-testid="propose-section-org">
-      <h2 class="text-base font-semibold text-gray-900">Contributing organization</h2>
+      <div class="flex items-center gap-2">
+        <h2 class="text-base font-semibold text-gray-900">Contributing organization</h2>
+        <lfx-tag value="New foundation only" severity="secondary" data-testid="propose-section-org-scope-tag"></lfx-tag>
+      </div>
 
       <div>
         <label for="contributing-org" class="mb-1 block text-sm font-medium text-gray-700">Organization <span class="text-red-500">*</span></label>
@@ -260,7 +290,10 @@
 
     <!-- Governance and licensing -->
     <section class="flex flex-col gap-3" data-testid="propose-section-governance">
-      <h2 class="text-base font-semibold text-gray-900">Governance and licensing</h2>
+      <div class="flex items-center gap-2">
+        <h2 class="text-base font-semibold text-gray-900">Governance and licensing</h2>
+        <lfx-tag value="New foundation only" severity="secondary" data-testid="propose-section-governance-scope-tag"></lfx-tag>
+      </div>
 
       <div class="grid grid-cols-1 gap-4 md:grid-cols-2">
         <div>
