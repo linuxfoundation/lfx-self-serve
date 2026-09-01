@@ -5,6 +5,6 @@
   <lfx-dashboard-quicklinks layout="sidebar" class="empty:hidden" />
   <lfx-project-staff-card [projectUid]="projectUid()" [heading]="staffHeading()" class="empty:hidden" />
   @if (formationFlagEnabled() && isFormation()) {
-    <lfx-formation-card [projectUid]="projectUid()" class="empty:hidden" />
+    <lfx-formation-card class="empty:hidden" />
   }
 </aside>
