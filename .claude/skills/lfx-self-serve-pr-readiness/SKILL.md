@@ -6,9 +6,10 @@ description: >
   conventional-commit format, rebase status, DCO + GPG signing per
   commit, total diff size, and protected files touched) against the
   target base branch. Does NOT
-  audit code; the complete pre-PR review gate is owned by `CLAUDE.md`'s
-  **Pre-PR review** section. Use once before opening a PR, after that gate
-  is complete.
+  audit code; the review protocol is owned by `CLAUDE.md`'s **Pre-PR
+  review** section. Run inside Mode 2, once its whole-branch review, the
+  required finding fixes, the documentation-currency updates, and the
+  resulting signed/DCO commit are complete.
 context: fork
 allowed-tools: Bash, Read, Glob, Grep
 ---
@@ -17,7 +18,7 @@ allowed-tools: Bash, Read, Glob, Grep
 
 You are checking whether **local commits are shaped correctly to open as a PR** — branch name, ticket references (JIRA or GitHub Issue) in commit messages, conventional-commit format, rebase status, DCO + GPG signing on every commit, total diff size.
 
-This skill does NOT audit code. `CLAUDE.md`'s **Pre-PR review** section is the single owner of that protocol. Before running this shape check, confirm that gate is complete; otherwise stop and return to it.
+This skill does NOT audit code. `CLAUDE.md`'s **Pre-PR review** section is the single owner of that protocol, and this check is a step inside its Mode 2. Before running it, confirm the work that precedes it in Mode 2 is complete: the whole-branch review returned a valid batch, its required findings are fixed, the documentation-currency updates are done, and all of that is in a signed/DCO commit against a clean tree. If any of that is outstanding, stop and finish it first.
 
 The PR-shape checklist lives in `references/pr-shape.md` and is walked directly in this body.
 
@@ -129,6 +130,6 @@ Every finding must quote an item in `references/pr-shape.md`. Drop hallucinated 
 
 ## Companion skills & subagents
 
-- Pre-PR review gate: owned by `CLAUDE.md`'s **Pre-PR review** section and required before this check.
+- Mode 2 whole-branch review, its finding fixes, the documentation-currency updates, and the resulting signed/DCO commit: owned by `CLAUDE.md`'s **Pre-PR review** section and required before this check.
 - `/preflight` — mechanical checks (license, format, lint, build, protected files). Run after this passes.
 - `/lfx-review-pr` — post-PR reviewer. Not part of pre-PR.

@@ -2,16 +2,17 @@
 name: preflight
 description: >
   Mechanical pre-PR pipeline, license headers, format, lint, build, protected
-  file check, commit verification, and PR change summary. Run after
-  `CLAUDE.md`'s pre-PR review gate and `/lfx-self-serve-pr-readiness` have
-  completed. Review protocol and pattern/convention auditing are not owned by
-  this skill.
+  file check, commit verification, and PR change summary. Run as the final
+  deterministic check inside Mode 2 of `CLAUDE.md`'s **Pre-PR review**
+  section, after the preceding review, fix, documentation-currency, and
+  commit work and after `/lfx-self-serve-pr-readiness`. Review protocol and
+  pattern/convention auditing are not owned by this skill.
 allowed-tools: Bash, Read, Glob, Grep, AskUserQuestion
 ---
 
 # Pre-Submission Preflight Check
 
-You are running the mechanical pre-PR pipeline before the contributor submits a pull request. Every check here is shell-driven or hook-driven, no judgment calls. `CLAUDE.md`'s **Pre-PR review** section owns the review protocol and must be complete before this skill runs; this skill owns only the checks below.
+You are running the mechanical pre-PR pipeline before the contributor submits a pull request. Every check here is shell-driven or hook-driven, no judgment calls. `CLAUDE.md`'s **Pre-PR review** section owns the review protocol; this skill is the final deterministic check inside its Mode 2 and owns only the checks below. Before running it, the preceding Mode 2 work — the whole-branch review, its required fixes, the documentation-currency updates, the resulting signed/DCO commit — and `/lfx-self-serve-pr-readiness` must be complete.
 
 Run each check in order, report results clearly, and help fix any issues found.
 
