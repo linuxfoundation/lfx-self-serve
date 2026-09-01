@@ -797,7 +797,7 @@ export class CampaignsComponent {
   protected readonly emailTemplatesRenderCapMessage = computed<string>(() =>
     this.emailTemplatesRenderCapped()
       ? // "Showing N of M", not "the FIRST N of M". When a selected template ranks past the cap it
-        // is spliced to the top, so the drawn rows are that row plus the first N-1 -- and the
+        // is spliced into the LAST slot, so the drawn rows are the first N-1 plus that row -- and the
         // stronger claim would be false in exactly the case the splice exists for. The count and
         // the total are both still true; only the word "first" was not.
         `Showing ${HUBSPOT_TEMPLATE_RENDER_LIMIT} of ${this.emailTemplateRenderTotal()}. Search to narrow the list.`
