@@ -1,6 +1,7 @@
 // Copyright The Linux Foundation and each contributor to LFX.
 // SPDX-License-Identifier: MIT
 
+import { NgTemplateOutlet } from '@angular/common';
 import { Component, computed, input, output } from '@angular/core';
 import { ButtonComponent } from '@components/button/button.component';
 import { TagComponent } from '@components/tag/tag.component';
@@ -26,7 +27,7 @@ const STATUS_SEVERITY: Record<FormationItemStatus, TagSeverity> = {
 
 @Component({
   selector: 'lfx-formation-checklist-row',
-  imports: [TagComponent, ButtonComponent],
+  imports: [TagComponent, ButtonComponent, NgTemplateOutlet],
   templateUrl: './formation-checklist-row.component.html',
   styleUrl: './formation-checklist-row.component.scss',
 })

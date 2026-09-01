@@ -1,6 +1,7 @@
 // Copyright The Linux Foundation and each contributor to LFX.
 // SPDX-License-Identifier: MIT
 
+import type { FormationDrawerData } from '../interfaces/formation-checklist.interface';
 import type { FormationSubStage } from '../interfaces/formation.interface';
 
 /** Queue filter-pill order (`All` is derived, not listed) — includes `withdrawn` per GH-1958. */
@@ -20,3 +21,6 @@ export const SEEDED_FORMATION_TEMPLATE_UID = 'formation-template-seed-v1';
  * of silently dropping them.
  */
 export const FORMATION_ORPHAN_SECTION = { key: '__orphan__', title: 'Other' } as const;
+
+/** `FormationItemDrawerComponent`'s sentinel for "closed" or "not yet loaded" — see `FormationDrawerData`. */
+export const FORMATION_EMPTY_DRAWER_DATA: FormationDrawerData = { item: null, history: [] };

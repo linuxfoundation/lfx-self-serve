@@ -35,78 +35,19 @@
   <div class="shrink-0" [attr.data-testid]="'formation-checklist-row-action-' + item().uid">
     @switch (item().action) {
       @case ('link') {
-        @if (safeActionHref(); as href) {
-          <lfx-button
-            label="Open"
-            size="small"
-            severity="secondary"
-            [outlined]="true"
-            [href]="href"
-            target="_blank"
-            rel="noopener noreferrer"
-            [attr.data-testid]="'formation-checklist-row-link-' + item().uid" />
-        } @else {
-          <!-- A disabled button isn't focusable, so a hover-only `tooltip` would never reach a keyboard/screen-reader user — render the reason as visible text instead. -->
-          <div class="flex items-center gap-2">
-            <lfx-button
-              label="Open"
-              size="small"
-              severity="secondary"
-              [outlined]="true"
-              [disabled]="true"
-              [attr.data-testid]="'formation-checklist-row-link-' + item().uid" />
-            <span class="text-xs text-gray-500">Link unavailable</span>
-          </div>
-        }
+        <ng-container *ngTemplateOutlet="externalLinkAction; context: { $implicit: 'link' }" />
       }
       @case ('status_only') {
-        @if (safeActionHref(); as href) {
-          <lfx-button
-            label="Open"
-            size="small"
-            severity="secondary"
-            [outlined]="true"
-            [href]="href"
-            target="_blank"
-            rel="noopener noreferrer"
-            [attr.data-testid]="'formation-checklist-row-status-only-' + item().uid" />
-        } @else {
-          <!-- A disabled button isn't focusable, so a hover-only `tooltip` would never reach a keyboard/screen-reader user — render the reason as visible text instead. -->
-          <div class="flex items-center gap-2">
-            <lfx-button
-              label="Open"
-              size="small"
-              severity="secondary"
-              [outlined]="true"
-              [disabled]="true"
-              [attr.data-testid]="'formation-checklist-row-status-only-' + item().uid" />
-            <span class="text-xs text-gray-500">Link unavailable</span>
-          </div>
-        }
+        <ng-container *ngTemplateOutlet="externalLinkAction; context: { $implicit: 'status-only' }" />
       }
       @case ('provisionable') {
         @if (isActionable()) {
-          <lfx-button
-            label="Set up"
-            size="small"
-            severity="primary"
-            [disabled]="!item().can_complete"
-            [tooltip]="item().can_complete ? undefined : 'Requires gate_writer access'"
-            (onClick)="onAction()"
-            [attr.data-testid]="'formation-checklist-row-provision-' + item().uid" />
+          <ng-container *ngTemplateOutlet="gatedAction; context: { $implicit: 'provision', label: 'Set up', severity: 'primary', outlined: false }" />
         }
       }
       @case ('request') {
         @if (isActionable()) {
-          <lfx-button
-            label="Request"
-            size="small"
-            severity="secondary"
-            [outlined]="true"
-            [disabled]="!item().can_complete"
-            [tooltip]="item().can_complete ? undefined : 'Requires gate_writer access'"
-            (onClick)="onAction()"
-            [attr.data-testid]="'formation-checklist-row-request-' + item().uid" />
+          <ng-container *ngTemplateOutlet="gatedAction; context: { $implicit: 'request', label: 'Request', severity: 'secondary', outlined: true }" />
         }
       }
       @case ('manual') {
@@ -121,3 +62,55 @@
     }
   </div>
 </div>
+
+<!-- `link`/`status_only`: open an external href, or a disabled button when the href is missing/unsafe. -->
+<ng-template #externalLinkAction let-testidSuffix>
+  @if (safeActionHref(); as href) {
+    <lfx-button
+      label="Open"
+      size="small"
+      severity="secondary"
+      [outlined]="true"
+      [href]="href"
+      target="_blank"
+      rel="noopener noreferrer"
+      [attr.data-testid]="'formation-checklist-row-' + testidSuffix + '-' + item().uid" />
+  } @else {
+    <!-- A disabled button isn't focusable, so a hover-only `tooltip` would never reach a keyboard/screen-reader user — render the reason as visible text instead. -->
+    <div class="flex items-center gap-2">
+      <lfx-button
+        label="Open"
+        size="small"
+        severity="secondary"
+        [outlined]="true"
+        [disabled]="true"
+        [attr.data-testid]="'formation-checklist-row-' + testidSuffix + '-' + item().uid" />
+      <span class="text-xs text-gray-500">Link unavailable</span>
+    </div>
+  }
+</ng-template>
+
+<!-- `provisionable`/`request`: fires `onAction()`, or a disabled button when `can_complete` is false. -->
+<ng-template #gatedAction let-testidSuffix let-label="label" let-severity="severity" let-outlined="outlined">
+  @if (item().can_complete) {
+    <lfx-button
+      [label]="label"
+      size="small"
+      [severity]="severity"
+      [outlined]="outlined"
+      (onClick)="onAction()"
+      [attr.data-testid]="'formation-checklist-row-' + testidSuffix + '-' + item().uid" />
+  } @else {
+    <!-- A disabled button isn't focusable, so a hover-only `tooltip` would never reach a keyboard/screen-reader user — render the reason as visible text instead. -->
+    <div class="flex items-center gap-2">
+      <lfx-button
+        [label]="label"
+        size="small"
+        [severity]="severity"
+        [outlined]="outlined"
+        [disabled]="true"
+        [attr.data-testid]="'formation-checklist-row-' + testidSuffix + '-' + item().uid" />
+      <span class="text-xs text-gray-500">Requires gate_writer access</span>
+    </div>
+  }
+</ng-template>

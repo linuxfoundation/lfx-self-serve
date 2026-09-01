@@ -3,8 +3,9 @@
 
 import { describe, expect, it } from 'vitest';
 
-import type { FormationItem, FormationItemStatus } from '../interfaces/formation.interface';
-import { deriveFormationReadinessSummary } from './formation-checklist.utils';
+import { FORMATION_ORPHAN_SECTION } from '../constants/formation.constants';
+import type { FormationItem, FormationItemStatus, FormationTemplateSection } from '../interfaces/formation.interface';
+import { collectFormationOrphanItems, deriveFormationReadinessSummary, groupFormationItemsBySection } from './formation-checklist.utils';
 
 let uidCounter = 0;
 
@@ -34,6 +35,11 @@ function item(partial: Partial<FormationItem> & { status: FormationItemStatus })
     created_at: partial.created_at ?? '',
     updated_at: partial.updated_at ?? '',
   };
+}
+
+/** Builds a FormationTemplateSection fixture with no items — `groupFormationItemsBySection`/`collectFormationOrphanItems` only read `key`. */
+function section(key: string, title = key): FormationTemplateSection {
+  return { key, title, items: [] };
 }
 
 describe('deriveFormationReadinessSummary', () => {
@@ -116,5 +122,54 @@ describe('deriveFormationReadinessSummary', () => {
       done: 0,
       skipped: 0,
     });
+  });
+});
+
+describe('collectFormationOrphanItems', () => {
+  it('returns items whose section_key matches no known section', () => {
+    const known = item({ status: 'not_started', section_key: 'legal-and-entity' });
+    const orphan = item({ status: 'not_started', section_key: 'renamed-section' });
+
+    const orphans = collectFormationOrphanItems([known, orphan], [section('legal-and-entity')]);
+
+    expect(orphans).toEqual([orphan]);
+  });
+
+  it('returns an empty array when every item matches a known section', () => {
+    const items = [item({ status: 'not_started', section_key: 'legal-and-entity' })];
+
+    expect(collectFormationOrphanItems(items, [section('legal-and-entity')])).toEqual([]);
+  });
+});
+
+describe('groupFormationItemsBySection', () => {
+  it('buckets items under their matching section, in template order', () => {
+    const legalItem = item({ status: 'done', section_key: 'legal-and-entity' });
+    const launchItem = item({ status: 'not_started', section_key: 'community-and-launch' });
+
+    const rendered = groupFormationItemsBySection(
+      [launchItem, legalItem],
+      [section('legal-and-entity', 'Legal and entity'), section('community-and-launch', 'Community and launch')]
+    );
+
+    expect(rendered.map((entry) => entry.section.key)).toEqual(['legal-and-entity', 'community-and-launch']);
+    expect(rendered[0].items).toEqual([legalItem]);
+    expect(rendered[1].items).toEqual([launchItem]);
+  });
+
+  it('buckets an orphaned item into a synthetic fallback section instead of dropping it', () => {
+    const orphan = item({ status: 'not_started', section_key: 'renamed-section' });
+
+    const rendered = groupFormationItemsBySection([orphan], [section('legal-and-entity')]);
+
+    expect(rendered).toHaveLength(2);
+    expect(rendered[1].section.key).toBe(FORMATION_ORPHAN_SECTION.key);
+    expect(rendered[1].items).toEqual([orphan]);
+  });
+
+  it('omits the fallback section entirely when there are no orphaned items', () => {
+    const rendered = groupFormationItemsBySection([], [section('legal-and-entity')]);
+
+    expect(rendered).toHaveLength(1);
   });
 });
