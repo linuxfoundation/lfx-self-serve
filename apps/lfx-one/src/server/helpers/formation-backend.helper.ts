@@ -15,11 +15,12 @@
  * No `NODE_ENV==='production'` hard-block either (unlike the mock-backend precedents): production
  * isn't "reachable with a misconfigured env var flipping on fabricated data next to real data," it
  * is the only mode there is right now. The two read endpoints (`getProjectFormation`,
- * `getFormationsQueue`) label their response bodies `data_source: 'fixture'`; the mutation
- * endpoints don't carry that field today but only ever touch the in-memory fixture store, never a
- * real record — see `formation.service.ts`'s per-method `// TODO(#1957)` comments. Formation
- * fixture data is synthetic end-to-end — there's no real-identity-plus-fake-numbers juxtaposition
- * risk to guard against the way `isEngagementMockBackend()` does.
+ * `getFormationsQueue`) label their response bodies `data_source: 'fixture'`; every mutating
+ * method in `formation.service.ts` (`completeFormationItem`, `skipFormationItem`,
+ * `requestFormationItem`, `updateFormationItem`) carries its own `// TODO(#1957)` comment instead,
+ * since it only ever touches the in-memory fixture store, never a real record. Formation fixture
+ * data is synthetic end-to-end — there's no real-identity-plus-fake-numbers juxtaposition risk to
+ * guard against the way `isEngagementMockBackend()` does.
  */
 export function isFormationServiceLive(): boolean {
   return false;

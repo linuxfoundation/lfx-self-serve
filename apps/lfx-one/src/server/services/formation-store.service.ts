@@ -67,3 +67,11 @@ export function nextActivityUid(): string {
   activityCounter += 1;
   return `formation-activity:${Date.now()}:${activityCounter}`;
 }
+
+/** Test-only — clears all three stores and the activity counter so specs don't depend on inter-test uid uniqueness. Never call from application code. */
+export function resetFormationStoreForTests(): void {
+  itemStore.clear();
+  formationStore.clear();
+  activityStore.clear();
+  activityCounter = 0;
+}
