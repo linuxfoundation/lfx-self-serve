@@ -50,10 +50,13 @@ export class FormationItemDrawerComponent {
    * section can register this drawer's write in the same `submittingItemUids` map that guards row
    * actions and skip — without this, a row action fired while the drawer was mid-write (or vice
    * versa) would race against it undetected, since the section otherwise has no visibility into the
-   * drawer's own `completing`/`savingDetails` signals.
+   * drawer's own `completing`/`savingDetails` signals. Each event carries the item uid the write was
+   * *for*, captured at the moment the call started — reading the section's current `drawerItemUid()`
+   * instead would clear (or register) the wrong entry if the drawer switches to a different item
+   * before this write's response comes back (nothing today blocks closing the drawer mid-write).
    */
-  public readonly writeStarted = output<void>();
-  public readonly writeEnded = output<void>();
+  public readonly writeStarted = output<string>();
+  public readonly writeEnded = output<string>();
 
   protected readonly editForm = new FormGroup({
     notes: new FormControl<string>(''),
@@ -95,7 +98,7 @@ export class FormationItemDrawerComponent {
     const item = this.item();
     if (!item || this.busy()) return;
     this.completing.set(true);
-    this.writeStarted.emit();
+    this.writeStarted.emit(item.uid);
 
     this.formationService
       .completeFormationItem(item.uid)
@@ -103,7 +106,7 @@ export class FormationItemDrawerComponent {
         take(1),
         finalize(() => {
           this.completing.set(false);
-          this.writeEnded.emit();
+          this.writeEnded.emit(item.uid);
         })
       )
       .subscribe({
@@ -128,7 +131,7 @@ export class FormationItemDrawerComponent {
     const item = this.item();
     if (!item || this.busy()) return;
     this.savingDetails.set(true);
-    this.writeStarted.emit();
+    this.writeStarted.emit(item.uid);
 
     this.formationService
       .updateFormationItem(item.uid, {
@@ -140,7 +143,7 @@ export class FormationItemDrawerComponent {
         take(1),
         finalize(() => {
           this.savingDetails.set(false);
-          this.writeEnded.emit();
+          this.writeEnded.emit(item.uid);
         })
       )
       .subscribe({
