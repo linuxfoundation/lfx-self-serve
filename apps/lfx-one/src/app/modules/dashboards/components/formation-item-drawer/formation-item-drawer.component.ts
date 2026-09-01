@@ -71,24 +71,31 @@ export class FormationItemDrawerComponent {
   protected readonly loading: WritableSignal<boolean> = signal(false);
   protected readonly loadFailed: WritableSignal<boolean> = signal(false);
   /**
-   * Which item uid Mark complete/Save is currently writing, not just whether *something* is writing
-   * — this drawer component instance is reused across every item it ever opens, so a plain boolean
-   * would still read true for a newly-opened item B while a *previous* item A's write is still
-   * settling, and (worse) A's `finalize` clearing a shared boolean would wrongly clear B's own
-   * still-in-flight write. `completing`/`savingDetails` below derive from these against the
-   * currently-open item, so switching items automatically (not via an explicit reset) scopes each
-   * flag to the write it actually belongs to.
+   * Item uids Mark complete/Save is currently writing — a set, not a single slot, since this drawer
+   * component instance is reused across every item it ever opens and two of its own writes (e.g.
+   * Mark complete on A, then Mark complete on a different item B before A's response lands) can be
+   * in flight at once. A single `string | null` slot would let the second write's own uid clobber the
+   * first, and the first write's `finalize` would then incorrectly clear the second's flag.
+   * `completing`/`savingDetails` below derive from these against the currently-open item, so
+   * switching items automatically (not via an explicit reset) scopes each flag to the write it
+   * actually belongs to.
    */
-  protected readonly completingUid: WritableSignal<string | null> = signal(null);
-  protected readonly savingDetailsUid: WritableSignal<string | null> = signal(null);
+  protected readonly completingUids: WritableSignal<ReadonlySet<string>> = signal(new Set());
+  protected readonly savingDetailsUids: WritableSignal<ReadonlySet<string>> = signal(new Set());
   /**
    * Separate per-action signals, each driving only its own button's `[loading]` — a single shared
    * flag would spin the Save button while Mark complete is in flight (and vice versa), a spinner on
    * a button the user never pressed. Both are still checked in each handler's guard, not just their
    * own, since the two write the same item and must not run concurrently.
    */
-  protected readonly completing: Signal<boolean> = computed(() => this.completingUid() !== null && this.completingUid() === this.item()?.uid);
-  protected readonly savingDetails: Signal<boolean> = computed(() => this.savingDetailsUid() !== null && this.savingDetailsUid() === this.item()?.uid);
+  protected readonly completing: Signal<boolean> = computed(() => {
+    const uid = this.item()?.uid;
+    return uid !== undefined && this.completingUids().has(uid);
+  });
+  protected readonly savingDetails: Signal<boolean> = computed(() => {
+    const uid = this.item()?.uid;
+    return uid !== undefined && this.savingDetailsUids().has(uid);
+  });
   /**
    * Every write this drawer can trigger against the open item — Mark complete, Save, and (via
    * `mutationInFlight`) the section-owned Skip/row-action mutation. All three write the same item,
@@ -108,7 +115,7 @@ export class FormationItemDrawerComponent {
   protected onMarkComplete(): void {
     const item = this.item();
     if (!item || this.busy()) return;
-    this.completingUid.set(item.uid);
+    this.completingUids.update((uids) => new Set(uids).add(item.uid));
     this.writeStarted.emit(item.uid);
 
     this.formationService
@@ -116,10 +123,11 @@ export class FormationItemDrawerComponent {
       .pipe(
         take(1),
         finalize(() => {
-          // Only clear if this write is still the one `completingUid` is tracking — if the drawer
-          // switched away and back (or another Mark complete somehow started for this same uid
-          // again), an unconditional clear here could drop a different write's own flag.
-          if (this.completingUid() === item.uid) this.completingUid.set(null);
+          this.completingUids.update((uids) => {
+            const next = new Set(uids);
+            next.delete(item.uid);
+            return next;
+          });
           this.writeEnded.emit(item.uid);
         })
       )
@@ -144,7 +152,7 @@ export class FormationItemDrawerComponent {
   protected onSaveDetails(): void {
     const item = this.item();
     if (!item || this.busy()) return;
-    this.savingDetailsUid.set(item.uid);
+    this.savingDetailsUids.update((uids) => new Set(uids).add(item.uid));
     this.writeStarted.emit(item.uid);
 
     this.formationService
@@ -156,7 +164,11 @@ export class FormationItemDrawerComponent {
       .pipe(
         take(1),
         finalize(() => {
-          if (this.savingDetailsUid() === item.uid) this.savingDetailsUid.set(null);
+          this.savingDetailsUids.update((uids) => {
+            const next = new Set(uids);
+            next.delete(item.uid);
+            return next;
+          });
           this.writeEnded.emit(item.uid);
         })
       )

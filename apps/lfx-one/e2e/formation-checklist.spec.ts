@@ -205,9 +205,13 @@ test.describe('Formation Checklist section (GH-1958)', () => {
     await expect(markComplete).toBeDisabled();
 
     // Release A's held response and wait for the actual network round trip to land (not a fixed
-    // sleep — any erroneous state change is provoked synchronously by this same response). If either
-    // fix regressed, this would incorrectly re-enable B's button (guard cleared under the wrong uid)
-    // and/or incorrectly close B's drawer (onDrawerItemChanged firing for A while B is open).
+    // sleep — any erroneous state change is provoked synchronously by this same response). Exercises
+    // the section-level guard end to end: if writeStarted/writeEnded resolved the wrong uid, this
+    // would incorrectly re-enable B's button (its submittingItemUids entry cleared instead of A's)
+    // and/or incorrectly close B's drawer (onDrawerItemChanged firing for A while B is open). The
+    // button's [disabled] here is driven by mutationInFlight (section-owned), not by the drawer's own
+    // completingUids — that inner isolation is covered by hand-tracing in the fix commit, not by this
+    // assertion, since [disabled] would stay correctly true either way.
     const itemAResponse = page.waitForResponse((response) => response.url().includes(`/${encodeURIComponent(itemA.uid)}/complete`));
     await releaseHeldRequest(itemA.uid);
     await itemAResponse;
