@@ -714,6 +714,9 @@ describe('WeeklyBriefCardComponent — Current activity tally (GH-1922)', () => 
     // Pins the non-empty-tally variant specifically — 'view Recent Activity for the full list'
     // alone is shared by both variants and wouldn't catch the empty-tally wording rendering here.
     expect(note.textContent as string).toContain('This count may be incomplete');
+    // The note's only actionable content is the CTA — keep asserting it survives alongside the
+    // variant-specific text above.
+    expect(note.textContent as string).toContain('view Recent Activity for the full list');
     // The note is its own visible element (not folded into the tally's aria-label) — a screen
     // reader must not hear it announced twice, once for the group and once for the note itself.
     expect(tally.getAttribute('aria-label')).not.toContain('view Recent Activity for the full list');
@@ -761,6 +764,7 @@ describe('WeeklyBriefCardComponent — Current activity tally (GH-1922)', () => 
     const note = fixture.nativeElement.querySelector('[data-testid="weekly-brief-card-current-activity-truncation-note"]');
     expect(note).not.toBeNull();
     expect(note.textContent as string).toContain('could not be fully counted');
+    expect(note.textContent as string).toContain('view Recent Activity for the full list');
   });
 
   it('clicking a kind reveals its underlying ref titles, and clicking again collapses it', async () => {

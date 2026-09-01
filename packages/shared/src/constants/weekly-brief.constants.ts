@@ -208,8 +208,9 @@ export const WEEKLY_BRIEF_SOURCE_SECTIONS: readonly WeeklyBriefSourceSection[] =
  * linuxfoundation/lfx-self-serve#1934) and never constructs a `member_joined`/`member_left`
  * event (a known, permanently-deferred v1 limitation, not a tracked issue — no upstream
  * membership-timestamp/deletion-history signal to build one from). A week whose only real
- * activity was on one of these two kinds still renders "no activity yet" — an accepted v1 gap in
- * what the tally can attest to, not a claim that no such activity occurred.
+ * activity was on one of these two kinds still renders "no activity yet" (or, if the same
+ * response also happens to be truncated, GH-1998's "activity couldn't be counted" instead) — an
+ * accepted v1 gap in what the tally can attest to, not a claim that no such activity occurred.
  */
 export const WEEKLY_BRIEF_CURRENT_ACTIVITY_PHRASES: readonly WeeklyBriefCurrentActivityPhrase[] = [
   { kind: 'meeting', singular: 'meeting held', plural: 'meetings held' },

@@ -1072,6 +1072,38 @@ test.describe('WG Weekly Brief card — "This week so far" activity tally (GH-19
     // Pins the non-empty-tally variant specifically — the empty-tally variant shares the trailing
     // "view Recent Activity for the full list" and wouldn't be caught by that substring alone.
     await expect(note).toContainText('This count may be incomplete');
+    // The note's only actionable content is the CTA — keep asserting it survives alongside the
+    // variant-specific text above.
+    await expect(note).toContainText('view Recent Activity for the full list');
+  });
+
+  test('renders "activity couldn\'t be counted" (not "no activity yet") when truncated is true but every ref was filtered/unmapped away (GH-1998)', async ({
+    page,
+  }) => {
+    await mockCommitteeShell(page, { category: 'Board' });
+    await mockCurrentBrief(page, {
+      brief: GENERATED_BRIEF,
+      throttle: USED_THROTTLE_AFTER_GENERATE,
+      current_activity: {
+        window_start: '2026-08-24T00:00:00.000Z',
+        window_end: '2026-08-27T12:00:00.000Z',
+        source_refs: [],
+        truncated: true,
+      },
+    });
+
+    await page.goto(COMMITTEE_URL, { waitUntil: 'domcontentloaded' });
+    await expect(page).not.toHaveURL(/auth0\.com/);
+
+    const tally = page.getByTestId('weekly-brief-card-current-activity');
+    await expect(tally).toBeVisible({ timeout: DATA_LOAD_TIMEOUT });
+    await expect(tally).toContainText("activity couldn't be counted");
+    await expect(tally).not.toContainText('no activity yet');
+
+    const note = page.getByTestId('weekly-brief-card-current-activity-truncation-note');
+    await expect(note).toBeVisible();
+    await expect(note).toContainText('could not be fully counted');
+    await expect(note).toContainText('view Recent Activity for the full list');
   });
 });
 
