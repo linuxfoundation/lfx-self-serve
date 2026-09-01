@@ -40,6 +40,17 @@
         <span>no activity yet</span>
       }
     </div>
+    @if (isTruncated()) {
+      <!-- GH-1998: current-week activity filled a full upstream page, so source_refs above is a
+           floor, not the total — styled after org-roi-projects-bar.component.html's own
+           truncation-note precedent. -->
+      <p
+        class="flex items-start gap-2 rounded-md bg-gray-50 px-3 py-2.5 text-xs text-gray-600"
+        data-testid="weekly-brief-card-current-activity-truncation-note">
+        <i class="fa-light fa-circle-info mt-0.5 text-gray-400" aria-hidden="true"></i>
+        <span>{{ currentActivityTruncationNote }}</span>
+      </p>
+    }
     @for (section of currentActivity(); track section.kind) {
       @if (expandedActivityKinds().has(section.kind)) {
         <div

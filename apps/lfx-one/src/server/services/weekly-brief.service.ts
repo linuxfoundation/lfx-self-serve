@@ -1480,15 +1480,16 @@ export class WeeklyBriefService {
         logger.warning(
           req,
           'get_weekly_brief_current_activity',
-          'Current-week activity fills a full page — publishing null (settled, not a count) rather than a truncated count stated as fact',
+          'Current-week activity fills a full page — publishing source_refs as a floor with truncated: true rather than a count stated as fact',
           {
             committee_id: committeeId,
           }
         );
-        // null, not undefined — more in-window activity only ever accumulates within a poll
-        // cycle, never un-fills a full page, so this can't resolve differently on a later tick
-        // within the same cycle either.
-        return null;
+        // truncated: true, not null — more in-window activity only ever accumulates within a
+        // poll cycle, never un-fills a full page, so this can't resolve differently on a later
+        // tick within the same cycle either, but the already-mapped source_refs are still a real
+        // (if partial) count worth showing rather than discarding.
+        return { window_start, window_end, source_refs: sourceRefs, truncated: true };
       }
 
       return { window_start, window_end, source_refs: sourceRefs };

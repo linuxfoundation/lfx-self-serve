@@ -262,11 +262,21 @@ export class WeeklyBriefCardComponent {
   // the visible text can't drift apart on a future copy edit.
   protected readonly currentActivityPrefix = 'This week so far:';
 
+  // GH-1998: current-week activity filled a full upstream page — source_refs is a floor, not the
+  // total. Starting-point copy, flagged for product review, not locked in.
+  protected readonly currentActivityTruncationNote = '50+ events this week — view Recent Activity for the full list.';
+
+  public readonly isTruncated: Signal<boolean> = computed(() => !!this.briefResponse()?.current_activity?.truncated);
+
   // "This week so far: 1 meeting held, 1 vote closed" / "This week so far: no activity yet".
+  // Includes the truncation note (GH-1998) so the aria-label carries the same information as
+  // the visible text, which renders the note as a separate disclosure element.
   public readonly currentActivityLine: Signal<string> = computed(() => {
     const sections = this.currentActivity();
-    if (!sections.length) return `${this.currentActivityPrefix} no activity yet`;
-    return `${this.currentActivityPrefix} ${sections.map((section) => section.countText).join(', ')}`;
+    const base = !sections.length
+      ? `${this.currentActivityPrefix} no activity yet`
+      : `${this.currentActivityPrefix} ${sections.map((section) => section.countText).join(', ')}`;
+    return this.isTruncated() ? `${base}. ${this.currentActivityTruncationNote}` : base;
   });
 
   // "no_sources" is the only error_reason meaningful to the UI today (LFXV2-3000) —

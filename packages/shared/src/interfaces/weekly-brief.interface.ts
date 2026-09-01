@@ -214,13 +214,14 @@ export interface WeeklyBriefCurrentResponse {
    *     whether asking is worthwhile at all — see `weekly-brief-card.component.ts`'s `pollUntilTerminal`,
    *     which additionally gates on `isGoverningBoardCommittee()` for exactly this reason.
    *   - **`null`**: known, definitively, not to apply — the committee isn't
-   *     governance-classified, or the current week's activity exceeds what a single upstream
-   *     page can return (never a silently-truncated count). Not transient; re-asking within the
-   *     same poll cycle can't change either answer, so a caller that retries on any falsy value
-   *     without checking for this distinction (e.g. `weekly-brief-card.component.ts`'s
-   *     `pollUntilTerminal`) would spend calls forever for no reason.
+   *     governance-classified. Not transient; re-asking within the same poll cycle can't change
+   *     this answer, so a caller that retries on any falsy value without checking for this
+   *     distinction (e.g. `weekly-brief-card.component.ts`'s `pollUntilTerminal`) would spend
+   *     calls forever for no reason.
    *   - **Present**: the real tally, possibly with an empty `source_refs` (a genuine quiet week
-   *     — still a real answer, not absence).
+   *     — still a real answer, not absence). `truncated: true` when the current week's activity
+   *     exceeds what a single upstream page can return — `source_refs` is then a real but
+   *     partial count, not a silently-truncated one stated as fact.
    */
   current_activity?: WeeklyBriefCurrentActivity | null;
 }
@@ -230,6 +231,8 @@ export interface WeeklyBriefCurrentActivity {
   window_start: string;
   window_end: string;
   source_refs: WeeklyBriefSourceRef[];
+  /** True when the current week's activity filled a full upstream page — `source_refs` is a floor, not the total. */
+  truncated?: boolean;
 }
 
 /** A caller's one-tap quality rating on a specific weekly-brief revision. BFF-only — no upstream equivalent. */

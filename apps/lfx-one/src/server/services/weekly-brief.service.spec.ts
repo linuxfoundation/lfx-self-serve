@@ -889,7 +889,7 @@ describe('WeeklyBriefService', () => {
       expect(refs[0].id).not.toBe(refs[1].id);
     });
 
-    it('sets current_activity to null (a settled, not a transient, absence) when the returned page itself is full', async () => {
+    it('sets current_activity.truncated to true (a settled, not a transient, floor) when the returned page itself is full', async () => {
       delete process.env['WEEKLY_BRIEF_BACKEND'];
       getCommitteeBaseMock.mockResolvedValue({ uid: 'committee-1', category: 'Board' });
       getCommitteeActivityMock.mockResolvedValue({
@@ -910,10 +910,12 @@ describe('WeeklyBriefService', () => {
 
       const result = await service.getCurrentBrief(req, 'committee-1');
 
-      // null, not undefined: more in-window activity only ever accumulates within a poll cycle,
-      // so a caller (the client's pollUntilTerminal) is right to treat this as settled and stop
-      // asking, unlike a genuine transient failure — see buildCurrentActivity's doc comment.
-      expect(result.current_activity).toBeNull();
+      // truncated: true, not null: more in-window activity only ever accumulates within a poll
+      // cycle, so a caller (the client's pollUntilTerminal) is right to treat this as settled and
+      // stop asking, unlike a genuine transient failure — see buildCurrentActivity's doc comment.
+      // source_refs is still a real, if partial, count — a floor, not discarded.
+      expect(result.current_activity).toEqual(expect.objectContaining({ truncated: true, source_refs: expect.any(Array) }));
+      expect(result.current_activity?.source_refs).toHaveLength(ACTIVITY_FEED_MAX_PAGE_SIZE);
       expect(logger.warning).toHaveBeenCalledWith(
         req,
         'get_weekly_brief_current_activity',
@@ -922,7 +924,7 @@ describe('WeeklyBriefService', () => {
       );
     });
 
-    it('DOES settle to null when a full raw page is mostly future-stamped noise the window_end filter drops — the descending sort in CommitteeActivityService means those rows can crowd out real in-window events before this method ever sees them, so the gate must run on the raw page size, not the filtered count', async () => {
+    it('DOES truncate when a full raw page is mostly future-stamped noise the window_end filter drops — the descending sort in CommitteeActivityService means those rows can crowd out real in-window events before this method ever sees them, so the gate must run on the raw page size, not the filtered count', async () => {
       delete process.env['WEEKLY_BRIEF_BACKEND'];
       getCommitteeBaseMock.mockResolvedValue({ uid: 'committee-1', category: 'Board' });
 
@@ -954,7 +956,8 @@ describe('WeeklyBriefService', () => {
 
         const result = await service.getCurrentBrief(req, 'committee-1');
 
-        expect(result.current_activity).toBeNull();
+        expect(result.current_activity).toEqual(expect.objectContaining({ truncated: true, source_refs: expect.any(Array) }));
+        expect(result.current_activity?.source_refs).toHaveLength(3);
         expect(logger.warning).toHaveBeenCalledWith(
           req,
           'get_weekly_brief_current_activity',
@@ -966,7 +969,7 @@ describe('WeeklyBriefService', () => {
       }
     });
 
-    it('DOES settle to null when a full raw page is mostly unrecognized-but-in-window event types — an unmapped event is not proven irrelevant to the tally, so it must still count toward the truncation gate', async () => {
+    it('DOES truncate when a full raw page is mostly unrecognized-but-in-window event types — an unmapped event is not proven irrelevant to the tally, so it must still count toward the truncation gate', async () => {
       delete process.env['WEEKLY_BRIEF_BACKEND'];
       getCommitteeBaseMock.mockResolvedValue({ uid: 'committee-1', category: 'Board' });
 
@@ -993,7 +996,8 @@ describe('WeeklyBriefService', () => {
 
       const result = await service.getCurrentBrief(req, 'committee-1');
 
-      expect(result.current_activity).toBeNull();
+      expect(result.current_activity).toEqual(expect.objectContaining({ truncated: true, source_refs: expect.any(Array) }));
+      expect(result.current_activity?.source_refs).toHaveLength(2);
       expect(logger.warning).toHaveBeenCalledWith(
         req,
         'get_weekly_brief_current_activity',

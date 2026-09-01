@@ -1046,6 +1046,31 @@ test.describe('WG Weekly Brief card — "This week so far" activity tally (GH-19
 
     await expect(page.getByTestId('weekly-brief-card-current-activity')).toContainText('no activity yet', { timeout: DATA_LOAD_TIMEOUT });
   });
+
+  test('renders the tally PLUS a truncation disclosure when current_activity.truncated is true (GH-1998)', async ({ page }) => {
+    await mockCommitteeShell(page, { category: 'Board' });
+    await mockCurrentBrief(page, {
+      brief: GENERATED_BRIEF,
+      throttle: USED_THROTTLE_AFTER_GENERATE,
+      current_activity: {
+        window_start: '2026-08-24T00:00:00.000Z',
+        window_end: '2026-08-27T12:00:00.000Z',
+        source_refs: [{ id: 'act-meeting-1', kind: 'meeting', title: 'Board Sync' }],
+        truncated: true,
+      },
+    });
+
+    await page.goto(COMMITTEE_URL, { waitUntil: 'domcontentloaded' });
+    await expect(page).not.toHaveURL(/auth0\.com/);
+
+    const tally = page.getByTestId('weekly-brief-card-current-activity');
+    await expect(tally).toBeVisible({ timeout: DATA_LOAD_TIMEOUT });
+    await expect(tally).toContainText('1 meeting held');
+
+    const note = page.getByTestId('weekly-brief-card-current-activity-truncation-note');
+    await expect(note).toBeVisible();
+    await expect(note).toContainText('view Recent Activity for the full list');
+  });
 });
 
 test.describe('WG Weekly Brief card — Edit → Save round-trip', () => {
