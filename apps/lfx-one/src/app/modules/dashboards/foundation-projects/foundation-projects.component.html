@@ -2,12 +2,24 @@
 <!-- SPDX-License-Identifier: MIT -->
 
 <main class="flex flex-col gap-6 p-6" data-testid="foundation-projects-page">
-  <header class="flex flex-col gap-1">
-    <h1 class="text-xl font-semibold text-gray-900">Projects</h1>
-    @if (foundationSlug()) {
-      <p class="text-sm text-gray-500">All projects under {{ foundationName() }}. Monitor health, activity, and contributor metrics.</p>
-    } @else {
-      <p class="text-sm text-gray-500">Select a foundation to monitor project health, activity, and contributor metrics.</p>
+  <header class="flex items-start justify-between gap-4">
+    <div class="flex flex-col gap-1">
+      <h1 class="text-xl font-semibold text-gray-900">Projects</h1>
+      @if (foundationSlug()) {
+        <p class="text-sm text-gray-500">All projects under {{ foundationName() }}. Monitor health, activity, and contributor metrics.</p>
+      } @else {
+        <p class="text-sm text-gray-500">Select a foundation to monitor project health, activity, and contributor metrics.</p>
+      }
+    </div>
+    @if (foundationSlug() && formationEnabled()) {
+      <lfx-button
+        label="Add a project"
+        icon="fa-light fa-plus"
+        severity="secondary"
+        [outlined]="true"
+        size="small"
+        (onClick)="proposeProject()"
+        data-testid="foundation-projects-add-project"></lfx-button>
     }
   </header>
 

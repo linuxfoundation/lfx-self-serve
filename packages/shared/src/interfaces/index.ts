@@ -333,3 +333,6 @@ export * from './social-listening.interface';
 
 // Per-user preference store + BFF wire contracts (LFXV2-3002 Block 0)
 export * from './user-preference.interface';
+
+// Propose a project intake + fallback formation record (GH-1962/#1965 Epic 1)
+export * from './formation.interface';

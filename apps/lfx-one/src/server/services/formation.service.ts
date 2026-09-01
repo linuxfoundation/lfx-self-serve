@@ -1,0 +1,95 @@
+// Copyright The Linux Foundation and each contributor to LFX.
+// SPDX-License-Identifier: MIT
+
+import { FORMATION_TEMPLATE_VERSION } from '@lfx-one/shared/constants';
+import { FormationState } from '@lfx-one/shared/enums';
+import type { Formation, FormationIntake } from '@lfx-one/shared/interfaces';
+import { randomUUID } from 'crypto';
+import { Request } from 'express';
+
+import { getEffectiveUsername } from '../utils/auth-helper';
+import { logger } from './logger.service';
+
+/**
+ * Fixture-backed formation records (GH-1962/#1965 Epic 1). `lfx-v2-formation-service` (#1957)
+ * isn't built yet, so this is the ENTIRE data layer for a formation until it lands — not a
+ * degraded mode. The fixture convention (defined here, since neither sibling ticket #1958/#1959
+ * had landed one at the time of writing — both worktrees were still at the same commit as
+ * `main`):
+ *
+ * - No `NatsService` involvement at all. The read-only mock/live dual-branch pattern used by
+ *   `committee-engagement.service.ts` (an `ENGAGEMENT_BACKEND` env toggle between a deterministic
+ *   generator and a real Snowflake read) doesn't apply here — that pattern exists because a REAL
+ *   backend exists somewhere to cut over to; there's no live formation-service subject to gate to
+ *   yet, so a toggle would be dead code. Add one only once #1957 ships a real subject.
+ * - This endpoint is create-then-read (submit, redirect, the confirmation page re-fetches the
+ *   same formation by uid), so — unlike the stateless deterministic generators above — this
+ *   holds a small module-level in-memory `Map<uid, Formation>` as its store. The store is
+ *   intentionally ephemeral (resets on server restart); that's a known fixture limitation, not a
+ *   bug, and is flagged in the PR description.
+ * - Every response carries `data_source: 'mock'` (the same in-band provenance convention as
+ *   `CommitteeEngagementResponse.data_source`) so a client can always tell fabricated data from
+ *   real data once #1957 lands and this class grows a live branch.
+ */
+export class FormationService {
+  private static readonly store = new Map<string, Formation>();
+
+  /**
+   * Creates a formation in `proposed` state with no linked project record
+   * (`project_uid: null` — the "Record not yet created" fallback state). Per #1957's own Epic
+   * 1/Epic 2 split, the real formation service writes the proposer's `participant` tuple itself
+   * (no invite-service involved) — this fixture can't perform that FGA write (there's no real
+   * `formation` resource yet to write against), so `participant_granted: true` on the response
+   * reflects what the real service will have done, letting the client render the real Epic-1 UX
+   * ahead of #1957 landing. Invite-service calls (Epic 2, #1992) and formation@/parent-writers
+   * email notifications (no email-service integration in this repo) are TODO-logged, not sent.
+   */
+  public async createFormation(req: Request, intake: FormationIntake): Promise<Formation> {
+    const uid = randomUUID();
+    const submittedBy = getEffectiveUsername(req) ?? 'unknown';
+
+    logger.debug(req, 'create_formation', 'Creating fixture-backed formation record', { uid, project_name: intake.project_name });
+
+    const formation: Formation = {
+      uid,
+      state: FormationState.PROPOSED,
+      parent_project_uid: intake.parent_project_uid,
+      project_uid: null,
+      template_version: FORMATION_TEMPLATE_VERSION,
+      submitted_by: submittedBy,
+      submitted_at: new Date().toISOString(),
+      intake,
+      participant_granted: true,
+      data_source: 'mock',
+    };
+
+    FormationService.store.set(uid, formation);
+
+    logger.info(req, 'create_formation', 'formation-service is not built yet (#1957) — returning a fabricated fixture record, not a real formation', {
+      uid,
+      submitted_by: submittedBy,
+    });
+    logger.info(req, 'create_formation', 'TODO(#1957): proposer participant grant is simulated — the real formation service writes this tuple on submit', {
+      uid,
+    });
+    logger.info(req, 'create_formation', 'TODO(#1992): invite-service calls for the legal contact and any additional named contacts are Epic 2 — not sent', {
+      uid,
+      contact_count: intake.additional_contacts.length + 1,
+    });
+    logger.info(
+      req,
+      'create_formation',
+      'TODO: formation@ and the parent project writers notification email is not sent — no email-service integration in this repo',
+      { uid }
+    );
+
+    return formation;
+  }
+
+  /** Reads a fixture formation by uid. Returns null when unknown — including after a server
+   *  restart, since the store is in-memory only (see this class's doc comment). */
+  public async getFormationByUid(req: Request, uid: string): Promise<Formation | null> {
+    logger.debug(req, 'get_formation_by_uid', 'Reading fixture-backed formation record', { uid });
+    return FormationService.store.get(uid) ?? null;
+  }
+}

@@ -1,0 +1,36 @@
+<!-- Copyright The Linux Foundation and each contributor to LFX. -->
+<!-- SPDX-License-Identifier: MIT -->
+
+<div class="mx-auto flex max-w-3xl flex-col gap-6 px-4 py-8" data-testid="propose-confirmation-page">
+  @if (loading()) {
+    <div class="flex items-center justify-center py-12">
+      <i class="fa-light fa-spinner-third fa-spin text-2xl text-gray-400"></i>
+    </div>
+  } @else if (formation(); as formation) {
+    <div class="flex flex-col gap-2 rounded-md border border-emerald-100 bg-emerald-50 p-4" data-testid="propose-confirmation-banner">
+      <p class="text-sm font-medium text-gray-900">Proposed on {{ submittedOn(formation) }}. The formation team has been notified.</p>
+    </div>
+
+    @if (!formation.project_uid) {
+      <div class="flex flex-col gap-2 rounded-md border border-amber-200 bg-amber-50 p-4" data-testid="propose-confirmation-not-created">
+        <p class="text-sm font-medium text-gray-900">Record not yet created</p>
+        <p class="text-xs text-gray-600">Staff only — this project doesn't have a record in the admin tool yet.</p>
+        <a
+          [href]="adminToolLink(formation)"
+          target="_blank"
+          rel="noopener"
+          class="text-xs font-medium text-blue-600 hover:text-blue-800"
+          data-testid="propose-confirmation-admin-link">
+          Create in admin tool ↗
+        </a>
+      </div>
+    }
+
+    <lfx-whats-next-panel></lfx-whats-next-panel>
+  } @else {
+    <div class="flex flex-col items-center gap-2 py-12 text-center">
+      <p class="text-sm font-medium text-gray-700">We couldn't find that proposal.</p>
+      <p class="text-xs text-gray-500">It may have been submitted in a different session — check with the formation team if you expected to see it here.</p>
+    </div>
+  }
+</div>

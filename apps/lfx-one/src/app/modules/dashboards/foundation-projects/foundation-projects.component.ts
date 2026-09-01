@@ -7,6 +7,7 @@ import { Component, computed, inject, signal, Signal } from '@angular/core';
 import { toObservable, toSignal } from '@angular/core/rxjs-interop';
 import { FormBuilder, FormGroup, ReactiveFormsModule } from '@angular/forms';
 import { Router } from '@angular/router';
+import { ButtonComponent } from '@components/button/button.component';
 import { FilterPillsComponent } from '@components/filter-pills/filter-pills.component';
 import { InputTextComponent } from '@components/input-text/input-text.component';
 import { StatCardGridComponent } from '@components/stat-card-grid/stat-card-grid.component';
@@ -14,6 +15,7 @@ import { TableComponent } from '@components/table/table.component';
 import {
   DEFAULT_FOUNDATION_PROJECT_ROW_VIEW,
   DEFAULT_FOUNDATION_PROJECTS_DETAIL_GROUPED,
+  FORMATION_ENABLED_FLAG,
   FOUNDATION_PROJECT_COUNT_FETCH_CONCURRENCY,
   PRESENCE_PILL_IDS,
   UUID_REGEX,
@@ -21,6 +23,7 @@ import {
 import { buildLensAwareInsightsUrl, hasAnyChannel } from '@lfx-one/shared/utils';
 import { AnalyticsService } from '@services/analytics.service';
 import { CommitteeService } from '@services/committee.service';
+import { FeatureFlagService } from '@services/feature-flag.service';
 import { LensService } from '@services/lens.service';
 import { MailingListService } from '@services/mailing-list.service';
 import { ProjectContextService } from '@services/project-context.service';
@@ -42,7 +45,7 @@ import type {
 
 @Component({
   selector: 'lfx-foundation-projects',
-  imports: [DecimalPipe, ReactiveFormsModule, FilterPillsComponent, InputTextComponent, StatCardGridComponent, TableComponent, TooltipModule],
+  imports: [DecimalPipe, ReactiveFormsModule, ButtonComponent, FilterPillsComponent, InputTextComponent, StatCardGridComponent, TableComponent, TooltipModule],
   templateUrl: './foundation-projects.component.html',
   styleUrl: './foundation-projects.component.scss',
 })
@@ -56,6 +59,7 @@ export class FoundationProjectsComponent {
   private readonly lensService = inject(LensService);
   private readonly router = inject(Router);
   private readonly fb = inject(FormBuilder);
+  private readonly featureFlagService = inject(FeatureFlagService);
 
   // === Forms ===
   protected readonly searchForm: FormGroup = this.fb.group({
@@ -70,6 +74,10 @@ export class FoundationProjectsComponent {
   // Used by `initPillOptions` to hide the count suffix during progressive
   // loading so "With Groups" doesn't flicker 0 → 1 → 2 → 3 per resolution.
   protected readonly countsLoading = signal(false);
+
+  // Dark-launched (GH-1962/#1965 Epic 1) — the CTA is hidden, not just redirected, for anyone
+  // not yet targeted, since a visible-but-redirecting CTA is a worse UX than not showing it.
+  protected readonly formationEnabled = this.featureFlagService.getBooleanFlag(FORMATION_ENABLED_FLAG, false);
 
   // === Computed/toSignal Signals ===
   protected readonly foundationSlug: Signal<string> = computed(() => this.projectContextService.selectedFoundation()?.slug ?? '');
@@ -111,6 +119,11 @@ export class FoundationProjectsComponent {
   // === Protected Methods ===
   protected getInsightsUrl(slug: string): string {
     return buildLensAwareInsightsUrl(slug, false);
+  }
+
+  /** "Add a project" entry point (GH-1962) — launches the intake form with this foundation prefilled as the parent. */
+  protected proposeProject(): void {
+    this.router.navigate(['/propose'], { queryParams: { parent: this.foundationSlug() } });
   }
 
   protected openProjectLens(project: ProjectTableRow): void {

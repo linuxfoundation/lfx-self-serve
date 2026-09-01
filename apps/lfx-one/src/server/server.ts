@@ -66,6 +66,7 @@ import votesRouter from './routes/votes.route';
 import akritesRouter from './routes/akrites.route';
 import mktgAgentsRouter from './routes/mktg-agents.route';
 import weeklyBriefRouter from './routes/weekly-brief.route';
+import formationsRouter from './routes/formations.route';
 import { reqSerializer, resSerializer, serverLogger } from './server-logger';
 import { logger } from './services/logger.service';
 import { NatsService } from './services/nats.service';
@@ -353,6 +354,10 @@ app.use('/api/changelog', changelogRouter);
 app.use('/api/newsletters', userNewslettersRouter);
 app.use('/api/projects/:projectUid/newsletters', newslettersRouter);
 app.use('/api/invite', inviteRouter);
+// Propose a project intake (GH-1962/#1965 Epic 1): fixture-backed formation records, no
+// upstream lfx-v2-formation-service (#1957) yet. UI gated by formationEnabledGuard; no
+// paired server-side kill switch — see formation.service.ts's doc comment.
+app.use('/api/formations', formationsRouter);
 // Akrites (formerly OSSPREY): LD-flag-controlled rollout for all authenticated LFX users (akritesEnabledGuard).
 // Not role-restricted — if per-role access is needed in future, add requireExecutiveDirector here.
 app.use('/api/akrites', akritesRouter);

@@ -1,0 +1,273 @@
+<!-- Copyright The Linux Foundation and each contributor to LFX. -->
+<!-- SPDX-License-Identifier: MIT -->
+
+<div class="mx-auto flex max-w-3xl flex-col gap-8 px-4 py-8" data-testid="propose-page">
+  <div class="flex flex-col gap-1">
+    <h1 class="text-xl font-semibold text-gray-900">Propose a project</h1>
+    <p class="text-sm text-gray-500">Tell us about the project you'd like to bring under the Linux Foundation.</p>
+  </div>
+
+  <form [formGroup]="form" (ngSubmit)="onSubmit()" class="flex flex-col gap-8">
+    <!-- Parent -->
+    <section class="flex flex-col gap-3" data-testid="propose-section-parent">
+      <h2 class="text-base font-semibold text-gray-900">Parent</h2>
+      <div>
+        <label class="mb-1 block text-sm font-medium text-gray-700">Parent foundation</label>
+        <lfx-project-picker [form]="form" uidControl="parent_project_uid"></lfx-project-picker>
+      </div>
+    </section>
+
+    <!-- Project -->
+    <section class="flex flex-col gap-3" data-testid="propose-section-project">
+      <h2 class="text-base font-semibold text-gray-900">Project</h2>
+
+      <div>
+        <label for="project-name" class="mb-1 block text-sm font-medium text-gray-700">Project name <span class="text-red-500">*</span></label>
+        <lfx-input-text
+          size="small"
+          [form]="form"
+          control="project_name"
+          id="project-name"
+          styleClass="w-full"
+          data-testid="propose-project-name"></lfx-input-text>
+        @if (form.get('project_name')?.errors?.['trimmedRequired'] && form.get('project_name')?.touched) {
+          <p class="mt-1 text-xs text-red-600">Project name is required</p>
+        }
+        @if (duplicateNameMatch(); as match) {
+          <p class="mt-1 text-xs text-amber-600" data-testid="propose-duplicate-name-warning">
+            A project named "{{ match }}" already exists — double-check this isn't a duplicate.
+          </p>
+        }
+      </div>
+
+      <div>
+        <label for="project-repository" class="mb-1 block text-sm font-medium text-gray-700">Repository URL</label>
+        <lfx-input-text
+          size="small"
+          [form]="form"
+          control="project_repository_url"
+          id="project-repository"
+          placeholder="https://github.com/..."
+          styleClass="w-full"
+          data-testid="propose-project-repository"></lfx-input-text>
+        @if (form.get('project_repository_url')?.errors?.['httpsUrl'] && form.get('project_repository_url')?.touched) {
+          <p class="mt-1 text-xs text-red-600">Enter a valid https URL</p>
+        }
+      </div>
+
+      <div>
+        <label class="mb-1 block text-sm font-medium text-gray-700">Logo</label>
+        <lfx-file-upload
+          mode="basic"
+          accept="image/*"
+          [auto]="false"
+          chooseLabel="Choose logo"
+          (onSelect)="onLogoSelect($event)"
+          data-testid="propose-project-logo">
+        </lfx-file-upload>
+        @if (logoFilename(); as filename) {
+          <p class="mt-1 text-xs text-gray-500">{{ filename }}</p>
+        }
+      </div>
+
+      <div>
+        <label for="trademark-status" class="mb-1 block text-sm font-medium text-gray-700">Trademark status <span class="text-red-500">*</span></label>
+        <lfx-select
+          size="small"
+          [form]="form"
+          control="trademark_status"
+          [options]="trademarkStatusOptions"
+          placeholder="Select trademark status"
+          styleClass="w-full"
+          appendTo="body"
+          id="trademark-status"
+          data-testid="propose-trademark-status"></lfx-select>
+        @if (form.get('trademark_status')?.errors?.['required'] && form.get('trademark_status')?.touched) {
+          <p class="mt-1 text-xs text-red-600">Trademark status is required</p>
+        }
+      </div>
+    </section>
+
+    <!-- Contributing organization -->
+    <section class="flex flex-col gap-3" data-testid="propose-section-org">
+      <h2 class="text-base font-semibold text-gray-900">Contributing organization</h2>
+
+      <div>
+        <label for="contributing-org" class="mb-1 block text-sm font-medium text-gray-700">Organization <span class="text-red-500">*</span></label>
+        <lfx-organization-search
+          [form]="form"
+          nameControl="contributing_org_name"
+          domainControl="contributing_org_domain"
+          idControl="contributing_org_id"
+          placeholder="Search for organization..."
+          styleClass="w-full"
+          dataTestId="propose-contributing-org"
+          (onOrganizationResolved)="onOrgResolved($event)">
+        </lfx-organization-search>
+        @if (form.get('contributing_org_name')?.errors?.['trimmedRequired'] && form.get('contributing_org_name')?.touched) {
+          <p class="mt-1 text-xs text-red-600">Contributing organization is required</p>
+        }
+      </div>
+
+      <div class="rounded-md border border-gray-200 p-3" [formGroup]="$any(form.get('legal_contact'))">
+        <p class="mb-2 text-sm font-medium text-gray-700">Legal contact <span class="text-red-500">*</span></p>
+        <div class="grid grid-cols-1 gap-3 md:grid-cols-3">
+          <div>
+            <lfx-input-text
+              size="small"
+              [form]="$any(form.get('legal_contact'))"
+              control="first_name"
+              placeholder="First name"
+              styleClass="w-full"
+              data-testid="propose-legal-contact-first-name"></lfx-input-text>
+          </div>
+          <div>
+            <lfx-input-text
+              size="small"
+              [form]="$any(form.get('legal_contact'))"
+              control="last_name"
+              placeholder="Last name"
+              styleClass="w-full"
+              data-testid="propose-legal-contact-last-name"></lfx-input-text>
+          </div>
+          <div>
+            <lfx-input-text
+              size="small"
+              [form]="$any(form.get('legal_contact'))"
+              control="email"
+              placeholder="Email"
+              styleClass="w-full"
+              data-testid="propose-legal-contact-email"></lfx-input-text>
+          </div>
+        </div>
+        @if (form.get('legal_contact.email')?.errors?.['email'] && form.get('legal_contact.email')?.touched) {
+          <p class="mt-1 text-xs text-red-600">Enter a valid email address</p>
+        }
+      </div>
+
+      <div class="flex flex-col gap-2">
+        <p class="text-sm font-medium text-gray-700">Who else should we loop in?</p>
+        @for (contact of additionalContacts(); track contact.email; let i = $index) {
+          <div class="flex items-center justify-between gap-2 rounded-md border border-gray-200 px-3 py-2" data-testid="propose-additional-contact-row">
+            <span class="text-sm text-gray-900">{{ contact.first_name }} {{ contact.last_name }} ({{ contact.email }})</span>
+            <button type="button" class="text-xs text-red-600 hover:text-red-800" (click)="removeContact(i)" data-testid="propose-additional-contact-remove">
+              Remove
+            </button>
+          </div>
+        }
+        <div class="grid grid-cols-1 gap-2 md:grid-cols-4" [formGroup]="newContactForm">
+          <lfx-input-text size="small" [form]="newContactForm" control="first_name" placeholder="First name" styleClass="w-full"></lfx-input-text>
+          <lfx-input-text size="small" [form]="newContactForm" control="last_name" placeholder="Last name" styleClass="w-full"></lfx-input-text>
+          <lfx-input-text size="small" [form]="newContactForm" control="email" placeholder="Email" styleClass="w-full"></lfx-input-text>
+          <lfx-button label="Add" severity="secondary" [outlined]="true" size="small" type="button" (onClick)="addContact()" data-testid="propose-add-contact">
+          </lfx-button>
+        </div>
+      </div>
+    </section>
+
+    <!-- Governance and licensing -->
+    <section class="flex flex-col gap-3" data-testid="propose-section-governance">
+      <h2 class="text-base font-semibold text-gray-900">Governance and licensing</h2>
+
+      <div class="grid grid-cols-1 gap-4 md:grid-cols-2">
+        <div>
+          <label for="license" class="mb-1 block text-sm font-medium text-gray-700">License <span class="text-red-500">*</span></label>
+          <lfx-select
+            size="small"
+            [form]="form"
+            control="license"
+            [options]="licenseOptions"
+            placeholder="Select license"
+            styleClass="w-full"
+            appendTo="body"
+            id="license"
+            data-testid="propose-license"></lfx-select>
+        </div>
+        <div>
+          <label for="chat-platform" class="mb-1 block text-sm font-medium text-gray-700">Chat platform <span class="text-red-500">*</span></label>
+          <lfx-select
+            size="small"
+            [form]="form"
+            control="chat_platform"
+            [options]="chatPlatformOptions"
+            placeholder="Select chat platform"
+            styleClass="w-full"
+            appendTo="body"
+            id="chat-platform"
+            data-testid="propose-chat-platform"></lfx-select>
+        </div>
+        <div>
+          <label for="agreement-type" class="mb-1 block text-sm font-medium text-gray-700">CLA / DCO <span class="text-red-500">*</span></label>
+          <lfx-select
+            size="small"
+            [form]="form"
+            control="agreement_type"
+            [options]="agreementTypeOptions"
+            placeholder="Select agreement type"
+            styleClass="w-full"
+            appendTo="body"
+            id="agreement-type"
+            data-testid="propose-agreement-type"></lfx-select>
+        </div>
+        <div class="flex items-end">
+          <lfx-checkbox [form]="form" control="is_spec_project" label="This is a specification project" data-testid="propose-is-spec"></lfx-checkbox>
+        </div>
+      </div>
+
+      <div>
+        <label for="mission-statement" class="mb-1 block text-sm font-medium text-gray-700">Mission statement <span class="text-red-500">*</span></label>
+        <lfx-textarea [form]="form" control="mission_statement" id="mission-statement" [rows]="3" styleClass="w-full" data-testid="propose-mission-statement">
+        </lfx-textarea>
+        <div class="mt-1 flex justify-between">
+          @if (form.get('mission_statement')?.errors?.['trimmedRequired'] && form.get('mission_statement')?.touched) {
+            <p class="text-xs text-red-600">Mission statement is required</p>
+          } @else {
+            <span></span>
+          }
+          <span class="text-xs text-gray-500">{{ missionStatementLength() }} / {{ missionStatementMaxLength }}</span>
+        </div>
+      </div>
+    </section>
+
+    <!-- About -->
+    <section class="flex flex-col gap-3" data-testid="propose-section-about">
+      <h2 class="text-base font-semibold text-gray-900">About</h2>
+
+      <div>
+        <label for="description" class="mb-1 block text-sm font-medium text-gray-700">Description <span class="text-red-500">*</span></label>
+        <lfx-textarea [form]="form" control="description" id="description" [rows]="5" styleClass="w-full" data-testid="propose-description"></lfx-textarea>
+        <div class="mt-1 flex justify-between">
+          @if (form.get('description')?.errors?.['trimmedRequired'] && form.get('description')?.touched) {
+            <p class="text-xs text-red-600">Description is required</p>
+          } @else {
+            <span></span>
+          }
+          <span class="text-xs text-gray-500">{{ descriptionLength() }} / {{ descriptionMaxLength }}</span>
+        </div>
+      </div>
+
+      <div>
+        <label for="website" class="mb-1 block text-sm font-medium text-gray-700">Website</label>
+        <lfx-input-text
+          size="small"
+          [form]="form"
+          control="website_url"
+          id="website"
+          placeholder="https://..."
+          styleClass="w-full"
+          data-testid="propose-website"></lfx-input-text>
+        @if (form.get('website_url')?.errors?.['httpsUrl'] && form.get('website_url')?.touched) {
+          <p class="mt-1 text-xs text-red-600">Enter a valid https URL</p>
+        }
+      </div>
+    </section>
+
+    <!-- What happens next -->
+    <lfx-whats-next-panel></lfx-whats-next-panel>
+
+    <div class="flex justify-end gap-3 border-t pt-6">
+      <lfx-button label="Submit proposal" type="submit" size="small" [loading]="submitting()" [disabled]="submitting()" data-testid="propose-submit">
+      </lfx-button>
+    </div>
+  </form>
+</div>

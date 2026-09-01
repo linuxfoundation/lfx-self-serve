@@ -70,6 +70,20 @@ export const ORG_LENS_PRIVATE_RELEASE_FLAG = 'org-lens-private-release';
 export const MARKETING_OPS_FGA_ENABLED_FLAG = 'marketing-ops-fga-enabled';
 
 /**
+ * Dark-launch gate for the "Propose a project" intake form (GH-1962/#1965 Epic 1) — the `/propose`
+ * route, its "Add a project" entry points, and the confirmation page. Default false: staged
+ * targeting (named users first, then LF Staff, then all — same rule as
+ * `MARKETING_OPS_FGA_ENABLED_FLAG`), not "all users" in one step.
+ *
+ * **UI-only** — evaluated through `FeatureFlagService.getBooleanFlag`. There is no paired
+ * server-side flag for this ticket: submit always takes the fixture-backed fallback path (create
+ * a `formation` record, no v1/v2 project record) regardless of this flag's value — the real BFF
+ * v1 project-service create adapter and its own kill switch (`ServerFeatureFlag.FormationIntake`)
+ * are Epic 2 (#1995), not built here.
+ */
+export const FORMATION_ENABLED_FLAG = 'formation-enabled';
+
+/**
  * `localStorage` key holding a `Record<string, boolean>` of locally-forced flag values, read by
  * `FeatureFlagService.getBooleanFlag` in **non-production builds only**.
  *

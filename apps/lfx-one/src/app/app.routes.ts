@@ -14,6 +14,7 @@ import { newsletterAccessGuard } from './shared/guards/newsletter-access.guard';
 import { orgLensEnabledGuard } from './shared/guards/org-lens-enabled.guard';
 import { orgLensRoiEnabledGuard } from './shared/guards/org-lens-roi-enabled.guard';
 import { akritesEnabledGuard } from './shared/guards/akrites-enabled.guard';
+import { formationEnabledGuard } from './shared/guards/formation-enabled.guard';
 import { mktgOsAgentsEnabledGuard } from './shared/guards/mktg-os-agents-enabled.guard';
 import { projectQueryParamGuard } from './shared/guards/project-query-param.guard';
 import { settingsLensRedirectGuard } from './shared/guards/settings-lens-redirect.guard';
@@ -460,6 +461,14 @@ export const routes: Routes = [
         path: 'akrites',
         canMatch: [akritesEnabledGuard],
         loadChildren: () => import('./modules/akrites/akrites.routes').then((m) => m.AKRITES_ROUTES),
+      },
+      // Propose a project (GH-1962/#1965 Epic 1): dark-launched behind formation-enabled.
+      // Top-level rather than lens-scoped — /propose is reachable from the Linux Foundation
+      // root with an optional ?parent= prefill from a foundation's "Add a project".
+      {
+        path: 'propose',
+        canMatch: [formationEnabledGuard],
+        loadChildren: () => import('./modules/formations/formations.routes').then((m) => m.FORMATION_ROUTES),
       },
     ],
   },

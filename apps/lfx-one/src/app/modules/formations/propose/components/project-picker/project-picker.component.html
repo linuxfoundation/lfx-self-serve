@@ -1,0 +1,40 @@
+<!-- Copyright The Linux Foundation and each contributor to LFX. -->
+<!-- SPDX-License-Identifier: MIT -->
+
+<div class="flex flex-col gap-2" data-testid="propose-project-picker">
+  @if (hasSelection()) {
+    <div class="flex items-center justify-between gap-2 rounded-md border border-gray-200 px-3 py-2">
+      <span class="text-sm text-gray-900" data-testid="propose-project-picker-selected">{{ selectedName() }}</span>
+      <button type="button" class="text-xs text-blue-600 hover:text-blue-800" (click)="clear()" data-testid="propose-project-picker-clear">Change</button>
+    </div>
+  } @else {
+    <form [formGroup]="searchForm" class="relative">
+      <lfx-input-text
+        size="small"
+        [form]="searchForm"
+        control="query"
+        placeholder="Search for a parent project or foundation..."
+        styleClass="w-full"
+        data-testid="propose-project-picker-search"></lfx-input-text>
+      @if (hasQuery() && results().length > 0) {
+        <ul class="absolute z-10 mt-1 w-full rounded-md border border-gray-200 bg-white shadow-lg" data-testid="propose-project-picker-results">
+          @for (project of results(); track project.uid) {
+            <li>
+              <button
+                type="button"
+                class="block w-full px-3 py-2 text-left text-sm text-gray-900 hover:bg-gray-50"
+                (click)="select(project)"
+                [attr.data-testid]="'propose-project-picker-option-' + project.slug">
+                {{ project.name }}
+              </button>
+            </li>
+          }
+        </ul>
+      }
+      @if (hasQuery() && results().length === 0) {
+        <p class="mt-1 text-xs text-gray-500">No matching projects.</p>
+      }
+    </form>
+    <p class="text-xs text-gray-500">Not sure? Leave this blank and the formation team will place the project.</p>
+  }
+</div>
