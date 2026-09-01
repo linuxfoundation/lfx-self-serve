@@ -1230,6 +1230,62 @@ describe('WeeklyBriefService', () => {
       );
     });
 
+    it('degrades to current_activity: undefined (not a thrown error, and regardless of count) when any_leg_failed is true, even though the returned page is short (GH-1967 review)', async () => {
+      delete process.env['WEEKLY_BRIEF_BACKEND'];
+      getCommitteeBaseMock.mockResolvedValue({ uid: 'committee-1', category: 'Board' });
+      // A short, comfortably-under-cap page — the exact shape a failed leg degrades to in
+      // committee-activity.service.ts ({ events: [], saturated: false }), indistinguishable from
+      // a leg that genuinely had nothing this week without the any_leg_failed flag itself.
+      getCommitteeActivityMock.mockResolvedValue({
+        data: [
+          {
+            type: 'meeting_held',
+            occurred_at: '2026-01-12T10:00:00Z',
+            committee_uid: 'committee-1',
+            payload: { meeting_id: 'm1', meeting_occurrence_id: 'm1-occ', title: 'Board Sync', password: null },
+          },
+        ],
+        page_token: undefined,
+        any_leg_saturated: false,
+        any_leg_failed: true,
+      });
+
+      const result = await service.getCurrentBrief(req, 'committee-1');
+
+      // undefined, not null: unlike the page-fill gate, a leg failure is transient — the same
+      // upstream call may succeed on the next poll tick.
+      expect(result.current_activity).toBeUndefined();
+      expect(logger.warning).toHaveBeenCalledWith(
+        req,
+        'get_weekly_brief_current_activity',
+        expect.stringContaining('leg'),
+        expect.objectContaining({ committee_id: 'committee-1' })
+      );
+    });
+
+    it("does NOT degrade current_activity when any_leg_saturated is true but any_leg_failed is false — saturation reflects lifetime, not this-week, volume for two of the five legs (see buildCurrentActivity's own doc comment)", async () => {
+      delete process.env['WEEKLY_BRIEF_BACKEND'];
+      getCommitteeBaseMock.mockResolvedValue({ uid: 'committee-1', category: 'Board' });
+      getCommitteeActivityMock.mockResolvedValue({
+        data: [
+          {
+            type: 'meeting_held',
+            occurred_at: '2026-01-12T10:00:00Z',
+            committee_uid: 'committee-1',
+            payload: { meeting_id: 'm1', meeting_occurrence_id: 'm1-occ', title: 'Board Sync', password: null },
+          },
+        ],
+        page_token: undefined,
+        any_leg_saturated: true,
+        any_leg_failed: false,
+      });
+
+      const result = await service.getCurrentBrief(req, 'committee-1');
+
+      expect(result.current_activity).toEqual(expect.objectContaining({ source_refs: expect.any(Array) }));
+      expect(result.current_activity?.source_refs).toHaveLength(1);
+    });
+
     it('degrades to current_activity: undefined once WEEKLY_BRIEF_CURRENT_ACTIVITY_BUDGET_MS elapses, rather than letting a slow (not erroring) upstream hold the whole response hostage', async () => {
       delete process.env['WEEKLY_BRIEF_BACKEND'];
       getCommitteeBaseMock.mockResolvedValue({ uid: 'committee-1', category: 'Board' });

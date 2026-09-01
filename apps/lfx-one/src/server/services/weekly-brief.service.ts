@@ -1339,13 +1339,17 @@ export class WeeklyBriefService {
    * individual leg's single upstream page can under-report while the merged, capped `data.length`
    * still lands under `limit`. Deliberately not re-derived here leg-by-leg — a summary of which mechanism hits which
    * leg is exactly the kind of detail that silently drifts out of sync with its source as that
-   * source evolves, and none of it crosses the `getCommitteeActivity` boundary as a signal this
-   * caller could gate on regardless: only a single merged `page_token` comes back, no per-leg flag.
-   * Closing this for real would need `getCommitteeActivity` to expose a per-leg completeness signal
-   * it doesn't return today — not done here to avoid changing the public contract of an endpoint
-   * the real "Recent Activity" feed also consumes, for a v1 tally where this is already a narrow
-   * edge case relative to the `page_token`/`anyLegSaturated` gate this replaced (which fired on
-   * nearly every long-lived board, every week).
+   * source evolves. This residual is narrower than it was when first written: `any_leg_failed`
+   * (GH-1967's addition to `CommitteeActivityResponse`) closes the outright-leg-error half of this
+   * gap — handled explicitly above, independent of this gate — leaving only the harder-to-signal
+   * half: a leg that fetched successfully but under-reported for a reason that isn't "erred" or
+   * "this specific committee's own upstream page saturated" (e.g. an FGA-filtered-empty page, or
+   * a sort-order mismatch against `occurred_at` — see committee-activity.service.ts's own
+   * comments). Nothing crosses the `getCommitteeActivity` boundary as a signal this caller could
+   * gate on for that narrower remainder today. `any_leg_saturated` deliberately still isn't part
+   * of this gate, unlike `any_leg_failed` above — see this method's own comment on why two of the
+   * five legs' saturation reflects lifetime volume, not this week's, and would falsely hide the
+   * tally for exactly the long-lived committees it exists to help.
    */
   private async buildCurrentActivity(req: Request, committeeId: string): Promise<WeeklyBriefCurrentActivity | null | undefined> {
     try {
@@ -1382,7 +1386,7 @@ export class WeeklyBriefService {
       // see this method's own doc comment for why. `quietAggregationLog: true` separately, since
       // this is a per-poll-tick call, not the controller-driven feed read that method's own
       // INFO-logging rationale is written for — see that call site's own comment.
-      const { data } = await this.committeeActivityService.getCommitteeActivity(
+      const { data, any_leg_failed } = await this.committeeActivityService.getCommitteeActivity(
         req,
         committeeId,
         {
@@ -1392,6 +1396,23 @@ export class WeeklyBriefService {
         { knownCommittee: committee, quietAggregationLog: true }
       );
       logger.debug(req, 'get_weekly_brief_current_activity', 'Fetched current-week activity', { committee_id: committeeId, event_count: data.length });
+      // `any_leg_failed` (GH-1967's addition to CommitteeActivityResponse, not available when
+      // this method was first written): unlike `any_leg_saturated` below, a leg failure isn't
+      // proportional to a committee's lifetime volume, so it carries none of the false-positive
+      // risk that rules out gating on saturation — a leg either errored on this call or it
+      // didn't. And unlike the page-fill gate below, this can under-report at ANY count,
+      // including a comfortably-under-cap or even zero one: a failed vote/meeting/document leg
+      // degrades to `{ events: [], saturated: false }` in committee-activity.service.ts,
+      // indistinguishable from a leg that genuinely had nothing this week. `undefined`, not
+      // `null` — a leg failure is transient (the same upstream call can succeed on the next poll
+      // tick), unlike the page-fill gate's `null`, which this method's own doc comment already
+      // establishes is provably permanent within a poll cycle.
+      if (any_leg_failed) {
+        logger.warning(req, 'get_weekly_brief_current_activity', 'One or more activity legs failed, omitting the tally rather than publishing an undercount', {
+          committee_id: committeeId,
+        });
+        return undefined;
+      }
 
       // Filtered to occurred_at <= window_end, not just >= window_start (the `since` param
       // above already narrows that half) — getCommitteeActivity has no `before`/upper-bound
