@@ -137,6 +137,31 @@ describe('formation-store.service', () => {
     });
   });
 
+  describe('activity cap', () => {
+    it('caps the retained activity list per formation instead of growing it unbounded', () => {
+      const formation = buildFormation();
+      const actor = { username: 'alex.rivera', name: 'Alex Rivera' };
+
+      for (let i = 0; i < 210; i += 1) {
+        appendActivity({
+          uid: nextActivityUid(),
+          formation_uid: formation.uid,
+          formation_item_uid: null,
+          type: 'note_added',
+          actor,
+          message: `entry ${i}`,
+          metadata: null,
+          created_at: '',
+        });
+      }
+
+      const result = getActivityForFormation(formation.uid);
+      expect(result).toHaveLength(200);
+      // Most-recent-first — the cap must drop the oldest entries, not the newest.
+      expect(result[0]?.message).toBe('entry 209');
+    });
+  });
+
   describe('nextActivityUid', () => {
     it('never returns the same value twice', () => {
       const uids = new Set(Array.from({ length: 20 }, () => nextActivityUid()));

@@ -1,7 +1,8 @@
 // Copyright The Linux Foundation and each contributor to LFX.
 // SPDX-License-Identifier: MIT
 
-import { Component, computed, inject, Signal, signal } from '@angular/core';
+import { isPlatformBrowser } from '@angular/common';
+import { Component, computed, inject, PLATFORM_ID, Signal, signal } from '@angular/core';
 import { toObservable, toSignal } from '@angular/core/rxjs-interop';
 import { StatCardGridComponent } from '@components/stat-card-grid/stat-card-grid.component';
 import { FormationService } from '@services/formation.service';
@@ -27,6 +28,7 @@ export class FormationsQueueComponent {
   private readonly formationService = inject(FormationService);
   private readonly messageService = inject(MessageService);
   private readonly dialogService = inject(DialogService);
+  private readonly platformId = inject(PLATFORM_ID);
 
   private readonly refresh$ = new BehaviorSubject<void>(undefined);
   private readonly filters = signal<FormationsQueueFilterState>({ subStage: undefined, search: '' });
@@ -44,6 +46,10 @@ export class FormationsQueueComponent {
   }
 
   protected onRetry(): void {
+    // The error state's @else branch (formations-queue.component.html) destroys FormationsTableComponent,
+    // which resets its own statusTab/searchForm to defaults — reset filters() to match, or the retried
+    // fetch would run with stale filter values the freshly re-created table no longer displays.
+    this.filters.set({ subStage: undefined, search: '' });
     this.refresh$.next();
   }
 
@@ -62,15 +68,20 @@ export class FormationsQueueComponent {
             return;
           }
 
-          // Not `window.open(url, '_blank', 'noopener,noreferrer')` — per spec, `noopener` (which
-          // `noreferrer` also implies) makes window.open return null unconditionally, so that form
-          // can never distinguish "opened" from "blocked" and would show the blocked-popup warning
-          // on every successful Accept. Achieve the same reverse-tabnabbing protection by nulling
-          // `opener` manually on the window reference instead.
-          const opened = window.open(result.deep_link_url, '_blank');
-          if (opened) {
-            opened.opener = null;
-          } else {
+          // `window` is a browser-only global (ssr-safety.md) — this callback only ever fires from a
+          // click handler, so the server never reaches it in practice, but the guard is unconditional
+          // per the rule either way.
+          let opened: Window | null = null;
+          if (isPlatformBrowser(this.platformId)) {
+            // Not `window.open(url, '_blank', 'noopener,noreferrer')` — per spec, `noopener` (which
+            // `noreferrer` also implies) makes window.open return null unconditionally, so that form
+            // can never distinguish "opened" from "blocked" and would show the blocked-popup warning
+            // on every successful Accept. Achieve the same reverse-tabnabbing protection by nulling
+            // `opener` manually on the window reference instead.
+            opened = window.open(result.deep_link_url, '_blank');
+            if (opened) opened.opener = null;
+          }
+          if (!opened) {
             // Popup blocked — this fires from an async response callback, outside the click's
             // user-gesture window, so the browser can (and does, in some configurations) block it.
             this.messageService.add({

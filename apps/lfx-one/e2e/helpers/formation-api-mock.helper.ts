@@ -1,7 +1,7 @@
 // Copyright The Linux Foundation and each contributor to LFX.
 // SPDX-License-Identifier: MIT
 
-import { FormationsQueueResponse } from '@lfx-one/shared/interfaces';
+import { FormationItem, FormationsQueueResponse } from '@lfx-one/shared/interfaces';
 import { Page } from '@playwright/test';
 
 import { getMockFormation, getMockFormationItems, mockFormationActivity, mockFormationsQueue, mockFormationTemplate } from '../fixtures/mock-data';
@@ -80,7 +80,9 @@ export class FormationApiMockHelper {
         withdrawn: rows.filter((row) => row.sub_stage === 'withdrawn').length,
         total: rows.length,
         foundations: rows.filter((row) => row.entity_type === 'foundation').length,
-        subprojects: rows.filter((row) => row.entity_type === 'subproject').length,
+        // Mirrors formation.service.ts's buildQueueTiles — a bare 'project' entity rolls into the
+        // subprojects count so it isn't dropped from the breakdown while still counting toward total.
+        subprojects: rows.filter((row) => row.entity_type === 'subproject' || row.entity_type === 'project').length,
         mine: 0,
       };
 
@@ -88,23 +90,46 @@ export class FormationApiMockHelper {
     });
   }
 
-  /** Mocks the write endpoints (`complete`/`skip`/`request`/update on an item; `accept`/`decline` on a formation) with a canned success or error body per test. */
+  /**
+   * Mocks `PATCH /api/formation-items/:uid/{complete,skip,request}` with a canned success or error
+   * response per test. The success body is the full seeded `FormationItem` (status field updated to
+   * match the action) — not just `{ status: '...' }` — since `FormationItemDrawerComponent` consumes
+   * the response body directly (`itemChanged.emit(updated)`, `${updated.title} is done`); a partial
+   * body would leave those fields `undefined` in a way the real BFF never does.
+   */
   static async setupFormationItemActionMock(
     page: Page,
     options: { complete?: 'success' | 'error'; skip?: 'success' | 'error'; request?: 'success' | 'error' } = {}
   ): Promise<void> {
+    const findItem = (url: string): FormationItem | undefined => {
+      const segments = new URL(url).pathname.split('/');
+      const uid = decodeURIComponent(segments[segments.length - 2] ?? '');
+      return getMockFormationItems('formation:cascade-data-alliance').find((item) => item.uid === uid);
+    };
+
     await page.route('**/api/formation-items/*/complete', async (route) => {
-      await route.fulfill({ status: options.complete === 'error' ? 500 : 200, contentType: 'application/json', body: JSON.stringify({ status: 'done' }) });
+      if (options.complete === 'error') {
+        await route.fulfill({ status: 500, contentType: 'application/json', body: '{}' });
+        return;
+      }
+      const item = findItem(route.request().url());
+      await route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify({ ...item, status: 'done', skip_reason: null }) });
     });
     await page.route('**/api/formation-items/*/skip', async (route) => {
-      await route.fulfill({ status: options.skip === 'error' ? 500 : 200, contentType: 'application/json', body: JSON.stringify({ status: 'skipped' }) });
+      if (options.skip === 'error') {
+        await route.fulfill({ status: 500, contentType: 'application/json', body: '{}' });
+        return;
+      }
+      const item = findItem(route.request().url());
+      await route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify({ ...item, status: 'skipped' }) });
     });
     await page.route('**/api/formation-items/*/request', async (route) => {
-      await route.fulfill({
-        status: options.request === 'error' ? 500 : 200,
-        contentType: 'application/json',
-        body: JSON.stringify({ status: 'waiting_on_partner' }),
-      });
+      if (options.request === 'error') {
+        await route.fulfill({ status: 500, contentType: 'application/json', body: '{}' });
+        return;
+      }
+      const item = findItem(route.request().url());
+      await route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify({ ...item, status: 'waiting_on_partner' }) });
     });
   }
 

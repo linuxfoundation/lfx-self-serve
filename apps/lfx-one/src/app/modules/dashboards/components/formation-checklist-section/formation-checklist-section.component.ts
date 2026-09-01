@@ -17,7 +17,7 @@ import { collectFormationOrphanItems, groupFormationItemsBySection } from '@lfx-
 import { MessageService } from 'primeng/api';
 import { SkeletonModule } from 'primeng/skeleton';
 import { DialogService } from 'primeng/dynamicdialog';
-import { BehaviorSubject, catchError, combineLatest, finalize, of, switchMap, take, tap } from 'rxjs';
+import { BehaviorSubject, catchError, combineLatest, distinctUntilChanged, finalize, of, switchMap, take, tap } from 'rxjs';
 
 import { ReasonPromptDialogComponent } from '@components/reason-prompt-dialog/reason-prompt-dialog.component';
 
@@ -133,10 +133,15 @@ export class FormationChecklistSectionComponent {
   }
 
   private initResponse(): Signal<FormationChecklistResponse | null> {
+    // Projected to the slug and deduped — activeContext() is a computed that can re-emit a fresh
+    // object with the same slug (e.g. the context service enriching it), and without
+    // distinctUntilChanged that would still re-trigger this fetch on every such re-set.
+    const slug$ = toObservable(computed(() => this.projectContextService.activeContext()?.slug ?? null)).pipe(distinctUntilChanged());
+
     return toSignal(
-      combineLatest([this.refresh$, toObservable(computed(() => this.projectContextService.activeContext()))]).pipe(
-        switchMap(([, context]) => {
-          if (!context?.slug) {
+      combineLatest([this.refresh$, slug$]).pipe(
+        switchMap(([, slug]) => {
+          if (!slug) {
             // Unreachable in the real flow — the parent only renders this component once
             // ProjectService.project()?.stage already confirmed a Formation-stage project, which
             // requires a resolved context. Still resolved defensively rather than left loading forever.
@@ -146,7 +151,7 @@ export class FormationChecklistSectionComponent {
 
           this.loadFailed.set(false);
           this.loading.set(true);
-          return this.formationService.getProjectFormation(context.slug).pipe(
+          return this.formationService.getProjectFormation(slug).pipe(
             tap((response) => this.logOrphanSectionKeys(response)),
             catchError((error: unknown) => {
               console.error('[FormationChecklistSection] Failed to load formation checklist', error);

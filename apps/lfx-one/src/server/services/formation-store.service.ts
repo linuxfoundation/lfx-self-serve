@@ -19,6 +19,9 @@ const formationStore = new Map<string, Formation>();
 const activityStore = new Map<string, FormationActivity[]>();
 let activityCounter = 0;
 
+/** Per-formation activity cap — this is a long-lived process-global Map with no eviction otherwise; bounds it against unbounded growth over the process lifetime. */
+const MAX_ACTIVITY_PER_FORMATION = 200;
+
 export function seedFormation(formation: Formation, items: FormationItem[]): void {
   if (!formationStore.has(formation.uid)) {
     formationStore.set(formation.uid, formation);
@@ -52,7 +55,7 @@ export function putStoredFormation(formation: Formation): void {
 
 export function appendActivity(activity: FormationActivity): void {
   const existing = activityStore.get(activity.formation_uid) ?? [];
-  activityStore.set(activity.formation_uid, [activity, ...existing]);
+  activityStore.set(activity.formation_uid, [activity, ...existing].slice(0, MAX_ACTIVITY_PER_FORMATION));
 }
 
 export function getActivityForFormation(formationUid: string): FormationActivity[] {

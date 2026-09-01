@@ -11,13 +11,13 @@
   <ng-template #header>
     <div class="flex items-start justify-between gap-4 w-full">
       <div class="flex flex-col gap-1 flex-1 min-w-0">
-        <h2 class="text-lg font-semibold text-gray-900 lg:truncate">{{ item()?.title }}</h2>
+        <h2 class="text-lg font-semibold text-gray-900 lg:truncate" [attr.title]="item()?.title">{{ item()?.title }}</h2>
         @if (item(); as currentItem) {
-          <span [attr.data-testid]="'formation-item-drawer-gates-active-' + currentItem.uid">
-            @if (currentItem.is_gating) {
+          @if (currentItem.is_gating) {
+            <span [attr.data-testid]="'formation-item-drawer-gates-active-' + currentItem.uid">
               <lfx-tag value="Gates Active" severity="warn" />
-            }
-          </span>
+            </span>
+          }
         }
       </div>
       <button
@@ -41,25 +41,30 @@
         <p class="text-sm text-red-700">Something went wrong loading this item.</p>
       </div>
     } @else if (item(); as currentItem) {
-      <div class="flex gap-2">
+      <div class="flex flex-col gap-2">
         @if (currentItem.status !== 'done') {
-          <lfx-button
-            label="Mark complete"
-            size="small"
-            severity="primary"
-            [disabled]="!currentItem.can_complete"
-            [tooltip]="currentItem.can_complete ? undefined : 'Requires gate_writer access'"
-            (onClick)="onMarkComplete()"
-            data-testid="formation-item-drawer-mark-complete" />
-          @if (currentItem.is_gating) {
+          <div class="flex items-center gap-2">
             <lfx-button
-              label="Skip…"
+              label="Mark complete"
               size="small"
-              severity="secondary"
-              [outlined]="true"
+              severity="primary"
               [disabled]="!currentItem.can_complete"
-              (onClick)="onSkip()"
-              data-testid="formation-item-drawer-skip" />
+              (onClick)="onMarkComplete()"
+              data-testid="formation-item-drawer-mark-complete" />
+            @if (currentItem.is_gating) {
+              <lfx-button
+                label="Skip…"
+                size="small"
+                severity="secondary"
+                [outlined]="true"
+                [disabled]="!currentItem.can_complete"
+                (onClick)="onSkip()"
+                data-testid="formation-item-drawer-skip" />
+            }
+          </div>
+          @if (!currentItem.can_complete) {
+            <!-- A disabled button isn't focusable, so a hover-only tooltip would never reach a keyboard/screen-reader user — render the reason as visible text instead. -->
+            <span class="text-xs text-gray-500">Requires gate_writer access</span>
           }
         }
       </div>

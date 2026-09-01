@@ -77,3 +77,12 @@ export function groupFormationItemsBySection(items: FormationItem[], sections: F
 
   return rendered;
 }
+
+/** `FormationReadinessStripComponent`'s "N days" / "N days ago" / "today" label for an announcement date, relative to now. */
+export function formatFormationRelativeDayCount(date: Date): string {
+  const diffDays = Math.round((date.getTime() - Date.now()) / 86_400_000);
+  if (diffDays === 0) return 'today';
+  if (diffDays > 0) return `${diffDays} day${diffDays === 1 ? '' : 's'}`;
+  const past = Math.abs(diffDays);
+  return `${past} day${past === 1 ? '' : 's'} ago`;
+}
