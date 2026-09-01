@@ -370,9 +370,6 @@ app.use('/api/mktg-agents', mktgAgentsRouter);
 app.use('/public/api/*', apiErrorHandler);
 app.use('/api/*', apiErrorHandler);
 
-// Cold-start phase mark (see #1378) — router mounting + middleware complete.
-const routesReadyMs = performance.now();
-
 // Profile auth callback registered in Auth0 Profile Client.
 const profileCallbackController = new ProfileController();
 app.get('/passwordless/callback', authRateLimiter, (req, res) => profileCallbackController.handleProfileAuthCallback(req, res));
@@ -384,6 +381,9 @@ const crowdfundingCallbackController = new CrowdfundingController();
 app.get('/crowdfunding/callback', authRateLimiter, (req, res) => crowdfundingCallbackController.handleCrowdfundingAuthCallback(req, res));
 
 const crowdfundingAuthService = new CrowdfundingAuthService();
+
+// Cold-start phase mark (see #1378) — router mounting + middleware complete.
+const routesReadyMs = performance.now();
 
 app.use('/**', async (req: Request, res: Response, next: NextFunction) => {
   const ssrStartTime = Date.now();
