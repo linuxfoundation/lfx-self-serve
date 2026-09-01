@@ -3043,7 +3043,10 @@ describe('CampaignsComponent — email delivery channel', () => {
       (internals() as unknown as { onSelectEmailTemplate(id: string): void }).onSelectEmailTemplate('chosen');
       (internals() as unknown as { onSelectEmailType(id: string): void }).onSelectEmailType('thank-you-survey');
 
-      expect(internals().emailTemplatesRendered()[0].id).toBe('chosen');
+      // Present but NOT promoted: the spliced row takes the last slot, so the first row remains a
+      // genuine ranking result. That is what makes the banner's "Showing N of M" honest.
+      const drawn = internals().emailTemplatesRendered();
+      expect(drawn[drawn.length - 1].id).toBe('chosen');
       expect(internals().emailTemplatesRenderCapMessage()).not.toContain('first');
     });
 
@@ -3061,8 +3064,12 @@ describe('CampaignsComponent — email delivery channel', () => {
 
       const rendered = internals().emailTemplatesRendered();
       expect(rendered.some((t) => t.id === 'chosen')).toBe(true);
-      // At the TOP: it is the row the operator chose, so it belongs where they will look.
-      expect(rendered[0].id).toBe('chosen');
+      // In the LAST slot, not the first. Promoting it kept the row visible but put a zero-scoring
+      // template above every matching one, which contradicts the ranking invariant: the first row
+      // is meant to be the best suggestion. Visible-but-not-promoted satisfies both.
+      expect(rendered[rendered.length - 1].id).toBe('chosen');
+      // And the first row is still a genuine match, which is the invariant that was broken.
+      expect(rendered[0].id).not.toBe('chosen');
       // The cap is still honoured — the splice replaces a row rather than appending one.
       expect(rendered.length).toBe(HUBSPOT_TEMPLATE_RENDER_LIMIT);
     });
