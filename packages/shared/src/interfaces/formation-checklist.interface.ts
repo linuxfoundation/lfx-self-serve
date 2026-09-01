@@ -48,7 +48,8 @@ export interface FormationRenderedSection {
  * `provisionable`/`request` action kind. `testidPrefix` carries the full `data-testid` prefix (not
  * a bare suffix) so it stays greppable from the value that produces it, per GH-1958 review.
  * `severity` is the non-optional `ButtonSeverity` (not `ButtonProps['severity']`, which admits
- * `undefined`) so a missing/mistyped severity fails the `satisfies` check at the definition site.
+ * `null`/`undefined`) so a config can't null out severity — a mistyped literal was already
+ * rejected by `satisfies` before this narrowing.
  */
 export interface FormationRowActionConfig {
   testidPrefix: string;

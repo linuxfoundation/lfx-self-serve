@@ -57,10 +57,13 @@ export const FORMATION_EMPTY_QUEUE_TILES = {
 } as const satisfies FormationQueueTiles;
 
 /**
- * `FormationsQueueComponent`'s sentinel for "not yet loaded" or a failed fetch. Not `as const` —
- * `rows: []` would narrow to `readonly never[]`, which doesn't satisfy `Formation[]`.
+ * `FormationsQueueComponent`'s sentinel for "not yet loaded" or a failed fetch — a factory, not a
+ * shared object, so its `toSignal` `initialValue` use and its `catchError` fallback use each get
+ * their own `tiles`/`rows`, never one singleton two call sites could mutate through each other.
  */
-export const FORMATION_EMPTY_QUEUE_RESPONSE: FormationsQueueResponse = { tiles: FORMATION_EMPTY_QUEUE_TILES, rows: [], data_source: 'fixture' };
+export function emptyFormationsQueueResponse(): FormationsQueueResponse {
+  return { tiles: { ...FORMATION_EMPTY_QUEUE_TILES }, rows: [], data_source: 'fixture' };
+}
 
 /** `FormationChecklistRowComponent`'s status chip labels, mirroring `POLL_STATUS_LABELS`'s pattern. */
 export const FORMATION_ITEM_STATUS_LABELS = {
