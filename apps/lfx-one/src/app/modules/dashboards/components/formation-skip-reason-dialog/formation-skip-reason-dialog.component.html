@@ -1,0 +1,28 @@
+<!-- Copyright The Linux Foundation and each contributor to LFX. -->
+<!-- SPDX-License-Identifier: MIT -->
+
+<div class="flex flex-col gap-4" data-testid="formation-skip-reason-dialog">
+  <p class="text-sm text-gray-600">
+    Skipping <strong>{{ itemTitle }}</strong> requires a reason. This is logged in the item's history.
+  </p>
+
+  <lfx-textarea
+    [form]="form"
+    control="reason"
+    [rows]="4"
+    placeholder="Why is this item being skipped?"
+    styleClass="w-full"
+    [required]="true"
+    dataTest="formation-skip-reason-dialog-textarea" />
+
+  <div class="flex justify-end gap-2">
+    <lfx-button label="Cancel" size="small" severity="secondary" (onClick)="onCancel()" data-testid="formation-skip-reason-dialog-cancel" />
+    <lfx-button
+      label="Skip item"
+      size="small"
+      severity="danger"
+      [disabled]="!canConfirm()"
+      (onClick)="onConfirm()"
+      data-testid="formation-skip-reason-dialog-confirm-btn" />
+  </div>
+</div>

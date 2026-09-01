@@ -1,0 +1,131 @@
+<!-- Copyright The Linux Foundation and each contributor to LFX. -->
+<!-- SPDX-License-Identifier: MIT -->
+
+<p-drawer
+  [(visible)]="visible"
+  position="right"
+  [modal]="true"
+  [showCloseIcon]="false"
+  styleClass="xl:w-[45%] lg:w-[55%] md:w-[70%] sm:w-[90%] w-full"
+  data-testid="formation-item-drawer">
+  <ng-template #header>
+    <div class="flex items-start justify-between gap-4 w-full">
+      <div class="flex flex-col gap-1 flex-1 min-w-0">
+        <h2 class="text-lg font-semibold text-gray-900 truncate">{{ item()?.title }}</h2>
+        @if (item(); as currentItem) {
+          <span [attr.data-testid]="'formation-item-drawer-gates-active-' + currentItem.uid">
+            @if (currentItem.is_gating) {
+              <lfx-tag value="Gates Active" severity="warn" />
+            }
+          </span>
+        }
+      </div>
+      <button type="button" (click)="onClose()" class="p-1 text-gray-400 hover:text-gray-600" aria-label="Close panel">
+        <i class="fa-light fa-xmark text-xl" aria-hidden="true"></i>
+      </button>
+    </div>
+  </ng-template>
+
+  <div class="flex flex-col gap-6 pb-2">
+    @if (loading()) {
+      <div class="flex items-center justify-center py-12">
+        <i class="fa-light fa-spinner-third fa-spin text-2xl text-gray-400"></i>
+      </div>
+    } @else if (item(); as currentItem) {
+      <div class="flex gap-2">
+        @if (currentItem.status !== 'done') {
+          <lfx-button
+            label="Mark complete"
+            size="small"
+            severity="primary"
+            [disabled]="!currentItem.can_complete"
+            [tooltip]="currentItem.can_complete ? undefined : 'Requires gate_writer access'"
+            (onClick)="onMarkComplete()"
+            data-testid="formation-item-drawer-mark-complete" />
+          @if (currentItem.is_gating) {
+            <lfx-button
+              label="Skip…"
+              size="small"
+              severity="secondary"
+              [outlined]="true"
+              [disabled]="!currentItem.can_complete"
+              (onClick)="onSkip()"
+              data-testid="formation-item-drawer-skip" />
+          }
+        }
+      </div>
+
+      <div class="flex flex-col gap-2" data-testid="formation-item-drawer-notes">
+        <span class="text-xs font-medium text-gray-500 uppercase tracking-wide">Notes</span>
+        <lfx-textarea [form]="editForm" control="notes" [rows]="4" placeholder="Add notes…" styleClass="w-full" />
+      </div>
+
+      <div class="flex flex-col gap-3 sm:flex-row">
+        <div class="flex flex-col gap-2 flex-1" data-testid="formation-item-drawer-assignee">
+          <span class="text-xs font-medium text-gray-500 uppercase tracking-wide">Assignee</span>
+          <lfx-input-text [form]="editForm" control="ownerUsername" placeholder="Username" />
+        </div>
+        <div class="flex flex-col gap-2 flex-1" data-testid="formation-item-drawer-due-date">
+          <span class="text-xs font-medium text-gray-500 uppercase tracking-wide">Due date</span>
+          <lfx-calendar [form]="editForm" control="dueDate" placeholder="Select a date" />
+        </div>
+      </div>
+
+      <div>
+        <lfx-button label="Save" size="small" severity="secondary" (onClick)="onSaveDetails()" data-testid="formation-item-drawer-save" />
+      </div>
+
+      @if (currentItem.links.length > 0) {
+        <div class="flex flex-col gap-2" data-testid="formation-item-drawer-links">
+          <span class="text-xs font-medium text-gray-500 uppercase tracking-wide">Links</span>
+          <div class="flex flex-col gap-1">
+            @for (link of currentItem.links; track link.href) {
+              <a [href]="link.href" target="_blank" rel="noopener noreferrer" class="text-sm text-blue-600 hover:underline">{{ link.label }}</a>
+            }
+          </div>
+        </div>
+      }
+
+      @if (currentItem.sub_items.length > 0) {
+        <div class="flex flex-col gap-2" data-testid="formation-item-drawer-sub-items">
+          <span class="text-xs font-medium text-gray-500 uppercase tracking-wide">Sub-items</span>
+          <div class="flex flex-col gap-1">
+            @for (subItem of currentItem.sub_items; track subItem.uid) {
+              <div class="flex items-center justify-between text-sm">
+                <span class="text-gray-700">{{ subItem.title }}</span>
+                <span class="text-gray-500">{{ subItem.status }}</span>
+              </div>
+            }
+          </div>
+        </div>
+      }
+
+      @if (currentItem.skip_reason) {
+        <div class="flex flex-col gap-1 p-3 bg-gray-50 border border-gray-200 rounded-lg" data-testid="formation-item-drawer-skip-reason">
+          <span class="text-xs font-medium text-gray-500 uppercase tracking-wide">Skip reason</span>
+          <span class="text-sm text-gray-700">{{ currentItem.skip_reason }}</span>
+        </div>
+      }
+
+      <div class="flex flex-col gap-2" data-testid="formation-item-drawer-history">
+        <span class="text-xs font-medium text-gray-500 uppercase tracking-wide">History</span>
+        @if (history().length === 0) {
+          <span class="text-sm text-gray-500">No activity yet.</span>
+        } @else {
+          <div class="flex flex-col gap-2">
+            @for (entry of history(); track entry.uid) {
+              <div class="flex flex-col text-sm border-b border-gray-100 pb-2 last:border-b-0">
+                <span class="text-gray-700">{{ entry.actor.name }} {{ entry.message }}</span>
+                <span class="text-xs text-gray-400">{{ entry.created_at | date: 'medium' }}</span>
+              </div>
+            }
+          </div>
+        }
+      </div>
+    } @else {
+      <div class="text-center py-8 border border-slate-200 rounded-lg">
+        <p class="text-sm text-gray-500">No item selected.</p>
+      </div>
+    }
+  </div>
+</p-drawer>
