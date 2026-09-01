@@ -650,15 +650,27 @@ export class VoteManageComponent {
       )
       // No initialValue: undefined doubles as the leg's pending state (see the doc above).
     );
+    // Committee leg: edit mode derives the uid from the loaded vote's own committee (URL only as
+    // fallback), mirroring writerGuard's entity-scoped resolution — otherwise the guard admits a
+    // committee writer on a context-less edit link while this predicate evicts them. undefined stays
+    // pending; null resolves the leg immediately so it never counts as pending.
+    const committeeUid$: Observable<string | null | undefined> = editVoteId
+      ? toObservable(this.vote).pipe(map((vote) => (vote ? (vote.committee_uid ?? null) : undefined)))
+      : of(this.committeeUidFromUrl);
     const committeeAccess = toSignal(
-      this.committeeUidFromUrl
-        ? this.committeeService.fetchCommittee(this.committeeUidFromUrl).pipe(
-            map((committee) => committee?.writer === true),
-            catchError(() => of(false))
-          )
-        : of(false)
-      // No initialValue: undefined doubles as the leg's pending state. Without a committee_uid
-      // param the synchronous of(false) resolves the leg immediately, so it never counts as pending.
+      committeeUid$.pipe(
+        filter((uid): uid is string | null => uid !== undefined),
+        distinctUntilChanged(),
+        switchMap((uid) =>
+          uid
+            ? this.committeeService.fetchCommittee(uid).pipe(
+                map((committee) => committee?.writer === true),
+                catchError(() => of(false))
+              )
+            : of(false)
+        )
+      )
+      // No initialValue: undefined doubles as the leg's pending state (see the doc above).
     );
     return computed(() => {
       const project = projectAccess();
