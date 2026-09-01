@@ -1159,6 +1159,17 @@ describe('ProfileClasComponent — Sign CLA hand-off and identity selection (#12
     expect(location.href).toContain('/#/cla/gerrit/project/cg-1/individual');
   });
 
+  it('releases Sign CLA before leaving for the Console', async () => {
+    const fixture = await setup({ organizations: [org('gerrit')], accountClosesWith: { kind: 'gerrit' } });
+
+    await sign(fixture);
+
+    // Invisible on the return trip, which is a fresh navigation — but a Back out of the Console
+    // can restore this page from bfcache, and a button left spinning ignores clicks until reload.
+    expect(location.href).toContain('/#/cla/gerrit/project/cg-1/individual');
+    expect(isStarting(fixture)).toBe(false);
+  });
+
   it('gives the Console a return address back to this page', async () => {
     const fixture = await setup({ organizations: [org('gerrit')], accountClosesWith: { kind: 'gerrit' } });
 
@@ -1169,8 +1180,14 @@ describe('ProfileClasComponent — Sign CLA hand-off and identity selection (#12
     expect(location.href).toContain(`redirect=${encodeURIComponent(HOME)}`);
   });
 
-  it('stops rather than navigating when the Gerrit identity cannot be resolved', async () => {
-    const fixture = await setup({ organizations: [org('gerrit')], viewerUsername: null });
+  // Blank and absent are one case, not two: the dialog trims before it builds the card, so a
+  // username this step accepted but the dialog discards would render a Gerrit header over the
+  // GitHub-worded empty state — the wrong-platform copy this flow exists to prevent.
+  it.each([
+    ['absent', null],
+    ['whitespace-only', '   '],
+  ])('stops rather than navigating when the Gerrit identity is %s', async (_label, viewerUsername) => {
+    const fixture = await setup({ organizations: [org('gerrit')], viewerUsername });
 
     await sign(fixture);
 
@@ -1233,8 +1250,11 @@ describe('ProfileClasComponent — Sign CLA hand-off and identity selection (#12
     expect(location.href).toContain('/#/cla/gerrit/project/cg-1/individual');
   });
 
-  it('falls back to the GitHub step when a mixed group has no resolvable Gerrit identity', async () => {
-    const fixture = await setup({ organizations: [org('github'), org('gerrit')], viewerUsername: null });
+  it.each([
+    ['absent', null],
+    ['whitespace-only', '   '],
+  ])("falls back to the GitHub step when a mixed group's Gerrit identity is %s", async (_label, viewerUsername) => {
+    const fixture = await setup({ organizations: [org('github'), org('gerrit')], viewerUsername });
 
     await sign(fixture);
 

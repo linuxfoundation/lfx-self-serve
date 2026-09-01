@@ -294,7 +294,7 @@ export class ProfileClasComponent {
    * on the GitHub account they do not need.
    */
   private chooseIdentityThenSign(option: ClaGroupOption, variant: SignIdentityVariant, accounts: GithubAccountOption[]): void {
-    const gerritUsername = variant === 'github' ? undefined : (this.userService.viewerUsername() ?? undefined);
+    const gerritUsername = variant === 'github' ? undefined : this.userService.viewerUsername()?.trim() || undefined;
 
     // Nothing to show and nothing to fall back on. Only reachable if the session lost the
     // identity it was resolved from, so it is reported rather than rendered as an empty step.
@@ -400,6 +400,7 @@ export class ProfileClasComponent {
       return;
     }
 
+    this.starting.set(false);
     this.document.location.href = url;
   }
 
