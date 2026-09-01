@@ -750,7 +750,7 @@ export class MeetingJoinComponent implements OnInit {
   private initializeMeeting(seed: MeetingJoinPageState | null) {
     const meeting$ = combineLatest([this.activatedRoute.paramMap, this.activatedRoute.queryParamMap, this.refreshTrigger$]).pipe(
       debounceTime(0), // Coalesce rapid SSR hydration emissions so the fallback chain isn't canceled
-      switchMap(([params, queryParams], index) => {
+      switchMap(([params, queryParams]) => {
         const meetingId = params.get('id');
         this.password.set(queryParams.get('password'));
 
@@ -809,12 +809,7 @@ export class MeetingJoinComponent implements OnInit {
           );
         }
 
-        // Seed only the very first emission of this subscription (the one matching the SSR
-        // render) from the transferred state, so hydration doesn't tear down the server DOM and
-        // refetch from scratch (GH-2041). `switchMap`'s index resets only on a fresh subscribe —
-        // i.e. a new component instance — so a `refreshTrigger$` tick or an in-place navigation
-        // to a different meeting on the same instance always re-enters loading, never the seed.
-        return index === 0 && seed ? result$.pipe(startWith({ meeting: seed.meeting, project: seed.meeting.project })) : result$;
+        return result$;
       }),
       map((res) => ({ ...res.meeting, project: res.project })),
       tap((res) => {
