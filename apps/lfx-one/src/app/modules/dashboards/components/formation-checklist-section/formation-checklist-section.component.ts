@@ -50,12 +50,27 @@ export class FormationChecklistSectionComponent {
   public readonly drawerVisible = signal(false);
   public readonly drawerItemUid = signal<string | null>(null);
 
-  /** Item uids with a row action or skip currently in flight — guards a double-click into issuing two writes (and two history entries), and drives the row/drawer buttons' `[loading]`/`[disabled]` state. */
-  protected readonly submittingItemUids = signal<ReadonlySet<string>>(new Set());
-  /** `drawerItemUid()` is nullable — `.has(null)` is always false on a `Set<string>`, but spelling it out avoids leaning on a `?? ''` sentinel that would coincidentally collide with a real (if invalid) empty-string uid. */
+  /**
+   * Item uids with a mutation currently in flight, tagged by kind — guards a double-click (or a
+   * click on one surface while the other is mid-write) into issuing two writes for the same item.
+   * `'row'`/`'skip'` are begun/ended here directly; `'drawer'` is registered from the drawer's own
+   * `writeStarted`/`writeEnded` (Mark complete/Save), which is otherwise invisible to this section —
+   * without it, closing the drawer mid-write and then firing a row action for the same item would
+   * race undetected. Drives the row button's `[loading]` (which itself blocks re-entry — see
+   * `ButtonComponent.handleClick`) and, via `drawerItemMutationInFlight`/`drawerItemSkipInFlight` ->
+   * the drawer's `mutationInFlight`/`skipInFlight` inputs, the drawer's `busy()`-gated
+   * `[disabled]` state and its skip button's own `[loading]`.
+   */
+  protected readonly submittingItemUids = signal<ReadonlyMap<string, 'row' | 'skip' | 'drawer'>>(new Map());
+  /** `drawerItemUid()` is nullable — spelled out explicitly rather than leaning on a `?? ''` sentinel that would coincidentally collide with a real (if invalid) empty-string uid. */
   protected readonly drawerItemMutationInFlight: Signal<boolean> = computed(() => {
     const uid = this.drawerItemUid();
     return uid !== null && this.submittingItemUids().has(uid);
+  });
+  /** Narrower than `drawerItemMutationInFlight` — true only while this item's own in-flight mutation is specifically a skip, so a row action elsewhere doesn't spin the drawer's Skip button. */
+  protected readonly drawerItemSkipInFlight: Signal<boolean> = computed(() => {
+    const uid = this.drawerItemUid();
+    return uid !== null && this.submittingItemUids().get(uid) === 'skip';
   });
 
   private readonly response: Signal<FormationChecklistResponse | null> = this.initResponse();
@@ -87,7 +102,7 @@ export class FormationChecklistSectionComponent {
   }
 
   protected onRowAction(item: FormationItem): void {
-    if (!this.beginSubmitting(item.uid)) return;
+    if (!this.beginSubmitting(item.uid, 'row')) return;
     const call$ = item.action === 'request' ? this.formationService.requestFormationItem(item.uid) : this.formationService.completeFormationItem(item.uid);
 
     call$
@@ -115,6 +130,17 @@ export class FormationChecklistSectionComponent {
     this.refresh$.next();
   }
 
+  /** The drawer's own Mark complete/Save has started a write against the open item — register it so a row action for the same item is guarded too. */
+  protected onDrawerWriteStarted(): void {
+    const uid = this.drawerItemUid();
+    if (uid !== null) this.beginSubmitting(uid, 'drawer');
+  }
+
+  protected onDrawerWriteEnded(): void {
+    const uid = this.drawerItemUid();
+    if (uid !== null) this.endSubmitting(uid);
+  }
+
   protected onSkipRequested(item: FormationItem): void {
     const ref = this.dialogService.open(ReasonPromptDialogComponent, {
       header: 'Skip item',
@@ -128,7 +154,7 @@ export class FormationChecklistSectionComponent {
     });
 
     ref?.onClose.pipe(take(1)).subscribe((result: ReasonPromptDialogResult | undefined) => {
-      if (!result?.reason || !this.beginSubmitting(item.uid)) return;
+      if (!result?.reason || !this.beginSubmitting(item.uid, 'skip')) return;
 
       this.formationService
         .skipFormationItem(item.uid, result.reason)
@@ -151,15 +177,15 @@ export class FormationChecklistSectionComponent {
   }
 
   /** Returns false (a no-op guard) if `uid` already has a mutation in flight. */
-  private beginSubmitting(uid: string): boolean {
+  private beginSubmitting(uid: string, kind: 'row' | 'skip' | 'drawer'): boolean {
     if (this.submittingItemUids().has(uid)) return false;
-    this.submittingItemUids.update((uids) => new Set(uids).add(uid));
+    this.submittingItemUids.update((uids) => new Map(uids).set(uid, kind));
     return true;
   }
 
   private endSubmitting(uid: string): void {
     this.submittingItemUids.update((uids) => {
-      const next = new Set(uids);
+      const next = new Map(uids);
       next.delete(uid);
       return next;
     });

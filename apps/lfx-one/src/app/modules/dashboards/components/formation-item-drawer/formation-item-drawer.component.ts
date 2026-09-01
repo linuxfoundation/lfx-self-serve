@@ -31,19 +31,29 @@ export class FormationItemDrawerComponent {
   public readonly itemUid = input<string | null>(null);
   /**
    * True while the section has *any* mutation in flight for this item — a row action
-   * (provisionable/request) as well as a submitted skip, since the section owns both and this
-   * drawer only owns Mark complete/Save. No fixture item today is both gating (so it renders a Skip
-   * button here) and provisionable/request (so it also has a row action) — but that's current
-   * fixture data, not an enforced invariant, so this input is deliberately named/scoped for the
-   * broader "any mutation" contract rather than assuming it can only ever mean skip.
+   * (provisionable/request), a submitted skip, or this drawer's own Mark complete/Save (echoed back
+   * via `writeStarted`/`writeEnded`, below). Drives `busy()`'s `[disabled]` gate on every button here;
+   * `[loading]` stays per-action (`completing`/`savingDetails`/`skipInFlight`) so a spinner never
+   * appears on a button the user didn't press.
    */
   public readonly mutationInFlight = input<boolean>(false);
+  /** True specifically while a skip the user submitted from this drawer is in flight — scoped narrower than `mutationInFlight` so a row action elsewhere doesn't spin this button. */
+  public readonly skipInFlight = input<boolean>(false);
 
   /** Fired for a status-changing action (Mark complete) — the section closes the drawer and refreshes the row list. */
   public readonly itemChanged = output<FormationItem>();
   /** Fired for a metadata-only save (notes/assignee/due-date) — the section refreshes the row list but leaves the drawer open. */
   public readonly itemUpdated = output<FormationItem>();
   public readonly skipRequested = output<FormationItem>();
+  /**
+   * Fired synchronously around Mark complete/Save's own service call (start, then finalize) so the
+   * section can register this drawer's write in the same `submittingItemUids` map that guards row
+   * actions and skip — without this, a row action fired while the drawer was mid-write (or vice
+   * versa) would race against it undetected, since the section otherwise has no visibility into the
+   * drawer's own `completing`/`savingDetails` signals.
+   */
+  public readonly writeStarted = output<void>();
+  public readonly writeEnded = output<void>();
 
   protected readonly editForm = new FormGroup({
     notes: new FormControl<string>(''),
@@ -85,12 +95,16 @@ export class FormationItemDrawerComponent {
     const item = this.item();
     if (!item || this.busy()) return;
     this.completing.set(true);
+    this.writeStarted.emit();
 
     this.formationService
       .completeFormationItem(item.uid)
       .pipe(
         take(1),
-        finalize(() => this.completing.set(false))
+        finalize(() => {
+          this.completing.set(false);
+          this.writeEnded.emit();
+        })
       )
       .subscribe({
         next: (updated) => {
@@ -114,6 +128,7 @@ export class FormationItemDrawerComponent {
     const item = this.item();
     if (!item || this.busy()) return;
     this.savingDetails.set(true);
+    this.writeStarted.emit();
 
     this.formationService
       .updateFormationItem(item.uid, {
@@ -123,7 +138,10 @@ export class FormationItemDrawerComponent {
       })
       .pipe(
         take(1),
-        finalize(() => this.savingDetails.set(false))
+        finalize(() => {
+          this.savingDetails.set(false);
+          this.writeEnded.emit();
+        })
       )
       .subscribe({
         next: (updated) => {

@@ -63,7 +63,7 @@
                 severity="secondary"
                 [outlined]="true"
                 [disabled]="!currentItem.can_complete || busy()"
-                [loading]="mutationInFlight()"
+                [loading]="skipInFlight()"
                 (onClick)="onSkip()"
                 data-testid="formation-item-drawer-skip" />
             }

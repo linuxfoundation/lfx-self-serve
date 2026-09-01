@@ -64,7 +64,10 @@
 <lfx-formation-item-drawer
   [itemUid]="drawerItemUid()"
   [mutationInFlight]="drawerItemMutationInFlight()"
+  [skipInFlight]="drawerItemSkipInFlight()"
   [(visible)]="drawerVisible"
   (itemChanged)="onDrawerItemChanged()"
   (itemUpdated)="onDrawerItemUpdated()"
-  (skipRequested)="onSkipRequested($event)" />
+  (skipRequested)="onSkipRequested($event)"
+  (writeStarted)="onDrawerWriteStarted()"
+  (writeEnded)="onDrawerWriteEnded()" />
