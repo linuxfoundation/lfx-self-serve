@@ -133,17 +133,24 @@ test.describe('Formation Checklist section (GH-1958)', () => {
   });
 
   test('a drawer write is retired by the uid it was issued for, not by whichever item the drawer currently shows', async ({ page }) => {
-    // Pins the regression across three prior fix commits on this branch: writeStarted/writeEnded
-    // used to resolve the uid from the section's *current* drawerItemUid() signal, so switching to a
+    // Pins the regression across four prior fix commits on this branch: writeStarted/writeEnded used
+    // to resolve the uid from the section's *current* drawerItemUid() signal, so switching to a
     // different item before an earlier write's response landed would clear the wrong item's guard —
     // stranding the original item's buttons disabled forever while dropping the new item's own guard
-    // early (re-opening the exact double-write race these commits exist to prevent).
+    // early. It also depends on onDrawerItemChanged's uid-gated close (a sibling bug this same test
+    // scenario surfaced): without it, A's response landing while B's drawer is open would incorrectly
+    // close B's drawer too.
     await stubFormationFlag(page, true);
     await mockFormationChecklistApis(page, { project: buildBaseProject(FORMATION_PROJECT_SLUG) });
 
     const formation = getMockFormation(FORMATION_PROJECT_SLUG);
     if (!formation) throw new Error('Expected a seeded mock formation for this slug.');
     const items = getMockFormationItems(formation.uid);
+    // Both need can_complete: true and a non-'done' status — the drawer's Mark complete is
+    // [disabled]="!can_complete || busy()" and disappears entirely once status is 'done'; an item
+    // failing either check could never be clicked and would never exercise this guard.
+    const [itemA, itemB] = items.filter((item) => item.can_complete && item.status !== 'done');
+    if (!itemA || !itemB) throw new Error('Expected at least two seeded items with can_complete: true and a non-done status.');
 
     // Each PATCH .../complete is held open until this test explicitly releases it, keyed by uid —
     // lets two different items' writes stay in flight at once, which is what this regression needs.
@@ -153,19 +160,32 @@ test.describe('Formation Checklist section (GH-1958)', () => {
       const uid = decodeURIComponent(segments[segments.length - 2] ?? '');
       await new Promise<void>((resolve) => pendingResolvers.set(uid, resolve));
       const item = items.find((candidate) => candidate.uid === uid);
+      if (!item) {
+        // Fixture drift — fail loudly rather than silently fulfilling a partial body (mirrors
+        // FormationApiMockHelper.setupFormationItemActionMock's same rationale).
+        await route.fulfill({ status: 404, contentType: 'application/json', body: JSON.stringify({ error: 'No mock item for this uid' }) });
+        return;
+      }
       await route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify({ ...item, status: 'done', skip_reason: null }) });
     });
 
     await gotoProjectOverview(page, FORMATION_PROJECT_SLUG);
 
-    const uidA = 'formation-item:cascade-data-alliance:contribution-agreement-executed';
-    const uidB = 'formation-item:cascade-data-alliance:domain-and-dns-transfer';
     const drawer = page.getByTestId('formation-item-drawer');
     const markComplete = page.getByTestId('formation-item-drawer-mark-complete').locator('button');
 
+    // Clicking Mark complete only proves the client set its own optimistic [disabled] state — it
+    // does not prove the request has actually reached Playwright's route interceptor yet. Poll for
+    // the handler above to have registered uid's resolver before releasing it, so releasing never
+    // silently no-ops (which would make every assertion below pass for the wrong reason).
+    async function releaseHeldRequest(uid: string): Promise<void> {
+      await expect.poll(() => pendingResolvers.has(uid)).toBe(true);
+      pendingResolvers.get(uid)?.();
+    }
+
     // Start A's write, then close the drawer while it's still in flight — nothing gates onClose() on
     // a pending write, and neither does the mask/ESC dismiss p-drawer offers by default.
-    await page.getByTestId(`formation-checklist-row-title-${uidA}`).click();
+    await page.getByTestId(`formation-checklist-row-title-${itemA.uid}`).click();
     await expect(drawer).toBeVisible({ timeout: DATA_LOAD_TIMEOUT });
     await markComplete.click();
     await expect(markComplete).toBeDisabled();
@@ -174,27 +194,29 @@ test.describe('Formation Checklist section (GH-1958)', () => {
 
     // Open a different item and start its own write too — the drawer (and drawerItemUid()) now
     // points at B while A's write is still unresolved.
-    await page.getByTestId(`formation-checklist-row-title-${uidB}`).click();
+    await page.getByTestId(`formation-checklist-row-title-${itemB.uid}`).click();
     await expect(drawer).toBeVisible();
     await markComplete.click();
     await expect(markComplete).toBeDisabled();
 
-    // Release A's held response. If writeEnded resolved the uid from the section's current
-    // drawerItemUid() (B) instead of the uid the write was actually issued for (A), this would
-    // incorrectly clear B's guard and B's button would re-enable here, before B's own request
-    // has resolved.
-    pendingResolvers.get(uidA)?.();
-    await page.waitForTimeout(300);
+    // Release A's held response and wait for the actual network round trip to land (not a fixed
+    // sleep — any erroneous state change is provoked synchronously by this same response). If either
+    // fix regressed, this would incorrectly re-enable B's button (guard cleared under the wrong uid)
+    // and/or incorrectly close B's drawer (onDrawerItemChanged firing for A while B is open).
+    const itemAResponse = page.waitForResponse((response) => response.url().includes(`/${encodeURIComponent(itemA.uid)}/complete`));
+    await releaseHeldRequest(itemA.uid);
+    await itemAResponse;
+    await expect(drawer).toBeVisible();
     await expect(markComplete).toBeDisabled();
 
     // Release B's held response too — now B's own write really is done, and its button recovers.
-    pendingResolvers.get(uidB)?.();
+    await releaseHeldRequest(itemB.uid);
     await expect(markComplete).toBeEnabled({ timeout: DATA_LOAD_TIMEOUT });
 
     // A's guard must have been correctly retired when its response was released above — reopening it
     // must not still show it stuck disabled forever.
     await page.getByTestId('formation-item-drawer-close').click();
-    await page.getByTestId(`formation-checklist-row-title-${uidA}`).click();
+    await page.getByTestId(`formation-checklist-row-title-${itemA.uid}`).click();
     await expect(drawer).toBeVisible();
     await expect(markComplete).toBeEnabled({ timeout: DATA_LOAD_TIMEOUT });
   });

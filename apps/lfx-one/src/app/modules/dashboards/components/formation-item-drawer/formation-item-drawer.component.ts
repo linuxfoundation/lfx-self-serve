@@ -186,6 +186,14 @@ export class FormationItemDrawerComponent {
           if (trigger === 'open') {
             this.loadFailed.set(false);
             this.loading.set(true);
+            // completing/savingDetails live on this drawer instance, not per-item — the instance is
+            // reused across every item the drawer ever opens. Without resetting them here, a write
+            // still pending for a *previously* open item would leave Mark complete/Save disabled for
+            // every item opened afterward, until that original request eventually resolves (or
+            // forever, if it never does). `mutationInFlight`/`skipInFlight` (section-owned, keyed by
+            // this item's own uid) still correctly reflect this item's own busy state regardless.
+            this.completing.set(false);
+            this.savingDetails.set(false);
           }
 
           return this.formationService.getFormationItem(uid).pipe(
