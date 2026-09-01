@@ -31,4 +31,8 @@ describe('isFormationStage', () => {
     expect(isFormationStage('Formation - Engaged')).toBe(true);
     expect(isFormationStage('Some Unrecognized Stage')).toBe(false);
   });
+
+  it('matches by prefix, so a new upstream Formation sub-stage not yet in the enum still gates on', () => {
+    expect(isFormationStage('Formation - Some New Sub-Stage')).toBe(true);
+  });
 });
