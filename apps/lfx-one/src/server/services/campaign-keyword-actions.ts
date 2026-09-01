@@ -274,23 +274,24 @@ const UPSTREAM_UNCONFIRMED_MARKER = 'are unconfirmed';
  * and those are the errors that carry `originalError` or the TIMEOUT code.
  */
 function upstreamAnswered(error: unknown): boolean {
-  const e = error as { originalError?: unknown; code?: unknown; statusCode?: unknown; status?: unknown } | null | undefined;
+  const e = error as { originalError?: unknown; code?: unknown; errorBody?: unknown } | null | undefined;
   // A BFF-raised failure is never an answer, however it is spelled.
   if (e?.originalError !== undefined || e?.code === 'TIMEOUT') {
     return false;
   }
-  // POSITIVE evidence only. Absence of a marker is not evidence of an answer: a socket hang-up
-  // that escapes before MicroserviceError wraps it is a bare Error carrying neither a status nor
-  // originalError, and reading that as "upstream replied" would keep the fan-out running through
-  // an outage. A status upstream actually chose is the thing that proves it replied.
-  // Not a nested ternary: `.claude/rules` forbids them, and this reads better as a fallback chain.
-  let status = 0;
-  if (typeof e?.statusCode === 'number') {
-    status = e.statusCode;
-  } else if (typeof e?.status === 'number') {
-    status = e.status;
-  }
-  return status > 0;
+  // The APPLICATION must have answered, not merely some HTTP layer. A status alone does not
+  // establish that: executeRequest raises the same MicroserviceError shape for EVERY !response.ok
+  // (api-client.service.ts:289), so an ingress 502/503/504 that campaign-service never saw
+  // carries a real status and no originalError. Reading those as replies reported a gateway
+  // timeout as a DEFINITE failure -- its text has no unconfirmed marker -- and invited a retry of
+  // a REMOVE that Google cannot undo.
+  //
+  // Every campaign-service error is a Goa-rendered body with its own `code` and `message`
+  // (internal/service/brief_keyword_actions.go), which executeRequest parses into errorBody. A
+  // gateway sends HTML or nothing, so the parse leaves errorBody undefined. That parsed body is
+  // the only evidence here that the application itself formed the response.
+  const body = e?.errorBody as { code?: unknown; message?: unknown } | undefined;
+  return typeof body?.message === 'string' && body.message !== '';
 }
 
 export function classifyMutationFailure(error: unknown): string {

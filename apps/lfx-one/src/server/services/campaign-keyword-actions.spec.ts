@@ -234,7 +234,11 @@ describe('classifyMutationFailure', () => {
    */
   it("honours upstream's own unconfirmed marker on a 503", () => {
     const msg = classifyMutationFailure(
-      new MicroserviceError('the keyword actions are unconfirmed — they may or may not have been applied on the ad platform', 503, 'ERR', {})
+      new MicroserviceError('the keyword actions are unconfirmed — they may or may not have been applied on the ad platform', 503, 'ERR', {
+        // The parsed Goa body is what proves the APPLICATION answered; executeRequest raises the
+        // same shape for a gateway 502/504, which has no parseable body at all.
+        errorBody: { code: '503', message: 'the keyword actions are unconfirmed — they may or may not have been applied on the ad platform' },
+      })
     );
     expect(msg).toContain(CAMPAIGN_OUTCOME_UNCONFIRMED);
   });
@@ -245,8 +249,29 @@ describe('classifyMutationFailure', () => {
   ])('reports an ANSWERED %i (%s) as definite, because upstream said so', (code) => {
     // Upstream's own words for its definite arm, whose comment reads "A DEFINITE upstream
     // failure ... nothing was applied, so a plain retry is the right remedy".
-    const msg = classifyMutationFailure(new MicroserviceError('the keyword actions could not be applied', code, 'ERR', {}));
+    const msg = classifyMutationFailure(
+      new MicroserviceError('the keyword actions could not be applied', code, 'ERR', {
+        errorBody: { code: String(code), message: 'the keyword actions could not be applied' },
+      })
+    );
     expect(msg).not.toContain(CAMPAIGN_OUTCOME_UNCONFIRMED);
+  });
+
+  it.each([
+    [502, 'bad gateway'],
+    [503, 'ingress unavailable'],
+    [504, 'gateway timeout'],
+  ])('treats a GATEWAY %i (%s) as unconfirmed, not as an upstream answer', (code) => {
+    // executeRequest raises the same MicroserviceError shape for EVERY !response.ok, so an
+    // ingress error campaign-service never saw carries a real status and no originalError. An
+    // earlier version of this guard keyed on "has a status", which read these as application
+    // replies -- and because their text has no unconfirmed marker, reported a gateway timeout as
+    // a DEFINITE failure, inviting a retry of a REMOVE Google cannot undo.
+    //
+    // No errorBody: a gateway sends HTML or nothing, so executeRequest's JSON.parse leaves it
+    // undefined. That absence is the whole discriminator.
+    const msg = classifyMutationFailure(new MicroserviceError('Service Unavailable', code, 'ERR', {}));
+    expect(msg).toContain(CAMPAIGN_OUTCOME_UNCONFIRMED);
   });
 
   it('treats a real timeout as unconfirmed', () => {
@@ -275,7 +300,11 @@ describe('applyKeywordActionsViaCampaignService — the fan-out stop', () => {
     const resolveGoogleAdsCampaign = vi.fn().mockResolvedValue({ match_count: 1, matches: [{ brief_id: 'b-1', campaign_id: 'c-1' }] });
     const applyKeywordActions = vi
       .fn()
-      .mockRejectedValueOnce(new MicroserviceError('the keyword actions could not be applied', 503, 'ERR', {}))
+      .mockRejectedValueOnce(
+        new MicroserviceError('the keyword actions could not be applied', 503, 'ERR', {
+          errorBody: { code: '503', message: 'the keyword actions could not be applied' },
+        })
+      )
       .mockResolvedValueOnce({ campaign_id: 'c-2', applied_count: 1, results: [{ ad_group_id: 'ag-1', criterion_id: 'k-2', action: 'PAUSE' }] });
 
     const client = { resolveGoogleAdsCampaign, applyKeywordActions } as never;
