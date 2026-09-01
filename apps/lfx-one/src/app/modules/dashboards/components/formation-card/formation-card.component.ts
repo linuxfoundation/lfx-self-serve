@@ -62,18 +62,7 @@ export class FormationCardComponent {
     }));
   });
 
-  /** `null` when missing, or when the scheme isn't http(s) — never bind an unvalidated URL to `[href]`. */
-  protected readonly repositoryUrl: Signal<string | null> = computed(() => {
-    const url = this.project()?.repository_url;
-    if (!url) return null;
-    try {
-      const parsed = new URL(url);
-      return parsed.protocol === 'http:' || parsed.protocol === 'https:' ? url : null;
-    } catch {
-      return null;
-    }
-  });
-
+  protected readonly repositoryUrl: Signal<string | null> = this.initRepositoryUrl();
   protected readonly sfid: Signal<string | null> = this.initSfid();
 
   /**
@@ -117,6 +106,20 @@ export class FormationCardComponent {
       ),
       { initialValue: null }
     );
+  }
+
+  /** `null` when missing, or when the scheme isn't http(s) — never bind an unvalidated URL to `[href]`. */
+  private initRepositoryUrl(): Signal<string | null> {
+    return computed(() => {
+      const url = this.project()?.repository_url;
+      if (!url) return null;
+      try {
+        const parsed = new URL(url);
+        return parsed.protocol === 'http:' || parsed.protocol === 'https:' ? url : null;
+      } catch {
+        return null;
+      }
+    });
   }
 
   // `ProjectService.getProjectSfid` already logs and resolves to `null` on failure — no additional
