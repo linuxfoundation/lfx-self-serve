@@ -50,8 +50,8 @@ export class FormationChecklistSectionComponent {
   public readonly drawerVisible = signal(false);
   public readonly drawerItemUid = signal<string | null>(null);
 
-  /** Item uids with a row action or skip currently in flight — guards a double-click into issuing two writes (and two history entries). */
-  private readonly submittingItemUids = signal<ReadonlySet<string>>(new Set());
+  /** Item uids with a row action or skip currently in flight — guards a double-click into issuing two writes (and two history entries), and drives the row/drawer buttons' `[loading]` state. */
+  protected readonly submittingItemUids = signal<ReadonlySet<string>>(new Set());
 
   private readonly response: Signal<FormationChecklistResponse | null> = this.initResponse();
   protected readonly formation = computed(() => this.response()?.formation ?? null);
@@ -179,6 +179,9 @@ export class FormationChecklistSectionComponent {
             // Unreachable in the real flow — the parent only renders this component once
             // ProjectService.project()?.stage already confirmed a Formation-stage project, which
             // requires a resolved context. Still resolved defensively rather than left loading forever.
+            // lastSlug is reset too — otherwise an A -> null -> A round trip would misclassify the
+            // return to A as "same slug" and skip the loading state a genuine reload needs.
+            lastSlug = null;
             this.loading.set(false);
             return of(null);
           }

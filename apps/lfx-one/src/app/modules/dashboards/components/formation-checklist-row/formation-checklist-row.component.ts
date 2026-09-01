@@ -22,6 +22,8 @@ import { isValidUrl } from '@lfx-one/shared/utils';
 })
 export class FormationChecklistRowComponent {
   public readonly item = input.required<FormationItem>();
+  /** True while a provisionable/request action for this item is in flight — drives the gated action button's `[loading]` state. */
+  public readonly submitting = input<boolean>(false);
 
   public readonly openDrawer = output<FormationItem>();
   /** Fired for the `provisionable`/`request` action kinds only — `manual` opens the drawer instead; the orchestrator owns the actual service call. */
