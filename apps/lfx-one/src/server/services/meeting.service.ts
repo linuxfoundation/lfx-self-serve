@@ -680,7 +680,13 @@ export class MeetingService {
     // returned (LFXV2-2078).
     const [registrants, rsvps] = await Promise.all([
       registrantsPromise,
-      this.getRawMeetingRsvps(req, meetingUid, options).catch((error) => {
+      this.getRawMeetingRsvps(req, meetingUid, options, failOnPartial).catch((error) => {
+        // A strict caller asked for a complete result and cannot tell "registrants have no RSVPs"
+        // from "RSVP data failed to load" if we swallow this — rethrow instead of returning a
+        // 200 with silently-missing RSVP data.
+        if (failOnPartial) {
+          throw error;
+        }
         logger.warning(req, 'get_meeting_registrants', 'Failed to fetch RSVPs for registrants, returning registrants without RSVP data', {
           meeting_id: meetingUid,
           err: error,
@@ -1411,8 +1417,12 @@ export class MeetingService {
    * roster for another reason — e.g. `getMeetingRegistrants` with `includeRsvp` — can fetch RSVPs
    * in parallel with that roster fetch instead of going through `getMeetingRsvps`, which would
    * walk the roster a second time (LFXV2-2078).
+   * @param failOnPartial - If true, throw instead of returning a truncated result when a later
+   *   page fails. Callers that treat this roster's length as authoritative (e.g. `getMyMeetingRegistrants`
+   *   via `getMeetingRegistrants`) should set this; default preserves the existing partial-tolerant
+   *   behavior for callers that just render whatever loaded.
    */
-  public async getRawMeetingRsvps(req: Request, meetingUid: string, options?: ApiRequestOptions): Promise<MeetingRsvp[]> {
+  public async getRawMeetingRsvps(req: Request, meetingUid: string, options?: ApiRequestOptions, failOnPartial: boolean = false): Promise<MeetingRsvp[]> {
     logger.debug(req, 'get_raw_meeting_rsvps', 'Fetching meeting RSVPs', { meeting_id: meetingUid });
 
     const rsvpParams = {
@@ -1421,17 +1431,20 @@ export class MeetingService {
       page_size: QUERY_SERVICE_MAX_PAGE_SIZE,
     };
 
-    return fetchAllQueryResources<MeetingRsvp>(req, (pageToken) =>
-      this.microserviceProxy.proxyRequest<QueryServiceResponse<MeetingRsvp>>(
-        req,
-        'LFX_V2_SERVICE',
-        '/query/resources',
-        'GET',
-        { ...rsvpParams, ...(pageToken && { page_token: pageToken }) },
-        undefined,
-        undefined,
-        options
-      )
+    return fetchAllQueryResources<MeetingRsvp>(
+      req,
+      (pageToken) =>
+        this.microserviceProxy.proxyRequest<QueryServiceResponse<MeetingRsvp>>(
+          req,
+          'LFX_V2_SERVICE',
+          '/query/resources',
+          'GET',
+          { ...rsvpParams, ...(pageToken && { page_token: pageToken }) },
+          undefined,
+          undefined,
+          options
+        ),
+      { failOnPartial }
     );
   }
 

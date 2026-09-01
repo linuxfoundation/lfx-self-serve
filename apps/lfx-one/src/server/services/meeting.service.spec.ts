@@ -508,6 +508,14 @@ describe('MeetingService.getMeetingRegistrants', () => {
     expect(result).toHaveLength(1);
     expect((result[0] as any).rsvp).toBeUndefined();
   });
+
+  it('rejects instead of silently returning registrants without RSVP data when failOnPartial is true', async () => {
+    proxyRequest
+      .mockResolvedValueOnce({ resources: [registrantRecord('a')] }) // roster page
+      .mockRejectedValueOnce(new Error('rsvp fetch down')); // getRawMeetingRsvps: rsvp page
+
+    await expect(service.getMeetingRegistrants(req, 'meeting-1', true, undefined, true)).rejects.toThrow('rsvp fetch down');
+  });
 });
 
 describe('MeetingService.getRawMeetingRsvps', () => {
@@ -526,6 +534,14 @@ describe('MeetingService.getRawMeetingRsvps', () => {
     const [, , , , query, , , options] = proxyRequest.mock.calls[0];
     expect(query.page_size).toBe(1000);
     expect(options).toEqual({ bearerToken: 'm2m-token' });
+  });
+
+  it('rethrows on a partial page failure when failOnPartial is true', async () => {
+    proxyRequest
+      .mockResolvedValueOnce({ resources: [], page_token: 'next' }) // page 1
+      .mockRejectedValueOnce(new Error('query service down')); // page 2
+
+    await expect(service.getRawMeetingRsvps(req, 'meeting-1', undefined, true)).rejects.toThrow('query service down');
   });
 });
 

@@ -257,8 +257,6 @@ function buildMeetingStub(enriched: boolean) {
     auto_email_reminder_enabled: false,
     show_meeting_attendees: false,
     registrant_count: 0,
-    individual_registrants_count: 0,
-    committee_members_count: 0,
     writer: true,
     organizer: true,
   };
