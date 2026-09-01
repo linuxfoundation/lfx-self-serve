@@ -120,7 +120,12 @@
             </div>
 
             <div class="flex-1 min-w-0">
-              <p class="font-medium text-sm text-gray-900 mb-0 truncate">{{ displayItem.item.name || displayItem.item.slug }}</p>
+              <div class="flex items-center gap-1.5 min-w-0">
+                <p class="font-medium text-sm text-gray-900 mb-0 truncate">{{ displayItem.item.name || displayItem.item.slug }}</p>
+                @if (formationFlagEnabled() && displayItem.item.formationSubStage) {
+                  <lfx-tag value="Formation" [rounded]="true" styleClass="!bg-violet-100 !text-violet-700 border border-violet-200 shrink-0" />
+                }
+              </div>
               @if (displayItem.roleLabel) {
                 <p class="text-xs text-gray-400 leading-none mt-0.5 truncate">
                   <i [ngClass]="displayItem.roleIcon" class="mr-1" aria-hidden="true"></i>{{ displayItem.roleLabel }}

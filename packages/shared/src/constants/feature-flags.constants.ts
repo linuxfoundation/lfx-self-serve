@@ -104,3 +104,16 @@ export const MENTORSHIP_ENABLED_FLAG = 'mentorship-enabled';
  * lands.
  */
 export const FEATURE_FLAG_OVERRIDE_STORAGE_KEY = 'lfx-feature-flag-overrides';
+
+/**
+ * Gates the Formation Checklist Epic 1 surfaces (GH-1955/1958/1959/1962) — the project dashboard's
+ * Formation badge/subtitle/sidebar card, the stage-scoped Formation nav item, and the project
+ * selector's Formation tag. LaunchDarkly targets a small internal audience while the formation
+ * flow is validated; default false so an unflagged evaluation renders the pre-Formation UI.
+ *
+ * **UI-only** — evaluated through `FeatureFlagService.getBooleanFlag`. Does not gate the BFF or any
+ * endpoint: the underlying `stage`/formation fields on `/api/projects/:slugOrUid` are already
+ * visible to anyone authorized to view the project regardless of this flag — it only controls
+ * whether Self Serve *renders* Formation-specific UI around already-reachable data.
+ */
+export const FORMATION_ENABLED_FLAG = 'formation-enabled';
