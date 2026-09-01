@@ -181,7 +181,7 @@ test.describe('Formations queue (GH-1958)', () => {
     await expect(empty).toContainText('No results found');
   });
 
-  test('the inline error state renders on a 500 from the queue endpoint', async ({ page }) => {
+  test('the inline error state renders (with a working Retry) on a 500 from the queue endpoint', async ({ page }) => {
     await page.route('**/api/formations*', (route) =>
       route.request().method() === 'GET' ? route.fulfill({ status: 500, contentType: 'application/json', body: '{}' }) : route.fallback()
     );
@@ -189,6 +189,15 @@ test.describe('Formations queue (GH-1958)', () => {
     await gotoFormationsQueue(page);
 
     await expect(page.getByTestId('formations-queue-inline-error')).toBeVisible({ timeout: SIDEBAR_LOAD_TIMEOUT });
-    await expect(page.getByTestId('formations-queue-retry')).toBeVisible();
+    const retry = page.getByTestId('formations-queue-retry');
+    await expect(retry).toBeVisible();
+
+    // Re-route to a working response before clicking, so this pins onRetry's filters.set()-alone
+    // contract — not just that the button renders.
+    await FormationApiMockHelper.setupFormationsQueueMock(page);
+    await retry.click();
+
+    await expect(page.getByTestId('formations-table')).toBeVisible({ timeout: SIDEBAR_LOAD_TIMEOUT });
+    await expect(page.getByTestId('formations-queue-inline-error')).toHaveCount(0);
   });
 });
