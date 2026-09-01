@@ -63,7 +63,7 @@
 
 <lfx-formation-item-drawer
   [itemUid]="drawerItemUid()"
-  [skipInFlight]="submittingItemUids().has(drawerItemUid() ?? '')"
+  [mutationInFlight]="drawerItemMutationInFlight()"
   [(visible)]="drawerVisible"
   (itemChanged)="onDrawerItemChanged()"
   (itemUpdated)="onDrawerItemUpdated()"
