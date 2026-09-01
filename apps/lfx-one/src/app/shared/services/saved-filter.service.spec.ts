@@ -102,7 +102,7 @@ describe('SavedFilterService', () => {
     expect(service.state().readOnly).toBe(true);
   });
 
-  it('surfaces a load failure as an info toast and keeps the store empty', async () => {
+  it('surfaces a load failure as an error toast and keeps the store empty', async () => {
     socialListeningService.getPreference.mockReturnValue(throwError(() => new Error('boom')));
 
     service.setContext(ctx);
@@ -111,9 +111,9 @@ describe('SavedFilterService', () => {
     expect(service.state().error).toBeTruthy();
     expect(service.state().data).toEqual([]);
     expect(messageService.add).toHaveBeenCalledWith({
-      severity: 'info',
-      summary: 'Views temporarily unavailable',
-      detail: "We couldn't load your saved views. Please try again later.",
+      severity: 'error',
+      summary: 'Saved views unavailable',
+      detail: 'Your saved views could not be loaded. Refresh the page and try again.',
     });
   });
 
@@ -174,7 +174,7 @@ describe('SavedFilterService', () => {
     expect(socialListeningService.upsertPreference).not.toHaveBeenCalled();
   });
 
-  it('rejects a save at the per-project limit with a warn toast', async () => {
+  it('rejects a save at the per-foundation limit with a warn toast', async () => {
     const atCap = Array.from({ length: MAX_SAVED_FILTERS_PER_PROJECT }, (_, i) => view({ id: `v${i}`, name: `View ${i}` }));
     socialListeningService.getPreference.mockReturnValue(of(storedDoc(atCap)));
     service.setContext(ctx);

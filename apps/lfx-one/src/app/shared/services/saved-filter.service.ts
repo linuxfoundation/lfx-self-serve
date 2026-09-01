@@ -53,13 +53,7 @@ export class SavedFilterService {
         });
       }
     },
-    onLoadError: () => {
-      this.messageService.add({
-        severity: 'info',
-        summary: 'Views temporarily unavailable',
-        detail: "We couldn't load your saved views. Please try again later.",
-      });
-    },
+    onLoadError: () => this.notifyUnavailable(),
     onContextChange: () => this.deletingViewIdsSignal.set(new Set()),
   });
 
