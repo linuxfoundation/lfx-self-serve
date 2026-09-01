@@ -9,13 +9,14 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
 // The vitest shared alias resolves enums/interfaces for real; constants/utils keep importActual subfile
 // stubs because their barrels reach Angular. The service's interfaces import is `import type` — erased, no mock needed.
-const { proxyRequest, getMeetings, getVotes, encodeActivityPageToken, warning, info } = vi.hoisted(() => ({
+const { proxyRequest, getMeetings, getVotes, encodeActivityPageToken, warning, info, debug } = vi.hoisted(() => ({
   proxyRequest: vi.fn(),
   getMeetings: vi.fn(),
   getVotes: vi.fn(),
   encodeActivityPageToken: vi.fn((cursor: { before: string; key: string }) => `token(${cursor.before}|${cursor.key})`),
   warning: vi.fn(),
   info: vi.fn(),
+  debug: vi.fn(),
 }));
 
 vi.mock('@lfx-one/shared/constants', async () => {
@@ -60,7 +61,7 @@ vi.mock('../helpers/committee-activity-query.helper', async (importOriginal) => 
   ...(await importOriginal<typeof import('../helpers/committee-activity-query.helper')>()),
   encodeActivityPageToken,
 }));
-vi.mock('./logger.service', () => ({ logger: { debug: vi.fn(), warning, info, startOperation: vi.fn(), success: vi.fn() } }));
+vi.mock('./logger.service', () => ({ logger: { debug, warning, info, startOperation: vi.fn(), success: vi.fn() } }));
 vi.mock('./meeting.service', () => ({
   MeetingService: class {
     public getMeetings = getMeetings;
@@ -78,7 +79,7 @@ vi.mock('./microservice-proxy.service', () => ({
 }));
 
 import { PollStatus, SurveyStatus } from '@lfx-one/shared/enums';
-import type { ActivityPageCursor, CommitteeActivityNoteAttachment, PastMeeting, Survey, Vote } from '@lfx-one/shared/interfaces';
+import type { ActivityPageCursor, Committee, CommitteeActivityNoteAttachment, PastMeeting, Survey, Vote } from '@lfx-one/shared/interfaces';
 
 import { ResourceNotFoundError, ServiceValidationError } from '../errors';
 import { CommitteeActivityService } from './committee-activity.service';
@@ -923,6 +924,87 @@ describe('CommitteeActivityService', () => {
       await expect(service.getCommitteeActivity(req, uidNeedingEncoding, { limit: 8 })).rejects.toMatchObject({
         path: '/committees/committee%201',
       });
+    });
+  });
+
+  describe('knownCommittee (caller already resolved the committee)', () => {
+    it('uses the passed-in committee instead of fetching it again', async () => {
+      getVotes.mockResolvedValue({ data: [vote()] });
+      proxyRequest.mockImplementation((r, s, path, m, query) => {
+        if (/^\/committees\/[^/]+$/.test(path)) throw new Error('fetchCommittee should not run when knownCommittee is provided');
+        return defaultProxyRequest(r, s, path, m, query);
+      });
+
+      const result = await service.getCommitteeActivity(
+        req,
+        COMMITTEE_UID,
+        { limit: 8 },
+        { knownCommittee: { uid: COMMITTEE_UID, enable_voting: true } as Committee }
+      );
+
+      // enable_voting: true on the passed-in committee — votes are included, proving the
+      // knownCommittee value (not a stubbed-out default) actually drove the gating decision.
+      expect(result.data.map((e) => e.type)).toEqual(['vote_opened']);
+    });
+
+    it('still gates on enable_voting from the knownCommittee, not just skips the fetch', async () => {
+      getVotes.mockResolvedValue({ data: [vote()] });
+
+      const result = await service.getCommitteeActivity(
+        req,
+        COMMITTEE_UID,
+        { limit: 8 },
+        { knownCommittee: { uid: COMMITTEE_UID, enable_voting: false } as Committee }
+      );
+
+      expect(result.data).toEqual([]);
+    });
+
+    it('rejects a knownCommittee whose uid does not match committeeUid, rather than silently trusting it', async () => {
+      // enable_voting decides the entire vote leg's visibility — a mismatched committee here
+      // would silently add or hide votes for the real committeeUid with no error anywhere else.
+      await expect(
+        service.getCommitteeActivity(req, COMMITTEE_UID, { limit: 8 }, { knownCommittee: { uid: 'some-other-committee', enable_voting: true } as Committee })
+      ).rejects.toThrow(ServiceValidationError);
+      // Pins the guard's value as a cheap tripwire — it must reject BEFORE the 5-leg upstream
+      // fan-out starts, not just eventually throw after paying for it.
+      expect(proxyRequest).not.toHaveBeenCalled();
+    });
+
+    it('logs the aggregation start/completion at DEBUG, not INFO, when quietAggregationLog is passed — this caller is a per-poll-tick tally, not the controller-driven feed the INFO rationale was written for', async () => {
+      getVotes.mockResolvedValue({ data: [vote()] });
+
+      await service.getCommitteeActivity(
+        req,
+        COMMITTEE_UID,
+        { limit: 8 },
+        { knownCommittee: { uid: COMMITTEE_UID, enable_voting: true } as Committee, quietAggregationLog: true }
+      );
+
+      expect(debug).toHaveBeenCalledWith(req, 'get_committee_activity', 'Starting committee activity aggregation', expect.anything());
+      expect(debug).toHaveBeenCalledWith(req, 'get_committee_activity', 'Completed committee activity aggregation', expect.anything());
+      expect(info).not.toHaveBeenCalledWith(req, 'get_committee_activity', 'Starting committee activity aggregation', expect.anything());
+      expect(info).not.toHaveBeenCalledWith(req, 'get_committee_activity', 'Completed committee activity aggregation', expect.anything());
+    });
+
+    it('logs the aggregation start/completion at INFO, as before, when quietAggregationLog is omitted (the controller-driven feed path)', async () => {
+      getVotes.mockResolvedValue({ data: [vote()] });
+
+      await service.getCommitteeActivity(req, COMMITTEE_UID, { limit: 8 });
+
+      expect(info).toHaveBeenCalledWith(req, 'get_committee_activity', 'Starting committee activity aggregation', expect.anything());
+      expect(info).toHaveBeenCalledWith(req, 'get_committee_activity', 'Completed committee activity aggregation', expect.anything());
+      expect(debug).not.toHaveBeenCalledWith(req, 'get_committee_activity', 'Starting committee activity aggregation', expect.anything());
+      expect(debug).not.toHaveBeenCalledWith(req, 'get_committee_activity', 'Completed committee activity aggregation', expect.anything());
+    });
+
+    it('still logs at INFO when knownCommittee is passed but quietAggregationLog is not — passing knownCommittee alone must not silence the log, since it exists only to skip a redundant fetch and says nothing about call frequency', async () => {
+      getVotes.mockResolvedValue({ data: [vote()] });
+
+      await service.getCommitteeActivity(req, COMMITTEE_UID, { limit: 8 }, { knownCommittee: { uid: COMMITTEE_UID, enable_voting: true } as Committee });
+
+      expect(info).toHaveBeenCalledWith(req, 'get_committee_activity', 'Starting committee activity aggregation', expect.anything());
+      expect(debug).not.toHaveBeenCalledWith(req, 'get_committee_activity', 'Starting committee activity aggregation', expect.anything());
     });
   });
 
