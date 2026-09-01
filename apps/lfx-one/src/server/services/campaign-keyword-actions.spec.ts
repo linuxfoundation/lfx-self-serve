@@ -4,7 +4,17 @@
 import type { KeywordActionRequest } from '@lfx-one/shared/interfaces';
 import { describe, expect, it } from 'vitest';
 
-import { appliedResults, failedResults, groupByCampaign, inRequestOrder, toBulkResponse, toUpstreamActions } from './campaign-keyword-actions';
+import {
+  appliedResults,
+  CAMPAIGN_OUTCOME_UNCONFIRMED,
+  classifyMutationFailure,
+  failedResults,
+  groupByCampaign,
+  inRequestOrder,
+  toBulkResponse,
+  toUpstreamActions,
+} from './campaign-keyword-actions';
+import { MicroserviceError } from '../errors/microservice.error';
 
 const kw = (campaignId: string, criterionId: string, adGroupId = 'ag-1'): KeywordActionRequest => ({
   campaignId,
@@ -191,5 +201,39 @@ describe('inRequestOrder', () => {
 
     expect(ordered.map((r) => r.success)).toEqual([false, true, false]);
     expect(ordered.map((r) => r.keyword)).toEqual(['Criterion 1', 'Criterion 9', 'Criterion 1']);
+  });
+});
+
+/**
+ * The classifier must read the field the real error actually carries.
+ *
+ * `MicroserviceError` exposes `statusCode`, not `status`. Reading only `status` made this
+ * evaluate to 0 for every real proxy error, so a definite 4xx refusal was tagged UNCONFIRMED --
+ * hiding an actionable validation or authorization message behind "may or may not have been
+ * applied", and inviting a retry the caller did not need.
+ *
+ * Driven with a REAL MicroserviceError rather than a `{ status }` literal: a literal is exactly
+ * what the old tests used, and it is why the bug shipped.
+ */
+describe('classifyMutationFailure', () => {
+  it('treats a real MicroserviceError 4xx as a definite refusal', () => {
+    const err = new MicroserviceError('adGroupId must be numeric', 400, 'BAD_REQUEST', {});
+    const msg = classifyMutationFailure(err);
+
+    expect(msg).toBe('adGroupId must be numeric');
+    expect(msg).not.toContain(CAMPAIGN_OUTCOME_UNCONFIRMED);
+  });
+
+  it.each([
+    [408, 'timeout'],
+    [500, 'upstream 5xx'],
+    [503, 'unavailable'],
+  ])('treats a real MicroserviceError %i (%s) as unconfirmed', (code) => {
+    const msg = classifyMutationFailure(new MicroserviceError('upstream failed', code, 'ERR', {}));
+    expect(msg).toContain(CAMPAIGN_OUTCOME_UNCONFIRMED);
+  });
+
+  it('treats a transport failure with no status at all as unconfirmed', () => {
+    expect(classifyMutationFailure(new Error('socket hang up'))).toContain(CAMPAIGN_OUTCOME_UNCONFIRMED);
   });
 });

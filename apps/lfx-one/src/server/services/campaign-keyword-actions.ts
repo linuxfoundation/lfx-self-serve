@@ -217,6 +217,34 @@ export const CAMPAIGN_OUTCOME_UNCONFIRMED =
  * Both cases are refusals rather than errors upstream, so they arrive as ordinary answers and
  * have to be turned into per-keyword failures here.
  */
+/**
+ * The message a failed keyword mutation reports, and whether it claims certainty.
+ *
+ * EXPORTED so it can be pinned. It lived inline and unexported, which is exactly how it shipped
+ * reading `.status` -- a field `MicroserviceError` does not have. Every real proxy error therefore
+ * evaluated to 0, so a definite 4xx refusal was tagged UNCONFIRMED and the actionable
+ * validation/authorization message was buried behind "may or may not have been applied".
+ *
+ * `statusCode` first, matching `access-error.helper.ts` and `key-contact-error.helper.ts`;
+ * `status` is the fallback for plain `HttpErrorResponse` shapes.
+ *
+ * Only a 4xx other than 408 is a boundary refusal that provably never dispatched. Transport, 408
+ * and 5xx are UNCONFIRMED: the mutate may already have run, and a retried REMOVE is irreversible.
+ */
+export function classifyMutationFailure(error: unknown): string {
+  const e = error as { statusCode?: unknown; status?: unknown } | null | undefined;
+  // Not a nested ternary: `.claude/rules` forbids them, and this reads better as a fallback chain.
+  let status = 0;
+  if (typeof e?.statusCode === 'number') {
+    status = e.statusCode;
+  } else if (typeof e?.status === 'number') {
+    status = e.status;
+  }
+  const refusedAtBoundary = status >= 400 && status < 500 && status !== 408;
+  const raw = error instanceof Error ? error.message : 'The keyword change could not be applied.';
+  return refusedAtBoundary ? raw : `${CAMPAIGN_OUTCOME_UNCONFIRMED} (${raw})`;
+}
+
 export const CAMPAIGN_UNRESOLVED = 'This campaign is not managed here, so its keywords cannot be changed.';
 /**
  * A lookup that FAILED, as distinct from one that answered "no such campaign".
@@ -318,10 +346,7 @@ export async function applyKeywordActionsViaCampaignService(
       // Reporting that as definite invites a retry of a mutate that may already have run, and a
       // retried REMOVE is irreversible. Only a 4xx other than 408 is a boundary refusal that
       // provably never dispatched.
-      const status = typeof (error as { status?: unknown })?.status === 'number' ? (error as { status: number }).status : 0;
-      const refusedAtBoundary = status >= 400 && status < 500 && status !== 408;
-      const raw = error instanceof Error ? error.message : 'The keyword change could not be applied.';
-      const message = refusedAtBoundary ? raw : `${CAMPAIGN_OUTCOME_UNCONFIRMED} (${raw})`;
+      const message = classifyMutationFailure(error);
       logger.warning(req, 'keyword_actions', 'Keyword action batch failed', {
         platformCampaignId: group.platformCampaignId,
         campaignId: ref.campaign_id,
