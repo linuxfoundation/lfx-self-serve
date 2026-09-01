@@ -306,15 +306,19 @@ describe('ProfileController.getMeetingInviteEmail', () => {
     expect(next).not.toHaveBeenCalled();
   });
 
-  it('normalizes a null preference to the no-override shape rather than sending null', async () => {
+  it('propagates a 503 rather than normalizing a failed fetch to the no-override shape', async () => {
+    // The service returns null only on failure — a confirmed no-override comes back as a non-null
+    // `{ email_id: null, email: null }`. Normalizing null to that same shape would make a real
+    // outage indistinguishable from "no override" to the client, silently disabling its
+    // delete/remove fail-closed guard.
     meetingPrefSvc.getMeetingInviteEmail.mockResolvedValue(null);
     const res = buildRes();
     const next = vi.fn();
 
     await controller.getMeetingInviteEmail(buildReq({ apiGatewayToken: 'v1-token' }), res, next);
 
-    expect(res.json).toHaveBeenCalledWith({ email_id: null, email: null });
-    expect(next).not.toHaveBeenCalled();
+    expect(next).toHaveBeenCalledWith(expect.objectContaining({ code: 'SERVICE_UNAVAILABLE', statusCode: 503 }));
+    expect(res.json).not.toHaveBeenCalled();
   });
 
   it('propagates an unexpected service rejection via next(error)', async () => {

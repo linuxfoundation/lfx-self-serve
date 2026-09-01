@@ -25,7 +25,6 @@ import {
   EnrichedIdentity,
   IdentityDisplayState,
   LinuxAliasData,
-  MeetingInviteEmail,
   ProfileAuthStatus,
   ProfilePictureUploadResponse,
   ProfileUpdateRequest,
@@ -642,11 +641,28 @@ export class ProfileController {
       }
 
       const preference = await this.meetingPreferenceService.getMeetingInviteEmail(req, v1Token);
-      const result: MeetingInviteEmail = preference ?? { email_id: null, email: null };
 
-      logger.success(req, 'get_meeting_invite_email', startTime, { has_override: Boolean(result.email) });
+      if (!preference) {
+        // The service returns null only on failure (NATS error reply, transport, or decode
+        // failure) — a confirmed no-override comes back as `{ email_id: null, email: null }`.
+        // Normalizing a failure to that same shape would look identical to the client, so its
+        // delete/remove fail-closed guard would never trip during a real outage.
+        return next(
+          new MicroserviceError(
+            'Meeting invitation email settings are temporarily unavailable. Please refresh the page and try again.',
+            503,
+            'SERVICE_UNAVAILABLE',
+            {
+              operation: 'get_meeting_invite_email',
+              service: 'profile_controller',
+            }
+          )
+        );
+      }
 
-      res.json(result);
+      logger.success(req, 'get_meeting_invite_email', startTime, { has_override: Boolean(preference.email) });
+
+      res.json(preference);
     } catch (error) {
       next(error);
     }
