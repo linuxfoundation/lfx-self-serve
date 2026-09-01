@@ -86,10 +86,10 @@ export class CertificateService {
   }
 
   /**
-   * Country trimmed and lowercased so casing drift in imported CSV data doesn't skip the
-   * override, and whole-string so 'Hong Kong (SAR China)' doesn't match. The source half
-   * defers to isBackfillEventSource() so this stays in lockstep with the rest of the backfill
-   * handling. Unmatched values keep the base template.
+   * Country trimmed/lowercased against casing drift in imported CSV data, and whole-string so
+   * 'Hong Kong (SAR China)' doesn't match.
+   * Source half defers to isBackfillEventSource() for one source of truth; its ' \t\n\r' strip
+   * is narrower than trim() (see event.utils.spec.ts). Unmatched values keep the base template.
    */
   private requiresLfOpenSourceOverride(event: CertificateEventRow): boolean {
     const country = event.EVENT_COUNTRY?.trim().toLowerCase();
