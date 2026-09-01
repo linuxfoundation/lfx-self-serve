@@ -59,9 +59,10 @@ export class ProposeComponent {
   private readonly projectService = inject(ProjectService);
   private readonly messageService = inject(MessageService);
   private readonly organizationSearch = viewChild(OrganizationSearchComponent);
-  /** Backs additionalContacts' clientId — a monotonic counter, not crypto.randomUUID(), so
-   *  server and client renders agree on the same id (hydration-safe) and the sequence
-   *  (`contact-1`, `contact-2`, …) stays legible in a debugger without being random. */
+  /** Backs additionalContacts' clientId — a monotonic counter, not crypto.randomUUID(), so the
+   *  sequence (`contact-1`, `contact-2`, …) stays legible in a debugger rather than random. Only
+   *  ever advances from a user's Add click (see addContact()), so there's no SSR/hydration
+   *  concern to weigh either way — contacts are always empty on the server render. */
   private nextContactClientId = 1;
 
   // Forms
