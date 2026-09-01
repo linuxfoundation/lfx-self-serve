@@ -352,6 +352,7 @@ export class PlanningTabComponent implements OnInit {
    * Built as an observable field rather than inside `ngOnInit` because `toObservable` needs an
    * injection context, and field initialisers have one.
    */
+
   /**
    * The active foundation slug, coalesced to `''` when there is no context.
    *
@@ -1275,6 +1276,7 @@ export class PlanningTabComponent implements OnInit {
    * point at which the user's intent is visible, which is what makes it the right thing to
    * compare. Same reasoning as restoreSavedBrief's guard.
    */
+
   /**
    * Whether this lookup is still the LATEST one, which is the only question the shared
    * `hsSearching` flag should be gated on.
@@ -1290,6 +1292,7 @@ export class PlanningTabComponent implements OnInit {
    * lookup is in flight leaves the old response matching on both, so an equality check would
    * let it clear or overwrite the newer one. A counter only advances.
    */
+
   /**
    * The status line for a lookup that found nothing, which is three different statements.
    *
@@ -1326,6 +1329,7 @@ export class PlanningTabComponent implements OnInit {
    * ever advances, so exactly one in-flight create owns the flag at a time, and identity does
    * not depend on state the user can navigate back to.
    */
+
   /**
    * The operator-facing message for a create that PROVABLY did not happen.
    *

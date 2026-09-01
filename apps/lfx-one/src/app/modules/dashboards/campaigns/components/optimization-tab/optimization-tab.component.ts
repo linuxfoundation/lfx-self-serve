@@ -119,6 +119,7 @@ export class OptimizationTabComponent implements OnInit {
    * boolean would disable every button while one request is out, and worse, an error on one row
    * would render against another.
    */
+
   /**
    * Holds the DIRECTION dispatched, not merely `true`.
    *
@@ -942,6 +943,7 @@ export class OptimizationTabComponent implements OnInit {
    * Matched case-insensitively on the WORD, not a full sentence, so a wording tweak upstream
    * cannot silently re-collapse the states.
    */
+
   /**
    * Build the stored outcome, classifying it ONCE at the point of storage.
    *
@@ -950,6 +952,7 @@ export class OptimizationTabComponent implements OnInit {
    * Deriving here also means every write site gets the same classification for free, rather than
    * each one remembering to.
    */
+
   /**
    * Classify a browser-to-BFF failure, which carries no structured result to read.
    *
