@@ -317,7 +317,12 @@ describe('applyKeywordActionsViaCampaignService — the fan-out stop', () => {
     // Nothing was sent for the malformed one.
     expect(applyKeywordActions).toHaveBeenCalledTimes(1);
     expect(res.results[0].success).toBe(false);
-    // Reported as UNRESOLVED, not as an unconfirmed mutation: nothing reached the platform.
+    // Reported as a TRANSIENT lookup failure -- "try again" -- not as "not managed here".
+    // An inconsistent 2xx does not establish the campaign is unmanaged, and telling an operator
+    // it is stops them retrying while a spending campaign keeps spending.
+    expect(res.results[0].message).toContain('could not be looked up');
+    expect(res.results[0].message).not.toContain('not managed here');
+    // And not an unconfirmed MUTATION either: nothing reached the platform.
     expect(res.results[0].message).not.toContain('unconfirmed');
     // And the batch CONTINUED -- the second campaign is unaffected by the first's bad response.
     expect(resolveGoogleAdsCampaign).toHaveBeenCalledTimes(2);

@@ -395,7 +395,12 @@ export async function applyKeywordActionsViaCampaignService(
       // identified, which is exactly CAMPAIGN_UNRESOLVED, and the other campaigns continue.
       const match = resolution.matches?.[0];
       if (!match?.brief_id || !match?.campaign_id) {
-        results.push(...failedResults(group, body.action, CAMPAIGN_UNRESOLVED));
+        // CAMPAIGN_LOOKUP_FAILED, not CAMPAIGN_UNRESOLVED. An inconsistent 2xx -- match_count
+        // says 1 but the entry is absent or id-less -- does NOT establish that the campaign is
+        // unmanaged. Saying "not managed here" tells the operator to stop trying, and a
+        // still-spending campaign keeps spending. Only match_count === 0 is upstream actually
+        // answering "not yours"; this is upstream contradicting itself, which is transient.
+        results.push(...failedResults(group, body.action, CAMPAIGN_LOOKUP_FAILED));
         continue;
       }
       ref = match;
