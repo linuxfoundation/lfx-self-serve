@@ -14,8 +14,10 @@
          be missing this element by the time the client tries to hydrate it, mismatching against
          the client-side render (where the DOM API tolerates the nesting) and forcing Angular to
          destroy and rebuild the subtree instead of hydrating it. [formGroup] binds to any element,
-         not just <form>, so a <div> loses nothing functionally. -->
-    <div [formGroup]="searchForm" class="relative">
+         not just <form> — but the search input's form OWNER is now unconditionally the outer
+         proposal form (a <form> element, unlike this <div>, does scope form ownership), so Enter
+         here would submit the whole proposal without the explicit guard below. -->
+    <div [formGroup]="searchForm" class="relative" (keydown.enter)="$event.preventDefault()" data-testid="propose-project-picker-search-row">
       <lfx-input-text
         size="small"
         [form]="searchForm"

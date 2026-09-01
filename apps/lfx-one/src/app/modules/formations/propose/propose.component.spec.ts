@@ -440,6 +440,28 @@ describe('ProposeComponent', () => {
     expect(createFormation).not.toHaveBeenCalled();
   });
 
+  it('pressing Enter in the parent-project search box does not submit the whole proposal — that field is a <div>, not a <form>, inside the outer <form>', async () => {
+    const { component, fixture } = await createComponentWithFixture();
+    const applicationRef = TestBed.inject(ApplicationRef);
+    // fillRequiredFields: without it the outer form is already invalid, so onSubmit() would
+    // return early regardless of the Enter handler — see the sibling "who else" Enter test for
+    // why that would make this pass for the wrong reason.
+    fillRequiredFields(component);
+    createFormation.mockReturnValue(of({ uid: 'formation-1' } as Formation));
+    await applicationRef.whenStable();
+
+    const row = (fixture.nativeElement as HTMLElement).querySelector('[data-testid="propose-project-picker-search-row"]');
+    expect(row).not.toBeNull();
+    const event = new KeyboardEvent('keydown', { key: 'Enter', bubbles: true, cancelable: true });
+    row!.dispatchEvent(event);
+
+    // jsdom doesn't implement implicit form submission on Enter, so the only way to prove the
+    // handler actually ran is to check the event itself was cancelled — see the sibling "who
+    // else" Enter test for the same reasoning.
+    expect(event.defaultPrevented).toBe(true);
+    expect(createFormation).not.toHaveBeenCalled();
+  });
+
   it("labels every <label for> target with a real, labelable control — derived from the DOM so a broken id can't drift back in unnoticed", async () => {
     const { fixture } = await createComponentWithFixture();
     const el: HTMLElement = fixture.nativeElement;
