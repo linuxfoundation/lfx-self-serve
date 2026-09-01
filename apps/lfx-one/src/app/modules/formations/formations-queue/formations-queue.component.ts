@@ -6,7 +6,7 @@ import { toObservable, toSignal } from '@angular/core/rxjs-interop';
 import { StatCardGridComponent } from '@components/stat-card-grid/stat-card-grid.component';
 import { FormationService } from '@services/formation.service';
 import type { Formation, FormationsQueueFilterState, FormationsQueueResponse, ReasonPromptDialogResult, StatCardItem } from '@lfx-one/shared/interfaces';
-import { emptyFormationsQueueResponse } from '@lfx-one/shared/constants';
+import { createEmptyFormationsQueueResponse } from '@lfx-one/shared/constants';
 import { isValidUrl } from '@lfx-one/shared/utils';
 import { MessageService } from 'primeng/api';
 import { DialogService } from 'primeng/dynamicdialog';
@@ -144,13 +144,13 @@ export class FormationsQueueComponent {
             catchError((error: unknown) => {
               console.error('[FormationsQueue] Failed to load Formations queue', error);
               this.loadFailed.set(true);
-              return of(emptyFormationsQueueResponse());
+              return of(createEmptyFormationsQueueResponse());
             }),
             finalize(() => this.loading.set(false))
           );
         })
       ),
-      { initialValue: emptyFormationsQueueResponse() }
+      { initialValue: createEmptyFormationsQueueResponse() }
     );
   }
 }
