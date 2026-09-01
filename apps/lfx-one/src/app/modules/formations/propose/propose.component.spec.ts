@@ -289,9 +289,10 @@ describe('ProposeComponent', () => {
     // a correctly-bound id can't satisfy a <label for>. Positively assert the resolved element is
     // one of the tags a <label for> can actually name, covering every label[for] rendered in the
     // form's default state (search mode, no additional contacts) rather than a hand-picked
-    // subset. The four p-select fields and the file-upload field carry no `for` at all — they're
-    // covered by the aria-labelledby test below instead. This does not drive
-    // lfx-organization-search into its manual-entry branch.
+    // subset. The four p-select fields carry no `for` — they're covered by the aria-labelledby
+    // test below instead. The logo field has no <label> at all (see the template comment):
+    // p-fileUpload's basic-mode button names itself via chooseLabel, and that name isn't asserted
+    // by any test. This does not drive lfx-organization-search into its manual-entry branch.
     const labelableTags = new Set(['INPUT', 'TEXTAREA', 'SELECT']);
     const labels = Array.from(el.querySelectorAll<HTMLLabelElement>('label[for]'));
     expect(labels.length).toBeGreaterThan(0);
