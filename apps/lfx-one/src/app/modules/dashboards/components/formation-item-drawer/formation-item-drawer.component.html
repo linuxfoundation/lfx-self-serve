@@ -11,7 +11,11 @@
   <ng-template #header>
     <div class="flex items-start justify-between gap-4 w-full">
       <div class="flex flex-col gap-1 flex-1 min-w-0">
-        <h2 class="text-lg font-semibold text-gray-900 lg:truncate" tabindex="0" [attr.title]="item()?.title">{{ item()?.title }}</h2>
+        <!-- `title` is a hover-only affordance in Chromium/WebKit — a tabindex here wouldn't expose
+             it to keyboard focus (and would wrongly become the drawer's focus-trap entry point
+             ahead of Close). The full title is already in the DOM text regardless of the `lg:truncate`
+             visual clipping, so screen readers announce it either way; this is a mouse-only nicety. -->
+        <h2 class="text-lg font-semibold text-gray-900 lg:truncate" [attr.title]="item()?.title">{{ item()?.title }}</h2>
         @if (item(); as currentItem) {
           @if (currentItem.is_gating) {
             <span [attr.data-testid]="'formation-item-drawer-gates-active-' + currentItem.uid">
