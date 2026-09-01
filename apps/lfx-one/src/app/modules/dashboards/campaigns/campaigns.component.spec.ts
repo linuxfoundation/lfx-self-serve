@@ -2979,11 +2979,6 @@ describe('CampaignsComponent — email delivery channel', () => {
      * longer see or change.
      */
     /**
-     * The index tie-break at a NON-ZERO score. Testing it only at score 0 leaves the comparator's
-     * `|| a.index - b.index` unverified for the case it exists for: several templates matching the
-     * type equally, where the server's newest-first order must survive the sort.
-     */
-    /**
      * The type score must COUNT matched keywords, not merely report that one matched.
      *
      * Every prior case compared a multi-keyword match against zero-score rows, so collapsing the
@@ -3007,6 +3002,11 @@ describe('CampaignsComponent — email delivery channel', () => {
       ).toEqual(['many', 'one']);
     });
 
+    /**
+     * The index tie-break at a NON-ZERO score. Testing it only at score 0 leaves the comparator's
+     * `|| a.index - b.index` unverified for the case it exists for: several templates matching the
+     * type equally, where the server's newest-first order must survive the sort.
+     */
     it('keeps the server order among templates that score equally above zero', () => {
       selectEmail();
       // All three carry the same type keyword, so they score identically and only `index` orders
