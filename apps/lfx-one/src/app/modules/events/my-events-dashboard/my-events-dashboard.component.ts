@@ -6,6 +6,7 @@ import { toSignal } from '@angular/core/rxjs-interop';
 import { ButtonComponent } from '@components/button/button.component';
 import { CardComponent } from '@components/card/card.component';
 import { CardTabsBarComponent } from '@components/card-tabs-bar/card-tabs-bar.component';
+import { ToastMessageComponent } from '@components/toast-message/toast-message.component';
 import { MY_EVENT_STATUS_OPTIONS, VISA_REQUEST_STATUS_OPTIONS } from '@lfx-one/shared/constants';
 import { EventTabId, FilterOption, FilterPillOption } from '@lfx-one/shared/interfaces';
 import { OpenIntercomDirective } from '@shared/directives/open-intercom.directive';
@@ -32,6 +33,7 @@ const SALESFORCE_ERROR_TOAST_KEY = 'my-events-salesforce-error';
     EventsListComponent,
     Tooltip,
     ToastModule,
+    ToastMessageComponent,
     OpenIntercomDirective,
   ],
   templateUrl: './my-events-dashboard.component.html',
