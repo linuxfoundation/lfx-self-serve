@@ -1,7 +1,7 @@
 // Copyright The Linux Foundation and each contributor to LFX.
 // SPDX-License-Identifier: MIT
 
-import type { FormationItemStatus } from './formation.interface';
+import type { FormationActivity, FormationItem, FormationItemStatus, FormationSubStage } from './formation.interface';
 
 /**
  * Client-derived stand-in for the readiness strip. TODO(#1957): once the backend returns a
@@ -20,3 +20,18 @@ export interface FormationReadinessSummary {
   openGatingItems: number;
   totalGatingItems: number;
 }
+
+/** `FormationItemDrawerComponent`'s lazy-loaded data shape — the empty-sentinel object doubles as both "not yet loaded" and "closed"; loading/error are tracked separately by the component. */
+export interface FormationDrawerData {
+  item: FormationItem | null;
+  history: FormationActivity[];
+}
+
+/** `FormationsTableComponent`'s emitted filter state — also the shape `FormationService.getFormationsQueue` accepts. */
+export interface FormationsQueueFilterState {
+  subStage: FormationSubStage | undefined;
+  search: string;
+}
+
+/** `FormationChecklistSectionComponent`'s top-level view state. */
+export type FormationChecklistPageState = 'loading' | 'error' | 'no-template' | 'no-items' | 'ready';

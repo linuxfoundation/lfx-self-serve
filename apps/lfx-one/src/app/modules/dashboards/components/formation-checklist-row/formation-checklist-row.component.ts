@@ -6,6 +6,7 @@ import { ButtonComponent } from '@components/button/button.component';
 import { TagComponent } from '@components/tag/tag.component';
 import type { FormationItem, FormationItemStatus } from '@lfx-one/shared/interfaces';
 import type { TagSeverity } from '@lfx-one/shared/interfaces';
+import { isValidUrl } from '@lfx-one/shared/utils';
 
 const STATUS_LABEL: Record<FormationItemStatus, string> = {
   done: 'Done',
@@ -33,12 +34,19 @@ export class FormationChecklistRowComponent {
   public readonly item = input.required<FormationItem>();
 
   public readonly openDrawer = output<FormationItem>();
-  /** Fired for the `manual`/`provisionable`/`request` action kinds — the orchestrator owns the actual service call. */
+  /** Fired for the `provisionable`/`request` action kinds only — `manual` opens the drawer instead; the orchestrator owns the actual service call. */
   public readonly actionTriggered = output<FormationItem>();
 
   protected readonly statusLabel = computed(() => STATUS_LABEL[this.item().status]);
   protected readonly statusSeverity = computed(() => STATUS_SEVERITY[this.item().status]);
   protected readonly statusOutlined = computed(() => this.item().status === 'not_started');
+  /** `provisionable`/`request` actions change status the same way complete/skip do — hide them once the item is already terminal. */
+  protected readonly isActionable = computed(() => this.item().status !== 'done' && this.item().status !== 'skipped');
+  /** `action_href` is API-sourced (fixture today, a real upstream response once #1957 lands) — never trust it into `[href]` unvalidated. `null` renders no link rather than a raw/unsafe URL. */
+  protected readonly safeActionHref = computed(() => {
+    const href = this.item().action_href;
+    return href && isValidUrl(href) ? href : null;
+  });
 
   protected onOpenDrawer(): void {
     this.openDrawer.emit(this.item());

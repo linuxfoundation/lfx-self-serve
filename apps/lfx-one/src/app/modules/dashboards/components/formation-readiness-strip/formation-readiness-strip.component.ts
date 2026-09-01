@@ -43,9 +43,8 @@ export class FormationReadinessStripComponent {
     return `${dateLabel} · ${formatRelativeDayCount(parsed)}`;
   });
 
-  protected segmentClass(status: FormationItemStatus): string {
-    return SEGMENT_COLOR_CLASS[status] ?? SEGMENT_COLOR_CLASS.not_started;
-  }
+  /** Exposed directly so the template does a plain lookup, never a method call — see frontend-checklist §4. */
+  protected readonly segmentColorClass = SEGMENT_COLOR_CLASS;
 }
 
 function formatRelativeDayCount(date: Date): string {

@@ -3,7 +3,7 @@
 
 import { DatePipe } from '@angular/common';
 import { toObservable, toSignal } from '@angular/core/rxjs-interop';
-import { Component, computed, inject, input, model, output, Signal } from '@angular/core';
+import { Component, computed, inject, input, model, output, signal, Signal, WritableSignal } from '@angular/core';
 import { FormControl, FormGroup, ReactiveFormsModule } from '@angular/forms';
 import { ButtonComponent } from '@components/button/button.component';
 import { CalendarComponent } from '@components/calendar/calendar.component';
@@ -11,17 +11,13 @@ import { InputTextComponent } from '@components/input-text/input-text.component'
 import { TagComponent } from '@components/tag/tag.component';
 import { TextareaComponent } from '@components/textarea/textarea.component';
 import { FormationService } from '@services/formation.service';
-import type { FormationActivity, FormationItem } from '@lfx-one/shared/interfaces';
+import type { FormationDrawerData, FormationItem, FormationItemLink } from '@lfx-one/shared/interfaces';
+import { isValidUrl } from '@lfx-one/shared/utils';
 import { MessageService } from 'primeng/api';
 import { DrawerModule } from 'primeng/drawer';
-import { catchError, of, skip, switchMap, take, tap } from 'rxjs';
+import { catchError, finalize, of, skip, switchMap, take, tap } from 'rxjs';
 
-interface DrawerData {
-  item: FormationItem | null;
-  history: FormationActivity[];
-}
-
-const EMPTY_DATA: DrawerData = { item: null, history: [] };
+const EMPTY_DATA: FormationDrawerData = { item: null, history: [] };
 
 @Component({
   selector: 'lfx-formation-item-drawer',
@@ -36,19 +32,25 @@ export class FormationItemDrawerComponent {
   public readonly itemUid = input<string | null>(null);
   public readonly visible = model<boolean>(false);
 
+  /** Fired for a status-changing action (Mark complete) — the section closes the drawer and refreshes the row list. */
   public readonly itemChanged = output<FormationItem>();
+  /** Fired for a metadata-only save (notes/assignee/due-date) — the section refreshes the row list but leaves the drawer open. */
+  public readonly itemUpdated = output<FormationItem>();
   public readonly skipRequested = output<FormationItem>();
-
-  protected readonly loading: Signal<boolean> = computed(() => this.drawerData() === EMPTY_DATA && this.visible());
-  protected readonly drawerData: Signal<DrawerData> = this.initDrawerData();
-  protected readonly item = computed(() => this.drawerData().item);
-  protected readonly history = computed(() => this.drawerData().history);
 
   protected readonly editForm = new FormGroup({
     notes: new FormControl<string>(''),
     ownerUsername: new FormControl<string>(''),
     dueDate: new FormControl<Date | null>(null),
   });
+
+  protected readonly loading: WritableSignal<boolean> = signal(false);
+  protected readonly loadFailed: WritableSignal<boolean> = signal(false);
+  protected readonly drawerData: Signal<FormationDrawerData> = this.initDrawerData();
+  protected readonly item = computed(() => this.drawerData().item);
+  protected readonly history = computed(() => this.drawerData().history);
+  /** `link.href` is API-sourced — never trust it into `[href]` unvalidated; drop anything that isn't http(s). */
+  protected readonly safeLinks: Signal<FormationItemLink[]> = computed(() => (this.item()?.links ?? []).filter((link) => isValidUrl(link.href)));
 
   protected onClose(): void {
     this.visible.set(false);
@@ -88,14 +90,14 @@ export class FormationItemDrawerComponent {
       .pipe(take(1))
       .subscribe({
         next: (updated) => {
-          this.itemChanged.emit(updated);
+          this.itemUpdated.emit(updated);
           this.messageService.add({ severity: 'success', summary: 'Saved', detail: 'Item details updated.' });
         },
         error: () => this.messageService.add({ severity: 'error', summary: 'Error', detail: 'Could not save item details.' }),
       });
   }
 
-  private initDrawerData(): Signal<DrawerData> {
+  private initDrawerData(): Signal<FormationDrawerData> {
     return toSignal(
       toObservable(this.visible).pipe(
         skip(1),
@@ -105,9 +107,16 @@ export class FormationItemDrawerComponent {
             return of(EMPTY_DATA);
           }
 
+          this.loadFailed.set(false);
+          this.loading.set(true);
           return this.formationService.getFormationItem(uid).pipe(
             tap((data) => this.syncForm(data.item)),
-            catchError(() => of(EMPTY_DATA))
+            catchError((error: unknown) => {
+              console.error('[FormationItemDrawer] Failed to load formation item', error);
+              this.loadFailed.set(true);
+              return of(EMPTY_DATA);
+            }),
+            finalize(() => this.loading.set(false))
           );
         })
       ),
