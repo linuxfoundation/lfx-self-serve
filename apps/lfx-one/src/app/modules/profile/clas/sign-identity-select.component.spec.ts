@@ -321,7 +321,12 @@ describe('SignIdentitySelectComponent', () => {
     it('refuses to submit it even if the card is reached another way', async () => {
       await setup({ claGroupAgreements: signedAs('octocat') });
 
-      await choose('sign-identity-select-github-12345');
+      // Clicking a grayed card is refused by the card itself, which leaves the control unwritten
+      // and never reaches the guard this test is named for. Writing the control directly is the
+      // "another way" — it is what a refactor that drops the guard would silently allow.
+      (fixture.componentInstance as any).selectForm.controls.identity.setValue('12345');
+      fixture.detectChanges();
+      await fixture.whenStable();
       (fixture.componentInstance as any).onContinue();
 
       expect(close).not.toHaveBeenCalled();

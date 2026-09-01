@@ -181,9 +181,13 @@ export class SignIdentitySelectComponent {
     return this.withPlatform(username, SIGN_IDENTITY_PLATFORM_LABELS.gerrit);
   }
 
-  /** Only meaningful when a Gerrit card is on offer at all. */
+  /**
+   * Only meaningful when a Gerrit card is on offer at all — read off the `gerritLabel` signal,
+   * declared above this one, so the card's visibility and its already-signed verdict cannot
+   * come from two independent evaluations of the same question.
+   */
   private initGerritAlreadySignedTooltip(): string | undefined {
-    if (!this.initGerritLabel()) return undefined;
+    if (!this.gerritLabel()) return undefined;
 
     const held = alreadySignedAgreementForIdentity(this.config.data?.claGroupAgreements ?? [], { platform: 'gerrit' });
     return held ? alreadySignedIdentityTooltip(held) : undefined;

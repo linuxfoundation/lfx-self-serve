@@ -207,13 +207,24 @@ export interface ClaGroupSearchResponse {
 }
 
 /**
- * What the Sign a CLA group picker is given so it can gray out groups the contributor
- * already holds (#1914). The list is the one already loaded on the CLAs tab — the picker
- * does not fetch it again.
+ * What the Sign a CLA group picker is given so it can tag groups the contributor already
+ * holds (#1914). The list is the one already loaded on the CLAs tab — the picker does not
+ * fetch it again.
  */
 export interface ClaGroupSelectDialogData {
   agreements: MyClaAgreement[];
 }
+
+/** What a tagged picker row shows: the inline tag, and the sentence behind it. */
+export interface AlreadySignedNote {
+  /** Inline tag, naming the identity that signed it. */
+  chip: string;
+  /** Fuller sentence: which kind, whose employer on an ECLA, and that another identity may sign. */
+  tooltip: string;
+}
+
+/** Which identity a card in the sign-identity step offers. */
+export type SignIdentityRef = { platform: 'github'; username: string } | { platform: 'gerrit' };
 
 /** Picker row: a search result with display fields precomputed so the template calls nothing. */
 export interface ClaGroupOptionView extends ClaGroupOption {

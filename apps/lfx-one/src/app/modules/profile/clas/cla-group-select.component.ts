@@ -5,7 +5,7 @@ import { ChangeDetectionStrategy, Component, computed, inject, Signal, signal } 
 import { takeUntilDestroyed } from '@angular/core/rxjs-interop';
 import { FormControl, FormGroup, ReactiveFormsModule } from '@angular/forms';
 import { CLA_GROUP_SEARCH_DEBOUNCE_MS, CLA_GROUP_SEARCH_MIN_CHARS } from '@lfx-one/shared/constants';
-import type { ClaGroupOptionView, ClaGroupSearchResponse, ClaGroupSelectDialogData, MyClaAgreement } from '@lfx-one/shared/interfaces';
+import type { AlreadySignedNote, ClaGroupOptionView, ClaGroupSearchResponse, ClaGroupSelectDialogData, MyClaAgreement } from '@lfx-one/shared/interfaces';
 import { alreadySignedAgreementForGroup, alreadySignedChipLabel, alreadySignedGroupTooltip, toClaGroupOptionView } from '@lfx-one/shared/utils';
 import { MyClasService } from '@services/my-clas.service';
 import { DynamicDialogConfig, DynamicDialogRef } from 'primeng/dynamicdialog';
@@ -14,14 +14,6 @@ import { catchError, debounceTime, map, of, Subject, switchMap } from 'rxjs';
 
 import { ButtonComponent } from '@components/button/button.component';
 import { InputTextComponent } from '@components/input-text/input-text.component';
-
-/** What a search result the contributor already holds a CLA for is annotated with. */
-interface AlreadySignedNote {
-  /** Inline tag, naming the identity that signed it. */
-  chip: string;
-  /** Fuller sentence: which kind, whose employer on an ECLA, and that another identity can sign. */
-  tooltip: string;
-}
 
 /**
  * "Sign a CLA" picker, opened via DialogService (#1251), following the approved M2 prototype:
@@ -49,13 +41,10 @@ interface AlreadySignedNote {
 export class ClaGroupSelectComponent {
   private readonly ref = inject(DynamicDialogRef);
   private readonly myClasService = inject(MyClasService);
-  private readonly config = inject<DynamicDialogConfig<ClaGroupSelectDialogData>>(DynamicDialogConfig, { optional: true });
+  private readonly config = inject<DynamicDialogConfig<ClaGroupSelectDialogData>>(DynamicDialogConfig);
 
-  /**
-   * The CLAs tab's loaded list. Optional so a test that never opens this through DialogService
-   * still constructs; no list means nothing is tagged.
-   */
-  private readonly agreements: readonly MyClaAgreement[] = this.config?.data?.agreements ?? [];
+  /** The CLAs tab's loaded list — this dialog never fetches it. */
+  private readonly agreements: readonly MyClaAgreement[] = this.config.data?.agreements ?? [];
 
   protected readonly searchForm = new FormGroup({
     query: new FormControl(''),

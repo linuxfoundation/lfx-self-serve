@@ -121,18 +121,19 @@ If the search returns more matches than it can display, narrow the term — the 
 
 In the **Sign a CLA** dialog, a result you already hold a CLA for is tagged **Already signed as** followed by the account it was signed under. Hover the result to see which agreement you hold — an ICLA (Individual CLA) or an ECLA (Employee CLA).
 
-The result stays selectable, because holding a CLA under one identity does not stop you signing under another. If you have two GitHub accounts linked to your profile and signed with one of them, you can still sign with the other. Continue past the result and the identity step shows you which of your identities is already covered: it is greyed out, and the rest stay available.
+The result stays selectable, because holding a CLA under one identity does not stop you signing under another. If you have two GitHub accounts linked to your profile and signed with one of them, you can still sign with the other.
+
+The tag names an account only when EasyCLA recorded one. Continue past the result and the identity step greys out the identity that signed — but only when the account on the agreement is one of the GitHub accounts linked to your profile, or the CLA was signed under your LF identity through Gerrit. Where no account was recorded, or the CLA was signed through GitLab, the result is still tagged and every identity stays selectable.
 
 Results are matched per **CLA group**, not per project. A project with more than one CLA group only tags the group you signed.
 
-Which statuses grey out an identity in the next step:
+Which statuses grey out an identity in the next step, once the account on the agreement is one you have linked:
 
 | Status on your existing CLA      | Identity greyed out? | What to do instead                                                                                                                         |
 | -------------------------------- | -------------------- | ------------------------------------------------------------------------------------------------------------------------------------------ |
 | **Valid**                        | Yes                  | Nothing — that identity is already covered                                                                                                 |
 | **Needs attention** (ECLA)       | Yes                  | Signing again does not restore coverage. Use **Request approval** on the CLAs row to ask your employer's CLA managers to approve you again |
 | **Revoked** (ECLA)               | Yes                  | This is a sanctions-screening outcome and cannot be changed from Self Serve                                                                |
-| **Superseded**                   | Yes                  | A newer version of the agreement has replaced this one, so signing again under that identity changes nothing                               |
 | **—** (no status recorded, ECLA) | Yes                  | The status could not be read, so the identity stays greyed out rather than offer you a signature that may do nothing                       |
 | **Invalidated**                  | No                   | That agreement no longer covers you, so you can sign again with the same identity                                                          |
 

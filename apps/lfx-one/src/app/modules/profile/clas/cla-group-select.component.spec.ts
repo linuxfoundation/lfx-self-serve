@@ -65,6 +65,7 @@ describe('ClaGroupSelectComponent', () => {
         provideRouter([]),
         provideNoopAnimations(),
         { provide: DynamicDialogRef, useValue: { close } },
+        { provide: DynamicDialogConfig, useValue: { data: { agreements: [] } } },
         { provide: MyClasService, useValue: { getClaGroupOptions } },
       ],
     });
@@ -439,7 +440,7 @@ describe('ClaGroupSelectComponent', () => {
       const row = fixture.debugElement.query(By.css('[data-testid="cla-group-select-cg-1"]'));
       expect(state('already-signed-cg-1')?.textContent?.trim()).toBe(`${ALREADY_SIGNED_CLA_LABEL} as jellis (GitHub)`);
       expect(row.injector.get(Tooltip, null)?.content).toBe(
-        'You already have an ICLA for this CLA group. Signed as jellis (GitHub). You can still sign it with a different identity.'
+        'You already have an ICLA for this CLA group. Signed as jellis (GitHub). If you have another identity linked, you can still sign with it.'
       );
     });
 
@@ -455,7 +456,7 @@ describe('ClaGroupSelectComponent', () => {
       const describedBy = row.nativeElement.getAttribute('aria-describedby');
       expect(describedBy).toBe('cla-group-already-signed-cg-1');
       expect(fixture.nativeElement.querySelector(`#${describedBy}`)?.textContent?.trim()).toBe(
-        'You already have an ICLA for this CLA group. Signed as jellis (GitHub). You can still sign it with a different identity.'
+        'You already have an ICLA for this CLA group. Signed as jellis (GitHub). If you have another identity linked, you can still sign with it.'
       );
     });
 

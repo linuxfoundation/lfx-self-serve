@@ -17,7 +17,7 @@ import {
 import { PROFILE_TABS } from '../constants/profile.constants';
 import { BadgeSeverity, TagSeverity } from '../interfaces/components.interface';
 import { ProfileTab } from '../interfaces';
-import {
+import type {
   ClaGroupOption,
   ClaGroupOptionView,
   ClaGroupOrg,
@@ -26,6 +26,7 @@ import {
   ClaStatus,
   MyClaAgreement,
   MyClasIdentitySummary,
+  SignIdentityRef,
 } from '../interfaces/cla.interface';
 
 /**
@@ -277,7 +278,12 @@ export function alreadySignedChipLabel(agreement: MyClaAgreement): string {
 
 /**
  * Tooltip on a tagged Sign a CLA result (#1914). Names the kind they already hold, the employer
- * covering an ECLA, and — since the row is still selectable — that another identity can sign it.
+ * covering an ECLA, and — since the row is still selectable — that another identity may sign it.
+ *
+ * The closing sentence is conditional on purpose. All this has to work from is the agreements
+ * list, which says nothing about how many identities are linked, so it cannot promise a second
+ * one exists: a contributor with a single account would be told another identity can sign and
+ * then reach a step offering only the card that already signed.
  */
 export function alreadySignedGroupTooltip(agreement: MyClaAgreement): string {
   const kind = agreement.kind === 'ECLA' ? 'an ECLA' : 'an ICLA';
@@ -285,11 +291,8 @@ export function alreadySignedGroupTooltip(agreement: MyClaAgreement): string {
   const held = company ? `You already have ${kind} for this CLA group, covered by ${company}.` : `You already have ${kind} for this CLA group.`;
   const signed = signedAsLine(agreement.signedVia, agreement.signedAs);
 
-  return `${signed ? `${held} ${signed}.` : held} You can still sign it with a different identity.`;
+  return `${signed ? `${held} ${signed}.` : held} If you have another identity linked, you can still sign with it.`;
 }
-
-/** Which identity a card in the sign-identity step offers. */
-export type SignIdentityRef = { platform: 'github'; username: string } | { platform: 'gerrit' };
 
 /**
  * The agreement this one identity already signed for the group, if any — the check that
@@ -300,9 +303,13 @@ export type SignIdentityRef = { platform: 'github'; username: string } | { platf
  * decides whether to gray a card, while the hand-off still submits `githubId`, and EasyCLA
  * re-derives the attested set from the caller's own token regardless of what is sent.
  *
- * An agreement with no recorded identity therefore matches nothing and blocks no card. Naming
- * a card as already-signed on the strength of a blank is the worse error: it would strand a
- * contributor whose only account is the one it grayed out.
+ * **On the GitHub branch only**, an agreement with no recorded identity matches nothing and
+ * blocks no card. Naming a card as already-signed on the strength of a blank is the worse error:
+ * it would strand a contributor whose only account is the one it grayed out.
+ *
+ * The Gerrit branch cannot make that trade, because it has nothing to compare. Only one Gerrit
+ * card is ever offered and it is the contributor's own LF identity, so the platform alone
+ * identifies it — which does mean a Gerrit agreement with a blank handle still blocks that card.
  */
 export function alreadySignedAgreementForIdentity(agreements: readonly MyClaAgreement[], identity: SignIdentityRef): MyClaAgreement | undefined {
   return agreements.find((agreement) => {
