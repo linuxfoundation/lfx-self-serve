@@ -39,7 +39,7 @@
  *   - apps/lfx-one/.env populated with TEST_USERNAME / TEST_PASSWORD (tests skip otherwise)
  */
 
-import type { LensItem, PersistedPersonaState, PersonaType } from '@lfx-one/shared/interfaces';
+import type { LensItem, NavLens, PersistedPersonaState, PersonaType } from '@lfx-one/shared/interfaces';
 import { FEATURE_FLAG_OVERRIDE_STORAGE_KEY, MARKETING_OPS_FGA_ENABLED_FLAG, PERSONA_COOKIE_KEY } from '@lfx-one/shared/constants';
 import { expect, Page, test } from '@playwright/test';
 
@@ -56,6 +56,12 @@ const MOCK_FOUNDATION_ITEM: LensItem = {
   name: 'Test Foundation',
   logoUrl: null,
   isFoundation: true,
+};
+
+/** Project-lens flavor of the mock item — `isFoundation: false` so a hybrid persona's `applyVisibilityFilters` doesn't strip it. */
+const MOCK_PROJECT_ITEM: LensItem = {
+  ...MOCK_FOUNDATION_ITEM,
+  isFoundation: false,
 };
 
 const SIDEBAR = {
@@ -121,11 +127,11 @@ async function stubPersona(page: Page, personas: string[], options: StubPersonaO
   );
 }
 
-async function stubNavLensItems(page: Page, items: LensItem[] = [MOCK_FOUNDATION_ITEM]): Promise<void> {
+async function stubNavLensItems(page: Page, items: LensItem[] = [MOCK_FOUNDATION_ITEM], targetLens: NavLens = 'foundation'): Promise<void> {
   await page.route('**/api/nav/lens-items*', (route) => {
     const url = route.request().url();
     const requestedLens = new URL(url).searchParams.get('lens') ?? 'foundation';
-    if (requestedLens !== 'foundation') {
+    if (requestedLens !== targetLens) {
       return route.fulfill({
         status: 200,
         contentType: 'application/json',
@@ -135,7 +141,7 @@ async function stubNavLensItems(page: Page, items: LensItem[] = [MOCK_FOUNDATION
     return route.fulfill({
       status: 200,
       contentType: 'application/json',
-      body: JSON.stringify({ items, next_page_token: null, upstream_failed: false, lens: 'foundation' }),
+      body: JSON.stringify({ items, next_page_token: null, upstream_failed: false, lens: targetLens }),
     });
   });
 }
@@ -397,7 +403,7 @@ test.describe('S10: Project lens — hybrid marketing_auditor (flag ON, contribu
     // Project lens, not just Foundation lens.
     await stubPersona(page, ['contributor'], { isMarketingAuditor: true });
     await setPersonaCookie(page, ['contributor']);
-    await stubNavLensItems(page);
+    await stubNavLensItems(page, [MOCK_PROJECT_ITEM], 'project');
     await stubProjectApi(page, MOCK_FOUNDATION_SLUG, false);
     await gotoAndWaitForSidebar(page, `/project/overview?project=${MOCK_FOUNDATION_SLUG}`);
   });
@@ -409,5 +415,6 @@ test.describe('S10: Project lens — hybrid marketing_auditor (flag ON, contribu
     await expect(page.getByTestId(SIDEBAR.marketingImpact), 'persona=hybrid-marketing_auditor lens=project item=marketing-impact').toBeVisible({
       timeout: ELEMENT_TIMEOUT,
     });
+    await expect(page.getByTestId(SIDEBAR.campaigns), 'persona=hybrid-marketing_auditor lens=project item=campaigns should be hidden').toHaveCount(0);
   });
 });
