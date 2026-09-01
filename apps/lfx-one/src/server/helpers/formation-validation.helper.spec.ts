@@ -62,11 +62,33 @@ describe('parseFormationIntakeBody', () => {
   });
 
   it('parses additional_contacts and validates each entry', () => {
-    const body = validBody({ additional_contacts: [validContact, { ...validContact, email: 'second@example.test' }] });
+    const body = validBody({
+      additional_contacts: [
+        { ...validContact, email: 'first@example.test' },
+        { ...validContact, email: 'second@example.test' },
+      ],
+    });
 
     const intake = parseFormationIntakeBody(reqWithBody(body), 'create_formation');
 
     expect(intake.additional_contacts).toHaveLength(2);
+  });
+
+  it("rejects an additional_contacts entry sharing the legal contact's email, case-insensitively — the client-side check in propose.component.ts is a UX guard, not the source of truth", () => {
+    const body = validBody({ additional_contacts: [{ ...validContact, email: validContact.email.toUpperCase() }] });
+
+    expect(() => parseFormationIntakeBody(reqWithBody(body), 'create_formation')).toThrow();
+  });
+
+  it('rejects two additional_contacts entries sharing the same email, case-insensitively', () => {
+    const body = validBody({
+      additional_contacts: [
+        { first_name: 'Sam', last_name: 'Lee', email: 'sam@example.test' },
+        { first_name: 'Sam', last_name: 'Again', email: 'SAM@example.test' },
+      ],
+    });
+
+    expect(() => parseFormationIntakeBody(reqWithBody(body), 'create_formation')).toThrow();
   });
 
   it('rejects an invalid entry inside additional_contacts', () => {

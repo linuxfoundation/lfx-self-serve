@@ -166,6 +166,18 @@ export function parseFormationIntakeBody(req: Request, operation: string): Forma
   const additionalContacts = Array.isArray(rawAdditionalContacts)
     ? rawAdditionalContacts.map((contact, index) => parseContact(contact, `additional_contacts[${index}]`, req, operation))
     : [];
+  // The Angular form (propose.component.ts's addContact()) blocks a duplicate email at input time,
+  // but that's a UX guard, not an invariant enforcement — a direct POST bypasses it entirely.
+  // Re-check here so the server, which is the actual source of truth, can't store a formation
+  // whose additional_contacts repeats the legal contact or each other.
+  const seenEmails = new Set([legalContact.email.toLowerCase()]);
+  for (const [index, contact] of additionalContacts.entries()) {
+    const email = contact.email.toLowerCase();
+    if (seenEmails.has(email)) {
+      fail(`additional_contacts[${index}].email`, 'This email is already listed as a contact', req, operation);
+    }
+    seenEmails.add(email);
+  }
 
   return {
     parent_project_uid: parentProjectUid,
