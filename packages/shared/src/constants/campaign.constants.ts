@@ -3,6 +3,7 @@
 
 import type {
   CampaignDeliveryTypeOption,
+  CampaignEmailTypeOption,
   CampaignGoalOption,
   CampaignKeyword,
   CampaignPlatform,
@@ -15,11 +16,11 @@ import type {
   LinkedInGeoTarget,
   MetaObjective,
   MetaObjectiveParams,
-  SelectableMetaObjective,
   MetaPlacement,
   ParsedCampaignName,
   RedditObjective,
   RedditObjectiveParams,
+  SelectableMetaObjective,
 } from '../interfaces/campaign.interface';
 import { COUNTRIES } from './countries.constants';
 
@@ -960,3 +961,58 @@ export const HUBSPOT_TEMPLATE_RENDER_LIMIT = 100;
  * Order is the enum's, widening then calendar-relative; nothing depends on it.
  */
 export const CAMPAIGN_METRICS_WINDOWS = ['today', 'yesterday', 'last_7_days', 'last_14_days', 'last_30_days', 'this_month', 'last_month'] as const;
+
+/**
+ * Told to an operator wherever an email action needs a brief that does not exist yet.
+ *
+ * Shared because it appears at three points in the email flow (copy generation, audience build,
+ * staging) and it is the copy that tells someone how to unblock themselves -- three literals drift
+ * apart, and the one that drifts is the one nobody re-reads.
+ */
+export const EMAIL_BRIEF_REQUIRED_HINT = 'Generate a brief on the Plan tab first.';
+
+/**
+ * The twelve email types an event programme sends, in lifecycle order, each mapped to the stage
+ * campaign-service generates from.
+ *
+ * Ported from the LF-Marketing-Ops reference (prasad/skills, 3bca85c2). Several types share a
+ * stage on purpose: a CFP launch and a co-located CFP reminder differ in when they are sent, not
+ * in how the copy is written.
+ *
+ * `Thank You + Survey` is where a post-event survey ask lives. It is an email type, not a separate
+ * campaign or audience -- the survey is a CTA inside a post-event email to the same registrants.
+ *
+ * `keywords` rank clone templates (#1942) and are the reference's own matchers.
+ */
+export const CAMPAIGN_EMAIL_TYPES: readonly CampaignEmailTypeOption[] = [
+  { id: 'cfp-launch', label: 'CFP Launch', stage: 'CFP Launch', keywords: ['cfp', 'call for proposals', 'call for speakers', 'speak'] },
+  {
+    id: 'registration-launch',
+    label: 'Registration Launch',
+    stage: 'Registration Push',
+    keywords: ['registration', 'register', 'cfp open', 'registration live'],
+  },
+  { id: 'colocated-cfp-reminder', label: 'Co-Located Events + CFP Reminder', stage: 'CFP Launch', keywords: ['cfp', 'co-located', 'colocated', 'reminder'] },
+  { id: 'dei-travel-fund', label: 'DEI & Travel Fund', stage: 'Discount Offer', keywords: ['dei', 'travel fund', 'scholarship', 'diversity'] },
+  { id: 'schedule-announcement', label: 'Schedule Announcement', stage: 'Schedule Announcement', keywords: ['schedule', 'keynote', 'sessions', 'agenda'] },
+  { id: 'main-registration-push', label: 'Main Registration Push', stage: 'Registration Push', keywords: ['register', 'reminder', 'registration', 'push'] },
+  {
+    id: 'final-countdown',
+    label: 'Final Countdown',
+    stage: 'Final Countdown',
+    keywords: ['last chance', 'last call', 'final', 'countdown', 'closing', 'closes', 'deadline'],
+  },
+  { id: 'event-week', label: 'Event Week', stage: 'Final Countdown', keywords: ['reminder', 'event week', 'logistics', 'venue', 'join us'] },
+  { id: 'thank-you-survey', label: 'Thank You + Survey', stage: 'Post-Event', keywords: ['thank you', 'thanks', 'survey', 'feedback', 'post-event'] },
+  { id: 'content-recordings', label: 'Content & Recordings Release', stage: 'Post-Event', keywords: ['recording', 'content', 'recap', 'slides', 'session'] },
+  { id: 'next-event-teaser', label: 'Next Event CFP Teaser', stage: 'CFP Launch', keywords: ['cfp', 'upcoming', 'next event', 'teaser', 'save the date'] },
+  { id: 'community-nurture', label: 'Community Nurture', stage: 'Post-Event', keywords: ['community', 'newsletter', 'update', 'nurture'] },
+];
+
+/**
+ * The type selected when the operator has not chosen one.
+ *
+ * Main Registration Push, because its stage is what the generator produced before stages existed
+ * -- so an operator who ignores the selector gets exactly the copy they get today.
+ */
+export const DEFAULT_CAMPAIGN_EMAIL_TYPE_ID = 'main-registration-push';

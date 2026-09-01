@@ -1,12 +1,13 @@
 // Copyright The Linux Foundation and each contributor to LFX.
 // SPDX-License-Identifier: MIT
 
-import { CAMPAIGN_GOALS, CAMPAIGN_PLATFORMS, JOB_LOST_MESSAGE } from '@lfx-one/shared/constants';
+import { CAMPAIGN_GOALS, CAMPAIGN_PLATFORMS, COUNTRIES, JOB_LOST_MESSAGE } from '@lfx-one/shared/constants';
 import type {
   ApiResponse,
   BriefMetrics,
+  BuildAudienceResult,
+  CampaignAudienceStatus,
   CampaignBriefLoadResult,
-  CampaignServiceCreateResult,
   CampaignBriefOutput,
   CampaignBriefPersistResult,
   CampaignMetricsWindow,
@@ -23,19 +24,24 @@ import type {
   CampaignGoal,
   CampaignIndexDoc,
   CampaignJobStatus,
-  CampaignListResult,
   CampaignKeyword,
+  CampaignListResult,
+  CampaignMetricsWindow,
   CampaignPlatform,
   CampaignPlatformResult,
   CampaignProgramType,
   CampaignServiceCampaign,
+  CampaignServiceCreateResult,
   CampaignToggleStatus,
+  GenerateEmailCopyResult,
+  HubSpotEmailSearchResult,
+  HubSpotMarketingEmail,
   LinkedInBriefCopy,
   LinkedInCreativeVariant,
   MetaAdVariant,
-  RedditAdVariant,
   MetaBriefCopy,
   QueryServiceResponse,
+  RedditAdVariant,
   RedditBriefCopy,
 } from '@lfx-one/shared/interfaces';
 import type { Request } from 'express';
@@ -112,6 +118,44 @@ interface CampaignServiceBriefInput {
  * for the same reason as on the input — the service validates none of them, so a value coming
  * back is not evidence of its shape and the adapter has to check rather than trust.
  */
+/** Upstream email-copy shape, snake_case-free but exactly as campaign-service returns it. */
+interface CampaignServiceEmailCopy {
+  subject: string;
+  preheader: string;
+  body: string;
+  cta: string;
+}
+
+/**
+ * Narrow the upstream status string onto the closed union.
+ *
+ * Upstream declares `Enum("building", "built", "failed")`, but a wire string is only ever a claim.
+ * Anything unrecognised becomes `failed` rather than being passed through: `canStageEmail` admits
+ * only `built`, so an unknown value must not be able to masquerade as a usable audience, and
+ * `failed` is the arm that offers the operator a rebuild.
+ */
+function toAudienceStatus(status: string): CampaignAudienceStatus {
+  return status === 'built' || status === 'building' ? status : 'failed';
+}
+
+/**
+ * The upstream audience shape, snake_case exactly as campaign-service returns it.
+ *
+ * Local to this file for the same reason the brief shapes are: it is a WIRE type, and exporting
+ * it would invite the app to depend on upstream naming that this layer exists to translate.
+ */
+interface CampaignServiceAudience {
+  id: string;
+  project_id: string;
+  brief_id: string;
+  platform: string;
+  platform_master_list_id?: string;
+  suppression_list_ids?: string[];
+  inclusion_summary?: string;
+  status: string;
+  version: number;
+}
+
 interface CampaignServiceBrief {
   id: string;
   project_id: string;
@@ -710,6 +754,118 @@ export class CampaignServiceClient {
     return brief === null
       ? { status: 'unreadable', briefId: found.brief.id, brief: null, etag: found.etag, approved }
       : { status: 'loaded', briefId: found.brief.id, brief, etag: found.etag, approved };
+  }
+
+  /**
+   * Generate email copy for a brief through campaign-service.
+   *
+   * A THIN PROXY, not a second generator. campaign-service owns this (LFXV2-2775, merged): it
+   * composes the prompt from the brief's own persisted event details and calls the same LiteLLM
+   * proxy this app would have. Generating here as well would mean two prompts producing two
+   * shapes for one feature, and the architecture's "AI generation eventually moves to this
+   * service" has already happened for email copy.
+   *
+   * Takes no body: `project_id` and `brief_id` are the whole input, and the brief supplies the
+   * event facts. Upstream does NOT persist the result — regenerating is safe and cheap.
+   *
+   * A 503 is a deployment state, not a bug: the AI model is optional upstream, and a service
+   * without one configured refuses rather than inventing copy.
+   */
+  public async generateEmailCopy(req: Request, projectSlug: string, briefId: string, stage?: string): Promise<GenerateEmailCopyResult> {
+    if (!isServerFeatureEnabled(ServerFeatureFlag.CampaignServiceBriefs)) {
+      return { enabled: false };
+    }
+
+    const path = `/projects/${encodeURIComponent(projectSlug)}/briefs/${encodeURIComponent(briefId)}/email-copy`;
+    try {
+      // Fifth argument is `query`, sixth is `data`. The stage is a QUERY parameter upstream, so
+      // it goes in the FIFTH -- putting it sixth would send it as a body, which upstream does not
+      // read, and no type error would say so because both slots are optional and loosely typed.
+      //
+      // It is a query param rather than a body attribute because declaring it in the body made
+      // the body REQUIRED upstream, so a caller sending none got a 400 instead of default-stage
+      // copy.
+      const response = await this.microserviceProxy.proxyRequestWithResponse<CampaignServiceEmailCopy>(
+        req,
+        'LFX_V2_CAMPAIGN_SERVICE',
+        path,
+        'POST',
+        stage ? { stage } : undefined,
+        undefined
+      );
+
+      const copy = response.data;
+      if (!copy?.subject) {
+        return { enabled: true, error: 'The generator returned no email copy.' };
+      }
+
+      return {
+        enabled: true,
+        copy: { subject: copy.subject, preheader: copy.preheader, body: copy.body, cta: copy.cta },
+      };
+    } catch (error) {
+      logger.warning(req, 'generate_email_copy', 'Email copy generation failed, returning an error result', { err: error });
+      return { enabled: true, error: upstreamMessageOr(error, 'The email copy could not be generated. Try again.') };
+    }
+  }
+
+  /**
+   * Build a brief's send audience in campaign-service.
+   *
+   * Takes NO body: the service derives the audience from the brief's own event details, so the
+   * only inputs are the two path segments. Sending a list from here would be the divergent second
+   * source of truth `hubspot.go:293` exists to avoid — it resolves the BUILT audience by brief id
+   * and never reads one off a request.
+   *
+   * Answers 202, not 200: the build calls Snowflake and several HubSpot creates, so it is
+   * accepted-and-recorded rather than a promise that every platform-side list is confirmed.
+   */
+  public async buildAudience(req: Request, projectSlug: string, briefId: string): Promise<BuildAudienceResult> {
+    if (!isServerFeatureEnabled(ServerFeatureFlag.CampaignServiceBriefs)) {
+      // Same steady state as saveBrief: the flag being off is not a failure.
+      return { enabled: false };
+    }
+
+    const path = `/projects/${encodeURIComponent(projectSlug)}/briefs/${encodeURIComponent(briefId)}/audiences/build`;
+    try {
+      // Fifth argument is `query`, sixth is `data` — this call has neither. Passing anything
+      // fifth would serialise it into the query string and send no body.
+      const response = await this.microserviceProxy.proxyRequestWithResponse<CampaignServiceAudience>(
+        req,
+        'LFX_V2_CAMPAIGN_SERVICE',
+        path,
+        'POST',
+        undefined,
+        undefined
+      );
+
+      const built = response.data;
+      if (!built?.id) {
+        return { enabled: true, error: 'The audience build was accepted but returned nothing to track.' };
+      }
+
+      return {
+        enabled: true,
+        audience: {
+          id: built.id,
+          projectId: built.project_id,
+          briefId: built.brief_id,
+          platform: built.platform,
+          platformMasterListId: built.platform_master_list_id,
+          suppressionListIds: built.suppression_list_ids,
+          inclusionSummary: built.inclusion_summary,
+          status: toAudienceStatus(built.status),
+          version: built.version,
+          // Off the HEADER, not the body: the design maps it as `Header("etag:ETag")` on the 202,
+          // so `built.etag` would read `undefined` forever -- the exact trap the brief wire-type
+          // comment above records. `readEtag` is the established way to take it.
+          etag: readEtag(response) ?? undefined,
+        },
+      };
+    } catch (error) {
+      logger.warning(req, 'build_audience', 'Audience build failed, returning an error result', { err: error });
+      return { enabled: true, error: upstreamMessageOr(error, 'The audience could not be built. Check the HubSpot connection and try again.') };
+    }
   }
 
   /**
@@ -1855,6 +2011,77 @@ export function deriveEventSlug(brief: CampaignBriefOutput): string | null {
 }
 
 /**
+ * Add the field names campaign-service's consumers actually decode.
+ *
+ * The UI's own names are KEPT -- other consumers key on them, and dropping one would be a silent
+ * regression -- so this only ADDS aliases. Each was found by running the stack end to end:
+ *
+ * - `eventName`: `email_copy.go` REQUIRES it and 400s without it ("provide at least eventName");
+ *   `audience_build.go` prefers it and falls back to `name`. The UI persists `name`.
+ * - `country`: the audience builder matches it against a HubSpot country property and needs the
+ *   NAME, not the ISO-2 code the UI carries. See `countryNameFor`.
+ * - `location`: both consumers read it; the UI persists the same value as `city`.
+ *
+ * These are aliases rather than a rename because the wire shape is shared with the paid path,
+ * whose consumers read the UI's names. A rename would fix email and break paid.
+ */
+function toUpstreamEventDetails(details: CampaignEventDetails): Record<string, unknown> {
+  return {
+    ...details,
+    eventName: details.name,
+    location: details.city,
+    country: countryNameFor(details.countryCode),
+  };
+}
+
+/**
+ * The upstream's own message when it is a CONTROLLED 4xx, otherwise the caller's generic fallback.
+ *
+ * Collapsing every failure to "Try again" told the operator the wrong thing about the failures
+ * that will never succeed on a retry: a 503 for an unconfigured AI model, a 409 naming which
+ * precondition is unmet. Those messages are written for a human and name the remedy, and this
+ * layer has nothing better to say than they do.
+ *
+ * 5xx OTHER than a deliberate 503 stays generic: an unexpected server error can carry stack or
+ * infrastructure detail that is not the operator's to read, and "try again" is honest advice for
+ * it. A transport failure has no upstream message at all and falls through the same way.
+ */
+function upstreamMessageOr(error: unknown, fallback: string): string {
+  if (!(error instanceof MicroserviceError)) {
+    return fallback;
+  }
+  const controlled = error.statusCode === 503 || (error.statusCode >= 400 && error.statusCode < 500);
+  const message = typeof error.message === 'string' ? error.message.trim() : '';
+  return controlled && message !== '' ? message : fallback;
+}
+
+/**
+ * The ISO-2 code's country NAME, or an empty string when it is absent or unrecognised.
+ *
+ * Deliberately NOT `getCountryByCode` from the shared constants, which falls back to the raw CODE.
+ * That fallback is the silent-empty-list bug: campaign-service matches this against a HubSpot
+ * country property, so a literal `ZZ` matches nothing and the build SUCCEEDS with an empty
+ * inclusion list. Empty makes it fail loudly instead. Do not "simplify" this into the shared
+ * helper.
+ *
+ * The loud-failure guarantee covers an UNKNOWN code, not a known code whose label HubSpot spells
+ * differently. `COUNTRIES` uses `&` (Antigua & Barbuda) and diacritics (São Tomé & Príncipe); only
+ * Kenya has been checked against a live portal. A mismatch there lands back on the silent
+ * empty-list path, so verify the label before relying on one of those.
+ *
+ * Empty rather than the raw code: campaign-service fails loudly on a missing country and would
+ * silently build an EMPTY inclusion list for an unmatched one, and an empty send list is the
+ * worse of the two outcomes on a list that decides who receives an email.
+ */
+function countryNameFor(countryCode: string | undefined): string {
+  const code = (countryCode ?? '').trim().toUpperCase();
+  if (code === '') {
+    return '';
+  }
+  return COUNTRIES.find((c) => c.value === code)?.label ?? '';
+}
+
+/**
  * Map the UI's brief onto `brief-input`.
  *
  * `event_details`, `copy`, `keywords` and `targeting` are `Any` in the design — the service
@@ -1878,7 +2105,13 @@ function toBriefInput(brief: CampaignBriefOutput, eventSlug: string): CampaignSe
     event_slug: eventSlug,
     url: brief.eventDetails?.registrationUrl || undefined,
     platforms: brief.selectedPlatforms,
-    event_details: brief.eventDetails ? { ...brief.eventDetails } : undefined,
+    // `country` alongside `countryCode`, because campaign-service's audience builder reads
+    // `json:"country"` and needs the NAME, not the ISO-2 code: its inclusion lists are matched
+    // against a HubSpot country property, and it documents that a raw `KE` "would pass through
+    // literally, match no HubSpot country property, and the build would SUCCEED while storing an
+    // empty inclusion list". Without this every audience build fails with "has no country in its
+    // details" -- observed end to end against a live local campaign-service.
+    event_details: brief.eventDetails ? toUpstreamEventDetails(brief.eventDetails) : undefined,
     copy: {
       structured: brief.structuredCopy,
       linkedIn: brief.linkedInCopy ?? null,

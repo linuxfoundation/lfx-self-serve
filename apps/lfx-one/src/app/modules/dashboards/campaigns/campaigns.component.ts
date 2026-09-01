@@ -8,13 +8,22 @@ import { FormControl, FormGroup, ReactiveFormsModule } from '@angular/forms';
 
 import {
   CAMPAIGN_DELIVERY_TYPES,
+  CAMPAIGN_EMAIL_TYPES,
+  CAMPAIGN_JOB_POLL_INTERVAL_MS,
   CAMPAIGN_PROGRAM_TYPES,
   CAMPAIGN_TABS,
+  DEFAULT_CAMPAIGN_EMAIL_TYPE_ID,
+  EMAIL_BRIEF_REQUIRED_HINT,
   HUBSPOT_TEMPLATE_RENDER_LIMIT,
   MARKETING_OPS_FGA_ENABLED_FLAG,
 } from '@lfx-one/shared/constants';
 import type {
   CampaignBriefOutput,
+  CampaignAudience,
+  CampaignJobOutcome,
+  CampaignEmailStage,
+  EmailBriefCopy,
+  CampaignCreateRequest,
   CampaignBriefPersistenceState,
   CampaignImplementationDraft,
   CampaignBriefPersistResult,
@@ -25,11 +34,12 @@ import type {
   CampaignTabOption,
   HubSpotMarketingEmail,
 } from '@lfx-one/shared/interfaces';
+import { ButtonComponent } from '@components/button/button.component';
 import { CampaignService } from '@services/campaign.service';
 import { FeatureFlagService } from '@services/feature-flag.service';
 import { PersonaService } from '@services/persona.service';
 import { ProjectContextService } from '@services/project-context.service';
-import { firstValueFrom, skip, take } from 'rxjs';
+import { firstValueFrom, skip, Subscription, take } from 'rxjs';
 
 import { HubSpotTemplateLabelPipe } from '../../../shared/pipes/hubspot-template-label.pipe';
 import { HubSpotUpdatedAtPipe } from '../../../shared/pipes/hubspot-updated-at.pipe';
@@ -43,6 +53,7 @@ import { PlanningTabComponent } from './components/planning-tab/planning-tab.com
   selector: 'lfx-campaigns',
   imports: [
     ReactiveFormsModule,
+    ButtonComponent,
     SelectComponent,
     PlanningTabComponent,
     ImplementationTabComponent,
@@ -77,6 +88,11 @@ export class CampaignsComponent {
   protected readonly selectorForm = new FormGroup({
     programType: new FormControl<CampaignProgramType>('events', { nonNullable: true }),
     deliveryType: new FormControl<CampaignDeliveryType>('paid-marketing', { nonNullable: true }),
+    // Same reason as the two above, and it replaces a raw <select>: `frontend-checklist.md` 14.1
+    // makes `lfx-select` mandatory for changed controls, and the wrapper is form-driven. The
+    // native control also needed `selected` on each OPTION, because a `[value]` binding applied
+    // before the options exist is ignored -- a form control has no such ordering hazard.
+    emailType: new FormControl<string>(DEFAULT_CAMPAIGN_EMAIL_TYPE_ID, { nonNullable: true }),
   });
 
   /**
@@ -326,6 +342,64 @@ export class CampaignsComponent {
    * subscription. A mismatch means the result is for a superseded brief and is dropped — the
    * newer owner of the signal has already set the state it wants.
    */
+  /** The in-flight staging poll, so a second Stage cannot leave two pollers racing. */
+  private stagingJobSubscription: Subscription | null = null;
+
+  /**
+   * Guards a late copy response against a stage the operator has since changed.
+   *
+   * `onSelectEmailType` clears `emailCopy` while a generate request may still be in flight, and
+   * the selector stays usable — so the older response resolves afterwards and repopulates the
+   * panel with the PREVIOUS stage's copy under the new stage's label. Clearing the signal cannot
+   * prevent that; only a counter can tell the two responses apart.
+   */
+  private emailCopyGeneration = 0;
+
+  /**
+   * Guards a late audience response against a brief the page no longer holds.
+   *
+   * Same hazard as `emailCopyGeneration`, and the reset alone cannot close it: clearing
+   * `emailAudience` does nothing to a build already in flight, whose response then reports a
+   * BUILT audience belonging to the previous brief -- and `canStageEmail` gates on exactly that
+   * status, so the stale success re-enables staging against the wrong brief.
+   */
+  private emailAudienceGeneration = 0;
+
+  /**
+   * Guards the staging path against a brief the page no longer holds.
+   *
+   * Staging AWAITS `ensureEmailBriefId` and then CREATES a campaign. A reset landing in between
+   * meant the create proceeded against the previous brief -- and unlike a stale read this one
+   * WRITES: it clones a HubSpot draft and points it at that brief's audience. The reset bumps
+   * this, so the create is abandoned rather than issued against a context nobody is looking at.
+   */
+  private emailStagingGeneration = 0;
+
+  /**
+   * The persist a concurrent caller can join instead of starting a second one.
+   *
+   * `ensureEmailBriefId` caches the id only AFTER its persist resolves, so two email actions
+   * started close together -- generate copy and build audience, say -- each saw an empty cache
+   * and each issued a first-save persist for the same (project, event). Whichever landed second
+   * either created a duplicate brief or lost the ownership race. Sharing the in-flight promise
+   * makes the second caller await the first rather than race it.
+   */
+  private emailBriefPersistInFlight: Promise<string> | null = null;
+
+  /**
+   * Invalidates a persist's own CACHE WRITES, not just the responses that consume them.
+   *
+   * The generation guards on the copy/audience/staging paths protect the writes those handlers
+   * make. `persistEmailBrief` makes its own, deeper down: `emailBriefId.set(briefId)` and the
+   * `knownBriefIds` entry beside it. A persist already on the wire when a reset lands still
+   * resolved afterwards and wrote the PREVIOUS brief's id back -- and because `persistEmailBrief`
+   * short-circuits on a non-empty `emailBriefId()`, the next action on the new brief read the
+   * clobbered id and proceeded against the abandoned one, staging a HubSpot draft against the
+   * wrong audience. The reset's own comment says the in-flight request is "left to finish"
+   * harmlessly; that is only true if it does not write.
+   */
+  private emailBriefPersistGeneration = 0;
+
   private briefPersistenceGeneration = 0;
 
   /**
@@ -677,8 +751,139 @@ export class CampaignsComponent {
       : ''
   );
 
+  /**
+   * The brief's built send audience — the prerequisite email dispatch cannot run without.
+   *
+   * Held separately from the copy because they are independent: an operator can build the
+   * audience before writing the email or after, and regenerating copy must not discard a built
+   * audience (rebuilding calls Snowflake and several HubSpot creates).
+   */
+  protected readonly emailAudience = signal<CampaignAudience | null>(null);
+
+  /**
+   * Build lifecycle for the REQUEST, not the upstream job.
+   *
+   * `building` covers the in-flight call only; it returns to `idle` when the 202 lands.
+   *
+   * There is no poll and no status re-read route, so the audience's `status` is only ever the one
+   * the 202 carried. `canStageEmail` reads that rather than this signal because it is the closest
+   * thing to an authority available.
+   *
+   * A row that comes back `building` is therefore TERMINAL in this UI, by design: upstream keeps
+   * that state when the outcome is UNCONFIRMED -- a HubSpot list may already exist -- so offering
+   * a rebuild would create the duplicate contact list that state exists to prevent. The operator's
+   * route out is reconciling the ids in `inclusionSummary`, which is why that summary is rendered
+   * verbatim. A status re-read is the real fix and is not in this change.
+   *
+   * This rests on the build being SYNCHRONOUS from the client's side: `onBuildAudience` awaits the
+   * call and sets `emailAudience` only after it resolves, so every `building` row on screen came
+   * back on a completed 202 and is genuinely unconfirmed rather than merely in flight. If upstream
+   * ever answers `building` for an ordinary async build, the two stop being the same thing and
+   * this copy would mislabel one as the other.
+   */
+  protected readonly emailAudienceState = signal<'idle' | 'building' | 'error'>('idle');
+
+  /** Message for a failed or disabled build — empty while idle or in flight. */
+  protected readonly emailAudienceMessage = signal<string>('');
+
+  /** Shared so the three email blocks that need a brief cannot drift apart. */
+  protected readonly briefRequiredHint = EMAIL_BRIEF_REQUIRED_HINT;
+
+  /**
+   * The brief id the email side has established, if any.
+   *
+   * Email skips brief persistence on the Plan tab, so unlike the paid side there is no
+   * `briefPersistence().briefId` to read. Staging persists on demand and records the id here so a
+   * subsequent audience build — which is brief-scoped upstream — has one without persisting twice.
+   */
+  protected readonly emailBriefId = signal<string>('');
+
+  /**
+   * The email type the operator is writing.
+   *
+   * Held as the TYPE id rather than the stage, because several types share a stage and the
+   * operator picked a type -- storing the stage would lose which one they chose, and a reload
+   * would show a different label than they selected.
+   */
+  protected readonly selectedEmailTypeId = signal<string>(DEFAULT_CAMPAIGN_EMAIL_TYPE_ID);
+
+  /** The stage that type generates from — what campaign-service actually takes. */
+  protected readonly selectedEmailStage = computed<CampaignEmailStage | undefined>(
+    () => CAMPAIGN_EMAIL_TYPES.find((t) => t.id === this.selectedEmailTypeId())?.stage
+  );
+
+  /** The full type list, for the selector. */
+  // A mutable COPY for the template. `lfx-select` types `options` as `any[]`, and a readonly
+  // array is not assignable to it -- widening the wrapper's input would relax it for every caller
+  // to satisfy one. The shared constant stays readonly, which is what protects it.
+  protected readonly emailTypes = [...CAMPAIGN_EMAIL_TYPES];
+
   /** The chosen template's id — what `hubspotConfig.sourceEmailId` takes on create. */
   protected readonly selectedEmailTemplateId = signal<string>('');
+
+  /**
+   * Generated email copy for the brief on screen — LFXV2-3198's `email-copy`.
+   *
+   * Held here rather than on the brief because the two are generated by different calls at
+   * different times: the brief comes from the Plan-tab scrape, the copy is generated on demand in
+   * Implement and can be regenerated without re-scraping. Folding it into the brief would make a
+   * refine re-run the scrape.
+   */
+  protected readonly emailCopy = signal<EmailBriefCopy | null>(null);
+
+  /** Generation lifecycle. `generating` covers a first pass and a refine alike. */
+  protected readonly emailCopyState = signal<'idle' | 'generating' | 'error'>('idle');
+
+  /** Message for a failed generation — empty while idle or in flight. */
+  protected readonly emailCopyError = signal<string>('');
+
+  /**
+   * Whether copy can be generated: a brief must exist, because the prompt is instructed to use
+   * ONLY supplied event facts and has nothing to work from otherwise.
+   */
+  protected readonly canGenerateEmailCopy = computed(() => this.emailBriefOutput() !== null && this.emailCopyState() !== 'generating');
+
+  /**
+   * Email staging state — LFXV2-3201's create trigger.
+   *
+   * Separate from the paid side's `creating`/`campaignRows` because the two report DIFFERENT
+   * outcomes. Paid creation returns per-platform rows a user can act on; staging an email
+   * produces ONE HubSpot draft and nothing to pause, so a row table would imply controls that
+   * do not exist (`HubSpotDispatcher` implements no `StatusToggler`).
+   *
+   * `idle` before any attempt, `staging` while the job runs, then a terminal message. The
+   * message is kept as text rather than a boolean because the failure a user can act on
+   * ("connect HubSpot", "pick a template") and the one they cannot are both surfaced here.
+   */
+  protected readonly emailStaging = signal<'idle' | 'staging' | 'done' | 'error'>('idle');
+
+  /** Terminal message for the staging attempt — empty while idle or in flight. */
+  protected readonly emailStagingMessage = signal<string>('');
+
+  /**
+   * Whether a send can be staged right now.
+   *
+   * All three are REQUIRED by the upstream contract, not by preference: the brief because
+   * creation posts to `/projects/{slug}/briefs/{id}/campaigns` and there is no
+   * create-without-a-brief route; the template because `hubspot.go:281-283` refuses a blank
+   * `sourceEmailId`; the slug because briefs are project-scoped and authorised per project.
+   */
+  protected readonly canStageEmail = computed(
+    () =>
+      this.emailBriefOutput() !== null &&
+      this.selectedEmailTemplateId() !== '' &&
+      this.activeFoundationSlug() !== '' &&
+      // The audience is a real upstream precondition, not just UI copy: campaign-service's
+      // `resolveBuiltAudience` refuses to stage when the brief has no BUILT audience. Without
+      // this the Stage button is enabled, the HubSpot draft work begins, and the refusal comes
+      // back as a generic staging error after the fact.
+      //
+      // The STATUS, not merely a non-null row: upstream's three states are `building`, `built`
+      // and `failed`, and a build that ends in `failed` still yields an audience object. Gating
+      // on existence alone would re-admit the exact refusal this guard exists to prevent.
+      this.emailAudience()?.status === 'built' &&
+      this.emailStaging() !== 'staging'
+  );
 
   /**
    * Whether the channel is usable at all for this project.
@@ -815,6 +1020,12 @@ export class CampaignsComponent {
         this.emailChannelEnabled.set(null);
         this.emailTemplatesError.set(null);
         this.selectedEmailTemplateId.set('');
+        // The brief-derived state too. `emailBriefId` is scoped to a (project, event) row, and
+        // `ensureEmailBriefId` returns the cached id when set -- so carrying it across a
+        // foundation switch points the audience build, the copy generation and the staged draft
+        // at the PREVIOUS foundation's brief while the page says the new one. Silently, because
+        // every call still succeeds against that row.
+        this.resetEmailBriefDerivedState();
         // Cleared with the rest: it names the project in the "not connected" copy, and the
         // previous foundation's slug must not survive into a message rendered under the new one.
         this.emailSearchProjectSlug.set('');
@@ -886,6 +1097,13 @@ export class CampaignsComponent {
     // differ: Email has no Optimize (see emailTabs). A shared signal would leave the page on
     // a tab this side does not render after a switch away from Optimize — a blank panel with a
     // tablist that agrees with nothing.
+    // The email-type control drives the existing handler rather than duplicating it: the guard
+    // against a no-op change, the generation bump and the copy reset all live there, and a second
+    // copy of that sequence is one edit away from disagreeing with the first.
+    this.selectorForm.controls.emailType.valueChanges.pipe(takeUntilDestroyed()).subscribe((value) => {
+      this.onSelectEmailType(value);
+    });
+
     this.selectorForm.controls.deliveryType.valueChanges.pipe(takeUntilDestroyed()).subscribe((value) => {
       if (value === this.selectedDeliveryType()) {
         return;
@@ -1067,11 +1285,307 @@ export class CampaignsComponent {
    */
   protected onEmailProceedToImplementation(brief: CampaignBriefOutput): void {
     this.emailBriefOutput.set(brief);
+    this.resetEmailBriefDerivedState();
     this.selectedEmailTab.set('implementation');
     // Load the picker's options on ARRIVAL rather than on first keystroke, so the tab opens with
     // the portal's most recently updated templates already listed. Someone staging a send usually
     // wants a recent one, and an empty box with no options reads as a broken channel.
     this.searchEmailTemplates('');
+  }
+
+  /**
+   * Build the brief's send audience.
+   *
+   * Separate action rather than folded into staging because it is EXPENSIVE — it calls Snowflake
+   * and several HubSpot creates — and because an operator wants to inspect the provenance
+   * (`inclusionSummary`) before sending to a list they did not assemble by hand.
+   */
+  protected async onBuildAudience(): Promise<void> {
+    const brief = this.emailBriefOutput();
+    const projectSlug = this.activeFoundationSlug();
+    if (brief === null || projectSlug === '') {
+      return;
+    }
+
+    // Bumped BEFORE any await, like the copy path: every write below runs after one.
+    const generation = ++this.emailAudienceGeneration;
+    const isCurrent = (): boolean => generation === this.emailAudienceGeneration;
+
+    this.emailAudienceState.set('building');
+    this.emailAudienceMessage.set('');
+
+    try {
+      const briefId = await this.ensureEmailBriefId(brief, projectSlug);
+      if (!isCurrent()) {
+        return;
+      }
+      if (briefId === '') {
+        this.emailAudienceState.set('error');
+        this.emailAudienceMessage.set('The brief could not be saved, so no audience was built.');
+        return;
+      }
+
+      const result = await firstValueFrom(this.campaignService.buildAudience(projectSlug, briefId));
+      // A BUILT audience for the previous brief would re-enable staging against the wrong one:
+      // `canStageEmail` gates on `emailAudience()?.status === 'built'`.
+      if (!isCurrent()) {
+        return;
+      }
+
+      // `enabled: false` is the cutover flag being off — a steady state, not a failure.
+      if (!result.enabled) {
+        this.emailAudienceState.set('idle');
+        this.emailAudienceMessage.set('Audience building is not enabled for this deployment yet.');
+        return;
+      }
+
+      if (result.error || !result.audience) {
+        this.emailAudienceState.set('error');
+        this.emailAudienceMessage.set(result.error ?? 'The audience could not be built.');
+        return;
+      }
+
+      this.emailAudience.set(result.audience);
+      this.emailAudienceState.set('idle');
+    } catch {
+      if (!isCurrent()) {
+        return;
+      }
+      this.emailAudienceState.set('error');
+      this.emailAudienceMessage.set('The audience could not be built. Try again.');
+    }
+  }
+
+  /**
+   * Switch the email type.
+   *
+   * Clears any generated copy, because the copy on screen was written for the PREVIOUS type: its
+   * subject, tone and CTA all belong to that stage. Leaving it would show an operator
+   * post-event copy under a "CFP Launch" label, and `onStageEmailSend` reads `emailCopy()`
+   * unconditionally -- so the mismatched copy is stageable, the same defect a failed
+   * regeneration had before it cleared on retry.
+   */
+  protected onSelectEmailType(typeId: string): void {
+    if (typeId === this.selectedEmailTypeId()) {
+      return;
+    }
+    this.selectedEmailTypeId.set(typeId);
+    // Invalidate any generate still in flight. Clearing the signals is not enough: the older
+    // response resolves afterwards and would repopulate the panel with the previous stage's copy.
+    this.emailCopyGeneration++;
+    this.emailCopy.set(null);
+    this.emailCopyState.set('idle');
+    this.emailCopyError.set('');
+  }
+
+  /**
+   * Generate email copy for the brief.
+   *
+   * Brief-scoped upstream (`/briefs/{id}/email-copy`), so the brief must be persisted first —
+   * shared with the audience build and staging via `ensureEmailBriefId`, so all three actions
+   * write at most one brief for the event.
+   *
+   * Regeneration is just calling this again: upstream composes the prompt from the brief and does
+   * NOT persist the result, so a second call is safe and cheap.
+   */
+  protected async onGenerateEmailCopy(): Promise<void> {
+    const brief = this.emailBriefOutput();
+    const projectSlug = this.activeFoundationSlug();
+    if (brief === null || projectSlug === '') {
+      return;
+    }
+
+    // Bumped BEFORE any await. Every write below runs after one, and `onSelectEmailType` can
+    // change the stage in between — so an older response must be able to recognise that the
+    // request it belongs to is no longer the current one.
+    const generation = ++this.emailCopyGeneration;
+    const isCurrent = (): boolean => generation === this.emailCopyGeneration;
+
+    this.emailCopyState.set('generating');
+    this.emailCopyError.set('');
+    // Drop the PREVIOUS copy before regenerating. Leaving it would put stale copy on screen beside
+    // a "could not be generated" error, and `onStageEmailSend` reads `emailCopy()` unconditionally
+    // -- so the operator could stage the old subject and body while being told the regeneration
+    // failed.
+    this.emailCopy.set(null);
+
+    try {
+      const briefId = await this.ensureEmailBriefId(brief, projectSlug);
+      if (!isCurrent()) {
+        return;
+      }
+      if (briefId === '') {
+        this.emailCopyState.set('error');
+        this.emailCopyError.set('The brief could not be saved, so no copy was generated.');
+        return;
+      }
+
+      const result = await firstValueFrom(this.campaignService.generateEmailCopy(projectSlug, briefId, this.selectedEmailStage()));
+      // The stage may have changed while this was in flight. Writing now would put the PREVIOUS
+      // stage's copy on screen under the new stage's label — copy that reads plausibly and is
+      // simply the wrong kind of email, which `onStageEmailSend` would then clone.
+      if (!isCurrent()) {
+        return;
+      }
+
+      // The cutover flag being off is a steady state, not a failure.
+      if (!result.enabled) {
+        this.emailCopyState.set('error');
+        this.emailCopyError.set('Email copy generation is not enabled for this deployment yet.');
+        return;
+      }
+
+      if (result.error || !result.copy) {
+        this.emailCopyState.set('error');
+        this.emailCopyError.set(result.error ?? 'The email copy could not be generated.');
+        return;
+      }
+
+      this.emailCopy.set(result.copy);
+      this.emailCopyState.set('idle');
+    } catch {
+      if (!isCurrent()) {
+        return;
+      }
+      this.emailCopyState.set('error');
+      this.emailCopyError.set('Could not generate the email. Try again.');
+    }
+  }
+
+  /**
+   * Stage the email send — LFXV2-3201's create trigger.
+   *
+   * TWO upstream calls, in order, because creation is brief-scoped: the route is
+   * `/projects/{slug}/briefs/{brief_id}/campaigns`, so a brief id must exist BEFORE create.
+   * The email planner never persisted one (it skips the saved-brief lookup entirely, because
+   * persistence is keyed on (foundation, event) with no delivery type and the row it would find
+   * is a PAID brief), so this persists first and uses the id that comes back.
+   *
+   * The persist goes through `ensureEmailBriefId`, which consults `knownBriefIds` for a row this
+   * session already owns at this (project, event) and RECORDS the row it persists. An earlier
+   * version noted that no ownership was established and none was passed; that stopped being true
+   * once the email persist began writing the cache, and the reason it had to is the same one the
+   * note gave — the paid path reads that cache, so an email save that left it empty created a
+   * SECOND brief for an event that already had one while paid went on addressing the first.
+   *
+   * `platforms: ['hubspot']` is legal here and only here — `CampaignCreateInput.platforms` is
+   * typed `CampaignAnyPlatform[]`, the one request shape that admits the email channel.
+   */
+  protected async onStageEmailSend(): Promise<void> {
+    const brief = this.emailBriefOutput();
+    const sourceEmailId = this.selectedEmailTemplateId();
+    const projectSlug = this.activeFoundationSlug();
+    const copy = this.emailCopy();
+
+    // Re-checked rather than trusted from `canStageEmail`: the button is one caller, and a
+    // signal can change between the guard and the await below.
+    //
+    // The audience is re-checked with the OTHERS, not left out of the list. It is the one
+    // precondition upstream actively refuses on (`resolveBuiltAudience`), so omitting it here
+    // would let the enumeration drift from the guard it mirrors -- and the failure would arrive
+    // from HubSpot after the draft work had begun rather than from this early return.
+    if (brief === null || sourceEmailId === '' || projectSlug === '' || this.emailAudience()?.status !== 'built') {
+      return;
+    }
+
+    this.emailStaging.set('staging');
+    this.emailStagingMessage.set('');
+
+    // Bumped BEFORE the await below; the reset bumps the same counter to invalidate it.
+    const generation = ++this.emailStagingGeneration;
+    const isCurrent = (): boolean => generation === this.emailStagingGeneration;
+
+    try {
+      // Shared with the audience build via `ensureEmailBriefId`, so the two actions cannot write
+      // two briefs for the same event.
+      const briefId = await this.ensureEmailBriefId(brief, projectSlug);
+      // A reset can land during that await. Abandoning here is what stops the create below --
+      // which CLONES a HubSpot draft -- from running against the previous brief.
+      if (!isCurrent()) {
+        return;
+      }
+
+      // A persist that reports success without an id cannot be followed by a create — the id is
+      // a PATH segment upstream. Reported as a failure rather than retried, because a retry
+      // would post a second brief for the same event.
+      if (briefId === '') {
+        this.emailStaging.set('error');
+        this.emailStagingMessage.set('The brief could not be saved, so the send was not staged. Try again.');
+        return;
+      }
+
+      // Built field-by-field rather than spread from the brief: `CampaignCreateRequest` is the
+      // PAID shape (budget split, dates, keywords, headlines) and a brief carries none of those
+      // under `eventDetails`. The email dispatcher reads only the identifiers plus
+      // `hubspotConfig`; the paid-only fields are sent empty because the contract requires them
+      // present, not because HubSpot consults them.
+      const details = brief.eventDetails;
+      const request: CampaignCreateRequest = {
+        eventName: details.name,
+        eventSlug: details.slug,
+        countryCode: details.countryCode,
+        registrationUrl: details.registrationUrl,
+        campaignTypes: [],
+        budgetUsd: 0,
+        searchBudgetPct: 0,
+        startDate: '',
+        endDate: '',
+        keywords: [],
+        headlines: [],
+        descriptions: [],
+        geoTargets: [],
+        platforms: ['hubspot'],
+        // Generated copy rides along when it exists (LFXV2-2775). Spread conditionally rather
+        // than sent as empty strings: upstream treats a blank subject as "leave the template's
+        // own", and sending '' would be indistinguishable from an operator who generated nothing
+        // — but it would also mean every staging call claimed to carry copy it did not have.
+        hubspotConfig: {
+          sourceEmailId,
+          ...(copy === null ? {} : { subject: copy.subject, bodyHtml: copy.body }),
+        },
+      };
+
+      const outcome = await firstValueFrom(this.campaignService.createCampaign(request, projectSlug, briefId));
+      // Checked here TOO, not only after the persist above. A reset landing during THIS await
+      // leaves the request already sent -- the draft may well exist upstream -- but everything
+      // after it belongs to the previous brief: the poll would run under the new context and
+      // write `done` or `error` for a job nobody on screen is waiting for. The request cannot be
+      // recalled; the state writes can be, and those are what the operator sees.
+      if (!isCurrent()) {
+        return;
+      }
+
+      if (outcome.error) {
+        this.emailStaging.set('error');
+        this.emailStagingMessage.set(outcome.error);
+        return;
+      }
+
+      // POLL rather than trusting the ack. `createCampaign` answers 202 with a job id; the
+      // HubSpot clone, the audience resolution and the copy application all run in the background
+      // job, so reporting "Draft created" here claimed success for work that had not happened --
+      // a dispatcher failure read as a created draft. The paid path already polls
+      // (`implementation-tab`'s `pollJob`); this is the same contract for email.
+      if (!outcome.jobId) {
+        // No id to follow. Report the ack honestly rather than inventing an outcome.
+        this.emailStaging.set('error');
+        this.emailStagingMessage.set('Staging was accepted but returned nothing to track. Check HubSpot before retrying.');
+        return;
+      }
+
+      this.pollStagingJob(outcome.jobId, projectSlug);
+    } catch {
+      // Guarded like every other write in this method. A reset mid-stage would otherwise raise a
+      // failure banner for a brief nobody is looking at -- and on the email tab that reads as
+      // "your staging failed" about work the operator has already navigated away from.
+      if (!isCurrent()) {
+        return;
+      }
+      // The cause is not surfaced: a create failure can carry upstream detail, and the job
+      // result collapses every dispatcher error to one string anyway.
+      this.emailStaging.set('error');
+      this.emailStagingMessage.set('Staging failed. Check the HubSpot connection and try again.');
+    }
   }
 
   /**
@@ -1484,6 +1998,159 @@ export class CampaignsComponent {
   }
 
   /**
+   * Follow a staging job to a terminal state.
+   *
+   * `emailStaging` stays 'staging' until the job settles, so the panel shows work in progress
+   * rather than a success the dispatcher has not earned. Bounded the same way as the paid path:
+   * a job that never settles reports that rather than spinning forever, because a HubSpot draft
+   * may exist either way and the operator needs to be told to go look.
+   */
+  private pollStagingJob(jobId: string, projectSlug: string): void {
+    const MAX_POLLS = Math.ceil(300_000 / CAMPAIGN_JOB_POLL_INTERVAL_MS);
+    this.stagingJobSubscription?.unsubscribe();
+    this.stagingJobSubscription = this.campaignService
+      .getCreateResult(jobId, projectSlug)
+      .pipe(take(MAX_POLLS), takeUntilDestroyed(this.destroyRef))
+      .subscribe({
+        next: (outcome: CampaignJobOutcome | null) => {
+          // `null` is a still-running tick, not an answer.
+          if (!outcome) {
+            return;
+          }
+          if (outcome.errors.length > 0) {
+            this.emailStaging.set('error');
+            this.emailStagingMessage.set(outcome.errors[0]);
+            return;
+          }
+
+          // The PER-PLATFORM result decides, not just the top-level errors. campaign-service
+          // reports a partial outcome as `{ platform: 'hubspot', ok: false, error }` with an EMPTY
+          // `errors` array, so checking only the latter announced "Draft created in HubSpot" for a
+          // staging that failed -- and the operator would go looking for a draft that is not
+          // there. The paid Implementation tab already reads these rows per platform; this path
+          // did not.
+          const hubspotResult = outcome.platformResults?.find((r) => r.platform === 'hubspot');
+          if (hubspotResult !== undefined && !hubspotResult.ok) {
+            this.emailStaging.set('error');
+            this.emailStagingMessage.set(hubspotResult.error ?? 'The draft could not be created in HubSpot.');
+            return;
+          }
+
+          // An ABSENT hubspot row is not treated as a failure: `platformResults` is optional on
+          // the contract, and an older service that omits it entirely would otherwise report every
+          // successful staging as an error. Only an explicit `ok: false` is a failure.
+          this.emailStaging.set('done');
+          this.emailStagingMessage.set('Draft created in HubSpot. Review and send it from there.');
+        },
+        error: () => {
+          this.emailStaging.set('error');
+          this.emailStagingMessage.set('Lost track of the staging job. Check HubSpot before retrying.');
+        },
+        complete: () => {
+          // Ran out of polls without a terminal answer. A draft may exist; say so rather than
+          // leaving the panel spinning or claiming a success nothing confirmed.
+          if (this.emailStaging() === 'staging') {
+            this.emailStaging.set('error');
+            this.emailStagingMessage.set('Staging is taking longer than expected. Check HubSpot to see whether the draft was created.');
+          }
+        },
+      });
+  }
+
+  /**
+   * Ensure the email brief is persisted and return its id.
+   *
+   * Email never persists on the Plan tab, but BOTH the audience build and campaign creation are
+   * brief-scoped upstream, so each needs an id. Persisting once and caching it here stops the two
+   * actions writing two briefs for the same event.
+   *
+   * Returns '' when the persist could not produce an id; callers must treat that as a failure
+   * rather than proceeding with an empty path segment.
+   */
+  private async ensureEmailBriefId(brief: CampaignBriefOutput, projectSlug: string): Promise<string> {
+    // Join a persist already running rather than starting a second. The cache below is only
+    // written once the request RESOLVES, so without this two concurrent email actions both find
+    // it empty and both save.
+    if (this.emailBriefPersistInFlight !== null) {
+      return this.emailBriefPersistInFlight;
+    }
+    const pending = this.persistEmailBrief(brief, projectSlug);
+    this.emailBriefPersistInFlight = pending;
+    try {
+      return await pending;
+    } finally {
+      // Cleared whatever the outcome: a failed persist must not wedge every later attempt into
+      // returning the same rejected promise.
+      //
+      // ONLY IF IT IS STILL OURS. A reset clears this field, and an action after it starts a new
+      // persist -- so an unconditional clear here lets THIS promise, settling late, wipe the
+      // NEWER one and let a third action start a second concurrent save. That is exactly the
+      // duplicate the dedup exists to prevent, reached through the guard rather than around it.
+      if (this.emailBriefPersistInFlight === pending) {
+        this.emailBriefPersistInFlight = null;
+      }
+    }
+  }
+
+  /** The persist itself, wrapped by `ensureEmailBriefId`'s in-flight dedup. */
+  private async persistEmailBrief(brief: CampaignBriefOutput, projectSlug: string): Promise<string> {
+    const known = this.emailBriefId();
+    if (known !== '') {
+      return known;
+    }
+
+    // Name the row if this session already owns it. Briefs are keyed on (project, event) and
+    // SHARED across delivery types, so an event whose paid brief was generated or restored in
+    // this session already has a row -- and a first-save call, which sends no `brief_id`, is
+    // refused against it as `unowned-brief-exists`. That made the email channel unusable for
+    // every event the paid side had touched. `knownBriefIds` is the same ownership record the
+    // paid save consults; reading it here is what lets email REPLACE rather than only create.
+    // `null` when the brief has no event slug -- there is no row to own, so this falls through to
+    // a plain first save exactly as before.
+    const ownershipKey = this.ownershipKey(projectSlug, brief);
+    const owned = ownershipKey === null ? null : (this.knownBriefIds.get(ownershipKey) ?? null);
+    // Captured BEFORE the await, compared after: the only thing that can tell a response
+    // belonging to this brief from one belonging to a brief the page has since dropped.
+    const generation = this.emailBriefPersistGeneration;
+    const persisted = await firstValueFrom(
+      this.campaignService.persistBrief(brief, projectSlug, owned?.id ?? null, owned?.etag ?? null, owned?.absence === 'overwrite')
+    );
+    const briefId = persisted.briefId ?? '';
+    // An id is not enough: campaign-service gates `build-audience` AND campaign creation on the
+    // brief having reached `approved`, and `saveBrief` deliberately returns an id with
+    // `approved: false` when the approve step failed. Caching that id would make every downstream
+    // call fail against a brief this session believes is ready -- and because the cache
+    // short-circuits, a retry would never re-attempt the approval that is actually missing.
+    if (briefId !== '' && persisted.approved) {
+      // A reset while this was on the wire means the id belongs to a brief the page no longer
+      // holds. Returning it is fine -- the caller that started this persist asked for it -- but
+      // writing it into the SHARED cache is what strands the next action on the abandoned brief.
+      if (generation !== this.emailBriefPersistGeneration) {
+        return briefId;
+      }
+      this.emailBriefId.set(briefId);
+      // Record OWNERSHIP too, not just the id. `emailBriefId` is cleared by
+      // `resetEmailBriefDerivedState`, so caching only there meant the next save after a Proceed
+      // consulted an empty `knownBriefIds`, found no owned row, and CREATED a second brief for a
+      // (project, event) that already had one — while the paid path, which reads the same cache,
+      // went on addressing the first. Two rows for one event, each believed to be the only one.
+      //
+      // Same shape the paid save writes: a null etag is UNKNOWN rather than permission, so the
+      // overwrite licence is granted only where the write returned no validator at all.
+      if (ownershipKey !== null) {
+        const validator = persisted.etag ?? null;
+        this.knownBriefIds.set(ownershipKey, {
+          id: briefId,
+          etag: validator,
+          ...(validator === null ? { absence: 'overwrite' as const } : {}),
+        });
+      }
+      return briefId;
+    }
+    return '';
+  }
+
+  /**
    * Save the approved brief in the background.
    *
    * Deliberately NOT awaited before the tab switch above: gating the handoff on a network call
@@ -1877,6 +2544,54 @@ export class CampaignsComponent {
     this.implementationDraft.set(null);
     this.selectedTab.set('planning');
     this.emailBriefOutput.set(null);
+    this.resetEmailBriefDerivedState();
     this.selectedEmailTab.set('planning');
+  }
+
+  /**
+   * Drop everything derived from the PREVIOUS email brief.
+   *
+   * `emailBriefId` is the one that matters: `ensureEmailBriefId` returns the cached id when it is
+   * set, so leaving it behind makes the audience build, the copy generation and the staged draft
+   * all target the previous event's brief row -- silently, because every call still succeeds. The
+   * rest are cleared for the ordinary reason that they describe a brief that is no longer on screen.
+   */
+  private resetEmailBriefDerivedState(): void {
+    // Bumped FIRST, before any signal is cleared: a persist that resolves between the clear and
+    // the bump would otherwise still see its own generation and write the stale id back.
+    this.emailBriefPersistGeneration++;
+    // `selectedEmailTypeId` is deliberately NOT cleared, unlike every signal below it. It is the
+    // operator's choice rather than state derived from the brief, and someone working an event's
+    // send sequence usually wants the type to persist across briefs. Nothing stale survives with
+    // it: the generated copy IS cleared here, so the next generation runs against the new brief.
+    this.emailBriefId.set('');
+    this.emailAudience.set(null);
+    this.emailAudienceState.set('idle');
+    this.emailAudienceMessage.set('');
+    this.emailCopy.set(null);
+    this.emailCopyState.set('idle');
+    this.emailCopyError.set('');
+    // Invalidate everything already in flight. Clearing the signals cannot reach a request
+    // still on the wire: a copy or audience response landing after this reports work for the
+    // PREVIOUS brief -- and for the audience that is not merely stale, it re-enables staging,
+    // since `canStageEmail` gates on the audience status. Unsubscribing the poll below is the
+    // same idea for the one path that owns a subscription.
+    this.emailCopyGeneration++;
+    this.emailAudienceGeneration++;
+    this.emailStagingGeneration++;
+    // Drop the shared persist too. It is keyed to the brief that started it, so a caller joining
+    // it AFTER this reset would receive the PREVIOUS brief's id and address every later write to
+    // the wrong row -- the dedup turning into a correctness bug precisely because it succeeded.
+    // The in-flight request is left to finish; only the promise other callers can join is cut.
+    this.emailBriefPersistInFlight = null;
+
+    // Cancel the poll, do not merely relabel it. Setting the signal back to `idle` leaves the
+    // subscription running, so a job settling after a new brief or a foundation switch still
+    // writes `done` or `error` — announcing a HubSpot draft that belongs to the PREVIOUS brief as
+    // though it were this one's.
+    this.stagingJobSubscription?.unsubscribe();
+    this.stagingJobSubscription = null;
+    this.emailStaging.set('idle');
+    this.emailStagingMessage.set('');
   }
 }

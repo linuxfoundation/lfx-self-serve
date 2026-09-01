@@ -488,6 +488,86 @@ describe('CampaignProxyService email delivery type', () => {
  * four sibling tests when this lived there. Its own describe means its background work cannot
  * reach them.
  */
+/**
+ * The model is asked for bare JSON and usually obliges, but it wraps the payload in a ```json
+ * fence often enough that this broke every email brief in local testing: `JSON.parse` rejects the
+ * fence, extraction throws, and the catch downgrades it to "continuing with the URL only". The
+ * stream then completes with a 200 and no `event` frame at all, so the UI has no event details to
+ * show and the failure reads as a page the AI could not understand.
+ *
+ * `stripJsonFences` already existed and was already applied to the copy and keyword stages — the
+ * defect was that extraction and the LinkedIn strategy stage never called it. So this pins the
+ * omission, not the helper.
+ */
+describe('CampaignProxyService model JSON fences', () => {
+  let service: CampaignProxyService;
+  const originalEnv = { ...process.env };
+
+  async function drain(gen: AsyncGenerator<{ type: string; data: unknown }>): Promise<{ type: string; data: unknown }[]> {
+    const events: { type: string; data: unknown }[] = [];
+    for await (const e of gen) events.push(e);
+    return events;
+  }
+
+  afterEach(() => {
+    vi.unstubAllGlobals();
+    process.env = { ...originalEnv };
+  });
+
+  /** Stub every AI call to answer with `payload`, verbatim — fence and all. */
+  function stubAiReturning(payload: string): void {
+    process.env['AI_PROXY_URL'] = 'https://ai.example.test/v1/chat';
+    process.env['AI_API_KEY'] = 'test-key';
+    vi.stubGlobal(
+      'fetch',
+      vi.fn(async () => ({
+        ok: true,
+        status: 200,
+        text: async () => payload,
+        json: async () => ({ choices: [{ message: { content: payload } }] }),
+        body: new ReadableStream<Uint8Array>({
+          start(controller) {
+            controller.enqueue(new TextEncoder().encode('data: {"choices":[{"delta":{"content":"{}"}}]}\n\ndata: [DONE]\n\n'));
+            controller.close();
+          },
+        }),
+      }))
+    );
+    service = new CampaignProxyService();
+  }
+
+  const details =
+    '{"name":"KubeCon EU 2026","dates":"March 3-4, 2026","city":"Amsterdam","country_code":"NL","audience":"Developers","themes":[],"registration_url":"https://events.example.com/kubecon-eu-2026","speakers":[],"slug":"kubecon-eu-2026","format_notes":""}';
+
+  it('extracts event details from a fenced response', async () => {
+    stubAiReturning('```json\n' + details + '\n```');
+    const events = await drain(
+      service.streamBrief(req, { url: 'https://events.example.com/kubecon-eu-2026', deliveryType: 'email' }, new AbortController().signal) as AsyncGenerator<{
+        type: string;
+        data: unknown;
+      }>
+    );
+
+    const eventFrame = events.find((e) => e.type === 'event');
+    // Asserting the frame AND its payload: before the fix no `event` frame was emitted at all,
+    // and a frame carrying an empty name would be just as broken for the UI downstream.
+    expect(eventFrame).toBeDefined();
+    expect((eventFrame?.data as { name: string }).name).toBe('KubeCon EU 2026');
+  });
+
+  it('still extracts details from an unfenced response', async () => {
+    stubAiReturning(details);
+    const events = await drain(
+      service.streamBrief(req, { url: 'https://events.example.com/kubecon-eu-2026', deliveryType: 'email' }, new AbortController().signal) as AsyncGenerator<{
+        type: string;
+        data: unknown;
+      }>
+    );
+
+    expect((events.find((e) => e.type === 'event')?.data as { name: string }).name).toBe('KubeCon EU 2026');
+  });
+});
+
 describe('CampaignProxyService legacy platform gate', () => {
   const req = {} as unknown as Request;
   const service = new CampaignProxyService();

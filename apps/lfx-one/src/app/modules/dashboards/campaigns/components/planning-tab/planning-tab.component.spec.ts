@@ -109,11 +109,6 @@ describe('PlanningTabComponent brief read-back', () => {
 
     campaignService = { loadBrief: vi.fn() };
     vi.spyOn(TestBed.inject(CampaignService), 'loadBrief').mockImplementation(campaignService.loadBrief);
-    // A foundation change re-runs the HubSpot lookup (the panel must re-ask the new portal), so
-    // this block reaches it too even though it is about brief read-back. Stubbed to a completed
-    // observable: unstubbed, the real service is absent and `.pipe` on undefined throws an
-    // UNHANDLED error, which fails the suite while every test still reports as passing.
-    vi.spyOn(TestBed.inject(CampaignService), 'lookupHubSpotUtm').mockReturnValue(EMPTY);
     projectContextService = TestBed.inject(ProjectContextService);
 
     // Seed the foundation with a starting value so toObservable can emit it.
@@ -739,10 +734,6 @@ describe('PlanningTabComponent delivery-type mode', () => {
     // the component advancing past 'generating' and clearing the state under test.
     generateBrief = vi.fn().mockReturnValue(new Subject());
     vi.spyOn(TestBed.inject(CampaignService), 'generateBrief').mockImplementation(generateBrief);
-    // Same reason as the read-back block: a foundation change re-runs the HubSpot lookup, and an
-    // unstubbed service makes `.pipe` on undefined throw an UNHANDLED error — which fails the
-    // suite while every test still reports as passing, so it is easy to miss locally.
-    vi.spyOn(TestBed.inject(CampaignService), 'lookupHubSpotUtm').mockReturnValue(EMPTY);
 
     const projectContextService = TestBed.inject(ProjectContextService);
     projectContextService.setRouteLensKind('foundation');
@@ -1027,16 +1018,224 @@ describe('PlanningTabComponent delivery-type mode', () => {
 });
 
 /**
- * HubSpot UTM lookup and create, and specifically the THREE states a campaign can be in.
- *
- * The legacy BFF path fabricated a utm token (`<id>-<name>`) whenever HubSpot had none, so this
- * component only ever saw two states and was written for two: token-or-nothing. Removing the
- * fabrication — correct, because a fabricated token attributes traffic to a campaign HubSpot
- * cannot report on — exposed that assumption.
- *
- * Both failure modes end the same way: the Create button stays up and a retry writes ANOTHER
- * campaign into a namespace shared by everyone on that HubSpot account, no duplicate check upstream.
+ * LFXV2-2770: the email brief is a SCRAPE, and the scrape is what gets the date or the city wrong.
+ * The generator is instructed to use these fields verbatim, so without an editor the only remedy
+ * for a wrong value is to fix the event page upstream and re-scrape.
  */
+describe('PlanningTabComponent email brief editing', () => {
+  let fixture: ComponentFixture<PlanningTabComponent>;
+
+  const programTypeConfig: CampaignProgramTypeOption = {
+    id: 'events',
+    label: 'Events',
+    breadcrumbLabel: 'Events',
+    urlLabel: 'Event URL',
+    urlPlaceholder: 'https://events.example.com/event-name',
+    urlHelp: 'Enter the event registration URL',
+    goalLabel: 'Event conversions',
+    audiencePlaceholder: 'Enter target audience',
+    valuePropPlaceholder: 'Enter value proposition',
+  };
+
+  const scraped = {
+    name: 'MCP Dev Summit Nairobi',
+    dates: 'March 3-4, 2026',
+    city: 'Nairobi',
+    countryCode: 'KE',
+    audience: 'Developers',
+    themes: [],
+    registrationUrl: 'https://events.example.com/mcp-dev-summit-nairobi/',
+    speakers: [],
+    slug: 'mcp-dev-summit-nairobi',
+    formatNotes: '',
+  };
+
+  interface EmailEditInternals {
+    eventDetails: {
+      set(v: unknown): void;
+      (): { name: string; dates: string; city: string; audience: string; registrationUrl: string } | null;
+    };
+    isEditingEmailBrief(): boolean;
+    emailEditForm: { controls: Record<string, { value: string | null; setValue(v: string): void }> };
+    enterEmailEditMode(): void;
+    saveEmailEdit(): void;
+    cancelEmailEdit(): void;
+  }
+
+  function internals(): EmailEditInternals {
+    return fixture.componentInstance as unknown as EmailEditInternals;
+  }
+
+  /**
+   * The brief card lives inside the `step() === 'review'` branch, so a fixture left on the form
+   * step renders nothing and every DOM assertion here would pass vacuously.
+   */
+  async function buildWithScrape(deliveryType: 'paid-marketing' | 'email' = 'email'): Promise<void> {
+    fixture = TestBed.createComponent(PlanningTabComponent);
+    fixture.componentRef.setInput('programTypeConfig', programTypeConfig);
+    fixture.componentRef.setInput('deliveryType', deliveryType);
+    fixture.detectChanges();
+    await fixture.whenStable();
+    internals().eventDetails.set(scraped);
+    (fixture.componentInstance as unknown as { step: { set(v: string): void } }).step.set('review');
+    fixture.detectChanges();
+  }
+
+  beforeEach(async () => {
+    await TestBed.configureTestingModule({
+      imports: [PlanningTabComponent],
+      providers: [
+        provideHttpClient(),
+        provideHttpClientTesting(),
+        provideRouter([]),
+        ProjectContextService,
+        { provide: MessageService, useValue: { add: vi.fn() } },
+      ],
+    }).compileComponents();
+
+    const projectContextService = TestBed.inject(ProjectContextService);
+    projectContextService.setRouteLensKind('foundation');
+    projectContextService.setFoundation({ uid: 'foundation-a-uid', slug: 'foundation-a', name: 'Foundation A' }, false);
+  });
+
+  it('renders the scraped brief so the user can see what generation will use', async () => {
+    await buildWithScrape();
+    const name = (fixture.nativeElement as HTMLElement).querySelector('[data-testid="planning-email-brief-name"]');
+    // The VALUE, not just presence: an empty card would still satisfy a presence check.
+    expect(name?.textContent?.trim()).toBe('MCP Dev Summit Nairobi');
+  });
+
+  it('seeds the editor from the scrape rather than opening blank', async () => {
+    await buildWithScrape();
+    internals().enterEmailEditMode();
+    // An editor that opened blank would silently blank the brief on save.
+    expect(internals().emailEditForm.controls['name'].value).toBe('MCP Dev Summit Nairobi');
+    expect(internals().isEditingEmailBrief()).toBe(true);
+  });
+
+  it('writes the edit back into eventDetails, which is what generation reads', async () => {
+    await buildWithScrape();
+    internals().enterEmailEditMode();
+    internals().emailEditForm.controls['dates'].setValue('March 10-11, 2026');
+    internals().saveEmailEdit();
+    // Asserting the DESTINATION: an edit that stopped at the form would show the corrected date
+    // on screen while content generation still sent the wrong one upstream.
+    expect(internals().eventDetails()?.dates).toBe('March 10-11, 2026');
+    expect(internals().isEditingEmailBrief()).toBe(false);
+  });
+
+  it('discards edits on cancel', async () => {
+    await buildWithScrape();
+    internals().enterEmailEditMode();
+    internals().emailEditForm.controls['name'].setValue('Something else entirely');
+    internals().cancelEmailEdit();
+    expect(internals().eventDetails()?.name).toBe('MCP Dev Summit Nairobi');
+  });
+
+  it('flushes an open editor when the user clicks Proceed without saving', async () => {
+    await buildWithScrape();
+    const emitted: unknown[] = [];
+    (fixture.componentInstance as unknown as { proceedToImplementation: { subscribe(f: (v: unknown) => void): void } }).proceedToImplementation.subscribe((v) =>
+      emitted.push(v)
+    );
+
+    internals().enterEmailEditMode();
+    internals().emailEditForm.controls['dates'].setValue('March 10-11, 2026');
+    // Deliberately NOT calling saveEmailEdit: clicking Proceed straight from an open editor is
+    // the ordinary path, and dropping the correction there sends the stale scrape to generation
+    // while the user is looking at their edit on screen.
+    (fixture.componentInstance as unknown as { onProceedToImplementation(): void }).onProceedToImplementation();
+
+    expect((emitted[0] as { eventDetails: { dates: string } }).eventDetails.dates).toBe('March 10-11, 2026');
+  });
+
+  /**
+   * A failed extraction must not INVENT a country.
+   *
+   * The fallback record is empty in every field except the name and slug, which are derived from
+   * the URL the user typed -- but `countryCode` was hardcoded `'US'`, and it does not stay in the
+   * UI: it reaches campaign-service's audience builder as `country`. So a failed scrape for a
+   * Nairobi event built a UNITED STATES audience. Real, plausible and wrong, which is worse than
+   * an audience that refuses to build.
+   */
+  /**
+   * The country became editable BECAUSE the fallback stopped inventing one.
+   *
+   * Empty is the honest answer for a failed extraction, but without a field to correct it an
+   * operator could not build a country-scoped audience at all — the fix would have traded a wrong
+   * audience for no audience.
+   */
+  it('carries an operator-corrected country code into the emitted brief', async () => {
+    await buildWithScrape();
+    const emitted: unknown[] = [];
+    (fixture.componentInstance as unknown as { proceedToImplementation: { subscribe(f: (v: unknown) => void): void } }).proceedToImplementation.subscribe((v) =>
+      emitted.push(v)
+    );
+
+    internals().enterEmailEditMode();
+    // Lower-case in, upper-case out: `countryNameFor` looks the code up case-sensitively.
+    internals().emailEditForm.controls['countryCode'].setValue('ke');
+    (fixture.componentInstance as unknown as { onProceedToImplementation(): void }).onProceedToImplementation();
+
+    expect((emitted[0] as { eventDetails: { countryCode: string } }).eventDetails.countryCode).toBe('KE');
+  });
+
+  it('does not invent a country when event extraction produced nothing', async () => {
+    // Built WITHOUT a scrape, so `eventDetails()` is null and the fallback record is what gets
+    // emitted -- the state this test is about. `buildWithScrape` would set it and hide the case.
+    fixture = TestBed.createComponent(PlanningTabComponent);
+    fixture.componentRef.setInput('programTypeConfig', programTypeConfig);
+    fixture.componentRef.setInput('deliveryType', 'email');
+    fixture.detectChanges();
+    await fixture.whenStable();
+
+    const emitted: unknown[] = [];
+    (fixture.componentInstance as unknown as { proceedToImplementation: { subscribe(f: (v: unknown) => void): void } }).proceedToImplementation.subscribe((v) =>
+      emitted.push(v)
+    );
+
+    // No scrape: `eventDetails()` is null, so the fallback record is what gets emitted.
+    (fixture.componentInstance as unknown as { briefForm: { controls: { url: { setValue(v: string): void } } } }).briefForm.controls.url.setValue(
+      'https://events.example.com/mcp-dev-summit-nairobi'
+    );
+    (fixture.componentInstance as unknown as { onProceedToImplementation(): void }).onProceedToImplementation();
+
+    expect((emitted[0] as { eventDetails: { countryCode: string } }).eventDetails.countryCode).toBe('');
+  });
+
+  it('closes the editor when a new brief is generated', async () => {
+    await buildWithScrape();
+    internals().enterEmailEditMode();
+    expect(internals().isEditingEmailBrief()).toBe(true);
+
+    (fixture.componentInstance as unknown as { reset(): void }).reset();
+
+    // The flag outliving its brief means the NEXT brief opens straight into an editor seeded from
+    // the previous event, and saving then overwrites the new scrape with the old one.
+    expect(internals().isEditingEmailBrief()).toBe(false);
+  });
+
+  it('does not render the brief card in paid mode', async () => {
+    await buildWithScrape('paid-marketing');
+    // Paid already has its own structured-copy editor plus the compact strip; a second card
+    // would be a duplicate surface.
+    expect((fixture.nativeElement as HTMLElement).querySelector('[data-testid="planning-email-brief"]')).toBeNull();
+  });
+
+  it('drops the compact strip in email mode so the details are not shown twice', async () => {
+    await buildWithScrape();
+    // Targets the STRIP's own testid. Asserting on the card's testid instead could never fail:
+    // the card is the only thing carrying it, so the count is 1 whether or not the strip renders.
+    expect((fixture.nativeElement as HTMLElement).querySelector('[data-testid="planning-event-strip"]')).toBeNull();
+  });
+
+  it('keeps the compact strip in paid mode', async () => {
+    await buildWithScrape('paid-marketing');
+    // The other half of the guard: scoping the strip to paid must not remove it from paid.
+    expect((fixture.nativeElement as HTMLElement).querySelector('[data-testid="planning-event-strip"]')).not.toBeNull();
+  });
+});
+
 describe('PlanningTabComponent — HubSpot UTM states', () => {
   const foundationA = { uid: 'foundation-a-uid', slug: 'foundation-a', name: 'Foundation A' };
   const programTypeConfig: CampaignProgramTypeOption = {

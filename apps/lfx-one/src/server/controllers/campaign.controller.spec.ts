@@ -14,6 +14,7 @@ const {
   saveBrief,
   loadBrief,
   createCampaigns,
+  generateEmailCopy,
   legacyCreate,
   svcGetJobStatus,
   legacyGetJobStatus,
@@ -39,6 +40,7 @@ const {
   saveBrief: vi.fn(),
   loadBrief: vi.fn(),
   createCampaigns: vi.fn(),
+  generateEmailCopy: vi.fn(),
   legacyCreate: vi.fn(),
   svcGetJobStatus: vi.fn(),
   legacyGetJobStatus: vi.fn(),
@@ -73,6 +75,7 @@ vi.mock('../services/campaign-service.service', async (importOriginal) => {
       public saveBrief = saveBrief;
       public loadBrief = loadBrief;
       public createCampaigns = createCampaigns;
+      public generateEmailCopy = generateEmailCopy;
       public getJobStatus = svcGetJobStatus;
       public searchHubSpotEmails = searchHubSpotEmails;
       public toggleCampaignStatus = toggleCampaignStatus;
@@ -1094,6 +1097,69 @@ describe('CampaignController.createCampaign cutover', () => {
 
     const sent = envelopeFor(createCampaigns)['hubspotConfig'] as Record<string, unknown>;
     expect(sent).toEqual({ sourceEmailId: 'email-123' });
+  });
+
+  it('forwards the body stage to the campaign-service client', async () => {
+    generateEmailCopy.mockResolvedValue({ enabled: true, copy: { subject: 's', preheader: 'p', body: '<p>b</p>', cta: 'c' } });
+
+    await controller.generateEmailCopy(buildReq({ stage: 'Post-Event' }, { project: 'tlf', brief_id: 'b-1' }), res, next);
+
+    // The whole selector is inert if this argument is dropped, and nothing else would say so:
+    // generation still succeeds, just with default-stage copy under the operator's chosen label.
+    expect(generateEmailCopy).toHaveBeenCalledWith(expect.anything(), 'tlf', 'b-1', 'Post-Event');
+  });
+
+  it.each([
+    ['whitespace only', { stage: '   ' }],
+    ['not a string', { stage: 42 }],
+    ['absent', {}],
+  ])('sends no stage when the body carries %s', async (_label, body) => {
+    generateEmailCopy.mockResolvedValue({ enabled: true, copy: { subject: 's', preheader: 'p', body: '<p>b</p>', cta: 'c' } });
+
+    await controller.generateEmailCopy(buildReq(body, { project: 'tlf', brief_id: 'b-1' }), res, next);
+
+    // `undefined`, not '' -- upstream reads absence as "the caller did not say" and defaults,
+    // while an empty string would fail its enum and 400 a request the operator did not make.
+    expect(generateEmailCopy).toHaveBeenCalledWith(expect.anything(), 'tlf', 'b-1', undefined);
+  });
+
+  it('forwards the generated subject and body to the dispatcher', async () => {
+    createCampaigns.mockResolvedValue({ enabled: false, jobId: null, error: null });
+    legacyCreate.mockResolvedValue({ jobId: 'job_1' });
+
+    await controller.createCampaign(
+      buildReq(
+        { platforms: ['hubspot'], hubspotConfig: { sourceEmailId: 'e-1', subject: 'Join us in Nairobi', bodyHtml: '<p>Hello</p>' } },
+        { project: 'tlf', brief_id: 'b-1' }
+      ),
+      res,
+      next
+    );
+
+    // This mapper is an ALLOW-LIST: anything it does not name never reaches campaign-service.
+    // It named only sourceEmailId and utmCampaign, so a staged draft silently kept the cloned
+    // template's own subject and body while the UI showed the generated ones. Observed live on
+    // draft 220597885197.
+    expect(envelopeFor(createCampaigns)['hubspotConfig']).toEqual({
+      sourceEmailId: 'e-1',
+      subject: 'Join us in Nairobi',
+      bodyHtml: '<p>Hello</p>',
+    });
+  });
+
+  it('omits subject and bodyHtml when no copy was generated', async () => {
+    createCampaigns.mockResolvedValue({ enabled: false, jobId: null, error: null });
+    legacyCreate.mockResolvedValue({ jobId: 'job_1' });
+
+    await controller.createCampaign(
+      buildReq({ platforms: ['hubspot'], hubspotConfig: { sourceEmailId: 'e-1', subject: '   ' } }, { project: 'tlf', brief_id: 'b-1' }),
+      res,
+      next
+    );
+
+    // Upstream leaves the template's own value in place when a field is ABSENT, so sending ""
+    // would be a request to blank the draft's subject rather than to leave it alone.
+    expect(envelopeFor(createCampaigns)['hubspotConfig']).toEqual({ sourceEmailId: 'e-1' });
   });
 
   it('forwards utmCampaign only when it is set', async () => {
