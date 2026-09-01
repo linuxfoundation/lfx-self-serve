@@ -96,10 +96,13 @@
          the same reason (LFXV2-3202): PlanningTabComponent holds its brief state locally, so a
          structural @switch destroyed an in-progress brief on every trip to another tab.
 
-         The other email panels stay in the lazy @switch, but NOT for the paid side's reason —
-         they are static placeholders with no component, no ngOnInit and no local state, so
-         eager-mounting them would cost nothing. They stay switched so both containers keep the
-         same structure and the paid side's carve-out is not re-litigated one container over. -->
+         The other email panels stay in the lazy @switch, but NOT for the paid side's reason. They
+         were static placeholders when this was written; Monitor now renders real metrics (#1699)
+         and Implement holds the template picker, so "no component, no local state" no longer
+         describes them. They stay switched because their state is derived from signals the
+         container owns rather than held locally, so re-creating them costs nothing — and because
+         both containers keeping the same structure means the paid side's carve-out is not
+         re-litigated one container over. -->
       <div
         role="tabpanel"
         id="email-panel-planning"

@@ -1005,13 +1005,15 @@ export class CampaignsComponent {
    * is running to pause. A Pause/Resume would be answered `ErrToggleUnsupported` → 400, over
    * keyword and metrics data that is not this channel's to begin with.
    *
-   * Monitor stays, but as a pending panel rather than the paid Monitor component.
-   * campaign-service CAN read HubSpot email metrics (`HubSpotDispatcher.ReadMetrics`,
-   * LFXV2-3058) — this application has no route to it, so there is nothing to render yet.
-   * Stated at both layers deliberately: an earlier version of this comment reasoned from the
-   * backend capability straight to a frontend guarantee, and that missing step is exactly what
-   * made reusing `MonitoringTabComponent` here look safe. It is not — that component's
-   * `PlatformType` is `'google' | 'linkedin' | 'reddit' | 'meta'`.
+   * Monitor stays, and as of #1699 it RENDERS: campaign-service reads HubSpot email metrics
+   * (`HubSpotDispatcher.ReadMetrics`, LFXV2-3058) and this application now has a route to them,
+   * surfaced by `emailMetricsRows` below. The comment previously said there was "no route, so
+   * nothing to render yet"; that was true until this PR built one.
+   *
+   * It is still NOT the paid Monitor component. An earlier version of this note reasoned from the
+   * backend capability straight to a frontend guarantee, and that missing step is what made
+   * reusing `MonitoringTabComponent` look safe. It is not — its `PlatformType` is
+   * `'google' | 'linkedin' | 'reddit' | 'meta'`, none of which is HubSpot.
    */
   protected readonly emailTabs: readonly CampaignTabOption[] = CAMPAIGN_TABS.filter((t) => t.id !== 'optimization');
 
