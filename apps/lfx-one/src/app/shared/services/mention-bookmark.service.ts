@@ -35,13 +35,7 @@ export class MentionBookmarkService {
     serialize: (ids) => JSON.stringify([...ids]),
     // PCC parity: emptying the set deletes the row rather than persisting '[]'.
     shouldDeleteOnEmpty: (ids) => ids.size === 0,
-    onLoadError: () => {
-      this.messageService.add({
-        severity: 'error',
-        summary: 'Bookmarks unavailable',
-        detail: 'Your bookmarks could not be loaded. Refresh the page and try again.',
-      });
-    },
+    onLoadError: () => this.notifyUnavailable(),
   });
 
   public readonly state = this.store.state;
@@ -54,13 +48,7 @@ export class MentionBookmarkService {
     const { data: ids, loading, error } = this.store.state();
     // A failed load leaves an empty fallback set — writing from it would clobber the persisted bookmarks.
     if (loading || error) {
-      if (error) {
-        this.messageService.add({
-          severity: 'error',
-          summary: 'Bookmarks unavailable',
-          detail: 'Your bookmarks could not be loaded. Refresh the page and try again.',
-        });
-      }
+      if (error) this.notifyUnavailable();
       return;
     }
 
@@ -97,15 +85,23 @@ export class MentionBookmarkService {
       onSuccess: () =>
         this.messageService.add(
           adding
-            ? { severity: 'success', summary: 'Bookmarked', detail: 'Mention added to your bookmarks.' }
+            ? { severity: 'success', summary: 'Bookmark added', detail: 'Mention added to your bookmarks.' }
             : { severity: 'success', summary: 'Bookmark removed', detail: 'Mention removed from your bookmarks.' }
         ),
       onError: () =>
         this.messageService.add({
           severity: 'error',
-          summary: adding ? 'Could not save bookmark' : 'Could not remove bookmark',
-          detail: 'Please try again.',
+          summary: adding ? 'Failed to save bookmark' : 'Failed to remove bookmark',
+          detail: adding ? 'Could not save the bookmark. Please try again.' : 'Could not remove the bookmark. Please try again.',
         }),
+    });
+  }
+
+  private notifyUnavailable(): void {
+    this.messageService.add({
+      severity: 'error',
+      summary: 'Bookmarks unavailable',
+      detail: 'Your bookmarks could not be loaded. Refresh the page and try again.',
     });
   }
 }
