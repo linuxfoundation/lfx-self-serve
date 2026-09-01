@@ -1,10 +1,12 @@
 // Copyright The Linux Foundation and each contributor to LFX.
 // SPDX-License-Identifier: MIT
 
+import { signal } from '@angular/core';
 import { ComponentFixture, TestBed } from '@angular/core/testing';
-import { ActivatedRoute, convertToParamMap } from '@angular/router';
+import { ActivatedRoute, convertToParamMap, Router } from '@angular/router';
 import { Formation } from '@lfx-one/shared/interfaces';
 import { FormationService } from '@services/formation.service';
+import { PersonaService } from '@services/persona.service';
 import { of } from 'rxjs';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 
@@ -32,7 +34,7 @@ function buildFormation(overrides: Partial<Formation> = {}): Formation {
       trademark_status: 'not_filed',
       contributing_org_name: 'Example Org',
       contributing_org_id: null,
-      contributing_org_domain: null,
+      contributing_org_website_url: null,
       legal_contact: { first_name: 'Jane', last_name: 'Doe', email: 'jane@example.test' },
       additional_contacts: [],
       license: 'MIT',
@@ -52,12 +54,18 @@ function buildFormation(overrides: Partial<Formation> = {}): Formation {
 describe('ProposeConfirmationComponent', () => {
   let fixture: ComponentFixture<ProposeConfirmationComponent>;
   let getFormationByUid: ReturnType<typeof vi.fn>;
+  let getCurrentNavigation: ReturnType<typeof vi.fn>;
+  let isLFStaff: ReturnType<typeof signal<boolean>>;
 
-  async function setup(uid: string | null): Promise<void> {
+  async function setup(uid: string | null, options: { staff?: boolean } = {}): Promise<void> {
+    isLFStaff.set(options.staff ?? true);
+
     await TestBed.configureTestingModule({
       imports: [ProposeConfirmationComponent],
       providers: [
         { provide: FormationService, useValue: { getFormationByUid } },
+        { provide: Router, useValue: { getCurrentNavigation } },
+        { provide: PersonaService, useValue: { isLFStaff, currentPersona: signal('contributor') } },
         {
           provide: ActivatedRoute,
           useValue: { paramMap: of(convertToParamMap(uid ? { formationUid: uid } : {})) },
@@ -71,12 +79,15 @@ describe('ProposeConfirmationComponent', () => {
 
   beforeEach(() => {
     getFormationByUid = vi.fn();
+    // No in-flight navigation state by default — exercises the GET-by-uid fallback path.
+    getCurrentNavigation = vi.fn().mockReturnValue(null);
+    isLFStaff = signal(true);
   });
 
-  it('renders the "Record not yet created" fallback state with a staff admin-tool link when project_uid is null', async () => {
+  it('renders the "Record not yet created" fallback state with a staff admin-tool link for a staff viewer', async () => {
     getFormationByUid.mockReturnValue(of(buildFormation({ project_uid: null })));
 
-    await setup('formation-1');
+    await setup('formation-1', { staff: true });
 
     const el: HTMLElement = fixture.nativeElement;
     expect(el.querySelector('[data-testid="propose-confirmation-not-created"]')).toBeTruthy();
@@ -84,6 +95,20 @@ describe('ProposeConfirmationComponent', () => {
     expect(link).toBeTruthy();
     expect(link!.href).toContain('/project/new');
     expect(link!.href).toContain('formation_uid=formation-1');
+    expect(link!.rel).toContain('noopener');
+    expect(link!.rel).toContain('noreferrer');
+  });
+
+  it('hides the staff admin-tool link and framing from an ordinary proposer', async () => {
+    getFormationByUid.mockReturnValue(of(buildFormation({ project_uid: null })));
+
+    await setup('formation-1', { staff: false });
+
+    const el: HTMLElement = fixture.nativeElement;
+    expect(el.querySelector('[data-testid="propose-confirmation-not-created"]')).toBeTruthy();
+    expect(el.querySelector('[data-testid="propose-confirmation-admin-link"]')).toBeNull();
+    expect(el.textContent).not.toContain('Staff only');
+    expect(el.textContent).toContain('The formation team will follow up');
   });
 
   it('does not render the fallback note once a project record is linked', async () => {
@@ -103,11 +128,21 @@ describe('ProposeConfirmationComponent', () => {
     expect(banner?.textContent).toContain('The formation team has been notified.');
   });
 
-  it('shows a not-found state when the formation cannot be resolved (e.g. after a server restart)', async () => {
+  it('shows a not-found state when the formation cannot be resolved (e.g. a different pod, or after a server restart)', async () => {
     getFormationByUid.mockReturnValue(of(null));
 
     await setup('unknown-uid');
 
     expect(fixture.nativeElement.textContent).toContain("couldn't find that proposal");
+  });
+
+  it('reads the formation from router state (the primary path) without calling the fallback GET', async () => {
+    const formation = buildFormation({ uid: 'from-state', project_uid: null });
+    getCurrentNavigation.mockReturnValue({ extras: { state: { formation } } });
+
+    await setup('from-state');
+
+    expect(getFormationByUid).not.toHaveBeenCalled();
+    expect(fixture.nativeElement.querySelector('[data-testid="propose-confirmation-not-created"]')).toBeTruthy();
   });
 });

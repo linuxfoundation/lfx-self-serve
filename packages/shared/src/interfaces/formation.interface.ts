@@ -35,7 +35,8 @@ export interface FormationIntake {
   contributing_org_name: string;
   /** CDP-resolved org id, when the org picker resolved a match. */
   contributing_org_id: string | null;
-  contributing_org_domain: string | null;
+  /** A full normalized URL (via `normalizeToUrl`, the same shape `organization-search.component.ts` writes to `domainControl` elsewhere), not a bare domain — named to match. */
+  contributing_org_website_url: string | null;
   legal_contact: FormationContact;
   /** "Who else should we loop in" — optional, repeatable. */
   additional_contacts: FormationContact[];

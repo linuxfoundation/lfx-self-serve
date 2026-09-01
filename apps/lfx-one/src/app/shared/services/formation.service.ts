@@ -19,7 +19,7 @@ export class FormationService {
   }
 
   public getFormationByUid(uid: string): Observable<Formation | null> {
-    return this.http.get<Formation>(`/api/formations/${uid}`).pipe(
+    return this.http.get<Formation>(`/api/formations/${encodeURIComponent(uid)}`).pipe(
       take(1),
       catchError(() => of(null))
     );

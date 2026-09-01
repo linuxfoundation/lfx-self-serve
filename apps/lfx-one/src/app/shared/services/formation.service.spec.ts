@@ -47,6 +47,16 @@ describe('FormationService', () => {
     expect(await promise).toEqual(formation);
   });
 
+  it('encodes the uid in the GET url', async () => {
+    const result$ = service.getFormationByUid('uid with spaces/slash');
+
+    const promise = new Promise<Formation | null>((resolve) => result$.subscribe(resolve));
+    const req = httpMock.expectOne('/api/formations/uid%20with%20spaces%2Fslash');
+    req.flush({ uid: 'x' } as Formation);
+
+    await promise;
+  });
+
   it('degrades to null when the get request fails — the confirmation page renders its own not-found state', async () => {
     const result$ = service.getFormationByUid('unknown');
 

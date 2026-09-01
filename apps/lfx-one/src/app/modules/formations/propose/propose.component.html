@@ -13,7 +13,7 @@
       <h2 class="text-base font-semibold text-gray-900">Parent</h2>
       <div>
         <label class="mb-1 block text-sm font-medium text-gray-700">Parent foundation</label>
-        <lfx-project-picker [form]="form" uidControl="parent_project_uid"></lfx-project-picker>
+        <lfx-project-picker [form]="form" uidControl="parent_project_uid" [initialSelection]="prefilledParentProject()"></lfx-project-picker>
       </div>
     </section>
 
@@ -97,7 +97,7 @@
         <lfx-organization-search
           [form]="form"
           nameControl="contributing_org_name"
-          domainControl="contributing_org_domain"
+          domainControl="contributing_org_website_url"
           idControl="contributing_org_id"
           placeholder="Search for organization..."
           styleClass="w-full"
@@ -156,12 +156,33 @@
           </div>
         }
         <div class="grid grid-cols-1 gap-2 md:grid-cols-4" [formGroup]="newContactForm">
-          <lfx-input-text size="small" [form]="newContactForm" control="first_name" placeholder="First name" styleClass="w-full"></lfx-input-text>
-          <lfx-input-text size="small" [form]="newContactForm" control="last_name" placeholder="Last name" styleClass="w-full"></lfx-input-text>
-          <lfx-input-text size="small" [form]="newContactForm" control="email" placeholder="Email" styleClass="w-full"></lfx-input-text>
+          <lfx-input-text
+            size="small"
+            [form]="newContactForm"
+            control="first_name"
+            placeholder="First name"
+            styleClass="w-full"
+            data-testid="propose-new-contact-first-name"></lfx-input-text>
+          <lfx-input-text
+            size="small"
+            [form]="newContactForm"
+            control="last_name"
+            placeholder="Last name"
+            styleClass="w-full"
+            data-testid="propose-new-contact-last-name"></lfx-input-text>
+          <lfx-input-text
+            size="small"
+            [form]="newContactForm"
+            control="email"
+            placeholder="Email"
+            styleClass="w-full"
+            data-testid="propose-new-contact-email"></lfx-input-text>
           <lfx-button label="Add" severity="secondary" [outlined]="true" size="small" type="button" (onClick)="addContact()" data-testid="propose-add-contact">
           </lfx-button>
         </div>
+        @if (newContactForm.get('email')?.errors?.['duplicateEmail']) {
+          <p class="text-xs text-red-600" data-testid="propose-new-contact-duplicate-email">That email is already on this proposal.</p>
+        }
       </div>
     </section>
 

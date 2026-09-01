@@ -24,7 +24,7 @@ function formation(overrides: Partial<Formation> = {}): Formation {
       trademark_status: 'not_filed',
       contributing_org_name: 'Example Org',
       contributing_org_id: null,
-      contributing_org_domain: null,
+      contributing_org_website_url: null,
       legal_contact: { first_name: 'Jane', last_name: 'Doe', email: 'jane@example.test' },
       additional_contacts: [],
       license: 'MIT',

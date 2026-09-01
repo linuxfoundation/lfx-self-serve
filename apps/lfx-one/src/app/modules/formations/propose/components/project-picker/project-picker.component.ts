@@ -1,7 +1,7 @@
 // Copyright The Linux Foundation and each contributor to LFX.
 // SPDX-License-Identifier: MIT
 
-import { Component, inject, input, output, Signal, signal } from '@angular/core';
+import { Component, computed, inject, input, output, Signal, signal } from '@angular/core';
 import { takeUntilDestroyed, toObservable, toSignal } from '@angular/core/rxjs-interop';
 import { FormControl, FormGroup, ReactiveFormsModule } from '@angular/forms';
 import { InputTextComponent } from '@components/input-text/input-text.component';
@@ -28,34 +28,25 @@ export class ProjectPickerComponent {
   public form = input.required<FormGroup>();
   /** Name of the parent-form control holding the selected project's uid (null = "let LF decide"). */
   public uidControl = input.required<string>();
+  /** A project resolved asynchronously by the parent (e.g. a `?parent=` slug lookup) whose uid
+   *  was already patched into `uidControl` before this component could reflect it in its own
+   *  display — pass it through here so the picker shows the pick instead of an empty search box. */
+  public initialSelection = input<Project | null>(null);
 
   public readonly onProjectSelect = output<Project>();
 
   protected readonly searchForm = new FormGroup({ query: new FormControl('', { nonNullable: true }) });
 
   /** The selected project's display name, shown in place of the search box once a pick is made. */
-  protected readonly selectedName = signal<string | null>(null);
+  public readonly selectedName = signal<string | null>(null);
+  public readonly hasSelection = signal(false);
 
   private readonly query: Signal<string> = toSignal(this.searchForm.controls.query.valueChanges, { initialValue: '' });
-
-  protected readonly hasSelection = signal(false);
-
-  protected readonly results: Signal<Project[]> = toSignal(
-    this.searchForm.controls.query.valueChanges.pipe(
-      startWith(''),
-      distinctUntilChanged(),
-      debounceTime(300),
-      switchMap((term) => {
-        const trimmed = term.trim();
-        if (trimmed.length < 2) return of([]);
-        return this.projectService.searchProjects(trimmed).pipe(catchError(() => of([])));
-      })
-    ),
-    { initialValue: [] }
-  );
+  protected readonly hasQuery: Signal<boolean> = computed(() => this.query().trim().length >= 2);
+  protected readonly results: Signal<Project[]> = this.initResults();
 
   public constructor() {
-    // Sync selection state with the parent form (e.g. a ?parent= prefill patched in after load).
+    // Sync selection state with the parent form (e.g. a manual external reset of the uid control).
     combineLatest([toObservable(this.form), toObservable(this.uidControl)])
       .pipe(
         switchMap(([parentForm, controlName]) => {
@@ -71,9 +62,19 @@ export class ProjectPickerComponent {
           this.selectedName.set(null);
         }
       });
+
+    // Reflect a parent-resolved prefill (see `initialSelection`'s doc) once it arrives — its uid
+    // is already on the form, so this only needs to update this component's own display state.
+    toObservable(this.initialSelection)
+      .pipe(takeUntilDestroyed())
+      .subscribe((project) => {
+        if (project) {
+          this.select(project);
+        }
+      });
   }
 
-  protected select(project: Project): void {
+  public select(project: Project): void {
     this.form().get(this.uidControl())?.setValue(project.uid);
     this.selectedName.set(project.name);
     this.hasSelection.set(true);
@@ -81,13 +82,25 @@ export class ProjectPickerComponent {
     this.onProjectSelect.emit(project);
   }
 
-  protected clear(): void {
+  public clear(): void {
     this.form().get(this.uidControl())?.setValue(null);
     this.selectedName.set(null);
     this.hasSelection.set(false);
   }
 
-  protected hasQuery(): boolean {
-    return this.query().trim().length >= 2;
+  private initResults(): Signal<Project[]> {
+    return toSignal(
+      this.searchForm.controls.query.valueChanges.pipe(
+        startWith(''),
+        distinctUntilChanged(),
+        debounceTime(300),
+        switchMap((term) => {
+          const trimmed = term.trim();
+          if (trimmed.length < 2) return of([]);
+          return this.projectService.searchProjects(trimmed).pipe(catchError(() => of([])));
+        })
+      ),
+      { initialValue: [] }
+    );
   }
 }

@@ -54,7 +54,7 @@ describe('ProposeComponent', () => {
     trademark_status: 'not_filed',
     contributing_org_name: 'Example Org',
     contributing_org_id: null,
-    contributing_org_domain: '',
+    contributing_org_website_url: '',
     license: 'MIT',
     chat_platform: 'slack',
     mission_statement: 'Our mission statement.',
@@ -102,7 +102,9 @@ describe('ProposeComponent', () => {
         parent_project_uid: null,
       })
     );
-    expect(navigate).toHaveBeenCalledWith(['/propose/confirmation', 'formation-1']);
+    // The formation travels via router state (not just the uid in the URL) — the fixture store is
+    // per-pod, so the confirmation page's own GET-by-uid isn't guaranteed to see this POST.
+    expect(navigate).toHaveBeenCalledWith(['/propose/confirmation', 'formation-1'], { state: { formation } });
     expect(component.submitting()).toBe(false);
   });
 
@@ -139,5 +141,28 @@ describe('ProposeComponent', () => {
     component.removeContact(0);
 
     expect(component.additionalContacts()).toEqual([]);
+  });
+
+  it('rejects a duplicate email in "who else" — @for tracks by email, so a duplicate would break the track key', async () => {
+    const component = await createComponent();
+    component.newContactForm.setValue({ first_name: 'Sam', last_name: 'Lee', email: 'sam@example.test' });
+    component.addContact();
+
+    component.newContactForm.setValue({ first_name: 'Sam', last_name: 'Again', email: 'SAM@example.test' });
+    component.addContact();
+
+    expect(component.additionalContacts()).toHaveLength(1);
+    expect(component.newContactForm.get('email')?.errors?.['duplicateEmail']).toBe(true);
+  });
+
+  it('rejects a "who else" contact sharing the legal contact\'s email', async () => {
+    const component = await createComponent();
+    component.form.get('legal_contact')?.patchValue({ first_name: 'Jane', last_name: 'Doe', email: 'jane@example.test' });
+
+    component.newContactForm.setValue({ first_name: 'Someone', last_name: 'Else', email: 'jane@example.test' });
+    component.addContact();
+
+    expect(component.additionalContacts()).toEqual([]);
+    expect(component.newContactForm.get('email')?.errors?.['duplicateEmail']).toBe(true);
   });
 });

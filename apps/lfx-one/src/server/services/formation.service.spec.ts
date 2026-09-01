@@ -3,7 +3,7 @@
 
 import { FormationState } from '@lfx-one/shared/enums';
 import type { FormationIntake } from '@lfx-one/shared/interfaces';
-import { beforeEach, describe, expect, it, vi } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
 const { getEffectiveUsername } = vi.hoisted(() => ({ getEffectiveUsername: vi.fn() }));
 
@@ -27,7 +27,7 @@ function intake(overrides: Partial<FormationIntake> = {}): FormationIntake {
     trademark_status: 'not_filed',
     contributing_org_name: 'Example Org',
     contributing_org_id: null,
-    contributing_org_domain: null,
+    contributing_org_website_url: null,
     legal_contact: { first_name: 'Jane', last_name: 'Doe', email: 'jane@example.test' },
     additional_contacts: [],
     license: 'MIT',
@@ -104,6 +104,34 @@ describe('FormationService', () => {
     it('returns null for an unknown uid, matching the ephemeral in-memory fixture store', async () => {
       const fetched = await service.getFormationByUid(req, 'does-not-exist');
 
+      expect(fetched).toBeNull();
+    });
+
+    it('returns null for a different user — an unauthorized read is indistinguishable from an unknown uid', async () => {
+      getEffectiveUsername.mockReturnValue('proposer1');
+      const created = await service.createFormation(req, intake());
+
+      getEffectiveUsername.mockReturnValue('someone-else');
+      const fetched = await service.getFormationByUid(req, created.uid);
+
+      expect(fetched).toBeNull();
+    });
+  });
+
+  describe('fixture store TTL', () => {
+    afterEach(() => {
+      vi.useRealTimers();
+    });
+
+    it('prunes an entry older than the TTL on the next create, bounding retained PII', async () => {
+      vi.useFakeTimers();
+      vi.setSystemTime(new Date('2026-08-01T00:00:00.000Z'));
+      const stale = await service.createFormation(req, intake());
+
+      vi.setSystemTime(new Date('2026-08-01T01:00:01.000Z')); // just past the 1-hour TTL
+      await service.createFormation(req, intake({ project_name: 'Fresh Project' }));
+
+      const fetched = await service.getFormationByUid(req, stale.uid);
       expect(fetched).toBeNull();
     });
   });

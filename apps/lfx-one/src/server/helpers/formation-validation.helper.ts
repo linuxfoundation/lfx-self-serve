@@ -30,12 +30,13 @@ function assertOptionalHttpsUrl(value: unknown, field: string, req: Request, ope
   if (typeof value !== 'string') {
     throw ServiceValidationError.forField(field, `${field} must be a string`, { operation, service: 'formation.controller', path: req.path });
   }
+  let parsed: URL;
   try {
-    const parsed = new URL(value.trim());
-    if (parsed.protocol !== 'https:') {
-      throw new Error('not https');
-    }
+    parsed = new URL(value.trim());
   } catch {
+    throw ServiceValidationError.forField(field, `${field} must be a valid https URL`, { operation, service: 'formation.controller', path: req.path });
+  }
+  if (parsed.protocol !== 'https:') {
     throw ServiceValidationError.forField(field, `${field} must be a valid https URL`, { operation, service: 'formation.controller', path: req.path });
   }
   return value.trim();
@@ -60,8 +61,8 @@ function parseContact(raw: unknown, field: string, req: Request, operation: stri
 
 /**
  * Validates and normalizes the intake POST body. Throws {@link ServiceValidationError} on the
- * first violation — the controller's catch-free call site relies on this (see `formation-endpoint.md`'s
- * pattern: `next(error)` in the controller catch block, not here).
+ * first violation — the controller's `try/catch` around this call forwards it to `next(error)`
+ * (see `.claude/skills/self-serve-dev/references/backend-endpoint.md`'s controller pattern).
  */
 export function parseFormationIntakeBody(req: Request, operation: string): FormationIntake {
   const body = (req.body ?? {}) as Record<string, unknown>;
@@ -103,8 +104,10 @@ export function parseFormationIntakeBody(req: Request, operation: string): Forma
     trademark_status: (body['trademark_status'] as string).trim(),
     contributing_org_name: (body['contributing_org_name'] as string).trim(),
     contributing_org_id: typeof body['contributing_org_id'] === 'string' && body['contributing_org_id'] ? (body['contributing_org_id'] as string) : null,
-    contributing_org_domain:
-      typeof body['contributing_org_domain'] === 'string' && body['contributing_org_domain'] ? (body['contributing_org_domain'] as string) : null,
+    contributing_org_website_url:
+      typeof body['contributing_org_website_url'] === 'string' && body['contributing_org_website_url']
+        ? (body['contributing_org_website_url'] as string)
+        : null,
     legal_contact: legalContact,
     additional_contacts: additionalContacts,
     license: (body['license'] as string).trim(),

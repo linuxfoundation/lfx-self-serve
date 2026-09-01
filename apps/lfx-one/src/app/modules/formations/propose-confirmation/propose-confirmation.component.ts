@@ -1,13 +1,14 @@
 // Copyright The Linux Foundation and each contributor to LFX.
 // SPDX-License-Identifier: MIT
 
-import { Component, inject, Signal, signal } from '@angular/core';
+import { Component, computed, inject, Signal, signal } from '@angular/core';
 import { takeUntilDestroyed, toSignal } from '@angular/core/rxjs-interop';
-import { ActivatedRoute } from '@angular/router';
+import { ActivatedRoute, Router } from '@angular/router';
 import { environment } from '@environments/environment';
 import { Formation } from '@lfx-one/shared/interfaces';
 import { buildFormationAdminToolLink, formatShortDate } from '@lfx-one/shared/utils';
 import { FormationService } from '@services/formation.service';
+import { PersonaService } from '@services/persona.service';
 import { map, switchMap, tap } from 'rxjs';
 
 import { WhatsNextPanelComponent } from '../propose/components/whats-next-panel/whats-next-panel.component';
@@ -17,6 +18,12 @@ import { WhatsNextPanelComponent } from '../propose/components/whats-next-panel/
  * record to redirect to yet (only the fixture-backed `formation` was created — see
  * `formation.service.ts`), so this is a dedicated formation-scoped route
  * (`/propose/confirmation/:formationUid`), not the real project page.
+ *
+ * The formation is read from router state first (`ProposeComponent.onSubmit`'s `router.navigate`
+ * call), the same pattern `committee-view.component.ts` uses for `backLabel` — this is the
+ * primary path, since the fixture store is per-pod (multiple replicas) and a follow-up GET can
+ * land on a pod that never saw the POST. The GET-by-uid fallback below only runs for a direct or
+ * refreshed link, where no navigation state exists.
  */
 @Component({
   selector: 'lfx-propose-confirmation',
@@ -25,25 +32,39 @@ import { WhatsNextPanelComponent } from '../propose/components/whats-next-panel/
 })
 export class ProposeConfirmationComponent {
   private readonly route = inject(ActivatedRoute);
+  private readonly router = inject(Router);
   private readonly formationService = inject(FormationService);
+  private readonly personaService = inject(PersonaService);
 
-  // Loads once per route activation; the fixture store is server-process-lifetime only, so a
-  // stale/unknown uid (e.g. after a server restart) is a genuine, expected not-found case.
   public loading = signal(true);
 
   public readonly formation: Signal<Formation | null> = this.initFormation();
 
-  protected readonly pccUrl = environment.urls.pcc;
+  /** The "Create in admin tool" CTA names an internal staff workflow — hide it (and the fixture's
+   *  "Staff only" framing) from an ordinary proposer landing on their own confirmation page. No
+   *  `formation_admin` FGA check exists in this repo yet (#1955/#1958 will add one); this persona
+   *  signal is the nearest existing gate. */
+  protected readonly isStaffOrExecutiveDirector: Signal<boolean> = computed(
+    () => this.personaService.isLFStaff() || this.personaService.currentPersona() === 'executive-director'
+  );
 
-  protected adminToolLink(formation: Formation): string {
-    return buildFormationAdminToolLink(this.pccUrl, formation);
-  }
+  protected readonly submittedOnLabel: Signal<string> = computed(() => {
+    const formation = this.formation();
+    return formation ? formatShortDate(new Date(formation.submitted_at)) : '';
+  });
 
-  protected submittedOn(formation: Formation): string {
-    return formatShortDate(new Date(formation.submitted_at));
-  }
+  protected readonly adminToolLink: Signal<string> = computed(() => {
+    const formation = this.formation();
+    return formation ? buildFormationAdminToolLink(environment.urls.pcc, formation) : '';
+  });
 
   private initFormation(): Signal<Formation | null> {
+    const navigationFormation = this.router.getCurrentNavigation()?.extras?.state?.['formation'] as Formation | undefined;
+    if (navigationFormation) {
+      this.loading.set(false);
+      return signal<Formation | null>(navigationFormation);
+    }
+
     return toSignal(
       this.route.paramMap.pipe(
         map((params) => params.get('formationUid')),

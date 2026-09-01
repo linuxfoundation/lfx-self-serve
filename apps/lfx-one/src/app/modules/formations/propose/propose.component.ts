@@ -21,7 +21,7 @@ import {
   FORMATION_MISSION_STATEMENT_MAX_LENGTH,
   FORMATION_TRADEMARK_STATUS_OPTIONS,
 } from '@lfx-one/shared/constants';
-import { FormationContact, FormationIntake, OrganizationResolveResult } from '@lfx-one/shared/interfaces';
+import { FormationContact, FormationIntake, OrganizationResolveResult, Project } from '@lfx-one/shared/interfaces';
 import { capCodePointEdit, codePointLength } from '@lfx-one/shared/utils';
 import { httpsUrlValidator, maxCodePointsValidator, trimmedRequired } from '@lfx-one/shared/validators';
 import { FormationService } from '@services/formation.service';
@@ -77,6 +77,8 @@ export class ProposeComponent {
   // Simple WritableSignals
   public submitting = signal(false);
   public additionalContacts = signal<FormationContact[]>([]);
+  /** Set once the `?parent=` prefill resolves, so `lfx-project-picker` can reflect the async pick — see `initialSelection` on that component. */
+  protected prefilledParentProject = signal<Project | null>(null);
   protected logoFilename = signal<string | null>(null);
   protected missionStatementLength = signal(0);
   protected descriptionLength = signal(0);
@@ -102,7 +104,11 @@ export class ProposeComponent {
     this.formationService.createFormation(intake).subscribe({
       next: (formation) => {
         this.submitting.set(false);
-        this.router.navigate(['/propose/confirmation', formation.uid]);
+        // Pass the created Formation via router state so the confirmation page renders it without
+        // a second request — the fixture store is per-pod (multiple replicas), so a follow-up GET
+        // can land on a pod that never saw this POST. State is the primary path; the confirmation
+        // page's GET is a best-effort fallback for a direct or refreshed link only.
+        this.router.navigate(['/propose/confirmation', formation.uid], { state: { formation } });
       },
       error: (error: HttpErrorResponse) => {
         this.submitting.set(false);
@@ -121,10 +127,22 @@ export class ProposeComponent {
       return;
     }
     const { first_name, last_name, email } = this.newContactForm.getRawValue();
-    if (!first_name.trim() || !last_name.trim() || !email.trim()) {
+    const trimmedEmail = email.trim();
+    if (!first_name.trim() || !last_name.trim() || !trimmedEmail) {
       return;
     }
-    this.additionalContacts.update((contacts) => [...contacts, { first_name: first_name.trim(), last_name: last_name.trim(), email: email.trim() }]);
+    // Guards @for's `track contact.email` in the template — two entries with the same email would
+    // otherwise produce a duplicate track key.
+    const legalContactEmail = (this.form.get('legal_contact.email')?.value ?? '').trim().toLowerCase();
+    const isDuplicate =
+      trimmedEmail.toLowerCase() === legalContactEmail ||
+      this.additionalContacts().some((contact) => contact.email.toLowerCase() === trimmedEmail.toLowerCase());
+    if (isDuplicate) {
+      this.newContactForm.get('email')?.setErrors({ duplicateEmail: true });
+      this.newContactForm.get('email')?.markAsTouched();
+      return;
+    }
+    this.additionalContacts.update((contacts) => [...contacts, { first_name: first_name.trim(), last_name: last_name.trim(), email: trimmedEmail }]);
     this.newContactForm.reset({ first_name: '', last_name: '', email: '' });
   }
 
@@ -141,6 +159,30 @@ export class ProposeComponent {
     this.logoFilename.set(file?.name ?? null);
   }
 
+  /** Soft, non-blocking duplicate-name signal — debounced search against existing projects, distinct from the `project_name` control's own (required-only) validators so it never blocks submit. */
+  private initDuplicateNameMatch(): Signal<string | null> {
+    const nameControl = this.form.get('project_name') as FormControl<string>;
+    return toSignal(
+      nameControl.valueChanges.pipe(
+        startWith(''),
+        debounceTime(400),
+        distinctUntilChanged(),
+        switchMap((name) => {
+          const trimmed = (name ?? '').trim();
+          if (trimmed.length < 3) return of(null);
+          return this.projectService.searchProjects(trimmed).pipe(
+            switchMap((projects) => {
+              const match = projects.find((project) => project.name.trim().toLowerCase() === trimmed.toLowerCase());
+              return of(match ? match.name : null);
+            }),
+            catchError(() => of(null))
+          );
+        })
+      ),
+      { initialValue: null }
+    );
+  }
+
   private createFormGroup(): FormGroup {
     return new FormGroup({
       parent_project_uid: new FormControl<string | null>(null),
@@ -149,7 +191,7 @@ export class ProposeComponent {
       trademark_status: new FormControl('', [Validators.required]),
       contributing_org_name: new FormControl('', [trimmedRequired()]),
       contributing_org_id: new FormControl<string | null>(null),
-      contributing_org_domain: new FormControl(''),
+      contributing_org_website_url: new FormControl(''),
       legal_contact: new FormGroup({
         first_name: new FormControl('', [Validators.required]),
         last_name: new FormControl('', [Validators.required]),
@@ -175,7 +217,7 @@ export class ProposeComponent {
       trademark_status: value.trademark_status,
       contributing_org_name: value.contributing_org_name.trim(),
       contributing_org_id: value.contributing_org_id || null,
-      contributing_org_domain: value.contributing_org_domain?.trim() || null,
+      contributing_org_website_url: value.contributing_org_website_url?.trim() || null,
       legal_contact: value.legal_contact,
       additional_contacts: this.additionalContacts(),
       license: value.license,
@@ -200,6 +242,7 @@ export class ProposeComponent {
       .subscribe((project) => {
         if (project) {
           this.form.patchValue({ parent_project_uid: project.uid });
+          this.prefilledParentProject.set(project);
         }
       });
   }
@@ -219,29 +262,5 @@ export class ProposeComponent {
       lastValid = value;
       lengthSignal.set(codePointLength(value));
     });
-  }
-
-  /** Soft, non-blocking duplicate-name signal — debounced search against existing projects, distinct from the `project_name` control's own (required-only) validators so it never blocks submit. */
-  private initDuplicateNameMatch(): Signal<string | null> {
-    const nameControl = this.form.get('project_name') as FormControl<string>;
-    return toSignal(
-      nameControl.valueChanges.pipe(
-        startWith(''),
-        debounceTime(400),
-        distinctUntilChanged(),
-        switchMap((name) => {
-          const trimmed = (name ?? '').trim();
-          if (trimmed.length < 3) return of(null);
-          return this.projectService.searchProjects(trimmed).pipe(
-            switchMap((projects) => {
-              const match = projects.find((project) => project.name.trim().toLowerCase() === trimmed.toLowerCase());
-              return of(match ? match.name : null);
-            }),
-            catchError(() => of(null))
-          );
-        })
-      ),
-      { initialValue: null }
-    );
   }
 }

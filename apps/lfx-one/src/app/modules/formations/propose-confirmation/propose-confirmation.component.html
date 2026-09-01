@@ -8,21 +8,25 @@
     </div>
   } @else if (formation(); as formation) {
     <div class="flex flex-col gap-2 rounded-md border border-emerald-100 bg-emerald-50 p-4" data-testid="propose-confirmation-banner">
-      <p class="text-sm font-medium text-gray-900">Proposed on {{ submittedOn(formation) }}. The formation team has been notified.</p>
+      <p class="text-sm font-medium text-gray-900">Proposed on {{ submittedOnLabel() }}. The formation team has been notified.</p>
     </div>
 
     @if (!formation.project_uid) {
       <div class="flex flex-col gap-2 rounded-md border border-amber-200 bg-amber-50 p-4" data-testid="propose-confirmation-not-created">
         <p class="text-sm font-medium text-gray-900">Record not yet created</p>
-        <p class="text-xs text-gray-600">Staff only — this project doesn't have a record in the admin tool yet.</p>
-        <a
-          [href]="adminToolLink(formation)"
-          target="_blank"
-          rel="noopener"
-          class="text-xs font-medium text-blue-600 hover:text-blue-800"
-          data-testid="propose-confirmation-admin-link">
-          Create in admin tool ↗
-        </a>
+        @if (isStaffOrExecutiveDirector()) {
+          <p class="text-xs text-gray-600">Staff only — this project doesn't have a record in the admin tool yet.</p>
+          <a
+            [href]="adminToolLink()"
+            target="_blank"
+            rel="noopener noreferrer"
+            class="text-xs font-medium text-blue-600 hover:text-blue-800"
+            data-testid="propose-confirmation-admin-link">
+            Create in admin tool ↗
+          </a>
+        } @else {
+          <p class="text-xs text-gray-600">The formation team will follow up once your proposal is reviewed.</p>
+        }
       </div>
     }
 

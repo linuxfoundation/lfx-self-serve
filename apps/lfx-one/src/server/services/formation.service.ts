@@ -25,12 +25,20 @@ import { logger } from './logger.service';
  * - This endpoint is create-then-read (submit, redirect, the confirmation page re-fetches the
  *   same formation by uid), so — unlike the stateless deterministic generators above — this
  *   holds a small module-level in-memory `Map<uid, Formation>` as its store. The store is
- *   intentionally ephemeral (resets on server restart); that's a known fixture limitation, not a
- *   bug, and is flagged in the PR description.
+ *   per-POD, not just per-restart: `charts/lfx-self-serve/values.yaml` runs multiple replicas, so
+ *   a GET can land on a pod that never saw the matching POST, not only after a restart. That's
+ *   why `ProposeComponent` passes the just-created `Formation` to the confirmation route via
+ *   router state instead of relying on this store for the primary redirect — the GET/this store
+ *   is a best-effort fallback for a direct or refreshed confirmation link only, and a known
+ *   fixture limitation there (not a bug), flagged in the PR description.
+ * - Entries are pruned after `FORMATION_STORE_TTL_MS` (see `pruneExpired`) so a long-lived pod
+ *   doesn't retain submitted contact PII (legal contact, additional contacts) indefinitely.
  * - Every response carries `data_source: 'mock'` (the same in-band provenance convention as
  *   `CommitteeEngagementResponse.data_source`) so a client can always tell fabricated data from
  *   real data once #1957 lands and this class grows a live branch.
  */
+const FORMATION_STORE_TTL_MS = 60 * 60 * 1000;
+
 export class FormationService {
   private static readonly store = new Map<string, Formation>();
 
@@ -45,6 +53,8 @@ export class FormationService {
    * email notifications (no email-service integration in this repo) are TODO-logged, not sent.
    */
   public async createFormation(req: Request, intake: FormationIntake): Promise<Formation> {
+    FormationService.pruneExpired();
+
     const uid = randomUUID();
     const submittedBy = getEffectiveUsername(req) ?? 'unknown';
 
@@ -86,10 +96,34 @@ export class FormationService {
     return formation;
   }
 
-  /** Reads a fixture formation by uid. Returns null when unknown — including after a server
-   *  restart, since the store is in-memory only (see this class's doc comment). */
+  /**
+   * Reads a fixture formation by uid. Returns null when unknown — including for a different pod
+   * or after a server restart (see this class's doc comment) — or when the caller isn't the
+   * proposer, so an unauthorized read looks identical to an unknown uid rather than confirming
+   * the formation exists (no staff/`formation_admin` allowance yet — this repo has no such check
+   * to reuse; add one when #1955/#1958 lands it).
+   */
   public async getFormationByUid(req: Request, uid: string): Promise<Formation | null> {
     logger.debug(req, 'get_formation_by_uid', 'Reading fixture-backed formation record', { uid });
-    return FormationService.store.get(uid) ?? null;
+    const formation = FormationService.store.get(uid);
+    if (!formation) {
+      return null;
+    }
+    if (formation.submitted_by !== getEffectiveUsername(req)) {
+      logger.warning(req, 'get_formation_by_uid', 'Formation exists but the caller is not the proposer; returning not-found', { uid });
+      return null;
+    }
+    return formation;
+  }
+
+  /** Sweeps entries older than {@link FORMATION_STORE_TTL_MS} — an hour is far more than the
+   *  submit→confirm round trip needs, bounding the fixture store's PII retention and growth. */
+  private static pruneExpired(): void {
+    const cutoff = Date.now() - FORMATION_STORE_TTL_MS;
+    for (const [uid, formation] of FormationService.store) {
+      if (new Date(formation.submitted_at).getTime() < cutoff) {
+        FormationService.store.delete(uid);
+      }
+    }
   }
 }
