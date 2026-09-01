@@ -61,9 +61,9 @@ export class ProposeComponent {
   // Forms
   public readonly form: FormGroup = this.createFormGroup();
   public readonly newContactForm = new FormGroup({
-    first_name: new FormControl('', { nonNullable: true }),
-    last_name: new FormControl('', { nonNullable: true }),
-    email: new FormControl('', { nonNullable: true, validators: [Validators.email] }),
+    first_name: new FormControl('', { nonNullable: true, validators: [Validators.required] }),
+    last_name: new FormControl('', { nonNullable: true, validators: [Validators.required] }),
+    email: new FormControl('', { nonNullable: true, validators: [Validators.required, Validators.email] }),
   });
 
   // Option lists — spread into mutable arrays; lfx-select's `options` input is typed `any[]`.

@@ -37,11 +37,19 @@ import { logger } from './logger.service';
  *   that stops receiving ANY `/api/formations*` request after storing an entry has nothing left
  *   to trigger the sweep, so that entry lives until the pod restarts — accepted for a fixture
  *   with an already-documented per-pod lifetime, rather than adding a background timer.
+ * - The store is also capped at `FORMATION_STORE_MAX_ENTRIES`, evicting oldest-first: unlike the
+ *   other fixture Maps in this codebase (`credly.service.ts`, `github-readme.service.ts`, etc,
+ *   which cache over a bounded, server-derived key space), this one is keyed by a fresh
+ *   `randomUUID()` per authenticated POST — an unbounded key space driven entirely by client
+ *   traffic. The TTL alone bounds age, not size, within that hour; the cap bounds worst-case
+ *   memory regardless of request volume. Per-field length caps in `formation-validation.helper.ts`
+ *   bound the size of each individual entry.
  * - Every response carries `data_source: 'mock'` (the same in-band provenance convention as
  *   `CommitteeEngagementResponse.data_source`) so a client can always tell fabricated data from
  *   real data once #1957 lands and this class grows a live branch.
  */
 const FORMATION_STORE_TTL_MS = 60 * 60 * 1000;
+const FORMATION_STORE_MAX_ENTRIES = 1000;
 
 export class FormationService {
   private static readonly store = new Map<string, Formation>();
@@ -58,6 +66,7 @@ export class FormationService {
    */
   public async createFormation(req: Request, intake: FormationIntake): Promise<Formation> {
     FormationService.pruneExpired();
+    FormationService.evictOldestIfFull();
 
     const uid = randomUUID();
     const submittedBy = getEffectiveUsername(req) ?? 'unknown';
@@ -129,6 +138,18 @@ export class FormationService {
       if (new Date(formation.submitted_at).getTime() < cutoff) {
         FormationService.store.delete(uid);
       }
+    }
+  }
+
+  /** Bounds worst-case memory regardless of request volume — see {@link FORMATION_STORE_MAX_ENTRIES}'s
+   *  doc comment. `Map` preserves insertion order, so the first key is always the oldest entry. */
+  private static evictOldestIfFull(): void {
+    if (FormationService.store.size < FORMATION_STORE_MAX_ENTRIES) {
+      return;
+    }
+    const oldestUid = FormationService.store.keys().next().value;
+    if (oldestUid !== undefined) {
+      FormationService.store.delete(oldestUid);
     }
   }
 }

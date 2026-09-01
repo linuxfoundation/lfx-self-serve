@@ -101,4 +101,43 @@ describe('parseFormationIntakeBody', () => {
 
     expect(() => parseFormationIntakeBody(reqWithBody(body), 'create_formation')).toThrow();
   });
+
+  it.each(['trademark_status', 'license', 'chat_platform', 'agreement_type'])(
+    "rejects a %s value outside the known option set — a hand-rolled POST can't seed an arbitrary value the client select never offers",
+    (field) => {
+      const body = validBody({ [field]: 'not-a-real-option' });
+
+      expect(() => parseFormationIntakeBody(reqWithBody(body), 'create_formation')).toThrow();
+    }
+  );
+
+  it.each(['project_name', 'contributing_org_name'])(
+    'rejects an oversized %s — bounds the fixture store against a client pushing unbounded strings',
+    (field) => {
+      const body = validBody({ [field]: 'a'.repeat(201) });
+
+      expect(() => parseFormationIntakeBody(reqWithBody(body), 'create_formation')).toThrow();
+    }
+  );
+
+  it('rejects more than the max number of additional_contacts', () => {
+    const tooMany = Array.from({ length: 21 }, (_, i) => ({ ...validContact, email: `contact${i}@example.test` }));
+    const body = validBody({ additional_contacts: tooMany });
+
+    expect(() => parseFormationIntakeBody(reqWithBody(body), 'create_formation')).toThrow();
+  });
+
+  it('rejects an oversized contact name', () => {
+    const body = validBody({ legal_contact: { ...validContact, first_name: 'a'.repeat(101) } });
+
+    expect(() => parseFormationIntakeBody(reqWithBody(body), 'create_formation')).toThrow();
+  });
+
+  it('validates contributing_org_website_url as an optional https URL, same as the other URL fields', () => {
+    const valid = parseFormationIntakeBody(reqWithBody(validBody({ contributing_org_website_url: 'https://example.test' })), 'create_formation');
+    expect(valid.contributing_org_website_url).toBe('https://example.test');
+
+    const body = validBody({ contributing_org_website_url: 'http://example.test' });
+    expect(() => parseFormationIntakeBody(reqWithBody(body), 'create_formation')).toThrow();
+  });
 });

@@ -12,10 +12,26 @@ export const FORMATION_MISSION_STATEMENT_MAX_LENGTH = 600;
 export const FORMATION_DESCRIPTION_MAX_LENGTH = 1200;
 
 /**
- * `FormationIntake` keys the intake form treats as required. Centralized so a required-ness
- * change (the field list is explicitly pending Scott's Google-Form confirmation — see #1962) is
- * a one-line diff here, read by both the Angular FormGroup builder and the server-side validator,
- * instead of two places drifting independently.
+ * Bounds for every other field the server-side validator accepts, so the fixture store (an
+ * hour-long, size-unbounded-by-TTL-alone in-memory `Map`, see `formation.service.ts`) can't be
+ * grown by an authenticated caller pushing arbitrarily large strings/arrays into a single POST.
+ * The client form has no equivalent caps beyond its own `lfx-select`/text-input widths — these
+ * are the server's own floor, not a mirror of client validation.
+ */
+export const FORMATION_SHORT_TEXT_MAX_LENGTH = 200;
+export const FORMATION_URL_MAX_LENGTH = 2048;
+export const FORMATION_CONTACT_NAME_MAX_LENGTH = 100;
+export const FORMATION_MAX_ADDITIONAL_CONTACTS = 20;
+
+/**
+ * `FormationIntake` keys the intake form treats as required. The server-side validator
+ * (`formation-validation.helper.ts`) reads this set directly for its generic required-field
+ * check. The Angular `FormGroup` (`propose.component.ts`'s `createFormGroup`) does NOT read it —
+ * each control there needs a specific validator *type* chosen by hand (`trimmedRequired()` for
+ * text fields, `Validators.required` for selects), so a bare membership check wouldn't remove
+ * real coupling. Keep the two in sync by convention when the field list changes (still pending
+ * Scott's Google-Form confirmation — see #1962); this constant is the source of truth for
+ * required-ness on the server side, not an automatic driver of the client form.
  */
 export const FORMATION_REQUIRED_FIELDS = [
   'project_name',

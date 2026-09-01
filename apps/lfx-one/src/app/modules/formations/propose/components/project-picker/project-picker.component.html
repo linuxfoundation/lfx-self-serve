@@ -31,7 +31,9 @@
           }
         </ul>
       }
-      @if (hasQuery() && results().length === 0) {
+      @if (hasQuery() && searching()) {
+        <p class="mt-1 text-xs text-gray-500" data-testid="propose-project-picker-searching">Searching...</p>
+      } @else if (hasQuery() && results().length === 0) {
         <p class="mt-1 text-xs text-gray-500">No matching projects.</p>
       }
     </form>

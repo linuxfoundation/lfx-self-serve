@@ -158,4 +158,30 @@ describe('FormationService', () => {
       expect(fetched).not.toBeNull(); // the read pruned its stale sibling without dropping this live entry
     });
   });
+
+  describe('fixture store size cap', () => {
+    const store = (): Map<string, unknown> => (FormationService as unknown as { store: Map<string, unknown> }).store;
+
+    it('evicts the oldest entry once the store is full, bounding worst-case memory under sustained traffic', async () => {
+      // All within the same TTL window (fake time held fixed) so pruneExpired can't be what
+      // shrinks the store — only evictOldestIfFull can.
+      vi.useFakeTimers();
+      vi.setSystemTime(new Date('2026-08-01T00:00:00.000Z'));
+
+      const oldest = await service.createFormation(req, intake({ project_name: 'Oldest' }));
+      for (let i = 0; i < 999; i++) {
+        await service.createFormation(req, intake({ project_name: `Filler ${i}` }));
+      }
+      expect(store().size).toBe(1000);
+      expect(store().has(oldest.uid)).toBe(true);
+
+      const overflow = await service.createFormation(req, intake({ project_name: 'Overflow' }));
+
+      expect(store().size).toBe(1000);
+      expect(store().has(oldest.uid)).toBe(false);
+      expect(store().has(overflow.uid)).toBe(true);
+
+      vi.useRealTimers();
+    }, 20000);
+  });
 });

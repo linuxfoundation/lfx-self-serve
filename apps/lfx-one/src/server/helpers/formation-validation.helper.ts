@@ -1,7 +1,19 @@
 // Copyright The Linux Foundation and each contributor to LFX.
 // SPDX-License-Identifier: MIT
 
-import { FORMATION_DESCRIPTION_MAX_LENGTH, FORMATION_MISSION_STATEMENT_MAX_LENGTH, FORMATION_REQUIRED_FIELDS } from '@lfx-one/shared/constants';
+import {
+  FORMATION_AGREEMENT_TYPE_OPTIONS,
+  FORMATION_CHAT_PLATFORM_OPTIONS,
+  FORMATION_CONTACT_NAME_MAX_LENGTH,
+  FORMATION_DESCRIPTION_MAX_LENGTH,
+  FORMATION_LICENSE_OPTIONS,
+  FORMATION_MAX_ADDITIONAL_CONTACTS,
+  FORMATION_MISSION_STATEMENT_MAX_LENGTH,
+  FORMATION_REQUIRED_FIELDS,
+  FORMATION_SHORT_TEXT_MAX_LENGTH,
+  FORMATION_TRADEMARK_STATUS_OPTIONS,
+  FORMATION_URL_MAX_LENGTH,
+} from '@lfx-one/shared/constants';
 import type { FormationContact, FormationIntake } from '@lfx-one/shared/interfaces';
 // Deep import, not the `@lfx-one/shared/utils` barrel: the barrel also re-exports form.utils.ts /
 // vote.utils.ts / meeting.utils.ts, which pull in real (non-type-only) `@angular/forms` /
@@ -15,29 +27,56 @@ import { Request } from 'express';
 
 import { ServiceValidationError } from '../errors';
 
+const FORMATION_TRADEMARK_STATUS_VALUES: readonly string[] = FORMATION_TRADEMARK_STATUS_OPTIONS.map((o) => o.value);
+const FORMATION_LICENSE_VALUES: readonly string[] = FORMATION_LICENSE_OPTIONS.map((o) => o.value);
+const FORMATION_CHAT_PLATFORM_VALUES: readonly string[] = FORMATION_CHAT_PLATFORM_OPTIONS.map((o) => o.value);
+const FORMATION_AGREEMENT_TYPE_VALUES: readonly string[] = FORMATION_AGREEMENT_TYPE_OPTIONS.map((o) => o.value);
+
+function fail(field: string, message: string, req: Request, operation: string): never {
+  throw ServiceValidationError.forField(field, message, { operation, service: 'formation.controller', path: req.path });
+}
+
 /** Server-side mirror of the client's inline validation — the field list is explicitly pending
- *  Scott's Google-Form confirmation (see #1962), so required-ness is read off the same
- *  `FORMATION_REQUIRED_FIELDS` set the Angular form builder uses, rather than duplicated here. */
+ *  Scott's Google-Form confirmation (see #1962), so required-ness is read off
+ *  `FORMATION_REQUIRED_FIELDS` (the source of truth for this generic presence check) rather than
+ *  a hand-written list here. See that constant's doc comment for why the Angular form doesn't
+ *  read it the same way — keep the two in sync by convention when the field list changes. */
 function assertRequiredField(body: Record<string, unknown>, field: string, req: Request, operation: string): void {
   const value = body[field];
   if (typeof value !== 'string' || value.trim() === '') {
-    throw ServiceValidationError.forField(field, `${field} is required`, { operation, service: 'formation.controller', path: req.path });
+    fail(field, `${field} is required`, req, operation);
+  }
+}
+
+/** Caps every accepted string field — the fixture store holds every accepted payload for up to
+ *  an hour (see `FORMATION_SHORT_TEXT_MAX_LENGTH`'s doc comment); this is the floor that keeps a
+ *  single POST from growing that store by an arbitrary amount. */
+function assertMaxLength(value: string, max: number, field: string, req: Request, operation: string): void {
+  if (codePointLength(value) > max) {
+    fail(field, `${field} must be ${max} characters or fewer`, req, operation);
+  }
+}
+
+function assertOneOf(value: string, allowed: readonly string[], field: string, req: Request, operation: string): void {
+  if (!allowed.includes(value)) {
+    fail(field, `${field} must be one of: ${allowed.join(', ')}`, req, operation);
   }
 }
 
 function assertOptionalHttpsUrl(value: unknown, field: string, req: Request, operation: string): string | null {
   if (value === undefined || value === null || value === '') return null;
   if (typeof value !== 'string') {
-    throw ServiceValidationError.forField(field, `${field} must be a string`, { operation, service: 'formation.controller', path: req.path });
+    fail(field, `${field} must be a string`, req, operation);
   }
+  assertMaxLength(value, FORMATION_URL_MAX_LENGTH, field, req, operation);
   let parsed: URL;
   try {
     parsed = new URL(value.trim());
   } catch {
-    throw ServiceValidationError.forField(field, `${field} must be a valid https URL`, { operation, service: 'formation.controller', path: req.path });
+    fail(field, `${field} must be a valid https URL`, req, operation);
   }
   if (parsed.protocol !== 'https:') {
-    throw ServiceValidationError.forField(field, `${field} must be a valid https URL`, { operation, service: 'formation.controller', path: req.path });
+    fail(field, `${field} must be a valid https URL`, req, operation);
   }
   return value.trim();
 }
@@ -45,17 +84,20 @@ function assertOptionalHttpsUrl(value: unknown, field: string, req: Request, ope
 function parseContact(raw: unknown, field: string, req: Request, operation: string): FormationContact {
   const contact = raw as Partial<FormationContact> | undefined;
   if (!contact || typeof contact !== 'object') {
-    throw ServiceValidationError.forField(field, `${field} is required`, { operation, service: 'formation.controller', path: req.path });
+    fail(field, `${field} is required`, req, operation);
   }
   if (typeof contact.first_name !== 'string' || contact.first_name.trim() === '') {
-    throw ServiceValidationError.forField(`${field}.first_name`, 'First name is required', { operation, service: 'formation.controller', path: req.path });
+    fail(`${field}.first_name`, 'First name is required', req, operation);
   }
+  assertMaxLength(contact.first_name, FORMATION_CONTACT_NAME_MAX_LENGTH, `${field}.first_name`, req, operation);
   if (typeof contact.last_name !== 'string' || contact.last_name.trim() === '') {
-    throw ServiceValidationError.forField(`${field}.last_name`, 'Last name is required', { operation, service: 'formation.controller', path: req.path });
+    fail(`${field}.last_name`, 'Last name is required', req, operation);
   }
+  assertMaxLength(contact.last_name, FORMATION_CONTACT_NAME_MAX_LENGTH, `${field}.last_name`, req, operation);
   if (typeof contact.email !== 'string' || !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(contact.email.trim())) {
-    throw ServiceValidationError.forField(`${field}.email`, 'A valid email is required', { operation, service: 'formation.controller', path: req.path });
+    fail(`${field}.email`, 'A valid email is required', req, operation);
   }
+  assertMaxLength(contact.email, FORMATION_SHORT_TEXT_MAX_LENGTH, `${field}.email`, req, operation);
   return { first_name: contact.first_name.trim(), last_name: contact.last_name.trim(), email: contact.email.trim() };
 }
 
@@ -71,51 +113,73 @@ export function parseFormationIntakeBody(req: Request, operation: string): Forma
     assertRequiredField(body, field, req, operation);
   }
 
-  const missionStatement = String(body['mission_statement'] ?? '');
-  if (codePointLength(missionStatement) > FORMATION_MISSION_STATEMENT_MAX_LENGTH) {
-    throw ServiceValidationError.forField('mission_statement', `mission_statement must be ${FORMATION_MISSION_STATEMENT_MAX_LENGTH} characters or fewer`, {
-      operation,
-      service: 'formation.controller',
-      path: req.path,
-    });
+  const projectName = (body['project_name'] as string).trim();
+  assertMaxLength(projectName, FORMATION_SHORT_TEXT_MAX_LENGTH, 'project_name', req, operation);
+
+  const contributingOrgName = (body['contributing_org_name'] as string).trim();
+  assertMaxLength(contributingOrgName, FORMATION_SHORT_TEXT_MAX_LENGTH, 'contributing_org_name', req, operation);
+
+  const trademarkStatus = (body['trademark_status'] as string).trim();
+  assertOneOf(trademarkStatus, FORMATION_TRADEMARK_STATUS_VALUES, 'trademark_status', req, operation);
+
+  const license = (body['license'] as string).trim();
+  assertOneOf(license, FORMATION_LICENSE_VALUES, 'license', req, operation);
+
+  const chatPlatform = (body['chat_platform'] as string).trim();
+  assertOneOf(chatPlatform, FORMATION_CHAT_PLATFORM_VALUES, 'chat_platform', req, operation);
+
+  const agreementType = (body['agreement_type'] as string).trim();
+  assertOneOf(agreementType, FORMATION_AGREEMENT_TYPE_VALUES, 'agreement_type', req, operation);
+
+  const missionStatement = String(body['mission_statement'] ?? '').trim();
+  assertMaxLength(missionStatement, FORMATION_MISSION_STATEMENT_MAX_LENGTH, 'mission_statement', req, operation);
+
+  const description = String(body['description'] ?? '').trim();
+  assertMaxLength(description, FORMATION_DESCRIPTION_MAX_LENGTH, 'description', req, operation);
+
+  const projectLogoFilename =
+    typeof body['project_logo_filename'] === 'string' && body['project_logo_filename'] ? (body['project_logo_filename'] as string).trim() : null;
+  if (projectLogoFilename) {
+    assertMaxLength(projectLogoFilename, FORMATION_SHORT_TEXT_MAX_LENGTH, 'project_logo_filename', req, operation);
   }
 
-  const description = String(body['description'] ?? '');
-  if (codePointLength(description) > FORMATION_DESCRIPTION_MAX_LENGTH) {
-    throw ServiceValidationError.forField('description', `description must be ${FORMATION_DESCRIPTION_MAX_LENGTH} characters or fewer`, {
-      operation,
-      service: 'formation.controller',
-      path: req.path,
-    });
+  const contributingOrgId =
+    typeof body['contributing_org_id'] === 'string' && body['contributing_org_id'] ? (body['contributing_org_id'] as string).trim() : null;
+  if (contributingOrgId) {
+    assertMaxLength(contributingOrgId, FORMATION_SHORT_TEXT_MAX_LENGTH, 'contributing_org_id', req, operation);
+  }
+
+  const parentProjectUid = typeof body['parent_project_uid'] === 'string' && body['parent_project_uid'] ? (body['parent_project_uid'] as string).trim() : null;
+  if (parentProjectUid) {
+    assertMaxLength(parentProjectUid, FORMATION_SHORT_TEXT_MAX_LENGTH, 'parent_project_uid', req, operation);
   }
 
   const legalContact = parseContact(body['legal_contact'], 'legal_contact', req, operation);
   const rawAdditionalContacts = body['additional_contacts'];
+  if (Array.isArray(rawAdditionalContacts) && rawAdditionalContacts.length > FORMATION_MAX_ADDITIONAL_CONTACTS) {
+    fail('additional_contacts', `additional_contacts must have ${FORMATION_MAX_ADDITIONAL_CONTACTS} entries or fewer`, req, operation);
+  }
   const additionalContacts = Array.isArray(rawAdditionalContacts)
     ? rawAdditionalContacts.map((contact, index) => parseContact(contact, `additional_contacts[${index}]`, req, operation))
     : [];
 
   return {
-    parent_project_uid: typeof body['parent_project_uid'] === 'string' && body['parent_project_uid'] ? (body['parent_project_uid'] as string) : null,
-    project_name: (body['project_name'] as string).trim(),
+    parent_project_uid: parentProjectUid,
+    project_name: projectName,
     project_repository_url: assertOptionalHttpsUrl(body['project_repository_url'], 'project_repository_url', req, operation),
-    project_logo_filename:
-      typeof body['project_logo_filename'] === 'string' && body['project_logo_filename'] ? (body['project_logo_filename'] as string) : null,
-    trademark_status: (body['trademark_status'] as string).trim(),
-    contributing_org_name: (body['contributing_org_name'] as string).trim(),
-    contributing_org_id: typeof body['contributing_org_id'] === 'string' && body['contributing_org_id'] ? (body['contributing_org_id'] as string) : null,
-    contributing_org_website_url:
-      typeof body['contributing_org_website_url'] === 'string' && body['contributing_org_website_url']
-        ? (body['contributing_org_website_url'] as string)
-        : null,
+    project_logo_filename: projectLogoFilename,
+    trademark_status: trademarkStatus,
+    contributing_org_name: contributingOrgName,
+    contributing_org_id: contributingOrgId,
+    contributing_org_website_url: assertOptionalHttpsUrl(body['contributing_org_website_url'], 'contributing_org_website_url', req, operation),
     legal_contact: legalContact,
     additional_contacts: additionalContacts,
-    license: (body['license'] as string).trim(),
-    chat_platform: (body['chat_platform'] as string).trim(),
-    mission_statement: missionStatement.trim(),
-    agreement_type: (body['agreement_type'] as string).trim(),
+    license,
+    chat_platform: chatPlatform,
+    mission_statement: missionStatement,
+    agreement_type: agreementType,
     is_spec_project: body['is_spec_project'] === true,
-    description: description.trim(),
+    description,
     website_url: assertOptionalHttpsUrl(body['website_url'], 'website_url', req, operation),
   };
 }

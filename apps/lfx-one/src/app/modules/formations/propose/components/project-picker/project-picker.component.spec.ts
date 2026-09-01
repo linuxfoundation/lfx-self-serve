@@ -5,7 +5,7 @@ import { ComponentFixture, TestBed } from '@angular/core/testing';
 import { FormControl, FormGroup } from '@angular/forms';
 import { Project } from '@lfx-one/shared/interfaces';
 import { ProjectService } from '@services/project.service';
-import { of } from 'rxjs';
+import { of, Subject } from 'rxjs';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 
 import { ProjectPickerComponent } from './project-picker.component';
@@ -123,6 +123,32 @@ describe('ProjectPickerComponent', () => {
       searchProjects.mockReturnValueOnce(of([project]));
       instance().searchForm.controls.query.setValue('my');
       await vi.advanceTimersByTimeAsync(300);
+      expect(instance().results()).toEqual([project]);
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  it('is "searching" while the HTTP round trip is in flight, so the empty state does not flash before real results arrive', async () => {
+    vi.useFakeTimers();
+    try {
+      fixture = TestBed.createComponent(ProjectPickerComponent);
+      fixture.componentRef.setInput('form', form);
+      fixture.componentRef.setInput('uidControl', 'parent_project_uid');
+      fixture.detectChanges();
+
+      const search$ = new Subject<Project[]>();
+      searchProjects.mockReturnValueOnce(search$);
+      instance().searchForm.controls.query.setValue('ab');
+      await vi.advanceTimersByTimeAsync(300);
+
+      expect(instance().searching()).toBe(true);
+      expect(instance().results()).toEqual([]); // still the initial value — not yet a confirmed empty result
+
+      search$.next([project]);
+      search$.complete();
+
+      expect(instance().searching()).toBe(false);
       expect(instance().results()).toEqual([project]);
     } finally {
       vi.useRealTimers();

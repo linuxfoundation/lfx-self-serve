@@ -3,6 +3,7 @@
 
 import { NextFunction, Request, Response } from 'express';
 
+import { ResourceNotFoundError } from '../errors';
 import { parseFormationIntakeBody } from '../helpers/formation-validation.helper';
 import { validateUidParameter } from '../helpers/validation.helper';
 import { FormationService } from '../services/formation.service';
@@ -38,8 +39,9 @@ export class FormationController {
 
       const formation = await this.formationService.getFormationByUid(req, uid);
       if (!formation) {
-        res.status(404).json({ error: 'Formation not found' });
-        return;
+        // Same 404 for "unknown uid" and "not the proposer" — see FormationService's doc
+        // comment on why an unauthorized read must be indistinguishable from an unknown one.
+        throw new ResourceNotFoundError('Formation', uid, { operation: 'get_formation_by_uid', service: 'formation_controller', path: req.path });
       }
 
       logger.success(req, 'get_formation_by_uid', startTime, { uid });

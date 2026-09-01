@@ -96,14 +96,14 @@ describe('FormationController', () => {
       expect(res.json).toHaveBeenCalledWith(formation);
     });
 
-    it('returns 404 when the formation is not found — the ephemeral fixture store case', async () => {
+    it('passes a 404 ResourceNotFoundError to next when the formation is not found — the ephemeral fixture store case', async () => {
       getFormationByUid.mockResolvedValue(null);
       const res = buildRes();
 
       await controller.getFormationByUid(buildReq({ params: { uid: 'unknown' } }), res, next);
 
-      expect(res.status).toHaveBeenCalledWith(404);
-      expect(next).not.toHaveBeenCalled();
+      expect(res.json).not.toHaveBeenCalled();
+      expect(next).toHaveBeenCalledWith(expect.objectContaining({ statusCode: 404 }));
     });
 
     it('stops after validateUidParameter returns false, without calling the service', async () => {

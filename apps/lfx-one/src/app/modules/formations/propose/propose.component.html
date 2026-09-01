@@ -67,6 +67,9 @@
         </lfx-file-upload>
         @if (logoFilename(); as filename) {
           <p class="mt-1 text-xs text-gray-500">{{ filename }}</p>
+          <p class="mt-1 text-xs text-amber-600" data-testid="propose-project-logo-not-stored">
+            The file itself isn't uploaded yet — the formation team will request it separately.
+          </p>
         }
       </div>
 
@@ -120,6 +123,9 @@
               placeholder="First name"
               styleClass="w-full"
               data-testid="propose-legal-contact-first-name"></lfx-input-text>
+            @if (form.get('legal_contact.first_name')?.errors?.['required'] && form.get('legal_contact.first_name')?.touched) {
+              <p class="mt-1 text-xs text-red-600">First name is required</p>
+            }
           </div>
           <div>
             <lfx-input-text
@@ -129,6 +135,9 @@
               placeholder="Last name"
               styleClass="w-full"
               data-testid="propose-legal-contact-last-name"></lfx-input-text>
+            @if (form.get('legal_contact.last_name')?.errors?.['required'] && form.get('legal_contact.last_name')?.touched) {
+              <p class="mt-1 text-xs text-red-600">Last name is required</p>
+            }
           </div>
           <div>
             <lfx-input-text
@@ -138,11 +147,14 @@
               placeholder="Email"
               styleClass="w-full"
               data-testid="propose-legal-contact-email"></lfx-input-text>
+            @if (form.get('legal_contact.email')?.errors?.['required'] && form.get('legal_contact.email')?.touched) {
+              <p class="mt-1 text-xs text-red-600">Email is required</p>
+            }
+            @if (form.get('legal_contact.email')?.errors?.['email'] && form.get('legal_contact.email')?.touched) {
+              <p class="mt-1 text-xs text-red-600">Enter a valid email address</p>
+            }
           </div>
         </div>
-        @if (form.get('legal_contact.email')?.errors?.['email'] && form.get('legal_contact.email')?.touched) {
-          <p class="mt-1 text-xs text-red-600">Enter a valid email address</p>
-        }
       </div>
 
       <div class="flex flex-col gap-2">
@@ -182,6 +194,8 @@
         </div>
         @if (newContactForm.get('email')?.errors?.['duplicateEmail']) {
           <p class="text-xs text-red-600" data-testid="propose-new-contact-duplicate-email">That email is already on this proposal.</p>
+        } @else if (newContactForm.invalid && newContactForm.touched) {
+          <p class="text-xs text-red-600" data-testid="propose-new-contact-incomplete">Enter a first name, last name, and valid email to add this contact.</p>
         }
       </div>
     </section>
@@ -203,6 +217,9 @@
             appendTo="body"
             id="license"
             data-testid="propose-license"></lfx-select>
+          @if (form.get('license')?.errors?.['required'] && form.get('license')?.touched) {
+            <p class="mt-1 text-xs text-red-600">License is required</p>
+          }
         </div>
         <div>
           <label for="chat-platform" class="mb-1 block text-sm font-medium text-gray-700">Chat platform <span class="text-red-500">*</span></label>
@@ -216,6 +233,9 @@
             appendTo="body"
             id="chat-platform"
             data-testid="propose-chat-platform"></lfx-select>
+          @if (form.get('chat_platform')?.errors?.['required'] && form.get('chat_platform')?.touched) {
+            <p class="mt-1 text-xs text-red-600">Chat platform is required</p>
+          }
         </div>
         <div>
           <label for="agreement-type" class="mb-1 block text-sm font-medium text-gray-700">CLA / DCO <span class="text-red-500">*</span></label>
@@ -229,6 +249,9 @@
             appendTo="body"
             id="agreement-type"
             data-testid="propose-agreement-type"></lfx-select>
+          @if (form.get('agreement_type')?.errors?.['required'] && form.get('agreement_type')?.touched) {
+            <p class="mt-1 text-xs text-red-600">CLA / DCO is required</p>
+          }
         </div>
         <div class="flex items-end">
           <lfx-checkbox [form]="form" control="is_spec_project" label="This is a specification project" data-testid="propose-is-spec"></lfx-checkbox>
