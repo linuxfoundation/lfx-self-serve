@@ -3755,6 +3755,7 @@ describe('CampaignsComponent — HubSpot template picker', () => {
     emailTemplateSuggestionTerms: Signal<readonly string[]>;
     emailTemplatesRendered: Signal<HubSpotMarketingEmail[]>;
     selectedEmailTypeId: WritableSignal<string>;
+    canStageEmail: Signal<boolean>;
   }
   const picker = (): PickerInternals => fixture.componentInstance as unknown as PickerInternals;
 
@@ -3812,6 +3813,47 @@ describe('CampaignsComponent — HubSpot template picker', () => {
         .forEach((r) => r.flush({ enabled: true, error: null, possiblyTruncated: false, emails: [] }));
       fixture.detectChanges();
     };
+
+    /**
+     * A pending search must release a SUGGESTED selection at dispatch, not only when it answers.
+     *
+     * Every arm that clears the template list also released the suggestion, but all of them run
+     * after the response lands. In between, the loading branch hides the list while
+     * `canStageEmail` still reads only `selectedEmailTemplateId` -- and `onStageEmailSend`
+     * snapshots that id before its first await. So the operator could stage a suggestion the
+     * in-flight search was about to remove, with the row that justified it already off screen:
+     * a silent wrong clone, which is the exact failure this feature exists to prevent.
+     *
+     * Asserts the state DURING the flight -- the request is deliberately left unanswered, because
+     * flushing it is what the old code needed in order to look correct.
+     */
+    it('releases a suggested selection when a new search is dispatched, before it answers', () => {
+      showPicker();
+      picker().emailBriefOutput.set(briefFor('KubeCon Europe 2026', 'kubecon-eu-2026'));
+      picker().searchEmailTemplates('kubecon');
+      respond({
+        enabled: true,
+        error: null,
+        possiblyTruncated: false,
+        emails: [{ id: 'k26', name: 'KubeCon Europe 2026 announcement', subject: 'Register now' }] as HubSpotMarketingEmail[],
+      });
+
+      // The suggestion took, and it is SYSTEM-owned -- the precondition for the release.
+      expect(picker().selectedEmailTemplateId()).toBe('k26');
+      expect(picker().emailTemplateSuggestionId()).toBe('k26');
+
+      // Dispatch a narrower search and leave it IN FLIGHT.
+      picker().searchEmailTemplates('workshop');
+      fixture.detectChanges();
+
+      expect(picker().selectedEmailTemplateId()).toBe('');
+      expect(picker().canStageEmail()).toBe(false);
+
+      // Drain so the harness's afterEach verification does not trip on the open request.
+      httpMock
+        .match((r) => r.url === '/api/campaigns/hubspot/emails')
+        .forEach((r) => r.flush({ enabled: true, error: null, possiblyTruncated: false, emails: [] }));
+    });
 
     /**
      * The YEAR outranks the CITY, and a prior edition naming the city is the case that proves it.

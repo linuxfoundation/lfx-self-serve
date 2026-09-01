@@ -2006,6 +2006,19 @@ export class CampaignsComponent {
     // `emailTemplateQuery` already shows the later search. The foundation-switch handler clears
     // these signals but cannot stop an in-flight response from refilling them — under the NEW
     // foundation — which is the cross-portal leak that handler exists to prevent.
+    // Released at DISPATCH, not only in the terminal arms below.
+    //
+    // Every arm that clears the list also releases a system-owned selection, but all of them run
+    // AFTER the response lands. In the window between them the loading branch hides the template
+    // list while `canStageEmail` stays enabled -- it reads `selectedEmailTemplateId`, not the
+    // loading flag -- and `onStageEmailSend` snapshots that id before its first await. So an
+    // operator could stage a suggestion that the in-flight search was about to remove or reject,
+    // with the row that justified it already off screen. Releasing here closes the window.
+    //
+    // Only a SYSTEM-owned selection, same as every other call: a hand-picked template is the
+    // operator's and survives the search that is being dispatched.
+    this.releaseSuggestedSelection();
+
     const generation = ++this.emailSearchGeneration;
     const isCurrent = (): boolean => generation === this.emailSearchGeneration;
 
