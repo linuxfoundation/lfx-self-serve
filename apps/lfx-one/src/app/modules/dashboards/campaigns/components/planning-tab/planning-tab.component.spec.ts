@@ -6,7 +6,7 @@ import { provideHttpClientTesting } from '@angular/common/http/testing';
 import { ComponentFixture, TestBed } from '@angular/core/testing';
 import type { FormGroup } from '@angular/forms';
 import { provideRouter } from '@angular/router';
-import type { CampaignBriefLoadResult, CampaignBriefOutput, CampaignProgramTypeOption, HubSpotUtmCreateResult, HubSpotUtmLookupResult } from '@lfx-one/shared/interfaces';
+import type { CampaignBriefLoadResult, CampaignBriefOutput, CampaignProgramTypeOption, HubSpotUtmLookupResult } from '@lfx-one/shared/interfaces';
 import { CampaignService } from '@services/campaign.service';
 import { ProjectContextService } from '@services/project-context.service';
 import { MessageService } from 'primeng/api';
