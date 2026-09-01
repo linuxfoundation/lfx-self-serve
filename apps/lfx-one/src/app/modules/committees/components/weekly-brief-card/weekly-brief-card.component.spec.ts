@@ -712,7 +712,44 @@ describe('WeeklyBriefCardComponent — Current activity tally (GH-1922)', () => 
     const note = fixture.nativeElement.querySelector('[data-testid="weekly-brief-card-current-activity-truncation-note"]');
     expect(note).not.toBeNull();
     expect(note.textContent as string).toContain('view Recent Activity for the full list');
-    expect(tally.getAttribute('aria-label')).toContain('view Recent Activity for the full list');
+    // The note is its own visible element (not folded into the tally's aria-label) — a screen
+    // reader must not hear it announced twice, once for the group and once for the note itself.
+    expect(tally.getAttribute('aria-label')).not.toContain('view Recent Activity for the full list');
+  });
+
+  it('does not render the truncation note when truncated is true but every ref was filtered/unmapped away, to avoid contradicting "no activity yet" (GH-1998)', async () => {
+    const truncatedEmpty = {
+      ...briefResponse([]),
+      current_activity: {
+        window_start: '2026-08-24T00:00:00Z',
+        window_end: '2026-08-27T12:00:00Z',
+        source_refs: [],
+        truncated: true,
+      },
+    };
+    getWeeklyBrief = vi.fn(() => of(truncatedEmpty));
+    await TestBed.configureTestingModule({
+      imports: [WeeklyBriefCardComponent],
+      providers: [
+        provideRouter([]),
+        provideNoopAnimations(),
+        { provide: WeeklyBriefService, useValue: { getWeeklyBrief, listWeeklyBriefs: vi.fn(() => of({ data: [] })) } },
+        { provide: FeatureFlagService, useValue: { getBooleanFlag: vi.fn(() => signal(false)) } },
+        { provide: MessageService, useValue: { add: vi.fn() } },
+        ConfirmationService,
+        { provide: UserService, useValue: { impersonating: signal(false) } },
+      ],
+    }).compileComponents();
+    fixture = TestBed.createComponent(WeeklyBriefCardComponent);
+    component = fixture.componentInstance;
+    fixture.componentRef.setInput('committee', BOARD_COMMITTEE);
+    fixture.componentRef.setInput('canEdit', true);
+    await fixture.whenStable();
+
+    expect(component.isTruncated()).toBe(false);
+    const tally = fixture.nativeElement.querySelector('[data-testid="weekly-brief-card-current-activity"]');
+    expect((tally.textContent as string).replace(/\s+/g, ' ')).toContain('no activity yet');
+    expect(fixture.nativeElement.querySelector('[data-testid="weekly-brief-card-current-activity-truncation-note"]')).toBeNull();
   });
 
   it('clicking a kind reveals its underlying ref titles, and clicking again collapses it', async () => {

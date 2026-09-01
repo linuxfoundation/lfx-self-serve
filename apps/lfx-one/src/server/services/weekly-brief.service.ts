@@ -1329,10 +1329,11 @@ export class WeeklyBriefService {
    * window_end filter. Gating on `data.length >= limit` instead catches that: a full raw page is
    * treated as "possibly truncated" regardless of composition. The cost is the mirror-image false
    * positive — a committee whose only this-week activity actually is `limit`-many future-stamped
-   * votes gets `null` instead of an honest small `sourceRefs`, since this method can't tell the two
-   * cases apart with the signal `getCommitteeActivity` exposes today. Consistent with this
-   * method's own bias (see `WeeklyBriefCurrentResponse.current_activity`'s doc comment): an
-   * unnecessary `null` is a safe, if slightly annoying, degradation; a false-complete count is not.
+   * votes gets `truncated: true` alongside its (already-honest) small `sourceRefs`, since this
+   * method can't tell the two cases apart with the signal `getCommitteeActivity` exposes today.
+   * Consistent with this method's own bias (see `WeeklyBriefCurrentResponse.current_activity`'s
+   * doc comment): an unnecessary `truncated: true` is a safe, if slightly annoying, degradation
+   * that still surfaces the real `sourceRefs` it has; a false-complete count is not.
    *
    * Known v1 residual (accepted, not solved): `data.length < limit` is a heuristic, not a
    * proof of completeness. `committee-activity.service.ts` documents — in its own "Filter
@@ -1407,8 +1408,8 @@ export class WeeklyBriefService {
       // degrades to `{ events: [], saturated: false }` in committee-activity.service.ts,
       // indistinguishable from a leg that genuinely had nothing this week. `undefined`, not
       // `null` — a leg failure is transient (the same upstream call can succeed on the next poll
-      // tick), unlike the page-fill gate's `null`, which this method's own doc comment already
-      // establishes is provably permanent within a poll cycle.
+      // tick), unlike the page-fill gate's `truncated: true`, which this method's own doc comment
+      // already establishes is provably permanent within a poll cycle.
       if (any_leg_failed) {
         logger.warning(req, 'get_weekly_brief_current_activity', 'One or more activity legs failed, omitting the tally rather than publishing an undercount', {
           committee_id: committeeId,
