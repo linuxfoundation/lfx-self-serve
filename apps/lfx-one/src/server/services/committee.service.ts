@@ -422,6 +422,38 @@ export class CommitteeService {
   }
 
   /**
+   * A single plain GET, not a `getCommitteeById` call with the rest discarded: a caller reaching
+   * only for the base record (e.g. weekly-brief.service.ts's `buildCurrentActivity`, which reads
+   * `category` for its governance gate and then passes this same resolved committee into
+   * `CommitteeActivityService.getCommitteeActivity` so that method doesn't pay an identical second
+   * fetch for a committee the caller already has) shouldn't pay `getCommitteeById`'s default-options
+   * cost of three upstream calls — base GET, settings, and an access-check — for data it throws
+   * away. `undefined` here means upstream resolved with no body at all — an empty body (which
+   * `ApiClientService.executeRequest` parses to `null` via `text ? JSON.parse(text) : null`) — NOT
+   * "committee not found": a genuine 404 or other upstream error status throws a `MicroserviceError`
+   * out of `proxyRequest` before this method ever gets a value to return, same as `getCommitteeById`'s
+   * own upstream call. Deliberately doesn't catch that throw and normalize it to `undefined` —
+   * existing callers of `getCommitteeById` already have their own not-found handling for the
+   * write/detail paths that need it; a caller reaching only for the base record has nothing to write
+   * to and no detail page to 404, so leaving the throw uncaught keeps that decision (log and degrade,
+   * or propagate) with the caller instead of forcing one.
+   *
+   * Still runs the result through `stripChatWebhookUrl` — this is a public read path returning a raw
+   * upstream fetch, exactly the shape that helper's own doc comment says must be enrolled so
+   * `Committee.has_slack_webhook`'s "never returned by any read" invariant holds everywhere, not just
+   * the two hand-audited call sites its docblock predates this method by.
+   */
+  public async getCommitteeBase(req: Request, committeeId: string): Promise<Committee | undefined> {
+    const committee = await this.microserviceProxy.proxyRequest<Committee | null>(
+      req,
+      'LFX_V2_SERVICE',
+      `/committees/${encodeURIComponent(committeeId)}`,
+      'GET'
+    );
+    return committee ? this.stripChatWebhookUrl(committee) : undefined;
+  }
+
+  /**
    * Creates a new committee with optional settings
    */
   public async createCommittee(req: Request, data: CommitteeCreateData): Promise<Committee> {
@@ -1869,7 +1901,7 @@ export class CommitteeService {
    * service via any HTTP response. Applied at every method that returns a `Committee`/`Committee[]`
    * built from a raw upstream fetch — `getCommittees`, `getDirectGrantCommittees`,
    * `searchCreatableCommittees`, `createCommittee`, `updateCommittee`, `getCommitteesByIds`
-   * (covers `getMyCommittees`) — so the "never returned by any read" invariant on
+   * (covers `getMyCommittees`), `getCommitteeBase` (GH-1922) — so the "never returned by any read" invariant on
    * {@link Committee.has_slack_webhook}'s doc comment holds everywhere, not just the two
    * hand-audited call sites. {@link getCommitteeById} calls this too, on top of (not instead of)
    * its own inline destructure of the base resource — the inline strip keeps the credential out

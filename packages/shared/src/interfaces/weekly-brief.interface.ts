@@ -96,6 +96,33 @@ export interface WeeklyBriefSourceChipSection extends WeeklyBriefSourceSection {
   chips: WeeklyBriefSourceChip[];
 }
 
+/**
+ * A `WeeklyBriefSourceSection` populated with one kind's non-zero refs from
+ * `WeeklyBriefCurrentActivity.source_refs`, plus the precomputed verb-phrase count text for
+ * that kind (e.g. "1 meeting held") — the "this week so far" tally's analog to
+ * `WeeklyBriefSourceChipSection` (GH-1922). Omitted entirely (not zero-length) for a kind with
+ * no activity — `weekly-brief-card.component.ts`'s `currentActivity` (built by
+ * `initCurrentActivitySections`) only returns non-zero kinds, same filtering
+ * `initSourceChipSections` already does for the Sources row.
+ */
+export interface WeeklyBriefCurrentActivitySection extends WeeklyBriefSourceSection {
+  refs: WeeklyBriefSourceRef[];
+  countText: string;
+}
+
+/**
+ * Verb-phrase singular/plural for one activity kind in the "this week so far" tally caption
+ * (GH-1922) — see `WEEKLY_BRIEF_CURRENT_ACTIVITY_PHRASES`'s own doc comment for the full
+ * membership/ordering/label contract, including the "recognized kinds only" scope of this list
+ * and the trailing `other` catch-all for the kinds it doesn't cover — not restated here to avoid
+ * the two drifting apart.
+ */
+export interface WeeklyBriefCurrentActivityPhrase {
+  kind: string;
+  singular: string;
+  plural: string;
+}
+
 export interface WeeklyBrief {
   uid: string;
   committee_uid: string;
@@ -167,6 +194,42 @@ export interface WeeklyBriefCurrentResponse {
    * fetch, or a fetch fault. Never a hard failure of `getCurrentBrief`.
    */
   staleness?: WeeklyBriefStaleness | null;
+  /**
+   * BFF-side enrichment (not part of upstream's contract, same as `caller_rating`): a raw
+   * count of activity in the current, not-yet-closed week — distinct from `brief`'s own
+   * completed-week window (GH-1922). Sourced from `CommitteeActivityService`'s existing live
+   * meeting/vote/document aggregation (not a weekly-brief-specific upstream call), so it's
+   * populated identically in mock and live mode — see
+   * `weekly-brief.service.ts#buildCurrentActivity`. Three states, not two — `null` and absent
+   * are deliberately distinct:
+   *   - **Absent** (key not present at all): two distinct classes of cause, only one worth
+   *     re-asking for. Either `buildCurrentActivity` genuinely couldn't produce an answer (see
+   *     that method's own doc comment for its three actual causes) — transient, worth asking
+   *     again on a governance committee, up to `WEEKLY_BRIEF_CURRENT_ACTIVITY_MAX_ASK_ATTEMPTS`
+   *     poll ticks; OR the caller deliberately asked the BFF to skip the fan-out via
+   *     `includeCurrentActivity: false` (GH-1922 cost optimization —
+   *     `weekly-brief-card.component.ts` does this on every non-poll load for any committee it
+   *     already knows isn't governance-classified, since the tally section can never render for
+   *     one regardless) — never worth re-asking for. A caller re-asking on absent must also check
+   *     whether asking is worthwhile at all — see `weekly-brief-card.component.ts`'s `pollUntilTerminal`,
+   *     which additionally gates on `isGoverningBoardCommittee()` for exactly this reason.
+   *   - **`null`**: known, definitively, not to apply — the committee isn't
+   *     governance-classified, or the current week's activity exceeds what a single upstream
+   *     page can return (never a silently-truncated count). Not transient; re-asking within the
+   *     same poll cycle can't change either answer, so a caller that retries on any falsy value
+   *     without checking for this distinction (e.g. `weekly-brief-card.component.ts`'s
+   *     `pollUntilTerminal`) would spend calls forever for no reason.
+   *   - **Present**: the real tally, possibly with an empty `source_refs` (a genuine quiet week
+   *     — still a real answer, not absence).
+   */
+  current_activity?: WeeklyBriefCurrentActivity | null;
+}
+
+/** See `WeeklyBriefCurrentResponse.current_activity`. */
+export interface WeeklyBriefCurrentActivity {
+  window_start: string;
+  window_end: string;
+  source_refs: WeeklyBriefSourceRef[];
 }
 
 /** A caller's one-tap quality rating on a specific weekly-brief revision. BFF-only — no upstream equivalent. */
