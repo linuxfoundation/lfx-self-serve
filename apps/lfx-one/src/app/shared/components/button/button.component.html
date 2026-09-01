@@ -37,6 +37,7 @@
     pButton
     [type]="type()"
     [routerLink]="disabled() || loading() ? null : routerLink()"
+    [class.p-disabled]="disabled() || loading()"
     [attr.aria-disabled]="disabled() || loading() ? true : null"
     [queryParams]="queryParams()"
     [target]="target()"
@@ -51,7 +52,7 @@
     [size]="size()"
     [loading]="loading()"
     [ariaLabel]="ariaLabel()!"
-    [tabindex]="tabindex()"
+    [attr.tabindex]="disabled() || loading() ? -1 : tabindex()"
     [fluid]="fluid()"
     [icon]="icon()!"
     [pTooltip]="tooltip()"
