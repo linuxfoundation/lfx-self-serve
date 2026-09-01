@@ -1,7 +1,7 @@
 // Copyright The Linux Foundation and each contributor to LFX.
 // SPDX-License-Identifier: MIT
 
-import { HttpClient } from '@angular/common/http';
+import { HttpClient, HttpParams } from '@angular/common/http';
 import { TestBed } from '@angular/core/testing';
 import { of, throwError } from 'rxjs';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
@@ -103,7 +103,10 @@ describe('ProjectService.searchProjects', () => {
     let result: unknown[] = [];
     service.searchProjects('example').subscribe((projects) => (result = projects));
 
-    expect(httpGet).toHaveBeenCalledWith('/api/projects/search', expect.anything());
+    expect(httpGet).toHaveBeenCalledTimes(1);
+    const [url, options] = httpGet.mock.calls[0];
+    expect(url).toBe('/api/projects/search');
+    expect((options.params as HttpParams).get('q')).toBe('example');
     expect(result).toEqual([{ uid: 'p1', name: 'Example' }]);
   });
 
