@@ -263,10 +263,11 @@ export interface GithubAccountOption {
   /** Immutable GitHub account number. Handles get renamed and reclaimed; this does not. */
   githubId: string;
   /**
-   * Display handle. Never matched on to decide identity or to address the hand-off — that is
-   * `githubId`'s job. It is compared against the handle recorded on an existing agreement, but
-   * only to decide whether to gray a card: renames and reclaims make it unreliable, and a wrong
-   * result there can only gray a card that should not have been, or miss one that should.
+   * Display handle, and never an identity key on its own. It has two consumers beyond display:
+   * it rides alongside `githubId` on prepare-sign, where the producer resolves the pair against
+   * each other, and it is compared against the handle an existing agreement recorded so the
+   * identity step can gray the account that already signed. Renames and reclaims make it
+   * unreliable for both, which is why `githubId` is what actually addresses the account.
    */
   githubUsername: string;
   avatarUrl?: string;
