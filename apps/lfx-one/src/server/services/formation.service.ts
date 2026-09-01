@@ -247,6 +247,7 @@ export class FormationService {
     return { deep_link_url: `https://admin.linuxfoundation.org/formations/${encodeURIComponent(formation.parent_project_slug)}` };
   }
 
+  // TODO(#1957): swap the fixture writes below for a real lfx-v2-formation-service mutation call.
   public async declineFormation(req: Request, formationUid: string, reason: unknown): Promise<Formation> {
     this.assertValidReason(reason, 'A reason is required to decline a formation', req, 'decline_formation');
 
