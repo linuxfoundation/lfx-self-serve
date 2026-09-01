@@ -37,7 +37,7 @@
           </button>
         }
       } @else {
-        <span>no activity yet</span>
+        <span>{{ currentActivityEmptyText() }}</span>
       }
     </div>
     @for (section of currentActivity(); track section.kind) {

@@ -287,14 +287,22 @@ export class WeeklyBriefCardComponent {
   // happens to be empty.
   public readonly isTruncated: Signal<boolean> = computed(() => !!this.briefResponse()?.current_activity?.truncated);
 
-  // "This week so far: 1 meeting held, 1 vote closed" / "This week so far: no activity yet". The
-  // truncation note (GH-1998) is a separate visible element (see the template), not folded in
-  // here — this stays the accessible name for the tally group alone, so a screen reader doesn't
-  // hear the note announced twice (once for this group, once for its own sibling paragraph).
+  // GH-1998: the empty-tally placeholder itself, not just the separate truncation note below it,
+  // must not assert "no activity yet" when isTruncated() is true — that's the same false-complete
+  // claim this whole fix exists to avoid, just relocated to the tally line instead of the note.
+  // Read by both the visible @else span and currentActivityLine (its aria-label) below, so the
+  // two can't drift out of sync the way "no activity yet" vs. the note text did before this fix.
+  protected readonly currentActivityEmptyText: Signal<string> = computed(() => (this.isTruncated() ? "activity couldn't be counted" : 'no activity yet'));
+
+  // "This week so far: 1 meeting held, 1 vote closed" / "This week so far: no activity yet" /
+  // "This week so far: activity couldn't be counted". The truncation note (GH-1998) is a separate
+  // visible element (see the template), not folded in here — this stays the accessible name for
+  // the tally group alone, so a screen reader doesn't hear the note announced twice (once for
+  // this group, once for its own sibling paragraph).
   public readonly currentActivityLine: Signal<string> = computed(() => {
     const sections = this.currentActivity();
     return !sections.length
-      ? `${this.currentActivityPrefix} no activity yet`
+      ? `${this.currentActivityPrefix} ${this.currentActivityEmptyText()}`
       : `${this.currentActivityPrefix} ${sections.map((section) => section.countText).join(', ')}`;
   });
 

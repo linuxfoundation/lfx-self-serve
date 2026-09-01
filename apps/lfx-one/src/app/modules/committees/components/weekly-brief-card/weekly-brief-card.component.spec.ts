@@ -711,7 +711,9 @@ describe('WeeklyBriefCardComponent — Current activity tally (GH-1922)', () => 
     expect((tally.textContent as string).replace(/\s+/g, ' ')).toContain('1 meeting held');
     const note = fixture.nativeElement.querySelector('[data-testid="weekly-brief-card-current-activity-truncation-note"]');
     expect(note).not.toBeNull();
-    expect(note.textContent as string).toContain('view Recent Activity for the full list');
+    // Pins the non-empty-tally variant specifically — 'view Recent Activity for the full list'
+    // alone is shared by both variants and wouldn't catch the empty-tally wording rendering here.
+    expect(note.textContent as string).toContain('This count may be incomplete');
     // The note is its own visible element (not folded into the tally's aria-label) — a screen
     // reader must not hear it announced twice, once for the group and once for the note itself.
     expect(tally.getAttribute('aria-label')).not.toContain('view Recent Activity for the full list');
@@ -748,11 +750,14 @@ describe('WeeklyBriefCardComponent — Current activity tally (GH-1922)', () => 
 
     // A bare, unqualified "no activity yet" would be a false-complete signal here — the raw
     // upstream page was full, so this genuinely might not be a quiet week (GH-1922: "do NOT
-    // fabricate ... degrade gracefully"). isTruncated stays true and the note still renders,
-    // just with wording that doesn't claim the (possibly wrong) partial count is a real count.
+    // fabricate ... degrade gracefully"). isTruncated stays true and both the tally line's own
+    // placeholder and the separate note reflect that, so a screen-reader user reading only the
+    // group's aria-label (not the note, a sibling element) still gets the honest signal.
     expect(component.isTruncated()).toBe(true);
     const tally = fixture.nativeElement.querySelector('[data-testid="weekly-brief-card-current-activity"]');
-    expect((tally.textContent as string).replace(/\s+/g, ' ')).toContain('no activity yet');
+    expect((tally.textContent as string).replace(/\s+/g, ' ')).not.toContain('no activity yet');
+    expect((tally.textContent as string).replace(/\s+/g, ' ')).toContain("activity couldn't be counted");
+    expect(tally.getAttribute('aria-label')).toContain("activity couldn't be counted");
     const note = fixture.nativeElement.querySelector('[data-testid="weekly-brief-card-current-activity-truncation-note"]');
     expect(note).not.toBeNull();
     expect(note.textContent as string).toContain('could not be fully counted');
