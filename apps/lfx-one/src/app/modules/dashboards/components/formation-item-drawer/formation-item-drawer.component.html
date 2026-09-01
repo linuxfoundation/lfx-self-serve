@@ -52,7 +52,7 @@
               label="Mark complete"
               size="small"
               severity="primary"
-              [disabled]="!currentItem.can_complete"
+              [disabled]="!currentItem.can_complete || busy()"
               [loading]="completing()"
               (onClick)="onMarkComplete()"
               data-testid="formation-item-drawer-mark-complete" />
@@ -62,8 +62,8 @@
                 size="small"
                 severity="secondary"
                 [outlined]="true"
-                [disabled]="!currentItem.can_complete"
-                [loading]="skipInFlight()"
+                [disabled]="!currentItem.can_complete || busy()"
+                [loading]="mutationInFlight()"
                 (onClick)="onSkip()"
                 data-testid="formation-item-drawer-skip" />
             }
@@ -96,6 +96,7 @@
           label="Save"
           size="small"
           severity="secondary"
+          [disabled]="busy()"
           [loading]="savingDetails()"
           (onClick)="onSaveDetails()"
           data-testid="formation-item-drawer-save" />

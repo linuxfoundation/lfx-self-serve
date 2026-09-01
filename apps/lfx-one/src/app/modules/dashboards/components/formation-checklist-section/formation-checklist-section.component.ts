@@ -50,8 +50,13 @@ export class FormationChecklistSectionComponent {
   public readonly drawerVisible = signal(false);
   public readonly drawerItemUid = signal<string | null>(null);
 
-  /** Item uids with a row action or skip currently in flight — guards a double-click into issuing two writes (and two history entries), and drives the row/drawer buttons' `[loading]` state. */
+  /** Item uids with a row action or skip currently in flight — guards a double-click into issuing two writes (and two history entries), and drives the row/drawer buttons' `[loading]`/`[disabled]` state. */
   protected readonly submittingItemUids = signal<ReadonlySet<string>>(new Set());
+  /** `drawerItemUid()` is nullable — `.has(null)` is always false on a `Set<string>`, but spelling it out avoids leaning on a `?? ''` sentinel that would coincidentally collide with a real (if invalid) empty-string uid. */
+  protected readonly drawerItemMutationInFlight: Signal<boolean> = computed(() => {
+    const uid = this.drawerItemUid();
+    return uid !== null && this.submittingItemUids().has(uid);
+  });
 
   private readonly response: Signal<FormationChecklistResponse | null> = this.initResponse();
   protected readonly formation = computed(() => this.response()?.formation ?? null);

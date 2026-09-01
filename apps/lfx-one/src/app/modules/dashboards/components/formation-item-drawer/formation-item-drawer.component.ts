@@ -29,8 +29,15 @@ export class FormationItemDrawerComponent {
   private readonly messageService = inject(MessageService);
 
   public readonly itemUid = input<string | null>(null);
-  /** True while the parent's skip-reason dialog flow has actually submitted the skip for this item — the section owns that mutation, not this drawer, so it must tell this drawer when to show the Skip button's `[loading]` state. */
-  public readonly skipInFlight = input<boolean>(false);
+  /**
+   * True while the section has *any* mutation in flight for this item — a row action
+   * (provisionable/request) as well as a submitted skip, since the section owns both and this
+   * drawer only owns Mark complete/Save. No fixture item today is both gating (so it renders a Skip
+   * button here) and provisionable/request (so it also has a row action) — but that's current
+   * fixture data, not an enforced invariant, so this input is deliberately named/scoped for the
+   * broader "any mutation" contract rather than assuming it can only ever mean skip.
+   */
+  public readonly mutationInFlight = input<boolean>(false);
 
   /** Fired for a status-changing action (Mark complete) — the section closes the drawer and refreshes the row list. */
   public readonly itemChanged = output<FormationItem>();
@@ -58,6 +65,12 @@ export class FormationItemDrawerComponent {
    */
   protected readonly completing: WritableSignal<boolean> = signal(false);
   protected readonly savingDetails: WritableSignal<boolean> = signal(false);
+  /**
+   * Every write this drawer can trigger against the open item — Mark complete, Save, and (via
+   * `mutationInFlight`) the section-owned Skip/row-action mutation. All three write the same item,
+   * so any one of them in flight must block the other two, not just its own button.
+   */
+  protected readonly busy: Signal<boolean> = computed(() => this.completing() || this.savingDetails() || this.mutationInFlight());
   protected readonly drawerData: Signal<FormationDrawerData> = this.initDrawerData();
   protected readonly item = computed(() => this.drawerData().item);
   protected readonly history = computed(() => this.drawerData().history);
@@ -70,7 +83,7 @@ export class FormationItemDrawerComponent {
 
   protected onMarkComplete(): void {
     const item = this.item();
-    if (!item || this.completing() || this.savingDetails()) return;
+    if (!item || this.busy()) return;
     this.completing.set(true);
 
     this.formationService
@@ -93,12 +106,13 @@ export class FormationItemDrawerComponent {
 
   protected onSkip(): void {
     const item = this.item();
-    if (item) this.skipRequested.emit(item);
+    if (!item || this.busy()) return;
+    this.skipRequested.emit(item);
   }
 
   protected onSaveDetails(): void {
     const item = this.item();
-    if (!item || this.completing() || this.savingDetails()) return;
+    if (!item || this.busy()) return;
     this.savingDetails.set(true);
 
     this.formationService
