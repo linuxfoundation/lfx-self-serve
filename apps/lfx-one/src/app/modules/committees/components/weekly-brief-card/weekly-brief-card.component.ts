@@ -266,14 +266,26 @@ export class WeeklyBriefCardComponent {
   // total. Deliberately doesn't name a count: the truncation gate fires on the raw upstream page
   // size, before the window_end filter and kind-mapping this component's own tally is built from,
   // so a specific number here (e.g. "50+ events") could overstate what actually happened this
-  // week. Starting-point copy, flagged for product review, not locked in.
-  protected readonly currentActivityTruncationNote = 'This count may be incomplete — view Recent Activity for the full list.';
-
-  // Gated on currentActivity().length too — not just the server's truncated flag — so the note
-  // can never render alongside "no activity yet": a page full of raw events that all get
+  // week. Two variants, not one static string: a page full of raw events that all get
   // filtered/unmapped away (see buildCurrentActivity's own doc comment) still carries
-  // truncated: true, and "no activity yet. This count may be incomplete" would contradict itself.
-  public readonly isTruncated: Signal<boolean> = computed(() => !!this.briefResponse()?.current_activity?.truncated && this.currentActivity().length > 0);
+  // truncated: true with an empty tally, and pairing that with "This count may be incomplete"
+  // would read as "no activity yet" when the truth is closer to "we don't actually know." Hiding
+  // the note in that case instead (as an earlier version of this fix did) would be worse — a
+  // false-complete "no activity yet" is exactly the outcome GH-1922 says to avoid; the fix is
+  // to say the honest thing, not to say nothing. Starting-point copy, flagged for product
+  // review, not locked in.
+  protected readonly currentActivityTruncationNote: Signal<string> = computed(() =>
+    this.currentActivity().length
+      ? 'This count may be incomplete — view Recent Activity for the full list.'
+      : 'Activity this week could not be fully counted — view Recent Activity for the full list.'
+  );
+
+  // The server's raw truncated flag — do not additionally gate this on currentActivity().length.
+  // The template always shows *some* truncation note once this is true (see
+  // currentActivityTruncationNote's two variants above); a reader reaching for isTruncated to ask
+  // "is this data complete?" must get a truthful answer regardless of whether the surviving tally
+  // happens to be empty.
+  public readonly isTruncated: Signal<boolean> = computed(() => !!this.briefResponse()?.current_activity?.truncated);
 
   // "This week so far: 1 meeting held, 1 vote closed" / "This week so far: no activity yet". The
   // truncation note (GH-1998) is a separate visible element (see the template), not folded in

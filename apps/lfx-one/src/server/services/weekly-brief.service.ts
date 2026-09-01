@@ -1499,8 +1499,8 @@ export class WeeklyBriefService {
         committee_id: committeeId,
         err,
       });
-      // undefined, not null — this failure is transient (a lookup/fetch error), unlike the two
-      // null cases above, so a caller is right to ask again.
+      // undefined, not null — this failure is transient (a lookup/fetch error), unlike the settled
+      // null case above (non-governance), so a caller is right to ask again.
       return undefined;
     }
   }

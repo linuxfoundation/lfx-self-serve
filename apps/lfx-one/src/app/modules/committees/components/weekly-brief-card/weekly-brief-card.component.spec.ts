@@ -717,7 +717,7 @@ describe('WeeklyBriefCardComponent — Current activity tally (GH-1922)', () => 
     expect(tally.getAttribute('aria-label')).not.toContain('view Recent Activity for the full list');
   });
 
-  it('does not render the truncation note when truncated is true but every ref was filtered/unmapped away, to avoid contradicting "no activity yet" (GH-1998)', async () => {
+  it('still renders a truncation note, with different wording, when truncated is true but every ref was filtered/unmapped away (GH-1998)', async () => {
     const truncatedEmpty = {
       ...briefResponse([]),
       current_activity: {
@@ -746,10 +746,16 @@ describe('WeeklyBriefCardComponent — Current activity tally (GH-1922)', () => 
     fixture.componentRef.setInput('canEdit', true);
     await fixture.whenStable();
 
-    expect(component.isTruncated()).toBe(false);
+    // A bare, unqualified "no activity yet" would be a false-complete signal here — the raw
+    // upstream page was full, so this genuinely might not be a quiet week (GH-1922: "do NOT
+    // fabricate ... degrade gracefully"). isTruncated stays true and the note still renders,
+    // just with wording that doesn't claim the (possibly wrong) partial count is a real count.
+    expect(component.isTruncated()).toBe(true);
     const tally = fixture.nativeElement.querySelector('[data-testid="weekly-brief-card-current-activity"]');
     expect((tally.textContent as string).replace(/\s+/g, ' ')).toContain('no activity yet');
-    expect(fixture.nativeElement.querySelector('[data-testid="weekly-brief-card-current-activity-truncation-note"]')).toBeNull();
+    const note = fixture.nativeElement.querySelector('[data-testid="weekly-brief-card-current-activity-truncation-note"]');
+    expect(note).not.toBeNull();
+    expect(note.textContent as string).toContain('could not be fully counted');
   });
 
   it('clicking a kind reveals its underlying ref titles, and clicking again collapses it', async () => {
