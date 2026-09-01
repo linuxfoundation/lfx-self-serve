@@ -65,6 +65,7 @@ import {
   resolveOccurrenceRecurrence,
   TagSeverity,
 } from '@lfx-one/shared';
+import { isMeetingInviteResponsesEnabled } from '@lfx-one/shared/utils';
 import { RecordingModalComponent } from '@components/recording-modal/recording-modal.component';
 import { SummaryModalComponent } from '@components/summary-modal/summary-modal.component';
 import { LinkifyPipe } from '@pipes/linkify.pipe';
@@ -182,12 +183,15 @@ export class MeetingCardComponent implements OnInit {
   // True when the user is invited OR has just registered in this session (optimistic, before the
   // meeting refetch settles invited:true). Used to show RSVP options immediately after registration.
   public readonly effectivelyInvited: Signal<boolean> = computed(() => this.isInvited() || this.optimisticInvited());
+  public readonly inviteResponsesEnabled: Signal<boolean> = computed(() => isMeetingInviteResponsesEnabled(this.meeting()));
   public readonly canRegisterForMeeting: Signal<boolean> = computed(
     () => this.authenticated() && !this.effectivelyInvited() && !this.meeting().restricted && this.meeting().visibility === 'public'
   );
   // Computed signal to check if user can toggle between RSVP Details and RSVP Button Group
-  // True when user is both an organizer AND invited to the meeting (for non-past meetings)
-  public readonly canToggleRsvpView: Signal<boolean> = computed(() => !!this.meeting().organizer && this.isInvited() && !this.pastMeeting());
+  // True when user is both an organizer AND invited, and this meeting collects LFX RSVPs.
+  public readonly canToggleRsvpView: Signal<boolean> = computed(
+    () => !!this.meeting().organizer && this.isInvited() && !this.pastMeeting() && this.inviteResponsesEnabled()
+  );
   public readonly guestCount: Signal<number> = this.initGuestCount();
 
   public readonly meetingTitle: Signal<string> = this.initMeetingTitle();

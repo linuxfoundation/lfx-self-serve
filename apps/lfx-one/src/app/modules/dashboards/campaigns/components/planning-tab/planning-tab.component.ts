@@ -6,6 +6,7 @@ import { Component, computed, DestroyRef, inject, input, OnInit, output, PLATFOR
 import { takeUntilDestroyed, toObservable, toSignal } from '@angular/core/rxjs-interop';
 import { ReactiveFormsModule, FormBuilder, Validators } from '@angular/forms';
 import { ButtonComponent } from '@components/button/button.component';
+import { InputTextComponent } from '@components/input-text/input-text.component';
 import { CAMPAIGN_GOALS, CAMPAIGN_PLATFORMS } from '@lfx-one/shared/constants';
 import { CampaignService } from '@services/campaign.service';
 import { ProjectContextService } from '@services/project-context.service';
@@ -36,7 +37,7 @@ type PlanningStep = 'input' | 'generating' | 'review';
 
 @Component({
   selector: 'lfx-planning-tab',
-  imports: [ReactiveFormsModule, ButtonComponent, NgClass],
+  imports: [ReactiveFormsModule, ButtonComponent, InputTextComponent, NgClass],
   templateUrl: './planning-tab.component.html',
   styleUrl: './planning-tab.component.scss',
 })
@@ -114,6 +115,43 @@ export class PlanningTabComponent implements OnInit {
   protected readonly selectedPlatforms = signal<Set<CampaignPlatform>>(new Set(['google-ads']));
   protected readonly statusMessages = signal<string[]>([]);
   protected readonly eventDetails = signal<CampaignEventDetails | null>(null);
+
+  /**
+   * Email-brief editing (LFXV2-2770).
+   *
+   * An email brief comes back as event details and a UTM token — no `structuredCopy`, which is
+   * why the paid Edit entry point is hidden for email. But the SCRAPE is what gets things wrong
+   * (a wrong date, a venue that reads oddly, an audience the page never stated), and those are
+   * exactly the fields the generator is instructed to use verbatim. Without an editor the only
+   * remedy is to fix the event page and re-scrape.
+   *
+   * Held as a separate draft rather than mutating `eventDetails` in place, so Cancel restores
+   * what the scrape actually returned rather than the last thing typed.
+   */
+  protected readonly isEditingEmailBrief = signal<boolean>(false);
+
+  /**
+   * The email brief editor, as a FormGroup rather than six signals.
+   *
+   * `frontend-checklist.md` 14.1 makes the `lfx-input-text` wrapper mandatory for changed form
+   * controls, and the wrapper takes a FormGroup plus a control name -- `ngModel` is not supported.
+   * Raw `<input>` bound to signals worked but recreated the wrapper's label/validation behaviour
+   * by hand, which is the duplication the rule exists to stop.
+   *
+   * `countryCode` is here for a reason the others are not: it became editable when the fallback
+   * stopped inventing 'US'. An extraction that produces nothing now leaves it empty -- the honest
+   * answer -- but without a field to correct it an operator could not build a country-scoped
+   * audience at all. The fields beside it were already repairable; this one carried the
+   * consequence.
+   */
+  protected readonly emailEditForm = this.fb.group({
+    name: [''],
+    dates: [''],
+    city: [''],
+    countryCode: [''],
+    audience: [''],
+    registrationUrl: [''],
+  });
   protected readonly copyBuffer = signal('');
   protected readonly structuredCopy = signal<Record<string, unknown> | null>(null);
   protected readonly hsUtm = signal<string | null>(null);
@@ -358,6 +396,7 @@ export class PlanningTabComponent implements OnInit {
     this.step.set('input');
     this.statusMessages.set([]);
     this.eventDetails.set(null);
+    this.isEditingEmailBrief.set(false);
     this.copyBuffer.set('');
     this.structuredCopy.set(null);
     this.hsUtm.set(null);
@@ -522,6 +561,7 @@ export class PlanningTabComponent implements OnInit {
     this.step.set('generating');
     this.statusMessages.set([]);
     this.eventDetails.set(null);
+    this.isEditingEmailBrief.set(false);
     this.copyBuffer.set('');
     this.structuredCopy.set(null);
     this.keywords.set([]);
@@ -573,14 +613,28 @@ export class PlanningTabComponent implements OnInit {
     if (this.isEditing()) {
       this.saveEdits();
     }
+    // Same reason as the paid flush above: the emitted `eventDetails` is what generation is told
+    // to use verbatim, so an editor still open here would send the UNCORRECTED scrape while the
+    // user is looking at their correction on screen.
+    if (this.isEditingEmailBrief()) {
+      this.saveEmailEdit();
+    }
     const url = this.briefForm.controls.url.value.trim();
     const fallbackName = this.extractEventName(url);
     const fallbackSlug = this.extractSlug(url);
+    // Every field here is EMPTY except the name and slug, which are derived from the URL the user
+    // typed. `countryCode` was 'US' -- the one invented value in an otherwise honest blank record,
+    // and the one that does damage: it reaches campaign-service's audience builder as `country`,
+    // so a failed extraction for a Nairobi event built a United States audience. Real, plausible,
+    // and wrong, which is worse than an audience that refuses to build.
+    //
+    // Empty instead. `countryNameFor` maps an unknown code to '' rather than a raw code, so the
+    // builder receives no country filter rather than the wrong one.
     const details: CampaignEventDetails = this.eventDetails() ?? {
       name: fallbackName,
       dates: '',
       city: '',
-      countryCode: 'US',
+      countryCode: '',
       audience: '',
       themes: [],
       registrationUrl: url,
@@ -645,6 +699,54 @@ export class PlanningTabComponent implements OnInit {
       default:
         return 'bg-gray-100 text-gray-600';
     }
+  }
+
+  /** Open the email brief editor, seeded with what the scrape returned. */
+  protected enterEmailEditMode(): void {
+    const d = this.eventDetails();
+    if (d === null) {
+      return;
+    }
+    this.emailEditForm.setValue({
+      name: d.name,
+      dates: d.dates,
+      city: d.city,
+      countryCode: d.countryCode,
+      audience: d.audience,
+      registrationUrl: d.registrationUrl,
+    });
+    this.isEditingEmailBrief.set(true);
+  }
+
+  /**
+   * Apply the edits to the brief the rest of the flow reads.
+   *
+   * Writes back into `eventDetails` because that is what `proceedToImplementation` emits and what
+   * content generation is told to use verbatim — an edit that stopped at the form would show the
+   * corrected date on screen while the generator still wrote the wrong one.
+   */
+  protected saveEmailEdit(): void {
+    const d = this.eventDetails();
+    if (d === null) {
+      return;
+    }
+    this.eventDetails.set({
+      ...d,
+      name: (this.emailEditForm.controls.name.value ?? '').trim(),
+      dates: (this.emailEditForm.controls.dates.value ?? '').trim(),
+      city: (this.emailEditForm.controls.city.value ?? '').trim(),
+      // Upper-cased: `countryNameFor` looks the code up case-sensitively after its own
+      // normalisation, and an operator typing "ke" should not silently produce no country.
+      countryCode: (this.emailEditForm.controls.countryCode.value ?? '').trim().toUpperCase(),
+      audience: (this.emailEditForm.controls.audience.value ?? '').trim(),
+      registrationUrl: (this.emailEditForm.controls.registrationUrl.value ?? '').trim(),
+    });
+    this.isEditingEmailBrief.set(false);
+  }
+
+  /** Discard the edits. `eventDetails` was never mutated, so nothing to restore. */
+  protected cancelEmailEdit(): void {
+    this.isEditingEmailBrief.set(false);
   }
 
   protected enterEditMode(): void {

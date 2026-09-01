@@ -5,6 +5,8 @@ import { describe, expect, it } from 'vitest';
 
 import {
   CAMPAIGN_ALERT_THRESHOLDS,
+  CAMPAIGN_EMAIL_TYPES,
+  DEFAULT_CAMPAIGN_EMAIL_TYPE_ID,
   META_OBJECTIVE_LABELS,
   META_OBJECTIVE_PARAMS,
   META_SELECTABLE_OBJECTIVES,
@@ -361,5 +363,28 @@ describe('CAMPAIGN_ALERT_THRESHOLDS', () => {
     expect(CAMPAIGN_ALERT_THRESHOLDS['linkedin-ads'].minImpressions).toBeNull();
     expect(CAMPAIGN_ALERT_THRESHOLDS['meta-ads'].minImpressions).not.toBeNull();
     expect(CAMPAIGN_ALERT_THRESHOLDS['reddit-ads'].minImpressions).not.toBeNull();
+  });
+});
+
+describe('CAMPAIGN_EMAIL_TYPES', () => {
+  it('has a default id that actually exists in the list', () => {
+    // Without this, renaming the id leaves `selectedEmailStage()` undefined, the stage is omitted
+    // from generation, and the `[selected]` binding matches nothing -- so the control falls back
+    // to the FIRST option. That is the CFP-Launch default bug, resurrected silently.
+    expect(CAMPAIGN_EMAIL_TYPES.some((t) => t.id === DEFAULT_CAMPAIGN_EMAIL_TYPE_ID)).toBe(true);
+  });
+
+  it('maps every type to a stage campaign-service enumerates', () => {
+    const upstream = new Set(['CFP Launch', 'Schedule Announcement', 'Registration Push', 'Discount Offer', 'Final Countdown', 'Post-Event']);
+    // A stage outside the enum is refused with a 400, so a typo here breaks that type entirely.
+    for (const t of CAMPAIGN_EMAIL_TYPES) {
+      expect(upstream.has(t.stage), `${t.id} -> ${t.stage}`).toBe(true);
+    }
+  });
+
+  it('gives every type at least one keyword to rank clones by', () => {
+    for (const t of CAMPAIGN_EMAIL_TYPES) {
+      expect(t.keywords.length, t.id).toBeGreaterThan(0);
+    }
   });
 });

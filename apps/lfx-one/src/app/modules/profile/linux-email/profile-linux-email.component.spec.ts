@@ -36,6 +36,11 @@ describe('ProfileLinuxEmailComponent — forward re-auth state (#1935)', () => {
     authorizeUrl: 'https://app.dev.lfx.dev/api/profile/auth/start?returnTo=/profile/identities',
   };
 
+  const claimedReauthUnavailable: LinuxAliasData = {
+    ...claimedNeedsReauth,
+    authorizeUrl: undefined,
+  };
+
   const claimedForwardUnset: LinuxAliasData = {
     state: 'claimed',
     domain: 'linux.com',
@@ -140,6 +145,25 @@ describe('ProfileLinuxEmailComponent — forward re-auth state (#1935)', () => {
     // Regression guard: clearing this here would reopen the automatic-redirect loop
     // maybeReauthForForward exists to prevent.
     expect(sessionStorage.getItem(REAUTH_FLAG_KEY)).toBe('1');
+  });
+
+  it('clears the guard and does not redirect once a reload comes back without forwardAuthRequired', async () => {
+    sessionStorage.setItem(REAUTH_FLAG_KEY, '1');
+    const { locationHref } = await setup(claimedWithForward);
+
+    expect(sessionStorage.getItem(REAUTH_FLAG_KEY)).toBeNull();
+    expect(locationHref()).toBe('https://app.dev.lfx.dev/profile/identities');
+  });
+
+  it('neither redirects nor latches the guard when Flow C is unconfigured (no authorizeUrl)', async () => {
+    const { fixture, locationHref } = await setup(claimedReauthUnavailable);
+
+    expect(locationHref()).toBe('https://app.dev.lfx.dev/profile/identities');
+    expect(sessionStorage.getItem(REAUTH_FLAG_KEY)).toBeNull();
+
+    const compiled = fixture.nativeElement as HTMLElement;
+    expect(compiled.querySelector('[data-testid="linux-email-forward-reauth"]')).toBeTruthy();
+    expect(compiled.querySelector('[data-testid="linux-email-forward-select"]')).toBeFalsy();
   });
 
   it('keeps the select usable when the forward is genuinely unset (no forwardAuthRequired)', async () => {

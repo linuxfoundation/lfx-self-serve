@@ -295,6 +295,20 @@ export interface Meeting {
   youtube_upload_enabled: boolean | null;
   /** Show meeting attendees on meeting details page */
   show_meeting_attendees?: boolean | null;
+  /**
+   * Whether LFX invite-response (RSVP) tracking is enabled for this meeting.
+   * ITX GET `/itx/meetings/:uid` returns this field (omitted when false via Go `omitempty`).
+   * False/absent for meetings created before the January 2024 invite-responses release.
+   * Self Serve must hide RSVP counts/UI when this is not true
+   * (linuxfoundation/lfx-self-serve-ops#4, GH-1951).
+   */
+  is_invite_responses_enabled?: boolean;
+  /**
+   * Indexed `v1_meeting` name for the same flag as `is_invite_responses_enabled`.
+   * The BFF maps this onto `is_invite_responses_enabled` via
+   * `normalizeIndexedMeetingInviteResponses`; UI should read the latter.
+   */
+  use_new_invite_email_address?: boolean;
   /** Who can access meeting artifacts (recordings, transcripts, AI summaries) */
   artifact_visibility: ArtifactVisibility | null;
   /** Per-meeting override for cancelling registration on committee removal; "inherit" defers to the project default */

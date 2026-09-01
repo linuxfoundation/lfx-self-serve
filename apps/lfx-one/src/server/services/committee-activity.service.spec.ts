@@ -178,7 +178,7 @@ describe('CommitteeActivityService', () => {
 
   it('returns an empty feed when every source is empty', async () => {
     const result = await service.getCommitteeActivity(req, COMMITTEE_UID, { limit: 8 });
-    expect(result).toEqual({ data: [], page_token: undefined });
+    expect(result).toEqual({ data: [], page_token: undefined, any_leg_saturated: false, any_leg_failed: false });
   });
 
   it('merges all four sources and sorts the result by occurred_at descending', async () => {
@@ -275,13 +275,13 @@ describe('CommitteeActivityService', () => {
   });
 
   describe('since/cursor/limit handling', () => {
-    it('sends since as date_from and cursor.before as date_to to every source, as best-effort narrowing', async () => {
-      // Every leg's occurred_at is derived from a field-fallback a single upstream date_field can't
-      // fully represent (see the comments in fetchPastMeetingEvents/fetchVoteEvents/etc.) — the
-      // upstream date params are best-effort narrowing to keep the fetched volume small, not a
-      // correctness guarantee. The in-memory since/cursor filter in getCommitteeActivity is what
-      // actually enforces the window; dropping the upstream narrowing entirely (an earlier version
-      // of this fix) traded that rare miss for hard truncation at fetchSize on every page instead.
+    it('sends since as date_from and cursor.before as date_to to meetings, as best-effort narrowing', async () => {
+      // Meetings' occurred_at is derived from a field-fallback a single upstream date_field can't
+      // fully represent (see fetchPastMeetingEvents' own comment) — the upstream date params are
+      // best-effort narrowing to keep the fetched volume small, not a correctness guarantee. The
+      // in-memory since/cursor filter in getCommitteeActivity is what actually enforces the window;
+      // dropping the upstream narrowing entirely (an earlier version of this fix) traded that rare
+      // miss for hard truncation at fetchSize on every page instead.
       await service.getCommitteeActivity(req, COMMITTEE_UID, {
         since: '2026-01-01T00:00:00Z',
         cursor: { before: '2026-02-01T00:00:00Z', key: 'vote:unrelated' },
@@ -292,8 +292,8 @@ describe('CommitteeActivityService', () => {
       // ceiling test below) — an already-whole-second cursor still round-trips through
       // Date.toISOString(), which always emits milliseconds, hence the trailing `.000Z`. `since`
       // round-trips through the same normalizeTimestamp/Date.toISOString() call on the way in, so
-      // it picks up the identical `.000Z` — these three assertions cover that round-trip shape for
-      // an already-well-formed `since`; the dedicated "normalizes a zone-less since" test below
+      // it picks up the identical `.000Z` — this assertion covers that round-trip shape for an
+      // already-well-formed `since`; the dedicated "normalizes a zone-less since" test below
       // covers the actual reformatting case (a value Date.parse accepts but isn't RFC3339 yet).
       expect(getMeetings).toHaveBeenCalledWith(
         req,
@@ -301,10 +301,34 @@ describe('CommitteeActivityService', () => {
         'v1_past_meeting',
         false
       );
-      expect(getVotes).toHaveBeenCalledWith(
-        req,
-        expect.objectContaining({ date_field: 'last_modified_time', date_from: '2026-01-01T00:00:00.000Z', date_to: '2026-02-01T00:00:00.000Z' })
-      );
+    });
+
+    it('sends cursor.before as date_to to votes, but never since as date_from (GH-1967 review)', async () => {
+      // A deadline-driven vote_closed (isVoteDeadlinePast in mapVoteToEvent) can occur with no
+      // write to last_modified_time at all, so a date_from on it was systematically excluding
+      // exactly the votes `since` is meant to include, not a rare best-effort miss — the same
+      // failure class surveys already opted out of date_from for. date_to has no equivalent
+      // failure (over-inclusion is safe, trimmed by the in-memory pass) and is still sent, to keep
+      // Recent Activity's own cursor pagination able to reach older votes.
+      await service.getCommitteeActivity(req, COMMITTEE_UID, {
+        since: '2026-01-01T00:00:00Z',
+        cursor: { before: '2026-02-01T00:00:00Z', key: 'vote:unrelated' },
+        limit: 8,
+      });
+
+      expect(getVotes).toHaveBeenCalledWith(req, expect.objectContaining({ date_field: 'last_modified_time', date_to: '2026-02-01T00:00:00.000Z' }));
+      expect(getVotes).toHaveBeenCalledWith(req, expect.not.objectContaining({ date_from: expect.anything() }));
+    });
+
+    it('sends no date_field/date_from/date_to to votes when only since is set, no cursor', async () => {
+      // Complements the paired test above — without a cursor, votes now sends none of the three
+      // date params at all (the same shape surveys already has), unlike meetings/files which still
+      // send date_from as best-effort narrowing.
+      await service.getCommitteeActivity(req, COMMITTEE_UID, { since: '2026-01-01T00:00:00Z', limit: 8 });
+
+      expect(getVotes).toHaveBeenCalledWith(req, expect.not.objectContaining({ date_field: expect.anything() }));
+      expect(getVotes).toHaveBeenCalledWith(req, expect.not.objectContaining({ date_from: expect.anything() }));
+      expect(getVotes).toHaveBeenCalledWith(req, expect.not.objectContaining({ date_to: expect.anything() }));
     });
 
     it('sends no date_field/date_from/date_to to the survey leg, even with since and cursor set', async () => {
@@ -389,7 +413,7 @@ describe('CommitteeActivityService', () => {
       vi.stubEnv('TZ', 'UTC');
       await service.getCommitteeActivity(req, COMMITTEE_UID, { since: '2026-01-05T00:00:00', limit: 8 });
 
-      expect(getVotes).toHaveBeenCalledWith(req, expect.objectContaining({ date_from: '2026-01-05T00:00:00.000Z' }));
+      expect(getMeetings).toHaveBeenCalledWith(req, expect.objectContaining({ date_from: '2026-01-05T00:00:00.000Z' }), 'v1_past_meeting', false);
     });
 
     it.each([
@@ -443,6 +467,21 @@ describe('CommitteeActivityService', () => {
 
       expect(result.data).toHaveLength(1);
       expect(result.page_token).toBeUndefined();
+    });
+
+    it('keeps any_leg_saturated true even when page_token is dropped because every fetched row was filtered out of the merged pool (GH-1967 review)', async () => {
+      // The gap Copilot flagged: hasMore/page_token need a real lastPageItem to anchor a cursor on,
+      // so if the in-memory since filter drops every row from every leg (here: a saturated votes
+      // leg whose only fetched row is before `since`), page_token comes back undefined even though
+      // the votes leg's own upstream page was genuinely saturated — any_leg_saturated is read
+      // directly off each leg's own saturation and isn't affected by what survived filtering.
+      getVotes.mockResolvedValue({ data: [vote({ creation_time: '2020-01-01T00:00:00Z' })], page_token: 'more-votes-upstream' });
+
+      const result = await service.getCommitteeActivity(req, COMMITTEE_UID, { since: '2026-01-01T00:00:00Z', limit: 8 });
+
+      expect(result.data).toHaveLength(0);
+      expect(result.page_token).toBeUndefined();
+      expect(result.any_leg_saturated).toBe(true);
     });
 
     it('requests page_size = max(limit + 1, 25) from every source', async () => {
@@ -745,6 +784,10 @@ describe('CommitteeActivityService', () => {
       const result = await service.getCommitteeActivity(req, COMMITTEE_UID, { limit: 8 });
       expect(result.data.map((e) => e.type)).toEqual(['vote_opened']);
       expect(warning).toHaveBeenCalled();
+      // GH-1967 review: a leg failure must be surfaced on the response, not just swallowed into an
+      // indistinguishable-from-empty `{events: [], saturated: false}` — see any_leg_failed's own
+      // interface doc comment (activity-event.internal.interface.ts) for why.
+      expect(result.any_leg_failed).toBe(true);
     });
 
     it('renders the other three sources when votes fail', async () => {
@@ -753,6 +796,7 @@ describe('CommitteeActivityService', () => {
 
       const result = await service.getCommitteeActivity(req, COMMITTEE_UID, { limit: 8 });
       expect(result.data.map((e) => e.type)).toEqual(['meeting_held']);
+      expect(result.any_leg_failed).toBe(true);
     });
 
     it('renders the other three sources when surveys fail', async () => {
@@ -795,6 +839,21 @@ describe('CommitteeActivityService', () => {
       // as the real, current message; the pre-existing folders-failure test above never exercised
       // this leg's own message, so this substring was previously pinned nowhere in the suite.
       expect(warning).toHaveBeenCalledWith(expect.anything(), 'get_committee_activity', expect.stringContaining('committee files'), expect.anything());
+    });
+
+    it('does not set any_leg_failed for a folders/links/files sub-fetch failure inside the document leg', async () => {
+      // fetchDocumentEvents catches folders/links/files individually and never rejects the whole
+      // document leg for one of them failing — any_leg_failed only tracks the outer per-leg catch
+      // in getCommitteeActivity (see its own doc comment), a deliberately narrower scope than every
+      // failure this endpoint can encounter.
+      getMeetings.mockResolvedValue({ data: [pastMeeting()] });
+      proxyRequest.mockImplementation((r, s, path, m, query) => {
+        if (path.endsWith('/folders')) return Promise.reject(new Error('upstream down'));
+        return defaultProxyRequest(r, s, path, m, query);
+      });
+
+      const result = await service.getCommitteeActivity(req, COMMITTEE_UID, { limit: 8 });
+      expect(result.any_leg_failed).toBe(false);
     });
   });
 
@@ -1231,6 +1290,18 @@ describe('CommitteeActivityService', () => {
       expect(result.data[0].type).toBe('vote_closed');
     });
 
+    it("carries the vote's creation_time as payload.opened_at and its end_time even once closed, independent of the collapsed occurred_at (GH-1967 review)", async () => {
+      getVotes.mockResolvedValue({ data: [vote({ status: PollStatus.ENDED, creation_time: '2026-01-02T10:00:00Z', end_time: '2026-01-10T00:00:00Z' })] });
+      const result = await service.getCommitteeActivity(req, COMMITTEE_UID, { limit: 8 });
+      // end_time rides along for the weekly-brief staleness gate — upstream's VoteSource windows
+      // on it alone (GH-1967 Copilot review).
+      expect(result.data[0]).toMatchObject({
+        type: 'vote_closed',
+        occurred_at: '2026-01-10T00:00:00Z',
+        payload: expect.objectContaining({ opened_at: '2026-01-02T10:00:00Z', end_time: '2026-01-10T00:00:00Z' }),
+      });
+    });
+
     it('maps an active vote to vote_opened only', async () => {
       getVotes.mockResolvedValue({ data: [vote({ status: PollStatus.ACTIVE })] });
       const result = await service.getCommitteeActivity(req, COMMITTEE_UID, { limit: 8 });
@@ -1390,6 +1461,71 @@ describe('CommitteeActivityService', () => {
       const byType = Object.fromEntries(result.data.map((e) => [e.type, e]));
       expect(byType['survey_closed']).toMatchObject({ payload: { survey_uid: 'survey-closed' } });
       expect(byType['survey_published']).toMatchObject({ payload: { survey_uid: 'survey-open' } });
+    });
+
+    it('falls back to created_at for payload.opened_at when a survey has no send date, and still carries its cutoff_date (GH-1967 review)', async () => {
+      proxyRequest.mockImplementation((r, s, path, m, query) => {
+        if (path === '/query/resources' && query?.['type'] === 'survey') {
+          return Promise.resolve({
+            resources: [
+              {
+                type: 'survey',
+                id: 'survey-closed',
+                data: survey({
+                  uid: 'survey-closed',
+                  survey_status: SurveyStatus.CLOSED,
+                  created_at: '2026-01-01T00:00:00Z',
+                  last_modified_at: '2026-01-05T00:00:00Z',
+                  survey_cutoff_date: '2026-01-06T00:00:00Z',
+                }),
+              },
+            ],
+          });
+        }
+        return defaultProxyRequest(r, s, path, m, query);
+      });
+
+      const result = await service.getCommitteeActivity(req, COMMITTEE_UID, { limit: 8 });
+      // Explicit CLOSED status (not a cutoff-driven closure), so occurred_at stays last_modified_at
+      // — and with no survey_send_date on the row, opened_at falls back to created_at while
+      // cutoff_date still rides along for the weekly-brief staleness gate (GH-1967 Copilot review).
+      expect(result.data[0]).toMatchObject({
+        type: 'survey_closed',
+        occurred_at: '2026-01-05T00:00:00Z',
+        payload: expect.objectContaining({ opened_at: '2026-01-01T00:00:00Z', cutoff_date: '2026-01-06T00:00:00Z' }),
+      });
+    });
+
+    it('prefers survey_send_date over created_at for payload.opened_at — a scheduled survey opens when it sends, not when it is created (GH-1967 Copilot review)', async () => {
+      // ITX's survey API is a schedule API (POST /v2/surveys/schedule requires a future
+      // survey_send_date), so created_at is the record-creation moment, not the publish moment.
+      // SENT with a far-future cutoff keeps the survey published (not cutoff-closed) for this test.
+      proxyRequest.mockImplementation((r, s, path, m, query) => {
+        if (path === '/query/resources' && query?.['type'] === 'survey') {
+          return Promise.resolve({
+            resources: [
+              {
+                type: 'survey',
+                id: 'survey-scheduled',
+                data: survey({
+                  uid: 'survey-scheduled',
+                  survey_status: SurveyStatus.SENT,
+                  survey_cutoff_date: '2099-01-01T00:00:00Z',
+                  created_at: '2026-01-01T00:00:00Z',
+                  survey_send_date: '2026-01-05T09:00:00Z',
+                }),
+              },
+            ],
+          });
+        }
+        return defaultProxyRequest(r, s, path, m, query);
+      });
+
+      const result = await service.getCommitteeActivity(req, COMMITTEE_UID, { limit: 8 });
+      expect(result.data[0]).toMatchObject({
+        type: 'survey_published',
+        payload: expect.objectContaining({ opened_at: '2026-01-05T09:00:00Z' }),
+      });
     });
   });
 });

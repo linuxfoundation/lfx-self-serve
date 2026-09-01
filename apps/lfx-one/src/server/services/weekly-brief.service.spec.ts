@@ -30,6 +30,7 @@ const {
   createNewsletterMock,
   sendNewsletterMock,
   deleteNewsletterMock,
+  getCommitteeActivityMock,
 } = vi.hoisted(() => {
   const valkeyStore = new Map<string, unknown>();
   const valkeyServiceMock = {
@@ -81,6 +82,8 @@ const {
     createNewsletterMock: vi.fn(),
     sendNewsletterMock: vi.fn(),
     deleteNewsletterMock: vi.fn(),
+    // withStaleness' (GH-1966) collaborator — controlled per-test in its own describe block below.
+    getCommitteeActivityMock: vi.fn(),
   };
 });
 
@@ -93,6 +96,8 @@ vi.mock('@lfx-one/shared/constants', () => ({
   NEWSLETTER_BODY_MAX_LENGTH: 100_000,
   AI_MODEL: 'mock-ai-model',
   VALKEY_CACHE: { WEEKLY_BRIEF_RATING_TTL_SECONDS: 7_776_000, WEEKLY_BRIEF_ACTION_ITEMS_TTL_SECONDS: 604800 },
+  ACTIVITY_FEED_MAX_PAGE_SIZE: 50,
+  WEEKLY_BRIEF_STALENESS_EVENT_TYPES: ['meeting_held', 'vote_opened', 'vote_closed', 'survey_published', 'survey_closed'],
 }));
 // '../constants' (this app's server-only constants, not the `@lfx-one/shared` package) is
 // plain string/number literals with no transitive Angular imports — safe to leave unmocked,
@@ -141,6 +146,15 @@ vi.mock('./ai.service', () => ({
     public extractBriefActionItems = extractBriefActionItems;
   },
 }));
+// withStaleness' (GH-1966) collaborator — real committee-activity.service.ts transitively
+// imports meeting/project services that need @lfx-one/shared/interfaces at runtime (an enum
+// value, not just types), which this file mocks to `{}` above — leaving this unmocked would
+// crash the module graph, same reasoning as every other sibling-service mock in this file.
+vi.mock('./committee-activity.service', () => ({
+  CommitteeActivityService: class {
+    public getCommitteeActivity = getCommitteeActivityMock;
+  },
+}));
 // Single mock for both weekly-brief.service.ts collaborators that live in valkey.service —
 // rating (LFXV2-3042) and action-items (LFXV2-3043) both call the same `valkeyService`
 // singleton import, so they must share one mock object rather than each getting its own.
@@ -152,7 +166,7 @@ vi.mock('./valkey.service', () => ({
 
 import type { Request } from 'express';
 
-import { WEEKLY_BRIEF_MOCK_QUIET_WEEK_COMMITTEE_UID } from '../constants';
+import { WEEKLY_BRIEF_MOCK_QUIET_WEEK_COMMITTEE_UID, WEEKLY_BRIEF_STALENESS_FETCH_TIMEOUT_MS } from '../constants';
 import { MicroserviceError } from '../errors';
 import { ServerFeatureFlag } from '../helpers/server-feature-flag.helper';
 
@@ -420,6 +434,21 @@ describe('WeeklyBriefService', () => {
       expect(buildCacheKey).not.toHaveBeenCalled();
     });
 
+    it('never triggers the committee-activity staleness fan-out even for a shareable live-mode brief (GH-1966 perf regression guard)', async () => {
+      process.env['WEEKLY_BRIEF_BACKEND'] = 'live';
+      proxyRequest.mockResolvedValueOnce({
+        brief: { uid: 'b1', state: 'generated', revision: 1, brief_text: 'Hello committee' },
+        throttle: null,
+      });
+      extractBriefActionItems.mockResolvedValueOnce({ items: [] });
+
+      await service.getActionItems(req, 'committee-1');
+
+      // getActionItems only needs `brief` — it must fetch via fetchCurrentBrief, not the
+      // enriched getCurrentBrief, so withStaleness' committee-activity fan-out never fires here.
+      expect(getCommitteeActivityMock).not.toHaveBeenCalled();
+    });
+
     it('skips extraction and returns {items: []} when the cache key is null (fail-closed on an unsafe brief uid), logging a warning', async () => {
       buildCacheKey.mockReturnValueOnce(null);
 
@@ -622,6 +651,566 @@ describe('WeeklyBriefService', () => {
       proxyRequest.mockResolvedValueOnce({ brief: null, throttle: null });
       await service.getCurrentBrief(req, 'a/b c');
       expect(proxyRequest).toHaveBeenCalledWith(req, 'LFX_V2_SERVICE', '/committees/a%2Fb%20c/weekly-briefs/current', 'GET');
+    });
+  });
+
+  describe('getCurrentBrief — staleness enrichment (GH-1966)', () => {
+    // Both dates safely in the past relative to any real test-run time (this repo's earliest
+    // plausible run date is long after Jan 2026) — deterministic without any fake-timer
+    // dependency. `updated_at` before `window_end` models a brief generated on window_end's own
+    // anchor Saturday (the only day briefWindow() can produce a still-current window) — that
+    // relationship, not "is window_end in the future right now", is what makes staleness
+    // computable: the brief stays checkable for the rest of that week, not just the day it was
+    // generated (general review finding, full-branch sweep — the previous version of this check
+    // gated on the wrong condition and suppressed exactly this case).
+    const liveBrief = {
+      uid: 'b1',
+      state: 'generated',
+      updated_at: '2026-01-17T08:00:00.000Z', // generated the same Saturday its window closes
+      window_start: '2026-01-11T00:00:00.000Z', // the Sunday opening that window
+      window_end: '2026-01-17T23:59:59.999Z',
+    };
+    // Same brief shape, but generated AFTER its own window had already closed — the common case
+    // (6 of 7 days) per briefWindow(). Provably not stale: the generator already had the
+    // complete, closed window available at that moment.
+    const closedWindowBrief = {
+      uid: 'b1',
+      state: 'generated',
+      updated_at: '2026-01-15T09:00:00.000Z', // Thursday, after the window below already closed
+      window_start: '2026-01-04T00:00:00.000Z',
+      window_end: '2026-01-10T23:59:59.999Z', // the previous Saturday
+    };
+
+    beforeEach(() => {
+      process.env['WEEKLY_BRIEF_BACKEND'] = 'live';
+    });
+
+    it('starts the staleness fetch without waiting for the caller-rating lookup to resolve first (parallel, not serial — perf fix)', async () => {
+      proxyRequest.mockResolvedValueOnce({ brief: liveBrief, throttle: null });
+      valkeyServiceMock.getJson.mockReturnValueOnce(new Promise<never>(() => undefined)); // caller-rating lookup hangs forever
+      getCommitteeActivityMock.mockResolvedValueOnce({ data: [] });
+
+      void service.getCurrentBrief(userReq, 'committee-1'); // not awaited — the rating lookup above never resolves
+      // vi.waitFor, not a fixed number of chained microtask flushes — a correct microtask count
+      // is an implementation detail of fetchCurrentBrief's own await depth, and would make this
+      // test fail with a misleading "still serial" result if that depth ever changes for an
+      // unrelated reason (general review finding). If withStaleness were still chained after
+      // withCallerRating, this could never resolve while the rating lookup is stuck — it
+      // resolving anyway proves the two now run concurrently.
+      await vi.waitFor(() => expect(getCommitteeActivityMock).toHaveBeenCalled());
+    });
+
+    it('reports not stale when no qualifying activity is found', async () => {
+      proxyRequest.mockResolvedValueOnce({ brief: liveBrief, throttle: null });
+      getCommitteeActivityMock.mockResolvedValueOnce({ data: [] });
+
+      const result = await service.getCurrentBrief(req, 'committee-1');
+
+      expect(result.staleness).toEqual({ stale: false, event_count: 0, event_count_is_floor: false });
+      expect(getCommitteeActivityMock).toHaveBeenCalledWith(req, 'committee-1', { since: liveBrief.updated_at, limit: 50 });
+    });
+
+    it('reports stale for activity inside the window after the brief was generated, even though the window has long since closed by the time this is checked (the class of scenario GH-1966 describes)', async () => {
+      proxyRequest.mockResolvedValueOnce({ brief: liveBrief, throttle: null });
+      getCommitteeActivityMock.mockResolvedValueOnce({
+        data: [
+          { type: 'meeting_held', occurred_at: '2026-01-17T18:00:00.000Z' },
+          // vote_closed's payload.end_time is what upstream's VoteSource windows on — in-window
+          // here, so the vote is regeneration-consumable and the event counts (GH-1967 Copilot).
+          {
+            type: 'vote_closed',
+            occurred_at: '2026-01-17T10:00:00.000Z',
+            payload: { vote_uid: 'v1', name: 'Q1 Budget', status: 'Ended', end_time: '2026-01-17T10:00:00.000Z' },
+          },
+        ],
+      });
+
+      const result = await service.getCurrentBrief(req, 'committee-1');
+
+      expect(result.staleness).toEqual({
+        stale: true,
+        event_count: 2,
+        event_count_is_floor: false,
+      });
+    });
+
+    it('excludes an event stamped at the exact same instant as brief.updated_at — the lower bound is strictly after, not at-or-after (GH-1967 review)', async () => {
+      // getCommitteeActivity's own since filter (isAtOrAfterSince) is inclusive (occurred_at >=
+      // since), so without withStaleness re-asserting a strict lower bound, an event stamped at
+      // exactly brief.updated_at would count as "new" activity that happened after generation.
+      proxyRequest.mockResolvedValueOnce({ brief: liveBrief, throttle: null });
+      getCommitteeActivityMock.mockResolvedValueOnce({
+        data: [{ type: 'meeting_held', occurred_at: liveBrief.updated_at }],
+      });
+
+      const result = await service.getCurrentBrief(req, 'committee-1');
+
+      expect(result.staleness).toEqual({ stale: false, event_count: 0, event_count_is_floor: false });
+    });
+
+    it('excludes a notes event from the count — notes_added is not a brief source, so regenerating could never reflect it', async () => {
+      proxyRequest.mockResolvedValueOnce({ brief: liveBrief, throttle: null });
+      getCommitteeActivityMock.mockResolvedValueOnce({
+        data: [{ type: 'notes_added', occurred_at: '2026-01-17T11:00:00.000Z' }],
+      });
+
+      const result = await service.getCurrentBrief(req, 'committee-1');
+
+      expect(result.staleness).toEqual({ stale: false, event_count: 0, event_count_is_floor: false });
+    });
+
+    it('counts survey_published/survey_closed events, and still excludes a document_uploaded event alongside a counted meeting/vote event — GH-1967 review: survey feeds the generator, document does not', async () => {
+      // Verified against lfx-v2-committee-service's buildClaimsAndRefs (group_weekly_brief_generator.go):
+      // it emits Kind: "survey" (fed into ClaimEvidence, the generator's actual LLM input) but never
+      // a "document"/"doc" kind — the original event-type list had this backwards.
+      // Vote/survey events carry the payload field upstream windows on (end_time / cutoff_date —
+      // GH-1967 Copilot review); each one here is in-window and (for surveys) already passed.
+      proxyRequest.mockResolvedValueOnce({ brief: liveBrief, throttle: null });
+      getCommitteeActivityMock.mockResolvedValueOnce({
+        data: [
+          {
+            type: 'survey_published',
+            occurred_at: '2026-01-17T08:30:00.000Z',
+            payload: { survey_uid: 's1', title: 'Q1 Survey', status: 'Sent', cutoff_date: '2026-01-17T12:00:00.000Z' },
+          },
+          {
+            type: 'survey_closed',
+            occurred_at: '2026-01-17T09:00:00.000Z',
+            payload: { survey_uid: 's2', title: 'Q2 Survey', status: 'Closed', cutoff_date: '2026-01-17T09:00:00.000Z' },
+          },
+          { type: 'document_uploaded', occurred_at: '2026-01-17T10:00:00.000Z' },
+          {
+            type: 'vote_opened',
+            occurred_at: '2026-01-17T11:00:00.000Z',
+            payload: { vote_uid: 'v1', name: 'Q1 Budget', status: 'Active', end_time: '2026-01-17T18:00:00.000Z' },
+          },
+        ],
+      });
+
+      const result = await service.getCurrentBrief(req, 'committee-1');
+
+      expect(result.staleness).toEqual({ stale: true, event_count: 3, event_count_is_floor: false });
+    });
+
+    it('still counts a vote_closed event whose collapsed occurred_at is out-of-range when its end_time is in-window and its payload.opened_at is new — the fallback surviving source-window alignment (GH-1967 review)', async () => {
+      // getCommitteeActivity collapses each vote to one event reflecting only its current state —
+      // a vote whose EARLY close landed after window_end while its scheduled end_time was in-window
+      // shows up only as vote_closed at that (out-of-range) close moment. Upstream's VoteSource
+      // windows on end_time alone, so a regeneration WOULD include this vote — payload.opened_at
+      // (in-window, after updated_at) is the fallback newness signal that catches it.
+      proxyRequest.mockResolvedValueOnce({ brief: liveBrief, throttle: null });
+      getCommitteeActivityMock.mockResolvedValueOnce({
+        data: [
+          {
+            type: 'vote_closed',
+            occurred_at: '2026-01-18T10:00:00.000Z', // after window_end (early_end_time)
+            payload: { vote_uid: 'v1', name: 'Q1 Budget', status: 'Ended', opened_at: '2026-01-17T12:00:00.000Z', end_time: '2026-01-17T22:00:00.000Z' }, // opened in-window after generation; end_time in-window
+          },
+        ],
+      });
+
+      const result = await service.getCurrentBrief(req, 'committee-1');
+
+      expect(result.staleness).toEqual({ stale: true, event_count: 1, event_count_is_floor: false });
+    });
+
+    it("does not count a vote_closed event whose opened_at falls in the window when its end_time does not — the opened_at fallback can no longer override upstream's source window (GH-1967 Copilot review)", async () => {
+      // The pre-alignment false positive Copilot flagged: a vote opened after generation but ending
+      // OUTSIDE the brief window — upstream's VoteSource (date_field=end_time) could never include
+      // it in a regeneration, so it must not flag the brief stale on its open moment alone.
+      proxyRequest.mockResolvedValueOnce({ brief: liveBrief, throttle: null });
+      getCommitteeActivityMock.mockResolvedValueOnce({
+        data: [
+          {
+            type: 'vote_closed',
+            occurred_at: '2026-01-18T10:00:00.000Z', // after window_end
+            payload: { vote_uid: 'v1', name: 'Q1 Budget', status: 'Ended', opened_at: '2026-01-17T12:00:00.000Z', end_time: '2026-01-18T10:00:00.000Z' }, // opened in-window, but end_time outside it
+          },
+        ],
+      });
+
+      const result = await service.getCurrentBrief(req, 'committee-1');
+
+      expect(result.staleness).toEqual({ stale: false, event_count: 0, event_count_is_floor: false });
+    });
+
+    it('does not count a vote_closed event when neither its occurred_at nor its payload.opened_at falls in the window', async () => {
+      // Negative control for the fallback above — an upstream-selectable vote (end_time in-window)
+      // with NO new moment since generation (opened before updated_at, closed after window_end)
+      // must not count: staleness requires source-window qualification AND newness together.
+      proxyRequest.mockResolvedValueOnce({ brief: liveBrief, throttle: null });
+      getCommitteeActivityMock.mockResolvedValueOnce({
+        data: [
+          {
+            type: 'vote_closed',
+            occurred_at: '2026-01-18T10:00:00.000Z', // after window_end
+            payload: { vote_uid: 'v1', name: 'Q1 Budget', status: 'Ended', opened_at: '2026-01-16T00:00:00.000Z', end_time: '2026-01-17T22:00:00.000Z' }, // opened before updated_at; end_time in-window
+          },
+        ],
+      });
+
+      const result = await service.getCurrentBrief(req, 'committee-1');
+
+      expect(result.staleness).toEqual({ stale: false, event_count: 0, event_count_is_floor: false });
+    });
+
+    it('does not count a vote_opened event whose end_time falls outside the window — an open moment alone never qualifies a vote upstream (GH-1967 Copilot review)', async () => {
+      // Upstream's VoteSource selects votes solely by end_time ∈ [window_start, window_end]
+      // (vote_source.go: date_field=end_time), so a vote opened after generation but ending next
+      // week is invisible to a regeneration — flagging it stale would burn a weekly regeneration
+      // for no new content.
+      proxyRequest.mockResolvedValueOnce({ brief: liveBrief, throttle: null });
+      getCommitteeActivityMock.mockResolvedValueOnce({
+        data: [
+          {
+            type: 'vote_opened',
+            occurred_at: '2026-01-17T11:00:00.000Z', // in-window, after updated_at
+            payload: { vote_uid: 'v1', name: 'Q1 Budget', status: 'Active', end_time: '2026-01-24T10:00:00.000Z' }, // next week — outside the window
+          },
+        ],
+      });
+
+      const result = await service.getCurrentBrief(req, 'committee-1');
+
+      expect(result.staleness).toEqual({ stale: false, event_count: 0, event_count_is_floor: false });
+    });
+
+    it('does not count a survey_published event whose cutoff has not passed yet — upstream excludes surveys still collecting responses (GH-1967 Copilot review)', async () => {
+      // SurveySource drops cutoffs in the future even inside the window (survey_source.go:
+      // cutoff.After(time.Now()) — "excluding surveys still collecting responses"), so a publish
+      // moment alone must not qualify.
+      vi.useFakeTimers();
+      try {
+        vi.setSystemTime(new Date('2026-01-17T12:00:00.000Z')); // same Saturday as liveBrief
+        proxyRequest.mockResolvedValueOnce({ brief: liveBrief, throttle: null });
+        getCommitteeActivityMock.mockResolvedValueOnce({
+          data: [
+            {
+              type: 'survey_published',
+              occurred_at: '2026-01-17T11:00:00.000Z', // in-window, after updated_at, before pinned now
+              payload: { survey_uid: 's1', title: 'Q1 Survey', status: 'Sent', cutoff_date: '2026-01-17T20:00:00.000Z' }, // in-window but after pinned now
+            },
+          ],
+        });
+
+        const result = await service.getCurrentBrief(req, 'committee-1');
+
+        expect(result.staleness).toEqual({ stale: false, event_count: 0, event_count_is_floor: false });
+      } finally {
+        vi.useRealTimers();
+      }
+    });
+
+    it('does not count a survey_published event whose cutoff falls outside the window (GH-1967 Copilot review)', async () => {
+      proxyRequest.mockResolvedValueOnce({ brief: liveBrief, throttle: null });
+      getCommitteeActivityMock.mockResolvedValueOnce({
+        data: [
+          {
+            type: 'survey_published',
+            occurred_at: '2026-01-17T11:00:00.000Z', // in-window, after updated_at
+            payload: { survey_uid: 's1', title: 'Q1 Survey', status: 'Sent', cutoff_date: '2026-01-24T12:00:00.000Z' }, // next week — outside the window
+          },
+        ],
+      });
+
+      const result = await service.getCurrentBrief(req, 'committee-1');
+
+      expect(result.staleness).toEqual({ stale: false, event_count: 0, event_count_is_floor: false });
+    });
+
+    it('counts a scheduled survey created before the brief but SENT after it, when its collapsed survey_closed occurred_at is out of range — opened_at is the send moment, not creation (GH-1967 Copilot review)', async () => {
+      // Scheduled survey: created before the brief was generated, scheduled-sent after it, then
+      // explicitly closed with a last_modified after window_end — the collapsed survey_closed
+      // event's occurred_at is out of range, so only payload.opened_at carries the in-window open
+      // moment. CommitteeActivityService keys opened_at on survey_send_date (not created_at)
+      // precisely so this survey isn't missed; with created_at it would fall before updated_at and
+      // the survey would be invisible here.
+      proxyRequest.mockResolvedValueOnce({ brief: liveBrief, throttle: null });
+      getCommitteeActivityMock.mockResolvedValueOnce({
+        data: [
+          {
+            type: 'survey_closed',
+            occurred_at: '2026-01-18T09:00:00.000Z', // after window_end (explicit close edit)
+            payload: {
+              survey_uid: 's1',
+              title: 'Q1 Survey',
+              status: 'Closed',
+              opened_at: '2026-01-17T11:00:00.000Z', // survey_send_date — in-window, after updated_at
+              cutoff_date: '2026-01-17T20:00:00.000Z', // in-window and (by real now) passed
+            },
+          },
+        ],
+      });
+
+      const result = await service.getCurrentBrief(req, 'committee-1');
+
+      expect(result.staleness).toEqual({ stale: true, event_count: 1, event_count_is_floor: false });
+    });
+
+    it('confidently reports not stale — and skips the fetch entirely — when updated_at exactly equals window_end (GH-1967 review)', async () => {
+      // The qualifying interval (updated_at, window_end] is provably empty here (nothing can be
+      // strictly greater than and at-most-equal-to the same instant) — the >= short-circuit (not
+      // just >) is what catches this without paying the fetch fan-out.
+      proxyRequest.mockResolvedValueOnce({ brief: { ...liveBrief, updated_at: liveBrief.window_end }, throttle: null });
+
+      const result = await service.getCurrentBrief(req, 'committee-1');
+
+      expect(result.staleness).toEqual({ stale: false, event_count: 0, event_count_is_floor: false });
+      expect(getCommitteeActivityMock).not.toHaveBeenCalled();
+    });
+
+    it('carries both caller_rating and staleness together in the merged response (general review finding — the parallel-await merge is otherwise untested with both enrichments actually populated)', async () => {
+      const brief = { ...liveBrief, revision: 1 };
+      proxyRequest.mockResolvedValueOnce({ brief, throttle: null });
+      const key = buildWeeklyBriefRatingCacheKeyMock('committee-1', brief.uid, brief.revision, 'alice')!;
+      valkeyStore.set(key, { rating: 'up' });
+      getCommitteeActivityMock.mockResolvedValueOnce({
+        data: [{ type: 'meeting_held', occurred_at: '2026-01-17T10:00:00.000Z' }],
+      });
+
+      const result = await service.getCurrentBrief(userReq, 'committee-1');
+
+      expect(result).toMatchObject({
+        caller_rating: 'up',
+        staleness: { stale: true, event_count: 1, event_count_is_floor: false },
+      });
+    });
+
+    it('confidently reports not stale — and skips the fetch entirely — when the brief was (re)generated after its own window had already closed (the common case: the generator already had the complete, closed window)', async () => {
+      proxyRequest.mockResolvedValueOnce({ brief: closedWindowBrief, throttle: null });
+
+      const result = await service.getCurrentBrief(req, 'committee-1');
+
+      expect(result.staleness).toEqual({ stale: false, event_count: 0, event_count_is_floor: false });
+      expect(getCommitteeActivityMock).not.toHaveBeenCalled();
+    });
+
+    it('confidently reports not stale (not a degrade) when the fetch returned data but none of it was in range, and nothing was truncated', async () => {
+      // No page_token back means the fetch was NOT truncated (committee-activity's hasMore only
+      // ever sets one alongside a real lastPageItem) — everything that exists was returned, so an
+      // all-irrelevant result here is a genuine, confident "not stale", not an unknown.
+      proxyRequest.mockResolvedValueOnce({ brief: liveBrief, throttle: null });
+      getCommitteeActivityMock.mockResolvedValueOnce({
+        data: [{ type: 'meeting_held', occurred_at: '2026-01-18T10:00:00.000Z' }], // after window_end
+      });
+
+      const result = await service.getCurrentBrief(req, 'committee-1');
+
+      expect(result.staleness).toEqual({ stale: false, event_count: 0, event_count_is_floor: false });
+      expect(logger.warning).not.toHaveBeenCalled();
+    });
+
+    it('excludes an event after "now" from the count, even though it is still before window_end — an event cannot count as "already happened" before it has', async () => {
+      vi.useFakeTimers();
+      try {
+        vi.setSystemTime(new Date('2026-01-17T12:00:00.000Z')); // same Saturday as liveBrief, before its window_end
+        proxyRequest.mockResolvedValueOnce({ brief: liveBrief, throttle: null });
+        getCommitteeActivityMock.mockResolvedValueOnce({
+          // end_time in-window (upstream-selectable) so the ONLY thing excluding this event is the
+          // ceiling — occurred_at is after the pinned "now", still before window_end.
+          data: [
+            {
+              type: 'vote_closed',
+              occurred_at: '2026-01-17T18:00:00.000Z',
+              payload: { vote_uid: 'v1', name: 'Q1 Budget', status: 'Ended', end_time: '2026-01-17T18:00:00.000Z' },
+            },
+          ],
+        });
+
+        const result = await service.getCurrentBrief(req, 'committee-1');
+
+        expect(result.staleness).toEqual({ stale: false, event_count: 0, event_count_is_floor: false });
+      } finally {
+        vi.useRealTimers();
+      }
+    });
+
+    it('reports unknown (null), not a false negative, when the fetch saturated and nothing relevant turned up on this page', async () => {
+      // getCommitteeActivity sorts descending by occurred_at, so events past the ceiling sort
+      // ahead of genuinely relevant ones. If the fetch itself saturated (page_token set) and
+      // every returned event is out of range, real relevant activity could still be sitting on a
+      // page never fetched — a confident `stale: false` there would be a false negative, not a
+      // floor-qualified true.
+      proxyRequest.mockResolvedValueOnce({ brief: liveBrief, throttle: null });
+      getCommitteeActivityMock.mockResolvedValueOnce({
+        data: [{ type: 'meeting_held', occurred_at: '2026-01-18T10:00:00.000Z' }],
+        page_token: 'next-page',
+      });
+
+      const result = await service.getCurrentBrief(req, 'committee-1');
+
+      expect(result.staleness).toBeNull();
+      expect(logger.warning).toHaveBeenCalledTimes(1);
+    });
+
+    it('reports unknown (null), not a false negative, when a committee-activity leg failed and nothing relevant turned up (GH-1967 review)', async () => {
+      // any_leg_failed means at least one of getCommitteeActivity's 5 legs was caught-and-degraded
+      // to {events: [], saturated: false} on a fetch failure — indistinguishable from that leg
+      // genuinely having nothing, so a confident "not stale" here would risk a false negative the
+      // same way an unfetched saturated page does.
+      proxyRequest.mockResolvedValueOnce({ brief: liveBrief, throttle: null });
+      getCommitteeActivityMock.mockResolvedValueOnce({ data: [], any_leg_failed: true });
+
+      const result = await service.getCurrentBrief(req, 'committee-1');
+
+      expect(result.staleness).toBeNull();
+      expect(logger.warning).toHaveBeenCalledTimes(1);
+    });
+
+    it('reports unknown (null), not a false negative, when any_leg_saturated is true with no page_token and nothing relevant turned up (GH-1967 review)', async () => {
+      // Distinct from the page_token-set case above: this covers getCommitteeActivity's own
+      // documented gap where page_token comes back unset (no real lastPageItem to anchor a cursor
+      // on) even though a leg's own upstream page was genuinely saturated — any_leg_saturated is
+      // read directly off each leg's own saturation and isn't affected by that.
+      proxyRequest.mockResolvedValueOnce({ brief: liveBrief, throttle: null });
+      getCommitteeActivityMock.mockResolvedValueOnce({ data: [], any_leg_saturated: true });
+
+      const result = await service.getCurrentBrief(req, 'committee-1');
+
+      expect(result.staleness).toBeNull();
+      expect(logger.warning).toHaveBeenCalledTimes(1);
+    });
+
+    it('still reports stale (not a degrade) when a committee-activity leg failed but other legs already found real qualifying activity', async () => {
+      // A leg failure can only hide a real positive, never manufacture a false one — once relevant
+      // activity has already been found, any_leg_failed on a different leg doesn't undermine it.
+      proxyRequest.mockResolvedValueOnce({ brief: liveBrief, throttle: null });
+      getCommitteeActivityMock.mockResolvedValueOnce({
+        data: [{ type: 'meeting_held', occurred_at: '2026-01-17T10:00:00.000Z' }],
+        any_leg_failed: true,
+      });
+
+      const result = await service.getCurrentBrief(req, 'committee-1');
+
+      expect(result.staleness).toEqual({ stale: true, event_count: 1, event_count_is_floor: false });
+    });
+
+    it('marks event_count as a floor when the activity fetch itself paginated', async () => {
+      proxyRequest.mockResolvedValueOnce({ brief: liveBrief, throttle: null });
+      getCommitteeActivityMock.mockResolvedValueOnce({
+        data: [{ type: 'meeting_held', occurred_at: '2026-01-17T10:00:00.000Z' }],
+        page_token: 'next-page',
+      });
+
+      const result = await service.getCurrentBrief(req, 'committee-1');
+
+      expect(result.staleness?.event_count_is_floor).toBe(true);
+    });
+
+    it('degrades to null and logs a warning instead of a silent false-negative "stale: true" when the brief has no updated_at (no lower bound to send upstream)', async () => {
+      proxyRequest.mockResolvedValueOnce({ brief: { ...liveBrief, updated_at: undefined }, throttle: null });
+
+      const result = await service.getCurrentBrief(req, 'committee-1');
+
+      expect(result.staleness).toBeNull();
+      expect(getCommitteeActivityMock).not.toHaveBeenCalled();
+      expect(logger.warning).toHaveBeenCalledTimes(1);
+      expect(logger.warning).toHaveBeenCalledWith(
+        req,
+        'weekly_brief_staleness',
+        expect.any(String),
+        expect.objectContaining({ updated_at: null, window_end: liveBrief.window_end })
+      );
+    });
+
+    it('degrades to null and logs the offending raw value when the brief has an unparseable updated_at', async () => {
+      proxyRequest.mockResolvedValueOnce({ brief: { ...liveBrief, updated_at: 'not-a-date' }, throttle: null });
+
+      const result = await service.getCurrentBrief(req, 'committee-1');
+
+      expect(result.staleness).toBeNull();
+      expect(getCommitteeActivityMock).not.toHaveBeenCalled();
+      expect(logger.warning).toHaveBeenCalledTimes(1);
+      expect(logger.warning).toHaveBeenCalledWith(req, 'weekly_brief_staleness', expect.any(String), expect.objectContaining({ updated_at: 'not-a-date' }));
+    });
+
+    it('degrades to null and logs the offending raw value when the brief has an unparseable window_end', async () => {
+      proxyRequest.mockResolvedValueOnce({ brief: { ...liveBrief, window_end: 'not-a-date' }, throttle: null });
+
+      const result = await service.getCurrentBrief(req, 'committee-1');
+
+      expect(result.staleness).toBeNull();
+      expect(getCommitteeActivityMock).not.toHaveBeenCalled();
+      expect(logger.warning).toHaveBeenCalledTimes(1);
+      expect(logger.warning).toHaveBeenCalledWith(req, 'weekly_brief_staleness', expect.any(String), expect.objectContaining({ window_end: 'not-a-date' }));
+    });
+
+    it('degrades to null and logs the offending raw value when the brief has an unparseable window_start — the per-source window alignment has no lower bound without it (GH-1967 Copilot review)', async () => {
+      proxyRequest.mockResolvedValueOnce({ brief: { ...liveBrief, window_start: 'not-a-date' }, throttle: null });
+
+      const result = await service.getCurrentBrief(req, 'committee-1');
+
+      expect(result.staleness).toBeNull();
+      expect(getCommitteeActivityMock).not.toHaveBeenCalled();
+      expect(logger.warning).toHaveBeenCalledTimes(1);
+      expect(logger.warning).toHaveBeenCalledWith(req, 'weekly_brief_staleness', expect.any(String), expect.objectContaining({ window_start: 'not-a-date' }));
+    });
+
+    it('degrades to null and logs a warning (not an error) when the activity fetch throws, without failing getCurrentBrief', async () => {
+      proxyRequest.mockResolvedValueOnce({ brief: liveBrief, throttle: null });
+      getCommitteeActivityMock.mockRejectedValueOnce(new Error('upstream unavailable'));
+
+      const result = await service.getCurrentBrief(req, 'committee-1');
+
+      expect(result.brief).toBe(liveBrief);
+      expect(result.staleness).toBeNull();
+      expect(logger.warning).toHaveBeenCalledTimes(1);
+      expect(logger.error).not.toHaveBeenCalled();
+    });
+
+    it('degrades to null after WEEKLY_BRIEF_STALENESS_FETCH_TIMEOUT_MS instead of blocking getCurrentBrief indefinitely when the activity fetch hangs', async () => {
+      vi.useFakeTimers();
+      try {
+        proxyRequest.mockResolvedValueOnce({ brief: liveBrief, throttle: null });
+        getCommitteeActivityMock.mockReturnValueOnce(new Promise<never>(() => undefined)); // never settles
+
+        const resultPromise = service.getCurrentBrief(req, 'committee-1');
+        await vi.advanceTimersByTimeAsync(WEEKLY_BRIEF_STALENESS_FETCH_TIMEOUT_MS);
+        const result = await resultPromise;
+
+        expect(result.brief).toBe(liveBrief);
+        expect(result.staleness).toBeNull();
+        expect(logger.warning).toHaveBeenCalledTimes(1);
+      } finally {
+        vi.useRealTimers();
+      }
+    });
+
+    it('skips the activity fetch entirely for a brief in a non-shareable state', async () => {
+      proxyRequest.mockResolvedValueOnce({ brief: { ...liveBrief, state: 'generating' }, throttle: null });
+
+      const result = await service.getCurrentBrief(req, 'committee-1');
+
+      expect(result.staleness).toBeUndefined();
+      expect(getCommitteeActivityMock).not.toHaveBeenCalled();
+    });
+
+    it('skips the activity fetch entirely when there is no brief', async () => {
+      proxyRequest.mockResolvedValueOnce({ brief: null, throttle: null });
+
+      const result = await service.getCurrentBrief(req, 'committee-1');
+
+      expect(result.staleness).toBeUndefined();
+      expect(getCommitteeActivityMock).not.toHaveBeenCalled();
+    });
+
+    it("generateBrief's response carries no staleness field — only getCurrentBrief computes it", async () => {
+      const data = { brief: { uid: 'b1', state: 'generating' }, throttle: {} };
+      proxyRequestWithResponse.mockResolvedValueOnce({ status: 202, data, statusText: 'Accepted', headers: {} });
+
+      const result = await service.generateBrief(req, 'committee-1', { force: true });
+
+      expect(result.data).not.toHaveProperty('staleness');
+      expect(getCommitteeActivityMock).not.toHaveBeenCalled();
+    });
+
+    it('mock mode never invokes the activity fetch — staleness is always null (documented gap: CommitteeActivityService has no mock branch)', async () => {
+      delete process.env['WEEKLY_BRIEF_BACKEND'];
+
+      const result = await service.getCurrentBrief(req, 'committee-1');
+
+      expect(result.staleness).toBeNull();
+      expect(getCommitteeActivityMock).not.toHaveBeenCalled();
     });
   });
 
@@ -878,6 +1467,18 @@ describe('WeeklyBriefService', () => {
 
       expect(result.caller_rating).toBeNull();
     });
+
+    it('rateBrief resolves caller_rating via resolveRatableBrief without triggering the staleness fan-out, in live mode (GH-1966 perf regression guard)', async () => {
+      process.env['WEEKLY_BRIEF_BACKEND'] = 'live';
+      const liveBrief = { uid: 'b1', state: 'generated', revision: 1, brief_text: 'Hello committee' };
+      proxyRequest.mockResolvedValueOnce({ brief: liveBrief, throttle: null }); // resolveRatableBrief's fetchCurrentBrief
+
+      await service.rateBrief(userReq, 'committee-1', 'b1', 'up', 1);
+
+      // resolveRatableBrief genuinely needs caller_rating (for the log line's previous_rating),
+      // so it still calls withCallerRating explicitly — but never withStaleness.
+      expect(getCommitteeActivityMock).not.toHaveBeenCalled();
+    });
   });
 
   describe('shareToSlack (LFXV2-3080)', () => {
@@ -979,6 +1580,10 @@ describe('WeeklyBriefService', () => {
       expect(proxyRequest).toHaveBeenNthCalledWith(3, req, 'LFX_V2_SERVICE', '/committees/committee-1/weekly-briefs/share-to-chat', 'POST', undefined, {
         revision: 1,
       });
+      // GH-1966 perf regression guard: this method only needs `brief`, so it must fetch via
+      // fetchCurrentBrief, not the enriched getCurrentBrief — the committee-activity fan-out
+      // withStaleness would trigger for this shareable ('generated') brief must never fire here.
+      expect(getCommitteeActivityMock).not.toHaveBeenCalled();
     });
 
     it('logs the sending user (as their opaque sub, not the human-readable username) on a successful send — the committee-service call carries no caller identity of its own beyond the bearer token, so this is the only record of who shared it', async () => {
@@ -1126,6 +1731,8 @@ describe('WeeklyBriefService', () => {
         expect.objectContaining({ ed_reply_email: 'writer@example.com', committee_uids: ['committee-1'] })
       );
       expect(nonImpersonatingReq.bearerToken).toBe('writer-token');
+      // GH-1966 perf regression guard — same rationale as shareToSlack's equivalent assertion.
+      expect(getCommitteeActivityMock).not.toHaveBeenCalled();
     });
 
     it("impersonating: authorizes and sends under the REAL staff member's token/email, not the impersonated target's, and restores the impersonation token afterward", async () => {
