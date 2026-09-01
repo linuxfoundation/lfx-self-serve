@@ -1,8 +1,9 @@
 // Copyright The Linux Foundation and each contributor to LFX.
 // SPDX-License-Identifier: MIT
 
-import type { FormationDrawerData, FormationRowActionConfig } from '../interfaces/formation-checklist.interface';
-import type { FormationQueueTiles, FormationsQueueResponse, FormationSubStage } from '../interfaces/formation.interface';
+import type { TagSeverity } from '../interfaces/components.interface';
+import type { FormationDrawerData, FormationLinkRowActionConfig, FormationRowActionConfig } from '../interfaces/formation-checklist.interface';
+import type { FormationItemStatus, FormationQueueTiles, FormationsQueueResponse, FormationSubStage } from '../interfaces/formation.interface';
 
 /** Queue filter-pill order (`All` is derived, not listed) — includes `withdrawn` per GH-1958. */
 export const FORMATION_QUEUE_SUB_STAGES: FormationSubStage[] = ['proposed', 'exploratory', 'engaged', 'on_hold', 'activating', 'withdrawn'];
@@ -35,8 +36,14 @@ export const FORMATION_GATED_ROW_ACTIONS = {
   request: { testidPrefix: 'formation-checklist-row-request', label: 'Request', severity: 'secondary', outlined: true },
 } as const satisfies Record<'provisionable' | 'request', FormationRowActionConfig>;
 
+/** `FormationChecklistRowComponent`'s `link`/`status_only` action testid prefixes, keyed by action kind — same typed-at-the-definition-site rationale as `FORMATION_GATED_ROW_ACTIONS`. */
+export const FORMATION_LINK_ROW_ACTIONS = {
+  link: { testidPrefix: 'formation-checklist-row-link' },
+  status_only: { testidPrefix: 'formation-checklist-row-status-only' },
+} as const satisfies Record<'link' | 'status_only', FormationLinkRowActionConfig>;
+
 /** `FormationsQueueComponent`'s zeroed tile counts — the `catchError`/pre-fetch fallback for `FormationQueueTiles`. */
-export const FORMATION_EMPTY_QUEUE_TILES: FormationQueueTiles = {
+export const FORMATION_EMPTY_QUEUE_TILES = {
   proposed: 0,
   exploratory: 0,
   engaged: 0,
@@ -47,7 +54,28 @@ export const FORMATION_EMPTY_QUEUE_TILES: FormationQueueTiles = {
   foundations: 0,
   subprojects: 0,
   mine: 0,
-};
+} as const satisfies FormationQueueTiles;
 
-/** `FormationsQueueComponent`'s sentinel for "not yet loaded" or a failed fetch. */
+/**
+ * `FormationsQueueComponent`'s sentinel for "not yet loaded" or a failed fetch. Not `as const` —
+ * `rows: []` would narrow to `readonly never[]`, which doesn't satisfy `Formation[]`.
+ */
 export const FORMATION_EMPTY_QUEUE_RESPONSE: FormationsQueueResponse = { tiles: FORMATION_EMPTY_QUEUE_TILES, rows: [], data_source: 'fixture' };
+
+/** `FormationChecklistRowComponent`'s status chip labels, mirroring `POLL_STATUS_LABELS`'s pattern. */
+export const FORMATION_ITEM_STATUS_LABELS = {
+  done: 'Done',
+  in_progress: 'In progress',
+  waiting_on_partner: 'Waiting on partner',
+  not_started: 'Not started',
+  skipped: 'Skipped',
+} as const satisfies Record<FormationItemStatus, string>;
+
+/** `FormationChecklistRowComponent`'s status chip severities, mirroring `POLL_STATUS_SEVERITY`'s pattern. */
+export const FORMATION_ITEM_STATUS_SEVERITY = {
+  done: 'success',
+  in_progress: 'warn',
+  waiting_on_partner: 'accent',
+  not_started: 'secondary',
+  skipped: 'secondary',
+} as const satisfies Record<FormationItemStatus, TagSeverity>;
