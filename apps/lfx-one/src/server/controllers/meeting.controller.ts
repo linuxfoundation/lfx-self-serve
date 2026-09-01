@@ -119,6 +119,10 @@ export class MeetingController {
 
   /**
    * GET /meetings/:uid
+   *
+   * Does not read the registrant roster: individual_registrants_count/committee_members_count
+   * are no longer populated on this response (GH-1731) since the join page now derives its own
+   * counts from the roster it already fetches via getMyMeetingRegistrants.
    */
   public async getMeetingById(req: Request, res: Response, next: NextFunction): Promise<void> {
     const { uid } = req.params;
@@ -158,16 +162,10 @@ export class MeetingController {
       // meeting far in the future or past — the key would be stripped anyway.
       const withinHostKeyWindow = isWithinHostKeyWindow(meeting);
 
-      // Run registrant counts, invited status, and host-key fetch in parallel.
-      const [registrants, meetingWithInvitedStatus, hostKey] = await Promise.all([
-        // TODO: Remove this once we have a way to get the registrants count
-        this.meetingService.getMeetingRegistrants(req, meeting.id).catch((error) => {
-          logger.warning(req, 'get_meeting_by_id', 'Failed to fetch registrants for meeting', {
-            meeting_id: uid,
-            err: error,
-          });
-          return null;
-        }),
+      // Registrant counts are no longer derived here — the full roster read was purely to derive
+      // two integers with no consumer once the join page holds its own roster (GH-1731). Run
+      // invited status and host-key fetch in parallel.
+      const [meetingWithInvitedStatus, hostKey] = await Promise.all([
         addInvitedStatusToMeeting(req, meeting, userEmail),
         withinHostKeyWindow
           ? this.meetingService.getMeetingHostKey(req, uid).catch((error) => {
@@ -179,15 +177,6 @@ export class MeetingController {
             })
           : Promise.resolve(null),
       ]);
-
-      if (registrants) {
-        const committeeMembers = registrants.filter((r) => r.type === 'committee').length;
-        meetingWithInvitedStatus.individual_registrants_count = registrants.length - committeeMembers;
-        meetingWithInvitedStatus.committee_members_count = committeeMembers;
-      } else {
-        meetingWithInvitedStatus.individual_registrants_count = 0;
-        meetingWithInvitedStatus.committee_members_count = 0;
-      }
 
       // Gate the Zoom host key: the query-service enforces FGA `host` on v1_meeting_host_credentials
       // (covering direct co-hosts AND organizer-derived writers/coordinators), so a null return
@@ -542,7 +531,9 @@ export class MeetingController {
         has_m2m_token: !!m2mToken,
       });
 
-      const registrants = await this.meetingService.getMeetingRegistrants(req, uid, includeRsvp, occurrenceId, false, undefined, {
+      // The join page treats this roster's length as an authoritative denominator (GH-1731) —
+      // a partial query-service page failure must surface as an error, not a silently truncated list.
+      const registrants = await this.meetingService.getMeetingRegistrants(req, uid, includeRsvp, occurrenceId, true, undefined, {
         bearerToken: m2mToken,
       });
 
