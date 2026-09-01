@@ -152,7 +152,7 @@ describe('MentionBookmarkService', () => {
     expect(messageService.add).toHaveBeenCalledWith({
       severity: 'warn',
       summary: 'Bookmark limit reached',
-      detail: `You can bookmark up to ${MENTION_IDS_MAX_VALUES} mentions per project.`,
+      detail: `You can bookmark up to ${MENTION_IDS_MAX_VALUES} mentions per foundation.`,
     });
     expect(socialListeningService.upsertPreference).not.toHaveBeenCalled();
     expect(service.state().data.has('new-mention')).toBe(false);
