@@ -7,7 +7,7 @@ import { FormControl, FormGroup, ReactiveFormsModule } from '@angular/forms';
 import { InputTextComponent } from '@components/input-text/input-text.component';
 import { Project } from '@lfx-one/shared/interfaces';
 import { ProjectService } from '@services/project.service';
-import { catchError, combineLatest, debounceTime, distinctUntilChanged, EMPTY, merge, of, startWith, switchMap } from 'rxjs';
+import { combineLatest, debounceTime, distinctUntilChanged, EMPTY, merge, of, startWith, switchMap } from 'rxjs';
 
 /**
  * Parent-project picker for the intake form's Parent section. Deliberately not
@@ -105,13 +105,12 @@ export class ProjectPickerComponent {
         switchMap((term) => {
           const trimmed = term.trim();
           if (trimmed.length < 2) return of([]);
-          // ProjectService.searchProjects already degrades to `of([])` internally today (with its
-          // own console.error), so this is currently unreachable and deliberately not re-logged —
-          // kept anyway as a terminal guard on a `toSignal` stream: an error escaping switchMap
-          // here would permanently kill `results()` for the rest of the component's lifetime (no
-          // retry), which is worse than one redundant handler. Matches
-          // `ProposeComponent.initDuplicateNameMatch`'s same defensive `catchError` on the same call.
-          return this.projectService.searchProjects(trimmed).pipe(catchError(() => of([])));
+          // No catchError here: ProjectService.searchProjects already logs (console.error) and
+          // degrades to of([]) internally, and frontend-checklist.md §14.6 ("Handle errors in one
+          // place") is explicit that a component-level catchError over an already-handled stream
+          // is dead code to be removed, not kept defensively. Final call — see propose.component.ts's
+          // initDuplicateNameMatch for the same resolution on the same upstream call.
+          return this.projectService.searchProjects(trimmed);
         })
       ),
       { initialValue: [] }

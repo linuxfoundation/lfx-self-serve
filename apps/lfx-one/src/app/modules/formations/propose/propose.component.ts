@@ -27,7 +27,7 @@ import { httpsUrlValidator, maxCodePointsValidator, trimmedRequired } from '@lfx
 import { FormationService } from '@services/formation.service';
 import { ProjectService } from '@services/project.service';
 import { MessageService } from 'primeng/api';
-import { catchError, debounceTime, distinctUntilChanged, of, startWith, switchMap } from 'rxjs';
+import { debounceTime, distinctUntilChanged, map, of, startWith, switchMap } from 'rxjs';
 
 import { ProjectPickerComponent } from './components/project-picker/project-picker.component';
 import { WhatsNextPanelComponent } from './components/whats-next-panel/whats-next-panel.component';
@@ -170,15 +170,14 @@ export class ProposeComponent {
         switchMap((name) => {
           const trimmed = (name ?? '').trim();
           if (trimmed.length < 3) return of(null);
-          // ProjectService.searchProjects already logs and degrades internally — see the matching
-          // comment on ProjectPickerComponent.initResults for why this is a deliberately silent,
-          // defensive terminal guard on the toSignal stream, not a missed log line.
+          // No catchError here, same resolution as ProjectPickerComponent.initResults:
+          // ProjectService.searchProjects already logs and degrades internally, so a second
+          // handler on the same call would be dead code per frontend-checklist.md §14.6.
           return this.projectService.searchProjects(trimmed).pipe(
-            switchMap((projects) => {
+            map((projects) => {
               const match = projects.find((project) => project.name.trim().toLowerCase() === trimmed.toLowerCase());
-              return of(match ? match.name : null);
-            }),
-            catchError(() => of(null))
+              return match ? match.name : null;
+            })
           );
         })
       ),
