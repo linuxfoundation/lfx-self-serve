@@ -126,7 +126,7 @@ describe('FormationCardComponent', () => {
     expect(text()).toContain('Staff only');
     expect(text()).toContain('Set up in admin tool');
     expect(fixture.nativeElement.querySelector('[data-testid="formation-card-admin-tool-link"]').getAttribute('href')).toBe(
-      'https://pcc.dev.platform.linuxfoundation.org/project/sfid-1/setup'
+      'https://pcc.dev.platform.linuxfoundation.org/project/sfid-1'
     );
   });
 

@@ -8,11 +8,14 @@ import { FeatureFlagService } from '@services/feature-flag.service';
 import { PermissionsService } from '@services/permissions.service';
 import { ProjectContextService } from '@services/project-context.service';
 import { ProjectService } from '@services/project.service';
-import { Observable, of, Subject } from 'rxjs';
+import { Observable, of, Subject, throwError } from 'rxjs';
 import { describe, expect, it } from 'vitest';
 
 import { DashboardCastDrawerHostComponent } from '../components/dashboard-cast-drawer-host/dashboard-cast-drawer-host.component';
 import { DashboardSidebarComponent } from '../components/dashboard-sidebar/dashboard-sidebar.component';
+import { MyMeetingsComponent } from '../components/my-meetings/my-meetings.component';
+import { PendingActionsComponent } from '../components/pending-actions/pending-actions.component';
+import { RecentProgressComponent } from '../components/recent-progress/recent-progress.component';
 import { ProjectDashboardComponent } from './project-dashboard.component';
 
 const CONTEXT: ProjectContext = { uid: 'proj-1', name: 'Project One', slug: 'project-one' };
@@ -26,6 +29,20 @@ class StubDashboardSidebarComponent {
 
 @Component({ selector: 'lfx-dashboard-cast-drawer-host', standalone: true, template: '' })
 class StubDashboardCastDrawerHostComponent {}
+
+// The three `@defer (on idle)` children below are stubbed out too — `await fixture.whenStable()`
+// (unlike a bare `detectChanges()`) waits for the idle callback that resolves those blocks, so
+// without stubs their real, service-heavy implementations would instantiate and need a full DI tree.
+@Component({ selector: 'lfx-recent-progress', standalone: true, template: '' })
+class StubRecentProgressComponent {}
+
+@Component({ selector: 'lfx-my-meetings', standalone: true, template: '' })
+class StubMyMeetingsComponent {}
+
+@Component({ selector: 'lfx-pending-actions', standalone: true, template: '' })
+class StubPendingActionsComponent {
+  public readonly pendingActions = input<unknown[]>([]);
+}
 
 function settings(announcementDate: string): ProjectSettings {
   return {
@@ -65,14 +82,23 @@ describe('ProjectDashboardComponent — Formation badge/subtitle (GH-1955)', () 
       ],
     })
       .overrideComponent(ProjectDashboardComponent, {
-        remove: { imports: [DashboardSidebarComponent, DashboardCastDrawerHostComponent] },
-        add: { imports: [StubDashboardSidebarComponent, StubDashboardCastDrawerHostComponent] },
+        remove: {
+          imports: [DashboardSidebarComponent, DashboardCastDrawerHostComponent, RecentProgressComponent, MyMeetingsComponent, PendingActionsComponent],
+        },
+        add: {
+          imports: [
+            StubDashboardSidebarComponent,
+            StubDashboardCastDrawerHostComponent,
+            StubRecentProgressComponent,
+            StubMyMeetingsComponent,
+            StubPendingActionsComponent,
+          ],
+        },
       })
       .compileComponents();
 
     fixture = TestBed.createComponent(ProjectDashboardComponent);
     await fixture.whenStable();
-    fixture.detectChanges();
   }
 
   function text(): string {
@@ -82,7 +108,7 @@ describe('ProjectDashboardComponent — Formation badge/subtitle (GH-1955)', () 
   it('renders no badge or subtitle when the flag is off', async () => {
     await render(true);
     flagEnabled.set(false);
-    fixture.detectChanges();
+    await fixture.whenStable();
 
     expect(fixture.nativeElement.querySelector('[data-testid="project-dashboard-formation-subtitle"]')).toBeNull();
   });
@@ -110,8 +136,19 @@ describe('ProjectDashboardComponent — Formation badge/subtitle (GH-1955)', () 
     expect(subtitle()).not.toContain('Announcement date');
 
     pending.next(settings('2026-09-01'));
-    fixture.detectChanges();
+    await fixture.whenStable();
 
     expect(subtitle()).toContain('Announcement date Sep 1, 2026');
+  });
+
+  it('omits the "Announcement date" clause on a failed settings fetch, rather than falsely asserting "Not set"', async () => {
+    await render(
+      true,
+      throwError(() => new Error('network error'))
+    );
+
+    const subtitle = () => fixture.nativeElement.querySelector('[data-testid="project-dashboard-formation-subtitle"]')?.textContent ?? '';
+    expect(subtitle()).toContain('Stage Formation · Engaged');
+    expect(subtitle()).not.toContain('Announcement date');
   });
 });

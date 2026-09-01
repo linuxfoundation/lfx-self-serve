@@ -20,12 +20,14 @@ import { catchError, filter, of, switchMap, tap } from 'rxjs';
  * The Formation sidebar card (GH-1955) — sub-stage pill, announcement date, the same
  * `executive_director`/`program_manager`/`opportunity_owner` contacts `ProjectStaffCardComponent`
  * shows above it, intake fields (repository/logo), and — for `PersonaService.isLFStaff` only —
- * a deep link into the admin tool's project-setup page. Rendered only while the project is
- * Draft/Formation; see `ProjectContextService.isActiveProjectInFormation`.
+ * a deep link into the admin tool. Rendered only while the project is Draft/Formation; see
+ * `ProjectContextService.isActiveProjectInFormation`.
  *
- * The ticket originally asked for two admin-tool links ("Edit stage" and "Set up"), but PCC has
- * no stage-specific route — only `/project/:id/setup` is confirmed. Both actions point there for
- * now; a distinct "Edit stage" destination needs a product/PCC decision (see `initAdminToolUrl`).
+ * The ticket asked for two distinct admin-tool links ("Edit stage" and "Set up"). Neither a
+ * `?tab=` param nor a `/setup` sub-route exists on `environment.urls.pcc` (verified — see
+ * `initAdminToolUrl`), so this ships a single link to the bare project page, the only destination
+ * actually confirmed to resolve. Both the specific "Edit stage" destination and any dedicated
+ * "Set up" sub-page need a product/PCC decision before a more specific link can be built.
  *
  * Reads `ProjectContextService.activeProject` for project fields and its own `uid` (no
  * `projectUid` input) — this card only ever renders for the currently active project, so there's
@@ -127,16 +129,20 @@ export class FormationCardComponent {
   }
 
   /**
-   * `/project/:sfid/setup` is PCC's real project-setup route (confirmed against
-   * `lfx-pcc`'s `project-routing.module.ts`, which declares `:id/setup` — a "Set up" and an
-   * "Edit stage" action share this one destination until PCC exposes a stage-specific sub-route;
-   * flagged for product/design rather than guessing one (`?tab=` params don't exist in PCC's
-   * routing at all — that was this card's original, now-corrected assumption).
+   * `environment.urls.pcc` resolves to PCC's v2 frontend (`pcc.dev.platform.linuxfoundation.org` /
+   * `projectadmin.lfx.linuxfoundation.org` in prod — confirmed via `lfx-pcc`'s
+   * `apps/v2-frontend/serverless.yml` host mappings), whose routing (`pages-routing.module.ts`)
+   * declares `project/:id`, `project/:id/operations`, `project/:id/collaboration`,
+   * `project/:id/onboarding`, `project/:id/development`, `project/:id/reports`, and no `**`
+   * fallback. None of those is an obvious "stage" or "setup" destination, and this card's first
+   * two attempts at guessing one (`?tab=` params, then a v1-only `/setup` route neither of which
+   * exists on v2) were both wrong. `/project/:id` is the one route confirmed to resolve — use that
+   * until product/PCC names the real destination.
    */
   private initAdminToolUrl(): Signal<string> {
     return computed(() => {
       const sfid = this.sfid();
-      return sfid ? `${this.pccBaseUrl()}/project/${sfid}/setup` : '';
+      return sfid ? `${this.pccBaseUrl()}/project/${sfid}` : '';
     });
   }
 
