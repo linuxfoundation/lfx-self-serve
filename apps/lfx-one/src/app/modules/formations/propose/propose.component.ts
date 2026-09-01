@@ -59,9 +59,9 @@ export class ProposeComponent {
   private readonly projectService = inject(ProjectService);
   private readonly messageService = inject(MessageService);
   private readonly organizationSearch = viewChild(OrganizationSearchComponent);
-  /** Backs additionalContacts' clientId — a monotonic counter (not crypto.randomUUID()) so a
-   *  contact's testid is deterministically addressable by a spec (`contact-1`, `contact-2`, …)
-   *  instead of only queryable by prefix. */
+  /** Backs additionalContacts' clientId — a monotonic counter, not crypto.randomUUID(), so
+   *  server and client renders agree on the same id (hydration-safe) and the sequence
+   *  (`contact-1`, `contact-2`, …) stays legible in a debugger without being random. */
   private nextContactClientId = 1;
 
   // Forms
@@ -89,7 +89,7 @@ export class ProposeComponent {
   /** `clientId` (from `nextContactClientId`) is a view-only stable key (not part of the wire
    *  payload — buildIntakePayload strips it), so the @for track and each row's data-testid
    *  survive a removal instead of re-keying by array position, without putting the contact's
-   *  email in a DOM attribute — and unlike a random id, stays addressable by a spec. */
+   *  email in a DOM attribute. */
   public additionalContacts = signal<(FormationContact & { clientId: string })[]>([]);
   /** True only after a real "Add" click on `newContactForm` — distinct from that form's own
    *  `touched` state, which blurring through its fields (with no intent to add anyone) would
@@ -168,10 +168,10 @@ export class ProposeComponent {
       this.newContactForm.get('email')?.markAsTouched();
       return;
     }
-    this.additionalContacts.update((contacts) => [
-      ...contacts,
-      { clientId: `contact-${this.nextContactClientId++}`, first_name: first_name.trim(), last_name: last_name.trim(), email: trimmedEmail },
-    ]);
+    // Computed before update(): an updater callback is expected to be a pure T => T, not a place
+    // to run side effects like advancing a counter.
+    const clientId = `contact-${this.nextContactClientId++}`;
+    this.additionalContacts.update((contacts) => [...contacts, { clientId, first_name: first_name.trim(), last_name: last_name.trim(), email: trimmedEmail }]);
     this.newContactForm.reset({ first_name: '', last_name: '', email: '' });
     this.newContactAttempted.set(false);
   }

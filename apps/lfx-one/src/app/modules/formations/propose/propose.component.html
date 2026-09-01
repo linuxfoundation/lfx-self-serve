@@ -199,10 +199,10 @@
         <!-- Rendered unconditionally (text toggles, not the element) so the live region is already
              in the accessibility tree before its content changes — a region inserted already
              populated is commonly missed by screen readers, since they announce mutations to an
-             existing region rather than a newly-added one. empty:h-0/overflow-hidden (not `hidden`
-             or display:none) collapse its layout footprint while empty without pulling it out of
-             the accessibility tree. -->
-        <p class="text-xs text-gray-500 empty:h-0 empty:overflow-hidden" role="status" data-testid="propose-additional-contact-limit">
+             existing region rather than a newly-added one. empty:absolute (not `hidden` or
+             display:none, both of which would pull it out of the accessibility tree) takes it out
+             of the flex column's layout flow while empty, so it contributes no gap either side. -->
+        <p class="text-xs text-gray-500 empty:absolute empty:h-0 empty:overflow-hidden" role="status" data-testid="propose-additional-contact-limit">
           @if (additionalContactsAtLimit()) {
             You've reached the limit of {{ maxAdditionalContacts }} additional contacts.
           }

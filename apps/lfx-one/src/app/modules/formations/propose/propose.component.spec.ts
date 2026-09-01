@@ -280,12 +280,21 @@ describe('ProposeComponent', () => {
 
     component.newContactForm.setValue({ first_name: 'Sam', last_name: 'Lee', email: 'sam@example.test' });
     component.addContact();
+    component.newContactForm.setValue({ first_name: 'Ali', last_name: 'Kay', email: 'ali@example.test' });
+    component.addContact();
 
-    expect(component.additionalContacts()).toEqual([expect.objectContaining({ first_name: 'Sam', last_name: 'Lee', email: 'sam@example.test' })]);
-    // clientId is a view-only stable key (not part of the wire payload) — assert it's present and
-    // unique, not its exact value.
-    expect(component.additionalContacts()[0].clientId).toBeTruthy();
+    expect(component.additionalContacts()).toEqual([
+      expect.objectContaining({ first_name: 'Sam', last_name: 'Lee', email: 'sam@example.test' }),
+      expect.objectContaining({ first_name: 'Ali', last_name: 'Kay', email: 'ali@example.test' }),
+    ]);
+    // clientId is a view-only stable key (not part of the wire payload) — assert it's actually
+    // unique across two contacts, not just present on one.
+    const [firstClientId, secondClientId] = component.additionalContacts().map((contact) => contact.clientId);
+    expect(firstClientId).toBeTruthy();
+    expect(secondClientId).toBeTruthy();
+    expect(firstClientId).not.toBe(secondClientId);
 
+    component.removeContact(1);
     component.removeContact(0);
 
     expect(component.additionalContacts()).toEqual([]);
@@ -303,6 +312,28 @@ describe('ProposeComponent', () => {
     component.addContact();
 
     expect(component.additionalContacts()).toHaveLength(FORMATION_MAX_ADDITIONAL_CONTACTS);
+  });
+
+  it('does not surface the "incomplete contact" error when addContact is reached at the limit with an empty form', async () => {
+    const { component, fixture } = await createComponentWithFixture();
+    const applicationRef = TestBed.inject(ApplicationRef);
+    for (let i = 0; i < FORMATION_MAX_ADDITIONAL_CONTACTS; i++) {
+      component.newContactForm.setValue({ first_name: 'Sam', last_name: 'Lee', email: `sam${i}@example.test` });
+      component.addContact();
+    }
+    // Fields stay enabled at the limit (only the Add button is disabled — see the sibling test
+    // below), so Enter in an empty field can still call addContact() here. The limit guard must
+    // return before newContactAttempted is set, or this would wrongly show the "incomplete
+    // contact" message instead of leaving the limit's own message as the only explanation.
+    component.newContactForm.reset({ first_name: '', last_name: '', email: '' });
+    component.addContact();
+    await applicationRef.whenStable();
+
+    const el: HTMLElement = fixture.nativeElement;
+    expect(el.querySelector('[data-testid="propose-new-contact-incomplete"]')).toBeNull();
+    expect(el.querySelector('[data-testid="propose-additional-contact-limit"]')?.textContent?.trim()).toContain(
+      `You've reached the limit of ${FORMATION_MAX_ADDITIONAL_CONTACTS} additional contacts.`
+    );
   });
 
   it('disables the Add button at the contact limit rather than removing the fields — keeps focus/context stable instead of yanking the just-clicked control out of the DOM', async () => {
@@ -326,7 +357,7 @@ describe('ProposeComponent', () => {
     expect((addButton as HTMLButtonElement).disabled).toBe(true);
   });
 
-  it('rejects a duplicate email in "who else" — @for tracks by email, so a duplicate would break the track key', async () => {
+  it('rejects a duplicate email in "who else" — the same person must not appear twice', async () => {
     const component = await createComponent();
     component.newContactForm.setValue({ first_name: 'Sam', last_name: 'Lee', email: 'sam@example.test' });
     component.addContact();
