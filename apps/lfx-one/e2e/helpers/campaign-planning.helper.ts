@@ -47,6 +47,7 @@ export function skipWhenAuthMissing(): void {
 }
 
 /** One `text/event-stream` body, in the shape `/api/campaigns/brief/generate` emits. */
+
 /**
  * The PAID planning panel.
  *
@@ -214,10 +215,12 @@ async function waitForHydration(page: Page, quietMs = 1200, timeoutMs = 20000): 
 /**
  * Open the Campaigns page's Planning tab for a foundation.
  *
- * Defaults to `aswf`, matching the other authenticated specs in this suite: the route is behind
- * campaignAccessGuard, which redirects to /foundation/overview unless the signed-in user is an
- * ED or campaign_manager on that project — so a slug the test account cannot access fails as a
- * silent redirect rather than an obvious error.
+ * Defaults to `aswf`, which is the project the test account is an ED on — NOT `tlf`, as an
+ * earlier version of this note claimed. The route is behind campaignAccessGuard, which
+ * redirects to /foundation/overview unless the signed-in user is an ED or campaign_manager on
+ * that project, so a slug the account cannot access fails as a silent redirect rather than an
+ * obvious error. That is precisely how the wrong default cost a debugging session: the specs
+ * landed on the overview page and every planning locator timed out.
  */
 export async function gotoPlanningTab(page: Page, project = 'aswf'): Promise<void> {
   await seedEdPersona(page);
