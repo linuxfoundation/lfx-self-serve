@@ -177,10 +177,15 @@ test.describe('Formation Checklist section (GH-1958)', () => {
     // Clicking Mark complete only proves the client set its own optimistic [disabled] state — it
     // does not prove the request has actually reached Playwright's route interceptor yet. Poll for
     // the handler above to have registered uid's resolver before releasing it, so releasing never
-    // silently no-ops (which would make every assertion below pass for the wrong reason).
+    // silently no-ops (which would make every assertion below pass for the wrong reason). Deletes the
+    // entry once released — a Map with an unresolved-vs-already-released entry that both `.has()` as
+    // truthy would let a second write for the same uid poll-pass against a stale, already-fired
+    // resolver and release nothing.
     async function releaseHeldRequest(uid: string): Promise<void> {
       await expect.poll(() => pendingResolvers.has(uid)).toBe(true);
-      pendingResolvers.get(uid)?.();
+      const resolve = pendingResolvers.get(uid);
+      pendingResolvers.delete(uid);
+      resolve?.();
     }
 
     // Start A's write, then close the drawer while it's still in flight — nothing gates onClose() on
@@ -209,13 +214,15 @@ test.describe('Formation Checklist section (GH-1958)', () => {
     await expect(drawer).toBeVisible();
     await expect(markComplete).toBeDisabled();
 
-    // Release B's held response too — now B's own write really is done, and its button recovers.
+    // Release B's held response too — now B's own write really is done. B is still what the drawer
+    // shows at this point, so this is a real (uid-matching) completion — onDrawerItemChanged closes
+    // the drawer itself, same as any other successful Mark complete.
     await releaseHeldRequest(itemB.uid);
-    await expect(markComplete).toBeEnabled({ timeout: DATA_LOAD_TIMEOUT });
+    await expect(drawer).toBeHidden({ timeout: DATA_LOAD_TIMEOUT });
 
     // A's guard must have been correctly retired when its response was released above — reopening it
-    // must not still show it stuck disabled forever.
-    await page.getByTestId('formation-item-drawer-close').click();
+    // must not still show it stuck disabled forever. (The drawer is already closed from B's own
+    // completion above, so there's nothing to close first.)
     await page.getByTestId(`formation-checklist-row-title-${itemA.uid}`).click();
     await expect(drawer).toBeVisible();
     await expect(markComplete).toBeEnabled({ timeout: DATA_LOAD_TIMEOUT });

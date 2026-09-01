@@ -40,7 +40,7 @@ export class FormationItemDrawerComponent {
   /** True specifically while a skip the user submitted from this drawer is in flight — scoped narrower than `mutationInFlight` so a row action elsewhere doesn't spin this button. */
   public readonly skipInFlight = input<boolean>(false);
 
-  /** Fired for a status-changing action (Mark complete) — the section closes the drawer and refreshes the row list. */
+  /** Fired for a status-changing action (Mark complete) — the section refreshes the row list, and closes the drawer if it's still showing this item. */
   public readonly itemChanged = output<FormationItem>();
   /** Fired for a metadata-only save (notes/assignee/due-date) — the section refreshes the row list but leaves the drawer open. */
   public readonly itemUpdated = output<FormationItem>();
@@ -71,13 +71,24 @@ export class FormationItemDrawerComponent {
   protected readonly loading: WritableSignal<boolean> = signal(false);
   protected readonly loadFailed: WritableSignal<boolean> = signal(false);
   /**
-   * Separate per-action flags, each driving only its own button's `[loading]` — a single shared
+   * Which item uid Mark complete/Save is currently writing, not just whether *something* is writing
+   * — this drawer component instance is reused across every item it ever opens, so a plain boolean
+   * would still read true for a newly-opened item B while a *previous* item A's write is still
+   * settling, and (worse) A's `finalize` clearing a shared boolean would wrongly clear B's own
+   * still-in-flight write. `completing`/`savingDetails` below derive from these against the
+   * currently-open item, so switching items automatically (not via an explicit reset) scopes each
+   * flag to the write it actually belongs to.
+   */
+  protected readonly completingUid: WritableSignal<string | null> = signal(null);
+  protected readonly savingDetailsUid: WritableSignal<string | null> = signal(null);
+  /**
+   * Separate per-action signals, each driving only its own button's `[loading]` — a single shared
    * flag would spin the Save button while Mark complete is in flight (and vice versa), a spinner on
    * a button the user never pressed. Both are still checked in each handler's guard, not just their
    * own, since the two write the same item and must not run concurrently.
    */
-  protected readonly completing: WritableSignal<boolean> = signal(false);
-  protected readonly savingDetails: WritableSignal<boolean> = signal(false);
+  protected readonly completing: Signal<boolean> = computed(() => this.completingUid() !== null && this.completingUid() === this.item()?.uid);
+  protected readonly savingDetails: Signal<boolean> = computed(() => this.savingDetailsUid() !== null && this.savingDetailsUid() === this.item()?.uid);
   /**
    * Every write this drawer can trigger against the open item — Mark complete, Save, and (via
    * `mutationInFlight`) the section-owned Skip/row-action mutation. All three write the same item,
@@ -97,7 +108,7 @@ export class FormationItemDrawerComponent {
   protected onMarkComplete(): void {
     const item = this.item();
     if (!item || this.busy()) return;
-    this.completing.set(true);
+    this.completingUid.set(item.uid);
     this.writeStarted.emit(item.uid);
 
     this.formationService
@@ -105,7 +116,10 @@ export class FormationItemDrawerComponent {
       .pipe(
         take(1),
         finalize(() => {
-          this.completing.set(false);
+          // Only clear if this write is still the one `completingUid` is tracking — if the drawer
+          // switched away and back (or another Mark complete somehow started for this same uid
+          // again), an unconditional clear here could drop a different write's own flag.
+          if (this.completingUid() === item.uid) this.completingUid.set(null);
           this.writeEnded.emit(item.uid);
         })
       )
@@ -130,7 +144,7 @@ export class FormationItemDrawerComponent {
   protected onSaveDetails(): void {
     const item = this.item();
     if (!item || this.busy()) return;
-    this.savingDetails.set(true);
+    this.savingDetailsUid.set(item.uid);
     this.writeStarted.emit(item.uid);
 
     this.formationService
@@ -142,7 +156,7 @@ export class FormationItemDrawerComponent {
       .pipe(
         take(1),
         finalize(() => {
-          this.savingDetails.set(false);
+          if (this.savingDetailsUid() === item.uid) this.savingDetailsUid.set(null);
           this.writeEnded.emit(item.uid);
         })
       )
@@ -150,8 +164,11 @@ export class FormationItemDrawerComponent {
         next: (updated) => {
           this.itemUpdated.emit(updated);
           // Re-fetch so `item()`/`history()` in this still-open drawer reflect the save (the new
-          // history entry included) instead of showing pre-save data until the drawer is reopened.
-          this.reload$.next();
+          // history entry included) instead of showing pre-save data until the drawer is reopened —
+          // but only if the drawer is still showing the item this save was actually for; otherwise
+          // the reload would fetch (and overwrite the form of) whatever item the user has since
+          // switched to, using this stale save's response as the trigger.
+          if (this.itemUid() === item.uid) this.reload$.next();
           this.messageService.add({ severity: 'success', summary: 'Saved', detail: 'Item details updated.' });
         },
         error: (error: unknown) => {
@@ -186,14 +203,6 @@ export class FormationItemDrawerComponent {
           if (trigger === 'open') {
             this.loadFailed.set(false);
             this.loading.set(true);
-            // completing/savingDetails live on this drawer instance, not per-item — the instance is
-            // reused across every item the drawer ever opens. Without resetting them here, a write
-            // still pending for a *previously* open item would leave Mark complete/Save disabled for
-            // every item opened afterward, until that original request eventually resolves (or
-            // forever, if it never does). `mutationInFlight`/`skipInFlight` (section-owned, keyed by
-            // this item's own uid) still correctly reflect this item's own busy state regardless.
-            this.completing.set(false);
-            this.savingDetails.set(false);
           }
 
           return this.formationService.getFormationItem(uid).pipe(
