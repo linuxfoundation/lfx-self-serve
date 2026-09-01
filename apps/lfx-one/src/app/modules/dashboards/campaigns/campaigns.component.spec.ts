@@ -4496,6 +4496,8 @@ describe('CampaignsComponent email monitor', () => {
     emailMetricsNothingSent(): boolean;
     emailMetricsRates(): { delivery: number | null; open: number | null; click: number | null; bounce: number | null };
     loadEmailMetrics(): void;
+    canRefreshEmailMetrics(): boolean;
+    emailBriefOutput: { set(v: unknown): void };
   }
 
   const internals = (): MonitorInternals => fixture.componentInstance as unknown as MonitorInternals;
@@ -4932,5 +4934,44 @@ describe('CampaignsComponent email monitor', () => {
     // that leaves `sent` intact and corrupts another field — which is exactly what "skipped"
     // has to rule out: the row must contribute nothing to ANY counter.
     expect(internals().emailMetricsTotals()).toEqual({ sent: 9400, delivered: 9268, opens: 1840, clicks: 212, bounces: 95, unsubscribes: 17 });
+  });
+
+  /**
+   * `idle` is two states, and Refresh must only be live for one of them.
+   *
+   * A Monitor parked by a reset still has a resolvable owned row, so Refresh reloads it. A genuine
+   * no-brief context resolves `briefId === ''` and early-returns to the same idle it started from,
+   * so an enabled button there silently does nothing -- indistinguishable, to an operator or a
+   * screen-reader user, from a load that failed without saying so.
+   *
+   * Asserts the COMPUTED the template binds, not the request: the defect is a control that renders
+   * enabled beside a panel it cannot change.
+   */
+  it('does not offer Refresh when no brief id is resolvable', () => {
+    internals().emailBriefId.set('');
+    internals().emailBriefOutput.set(null);
+    internals().emailMetricsState.set('idle');
+    fixture.detectChanges();
+
+    expect(internals().canRefreshEmailMetrics()).toBe(false);
+  });
+
+  it('offers Refresh in the recoverable idle state a reset leaves behind', () => {
+    // The signal is cleared exactly as `resetEmailBriefDerivedState` leaves it, but the brief is
+    // still on screen -- this is the case the narrowed predicate was widened for, and it must not
+    // regress into "disabled everywhere idle".
+    internals().emailBriefId.set('b-monitor');
+    internals().emailMetricsState.set('idle');
+    fixture.detectChanges();
+
+    expect(internals().canRefreshEmailMetrics()).toBe(true);
+  });
+
+  it('does not offer Refresh while a load is already in flight', () => {
+    internals().emailBriefId.set('b-monitor');
+    internals().emailMetricsState.set('loading');
+    fixture.detectChanges();
+
+    expect(internals().canRefreshEmailMetrics()).toBe(false);
   });
 });

@@ -295,6 +295,16 @@ export class CampaignsComponent {
   private knownBriefIds = new Map<string, { id: string; etag: string | null; absence?: 'overwrite' | 'unknown' }>();
 
   /**
+   * Bumped on every write to `knownBriefIds`, so a computed can depend on the map.
+   *
+   * The map itself is a plain `Map` and cannot be tracked: a `computed` reading it would be
+   * evaluated once and never invalidated when an entry lands, which would leave a control gated
+   * on it stuck at whatever the first read happened to say. Writing through
+   * `rememberBriefId` is what keeps this in step -- do not call `knownBriefIds.set` directly.
+   */
+  private readonly knownBriefIdsVersion = signal(0);
+
+  /**
    * True while `onRestoreSavedBrief` is adopting a restored brief's own program.
    *
    * The `programType` subscription treats a change as the user choosing a different program and
@@ -1295,12 +1305,20 @@ export class CampaignsComponent {
           this.loadEmailTemplatesIfNeverAnswered();
         }
 
-        // Same shape one tab over, but the claim is narrower than the picker's above:
+        // Same shape one tab over, but the claim is narrower than the picker's above, and
+        // narrower again than an earlier version of this comment asserted.
+        //
         // `resetEmailBriefDerivedState` has already run in this handler, so the previous
-        // foundation's numbers are gone either way -- what this prevents is the panel sitting
-        // EMPTY until the operator navigates away and back, not stale numbers under a new name.
-        // `loadEmailMetrics` re-reads its own context and handles the no-brief case, so it is
-        // safe to call unconditionally.
+        // foundation's numbers are gone either way -- this is NOT protection against stale
+        // numbers under a new name. Nor is it a cross-foundation guarantee: the fallback in
+        // `loadEmailMetrics` keys the ownership cache on the CURRENT foundation's slug, so
+        // after a switch it usually misses, `briefId` resolves to '', and the panel legitimately
+        // lands back in idle until a brief is re-established there.
+        //
+        // What it does buy is the SAME-foundation round-trip, where the owned brief is still
+        // resolvable: the panel repopulates instead of sitting empty until the operator
+        // navigates away and back. `loadEmailMetrics` re-reads its own context and handles the
+        // no-brief case, so it is safe to call unconditionally either way.
         if (this.selectedDeliveryType() === 'email' && this.selectedEmailTab() === 'insights') {
           this.loadEmailMetrics();
         }
@@ -2072,7 +2090,7 @@ export class CampaignsComponent {
       // rely on. Treating `undefined` as "present" would withhold the overwrite licence and
       // refuse the first save after a restore as `unverified-validator`.
       const validator = etag ?? null;
-      this.knownBriefIds.set(key, { id: briefId, etag: validator, ...(validator === null ? { absence: 'overwrite' as const } : {}) });
+      this.rememberBriefId(key, { id: briefId, etag: validator, ...(validator === null ? { absence: 'overwrite' as const } : {}) });
     }
     this.onProceedToImplementation(brief, true, approved);
   }
@@ -2090,6 +2108,42 @@ export class CampaignsComponent {
    * date, and the counters returned are then that email's totals TO DATE. Sending a window from
    * here would imply a period the numbers do not cover.
    */
+  /** Single write path for `knownBriefIds`, so `knownBriefIdsVersion` cannot drift from the map. */
+  private rememberBriefId(key: string, value: { id: string; etag: string | null; absence?: 'overwrite' | 'unknown' }): void {
+    this.knownBriefIds.set(key, value);
+    this.knownBriefIdsVersion.update((v) => v + 1);
+  }
+
+  /**
+   * Whether Refresh can actually load anything.
+   *
+   * `idle` is two different states wearing one name: a Monitor parked by a reset whose owned row
+   * is still resolvable (recoverable -- Refresh works), and a genuine no-brief context where
+   * `loadEmailMetrics` resolves `briefId === ''` and early-returns to the same idle it started
+   * from. Gating on `state !== 'loading'` alone renders an enabled button beside the second one,
+   * which gives an operator -- and a screen-reader user -- no way to tell "nothing to load" from
+   * "the load failed silently".
+   *
+   * This resolves the brief id exactly the way `loadEmailMetrics` does, so the two cannot
+   * disagree about whether a refresh is possible.
+   */
+  protected readonly canRefreshEmailMetrics = computed<boolean>(() => {
+    if (this.emailMetricsState() === 'loading') {
+      return false;
+    }
+    if (this.emailBriefId() !== '') {
+      return true;
+    }
+    // Establishes the dependency: the fallback below reads an untracked Map.
+    this.knownBriefIdsVersion();
+    const brief = this.emailBriefOutput();
+    if (brief === null) {
+      return false;
+    }
+    const key = this.ownershipKey(this.activeFoundationSlug(), brief);
+    return key !== null && (this.knownBriefIds.get(key)?.id ?? '') !== '';
+  });
+
   protected loadEmailMetrics(): void {
     const projectSlug = this.activeFoundationSlug();
     // Fall back to the OWNED id when the signal is empty. `resetEmailBriefDerivedState` clears
@@ -2517,7 +2571,7 @@ export class CampaignsComponent {
       // overwrite licence is granted only where the write returned no validator at all.
       if (ownershipKey !== null) {
         const validator = persisted.etag ?? null;
-        this.knownBriefIds.set(ownershipKey, {
+        this.rememberBriefId(ownershipKey, {
           id: briefId,
           etag: validator,
           ...(validator === null ? { absence: 'overwrite' as const } : {}),
@@ -2702,7 +2756,7 @@ export class CampaignsComponent {
             // A null etag here is UNKNOWN, not permission: the write returned no validator, or
             // its approval outcome was indeterminate. The next save must not silently fall back
             // to a freshly read one on the strength of it.
-            this.knownBriefIds.set(ownershipKey, {
+            this.rememberBriefId(ownershipKey, {
               id: result.briefId,
               etag: result.etag,
               ...(result.etag === null ? { absence: 'unknown' as const } : {}),
@@ -2764,7 +2818,7 @@ export class CampaignsComponent {
               if (owned !== undefined) {
                 // EXPLICIT: the user has just been shown the stale-brief warning. The next save
                 // may take the freshly read validator, which is what proceeding means.
-                this.knownBriefIds.set(ownershipKey, { id: owned.id, etag: null, absence: 'overwrite' });
+                this.rememberBriefId(ownershipKey, { id: owned.id, etag: null, absence: 'overwrite' });
               }
             }
             this.briefPersistence.set({

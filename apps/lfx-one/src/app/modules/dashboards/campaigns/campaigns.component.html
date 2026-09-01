@@ -647,7 +647,7 @@
                 icon="fa-light fa-arrows-rotate"
                 [outlined]="true"
                 size="small"
-                [disabled]="emailMetricsState() === 'loading'"
+                [disabled]="!canRefreshEmailMetrics()"
                 (onClick)="loadEmailMetrics()"
                 data-testid="campaigns-email-metrics-refresh" />
             </div>
