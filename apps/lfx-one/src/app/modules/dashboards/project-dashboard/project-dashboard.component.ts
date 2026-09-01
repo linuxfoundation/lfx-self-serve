@@ -1,7 +1,7 @@
 // Copyright The Linux Foundation and each contributor to LFX.
 // SPDX-License-Identifier: MIT
 
-import { Component, computed, inject, Signal } from '@angular/core';
+import { Component, computed, inject, signal, Signal } from '@angular/core';
 import { toObservable, toSignal } from '@angular/core/rxjs-interop';
 import { FORMATION_ENABLED_FLAG } from '@lfx-one/shared/constants';
 import { PendingActionItem } from '@lfx-one/shared/interfaces';
@@ -12,7 +12,7 @@ import { ProjectContextService } from '@services/project-context.service';
 import { ProjectService } from '@services/project.service';
 import { TagComponent } from '@components/tag/tag.component';
 import { SkeletonModule } from 'primeng/skeleton';
-import { BehaviorSubject, catchError, combineLatest, filter, map, of, switchMap } from 'rxjs';
+import { BehaviorSubject, catchError, combineLatest, filter, map, of, switchMap, tap } from 'rxjs';
 
 import { DashboardCastDrawerHostComponent } from '../components/dashboard-cast-drawer-host/dashboard-cast-drawer-host.component';
 import { DashboardSidebarComponent } from '../components/dashboard-sidebar/dashboard-sidebar.component';
@@ -51,6 +51,8 @@ export class ProjectDashboardComponent {
   protected readonly formationSubStage = this.projectContextService.activeProjectFormationSubStage;
 
   public readonly pendingActions: Signal<PendingActionItem[]>;
+  /** True until the announcement-date fetch for the current project settles — gates the subtitle's date clause so it never asserts "Not set" before the real value is known. */
+  protected readonly announcementDateLoading = signal(true);
   private readonly announcementDate: Signal<string | null>;
   protected readonly announcementDateLabel: Signal<string>;
 
@@ -88,13 +90,15 @@ export class ProjectDashboardComponent {
     return toSignal(
       toObservable(this.selectedProject).pipe(
         filter((project): project is NonNullable<typeof project> => !!project?.uid),
+        tap(() => this.announcementDateLoading.set(true)),
         switchMap((project) =>
           this.permissionsService.getProjectSettings(project.uid).pipe(
             map((settings) => settings.announcement_date || null),
             catchError((error) => {
               console.error('Project dashboard: failed to load announcement date', error);
               return of(null);
-            })
+            }),
+            tap(() => this.announcementDateLoading.set(false))
           )
         )
       ),
