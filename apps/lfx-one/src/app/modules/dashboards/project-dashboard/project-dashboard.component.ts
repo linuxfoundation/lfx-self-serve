@@ -5,7 +5,7 @@ import { Component, computed, inject, Signal } from '@angular/core';
 import { toObservable, toSignal } from '@angular/core/rxjs-interop';
 import { FORMATION_ENABLED_FLAG } from '@lfx-one/shared/constants';
 import { PendingActionItem } from '@lfx-one/shared/interfaces';
-import { formatIsoDateLabel } from '@lfx-one/shared/utils';
+import { formatAnnouncementDateLabel } from '@lfx-one/shared/utils';
 import { FeatureFlagService } from '@services/feature-flag.service';
 import { PermissionsService } from '@services/permissions.service';
 import { ProjectContextService } from '@services/project-context.service';
@@ -103,9 +103,6 @@ export class ProjectDashboardComponent {
   }
 
   private initAnnouncementDateLabel(): Signal<string> {
-    return computed(() => {
-      const date = this.announcementDate();
-      return date ? formatIsoDateLabel(date) : 'Not set';
-    });
+    return computed(() => formatAnnouncementDateLabel(this.announcementDate()));
   }
 }

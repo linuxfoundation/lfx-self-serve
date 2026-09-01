@@ -630,6 +630,11 @@ export function formatIsoDateLabel(iso: string): string {
   });
 }
 
+/** `formatIsoDateLabel`, with a `'Not set'` fallback for an absent date — shared by the project dashboard's Formation subtitle and the Formation sidebar card (GH-1955). */
+export function formatAnnouncementDateLabel(date: string | null | undefined): string {
+  return date ? formatIsoDateLabel(date) : 'Not set';
+}
+
 /**
  * Render a HubSpot `updatedAt` for a marketing-email row.
  *
