@@ -142,7 +142,7 @@ export class FormationCardComponent {
   private initAdminToolUrl(): Signal<string> {
     return computed(() => {
       const sfid = this.sfid();
-      return sfid ? `${this.pccBaseUrl()}/project/${sfid}` : '';
+      return sfid ? `${this.pccBaseUrl()}/project/${encodeURIComponent(sfid)}` : '';
     });
   }
 

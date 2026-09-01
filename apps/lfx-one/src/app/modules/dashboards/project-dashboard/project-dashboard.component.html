@@ -13,7 +13,9 @@
       @if (formationFlagEnabled() && isFormation()) {
         <p class="text-sm text-gray-500" data-testid="project-dashboard-formation-subtitle">
           Stage Formation · {{ formationSubStage() }}
-          @if (!announcementDateLoading() && !announcementDateHasError()) {
+          @if (announcementDateLoading()) {
+            · Announcement date —
+          } @else if (!announcementDateHasError()) {
             · Announcement date {{ announcementDateLabel() }}
           }
         </p>

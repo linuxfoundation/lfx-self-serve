@@ -127,13 +127,14 @@ describe('ProjectDashboardComponent — Formation badge/subtitle (GH-1955)', () 
     expect(fixture.nativeElement.querySelector('[data-testid="project-dashboard-formation-subtitle"]')).not.toBeNull();
   });
 
-  it('omits the "Announcement date" clause entirely until the settings fetch resolves, rather than asserting "Not set" prematurely', async () => {
+  it('shows an em dash placeholder, not "Not set", until the settings fetch resolves', async () => {
     const pending = new Subject<ProjectSettings>();
     await render(true, pending);
 
     const subtitle = () => fixture.nativeElement.querySelector('[data-testid="project-dashboard-formation-subtitle"]')?.textContent ?? '';
     expect(subtitle()).toContain('Stage Formation · Engaged');
-    expect(subtitle()).not.toContain('Announcement date');
+    expect(subtitle()).toContain('Announcement date —');
+    expect(subtitle()).not.toContain('Not set');
 
     pending.next(settings('2026-09-01'));
     await fixture.whenStable();

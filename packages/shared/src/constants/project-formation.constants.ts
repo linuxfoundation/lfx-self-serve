@@ -19,7 +19,8 @@ export const FORMATION_SUB_STAGE_LABELS: Partial<Record<ProjectStage, string>> =
 /**
  * Sentinel value referenced by ticket GH-1955 ("Draft status or any Formation sub-stage") with
  * no backing `ProjectStage` member today. Kept as a defensive literal check in
- * `isFormationStage`/`getFormationSubStageLabel` so a future upstream addition of this value
- * doesn't silently fall outside the gate — not evidence that upstream currently emits it.
+ * `getFormationSubStageLabel` (which `isFormationStage` delegates to) so a future upstream
+ * addition of this value doesn't silently fall outside the gate — not evidence that upstream
+ * currently emits it.
  */
 export const DRAFT_STAGE_SENTINEL = 'Draft';
