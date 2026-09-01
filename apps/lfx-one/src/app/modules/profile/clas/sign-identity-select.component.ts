@@ -174,13 +174,18 @@ export class SignIdentitySelectComponent {
     const accounts = this.config.data?.accounts ?? [];
     const gerritOffered = !!this.config.data?.gerritUsername?.trim();
 
+    // Every handle on the step, so the matcher can tell a recorded account number from a handle
+    // that happens to be all digits.
+    const offeredHandles = accounts.map((account) => account.githubUsername);
+
     const byGithubId = new Map<string, MyClaAgreement>();
     for (const account of accounts) {
-      const held = alreadySignedAgreementForIdentity(agreements, { platform: 'github', username: account.githubUsername, githubId: account.githubId });
+      const identity = { platform: 'github', username: account.githubUsername, githubId: account.githubId } as const;
+      const held = alreadySignedAgreementForIdentity(agreements, identity, offeredHandles);
       if (held) byGithubId.set(account.githubId, held);
     }
 
-    const gerrit = gerritOffered ? alreadySignedAgreementForIdentity(agreements, { platform: 'gerrit' }) : undefined;
+    const gerrit = gerritOffered ? alreadySignedAgreementForIdentity(agreements, { platform: 'gerrit' }, offeredHandles) : undefined;
     const selectable = accounts.filter((account) => !byGithubId.has(account.githubId)).length + (gerritOffered && !gerrit ? 1 : 0);
 
     return { byGithubId, gerrit, anotherSelectable: selectable > 0 };

@@ -85,15 +85,6 @@ SPDX-License-Identifier: MIT
                       [attr.data-testid]="'cla-group-select-already-signed-' + option.claGroupId">
                       {{ alreadySigned.chip }}
                     </span>
-                    <!--
-                      Which agreement they already hold — and, where the route has one to offer,
-                      that another identity can still sign it — lives only in a hover tooltip, which
-                      assistive tech never reaches. Carried here as an `aria-describedby` target
-                      rather than an `aria-label`, so the option still announces its project name
-                      first and the note after it. The chip is capped rather than shrinkable: it
-                      names the identity, so a long project name must not truncate it away.
-                    -->
-                    <span class="sr-only" [id]="'cla-group-already-signed-' + option.claGroupId">{{ alreadySigned.tooltip }}</span>
                   }
                 </span>
                 @if (option.secondaryName; as secondary) {
@@ -124,6 +115,21 @@ SPDX-License-Identifier: MIT
                   </span>
                 }
               </div>
+
+              @if (alreadySigned) {
+                <!--
+                  Which agreement they already hold — and, where the route has one to offer, that
+                  another identity can still sign it — lives only in a hover tooltip, which assistive
+                  tech never reaches. It is carried as an `aria-describedby` target so the option
+                  still announces its project name first and the note after it, rather than as an
+                  `aria-label` that would replace the name.
+
+                  It sits outside the option rather than inside it: an option's accessible name is
+                  built from its contents, so a hidden child would put this same sentence in the
+                  name as well as the description and a screen reader would read it twice.
+                -->
+                <span class="sr-only" [id]="'cla-group-already-signed-' + option.claGroupId">{{ alreadySigned.tooltip }}</span>
+              }
 
               @if (option.orgViews.length > 1) {
                 <button

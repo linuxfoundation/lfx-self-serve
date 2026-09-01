@@ -311,6 +311,13 @@ export function alreadySignedGroupTooltip(agreement: MyClaAgreement, route: ClaS
  * whether to gray a card, while the hand-off still submits `githubId`, and EasyCLA re-derives
  * the attested set from the caller's own token regardless of what is sent.
  *
+ * Nothing in the recorded string says which of the two it is, and GitHub handles can be all
+ * digits — login `12345` is a real account, whose number is something else entirely. So a
+ * number is only read as a number once no handle on offer claims that same string; where one
+ * does, the string is that contributor's handle and grays their card alone. Without this a
+ * contributor who had signed as a numerically-named account could find a wholly unrelated
+ * account of theirs grayed, which on a single-account step would leave them nothing to pick.
+ *
  * **On the GitHub branch only**, an agreement with no recorded identity matches nothing and
  * blocks no card. Naming a card as already-signed on the strength of a blank is the worse error:
  * it would strand a contributor whose only account is the one it grayed out.
@@ -319,7 +326,13 @@ export function alreadySignedGroupTooltip(agreement: MyClaAgreement, route: ClaS
  * card is ever offered and it is the contributor's own LF identity, so the platform alone
  * identifies it — which does mean a Gerrit agreement with a blank handle still blocks that card.
  */
-export function alreadySignedAgreementForIdentity(agreements: readonly MyClaAgreement[], identity: SignIdentityRef): MyClaAgreement | undefined {
+export function alreadySignedAgreementForIdentity(
+  agreements: readonly MyClaAgreement[],
+  identity: SignIdentityRef,
+  offeredHandles: readonly string[]
+): MyClaAgreement | undefined {
+  const handles = new Set(offeredHandles.map((handle) => handle.trim().toLowerCase()).filter(Boolean));
+
   return agreements.find((agreement) => {
     if (!ALREADY_SIGNED_CLA_STATUSES.has(agreement.status)) return false;
     if (identity.platform === 'gerrit') return agreement.signedVia === 'gerrit';
@@ -329,7 +342,9 @@ export function alreadySignedAgreementForIdentity(agreements: readonly MyClaAgre
     if (!signedAs) return false;
 
     const username = identity.username?.trim().toLowerCase();
-    return signedAs === identity.githubId.trim().toLowerCase() || (!!username && signedAs === username);
+    if (username && signedAs === username) return true;
+
+    return !handles.has(signedAs) && signedAs === identity.githubId.trim().toLowerCase();
   });
 }
 

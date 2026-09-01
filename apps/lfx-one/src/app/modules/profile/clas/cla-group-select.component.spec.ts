@@ -458,6 +458,12 @@ describe('ClaGroupSelectComponent', () => {
       expect(fixture.nativeElement.querySelector(`#${describedBy}`)?.textContent?.trim()).toBe(
         'You already have an ICLA for this CLA group. Signed as jellis (GitHub). If you have another identity linked, you can still sign with it.'
       );
+
+      // And it has to live outside the option. An option's accessible name is built from its
+      // contents, so a hidden child would put the same sentence in the name as well as the
+      // description, and a screen reader would read the whole thing twice.
+      expect(row.nativeElement.querySelector(`#${describedBy}`)).toBeNull();
+      expect(row.nativeElement.textContent).not.toContain('You already have an ICLA');
     });
 
     it('still lets them select it, because another of their identities may be able to sign', async () => {
