@@ -88,17 +88,20 @@ export class FormationService {
 
     FormationService.store.set(uid, formation);
 
+    // One INFO line with genuine production value (fixture provenance); the rest are static
+    // build-time TODO markers that carry no per-request information and would otherwise print
+    // identically on every submission — DEBUG per logging-patterns.md, not INFO.
     logger.info(req, 'create_formation', 'formation-service is not built yet (#1957) — returning a fabricated fixture record, not a real formation', {
       uid,
     });
-    logger.info(req, 'create_formation', 'TODO(#1957): proposer participant grant is simulated — the real formation service writes this tuple on submit', {
+    logger.debug(req, 'create_formation', 'TODO(#1957): proposer participant grant is simulated — the real formation service writes this tuple on submit', {
       uid,
     });
-    logger.info(req, 'create_formation', 'TODO(#1992): invite-service calls for the legal contact and any additional named contacts are Epic 2 — not sent', {
+    logger.debug(req, 'create_formation', 'TODO(#1992): invite-service calls for the legal contact and any additional named contacts are Epic 2 — not sent', {
       uid,
       contact_count: intake.additional_contacts.length + 1,
     });
-    logger.info(
+    logger.debug(
       req,
       'create_formation',
       'TODO: formation@ and the parent project writers notification email is not sent — no email-service integration in this repo',

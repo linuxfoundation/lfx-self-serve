@@ -254,6 +254,16 @@ describe('ProposeComponent', () => {
     expect(component.newContactForm.get('first_name')?.errors?.['trimmedRequired']).toBe(true);
   });
 
+  it("rejects a dotless-domain email that Angular's own Validators.email would accept, matching the server's stricter check", async () => {
+    const component = await createComponent();
+
+    component.newContactForm.setValue({ first_name: 'Sam', last_name: 'Lee', email: 'sam@localhost' });
+    component.addContact();
+
+    expect(component.additionalContacts()).toEqual([]);
+    expect(component.newContactForm.get('email')?.errors?.['email']).toBe(true);
+  });
+
   it('only shows the "who else" incomplete error after a real Add attempt, not merely blurring the fields', async () => {
     const { component, fixture } = await createComponentWithFixture();
     const applicationRef = TestBed.inject(ApplicationRef);

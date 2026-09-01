@@ -10,4 +10,5 @@ export * from './max-code-points.validator';
 export * from './meeting.validators';
 export * from './newsletter.validators';
 export * from './plain-text-message.validator';
+export * from './strict-email.validator';
 export * from './vote.validators';

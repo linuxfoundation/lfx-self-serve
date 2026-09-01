@@ -12,7 +12,7 @@
     <section class="flex flex-col gap-3" data-testid="propose-section-parent">
       <h2 class="text-base font-semibold text-gray-900">Parent</h2>
       <div>
-        <label class="mb-1 block text-sm font-medium text-gray-700">Parent foundation</label>
+        <label for="parent-project-search" class="mb-1 block text-sm font-medium text-gray-700">Parent foundation</label>
         <lfx-project-picker [form]="form" uidControl="parent_project_uid" [initialSelection]="prefilledParentProject()"></lfx-project-picker>
       </div>
     </section>
@@ -56,7 +56,9 @@
       </div>
 
       <div>
-        <label class="mb-1 block text-sm font-medium text-gray-700">Logo</label>
+        <!-- Not a <label>: p-fileUpload's basic-mode button has its own accessible name from
+             chooseLabel below, so a <label> here with no `for` would be a dangling association. -->
+        <p class="mb-1 text-sm font-medium text-gray-700">Logo</p>
         <lfx-file-upload
           mode="basic"
           accept="image/*"
@@ -112,46 +114,58 @@
         }
       </div>
 
-      <div class="rounded-md border border-gray-200 p-3" [formGroup]="$any(form.get('legal_contact'))">
+      <div class="rounded-md border border-gray-200 p-3" [formGroup]="legalContact">
         <p class="mb-2 text-sm font-medium text-gray-700">Legal contact <span class="text-red-500">*</span></p>
         <div class="grid grid-cols-1 gap-3 md:grid-cols-3">
           <div>
+            <label for="legal-contact-first-name" class="sr-only">Legal contact first name</label>
             <lfx-input-text
               size="small"
-              [form]="$any(form.get('legal_contact'))"
+              [form]="legalContact"
               control="first_name"
+              id="legal-contact-first-name"
               placeholder="First name"
               styleClass="w-full"
               data-testid="propose-legal-contact-first-name"></lfx-input-text>
-            @if (form.get('legal_contact.first_name')?.errors?.['trimmedRequired'] && form.get('legal_contact.first_name')?.touched) {
-              <p class="mt-1 text-xs text-red-600">First name is required</p>
+            @if (legalContact.get('first_name'); as control) {
+              @if (control.errors?.['trimmedRequired'] && control.touched) {
+                <p class="mt-1 text-xs text-red-600">First name is required</p>
+              }
             }
           </div>
           <div>
+            <label for="legal-contact-last-name" class="sr-only">Legal contact last name</label>
             <lfx-input-text
               size="small"
-              [form]="$any(form.get('legal_contact'))"
+              [form]="legalContact"
               control="last_name"
+              id="legal-contact-last-name"
               placeholder="Last name"
               styleClass="w-full"
               data-testid="propose-legal-contact-last-name"></lfx-input-text>
-            @if (form.get('legal_contact.last_name')?.errors?.['trimmedRequired'] && form.get('legal_contact.last_name')?.touched) {
-              <p class="mt-1 text-xs text-red-600">Last name is required</p>
+            @if (legalContact.get('last_name'); as control) {
+              @if (control.errors?.['trimmedRequired'] && control.touched) {
+                <p class="mt-1 text-xs text-red-600">Last name is required</p>
+              }
             }
           </div>
           <div>
+            <label for="legal-contact-email" class="sr-only">Legal contact email</label>
             <lfx-input-text
               size="small"
-              [form]="$any(form.get('legal_contact'))"
+              [form]="legalContact"
               control="email"
+              id="legal-contact-email"
               placeholder="Email"
               styleClass="w-full"
               data-testid="propose-legal-contact-email"></lfx-input-text>
-            @if (form.get('legal_contact.email')?.errors?.['required'] && form.get('legal_contact.email')?.touched) {
-              <p class="mt-1 text-xs text-red-600">Email is required</p>
-            }
-            @if (form.get('legal_contact.email')?.errors?.['email'] && form.get('legal_contact.email')?.touched) {
-              <p class="mt-1 text-xs text-red-600">Enter a valid email address</p>
+            @if (legalContact.get('email'); as control) {
+              @if (control.errors?.['required'] && control.touched) {
+                <p class="mt-1 text-xs text-red-600">Email is required</p>
+              }
+              @if (control.errors?.['email'] && control.touched) {
+                <p class="mt-1 text-xs text-red-600">Enter a valid email address</p>
+              }
             }
           </div>
         </div>
@@ -168,24 +182,30 @@
           </div>
         }
         <div class="grid grid-cols-1 gap-2 md:grid-cols-4" [formGroup]="newContactForm">
+          <label for="new-contact-first-name" class="sr-only">New contact first name</label>
           <lfx-input-text
             size="small"
             [form]="newContactForm"
             control="first_name"
+            id="new-contact-first-name"
             placeholder="First name"
             styleClass="w-full"
             data-testid="propose-new-contact-first-name"></lfx-input-text>
+          <label for="new-contact-last-name" class="sr-only">New contact last name</label>
           <lfx-input-text
             size="small"
             [form]="newContactForm"
             control="last_name"
+            id="new-contact-last-name"
             placeholder="Last name"
             styleClass="w-full"
             data-testid="propose-new-contact-last-name"></lfx-input-text>
+          <label for="new-contact-email" class="sr-only">New contact email</label>
           <lfx-input-text
             size="small"
             [form]="newContactForm"
             control="email"
+            id="new-contact-email"
             placeholder="Email"
             styleClass="w-full"
             data-testid="propose-new-contact-email"></lfx-input-text>

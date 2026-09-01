@@ -138,7 +138,7 @@ describe('ProposeConfirmationComponent', () => {
     await setup('formation-1');
 
     const banner = fixture.nativeElement.querySelector('[data-testid="propose-confirmation-banner"]');
-    expect(banner?.textContent).toContain('The formation team has been notified.');
+    expect(banner?.textContent).toContain('Your proposal has been recorded.');
   });
 
   it('shows a not-found state when the formation cannot be resolved (e.g. a different pod, or after a server restart)', async () => {

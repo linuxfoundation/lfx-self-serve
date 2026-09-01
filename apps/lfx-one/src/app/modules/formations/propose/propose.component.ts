@@ -23,7 +23,7 @@ import {
 } from '@lfx-one/shared/constants';
 import { FormationContact, FormationIntake, OrganizationResolveResult, Project } from '@lfx-one/shared/interfaces';
 import { capCodePointEdit, codePointLength } from '@lfx-one/shared/utils';
-import { httpsUrlValidator, maxCodePointsValidator, trimmedRequired } from '@lfx-one/shared/validators';
+import { httpsUrlValidator, maxCodePointsValidator, strictEmailValidator, trimmedRequired } from '@lfx-one/shared/validators';
 import { FormationService } from '@services/formation.service';
 import { ProjectService } from '@services/project.service';
 import { MessageService } from 'primeng/api';
@@ -63,8 +63,11 @@ export class ProposeComponent {
   public readonly newContactForm = new FormGroup({
     first_name: new FormControl('', { nonNullable: true, validators: [trimmedRequired()] }),
     last_name: new FormControl('', { nonNullable: true, validators: [trimmedRequired()] }),
-    email: new FormControl('', { nonNullable: true, validators: [Validators.required, Validators.email] }),
+    email: new FormControl('', { nonNullable: true, validators: [Validators.required, strictEmailValidator()] }),
   });
+  /** Typed reference to the nested legal-contact group, so the template can bind `[formGroup]`/
+   *  `[form]` directly instead of `$any(form.get('legal_contact'))` at every use site. */
+  protected readonly legalContact = this.form.get('legal_contact') as FormGroup;
 
   // Option lists — spread into mutable arrays; lfx-select's `options` input is typed `any[]`.
   protected readonly trademarkStatusOptions = [...FORMATION_TRADEMARK_STATUS_OPTIONS];
@@ -135,7 +138,7 @@ export class ProposeComponent {
     const trimmedEmail = email.trim();
     // Guards @for's `track contact.email` in the template — two entries with the same email would
     // otherwise produce a duplicate track key.
-    const legalContactEmail = (this.form.get('legal_contact.email')?.value ?? '').trim().toLowerCase();
+    const legalContactEmail = (this.legalContact.get('email')?.value ?? '').trim().toLowerCase();
     const isDuplicate =
       trimmedEmail.toLowerCase() === legalContactEmail ||
       this.additionalContacts().some((contact) => contact.email.toLowerCase() === trimmedEmail.toLowerCase());
@@ -200,7 +203,7 @@ export class ProposeComponent {
       legal_contact: new FormGroup({
         first_name: new FormControl('', [trimmedRequired()]),
         last_name: new FormControl('', [trimmedRequired()]),
-        email: new FormControl('', [Validators.required, Validators.email]),
+        email: new FormControl('', [Validators.required, strictEmailValidator()]),
       }),
       license: new FormControl('', [Validators.required]),
       chat_platform: new FormControl('', [Validators.required]),

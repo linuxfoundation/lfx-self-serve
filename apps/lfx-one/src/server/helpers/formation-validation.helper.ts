@@ -22,6 +22,7 @@ import type { FormationContact, FormationIntake } from '@lfx-one/shared/interfac
 // `@angular/compiler` is warmed up ("PlatformLocation needs to be compiled using the JIT
 // compiler") — worker-scheduling-dependent, so avoid the barrel here entirely rather than rely on
 // another spec having loaded the compiler first.
+import { isValidEmail } from '@lfx-one/shared/utils/email.utils';
 import { codePointLength } from '@lfx-one/shared/utils/string.utils';
 import { Request } from 'express';
 
@@ -94,7 +95,10 @@ function parseContact(raw: unknown, field: string, req: Request, operation: stri
     fail(`${field}.last_name`, 'Last name is required', req, operation);
   }
   assertMaxLength(contact.last_name, FORMATION_CONTACT_NAME_MAX_LENGTH, `${field}.last_name`, req, operation);
-  if (typeof contact.email !== 'string' || !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(contact.email.trim())) {
+  // isValidEmail (EMAIL_REGEX) is the same check `strictEmailValidator()` runs client-side — a
+  // single source of truth instead of two independently-drifting patterns (unlike Angular's own
+  // Validators.email, which admits a dotless domain such as `someone@localhost`).
+  if (typeof contact.email !== 'string' || !isValidEmail(contact.email)) {
     fail(`${field}.email`, 'A valid email is required', req, operation);
   }
   assertMaxLength(contact.email, FORMATION_SHORT_TEXT_MAX_LENGTH, `${field}.email`, req, operation);
