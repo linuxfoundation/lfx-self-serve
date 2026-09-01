@@ -1,23 +1,18 @@
 // Copyright The Linux Foundation and each contributor to LFX.
 // SPDX-License-Identifier: MIT
 
-import { describe, expect, it, vi } from 'vitest';
+import { describe, expect, it } from 'vitest';
 
-// isValidUrl, not a hand-copied mirror: a future tightening/loosening of its guard (it also
-// rejects DANGEROUS_URL_PATTERNS and short/localhost hostnames on top of the http(s) check) should
-// fail this suite too. Deep-imports the single pure file rather than `vi.importActual('@lfx-one/shared/utils')` —
-// the barrel re-exports Angular-dependent utils that pull in `@angular/common`'s `PlatformLocation`,
-// which needs the Angular JIT compiler, unavailable under this plain-Node Vitest environment.
-// Mirrors project.service.spec.ts's identical workaround.
-vi.mock('@lfx-one/shared/utils', async () => {
-  const urlUtils = await vi.importActual<typeof import('../../../../../packages/shared/src/utils/url.utils')>(
-    '../../../../../packages/shared/src/utils/url.utils'
-  );
-  return { isValidUrl: urlUtils.isValidUrl };
-});
+// The real isValidUrl, not a hand-copied mirror: a future tightening/loosening of its guard (it
+// also rejects DANGEROUS_URL_PATTERNS and short/localhost hostnames on top of the http(s) check)
+// should fail this suite too. Deep-imports the single pure file rather than the `@lfx-one/shared/utils`
+// barrel — that barrel re-exports Angular-dependent utils that pull in `@angular/common`'s
+// `PlatformLocation`, which needs the Angular JIT compiler, unavailable under this plain-Node
+// Vitest environment. A plain import (not `vi.mock`) is enough: formation-fixture.helper.ts itself
+// never imports `@lfx-one/shared/utils`, so there's nothing here for a mock to intercept.
+import { isValidUrl } from '@lfx-one/shared/utils/url.utils';
 
-const { isValidUrl } = await import('@lfx-one/shared/utils');
-const { generateMockFormation, STATIC_QUEUE_FORMATIONS } = await import('./formation-fixture.helper');
+import { generateMockFormation, STATIC_QUEUE_FORMATIONS } from './formation-fixture.helper';
 
 describe('generateMockFormation', () => {
   const { items } = generateMockFormation({
@@ -52,7 +47,6 @@ describe('STATIC_QUEUE_FORMATIONS', () => {
   it('covers exactly the three known entity_type values', () => {
     const entityTypes = new Set(STATIC_QUEUE_FORMATIONS.map((row) => row.entity_type));
 
-    expect(STATIC_QUEUE_FORMATIONS.length).toBeGreaterThan(0);
     expect(entityTypes).toEqual(new Set(['foundation', 'subproject', 'project']));
   });
 });
