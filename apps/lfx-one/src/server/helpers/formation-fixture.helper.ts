@@ -3,15 +3,7 @@
 
 import { ProjectStage } from '@lfx-one/shared/enums';
 import { SEEDED_FORMATION_TEMPLATE_UID } from '@lfx-one/shared/constants';
-import type {
-  Formation,
-  FormationEntityType,
-  FormationItem,
-  FormationItemStatus,
-  FormationLead,
-  FormationSubStage,
-  FormationTemplate,
-} from '@lfx-one/shared/interfaces';
+import type { Formation, FormationItem, FormationItemStatus, FormationLead, FormationSubStage, FormationTemplate } from '@lfx-one/shared/interfaces';
 import crypto from 'crypto';
 
 /**
@@ -266,17 +258,13 @@ export function generateMockFormation(input: GenerateFormationInput): { formatio
 // needs exactly one of each interesting scenario for UI testing, which a generator would fight
 // against (a generator can't guarantee "exactly one Withdrawn row" the way a curated list can).
 
-function entityType(type: FormationEntityType): FormationEntityType {
-  return type;
-}
-
 export const STATIC_QUEUE_FORMATIONS: Formation[] = [
   {
     uid: 'formation:queue-1',
     parent_project_uid: 'queue-project-1',
     parent_project_slug: 'cascade-data-alliance',
     parent_project_name: 'Cascade Data Alliance',
-    entity_type: entityType('foundation'),
+    entity_type: 'foundation',
     template_uid: SEEDED_FORMATION_TEMPLATE_UID,
     template_version: 1,
     state: 'active',
@@ -297,7 +285,7 @@ export const STATIC_QUEUE_FORMATIONS: Formation[] = [
     parent_project_uid: 'queue-project-2',
     parent_project_slug: 'harbor-data-exchange',
     parent_project_name: 'Harbor Data Exchange',
-    entity_type: entityType('subproject'),
+    entity_type: 'subproject',
     template_uid: SEEDED_FORMATION_TEMPLATE_UID,
     template_version: 1,
     state: 'draft',
@@ -318,7 +306,7 @@ export const STATIC_QUEUE_FORMATIONS: Formation[] = [
     parent_project_uid: 'queue-project-3',
     parent_project_slug: 'lakeshore-toolkit',
     parent_project_name: 'Lakeshore compartmentalization toolkit',
-    entity_type: entityType('subproject'),
+    entity_type: 'subproject',
     template_uid: SEEDED_FORMATION_TEMPLATE_UID,
     template_version: 1,
     state: 'active',
@@ -339,7 +327,7 @@ export const STATIC_QUEUE_FORMATIONS: Formation[] = [
     parent_project_uid: 'queue-project-4',
     parent_project_slug: 'agent-name-service',
     parent_project_name: 'Agent Name Service',
-    entity_type: entityType('project'),
+    entity_type: 'project',
     template_uid: SEEDED_FORMATION_TEMPLATE_UID,
     template_version: 1,
     state: 'active',
@@ -360,7 +348,7 @@ export const STATIC_QUEUE_FORMATIONS: Formation[] = [
     parent_project_uid: 'queue-project-5',
     parent_project_slug: 'appia-foundation',
     parent_project_name: 'Appia Foundation',
-    entity_type: entityType('foundation'),
+    entity_type: 'foundation',
     template_uid: SEEDED_FORMATION_TEMPLATE_UID,
     template_version: 1,
     state: 'active',
@@ -381,7 +369,7 @@ export const STATIC_QUEUE_FORMATIONS: Formation[] = [
     parent_project_uid: 'queue-project-6',
     parent_project_slug: 'value-measurement-spec',
     parent_project_name: 'AI value measurement spec',
-    entity_type: entityType('subproject'),
+    entity_type: 'subproject',
     template_uid: SEEDED_FORMATION_TEMPLATE_UID,
     template_version: 1,
     state: 'draft',
@@ -402,7 +390,7 @@ export const STATIC_QUEUE_FORMATIONS: Formation[] = [
     parent_project_uid: 'queue-project-7',
     parent_project_slug: 'formerly-brightpath',
     parent_project_name: 'Formerly Brightpath Working Group',
-    entity_type: entityType('subproject'),
+    entity_type: 'subproject',
     template_uid: SEEDED_FORMATION_TEMPLATE_UID,
     template_version: 1,
     state: 'withdrawn',

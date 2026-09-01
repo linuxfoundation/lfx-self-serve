@@ -168,6 +168,19 @@ test.describe('Formations queue (GH-1958)', () => {
     await expect(dialog).toHaveCount(0);
   });
 
+  test('the empty state renders "No formations yet" with zero rows, and "No results found" once filtered', async ({ page }) => {
+    await FormationApiMockHelper.setupFormationsQueueMock(page, []);
+
+    await gotoFormationsQueue(page);
+
+    const empty = page.getByTestId('formations-table-empty');
+    await expect(empty).toBeVisible({ timeout: SIDEBAR_LOAD_TIMEOUT });
+    await expect(empty).toContainText('No formations yet');
+
+    await page.getByTestId('filter-pill-proposed').click();
+    await expect(empty).toContainText('No results found');
+  });
+
   test('the inline error state renders on a 500 from the queue endpoint', async ({ page }) => {
     await page.route('**/api/formations*', (route) =>
       route.request().method() === 'GET' ? route.fulfill({ status: 500, contentType: 'application/json', body: '{}' }) : route.fallback()

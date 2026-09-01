@@ -12,27 +12,9 @@ import { EmptyStateComponent } from '@components/empty-state/empty-state.compone
 import { InputTextComponent } from '@components/input-text/input-text.component';
 import { TableComponent } from '@components/table/table.component';
 import { TagComponent } from '@components/tag/tag.component';
-import { FORMATION_QUEUE_SUB_STAGES } from '@lfx-one/shared/constants';
-import type { FilterPillOption, Formation, FormationsQueueFilterState, FormationSubStage, FormationTableRow, TagSeverity } from '@lfx-one/shared/interfaces';
+import { FORMATION_QUEUE_SUB_STAGES, FORMATION_SUB_STAGE_LABELS, FORMATION_SUB_STAGE_SEVERITY } from '@lfx-one/shared/constants';
+import type { FilterPillOption, Formation, FormationsQueueFilterState, FormationSubStage, FormationTableRow } from '@lfx-one/shared/interfaces';
 import { debounceTime, distinctUntilChanged, map } from 'rxjs';
-
-const SUB_STAGE_LABEL: Record<FormationSubStage, string> = {
-  proposed: 'Proposed',
-  exploratory: 'Formation · Exploratory',
-  engaged: 'Formation · Engaged',
-  on_hold: 'Formation · On Hold',
-  activating: 'Activating',
-  withdrawn: 'Withdrawn',
-};
-
-const SUB_STAGE_SEVERITY: Record<FormationSubStage, TagSeverity> = {
-  proposed: 'info',
-  exploratory: 'accent',
-  engaged: 'accent',
-  on_hold: 'accent',
-  activating: 'warn',
-  withdrawn: 'secondary',
-};
 
 @Component({
   selector: 'lfx-formations-table',
@@ -67,7 +49,7 @@ export class FormationsTableComponent {
 
   protected readonly statusTabOptions: Signal<FilterPillOption[]> = computed(() => [
     { id: 'all', label: 'All' },
-    ...FORMATION_QUEUE_SUB_STAGES.map((stage) => ({ id: stage, label: SUB_STAGE_LABEL[stage] })),
+    ...FORMATION_QUEUE_SUB_STAGES.map((stage) => ({ id: stage, label: FORMATION_SUB_STAGE_LABELS[stage] })),
   ]);
 
   protected readonly isFiltered = computed(() => this.statusTab() !== 'all' || !!this.searchValue().trim());
@@ -105,7 +87,9 @@ export class FormationsTableComponent {
 
   /** PrimeNG types the `#body` row context `any` — precomputing the chip label/severity here lets the template do a plain property read instead of a method call. */
   private initDisplayRows(): Signal<FormationTableRow[]> {
-    return computed(() => this.rows().map((row) => ({ ...row, stageLabel: SUB_STAGE_LABEL[row.sub_stage], stageSeverity: SUB_STAGE_SEVERITY[row.sub_stage] })));
+    return computed(() =>
+      this.rows().map((row) => ({ ...row, stageLabel: FORMATION_SUB_STAGE_LABELS[row.sub_stage], stageSeverity: FORMATION_SUB_STAGE_SEVERITY[row.sub_stage] }))
+    );
   }
 
   private emitFilters(): void {

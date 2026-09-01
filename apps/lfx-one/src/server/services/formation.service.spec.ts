@@ -347,6 +347,14 @@ describe('FormationService', () => {
       expect(result.tiles.total).toBe(STATIC_QUEUE_FORMATIONS.length);
     });
 
+    it('the foundations/subprojects tile breakdown sums to total — a bare "project" entity rolls into subprojects rather than being dropped', async () => {
+      expect(STATIC_QUEUE_FORMATIONS.some((row) => row.entity_type === 'project')).toBe(true);
+
+      const result = await service.getFormationsQueue(buildReq());
+
+      expect(result.tiles.foundations + result.tiles.subprojects).toBe(result.tiles.total);
+    });
+
     it('reflects a prior decline in the queue read, not just the decline response', async () => {
       await service.declineFormation(buildReq(), 'formation:queue-2', 'not a fit at this time');
 
@@ -367,6 +375,12 @@ describe('FormationService', () => {
     it('throws ResourceNotFoundError for an unknown formation uid', async () => {
       await expect(service.acceptFormation(buildReq(), 'formation:does-not-exist')).rejects.toThrow(/not found/i);
     });
+
+    it('rejects a project-checklist formation uid even though it exists in the store — Accept is queue-only', async () => {
+      const { formation } = seedItem();
+
+      await expect(service.acceptFormation(buildReq(), formation.uid)).rejects.toThrow(/not found/i);
+    });
   });
 
   describe('declineFormation', () => {
@@ -376,6 +390,29 @@ describe('FormationService', () => {
 
     it('rejects a non-string reason', async () => {
       await expect(service.declineFormation(buildReq(), 'formation:queue-1', 42)).rejects.toThrow(/reason/i);
+    });
+
+    it('rejects a project-checklist formation uid even though it exists in the store — Decline is queue-only, so it can never permanently withdraw a project checklist', async () => {
+      const { formation } = seedItem();
+
+      await expect(service.declineFormation(buildReq(), formation.uid, 'not a fit at this time')).rejects.toThrow(/not found/i);
+      expect(getStoredFormation(formation.uid)?.state).not.toBe('withdrawn');
+    });
+
+    it('reads its own write back on a second call, rather than re-deriving from the stale static row', async () => {
+      await service.declineFormation(buildReq(), 'formation:queue-1', 'first decline');
+      const second = await service.getFormationsQueue(buildReq());
+
+      const row = second.rows.find((candidate) => candidate.uid === 'formation:queue-1');
+      expect(row?.state).toBe('withdrawn');
+
+      // A second decline attempt on an already-withdrawn row must not silently re-derive from the
+      // stale STATIC_QUEUE_FORMATIONS entry (state: 'active') and append a duplicate activity as if
+      // the first decline never happened.
+      const result = await service.declineFormation(buildReq(), 'formation:queue-1', 'second decline');
+      expect(result.state).toBe('withdrawn');
+      const activity = getActivityForFormation('formation:queue-1');
+      expect(activity.filter((entry) => entry.type === 'formation_declined')).toHaveLength(2);
     });
 
     it('transitions the formation to withdrawn and records a formation_declined activity carrying the reason', async () => {

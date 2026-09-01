@@ -89,3 +89,32 @@ export const FORMATION_ITEM_STATUS_SEVERITY = {
   not_started: 'secondary',
   skipped: 'secondary',
 } as const satisfies Record<FormationItemStatus, TagSeverity>;
+
+/** `FormationReadinessStripComponent`'s per-segment fill color, keyed by item status. */
+export const FORMATION_ITEM_SEGMENT_COLORS = {
+  done: 'bg-emerald-600',
+  in_progress: 'bg-amber-500',
+  waiting_on_partner: 'bg-violet-500',
+  not_started: 'bg-gray-200',
+  skipped: 'bg-gray-400',
+} as const satisfies Record<FormationItemStatus, string>;
+
+/** `FormationsTableComponent`'s stage chip labels, keyed by queue sub-stage. */
+export const FORMATION_SUB_STAGE_LABELS = {
+  proposed: 'Proposed',
+  exploratory: 'Formation · Exploratory',
+  engaged: 'Formation · Engaged',
+  on_hold: 'Formation · On Hold',
+  activating: 'Activating',
+  withdrawn: 'Withdrawn',
+} as const satisfies Record<FormationSubStage, string>;
+
+/** `FormationsTableComponent`'s stage chip severities, keyed by queue sub-stage. */
+export const FORMATION_SUB_STAGE_SEVERITY = {
+  proposed: 'info',
+  exploratory: 'accent',
+  engaged: 'accent',
+  on_hold: 'accent',
+  activating: 'warn',
+  withdrawn: 'secondary',
+} as const satisfies Record<FormationSubStage, TagSeverity>;

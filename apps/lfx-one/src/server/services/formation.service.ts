@@ -182,6 +182,13 @@ export class FormationService {
         path: req.path,
       });
     }
+    if (typeof patch.owner_username === 'string' && patch.owner_username.length > 200) {
+      throw ServiceValidationError.forField('owner_username', 'owner_username must be 200 characters or fewer', {
+        operation: 'update_formation_item',
+        service: 'formation_service',
+        path: req.path,
+      });
+    }
     if (patch.due_date !== undefined && patch.due_date !== null && (typeof patch.due_date !== 'string' || Number.isNaN(Date.parse(patch.due_date)))) {
       throw ServiceValidationError.forField('due_date', 'due_date must be a valid ISO date string or null', {
         operation: 'update_formation_item',
@@ -218,9 +225,9 @@ export class FormationService {
 
     // TODO(#1957): swap for a real query-service read once lfx-v2-formation-service ships;
     // STATIC_QUEUE_FORMATIONS's shape already matches Formation[]. Each row is read through the
-    // write store first — a prior Accept/Decline on this row must be reflected here, not just on
-    // its own response (declineFormation writes via putStoredFormation).
-    let rows = STATIC_QUEUE_FORMATIONS.map((row) => getStoredFormation(row.uid) ?? row);
+    // write store first via getQueueFormation — a prior Accept/Decline on this row must be
+    // reflected here, not just on its own response (declineFormation writes via putStoredFormation).
+    let rows = STATIC_QUEUE_FORMATIONS.map((row) => this.getQueueFormation(row.uid) ?? row);
     if (subStage) {
       rows = rows.filter((row) => row.sub_stage === subStage);
     }
@@ -236,7 +243,7 @@ export class FormationService {
 
   /** Returns a deep link to the external admin tool. No state mutation — nothing real to accept into yet (#1957). */
   public async acceptFormation(req: Request, formationUid: string): Promise<{ deep_link_url: string }> {
-    const formation = STATIC_QUEUE_FORMATIONS.find((row) => row.uid === formationUid) ?? getStoredFormation(formationUid);
+    const formation = this.getQueueFormation(formationUid);
     if (!formation) {
       throw new ResourceNotFoundError('Formation', formationUid, { operation: 'accept_formation', service: 'formation_service', path: req.path });
     }
@@ -251,7 +258,7 @@ export class FormationService {
   public async declineFormation(req: Request, formationUid: string, reason: unknown): Promise<Formation> {
     this.assertValidReason(reason, 'A reason is required to decline a formation', req, 'decline_formation');
 
-    const existing = STATIC_QUEUE_FORMATIONS.find((row) => row.uid === formationUid) ?? getStoredFormation(formationUid);
+    const existing = this.getQueueFormation(formationUid);
     if (!existing) {
       throw new ResourceNotFoundError('Formation', formationUid, { operation: 'decline_formation', service: 'formation_service', path: req.path });
     }
@@ -283,8 +290,21 @@ export class FormationService {
     return declined;
   }
 
+  /**
+   * Resolves a queue formation uid through the write store first, scoped to `STATIC_QUEUE_FORMATIONS`
+   * only — `undefined` for a project-checklist formation uid (`getProjectFormation` seeds those into
+   * the same store under `formation:<projectUid>`). Accept/Decline must never resolve one of those:
+   * a decline would permanently corrupt that project's checklist to `withdrawn`
+   * (`refreshFormationReadiness` deliberately never un-withdraws it), with no un-decline path.
+   */
+  private getQueueFormation(formationUid: string): Formation | undefined {
+    const staticRow = STATIC_QUEUE_FORMATIONS.find((row) => row.uid === formationUid);
+    if (!staticRow) return undefined;
+    return getStoredFormation(formationUid) ?? staticRow;
+  }
+
   private buildQueueTiles(req: Request): FormationsQueueResponse['tiles'] {
-    const rows = STATIC_QUEUE_FORMATIONS.map((row) => getStoredFormation(row.uid) ?? row);
+    const rows = STATIC_QUEUE_FORMATIONS.map((row) => this.getQueueFormation(row.uid) ?? row);
     const bySubStage = Object.fromEntries(FORMATION_QUEUE_SUB_STAGES.map((stage) => [stage, 0])) as Record<FormationSubStage, number>;
     for (const row of rows) {
       bySubStage[row.sub_stage] = (bySubStage[row.sub_stage] ?? 0) + 1;
@@ -292,11 +312,14 @@ export class FormationService {
 
     // `lead`/`proposer` carry usernames, not emails — compare against the caller's username, not their email.
     const username = getEffectiveUsername(req);
+    // The tile subLine only has room for a foundations/subprojects split — a bare 'project' entity
+    // (no foundation/subproject formation ceremony) rolls into the subprojects count so it isn't
+    // silently dropped from the breakdown while still counting toward `total`.
     return {
       ...bySubStage,
       total: rows.length,
       foundations: rows.filter((row) => row.entity_type === 'foundation').length,
-      subprojects: rows.filter((row) => row.entity_type === 'subproject').length,
+      subprojects: rows.filter((row) => row.entity_type === 'subproject' || row.entity_type === 'project').length,
       mine: rows.filter((row) => row.lead?.username === username || row.proposer?.username === username).length,
     };
   }
