@@ -37,28 +37,7 @@ export class FormationsQueueComponent {
 
   private readonly response: Signal<FormationsQueueResponse> = this.initResponse();
   protected readonly rows = computed(() => this.response().rows);
-
-  protected readonly tiles: Signal<StatCardItem[]> = computed(() => {
-    const t = this.response().tiles;
-    return [
-      {
-        value: t.total,
-        label: 'In formation',
-        subLine: `${t.foundations} foundations · ${t.subprojects} subprojects`,
-        icon: 'fa-light fa-diagram-project',
-        iconContainerClass: 'bg-blue-50 text-blue-600',
-      },
-      {
-        value: t.activating,
-        label: 'Ready to activate',
-        subLine: 'Gating items done',
-        icon: 'fa-light fa-flag-checkered',
-        iconContainerClass: 'bg-amber-50 text-amber-600',
-      },
-      { value: t.proposed, label: 'New proposals', subLine: 'Awaiting triage', icon: 'fa-light fa-inbox', iconContainerClass: 'bg-violet-50 text-violet-600' },
-      { value: t.mine, label: 'Mine', subLine: 'Led or proposed by you', icon: 'fa-light fa-user', iconContainerClass: 'bg-emerald-50 text-emerald-600' },
-    ];
-  });
+  protected readonly tiles: Signal<StatCardItem[]> = this.initTiles();
 
   protected onFiltersChange(filters: FormationsQueueFilterState): void {
     this.filters.set(filters);
@@ -152,5 +131,35 @@ export class FormationsQueueComponent {
       ),
       { initialValue: createEmptyFormationsQueueResponse() }
     );
+  }
+
+  private initTiles(): Signal<StatCardItem[]> {
+    return computed(() => {
+      const t = this.response().tiles;
+      return [
+        {
+          value: t.total,
+          label: 'In formation',
+          subLine: `${t.foundations} foundations · ${t.subprojects} subprojects`,
+          icon: 'fa-light fa-diagram-project',
+          iconContainerClass: 'bg-blue-50 text-blue-600',
+        },
+        {
+          value: t.activating,
+          label: 'Ready to activate',
+          subLine: 'Gating items done',
+          icon: 'fa-light fa-flag-checkered',
+          iconContainerClass: 'bg-amber-50 text-amber-600',
+        },
+        {
+          value: t.proposed,
+          label: 'New proposals',
+          subLine: 'Awaiting triage',
+          icon: 'fa-light fa-inbox',
+          iconContainerClass: 'bg-violet-50 text-violet-600',
+        },
+        { value: t.mine, label: 'Mine', subLine: 'Led or proposed by you', icon: 'fa-light fa-user', iconContainerClass: 'bg-emerald-50 text-emerald-600' },
+      ];
+    });
   }
 }

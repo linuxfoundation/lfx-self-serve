@@ -24,7 +24,10 @@ vi.mock('./logger.service', () => ({
 }));
 
 const { FormationService } = await import('./formation.service');
-const { seedFormation, getStoredItem, getActivityForItem, resetFormationStoreForTests } = await import('./formation-store.service');
+const { seedFormation, putStoredFormation, getStoredItem, getStoredFormation, getActivityForItem, getActivityForFormation, resetFormationStoreForTests } =
+  await import('./formation-store.service');
+const { STATIC_QUEUE_FORMATIONS } = await import('../helpers/formation-fixture.helper');
+const { logger } = await import('./logger.service');
 
 let uidCounter = 0;
 
@@ -214,9 +217,31 @@ describe('FormationService', () => {
       canComplete.mockResolvedValue(true);
 
       await service.requestFormationItem(buildReq(), item.uid);
-      const { getStoredFormation } = await import('./formation-store.service');
 
       expect(getStoredFormation(formation.uid)?.gating_items_open).toBe(1);
+    });
+
+    it('completing the last open gating item flips sub_stage to activating, and reopening it via request reverts to engaged', async () => {
+      const { formation, item } = seedItem({ is_gating: true, action: 'request' });
+      getProjectById.mockResolvedValue({ writer: true });
+      canComplete.mockResolvedValue(true);
+
+      await service.completeFormationItem(buildReq(), item.uid);
+      expect(getStoredFormation(formation.uid)?.sub_stage).toBe('activating');
+
+      await service.requestFormationItem(buildReq(), item.uid);
+      expect(getStoredFormation(formation.uid)?.sub_stage).toBe('engaged');
+    });
+
+    it('never overrides a withdrawn sub_stage while recomputing readiness', async () => {
+      const { formation, item } = seedItem({ is_gating: true, action: 'request' });
+      putStoredFormation({ ...formation, sub_stage: 'withdrawn', state: 'withdrawn' });
+      getProjectById.mockResolvedValue({ writer: true });
+      canComplete.mockResolvedValue(true);
+
+      await service.completeFormationItem(buildReq(), item.uid);
+
+      expect(getStoredFormation(formation.uid)?.sub_stage).toBe('withdrawn');
     });
   });
 
@@ -224,6 +249,38 @@ describe('FormationService', () => {
     it('rejects an empty/whitespace-only reason before even resolving the item', async () => {
       await expect(service.skipFormationItem(buildReq(), 'formation-item:whatever', '   ')).rejects.toThrow(/reason/i);
       expect(getProjectById).not.toHaveBeenCalled();
+    });
+
+    it('rejects a non-string reason instead of throwing a raw TypeError from .trim()', async () => {
+      await expect(service.skipFormationItem(buildReq(), 'formation-item:whatever', { not: 'a string' })).rejects.toThrow(/reason/i);
+      expect(getProjectById).not.toHaveBeenCalled();
+    });
+
+    it('rejects a reason over 2000 characters', async () => {
+      await expect(service.skipFormationItem(buildReq(), 'formation-item:whatever', 'x'.repeat(2001))).rejects.toThrow(/reason/i);
+      expect(getProjectById).not.toHaveBeenCalled();
+    });
+
+    it('does not log the reason text on the general application logger', async () => {
+      const { item } = seedItem({ is_gating: true });
+      getProjectById.mockResolvedValue({ writer: true });
+      canComplete.mockResolvedValue(true);
+
+      await service.skipFormationItem(buildReq(), item.uid, 'a sensitive skip justification');
+
+      const infoCalls = vi.mocked(logger.info).mock.calls;
+      expect(infoCalls.some((call) => JSON.stringify(call).includes('sensitive skip justification'))).toBe(false);
+    });
+  });
+
+  describe('completeFormationItem — notes validation', () => {
+    it('rejects a non-string notes value', async () => {
+      await expect(service.completeFormationItem(buildReq(), 'formation-item:whatever', { not: 'a string' })).rejects.toThrow(/notes/i);
+      expect(getProjectById).not.toHaveBeenCalled();
+    });
+
+    it('rejects notes over 2000 characters', async () => {
+      await expect(service.completeFormationItem(buildReq(), 'formation-item:whatever', 'x'.repeat(2001))).rejects.toThrow(/notes/i);
     });
   });
 
@@ -261,6 +318,81 @@ describe('FormationService', () => {
       await service.updateFormationItem(buildReq(), item.uid, { owner_username: 'sam.chen' });
 
       expect(getActivityForItem(formation.uid, item.uid).some((activity) => activity.type === 'assignee_changed')).toBe(true);
+    });
+  });
+
+  describe('getFormationsQueue', () => {
+    it('filters rows by sub_stage', async () => {
+      const result = await service.getFormationsQueue(buildReq(), 'proposed');
+
+      expect(result.rows.length).toBeGreaterThan(0);
+      expect(result.rows.every((row) => row.sub_stage === 'proposed')).toBe(true);
+    });
+
+    it('filters rows by a case-insensitive search on the parent project name', async () => {
+      const result = await service.getFormationsQueue(buildReq(), undefined, 'CASCADE');
+
+      expect(result.rows.length).toBeGreaterThan(0);
+      expect(result.rows.every((row) => row.parent_project_name.toLowerCase().includes('cascade'))).toBe(true);
+    });
+
+    it('returns unfiltered rows plus tiles when called with no filters', async () => {
+      const result = await service.getFormationsQueue(buildReq());
+
+      expect(result.rows.length).toBe(STATIC_QUEUE_FORMATIONS.length);
+      expect(result.tiles.total).toBe(STATIC_QUEUE_FORMATIONS.length);
+    });
+
+    it('reflects a prior decline in the queue read, not just the decline response', async () => {
+      await service.declineFormation(buildReq(), 'formation:queue-2', 'not a fit at this time');
+
+      const result = await service.getFormationsQueue(buildReq(), 'withdrawn');
+
+      expect(result.rows.some((row) => row.uid === 'formation:queue-2')).toBe(true);
+    });
+  });
+
+  describe('acceptFormation', () => {
+    it('returns a deep link built from the formation slug, with no state mutation', async () => {
+      const result = await service.acceptFormation(buildReq(), 'formation:queue-1');
+
+      expect(result.deep_link_url).toContain('cascade-data-alliance');
+      expect(getStoredFormation('formation:queue-1')).toBeUndefined();
+    });
+
+    it('throws ResourceNotFoundError for an unknown formation uid', async () => {
+      await expect(service.acceptFormation(buildReq(), 'formation:does-not-exist')).rejects.toThrow(/not found/i);
+    });
+  });
+
+  describe('declineFormation', () => {
+    it('rejects a missing reason', async () => {
+      await expect(service.declineFormation(buildReq(), 'formation:queue-1', '')).rejects.toThrow(/reason/i);
+    });
+
+    it('rejects a non-string reason', async () => {
+      await expect(service.declineFormation(buildReq(), 'formation:queue-1', 42)).rejects.toThrow(/reason/i);
+    });
+
+    it('transitions the formation to withdrawn and records a formation_declined activity carrying the reason', async () => {
+      const result = await service.declineFormation(buildReq(), 'formation:queue-1', 'not a fit at this time');
+
+      expect(result.state).toBe('withdrawn');
+      expect(result.sub_stage).toBe('withdrawn');
+      const activity = getActivityForFormation(result.uid);
+      expect(activity.some((entry) => entry.type === 'formation_declined' && entry.metadata?.['reason'] === 'not a fit at this time')).toBe(true);
+    });
+
+    it('never logs the proposer username, even for a queue row that has one', async () => {
+      await service.declineFormation(buildReq(), 'formation:queue-2', 'not a fit at this time');
+
+      const infoCalls = vi.mocked(logger.info).mock.calls;
+      const declineCall = infoCalls.find((call) => call[1] === 'decline_formation');
+      expect(declineCall?.[3]).not.toHaveProperty('proposer');
+    });
+
+    it('throws ResourceNotFoundError for an unknown formation uid', async () => {
+      await expect(service.declineFormation(buildReq(), 'formation:does-not-exist', 'a reason')).rejects.toThrow(/not found/i);
     });
   });
 });

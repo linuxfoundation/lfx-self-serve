@@ -1,69 +1,93 @@
 // Copyright The Linux Foundation and each contributor to LFX.
 // SPDX-License-Identifier: MIT
 
-import { TestBed } from '@angular/core/testing';
+import { ComponentFixture, TestBed } from '@angular/core/testing';
+import { provideRouter } from '@angular/router';
 import type { ReasonPromptDialogData } from '@lfx-one/shared/interfaces';
 import { DynamicDialogConfig, DynamicDialogRef } from 'primeng/dynamicdialog';
-import { beforeEach, describe, expect, it, vi } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
 import { ReasonPromptDialogComponent } from './reason-prompt-dialog.component';
 
 describe('ReasonPromptDialogComponent', () => {
+  let fixture: ComponentFixture<ReasonPromptDialogComponent>;
   let close: ReturnType<typeof vi.fn>;
 
-  function create(data: ReasonPromptDialogData): ReasonPromptDialogComponent {
+  function textarea(): HTMLTextAreaElement {
+    return fixture.nativeElement.querySelector('textarea[data-test="reason-prompt-dialog-textarea"]');
+  }
+
+  function confirmButton(): HTMLButtonElement {
+    return fixture.nativeElement.querySelector('[data-testid="reason-prompt-dialog-confirm"] button');
+  }
+
+  function cancelButton(): HTMLButtonElement {
+    return fixture.nativeElement.querySelector('[data-testid="reason-prompt-dialog-cancel"] button');
+  }
+
+  async function typeReason(value: string): Promise<void> {
+    const el = textarea();
+    el.value = value;
+    el.dispatchEvent(new Event('input', { bubbles: true }));
+    fixture.detectChanges();
+    await fixture.whenStable();
+  }
+
+  function create(data: ReasonPromptDialogData): void {
     close = vi.fn();
     TestBed.configureTestingModule({
       imports: [ReasonPromptDialogComponent],
-      providers: [
-        { provide: DynamicDialogRef, useValue: { close } },
-        { provide: DynamicDialogConfig, useValue: { data } },
-      ],
+      providers: [provideRouter([]), { provide: DynamicDialogRef, useValue: { close } }, { provide: DynamicDialogConfig, useValue: { data } }],
     });
-    return TestBed.createComponent(ReasonPromptDialogComponent).componentInstance;
+    fixture = TestBed.createComponent(ReasonPromptDialogComponent);
+    document.body.appendChild(fixture.nativeElement);
+    fixture.detectChanges();
   }
 
-  beforeEach(() => {
-    TestBed.resetTestingModule();
+  afterEach(() => {
+    document.body.removeChild(fixture.nativeElement);
   });
 
-  it('exposes the dialog config data for the template', () => {
-    const component = create({ prompt: 'Skip "X"?', placeholder: 'Why?', confirmLabel: 'Skip item' });
+  beforeEach(() => create({ prompt: 'Skip "X"?', placeholder: 'Why?', confirmLabel: 'Skip item' }));
 
-    expect(component.data.prompt).toBe('Skip "X"?');
-    expect(component.data.confirmLabel).toBe('Skip item');
+  it('renders the dialog config data in the template', () => {
+    expect(fixture.nativeElement.querySelector('[data-testid="reason-prompt-dialog"]').textContent).toContain('Skip "X"?');
+    expect(confirmButton().textContent).toContain('Skip item');
   });
 
-  it('does not close the dialog when confirming with an empty reason', () => {
-    const component = create({ prompt: 'Skip?', placeholder: 'Why?', confirmLabel: 'Skip item' });
+  it('starts with Confirm disabled until a non-blank reason is typed', async () => {
+    expect(confirmButton().disabled).toBe(true);
 
-    (component as unknown as { onConfirm: () => void }).onConfirm();
+    await typeReason('   ');
+    expect(confirmButton().disabled).toBe(true);
 
-    expect(close).not.toHaveBeenCalled();
+    await typeReason('blocked upstream');
+    expect(confirmButton().disabled).toBe(false);
   });
 
-  it('does not close the dialog when confirming with a whitespace-only reason', () => {
-    const component = create({ prompt: 'Skip?', placeholder: 'Why?', confirmLabel: 'Skip item' });
-    component.form.controls.reason.setValue('   ');
+  it('Confirm closes with the trimmed reason', async () => {
+    await typeReason('  blocked upstream  ');
 
-    (component as unknown as { onConfirm: () => void }).onConfirm();
-
-    expect(close).not.toHaveBeenCalled();
-  });
-
-  it('closes with the trimmed reason when confirming with real content', () => {
-    const component = create({ prompt: 'Skip?', placeholder: 'Why?', confirmLabel: 'Skip item' });
-    component.form.controls.reason.setValue('  blocked upstream  ');
-
-    (component as unknown as { onConfirm: () => void }).onConfirm();
+    confirmButton().click();
+    await fixture.whenStable();
 
     expect(close).toHaveBeenCalledWith({ reason: 'blocked upstream' });
   });
 
-  it('closes with no result when cancelling', () => {
-    const component = create({ prompt: 'Skip?', placeholder: 'Why?', confirmLabel: 'Skip item' });
+  it('Confirm is a no-op while disabled (whitespace-only reason)', async () => {
+    await typeReason('   ');
 
-    (component as unknown as { onCancel: () => void }).onCancel();
+    confirmButton().click();
+    await fixture.whenStable();
+
+    expect(close).not.toHaveBeenCalled();
+  });
+
+  it('Cancel closes with no result, regardless of what was typed', async () => {
+    await typeReason('blocked upstream');
+
+    cancelButton().click();
+    await fixture.whenStable();
 
     expect(close).toHaveBeenCalledWith();
   });

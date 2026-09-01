@@ -32,11 +32,11 @@ import { logger } from './logger.service';
 import { ProjectService } from './project.service';
 
 /**
- * BFF service for the Formation Checklist section and Formations queue (GH-1958). Every public
- * method branches on {@link isFormationServiceLive} — currently always the fixture path — so this
- * is the single place `// TODO(#1957)` marks the real `lfx-v2-formation-service` swap; the fixture
- * generator's return shape already matches `Formation`/`FormationItem[]`, so downstream code
- * (controllers, Angular services) needs no change when that swap happens.
+ * BFF service for the Formation Checklist section and Formations queue (GH-1958). Only
+ * {@link getProjectFormation} branches on {@link isFormationServiceLive} today; every other method
+ * is fixture-only and carries its own `// TODO(#1957)` marking the real `lfx-v2-formation-service`
+ * swap. The fixture generator's return shape already matches `Formation`/`FormationItem[]`, so
+ * downstream code (controllers, Angular services) needs no change when that swap happens.
  */
 export class FormationService {
   private readonly projectService = new ProjectService();
@@ -103,7 +103,8 @@ export class FormationService {
 
   // TODO(#1957): swap the putStoredItem/recordActivity fixture writes below for a real
   // lfx-v2-formation-service mutation call once it ships.
-  public async completeFormationItem(req: Request, itemUid: string, notes?: string): Promise<FormationItem> {
+  public async completeFormationItem(req: Request, itemUid: string, notes?: unknown): Promise<FormationItem> {
+    this.assertValidNotes(notes, req, 'complete_formation_item');
     const item = await this.getFormationItemOrThrow(req, itemUid);
     await this.assertItemProjectWriteAccess(req, item);
     await this.assertCanComplete(req, item, 'complete_formation_item');
@@ -117,14 +118,8 @@ export class FormationService {
   }
 
   // TODO(#1957): swap the fixture writes below for a real lfx-v2-formation-service mutation call.
-  public async skipFormationItem(req: Request, itemUid: string, reason: string): Promise<FormationItem> {
-    if (!reason || !reason.trim()) {
-      throw ServiceValidationError.forField('reason', 'A reason is required to skip a gating item', {
-        operation: 'skip_formation_item',
-        service: 'formation_service',
-        path: req.path,
-      });
-    }
+  public async skipFormationItem(req: Request, itemUid: string, reason: unknown): Promise<FormationItem> {
+    this.assertValidReason(reason, 'A reason is required to skip a gating item', req, 'skip_formation_item');
 
     const item = await this.getFormationItemOrThrow(req, itemUid);
     await this.assertItemProjectWriteAccess(req, item);
@@ -134,7 +129,9 @@ export class FormationService {
     this.recordActivity(req, updated, 'item_skipped', `skipped "${updated.title}"`, { skip_reason: reason });
     this.refreshFormationReadiness(updated.formation_uid);
 
-    logger.info(req, 'skip_formation_item', 'Formation item skipped', { item_uid: itemUid, reason });
+    // Reason text goes into skip_reason/activity metadata (both already persisted above), not the
+    // log line — a free-text field is the wrong shape for a structured log field.
+    logger.info(req, 'skip_formation_item', 'Formation item skipped', { item_uid: itemUid });
     return this.enrichSingle(req, updated);
   }
 
@@ -170,22 +167,9 @@ export class FormationService {
   public async updateFormationItem(
     req: Request,
     itemUid: string,
-    patch: { notes?: string; owner_username?: string; due_date?: string | null }
+    patch: { notes?: unknown; owner_username?: string; due_date?: string | null }
   ): Promise<FormationItem> {
-    if (patch.notes !== undefined && typeof patch.notes !== 'string') {
-      throw ServiceValidationError.forField('notes', 'Notes must be a string', {
-        operation: 'update_formation_item',
-        service: 'formation_service',
-        path: req.path,
-      });
-    }
-    if (patch.notes !== undefined && patch.notes.length > 2000) {
-      throw ServiceValidationError.forField('notes', 'Notes must be 2000 characters or fewer', {
-        operation: 'update_formation_item',
-        service: 'formation_service',
-        path: req.path,
-      });
-    }
+    this.assertValidNotes(patch.notes, req, 'update_formation_item');
     if (patch.owner_username !== undefined && patch.owner_username !== null && typeof patch.owner_username !== 'string') {
       throw ServiceValidationError.forField('owner_username', 'owner_username must be a string', {
         operation: 'update_formation_item',
@@ -258,14 +242,8 @@ export class FormationService {
     return { deep_link_url: `https://admin.linuxfoundation.org/formations/${encodeURIComponent(formation.parent_project_slug)}` };
   }
 
-  public async declineFormation(req: Request, formationUid: string, reason: string): Promise<Formation> {
-    if (!reason || !reason.trim()) {
-      throw ServiceValidationError.forField('reason', 'A reason is required to decline a formation', {
-        operation: 'decline_formation',
-        service: 'formation_service',
-        path: req.path,
-      });
-    }
+  public async declineFormation(req: Request, formationUid: string, reason: unknown): Promise<Formation> {
+    this.assertValidReason(reason, 'A reason is required to decline a formation', req, 'decline_formation');
 
     const existing = STATIC_QUEUE_FORMATIONS.find((row) => row.uid === formationUid) ?? getStoredFormation(formationUid);
     if (!existing) {
@@ -289,9 +267,11 @@ export class FormationService {
 
     // TODO(#1957): replace this log-only stub with a real email-service notification once
     // lfx-v2-formation-service ships — this is explicitly a no-op today, not a degraded real path.
+    // Deliberately no `proposer` field here: today it's fixture-only, but this line is written
+    // against Formation.proposer, and the #1957 swap would turn a real LFID into an unredacted
+    // application-log emission with no second review of this line to catch it.
     logger.info(req, 'decline_formation', 'Would notify proposer (stub — #1957 owns real email-service integration)', {
       formation_uid: formationUid,
-      proposer: declined.proposer?.username ?? null,
     });
 
     return declined;
@@ -344,8 +324,23 @@ export class FormationService {
     const openGatingItems = gatingItems.filter((item) => item.status !== 'done');
     const isActivating = gatingItems.length > 0 && openGatingItems.length === 0;
 
+    // `generateMockFormation` derives the initial sub_stage from is_activating (mapProjectStageToSubStage)
+    // — this recompute must track it the same way, or completing the last gating item leaves a stored
+    // formation with is_activating: true but a stale sub_stage. 'withdrawn' is a terminal Decline state
+    // this method must never override. The original pre-activating sub_stage isn't preserved anywhere,
+    // so reverting out of 'activating' falls back to 'engaged' — the generator's own default case.
+    let subStage: FormationSubStage = formation.sub_stage;
+    if (formation.sub_stage !== 'withdrawn') {
+      if (isActivating) {
+        subStage = 'activating';
+      } else if (formation.sub_stage === 'activating') {
+        subStage = 'engaged';
+      }
+    }
+
     putStoredFormation({
       ...formation,
+      sub_stage: subStage,
       gating_items_open: openGatingItems.length,
       gating_items_total: gatingItems.length,
       is_activating: isActivating,
@@ -425,6 +420,36 @@ export class FormationService {
         path: req.path,
         code: 'GATE_WRITER_REQUIRED',
       });
+    }
+  }
+
+  /**
+   * Shared by `completeFormationItem`/`updateFormationItem` — the controller passes `req.body?.notes`
+   * straight through as `unknown`, so the type guard has to actually run at the service boundary,
+   * not just appear in a param type the caller's `any` body bypasses.
+   */
+  private assertValidNotes(notes: unknown, req: Request, operation: string): asserts notes is string | undefined {
+    if (notes === undefined) return;
+    if (typeof notes !== 'string') {
+      throw ServiceValidationError.forField('notes', 'Notes must be a string', { operation, service: 'formation_service', path: req.path });
+    }
+    if (notes.length > 2000) {
+      throw ServiceValidationError.forField('notes', 'Notes must be 2000 characters or fewer', { operation, service: 'formation_service', path: req.path });
+    }
+  }
+
+  /**
+   * Shared by `skipFormationItem`/`declineFormation`. Same `unknown`-at-the-boundary rationale as
+   * {@link assertValidNotes} — a non-string `reason` must 400 here, not throw a raw `TypeError` from
+   * `.trim()` further down. Caps length the same way `notes` is capped, so a skip/decline reason
+   * can't push unbounded text into the never-evicted fixture activity store or into this log line.
+   */
+  private assertValidReason(reason: unknown, message: string, req: Request, operation: string): asserts reason is string {
+    if (typeof reason !== 'string' || !reason.trim()) {
+      throw ServiceValidationError.forField('reason', message, { operation, service: 'formation_service', path: req.path });
+    }
+    if (reason.length > 2000) {
+      throw ServiceValidationError.forField('reason', 'Reason must be 2000 characters or fewer', { operation, service: 'formation_service', path: req.path });
     }
   }
 
