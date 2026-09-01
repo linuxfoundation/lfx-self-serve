@@ -176,18 +176,22 @@ export class PlanningTabComponent implements OnInit {
    */
   protected readonly hsCreateSuppressed = signal(false);
   /**
-   * HubSpot itself returned fewer campaigns than it matched. Carries the wire field `capped`.
+   * The search could not be SHOWN to be complete. Carries the wire field `capped`.
    *
-   * Named for truncation specifically, not for the weaker "completeness unproven", because only
-   * truncation licenses the words "there are more it did not return" that noMatchStatus() prints
-   * from it. An earlier name asserted the weaker claim while holding this stronger one, and read
-   * to a reviewer as the message fabricating a truncation it had not established.
+   * Deliberately NOT named for truncation. campaign-service's contract (design/connection.go)
+   * defines `capped` as "true when the search could NOT be shown to be complete", which covers
+   * HubSpot reporting more matches than it returned AND the cases where completeness is simply
+   * unknown — an absent `total`, or one that contradicts the rows. All fail CLOSED.
    *
-   * Separate from `hsCreateSuppressed` for that reason: a result HubSpot returned in FULL whose
-   * rows the local scorer rejected is equally inconclusive but is NOT truncated — and telling an
-   * operator to narrow their term there points away from the real remedy, checking the name.
+   * I renamed this to `hsHubSpotTruncated` once, on the belief that `capped` meant truncation on
+   * the wire. It does not, and the rename made the signal name assert more than the response
+   * establishes. Reverted; the status line it feeds must not claim truncation either.
+   *
+   * Separate from `hsCreateSuppressed` because the remedies differ: an unproven-completeness
+   * result asks for a narrower term, while a result HubSpot returned in FULL whose rows the local
+   * scorer rejected asks the operator to check the name.
    */
-  protected readonly hsHubSpotTruncated = signal(false);
+  protected readonly hsCompletenessUnproven = signal(false);
   protected readonly hsMatches = signal<{ name: string; hs_utm: string }[]>([]);
   /**
    * Whether the match picker has anything to offer.
@@ -456,7 +460,7 @@ export class PlanningTabComponent implements OnInit {
       this.hsMatches.set([]);
       this.hsNotFound.set(false);
       this.hsCreateSuppressed.set(false);
-      this.hsHubSpotTruncated.set(false);
+      this.hsCompletenessUnproven.set(false);
       this.hsUnconfirmed.set(false);
       this.hsStatus.set(null);
       this.hsSearching.set(false);
@@ -1306,14 +1310,18 @@ export class PlanningTabComponent implements OnInit {
   /**
    * The status line for a lookup that found nothing, which is three different statements.
    *
-   * Only a TRUNCATED search may say HubSpot returned fewer than it matched. A search HubSpot
-   * answered in full, whose rows the local scorer rejected, is equally inconclusive but says so
-   * differently — the remedies differ (narrow the term vs check the name), and a message that
-   * conflates them sends the operator to the wrong one.
+   * The first arm must NOT claim truncation. `capped` means only that completeness could not be
+   * SHOWN — it is equally true when HubSpot's `total` is absent or contradicts the rows — so
+   * "there are more it did not return" stated a fact the response never established. The wording
+   * now reports the uncertainty itself, which is what the operator can actually act on.
+   *
+   * Still distinct from the third arm: a search HubSpot answered in full, whose rows the local
+   * scorer rejected, is equally inconclusive but has a different remedy — check the name, rather
+   * than narrow the term — and a message that conflates them sends the operator the wrong way.
    */
-  private noMatchStatus(truncated: boolean, inconclusive: boolean): string {
-    if (truncated) {
-      return 'No match in the campaigns HubSpot returned — but there are more it did not';
+  private noMatchStatus(completenessUnproven: boolean, inconclusive: boolean): string {
+    if (completenessUnproven) {
+      return 'No match among the campaigns HubSpot returned, and the search could not be shown to be complete — narrow the search term';
     }
     if (inconclusive) {
       return 'No close match among the campaigns HubSpot returned';
@@ -1387,7 +1395,7 @@ export class PlanningTabComponent implements OnInit {
     this.hsMatches.set([]);
     this.hsNotFound.set(false);
     this.hsCreateSuppressed.set(false);
-    this.hsHubSpotTruncated.set(false);
+    this.hsCompletenessUnproven.set(false);
     // The lookup is what RESOLVES the unknown, so the unconfirmed state clears when one starts.
     this.hsUnconfirmed.set(false);
     this.hsUtm.set(null);
@@ -1448,7 +1456,7 @@ export class PlanningTabComponent implements OnInit {
             // which includes HubSpot omitting `total` entirely, so "it matched more than it
             // could return" would be fabricated for a response that never said so, and would
             // send the operator to narrow a term when the remedy is to check the name.
-            this.hsHubSpotTruncated.set(result?.capped === true);
+            this.hsCompletenessUnproven.set(result?.capped === true);
             this.hsStatus.set(this.noMatchStatus(result?.capped === true, result?.inconclusive === true));
           }
         },

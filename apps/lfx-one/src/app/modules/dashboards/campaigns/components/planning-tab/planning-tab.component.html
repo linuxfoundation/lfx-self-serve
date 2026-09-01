@@ -101,7 +101,7 @@
                     Both branches suppress the create; only the first may claim TRUNCATION, and
                     they point at different remedies — narrow the term vs check the name.
                   -->
-                  @if (hsHubSpotTruncated()) {
+                  @if (hsCompletenessUnproven()) {
                     <p class="text-sm text-amber-700">
                       No match for "{{ lastLookedUpEvent }}" among the campaigns HubSpot returned — and HubSpot did not confirm that search was complete, so the
                       campaign may still exist. Check HubSpot directly, or search a narrower term, before creating one.

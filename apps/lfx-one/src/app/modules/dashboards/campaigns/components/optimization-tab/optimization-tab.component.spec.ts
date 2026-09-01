@@ -2127,6 +2127,32 @@ describe('OptimizationTabComponent — keyword action outcome states', () => {
     }
   });
 
+  it('reads a SHORT 2xx result array as unconfirmed, not as failure', () => {
+    // The response is positional -- the client zips results[i] onto the list it sent -- so a 2xx
+    // whose array is shorter than the request says nothing about the keywords it omits. `?? false`
+    // rendered those as "Failed", inviting a re-run of an irreversible bulk REMOVE.
+    const campaignService = TestBed.inject(CampaignService) as unknown as {
+      executeKeywordActions: ReturnType<typeof vi.fn>;
+    };
+    // Two keywords sent, ONE result back.
+    campaignService.executeKeywordActions = vi.fn().mockReturnValue(of({ results: [{ success: true, message: 'Paused' }] }));
+
+    const keywords = [
+      { campaignId: 'c1', adGroupId: 'ag1', criterionId: 'cr1' },
+      { campaignId: 'c1', adGroupId: 'ag1', criterionId: 'cr2' },
+    ];
+    const component = fixture.componentInstance as unknown as {
+      bulkKeywordAction(keywords: unknown[], action: string): void;
+      actionResults: () => Record<string, { state: string }>;
+    };
+    component.bulkKeywordAction(keywords, 'REMOVE');
+
+    // The one that came back is reported as it answered.
+    expect(component.actionResults()['ag1-cr1']?.state).toBe('done');
+    // The one that did NOT is unconfirmed -- never 'failed'.
+    expect(component.actionResults()['ag1-cr2']?.state, 'a missing positional result read as a definite failure').toBe('unconfirmed');
+  });
+
   it('distinguishes an unconfirmed outcome from a definite failure', () => {
     expect(isUnconfirmed({ success: false, message: unconfirmedMessage }), 'an unconfirmed change read as a definite failure').toBe(true);
   });

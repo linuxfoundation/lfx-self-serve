@@ -1698,6 +1698,19 @@ describe('PlanningTabComponent — HubSpot UTM states', () => {
    * The set stops at 400/404. Widening it to 500 overshot into the opposite and worse error: the
    * BFF's own 500 covers faults at any position, including after the campaign exists.
    */
+  it('does not claim HubSpot truncated when capped only means completeness is unproven', () => {
+    // campaign-service defines `capped` as "true when the search could NOT be shown to be
+    // complete" -- which covers an ABSENT or CONTRADICTORY total, not just HubSpot returning
+    // fewer than it matched (design/connection.go). Saying "there are more it did not return"
+    // therefore stated a fact the response never established.
+    runLookup({ found: false, hs_utm: null, campaign_name: '', all_matches: [], capped: true, inconclusive: true }, 'Event capped');
+    fixture.detectChanges();
+
+    const status = String(instance()['hsStatus']());
+    expect(status, 'capped must not be reported as proven truncation').not.toMatch(/there are more it did not/i);
+    expect(status).toMatch(/could not be shown to be complete/i);
+  });
+
   it('announces the create outcome through a live region that is always in the DOM', () => {
     // A create outcome that only a sighted user can read is not delivered. The button that
     // started the create can disappear from under the focus that triggered it, and the message

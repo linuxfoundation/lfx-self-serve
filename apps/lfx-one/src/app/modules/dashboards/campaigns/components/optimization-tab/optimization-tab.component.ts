@@ -857,7 +857,7 @@ export class OptimizationTabComponent implements OnInit {
           const result = res.results[0];
           this.actionResults.update((map) => ({
             ...map,
-            [key]: this.toActionOutcome(result?.success ?? false, result?.message ?? 'Unknown result'),
+            [key]: this.positionalOutcome(result),
           }));
         },
         error: (err) => {
@@ -893,8 +893,9 @@ export class OptimizationTabComponent implements OnInit {
           this.actionResults.update((map) => {
             const updated = { ...map };
             for (let i = 0; i < keys.length; i++) {
-              const result = res.results[i];
-              updated[keys[i]] = this.toActionOutcome(result?.success ?? false, result?.message ?? 'Done');
+              // `?? false` here marked every unmatched key "Failed" -- across the WHOLE
+              // selection when the array came back short. Positional absence is unconfirmed.
+              updated[keys[i]] = this.positionalOutcome(res.results[i]);
             }
             return updated;
           });
@@ -978,6 +979,28 @@ export class OptimizationTabComponent implements OnInit {
       message: `${message} — this may or may not have been applied; check the platform before retrying.`,
       state: 'unconfirmed',
     };
+  }
+
+  /**
+   * The outcome for ONE positional entry of a keyword-action response.
+   *
+   * A MISSING entry is unconfirmed, never failed. The response is positional -- the client zips
+   * `results[i]` onto the list it sent -- so a 2xx whose array is short says nothing about
+   * whether that mutation applied. Rendering "Failed" there invites a retry of a REMOVE that may
+   * already have run, and Google cannot re-enable a removed criterion.
+   *
+   * Shared by the single and bulk paths deliberately: both read positionally, and the bulk one is
+   * the more dangerous of the two because one short array covers an entire selection.
+   */
+  private positionalOutcome(result: { success: boolean; message: string } | undefined): KeywordActionOutcome {
+    if (!result) {
+      return {
+        success: false,
+        message: 'The change was sent but no outcome came back for it. Check the keyword in the platform before retrying.',
+        state: 'unconfirmed',
+      };
+    }
+    return this.toActionOutcome(result.success, result.message);
   }
 
   private toActionOutcome(success: boolean, message: string): KeywordActionOutcome {
