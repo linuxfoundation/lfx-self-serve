@@ -29,8 +29,9 @@ export class OrganizationSearchComponent {
   public inputStyleClass = input<string>();
   public panelStyleClass = input<string>();
   public dataTestId = input<string>('organization-search');
-  /** id for the search-mode input, so a caller's own `<label for>` can name this field. Manual
-   *  mode's name/website fields already have their own ids (`{domainControl()}-input`). */
+  /** id for the field's focusable input, so a caller's own `<label for>` can name it — applied to
+   *  both the search-mode autocomplete input and the manual-mode org-name input. The manual-mode
+   *  website field keeps its own separate `{domainControl()}-input` id and label. */
   public inputId = input<string>();
   public disabled = input<boolean>(false);
   /** When false, the field keeps the user-selected name instead of being overwritten with the

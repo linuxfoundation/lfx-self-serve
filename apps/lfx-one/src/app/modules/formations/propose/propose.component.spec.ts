@@ -287,8 +287,9 @@ describe('ProposeComponent', () => {
     // (shadowing the label); a bound [id] avoids that — but for p-select specifically, its
     // focusable node is a <span role="combobox">, which isn't a labelable element at all, so even
     // a correctly-bound id can't satisfy a <label for>. Positively assert the resolved element is
-    // one of the tags a <label for> can actually name, covering every field on the form rather
-    // than a hand-picked subset.
+    // one of the tags a <label for> can actually name, covering every field rendered in the
+    // form's default state (search mode, no additional contacts) rather than a hand-picked
+    // subset — this does not drive lfx-organization-search into its manual-entry branch.
     const labelableTags = new Set(['INPUT', 'TEXTAREA', 'SELECT']);
     const labels = Array.from(el.querySelectorAll<HTMLLabelElement>('label[for]'));
     expect(labels.length).toBeGreaterThan(0);
