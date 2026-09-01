@@ -734,9 +734,8 @@ export class VoteManageComponent {
       return of(null);
     }
     this.contextFallbackRetried.add(entity.uid);
-    // VoteService keeps no detail cache — a fresh fetchVote IS the uncached re-fetch
-    // (meeting-manage's getMeetingDetail equivalent needs skipCache; this doesn't).
-    return this.voteService.fetchVote(entity.uid).pipe(
+    // Bypass the shared detail cache — this is the fresh re-fetch that polls for enrichment a cached payload may predate.
+    return this.voteService.fetchVote(entity.uid, { skipCache: true }).pipe(
       map((vote) => {
         if (!vote?.project_slug) {
           console.warn(`Unable to resolve project context for vote ${entity.uid}: detail payload carries no project_slug`);
