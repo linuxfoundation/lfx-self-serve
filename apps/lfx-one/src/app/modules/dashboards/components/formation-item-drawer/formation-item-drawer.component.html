@@ -107,7 +107,14 @@
           <span class="text-xs font-medium text-gray-500 uppercase tracking-wide">Links</span>
           <div class="flex flex-col gap-1">
             @for (link of safeLinks(); track link.href) {
-              <a [href]="link.href" target="_blank" rel="noopener noreferrer" class="text-sm text-blue-600 hover:underline">{{ link.label }}</a>
+              <a
+                [href]="link.href"
+                target="_blank"
+                rel="noopener noreferrer"
+                class="text-sm text-blue-600 hover:underline"
+                [attr.data-testid]="'formation-item-drawer-link-' + link.href">
+                {{ link.label }}
+              </a>
             }
           </div>
         </div>
