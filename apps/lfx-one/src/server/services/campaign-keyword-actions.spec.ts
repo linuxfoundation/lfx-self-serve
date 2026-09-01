@@ -225,16 +225,39 @@ describe('classifyMutationFailure', () => {
     expect(msg).not.toContain(CAMPAIGN_OUTCOME_UNCONFIRMED);
   });
 
+  /**
+   * campaign-service marks an unconfirmed outcome IN THE MESSAGE, not in the status: its definite
+   * and its unconfirmed arms BOTH answer 503 (internal/service/brief_keyword_actions.go). So the
+   * status cannot decide this, and deriving it from the status relabelled every answered failure
+   * as uncertain -- telling an operator not to retry something safe to retry, and leaving a
+   * campaign spending.
+   */
+  it("honours upstream's own unconfirmed marker on a 503", () => {
+    const msg = classifyMutationFailure(
+      new MicroserviceError('the keyword actions are unconfirmed — they may or may not have been applied on the ad platform', 503, 'ERR', {})
+    );
+    expect(msg).toContain(CAMPAIGN_OUTCOME_UNCONFIRMED);
+  });
+
   it.each([
-    [408, 'timeout'],
-    [500, 'upstream 5xx'],
-    [503, 'unavailable'],
-  ])('treats a real MicroserviceError %i (%s) as unconfirmed', (code) => {
-    const msg = classifyMutationFailure(new MicroserviceError('upstream failed', code, 'ERR', {}));
+    [500, 'pre-mutate credential fault'],
+    [503, 'definite platform refusal'],
+  ])('reports an ANSWERED %i (%s) as definite, because upstream said so', (code) => {
+    // Upstream's own words for its definite arm, whose comment reads "A DEFINITE upstream
+    // failure ... nothing was applied, so a plain retry is the right remedy".
+    const msg = classifyMutationFailure(new MicroserviceError('the keyword actions could not be applied', code, 'ERR', {}));
+    expect(msg).not.toContain(CAMPAIGN_OUTCOME_UNCONFIRMED);
+  });
+
+  it('treats a real timeout as unconfirmed', () => {
+    // code TIMEOUT, which is what ApiClientService actually emits for a 408 -- not the 'ERR' a
+    // previous version of this test used, which production never produces.
+    const msg = classifyMutationFailure(new MicroserviceError('Request timeout after 30000ms', 408, 'TIMEOUT', {}));
     expect(msg).toContain(CAMPAIGN_OUTCOME_UNCONFIRMED);
   });
 
   it('treats a transport failure with no status at all as unconfirmed', () => {
+    // Nobody answered, so nothing establishes the mutate did not run. Fails CLOSED.
     expect(classifyMutationFailure(new Error('socket hang up'))).toContain(CAMPAIGN_OUTCOME_UNCONFIRMED);
   });
 });
@@ -242,6 +265,30 @@ describe('classifyMutationFailure', () => {
 describe('applyKeywordActionsViaCampaignService — the fan-out stop', () => {
   afterEach(() => {
     vi.restoreAllMocks();
+  });
+
+  it('does NOT stop the fan-out when campaign-service answers, even with a 500 or 503', async () => {
+    // An ANSWER describes THIS campaign only. campaign-service returns 500 for a pre-mutate
+    // credential fault and 503 for a definite platform refusal -- both prove it replied, so
+    // abandoning the remaining campaigns on them stopped a fan-out that was fine to continue and
+    // left keywords the operator asked about unattempted for no reason.
+    const resolveGoogleAdsCampaign = vi.fn().mockResolvedValue({ match_count: 1, matches: [{ brief_id: 'b-1', campaign_id: 'c-1' }] });
+    const applyKeywordActions = vi
+      .fn()
+      .mockRejectedValueOnce(new MicroserviceError('the keyword actions could not be applied', 503, 'ERR', {}))
+      .mockResolvedValueOnce({ campaign_id: 'c-2', applied_count: 1, results: [{ ad_group_id: 'ag-1', criterion_id: 'k-2', action: 'PAUSE' }] });
+
+    const client = { resolveGoogleAdsCampaign, applyKeywordActions } as never;
+    const body = { action: 'pause' as const, keywords: [kw('camp-1', 'k-1'), kw('camp-2', 'k-2')] };
+    const req = { log: { warn: vi.fn(), info: vi.fn(), error: vi.fn(), debug: vi.fn() } } as never;
+
+    const res = await applyKeywordActionsViaCampaignService(req, client, 'aswf', body);
+
+    // BOTH campaigns attempted: the first one's answered failure said nothing about the second.
+    expect(resolveGoogleAdsCampaign).toHaveBeenCalledTimes(2);
+    expect(applyKeywordActions).toHaveBeenCalledTimes(2);
+    expect(res.results).toHaveLength(2);
+    expect(res.results[1].success, 'the second campaign was abandoned after an ANSWERED failure').toBe(true);
   });
 
   it('stops the fan-out when the MUTATION loses its connection, not only the lookup', async () => {

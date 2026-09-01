@@ -240,7 +240,57 @@ export function isTransportFailure(error: unknown): boolean {
   } else if (typeof e?.status === 'number') {
     status = e.status;
   }
+  // An ANSWER is not an outage, whatever its status. campaign-service returns 500 for a
+  // pre-mutate credential fault and 503 for a definite platform refusal; both prove it replied,
+  // so aborting the remaining campaigns on them stopped a fan-out that was fine to continue.
+  // Only an error the BFF itself raised establishes that the next lookup is doomed.
+  if (upstreamAnswered(error)) {
+    return false;
+  }
   return !(status >= 400 && status < 500 && status !== 408);
+}
+
+/**
+ * Upstream's own words for an outcome it could not confirm.
+ *
+ * campaign-service distinguishes unconfirmed from definite IN THE MESSAGE, not in the status:
+ * both arms answer 503. Its unconfirmed arm says "the keyword actions are unconfirmed — they may
+ * or may not have been applied", while its `default` arm says "the keyword actions could not be
+ * applied" and is commented "A DEFINITE upstream failure ... nothing was applied, so a plain
+ * retry is the right remedy" (internal/service/brief_keyword_actions.go).
+ *
+ * Deriving the distinction from the status alone therefore relabelled every answered 500/503 as
+ * uncertain — telling an operator not to retry a failure that is safe to retry, and leaving a
+ * campaign spending. Matched case-insensitively on a stable fragment rather than the whole
+ * sentence, so upstream rewording the tail does not silently flip the meaning back.
+ */
+const UPSTREAM_UNCONFIRMED_MARKER = 'are unconfirmed';
+
+/**
+ * Whether campaign-service ANSWERED, as opposed to never being reached.
+ *
+ * An answer -- any status it chose, including 500 and 503 -- describes THIS request only. A
+ * BFF-raised transport failure is the one thing that says the next campaign is unreachable too,
+ * and those are the errors that carry `originalError` or the TIMEOUT code.
+ */
+function upstreamAnswered(error: unknown): boolean {
+  const e = error as { originalError?: unknown; code?: unknown; statusCode?: unknown; status?: unknown } | null | undefined;
+  // A BFF-raised failure is never an answer, however it is spelled.
+  if (e?.originalError !== undefined || e?.code === 'TIMEOUT') {
+    return false;
+  }
+  // POSITIVE evidence only. Absence of a marker is not evidence of an answer: a socket hang-up
+  // that escapes before MicroserviceError wraps it is a bare Error carrying neither a status nor
+  // originalError, and reading that as "upstream replied" would keep the fan-out running through
+  // an outage. A status upstream actually chose is the thing that proves it replied.
+  // Not a nested ternary: `.claude/rules` forbids them, and this reads better as a fallback chain.
+  let status = 0;
+  if (typeof e?.statusCode === 'number') {
+    status = e.statusCode;
+  } else if (typeof e?.status === 'number') {
+    status = e.status;
+  }
+  return status > 0;
 }
 
 export function classifyMutationFailure(error: unknown): string {
@@ -252,8 +302,15 @@ export function classifyMutationFailure(error: unknown): string {
   } else if (typeof e?.status === 'number') {
     status = e.status;
   }
-  const refusedAtBoundary = status >= 400 && status < 500 && status !== 408;
   const raw = error instanceof Error ? error.message : 'The keyword change could not be applied.';
+  // Upstream's own marker decides it whenever upstream answered: it knows whether its mutate went
+  // out, and the status cannot carry that (its definite and unconfirmed arms share 503).
+  if (upstreamAnswered(error)) {
+    return raw.toLowerCase().includes(UPSTREAM_UNCONFIRMED_MARKER) ? `${CAMPAIGN_OUTCOME_UNCONFIRMED} (${raw})` : raw;
+  }
+  // Nobody answered. A 4xx other than 408 still proves a boundary refusal that never dispatched;
+  // anything else is a request that may already have run, so it fails CLOSED.
+  const refusedAtBoundary = status >= 400 && status < 500 && status !== 408;
   return refusedAtBoundary ? raw : `${CAMPAIGN_OUTCOME_UNCONFIRMED} (${raw})`;
 }
 
