@@ -18,6 +18,7 @@
     <lfx-formations-table
       [rows]="rows()"
       [loading]="loading()"
+      [submittingUids]="submittingUids()"
       (filtersChange)="onFiltersChange($event)"
       (accept)="onAccept($event)"
       (decline)="onDecline($event)" />

@@ -9,7 +9,7 @@ import { expect, Page, test } from '@playwright/test';
 
 import { mockFormationsQueue } from './fixtures/mock-data';
 import { FormationApiMockHelper } from './helpers/formation-api-mock.helper';
-import { stubFormationFlag } from './helpers/formation-checklist.helper';
+import { skipWhenAuthMissing, stubFormationFlag } from './helpers/formation-checklist.helper';
 
 test.setTimeout(60_000);
 
@@ -23,17 +23,6 @@ const MOCK_FOUNDATION_ITEM: LensItem = {
   logoUrl: null,
   isFoundation: true,
 };
-
-function skipWhenAuthMissing(page: Page): void {
-  try {
-    const { hostname } = new URL(page.url());
-    if (hostname === 'auth0.com' || hostname.endsWith('.auth0.com')) {
-      test.skip(true, 'TEST_USERNAME / TEST_PASSWORD not configured — see global-setup.ts');
-    }
-  } catch {
-    // Malformed URL — let the test surface the failure naturally.
-  }
-}
 
 /** Mirrors marketing-access.spec.ts's `stubPersona` — `isAuditor` is the field `formationsQueueAuditorGuard` reads. */
 async function stubPersona(page: Page, isAuditor: boolean): Promise<void> {
@@ -163,9 +152,15 @@ test.describe('Formations queue (GH-1958)', () => {
     await expect(confirm).toBeDisabled();
     await page.locator('textarea[data-test="reason-prompt-dialog-textarea"]').fill('not a fit at this time');
     await expect(confirm).toBeEnabled();
-    await confirm.click();
+
+    // The dialog closes on confirm-click regardless of the HTTP result and the component ignores
+    // the response body, so asserting only `dialog` count would pass even if the POST never fired
+    // or 500'd — anchor on the actual request (reason in the body) and the success toast instead.
+    const [declineRequest] = await Promise.all([page.waitForRequest('**/api/formations/*/decline', { timeout: ELEMENT_TIMEOUT }), confirm.click()]);
+    expect(declineRequest.postDataJSON()).toMatchObject({ reason: 'not a fit at this time' });
 
     await expect(dialog).toHaveCount(0);
+    await expect(page.getByText('was declined')).toBeVisible({ timeout: ELEMENT_TIMEOUT });
   });
 
   test('the empty state renders "No formations yet" with zero rows, and "No results found" once filtered', async ({ page }) => {

@@ -53,6 +53,7 @@
               size="small"
               severity="primary"
               [disabled]="!currentItem.can_complete"
+              [loading]="submitting()"
               (onClick)="onMarkComplete()"
               data-testid="formation-item-drawer-mark-complete" />
             @if (currentItem.is_gating) {
@@ -90,7 +91,13 @@
       </div>
 
       <div>
-        <lfx-button label="Save" size="small" severity="secondary" (onClick)="onSaveDetails()" data-testid="formation-item-drawer-save" />
+        <lfx-button
+          label="Save"
+          size="small"
+          severity="secondary"
+          [loading]="submitting()"
+          (onClick)="onSaveDetails()"
+          data-testid="formation-item-drawer-save" />
       </div>
 
       @if (safeLinks().length > 0) {

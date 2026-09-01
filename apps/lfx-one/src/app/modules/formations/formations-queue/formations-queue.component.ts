@@ -36,6 +36,8 @@ export class FormationsQueueComponent {
   // would flash "No formations yet" for one frame.
   protected readonly loading = signal(true);
   protected readonly loadFailed = signal(false);
+  /** Formation uids with an Accept/Decline currently in flight — guards a double-click into issuing two writes. */
+  protected readonly submittingUids = signal<ReadonlySet<string>>(new Set());
 
   private readonly response: Signal<FormationsQueueResponse> = this.initResponse();
   protected readonly rows = computed(() => this.response().rows);
@@ -55,9 +57,14 @@ export class FormationsQueueComponent {
   }
 
   protected onAccept(row: Formation): void {
+    if (!this.beginSubmitting(row.uid)) return;
+
     this.formationService
       .acceptFormation(row.uid)
-      .pipe(take(1))
+      .pipe(
+        take(1),
+        finalize(() => this.endSubmitting(row.uid))
+      )
       .subscribe({
         next: (result) => {
           // deep_link_url is fixture-constructed today (a fixed base + an encoded slug), but it's
@@ -114,11 +121,14 @@ export class FormationsQueueComponent {
     });
 
     ref?.onClose.pipe(take(1)).subscribe((result: ReasonPromptDialogResult | undefined) => {
-      if (!result?.reason) return;
+      if (!result?.reason || !this.beginSubmitting(row.uid)) return;
 
       this.formationService
         .declineFormation(row.uid, result.reason)
-        .pipe(take(1))
+        .pipe(
+          take(1),
+          finalize(() => this.endSubmitting(row.uid))
+        )
         .subscribe({
           next: () => {
             this.refresh$.next();
@@ -129,6 +139,21 @@ export class FormationsQueueComponent {
             this.messageService.add({ severity: 'error', summary: 'Error', detail: 'Could not decline this formation.' });
           },
         });
+    });
+  }
+
+  /** Returns false (a no-op guard) if `uid` already has a mutation in flight. */
+  private beginSubmitting(uid: string): boolean {
+    if (this.submittingUids().has(uid)) return false;
+    this.submittingUids.update((uids) => new Set(uids).add(uid));
+    return true;
+  }
+
+  private endSubmitting(uid: string): void {
+    this.submittingUids.update((uids) => {
+      const next = new Set(uids);
+      next.delete(uid);
+      return next;
     });
   }
 

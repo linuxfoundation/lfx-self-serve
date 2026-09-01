@@ -4,6 +4,7 @@
 /** Shared fixtures/mocks for the Formation Checklist section specs (GH-1958). */
 
 import { FEATURE_FLAG_OVERRIDE_STORAGE_KEY, FORMATION_ENABLED_FLAG } from '@lfx-one/shared/constants';
+import type { Project } from '@lfx-one/shared/interfaces';
 import { Page, test } from '@playwright/test';
 
 import { FormationApiMockHelper } from './formation-api-mock.helper';
@@ -30,7 +31,7 @@ export async function stubFormationFlag(page: Page, enabled = true): Promise<voi
   ] as const);
 }
 
-export function buildBaseProject(slug: string, overrides: Record<string, unknown> = {}): Record<string, unknown> {
+export function buildBaseProject(slug: string, overrides: Partial<Project> = {}): Project {
   return {
     uid: `e2e-${slug}-uid`,
     slug,
@@ -60,11 +61,8 @@ export function buildBaseProject(slug: string, overrides: Record<string, unknown
 
 export type FormationChecklistApiState = 'ready' | 'no-template' | 'no-items' | 'error';
 
-export async function mockFormationChecklistApis(
-  page: Page,
-  opts: { project: Record<string, unknown>; checklistState?: FormationChecklistApiState }
-): Promise<void> {
-  await page.route(`**/api/projects/${opts.project['slug']}`, (route) => {
+export async function mockFormationChecklistApis(page: Page, opts: { project: Project; checklistState?: FormationChecklistApiState }): Promise<void> {
+  await page.route(`**/api/projects/${opts.project.slug}`, (route) => {
     if (route.request().method() !== 'GET') return route.fallback();
     return route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify(opts.project) });
   });
@@ -79,10 +77,10 @@ export async function mockFormationChecklistApis(
         contentType: 'application/json',
         body: JSON.stringify({
           formation: {
-            uid: `formation:${opts.project['slug']}`,
-            parent_project_uid: opts.project['uid'],
-            parent_project_slug: opts.project['slug'],
-            parent_project_name: opts.project['name'],
+            uid: `formation:${opts.project.slug}`,
+            parent_project_uid: opts.project.uid,
+            parent_project_slug: opts.project.slug,
+            parent_project_name: opts.project.name,
             entity_type: 'foundation',
             template_uid: 'seed',
             template_version: 1,
@@ -106,7 +104,7 @@ export async function mockFormationChecklistApis(
       })
     );
   } else {
-    await FormationApiMockHelper.setupProjectFormationMock(page, opts.project['slug'] as string);
+    await FormationApiMockHelper.setupProjectFormationMock(page, opts.project.slug);
   }
 
   await FormationApiMockHelper.setupFormationItemMock(page);

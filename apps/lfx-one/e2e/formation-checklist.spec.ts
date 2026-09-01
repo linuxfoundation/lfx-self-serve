@@ -109,7 +109,7 @@ test.describe('Formation Checklist section (GH-1958)', () => {
     const project = buildBaseProject(FORMATION_PROJECT_SLUG);
     await mockFormationChecklistApis(page, { project });
 
-    const formation = getMockFormation(project['slug'] as string);
+    const formation = getMockFormation(project.slug);
     if (!formation) throw new Error('Expected a seeded mock formation for this slug.');
     const items = getMockFormationItems(formation.uid).map((item) => (item.action === 'link' ? { ...item, action_href: null } : item));
     const linkItem = items.find((item) => item.action === 'link');

@@ -359,7 +359,10 @@ export class FormationService {
 
     const items = getStoredItemsForFormation(formationUid);
     const gatingItems = items.filter((item) => item.is_gating);
-    const openGatingItems = gatingItems.filter((item) => item.status !== 'done');
+    // A skipped gating item is resolved, not open — skipFormationItem is the designed escape hatch
+    // for a gate the project can't complete; treating it as still-open would make isActivating
+    // permanently unreachable for any formation that ever uses it.
+    const openGatingItems = gatingItems.filter((item) => item.status !== 'done' && item.status !== 'skipped');
     const isActivating = gatingItems.length > 0 && openGatingItems.length === 0;
 
     // `generateMockFormation` derives the initial sub_stage from is_activating (mapProjectStageToSubStage)

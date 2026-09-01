@@ -229,7 +229,8 @@ export function generateMockFormation(input: GenerateFormationInput): { formatio
   });
 
   const gatingItems = items.filter((item) => item.is_gating);
-  const openGatingItems = gatingItems.filter((item) => item.status !== 'done');
+  // A skipped gating item is resolved, not open — see the matching note on refreshFormationReadiness.
+  const openGatingItems = gatingItems.filter((item) => item.status !== 'done' && item.status !== 'skipped');
   const isActivating = gatingItems.length > 0 && openGatingItems.length === 0;
   const blockingItem = openGatingItems[0] ?? null;
 

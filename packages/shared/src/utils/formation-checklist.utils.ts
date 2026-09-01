@@ -17,6 +17,11 @@ const EMPTY_COUNTS: Record<FormationItemStatus, number> = {
  * Client-side stand-in for the readiness strip. TODO(#1957): delete this call site once the
  * backend returns a pre-computed `readiness_summary` — see the doc comment on
  * {@link FormationReadinessSummary}.
+ *
+ * A gating item counts as resolved once it's `done` OR `skipped` — `skipFormationItem` exists
+ * specifically as the escape hatch for a gate the project can't complete, so treating a skipped
+ * gate as still-open would make `isActivating` permanently unreachable for any formation that
+ * ever uses it.
  */
 export function deriveFormationReadinessSummary(items: FormationItem[]): FormationReadinessSummary {
   const counts = { ...EMPTY_COUNTS };
@@ -32,7 +37,7 @@ export function deriveFormationReadinessSummary(items: FormationItem[]): Formati
     }
     if (item.is_gating) {
       totalGatingItems += 1;
-      if (item.status !== 'done') openGatingItems += 1;
+      if (item.status !== 'done' && item.status !== 'skipped') openGatingItems += 1;
     }
   }
 
