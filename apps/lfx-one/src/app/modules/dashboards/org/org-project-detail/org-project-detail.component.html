@@ -361,11 +361,11 @@
                         <tr
                           class="border-b border-gray-100"
                           [class.bg-blue-50]="row.isViewingOrg"
-                          [class.cursor-pointer]="!isActivityMode() && leaderboardDetailFeatureEnabled()"
-                          [class.hover:bg-blue-50]="!isActivityMode() && leaderboardDetailFeatureEnabled()"
+                          [class.cursor-pointer]="!isActivityMode()"
+                          [class.hover:bg-blue-50]="!isActivityMode()"
                           [attr.data-testid]="row.isViewingOrg ? 'project-detail-leaderboard-technical-viewing-row' : null"
-                          [attr.tabindex]="isActivityMode() || !leaderboardDetailFeatureEnabled() ? null : 0"
-                          [attr.aria-label]="isActivityMode() || !leaderboardDetailFeatureEnabled() ? null : 'Open ' + row.orgName + ' score breakdown'"
+                          [attr.tabindex]="isActivityMode() ? null : 0"
+                          [attr.aria-label]="isActivityMode() ? null : 'Open ' + row.orgName + ' score breakdown'"
                           (click)="openLeaderboardDetail('technical', row)"
                           (keydown.enter)="openLeaderboardDetail('technical', row)"
                           (keydown.space)="openLeaderboardDetail('technical', row); $event.preventDefault()">
@@ -497,11 +497,11 @@
                         <tr
                           class="border-b border-gray-100"
                           [class.bg-blue-50]="row.isViewingOrg"
-                          [class.cursor-pointer]="!isActivityMode() && leaderboardDetailFeatureEnabled()"
-                          [class.hover:bg-blue-50]="!isActivityMode() && leaderboardDetailFeatureEnabled()"
+                          [class.cursor-pointer]="!isActivityMode()"
+                          [class.hover:bg-blue-50]="!isActivityMode()"
                           [attr.data-testid]="row.isViewingOrg ? 'project-detail-leaderboard-ecosystem-viewing-row' : null"
-                          [attr.tabindex]="isActivityMode() || !leaderboardDetailFeatureEnabled() ? null : 0"
-                          [attr.aria-label]="isActivityMode() || !leaderboardDetailFeatureEnabled() ? null : 'Open ' + row.orgName + ' score breakdown'"
+                          [attr.tabindex]="isActivityMode() ? null : 0"
+                          [attr.aria-label]="isActivityMode() ? null : 'Open ' + row.orgName + ' score breakdown'"
                           (click)="openLeaderboardDetail('ecosystem', row)"
                           (keydown.enter)="openLeaderboardDetail('ecosystem', row)"
                           (keydown.space)="openLeaderboardDetail('ecosystem', row); $event.preventDefault()">
@@ -753,9 +753,12 @@
 <!-- Leaderboard row score-breakdown drawer (LFXV2-2934) -->
 <lfx-org-leaderboard-detail-drawer
   [dimension]="leaderboardDetailDimension()"
+  [organizationId]="leaderboardDetailOrganizationId()"
   [orgName]="leaderboardDetailOrgName()"
-  [isViewingOrg]="leaderboardDetailIsViewingOrg()"
   [projectName]="hero()?.projectName ?? ''"
+  [projectSlug]="projectSlug() ?? ''"
+  [orgUid]="orgUid()"
+  [range]="timeRange()"
   [(visible)]="leaderboardDetailOpen" />
 
 <lfx-person-detail-drawer />
