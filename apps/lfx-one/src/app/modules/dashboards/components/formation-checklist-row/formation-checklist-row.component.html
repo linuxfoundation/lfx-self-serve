@@ -16,9 +16,9 @@
         [attr.data-testid]="'formation-checklist-row-title-' + item().uid">
         {{ item().title }}
       </button>
-      @if (item().owner_team) {
+      @if (item().owner_team; as ownerTeam) {
         <span [attr.data-testid]="'formation-checklist-row-owner-chip-' + item().uid">
-          <lfx-tag [value]="item().owner_team!" severity="secondary" />
+          <lfx-tag [value]="ownerTeam" severity="secondary" />
         </span>
       }
       @if (item().is_gating) {
@@ -35,29 +35,39 @@
   <div class="shrink-0" [attr.data-testid]="'formation-checklist-row-action-' + item().uid">
     @switch (item().action) {
       @case ('link') {
-        <lfx-button label="Open" size="small" severity="secondary" [outlined]="true" [href]="item().action_href ?? '#'" target="_blank" />
+        @if (safeActionHref(); as href) {
+          <lfx-button label="Open" size="small" severity="secondary" [outlined]="true" [href]="href" target="_blank" rel="noopener noreferrer" />
+        }
       }
       @case ('status_only') {
-        @if (item().action_href) {
-          <lfx-button label="Open" size="small" severity="secondary" [outlined]="true" [href]="item().action_href!" target="_blank" />
+        @if (safeActionHref(); as href) {
+          <lfx-button label="Open" size="small" severity="secondary" [outlined]="true" [href]="href" target="_blank" rel="noopener noreferrer" />
         }
       }
       @case ('provisionable') {
-        <lfx-button
-          label="Set up"
-          size="small"
-          severity="primary"
-          (onClick)="onAction()"
-          [attr.data-testid]="'formation-checklist-row-provision-' + item().uid" />
+        @if (isActionable()) {
+          <lfx-button
+            label="Set up"
+            size="small"
+            severity="primary"
+            [disabled]="!item().can_complete"
+            [tooltip]="item().can_complete ? undefined : 'Requires gate_writer access'"
+            (onClick)="onAction()"
+            [attr.data-testid]="'formation-checklist-row-provision-' + item().uid" />
+        }
       }
       @case ('request') {
-        <lfx-button
-          label="Request"
-          size="small"
-          severity="secondary"
-          [outlined]="true"
-          (onClick)="onAction()"
-          [attr.data-testid]="'formation-checklist-row-request-' + item().uid" />
+        @if (isActionable()) {
+          <lfx-button
+            label="Request"
+            size="small"
+            severity="secondary"
+            [outlined]="true"
+            [disabled]="!item().can_complete"
+            [tooltip]="item().can_complete ? undefined : 'Requires gate_writer access'"
+            (onClick)="onAction()"
+            [attr.data-testid]="'formation-checklist-row-request-' + item().uid" />
+        }
       }
       @case ('manual') {
         <lfx-button label="View details" size="small" severity="secondary" [outlined]="true" (onClick)="onOpenDrawer()" />

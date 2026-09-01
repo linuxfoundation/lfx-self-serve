@@ -9,7 +9,7 @@
     </div>
     <div class="flex gap-0.5 h-1.5" data-testid="formation-readiness-strip-segment-bar" role="img" [attr.aria-label]="countsLabel()">
       @for (segment of summary().segments; track $index) {
-        <div class="flex-1 rounded-sm" [ngClass]="segmentClass(segment)"></div>
+        <div class="flex-1 rounded-sm" [ngClass]="segmentColorClass[segment]"></div>
       }
     </div>
   </div>

@@ -8,16 +8,34 @@ import { ButtonComponent } from '@components/button/button.component';
 import { TextareaComponent } from '@components/textarea/textarea.component';
 import { DynamicDialogConfig, DynamicDialogRef } from 'primeng/dynamicdialog';
 
-@Component({
-  selector: 'lfx-formations-decline-dialog',
-  imports: [ReactiveFormsModule, ButtonComponent, TextareaComponent],
-  templateUrl: './formations-decline-dialog.component.html',
-})
-export class FormationsDeclineDialogComponent {
-  private readonly dialogRef = inject(DynamicDialogRef);
-  private readonly dialogConfig = inject(DynamicDialogConfig);
+export interface ReasonPromptDialogData {
+  /** e.g. "Skip {{title}}" — rendered as the body's leading sentence. */
+  prompt: string;
+  placeholder: string;
+  confirmLabel: string;
+  /** Defaults to `'danger'`. */
+  confirmSeverity?: 'danger' | 'primary';
+}
 
-  public readonly formationName = this.dialogConfig.data.formationName as string;
+export interface ReasonPromptDialogResult {
+  reason: string;
+}
+
+/**
+ * Generic "confirm with a required reason" dialog — opened via `DialogService.open()`. Backs both
+ * the checklist item skip flow and the Formations queue decline flow (GH-1958), which are
+ * otherwise identical modals differing only in copy.
+ */
+@Component({
+  selector: 'lfx-reason-prompt-dialog',
+  imports: [ReactiveFormsModule, ButtonComponent, TextareaComponent],
+  templateUrl: './reason-prompt-dialog.component.html',
+})
+export class ReasonPromptDialogComponent {
+  private readonly dialogRef = inject(DynamicDialogRef);
+  private readonly dialogConfig = inject(DynamicDialogConfig<ReasonPromptDialogData>);
+
+  public readonly data = this.dialogConfig.data as ReasonPromptDialogData;
 
   public readonly form = new FormGroup({
     reason: new FormControl<string>('', { nonNullable: true }),
@@ -33,6 +51,6 @@ export class FormationsDeclineDialogComponent {
   protected onConfirm(): void {
     const reason = this.form.controls.reason.value.trim();
     if (!reason) return;
-    this.dialogRef.close({ reason });
+    this.dialogRef.close({ reason } satisfies ReasonPromptDialogResult);
   }
 }

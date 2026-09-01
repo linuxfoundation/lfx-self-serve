@@ -11,7 +11,7 @@
   <ng-template #header>
     <div class="flex items-start justify-between gap-4 w-full">
       <div class="flex flex-col gap-1 flex-1 min-w-0">
-        <h2 class="text-lg font-semibold text-gray-900 truncate">{{ item()?.title }}</h2>
+        <h2 class="text-lg font-semibold text-gray-900 lg:truncate">{{ item()?.title }}</h2>
         @if (item(); as currentItem) {
           <span [attr.data-testid]="'formation-item-drawer-gates-active-' + currentItem.uid">
             @if (currentItem.is_gating) {
@@ -20,7 +20,12 @@
           </span>
         }
       </div>
-      <button type="button" (click)="onClose()" class="p-1 text-gray-400 hover:text-gray-600" aria-label="Close panel">
+      <button
+        type="button"
+        (click)="onClose()"
+        class="p-1 text-gray-400 hover:text-gray-600"
+        aria-label="Close panel"
+        data-testid="formation-item-drawer-close">
         <i class="fa-light fa-xmark text-xl" aria-hidden="true"></i>
       </button>
     </div>
@@ -28,8 +33,12 @@
 
   <div class="flex flex-col gap-6 pb-2">
     @if (loading()) {
-      <div class="flex items-center justify-center py-12">
+      <div class="flex items-center justify-center py-12" data-testid="formation-item-drawer-loading">
         <i class="fa-light fa-spinner-third fa-spin text-2xl text-gray-400"></i>
+      </div>
+    } @else if (loadFailed()) {
+      <div class="flex flex-col items-center gap-2 py-12 text-center" data-testid="formation-item-drawer-error">
+        <p class="text-sm text-red-700">Something went wrong loading this item.</p>
       </div>
     } @else if (item(); as currentItem) {
       <div class="flex gap-2">
@@ -75,11 +84,11 @@
         <lfx-button label="Save" size="small" severity="secondary" (onClick)="onSaveDetails()" data-testid="formation-item-drawer-save" />
       </div>
 
-      @if (currentItem.links.length > 0) {
+      @if (safeLinks().length > 0) {
         <div class="flex flex-col gap-2" data-testid="formation-item-drawer-links">
           <span class="text-xs font-medium text-gray-500 uppercase tracking-wide">Links</span>
           <div class="flex flex-col gap-1">
-            @for (link of currentItem.links; track link.href) {
+            @for (link of safeLinks(); track link.href) {
               <a [href]="link.href" target="_blank" rel="noopener noreferrer" class="text-sm text-blue-600 hover:underline">{{ link.label }}</a>
             }
           </div>
