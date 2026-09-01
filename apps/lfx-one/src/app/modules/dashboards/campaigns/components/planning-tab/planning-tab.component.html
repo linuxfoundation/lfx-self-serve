@@ -55,6 +55,18 @@
             </p>
           }
 
+          <!--
+            OUTSIDE the @if below, deliberately. Same stable-live-region pattern as the
+            saved-brief announcement above, and for the same reason — but the gate itself is the
+            trap here: it tests hsStatus(), so a region placed inside it would be created in the
+            very change that populates it, and a live region inserted with its text already
+            present is not reliably announced.
+            It matters more here than elsewhere on this panel: hsStatus carries the OUTCOME of a
+            non-idempotent create, including "may or may not have been created", and the button
+            that started it can disappear from under the focus that triggered it.
+          -->
+          <div role="status" aria-live="polite" class="sr-only" data-testid="planning-hubspot-status-live">{{ hsStatus() }}</div>
+
           <!-- HubSpot UTM Token -->
           @if (hsUtm() || hsSearching() || hsCreating() || hsStatus() || hsNotFound()) {
             <div class="flex flex-col gap-2" data-testid="planning-hubspot-section">
@@ -132,7 +144,9 @@
               }
 
               @if (hsStatus()) {
-                <p [class]="'text-xs ' + (hsUtm() ? 'text-green-600' : 'text-amber-600')" data-testid="planning-hubspot-status">{{ hsStatus() }}</p>
+                <p aria-hidden="true" [class]="'text-xs ' + (hsUtm() ? 'text-green-600' : 'text-amber-600')" data-testid="planning-hubspot-status">
+                  {{ hsStatus() }}
+                </p>
               }
 
               <!--

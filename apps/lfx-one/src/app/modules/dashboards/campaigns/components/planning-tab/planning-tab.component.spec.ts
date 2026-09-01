@@ -1698,6 +1698,30 @@ describe('PlanningTabComponent — HubSpot UTM states', () => {
    * The set stops at 400/404. Widening it to 500 overshot into the opposite and worse error: the
    * BFF's own 500 covers faults at any position, including after the campaign exists.
    */
+  it('announces the create outcome through a live region that is always in the DOM', () => {
+    // A create outcome that only a sighted user can read is not delivered. The button that
+    // started the create can disappear from under the focus that triggered it, and the message
+    // can say "may or may not have been created" -- the one outcome a user must not miss.
+    //
+    // The region must exist BEFORE the text does: an aria-live element created by @if with its
+    // content already present is not reliably announced.
+    const host = fixture.nativeElement as HTMLElement;
+    const live = () => host.querySelector('[data-testid="planning-hubspot-status-live"]');
+
+    // Present while there is nothing to say -- that is the whole point.
+    expect(live(), 'the live region must be mounted before any status exists').not.toBeNull();
+    expect(live()?.getAttribute('aria-live')).toBe('polite');
+
+    runLookup({ found: false, hs_utm: null, campaign_name: '', all_matches: [], capped: false, inconclusive: false }, 'Event live');
+    create.mockReturnValue(throwError(() => ({ status: 503 })));
+    (fixture.componentInstance as unknown as { createInHubSpot(): void }).createInHubSpot();
+    fixture.detectChanges();
+
+    expect(live()?.textContent).toMatch(/may or may not/i);
+    // The visible copy is hidden from AT so the message is not announced twice.
+    expect(host.querySelector('[data-testid="planning-hubspot-status"]')?.getAttribute('aria-hidden')).toBe('true');
+  });
+
   it('distinguishes a definite create failure from an unconfirmed one', () => {
     for (const [status, offerStaysUp, expected] of [
       [400, true, /check the name/i],
