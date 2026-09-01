@@ -284,7 +284,9 @@ describe('SignIdentitySelectComponent', () => {
 
   describe('already signed', () => {
     function signedAs(signedAs: string, signedVia: 'github' | 'gerrit' = 'github'): MyClaAgreement[] {
-      return [{ id: 's1', kind: 'ICLA', claGroupName: 'Venus', claGroupId: 'cg-1', signedOn: '2022-01-01', status: 'valid', pdfAvailable: true, signedVia, signedAs }];
+      return [
+        { id: 's1', kind: 'ICLA', claGroupName: 'Venus', claGroupId: 'cg-1', signedOn: '2022-01-01', status: 'valid', pdfAvailable: true, signedVia, signedAs },
+      ];
     }
 
     const REASON = 'You already have an ICLA for this CLA group signed with this account. Choose another identity to sign again.';
