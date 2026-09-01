@@ -19,11 +19,23 @@ import { catchError, filter, of, switchMap, tap } from 'rxjs';
 /**
  * The Formation sidebar card (GH-1955) — sub-stage pill, announcement date, the same
  * `executive_director`/`program_manager`/`opportunity_owner` contacts `ProjectStaffCardComponent`
- * shows above it, intake fields (repository/logo), and — for `PersonaService.isLFStaff` only —
- * a deep link into the admin tool. Rendered only while the project is Draft/Formation; see
+ * shows above it (deliberately — no formation-specific contact fields exist yet; see below), intake
+ * fields (repository/logo), and — for `PersonaService.isLFStaff` only — a deep link into the admin
+ * tool. Rendered only while the project is Draft/Formation; see
  * `ProjectContextService.isActiveProjectInFormation`.
  *
- * The ticket asked for two distinct admin-tool links ("Edit stage" and "Set up"). Neither a
+ * Two intentional substitutions for fields/permissions the ticket asked for that don't exist yet:
+ * - **Staff-only gating**: the ticket specifies a `formation_admin` permission, which exists
+ *   nowhere in this repo or elsewhere in the `linuxfoundation` org (verified via `gh api`
+ *   `search/code`). `isLFStaff` is the closest available gate — narrow this to a real
+ *   `formation_admin` grant once one is modeled.
+ * - **Contact rows**: the ticket asked for formation lead/coordinator/partner/product-contact
+ *   fields, none of which exist upstream (confirmed against `lfx-v2-project-service`'s live
+ *   contract). Showing `executive_director`/`program_manager`/`opportunity_owner` here duplicates
+ *   `ProjectStaffCardComponent` directly above it in the sidebar — an explicit, approved trade-off
+ *   (matches ticket intent over de-duplication) pending those fields landing upstream.
+ *
+ * The ticket also asked for two distinct admin-tool links ("Edit stage" and "Set up"). Neither a
  * `?tab=` param nor a `/setup` sub-route exists on `environment.urls.pcc` (verified — see
  * `initAdminToolUrl`), so this ships a single link to the bare project page, the only destination
  * actually confirmed to resolve. Both the specific "Edit stage" destination and any dedicated
@@ -138,6 +150,10 @@ export class FormationCardComponent {
    * two attempts at guessing one (`?tab=` params, then a v1-only `/setup` route neither of which
    * exists on v2) were both wrong. `/project/:id` is the one route confirmed to resolve — use that
    * until product/PCC names the real destination.
+   *
+   * v2 also declares a `project-formation` route (`projectFormationGuard`), deliberately not used
+   * here: it takes no `:id` param, so it can't serve a per-project deep link — it looks like the
+   * global Formations queue (#1956), not a per-project stage editor.
    */
   private initAdminToolUrl(): Signal<string> {
     return computed(() => {

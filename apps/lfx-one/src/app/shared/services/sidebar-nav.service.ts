@@ -498,11 +498,13 @@ export class SidebarNavService {
   // card already surface "you are in Formation" on that page; a real destination (a distinct route)
   // is needed before a dedicated nav item can ship — flagged for product/design.
   //
-  // Also GH-1955: EasyCLA, Crowdfunding, and "public stats" have no project-scoped nav surface today
-  // to gate on `isActiveProjectInFormation` — EasyCLA is a personal Me-lens tab (my-clas-enabled.guard.ts),
-  // Crowdfunding is a static Me-lens section (see meLensItems above), and no "public stats" component/route
-  // exists anywhere in the app. Nothing is gated here for those three; flagged in the PR description
-  // for product/design rather than inventing a surface to hide.
+  // Also GH-1955: Insights, EasyCLA, Crowdfunding, and "public stats" have no project-scoped nav
+  // surface today to gate on `isActiveProjectInFormation` — Insights is an external link built by
+  // buildInsightsUrl() and rendered unconditionally in lens-switcher.component.html, EasyCLA is a
+  // personal Me-lens tab (my-clas-enabled.guard.ts), Crowdfunding is a static Me-lens section (see
+  // meLensItems above), and no "public stats" component/route exists anywhere in the app. Nothing is
+  // gated here for any of the four; flagged in the PR description for product/design rather than
+  // inventing a surface to hide.
   private readonly projectLensItems: SidebarMenuItem[] = [
     {
       label: 'Dashboard',
