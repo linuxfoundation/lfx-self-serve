@@ -393,7 +393,11 @@ export async function applyKeywordActionsViaCampaignService(
       //
       // Checked here instead, where it is still a resolution problem: the campaign cannot be
       // identified, which is exactly CAMPAIGN_UNRESOLVED, and the other campaigns continue.
-      const match = resolution.matches?.[0];
+      // The COUNT and the ARRAY must agree. `match_count: 1` with TWO entries is the same
+      // self-contradiction as `match_count: 1` with none, and taking matches[0] there would
+      // mutate one of two campaigns upstream never disambiguated -- the exact thing the
+      // match_count > 1 arm above refuses.
+      const match = resolution.matches?.length === 1 ? resolution.matches[0] : undefined;
       if (!match?.brief_id || !match?.campaign_id) {
         // CAMPAIGN_LOOKUP_FAILED, not CAMPAIGN_UNRESOLVED. An inconsistent 2xx -- match_count
         // says 1 but the entry is absent or id-less -- does NOT establish that the campaign is

@@ -295,6 +295,18 @@ describe('applyKeywordActionsViaCampaignService — the fan-out stop', () => {
   it.each([
     ['an empty matches array', { match_count: 1, matches: [] }],
     ['a match missing its ids', { match_count: 1, matches: [{}] }],
+    // count says one, array holds TWO: the same self-contradiction in the other direction.
+    // Taking matches[0] would mutate one of two campaigns upstream never disambiguated.
+    [
+      'more matches than the count claims',
+      {
+        match_count: 1,
+        matches: [
+          { brief_id: 'b-1', campaign_id: 'c-1' },
+          { brief_id: 'b-9', campaign_id: 'c-9' },
+        ],
+      },
+    ],
   ])('refuses %s rather than trusting match_count', async (_label, resolution) => {
     // The COUNT is not the ARRAY. Reading matches[0] on the strength of match_count === 1 made
     // `ref` undefined, so `ref.brief_id` threw a TypeError into the MUTATION catch -- which has

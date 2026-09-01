@@ -666,7 +666,14 @@ export const GOOGLE_ADS_RESOURCE_ID_RE = /^[0-9]{1,19}$/;
  */
 const MAX_INT64 = 9223372036854775807n;
 
-export function isCanonicalGoogleAdsResourceId(value: string): boolean {
+export function isCanonicalGoogleAdsResourceId(value: unknown): boolean {
+  // `unknown`, not `string`: the caller validates req.body, which is CAST rather than parsed, so
+  // a JSON number reaches here as a number. RE.test() coerces it and passes, and the
+  // startsWith() below then threw a TypeError -- turning malformed input into a 500 instead of
+  // the 400 the validation exists to produce.
+  if (typeof value !== 'string') {
+    return false;
+  }
   if (!GOOGLE_ADS_RESOURCE_ID_RE.test(value)) {
     return false;
   }

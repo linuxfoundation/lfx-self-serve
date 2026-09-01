@@ -413,4 +413,22 @@ describe('isCanonicalGoogleAdsResourceId', () => {
   ])('%s -> %s', (value, expected) => {
     expect(isCanonicalGoogleAdsResourceId(value)).toBe(expected);
   });
+
+  /**
+   * The controller validates `req.body`, which is CAST rather than parsed, so a JSON number
+   * reaches this helper as a number. The regex coerced it and passed, and the leading-zero check
+   * then threw `startsWith is not a function` -- turning malformed input into a 500 instead of
+   * the 400 this validation exists to produce.
+   */
+  it.each([
+    [123, 'a JSON number'],
+    [null, 'null'],
+    [undefined, 'undefined'],
+    [{}, 'an object'],
+    [['1'], 'an array'],
+    [true, 'a boolean'],
+  ])('refuses %s (%s) without throwing', (value) => {
+    expect(() => isCanonicalGoogleAdsResourceId(value as never)).not.toThrow();
+    expect(isCanonicalGoogleAdsResourceId(value as never)).toBe(false);
+  });
 });
