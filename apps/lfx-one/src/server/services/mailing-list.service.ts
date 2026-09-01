@@ -18,6 +18,7 @@ import {
 import { Request } from 'express';
 
 import { ResourceNotFoundError } from '../errors';
+import { fetchEntityProject, toEntityProjectFields } from '../helpers/entity-project-enrichment.helper';
 import { pollEndpoint, pollUntilIndexed } from '../helpers/poll-endpoint.helper';
 import { fetchAllQueryResources } from '../helpers/query-service.helper';
 import { getEffectiveEmail, getUsernameFromAuth, stripAuthPrefix } from '../utils/auth-helper';
@@ -204,6 +205,10 @@ export class MailingListService {
     // Enrich with service data
     mailingLists = await this.enrichWithServices(req, mailingLists);
 
+    // Enrich with project metadata — the index never emits is_foundation, and the table's
+    // canonical tier-prefixed row links (GH-1567) need it (same batched pass as the Me lens).
+    mailingLists = await this.projectService.enrichWithProjectData(req, mailingLists);
+
     // Add writer access field to all mailing lists
     return await this.accessCheckService.addAccessToResources(req, mailingLists, 'groupsio_mailing_list');
   }
@@ -247,9 +252,21 @@ export class MailingListService {
       });
     }
 
-    // Enrich with service data (single item as array for reuse)
-    const enriched = await this.enrichWithServices(req, [resources[0].data]);
+    const data = resources[0].data;
+
+    // Service-data and project enrichment both depend only on the query-service payload —
+    // run them in parallel so the project lookup adds no sequential latency.
+    const [enriched, project] = await Promise.all([
+      this.enrichWithServices(req, [data]),
+      fetchEntityProject(req, this.projectService, data.project_uid, { operation: 'get_mailing_list_by_id', mailing_list_id: mailingListId }),
+    ]);
     const mailingList = enriched[0];
+
+    // The index never emits is_foundation and v1-sync rows carry empty-string project fields —
+    // the edit page's context sync and writerGuard's probe need the enriched fields (GH-1567).
+    if (project) {
+      Object.assign(mailingList, toEntityProjectFields(project));
+    }
 
     // Add writer access field to the mailing list
     return await this.accessCheckService.addAccessToResource(req, mailingList, 'groupsio_mailing_list');
