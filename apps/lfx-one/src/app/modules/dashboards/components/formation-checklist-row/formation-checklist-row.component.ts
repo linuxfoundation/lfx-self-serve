@@ -5,26 +5,14 @@ import { NgTemplateOutlet } from '@angular/common';
 import { Component, computed, input, output } from '@angular/core';
 import { ButtonComponent } from '@components/button/button.component';
 import { TagComponent } from '@components/tag/tag.component';
-import type { FormationItem, FormationItemStatus } from '@lfx-one/shared/interfaces';
-import type { TagSeverity } from '@lfx-one/shared/interfaces';
-import { FORMATION_GATED_ROW_ACTIONS } from '@lfx-one/shared/constants';
+import type { FormationItem } from '@lfx-one/shared/interfaces';
+import {
+  FORMATION_GATED_ROW_ACTIONS,
+  FORMATION_ITEM_STATUS_LABELS,
+  FORMATION_ITEM_STATUS_SEVERITY,
+  FORMATION_LINK_ROW_ACTIONS,
+} from '@lfx-one/shared/constants';
 import { isValidUrl } from '@lfx-one/shared/utils';
-
-const STATUS_LABEL: Record<FormationItemStatus, string> = {
-  done: 'Done',
-  in_progress: 'In progress',
-  waiting_on_partner: 'Waiting on partner',
-  not_started: 'Not started',
-  skipped: 'Skipped',
-};
-
-const STATUS_SEVERITY: Record<FormationItemStatus, TagSeverity> = {
-  done: 'success',
-  in_progress: 'warn',
-  waiting_on_partner: 'accent',
-  not_started: 'secondary',
-  skipped: 'secondary',
-};
 
 @Component({
   selector: 'lfx-formation-checklist-row',
@@ -39,11 +27,12 @@ export class FormationChecklistRowComponent {
   /** Fired for the `provisionable`/`request` action kinds only — `manual` opens the drawer instead; the orchestrator owns the actual service call. */
   public readonly actionTriggered = output<FormationItem>();
 
-  /** `#gatedAction` template context per action kind — typed at the definition site (see `FORMATION_GATED_ROW_ACTIONS`), not inline in the template where `*ngTemplateOutlet` context is untyped. */
+  /** `#gatedAction`/`#externalLinkAction` template contexts, keyed by action kind — typed at the definition site (see `FORMATION_GATED_ROW_ACTIONS`/`FORMATION_LINK_ROW_ACTIONS`), not inline in the template where `*ngTemplateOutlet` context is untyped. */
   protected readonly gatedActions = FORMATION_GATED_ROW_ACTIONS;
+  protected readonly linkActions = FORMATION_LINK_ROW_ACTIONS;
 
-  protected readonly statusLabel = computed(() => STATUS_LABEL[this.item().status]);
-  protected readonly statusSeverity = computed(() => STATUS_SEVERITY[this.item().status]);
+  protected readonly statusLabel = computed(() => FORMATION_ITEM_STATUS_LABELS[this.item().status]);
+  protected readonly statusSeverity = computed(() => FORMATION_ITEM_STATUS_SEVERITY[this.item().status]);
   protected readonly statusOutlined = computed(() => this.item().status === 'not_started');
   /** `provisionable`/`request` actions change status the same way complete/skip do — hide them once the item is already terminal. */
   protected readonly isActionable = computed(() => this.item().status !== 'done' && this.item().status !== 'skipped');

@@ -1,7 +1,7 @@
 // Copyright The Linux Foundation and each contributor to LFX.
 // SPDX-License-Identifier: MIT
 
-import type { ButtonProps } from './components.interface';
+import type { ButtonSeverity } from './components.interface';
 import type { FormationActivity, FormationItem, FormationItemStatus, FormationSubStage, FormationTemplateSection } from './formation.interface';
 
 /**
@@ -44,13 +44,23 @@ export interface FormationRenderedSection {
 }
 
 /**
- * `FormationChecklistRowComponent`'s `#gatedAction` `&lt;ng-template&gt;` context — one entry per
+ * `FormationChecklistRowComponent`'s `#gatedAction` `<ng-template>` context — one entry per
  * `provisionable`/`request` action kind. `testidPrefix` carries the full `data-testid` prefix (not
  * a bare suffix) so it stays greppable from the value that produces it, per GH-1958 review.
+ * `severity` is the non-optional `ButtonSeverity` (not `ButtonProps['severity']`, which admits
+ * `undefined`) so a missing/mistyped severity fails the `satisfies` check at the definition site.
  */
 export interface FormationRowActionConfig {
   testidPrefix: string;
   label: string;
-  severity: ButtonProps['severity'];
+  severity: ButtonSeverity;
   outlined: boolean;
+}
+
+/**
+ * `FormationChecklistRowComponent`'s `#externalLinkAction` `<ng-template>` context — one entry per
+ * `link`/`status_only` action kind. See `FormationRowActionConfig` for the `testidPrefix` rationale.
+ */
+export interface FormationLinkRowActionConfig {
+  testidPrefix: string;
 }
