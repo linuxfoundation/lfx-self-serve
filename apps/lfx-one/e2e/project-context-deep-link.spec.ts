@@ -641,8 +641,9 @@ test.describe('Vote edit deep-link resolves the vote’s project context (GH-156
     });
     await expect(page.getByTestId('vote-manage-title')).toBeVisible({ timeout: PAGE_LOAD_TIMEOUT });
 
-    // Still on the edit page (no access-denied redirect), and the context follows the vote.
-    expect(page.url()).toContain(`/project/votes/${MOCK_VOTE_UID}/edit`);
+    // Still on the edit page (no access-denied redirect): the sync canonicalizes the URL to
+    // the vote's foundation tier — await the rewrite instead of racing it.
+    await expect(page).toHaveURL(new RegExp(`/foundation/votes/${MOCK_VOTE_UID}/edit`), { timeout: ELEMENT_TIMEOUT });
     await expect(page.getByTestId('project-selector')).toContainText('Test Foundation', { timeout: ELEMENT_TIMEOUT });
   });
 
