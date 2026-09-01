@@ -6,6 +6,7 @@ import { Component, input, Signal } from '@angular/core';
 import { Committee } from '@lfx-one/shared/interfaces';
 import { FormGroup, ReactiveFormsModule } from '@angular/forms';
 import { CalendarComponent } from '@components/calendar/calendar.component';
+import { CheckboxComponent } from '@components/checkbox/checkbox.component';
 import { CommitteeSelectorComponent } from '@components/committee-selector/committee-selector.component';
 import { InputTextComponent } from '@components/input-text/input-text.component';
 import { SelectComponent } from '@components/select/select.component';
@@ -14,7 +15,16 @@ import { COMMITTEE_LABEL, VOTE_ELIGIBLE_PARTICIPANTS, VOTE_LABEL } from '@lfx-on
 
 @Component({
   selector: 'lfx-vote-basics',
-  imports: [ReactiveFormsModule, InputTextComponent, TextareaComponent, SelectComponent, CalendarComponent, CommitteeSelectorComponent, LowerCasePipe],
+  imports: [
+    ReactiveFormsModule,
+    InputTextComponent,
+    TextareaComponent,
+    SelectComponent,
+    CalendarComponent,
+    CheckboxComponent,
+    CommitteeSelectorComponent,
+    LowerCasePipe,
+  ],
   templateUrl: './vote-basics.component.html',
 })
 export class VoteBasicsComponent {

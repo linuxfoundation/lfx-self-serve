@@ -399,6 +399,8 @@ export interface VoteFormValue {
   eligible_participants: string;
   /** Vote close/end date */
   close_date: Date | null;
+  /** Whether voters may abstain from voting */
+  allow_abstain: boolean;
   /** Array of question form values */
   questions: QuestionFormValue[];
   /** Array of comment-prompt form values (optional, creator authoring only) */

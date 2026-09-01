@@ -120,6 +120,7 @@ export function mapVoteToFormValue(vote: Vote): VoteFormValue {
     committee,
     eligible_participants: mapFiltersToEligibility(vote.committee_filters),
     close_date: vote.end_time ? new Date(vote.end_time) : null,
+    allow_abstain: vote.allow_abstain ?? false,
     questions: (vote.poll_questions?.filter((question) => !isDraftPlaceholderPollQuestion(question)) ?? []).map(mapApiQuestionToFormValue),
     commentPrompts: (vote.poll_comment_prompts ?? []).map(mapApiCommentPromptToFormValue),
   };
@@ -239,6 +240,7 @@ export function buildCreateVoteRequest(formValue: VoteFormValue, projectUid: str
     project_uid: projectUid,
     committee_uid: formValue.committee?.uid || '',
     committee_filters: mapEligibilityToFilters(formValue.eligible_participants),
+    allow_abstain: formValue.allow_abstain,
     poll_questions: formValue.questions.map(mapQuestionToApiFormat),
     poll_comment_prompts: mapCommentPromptsToApiFormat(formValue.commentPrompts),
   };
@@ -256,6 +258,7 @@ export function buildDraftVoteRequest(formValue: VoteFormValue, projectUid: stri
     project_uid: projectUid,
     committee_uid: formValue.committee?.uid || '',
     committee_filters: mapEligibilityToFilters(formValue.eligible_participants),
+    allow_abstain: formValue.allow_abstain,
     poll_questions,
     poll_comment_prompts: mapCommentPromptsToApiFormat(formValue.commentPrompts),
   };
@@ -275,6 +278,7 @@ export function buildUpdateVoteRequest(formValue: VoteFormValue, projectUid: str
     project_uid: projectUid,
     committee_uid: formValue.committee?.uid || '',
     committee_filters: mapEligibilityToFilters(formValue.eligible_participants),
+    allow_abstain: formValue.allow_abstain,
     poll_questions: formValue.questions.map(mapQuestionToApiFormat),
     poll_comment_prompts: mapCommentPromptsToApiFormat(formValue.commentPrompts),
   };
@@ -292,6 +296,7 @@ export function buildDraftUpdateVoteRequest(formValue: VoteFormValue, projectUid
     project_uid: projectUid,
     committee_uid: formValue.committee?.uid || '',
     committee_filters: mapEligibilityToFilters(formValue.eligible_participants),
+    allow_abstain: formValue.allow_abstain,
     poll_questions,
     poll_comment_prompts: mapCommentPromptsToApiFormat(formValue.commentPrompts),
   };

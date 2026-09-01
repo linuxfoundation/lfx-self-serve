@@ -413,6 +413,7 @@ export class VoteManageComponent {
       committee: formValue.committee,
       eligible_participants: formValue.eligible_participants,
       close_date: formValue.close_date,
+      allow_abstain: formValue.allow_abstain,
     });
 
     // Rebuild questions FormArray (Step 2)
@@ -460,6 +461,7 @@ export class VoteManageComponent {
       committee: new FormControl<CommitteeReference | null>(null, [Validators.required, validCommitteeReference()]),
       eligible_participants: new FormControl('', [Validators.required]),
       close_date: new FormControl<Date | null>(null, [Validators.required]),
+      allow_abstain: new FormControl<boolean>(false, { nonNullable: true }),
 
       // Step 2: Vote Questions (array of questions)
       questions: new FormArray([this.createQuestionFormGroup()], [Validators.minLength(1)]),

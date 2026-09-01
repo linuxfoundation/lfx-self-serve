@@ -132,6 +132,12 @@
               Select a date after today when this {{ voteLabel.singular | lowercase }} will close and no longer accept responses.
             </p>
           </div>
+
+          <!-- Allow Abstain -->
+          <div class="flex flex-col gap-1">
+            <lfx-checkbox [form]="form()" control="allow_abstain" label="Allow Abstain" data-testid="vote-allow-abstain-checkbox"></lfx-checkbox>
+            <p class="text-xs text-gray-400">Allow voters to abstain from voting instead of selecting an option.</p>
+          </div>
         </div>
       </div>
     </div>
