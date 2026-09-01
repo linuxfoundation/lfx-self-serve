@@ -5,12 +5,13 @@ import { Component, computed, inject, Signal, signal } from '@angular/core';
 import { toObservable, toSignal } from '@angular/core/rxjs-interop';
 import { StatCardGridComponent } from '@components/stat-card-grid/stat-card-grid.component';
 import { FormationService } from '@services/formation.service';
-import type { Formation, FormationsQueueFilterState, FormationsQueueResponse, StatCardItem } from '@lfx-one/shared/interfaces';
+import type { Formation, FormationsQueueFilterState, FormationsQueueResponse, ReasonPromptDialogResult, StatCardItem } from '@lfx-one/shared/interfaces';
+import { isValidUrl } from '@lfx-one/shared/utils';
 import { MessageService } from 'primeng/api';
 import { DialogService } from 'primeng/dynamicdialog';
 import { BehaviorSubject, catchError, combineLatest, finalize, of, switchMap, take } from 'rxjs';
 
-import { ReasonPromptDialogComponent, ReasonPromptDialogResult } from '@components/reason-prompt-dialog/reason-prompt-dialog.component';
+import { ReasonPromptDialogComponent } from '@components/reason-prompt-dialog/reason-prompt-dialog.component';
 
 import { FormationsTableComponent } from '../components/formations-table/formations-table.component';
 
@@ -86,6 +87,15 @@ export class FormationsQueueComponent {
       .pipe(take(1))
       .subscribe({
         next: (result) => {
+          // deep_link_url is fixture-constructed today (a fixed base + an encoded slug), but it's
+          // API-sourced the same way action_href/link.href are — validate it the same way before
+          // it ever reaches window.open, so the #1957 swap can't turn this into a javascript: sink.
+          if (!isValidUrl(result.deep_link_url)) {
+            console.error('[FormationsQueue] Rejected unsafe deep_link_url', result.deep_link_url);
+            this.messageService.add({ severity: 'error', summary: 'Error', detail: 'Could not open the admin tool.' });
+            return;
+          }
+
           const opened = window.open(result.deep_link_url, '_blank', 'noopener,noreferrer');
           if (!opened) {
             // Popup blocked — this fires from an async response callback, outside the click's

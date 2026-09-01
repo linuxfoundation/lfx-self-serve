@@ -66,11 +66,28 @@ test.describe('Formation Checklist section (GH-1958)', () => {
     await expect(page.getByTestId('formation-item-drawer-history')).toContainText('updated notes');
   });
 
-  test('the "Choose a template" empty state renders when no formation exists yet for the project', async ({ page }) => {
+  test('the "Choose a template" empty state renders when no template has been chosen', async ({ page }) => {
     await stubFormationFlag(page, true);
-    await mockFormationChecklistApis(page, { project: buildBaseProject(FORMATION_PROJECT_SLUG), hasFormation: false });
+    await mockFormationChecklistApis(page, { project: buildBaseProject(FORMATION_PROJECT_SLUG), checklistState: 'no-template' });
+    await gotoProjectOverview(page, FORMATION_PROJECT_SLUG);
+
+    await expect(page.getByTestId('formation-checklist-empty-no-template')).toBeVisible({ timeout: DATA_LOAD_TIMEOUT });
+  });
+
+  test('the "hasn\'t started" empty state renders when a template is chosen but has no items yet', async ({ page }) => {
+    await stubFormationFlag(page, true);
+    await mockFormationChecklistApis(page, { project: buildBaseProject(FORMATION_PROJECT_SLUG), checklistState: 'no-items' });
+    await gotoProjectOverview(page, FORMATION_PROJECT_SLUG);
+
+    await expect(page.getByTestId('formation-checklist-empty-no-items')).toBeVisible({ timeout: DATA_LOAD_TIMEOUT });
+  });
+
+  test('the inline error state renders (with a working Retry) on a 500 from the checklist endpoint', async ({ page }) => {
+    await stubFormationFlag(page, true);
+    await mockFormationChecklistApis(page, { project: buildBaseProject(FORMATION_PROJECT_SLUG), checklistState: 'error' });
     await gotoProjectOverview(page, FORMATION_PROJECT_SLUG);
 
     await expect(page.getByTestId('formation-checklist-inline-error')).toBeVisible({ timeout: DATA_LOAD_TIMEOUT });
+    await expect(page.getByTestId('formation-checklist-retry')).toBeVisible();
   });
 });

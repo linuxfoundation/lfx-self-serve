@@ -6,20 +6,8 @@ import { toSignal } from '@angular/core/rxjs-interop';
 import { FormControl, FormGroup, ReactiveFormsModule } from '@angular/forms';
 import { ButtonComponent } from '@components/button/button.component';
 import { TextareaComponent } from '@components/textarea/textarea.component';
+import type { ReasonPromptDialogData, ReasonPromptDialogResult } from '@lfx-one/shared/interfaces';
 import { DynamicDialogConfig, DynamicDialogRef } from 'primeng/dynamicdialog';
-
-export interface ReasonPromptDialogData {
-  /** e.g. "Skip {{title}}" — rendered as the body's leading sentence. */
-  prompt: string;
-  placeholder: string;
-  confirmLabel: string;
-  /** Defaults to `'danger'`. */
-  confirmSeverity?: 'danger' | 'primary';
-}
-
-export interface ReasonPromptDialogResult {
-  reason: string;
-}
 
 /**
  * Generic "confirm with a required reason" dialog — opened via `DialogService.open()`. Backs both

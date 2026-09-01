@@ -15,7 +15,7 @@ import type { FormationDrawerData, FormationItem, FormationItemLink } from '@lfx
 import { isValidUrl } from '@lfx-one/shared/utils';
 import { MessageService } from 'primeng/api';
 import { DrawerModule } from 'primeng/drawer';
-import { catchError, finalize, of, skip, switchMap, take, tap } from 'rxjs';
+import { BehaviorSubject, catchError, combineLatest, finalize, of, skip, switchMap, take, tap } from 'rxjs';
 
 const EMPTY_DATA: FormationDrawerData = { item: null, history: [] };
 
@@ -44,6 +44,8 @@ export class FormationItemDrawerComponent {
     dueDate: new FormControl<Date | null>(null),
   });
 
+  private readonly reload$ = new BehaviorSubject<void>(undefined);
+
   protected readonly loading: WritableSignal<boolean> = signal(false);
   protected readonly loadFailed: WritableSignal<boolean> = signal(false);
   protected readonly drawerData: Signal<FormationDrawerData> = this.initDrawerData();
@@ -68,7 +70,10 @@ export class FormationItemDrawerComponent {
           this.itemChanged.emit(updated);
           this.messageService.add({ severity: 'success', summary: 'Marked done', detail: `"${updated.title}" is done.` });
         },
-        error: () => this.messageService.add({ severity: 'error', summary: 'Error', detail: 'Could not mark this item done.' }),
+        error: (error: unknown) => {
+          console.error('[FormationItemDrawer] Mark complete failed', error);
+          this.messageService.add({ severity: 'error', summary: 'Error', detail: 'Could not mark this item done.' });
+        },
       });
   }
 
@@ -91,17 +96,22 @@ export class FormationItemDrawerComponent {
       .subscribe({
         next: (updated) => {
           this.itemUpdated.emit(updated);
+          // Re-fetch so `item()`/`history()` in this still-open drawer reflect the save (the new
+          // history entry included) instead of showing pre-save data until the drawer is reopened.
+          this.reload$.next();
           this.messageService.add({ severity: 'success', summary: 'Saved', detail: 'Item details updated.' });
         },
-        error: () => this.messageService.add({ severity: 'error', summary: 'Error', detail: 'Could not save item details.' }),
+        error: (error: unknown) => {
+          console.error('[FormationItemDrawer] Save details failed', error);
+          this.messageService.add({ severity: 'error', summary: 'Error', detail: 'Could not save item details.' });
+        },
       });
   }
 
   private initDrawerData(): Signal<FormationDrawerData> {
     return toSignal(
-      toObservable(this.visible).pipe(
-        skip(1),
-        switchMap((isVisible) => {
+      combineLatest([toObservable(this.visible).pipe(skip(1)), this.reload$]).pipe(
+        switchMap(([isVisible]) => {
           const uid = this.itemUid();
           if (!isVisible || !uid) {
             return of(EMPTY_DATA);

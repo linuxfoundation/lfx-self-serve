@@ -6,19 +6,26 @@ import { Component, computed, inject, Signal, signal } from '@angular/core';
 import { EmptyStateComponent } from '@components/empty-state/empty-state.component';
 import { ProjectContextService } from '@services/project-context.service';
 import { FormationService } from '@services/formation.service';
-import type { FormationChecklistPageState, FormationChecklistResponse, FormationItem, FormationTemplateSection } from '@lfx-one/shared/interfaces';
+import type {
+  FormationChecklistPageState,
+  FormationChecklistResponse,
+  FormationItem,
+  FormationTemplateSection,
+  ReasonPromptDialogResult,
+} from '@lfx-one/shared/interfaces';
 import { MessageService } from 'primeng/api';
 import { SkeletonModule } from 'primeng/skeleton';
 import { DialogService } from 'primeng/dynamicdialog';
 import { BehaviorSubject, catchError, combineLatest, finalize, of, switchMap, take } from 'rxjs';
 
-import { ReasonPromptDialogComponent, ReasonPromptDialogResult } from '@components/reason-prompt-dialog/reason-prompt-dialog.component';
+import { ReasonPromptDialogComponent } from '@components/reason-prompt-dialog/reason-prompt-dialog.component';
 
 import { FormationChecklistRowComponent } from '../formation-checklist-row/formation-checklist-row.component';
 import { FormationItemDrawerComponent } from '../formation-item-drawer/formation-item-drawer.component';
 import { FormationReadinessStripComponent } from '../formation-readiness-strip/formation-readiness-strip.component';
 
 const EMPTY_RESPONSE: FormationChecklistResponse | null = null;
+const ORPHAN_SECTION_KEY = '__orphan__';
 
 interface RenderedSection {
   section: FormationTemplateSection;
@@ -55,13 +62,32 @@ export class FormationChecklistSectionComponent {
   protected readonly template = computed(() => this.response()?.template ?? null);
   protected readonly items = computed(() => this.response()?.items ?? []);
 
-  /** Driven by `template().sections`, not a hardcoded key list — a template revision (#1957/#1959) that adds or renames a section still renders instead of silently dropping items. */
+  /**
+   * Driven by `template().sections`, not a hardcoded key list — a template revision (#1957/#1959)
+   * that adds or renames a section still renders instead of silently dropping items. Any item
+   * whose `section_key` matches none of the template's sections (exactly what a rename produces
+   * for items still carrying the old key) is bucketed into a synthetic fallback section rather
+   * than dropped — see `ORPHAN_SECTION_KEY`.
+   */
   protected readonly renderedSections: Signal<RenderedSection[]> = computed(() => {
     const items = this.items();
-    return (this.template()?.sections ?? []).map((section) => ({
+    const sections = this.template()?.sections ?? [];
+    const knownKeys = new Set(sections.map((section) => section.key));
+
+    const rendered: RenderedSection[] = sections.map((section) => ({
       section,
       items: items.filter((item) => item.section_key === section.key),
     }));
+
+    const orphans = items.filter((item) => !knownKeys.has(item.section_key));
+    if (orphans.length > 0) {
+      console.error('[FormationChecklistSection] Items with an unrecognized section_key', {
+        sectionKeys: orphans.map((item) => item.section_key),
+      });
+      rendered.push({ section: { key: ORPHAN_SECTION_KEY, title: 'Other', items: [] }, items: orphans });
+    }
+
+    return rendered;
   });
 
   protected readonly pageState: Signal<FormationChecklistPageState> = computed(() => {
