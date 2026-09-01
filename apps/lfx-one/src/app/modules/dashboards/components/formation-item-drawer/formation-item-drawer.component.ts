@@ -29,7 +29,6 @@ export class FormationItemDrawerComponent {
   private readonly messageService = inject(MessageService);
 
   public readonly itemUid = input<string | null>(null);
-  public readonly visible = model<boolean>(false);
 
   /** Fired for a status-changing action (Mark complete) — the section closes the drawer and refreshes the row list. */
   public readonly itemChanged = output<FormationItem>();
@@ -43,10 +42,14 @@ export class FormationItemDrawerComponent {
     dueDate: new FormControl<Date | null>(null),
   });
 
+  public readonly visible = model<boolean>(false);
+
   private readonly reload$ = new Subject<void>();
 
   protected readonly loading: WritableSignal<boolean> = signal(false);
   protected readonly loadFailed: WritableSignal<boolean> = signal(false);
+  /** Guards onMarkComplete/onSaveDetails against a double-click issuing two writes (and, for Mark complete, two history entries). */
+  protected readonly submitting: WritableSignal<boolean> = signal(false);
   protected readonly drawerData: Signal<FormationDrawerData> = this.initDrawerData();
   protected readonly item = computed(() => this.drawerData().item);
   protected readonly history = computed(() => this.drawerData().history);
@@ -59,11 +62,15 @@ export class FormationItemDrawerComponent {
 
   protected onMarkComplete(): void {
     const item = this.item();
-    if (!item) return;
+    if (!item || this.submitting()) return;
+    this.submitting.set(true);
 
     this.formationService
       .completeFormationItem(item.uid)
-      .pipe(take(1))
+      .pipe(
+        take(1),
+        finalize(() => this.submitting.set(false))
+      )
       .subscribe({
         next: (updated) => {
           this.itemChanged.emit(updated);
@@ -83,7 +90,8 @@ export class FormationItemDrawerComponent {
 
   protected onSaveDetails(): void {
     const item = this.item();
-    if (!item) return;
+    if (!item || this.submitting()) return;
+    this.submitting.set(true);
 
     this.formationService
       .updateFormationItem(item.uid, {
@@ -91,7 +99,10 @@ export class FormationItemDrawerComponent {
         owner_username: this.editForm.value.ownerUsername ?? '',
         due_date: this.editForm.value.dueDate ? this.editForm.value.dueDate.toISOString() : null,
       })
-      .pipe(take(1))
+      .pipe(
+        take(1),
+        finalize(() => this.submitting.set(false))
+      )
       .subscribe({
         next: (updated) => {
           this.itemUpdated.emit(updated);

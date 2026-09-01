@@ -1,11 +1,16 @@
 // Copyright The Linux Foundation and each contributor to LFX.
 // SPDX-License-Identifier: MIT
 
-import { describe, expect, it } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
 import { FORMATION_ORPHAN_SECTION } from '../constants/formation.constants';
 import type { FormationItem, FormationItemStatus, FormationTemplateSection } from '../interfaces/formation.interface';
-import { collectFormationOrphanItems, deriveFormationReadinessSummary, groupFormationItemsBySection } from './formation-checklist.utils';
+import {
+  collectFormationOrphanItems,
+  deriveFormationReadinessSummary,
+  formatFormationRelativeDayCount,
+  groupFormationItemsBySection,
+} from './formation-checklist.utils';
 
 let uidCounter = 0;
 
@@ -90,6 +95,13 @@ describe('deriveFormationReadinessSummary', () => {
     expect(noGatingItems.isActivating).toBe(false);
   });
 
+  it('treats a skipped gating item as resolved, not open — skipFormationItem is the designed escape hatch for a gate that cannot be completed', () => {
+    const doneAndSkipped = deriveFormationReadinessSummary([item({ status: 'done', is_gating: true }), item({ status: 'skipped', is_gating: true })]);
+
+    expect(doneAndSkipped.openGatingItems).toBe(0);
+    expect(doneAndSkipped.isActivating).toBe(true);
+  });
+
   it('ignores a status value outside the known union rather than corrupting counts into NaN', () => {
     const items = [item({ status: 'done' }), item({ status: 'weird_future_status' as FormationItemStatus })];
 
@@ -171,5 +183,49 @@ describe('groupFormationItemsBySection', () => {
     const rendered = groupFormationItemsBySection([], [section('legal-and-entity')]);
 
     expect(rendered).toHaveLength(1);
+  });
+});
+
+describe('formatFormationRelativeDayCount', () => {
+  const NOW = new Date('2026-06-15T12:00:00.000Z');
+
+  beforeEach(() => {
+    vi.useFakeTimers();
+    vi.setSystemTime(NOW);
+  });
+
+  afterEach(() => {
+    vi.useRealTimers();
+  });
+
+  it('returns "today" for the current moment', () => {
+    expect(formatFormationRelativeDayCount(NOW)).toBe('today');
+  });
+
+  it('pluralizes a future day count', () => {
+    expect(formatFormationRelativeDayCount(new Date(NOW.getTime() + 3 * 86_400_000))).toBe('3 days');
+  });
+
+  it('singularizes exactly 1 day in the future', () => {
+    expect(formatFormationRelativeDayCount(new Date(NOW.getTime() + 1 * 86_400_000))).toBe('1 day');
+  });
+
+  it('singularizes exactly 1 day in the past', () => {
+    expect(formatFormationRelativeDayCount(new Date(NOW.getTime() - 1 * 86_400_000))).toBe('1 day ago');
+  });
+
+  it('pluralizes a past day count', () => {
+    expect(formatFormationRelativeDayCount(new Date(NOW.getTime() - 3 * 86_400_000))).toBe('3 days ago');
+  });
+
+  // Math.round's half-up behavior means the "today" boundary isn't symmetric: -0.5 days rounds to
+  // -0 ("today"), +0.5 days rounds to 1 ("1 day"). Documenting the actual boundary rather than
+  // changing it — a 12-hour skew either way is well inside "today" for this label's purpose.
+  it('rounds a date 12 hours in the past to "today"', () => {
+    expect(formatFormationRelativeDayCount(new Date(NOW.getTime() - 12 * 60 * 60 * 1000))).toBe('today');
+  });
+
+  it('rounds a date 12 hours in the future to "1 day"', () => {
+    expect(formatFormationRelativeDayCount(new Date(NOW.getTime() + 12 * 60 * 60 * 1000))).toBe('1 day');
   });
 });

@@ -35,8 +35,12 @@ export const mockFormations: Record<string, Formation> = {
     sub_stage: 'engaged',
     announcement_date: new Date(Date.now() + 3 * 24 * 60 * 60 * 1000).toISOString(),
     is_activating: false,
-    gating_items_open: 3,
-    gating_items_total: 6,
+    // Mirrors mockFormationItems['formation:cascade-data-alliance']: 2 gating items
+    // (draft-project-record=done, contribution-agreement-executed=in_progress) — this same fixture
+    // backs both the checklist (counts derived from items) and the queue (counts read from this
+    // row), so a mismatch here would render two different "N of M open" numbers for one formation.
+    gating_items_open: 1,
+    gating_items_total: 2,
     blocking_item_title: 'Contribution agreement executed',
     lead: SYNTHETIC_LEAD,
     proposer: null,

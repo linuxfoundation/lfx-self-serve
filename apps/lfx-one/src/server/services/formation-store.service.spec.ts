@@ -11,9 +11,11 @@ import {
   getStoredFormation,
   getStoredItem,
   getStoredItemsForFormation,
+  MAX_FORMATIONS_TRACKED,
   nextActivityUid,
   putStoredFormation,
   putStoredItem,
+  resetFormationStoreForTests,
   seedFormation,
 } from './formation-store.service';
 
@@ -159,6 +161,38 @@ describe('formation-store.service', () => {
       expect(result).toHaveLength(200);
       // Most-recent-first — the cap must drop the oldest entries, not the newest.
       expect(result[0]?.message).toBe('entry 209');
+    });
+  });
+
+  describe('formation capacity', () => {
+    it('evicts the oldest formation (FIFO) once MAX_FORMATIONS_TRACKED is exceeded, cleaning up its items and activity too', () => {
+      resetFormationStoreForTests();
+
+      const oldest = buildFormation();
+      const oldestItem = buildItem(oldest.uid);
+      seedFormation(oldest, [oldestItem]);
+      appendActivity({
+        uid: nextActivityUid(),
+        formation_uid: oldest.uid,
+        formation_item_uid: null,
+        type: 'note_added',
+        actor: { username: 'alex.rivera', name: 'Alex Rivera' },
+        message: 'first',
+        metadata: null,
+        created_at: '',
+      });
+
+      // One more than capacity — pushes the oldest formation out.
+      for (let i = 0; i < MAX_FORMATIONS_TRACKED; i += 1) {
+        seedFormation(buildFormation(), []);
+      }
+
+      expect(getStoredFormation(oldest.uid)).toBeUndefined();
+      expect(getStoredItem(oldestItem.uid)).toBeUndefined();
+      expect(getStoredItemsForFormation(oldest.uid)).toEqual([]);
+      expect(getActivityForFormation(oldest.uid)).toEqual([]);
+
+      resetFormationStoreForTests();
     });
   });
 

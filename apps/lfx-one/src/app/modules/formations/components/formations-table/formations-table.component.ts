@@ -37,6 +37,8 @@ export class FormationsTableComponent {
 
   public readonly rows = input.required<Formation[]>();
   public readonly loading = input<boolean>(false);
+  /** Formation uids with an Accept/Decline currently in flight — drives the per-row button `[loading]` state. */
+  public readonly submittingUids = input<ReadonlySet<string>>(new Set());
 
   public readonly filtersChange = output<FormationsQueueFilterState>();
   public readonly accept = output<Formation>();

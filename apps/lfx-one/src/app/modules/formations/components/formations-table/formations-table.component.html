@@ -70,6 +70,7 @@
                     label="Accept"
                     size="small"
                     severity="primary"
+                    [loading]="submittingUids().has(row.uid)"
                     (onClick)="onAccept(row)"
                     (click)="$event.stopPropagation()"
                     [attr.data-testid]="'formations-table-accept-' + row.uid" />
@@ -78,6 +79,7 @@
                     size="small"
                     severity="secondary"
                     [outlined]="true"
+                    [loading]="submittingUids().has(row.uid)"
                     (onClick)="onDecline(row)"
                     (click)="$event.stopPropagation()"
                     [attr.data-testid]="'formations-table-decline-' + row.uid" />

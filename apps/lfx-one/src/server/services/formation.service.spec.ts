@@ -8,12 +8,13 @@ import type { Request } from 'express';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 
 const getProjectById = vi.fn();
+const getProjectIdBySlug = vi.fn();
 const canComplete = vi.fn();
 
 vi.mock('./project.service', () => ({
   ProjectService: class {
     public getProjectById = getProjectById;
-    public getProjectIdBySlug = vi.fn();
+    public getProjectIdBySlug = getProjectIdBySlug;
   },
 }));
 vi.mock('./formation-item-access.service', () => ({
@@ -24,8 +25,16 @@ vi.mock('./logger.service', () => ({
 }));
 
 const { FormationService } = await import('./formation.service');
-const { seedFormation, putStoredFormation, getStoredItem, getStoredFormation, getActivityForItem, getActivityForFormation, resetFormationStoreForTests } =
-  await import('./formation-store.service');
+const {
+  seedFormation,
+  putStoredFormation,
+  putStoredItem,
+  getStoredItem,
+  getStoredFormation,
+  getActivityForItem,
+  getActivityForFormation,
+  resetFormationStoreForTests,
+} = await import('./formation-store.service');
 const { STATIC_QUEUE_FORMATIONS } = await import('../helpers/formation-fixture.helper');
 const { logger } = await import('./logger.service');
 
@@ -104,8 +113,63 @@ describe('FormationService', () => {
   beforeEach(() => {
     resetFormationStoreForTests();
     getProjectById.mockReset();
+    getProjectIdBySlug.mockReset();
     canComplete.mockReset();
     vi.mocked(logger.info).mockClear();
+  });
+
+  describe('getProjectFormation', () => {
+    it('generates and returns a fixture checklist, enriched with can_complete, for a project with no prior writes', async () => {
+      getProjectIdBySlug.mockResolvedValue({ uid: 'project-uid-1', exists: true });
+      getProjectById.mockResolvedValue({ slug: 'test-project', name: 'Test Project', parent_uid: null, stage: 'Formation - Engaged' });
+      canComplete.mockResolvedValue(true);
+
+      const result = await service.getProjectFormation(buildReq(), 'test-project');
+
+      expect(result.data_source).toBe('fixture');
+      expect(result.formation.parent_project_uid).toBe('project-uid-1');
+      expect(result.items.length).toBeGreaterThan(0);
+      expect(result.items.every((item) => item.can_complete === true)).toBe(true);
+    });
+
+    it('throws ResourceNotFoundError when the project does not exist for this caller', async () => {
+      getProjectIdBySlug.mockResolvedValue({ uid: undefined, exists: false });
+
+      await expect(service.getProjectFormation(buildReq(), 'does-not-exist')).rejects.toThrow(/not found/i);
+      expect(getProjectById).not.toHaveBeenCalled();
+    });
+
+    it('returns the stored (mutated) items on a second read, not a freshly regenerated set', async () => {
+      getProjectIdBySlug.mockResolvedValue({ uid: 'project-uid-2', exists: true });
+      getProjectById.mockResolvedValue({ slug: 'test-project-2', name: 'Test Project 2', parent_uid: null, stage: 'Formation - Engaged' });
+      canComplete.mockResolvedValue(true);
+
+      const first = await service.getProjectFormation(buildReq(), 'test-project-2');
+      const targetItem = first.items[0];
+      putStoredFormation(first.formation);
+      // Mutated directly through the store (not a service mutation method) — this test only needs to
+      // prove getProjectFormation reads the store, not that a mutation method writes to it correctly.
+      const mutated: FormationItem = { ...getStoredItem(targetItem.uid)!, notes: 'mutated' };
+      putStoredItem(mutated);
+
+      const second = await service.getProjectFormation(buildReq(), 'test-project-2');
+
+      expect(second.items.find((item) => item.uid === targetItem.uid)?.notes).toBe('mutated');
+    });
+  });
+
+  describe('getFormationItemDetail', () => {
+    it('returns the enriched item alongside its activity history', async () => {
+      const { item } = seedItem({ is_gating: true });
+      getProjectById.mockResolvedValue({});
+      canComplete.mockResolvedValue(true);
+
+      const result = await service.getFormationItemDetail(buildReq(), item.uid);
+
+      expect(result.item.uid).toBe(item.uid);
+      expect(result.item.can_complete).toBe(true);
+      expect(result.history).toEqual(getActivityForItem(item.formation_uid, item.uid));
+    });
   });
 
   describe('getFormationItemOrThrow — project-scoped read access', () => {

@@ -19,16 +19,59 @@ const formationStore = new Map<string, Formation>();
 const activityStore = new Map<string, FormationActivity[]>();
 let activityCounter = 0;
 
+/**
+ * Secondary index so `getStoredItemsForFormation` (called on every checklist read and every
+ * `refreshFormationReadiness`) doesn't full-scan `itemStore.values()` per request — keeps
+ * `getStoredItem`'s O(1) flat lookup by item uid alone (the only key callers have) while this index
+ * answers "every item for formation X" in O(items in that formation) instead of O(all items ever seen).
+ */
+const itemUidsByFormation = new Map<string, Set<string>>();
+
 /** Per-formation activity cap — this is a long-lived process-global Map with no eviction otherwise; bounds it against unbounded growth over the process lifetime. */
 const MAX_ACTIVITY_PER_FORMATION = 200;
+
+/**
+ * Caps the number of distinct formations this process retains — otherwise `formationStore`/
+ * `itemStore` grow by one formation (~5-18 items) for every project ever viewed, for the lifetime
+ * of the process. Eviction is insertion-order (FIFO via `Map`'s iteration order), not true LRU —
+ * a formation seeded long ago but viewed a moment ago can still be evicted first. Acceptable for
+ * fixture-only, short-lived-by-design data (see the store's own TODO(#1957) deletion note); a real
+ * LRU would need to re-insert on every access, which for this store isn't worth the complexity.
+ */
+export const MAX_FORMATIONS_TRACKED = 500;
+
+function indexItem(item: FormationItem): void {
+  let uids = itemUidsByFormation.get(item.formation_uid);
+  if (!uids) {
+    uids = new Set();
+    itemUidsByFormation.set(item.formation_uid, uids);
+  }
+  uids.add(item.uid);
+}
+
+function evictOldestFormationIfOverCapacity(): void {
+  if (formationStore.size <= MAX_FORMATIONS_TRACKED) return;
+  const oldestUid = formationStore.keys().next().value;
+  if (oldestUid === undefined) return;
+
+  formationStore.delete(oldestUid);
+  const itemUids = itemUidsByFormation.get(oldestUid);
+  if (itemUids) {
+    for (const itemUid of itemUids) itemStore.delete(itemUid);
+    itemUidsByFormation.delete(oldestUid);
+  }
+  activityStore.delete(oldestUid);
+}
 
 export function seedFormation(formation: Formation, items: FormationItem[]): void {
   if (!formationStore.has(formation.uid)) {
     formationStore.set(formation.uid, formation);
+    evictOldestFormationIfOverCapacity();
   }
   for (const item of items) {
     if (!itemStore.has(item.uid)) {
       itemStore.set(item.uid, item);
+      indexItem(item);
     }
   }
 }
@@ -42,11 +85,19 @@ export function getStoredItem(uid: string): FormationItem | undefined {
 }
 
 export function getStoredItemsForFormation(formationUid: string): FormationItem[] {
-  return [...itemStore.values()].filter((item) => item.formation_uid === formationUid);
+  const uids = itemUidsByFormation.get(formationUid);
+  if (!uids) return [];
+  const items: FormationItem[] = [];
+  for (const uid of uids) {
+    const item = itemStore.get(uid);
+    if (item) items.push(item);
+  }
+  return items;
 }
 
 export function putStoredItem(item: FormationItem): void {
   itemStore.set(item.uid, item);
+  indexItem(item);
 }
 
 export function putStoredFormation(formation: Formation): void {
@@ -76,5 +127,6 @@ export function resetFormationStoreForTests(): void {
   itemStore.clear();
   formationStore.clear();
   activityStore.clear();
+  itemUidsByFormation.clear();
   activityCounter = 0;
 }

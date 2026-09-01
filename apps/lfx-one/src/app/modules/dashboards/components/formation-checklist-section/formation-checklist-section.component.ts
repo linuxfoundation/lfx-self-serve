@@ -50,6 +50,9 @@ export class FormationChecklistSectionComponent {
   public readonly drawerVisible = signal(false);
   public readonly drawerItemUid = signal<string | null>(null);
 
+  /** Item uids with a row action or skip currently in flight — guards a double-click into issuing two writes (and two history entries). */
+  private readonly submittingItemUids = signal<ReadonlySet<string>>(new Set());
+
   private readonly response: Signal<FormationChecklistResponse | null> = this.initResponse();
   protected readonly formation = computed(() => this.response()?.formation ?? null);
   protected readonly template = computed(() => this.response()?.template ?? null);
@@ -69,6 +72,7 @@ export class FormationChecklistSectionComponent {
   });
 
   protected onRetry(): void {
+    this.loading.set(true);
     this.refresh$.next();
   }
 
@@ -78,15 +82,21 @@ export class FormationChecklistSectionComponent {
   }
 
   protected onRowAction(item: FormationItem): void {
+    if (!this.beginSubmitting(item.uid)) return;
     const call$ = item.action === 'request' ? this.formationService.requestFormationItem(item.uid) : this.formationService.completeFormationItem(item.uid);
 
-    call$.pipe(take(1)).subscribe({
-      next: () => this.refresh$.next(),
-      error: (error: unknown) => {
-        console.error('[FormationChecklistSection] Row action failed', error);
-        this.messageService.add({ severity: 'error', summary: 'Error', detail: 'Could not complete this action.' });
-      },
-    });
+    call$
+      .pipe(
+        take(1),
+        finalize(() => this.endSubmitting(item.uid))
+      )
+      .subscribe({
+        next: () => this.refresh$.next(),
+        error: (error: unknown) => {
+          console.error('[FormationChecklistSection] Row action failed', error);
+          this.messageService.add({ severity: 'error', summary: 'Error', detail: 'Could not complete this action.' });
+        },
+      });
   }
 
   /** Mark complete changed the item's status — close the drawer and let the refreshed row list show it. */
@@ -113,11 +123,14 @@ export class FormationChecklistSectionComponent {
     });
 
     ref?.onClose.pipe(take(1)).subscribe((result: ReasonPromptDialogResult | undefined) => {
-      if (!result?.reason) return;
+      if (!result?.reason || !this.beginSubmitting(item.uid)) return;
 
       this.formationService
         .skipFormationItem(item.uid, result.reason)
-        .pipe(take(1))
+        .pipe(
+          take(1),
+          finalize(() => this.endSubmitting(item.uid))
+        )
         .subscribe({
           next: () => {
             this.refresh$.next();
@@ -132,11 +145,32 @@ export class FormationChecklistSectionComponent {
     });
   }
 
+  /** Returns false (a no-op guard) if `uid` already has a mutation in flight. */
+  private beginSubmitting(uid: string): boolean {
+    if (this.submittingItemUids().has(uid)) return false;
+    this.submittingItemUids.update((uids) => new Set(uids).add(uid));
+    return true;
+  }
+
+  private endSubmitting(uid: string): void {
+    this.submittingItemUids.update((uids) => {
+      const next = new Set(uids);
+      next.delete(uid);
+      return next;
+    });
+  }
+
   private initResponse(): Signal<FormationChecklistResponse | null> {
     // Projected to the slug and deduped — activeContext() is a computed that can re-emit a fresh
     // object with the same slug (e.g. the context service enriching it), and without
     // distinctUntilChanged that would still re-trigger this fetch on every such re-set.
     const slug$ = toObservable(computed(() => this.projectContextService.activeContext()?.slug ?? null)).pipe(distinctUntilChanged());
+
+    // Distinguishes a genuine (re)load — first mount or a project-context switch — from a
+    // post-mutation refresh$ tick with the same slug: only the former should flash the panels to
+    // skeletons. onRetry sets `loading` itself before calling refresh$, since a retry needs the
+    // skeleton back even though the slug hasn't changed.
+    let lastSlug: string | null = null;
 
     return toSignal(
       combineLatest([this.refresh$, slug$]).pipe(
@@ -150,7 +184,10 @@ export class FormationChecklistSectionComponent {
           }
 
           this.loadFailed.set(false);
-          this.loading.set(true);
+          if (slug !== lastSlug) {
+            lastSlug = slug;
+            this.loading.set(true);
+          }
           return this.formationService.getProjectFormation(slug).pipe(
             tap((response) => this.logOrphanSectionKeys(response)),
             catchError((error: unknown) => {
