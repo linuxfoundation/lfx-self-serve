@@ -174,16 +174,16 @@ export class PlanningTabComponent implements OnInit {
    * foundation shares, and the duplicate cannot be removed from this UI. The panel asks for a
    * narrower term instead of offering the create.
    */
-  protected readonly hsCapped = signal(false);
+  protected readonly hsCreateSuppressed = signal(false);
   /**
    * The narrower claim: HubSpot itself returned fewer campaigns than it matched.
    *
-   * Separate from `hsCapped` because only this one licenses the words "there are more it did
+   * Separate from `hsCreateSuppressed` because only this one licenses the words "there are more it did
    * not return". A result HubSpot returned in full, whose rows the local scorer rejected, is
    * equally inconclusive but is NOT truncated — and telling an operator to narrow their search
    * term there points them away from the actual remedy, which is to check the name.
    */
-  protected readonly hsTruncated = signal(false);
+  protected readonly hsCompletenessUnproven = signal(false);
   protected readonly hsMatches = signal<{ name: string; hs_utm: string }[]>([]);
   /**
    * Whether the match picker has anything to offer.
@@ -450,8 +450,8 @@ export class PlanningTabComponent implements OnInit {
       this.hsUtm.set(null);
       this.hsMatches.set([]);
       this.hsNotFound.set(false);
-      this.hsCapped.set(false);
-      this.hsTruncated.set(false);
+      this.hsCreateSuppressed.set(false);
+      this.hsCompletenessUnproven.set(false);
       this.hsUnconfirmed.set(false);
       this.hsStatus.set(null);
       this.hsSearching.set(false);
@@ -1376,8 +1376,8 @@ export class PlanningTabComponent implements OnInit {
     this.hsStatus.set(null);
     this.hsMatches.set([]);
     this.hsNotFound.set(false);
-    this.hsCapped.set(false);
-    this.hsTruncated.set(false);
+    this.hsCreateSuppressed.set(false);
+    this.hsCompletenessUnproven.set(false);
     // The lookup is what RESOLVES the unknown, so the unconfirmed state clears when one starts.
     this.hsUnconfirmed.set(false);
     this.hsUtm.set(null);
@@ -1427,15 +1427,18 @@ export class PlanningTabComponent implements OnInit {
             this.hsMatches.set(result?.all_matches ?? []);
             // Set from the SAME response that reported the absence, so the two can never
             // disagree about which search they describe.
-            // hsCapped gates the CREATE, so it takes the union answer: any reason a match might
-            // be hidden is a reason not to offer a non-idempotent write into a shared namespace.
-            this.hsCapped.set(result?.inconclusive === true);
+            // NAMED for what it holds, not for the field it reads. It gates the CREATE and takes
+            // the union answer — any reason a match might be hidden is a reason not to offer a
+            // non-idempotent write into a shared namespace — so it reads `inconclusive`, which is
+            // the broader signal. Calling it hsCapped while it held `inconclusive` (and its twin
+            // holding `capped`) made each signal look like the field named after the other.
+            this.hsCreateSuppressed.set(result?.inconclusive === true);
             // The COPY distinguishes them, because the two remedies differ — but neither may
             // claim TRUNCATION as fact. `capped` is set whenever completeness cannot be proven,
             // which includes HubSpot omitting `total` entirely, so "it matched more than it
             // could return" would be fabricated for a response that never said so, and would
             // send the operator to narrow a term when the remedy is to check the name.
-            this.hsTruncated.set(result?.capped === true);
+            this.hsCompletenessUnproven.set(result?.capped === true);
             this.hsStatus.set(this.noMatchStatus(result?.capped === true, result?.inconclusive === true));
           }
         },

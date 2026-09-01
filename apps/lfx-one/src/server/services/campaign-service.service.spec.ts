@@ -2137,6 +2137,19 @@ describe('CampaignServiceClient.buildAudience', () => {
     expect(result.error).toContain('not configured');
   });
 
+  it('does not surface raw transport text as an upstream message', async () => {
+    // Transport failures used to be 500, so the 5xx rule caught them. They are now 503 — a lost
+    // connection is an unconfirmed outcome, not proof nothing happened — which would otherwise
+    // make them "controlled" and put "Request failed: fetch failed" where an operator-facing
+    // remedy belongs. The BFF tags its own transport errors NETWORK_ERROR.
+    proxyRequestWithResponse.mockRejectedValueOnce(new MicroserviceError('Request failed: fetch failed', 503, 'NETWORK_ERROR'));
+
+    const result = await new CampaignServiceClient().generateEmailCopy(req, 'tlf', 'b-1');
+
+    expect(result.error).not.toContain('fetch failed');
+    expect(result.error).toContain('Try again');
+  });
+
   it('falls back to the generic message for an unexpected server error', async () => {
     proxyRequestWithResponse.mockRejectedValueOnce(new MicroserviceError('panic: nil map read at 0x4f2a', 500, 'INTERNAL'));
 

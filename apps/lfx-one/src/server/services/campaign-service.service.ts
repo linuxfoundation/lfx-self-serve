@@ -2044,10 +2044,21 @@ function toUpstreamEventDetails(details: CampaignEventDetails): Record<string, u
  *
  * 5xx OTHER than a deliberate 503 stays generic: an unexpected server error can carry stack or
  * infrastructure detail that is not the operator's to read, and "try again" is honest advice for
- * it. A transport failure has no upstream message at all and falls through the same way.
+ * it.
+ *
+ * A TRANSPORT failure falls through too, and now needs saying explicitly. It used to be a 500,
+ * so the 5xx rule caught it; it is now a 503 (a lost connection is an unconfirmed outcome, not a
+ * proof nothing happened), which would otherwise make it "controlled" and put raw transport text
+ * — "Request failed: fetch failed" — where an operator-facing remedy belongs. The BFF raises
+ * those itself and tags them NETWORK_ERROR, which is what distinguishes them from a 503 the
+ * service deliberately returned.
  */
 function upstreamMessageOr(error: unknown, fallback: string): string {
   if (!(error instanceof MicroserviceError)) {
+    return fallback;
+  }
+  // A BFF-raised transport failure is not an upstream message, whatever its status.
+  if (error.code === 'NETWORK_ERROR' || error.code === 'TIMEOUT') {
     return fallback;
   }
   const controlled = error.statusCode === 503 || (error.statusCode >= 400 && error.statusCode < 500);

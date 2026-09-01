@@ -83,13 +83,13 @@
                 namespace every foundation shares, and the duplicate cannot be removed from
                 this UI.
               -->
-              @if (hsNotFound() && !hsUtm() && hsCapped()) {
+              @if (hsNotFound() && !hsUtm() && hsCreateSuppressed()) {
                 <div class="rounded-lg border border-amber-200 bg-amber-50 p-3" data-testid="planning-hubspot-capped">
                   <!--
                     Both branches suppress the create; only the first may claim TRUNCATION, and
                     they point at different remedies — narrow the term vs check the name.
                   -->
-                  @if (hsTruncated()) {
+                  @if (hsCompletenessUnproven()) {
                     <p class="text-sm text-amber-700">
                       No match for "{{ lastLookedUpEvent }}" among the campaigns HubSpot returned — and HubSpot did not confirm that search was complete, so the
                       campaign may still exist. Check HubSpot directly, or search a narrower term, before creating one.
@@ -103,7 +103,7 @@
                 </div>
               }
 
-              @if (hsNotFound() && !hsUtm() && !hsCapped()) {
+              @if (hsNotFound() && !hsUtm() && !hsCreateSuppressed()) {
                 <!--
                   The exposure warning is REQUIRED by the upstream contract, not decoration.
                   HubSpot's campaign namespace is the whole LF portal, so a campaign created here
