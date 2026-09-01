@@ -106,6 +106,30 @@ describe('ProjectPickerComponent', () => {
     }
   });
 
+  it('degrades to an empty result on a failed search and stays usable for the next one — there is no local catchError, so this depends on ProjectService.searchProjects never erroring', async () => {
+    vi.useFakeTimers();
+    try {
+      fixture = TestBed.createComponent(ProjectPickerComponent);
+      fixture.componentRef.setInput('form', form);
+      fixture.componentRef.setInput('uidControl', 'parent_project_uid');
+      fixture.detectChanges();
+
+      // ProjectService.searchProjects' own contract: it never emits an error, it degrades to
+      // of([]) internally on failure — simulated here directly, matching that contract.
+      searchProjects.mockReturnValueOnce(of([]));
+      instance().searchForm.controls.query.setValue('ab');
+      await vi.advanceTimersByTimeAsync(300);
+      expect(instance().results()).toEqual([]);
+
+      searchProjects.mockReturnValueOnce(of([project]));
+      instance().searchForm.controls.query.setValue('my');
+      await vi.advanceTimersByTimeAsync(300);
+      expect(instance().results()).toEqual([project]);
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
   it('renders the "not sure" hint and no results dropdown before any query', () => {
     const el: HTMLElement = fixture.nativeElement;
     expect(el.querySelector('[data-testid="propose-project-picker-results"]')).toBeNull();

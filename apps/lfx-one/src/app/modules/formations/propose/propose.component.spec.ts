@@ -162,6 +162,46 @@ describe('ProposeComponent', () => {
     expect(component.form.get('parent_project_uid')?.value).toBeNull();
   });
 
+  // `initDuplicateNameMatch`'s `startWith('')` fires (harmlessly, trimmed.length<3) at construction,
+  // under real timers, scheduling a real 400ms debounce timer independent of the fake clock these
+  // tests install afterward. Draining it with a real wait before switching to fake timers keeps
+  // that stray timer from firing mid-assertion and clobbering the signal back to null.
+  const settleConstructionDebounce = () => new Promise((resolve) => setTimeout(resolve, 450));
+
+  it('the duplicate-name signal degrades to null on a failed search — there is no local catchError, so this depends on ProjectService.searchProjects never erroring', async () => {
+    const component = await createComponent();
+    const protectedAccess = component as any;
+    await settleConstructionDebounce();
+
+    vi.useFakeTimers();
+    try {
+      // ProjectService.searchProjects' own contract: it never emits an error, it degrades to
+      // of([]) internally on failure — simulated here directly, matching that contract.
+      searchProjects.mockReturnValueOnce(of([]));
+      component.form.get('project_name')?.setValue('Example Proj');
+      await vi.advanceTimersByTimeAsync(400);
+      expect(protectedAccess.duplicateNameMatch()).toBeNull();
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  it('the duplicate-name signal reports a real match — proving the stream stays alive, not just that it can return null', async () => {
+    const component = await createComponent();
+    const protectedAccess = component as any;
+    await settleConstructionDebounce();
+
+    vi.useFakeTimers();
+    try {
+      searchProjects.mockReturnValueOnce(of([{ uid: 'x', name: 'Existing Project' } as Project]));
+      component.form.get('project_name')?.setValue('Existing Project');
+      await vi.advanceTimersByTimeAsync(400);
+      expect(protectedAccess.duplicateNameMatch()).toBe('Existing Project');
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
   it('adds and removes an additional ("who else") contact', async () => {
     const component = await createComponent();
 
