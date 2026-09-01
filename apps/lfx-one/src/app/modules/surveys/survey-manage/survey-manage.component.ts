@@ -1,6 +1,7 @@
 // Copyright The Linux Foundation and each contributor to LFX.
 // SPDX-License-Identifier: MIT
 
+import { HttpErrorResponse } from '@angular/common/http';
 import { Component, computed, DestroyRef, inject, Signal, signal } from '@angular/core';
 import { takeUntilDestroyed, toObservable, toSignal } from '@angular/core/rxjs-interop';
 import { FormControl, FormGroup, ReactiveFormsModule, Validators } from '@angular/forms';
@@ -431,13 +432,18 @@ Thank you,
             return of(null);
           }
           return this.surveyService.getSurvey(id).pipe(
-            catchError(() => {
-              this.messageService.add({
-                severity: 'error',
-                summary: 'Error',
-                detail: `${this.surveyLabel.singular} not found`,
-              });
-              this.router.navigate(['/surveys']);
+            catchError((error) => {
+              // Only a real 404 ejects — the fetch exists for context sync (no form pre-population
+              // yet), so a transient 5xx/network blip leaves the page mounted; the context simply
+              // stays uncorrected rather than mislabeling a server error as "not found".
+              if (error instanceof HttpErrorResponse && error.status === 404) {
+                this.messageService.add({
+                  severity: 'error',
+                  summary: 'Error',
+                  detail: `${this.surveyLabel.singular} not found`,
+                });
+                this.router.navigate(['/surveys']);
+              }
               return of(null);
             })
           );

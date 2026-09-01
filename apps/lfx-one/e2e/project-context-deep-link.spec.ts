@@ -356,9 +356,11 @@ async function stubMailingListEditDetail(page: Page, list: ReturnType<typeof bui
 }
 
 /**
- * Survey detail payload for the edit page. `enriched: false` simulates the BFF project
- * enrichment having failed (project_slug/project_name/is_foundation absent) so the component's
- * resolve-by-uid fallback is exercised instead (GH-1569).
+ * Survey detail payload for the edit page, shaped as the BFF emits it post-GH-1569: project
+ * identity lives in committees[0] (as upstream sends it — the upstream detail schema has no
+ * top-level project_uid), `project_uid` top-level is the BFF's flattened stamp, and the slug/name/
+ * tier fields appear only when BFF enrichment succeeded. `enriched: false` simulates the
+ * enrichment having failed so the component's resolve-by-uid fallback is exercised instead (GH-1569).
  */
 function buildSurveyStub(enriched: boolean) {
   return {
@@ -367,7 +369,16 @@ function buildSurveyStub(enriched: boolean) {
     survey_status: 'draft',
     project_uid: MOCK_FOUNDATION_UID,
     ...(enriched ? { project_slug: MOCK_FOUNDATION_SLUG, project_name: 'Test Foundation', is_foundation: true } : {}),
-    committees: [],
+    committees: [
+      {
+        committee_uid: MOCK_COMMITTEE_UID,
+        committee_name: 'Governing Board',
+        project_uid: MOCK_FOUNDATION_UID,
+        project_name: 'Test Foundation',
+        total_recipients: 0,
+        total_responses: 0,
+      },
+    ],
     committee_category: '',
     is_nps_survey: false,
     is_project_survey: false,

@@ -97,7 +97,7 @@ export interface Survey {
   is_project_survey: boolean;
   /** Associated committees */
   committees: SurveyCommittee[];
-  /** Primary project UID (list rows: flattened from committees[0] by the BFF; detail: from the upstream payload) */
+  /** Primary project UID (flattened from committees[0] and stamped by the BFF on both list rows and the detail response — upstream sends no top-level project_uid) */
   project_uid?: string;
   /** Project display name (BFF-enriched on list rows and the authenticated detail response) */
   project_name?: string;

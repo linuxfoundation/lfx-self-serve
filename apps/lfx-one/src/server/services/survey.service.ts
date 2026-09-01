@@ -123,6 +123,12 @@ export class SurveyService {
       });
     }
 
+    // The upstream detail payload (SurveyScheduleResult) carries project identity only inside
+    // committees[] — flatten the primary project uid and stamp it top-level so the enrichment
+    // below, the writerGuard probe, and the manage page's resolve-by-uid fallback all receive a
+    // real uid (GH-1569; mirrors the list path's flatten in getSurveys).
+    survey.project_uid ??= survey.committees?.[0]?.project_uid;
+
     if (includeProject) {
       const project = await fetchEntityProject(req, this.projectService, survey.project_uid, { operation: 'get_survey_by_id', survey_uid: survey.uid });
       if (project) {

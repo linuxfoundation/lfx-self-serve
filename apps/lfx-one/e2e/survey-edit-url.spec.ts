@@ -37,6 +37,7 @@ const OTHER_FOUNDATION_UID = 'f0000000-0000-0000-0000-00000000d002';
 const OTHER_PROJECT_SLUG = 'other-project';
 const OTHER_PROJECT_UID = 'p0000000-0000-0000-0000-00000000d003';
 const MOCK_SURVEY_UID = 's1000000-0000-0000-0000-00000000d001';
+const MOCK_COMMITTEE_UID = 'c0000000-0000-0000-0000-00000000d001';
 
 function buildProjectStub(uid: string, slug: string, name: string) {
   return {
@@ -66,10 +67,11 @@ function buildProjectStub(uid: string, slug: string, name: string) {
 }
 
 /**
- * Surveys-table row / edit-page detail payload. The list shape mirrors the BFF `getSurveys`
- * response post-GH-1569 (project_uid flattened from committees[0], project fields enriched);
- * omitting `projectSlug`/`isFoundation` mirrors an enrichment failure, where the row must fall
- * back to the flat path.
+ * Surveys-table row / edit-page detail payload, shaped as the BFF emits it post-GH-1569: project
+ * identity lives in committees[0] (as upstream sends it), `project_uid` top-level is the BFF's
+ * flattened stamp, and `project_slug`/`project_name`/`is_foundation` appear only when the BFF
+ * enrichment succeeded. Omitting `projectSlug`/`isFoundation` mirrors an enrichment failure,
+ * where the row must fall back to the flat path.
  */
 function buildSurveyStub(owner: { projectUid: string; projectSlug?: string; projectName?: string; isFoundation?: boolean }) {
   return {
@@ -80,7 +82,16 @@ function buildSurveyStub(owner: { projectUid: string; projectSlug?: string; proj
     ...(owner.projectSlug !== undefined ? { project_slug: owner.projectSlug } : {}),
     ...(owner.projectName !== undefined ? { project_name: owner.projectName } : {}),
     ...(owner.isFoundation !== undefined ? { is_foundation: owner.isFoundation } : {}),
-    committees: [],
+    committees: [
+      {
+        committee_uid: MOCK_COMMITTEE_UID,
+        committee_name: 'Test Committee',
+        project_uid: owner.projectUid,
+        project_name: owner.projectName ?? '',
+        total_recipients: 0,
+        total_responses: 0,
+      },
+    ],
     committee_category: '',
     is_nps_survey: false,
     is_project_survey: false,
@@ -279,9 +290,12 @@ test.describe('Survey edit URL derives from the survey’s owning tier (GH-1569)
 
     await page.getByTestId(`surveys-edit-${MOCK_SURVEY_UID}`).click();
 
-    await expect(page).toHaveURL(new RegExp(`/foundation/surveys/${MOCK_SURVEY_UID}/edit\\?project=${MOCK_FOUNDATION_SLUG}$`), {
-      timeout: PAGE_LOAD_TIMEOUT,
-    });
+    await expect(page).toHaveURL(
+      new RegExp(`/foundation/surveys/${MOCK_SURVEY_UID}/edit\\?project=${MOCK_FOUNDATION_SLUG}&committee_uid=${MOCK_COMMITTEE_UID}$`),
+      {
+        timeout: PAGE_LOAD_TIMEOUT,
+      }
+    );
     await expect(page.getByTestId('survey-manage-title')).toBeVisible({ timeout: PAGE_LOAD_TIMEOUT });
   });
 
@@ -302,7 +316,7 @@ test.describe('Survey edit URL derives from the survey’s owning tier (GH-1569)
 
     await page.getByTestId(`surveys-edit-${MOCK_SURVEY_UID}`).click();
 
-    await expect(page).toHaveURL(new RegExp(`/project/surveys/${MOCK_SURVEY_UID}/edit\\?project=${OTHER_PROJECT_SLUG}$`), {
+    await expect(page).toHaveURL(new RegExp(`/project/surveys/${MOCK_SURVEY_UID}/edit\\?project=${OTHER_PROJECT_SLUG}&committee_uid=${MOCK_COMMITTEE_UID}$`), {
       timeout: PAGE_LOAD_TIMEOUT,
     });
     await expect(page.getByTestId('survey-manage-title')).toBeVisible({ timeout: PAGE_LOAD_TIMEOUT });
@@ -331,9 +345,10 @@ test.describe('Survey edit URL derives from the survey’s owning tier (GH-1569)
 
     await page.getByTestId(`surveys-edit-${MOCK_SURVEY_UID}`).click();
 
-    // The button navigates flat; lensRedirectGuard prefixes by the ACTIVE lens (project here).
-    // The flat hop itself is an atomic guard redirect — only the settled URL is observable.
-    await expect(page).toHaveURL(new RegExp(`/project/surveys/${MOCK_SURVEY_UID}/edit$`), { timeout: PAGE_LOAD_TIMEOUT });
+    // The button navigates flat (with only the row's committee scope); lensRedirectGuard prefixes
+    // by the ACTIVE lens (project here). The flat hop itself is an atomic guard redirect — only
+    // the settled URL is observable.
+    await expect(page).toHaveURL(new RegExp(`/project/surveys/${MOCK_SURVEY_UID}/edit\\?committee_uid=${MOCK_COMMITTEE_UID}$`), { timeout: PAGE_LOAD_TIMEOUT });
     expect(new URL(page.url()).searchParams.has('project')).toBe(false);
     await expect(page.getByTestId('survey-manage-title')).toBeVisible({ timeout: PAGE_LOAD_TIMEOUT });
   });
