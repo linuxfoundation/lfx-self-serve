@@ -111,9 +111,8 @@ import { ViewsDropdownComponent } from './components/views-dropdown/views-dropdo
 const EMPTY_FEED_RESPONSE: SocialListeningFeedResponse = { mentions: [], computedAt: null };
 
 /**
- * Social Listening — Foundation Lens page (ED + LF Staff), LFXV2-3016: PCC's mentions feed on the
- * 3015 endpoints — windowed pagination (100-row windows, ±2 cached), query-param sync, and reset
- * effects on scope/filter/foundation change. Saved views are deferred.
+ * Social Listening — Foundation Lens page (ED + LF Staff), LFXV2-3016: PCC's mentions feed on the 3015 endpoints —
+ * windowed pagination (100-row windows, ±2 cached), query-param sync, and reset effects on scope/filter/foundation change.
  */
 @Component({
   selector: 'lfx-social-listening',
@@ -162,7 +161,7 @@ export class SocialListeningComponent {
   public readonly selectedPlatform = signal('all');
   public readonly searchInput = signal(this.initialSearch);
 
-  // === Filter signals (wired into the predicate now; the filters panel UI lands in LFXV2-3017) ===
+  // === Filter signals (wired into the predicate and the filters panel, LFXV2-3017) ===
   public readonly selectedSentiment = signal('all');
   public readonly selectedRelevance = signal('all');
   public readonly selectedLanguage = signal('all');
@@ -407,7 +406,7 @@ export class SocialListeningComponent {
     // for owned keys at default so merge removes them. queryParamsEqual prevents write loops.
     effect(() => {
       const target = encodePredicateToQueryParams(this.currentPredicate(), this.currentScope(), this.activeViewId(), this.defaultPeriod);
-      // Don't strip a deep-linked ?search= while the debounced query is still catching up to the input.
+      // Don't strip a deep-linked ?q= while the debounced query is still catching up to the input.
       const pendingSearch = this.searchInput().trim();
       if (pendingSearch.length >= MENTION_SEARCH_MIN_CHARS && pendingSearch !== this.searchQuery()) return;
       if (queryParamsEqual(target, this.route.snapshot.queryParams)) return;

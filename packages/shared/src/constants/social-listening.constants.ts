@@ -1,7 +1,7 @@
 // Copyright The Linux Foundation and each contributor to LFX.
 // SPDX-License-Identifier: MIT
 
-/** Social Listening runtime constants — option lists double as server-side validation whitelists (3015). No hex colors (styling rule): Tailwind `colorClass` + `TagSeverity`. */
+/** Social Listening runtime constants — option lists double as server-side validation whitelists (LFXV2-3015). No hex colors (styling rule): Tailwind `colorClass` + `TagSeverity`. */
 
 import type { FilterPillOption } from '../interfaces/dashboard-metric.interface';
 import type {
