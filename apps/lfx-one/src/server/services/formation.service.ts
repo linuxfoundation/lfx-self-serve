@@ -102,7 +102,7 @@ export class FormationService {
 
   public async getFormationItemDetail(req: Request, itemUid: string): Promise<{ item: FormationItem; history: FormationActivity[] }> {
     const item = await this.getFormationItemOrThrow(req, itemUid);
-    const [enriched] = await this.enrichItems(req, [item]);
+    const enriched = await this.enrichSingle(req, item);
     return { item: enriched, history: getActivityForItem(item.formation_uid, item.uid) };
   }
 
@@ -494,8 +494,25 @@ export class FormationService {
     }
   }
 
+  /**
+   * `allSettled`, not `all` — a transient failure enriching one item (e.g. the `checkLFStaff` call
+   * behind `canComplete`) must not blank the entire checklist/queue response for items that resolved
+   * fine; a rejected item is logged and dropped rather than failing the whole read.
+   */
   private async enrichItems(req: Request, items: FormationItem[]): Promise<FormationItem[]> {
-    return Promise.all(items.map((item) => this.enrichSingle(req, item)));
+    const results = await Promise.allSettled(items.map((item) => this.enrichSingle(req, item)));
+    const enriched: FormationItem[] = [];
+    results.forEach((result, index) => {
+      if (result.status === 'fulfilled') {
+        enriched.push(result.value);
+        return;
+      }
+      logger.warning(req, 'enrich_formation_item', 'Failed to enrich formation item with can_complete, dropping from response', {
+        item_uid: items[index].uid,
+        error: result.reason instanceof Error ? result.reason.message : 'Unknown error',
+      });
+    });
+    return enriched;
   }
 
   private async enrichSingle(req: Request, item: FormationItem): Promise<FormationItem> {
