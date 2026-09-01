@@ -94,6 +94,10 @@ initializeServerConsoleOverride();
 const serverDistFolder = dirname(fileURLToPath(import.meta.url));
 const browserDistFolder = resolve(serverDistFolder, '../browser');
 
+// Cold-start phase marks (see #1378) — performance.now() is monotonic and
+// zeroed at process start, so each mark is elapsed-ms since the process spawned.
+const engineStartMs = performance.now();
+
 const angularApp = new AngularNodeAppEngine();
 const app = express();
 
@@ -365,6 +369,9 @@ app.use('/api/mktg-agents', mktgAgentsRouter);
 
 app.use('/public/api/*', apiErrorHandler);
 app.use('/api/*', apiErrorHandler);
+
+// Cold-start phase mark (see #1378) — router mounting + middleware complete.
+const routesReadyMs = performance.now();
 
 // Profile auth callback registered in Auth0 Profile Client.
 const profileCallbackController = new ProfileController();
@@ -695,11 +702,15 @@ async function gracefulShutdown(signal: string): Promise<void> {
 export function startServer() {
   const port = process.env['PORT'] || 4000;
   httpServer = app.listen(port, () => {
-    logger.debug(undefined, 'server_startup', 'Node Express server started', {
+    logger.info(undefined, 'server_startup', 'Node Express server started', {
       port,
       url: `http://localhost:${port}`,
       node_env: process.env['NODE_ENV'] || 'development',
       pm2: process.env['PM2'] === 'true',
+      // Cold-start phase breakdown (see #1378) — ms elapsed since process start.
+      engine_ms: Math.round(engineStartMs),
+      routes_ms: Math.round(routesReadyMs),
+      boot_ms: Math.round(performance.now()),
     });
   });
 }
