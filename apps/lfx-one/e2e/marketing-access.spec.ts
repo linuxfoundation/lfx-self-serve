@@ -28,6 +28,8 @@
  *   S8  Flag OFF (default) — grants present on the API response are ignored; behavior is byte-identical to pre-LFXV2-2236 ED/LF-staff-only gating
  *   S9  Flag ON  — marketing_auditor + campaign_manager grants do not unlock Health Metrics (ED/LF-Staff-only, LFXV2-2237)
  *   S10 Flag ON  — hybrid marketing_auditor (contributor + marketing grant) sees Marketing section under Project lens too, not just Foundation (LFXV2-2235)
+ *   S11 Flag ON  — marketing_auditor confirmed on project A, client-side switch to ungranted project B
+ *                  hides the Marketing section without a full page reload (PR #2028 review finding)
  *
  * This suite does NOT flip the server `LFX_MARKETING_OPS_FGA_ENABLED` env var or hit protected
  * analytics/campaigns routes directly — see `require-marketing-access.middleware.spec.ts` for
@@ -61,6 +63,17 @@ const MOCK_FOUNDATION_ITEM: LensItem = {
 /** Project-lens flavor of the mock item — `isFoundation: false` so a hybrid persona's `applyVisibilityFilters` doesn't strip it. */
 const MOCK_PROJECT_ITEM: LensItem = {
   ...MOCK_FOUNDATION_ITEM,
+  isFoundation: false,
+};
+
+/** A second, distinct project — used by S11 to switch scope client-side away from a granted project. */
+const MOCK_PROJECT_SLUG_B = 'test-project-b';
+
+const MOCK_PROJECT_ITEM_B: LensItem = {
+  uid: 'f0000000-0000-0000-0000-000000000002',
+  slug: MOCK_PROJECT_SLUG_B,
+  name: 'Test Project B',
+  logoUrl: null,
   isFoundation: false,
 };
 
@@ -125,6 +138,34 @@ async function stubPersona(page: Page, personas: string[], options: StubPersonaO
       }),
     })
   );
+}
+
+/**
+ * Slug-aware variant of {@link stubPersona} — returns different grants depending on the `?project=`
+ * query param `PersonaService.refreshEnrichedPersonas` sends per scope (persona.service.ts:198).
+ * Needed for S11: the plain `stubPersona` stub is static regardless of which slug is probed, so it
+ * can't reproduce a confirmed-on-A / denied-on-B scope switch.
+ */
+async function stubPersonaByProject(page: Page, personas: string[], grantsBySlug: Record<string, StubPersonaOptions>): Promise<void> {
+  await page.route('**/api/user/personas*', (route) => {
+    const url = route.request().url();
+    const slug = new URL(url).searchParams.get('project');
+    const { isLFStaff = false, isMarketingAuditor = false, isCampaignManager = false } = (slug && grantsBySlug[slug]) || {};
+    return route.fulfill({
+      status: 200,
+      contentType: 'application/json',
+      body: JSON.stringify({
+        personas,
+        personaProjects: {},
+        projects: [],
+        organizations: [],
+        isRootWriter: false,
+        isLFStaff,
+        isMarketingAuditor,
+        isCampaignManager,
+      }),
+    });
+  });
 }
 
 async function stubNavLensItems(page: Page, items: LensItem[] = [MOCK_FOUNDATION_ITEM], targetLens: NavLens = 'foundation'): Promise<void> {
@@ -416,5 +457,41 @@ test.describe('S10: Project lens — hybrid marketing_auditor (flag ON, contribu
       timeout: ELEMENT_TIMEOUT,
     });
     await expect(page.getByTestId(SIDEBAR.campaigns), 'persona=hybrid-marketing_auditor lens=project item=campaigns should be hidden').toHaveCount(0);
+  });
+});
+
+// ─── S11: scope switch A (granted) → B (ungranted) hides Marketing without a full reload ──
+
+test.describe('S11: Project lens — marketing_auditor confirmed on project A, switches to ungranted project B', () => {
+  test.beforeEach(async ({ page }) => {
+    await stubMarketingOpsFlag(page, true);
+    await stubPersonaByProject(page, ['contributor'], {
+      [MOCK_PROJECT_ITEM.slug]: { isMarketingAuditor: true },
+      [MOCK_PROJECT_SLUG_B]: {},
+    });
+    await setPersonaCookie(page, ['contributor']);
+    await stubNavLensItems(page, [MOCK_PROJECT_ITEM, MOCK_PROJECT_ITEM_B], 'project');
+    await stubProjectApi(page, MOCK_PROJECT_ITEM.slug, false);
+    await stubProjectApi(page, MOCK_PROJECT_SLUG_B, false);
+    await gotoAndWaitForSidebar(page, `/project/overview?project=${MOCK_PROJECT_ITEM.slug}`);
+  });
+
+  test('Marketing section disappears after switching to project B via the project selector', async ({ page }) => {
+    await expect(page.getByTestId(SIDEBAR.marketingSection), 'persona=marketing_auditor project=A section=marketing').toBeVisible({
+      timeout: ELEMENT_TIMEOUT,
+    });
+
+    // Client-side scope switch — the project selector popover, not page.goto, so this exercises the
+    // reactive marketingPersonaSlug -> grantsByScope -> marketingSectionItem chain rather than a fresh SSR load.
+    await page.getByTestId('project-selector').click();
+    await page.getByTestId(`lens-item-${MOCK_PROJECT_SLUG_B}`).click();
+
+    await expect(page, 'switching to project B should update the URL').toHaveURL(new RegExp(`project=${MOCK_PROJECT_SLUG_B}`), {
+      timeout: ELEMENT_TIMEOUT,
+    });
+    await expect(page.getByTestId(SIDEBAR.marketingSection), 'persona=marketing_auditor project=B(no-grant) section=marketing should be hidden').toHaveCount(
+      0,
+      { timeout: ELEMENT_TIMEOUT }
+    );
   });
 });

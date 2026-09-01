@@ -262,13 +262,21 @@ export class SidebarNavService {
     { initialValue: false }
   );
 
-  // Keeps isMarketingAuditor/isCampaignManager in sync with the active foundation — the root-scoped
-  // fetch alone misses a per-project grant (LFXV2-2235 review finding). Read in canSeeMarketing below
-  // to register the dependency; the refreshed value lives on PersonaService's own signals.
+  // Keeps PersonaService.grantsByScope populated for the active foundation/project — the root-scoped
+  // fetch alone misses a per-project grant (LFXV2-2235 review finding). marketingSectionItem reads
+  // this same slug to look up grantsByScope for the active scope.
   // For project-lens-only marketing users, `selectedFoundation` is never populated because
   // foundation rows that the sidebar shows under the project lens are stored in `selectedProject`
   // (sidebar.component.ts:188-200). Fall back to selectedProject so the scoped probe fires as soon
   // as they pick any context, bootstrapping their first-session foundation grant.
+  // Always re-probes on a selectedProject change — a scope switch from a confirmed project A to an
+  // unprobed project B must not leave the sidebar showing A's (possibly no-longer-relevant) grant for
+  // B (PR #2028 Copilot review finding). This used to stop probing once a grant was confirmed, to
+  // avoid a `false` result for an unrelated project clobbering the confirmed grant — but that
+  // clobber risk lived entirely in the legacy global isMarketingAuditor/isCampaignManager signals,
+  // which marketingSectionItem no longer reads as its primary source. grantsByScope resolves each
+  // relation to its own scope key (writeGrantForScope), so a denial for project B is written under
+  // B's own key and cannot overwrite project A's already-confirmed entry.
   private readonly marketingPersonaSlug: Signal<string> = toSignal(
     toObservable(
       computed(() => {
@@ -278,15 +286,6 @@ export class SidebarNavService {
         const foundationSlug = this.projectContextService.selectedFoundation()?.slug;
         if (foundationSlug) {
           return foundationSlug;
-        }
-        // Only fall back to selectedProject while no marketing grant is confirmed yet. Once
-        // isMarketingAuditor/isCampaignManager is true, a later selectedProject change with no
-        // explicit selectedFoundation must not re-probe that unrelated project slug — a `false`
-        // result there would overwrite (not merge with) the already-confirmed foundation-scoped
-        // grant (LFXV2-2235 review finding: "project slug clears marketing grant"). A genuine
-        // foundation switch still re-verifies via the selectedFoundation branch above.
-        if (this.personaService.isMarketingAuditor() || this.personaService.isCampaignManager()) {
-          return '';
         }
         return this.projectContextService.selectedProject()?.slug ?? '';
       })
@@ -439,11 +438,11 @@ export class SidebarNavService {
   // 'Projects' switcher entry already relies on (lens.service.ts switchLens/isHybridPersona), not
   // an oversight introduced here.
   private readonly marketingSectionItem = computed((): SidebarMenuItem | null => {
-    this.marketingPersonaSlug();
+    const slug = this.marketingPersonaSlug();
     const marketingItems: SidebarMenuItem[] = [];
 
     const canSeeMarketingImpact =
-      this.personaService.canViewExecutiveDashboards() || (this.isMarketingOpsFgaEnabled() && this.personaService.isMarketingAuditor());
+      this.personaService.canViewExecutiveDashboards() || (this.isMarketingOpsFgaEnabled() && this.hasMarketingGrant(slug, 'isMarketingAuditor'));
     if (canSeeMarketingImpact) {
       marketingItems.push({
         label: 'Campaign Impact',
@@ -457,7 +456,7 @@ export class SidebarNavService {
     // A campaign_manager-only user (no ED, no marketing_auditor, not LF Staff) must still see this
     // item, so it cannot be nested inside the Campaign Impact check above.
     const canSeeCampaigns =
-      this.personaService.currentPersona() === 'executive-director' || (this.isMarketingOpsFgaEnabled() && this.personaService.isCampaignManager());
+      this.personaService.currentPersona() === 'executive-director' || (this.isMarketingOpsFgaEnabled() && this.hasMarketingGrant(slug, 'isCampaignManager'));
     if (canSeeCampaigns) {
       marketingItems.push({
         label: 'Campaigns',
@@ -620,5 +619,36 @@ export class SidebarNavService {
 
   private initCanSeeNewsletters(): Signal<boolean> {
     return computed(() => this.personaService.currentPersona() === 'executive-director' || this.projectContextService.canWrite());
+  }
+
+  /**
+   * Scope-aware grant check, mirroring `marketing-impact.component.ts`'s `initHasFullMarketingAccess`
+   * and `campaigns.component.ts`'s `hasCampaignAccess`. Reads `PersonaService.grantsByScope` for
+   * `slug` first, then falls back to the ROOT (`null`) entry, before falling back to the legacy
+   * global `isMarketingAuditor`/`isCampaignManager` signal gated by `marketingGrantSlug()` — the same
+   * per-scope-first ordering those two components use, so the sidebar can't disagree with the page a
+   * click lands on (PR #2028 Copilot review finding: sidebar visibility based on stale global signal).
+   */
+  private hasMarketingGrant(slug: string, relation: 'isMarketingAuditor' | 'isCampaignManager'): boolean {
+    const grants = this.personaService.grantsByScope();
+    const scopedGrant = slug ? grants.get(slug) : undefined;
+    if (scopedGrant?.[relation]) {
+      return true;
+    }
+    const rootGrant = grants.get(null);
+    if (rootGrant?.[relation]) {
+      return true;
+    }
+    // An authoritative `false` at either scope key must win over the legacy global signal below,
+    // which can be stale `true` from a different scope's earlier probe.
+    if (scopedGrant !== undefined || rootGrant !== undefined) {
+      return false;
+    }
+    // No per-scope entry yet — fall back to the global signal with the slug gate.
+    const grantSlug = this.personaService.marketingGrantSlug();
+    if (slug && grantSlug !== null && grantSlug !== slug) {
+      return false;
+    }
+    return relation === 'isMarketingAuditor' ? this.personaService.isMarketingAuditor() : this.personaService.isCampaignManager();
   }
 }
