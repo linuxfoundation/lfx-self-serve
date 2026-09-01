@@ -4,11 +4,12 @@
 import { ChangeDetectionStrategy, Component, computed, inject, Signal, signal } from '@angular/core';
 import { takeUntilDestroyed } from '@angular/core/rxjs-interop';
 import { FormControl, FormGroup, ReactiveFormsModule } from '@angular/forms';
-import { CLA_GROUP_SEARCH_DEBOUNCE_MS, CLA_GROUP_SEARCH_MIN_CHARS } from '@lfx-one/shared/constants';
-import type { ClaGroupOptionView, ClaGroupSearchResponse } from '@lfx-one/shared/interfaces';
-import { toClaGroupOptionView } from '@lfx-one/shared/utils';
+import { ALREADY_SIGNED_CLA_LABEL, CLA_GROUP_SEARCH_DEBOUNCE_MS, CLA_GROUP_SEARCH_MIN_CHARS } from '@lfx-one/shared/constants';
+import type { ClaGroupOptionView, ClaGroupSearchResponse, ClaGroupSelectDialogData, MyClaAgreement } from '@lfx-one/shared/interfaces';
+import { alreadySignedClaTooltip, coveringAgreementForGroup, toClaGroupOptionView } from '@lfx-one/shared/utils';
 import { MyClasService } from '@services/my-clas.service';
-import { DynamicDialogRef } from 'primeng/dynamicdialog';
+import { DynamicDialogConfig, DynamicDialogRef } from 'primeng/dynamicdialog';
+import { TooltipModule } from 'primeng/tooltip';
 import { catchError, debounceTime, map, of, Subject, switchMap } from 'rxjs';
 
 import { ButtonComponent } from '@components/button/button.component';
@@ -25,16 +26,29 @@ import { InputTextComponent } from '@components/input-text/input-text.component'
  * Closes with the chosen `ClaGroupOption`, or `null` if the contributor backs out; the caller
  * resolves the hand-off URL. Searching happens here and upstream rather than by filtering a
  * fetched list, so #1250 can put the real four-source search behind the same route untouched.
+ *
+ * A group the contributor already holds a CLA for stays in the list, grayed out, with a
+ * tooltip that says so (#1914). Hiding it would look like the project does not exist.
  */
 @Component({
   selector: 'lfx-cla-group-select',
-  imports: [ReactiveFormsModule, ButtonComponent, InputTextComponent],
+  imports: [ReactiveFormsModule, ButtonComponent, InputTextComponent, TooltipModule],
   templateUrl: './cla-group-select.component.html',
   changeDetection: ChangeDetectionStrategy.OnPush,
 })
 export class ClaGroupSelectComponent {
   private readonly ref = inject(DynamicDialogRef);
   private readonly myClasService = inject(MyClasService);
+  private readonly config = inject<DynamicDialogConfig<ClaGroupSelectDialogData>>(DynamicDialogConfig, { optional: true });
+
+  /** Chip on a grayed-out row. The tooltip sentence is computed per option. */
+  protected readonly alreadySignedLabel = ALREADY_SIGNED_CLA_LABEL;
+
+  /**
+   * The CLAs tab's loaded list. Optional so a test that never opens this through DialogService
+   * still constructs; no list means nothing is grayed out.
+   */
+  private readonly agreements: readonly MyClaAgreement[] = this.config?.data?.agreements ?? [];
 
   protected readonly searchForm = new FormGroup({
     query: new FormControl(''),
@@ -163,7 +177,7 @@ export class ClaGroupSelectComponent {
         break;
       case 'Enter': {
         const highlighted = options[this.highlightedIndex()];
-        if (!highlighted) return;
+        if (!highlighted || this.alreadySignedTooltip(highlighted)) return;
         event.preventDefault();
         this.onSelect(highlighted);
         break;
@@ -187,7 +201,18 @@ export class ClaGroupSelectComponent {
     this.pushSearch(this.searchForm.controls.query.value ?? '');
   }
 
+  /**
+   * Tooltip on a result the contributor already holds a CLA for. Undefined means the
+   * row is selectable. Kept as a method rather than precomputed onto the view model so
+   * a search-result update cannot drop the coverage the parent already loaded.
+   */
+  protected alreadySignedTooltip(option: ClaGroupOptionView): string | undefined {
+    const covering = coveringAgreementForGroup(this.agreements, option.claGroupId);
+    return covering ? alreadySignedClaTooltip(covering) : undefined;
+  }
+
   protected onSelect(option: ClaGroupOptionView): void {
+    if (this.alreadySignedTooltip(option)) return;
     this.selected.set(option);
     this.suppressNextEmit = true;
     const display = option.secondaryName ? `${option.primaryName} — ${option.secondaryName}` : option.primaryName;

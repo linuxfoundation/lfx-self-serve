@@ -206,6 +206,15 @@ export interface ClaGroupSearchResponse {
   results: ClaGroupOption[];
 }
 
+/**
+ * What the Sign a CLA group picker is given so it can gray out groups the contributor
+ * already holds (#1914). The list is the one already loaded on the CLAs tab — the picker
+ * does not fetch it again.
+ */
+export interface ClaGroupSelectDialogData {
+  agreements: MyClaAgreement[];
+}
+
 /** Picker row: a search result with display fields precomputed so the template calls nothing. */
 export interface ClaGroupOptionView extends ClaGroupOption {
   primaryName: string;

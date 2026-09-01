@@ -6,6 +6,7 @@ import { describe, expect, it } from 'vitest';
 import { PROFILE_TABS } from '../constants/profile.constants';
 import { ClaGroupOrg, ClaGroupOrgSource, ClaSignedVia, ClaStatus, MyClaAgreement, MyClasIdentitySummary } from '../interfaces/cla.interface';
 import {
+  alreadySignedClaTooltip,
   buildProfileTabs,
   claGroupPrimaryName,
   claGroupSecondaryName,
@@ -13,6 +14,7 @@ import {
   claSignRoute,
   claStatusLabel,
   claStatusSeverity,
+  coveringAgreementForGroup,
   gerritSignUrl,
   isMyClasEmpty,
   shouldShowGithubCta,
@@ -181,6 +183,47 @@ describe('claGroupPrimaryName / claGroupSecondaryName', () => {
   it('falls back to the unnamed literal only when the producer resolved neither name', () => {
     expect(claGroupPrimaryName({})).toBe('Unnamed CLA group');
     expect(claGroupSecondaryName({})).toBeNull();
+  });
+});
+
+describe('coveringAgreementForGroup', () => {
+  it('returns the first in-force agreement for that CLA group', () => {
+    const covering = agreement({ claGroupId: 'cg-1', kind: 'ICLA', status: 'valid' });
+    expect(coveringAgreementForGroup([covering, agreement({ id: 's2', claGroupId: 'cg-2' })], 'cg-1')).toBe(covering);
+  });
+
+  it('does not treat an invalidated agreement as already signed', () => {
+    expect(coveringAgreementForGroup([agreement({ claGroupId: 'cg-1', status: 'invalidated' })], 'cg-1')).toBeUndefined();
+  });
+
+  it('treats needs-attention, revoked, unknown, and superseded as already signed', () => {
+    const statuses: ClaStatus[] = ['needs_attention', 'revoked', 'unknown', 'superseded'];
+    for (const status of statuses) {
+      expect(coveringAgreementForGroup([agreement({ claGroupId: 'cg-1', status })], 'cg-1')?.status).toBe(status);
+    }
+  });
+
+  it('ignores a blank group id and a row with no group id', () => {
+    expect(coveringAgreementForGroup([agreement({ claGroupId: 'cg-1' })], '   ')).toBeUndefined();
+    expect(coveringAgreementForGroup([agreement({})], 'cg-1')).toBeUndefined();
+  });
+});
+
+describe('alreadySignedClaTooltip', () => {
+  it('names the ICLA and the identity it was signed as', () => {
+    expect(alreadySignedClaTooltip(agreement({ kind: 'ICLA', signedVia: 'github', signedAs: 'jellis' }))).toBe(
+      'You already have an ICLA for this CLA group. Signed as jellis (GitHub).'
+    );
+  });
+
+  it('names the employer when an ECLA has no signed-as identity', () => {
+    expect(alreadySignedClaTooltip(agreement({ kind: 'ECLA', companyName: 'Acme', pdfAvailable: false }))).toBe(
+      'You already have an ECLA for this CLA group, covered by Acme.'
+    );
+  });
+
+  it('falls back to the kind alone when there is nothing else to name', () => {
+    expect(alreadySignedClaTooltip(agreement({ kind: 'ICLA' }))).toBe('You already have an ICLA for this CLA group.');
   });
 });
 

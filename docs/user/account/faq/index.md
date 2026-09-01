@@ -4,7 +4,7 @@ description: Frequently asked questions about account settings, affiliations, id
 audience: [all]
 product_area: Account
 tags: [account, faq, settings, affiliations, cla, easycla, transactions, billing]
-last_updated: 2026-08-31
+last_updated: 2026-09-01
 intercom_collection: Account
 ---
 
@@ -75,6 +75,10 @@ The CLAs tab matches agreements to your LF username, verified emails, and linked
 ## Can I sign a CLA from the CLAs tab?
 
 You can start there. Select **Sign CLA**, search for the project, CLA group, or repository you need to sign for, and choose which linked GitHub account to sign under. Self Serve then hands you off to the EasyCLA Contributor Console, which presents and records the agreement — the signing itself does not happen in Self Serve. See [How do I sign a new CLA?](../my-clas/#how-do-i-sign-a-new-cla).
+
+## Why is a project greyed out when I search for a CLA to sign?
+
+In the **Sign a CLA** dialog, a result is greyed out and labelled **Already signed** when you already hold a CLA for it, and you cannot start a second signing for it. Results are matched per CLA group, not per project, so a project with more than one CLA group only greys out the group you signed. An **Invalidated** CLA does not grey a result out — that agreement no longer covers you, so you can sign again. A **Needs attention** or **Revoked** ECLA (Employee CLA) does grey it out, because signing again would not restore your coverage. See [Why is a project greyed out when I search?](../my-clas/#why-is-a-project-greyed-out-when-i-search).
 
 ## What do the CLA status labels mean?
 

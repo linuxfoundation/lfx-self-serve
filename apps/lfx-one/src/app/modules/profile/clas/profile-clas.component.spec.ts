@@ -16,6 +16,7 @@ import type {
   ClaGroupOption,
   ClaGroupOrg,
   ClaGroupSearchResponse,
+  ClaGroupSelectDialogData,
   ClaManagerList,
   GithubAccountOptions,
   MyClaAgreement,
@@ -548,7 +549,7 @@ describe('ProfileClasComponent — Sign CLA hand-off and identity selection (#12
   /** Records dialog opens in order, so "which dialog, and was it opened at all" is assertable. */
   let opened: unknown[];
   /** Records what each dialog was opened with, so the identity step's inputs are assertable. */
-  let openedWith: { component: unknown; config: { header?: string; data?: SignIdentityDialogData } }[];
+  let openedWith: { component: unknown; config: { header?: string; data?: SignIdentityDialogData | ClaGroupSelectDialogData } }[];
 
   async function setup(
     options: {
@@ -563,6 +564,8 @@ describe('ProfileClasComponent — Sign CLA hand-off and identity selection (#12
       /** Linked organizations on the selected group — the sole input to the routing decision. */
       organizations?: ClaGroupOrg[];
       viewerUsername?: string | null;
+      /** Loaded My CLAs list handed to the group picker (#1914). */
+      agreements?: MyClaAgreement[];
     } = {}
   ): Promise<ComponentFixture<ProfileClasComponent>> {
     location = { href: HOME, origin: ORIGIN };
@@ -577,7 +580,7 @@ describe('ProfileClasComponent — Sign CLA hand-off and identity selection (#12
 
     const selectedGroup: ClaGroupOption = { ...CLA_GROUP, organizations: options.organizations ?? [] };
 
-    open = vi.fn((component: unknown, config?: { header?: string; data?: SignIdentityDialogData }) => {
+    open = vi.fn((component: unknown, config?: { header?: string; data?: SignIdentityDialogData | ClaGroupSelectDialogData }) => {
       opened.push(component);
       openedWith.push({ component, config: config ?? {} });
       if (component === SignIdentitySelectComponent) {
@@ -629,7 +632,7 @@ describe('ProfileClasComponent — Sign CLA hand-off and identity selection (#12
         {
           provide: MyClasService,
           useValue: {
-            getMyClas: vi.fn(() => of(EMPTY_CLAS)),
+            getMyClas: vi.fn(() => of(options.agreements ? { ...EMPTY_CLAS, agreements: options.agreements } : EMPTY_CLAS)),
             getPdfUrl: vi.fn(),
             getClaGroupOptions: vi.fn(() => of({ ...SEARCH_RESULTS, results: [selectedGroup] })),
             getGithubAccounts,
@@ -742,6 +745,43 @@ describe('ProfileClasComponent — Sign CLA hand-off and identity selection (#12
     expect(open).toHaveBeenCalled();
     expect(opened[0]).toBe(ClaGroupSelectComponent);
     expect(fixture.nativeElement.querySelector('p-dialog')).toBeNull();
+  });
+
+  it('hands the loaded agreements to the picker so it can gray out already-signed groups', async () => {
+    const covering: MyClaAgreement = {
+      id: 's1',
+      kind: 'ICLA',
+      claGroupName: 'Venus',
+      claGroupId: 'cg-1',
+      signedOn: '2022-01-01',
+      status: 'valid',
+      pdfAvailable: true,
+    };
+    const fixture = await setup({ agreements: [covering], dismissGroup: 'hold' });
+
+    await sign(fixture);
+
+    const groupOpen = openedWith.find((entry) => entry.component === ClaGroupSelectComponent);
+    expect(groupOpen?.config.data).toEqual({ agreements: [covering] });
+  });
+
+  it('does not start a hand-off when the picker closes with an already-signed group', async () => {
+    const covering: MyClaAgreement = {
+      id: 's1',
+      kind: 'ICLA',
+      claGroupName: 'Venus',
+      claGroupId: 'cg-1',
+      signedOn: '2022-01-01',
+      status: 'valid',
+      pdfAvailable: true,
+    };
+    const fixture = await setup({ agreements: [covering] });
+
+    await sign(fixture);
+
+    expect(getGithubAccounts).not.toHaveBeenCalled();
+    expect(prepareSign).not.toHaveBeenCalled();
+    expect(location.href).toBe(HOME);
   });
 
   it('does nothing when the contributor backs out of the project picker', async () => {
@@ -1100,7 +1140,8 @@ describe('ProfileClasComponent — Sign CLA hand-off and identity selection (#12
 
   /** What the identity step was actually served on the last open. */
   function identityStepData(): SignIdentityDialogData | undefined {
-    return openedWith.filter((entry) => entry.component === SignIdentitySelectComponent).at(-1)?.config.data;
+    const data = openedWith.filter((entry) => entry.component === SignIdentitySelectComponent).at(-1)?.config.data;
+    return data && 'variant' in data ? data : undefined;
   }
 
   it('keeps a group with no linked organization on the GitHub path', async () => {

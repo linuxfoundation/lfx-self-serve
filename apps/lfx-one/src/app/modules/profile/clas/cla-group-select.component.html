@@ -63,16 +63,43 @@ SPDX-License-Identifier: MIT
             </div>
           }
           @for (option of options(); track option.claGroupId; let index = $index) {
+            @let alreadySigned = alreadySignedTooltip(option);
             <div class="border-b border-slate-100 last:border-b-0">
               <div
                 role="option"
                 [id]="'cla-group-option-' + option.claGroupId"
                 [attr.aria-selected]="selected()?.claGroupId === option.claGroupId"
-                class="cursor-pointer px-4 py-2.5 text-left hover:bg-slate-50"
+                [attr.aria-disabled]="alreadySigned ? true : null"
+                [attr.aria-describedby]="alreadySigned ? 'cla-group-already-signed-' + option.claGroupId : null"
+                [pTooltip]="alreadySigned"
+                tooltipPosition="top"
+                class="px-4 py-2.5 text-left"
+                [class.cursor-pointer]="!alreadySigned"
+                [class.hover:bg-slate-50]="!alreadySigned"
+                [class.cursor-not-allowed]="!!alreadySigned"
+                [class.opacity-60]="!!alreadySigned"
                 [class.bg-slate-50]="highlightedIndex() === index"
                 [attr.data-testid]="'cla-group-select-' + option.claGroupId"
                 (click)="onSelect(option)">
-                <span class="block truncate text-sm font-medium text-slate-900">{{ option.primaryName }}</span>
+                <span class="flex items-center gap-2">
+                  <span class="block min-w-0 truncate text-sm font-medium" [class.text-slate-900]="!alreadySigned" [class.text-slate-400]="!!alreadySigned">{{
+                    option.primaryName
+                  }}</span>
+                  @if (alreadySigned) {
+                    <span
+                      class="shrink-0 rounded bg-slate-100 px-1.5 py-0.5 text-[0.65rem] font-medium text-slate-500"
+                      [attr.data-testid]="'cla-group-select-already-signed-' + option.claGroupId">
+                      {{ alreadySignedLabel }}
+                    </span>
+                    <!--
+                      Which agreement they already hold lives only in a hover tooltip, which assistive
+                      tech never reaches. Carried here as an `aria-describedby` target rather than an
+                      `aria-label`, so the option still announces its project name first and the reason
+                      after it, instead of replacing the name with the reason.
+                    -->
+                    <span class="sr-only" [id]="'cla-group-already-signed-' + option.claGroupId">{{ alreadySigned }}</span>
+                  }
+                </span>
                 @if (option.secondaryName; as secondary) {
                   <span class="block truncate text-xs text-slate-500">{{ secondary }}</span>
                 }

@@ -224,6 +224,45 @@ export function gerritSignUrl(consoleBaseUrl: string, claGroupId: string, return
   return `${base}/${GERRIT_CONSOLE_ROUTE_PREFIX}/${encodeURIComponent(groupId)}/${GERRIT_CONSOLE_CONTRACT_TYPE}?redirect=${redirect}`;
 }
 
+/**
+ * Statuses that mean signing again cannot produce a new agreement for this group (#1914).
+ *
+ * `invalidated` is excluded: that signature no longer covers contributions, so the
+ * contributor may need to sign again. `unknown` is included — we cannot tell they are
+ * uncovered, and walking them through a ceremony that produces nothing is worse.
+ */
+const ALREADY_SIGNED_CLA_STATUSES: ReadonlySet<ClaStatus> = new Set(['valid', 'needs_attention', 'revoked', 'unknown', 'superseded']);
+
+/**
+ * The in-force agreement that already covers this CLA group, if any. First match wins;
+ * the My CLAs list is already newest-first.
+ *
+ * Grain is the group, not the identity. The picker has not asked which identity they
+ * will sign as yet, and the product call is to gray the group out rather than let them
+ * continue into a second ceremony.
+ */
+export function coveringAgreementForGroup(agreements: readonly MyClaAgreement[], claGroupId: string): MyClaAgreement | undefined {
+  const id = claGroupId.trim();
+  if (!id) return undefined;
+  return agreements.find((agreement) => agreement.claGroupId === id && ALREADY_SIGNED_CLA_STATUSES.has(agreement.status));
+}
+
+/**
+ * Tooltip on a grayed-out Sign a CLA result (#1914). Names the kind they already hold
+ * and, when EasyCLA recorded it, the identity it was signed as.
+ */
+export function alreadySignedClaTooltip(agreement: MyClaAgreement): string {
+  const kind = agreement.kind === 'ECLA' ? 'an ECLA' : 'an ICLA';
+  const signed = signedAsLine(agreement.signedVia, agreement.signedAs);
+  if (signed) {
+    return `You already have ${kind} for this CLA group. ${signed}.`;
+  }
+  if (agreement.kind === 'ECLA' && agreement.companyName?.trim()) {
+    return `You already have ${kind} for this CLA group, covered by ${agreement.companyName.trim()}.`;
+  }
+  return `You already have ${kind} for this CLA group.`;
+}
+
 /** Maps a producer search result to the picker view model. */
 export function toClaGroupOptionView(option: ClaGroupOption, expanded = false): ClaGroupOptionView {
   return {

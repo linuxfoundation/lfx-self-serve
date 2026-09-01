@@ -19,7 +19,16 @@ import type {
   SignIdentitySelectResult,
   SignIdentityVariant,
 } from '@lfx-one/shared/interfaces';
-import { claSignRoute, claStatusLabel, claStatusSeverity, downloadFromUrl, gerritSignUrl, isMyClasEmpty, signedAsLine } from '@lfx-one/shared/utils';
+import {
+  claSignRoute,
+  claStatusLabel,
+  claStatusSeverity,
+  coveringAgreementForGroup,
+  downloadFromUrl,
+  gerritSignUrl,
+  isMyClasEmpty,
+  signedAsLine,
+} from '@lfx-one/shared/utils';
 import { MenuItem, MessageService } from 'primeng/api';
 import { DialogService, DynamicDialogRef } from 'primeng/dynamicdialog';
 import { ToastModule } from 'primeng/toast';
@@ -166,11 +175,18 @@ export class ProfileClasComponent {
       modal: true,
       closable: true,
       dismissableMask: true,
+      data: { agreements: this.agreements() },
     }) as DynamicDialogRef;
 
     this.whenDialogSettles<ClaGroupOption>(dialogRef, (option) => {
       this.signDialogOpen.set(false);
       if (!option) {
+        this.starting.set(false);
+        return;
+      }
+      // The picker refuses a click on an already-signed row. This is the same check
+      // in case a close value arrives another way — a second ceremony must not start.
+      if (coveringAgreementForGroup(this.agreements(), option.claGroupId)) {
         this.starting.set(false);
         return;
       }

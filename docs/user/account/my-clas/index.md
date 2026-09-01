@@ -4,7 +4,7 @@ description: View your signed Individual and Employee CLAs in LFX Self Serve, st
 audience: [all]
 product_area: Account
 tags: [account, cla, easycla, icla, ecla, ccla, identities, signing]
-last_updated: 2026-08-31
+last_updated: 2026-09-01
 intercom_collection: Account
 ---
 
@@ -116,6 +116,21 @@ You start signing from the CLAs tab and finish in the EasyCLA Contributor Consol
 6. Self Serve hands you off to the EasyCLA Contributor Console, which presents and records the agreement. When you finish there, you are returned to the CLAs tab.
 
 If the search returns more matches than it can display, narrow the term — the dialog tells you when results were truncated.
+
+### Why is a project greyed out when I search?
+
+In the **Sign a CLA** dialog, a result is greyed out and labelled **Already signed** when you already hold a CLA for it. You cannot start a second signing for it. Hover the result to see which agreement you hold — an ICLA (Individual CLA) or an ECLA (Employee CLA) — and, when EasyCLA recorded it, the account it was signed under.
+
+Results are matched per **CLA group**, not per project. A project that has more than one CLA group only greys out the group you signed; its other groups stay selectable.
+
+Which statuses grey a result out:
+
+| Status on your existing CLA | Greyed out? | What to do instead                                                                                                                         |
+| --------------------------- | ----------- | ------------------------------------------------------------------------------------------------------------------------------------------ |
+| **Valid**                   | Yes         | Nothing — you are already covered                                                                                                          |
+| **Needs attention** (ECLA)  | Yes         | Signing again does not restore coverage. Use **Request approval** on the CLAs row to ask your employer's CLA managers to approve you again |
+| **Revoked** (ECLA)          | Yes         | This is a sanctions-screening outcome and cannot be changed from Self Serve                                                                |
+| **Invalidated**             | No          | That agreement no longer covers you, so you can sign again                                                                                 |
 
 ## How do I ask my CLA manager to approve or remove my ECLA?
 
