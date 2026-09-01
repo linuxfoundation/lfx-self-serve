@@ -1,8 +1,9 @@
 // Copyright The Linux Foundation and each contributor to LFX.
 // SPDX-License-Identifier: MIT
 
-import type { FormationItem, FormationItemStatus } from '../interfaces/formation.interface';
-import type { FormationReadinessSummary } from '../interfaces/formation-checklist.interface';
+import type { FormationItem, FormationItemStatus, FormationTemplateSection } from '../interfaces/formation.interface';
+import type { FormationReadinessSummary, FormationRenderedSection } from '../interfaces/formation-checklist.interface';
+import { FORMATION_ORPHAN_SECTION } from '../constants/formation.constants';
 
 const EMPTY_COUNTS: Record<FormationItemStatus, number> = {
   not_started: 0,
@@ -43,4 +44,36 @@ export function deriveFormationReadinessSummary(items: FormationItem[]): Formati
     openGatingItems,
     totalGatingItems,
   };
+}
+
+/**
+ * Items whose `section_key` matches none of the template's current sections — exactly what a
+ * template section rename produces for items still carrying the old key. Shared between
+ * `groupFormationItemsBySection` (bucketing) and the caller that logs a template/item drift, so
+ * the two can't fall out of sync on what counts as "orphaned."
+ */
+export function collectFormationOrphanItems(items: FormationItem[], sections: FormationTemplateSection[]): FormationItem[] {
+  const knownKeys = new Set(sections.map((section) => section.key));
+  return items.filter((item) => !knownKeys.has(item.section_key));
+}
+
+/**
+ * Buckets checklist items under their template section, in template order. Driven by `sections`,
+ * not a hardcoded key list — a template revision (#1957/#1959) that adds or renames a section
+ * still renders instead of silently dropping items; any orphaned item (see
+ * `collectFormationOrphanItems`) is bucketed into a synthetic `FORMATION_ORPHAN_SECTION` fallback
+ * rather than dropped.
+ */
+export function groupFormationItemsBySection(items: FormationItem[], sections: FormationTemplateSection[]): FormationRenderedSection[] {
+  const rendered: FormationRenderedSection[] = sections.map((section) => ({
+    section,
+    items: items.filter((item) => item.section_key === section.key),
+  }));
+
+  const orphans = collectFormationOrphanItems(items, sections);
+  if (orphans.length > 0) {
+    rendered.push({ section: { ...FORMATION_ORPHAN_SECTION, items: [] }, items: orphans });
+  }
+
+  return rendered;
 }

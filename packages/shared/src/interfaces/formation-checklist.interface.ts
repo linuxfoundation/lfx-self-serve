@@ -1,7 +1,7 @@
 // Copyright The Linux Foundation and each contributor to LFX.
 // SPDX-License-Identifier: MIT
 
-import type { FormationActivity, FormationItem, FormationItemStatus, FormationSubStage } from './formation.interface';
+import type { FormationActivity, FormationItem, FormationItemStatus, FormationSubStage, FormationTemplateSection } from './formation.interface';
 
 /**
  * Client-derived stand-in for the readiness strip. TODO(#1957): once the backend returns a
@@ -35,3 +35,9 @@ export interface FormationsQueueFilterState {
 
 /** `FormationChecklistSectionComponent`'s top-level view state. */
 export type FormationChecklistPageState = 'loading' | 'error' | 'no-template' | 'no-items' | 'ready';
+
+/** One template section plus the checklist items bucketed under it — `FormationChecklistSectionComponent`'s render unit, built by `groupFormationItemsBySection`. */
+export interface FormationRenderedSection {
+  section: FormationTemplateSection;
+  items: FormationItem[];
+}

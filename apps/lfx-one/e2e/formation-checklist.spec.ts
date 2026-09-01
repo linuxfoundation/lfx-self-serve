@@ -93,11 +93,14 @@ test.describe('Formation Checklist section (GH-1958)', () => {
     await expect(retry).toBeVisible();
 
     // Re-route to a working response before clicking, so this asserts Retry actually recovers —
-    // not just that the button is present.
+    // not just that the button is present. Assert on the readiness strip specifically: the section
+    // testid is on the outer wrapper and stays mounted through every pageState (including
+    // 'loading'/'error'), so it alone can't distinguish a recovered 'ready' state from the
+    // transient skeleton the retry click itself produces.
     await FormationApiMockHelper.setupProjectFormationMock(page, FORMATION_PROJECT_SLUG);
     await retry.click();
 
-    await expect(page.getByTestId('formation-checklist-section')).toBeVisible({ timeout: DATA_LOAD_TIMEOUT });
+    await expect(page.getByTestId('formation-readiness-strip')).toBeVisible({ timeout: DATA_LOAD_TIMEOUT });
     await expect(page.getByTestId('formation-checklist-inline-error')).toHaveCount(0);
   });
 
@@ -123,7 +126,9 @@ test.describe('Formation Checklist section (GH-1958)', () => {
 
     const button = page.getByTestId(`formation-checklist-row-link-${linkItem.uid}`);
     await expect(button).toBeVisible({ timeout: DATA_LOAD_TIMEOUT });
-    await expect(button).toBeDisabled();
+    // `[disabled]` is a component input on the <lfx-button> host — the native `disabled` attribute
+    // Playwright checks lands on the PrimeNG <button> it renders internally, not the host itself.
+    await expect(button.locator('button')).toBeDisabled();
     await expect(page.getByTestId(`formation-checklist-row-action-${linkItem.uid}`)).toContainText('Link unavailable');
   });
 });
