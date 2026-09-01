@@ -91,7 +91,7 @@ export class FormationService {
     if (!item) {
       throw new ResourceNotFoundError('FormationItem', itemUid, { operation: 'get_formation_item', service: 'formation_service', path: req.path });
     }
-    await this.assertItemProjectAccess(req, item);
+    await this.assertItemProjectAccess(req, item, itemUid);
     return item;
   }
 
@@ -101,8 +101,11 @@ export class FormationService {
     return { item: enriched, history: getActivityForItem(item.formation_uid, item.uid) };
   }
 
+  // TODO(#1957): swap the putStoredItem/recordActivity fixture writes below for a real
+  // lfx-v2-formation-service mutation call once it ships.
   public async completeFormationItem(req: Request, itemUid: string, notes?: string): Promise<FormationItem> {
     const item = await this.getFormationItemOrThrow(req, itemUid);
+    await this.assertItemProjectWriteAccess(req, item);
     await this.assertCanComplete(req, item, 'complete_formation_item');
     const updated: FormationItem = { ...item, status: 'done', skip_reason: null, notes: notes ?? item.notes, updated_at: new Date().toISOString() };
     putStoredItem(updated);
@@ -113,6 +116,7 @@ export class FormationService {
     return this.enrichSingle(req, updated);
   }
 
+  // TODO(#1957): swap the fixture writes below for a real lfx-v2-formation-service mutation call.
   public async skipFormationItem(req: Request, itemUid: string, reason: string): Promise<FormationItem> {
     if (!reason || !reason.trim()) {
       throw ServiceValidationError.forField('reason', 'A reason is required to skip a gating item', {
@@ -123,6 +127,7 @@ export class FormationService {
     }
 
     const item = await this.getFormationItemOrThrow(req, itemUid);
+    await this.assertItemProjectWriteAccess(req, item);
     await this.assertCanComplete(req, item, 'skip_formation_item');
     const updated: FormationItem = { ...item, status: 'skipped', skip_reason: reason, updated_at: new Date().toISOString() };
     putStoredItem(updated);
@@ -136,15 +141,20 @@ export class FormationService {
   /**
    * Files the lightweight Epic-1 `request` action (GH-1958 finding #1) — flips the item to
    * `waiting_on_partner`. No SLA/target-team object; that richer `request` type is #1957/Epic 2.
+   * TODO(#1957): swap the fixture writes below for a real lfx-v2-formation-service mutation call.
    */
   public async requestFormationItem(req: Request, itemUid: string): Promise<FormationItem> {
     const item = await this.getFormationItemOrThrow(req, itemUid);
+    await this.assertItemProjectWriteAccess(req, item);
     // Same gate as complete/skip: `request` also changes `status`, so a gating item's status must
     // not be movable through this action by a caller `complete`/`skip` would deny.
     await this.assertCanComplete(req, item, 'request_formation_item');
     const updated: FormationItem = { ...item, status: 'waiting_on_partner', updated_at: new Date().toISOString() };
     putStoredItem(updated);
     this.recordActivity(req, updated, 'item_requested', `requested "${updated.title}"`);
+    // request also moves `status`, same as complete/skip — the readiness rollup must reflect it
+    // (e.g. a previously-done gating item moved back to waiting_on_partner reopens is_activating).
+    this.refreshFormationReadiness(updated.formation_uid);
 
     logger.info(req, 'request_formation_item', 'Formation item request filed', { item_uid: itemUid });
     return this.enrichSingle(req, updated);
@@ -153,7 +163,9 @@ export class FormationService {
   /**
    * Notes/assignee/due-date are general drawer editors, not gate_writer-restricted — the ticket
    * scopes `gate_writer` to completing/skipping a *gating* item specifically, not to editing its
-   * metadata. No `assertCanComplete` call here by design.
+   * metadata. No `assertCanComplete` call here by design; ordinary project `writer` (via
+   * `assertItemProjectWriteAccess`) is still required, same as every other mutating method.
+   * TODO(#1957): swap the fixture writes below for a real lfx-v2-formation-service mutation call.
    */
   public async updateFormationItem(
     req: Request,
@@ -181,8 +193,8 @@ export class FormationService {
         path: req.path,
       });
     }
-    if (patch.due_date !== undefined && patch.due_date !== null && Number.isNaN(Date.parse(patch.due_date))) {
-      throw ServiceValidationError.forField('due_date', 'due_date must be a valid ISO date or null', {
+    if (patch.due_date !== undefined && patch.due_date !== null && (typeof patch.due_date !== 'string' || Number.isNaN(Date.parse(patch.due_date)))) {
+      throw ServiceValidationError.forField('due_date', 'due_date must be a valid ISO date string or null', {
         operation: 'update_formation_item',
         service: 'formation_service',
         path: req.path,
@@ -190,6 +202,7 @@ export class FormationService {
     }
 
     const item = await this.getFormationItemOrThrow(req, itemUid);
+    await this.assertItemProjectWriteAccess(req, item);
     const updated: FormationItem = { ...item, updated_at: new Date().toISOString() };
 
     if (patch.notes !== undefined && patch.notes !== item.notes) {
@@ -349,16 +362,57 @@ export class FormationService {
    * can't see throws here (404/403 from the upstream project service) before any item data or
    * mutation is returned.
    */
-  private async assertItemProjectAccess(req: Request, item: Pick<FormationItem, 'formation_uid'>): Promise<void> {
+  private async assertItemProjectAccess(req: Request, item: Pick<FormationItem, 'formation_uid'>, itemUid: string): Promise<void> {
+    // Always throws the same "FormationItem not found" shape as the missing-uid branch above,
+    // regardless of which check actually failed (dangling formation reference vs. an upstream
+    // project-visibility denial) — a differentiated error would let a caller distinguish "this
+    // item doesn't exist" from "it exists and you can't see it", an account/resource enumeration
+    // oracle. The real cause is still logged for operators.
+    const denyNotFound = (cause: unknown): never => {
+      logger.debug(req, 'assert_item_project_access', 'Denying formation-item access', { item_uid: itemUid, err: cause });
+      throw new ResourceNotFoundError('FormationItem', itemUid, { operation: 'get_formation_item', service: 'formation_service', path: req.path });
+    };
+
+    const formation = getStoredFormation(item.formation_uid) ?? STATIC_QUEUE_FORMATIONS.find((row) => row.uid === item.formation_uid);
+    if (!formation) {
+      denyNotFound(new Error(`no formation record for formation_uid ${item.formation_uid}`));
+      return;
+    }
+
+    try {
+      await this.projectService.getProjectById(req, formation.parent_project_uid, false);
+    } catch (error) {
+      denyNotFound(error);
+    }
+  }
+
+  /**
+   * Required before any mutation (complete/skip/request/update) — `assertItemProjectAccess`
+   * (called first, via `getFormationItemOrThrow`) only requires the `viewer` relation, which is
+   * enough to read the checklist but not enough to change it. Callers here have already passed
+   * that read gate, so a denial is a plain `AuthorizationError` (403) rather than the "not found"
+   * masking `assertItemProjectAccess` uses — the caller already legitimately knows this item
+   * exists, so there is no existence-oracle risk in saying so.
+   */
+  private async assertItemProjectWriteAccess(req: Request, item: Pick<FormationItem, 'formation_uid'>): Promise<void> {
     const formation = getStoredFormation(item.formation_uid) ?? STATIC_QUEUE_FORMATIONS.find((row) => row.uid === item.formation_uid);
     if (!formation) {
       throw new ResourceNotFoundError('Formation', item.formation_uid, {
-        operation: 'assert_item_project_access',
+        operation: 'assert_item_project_write_access',
         service: 'formation_service',
         path: req.path,
       });
     }
-    await this.projectService.getProjectById(req, formation.parent_project_uid, false);
+
+    const project = await this.projectService.getProjectById(req, formation.parent_project_uid, true);
+    if (!project.writer) {
+      throw new AuthorizationError('Write access required for this project', {
+        operation: 'assert_item_project_write_access',
+        service: 'authorization',
+        path: req.path,
+        code: 'PROJECT_WRITE_REQUIRED',
+      });
+    }
   }
 
   /** Shared gate for every action that changes a gating item's status (complete/skip/request) — see `FormationItemAccessService.canComplete`. */
