@@ -98,8 +98,11 @@ export class MailingListManageComponent {
   public constructor() {
     evictOnWriteAccessLoss();
     // Sync context from the loaded list itself — an edit deep link can arrive under the wrong tier
-    // or with no `?project=` (GH-1567); preferEntityKind lets the list's own is_foundation re-point the lens kind.
-    syncEntityProjectContext(this.mailingListEntityContext, this.projectContextService, this.router, this.destroyRef, { preferEntityKind: true });
+    // or with no `?project=` (GH-1567); canonicalizeRoute then rewrites the URL to the owning tier.
+    syncEntityProjectContext(this.mailingListEntityContext, this.projectContextService, this.router, this.destroyRef, {
+      preferEntityKind: true,
+      canonicalizeRoute: true,
+    });
     this.initMailingListContextFallback();
     this.form()
       .get('group_name')

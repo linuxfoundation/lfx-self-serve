@@ -205,6 +205,10 @@ export class MailingListService {
     // Enrich with service data
     mailingLists = await this.enrichWithServices(req, mailingLists);
 
+    // Enrich with project metadata — the index never emits is_foundation, and the table's
+    // canonical tier-prefixed row links (GH-1567) need it (same batched pass as the Me lens).
+    mailingLists = await this.projectService.enrichWithProjectData(req, mailingLists);
+
     // Add writer access field to all mailing lists
     return await this.accessCheckService.addAccessToResources(req, mailingLists, 'groupsio_mailing_list');
   }

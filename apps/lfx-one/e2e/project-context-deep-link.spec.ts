@@ -579,6 +579,9 @@ test.describe('Mailing list edit deep-link resolves the list’s project context
       timeout: ELEMENT_TIMEOUT,
     });
 
+    // The route itself canonicalizes to the list's foundation tier once the payload lands (GH-1567).
+    await expect(page).toHaveURL(new RegExp(`/foundation/mailing-lists/${MOCK_MAILING_LIST_UID}/edit`), { timeout: ELEMENT_TIMEOUT });
+
     // The context correction must NOT inject ?project= into the entity URL (syncUrl guard) —
     // give any NavigationEnd-driven backfill a tick to (not) fire before asserting absence.
     await page.waitForTimeout(500);
@@ -607,8 +610,9 @@ test.describe('Mailing list edit deep-link resolves the list’s project context
     });
     await expect(page.getByTestId('mailing-list-manage-title')).toBeVisible({ timeout: PAGE_LOAD_TIMEOUT });
 
-    // Still on the edit page (no access-denied redirect), and the context follows the list.
-    expect(page.url()).toContain(`/project/mailing-lists/${MOCK_MAILING_LIST_UID}/edit`);
+    // Still on the edit page (no access-denied redirect): the URL canonicalizes to the owning
+    // foundation tier once the list loads, and the context follows the list.
+    await expect(page).toHaveURL(new RegExp(`/foundation/mailing-lists/${MOCK_MAILING_LIST_UID}/edit`), { timeout: ELEMENT_TIMEOUT });
     await expect(page.getByTestId('project-selector')).toContainText('Test Foundation', { timeout: ELEMENT_TIMEOUT });
   });
 
