@@ -133,13 +133,13 @@ test.describe('Formation Checklist section (GH-1958)', () => {
   });
 
   test('a drawer write is retired by the uid it was issued for, not by whichever item the drawer currently shows', async ({ page }) => {
-    // Pins the regression across four prior fix commits on this branch: writeStarted/writeEnded used
+    // Pins the regression across five prior fix commits on this branch: writeStarted/writeEnded used
     // to resolve the uid from the section's *current* drawerItemUid() signal, so switching to a
     // different item before an earlier write's response landed would clear the wrong item's guard —
     // stranding the original item's buttons disabled forever while dropping the new item's own guard
-    // early. It also depends on onDrawerItemChanged's uid-gated close (a sibling bug this same test
-    // scenario surfaced): without it, A's response landing while B's drawer is open would incorrectly
-    // close B's drawer too.
+    // early. Also depends on onDrawerItemChanged's uid-gated close (A's response landing while B's
+    // drawer is open must not close B's drawer too) and on completingUids/savingDetailsUids being
+    // sets, not single slots (starting B's write must not silently drop A's own [loading] tracking).
     await stubFormationFlag(page, true);
     await mockFormationChecklistApis(page, { project: buildBaseProject(FORMATION_PROJECT_SLUG) });
 
@@ -173,6 +173,11 @@ test.describe('Formation Checklist section (GH-1958)', () => {
 
     const drawer = page.getByTestId('formation-item-drawer');
     const markComplete = page.getByTestId('formation-item-drawer-mark-complete').locator('button');
+    // PrimeNG renders this icon inside a button only while that button's own `loading` input is true
+    // — unlike [disabled] (driven by busy(), which also includes the section-owned mutationInFlight
+    // and so stays true regardless of the drawer's own tracking), this is the one observable signal
+    // that actually discriminates the drawer-internal completingUids/savingDetailsUids fix.
+    const spinner = markComplete.locator('[data-p-icon="spinner"]');
 
     // Clicking Mark complete only proves the client set its own optimistic [disabled] state — it
     // does not prove the request has actually reached Playwright's route interceptor yet. Poll for
@@ -188,47 +193,60 @@ test.describe('Formation Checklist section (GH-1958)', () => {
       resolve?.();
     }
 
+    async function openItem(uid: string): Promise<void> {
+      await page.getByTestId(`formation-checklist-row-title-${uid}`).click();
+      await expect(drawer).toBeVisible({ timeout: DATA_LOAD_TIMEOUT });
+    }
+
     // Start A's write, then close the drawer while it's still in flight — nothing gates onClose() on
     // a pending write, and neither does the mask/ESC dismiss p-drawer offers by default.
-    await page.getByTestId(`formation-checklist-row-title-${itemA.uid}`).click();
-    await expect(drawer).toBeVisible({ timeout: DATA_LOAD_TIMEOUT });
+    await openItem(itemA.uid);
     await markComplete.click();
     await expect(markComplete).toBeDisabled();
+    await expect(spinner).toBeVisible();
     await page.getByTestId('formation-item-drawer-close').click();
     await expect(drawer).toBeHidden();
 
-    // Open a different item and start its own write too — the drawer (and drawerItemUid()) now
-    // points at B while A's write is still unresolved.
-    await page.getByTestId(`formation-checklist-row-title-${itemB.uid}`).click();
-    await expect(drawer).toBeVisible();
+    // Open B and start its own write too — both A and B now have writes genuinely in flight at once.
+    await openItem(itemB.uid);
     await markComplete.click();
     await expect(markComplete).toBeDisabled();
+    await expect(spinner).toBeVisible();
+
+    // Close B and reopen A. With the old single-slot completingUid, starting B's write just above
+    // would have overwritten A's tracked uid — so A's own spinner would be missing here even though
+    // A's write is still genuinely pending. [disabled] alone can't catch this (mutationInFlight keeps
+    // it true either way); the spinner can.
+    await page.getByTestId('formation-item-drawer-close').click();
+    await openItem(itemA.uid);
+    await expect(markComplete).toBeDisabled();
+    await expect(spinner).toBeVisible();
+    await page.getByTestId('formation-item-drawer-close').click();
+    await expect(drawer).toBeHidden();
 
     // Release A's held response and wait for the actual network round trip to land (not a fixed
-    // sleep — any erroneous state change is provoked synchronously by this same response). Exercises
-    // the section-level guard end to end: if writeStarted/writeEnded resolved the wrong uid, this
-    // would incorrectly re-enable B's button (its submittingItemUids entry cleared instead of A's)
-    // and/or incorrectly close B's drawer (onDrawerItemChanged firing for A while B is open). The
-    // button's [disabled] here is driven by mutationInFlight (section-owned), not by the drawer's own
-    // completingUids — that inner isolation is covered by hand-tracing in the fix commit, not by this
-    // assertion, since [disabled] would stay correctly true either way.
+    // sleep — any erroneous state change is provoked synchronously by this same response).
     const itemAResponse = page.waitForResponse((response) => response.url().includes(`/${encodeURIComponent(itemA.uid)}/complete`));
     await releaseHeldRequest(itemA.uid);
     await itemAResponse;
-    await expect(drawer).toBeVisible();
+
+    // B's write is still pending and was never touched by A's response landing — reopening it must
+    // show it exactly as it was left, not stranded or spuriously cleared. If writeStarted/writeEnded
+    // had resolved the wrong uid, this is where B's guard would have been dropped early instead of
+    // A's.
+    await openItem(itemB.uid);
     await expect(markComplete).toBeDisabled();
+    await expect(spinner).toBeVisible();
 
     // Release B's held response too — now B's own write really is done. B is still what the drawer
-    // shows at this point, so this is a real (uid-matching) completion — onDrawerItemChanged closes
-    // the drawer itself, same as any other successful Mark complete.
+    // shows, so this is a real (uid-matching) completion — onDrawerItemChanged closes the drawer
+    // itself, same as any other successful Mark complete.
     await releaseHeldRequest(itemB.uid);
     await expect(drawer).toBeHidden({ timeout: DATA_LOAD_TIMEOUT });
 
     // A's guard must have been correctly retired when its response was released above — reopening it
-    // must not still show it stuck disabled forever. (The drawer is already closed from B's own
-    // completion above, so there's nothing to close first.)
-    await page.getByTestId(`formation-checklist-row-title-${itemA.uid}`).click();
-    await expect(drawer).toBeVisible();
+    // must not still show it stuck disabled forever.
+    await openItem(itemA.uid);
     await expect(markComplete).toBeEnabled({ timeout: DATA_LOAD_TIMEOUT });
   });
 });
