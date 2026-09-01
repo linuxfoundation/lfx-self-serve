@@ -157,6 +157,10 @@ export async function seedEdPersona(page: Page): Promise<void> {
       // away from the tab. This defaulted to 127.0.0.1 while playwright.config.ts defaults
       // E2E_HOST to localhost, so a run with no overrides set the cookie on a host the browser
       // never visited. Same default, same source of truth.
+      // Same precedence the config uses, so setting E2E_BASE_URL moves the cookie host AND the
+      // browser origin together. They disagreed before: this read it, playwright.config.ts built
+      // its own url from E2E_HOST/E2E_PORT and ignored it, so the cookie landed on a host the
+      // browser never visited and the persona simply did not apply.
       domain: new URL(process.env['E2E_BASE_URL'] ?? `http://${process.env['E2E_HOST'] ?? 'localhost'}:${process.env['E2E_PORT'] ?? '4200'}`).hostname,
       path: '/',
       sameSite: 'Lax',
@@ -178,15 +182,6 @@ export async function seedEdPersona(page: Page): Promise<void> {
   );
 }
 
-/** Open the Campaigns page's Planning tab for a foundation. */
-/**
- * Open the Campaigns page's Planning tab for a foundation.
- *
- * Defaults to `tlf`, matching the other authenticated specs in this suite: the route is behind
- * campaignAccessGuard, which redirects to /foundation/overview unless the signed-in user is an
- * ED or campaign_manager on that project — so a slug the test account cannot access fails as a
- * silent redirect rather than an obvious error.
- */
 /**
  * Resolves once the page has stopped re-navigating to itself.
  *
@@ -216,6 +211,14 @@ async function waitForHydration(page: Page, quietMs = 1200, timeoutMs = 20000): 
   }
 }
 
+/**
+ * Open the Campaigns page's Planning tab for a foundation.
+ *
+ * Defaults to `aswf`, matching the other authenticated specs in this suite: the route is behind
+ * campaignAccessGuard, which redirects to /foundation/overview unless the signed-in user is an
+ * ED or campaign_manager on that project — so a slug the test account cannot access fails as a
+ * silent redirect rather than an obvious error.
+ */
 export async function gotoPlanningTab(page: Page, project = 'aswf'): Promise<void> {
   await seedEdPersona(page);
   await page.goto('/', { waitUntil: 'domcontentloaded' });

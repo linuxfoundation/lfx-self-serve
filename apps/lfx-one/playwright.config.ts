@@ -31,7 +31,10 @@ const E2E_PORT = process.env['E2E_PORT'] ?? '4200';
 // belongs at the binding layer, not here: changing the browser origin to work around it breaks
 // the auth cookie instead. Overridable for a setup that genuinely needs another host.
 const E2E_HOST = process.env['E2E_HOST'] ?? 'localhost';
-const E2E_BASE_URL = `http://${E2E_HOST}:${E2E_PORT}`;
+// E2E_BASE_URL wins when set. The cookie helper already read it as its first choice, so a config
+// that built its own url from E2E_HOST/E2E_PORT and ignored it put the persona cookie on a host
+// the browser never visited -- the persona silently did not apply.
+const E2E_BASE_URL = process.env['E2E_BASE_URL'] ?? `http://${E2E_HOST}:${E2E_PORT}`;
 
 export default defineConfig({
   testDir: './e2e',

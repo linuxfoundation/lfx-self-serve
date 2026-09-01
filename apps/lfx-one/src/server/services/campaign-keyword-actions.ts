@@ -116,13 +116,6 @@ export function failedResults(group: KeywordActionGroup, action: KeywordActionTy
 }
 
 /**
- * Collapse per-keyword outcomes into the UI's bulk response.
- *
- * `success` is true only when every keyword applied. A partially-applied batch is a failure at
- * this level even though each campaign either fully applied or fully did not: the caller asked
- * for one thing and got part of it.
- */
-/**
  * Restore the caller's original keyword order.
  *
  * THE RESPONSE IS POSITIONAL. `optimization-tab.component.ts` zips `res.results[i]` onto the
@@ -152,6 +145,13 @@ export function inRequestOrder(keywords: KeywordActionRequest[], results: Ordere
   return keywords.map((kw) => byKeyword.get(`${kw.adGroupId}-${kw.criterionId}`)?.shift()).filter((r): r is KeywordActionResponse => r !== undefined);
 }
 
+/**
+ * Collapse per-keyword outcomes into the UI's bulk response.
+ *
+ * `success` is true only when every keyword applied. A partially-applied batch is a failure at
+ * this level even though each campaign either fully applied or fully did not: the caller asked
+ * for one thing and got part of it.
+ */
 export function toBulkResponse(results: KeywordActionResponse[]): BulkKeywordActionResponse {
   const succeeded = results.filter((r) => r.success).length;
   return {
@@ -163,12 +163,6 @@ export function toBulkResponse(results: KeywordActionResponse[]): BulkKeywordAct
   };
 }
 
-/**
- * Why a campaign could not be acted on, in words a user can act on.
- *
- * Both cases are refusals rather than errors upstream, so they arrive as ordinary answers and
- * have to be turned into per-keyword failures here.
- */
 /**
  * Compare what upstream confirmed against what was requested; returns a short description of the
  * difference, or null when they match.
@@ -210,6 +204,12 @@ function describeOutcomeMismatch(group: KeywordActionGroup, action: KeywordActio
 export const CAMPAIGN_OUTCOME_UNCONFIRMED =
   'The change was sent but the confirmation did not match the request. Check the campaign in Google Ads before retrying.';
 
+/**
+ * Why a campaign could not be acted on, in words a user can act on.
+ *
+ * Both cases are refusals rather than errors upstream, so they arrive as ordinary answers and
+ * have to be turned into per-keyword failures here.
+ */
 export const CAMPAIGN_UNRESOLVED = 'This campaign is not managed here, so its keywords cannot be changed.';
 /**
  * A lookup that FAILED, as distinct from one that answered "no such campaign".
@@ -221,8 +221,6 @@ export const CAMPAIGN_UNRESOLVED = 'This campaign is not managed here, so its ke
  */
 export const CAMPAIGN_LOOKUP_FAILED = 'The campaign could not be looked up just now. Try again.';
 export const CAMPAIGN_AMBIGUOUS = 'This campaign id matches more than one campaign, so it is not clear which to change.';
-
-export type { BulkKeywordActionRequest };
 
 /**
  * Apply keyword actions through campaign-service, one call per campaign.
