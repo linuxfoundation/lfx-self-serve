@@ -17,6 +17,7 @@ import {
   EMAIL_BRIEF_REQUIRED_HINT,
   EVENT_TEMPLATE_SUGGESTION_MIN_SCORE,
   EVENT_TERM_DISTINCTIVE_LENGTH,
+  EVENT_TERM_GENERIC,
   EVENT_TERM_STOPWORDS,
   EVENT_TERM_YEAR_PATTERN,
   EVENT_TERM_WEIGHT,
@@ -2689,8 +2690,23 @@ export class CampaignsComponent {
    * unrelated names, so the two cases must not be scored the same.
    */
   private eventMatchScore(template: HubSpotMarketingEmail, terms: EventTemplateTerms): number {
-    return this.matchedEventTerms(template, terms.decisive).reduce(
-      (score, term) => score + (term.length >= EVENT_TERM_DISTINCTIVE_LENGTH ? EVENT_TERM_WEIGHT * 2 : EVENT_TERM_WEIGHT),
+    const matched = this.matchedEventTerms(template, terms.decisive);
+    // CORROBORATION, not length alone. Length was standing in for distinctiveness, and it cannot
+    // carry that weight: `register`, `webinar`, `keynote`, `session` and `speaker` are all six-plus
+    // characters and all generic, so each cleared the threshold on a single hit. The deny-list
+    // closes the words someone has already noticed; every un-listed one is a fresh false positive.
+    //
+    // A term is double-weighted only when it is long AND not a known generic. Corroboration was
+    // the first thing tried -- withhold unless a second term matched -- and it broke the case the
+    // feature exists for: "KubeCon Munchen" has two decisive terms, a template named only
+    // "KubeCon Munchen - Registrierung" matched both, but one named "KubeCon NA 2026" matched
+    // only `kubecon` and was withheld, though `kubecon` names the event unambiguously.
+    //
+    // EVENT_TERM_GENERIC is a vocabulary, not a length rule, so a word is excluded for being
+    // generic rather than for being short. It is still a list and still needs appending, but the
+    // failure mode is now a MISSED suggestion rather than a wrong one -- the safe direction.
+    return matched.reduce(
+      (score, term) => score + (term.length >= EVENT_TERM_DISTINCTIVE_LENGTH && !EVENT_TERM_GENERIC.has(term) ? EVENT_TERM_WEIGHT * 2 : EVENT_TERM_WEIGHT),
       0
     );
   }

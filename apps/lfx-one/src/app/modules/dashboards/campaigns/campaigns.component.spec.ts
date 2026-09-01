@@ -3833,6 +3833,32 @@ describe('CampaignsComponent — HubSpot template picker', () => {
      * Nairobi" in Nairobi) the token stays in `decisive` and, being six characters, clears the
      * threshold alone. An unrelated "Nairobi newsletter" is then auto-selected.
      */
+    /**
+     * An UN-ENUMERATED generic long word must not decide alone.
+     *
+     * The deny-list closes the words someone has already noticed; the proxy behind it is the real
+     * defect. Any decisive term of six-plus characters scores EVENT_TERM_WEIGHT*2 = the threshold,
+     * so `register`, `webinar`, `keynote`, `session` and `speaker` all clear it on a single hit --
+     * none of them on the list, each a fresh false positive until someone appends it.
+     *
+     * Uses `speaker`, deliberately NOT in EVENT_TERM_STOPWORDS, so this fails again the moment the
+     * fix regresses to enumeration.
+     */
+    it('withholds a suggestion when a single generic long word is the only match', () => {
+      showPicker();
+      picker().emailBriefOutput.set(briefFor('Speaker Enablement Program', 'speaker-enablement-program'));
+      picker().searchEmailTemplates('');
+      respond({
+        enabled: true,
+        error: null,
+        possiblyTruncated: false,
+        emails: [{ id: 'generic', name: 'Speaker reminder — monthly' }] as HubSpotMarketingEmail[],
+      });
+
+      expect(picker().emailTemplateSuggestionId(), 'a single generic long word auto-selected a template').toBe('');
+      expect(picker().selectedEmailTemplateId()).toBe('');
+    });
+
     it('does not let a city repeated in the event name justify a suggestion', () => {
       showPicker();
       picker().emailBriefOutput.set(briefFor('Regional Summit Nairobi', 'regional-summit-nairobi', 'Nairobi'));

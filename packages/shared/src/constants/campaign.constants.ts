@@ -984,6 +984,46 @@ export const EVENT_TEMPLATE_SUGGESTION_MIN_SCORE = 6;
 export const EVENT_TERM_DISTINCTIVE_LENGTH = 6;
 
 /**
+ * Words that are long enough to look distinctive but carry no event identity.
+ *
+ * `EVENT_TERM_DISTINCTIVE_LENGTH` uses length as a proxy for distinctiveness, and the proxy is
+ * wrong for a whole class of words: `register`, `webinar`, `keynote`, `session`, `speaker`,
+ * `reminder` are all six-plus characters and all generic, so each cleared the suggestion threshold
+ * on a SINGLE hit and pre-selected an unrelated template.
+ *
+ * These are excluded from the distinctive DOUBLE weight rather than dropped from matching
+ * entirely: they still order templates that already name the event, they just cannot be the reason
+ * one is suggested. Distinct from EVENT_TERM_STOPWORDS, which removes a token from matching
+ * altogether.
+ *
+ * A vocabulary is still a list and still needs appending. What changed is the failure mode: an
+ * un-listed generic word now produces a MISSED suggestion rather than a confidently wrong one.
+ */
+export const EVENT_TERM_GENERIC: ReadonlySet<string> = new Set([
+  'register',
+  'registration',
+  'webinar',
+  'keynote',
+  'session',
+  'sessions',
+  'speaker',
+  'speakers',
+  'reminder',
+  'newsletter',
+  'announcement',
+  'invitation',
+  'schedule',
+  'agenda',
+  'program',
+  'update',
+  'updates',
+  'welcome',
+  'community',
+  'training',
+  'workshop',
+]);
+
+/**
  * Words dropped from an event name before it is used to match template names.
  *
  * Every one of these appears in ordinary event titles AND in unrelated template names, so keeping
@@ -1007,11 +1047,16 @@ export const EVENT_TERM_STOPWORDS: readonly string[] = [
   'america',
   'europe',
   'asia',
-  // Long but GENERIC. Length was standing in for distinctiveness, and these are six-plus
-  // characters, so a single hit scored double and cleared the threshold alone: "Open Source
-  // Summit" reduces to `open` + `source`, and `source` then pre-selected an unrelated "Source
-  // newsletter". A confident wrong pick is the one outcome the suggestion must never produce,
-  // so the words that break the length proxy are dropped before scoring sees them.
+  // GENERIC, whatever their length. Length was standing in for distinctiveness, and the six-plus
+  // character ones broke that proxy outright: a single hit scored double and cleared the
+  // threshold alone, so "Open Source Summit" reduced to `open` + `source` and `source`
+  // pre-selected an unrelated "Source newsletter". A confident wrong pick is the one outcome the
+  // suggestion must never produce.
+  //
+  // `forum` (5) and `expo` (4) are shorter than that and do NOT clear the threshold alone. They
+  // are here because they are just as generic and still inflate a score toward it -- the list is
+  // about the words carrying no event identity, not about their length. An earlier version of
+  // this note said they were all six-plus characters, which two of them are not.
   'source',
   'global',
   'online',
