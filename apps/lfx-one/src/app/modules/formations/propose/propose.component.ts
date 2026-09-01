@@ -31,7 +31,7 @@ import { MessageService } from 'primeng/api';
 import { debounceTime, distinctUntilChanged, map, of, startWith, switchMap, take } from 'rxjs';
 
 import { ProjectPickerComponent } from './components/project-picker/project-picker.component';
-import { WhatsNextPanelComponent } from './components/whats-next-panel/whats-next-panel.component';
+import { WhatsNextPanelComponent } from '../components/whats-next-panel/whats-next-panel.component';
 
 @Component({
   selector: 'lfx-propose',

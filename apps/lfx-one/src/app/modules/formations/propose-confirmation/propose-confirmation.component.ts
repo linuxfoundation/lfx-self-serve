@@ -11,7 +11,7 @@ import { FormationService } from '@services/formation.service';
 import { PersonaService } from '@services/persona.service';
 import { map, switchMap, tap } from 'rxjs';
 
-import { WhatsNextPanelComponent } from '../propose/components/whats-next-panel/whats-next-panel.component';
+import { WhatsNextPanelComponent } from '../components/whats-next-panel/whats-next-panel.component';
 
 /**
  * Post-submit confirmation for the Epic 1 fallback path (GH-1962). There is no real project

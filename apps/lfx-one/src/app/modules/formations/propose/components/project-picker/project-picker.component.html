@@ -8,7 +8,14 @@
       <button type="button" class="text-xs text-blue-600 hover:text-blue-800" (click)="clear()" data-testid="propose-project-picker-clear">Change</button>
     </div>
   } @else {
-    <form [formGroup]="searchForm" class="relative">
+    <!-- A <div>, not <form>: this picker renders inside propose.component.html's outer <form>,
+         and nested <form> elements are invalid HTML — the browser's parser drops the inner one.
+         Every route here is server-rendered with hydration on, so the SSR payload would already
+         be missing this element by the time the client tries to hydrate it, mismatching against
+         the client-side render (where the DOM API tolerates the nesting) and forcing Angular to
+         destroy and rebuild the subtree instead of hydrating it. [formGroup] binds to any element,
+         not just <form>, so a <div> loses nothing functionally. -->
+    <div [formGroup]="searchForm" class="relative">
       <lfx-input-text
         size="small"
         [form]="searchForm"
@@ -37,7 +44,7 @@
       } @else if (hasQuery() && results().length === 0) {
         <p class="mt-1 text-xs text-gray-500">No matching projects.</p>
       }
-    </form>
+    </div>
     <p class="text-xs text-gray-500">Not sure? Leave this blank and the formation team will place the project.</p>
   }
 </div>
