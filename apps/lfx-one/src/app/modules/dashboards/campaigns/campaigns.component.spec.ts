@@ -3781,6 +3781,30 @@ describe('CampaignsComponent — HubSpot template picker', () => {
      *
      * Both templates score identically on the decisive term, so only the tie-break can order them.
      */
+    /**
+     * A city repeated in the EVENT NAME must not become decisive.
+     *
+     * The city is meant to RANK, never to justify a suggestion on its own -- that is the whole
+     * point of splitting decisive from ranking terms. But the ranking set is built with
+     * `!decisive.has(token)`, so when the name already contains the city ("Regional Summit
+     * Nairobi" in Nairobi) the token stays in `decisive` and, being six characters, clears the
+     * threshold alone. An unrelated "Nairobi newsletter" is then auto-selected.
+     */
+    it('does not let a city repeated in the event name justify a suggestion', () => {
+      showPicker();
+      picker().emailBriefOutput.set(briefFor('Regional Summit Nairobi', 'regional-summit-nairobi', 'Nairobi'));
+      picker().searchEmailTemplates('');
+      respond({
+        enabled: true,
+        error: null,
+        possiblyTruncated: false,
+        emails: [{ id: 'unrelated', name: 'Nairobi newsletter — monthly roundup' }] as HubSpotMarketingEmail[],
+      });
+
+      expect(picker().emailTemplateSuggestionId(), 'a city-only match was auto-selected').toBe('');
+      expect(picker().selectedEmailTemplateId()).toBe('');
+    });
+
     it('prefers the year-matching edition over a prior one that names the city', () => {
       showPicker();
       picker().emailBriefOutput.set(briefFor('KubeCon North America 2026', 'kubecon-north-america-2026', 'Salt Lake City'));
@@ -4234,7 +4258,11 @@ describe('CampaignsComponent — HubSpot template picker', () => {
       });
 
       expect(picker().emailTemplateSuggestionId()).toBe('de');
-      expect(picker().emailTemplateSuggestionTerms()).toContain('münchen');
+      // The DECISIVE term is what the accent handling has to preserve, and it is what the banner
+      // reports. `münchen` is a CITY token now -- it ranks but never justifies a suggestion, so
+      // it is deliberately absent from the reasons shown. Asserting it here would pin the old
+      // behaviour where a city could be presented as a reason.
+      expect(picker().emailTemplateSuggestionTerms()).toContain('kubecon');
     });
 
     /** The banner is one sentence; an @if between text nodes rendered "event . Pick a different". */

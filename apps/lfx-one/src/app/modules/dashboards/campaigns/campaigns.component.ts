@@ -2795,6 +2795,20 @@ export class CampaignsComponent {
     // same alphabet, so an accented term matches an accented template name.
     const usable = (token: string): boolean => token.length >= 3 && !EVENT_TERM_STOPWORDS.includes(token);
 
+    // CITY TOKENS FIRST, so the decisive pass below can exclude them. Built the other way round
+    // -- ranking filtered by `!decisive.has(token)` -- a city repeated in the event name stayed
+    // DECISIVE: "Regional Summit Nairobi" in Nairobi made `nairobi` decisive, and being six
+    // characters it cleared the threshold alone, auto-selecting an unrelated "Nairobi newsletter".
+    // The city is meant to rank, never to justify a suggestion, and that is only true if the same
+    // token cannot be both.
+    const cityTokens = new Set<string>();
+    for (const token of split(details.city ?? '')) {
+      const cleaned = token.toLowerCase();
+      if (usable(cleaned) && !EVENT_TERM_YEAR_PATTERN.test(cleaned)) {
+        cityTokens.add(cleaned);
+      }
+    }
+
     const decisive = new Set<string>();
     let year = '';
     for (const token of [...split(details.name ?? ''), ...split(details.slug ?? '')]) {
@@ -2808,7 +2822,8 @@ export class CampaignsComponent {
         year = year === '' ? cleaned : year;
         continue;
       }
-      if (usable(cleaned)) {
+      // A city token is never decisive, wherever it appears. It stays in `ranking` below.
+      if (usable(cleaned) && !cityTokens.has(cleaned)) {
         decisive.add(cleaned);
       }
     }
@@ -2818,13 +2833,7 @@ export class CampaignsComponent {
     // template with no relation to the event, pre-selected on location words alone. Operators do
     // name templates by city where a brand repeats annually, so the terms are still worth
     // ordering by; they just cannot be the reason a suggestion is offered.
-    const ranking = new Set<string>();
-    for (const token of split(details.city ?? '')) {
-      const cleaned = token.toLowerCase();
-      if (usable(cleaned) && !decisive.has(cleaned) && !EVENT_TERM_YEAR_PATTERN.test(cleaned)) {
-        ranking.add(cleaned);
-      }
-    }
+    const ranking = cityTokens;
 
     return { decisive: [...decisive], ranking: [...ranking], year };
   }
@@ -3410,9 +3419,10 @@ export class CampaignsComponent {
     // operator's, and leaving it describing a discarded brief is one new writer away from
     // discarding a hand-picked template.
     this.emailTemplateSelectionIsSuggested.set(false);
-    // The suggestion is derived from THIS brief's event, so it and the override that rejected it
-    // both belong to the brief. Carrying the override into a new event would suppress a suggestion
-    // the operator has never seen.
+    // The suggestion is derived from THIS brief's event, so its id and the terms it matched on
+    // both belong to the brief and go with it. (An earlier version of this note also mentioned an
+    // override flag that could suppress later suggestions; that flag was removed when provenance
+    // replaced it, and only these two signals are reset here.)
     this.emailTemplateSuggestionId.set('');
     this.emailTemplateSuggestionTerms.set([]);
   }
