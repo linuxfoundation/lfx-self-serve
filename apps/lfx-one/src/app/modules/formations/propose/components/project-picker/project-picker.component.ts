@@ -105,18 +105,13 @@ export class ProjectPickerComponent {
         switchMap((term) => {
           const trimmed = term.trim();
           if (trimmed.length < 2) return of([]);
-          // ProjectService.searchProjects already degrades to `of([])` internally today, so this
-          // is currently unreachable — kept anyway as a terminal guard on a `toSignal` stream: an
-          // error escaping switchMap here would permanently kill `results()` for the rest of the
-          // component's lifetime (no retry), which is worse than one redundant handler. Matches
+          // ProjectService.searchProjects already degrades to `of([])` internally today (with its
+          // own console.error), so this is currently unreachable and deliberately not re-logged —
+          // kept anyway as a terminal guard on a `toSignal` stream: an error escaping switchMap
+          // here would permanently kill `results()` for the rest of the component's lifetime (no
+          // retry), which is worse than one redundant handler. Matches
           // `ProposeComponent.initDuplicateNameMatch`'s same defensive `catchError` on the same call.
-          // Logged (not silent) so the guard is observable if it ever does fire.
-          return this.projectService.searchProjects(trimmed).pipe(
-            catchError((error) => {
-              console.error('Parent project search failed:', error);
-              return of([]);
-            })
-          );
+          return this.projectService.searchProjects(trimmed).pipe(catchError(() => of([])));
         })
       ),
       { initialValue: [] }

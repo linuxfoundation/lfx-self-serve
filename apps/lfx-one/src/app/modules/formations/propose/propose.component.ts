@@ -170,6 +170,9 @@ export class ProposeComponent {
         switchMap((name) => {
           const trimmed = (name ?? '').trim();
           if (trimmed.length < 3) return of(null);
+          // ProjectService.searchProjects already logs and degrades internally — see the matching
+          // comment on ProjectPickerComponent.initResults for why this is a deliberately silent,
+          // defensive terminal guard on the toSignal stream, not a missed log line.
           return this.projectService.searchProjects(trimmed).pipe(
             switchMap((projects) => {
               const match = projects.find((project) => project.name.trim().toLowerCase() === trimmed.toLowerCase());
