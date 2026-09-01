@@ -10,6 +10,12 @@ import { Request } from 'express';
 import { getEffectiveUsername } from '../utils/auth-helper';
 import { logger } from './logger.service';
 
+/** Sweep entries older than {@link FORMATION_STORE_TTL_MS}, bounding the fixture store's PII
+ *  retention and growth — an hour is far more than the submit→confirm round trip needs. */
+const FORMATION_STORE_TTL_MS = 60 * 60 * 1000;
+/** Cap the fixture store at this many entries, evicting oldest-first once full. */
+const FORMATION_STORE_MAX_ENTRIES = 1000;
+
 /**
  * Fixture-backed formation records (GH-1962/#1965 Epic 1). `lfx-v2-formation-service` (#1957)
  * isn't built yet, so this is the ENTIRE data layer for a formation until it lands — not a
@@ -31,12 +37,11 @@ import { logger } from './logger.service';
  *   router state instead of relying on this store for the primary redirect — the GET/this store
  *   is a best-effort fallback for a direct or refreshed confirmation link only, and a known
  *   fixture limitation there (not a bug), flagged in the PR description.
- * - Entries older than `FORMATION_STORE_TTL_MS` are swept (see `pruneExpired`) on every create
- *   AND every read, so a long-lived pod doesn't retain submitted contact PII (legal contact,
- *   additional contacts) past that window as long as it keeps receiving formation traffic. A pod
- *   that stops receiving ANY `/api/formations*` request after storing an entry has nothing left
- *   to trigger the sweep, so that entry lives until the pod restarts — accepted for a fixture
- *   with an already-documented per-pod lifetime, rather than adding a background timer.
+ * - Entries older than `FORMATION_STORE_TTL_MS` are swept (see `pruneExpired`) on every create,
+ *   every read, AND on a background interval (a quarter of the TTL) — a dark-launched flag's
+ *   steady state is near-idle traffic, so relying on request-triggered sweeps alone would leave
+ *   PII (legal contact, additional contacts) sitting past the documented retention window on
+ *   exactly the pods least likely to see another request.
  * - The store is also capped at `FORMATION_STORE_MAX_ENTRIES`, evicting oldest-first: unlike the
  *   other fixture Maps in this codebase (`credly.service.ts`, `github-readme.service.ts`, etc,
  *   which cache over a bounded, server-derived key space), this one is keyed by a fresh
@@ -48,11 +53,12 @@ import { logger } from './logger.service';
  *   `CommitteeEngagementResponse.data_source`) so a client can always tell fabricated data from
  *   real data once #1957 lands and this class grows a live branch.
  */
-const FORMATION_STORE_TTL_MS = 60 * 60 * 1000;
-const FORMATION_STORE_MAX_ENTRIES = 1000;
-
 export class FormationService {
   private static readonly store = new Map<string, Formation>();
+  // .unref() keeps this timer from holding the event loop open (process exit, test teardown).
+  // Runs well inside the TTL window so a near-idle pod still sweeps stale entries on its own,
+  // not just on the next request.
+  private static readonly sweepTimer = setInterval(() => FormationService.pruneExpired(), FORMATION_STORE_TTL_MS / 4).unref();
 
   /**
    * Creates a formation in `proposed` state with no linked project record

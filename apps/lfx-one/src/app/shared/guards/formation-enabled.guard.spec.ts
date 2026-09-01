@@ -4,6 +4,7 @@
 import { PLATFORM_ID, signal } from '@angular/core';
 import { TestBed } from '@angular/core/testing';
 import { Route, Router, UrlSegment, UrlTree } from '@angular/router';
+import { FORMATION_ENABLED_FLAG } from '@lfx-one/shared/constants';
 import { FeatureFlagService } from '@shared/services/feature-flag.service';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 
@@ -48,6 +49,10 @@ describe('formationEnabledGuard', () => {
     const result = await runGuard();
 
     expect(result).toBe(true);
+    // Pins the guard to the formation-enabled flag specifically — every other test in this file
+    // stubs getBooleanFlag to return a fixed signal regardless of which flag name it's called
+    // with, so none of them would catch this guard being wired to the wrong flag.
+    expect(getBooleanFlag).toHaveBeenCalledWith(FORMATION_ENABLED_FLAG, false);
   });
 
   it('redirects to root once the provider is ready and the flag is off', async () => {

@@ -102,4 +102,21 @@ describe('formations router impersonation boundary', () => {
     expect(response.status).toBe(200);
     expect(createFormation).toHaveBeenCalled();
   });
+
+  it('records the actor and target subs from the session on a blocked submit', async () => {
+    isImpersonating.mockReturnValue(true);
+
+    await fetch(`${baseUrl}/api/formations`, { method: 'POST' });
+
+    // isImpersonating is mocked (the gate decision doesn't read req.appSession at all), but the
+    // warning log's actor/target fields do — this is the only test in the file that proves the
+    // beforeAll session fixture (impersonator/impersonationUser) reaches that log, rather than
+    // just sitting unread in every other test here.
+    expect(logger.warning).toHaveBeenCalledWith(
+      expect.anything(),
+      'impersonation_readonly',
+      'Blocked write during impersonation',
+      expect.objectContaining({ impersonator_sub: 'actor-sub', target_sub: 'target-sub', outcome: 'blocked' })
+    );
+  });
 });

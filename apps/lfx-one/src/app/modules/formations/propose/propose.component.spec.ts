@@ -6,7 +6,8 @@ import { provideHttpClientTesting } from '@angular/common/http/testing';
 import { ApplicationRef } from '@angular/core';
 import { ComponentFixture, TestBed } from '@angular/core/testing';
 import { ActivatedRoute, convertToParamMap, Router } from '@angular/router';
-import { Formation, Project } from '@lfx-one/shared/interfaces';
+import { FORMATION_MAX_ADDITIONAL_CONTACTS } from '@lfx-one/shared/constants';
+import { Formation, OrganizationResolveResult, Project } from '@lfx-one/shared/interfaces';
 import { FormationService } from '@services/formation.service';
 import { ProjectService } from '@services/project.service';
 import { MessageService } from 'primeng/api';
@@ -30,8 +31,9 @@ describe('ProposeComponent', () => {
   let navigate: ReturnType<typeof vi.fn>;
   let messageAdd: ReturnType<typeof vi.fn>;
 
-  /** Only the "who else" DOM-rendering test below needs the `ComponentFixture` — every other test
-   *  in this file only drives the component class, via the `createComponent` wrapper below. */
+  /** Only the DOM-rendering tests below (the "who else" incomplete-error test and the two
+   *  label-association tests) need the `ComponentFixture` — every other test in this file only
+   *  drives the component class, via the `createComponent` wrapper below. */
   const createComponentWithFixture = async (
     queryParams: Record<string, string> = {}
   ): Promise<{ component: ProposeComponent; fixture: ComponentFixture<ProposeComponent> }> => {
@@ -115,6 +117,36 @@ describe('ProposeComponent', () => {
     expect(component.submitting()).toBe(false);
   });
 
+  it('resolves and registers a manually-created organization against CDP before submitting', async () => {
+    const component = await createComponent();
+    fillRequiredFields(component);
+    const orgSearch = (component as any).organizationSearch();
+    orgSearch.manualMode.set(true);
+    const resolveCurrentEntry = vi
+      .spyOn(orgSearch, 'resolveCurrentEntry')
+      .mockReturnValue(of({ id: 'cdp-org-1', name: 'Example Org', logo: '', originalName: 'Example Org', nameChanged: false } as OrganizationResolveResult));
+    const formation = { uid: 'formation-1' } as Formation;
+    createFormation.mockReturnValue(of(formation));
+
+    component.onSubmit();
+
+    expect(resolveCurrentEntry).toHaveBeenCalled();
+    expect(createFormation).toHaveBeenCalledWith(expect.objectContaining({ contributing_org_id: 'cdp-org-1' }));
+  });
+
+  it('does not re-resolve an organization already picked via search — onOrgResolved already set contributing_org_id', async () => {
+    const component = await createComponent();
+    fillRequiredFields(component);
+    const orgSearch = (component as any).organizationSearch();
+    const resolveCurrentEntry = vi.spyOn(orgSearch, 'resolveCurrentEntry');
+    createFormation.mockReturnValue(of({ uid: 'formation-1' } as Formation));
+
+    component.onSubmit();
+
+    expect(resolveCurrentEntry).not.toHaveBeenCalled();
+    expect(createFormation).toHaveBeenCalled();
+  });
+
   it('shows an error toast and does not navigate when submission fails', async () => {
     const component = await createComponent();
     fillRequiredFields(component);
@@ -135,6 +167,14 @@ describe('ProposeComponent', () => {
 
     expect(getProject).toHaveBeenCalledWith('my-foundation', false);
     expect(component.form.get('parent_project_uid')?.value).toBe('parent-uid-1');
+  });
+
+  it("encodes the ?parent= slug before handing it to getProject, so a path segment like ../.. can't escape /api/projects/:slug", async () => {
+    getProject.mockReturnValue(of(null));
+
+    await createComponent({ parent: '../../other-route' });
+
+    expect(getProject).toHaveBeenCalledWith('..%2F..%2Fother-route', false);
   });
 
   it('does not let a slow ?parent= prefill overwrite a parent the user already picked by hand', async () => {
@@ -219,6 +259,20 @@ describe('ProposeComponent', () => {
     component.removeContact(0);
 
     expect(component.additionalContacts()).toEqual([]);
+  });
+
+  it('refuses to add past FORMATION_MAX_ADDITIONAL_CONTACTS — the server rejects an oversized additional_contacts array', async () => {
+    const component = await createComponent();
+    for (let i = 0; i < FORMATION_MAX_ADDITIONAL_CONTACTS; i++) {
+      component.newContactForm.setValue({ first_name: 'Sam', last_name: 'Lee', email: `sam${i}@example.test` });
+      component.addContact();
+    }
+    expect(component.additionalContacts()).toHaveLength(FORMATION_MAX_ADDITIONAL_CONTACTS);
+
+    component.newContactForm.setValue({ first_name: 'One', last_name: 'Too Many', email: 'overflow@example.test' });
+    component.addContact();
+
+    expect(component.additionalContacts()).toHaveLength(FORMATION_MAX_ADDITIONAL_CONTACTS);
   });
 
   it('rejects a duplicate email in "who else" — @for tracks by email, so a duplicate would break the track key', async () => {

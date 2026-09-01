@@ -133,11 +133,14 @@ describe('ProposeConfirmationComponent', () => {
   });
 
   it('renders the "Proposed on {date}" banner', async () => {
-    getFormationByUid.mockReturnValue(of(buildFormation()));
+    getFormationByUid.mockReturnValue(of(buildFormation({ submitted_at: '2026-08-31T00:00:00.000Z' })));
 
     await setup('formation-1');
 
     const banner = fixture.nativeElement.querySelector('[data-testid="propose-confirmation-banner"]');
+    // formatShortDate renders in UTC — pins the actual date text, not just the surrounding copy,
+    // so a broken submittedOnLabel computed still fails this test.
+    expect(banner?.textContent).toContain('Proposed on Aug 31, 2026');
     expect(banner?.textContent).toContain('Your submission was received.');
   });
 
