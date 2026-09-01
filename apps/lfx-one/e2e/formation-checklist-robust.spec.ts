@@ -10,7 +10,6 @@
 import { expect, test } from '@playwright/test';
 
 import { getMockFormation, getMockFormationItems, mockFormationTemplate } from './fixtures/mock-data';
-import { FormationApiMockHelper } from './helpers/formation-api-mock.helper';
 import {
   buildBaseProject,
   DATA_LOAD_TIMEOUT,
