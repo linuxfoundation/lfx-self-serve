@@ -65,7 +65,7 @@ export function computeIsFoundation(project: Project | null): boolean {
  * literal (GH-1955 — see that constant's doc comment for why "Draft" is handled at all).
  */
 export function isFormationStage(stage: string | undefined | null): boolean {
-  return !!stage && (stage === DRAFT_STAGE_SENTINEL || getFormationSubStageLabel(stage) !== null);
+  return getFormationSubStageLabel(stage) !== null;
 }
 
 /**

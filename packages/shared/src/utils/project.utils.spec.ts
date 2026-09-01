@@ -94,6 +94,12 @@ describe('isFormationStage', () => {
     expect(isFormationStage(null)).toBe(false);
     expect(isFormationStage('')).toBe(false);
   });
+
+  it('returns false for a stage string colliding with an inherited Object.prototype member name', () => {
+    expect(isFormationStage('toString')).toBe(false);
+    expect(isFormationStage('constructor')).toBe(false);
+    expect(isFormationStage('hasOwnProperty')).toBe(false);
+  });
 });
 
 describe('getFormationSubStageLabel', () => {
@@ -115,5 +121,11 @@ describe('getFormationSubStageLabel', () => {
     expect(getFormationSubStageLabel(undefined)).toBeNull();
     expect(getFormationSubStageLabel(null)).toBeNull();
     expect(getFormationSubStageLabel('')).toBeNull();
+  });
+
+  it('returns null (not an inherited function) for a stage string colliding with an Object.prototype member name', () => {
+    expect(getFormationSubStageLabel('toString')).toBeNull();
+    expect(getFormationSubStageLabel('constructor')).toBeNull();
+    expect(getFormationSubStageLabel('hasOwnProperty')).toBeNull();
   });
 });
