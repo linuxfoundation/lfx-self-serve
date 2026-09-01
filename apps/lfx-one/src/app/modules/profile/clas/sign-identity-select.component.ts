@@ -22,13 +22,18 @@ import { SelectableCardComponent } from '@components/selectable-card/selectable-
  * so the step is never skipped on the strength of the group's source (#2002). Only which
  * identities are on offer varies, and the variant says which.
  *
- * ## Where each identity comes from, and why they are not equally trusted
+ * ## Where each identity comes from, and what makes each one safe
  *
  * The **GitHub accounts** come from the server, which reads them from the identity provider for
- * this session, and the CLA service records the submitted account without re-deriving ownership.
- * So that list is not merely display data: an account that should not be in it would be
- * recorded. It must be presented as given and never taken from the URL, from user input, or
- * from anywhere but `config.data`.
+ * this session. What is chosen here is re-validated on submit: `prepareSign` re-reads the
+ * session's linked accounts and refuses an id that is not among them, and the upstream service
+ * derives the attested set from the caller's own token and refuses anything outside it again.
+ * So this list is a UX and data-integrity constraint rather than the security boundary — an
+ * account that should not be in it is refused, not recorded.
+ *
+ * It must still be presented as given and never taken from the URL, from user input, or from
+ * anywhere but `config.data`. That is defence in depth: the server's refusal is the guarantee,
+ * and this component's job is to never make it necessary.
  *
  * The **Gerrit identity** does not come from the server, and that is safe only because of what
  * happens to it — nothing. It is never submitted, never sent upstream, and never recorded. The
