@@ -8,12 +8,15 @@ import { ComponentFixture, TestBed } from '@angular/core/testing';
 import type { Signal, WritableSignal } from '@angular/core';
 import { computed, signal } from '@angular/core';
 import type {
+  CampaignAudience,
+  EmailBriefCopy,
   CampaignBriefOutput,
   CampaignBriefPersistResult,
   CampaignBriefPersistenceState,
   CampaignImplementationDraft,
   CampaignDeliveryType,
   CampaignIndexDoc,
+  CampaignJobOutcome,
   CampaignListResult,
   CampaignProgramType,
   CampaignTab,
@@ -1833,6 +1836,22 @@ describe('CampaignsComponent — email delivery channel', () => {
     onTabKeydown(event: KeyboardEvent, index: number, owner: CampaignDeliveryType): void;
     onProceedToImplementation(brief: CampaignBriefOutput): void;
     onEmailProceedToImplementation(brief: CampaignBriefOutput): void;
+    selectedEmailTemplateId: WritableSignal<string>;
+    selectedEmailTypeId: WritableSignal<string>;
+    emailCopy: WritableSignal<EmailBriefCopy | null>;
+    emailAudience: WritableSignal<CampaignAudience | null>;
+    emailAudienceState: WritableSignal<'idle' | 'building' | 'error'>;
+    emailAudienceMessage: WritableSignal<string>;
+    emailBriefId: WritableSignal<string>;
+    onBuildAudience(): Promise<void>;
+    emailCopyState: WritableSignal<'idle' | 'generating' | 'error'>;
+    emailCopyError: WritableSignal<string>;
+    canGenerateEmailCopy: Signal<boolean>;
+    onGenerateEmailCopy(): Promise<void>;
+    emailStaging: WritableSignal<'idle' | 'staging' | 'done' | 'error'>;
+    emailStagingMessage: WritableSignal<string>;
+    canStageEmail: Signal<boolean>;
+    onStageEmailSend(): Promise<void>;
     selectorForm: {
       controls: {
         deliveryType: { setValue(v: CampaignDeliveryType): void };
@@ -2174,6 +2193,1072 @@ describe('CampaignsComponent — email delivery channel', () => {
     // Still the paid brief: a shared signal here would show an email brief under Paid
     // Marketing's Implement tab after a round-trip.
     expect(internals().briefOutput()).toEqual(exampleBrief);
+  });
+
+  describe('email content generation (LFXV2-2775 proxy)', () => {
+    const emailBrief = {
+      eventDetails: { name: 'KubeCon EU 2026', slug: 'kubecon-eu-2026', countryCode: 'NL', registrationUrl: 'https://x.example/' },
+    } as unknown as CampaignBriefOutput;
+
+    const copy = { subject: 'Three days in Amsterdam', preheader: 'Sessions and labs', body: '<p>Hello</p>', cta: 'Register' };
+
+    let persist: ReturnType<typeof vi.fn>;
+
+    beforeEach(() => {
+      persist = vi.fn().mockReturnValue(of({ status: 'saved', approved: true, briefId: 'brief-77', etag: null }));
+      vi.spyOn(TestBed.inject(CampaignService), 'persistBrief').mockImplementation(persist);
+    });
+
+    it('cannot generate without a brief', () => {
+      selectEmail();
+      expect(internals().canGenerateEmailCopy()).toBe(false);
+
+      internals().emailBriefOutput.set(emailBrief);
+      fixture.detectChanges();
+      expect(internals().canGenerateEmailCopy()).toBe(true);
+    });
+
+    /**
+     * A stage change mid-flight must invalidate the request it started.
+     *
+     * `onSelectEmailType` clears the copy while a generate may still be running, and the selector
+     * stays usable — so the older response resolves afterwards and repopulates the panel with the
+     * PREVIOUS stage's copy under the new stage's label. That copy reads plausibly and is simply
+     * the wrong kind of email, which `onStageEmailSend` would then clone.
+     */
+    it('discards copy that arrives after the operator changed the stage', async () => {
+      selectEmail();
+      internals().emailBriefOutput.set(emailBrief);
+      fixture.detectChanges();
+
+      const late = new Subject<{ enabled: boolean; copy: EmailBriefCopy }>();
+      vi.spyOn(TestBed.inject(CampaignService), 'generateEmailCopy').mockReturnValue(late.asObservable() as never);
+
+      const pending = internals().onGenerateEmailCopy();
+      (internals() as unknown as { onSelectEmailType(id: string): void }).onSelectEmailType('thank-you-survey');
+      late.next({ enabled: true, copy });
+      late.complete();
+      await pending;
+
+      expect(internals().emailCopy()).toBeNull();
+      expect(internals().emailCopyState()).toBe('idle');
+    });
+
+    /**
+     * `emailBriefId` is cleared by `resetEmailBriefDerivedState`, so caching the persisted id only
+     * there meant the next save after a Proceed found no owned row and CREATED a second brief for
+     * a (project, event) that already had one — while the paid path, reading the same cache, went
+     * on addressing the first.
+     */
+    it('records brief ownership so a later save replaces rather than creating a second row', async () => {
+      selectEmail();
+      internals().emailBriefOutput.set(emailBrief);
+      fixture.detectChanges();
+
+      vi.spyOn(TestBed.inject(CampaignService), 'generateEmailCopy').mockReturnValue(of({ enabled: true, copy }));
+      await internals().onGenerateEmailCopy();
+
+      // The reset clears `emailBriefId` — which is exactly the path that exposed this: with the id
+      // gone and ownership never recorded, the next persist had nothing to address and created a
+      // SECOND brief for a (project, event) that already had one.
+      (fixture.componentInstance as unknown as { resetEmailBriefDerivedState(): void }).resetEmailBriefDerivedState();
+      persist.mockClear();
+
+      await internals().onGenerateEmailCopy();
+      expect(persist).toHaveBeenCalled();
+      // The known id is the third argument: this save REPLACES the row rather than creating one.
+      expect(persist.mock.calls[0][2]).toBe('brief-77');
+    });
+
+    /** A BUILT audience, which is what `canStageEmail` gates on. */
+    const builtAudience: CampaignAudience = {
+      id: 'aud-1',
+      projectId: 'tlf',
+      briefId: 'brief-77',
+      platform: 'hubspot',
+      inclusionSummary: 'Past registrants',
+      status: 'built',
+      version: 1,
+    };
+
+    /**
+     * A late AUDIENCE response is worse than a stale one: `canStageEmail` gates on
+     * `emailAudience()?.status === 'built'`, so a build resolving after the reset re-enables
+     * staging against a brief the page no longer holds.
+     *
+     * LIMITATION, stated rather than implied: this test pins the OUTCOME, not the generation
+     * guard specifically. Removing the guard's bump from `resetEmailBriefDerivedState` leaves it
+     * green, because the reset's own `emailAudience.set(null)` already satisfies the assertion in
+     * this harness — the mocked persist resolves in a microtask, so the reset lands before the
+     * response and the clear is what the assertion observes. Driving the guard itself needs a
+     * fake that suspends INSIDE `ensureEmailBriefId`, which this suite has no seam for. The guard
+     * is kept because the write it protects (`emailAudience.set(result.audience)`) is
+     * unconditional, and a late response would otherwise overwrite the cleared signal.
+     */
+    /**
+     * A late persist must not clear a NEWER one's in-flight slot.
+     *
+     * `ensureEmailBriefId` dedups concurrent saves by parking the promise in
+     * `emailBriefPersistInFlight`, and its `finally` cleared that field unconditionally. A reset
+     * also clears it, so this ordering defeated the dedup: persist A starts, a reset clears the
+     * slot, persist B starts and takes it, then A settles and wipes B's slot — leaving a third
+     * action free to start a SECOND concurrent save of the same brief.
+     *
+     * Driven through the service mock, which is the real seam: the component's own
+     * `persistEmailBrief` awaits `campaignService.persistBrief`, so controlling that controls when
+     * each persist settles.
+     */
+    it("does not let a late persist clear a newer one's in-flight slot", async () => {
+      selectEmail();
+      internals().emailBriefOutput.set(emailBrief);
+      fixture.detectChanges();
+
+      const settleA: ((v: unknown) => void)[] = [];
+      const settleB: ((v: unknown) => void)[] = [];
+      let call = 0;
+      vi.spyOn(TestBed.inject(CampaignService), 'persistBrief').mockImplementation(
+        () =>
+          new Observable((sub) => {
+            const bucket = call++ === 0 ? settleA : settleB;
+            bucket.push((v) => {
+              sub.next(v);
+              sub.complete();
+            });
+          }) as never
+      );
+
+      const c = fixture.componentInstance as unknown as {
+        ensureEmailBriefId(brief: unknown, slug: string): Promise<string>;
+        resetEmailBriefDerivedState(): void;
+        emailBriefPersistInFlight: Promise<string> | null;
+      };
+
+      const a = c.ensureEmailBriefId(emailBrief, 'tlf');
+      // The reset frees the slot, exactly as it does in the app.
+      c.resetEmailBriefDerivedState();
+      const b = c.ensureEmailBriefId(emailBrief, 'tlf');
+      expect(c.emailBriefPersistInFlight, 'precondition: B holds the slot').not.toBeNull();
+
+      // A settles LAST. Its `finally` must leave B's slot alone.
+      settleA.forEach((f) => f({ enabled: true, briefId: 'brief-a', etag: null }));
+      await a.catch(() => undefined);
+
+      expect(c.emailBriefPersistInFlight, "a late persist cleared the newer one's slot, so a third action could start a second concurrent save").not.toBeNull();
+
+      settleB.forEach((f) => f({ enabled: true, briefId: 'brief-b', etag: null }));
+      await b.catch(() => undefined);
+    });
+
+    it('discards an audience that arrives after the brief-derived state reset', async () => {
+      selectEmail();
+      internals().emailBriefOutput.set(emailBrief);
+      fixture.detectChanges();
+
+      const late = new Subject<{ enabled: boolean; audience: CampaignAudience }>();
+      vi.spyOn(TestBed.inject(CampaignService), 'buildAudience').mockReturnValue(late.asObservable() as never);
+
+      const pending = internals().onBuildAudience();
+      (fixture.componentInstance as unknown as { resetEmailBriefDerivedState(): void }).resetEmailBriefDerivedState();
+      late.next({ enabled: true, audience: builtAudience });
+      late.complete();
+      await pending;
+
+      expect(internals().emailAudience()).toBeNull();
+      expect(internals().canStageEmail()).toBe(false);
+    });
+
+    /**
+     * The same for copy. Carries the same limitation as the audience test above: it pins the
+     * outcome, not the generation bump, which the reset's own clear can satisfy in this harness.
+     */
+    it('discards copy that arrives after the brief-derived state reset', async () => {
+      selectEmail();
+      internals().emailBriefOutput.set(emailBrief);
+      fixture.detectChanges();
+
+      const late = new Subject<{ enabled: boolean; copy: EmailBriefCopy }>();
+      vi.spyOn(TestBed.inject(CampaignService), 'generateEmailCopy').mockReturnValue(late.asObservable() as never);
+
+      const pending = internals().onGenerateEmailCopy();
+      (fixture.componentInstance as unknown as { resetEmailBriefDerivedState(): void }).resetEmailBriefDerivedState();
+      late.next({ enabled: true, copy });
+      late.complete();
+      await pending;
+
+      expect(internals().emailCopy()).toBeNull();
+    });
+
+    /**
+     * The dedup must not outlive the brief that started it.
+     *
+     * A caller joining the shared promise AFTER a reset would receive the PREVIOUS brief's id and
+     * address every later write to the wrong row — the dedup becoming a correctness bug precisely
+     * because it worked. The reset drops the joinable promise; the in-flight request itself is
+     * left to finish.
+     */
+    it('does not hand a joined caller the previous brief id after a reset', async () => {
+      selectEmail();
+      internals().emailBriefOutput.set(emailBrief);
+      fixture.detectChanges();
+
+      const slow = new Subject<CampaignBriefPersistResult>();
+      persist.mockReturnValue(slow.asObservable());
+      vi.spyOn(TestBed.inject(CampaignService), 'generateEmailCopy').mockReturnValue(of({ enabled: true, copy }));
+
+      const first = internals().onGenerateEmailCopy();
+      (fixture.componentInstance as unknown as { resetEmailBriefDerivedState(): void }).resetEmailBriefDerivedState();
+
+      // A second action after the reset must start its OWN persist rather than join the first.
+      persist.mockReturnValue(of({ status: 'saved', approved: true, briefId: 'brief-99', etag: null }));
+      const second = internals().onGenerateEmailCopy();
+
+      slow.next({ status: 'saved', approved: true, briefId: 'brief-77', etag: null } as unknown as CampaignBriefPersistResult);
+      slow.complete();
+      await Promise.all([first, second]);
+
+      // Two persists, not one joined call: the second belongs to the new brief.
+      expect(persist).toHaveBeenCalledTimes(2);
+
+      // And the ABANDONED persist must not write its id into the shared cache. The call count
+      // alone passed while `brief-77` clobbered `emailBriefId`: `persistEmailBrief` short-circuits
+      // on a non-empty id, so the next action would then stage against the previous brief --
+      // exactly the cross-brief leak the reset exists to prevent.
+      expect(internals().emailBriefId(), 'the abandoned persist wrote its id back after the reset').not.toBe('brief-77');
+    });
+
+    /**
+     * Two email actions started together each found an empty cache and each issued a first-save
+     * persist for the same (project, event) — a duplicate brief, or a lost ownership race.
+     */
+    it('issues one persist when two email actions start concurrently', async () => {
+      selectEmail();
+      internals().emailBriefOutput.set(emailBrief);
+      fixture.detectChanges();
+
+      vi.spyOn(TestBed.inject(CampaignService), 'generateEmailCopy').mockReturnValue(of({ enabled: true, copy }));
+      vi.spyOn(TestBed.inject(CampaignService), 'buildAudience').mockReturnValue(of({ enabled: true, audience: builtAudience }));
+      persist.mockClear();
+
+      await Promise.all([internals().onGenerateEmailCopy(), internals().onBuildAudience()]);
+
+      expect(persist).toHaveBeenCalledTimes(1);
+    });
+
+    it('persists the brief first, then generates against that id', async () => {
+      selectEmail();
+      internals().emailBriefOutput.set(emailBrief);
+      fixture.detectChanges();
+
+      const gen = vi.spyOn(TestBed.inject(CampaignService), 'generateEmailCopy').mockReturnValue(of({ enabled: true, copy }));
+      await internals().onGenerateEmailCopy();
+
+      // Brief-scoped upstream: generation posts to /briefs/{id}/email-copy, so an unpersisted
+      // brief has no id to address.
+      expect(persist).toHaveBeenCalled();
+      // Slug and brief id, in that order. The third argument is the email stage, asserted by its
+      // own test -- pinning the whole argv here made this ordering test fail when the stage was
+      // added, which is a different claim than the one it exists to make.
+      expect(gen.mock.calls[0].slice(0, 2)).toEqual(['tlf', 'brief-77']);
+      expect(internals().emailCopy()?.subject).toBe('Three days in Amsterdam');
+    });
+
+    it('does NOT generate when the persist returns no brief id', async () => {
+      selectEmail();
+      internals().emailBriefOutput.set(emailBrief);
+      fixture.detectChanges();
+
+      persist.mockReturnValue(of({ status: 'saved', briefId: '', etag: null }));
+      const gen = vi.spyOn(TestBed.inject(CampaignService), 'generateEmailCopy');
+
+      await internals().onGenerateEmailCopy();
+
+      // Generating without an id would POST to /briefs//email-copy. Refusing is the safe arm.
+      expect(gen).not.toHaveBeenCalled();
+      expect(internals().emailCopyState()).toBe('error');
+    });
+
+    it('reports a disabled cutover without claiming copy was generated', async () => {
+      selectEmail();
+      internals().emailBriefOutput.set(emailBrief);
+      fixture.detectChanges();
+
+      vi.spyOn(TestBed.inject(CampaignService), 'generateEmailCopy').mockReturnValue(of({ enabled: false }));
+      await internals().onGenerateEmailCopy();
+
+      expect(internals().emailCopy()).toBeNull();
+      expect(internals().emailCopyState()).toBe('error');
+    });
+
+    it('surfaces the upstream refusal rather than a generic message', async () => {
+      selectEmail();
+      internals().emailBriefOutput.set(emailBrief);
+      fixture.detectChanges();
+
+      // The 503 case: no AI model configured upstream. An operator needs the real reason.
+      vi.spyOn(TestBed.inject(CampaignService), 'generateEmailCopy').mockReturnValue(
+        of({ enabled: true, error: 'The email copy could not be generated. Try again.' })
+      );
+      await internals().onGenerateEmailCopy();
+
+      expect(internals().emailCopyError()).toBe('The email copy could not be generated. Try again.');
+    });
+  });
+
+  describe('email send audience', () => {
+    const emailBrief = {
+      eventDetails: { name: 'KubeCon EU 2026', slug: 'kubecon-eu-2026', countryCode: 'NL', registrationUrl: 'https://x.example/' },
+    } as unknown as CampaignBriefOutput;
+
+    const audience: CampaignAudience = {
+      id: 'aud-1',
+      projectId: 'tlf',
+      briefId: 'brief-77',
+      platform: 'hubspot',
+      inclusionSummary: 'Past registrants of 3 prior editions',
+      status: 'built',
+      version: 1,
+    };
+
+    let persist: ReturnType<typeof vi.fn>;
+
+    beforeEach(() => {
+      persist = vi.fn().mockReturnValue(of({ status: 'saved', approved: true, briefId: 'brief-77', etag: null }));
+      vi.spyOn(TestBed.inject(CampaignService), 'persistBrief').mockImplementation(persist);
+    });
+
+    it('persists the brief once and builds against that id', async () => {
+      selectEmail();
+      internals().emailBriefOutput.set(emailBrief);
+      fixture.detectChanges();
+
+      const build = vi.spyOn(TestBed.inject(CampaignService), 'buildAudience').mockReturnValue(of({ enabled: true, audience }));
+      await internals().onBuildAudience();
+
+      expect(build.mock.calls[0]).toEqual(['tlf', 'brief-77']);
+      expect(internals().emailAudience()?.inclusionSummary).toBe('Past registrants of 3 prior editions');
+    });
+
+    it('does NOT persist a second brief when staging follows an audience build', async () => {
+      selectEmail();
+      internals().emailBriefOutput.set(emailBrief);
+      internals().selectedEmailTemplateId.set('hs-1');
+      fixture.detectChanges();
+
+      vi.spyOn(TestBed.inject(CampaignService), 'buildAudience').mockReturnValue(of({ enabled: true, audience }));
+      vi.spyOn(TestBed.inject(CampaignService), 'createCampaign').mockReturnValue(of({ jobId: 'j1' }));
+
+      await internals().onBuildAudience();
+      await internals().onStageEmailSend();
+
+      // Two writes for one event is the bug this guards: the id is cached after the first.
+      expect(persist).toHaveBeenCalledTimes(1);
+    });
+
+    /**
+     * A failed HubSpot row must not be announced as a created draft.
+     *
+     * campaign-service reports a partial outcome as `{ platform: 'hubspot', ok: false, error }`
+     * with an EMPTY `errors` array, so checking only the top level said "Draft created in
+     * HubSpot" for a staging that failed — sending the operator to look for a draft that is not
+     * there.
+     */
+    it('reports a failed hubspot platform result as an error, not a created draft', async () => {
+      selectEmail();
+      internals().emailBriefOutput.set(emailBrief);
+      internals().selectedEmailTemplateId.set('hs-1');
+      fixture.detectChanges();
+
+      vi.spyOn(TestBed.inject(CampaignService), 'buildAudience').mockReturnValue(of({ enabled: true, audience }));
+      vi.spyOn(TestBed.inject(CampaignService), 'createCampaign').mockReturnValue(of({ jobId: 'j1' }));
+      vi.spyOn(TestBed.inject(CampaignService), 'getCreateResult').mockReturnValue(
+        of({
+          campaigns: [],
+          errors: [],
+          platformResults: [{ platform: 'hubspot', ok: false, error: 'the source template could not be cloned' }],
+        } as unknown as CampaignJobOutcome)
+      );
+
+      await internals().onBuildAudience();
+      await internals().onStageEmailSend();
+      fixture.detectChanges();
+
+      expect(internals().emailStaging()).toBe('error');
+      expect(internals().emailStagingMessage()).toContain('could not be cloned');
+    });
+
+    /** An ABSENT platformResults must still succeed — it is optional on the contract. */
+    it('still reports success when the service omits platformResults', async () => {
+      selectEmail();
+      internals().emailBriefOutput.set(emailBrief);
+      internals().selectedEmailTemplateId.set('hs-1');
+      fixture.detectChanges();
+
+      vi.spyOn(TestBed.inject(CampaignService), 'buildAudience').mockReturnValue(of({ enabled: true, audience }));
+      vi.spyOn(TestBed.inject(CampaignService), 'createCampaign').mockReturnValue(of({ jobId: 'j1' }));
+      vi.spyOn(TestBed.inject(CampaignService), 'getCreateResult').mockReturnValue(
+        of({ campaigns: [{ id: 'c1' }], errors: [] } as unknown as CampaignJobOutcome)
+      );
+
+      await internals().onBuildAudience();
+      await internals().onStageEmailSend();
+      fixture.detectChanges();
+
+      expect(internals().emailStaging()).toBe('done');
+    });
+
+    /**
+     * A reset landing during the CREATE await must stop the poll and the state writes.
+     *
+     * LIMITATION, same as the sibling test below: this pins the OUTCOME, not the guard. Removing
+     * the post-create `isCurrent()` check leaves it green -- I instrumented the branch and
+     * `isCurrent()` reads `true` throughout, because the reset lands before the generation is
+     * captured rather than inside the await. Producing a reset that lands strictly BETWEEN the
+     * capture and the create's resolution needs a seam this harness does not have.
+     *
+     * The guard is kept because the window is real in the browser: the request cannot be recalled
+     * once sent, but the poll and the state writes after it can be, and those are what an
+     * operator sees. I would rather label the test than report coverage I could not demonstrate.
+     */
+    it('abandons the staging result when the brief resets during the create', async () => {
+      selectEmail();
+      internals().emailBriefOutput.set(emailBrief);
+      internals().selectedEmailTemplateId.set('hs-1');
+      fixture.detectChanges();
+
+      vi.spyOn(TestBed.inject(CampaignService), 'buildAudience').mockReturnValue(of({ enabled: true, audience }));
+      await internals().onBuildAudience();
+
+      // The create hangs, so the reset lands squarely inside its await -- past the entry check.
+      const slowCreate = new Subject<{ jobId: string }>();
+      vi.spyOn(TestBed.inject(CampaignService), 'createCampaign').mockReturnValue(slowCreate.asObservable() as never);
+      const poll = vi.spyOn(TestBed.inject(CampaignService), 'getCreateResult').mockReturnValue(of(null));
+
+      void internals().onStageEmailSend();
+      await Promise.resolve();
+      (fixture.componentInstance as unknown as { resetEmailBriefDerivedState(): void }).resetEmailBriefDerivedState();
+
+      slowCreate.next({ jobId: 'j1' });
+      slowCreate.complete();
+      await Promise.resolve();
+      await Promise.resolve();
+
+      // The poll belongs to the abandoned brief and must never start.
+      expect(poll).not.toHaveBeenCalled();
+      expect(internals().emailStaging()).toBe('idle');
+    });
+
+    /**
+     * A reset during staging must stop the CREATE, not just the poll — that write clones a HubSpot
+     * draft and points it at the previous brief's audience, and cancelling the poll afterwards
+     * does not undo it.
+     *
+     * LIMITATION, stated rather than implied: this pins the OUTCOME, not the generation guard.
+     * Removing that guard leaves this green, because `resetEmailBriefDerivedState` also clears
+     * `emailAudience` and the ENTRY check (`emailAudience()?.status !== 'built'`) returns first.
+     * The guard is kept as defence-in-depth for a reset that lands after that check has passed,
+     * which this harness has no seam to produce; the entry check is what this test proves.
+     */
+    it('does not create a campaign when the brief resets mid-stage', async () => {
+      selectEmail();
+      internals().emailBriefOutput.set(emailBrief);
+      internals().selectedEmailTemplateId.set('hs-1');
+      fixture.detectChanges();
+
+      const create = vi.spyOn(TestBed.inject(CampaignService), 'createCampaign').mockReturnValue(of({ jobId: 'j1' }));
+      vi.spyOn(TestBed.inject(CampaignService), 'buildAudience').mockReturnValue(of({ enabled: true, audience }));
+
+      // The audience build runs FIRST, on the fast persist -- it also awaits `ensureEmailBriefId`,
+      // so slowing the persist before this point hangs the setup rather than the staging call.
+      await internals().onBuildAudience();
+      create.mockClear();
+
+      // NOW slow the persist, and clear the cached id so staging actually awaits it.
+      const slowPersist = new Subject<CampaignBriefPersistResult>();
+      persist.mockReturnValue(slowPersist.asObservable());
+      internals().emailBriefId.set('');
+
+      // NOT awaited: the guard returns early, and the promise chain settles on its own. Awaiting
+      // it here is what timed the first version of this test out.
+      void internals().onStageEmailSend();
+      (fixture.componentInstance as unknown as { resetEmailBriefDerivedState(): void }).resetEmailBriefDerivedState();
+      slowPersist.next({ status: 'saved', approved: true, briefId: 'brief-77', etag: null } as unknown as CampaignBriefPersistResult);
+      slowPersist.complete();
+      // Two microtask turns: one for the persist to resolve, one for the guard to run after it.
+      await Promise.resolve();
+      await Promise.resolve();
+
+      expect(create).not.toHaveBeenCalled();
+    });
+
+    /**
+     * A reset must CANCEL the staging poll, not merely relabel it.
+     *
+     * Setting `emailStaging` back to `idle` leaves the subscription running, so a job settling
+     * after a new brief or a foundation switch still writes `done` — announcing a HubSpot draft
+     * that belongs to the PREVIOUS brief as though it were this one's.
+     */
+    it('stops the staging poll when the brief-derived state resets', async () => {
+      selectEmail();
+      internals().emailBriefOutput.set(emailBrief);
+      internals().selectedEmailTemplateId.set('hs-1');
+      fixture.detectChanges();
+
+      const late = new Subject<CampaignJobOutcome | null>();
+      vi.spyOn(TestBed.inject(CampaignService), 'buildAudience').mockReturnValue(of({ enabled: true, audience }));
+      vi.spyOn(TestBed.inject(CampaignService), 'createCampaign').mockReturnValue(of({ jobId: 'j1' }));
+      vi.spyOn(TestBed.inject(CampaignService), 'getCreateResult').mockReturnValue(late.asObservable());
+
+      await internals().onBuildAudience();
+      await internals().onStageEmailSend();
+
+      (fixture.componentInstance as unknown as { resetEmailBriefDerivedState(): void }).resetEmailBriefDerivedState();
+      // The job settles AFTER the reset. With the poll still subscribed this writes 'done'.
+      late.next({ campaigns: [{ id: 'c1' }], errors: [] } as unknown as CampaignJobOutcome);
+      late.complete();
+      fixture.detectChanges();
+
+      expect(internals().emailStaging()).toBe('idle');
+      expect(internals().emailStagingMessage()).toBe('');
+    });
+
+    it('reports a disabled cutover as a steady state, not an error', async () => {
+      selectEmail();
+      internals().emailBriefOutput.set(emailBrief);
+      fixture.detectChanges();
+
+      vi.spyOn(TestBed.inject(CampaignService), 'buildAudience').mockReturnValue(of({ enabled: false }));
+      await internals().onBuildAudience();
+
+      expect(internals().emailAudienceState()).toBe('idle');
+      expect(internals().emailAudience()).toBeNull();
+    });
+  });
+
+  describe('email preview', () => {
+    const copy = {
+      subject: 'Three days in Amsterdam',
+      preheader: 'Sessions and labs',
+      body: '<p>Body</p>',
+      cta: 'Register',
+    };
+
+    it('shows nothing until copy exists', () => {
+      selectEmail();
+      internals().selectedEmailTab.set('implementation');
+      fixture.detectChanges();
+
+      const host: HTMLElement = fixture.nativeElement;
+      // An empty preview frame would suggest the email exists and is blank.
+      expect(host.querySelector('[data-testid="campaigns-email-preview"]')).toBeNull();
+
+      internals().emailCopy.set(copy);
+      fixture.detectChanges();
+      expect(host.querySelector('[data-testid="campaigns-email-preview"]')).not.toBeNull();
+    });
+
+    it('warns that a multi-widget template keeps its own body', () => {
+      selectEmail();
+      internals().selectedEmailTab.set('implementation');
+      internals().emailCopy.set(copy);
+      fixture.detectChanges();
+
+      // Pinned because it is a REAL upstream limitation, not a temporary gap: the dispatcher
+      // applies bodyHtml only when the draft has exactly one rich-text widget, and silently
+      // leaves a multi-widget template alone. An operator who is not told this discovers it on
+      // a send. If the upstream rule changes, this test should fail and the note be reworded.
+      const note = (fixture.nativeElement as HTMLElement).querySelector('[data-testid="campaigns-email-preview-note"]');
+      expect(note?.textContent).toContain('more than one text block');
+    });
+  });
+
+  describe('email staging trigger (LFXV2-3201)', () => {
+    // Scoped to THIS block: the outer `persistBrief` spy belongs to the first describe and is
+    // not in scope here.
+    let persistBrief: ReturnType<typeof vi.fn>;
+
+    beforeEach(() => {
+      persistBrief = vi.fn();
+      vi.spyOn(TestBed.inject(CampaignService), 'persistBrief').mockImplementation(persistBrief);
+    });
+
+    // A brief shaped like the email planner's output. `eventDetails` is what the create request
+    // is built FROM, so the fields asserted below must come from here and not from a spread.
+    const emailBrief = {
+      eventDetails: {
+        name: 'KubeCon EU 2026',
+        slug: 'kubecon-eu-2026',
+        countryCode: 'NL',
+        registrationUrl: 'https://events.linuxfoundation.org/kubecon-eu-2026/',
+      },
+    } as unknown as CampaignBriefOutput;
+
+    it('renders the button inside the email Implement panel, disabled with a reason', () => {
+      selectEmail();
+      internals().selectedEmailTab.set('implementation');
+      fixture.detectChanges();
+
+      const host: HTMLElement = fixture.nativeElement;
+      const panel = host.querySelector('[data-testid="campaigns-email-implementation-panel"]');
+      const btn = panel?.querySelector('[data-testid="campaigns-email-stage-btn"]');
+
+      // PLACEMENT is the claim: the button must live under the EMAIL implement panel, not the
+      // paid one. Querying from the panel rather than the document proves containment.
+      expect(btn).not.toBeNull();
+
+      // With no brief and no template the control must be disabled AND say why — a disabled
+      // button with no reason reads as a broken panel.
+      const hint = panel?.querySelector('[data-testid="campaigns-email-stage-hint"]');
+      expect(hint?.textContent?.trim()).toContain('Generate a brief');
+    });
+
+    it('cannot stage without a brief, a template, an audience, and a project', () => {
+      selectEmail();
+      expect(internals().canStageEmail()).toBe(false);
+
+      internals().emailBriefOutput.set(emailBrief);
+      fixture.detectChanges();
+      // A brief alone is not enough: `hubspot.go` refuses a blank sourceEmailId.
+      expect(internals().canStageEmail()).toBe(false);
+
+      internals().selectedEmailTemplateId.set('hs-123');
+      fixture.detectChanges();
+      // Still not enough. campaign-service's `resolveBuiltAudience` refuses to stage a brief with
+      // no BUILT audience, so enabling here would start the HubSpot draft work only to have the
+      // send refused afterwards -- which is what the panel's own copy promises it will not do.
+      expect(internals().canStageEmail()).toBe(false);
+
+      internals().emailAudience.set({ id: 'aud-1', status: 'built' } as never);
+      fixture.detectChanges();
+      expect(internals().canStageEmail()).toBe(true);
+    });
+
+    it('refuses to stage on an audience that is not BUILT', () => {
+      selectEmail();
+      internals().emailBriefOutput.set(emailBrief);
+      internals().selectedEmailTemplateId.set('hs-123');
+
+      // Upstream's three states are building | built | failed, and a build that ENDS in `failed`
+      // still returns an audience object. Gating on existence alone re-admits exactly the
+      // dispatcher refusal the gate exists to prevent.
+      internals().emailAudience.set({ id: 'aud-1', status: 'failed' } as never);
+      fixture.detectChanges();
+      expect(internals().canStageEmail()).toBe(false);
+
+      internals().emailAudience.set({ id: 'aud-1', status: 'building' } as never);
+      fixture.detectChanges();
+      expect(internals().canStageEmail()).toBe(false);
+
+      internals().emailAudience.set({ id: 'aud-1', status: 'built' } as never);
+      fixture.detectChanges();
+      expect(internals().canStageEmail()).toBe(true);
+    });
+
+    it('does not announce a failed audience as built', () => {
+      selectEmail();
+      internals().selectedEmailTab.set('implementation');
+      internals().emailBriefOutput.set(emailBrief);
+      internals().emailAudience.set({ id: 'aud-1', status: 'failed' } as never);
+      fixture.detectChanges();
+
+      const panel = (fixture.nativeElement as HTMLElement).querySelector('[data-testid="campaigns-email-audience-built"]');
+      // A green check beside the word "failed" tells the operator the opposite of what happened.
+      expect(panel?.textContent).toContain('Audience build failed');
+      expect(panel?.textContent).not.toContain('Audience built');
+    });
+
+    it('counts suppression lists, not the characters of an encoded one', () => {
+      selectEmail();
+      internals().selectedEmailTab.set('implementation');
+      internals().emailBriefOutput.set(emailBrief);
+      internals().emailAudience.set({ id: 'aud-1', status: 'built', suppressionListIds: ['sup-1'] } as never);
+      fixture.detectChanges();
+
+      const panel = (fixture.nativeElement as HTMLElement).querySelector('[data-testid="campaigns-email-audience-built"]');
+      // Upstream declares ArrayOf(String). If it ever arrived JSON-encoded, `.length` would read
+      // the STRING length and report "9 suppression list(s)" for a single list -- a
+      // compliance-facing number on a send list, wrong by a factor of nine.
+      expect(panel?.textContent).toContain('1 suppression list(s) applied');
+    });
+
+    it('refuses to stage if the audience stops being built before the await', async () => {
+      selectEmail();
+      internals().emailBriefOutput.set(emailBrief);
+      internals().selectedEmailTemplateId.set('hs-123');
+      internals().emailAudience.set({ id: 'aud-1', status: 'failed' } as never);
+      // A cached brief id, so `ensureEmailBriefId` cannot be what stops this. Without it the
+      // default `persistBrief` stub NEVER emits and the test would pass on the hang instead of
+      // on the guard -- which is exactly how it survived its first mutation run.
+      internals().emailBriefId.set('brief-77');
+      const create = vi.spyOn(TestBed.inject(CampaignService), 'createCampaign');
+
+      await internals().onStageEmailSend();
+
+      // The re-check exists because a signal can change between the guard and the await. Leaving
+      // the audience out of it let the enumeration drift from `canStageEmail`, so the refusal
+      // would come back from HubSpot after the draft work had begun.
+      expect(create).not.toHaveBeenCalled();
+    });
+
+    it("sends the selected type's STAGE, not its id", async () => {
+      selectEmail();
+      internals().emailBriefOutput.set(emailBrief);
+      internals().emailBriefId.set('brief-77');
+      const gen = vi
+        .spyOn(TestBed.inject(CampaignService), 'generateEmailCopy')
+        .mockReturnValue(of({ enabled: true, copy: { subject: 's', preheader: 'p', body: '<p>b</p>', cta: 'c' } }) as never);
+
+      (internals() as unknown as { onSelectEmailType(id: string): void }).onSelectEmailType('thank-you-survey');
+      await internals().onGenerateEmailCopy();
+
+      // campaign-service enumerates STAGES, not type ids -- sending 'thank-you-survey' would be
+      // refused by its enum. Several types share a stage, which is why the two are distinct.
+      expect(gen).toHaveBeenCalledWith('tlf', 'brief-77', 'Post-Event');
+    });
+
+    it('renders the selector defaulted to the registration push type', () => {
+      selectEmail();
+      internals().selectedEmailTab.set('implementation');
+      internals().emailBriefOutput.set(emailBrief);
+      fixture.detectChanges();
+
+      // `data-test`, not `data-testid`: that is the attribute `lfx-select` renders from its
+      // `dataTest` input, and querying the wrong one returns null on a control that IS present.
+      const sel = (fixture.nativeElement as HTMLElement).querySelector('[data-test="campaigns-email-type-select"]');
+      expect(sel, 'the email-type selector is not rendered').not.toBeNull();
+
+      // The RENDERED label, not the signal, and not the form value either. The raw <select> this
+      // replaced ignored a `[value]` binding applied before its options existed and fell back to
+      // the FIRST option -- so the signal read "main-registration-push" while the control showed
+      // CFP Launch, and an operator who never touched the selector silently got CFP copy. Reading
+      // the control's own text is the only assertion that can see that class of bug; driving the
+      // handler, or reading the FormControl, cannot.
+      expect(sel?.textContent).toContain('Main Registration Push');
+      expect(sel?.textContent).not.toContain('CFP Launch');
+
+      // The signal the rest of the component reads must agree with what is on screen.
+      expect(internals().selectedEmailTypeId()).toBe('main-registration-push');
+    });
+
+    it('drops copy written for the previous type when the type changes', () => {
+      selectEmail();
+      internals().emailCopy.set({ subject: 'CFP copy', preheader: '', body: '<p>x</p>', cta: '' } as never);
+
+      (internals() as unknown as { onSelectEmailType(id: string): void }).onSelectEmailType('thank-you-survey');
+
+      // The copy on screen was written for the PREVIOUS stage -- its subject, tone and CTA all
+      // belong to it. `onStageEmailSend` reads `emailCopy()` unconditionally, so leaving it makes
+      // mismatched copy stageable under the new type's label.
+      expect(internals().emailCopy()).toBeNull();
+    });
+
+    it('drops the previous copy when a regeneration fails', async () => {
+      selectEmail();
+      internals().emailBriefOutput.set(emailBrief);
+      internals().emailBriefId.set('brief-77');
+      internals().emailCopy.set({ subject: 'Old subject', preheader: '', body: '<p>Old</p>', cta: '' } as never);
+      vi.spyOn(TestBed.inject(CampaignService), 'generateEmailCopy').mockReturnValue(of({ enabled: true, error: 'upstream refused' }) as never);
+
+      await internals().onGenerateEmailCopy();
+
+      // `onStageEmailSend` reads `emailCopy()` unconditionally, so stale copy left here is
+      // stageable -- the operator would send the OLD subject and body while the panel says the
+      // regeneration failed.
+      expect(internals().emailCopy()).toBeNull();
+    });
+
+    it('does not call an unconfirmed build "building"', () => {
+      selectEmail();
+      internals().selectedEmailTab.set('implementation');
+      internals().emailBriefOutput.set(emailBrief);
+      internals().emailAudience.set({ id: 'aud-1', status: 'building' } as never);
+      fixture.detectChanges();
+
+      const card = (fixture.nativeElement as HTMLElement).querySelector('[data-testid="campaigns-email-audience-built"]');
+      // The whole argument for this state is that "building" tells the operator the wrong thing:
+      // the row is not in flight, it is a finished build whose outcome upstream could not
+      // confirm, and the ids in the summary may need reconciling.
+      expect(card?.textContent).toContain('unconfirmed');
+      expect(card?.textContent).not.toContain('Audience built');
+    });
+
+    it('does NOT offer a rebuild while the outcome is unconfirmed', () => {
+      selectEmail();
+      internals().selectedEmailTab.set('implementation');
+      internals().emailBriefOutput.set(emailBrief);
+      internals().emailAudience.set({ id: 'aud-1', status: 'building' } as never);
+      fixture.detectChanges();
+
+      // Upstream keeps a row BUILDING when a HubSpot list may already exist, and records the ids
+      // to reconcile. Observed live: "HubSpot lists ALREADY CREATED (reconcile these before
+      // retrying): 30779". A rebuild here creates the duplicate contact list that state exists
+      // to prevent -- so the control must be absent, not merely disabled.
+      expect((fixture.nativeElement as HTMLElement).querySelector('[data-testid="campaigns-email-audience-btn"]')).toBeNull();
+    });
+
+    it('says why staging is blocked while the outcome is unconfirmed', () => {
+      selectEmail();
+      internals().selectedEmailTab.set('implementation');
+      internals().emailBriefOutput.set(emailBrief);
+      internals().selectedEmailTemplateId.set('hs-123');
+      internals().emailAudience.set({ id: 'aud-1', status: 'building' } as never);
+      fixture.detectChanges();
+
+      const hint = (fixture.nativeElement as HTMLElement).querySelector('[data-testid="campaigns-email-stage-hint"]');
+      // With no retry offered, the copy is the ONLY thing telling the operator what to do next.
+      expect(hint?.textContent).toContain('reconcile');
+    });
+
+    it('keeps a rebuild control when the audience build failed', () => {
+      selectEmail();
+      internals().selectedEmailTab.set('implementation');
+      internals().emailBriefOutput.set(emailBrief);
+      internals().emailAudience.set({ id: 'aud-1', status: 'failed' } as never);
+      fixture.detectChanges();
+
+      // Without this the panel is a DEAD END: the status card replaces the button, canStageEmail
+      // refuses anything but `built`, and there is no poll and no re-read route -- so the only
+      // escape was re-running the Plan-tab scrape.
+      const btn = (fixture.nativeElement as HTMLElement).querySelector('[data-testid="campaigns-email-audience-btn"]');
+      expect(btn).not.toBeNull();
+    });
+
+    it('explains a disabled Stage button when the audience is present but not built', () => {
+      selectEmail();
+      internals().selectedEmailTab.set('implementation');
+      internals().emailBriefOutput.set(emailBrief);
+      internals().selectedEmailTemplateId.set('hs-123');
+      internals().emailAudience.set({ id: 'aud-1', status: 'failed' } as never);
+      fixture.detectChanges();
+
+      // The hint chain tested PRESENCE while the guard tested STATUS, so this state fell through
+      // every branch and rendered an empty span -- a disabled button with no reason, which the
+      // panel's own comment says it exists to prevent.
+      const hint = (fixture.nativeElement as HTMLElement).querySelector('[data-testid="campaigns-email-stage-hint"]');
+      expect(hint?.textContent?.trim()).toBeTruthy();
+      expect(hint?.textContent).toContain('failed');
+    });
+
+    it('says the audience is what is missing when only it is missing', () => {
+      selectEmail();
+      // The hint lives in the Implement panel; without this the panel never renders and the
+      // query below would be vacuously undefined rather than asserting anything.
+      internals().selectedEmailTab.set('implementation');
+      internals().emailBriefOutput.set(emailBrief);
+      internals().selectedEmailTemplateId.set('hs-123');
+      fixture.detectChanges();
+
+      const hint = (fixture.nativeElement as HTMLElement).querySelector('[data-testid="campaigns-email-stage-hint"]');
+      // A disabled button with no reason reads as a broken panel -- the same standard the
+      // no-brief case above is held to.
+      expect(hint?.textContent?.trim()).toContain('Build the send audience');
+    });
+
+    it('drops the previous brief id when a new brief arrives', () => {
+      selectEmail();
+      internals().emailBriefId.set('brief-old');
+      internals().emailAudience.set({ id: 'aud-old', status: 'built' } as never);
+
+      internals().onEmailProceedToImplementation(emailBrief);
+
+      // `ensureEmailBriefId` returns the cached id when it is set, so a stale one silently points
+      // the audience build, the copy generation and the staged draft at the PREVIOUS event's row.
+      expect(internals().emailBriefId()).toBe('');
+      expect(internals().emailAudience()).toBeNull();
+    });
+
+    it('persists the brief FIRST, then creates with the returned brief id', async () => {
+      selectEmail();
+      internals().emailBriefOutput.set(emailBrief);
+      internals().selectedEmailTemplateId.set('hs-123');
+      // Staging requires a BUILT audience upstream; these predate that gate.
+      internals().emailAudience.set({ id: 'aud-1', status: 'built' } as never);
+      fixture.detectChanges();
+
+      persistBrief.mockReturnValue(of({ status: 'saved', approved: true, briefId: 'brief-77', etag: 'W/"1"' }));
+      const create = vi.spyOn(TestBed.inject(CampaignService), 'createCampaign').mockReturnValue(of({ jobId: 'job-1', result: undefined, error: undefined }));
+
+      await internals().onStageEmailSend();
+
+      // The ORDER is the point: creation posts to /briefs/{id}/campaigns, so a create issued
+      // before the persist resolved would have no id to address.
+      expect(persistBrief).toHaveBeenCalled();
+      const [request, slug, briefId] = create.mock.calls[0];
+      expect(briefId).toBe('brief-77');
+      expect(slug).toBe('tlf');
+      // Asserts the VALUE and where it came from, not merely that create ran.
+      expect(request.platforms).toEqual(['hubspot']);
+      expect(request.hubspotConfig).toEqual({ sourceEmailId: 'hs-123' });
+      expect(request.eventSlug).toBe('kubecon-eu-2026');
+      expect(request.eventName).toBe('KubeCon EU 2026');
+      // 'staging', NOT 'done'. The create answers 202 with a job id and the HubSpot clone, the
+      // audience resolution and the copy application all run in the background job -- so the ack
+      // alone is not a created draft. This assertion said 'done' before polling landed, which is
+      // exactly the claim that made a dispatcher failure read as success.
+      expect(internals().emailStaging()).toBe('staging');
+    });
+
+    it('drops the brief-derived state when the foundation changes', async () => {
+      selectEmail();
+      internals().emailBriefId.set('brief-from-old-foundation');
+      internals().emailAudience.set({ id: 'aud-old', status: 'built' } as never);
+
+      TestBed.inject(ProjectContextService).setFoundation({ uid: 'f-b', slug: 'foundation-b', name: 'Foundation B' }, false);
+      await fixture.whenStable();
+      fixture.detectChanges();
+
+      // `emailBriefId` names a row in the PREVIOUS foundation, and `ensureEmailBriefId` returns
+      // the cached id when set -- so carrying it across would point the audience build, the copy
+      // generation and the staged draft at the old foundation's brief while the page says the new
+      // one. Silently, because every call still succeeds against that row.
+      expect(internals().emailBriefId()).toBe('');
+      expect(internals().emailAudience()).toBeNull();
+    });
+
+    it('does not cache a brief id that never reached approved', async () => {
+      selectEmail();
+      internals().emailBriefOutput.set(emailBrief);
+      vi.spyOn(TestBed.inject(CampaignService), 'persistBrief').mockReturnValue(of({ enabled: true, briefId: 'brief-77', approved: false }) as never);
+
+      const id = await (internals() as unknown as { ensureEmailBriefId(b: unknown, p: string): Promise<string> }).ensureEmailBriefId(emailBrief, 'tlf');
+
+      // campaign-service gates build-audience AND campaign creation on `approved`, so a cached
+      // unapproved id makes every downstream call fail against a brief this session believes is
+      // ready -- and the cache short-circuits, so a retry never re-attempts the approval.
+      expect(id).toBe('');
+      expect(internals().emailBriefId()).toBe('');
+    });
+
+    it('reuses a brief this session already owns instead of trying to create a second', async () => {
+      selectEmail();
+      internals().emailBriefOutput.set(emailBrief);
+      const persist = vi
+        .spyOn(TestBed.inject(CampaignService), 'persistBrief')
+        .mockReturnValue(of({ enabled: true, approved: true, briefId: 'brief-77' }) as never);
+      // The ownership record the PAID save writes when it generates or restores a brief.
+      (internals() as unknown as { knownBriefIds: Map<string, unknown> }).knownBriefIds.set(
+        (internals() as unknown as { ownershipKey(p: string, b: unknown): string }).ownershipKey('tlf', emailBrief),
+        { id: 'brief-77', etag: 'W/"3"' }
+      );
+
+      await (internals() as unknown as { ensureEmailBriefId(b: unknown, p: string): Promise<string> }).ensureEmailBriefId(emailBrief, 'tlf');
+
+      // Briefs are keyed on (project, event) and SHARED across delivery types, so a first-save
+      // call -- which sends no brief_id -- is refused as `unowned-brief-exists` against a row the
+      // paid side created. That made email unusable for every event paid had touched.
+      const [, , knownId, knownEtag] = persist.mock.calls[0] as unknown as [unknown, string, string | null, string | null];
+      expect(knownId).toBe('brief-77');
+      expect(knownEtag).toBe('W/"3"');
+    });
+
+    it('reports an error when the staging job FAILS after the ack', async () => {
+      selectEmail();
+      internals().emailBriefOutput.set(emailBrief);
+      internals().selectedEmailTemplateId.set('hs-123');
+      internals().emailAudience.set({ id: 'aud-1', status: 'built' } as never);
+      internals().emailBriefId.set('brief-77');
+      vi.spyOn(TestBed.inject(CampaignService), 'createCampaign').mockReturnValue(of({ jobId: 'job-1', result: undefined, error: undefined }) as never);
+      vi.spyOn(TestBed.inject(CampaignService), 'getCreateResult').mockReturnValue(of({ campaigns: [], errors: ['hubspot refused the clone'] }) as never);
+
+      await internals().onStageEmailSend();
+
+      // The failure the ack hid: the draft was never created, and saying "Draft created in
+      // HubSpot" would send the operator looking for something that does not exist.
+      expect(internals().emailStaging()).toBe('error');
+      expect(internals().emailStagingMessage()).toContain('hubspot refused the clone');
+    });
+
+    it('reports done once the staging job settles successfully', async () => {
+      selectEmail();
+      internals().emailBriefOutput.set(emailBrief);
+      internals().selectedEmailTemplateId.set('hs-123');
+      internals().emailAudience.set({ id: 'aud-1', status: 'built' } as never);
+      internals().emailBriefId.set('brief-77');
+      vi.spyOn(TestBed.inject(CampaignService), 'createCampaign').mockReturnValue(of({ jobId: 'job-1', result: undefined, error: undefined }) as never);
+      vi.spyOn(TestBed.inject(CampaignService), 'getCreateResult').mockReturnValue(of({ campaigns: [], errors: [] }) as never);
+
+      await internals().onStageEmailSend();
+
+      expect(internals().emailStaging()).toBe('done');
+    });
+
+    it('carries the generated copy into hubspotConfig when copy exists', async () => {
+      selectEmail();
+      internals().emailBriefOutput.set(emailBrief);
+      internals().selectedEmailTemplateId.set('hs-123');
+      // Staging requires a BUILT audience upstream; these predate that gate.
+      internals().emailAudience.set({ id: 'aud-1', status: 'built' } as never);
+      internals().emailCopy.set({ subject: 'Three days in Amsterdam', preheader: 'P', body: '<p>Join us</p>', cta: 'Register' });
+      fixture.detectChanges();
+
+      persistBrief.mockReturnValue(of({ status: 'saved', approved: true, briefId: 'brief-77', etag: null }));
+      const create = vi.spyOn(TestBed.inject(CampaignService), 'createCampaign').mockReturnValue(of({ jobId: 'j1' }));
+
+      await internals().onStageEmailSend();
+
+      // The VALUES, not merely that the keys exist: a staging call that sent the template id but
+      // dropped the copy would look identical in a shape-only assertion.
+      expect(create.mock.calls[0][0].hubspotConfig).toEqual({
+        sourceEmailId: 'hs-123',
+        subject: 'Three days in Amsterdam',
+        bodyHtml: '<p>Join us</p>',
+      });
+    });
+
+    it('omits subject and bodyHtml entirely when no copy was generated', async () => {
+      selectEmail();
+      internals().emailBriefOutput.set(emailBrief);
+      internals().selectedEmailTemplateId.set('hs-123');
+      // Staging requires a BUILT audience upstream; these predate that gate.
+      internals().emailAudience.set({ id: 'aud-1', status: 'built' } as never);
+      fixture.detectChanges();
+
+      persistBrief.mockReturnValue(of({ status: 'saved', approved: true, briefId: 'brief-77', etag: null }));
+      const create = vi.spyOn(TestBed.inject(CampaignService), 'createCampaign').mockReturnValue(of({ jobId: 'j1' }));
+
+      await internals().onStageEmailSend();
+
+      // Empty strings would be wrong, not merely untidy: upstream reads a blank subject as
+      // "leave the template's own", so sending '' claims copy that does not exist.
+      expect(create.mock.calls[0][0].hubspotConfig).toEqual({ sourceEmailId: 'hs-123' });
+    });
+
+    it('does NOT create when the persist returns no brief id', async () => {
+      selectEmail();
+      internals().emailBriefOutput.set(emailBrief);
+      internals().selectedEmailTemplateId.set('hs-123');
+      // Staging requires a BUILT audience upstream; these predate that gate.
+      internals().emailAudience.set({ id: 'aud-1', status: 'built' } as never);
+      fixture.detectChanges();
+
+      persistBrief.mockReturnValue(of({ status: 'saved', briefId: '', etag: null }));
+      const create = vi.spyOn(TestBed.inject(CampaignService), 'createCampaign');
+
+      await internals().onStageEmailSend();
+
+      // Creating without an id would post to /briefs//campaigns; refusing is the safe arm.
+      expect(create).not.toHaveBeenCalled();
+      expect(internals().emailStaging()).toBe('error');
+      expect(internals().emailStagingMessage()).not.toBe('');
+    });
+
+    it('reports a create failure rather than claiming the draft was staged', async () => {
+      selectEmail();
+      internals().emailBriefOutput.set(emailBrief);
+      internals().selectedEmailTemplateId.set('hs-123');
+      // Staging requires a BUILT audience upstream; these predate that gate.
+      internals().emailAudience.set({ id: 'aud-1', status: 'built' } as never);
+      fixture.detectChanges();
+
+      persistBrief.mockReturnValue(of({ status: 'saved', approved: true, briefId: 'brief-77', etag: null }));
+      vi.spyOn(TestBed.inject(CampaignService), 'createCampaign').mockReturnValue(
+        of({ jobId: '', result: undefined, error: 'platform campaign creation failed' })
+      );
+
+      await internals().onStageEmailSend();
+
+      expect(internals().emailStaging()).toBe('error');
+      expect(internals().emailStagingMessage()).toBe('platform campaign creation failed');
+    });
   });
 });
 

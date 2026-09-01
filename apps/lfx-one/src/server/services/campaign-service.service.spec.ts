@@ -2005,6 +2005,238 @@ describe('CampaignServiceClient.createCampaigns', () => {
  * body — which a GET discards, silently returning the UNFILTERED list. That failure looks like a
  * working search that ignores what the user typed, and no type checker can catch it.
  */
+describe('CampaignServiceClient brief country mapping', () => {
+  beforeEach(() => {
+    proxyRequestWithResponse.mockReset();
+    isServerFeatureEnabled.mockReturnValue(true);
+  });
+
+  /** The `event_details` actually sent upstream on the create call. */
+  async function persistedDetails(countryCode: string): Promise<Record<string, unknown>> {
+    proxyRequestWithResponse
+      .mockRejectedValueOnce(NOT_FOUND)
+      .mockResolvedValueOnce(apiResponse({ id: 'b-1' }, { etag: '"1"' }))
+      .mockResolvedValueOnce(apiResponse({ id: 'b-1' }, { etag: '"2"' }));
+    const base = briefWithSlug('mcp-dev-summit-nairobi');
+    const brief = { ...base, eventDetails: { ...base.eventDetails, countryCode } };
+    await new CampaignServiceClient().saveBrief(req, brief, 'mcp-dev-summit-nairobi', 'tlf', null, null, true);
+    // The body is an ENVELOPE -- `{ brief: {...} }` -- so `event_details` sits one level deeper.
+    const create = proxyRequestWithResponse.mock.calls.find((c) => c[3] === 'POST');
+    const envelope = (create?.[5] ?? {}) as { brief?: Record<string, unknown> };
+    return (envelope.brief?.['event_details'] ?? {}) as Record<string, unknown>;
+  }
+
+  it('sends the country NAME, which is what the audience builder reads', async () => {
+    const details = await persistedDetails('KE');
+
+    // campaign-service reads `json:"country"` and matches it against a HubSpot country property.
+    // Sending only `countryCode` failed every audience build with "has no country in its details"
+    // -- observed end to end against a live local campaign-service.
+    expect(details['country']).toBe('Kenya');
+    // The code is still carried: other consumers (geo targeting) key on it.
+    expect(details['countryCode']).toBe('KE');
+  });
+
+  it('sends the field names campaign-service actually decodes', async () => {
+    const details = await persistedDetails('KE');
+
+    // `email_copy.go` REQUIRES eventName and 400s without it; both consumers read `location`.
+    // The UI persists `name` and `city`, so without these aliases copy generation fails with
+    // "provide at least eventName" -- observed end to end against a live campaign-service.
+    // LITERALS, not `toBe(details['name'])`: a self-referential assertion passes when BOTH sides
+    // are undefined, so dropping the alias and its source together would be invisible here.
+    expect(details['eventName']).toBe('KubeCon EU 2026');
+    expect(details['location']).toBe('Amsterdam');
+  });
+
+  it('keeps the UI field names alongside the aliases', async () => {
+    const details = await persistedDetails('KE');
+
+    // ADDED, not renamed: the wire shape is shared with the paid path, whose consumers read the
+    // UI's names. Renaming would fix email and silently break paid.
+    expect(details['name']).toBe('KubeCon EU 2026');
+    // The VALUE, not merely the key: `toBeDefined()` passes against the very regression the
+    // aliases exist to prevent -- a UI name that survived in name only.
+    expect(details['city']).toBe('Amsterdam');
+  });
+
+  it('sends an empty country rather than the raw code when it is unrecognised', async () => {
+    const details = await persistedDetails('ZZ');
+
+    // Upstream fails loudly on an empty country and would build an EMPTY inclusion list for an
+    // unmatched one. On a list that decides who receives an email, the loud failure is better.
+    expect(details['country']).toBe('');
+  });
+});
+
+describe('CampaignServiceClient.buildAudience', () => {
+  const audience = {
+    id: 'aud-1',
+    project_id: 'p-1',
+    brief_id: 'b-1',
+    platform: 'hubspot',
+    platform_master_list_id: 'list-9',
+    suppression_list_ids: ['sup-1'],
+    inclusion_summary: '1,234 contacts',
+    status: 'built',
+    version: 1,
+  };
+
+  beforeEach(() => {
+    proxyRequestWithResponse.mockReset();
+    isServerFeatureEnabled.mockReturnValue(true);
+  });
+
+  it('answers enabled:false without calling upstream when the flag is off', async () => {
+    isServerFeatureEnabled.mockReturnValue(false);
+
+    await expect(new CampaignServiceClient().buildAudience(req, 'tlf', 'b-1')).resolves.toEqual({ enabled: false });
+    // The flag being dark is an ordinary deployment state, so it must not spend an upstream call.
+    expect(proxyRequestWithResponse).not.toHaveBeenCalled();
+  });
+
+  it('takes the etag off the ETag HEADER, not the body', async () => {
+    proxyRequestWithResponse.mockResolvedValueOnce(apiResponse(audience, { etag: '"7"' }));
+
+    const result = await new CampaignServiceClient().buildAudience(req, 'tlf', 'b-1');
+
+    // `design/audience.go` maps it as `Header("etag:ETag")` on the 202, so a body read would be
+    // `undefined` forever -- the same trap the brief wire-type comment records.
+    expect(result.audience?.etag).toBe('"7"');
+    expect(result.audience?.status).toBe('built');
+  });
+
+  it('does not let an unrecognised status masquerade as usable', async () => {
+    proxyRequestWithResponse.mockResolvedValueOnce(apiResponse({ ...audience, status: 'queued' }));
+
+    const result = await new CampaignServiceClient().buildAudience(req, 'tlf', 'b-1');
+
+    // `canStageEmail` admits only `built`, so an unknown wire value must not pass through as one.
+    // `failed` is the honest landing spot -- it is the arm that offers the operator a rebuild.
+    expect(result.audience?.status).toBe('failed');
+  });
+
+  it('passes through the statuses upstream actually declares', async () => {
+    proxyRequestWithResponse.mockResolvedValueOnce(apiResponse({ ...audience, status: 'building' }));
+
+    const result = await new CampaignServiceClient().buildAudience(req, 'tlf', 'b-1');
+
+    // Narrowing must not collapse the legitimate in-flight state into a failure.
+    expect(result.audience?.status).toBe('building');
+  });
+
+  it('keeps a controlled upstream message instead of saying "try again"', async () => {
+    proxyRequestWithResponse.mockRejectedValueOnce(
+      new MicroserviceError('AI model is not configured; email copy generation is unavailable', 503, 'UNAVAILABLE')
+    );
+
+    const result = await new CampaignServiceClient().generateEmailCopy(req, 'tlf', 'b-1');
+
+    // A 503 for an unconfigured model never succeeds on a retry, so "Try again" sends the
+    // operator round a loop that cannot end. The upstream message names the actual remedy.
+    expect(result.error).toContain('not configured');
+  });
+
+  it('falls back to the generic message for an unexpected server error', async () => {
+    proxyRequestWithResponse.mockRejectedValueOnce(new MicroserviceError('panic: nil map read at 0x4f2a', 500, 'INTERNAL'));
+
+    const result = await new CampaignServiceClient().generateEmailCopy(req, 'tlf', 'b-1');
+
+    // An unexpected 500 can carry stack or infrastructure detail that is not the operator's to
+    // read, and "try again" is honest advice for it.
+    expect(result.error).not.toContain('panic');
+    expect(result.error).toContain('Try again');
+  });
+
+  it('reports an error result rather than throwing when upstream fails', async () => {
+    proxyRequestWithResponse.mockRejectedValueOnce(new Error('boom'));
+
+    const result = await new CampaignServiceClient().buildAudience(req, 'tlf', 'b-1');
+
+    // A graceful degradation: the caller renders the message instead of the panel exploding.
+    expect(result.enabled).toBe(true);
+    expect(result.error).toBeTruthy();
+    expect(result.audience).toBeUndefined();
+  });
+
+  it('rejects a response with no audience id', async () => {
+    proxyRequestWithResponse.mockResolvedValueOnce(apiResponse({ ...audience, id: '' }));
+
+    const result = await new CampaignServiceClient().buildAudience(req, 'tlf', 'b-1');
+
+    expect(result.error).toBeTruthy();
+    expect(result.audience).toBeUndefined();
+  });
+});
+
+describe('CampaignServiceClient.generateEmailCopy', () => {
+  const copy = { subject: 'Join us in Nairobi', preheader: 'Two days of MCP', body: '<p>Hello</p>', cta: 'Register' };
+
+  beforeEach(() => {
+    proxyRequestWithResponse.mockReset();
+    isServerFeatureEnabled.mockReturnValue(true);
+  });
+
+  it('sends the stage as a QUERY param, not a body', async () => {
+    proxyRequestWithResponse.mockResolvedValueOnce(apiResponse({ subject: 's', preheader: 'p', body: '<p>b</p>', cta: 'c' }));
+
+    await new CampaignServiceClient().generateEmailCopy(req, 'tlf', 'b-1', 'Post-Event');
+
+    // `proxyRequestWithResponse(req, service, path, method, query, data)` -- query is 5th, data
+    // 6th, and BOTH are optional and loosely typed, so a swap is silent. Upstream reads `stage`
+    // off the query string; sent as a body it would be ignored and the caller would get
+    // default-stage copy while believing it asked for another.
+    const call = proxyRequestWithResponse.mock.calls[0];
+    expect(call[4]).toEqual({ stage: 'Post-Event' });
+    expect(call[5]).toBeUndefined();
+  });
+
+  it('sends no stage param at all when the caller names none', async () => {
+    proxyRequestWithResponse.mockResolvedValueOnce(apiResponse({ subject: 's', preheader: 'p', body: '<p>b</p>', cta: 'c' }));
+
+    await new CampaignServiceClient().generateEmailCopy(req, 'tlf', 'b-1');
+
+    // Absence is meaningful upstream: no stage resolves to the default. Sending an empty string
+    // would fail its enum instead.
+    expect(proxyRequestWithResponse.mock.calls[0][4]).toBeUndefined();
+  });
+
+  it('answers enabled:false without calling upstream when the flag is off', async () => {
+    isServerFeatureEnabled.mockReturnValue(false);
+
+    await expect(new CampaignServiceClient().generateEmailCopy(req, 'tlf', 'b-1')).resolves.toEqual({ enabled: false });
+    expect(proxyRequestWithResponse).not.toHaveBeenCalled();
+  });
+
+  it('returns the generated copy', async () => {
+    proxyRequestWithResponse.mockResolvedValueOnce(apiResponse(copy));
+
+    const result = await new CampaignServiceClient().generateEmailCopy(req, 'tlf', 'b-1');
+
+    expect(result.copy?.subject).toBe('Join us in Nairobi');
+    expect(result.copy?.body).toBe('<p>Hello</p>');
+  });
+
+  it('treats a response with no subject as a failure', async () => {
+    proxyRequestWithResponse.mockResolvedValueOnce(apiResponse({ ...copy, subject: '' }));
+
+    const result = await new CampaignServiceClient().generateEmailCopy(req, 'tlf', 'b-1');
+
+    // Staging would otherwise apply an empty subject over the template's own.
+    expect(result.error).toBeTruthy();
+    expect(result.copy).toBeUndefined();
+  });
+
+  it('reports an error result rather than throwing when upstream fails', async () => {
+    proxyRequestWithResponse.mockRejectedValueOnce(new Error('boom'));
+
+    const result = await new CampaignServiceClient().generateEmailCopy(req, 'tlf', 'b-1');
+
+    expect(result.enabled).toBe(true);
+    expect(result.error).toBeTruthy();
+  });
+});
+
 describe('CampaignServiceClient.searchHubSpotEmails', () => {
   beforeEach(() => {
     vi.clearAllMocks();

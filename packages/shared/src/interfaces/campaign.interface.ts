@@ -615,6 +615,76 @@ export interface LinkedInTargetingStrategy {
   campaignStructureNotes: string;
 }
 
+/**
+ * The audience build's lifecycle, closed because upstream declares it closed:
+ * `Enum("building", "built", "failed")` in campaign-service's `design/audience.go`.
+ *
+ * A union rather than `string` because six sites branch on these literals across two files, and
+ * `canStageEmail` admits ONLY `built` -- a typo in any branch would silently mean "not built" and
+ * disable staging with no error.
+ */
+export type CampaignAudienceStatus = 'building' | 'built' | 'failed';
+
+/**
+ * A brief's built send audience, as campaign-service returns it.
+ *
+ * The email channel CANNOT dispatch until this exists: `HubSpotDispatcher` resolves the brief's
+ * built audience by `brief.ID` (`hubspot.go:293`) rather than reading anything off the create
+ * request. That is why the audience is not part of `hubspotConfig`.
+ *
+ * `inclusionSummary` is human-readable provenance ("how this audience was built") — what an
+ * operator checks before sending to a list they did not assemble by hand.
+ */
+export interface CampaignAudience {
+  id: string;
+  projectId: string;
+  briefId: string;
+  platform: string;
+  platformMasterListId?: string;
+  suppressionListIds?: string[];
+  inclusionSummary?: string;
+  status: CampaignAudienceStatus;
+  version: number;
+  etag?: string;
+}
+
+/** Result of asking campaign-service to build a brief's audience. */
+export interface BuildAudienceResult {
+  enabled: boolean;
+  audience?: CampaignAudience;
+  error?: string;
+}
+
+/**
+ * AI-generated email copy for a brief, as campaign-service returns it.
+ *
+ * Mirrors the upstream `email-copy` type exactly (subject / preheader / body / cta) rather than
+ * reshaping it here: the BFF is a thin proxy, and a divergent local shape would have to be kept
+ * in step with a contract this layer does not own.
+ *
+ * `body` is a single HTML string, not a section list — upstream generates it that way. The UI
+ * renders it as one block.
+ */
+export interface EmailBriefCopy {
+  subject: string;
+  preheader: string;
+  body: string;
+  cta: string;
+}
+
+/**
+ * Result of asking campaign-service to generate email copy.
+ *
+ * `enabled: false` mirrors the other campaign-service reads: the cutover flag being off is a
+ * steady state, not a failure. `error` carries the upstream refusal — notably the 503 when no AI
+ * model is configured, which is a deployment state rather than a bug.
+ */
+export interface GenerateEmailCopyResult {
+  enabled: boolean;
+  copy?: EmailBriefCopy;
+  error?: string;
+}
+
 export interface LinkedInBriefCopy {
   variants: LinkedInCreativeVariant[];
   recommendedGeoTargets: LinkedInGeoTarget[];
@@ -960,10 +1030,9 @@ export interface CampaignBriefRefineRequest {
  * actually reads (`internal/dispatch/hubspot.go:47-56`) rather than to the legacy request shape
  * the ad platforms carry.
  *
- * Deliberately just these two fields. The rest of what the HubSpot dispatcher needs — the send
- * list, its suppressions — is NOT config: it resolves the brief's BUILT audience by `brief.ID`
- * (`hubspot.go:293`), so passing an audience here would be a second, divergent source of truth
- * for something the service already owns.
+ * The send list is deliberately NOT here: the dispatcher resolves the brief's BUILT audience by
+ * `brief.ID` (`hubspot.go:293`), so passing one would be a second, divergent source of truth for
+ * something the service already owns.
  */
 export interface HubSpotCampaignCreateRequest {
   /**
@@ -978,6 +1047,23 @@ export interface HubSpotCampaignCreateRequest {
    * only to roll several briefs' emails up to one campaign in reporting.
    */
   utmCampaign?: string;
+  /**
+   * Generated subject line to write onto the cloned draft (LFXV2-2775). Unset leaves the
+   * template's own subject, which is what every campaign did before that shipped.
+   */
+  subject?: string;
+  /**
+   * Generated body HTML to write onto the cloned draft (LFXV2-2775).
+   *
+   * Applied upstream ONLY when the draft has exactly one rich-text widget — a template with
+   * several (header blurb, body, footer note) is left alone rather than guessed at, because
+   * writing the wrong widget destroys content the operator did not choose to replace. So sending
+   * this is a request, not a guarantee; the dispatcher logs and moves on either way.
+   *
+   * There is no preheader counterpart: Marketing Emails v3 exposes no preheader property, so a
+   * field here would report success while HubSpot ignored it.
+   */
+  bodyHtml?: string;
 }
 
 export interface CampaignCreateRequest {
@@ -2031,4 +2117,27 @@ export interface BriefMetrics {
    * rendering an empty list as an all-clear.
    */
   action_items: BriefMetricsActionItem[];
+}
+
+/**
+ * The event-lifecycle stage an email belongs to, as campaign-service enumerates it.
+ *
+ * Closed because upstream's `generate-email-copy` declares it closed: an unrecognised value is
+ * refused with a 400 naming the valid ones, so a typo cannot quietly become registration copy.
+ */
+export type CampaignEmailStage = 'CFP Launch' | 'Schedule Announcement' | 'Registration Push' | 'Discount Offer' | 'Final Countdown' | 'Post-Event';
+
+/**
+ * One selectable email type.
+ *
+ * The TYPE is what an operator recognises ("Thank You + Survey"); the STAGE is what
+ * campaign-service generates from. Several types map to one stage -- a CFP launch and a
+ * co-located CFP reminder are both CFP Launch -- which is why these are two fields rather than
+ * one. `keywords` rank clone templates (#1942); they live here so the taxonomy has a single home.
+ */
+export interface CampaignEmailTypeOption {
+  id: string;
+  label: string;
+  stage: CampaignEmailStage;
+  keywords: readonly string[];
 }

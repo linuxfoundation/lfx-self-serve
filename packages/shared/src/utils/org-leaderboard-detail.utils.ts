@@ -1,67 +1,84 @@
 // Copyright The Linux Foundation and each contributor to LFX.
 // SPDX-License-Identifier: MIT
 
-import type { LeaderboardDimension } from '../interfaces/org-lens-project-detail.interface';
+import {
+  ORG_LEADERBOARD_DETAIL_UNCOUNTED_CATEGORY_TOOLTIPS,
+  ORG_LEADERBOARD_DETAIL_WITHHELD_CATEGORY_TOOLTIP_FALLBACK,
+  ORG_LEADERBOARD_DETAIL_WITHHELD_CATEGORY_TOOLTIPS,
+} from '../constants/org-leaderboard-detail-drawer.constants';
 import type {
+  OrgLeaderboardDetailBreakdown,
   OrgLeaderboardDetailCategory,
   OrgLeaderboardDetailCategoryRow,
-  OrgLeaderboardDetailLevel,
 } from '../interfaces/org-leaderboard-detail-drawer.interface';
 
 /**
- * Maps a total influence score to its Silent/Participating/Contributing/Leading level, per the real
- * scoring methodology (technical and ecosystem use different thresholds).
- */
-export function orgLeaderboardDetailLevelFor(dimension: LeaderboardDimension, score: number): OrgLeaderboardDetailLevel {
-  if (dimension === 'technical') {
-    if (score >= 15) return 'Leading';
-    if (score >= 5) return 'Contributing';
-    if (score >= 1) return 'Participating';
-    return 'Silent';
-  }
-  if (score >= 20) return 'Leading';
-  if (score >= 11) return 'Contributing';
-  if (score >= 3) return 'Participating';
-  return 'Silent';
-}
-
-/**
- * Builds the sorted (descending by points), percentage-computed category rows rendered in the
- * drawer's breakdown list. Returns an empty array when the score is 0 to avoid a divide-by-zero.
+ * Builds the category rows rendered in the drawer's breakdown list from a served breakdown.
  *
- * `maskedCategoryKeys` flags rows whose count, points, and share percentage must be withheld from
- * the viewer (see `ORG_LEADERBOARD_DETAIL_MASKED_CATEGORY_KEYS`). Masked rows are grouped at the
- * bottom of the list — since their figures are hidden, ranking them among the visible rows would
- * only leak the position. Their values are zeroed out here rather than merely hidden in the
- * template, so masked figures never reach the rendered payload.
+ * Visible rows are sorted descending by points. Withheld rows carry no figures at all — the server
+ * never sent them — and are grouped at the end in the categories' own declared order: ranking them
+ * among the visible rows, or among each other by size, would disclose the magnitudes the withholding
+ * exists to protect.
+ *
+ * `pct` is each category's share of the total score, so the bars are comparable within one breakdown.
+ * A zero total yields zero-width bars rather than a divide-by-zero.
  */
 export function orgLeaderboardDetailCategoryRows(
   categories: OrgLeaderboardDetailCategory[],
-  points: Record<string, number>,
-  counts: Record<string, number>,
-  score: number,
-  maskedCategoryKeys: readonly string[] = []
+  breakdown: OrgLeaderboardDetailBreakdown
 ): OrgLeaderboardDetailCategoryRow[] {
-  if (score <= 0) return [];
-  const masked = new Set(maskedCategoryKeys);
-  const rows = categories
-    .map((category) => ({
+  const withheld = new Set(breakdown.withheldCategories);
+  const figures = new Map(breakdown.categories.map((figure) => [figure.key, figure]));
+  const total = breakdown.totalScore;
+
+  const visible: OrgLeaderboardDetailCategoryRow[] = [];
+  const hidden: OrgLeaderboardDetailCategoryRow[] = [];
+
+  for (const category of categories) {
+    if (withheld.has(category.key)) {
+      hidden.push({
+        key: category.key,
+        name: category.name,
+        points: 0,
+        pct: 0,
+        count: null,
+        projectTotal: null,
+        notTrackedForProject: false,
+        withheld: true,
+        tooltip: withheldTooltipFor(category.key),
+      });
+      continue;
+    }
+    // A category absent from both lists is not a privacy omission — it is a category this dimension
+    // does not score (or one the warehouse stopped emitting). Render it as an explicit zero rather
+    // than dropping it, so the list always accounts for every category the methodology names.
+    const figure = figures.get(category.key);
+    const points = figure?.points ?? 0;
+    visible.push({
       key: category.key,
       name: category.name,
-      count: counts[category.key] ?? 0,
-      points: points[category.key] ?? 0,
-      pct: Math.round(((points[category.key] ?? 0) / score) * 100),
-      masked: masked.has(category.key),
-    }))
-    .sort((a, b) => {
-      if (a.masked !== b.masked) return a.masked ? 1 : -1;
-      // Masked-to-masked pairs keep their original category order (stable sort) — sorting by the
-      // soon-to-be-zeroed points here would leak the withheld relative ranking via row position.
-      if (a.masked) return 0;
-      return b.points - a.points;
+      points,
+      pct: total > 0 ? Math.round((points / total) * 100) : 0,
+      count: figure?.count ?? null,
+      projectTotal: figure?.projectTotal ?? null,
+      notTrackedForProject: figure?.projectAllTimeTotal === 0,
+      withheld: false,
+      tooltip: uncountedTooltipFor(category.key),
     });
-  return rows.map((row) => {
-    if (!row.masked) return row;
-    return { ...row, count: 0, points: 0, pct: 0 };
-  });
+  }
+
+  visible.sort((a, b) => b.points - a.points);
+  return [...visible, ...hidden];
+}
+
+// Own-property guarded so an upstream key like `constructor` resolves to the fallback rather than to
+// an inherited Object.prototype member.
+function withheldTooltipFor(key: string): string {
+  return Object.hasOwn(ORG_LEADERBOARD_DETAIL_WITHHELD_CATEGORY_TOOLTIPS, key)
+    ? ORG_LEADERBOARD_DETAIL_WITHHELD_CATEGORY_TOOLTIPS[key]
+    : ORG_LEADERBOARD_DETAIL_WITHHELD_CATEGORY_TOOLTIP_FALLBACK;
+}
+
+function uncountedTooltipFor(key: string): string | null {
+  return Object.hasOwn(ORG_LEADERBOARD_DETAIL_UNCOUNTED_CATEGORY_TOOLTIPS, key) ? ORG_LEADERBOARD_DETAIL_UNCOUNTED_CATEGORY_TOOLTIPS[key] : null;
 }

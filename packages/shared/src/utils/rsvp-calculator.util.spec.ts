@@ -459,6 +459,15 @@ describe('getRegistrantAttendanceStatus', () => {
     expect(getRegistrantAttendanceStatus({ rsvp: { response_type: 'accepted' }, invite_accepted: false })).toBe('accepted');
     expect(getRegistrantAttendanceStatus({ rsvp: { response_type: 'declined' }, invite_accepted: true })).toBe('declined');
   });
+
+  it('does not treat calendar invite_accepted as an RSVP when invite responses are disabled', () => {
+    expect(getRegistrantAttendanceStatus({ rsvp: null, invite_accepted: true }, { inviteResponsesEnabled: false })).toBe('pending');
+    expect(getRegistrantAttendanceStatus({ rsvp: null, invite_accepted: false }, { inviteResponsesEnabled: false })).toBe('pending');
+  });
+
+  it('still honours an explicit LFX RSVP when invite responses are disabled', () => {
+    expect(getRegistrantAttendanceStatus({ rsvp: { response_type: 'accepted' }, invite_accepted: false }, { inviteResponsesEnabled: false })).toBe('accepted');
+  });
 });
 
 describe('countRegistrantAttendance', () => {
@@ -485,5 +494,19 @@ describe('countRegistrantAttendance', () => {
       { rsvp: { response_type: 'declined' }, invite_accepted: null }, // Explicit LFX decline
     ];
     expect(countRegistrantAttendance(registrants)).toEqual({ accepted: 1, declined: 2, maybe: 0, total: 3 });
+  });
+
+  it('does not count calendar invite_accepted when invite responses are disabled', () => {
+    const registrants = [
+      { rsvp: null, invite_accepted: true },
+      { rsvp: null, invite_accepted: false },
+      { rsvp: { response_type: 'accepted' }, invite_accepted: null },
+    ];
+    expect(countRegistrantAttendance(registrants, { inviteResponsesEnabled: false })).toEqual({
+      accepted: 1,
+      declined: 0,
+      maybe: 0,
+      total: 3,
+    });
   });
 });

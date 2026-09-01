@@ -53,13 +53,7 @@ export class SavedFilterService {
         });
       }
     },
-    onLoadError: () => {
-      this.messageService.add({
-        severity: 'info',
-        summary: 'Views temporarily unavailable',
-        detail: "We couldn't load your saved views. Please try again later.",
-      });
-    },
+    onLoadError: () => this.notifyUnavailable(),
     onContextChange: () => this.deletingViewIdsSignal.set(new Set()),
   });
 
@@ -89,7 +83,7 @@ export class SavedFilterService {
       this.messageService.add({
         severity: 'warn',
         summary: 'Saved view limit reached',
-        detail: `You can save up to ${MAX_SAVED_FILTERS_PER_PROJECT} views per project.`,
+        detail: `You can save up to ${MAX_SAVED_FILTERS_PER_PROJECT} views per foundation.`,
       });
       return null;
     }

@@ -54,6 +54,7 @@
                 label="Edit {{ mailingListLabel.singular }}"
                 size="small"
                 [routerLink]="editRoute()"
+                [queryParams]="editQueryParams()"
                 data-testid="mailing-list-view-edit-button">
               </lfx-button>
             </div>
@@ -122,7 +123,7 @@
                 severity="secondary"
                 [outlined]="true"
                 [routerLink]="editRoute()"
-                [queryParams]="{ step: '3' }"
+                [queryParams]="manageGroupsQueryParams()"
                 data-testid="mailing-list-view-manage-groups-button">
               </lfx-button>
             </div>

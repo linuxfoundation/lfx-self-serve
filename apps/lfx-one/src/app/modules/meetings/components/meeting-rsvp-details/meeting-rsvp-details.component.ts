@@ -17,7 +17,7 @@ import {
   Project,
   RsvpCounts,
 } from '@lfx-one/shared';
-import { resolveRsvpOccurrenceId } from '@lfx-one/shared/utils';
+import { isMeetingInviteResponsesEnabled, resolveRsvpOccurrenceId } from '@lfx-one/shared/utils';
 import { MeetingService } from '@services/meeting.service';
 import { UserService } from '@services/user.service';
 import { catchError, distinctUntilChanged, map, of, switchMap, tap } from 'rxjs';
@@ -40,6 +40,11 @@ export class MeetingRsvpDetailsComponent {
   public readonly backgroundColor: InputSignal<string | undefined> = input<string | undefined>(undefined);
   public readonly borderColor: InputSignal<string | undefined> = input<string | undefined>(undefined);
   public readonly additionalRegistrantsCount: InputSignal<number> = input<number>(0);
+  // When supplied (non-null), the parent already fetched the roster (e.g. the join page's
+  // getMyMeetingRegistrants() call) — this component reuses it instead of fetching its own,
+  // avoiding a duplicate full-roster request. Null means "self-managed" (legacy behavior).
+  public readonly initialRegistrants: InputSignal<MeetingRegistrant[] | null> = input<MeetingRegistrant[] | null>(null);
+  public readonly initialRegistrantsLoading: InputSignal<boolean> = input<boolean>(false);
   public readonly addClicked = output<void>();
   // Emits whether the current user has any RSVP on this meeting, derived from the already-fetched
   // registrants/rsvps data. Parent card uses this to flip "Set My RSVP" → "Update My RSVP".
@@ -47,20 +52,36 @@ export class MeetingRsvpDetailsComponent {
   public readonly disabled: InputSignal<boolean> = input<boolean>(false);
   public readonly disabledMessage: InputSignal<string> = input<string>('RSVP not available for this meeting');
 
-  public readonly loading: WritableSignal<boolean> = signal(true);
+  private readonly externallyManaged: Signal<boolean> = computed(() => this.initialRegistrants() !== null);
+  private readonly internalLoading: WritableSignal<boolean> = signal(true);
+  public readonly loading: Signal<boolean> = computed(() =>
+    this.externallyManaged() && !this.pastMeeting() ? this.initialRegistrantsLoading() : this.internalLoading()
+  );
   // Private source: one observable, two derived signals. Consolidates registrants + RSVPs
   // into a single HTTP call for the Me lens (where the backend doesn't populate counts),
   // and falls back to a direct RSVP fetch for the non-Me lens where counts are already populated.
   private readonly upcomingData: Signal<{ rsvps: MeetingRsvp[]; registrants: MeetingRegistrant[] }> = this.initializeUpcomingData();
-  public readonly rsvps: Signal<MeetingRsvp[]> = computed(() => this.upcomingData().rsvps);
   public readonly pastParticipants: Signal<PastMeetingParticipant[]> = this.initializePastParticipants();
-  public readonly registrants: Signal<MeetingRegistrant[]> = computed(() => this.upcomingData().registrants);
+  // Prefer the parent-supplied roster (when present and not viewing past-meeting data, which
+  // always self-fetches participants) so a stale in-flight internal fetch can't win.
+  public readonly registrants: Signal<MeetingRegistrant[]> = computed(() =>
+    this.externallyManaged() && !this.pastMeeting() ? (this.initialRegistrants() ?? []) : this.upcomingData().registrants
+  );
+  public readonly rsvps: Signal<MeetingRsvp[]> = computed(() => {
+    if (this.externallyManaged() && !this.pastMeeting()) {
+      return this.registrants()
+        .map((r) => r.rsvp)
+        .filter((r): r is MeetingRsvp => r != null);
+    }
+    return this.upcomingData().rsvps;
+  });
+  public readonly inviteResponsesEnabled: Signal<boolean> = computed(() => isMeetingInviteResponsesEnabled(this.meeting()));
   // Tracks across both rsvps data AND user identity; re-emits whenever either changes so the
   // parent card's "Set My RSVP" / "Update My RSVP" label stays in sync with login/impersonation.
   public readonly currentUserHasRsvp: Signal<boolean> = computed(() => {
     const email = this.userService.user()?.email?.toLowerCase();
     if (!email) return false;
-    return this.upcomingData().rsvps.some((r) => r.email?.toLowerCase() === email);
+    return this.rsvps().some((r) => r.email?.toLowerCase() === email);
   });
   public readonly rsvpCounts: Signal<RsvpCounts> = this.initializeRsvpCounts();
   public readonly acceptedCount: Signal<number> = computed(() => this.rsvpCounts().accepted);
@@ -86,28 +107,37 @@ export class MeetingRsvpDetailsComponent {
     return toSignal(
       toObservable(this.meeting).pipe(
         tap(() => {
-          if (!this.pastMeeting()) this.loading.set(true);
+          if (!this.pastMeeting()) this.internalLoading.set(true);
         }),
         switchMap((meeting) => {
-          if (this.pastMeeting()) {
+          if (this.pastMeeting() || this.externallyManaged()) {
             return of({ rsvps: [] as MeetingRsvp[], registrants: [] as MeetingRegistrant[] });
           }
-          // Me lens (backend counts not populated) — one call for both registrants + RSVPs inline.
+          const inviteResponsesEnabled = isMeetingInviteResponsesEnabled(meeting);
+          // Me lens (backend split counts not populated) — one call for both registrants + RSVPs.
           if (!this.hasBackendRegistrantCounts(meeting)) {
+            // Pre-feature Me-lens cards already carry aggregate `registrant_count`; the
+            // invitee-count-only UI reads that field, so skip the roster fetch (GH-1951).
+            if (!inviteResponsesEnabled && meeting.registrant_count !== undefined) {
+              return of({ rsvps: [] as MeetingRsvp[], registrants: [] as MeetingRegistrant[] });
+            }
             // Resolve RSVPs against the target occurrence so a `single` decline for a
             // future date doesn't overwrite the current occurrence's per-registrant
-            // chip (LFXV2-2864).
+            // chip (LFXV2-2864). Skip attaching RSVPs when tracking is disabled (GH-1951).
             const occurrenceId = resolveRsvpOccurrenceId(meeting, { occurrence: this.currentOccurrence() });
-            return this.meetingService.getMeetingRegistrants(meeting.id, true, occurrenceId).pipe(
+            return this.meetingService.getMeetingRegistrants(meeting.id, inviteResponsesEnabled, occurrenceId).pipe(
               map((registrants) => ({
                 registrants,
-                rsvps: registrants.map((r) => r.rsvp).filter((r): r is MeetingRsvp => r != null),
+                rsvps: inviteResponsesEnabled ? registrants.map((r) => r.rsvp).filter((r): r is MeetingRsvp => r != null) : [],
               })),
               catchError((error) => {
                 console.error('Failed to fetch meeting registrants:', error);
                 return of({ rsvps: [] as MeetingRsvp[], registrants: [] as MeetingRegistrant[] });
               })
             );
+          }
+          if (!inviteResponsesEnabled) {
+            return of({ rsvps: [] as MeetingRsvp[], registrants: [] as MeetingRegistrant[] });
           }
           // Non-Me lens — counts are already on the meeting object, only need RSVPs.
           return this.meetingService.getMeetingRsvps(meeting.id).pipe(
@@ -119,7 +149,7 @@ export class MeetingRsvpDetailsComponent {
           );
         }),
         tap(() => {
-          if (!this.pastMeeting()) this.loading.set(false);
+          if (!this.pastMeeting()) this.internalLoading.set(false);
         })
       ),
       { initialValue: { rsvps: [] as MeetingRsvp[], registrants: [] as MeetingRegistrant[] } }
@@ -130,7 +160,7 @@ export class MeetingRsvpDetailsComponent {
     return toSignal(
       toObservable(this.meeting).pipe(
         tap(() => {
-          if (this.pastMeeting()) this.loading.set(true);
+          if (this.pastMeeting()) this.internalLoading.set(true);
         }),
         switchMap((meeting) => {
           if (!this.pastMeeting()) {
@@ -144,7 +174,7 @@ export class MeetingRsvpDetailsComponent {
           );
         }),
         tap(() => {
-          if (this.pastMeeting()) this.loading.set(false);
+          if (this.pastMeeting()) this.internalLoading.set(false);
         })
       ),
       { initialValue: [] }
@@ -164,7 +194,7 @@ export class MeetingRsvpDetailsComponent {
       // with the drawer's per-registrant chips (LFXV2-2864).
       const registrants = this.registrants();
       if (registrants.length > 0) {
-        return countRegistrantAttendance(registrants);
+        return countRegistrantAttendance(registrants, { inviteResponsesEnabled: this.inviteResponsesEnabled() });
       }
       // Non-Me lens: no registrant array available (detail page — counts come off
       // meeting.individual_registrants_count). Fall back to RSVP-only tallying;
@@ -183,6 +213,12 @@ export class MeetingRsvpDetailsComponent {
 
       if (this.pastMeeting()) {
         return this.pastParticipants().length + additionalCount;
+      }
+
+      // Parent-owned roster is already the live count — the base/additional split below only
+      // applies to the legacy backend-counts path (meeting-card list), which this bypasses.
+      if (this.externallyManaged()) {
+        return this.registrants().length + additionalCount;
       }
 
       const splitCount = (meeting.individual_registrants_count || 0) + (meeting.committee_members_count || 0);

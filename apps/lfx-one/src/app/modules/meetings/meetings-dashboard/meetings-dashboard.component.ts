@@ -21,6 +21,7 @@ import {
   getPastMeetingResourceId,
   getPastMeetingStartTimeMs,
   hasMeetingEnded,
+  isMeetingInviteResponsesEnabled,
   isMeetingOrganizedByViewer,
   meetingToCalendarEvents,
   resolveMeetingCalendarClickRoute,
@@ -701,8 +702,9 @@ export class MeetingsDashboardComponent {
     }
 
     if (pendingRsvpOnly) {
-      // Pending = no RSVP recorded. accepted, declined, and maybe are all valid responses.
-      filtered = filtered.filter((m) => !m.my_rsvp);
+      // Pending = no RSVP recorded on meetings that collect LFX RSVPs. Pre-feature meetings
+      // never collected responses, so they must not appear as "pending" (GH-1951).
+      filtered = filtered.filter((m) => isMeetingInviteResponsesEnabled(m) && !m.my_rsvp);
     }
 
     if (organizerOnly) {

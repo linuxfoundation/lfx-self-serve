@@ -186,6 +186,10 @@ export class WeeklyBriefController {
         revision: result.brief?.revision,
       });
 
+      // caller_rating and staleness (GH-1966) are both per-user/per-request BFF enrichments
+      // derived from FGA-filtered activity — must not sit in a shared or intermediary cache,
+      // same rationale as CommitteeActivityController.
+      res.setHeader('Cache-Control', 'no-store');
       res.json(result);
     } catch (error) {
       next(error);

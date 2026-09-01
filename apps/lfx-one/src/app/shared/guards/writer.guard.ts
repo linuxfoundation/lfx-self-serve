@@ -8,6 +8,7 @@ import { ActivatedRouteSnapshot, CanActivateFn, Router } from '@angular/router';
 import { catchError, map, Observable, of, switchMap } from 'rxjs';
 
 import { CommitteeService } from '../services/committee.service';
+import { MailingListService } from '../services/mailing-list.service';
 import { MeetingService } from '../services/meeting.service';
 import { PersonaService } from '../services/persona.service';
 import { ProjectContextService } from '../services/project-context.service';
@@ -55,6 +56,7 @@ export const writerGuard: CanActivateFn = (route: ActivatedRouteSnapshot) => {
   const projectContextService = inject(ProjectContextService);
   const projectService = inject(ProjectService);
   const committeeService = inject(CommitteeService);
+  const mailingListService = inject(MailingListService);
   const meetingService = inject(MeetingService);
   const router = inject(Router);
 
@@ -70,14 +72,12 @@ export const writerGuard: CanActivateFn = (route: ActivatedRouteSnapshot) => {
   // A missing/stale `?project=` can authorize against a different project than the entity being
   // edited — resolve the slug from the entity itself; only a 404 falls back, else fail closed.
   const writeFeature: string | undefined = route.data?.['writeFeature'];
-  // Entity probes keyed by writeFeature — a new entity adds one registry line + the route's
-  // entityScopedSlug flag. Probes must be tap-free: fetchCommittee, not getCommittee (which sets
-  // the shared committee signal), so a guard probe can't leak stale state into other pages. Both
-  // probes ride a short-TTL shared cache (getMeetingDetail / getCommitteeDetail via fetchCommittee),
-  // so the manage component's immediate refetch on the same navigation doesn't duplicate the request.
+  // Entity probes keyed by writeFeature — a new entity adds one registry line + the route's entityScopedSlug flag.
+  // Probes must be tap-free and ride short-TTL shared caches so the guard probe and the manage page share one request.
   const entityProbes: Record<string, (id: string) => Observable<Pick<EntityWithProject, 'project_slug' | 'project_uid'> | null>> = {
     meetings: (id) => meetingService.getMeetingDetail(id),
     committees: (id) => committeeService.fetchCommittee(id),
+    'mailing-lists': (id) => mailingListService.getMailingList(id),
   };
   const resolveSlug = (): Observable<string | null> => {
     const fromContext = route.queryParamMap.get('project') ?? projectContextService.activeContext()?.slug ?? null;

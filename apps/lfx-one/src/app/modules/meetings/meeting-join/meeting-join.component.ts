@@ -55,7 +55,7 @@ import {
   TagSeverity,
   User,
 } from '@lfx-one/shared';
-import { getUserTimezone, isHostKeyVisible, isPastMeetingCompositeId } from '@lfx-one/shared/utils';
+import { getUserTimezone, isHostKeyVisible, isMeetingInviteResponsesEnabled, isPastMeetingCompositeId, reconcileOptimisticPad } from '@lfx-one/shared/utils';
 import { FileTypeDisplayPipe } from '@pipes/file-type-display.pipe';
 import { LinkifyPipe } from '@pipes/linkify.pipe';
 import { MeetingTimePipe } from '@pipes/meeting-time.pipe';
@@ -240,7 +240,10 @@ export class MeetingJoinComponent implements OnInit {
   protected rsvpAcceptedCount = computed(() => this.meeting()?.registrants_accepted_count ?? 0);
   protected rsvpDeclinedCount = computed(() => this.meeting()?.registrants_declined_count ?? 0);
   protected rsvpPendingCount = computed(() => this.meeting()?.registrants_pending_count ?? 0);
-  protected hasRsvpData = computed(() => this.rsvpAcceptedCount() > 0 || this.rsvpDeclinedCount() > 0 || this.rsvpPendingCount() > 0);
+  protected inviteResponsesEnabled = computed(() => isMeetingInviteResponsesEnabled(this.meeting()));
+  protected hasRsvpData = computed(
+    () => this.inviteResponsesEnabled() && (this.rsvpAcceptedCount() > 0 || this.rsvpDeclinedCount() > 0 || this.rsvpPendingCount() > 0)
+  );
   protected userInitials = computed(() => {
     const name = this.user()?.name || 'User';
     return name.substring(0, 2).toUpperCase();
@@ -255,19 +258,30 @@ export class MeetingJoinComponent implements OnInit {
   // Registrant list, fetched only when the user is the meeting organizer or invited.
   // Pre-loaded with the meeting so the Show Members drawer renders instantly from cache.
   protected registrants: Signal<MeetingRegistrant[]>;
-  protected registrantsLoading: WritableSignal<boolean> = signal(false);
+  // Starts true so the RSVP card (which now derives its own `loading` from this signal) shows a
+  // skeleton on first paint instead of a premature "0 of 0" — cleared once the initial fetch
+  // resolves, including the early-return branches that never issue a request (GH-1731).
+  protected registrantsLoading: WritableSignal<boolean> = signal(true);
   // Re-fires the registrants fetch (e.g. after a guest is added from the drawer).
   private registrantsRefresh$ = new BehaviorSubject<void>(undefined);
+  // Snapshot of the roster size immediately before a refresh was requested — lets the refetch
+  // tell whether it has absorbed the newly-added rows without needing a separate counts fetch.
+  private rosterCountBeforeAdd = signal<number | null>(null);
+  // Meeting+occurrence key the last successful registrants fetch belongs to. A failed refetch's
+  // catchError only falls back to the last-known roster when this still matches the meeting AND
+  // occurrence it was fetching for. Meeting alone isn't enough: the roster carries per-occurrence
+  // `rsvp` data (the fetch passes `include_rsvp=true` with the resolved occurrence id), so a
+  // fallback after switching occurrences within the same series would show accepted/declined
+  // chips from the wrong occurrence even though the underlying registrant rows are still valid.
+  // Also guards the original case — the component is reused across in-place `meetings/:id`
+  // navigations, so a stale key (different meeting entirely) must fall back to an empty list
+  // instead of leaking a previous meeting's roster into the new one.
+  private registrantsRosterKey = signal<string | null>(null);
   // Counts from actual data
   protected totalInvitees = computed(() => this.registrants().length);
-  // Optimistic + actual: post-add we bump optimisticAdditional immediately and let the refetch
-  // catch up; the max keeps the count stable while query indexing settles.
-  public additionalRegistrantsCount = computed(() => {
-    const meeting = this.meeting();
-    const baseCount = (meeting?.individual_registrants_count || 0) + (meeting?.committee_members_count || 0);
-    const fetched = Math.max(0, this.registrants().length - baseCount);
-    return Math.max(fetched, this.optimisticAdditional());
-  });
+  // The roster the child component holds is now the base count — this pad is purely optimistic,
+  // covering the window between an add and the query-service refetch catching up.
+  public additionalRegistrantsCount = computed(() => this.optimisticAdditional());
   // Past meeting participants (fetched from API for attendance stats)
   protected pastMeetingParticipants: Signal<PastMeetingParticipant[]>;
   // Host source for the organizer chip: registrants for upcoming, participants for past (the
@@ -356,7 +370,9 @@ export class MeetingJoinComponent implements OnInit {
     // Reset post-registration optimistic flag when navigating to a different meeting so a
     // previous registration doesn't grant registrant-list access for an unrelated meeting.
     // Use getMeetingSeriesUid (not meeting.id) because past-occurrence composite ids differ
-    // from the live-series uid — occurrence navigation must not clear the flag.
+    // from the live-series uid — occurrence navigation must not clear the flag. Also clear the
+    // guest-add pad/snapshot so a pending count from the previous meeting doesn't leak into
+    // the next one's total.
     toObservable(this.meeting)
       .pipe(
         map((m) => (m ? getMeetingSeriesUid(m) : undefined)),
@@ -364,7 +380,11 @@ export class MeetingJoinComponent implements OnInit {
         skip(1),
         takeUntilDestroyed(this.destroyRef)
       )
-      .subscribe(() => this.optimisticInvited.set(false));
+      .subscribe(() => {
+        this.optimisticInvited.set(false);
+        this.optimisticAdditional.set(0);
+        this.rosterCountBeforeAdd.set(null);
+      });
 
     this.primaryRecordingUrl = this.initializePrimaryRecordingUrl();
     this.transcriptUrl = this.initializeTranscriptUrl();
@@ -482,6 +502,15 @@ export class MeetingJoinComponent implements OnInit {
 
   public onRegistrantsRefreshRequested(addedCount: number): void {
     if (addedCount > 0) {
+      // Only snapshot as a real baseline when the current roster is a confirmed, successful fetch
+      // for this meeting+occurrence — otherwise `registrants()` may still hold the initial `[]`
+      // (roster hasn't loaded yet) or a failure fallback, and reconcileOptimisticPad would treat
+      // that unconfirmed value as "absorbed" on the next real fetch, zeroing the pad before the
+      // added guests land.
+      const meeting = this.meeting();
+      const occurrenceId = resolveRsvpOccurrenceId(meeting, { occurrence: this.currentOccurrence() });
+      const hasConfirmedRoster = this.registrantsRosterKey() === this.buildRegistrantsRosterKey(meeting.id, occurrenceId);
+      this.rosterCountBeforeAdd.set(hasConfirmedRoster ? this.registrants().length : null);
       this.optimisticAdditional.update((c) => c + addedCount);
     }
     this.registrantsRefresh$.next();
@@ -1120,7 +1149,7 @@ export class MeetingJoinComponent implements OnInit {
   }
 
   private initializeCanToggleRsvpView(): Signal<boolean> {
-    return computed(() => !!this.meeting()?.organizer && this.isInvited());
+    return computed(() => !!this.meeting()?.organizer && this.isInvited() && this.inviteResponsesEnabled());
   }
 
   private initializeCurrentUserRsvp(): Signal<MeetingRsvp | null> {
@@ -1374,6 +1403,11 @@ export class MeetingJoinComponent implements OnInit {
       });
   }
 
+  /** Builds the composite key `initializeRegistrants` uses to detect a stale roster fallback. */
+  private buildRegistrantsRosterKey(meetingId: string, occurrenceId: string | undefined): string {
+    return `${meetingId}::${occurrenceId ?? ''}`;
+  }
+
   private initializeRegistrants(): Signal<MeetingRegistrant[]> {
     return toSignal(
       combineLatest([
@@ -1385,18 +1419,44 @@ export class MeetingJoinComponent implements OnInit {
       ]).pipe(
         switchMap(([meeting, occurrence, authenticated, , optimisticInvited]) => {
           if (!meeting?.id || !authenticated || !(meeting.organizer || meeting.invited || optimisticInvited) || this.isPastMeeting()) {
+            // No fetch will happen on this branch (unauthenticated, not organizer/invited, or a
+            // past meeting) — clear the loading flag so the RSVP card doesn't hang on a skeleton.
+            this.registrantsLoading.set(false);
             return of([] as MeetingRegistrant[]);
           }
           this.registrantsLoading.set(true);
-          const baseCount = (meeting.individual_registrants_count || 0) + (meeting.committee_members_count || 0);
           const occurrenceId = resolveRsvpOccurrenceId(meeting, { occurrence });
           return this.meetingService.getMyMeetingRegistrants(meeting.id, true, occurrenceId).pipe(
             tap((list) => {
-              // Once the refetch lands, drop the optimistic pad so it doesn't double-count.
-              const fetchedAdditional = Math.max(0, list.length - baseCount);
-              if (fetchedAdditional >= this.optimisticAdditional()) {
-                this.optimisticAdditional.set(0);
+              // Only the rows the refetch has actually absorbed come off the pad — a partial
+              // catch-up must not zero out rows the query-service index hasn't reflected yet.
+              const next = reconcileOptimisticPad({
+                pad: this.optimisticAdditional(),
+                before: this.rosterCountBeforeAdd(),
+                current: list.length,
+              });
+              this.optimisticAdditional.set(next.pad);
+              this.rosterCountBeforeAdd.set(next.before);
+              this.registrantsRosterKey.set(this.buildRegistrantsRosterKey(meeting.id, occurrenceId));
+            }),
+            catchError((error) => {
+              // A failed refetch for the SAME meeting+occurrence must not reach reconcileOptimisticPad
+              // as an empty list — that would look like "the roster shrank to zero" and zero out a
+              // pending pad for guests that were actually added. But if the last successful fetch
+              // belongs to a DIFFERENT meeting or occurrence (this component is reused across
+              // in-place `meetings/:id` navigations, and the roster carries per-occurrence `rsvp`
+              // data), `registrants()` is stale — falling back to it would either leak a previous
+              // meeting's registrant names/emails, or show accepted/declined chips from the wrong
+              // occurrence, so fall back to empty instead.
+              console.error(`Failed to refresh registrants for meeting ${meeting.id}:`, error);
+              const isSameRoster = this.registrantsRosterKey() === this.buildRegistrantsRosterKey(meeting.id, occurrenceId);
+              if (!isSameRoster) {
+                // Discarding a stale roster for a different meeting/occurrence — clear the key so a
+                // later failure back on THIS meeting/occurrence doesn't mistake the resulting empty
+                // list for a confirmed roster and let a guest-add snapshot `before = 0`.
+                this.registrantsRosterKey.set(null);
               }
+              return of(isSameRoster ? this.registrants() : []);
             }),
             finalize(() => this.registrantsLoading.set(false))
           );

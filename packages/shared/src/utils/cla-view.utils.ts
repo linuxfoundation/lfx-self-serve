@@ -5,11 +5,27 @@
 // branching logic (ICLA/ECLA split, empty/CTA rules, status labels) is unit-testable without
 // an Angular component-test harness.
 
-import { CLA_GROUP_MATCH_TYPE_LABELS, CLA_GROUP_ORG_SOURCE_ICONS, CLA_GROUP_ORG_SOURCE_LABELS, UNNAMED_CLA_GROUP } from '../constants/cla.constants';
+import {
+  CLA_GROUP_MATCH_TYPE_LABELS,
+  CLA_GROUP_ORG_SOURCE_ICONS,
+  CLA_GROUP_ORG_SOURCE_LABELS,
+  GERRIT_CONSOLE_CONTRACT_TYPE,
+  GERRIT_CONSOLE_ROUTE_PREFIX,
+  UNNAMED_CLA_GROUP,
+} from '../constants/cla.constants';
 import { PROFILE_TABS } from '../constants/profile.constants';
 import { BadgeSeverity, TagSeverity } from '../interfaces/components.interface';
 import { ProfileTab } from '../interfaces';
-import { ClaGroupOption, ClaGroupOptionView, ClaSignedVia, ClaStatus, MyClaAgreement, MyClasIdentitySummary } from '../interfaces/cla.interface';
+import {
+  ClaGroupOption,
+  ClaGroupOptionView,
+  ClaGroupOrg,
+  ClaSignedVia,
+  ClaSignRoute,
+  ClaStatus,
+  MyClaAgreement,
+  MyClasIdentitySummary,
+} from '../interfaces/cla.interface';
 
 /**
  * Profile subtab list, with the read-only "CLAs" tab appended (before Transactions)
@@ -134,6 +150,78 @@ export function claGroupPrimaryName(option: Pick<ClaGroupOption, 'projectName' |
 /** Secondary line — only when it says something the primary line does not. */
 export function claGroupSecondaryName(option: Pick<ClaGroupOption, 'projectName' | 'claGroupName'>): string | null {
   return option.claGroupName && option.claGroupName !== claGroupPrimaryName(option) ? option.claGroupName : null;
+}
+
+/**
+ * Which identity the sign step offers for a selected CLA Group, and therefore which hand-off
+ * it can end in (#2002).
+ *
+ * **Presence is evidence; absence is not.** The empty-list return is the first statement here
+ * deliberately, so no branch below can reach a conclusion from missing data. An empty list
+ * means nothing is linked or nothing resolved, not "not on GitHub"; those CLA Groups are
+ * searchable by name and signable today, so a rule shaped "no GitHub organization ⇒ not
+ * GitHub" would misroute them into a step they cannot complete. An empty list keeps the
+ * GitHub path, unchanged.
+ *
+ * The step itself is never skipped, whatever this returns — the contributor is always shown
+ * which identity they are about to sign under. Only the identity on offer varies.
+ *
+ * GitLab yields a block rather than a route because Self Serve holds no verifiable GitLab
+ * identity, and only when nothing else is linked: a group reachable through GitHub or Gerrit
+ * is signable, so its GitLab organizations are simply not offered.
+ */
+export function claSignRoute(organizations: ClaGroupOrg[]): ClaSignRoute {
+  if (organizations.length === 0) return 'github';
+
+  const has = (source: ClaGroupOrg['source']): boolean => organizations.some((org) => org.source === source);
+  const github = has('github');
+  const gerrit = has('gerrit');
+
+  // Must precede the single-source tests: a group carrying both is a choice, not whichever
+  // one happens to be checked first.
+  if (github && gerrit) return 'github-or-gerrit';
+  if (gerrit) return 'gerrit';
+  if (github) return 'github';
+  if (has('gitlab')) return 'gitlab-unsupported';
+
+  // A non-empty list of sources none of which is recognised. The search mapper drops unknown
+  // sources before the client sees them, so this is unreachable in practice; it carries no
+  // positive evidence either way, and so falls to today's behaviour rather than to a block.
+  return 'github';
+}
+
+/**
+ * The Contributor Console address a Gerrit contributor is sent to (#2002).
+ *
+ * The one address in this flow Self Serve composes itself. Every other hand-off uses the
+ * `signUrl` the producer returns, because the producer owns a signing session the address
+ * belongs to — the Gerrit route opens no session, carries no user id, and makes no producer
+ * call, so there is nothing to defer to. Keeping the composition here means a Console route
+ * change is a single edit.
+ *
+ * Returns `null` rather than a malformed address when the base or the group id is unusable,
+ * so the caller reports a failure instead of navigating somewhere that cannot work.
+ */
+export function gerritSignUrl(consoleBaseUrl: string, claGroupId: string, returnUrl: string): string | null {
+  // Trailing slashes are stripped by scanning, not by an anchored `/\/+$/`: that pattern
+  // backtracks polynomially on a long run of slashes, which CodeQL flags as a ReDoS even
+  // though this particular input is build-time configuration.
+  let base = consoleBaseUrl.trim();
+  while (base.endsWith('/')) base = base.slice(0, -1);
+
+  const groupId = claGroupId.trim();
+  if (!base || !groupId) return null;
+
+  // Parsed rather than pattern-matched so a base that is not an absolute URL is rejected here
+  // rather than producing a relative address the browser resolves against our own origin.
+  try {
+    new URL(base);
+  } catch {
+    return null;
+  }
+
+  const redirect = encodeURIComponent(returnUrl);
+  return `${base}/${GERRIT_CONSOLE_ROUTE_PREFIX}/${encodeURIComponent(groupId)}/${GERRIT_CONSOLE_CONTRACT_TYPE}?redirect=${redirect}`;
 }
 
 /** Maps a producer search result to the picker view model. */

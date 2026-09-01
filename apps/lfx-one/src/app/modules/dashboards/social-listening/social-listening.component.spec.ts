@@ -407,19 +407,19 @@ describe('SocialListeningComponent', () => {
       expect(currentParams['q']).toBe('mesh');
     });
 
-    it('keeps a deep-linked ?search= in the URL while the debounced query catches up', async () => {
-      currentParams = { search: 'mesh' };
+    it('keeps a deep-linked ?q= in the URL while the debounced query catches up', async () => {
+      currentParams = { q: 'mesh' };
       queryParams$.next(currentParams);
       await settle();
 
       // Inside the 500ms debounce window the URL-write effect must not strip the param.
       expect(navigate).not.toHaveBeenCalled();
-      expect(currentParams['search']).toBe('mesh');
+      expect(currentParams['q']).toBe('mesh');
 
       // Once the debounce lands, the applied state re-encodes to the same URL — still no write.
       await new Promise((resolve) => setTimeout(resolve, 600));
       await settle();
-      expect(currentParams['search']).toBe('mesh');
+      expect(currentParams['q']).toBe('mesh');
       expect(navigate).not.toHaveBeenCalled();
     });
   });
