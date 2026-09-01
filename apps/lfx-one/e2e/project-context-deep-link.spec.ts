@@ -646,7 +646,30 @@ test.describe('Mailing list edit deep-link resolves the list’s project context
       timeout: ELEMENT_TIMEOUT,
     });
 
+    // The uid fallback canonicalizes the route to the list's foundation tier too (GH-1567).
+    await expect(page).toHaveURL(new RegExp(`/foundation/mailing-lists/${MOCK_MAILING_LIST_UID}/edit`), { timeout: ELEMENT_TIMEOUT });
+
     await page.waitForTimeout(500);
     expect(new URL(page.url()).searchParams.has('project')).toBe(false);
+  });
+
+  test('view deep link under the wrong tier canonicalizes to the list’s foundation (GH-1567)', async ({ page }) => {
+    await stubMailingListEditDetail(page, buildMailingListStub(true));
+    // The view page's members child fetches /members — keep it from escaping to the real BFF.
+    await page.route(`**/api/mailing-lists/${MOCK_MAILING_LIST_UID}/members*`, (route) =>
+      route.fulfill({ status: 200, contentType: 'application/json', body: '[]' })
+    );
+
+    await gotoSpa(page, `/project/mailing-lists/${MOCK_MAILING_LIST_UID}`, {
+      uid: OTHER_PROJECT_UID,
+      slug: OTHER_PROJECT_SLUG,
+      name: 'Other Project',
+      foundation: false,
+    });
+    await expect(page.getByTestId('mailing-list-view-title')).toHaveText('Test Foundation Announcements', { timeout: PAGE_LOAD_TIMEOUT });
+
+    // Context syncs from the loaded list and the route rewrites to its owning tier (GH-1567).
+    await expect(page).toHaveURL(new RegExp(`/foundation/mailing-lists/${MOCK_MAILING_LIST_UID}$`), { timeout: ELEMENT_TIMEOUT });
+    await expect(page.getByTestId('project-selector')).toContainText('Test Foundation', { timeout: ELEMENT_TIMEOUT });
   });
 });

@@ -100,7 +100,7 @@ export function syncEntityProjectContext<T extends EntityWithProject>(
         const useFoundation = entity.is_foundation ?? router.url.startsWith('/foundation/');
         applyEntityProjectContext(projectContextService, context, useFoundation, syncUrl);
         if (options?.canonicalizeRoute && entity.is_foundation != null) {
-          canonicalizeTierPrefix(router, entity.is_foundation);
+          canonicalizeTierPrefix(router, entity.is_foundation, entity.project_slug);
         }
       } else if (router.url.startsWith('/foundation/')) {
         projectContextService.setFoundation(context, syncUrl);
@@ -112,7 +112,7 @@ export function syncEntityProjectContext<T extends EntityWithProject>(
 
 // Swaps only the leading tier segment so the URL reflects entity ownership (GH-1567); the
 // already-canonical no-op keeps the NavigationEnd re-apply loop-free, replaceUrl keeps history clean.
-function canonicalizeTierPrefix(router: Router, isFoundation: boolean): void {
+export function canonicalizeTierPrefix(router: Router, isFoundation: boolean, projectSlug: string): void {
   const url = router.url;
   const isFoundationUrl = url.startsWith('/foundation/');
   const isProjectUrl = url.startsWith('/project/');
@@ -121,5 +121,11 @@ function canonicalizeTierPrefix(router: Router, isFoundation: boolean): void {
   }
   const from = isFoundationUrl ? '/foundation/' : '/project/';
   const to = isFoundation ? '/foundation/' : '/project/';
-  router.navigateByUrl(to + url.slice(from.length), { replaceUrl: true });
+  const urlTree = router.parseUrl(to + url.slice(from.length));
+  // router.url still carries the pre-sync ?project= (the Location.replaceState sync bypasses the
+  // router) — pin the entity's slug so projectQueryParamGuard reseeds the right project.
+  if ('project' in urlTree.queryParams) {
+    urlTree.queryParams['project'] = projectSlug;
+  }
+  router.navigateByUrl(urlTree, { replaceUrl: true });
 }

@@ -30,7 +30,7 @@ import { catchError, distinctUntilChanged, filter, map, merge, Observable, of, s
 
 import { MailingListBasicInfoComponent } from '../components/mailing-list-basic-info/mailing-list-basic-info.component';
 import { MailingListSettingsComponent } from '../components/mailing-list-settings/mailing-list-settings.component';
-import { applyEntityProjectContext, syncEntityProjectContext } from '@shared/utils/entity-project-context.util';
+import { applyEntityProjectContext, canonicalizeTierPrefix, syncEntityProjectContext } from '@shared/utils/entity-project-context.util';
 import { evictOnWriteAccessLoss } from '@shared/utils/evict-on-write-access-loss.util';
 
 @Component({
@@ -306,6 +306,8 @@ export class MailingListManageComponent {
         // Mirror syncEntityProjectContext: only write ?project= to the URL when already present.
         const syncUrl = 'project' in this.router.parseUrl(this.router.url).queryParams;
         applyEntityProjectContext(this.projectContextService, resolved.context, resolved.isFoundation, syncUrl);
+        // Heal a wrong-tier URL the same way the enriched sync path does (GH-1567).
+        canonicalizeTierPrefix(this.router, resolved.isFoundation, resolved.context.slug);
       });
   }
 

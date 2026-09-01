@@ -87,7 +87,12 @@ export class MailingListViewComponent {
   public readonly manageGroupsQueryParams: Signal<Record<string, string>> = this.initManageGroupsQueryParams();
 
   public constructor() {
-    syncEntityProjectContext(this.mailingList, this.projectContextService, this.router, this.destroyRef);
+    // Sync context from the loaded list — a view deep link can land under the wrong tier (flat
+    // link redirected by a stale lens); canonicalizeRoute rewrites the URL to the owning tier (GH-1567).
+    syncEntityProjectContext(this.mailingList, this.projectContextService, this.router, this.destroyRef, {
+      preferEntityKind: true,
+      canonicalizeRoute: true,
+    });
   }
 
   public refreshData(): void {
