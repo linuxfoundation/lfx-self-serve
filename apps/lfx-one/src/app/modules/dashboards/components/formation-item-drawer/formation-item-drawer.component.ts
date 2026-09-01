@@ -15,7 +15,7 @@ import type { FormationDrawerData, FormationItem, FormationItemLink } from '@lfx
 import { isValidUrl } from '@lfx-one/shared/utils';
 import { MessageService } from 'primeng/api';
 import { DrawerModule } from 'primeng/drawer';
-import { BehaviorSubject, catchError, combineLatest, finalize, of, skip, switchMap, take, tap } from 'rxjs';
+import { catchError, finalize, map, merge, of, skip, Subject, switchMap, take, tap } from 'rxjs';
 
 const EMPTY_DATA: FormationDrawerData = { item: null, history: [] };
 
@@ -44,7 +44,7 @@ export class FormationItemDrawerComponent {
     dueDate: new FormControl<Date | null>(null),
   });
 
-  private readonly reload$ = new BehaviorSubject<void>(undefined);
+  private readonly reload$ = new Subject<void>();
 
   protected readonly loading: WritableSignal<boolean> = signal(false);
   protected readonly loadFailed: WritableSignal<boolean> = signal(false);
@@ -109,24 +109,50 @@ export class FormationItemDrawerComponent {
   }
 
   private initDrawerData(): Signal<FormationDrawerData> {
+    // Tagged so a post-save `reload$` refetch (item still open, already showing real data) doesn't
+    // drive the same `loading`/`loadFailed` signals as the open-transition fetch — those flip the
+    // template to a full-body spinner/error state, which would blank a drawer the user just
+    // successfully saved into. `lastData` lets a reload failure keep showing the pre-reload item
+    // instead of falling back to empty.
+    let lastData: FormationDrawerData = EMPTY_DATA;
+    const openTrigger$ = toObservable(this.visible).pipe(
+      skip(1),
+      map(() => 'open' as const)
+    );
+    const reloadTrigger$ = this.reload$.pipe(map(() => 'reload' as const));
+
     return toSignal(
-      combineLatest([toObservable(this.visible).pipe(skip(1)), this.reload$]).pipe(
-        switchMap(([isVisible]) => {
+      merge(openTrigger$, reloadTrigger$).pipe(
+        switchMap((trigger) => {
           const uid = this.itemUid();
-          if (!isVisible || !uid) {
+          if (!this.visible() || !uid) {
+            lastData = EMPTY_DATA;
             return of(EMPTY_DATA);
           }
 
-          this.loadFailed.set(false);
-          this.loading.set(true);
+          if (trigger === 'open') {
+            this.loadFailed.set(false);
+            this.loading.set(true);
+          }
+
           return this.formationService.getFormationItem(uid).pipe(
-            tap((data) => this.syncForm(data.item)),
+            tap((data) => {
+              this.syncForm(data.item);
+              lastData = data;
+            }),
             catchError((error: unknown) => {
               console.error('[FormationItemDrawer] Failed to load formation item', error);
-              this.loadFailed.set(true);
-              return of(EMPTY_DATA);
+              if (trigger === 'open') {
+                lastData = EMPTY_DATA;
+                this.loadFailed.set(true);
+                return of(EMPTY_DATA);
+              }
+              this.messageService.add({ severity: 'error', summary: 'Error', detail: 'Could not refresh this item.' });
+              return of(lastData);
             }),
-            finalize(() => this.loading.set(false))
+            finalize(() => {
+              if (trigger === 'open') this.loading.set(false);
+            })
           );
         })
       ),

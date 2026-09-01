@@ -13,10 +13,11 @@ import type {
   FormationTemplateSection,
   ReasonPromptDialogResult,
 } from '@lfx-one/shared/interfaces';
+import { FORMATION_ORPHAN_SECTION } from '@lfx-one/shared/constants';
 import { MessageService } from 'primeng/api';
 import { SkeletonModule } from 'primeng/skeleton';
 import { DialogService } from 'primeng/dynamicdialog';
-import { BehaviorSubject, catchError, combineLatest, finalize, of, switchMap, take } from 'rxjs';
+import { BehaviorSubject, catchError, combineLatest, finalize, of, switchMap, take, tap } from 'rxjs';
 
 import { ReasonPromptDialogComponent } from '@components/reason-prompt-dialog/reason-prompt-dialog.component';
 
@@ -25,7 +26,6 @@ import { FormationItemDrawerComponent } from '../formation-item-drawer/formation
 import { FormationReadinessStripComponent } from '../formation-readiness-strip/formation-readiness-strip.component';
 
 const EMPTY_RESPONSE: FormationChecklistResponse | null = null;
-const ORPHAN_SECTION_KEY = '__orphan__';
 
 interface RenderedSection {
   section: FormationTemplateSection;
@@ -67,7 +67,8 @@ export class FormationChecklistSectionComponent {
    * that adds or renames a section still renders instead of silently dropping items. Any item
    * whose `section_key` matches none of the template's sections (exactly what a rename produces
    * for items still carrying the old key) is bucketed into a synthetic fallback section rather
-   * than dropped — see `ORPHAN_SECTION_KEY`.
+   * than dropped — see `FORMATION_ORPHAN_SECTION`. Kept a pure derivation (no logging here) — see
+   * `logOrphanSectionKeys`, called once per fetched response instead of once per recomputation.
    */
   protected readonly renderedSections: Signal<RenderedSection[]> = computed(() => {
     const items = this.items();
@@ -81,10 +82,7 @@ export class FormationChecklistSectionComponent {
 
     const orphans = items.filter((item) => !knownKeys.has(item.section_key));
     if (orphans.length > 0) {
-      console.error('[FormationChecklistSection] Items with an unrecognized section_key', {
-        sectionKeys: orphans.map((item) => item.section_key),
-      });
-      rendered.push({ section: { key: ORPHAN_SECTION_KEY, title: 'Other', items: [] }, items: orphans });
+      rendered.push({ section: { ...FORMATION_ORPHAN_SECTION, items: [] }, items: orphans });
     }
 
     return rendered;
@@ -177,6 +175,7 @@ export class FormationChecklistSectionComponent {
           this.loadFailed.set(false);
           this.loading.set(true);
           return this.formationService.getProjectFormation(context.slug).pipe(
+            tap((response) => this.logOrphanSectionKeys(response)),
             catchError((error: unknown) => {
               console.error('[FormationChecklistSection] Failed to load formation checklist', error);
               this.loadFailed.set(true);
@@ -188,5 +187,14 @@ export class FormationChecklistSectionComponent {
       ),
       { initialValue: EMPTY_RESPONSE }
     );
+  }
+
+  /** Logs once per fetched response, not once per `renderedSections` recomputation (which fires on every `refresh$.next()`). */
+  private logOrphanSectionKeys(response: FormationChecklistResponse): void {
+    const knownKeys = new Set((response.template?.sections ?? []).map((section) => section.key));
+    const orphanKeys = response.items.filter((item) => !knownKeys.has(item.section_key)).map((item) => item.section_key);
+    if (orphanKeys.length > 0) {
+      console.error('[FormationChecklistSection] Items with an unrecognized section_key', { sectionKeys: orphanKeys });
+    }
   }
 }
