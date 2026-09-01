@@ -1,8 +1,8 @@
 // Copyright The Linux Foundation and each contributor to LFX.
 // SPDX-License-Identifier: MIT
 
-import type { ButtonSeverity } from './components.interface';
-import type { FormationActivity, FormationItem, FormationItemStatus, FormationSubStage, FormationTemplateSection } from './formation.interface';
+import type { ButtonSeverity, TagSeverity } from './components.interface';
+import type { Formation, FormationActivity, FormationItem, FormationItemStatus, FormationSubStage, FormationTemplateSection } from './formation.interface';
 
 /**
  * Client-derived stand-in for the readiness strip. TODO(#1957): once the backend returns a
@@ -64,4 +64,14 @@ export interface FormationRowActionConfig {
  */
 export interface FormationLinkRowActionConfig {
   testidPrefix: string;
+}
+
+/**
+ * `FormationsTableComponent`'s render row — `Formation` plus the pre-resolved stage chip
+ * label/severity, so the `#body` template (where PrimeNG types the row context `any`) does a plain
+ * property read instead of a method call that re-executes on every change-detection pass.
+ */
+export interface FormationTableRow extends Formation {
+  stageLabel: string;
+  stageSeverity: TagSeverity;
 }

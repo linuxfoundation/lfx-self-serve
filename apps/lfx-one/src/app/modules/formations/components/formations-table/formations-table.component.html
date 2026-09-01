@@ -33,7 +33,7 @@
         data-testid="formations-table-empty">
       </lfx-empty-state>
     } @else {
-      <lfx-table [value]="rows()" [loading]="loading()" [ariaLabel]="'Formations queue'" data-testid="formations-table">
+      <lfx-table [value]="displayRows()" [loading]="loading()" [ariaLabel]="'Formations queue'" data-testid="formations-table">
         <ng-template #header>
           <tr>
             <th class="w-[24%]">Formation</th>
@@ -58,7 +58,7 @@
               </div>
             </td>
             <td class="text-sm text-gray-700 capitalize">{{ row.entity_type }}</td>
-            <td><lfx-tag [value]="subStageLabel(row.sub_stage)" [severity]="subStageSeverity(row.sub_stage)" /></td>
+            <td><lfx-tag [value]="row.stageLabel" [severity]="row.stageSeverity" /></td>
             <td class="text-sm text-gray-700 tabular-nums">{{ row.gating_items_total - row.gating_items_open }} of {{ row.gating_items_total }}</td>
             <td class="text-sm text-gray-700">{{ row.announcement_date ? (row.announcement_date | date: 'MMM d') : 'Not set' }}</td>
             <td class="text-sm text-gray-700">{{ row.blocking_item_title || '—' }}</td>

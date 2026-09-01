@@ -3,7 +3,7 @@
 
 /** Shared fixtures/mocks for the Formation Checklist section specs (GH-1958). */
 
-import { FEATURE_FLAG_OVERRIDE_STORAGE_KEY, FORMATION_ENABLED_FLAG } from '@lfx-one/shared/constants/feature-flags.constants';
+import { FEATURE_FLAG_OVERRIDE_STORAGE_KEY, FORMATION_ENABLED_FLAG } from '@lfx-one/shared/constants';
 import { Page, test } from '@playwright/test';
 
 import { FormationApiMockHelper } from './formation-api-mock.helper';

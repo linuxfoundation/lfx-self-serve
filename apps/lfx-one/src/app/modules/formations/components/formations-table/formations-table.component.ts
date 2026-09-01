@@ -13,7 +13,7 @@ import { InputTextComponent } from '@components/input-text/input-text.component'
 import { TableComponent } from '@components/table/table.component';
 import { TagComponent } from '@components/tag/tag.component';
 import { FORMATION_QUEUE_SUB_STAGES } from '@lfx-one/shared/constants';
-import type { FilterPillOption, Formation, FormationSubStage, FormationsQueueFilterState, TagSeverity } from '@lfx-one/shared/interfaces';
+import type { FilterPillOption, Formation, FormationsQueueFilterState, FormationSubStage, FormationTableRow, TagSeverity } from '@lfx-one/shared/interfaces';
 import { debounceTime, distinctUntilChanged, map } from 'rxjs';
 
 const SUB_STAGE_LABEL: Record<FormationSubStage, string> = {
@@ -72,6 +72,11 @@ export class FormationsTableComponent {
 
   protected readonly isFiltered = computed(() => this.statusTab() !== 'all' || !!this.searchValue().trim());
 
+  /** PrimeNG types the `#body` row context `any` — precomputing the chip label/severity here lets the template do a plain property read instead of a method call. */
+  protected readonly displayRows: Signal<FormationTableRow[]> = computed(() =>
+    this.rows().map((row) => ({ ...row, stageLabel: SUB_STAGE_LABEL[row.sub_stage], stageSeverity: SUB_STAGE_SEVERITY[row.sub_stage] }))
+  );
+
   public constructor() {
     // Search is debounced and only re-emits filtersChange from here — the status-tab tab click
     // emits directly from onStatusTabChange. Filtering (both) is server-side: the parent re-fetches
@@ -87,17 +92,6 @@ export class FormationsTableComponent {
         this.searchValue.set(search);
         this.emitFilters();
       });
-  }
-
-  // Methods, not exposed-map lookups: `row` in the table's `#body` template context is typed `any`
-  // by PrimeNG, so `SUB_STAGE_LABEL[row.sub_stage]` fails strict-mode indexing (TS7053) — a typed
-  // method parameter accepts the `any` argument without that issue.
-  protected subStageLabel(stage: FormationSubStage): string {
-    return SUB_STAGE_LABEL[stage];
-  }
-
-  protected subStageSeverity(stage: FormationSubStage): TagSeverity {
-    return SUB_STAGE_SEVERITY[stage];
   }
 
   protected onStatusTabChange(tab: string): void {
