@@ -12,7 +12,10 @@
       </div>
       @if (formationFlagEnabled() && isFormation()) {
         <p class="text-sm text-gray-500" data-testid="project-dashboard-formation-subtitle">
-          Stage Formation · {{ formationSubStage() }} · Announcement date {{ announcementDateLabel() }}
+          Stage Formation · {{ formationSubStage() }}
+          @if (!announcementDateLoading()) {
+            · Announcement date {{ announcementDateLabel() }}
+          }
         </p>
       }
     </div>
@@ -88,7 +91,7 @@
     </div>
 
     @if (selectedProject()?.uid; as uid) {
-      <lfx-dashboard-sidebar [projectUid]="uid" [staffHeading]="staffHeading" />
+      <lfx-dashboard-sidebar [projectUid]="uid" [staffHeading]="staffHeading" [showFormationCard]="true" />
     }
   </div>
 </div>

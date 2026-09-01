@@ -4,7 +4,7 @@
 <aside class="flex flex-col gap-8 w-full" data-testid="dashboard-sidebar">
   <lfx-dashboard-quicklinks layout="sidebar" class="empty:hidden" />
   <lfx-project-staff-card [projectUid]="projectUid()" [heading]="staffHeading()" class="empty:hidden" />
-  @if (formationFlagEnabled() && isFormation()) {
+  @if (showFormationCard() && formationFlagEnabled() && isFormation()) {
     <lfx-formation-card class="empty:hidden" />
   }
 </aside>

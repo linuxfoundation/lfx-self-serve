@@ -21,6 +21,15 @@ export class DashboardSidebarComponent {
 
   public readonly projectUid = input.required<string>();
   public readonly staffHeading = input.required<string>();
+  /**
+   * GH-1955 — opt-in only. `FormationCardComponent` reads `ProjectContextService.activeProject`
+   * (the "project" lens slot), not this component's own `projectUid` input — the executive-director
+   * and board-member dashboards pass a *different* entity's uid here (`selectedProject`/
+   * `selectedFoundation`, not `activeContext`), so rendering the card there would silently describe
+   * the wrong project. Only `ProjectDashboardComponent`, where `projectUid` and `activeProject` are
+   * guaranteed to agree, sets this `true`.
+   */
+  public readonly showFormationCard = input<boolean>(false);
 
   /** GH-1955 — see `FORMATION_ENABLED_FLAG`'s doc comment for what this does and doesn't gate. */
   protected readonly formationFlagEnabled = this.featureFlagService.getBooleanFlag(FORMATION_ENABLED_FLAG, false);

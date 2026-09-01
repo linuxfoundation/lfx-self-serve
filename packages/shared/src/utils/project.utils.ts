@@ -65,16 +65,17 @@ export function computeIsFoundation(project: Project | null): boolean {
  * literal (GH-1955 — see that constant's doc comment for why "Draft" is handled at all).
  */
 export function isFormationStage(stage: string | undefined | null): boolean {
-  if (!stage) {
-    return false;
-  }
-  return stage === DRAFT_STAGE_SENTINEL || stage in FORMATION_SUB_STAGE_LABELS;
+  return !!stage && (stage === DRAFT_STAGE_SENTINEL || getFormationSubStageLabel(stage) !== null);
 }
 
 /**
  * Short display label for a project's Formation sub-stage (e.g. `'Engaged'`), or `null` when
  * `stage` isn't a Formation sub-stage. Single source of truth for every Formation UI surface —
  * the dashboard badge/subtitle, the sidebar Formation card, and the project-selector tag.
+ *
+ * `Object.hasOwn` (not `stage in FORMATION_SUB_STAGE_LABELS` / a bare index) so an upstream stage
+ * string that happens to collide with an inherited `Object.prototype` member name (`toString`,
+ * `constructor`, ...) can never read a function off the prototype chain instead of `null`.
  */
 export function getFormationSubStageLabel(stage: string | undefined | null): string | null {
   if (!stage) {
@@ -83,7 +84,7 @@ export function getFormationSubStageLabel(stage: string | undefined | null): str
   if (stage === DRAFT_STAGE_SENTINEL) {
     return DRAFT_STAGE_SENTINEL;
   }
-  return FORMATION_SUB_STAGE_LABELS[stage as ProjectStage] ?? null;
+  return Object.hasOwn(FORMATION_SUB_STAGE_LABELS, stage) ? (FORMATION_SUB_STAGE_LABELS[stage as ProjectStage] ?? null) : null;
 }
 
 /**

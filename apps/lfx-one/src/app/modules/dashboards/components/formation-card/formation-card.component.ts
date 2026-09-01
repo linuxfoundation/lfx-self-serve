@@ -20,8 +20,12 @@ import { catchError, filter, of, switchMap, tap } from 'rxjs';
  * The Formation sidebar card (GH-1955) — sub-stage pill, announcement date, the same
  * `executive_director`/`program_manager`/`opportunity_owner` contacts `ProjectStaffCardComponent`
  * shows above it, intake fields (repository/logo), and — for `PersonaService.isLFStaff` only —
- * deep links into the admin tool. Rendered only while the project is Draft/Formation; see
- * `ProjectContextService.isActiveProjectInFormation`.
+ * a deep link into the admin tool's project-setup page. Rendered only while the project is
+ * Draft/Formation; see `ProjectContextService.isActiveProjectInFormation`.
+ *
+ * The ticket originally asked for two admin-tool links ("Edit stage" and "Set up"), but PCC has
+ * no stage-specific route — only `/project/:id/setup` is confirmed. Both actions point there for
+ * now; a distinct "Edit stage" destination needs a product/PCC decision (see `initAdminToolUrl`).
  *
  * Reads `ProjectContextService.activeProject` for project fields and its own `uid` (no
  * `projectUid` input) — this card only ever renders for the currently active project, so there's
@@ -59,8 +63,7 @@ export class FormationCardComponent {
 
   protected readonly repositoryUrl: Signal<string | null> = this.initRepositoryUrl();
   protected readonly sfid: Signal<string | null> = this.initSfid();
-  protected readonly editStageUrl: Signal<string> = this.initAdminToolUrl('stage');
-  protected readonly setUpUrl: Signal<string> = this.initAdminToolUrl('setup');
+  protected readonly adminToolUrl: Signal<string> = this.initAdminToolUrl();
 
   private initSettings(): Signal<ProjectSettings | null> {
     return toSignal(
@@ -110,11 +113,12 @@ export class FormationCardComponent {
     });
   }
 
-  // `ProjectService.getProjectSfid` already logs and resolves to `null` on failure — no additional
-  // catchError needed here.
+  // Only fetched for LF staff — everyone else can never see the admin-tool link this resolves for,
+  // so a non-staff viewer shouldn't pay for the round trip. `ProjectService.getProjectSfid` already
+  // logs and resolves to `null` on failure — no additional catchError needed here.
   private initSfid(): Signal<string | null> {
     return toSignal(
-      toObservable(this.projectUid).pipe(
+      toObservable(computed(() => (this.isLFStaff() ? this.projectUid() : null))).pipe(
         filter((uid): uid is string => !!uid),
         switchMap((uid) => this.projectService.getProjectSfid(uid))
       ),
@@ -123,14 +127,16 @@ export class FormationCardComponent {
   }
 
   /**
-   * Both deep links use the same `/project/:sfid` PCC route with a distinguishing query param —
-   * unverified against the admin tool's actual routing; confirm with product/design before
-   * treating either link as final.
+   * `/project/:sfid/setup` is PCC's real project-setup route (confirmed against
+   * `lfx-pcc`'s `project-routing.module.ts`, which declares `:id/setup` — a "Set up" and an
+   * "Edit stage" action share this one destination until PCC exposes a stage-specific sub-route;
+   * flagged for product/design rather than guessing one (`?tab=` params don't exist in PCC's
+   * routing at all — that was this card's original, now-corrected assumption).
    */
-  private initAdminToolUrl(tab: 'stage' | 'setup'): Signal<string> {
+  private initAdminToolUrl(): Signal<string> {
     return computed(() => {
       const sfid = this.sfid();
-      return sfid ? `${this.pccBaseUrl()}/project/${sfid}?tab=${tab}` : '';
+      return sfid ? `${this.pccBaseUrl()}/project/${sfid}/setup` : '';
     });
   }
 

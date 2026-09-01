@@ -118,14 +118,16 @@ describe('FormationCardComponent', () => {
     expect(fixture.nativeElement.querySelector('[data-testid="formation-card-admin-links"]')).toBeNull();
   });
 
-  it('shows the admin-tool links and "Staff only" chip for an LF-staff user with a resolved SFID', async () => {
+  it('shows the admin-tool link and "Staff only" chip for an LF-staff user with a resolved SFID', async () => {
     await render('Formation - Engaged', true, { sfid: 'sfid-1' });
 
     const links = fixture.nativeElement.querySelector('[data-testid="formation-card-admin-links"]');
     expect(links).not.toBeNull();
     expect(text()).toContain('Staff only');
-    expect(text()).toContain('Edit stage in admin tool');
     expect(text()).toContain('Set up in admin tool');
+    expect(fixture.nativeElement.querySelector('[data-testid="formation-card-admin-tool-link"]').getAttribute('href')).toBe(
+      'https://pcc.dev.platform.linuxfoundation.org/project/sfid-1/setup'
+    );
   });
 
   it('hides the admin-tool links for an LF-staff user with no v1 mapping (null SFID)', async () => {
