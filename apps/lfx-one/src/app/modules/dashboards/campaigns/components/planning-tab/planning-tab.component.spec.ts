@@ -1558,6 +1558,38 @@ describe('PlanningTabComponent — HubSpot UTM states', () => {
    * token, which re-offers Create for a search already superseded. Only the generation counter
    * can tell two identical-looking lookups apart.
    */
+  /**
+   * A foundation switch must invalidate an in-flight CREATE, not just free the button.
+   *
+   * The handler clears hsCreating and re-runs the lookup (which bumps lookupGeneration), but
+   * nothing advanced createGeneration — so a create still in flight stayed "current". After an
+   * A -> B -> A round trip panelStillShows matches again and stops refusing, and the superseded
+   * create's answer lands on a panel it was never asked about.
+   *
+   * The lookup has to run FIRST: createInHubSpot returns early unless lastLookedUpEvent is set,
+   * so a test that skips it never starts a create and passes whether or not the fix is present.
+   */
+  it('invalidates an in-flight create across a round-trip foundation switch', () => {
+    runLookup({ found: false, hs_utm: null, campaign_name: '', all_matches: [], capped: false, inconclusive: false });
+
+    const pending = new Subject<unknown>();
+    create.mockReturnValue(pending);
+    (fixture.componentInstance as unknown as { createInHubSpot(): void }).createInHubSpot();
+
+    const ctx = TestBed.inject(ProjectContextService);
+    ctx.setFoundation({ uid: 'foundation-b-uid', slug: 'foundation-b', name: 'Foundation B' }, false);
+    fixture.detectChanges();
+    ctx.setFoundation({ uid: 'foundation-a-uid', slug: 'foundation-a', name: 'Foundation A' }, false);
+    fixture.detectChanges();
+
+    // Back on A, so panelStillShows matches again — only createGeneration can refuse this.
+    pending.next({ created: true, hs_utm: 'stale-token', campaign_name: 'Stale' });
+    pending.complete();
+    fixture.detectChanges();
+
+    expect(instance()['hsUtm'](), 'a superseded create wrote its token after a round trip').not.toBe('stale-token');
+  });
+
   it('does not let a round-tripped stale lookup render its answer', () => {
     const first = new Subject<HubSpotUtmLookupResult>();
     lookup.mockReturnValue(first);
