@@ -378,6 +378,11 @@ export async function applyKeywordActionsViaCampaignService(
       // retried REMOVE is irreversible. Only a 4xx other than 408 is a boundary refusal that
       // provably never dispatched.
       const message = classifyMutationFailure(error);
+      // The stop flag is set HERE too, not only in the resolver catch. A transport failure means
+      // the service is unreachable regardless of which call discovered it, and resolving first
+      // does not make the next mutate any likelier to land — so leaving this arm out let a mutate
+      // that lost its connection fall straight back into the fan-out this flag exists to stop.
+      transportFailed = isTransportFailure(error);
       logger.warning(req, 'keyword_actions', 'Keyword action batch failed', {
         platformCampaignId: group.platformCampaignId,
         campaignId: ref.campaign_id,

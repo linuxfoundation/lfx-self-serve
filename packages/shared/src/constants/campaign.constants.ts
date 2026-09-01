@@ -641,13 +641,41 @@ export const MAX_BULK_KEYWORD_ACTIONS = 50;
  * injection reasoning that governs the customer id applies. 19 rather than 20 because
  * `math.MaxInt64` ("9223372036854775807") has nineteen digits.
  *
- * Not the whole check upstream and not meant to be here either: a digit count cannot rule out
- * "9999999999999999999", "0", or the leading-zero spelling "0305729261" — campaign-service parses
- * the value for those. This refuses the clearly-impossible ids BEFORE any fan-out, which is what
- * keeps the batch all-or-nothing: the controller validates every row before mutating anything,
- * and a keyword REMOVE is irreversible, so a half-applied batch cannot be undone by retrying.
+ * Shape only. Kept as the first gate because these ids are concatenated into a Google Ads
+ * resource NAME, so the same injection reasoning that governs the customer id applies; the RANGE
+ * check lives in `isCanonicalGoogleAdsResourceId` below, because the int64 ceiling is arithmetic
+ * a regex states badly — an attempt to spell it as alternation silently rejected
+ * `math.MaxInt64` itself.
  */
 export const GOOGLE_ADS_RESOURCE_ID_RE = /^[0-9]{1,19}$/;
+
+/**
+ * Whether an id is a CANONICAL positive int64, which is what callers' error messages promise.
+ *
+ * The regex above admits "0", the leading-zero spelling "0305729261", and the out-of-range
+ * "9999999999999999999". Those were deferred to campaign-service, so the controller refused
+ * malformed ids with a message it did not actually enforce, and these three reached upstream to
+ * be rejected there instead.
+ *
+ * Ruling them out BEFORE any fan-out is what keeps the batch all-or-nothing: the controller
+ * validates every row before mutating anything, and a keyword REMOVE is irreversible, so a
+ * half-applied batch cannot be undone by retrying.
+ *
+ * BigInt, not Number: `math.MaxInt64` exceeds `Number.MAX_SAFE_INTEGER`, so a Number comparison
+ * cannot distinguish the ceiling from the values just past it.
+ */
+const MAX_INT64 = 9223372036854775807n;
+
+export function isCanonicalGoogleAdsResourceId(value: string): boolean {
+  if (!GOOGLE_ADS_RESOURCE_ID_RE.test(value)) {
+    return false;
+  }
+  // Rejects "0" and every leading-zero spelling: a canonical id never starts with '0'.
+  if (value.startsWith('0')) {
+    return false;
+  }
+  return BigInt(value) <= MAX_INT64;
+}
 
 /**
  * The match type a newly added keyword starts at.

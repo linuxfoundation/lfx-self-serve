@@ -29,7 +29,7 @@ import {
   MICROSOFT_CONTROL_CHAR_RE,
   MICROSOFT_MAX_BUDGET,
   MICROSOFT_MAX_CPC_BID,
-  GOOGLE_ADS_RESOURCE_ID_RE,
+  isCanonicalGoogleAdsResourceId,
   MICROSOFT_MAX_GEO_TARGETS,
   MAX_BULK_KEYWORD_ACTIONS,
   MICROSOFT_MAX_KEYWORDS,
@@ -1276,7 +1276,7 @@ export class CampaignController {
       // Refusing the whole request here is what keeps it all-or-nothing, and matches the
       // reject-all rule the Microsoft keyword path already states: a partial application that
       // reports success is worse than a refusal the operator can act on.
-      if (!GOOGLE_ADS_RESOURCE_ID_RE.test(kw.campaignId) || !GOOGLE_ADS_RESOURCE_ID_RE.test(kw.adGroupId) || !GOOGLE_ADS_RESOURCE_ID_RE.test(kw.criterionId)) {
+      if (!isCanonicalGoogleAdsResourceId(kw.campaignId) || !isCanonicalGoogleAdsResourceId(kw.adGroupId) || !isCanonicalGoogleAdsResourceId(kw.criterionId)) {
         next(
           ServiceValidationError.forField('keywords', 'campaignId, adGroupId, and criterionId must each be a positive integer id', {
             operation: 'keyword_actions',

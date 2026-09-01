@@ -2278,7 +2278,8 @@ describe('CampaignController.executeKeywordActions via campaign-service', () => 
 
   it('allows a bulk request exactly at the fan-out cap', async () => {
     // The boundary is inclusive: a request the UI can actually produce must not be refused.
-    const atCap = Array.from({ length: MAX_BULK_KEYWORD_ACTIONS }, (_, i) => keyword(String(24183781329 + i), String(i)));
+    // 1-based: "0" is not a canonical Google Ads resource id, and validation now enforces that.
+    const atCap = Array.from({ length: MAX_BULK_KEYWORD_ACTIONS }, (_, i) => keyword(String(24183781329 + i), String(i + 1)));
 
     await controller.executeKeywordActions(actionsReq(atCap), res, next);
 
@@ -2430,7 +2431,10 @@ describe('CampaignController.executeKeywordActions via campaign-service', () => 
   it('continues to the next campaign when one fails, and reports both outcomes', async () => {
     svcResolveCampaign.mockResolvedValueOnce(resolvedTo('c-1', 'b-1')).mockResolvedValueOnce(resolvedTo('c-2', 'b-2'));
     svcApplyKeywordActions
-      .mockRejectedValueOnce(new Error('upstream refused'))
+      // A 422, not a bare Error. This case is "campaign-service REFUSED this one, keep going"; a
+      // bare Error has no status and is a transport failure by definition, which now stops the
+      // fan-out -- so a bare Error here would assert the opposite of what the name describes.
+      .mockRejectedValueOnce(Object.assign(new Error('upstream refused'), { statusCode: 422 }))
       .mockResolvedValueOnce({ campaign_id: 'c-2', applied_count: 1, results: [{ ad_group_id: '176216228', criterion_id: '2', action: 'PAUSE' }] });
 
     await controller.executeKeywordActions(actionsReq([keyword('555', '1'), keyword('666', '2')]), res, next);
@@ -2452,7 +2456,8 @@ describe('CampaignController.executeKeywordActions via campaign-service', () => 
     // The loop is sequential and the controller admits up to MAX_BULK_KEYWORD_ACTIONS distinct
     // campaigns, each costing a lookup at the client's 30s default -- so an outage held ONE
     // request open for ~25 minutes while sending 50 doomed probes for a single user action.
-    const rows = Array.from({ length: 5 }, (_, i) => keyword(String(24183781329 + i), String(i)));
+    // 1-based: "0" is not a canonical Google Ads resource id and is refused before the fan-out.
+    const rows = Array.from({ length: 5 }, (_, i) => keyword(String(24183781329 + i), String(i + 1)));
     // Every lookup fails the same way a dead service does: no status at all.
     svcResolveCampaign.mockRejectedValue(new Error('socket hang up'));
 

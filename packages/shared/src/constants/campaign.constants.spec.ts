@@ -4,6 +4,7 @@
 import { describe, expect, it } from 'vitest';
 
 import {
+  isCanonicalGoogleAdsResourceId,
   CAMPAIGN_ALERT_THRESHOLDS,
   CAMPAIGN_EMAIL_TYPES,
   DEFAULT_CAMPAIGN_EMAIL_TYPE_ID,
@@ -386,5 +387,30 @@ describe('CAMPAIGN_EMAIL_TYPES', () => {
     for (const t of CAMPAIGN_EMAIL_TYPES) {
       expect(t.keywords.length, t.id).toBeGreaterThan(0);
     }
+  });
+});
+
+describe('isCanonicalGoogleAdsResourceId', () => {
+  /**
+   * The controller refuses malformed keyword ids with "must each be a positive integer id" BEFORE
+   * any fan-out, which is what keeps an irreversible REMOVE batch all-or-nothing. A digit-count
+   * regex alone did not enforce that promise: "0", the leading-zero spelling and an out-of-range
+   * value all passed here and were refused by campaign-service instead.
+   */
+  it.each([
+    ['123', true],
+    ['1', true],
+    // math.MaxInt64 itself is VALID. An alternation-based range check silently rejected it, which
+    // is why the bound is arithmetic rather than a regex.
+    ['9223372036854775807', true],
+    ['9223372036854775808', false],
+    ['9999999999999999999', false],
+    ['0', false],
+    ['0305729261', false],
+    ['', false],
+    ['12a', false],
+    ['-1', false],
+  ])('%s -> %s', (value, expected) => {
+    expect(isCanonicalGoogleAdsResourceId(value)).toBe(expected);
   });
 });

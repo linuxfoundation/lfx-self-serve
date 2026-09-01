@@ -244,6 +244,28 @@ describe('applyKeywordActionsViaCampaignService — the fan-out stop', () => {
     vi.restoreAllMocks();
   });
 
+  it('stops the fan-out when the MUTATION loses its connection, not only the lookup', async () => {
+    // The stop flag was set in the resolver catch only. If the resolver succeeds and
+    // applyKeywordActions then times out, the loop kept resolving and mutating every remaining
+    // campaign -- recreating the exact fan-out the flag exists to prevent, one call later.
+    const resolveGoogleAdsCampaign = vi.fn().mockResolvedValue({ match_count: 1, matches: [{ brief_id: 'b-1', campaign_id: 'c-1' }] });
+    const applyKeywordActions = vi
+      .fn()
+      .mockRejectedValue(new MicroserviceError('Request failed: fetch failed', 503, 'ECONNRESET', { originalError: new Error('fetch failed') }));
+
+    const client = { resolveGoogleAdsCampaign, applyKeywordActions } as never;
+    const body = { action: 'pause' as const, keywords: [kw('camp-1', 'k-1'), kw('camp-2', 'k-2')] };
+    const req = { log: { warn: vi.fn(), info: vi.fn(), error: vi.fn(), debug: vi.fn() } } as never;
+
+    const res = await applyKeywordActionsViaCampaignService(req, client, 'aswf', body);
+
+    expect(res.results).toHaveLength(2);
+    // The second group is never even resolved -- the mutation failure stopped the fan-out.
+    expect(resolveGoogleAdsCampaign).toHaveBeenCalledTimes(1);
+    expect(applyKeywordActions).toHaveBeenCalledTimes(1);
+    expect(res.results[1].success).toBe(false);
+  });
+
   it('reports groups it never reached instead of dropping them, once the service is unreachable', async () => {
     // The defect: the loop is sequential and the controller admits up to MAX_BULK_KEYWORD_ACTIONS
     // campaigns, so an outage sent 50 doomed probes at a 30s timeout each -- one HTTP request held
