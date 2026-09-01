@@ -59,6 +59,10 @@ export class ProposeComponent {
   private readonly projectService = inject(ProjectService);
   private readonly messageService = inject(MessageService);
   private readonly organizationSearch = viewChild(OrganizationSearchComponent);
+  /** Backs additionalContacts' clientId — a monotonic counter (not crypto.randomUUID()) so a
+   *  contact's testid is deterministically addressable by a spec (`contact-1`, `contact-2`, …)
+   *  instead of only queryable by prefix. */
+  private nextContactClientId = 1;
 
   // Forms
   public readonly form: FormGroup = this.createFormGroup();
@@ -82,9 +86,10 @@ export class ProposeComponent {
 
   // Simple WritableSignals
   public submitting = signal(false);
-  /** `clientId` is a view-only stable key (not part of the wire payload — buildIntakePayload
-   *  strips it), so the @for track and each row's data-testid survive a removal instead of
-   *  re-keying by array position, without putting the contact's email in a DOM attribute. */
+  /** `clientId` (from `nextContactClientId`) is a view-only stable key (not part of the wire
+   *  payload — buildIntakePayload strips it), so the @for track and each row's data-testid
+   *  survive a removal instead of re-keying by array position, without putting the contact's
+   *  email in a DOM attribute — and unlike a random id, stays addressable by a spec. */
   public additionalContacts = signal<(FormationContact & { clientId: string })[]>([]);
   /** True only after a real "Add" click on `newContactForm` — distinct from that form's own
    *  `touched` state, which blurring through its fields (with no intent to add anyone) would
@@ -138,18 +143,22 @@ export class ProposeComponent {
   }
 
   public addContact(): void {
-    this.newContactAttempted.set(true);
+    // Checked before newContactAttempted: at the limit, the fields are still enabled (only the
+    // Add button is disabled) so Enter in a field can still reach here — that must stay a silent
+    // no-op explained by the limit's own role="status" message, not surface the unrelated
+    // "incomplete contact" error for a user who never got that far.
     if (this.additionalContactsAtLimit()) {
       return;
     }
+    this.newContactAttempted.set(true);
     if (this.newContactForm.invalid) {
       this.newContactForm.markAllAsTouched();
       return;
     }
     const { first_name, last_name, email } = this.newContactForm.getRawValue();
     const trimmedEmail = email.trim();
-    // Guards @for's `track contact.email` in the template — two entries with the same email would
-    // otherwise produce a duplicate track key.
+    // Prevents the same person appearing twice in "who else" (and matching the legal contact) —
+    // not a track-key concern (the @for tracks contact.clientId, not email), just a UX guard.
     const legalContactEmail = (this.legalContact.get('email')?.value ?? '').trim().toLowerCase();
     const isDuplicate =
       trimmedEmail.toLowerCase() === legalContactEmail ||
@@ -161,7 +170,7 @@ export class ProposeComponent {
     }
     this.additionalContacts.update((contacts) => [
       ...contacts,
-      { clientId: crypto.randomUUID(), first_name: first_name.trim(), last_name: last_name.trim(), email: trimmedEmail },
+      { clientId: `contact-${this.nextContactClientId++}`, first_name: first_name.trim(), last_name: last_name.trim(), email: trimmedEmail },
     ]);
     this.newContactForm.reset({ first_name: '', last_name: '', email: '' });
     this.newContactAttempted.set(false);

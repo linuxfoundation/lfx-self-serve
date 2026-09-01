@@ -111,6 +111,10 @@ describe('ProposeComponent', () => {
         parent_project_uid: null,
       })
     );
+    // The formation travels via router state (not just the uid in the URL) — the fixture store is
+    // per-pod, so the confirmation page's own GET-by-uid isn't guaranteed to see this POST.
+    expect(navigate).toHaveBeenCalledWith(['/propose/confirmation', 'formation-1'], { state: { formation } });
+    expect(component.submitting()).toBe(false);
   });
 
   it('strips the view-only clientId from additional_contacts before submitting', async () => {
@@ -143,6 +147,26 @@ describe('ProposeComponent', () => {
 
     expect(resolveCurrentEntry).toHaveBeenCalled();
     expect(createFormation).toHaveBeenCalledWith(expect.objectContaining({ contributing_org_id: 'cdp-org-1' }));
+  });
+
+  it('picks up contributing_org_id via the template\'s (onOrganizationResolved)="onOrgResolved($event)" binding alone, not just onSubmit\'s belt-and-braces patch', async () => {
+    const component = await createComponent();
+    fillRequiredFields(component);
+    const orgSearch = (component as any).organizationSearch();
+    orgSearch.manualMode.set(true);
+    const result = { id: 'cdp-org-2', name: 'Example Org', logo: '', originalName: 'Example Org', nameChanged: false } as OrganizationResolveResult;
+    // Returns of(null) so onSubmit's own `if (result)` patch cannot be what sets
+    // contributing_org_id — only the real emit (simulating resolveCurrentEntry's synchronous
+    // onOrganizationResolved.emit inside its own map()) reaching the template binding can.
+    vi.spyOn(orgSearch, 'resolveCurrentEntry').mockImplementation(() => {
+      orgSearch.onOrganizationResolved.emit(result);
+      return of(null);
+    });
+    createFormation.mockReturnValue(of({ uid: 'formation-1' } as Formation));
+
+    component.onSubmit();
+
+    expect(createFormation).toHaveBeenCalledWith(expect.objectContaining({ contributing_org_id: 'cdp-org-2' }));
   });
 
   it('does not re-resolve an organization already picked via search — onOrgResolved already set contributing_org_id', async () => {
@@ -361,16 +385,26 @@ describe('ProposeComponent', () => {
     expect(errorEl()).not.toBeNull();
   });
 
-  it('pressing Enter in a "who else" field adds the contact instead of submitting the whole proposal — the fields sit inside the outer <form>', async () => {
+  it('pressing Enter in a "who else" field adds the contact and prevents the default implicit form submit — the fields sit inside the outer <form>', async () => {
     const { component, fixture } = await createComponentWithFixture();
     const applicationRef = TestBed.inject(ApplicationRef);
+    // fillRequiredFields: without it the outer form is already invalid, so onSubmit() would
+    // return early regardless of the Enter handler — that would make "does not submit" pass for
+    // the wrong reason and couldn't catch the handler being removed.
+    fillRequiredFields(component);
     createFormation.mockReturnValue(of({ uid: 'formation-1' } as Formation));
     component.newContactForm.setValue({ first_name: 'Sam', last_name: 'Lee', email: 'sam@example.test' });
     await applicationRef.whenStable();
 
     const row = (fixture.nativeElement as HTMLElement).querySelector('[data-testid="propose-new-contact-row"]');
-    row?.dispatchEvent(new KeyboardEvent('keydown', { key: 'Enter', bubbles: true, cancelable: true }));
+    expect(row).not.toBeNull();
+    const event = new KeyboardEvent('keydown', { key: 'Enter', bubbles: true, cancelable: true });
+    row!.dispatchEvent(event);
 
+    // jsdom doesn't implement implicit form submission on Enter, so the only way to prove the
+    // handler actually ran (rather than this passing because nothing happens by default) is to
+    // check the event itself was cancelled.
+    expect(event.defaultPrevented).toBe(true);
     expect(component.additionalContacts()).toHaveLength(1);
     expect(createFormation).not.toHaveBeenCalled();
   });
