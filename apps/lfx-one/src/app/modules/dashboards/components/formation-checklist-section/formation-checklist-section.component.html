@@ -66,7 +66,7 @@
   [mutationInFlight]="drawerItemMutationInFlight()"
   [skipInFlight]="drawerItemSkipInFlight()"
   [(visible)]="drawerVisible"
-  (itemChanged)="onDrawerItemChanged()"
+  (itemChanged)="onDrawerItemChanged($event)"
   (itemUpdated)="onDrawerItemUpdated()"
   (skipRequested)="onSkipRequested($event)"
   (writeStarted)="onDrawerWriteStarted($event)"

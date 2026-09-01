@@ -119,10 +119,16 @@ export class FormationChecklistSectionComponent {
       });
   }
 
-  /** Mark complete changed the item's status — close the drawer and let the refreshed row list show it. */
-  protected onDrawerItemChanged(): void {
+  /**
+   * Mark complete changed the item's status — refresh the row list and close the drawer, but only if
+   * it's still showing the item that changed. Mark complete is guarded against re-entry (`busy()`),
+   * but nothing stops the user from closing this drawer and opening a different item before this
+   * write's (possibly slow) response lands — closing unconditionally here would yank that other,
+   * unrelated item's drawer shut out from under the user.
+   */
+  protected onDrawerItemChanged(item: FormationItem): void {
     this.refresh$.next();
-    this.drawerVisible.set(false);
+    if (item.uid === this.drawerItemUid()) this.drawerVisible.set(false);
   }
 
   /** A metadata-only save (notes/assignee/due-date) — refresh the row list but leave the drawer open so the user keeps their place. */
@@ -174,7 +180,11 @@ export class FormationChecklistSectionComponent {
         .subscribe({
           next: () => {
             this.refresh$.next();
-            this.drawerVisible.set(false);
+            // Same reasoning as onDrawerItemChanged: the reason dialog is modal, but once it closes
+            // and this request is in flight, the drawer is interactive again — the user can switch to
+            // a different item before this response lands, and closing unconditionally here would
+            // yank that other item's drawer shut.
+            if (item.uid === this.drawerItemUid()) this.drawerVisible.set(false);
             this.messageService.add({ severity: 'success', summary: 'Skipped', detail: `"${item.title}" was skipped.` });
           },
           error: (error: unknown) => {
