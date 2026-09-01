@@ -31,10 +31,13 @@
 } @else if (routerLink()) {
   <!-- Real anchor so the link carries a href (a11y, middle-click) and RouterLink's click listener fires -->
   <!-- before any consumer stopPropagation on (onClick) can starve it on the p-button host. -->
+  <!-- Null link while disabled/loading: RouterLink no-ops on a null urlTree and renders no href, -->
+  <!-- mirroring the p-button branch's disabled behavior; aria-disabled keeps AT informed. -->
   <a
     pButton
     [type]="type()"
-    [routerLink]="routerLink()"
+    [routerLink]="disabled() || loading() ? null : routerLink()"
+    [attr.aria-disabled]="disabled() || loading() ? true : null"
     [queryParams]="queryParams()"
     [target]="target()"
     [rel]="rel()"

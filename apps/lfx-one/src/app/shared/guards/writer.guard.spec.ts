@@ -216,6 +216,35 @@ describe('writerGuard', () => {
     expect(getProject).toHaveBeenCalledWith(STALE_SLUG, false, { meetingCoordinator: false });
   });
 
+  it('admits a committee writer via the vote’s own committee_uid when the URL omits it', async () => {
+    fetchVote.mockReturnValue(of({ uid: VOTE_UID, project_uid: 'v-uid', project_slug: VOTE_SLUG, committee_uid: COMMITTEE_UID } as unknown as Vote));
+    getProject.mockReturnValue(of({ uid: 'v-uid', slug: VOTE_SLUG, writer: false }));
+    getCommittee.mockReturnValue(of({ uid: COMMITTEE_UID, writer: true } as unknown as Committee));
+
+    const result = await runGuard(voteRoute());
+
+    expect(result).toBe(true);
+    expect(getCommittee).toHaveBeenCalledWith(COMMITTEE_UID);
+  });
+
+  it('authorizes against the vote’s own committee, not a URL committee_uid naming an unrelated one', async () => {
+    fetchVote.mockReturnValue(of({ uid: VOTE_UID, project_uid: 'v-uid', project_slug: VOTE_SLUG, committee_uid: 'vote-committee' } as unknown as Vote));
+    getProject.mockReturnValue(of({ uid: 'v-uid', slug: VOTE_SLUG, writer: false }));
+    getCommittee.mockReturnValue(of({ uid: 'vote-committee', writer: false } as unknown as Committee));
+    const route = {
+      queryParamMap: convertToParamMap({ committee_uid: 'attacker-committee' }),
+      paramMap: convertToParamMap({ id: VOTE_UID }),
+      data: { writeFeature: 'votes', entityScopedSlug: true },
+      parent: null,
+    } as unknown as ActivatedRouteSnapshot;
+
+    const result = await runGuard(route);
+
+    expect(getCommittee).toHaveBeenCalledWith('vote-committee');
+    expect(getCommittee).not.toHaveBeenCalledWith('attacker-committee');
+    expect(result).not.toBe(true);
+  });
+
   it('fails closed on a 500 vote read without probing the stale project', async () => {
     fetchVote.mockReturnValue(throwError(() => httpError(500)));
 

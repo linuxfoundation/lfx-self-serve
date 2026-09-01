@@ -9,13 +9,14 @@ import { beforeEach, describe, expect, it, vi } from 'vitest';
 
 // Only `@lfx-one/shared/utils` is stubbed: its barrel pulls `@angular/common/http` (HttpParams via
 // meeting.utils), which can't JIT-compile in this plain-Node env. Enums/constants resolve for real via the alias.
-const { proxyRequest, proxyRequestWithResponse, pollEndpoint, fetchEntityProject } = vi.hoisted(() => ({
+const { proxyRequest, proxyRequestWithResponse, pollEndpoint, fetchEntityProject, toEntityProjectFields } = vi.hoisted(() => ({
   proxyRequest: vi.fn(),
   proxyRequestWithResponse: vi.fn(),
   // Resolve immediately without invoking pollFn — the index-polling loop is pollEndpoint's own
   // tested helper; these tests only pin the upstream path the vote methods build.
   pollEndpoint: vi.fn(() => Promise.resolve(true)),
-  fetchEntityProject: vi.fn(() => Promise.resolve(null)),
+  fetchEntityProject: vi.fn<(...args: unknown[]) => Promise<Record<string, unknown> | null>>(() => Promise.resolve(null)),
+  toEntityProjectFields: vi.fn(),
 }));
 
 vi.mock('@lfx-one/shared/utils', () => ({
@@ -43,7 +44,7 @@ vi.mock('./project.service', () => ({
 }));
 vi.mock('../helpers/entity-project-enrichment.helper', () => ({
   fetchEntityProject,
-  toEntityProjectFields: vi.fn(),
+  toEntityProjectFields,
 }));
 vi.mock('../helpers/poll-endpoint.helper', () => ({ pollEndpoint }));
 vi.mock('../helpers/query-service.helper', () => ({ fetchAllQueryResources: vi.fn() }));
@@ -90,6 +91,43 @@ describe('VoteService upstream path encoding', () => {
       await service.getVoteById(req, PREENCODED_UID);
 
       expect(proxyRequest).toHaveBeenCalledWith(req, 'LFX_V2_SERVICE', '/votes/..%252F', 'GET');
+    });
+
+    it('skips project enrichment entirely when includeProject is not set', async () => {
+      await service.getVoteById(req, CANONICAL_UID);
+
+      expect(fetchEntityProject).not.toHaveBeenCalled();
+      expect(toEntityProjectFields).not.toHaveBeenCalled();
+    });
+
+    it('merges the mapped project fields onto the vote when includeProject is set', async () => {
+      // Fresh object per test — getVoteById enriches via Object.assign on the proxied payload.
+      proxyRequest.mockResolvedValue({ ...voteFixture });
+      const project = { uid: voteFixture.project_uid, slug: 'acme-project', name: 'Acme Project' };
+      const mappedFields = { project_slug: 'acme-project', project_name: 'Acme Project', is_foundation: false };
+      fetchEntityProject.mockResolvedValue(project);
+      toEntityProjectFields.mockReturnValue(mappedFields);
+
+      const vote = await service.getVoteById(req, CANONICAL_UID, { includeProject: true });
+
+      expect(fetchEntityProject).toHaveBeenCalledWith(
+        req,
+        expect.anything(),
+        voteFixture.project_uid,
+        expect.objectContaining({ operation: 'get_vote_by_id', vote_uid: CANONICAL_UID })
+      );
+      expect(toEntityProjectFields).toHaveBeenCalledWith(project);
+      expect(vote).toMatchObject(mappedFields);
+    });
+
+    it('leaves the vote unenriched when the project lookup finds nothing', async () => {
+      proxyRequest.mockResolvedValue({ ...voteFixture });
+      fetchEntityProject.mockResolvedValue(null);
+
+      const vote = await service.getVoteById(req, CANONICAL_UID, { includeProject: true });
+
+      expect(vote).toEqual(voteFixture);
+      expect(toEntityProjectFields).not.toHaveBeenCalled();
     });
   });
 

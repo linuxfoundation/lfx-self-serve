@@ -39,7 +39,7 @@ import { VoteBasicsComponent } from '../components/vote-basics/vote-basics.compo
 import { VoteQuestionComponent } from '../components/vote-question/vote-question.component';
 import { VoteReviewComponent } from '../components/vote-review/vote-review.component';
 import { evictOnWriteAccessLoss } from '@shared/utils/evict-on-write-access-loss.util';
-import { applyEntityProjectContext, syncEntityProjectContext } from '@shared/utils/entity-project-context.util';
+import { applyEntityProjectContext, canonicalizeTierPrefix, syncEntityProjectContext } from '@shared/utils/entity-project-context.util';
 import { resolveEntityWriteSlug } from '@shared/utils/write-access.util';
 
 @Component({
@@ -90,6 +90,10 @@ export class VoteManageComponent {
   public readonly loading = signal<boolean>(false);
   private readonly internalStep = signal<number>(1);
   private readonly contextFallbackRetried = new Set<string>();
+  // Resolved fallback contexts by vote uid — plain Map, never read reactively. getProject caches
+  // its null result (shareReplay), so without this the once-only fresh-fetch resolution would be
+  // lost on the next NavigationEnd and MainLayout's route-lens re-assert would clobber it.
+  private readonly resolvedContextCache = new Map<string, { context: ProjectContext; isFoundation: boolean }>();
   private readonly committeeUidFromUrl = this.route.snapshot.queryParamMap.get('committee_uid');
 
   // Complex computed/toSignal signals
@@ -112,7 +116,11 @@ export class VoteManageComponent {
 
     // Context-less edit links land in the VOTE's project (not the cookie-restored one);
     // preferEntityKind picks the context slot from the vote's own is_foundation (see the util's doc).
-    syncEntityProjectContext(this.voteEntityContext, this.projectContextService, this.router, this.destroyRef, { preferEntityKind: true });
+    // canonicalizeRoute then rewrites a wrong-tier URL (/project/* vs /foundation/*) to match it.
+    syncEntityProjectContext(this.voteEntityContext, this.projectContextService, this.router, this.destroyRef, {
+      preferEntityKind: true,
+      canonicalizeRoute: true,
+    });
     this.initVoteContextFallback();
   }
 
@@ -678,8 +686,12 @@ export class VoteManageComponent {
     merge(unresolvedEntity$, navigationReapply$)
       .pipe(
         filter((entity): entity is EntityWithProject => !!entity?.project_uid && !entity.project_slug),
-        switchMap((entity) =>
-          this.projectService.getProject(entity.project_uid, false).pipe(
+        switchMap((entity) => {
+          const cached = this.resolvedContextCache.get(entity.uid);
+          if (cached) {
+            return of(cached);
+          }
+          return this.projectService.getProject(entity.project_uid, false).pipe(
             switchMap((project) => {
               if (!project) {
                 return this.resolveContextFromFreshVote(entity);
@@ -687,8 +699,8 @@ export class VoteManageComponent {
               const context: ProjectContext = { uid: project.uid, name: project.name, slug: project.slug };
               return of({ context, isFoundation: computeIsFoundation(project) });
             })
-          )
-        ),
+          );
+        }),
         takeUntilDestroyed(this.destroyRef)
       )
       .subscribe((resolved) => {
@@ -698,6 +710,8 @@ export class VoteManageComponent {
         // Mirror syncEntityProjectContext: only write ?project= to the URL when already present.
         const syncUrl = 'project' in this.router.parseUrl(this.router.url).queryParams;
         applyEntityProjectContext(this.projectContextService, resolved.context, resolved.isFoundation, syncUrl);
+        // Heal a wrong-tier URL the same way the enriched sync path does (GH-1568).
+        canonicalizeTierPrefix(this.router, resolved.isFoundation, resolved.context.slug);
       });
   }
 
@@ -716,12 +730,16 @@ export class VoteManageComponent {
           console.warn(`Unable to resolve project context for vote ${entity.uid}: detail payload carries no project_slug`);
           return null;
         }
-        const context: ProjectContext = {
-          uid: vote.project_uid,
-          name: vote.project_name || vote.project_slug,
-          slug: vote.project_slug,
+        const resolved = {
+          context: {
+            uid: vote.project_uid,
+            name: vote.project_name || vote.project_slug,
+            slug: vote.project_slug,
+          },
+          isFoundation: vote.is_foundation === true,
         };
-        return { context, isFoundation: vote.is_foundation === true };
+        this.resolvedContextCache.set(entity.uid, resolved);
+        return resolved;
       }),
       catchError((error) => {
         // Transient failures (network, 5xx) shouldn't burn the retry — release the uid so a later

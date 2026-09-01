@@ -25,10 +25,11 @@ import { hasMeetingWriteAccess, resolveEntityWriteSlug } from '../utils/write-ac
  * 1. `project.writer` — project owner, writer, or inherited parent-project writer.
  * 2. `project.meetingCoordinator` — meeting_coordinator role on the project; accepted
  *    only for routes with `data.writeFeature === 'meetings'`.
- * 3. `committee.writer` — committee writer; accepted only when `committee_uid` is
- *    present in the query params and `writeFeature` is one of `'meetings'`,
- *    `'surveys'`, or `'votes'`. The backend ruleset allows committee:uid#writer to
- *    create resources associated with their committee.
+ * 3. `committee.writer` — committee writer; accepted only when `writeFeature` is one of
+ *    `'meetings'`, `'surveys'`, or `'votes'` and a committee uid is available — from the probed
+ *    entity itself on `entityScopedSlug` edit routes (URL params are attacker-controlled), else
+ *    from the `committee_uid` query param (create routes). The backend ruleset allows
+ *    committee:uid#writer to create resources associated with their committee.
  *
  * Slug resolution: on routes flagged `data.entityScopedSlug` (meeting/group/vote edit), resolves
  * the slug from the entity itself first — the active context can belong to a different project
@@ -76,34 +77,43 @@ export const writerGuard: CanActivateFn = (route: ActivatedRouteSnapshot) => {
   const writeFeature: string | undefined = route.data?.['writeFeature'];
   // Entity probes keyed by writeFeature — a new entity adds one registry line + the route's entityScopedSlug flag.
   // Probes must be tap-free so a guard probe can't leak stale state; a short-TTL detail cache, when present, is shared with the manage page.
-  const entityProbes: Record<string, (id: string) => Observable<Pick<EntityWithProject, 'project_slug' | 'project_uid'> | null>> = {
+  const entityProbes: Record<
+    string,
+    (id: string) => Observable<(Pick<EntityWithProject, 'project_slug' | 'project_uid'> & { committee_uid?: string }) | null>
+  > = {
     meetings: (id) => meetingService.getMeetingDetail(id),
     committees: (id) => committeeService.fetchCommittee(id),
     votes: (id) => voteService.fetchVote(id),
     'mailing-lists': (id) => mailingListService.getMailingList(id),
   };
-  const resolveSlug = (): Observable<string | null> => {
+  const resolveSlug = (): Observable<{ slug: string | null; entityCommitteeUid: string | null }> => {
     const fromContext = route.queryParamMap.get('project') ?? projectContextService.activeContext()?.slug ?? null;
     if (route.data?.['entityScopedSlug'] !== true) {
-      return of(fromContext);
+      return of({ slug: fromContext, entityCommitteeUid: null });
     }
     const probe = writeFeature ? entityProbes[writeFeature] : undefined;
     const entityId = route.paramMap.get('id');
     // A flagged route without a usable probe is misconfigured — fail closed rather than
     // authorize against a possibly stale context.
     if (!probe || !entityId) {
-      return of(null);
+      return of({ slug: null, entityCommitteeUid: null });
     }
     // Resolve from the entity payload, never the active context — a readable entity with a stale
     // context would authorize against the wrong project; only a 404 falls back, else fail closed.
     return probe(entityId).pipe(
-      map((entity) => resolveEntityWriteSlug(entity, fromContext)),
-      catchError((error) => of(error instanceof HttpErrorResponse && error.status === 404 ? fromContext : null))
+      map((entity) => ({ slug: resolveEntityWriteSlug(entity, fromContext), entityCommitteeUid: entity?.committee_uid ?? null })),
+      catchError((error) =>
+        of(
+          error instanceof HttpErrorResponse && error.status === 404
+            ? { slug: fromContext, entityCommitteeUid: null }
+            : { slug: null, entityCommitteeUid: null }
+        )
+      )
     );
   };
 
   return resolveSlug().pipe(
-    switchMap((slug) => {
+    switchMap(({ slug, entityCommitteeUid }) => {
       if (!slug) {
         return of(router.parseUrl(overviewPath));
       }
@@ -112,10 +122,14 @@ export const writerGuard: CanActivateFn = (route: ActivatedRouteSnapshot) => {
       const deny = () => deniedUrl;
       const supportsCommitteeWriter = writeFeature != null && COMMITTEE_WRITE_FEATURES.includes(writeFeature);
 
-      // Committee writers can create entities for their committee via ?committee_uid=.
+      // Committee writers can create entities for their committee via ?committee_uid=. On
+      // entity-scoped edit routes the probed entity's own committee wins — a URL param naming an
+      // unrelated committee must not admit its writer, and an absent param must not deny the
+      // entity's real committee writer.
+      const effectiveCommitteeUid = entityCommitteeUid ?? committeeUid;
       // getCommittee's tap() side effect is safe here: deny blocks navigation; allow overwrites.
       const checkCommittee = (): Observable<true | ReturnType<typeof deny>> =>
-        committeeService.getCommittee(committeeUid!).pipe(
+        committeeService.getCommittee(effectiveCommitteeUid!).pipe(
           map((committee) => (committee?.writer === true ? (true as const) : deny())),
           catchError(() => of(deny()))
         );
@@ -125,7 +139,7 @@ export const writerGuard: CanActivateFn = (route: ActivatedRouteSnapshot) => {
           // project === null means the BFF fetch failed (403/404/5xx) — real denial or transient;
           // still try the committee check so a committee writer isn't denied on a fetch failure.
           if (project === null) {
-            return committeeUid && supportsCommitteeWriter ? checkCommittee() : of(deny());
+            return effectiveCommitteeUid && supportsCommitteeWriter ? checkCommittee() : of(deny());
           }
           if (project.writer === true) {
             return of(true as const);
@@ -134,7 +148,7 @@ export const writerGuard: CanActivateFn = (route: ActivatedRouteSnapshot) => {
           if (writeFeature === 'meetings' && hasMeetingWriteAccess(project)) {
             return of(true as const);
           }
-          if (committeeUid && supportsCommitteeWriter) {
+          if (effectiveCommitteeUid && supportsCommitteeWriter) {
             return checkCommittee();
           }
           return of(deny());
