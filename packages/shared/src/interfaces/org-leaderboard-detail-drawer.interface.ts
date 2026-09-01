@@ -56,8 +56,6 @@ export interface OrgLeaderboardDetailBreakdown {
   range: OrgLensLeaderboardTimeRange;
   totalScore: number;
   level: OrgLeaderboardDetailLevel;
-  /** Whether the caller belongs to the subject organization. A display input for explaining withheld rows, never a gate. */
-  isOwnOrganization: boolean;
   /** The organization's 1-based position on this dimension's board over the full ranked set; null when unranked. */
   rank: number | null;
   /** Organizations ranked on this board for the project and range, for the "#3 out of 41" phrasing. */

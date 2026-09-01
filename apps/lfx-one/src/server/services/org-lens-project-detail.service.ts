@@ -772,7 +772,6 @@ export class OrgLensProjectDetailService {
       // finer precision.
       totalScore: this.round2(this.num(dimension === 'technical' ? row.TECHNICAL_INFLUENCE_SCORE : row.ECOSYSTEM_INFLUENCE_SCORE)),
       level: this.mapDetailLevel(dimension === 'technical' ? row.TECHNICAL_INFLUENCE_LEVEL : row.ECOSYSTEM_INFLUENCE_LEVEL),
-      isOwnOrganization,
       rank: position.rank,
       totalOrganizations: position.total,
       ...(activitySharePercent === null ? {} : { activitySharePercent }),
@@ -2249,7 +2248,6 @@ export class OrgLensProjectDetailService {
     return (
       typeof candidate.organizationId === 'string' &&
       typeof candidate.totalScore === 'number' &&
-      typeof candidate.isOwnOrganization === 'boolean' &&
       Array.isArray(candidate.categories) &&
       Array.isArray(candidate.withheldCategories)
     );

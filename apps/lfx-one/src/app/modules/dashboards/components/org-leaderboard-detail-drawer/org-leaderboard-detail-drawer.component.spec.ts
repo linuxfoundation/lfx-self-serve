@@ -34,7 +34,6 @@ describe('OrgLeaderboardDetailDrawerComponent', () => {
     range: '1y',
     totalScore: 6.25,
     level: 'Participating',
-    isOwnOrganization: false,
     rank: 3,
     totalOrganizations: 41,
     categories: [

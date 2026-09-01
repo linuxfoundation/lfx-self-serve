@@ -26,7 +26,6 @@ function breakdown(figures: OrgLeaderboardDetailCategoryFigure[], totalScore: nu
     range: 'all',
     totalScore,
     level: 'Contributing',
-    isOwnOrganization: false,
     rank: 3,
     totalOrganizations: 41,
     categories: figures,
