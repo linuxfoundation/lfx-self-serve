@@ -161,6 +161,40 @@ describe('ProjectPickerComponent', () => {
     }
   });
 
+  it('keeps "searching" true when a stale earlier search resolves after the user has already typed further', async () => {
+    vi.useFakeTimers();
+    try {
+      fixture = TestBed.createComponent(ProjectPickerComponent);
+      fixture.componentRef.setInput('form', form);
+      fixture.componentRef.setInput('uidControl', 'parent_project_uid');
+      fixture.detectChanges();
+
+      const staleSearch$ = new Subject<Project[]>();
+      searchProjects.mockReturnValueOnce(staleSearch$);
+      instance().searchForm.controls.query.setValue('ab');
+      await vi.advanceTimersByTimeAsync(300); // 'ab' debounces and issues its (still-pending) search
+
+      const freshSearch$ = new Subject<Project[]>();
+      searchProjects.mockReturnValueOnce(freshSearch$);
+      instance().searchForm.controls.query.setValue('abc'); // user keeps typing before 'ab' resolves
+
+      // The stale 'ab' request resolves while 'abc' is still inside its own debounce window — it
+      // must not clear `searching`, or the empty state would flash for a query the user has left.
+      staleSearch$.next([]);
+      staleSearch$.complete();
+      expect(instance().searching()).toBe(true);
+
+      await vi.advanceTimersByTimeAsync(300); // 'abc' debounces; switchMap cancels nothing new here
+      freshSearch$.next([project]);
+      freshSearch$.complete();
+
+      expect(instance().searching()).toBe(false);
+      expect(instance().results()).toEqual([project]);
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
   it('renders the "not sure" hint and no results dropdown before any query', () => {
     const el: HTMLElement = fixture.nativeElement;
     expect(el.querySelector('[data-testid="propose-project-picker-results"]')).toBeNull();

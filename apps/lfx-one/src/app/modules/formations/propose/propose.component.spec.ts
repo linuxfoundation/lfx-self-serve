@@ -4,7 +4,7 @@
 import { provideHttpClient } from '@angular/common/http';
 import { provideHttpClientTesting } from '@angular/common/http/testing';
 import { ApplicationRef } from '@angular/core';
-import { TestBed } from '@angular/core/testing';
+import { ComponentFixture, TestBed } from '@angular/core/testing';
 import { ActivatedRoute, convertToParamMap, Router } from '@angular/router';
 import { Formation, Project } from '@lfx-one/shared/interfaces';
 import { FormationService } from '@services/formation.service';
@@ -47,6 +47,28 @@ describe('ProposeComponent', () => {
     const fixture = TestBed.createComponent(ProposeComponent);
     await TestBed.inject(ApplicationRef).whenStable();
     return fixture.componentInstance;
+  };
+
+  /** Same setup as `createComponent`, but also hands back the `ComponentFixture` — only the
+   *  "who else" DOM-rendering test below needs to query `nativeElement`; every other test in this
+   *  file only drives the component class. */
+  const createComponentWithFixture = async (): Promise<{ component: ProposeComponent; fixture: ComponentFixture<ProposeComponent> }> => {
+    await TestBed.configureTestingModule({
+      imports: [ProposeComponent],
+      providers: [
+        provideHttpClient(),
+        provideHttpClientTesting(),
+        { provide: FormationService, useValue: { createFormation } },
+        { provide: ProjectService, useValue: { getProject, searchProjects } },
+        { provide: Router, useValue: { navigate } },
+        { provide: MessageService, useValue: { add: messageAdd } },
+        { provide: ActivatedRoute, useValue: { snapshot: { queryParamMap: convertToParamMap({}) } } },
+      ],
+    }).compileComponents();
+
+    const fixture = TestBed.createComponent(ProposeComponent);
+    await TestBed.inject(ApplicationRef).whenStable();
+    return { component: fixture.componentInstance, fixture };
   };
 
   const validPayload = {
@@ -248,15 +270,18 @@ describe('ProposeComponent', () => {
   });
 
   it('only shows the "who else" incomplete error after a real Add attempt, not merely blurring the fields', async () => {
-    const component = await createComponent();
-    const protectedAccess = component as any;
+    const { component, fixture } = await createComponentWithFixture();
+    const applicationRef = TestBed.inject(ApplicationRef);
+    const errorEl = (): Element | null => (fixture.nativeElement as HTMLElement).querySelector('[data-testid="propose-new-contact-incomplete"]');
 
     component.newContactForm.get('first_name')?.markAsTouched();
+    await applicationRef.whenStable();
 
-    expect(protectedAccess.newContactAttempted()).toBe(false);
+    expect(errorEl()).toBeNull();
 
     component.addContact();
+    await applicationRef.whenStable();
 
-    expect(protectedAccess.newContactAttempted()).toBe(true);
+    expect(errorEl()).not.toBeNull();
   });
 });

@@ -127,7 +127,16 @@ export class ProjectPickerComponent {
           // place") is explicit that a component-level catchError over an already-handled stream
           // is dead code to be removed, not kept defensively. Final call — see propose.component.ts's
           // initDuplicateNameMatch for the same resolution on the same upstream call.
-          return this.projectService.searchProjects(trimmed).pipe(tap(() => this.searching.set(false)));
+          return this.projectService.searchProjects(trimmed).pipe(
+            tap(() => {
+              // A still-in-flight *earlier* search (issued before this one debounced, still
+              // resolving after the user kept typing) must not clear the flag for a term the
+              // user has already moved past — only the search matching the CURRENT query does.
+              if (this.searchForm.controls.query.value.trim() === trimmed) {
+                this.searching.set(false);
+              }
+            })
+          );
         })
       ),
       { initialValue: [] }
