@@ -7,6 +7,7 @@ import {
   AKRITES_ENABLED_FLAG,
   COMMITTEE_LABEL,
   DOCUMENT_LABEL,
+  FORMATION_ENABLED_FLAG,
   MAILING_LIST_LABEL,
   MARKETING_OPS_FGA_ENABLED_FLAG,
   MKTG_OS_AGENTS_ENABLED_FLAG,
@@ -53,6 +54,8 @@ export class SidebarNavService {
   private readonly isOrgLensRoiEnabled = this.featureFlagService.getBooleanFlag(ORG_LENS_ROI_ENABLED_FLAG, false);
   /** Dual-gated with `ServerFeatureFlag.MarketingOpsFga` — unlocks Marketing nav for marketing_auditor/campaign_manager grants (LFXV2-2235/LFXV2-2236). */
   private readonly isMarketingOpsFgaEnabled = this.featureFlagService.getBooleanFlag(MARKETING_OPS_FGA_ENABLED_FLAG, false);
+  /** GH-1955 — see `FORMATION_ENABLED_FLAG`'s doc comment for what this does and doesn't gate. */
+  private readonly isFormationEnabled = this.featureFlagService.getBooleanFlag(FORMATION_ENABLED_FLAG, false);
 
   /**
    * True when the user has non-marketing foundation access (board role, root-writer, LF-staff, or
@@ -491,33 +494,54 @@ export class SidebarNavService {
   });
 
   // --- Project Lens Items (base) ---
-  private readonly projectLensItems: SidebarMenuItem[] = [
-    {
-      label: 'Dashboard',
-      icon: 'fa-light fa-grid-2',
-      routerLink: '/project/overview',
-    },
-    {
-      label: 'Meetings',
-      icon: 'fa-light fa-calendar',
-      routerLink: '/project/meetings',
-    },
-    {
-      label: MAILING_LIST_LABEL.plural,
-      icon: 'fa-light fa-envelope',
-      routerLink: '/project/mailing-lists',
-    },
-    {
-      label: COMMITTEE_LABEL.plural,
-      icon: 'fa-light fa-users-rectangle',
-      routerLink: '/project/groups',
-    },
-    {
-      label: DOCUMENT_LABEL.plural,
-      icon: 'fa-light fa-folder-open',
-      routerLink: '/project/documents',
-    },
-  ];
+  // GH-1955: EasyCLA, Crowdfunding, and "public stats" have no project-scoped nav surface today
+  // to gate on `isActiveProjectInFormation` — EasyCLA is a personal Me-lens tab (my-clas-enabled.guard.ts),
+  // Crowdfunding is a static Me-lens section (see meLensItems above), and no "public stats" component/route
+  // exists anywhere in the app. Nothing is gated here for those three; flagged in the PR description
+  // for product/design rather than inventing a surface to hide.
+  private readonly projectLensItems = computed((): SidebarMenuItem[] => {
+    const items: SidebarMenuItem[] = [
+      {
+        label: 'Dashboard',
+        icon: 'fa-light fa-grid-2',
+        routerLink: '/project/overview',
+      },
+    ];
+
+    if (this.isFormationEnabled() && this.projectContextService.isActiveProjectInFormation()) {
+      items.push({
+        label: 'Formation',
+        icon: 'fa-light fa-flag',
+        routerLink: '/project/overview',
+        testId: 'sidebar-project-formation',
+      });
+    }
+
+    items.push(
+      {
+        label: 'Meetings',
+        icon: 'fa-light fa-calendar',
+        routerLink: '/project/meetings',
+      },
+      {
+        label: MAILING_LIST_LABEL.plural,
+        icon: 'fa-light fa-envelope',
+        routerLink: '/project/mailing-lists',
+      },
+      {
+        label: COMMITTEE_LABEL.plural,
+        icon: 'fa-light fa-users-rectangle',
+        routerLink: '/project/groups',
+      },
+      {
+        label: DOCUMENT_LABEL.plural,
+        icon: 'fa-light fa-folder-open',
+        routerLink: '/project/documents',
+      }
+    );
+
+    return items;
+  });
 
   // --- Project / Foundation — Mktg OS agents (dark-launched; inserted directly under Documents) ---
   private readonly mktgOsAgentsNavItem: SidebarMenuItem = {
