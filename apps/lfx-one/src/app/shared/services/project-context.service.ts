@@ -9,7 +9,7 @@ import { MARKETING_OPS_FGA_ENABLED_FLAG, SELECTED_FOUNDATION_COOKIE_KEY, SELECTE
 import { Project, ProjectContext } from '@lfx-one/shared/interfaces';
 import { getFormationSubStageLabel, isBoardScopedPersona, isFormationStage, isSameProjectContext } from '@lfx-one/shared/utils';
 import { SsrCookieService } from 'ngx-cookie-service-ssr';
-import { catchError, combineLatest, filter, of, startWith, switchMap } from 'rxjs';
+import { combineLatest, filter, of, startWith, switchMap } from 'rxjs';
 
 import { CookieRegistryService } from './cookie-registry.service';
 import { FeatureFlagService } from './feature-flag.service';
@@ -280,7 +280,8 @@ export class ProjectContextService {
           if (!ctx?.slug || !authenticated) {
             return of(null);
           }
-          return this.projectService.getProject(ctx.slug, false).pipe(catchError(() => of(null)));
+          // getProject already catches its own errors and logs, resolving to null — no outer catchError needed.
+          return this.projectService.getProject(ctx.slug, false);
         })
       ),
       { initialValue: null }
