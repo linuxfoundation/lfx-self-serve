@@ -7,6 +7,7 @@ import { ButtonComponent } from '@components/button/button.component';
 import { TagComponent } from '@components/tag/tag.component';
 import type { FormationItem, FormationItemStatus } from '@lfx-one/shared/interfaces';
 import type { TagSeverity } from '@lfx-one/shared/interfaces';
+import { FORMATION_GATED_ROW_ACTIONS } from '@lfx-one/shared/constants';
 import { isValidUrl } from '@lfx-one/shared/utils';
 
 const STATUS_LABEL: Record<FormationItemStatus, string> = {
@@ -37,6 +38,9 @@ export class FormationChecklistRowComponent {
   public readonly openDrawer = output<FormationItem>();
   /** Fired for the `provisionable`/`request` action kinds only — `manual` opens the drawer instead; the orchestrator owns the actual service call. */
   public readonly actionTriggered = output<FormationItem>();
+
+  /** `#gatedAction` template context per action kind — typed at the definition site (see `FORMATION_GATED_ROW_ACTIONS`), not inline in the template where `*ngTemplateOutlet` context is untyped. */
+  protected readonly gatedActions = FORMATION_GATED_ROW_ACTIONS;
 
   protected readonly statusLabel = computed(() => STATUS_LABEL[this.item().status]);
   protected readonly statusSeverity = computed(() => STATUS_SEVERITY[this.item().status]);
