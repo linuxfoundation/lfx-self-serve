@@ -252,7 +252,7 @@ base_sha: <full base SHA>
 review exactly: git diff <full base SHA> <full target SHA>
 range label: <mode-specific range label>
 
-The repo root and SHA range above are authoritative. Do not re-derive the range from HEAD or origin/main. Read added or modified code from <target_sha>:<path>, deleted code from <base_sha>:<path>, and both revisions for a rename. Never use a moving working-tree copy as code evidence. Load current rule, contract, checklist, architecture, and knowledge-base policy as the assigned skill directs.
+The repo root and SHA range above are authoritative. Do not re-derive the range from HEAD or origin/main. If the assigned skill tells you to derive the review range or changed-file list from HEAD, git show, or origin/main, replace that instruction with the exact pinned git diff above. Read added or modified code from <target_sha>:<path>, deleted code from <base_sha>:<path>, and both revisions for a rename. Never use a moving working-tree copy as code evidence. Load current rule, contract, checklist, architecture, and knowledge-base policy as the assigned skill directs.
 
 Report findings only. Follow the assigned skill's report conventions and return its complete findings. Prepend `Reviewed range: <full base SHA>..<full target SHA>`, then `Skill: /lfx-skills:lfx-general-code-review`, `Skill: /lfx-self-serve-code-review`, or `Skill: /lfx-self-serve-learnings-review`, matching that reviewer. If a repo reviewer used its allowed file fallback, append `; read from: <exact path>` to its Skill line. If incomplete, put `INCOMPLETE — <reason>` first, then the same two verification lines.
 ```
@@ -277,7 +277,7 @@ Entering this mode ends post-commit review for this PR attempt. Finish any activ
 
 1. Run `git fetch origin`, set `target_sha=$(git rev-parse HEAD)` and `base_sha=$(git merge-base origin/main HEAD)`, and launch the three reviewers together once against the whole branch range. Use the shared prompt with the range label `the branch's diff against origin/main` and review `git diff <full base SHA> <full target SHA>`. Never use `reviewed_through_sha` for this review.
 2. If the batch is operationally incomplete, retry the complete three-reviewer batch without changing the branch until one valid result returns. This obtains the one review; it is not another review pass.
-3. Fix the issues raised by that review, run the repository's documentation-currency checks, `/lfx-self-serve-pr-readiness`, and `/preflight`, then create the signed/DCO commit. Do not run the local reviewers again for that commit.
+3. Fix the issues raised by that review and complete the repository's documentation-currency updates. Commit all resulting changes with `git commit -s -S`, then run `/lfx-self-serve-pr-readiness` and `/preflight` against the clean, committed `HEAD`. If either check requires fixes, create another signed/DCO commit and rerun the affected deterministic checks. Do not run the local reviewers again.
 4. Push and open the PR. From that point onward, use Post-PR review only.
 
 ## Post-PR review
