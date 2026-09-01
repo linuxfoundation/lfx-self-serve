@@ -203,6 +203,29 @@ describe('toUtmLookupResult capped', () => {
     expect(res.all_matches).toHaveLength(1);
   });
 
+  it('refuses to auto-apply a generic CONTAINED name, whose two points are one piece of evidence', () => {
+    // "KubeCon" scores 2 against "KubeCon NA 2026" -- one point for containment, one for a shared
+    // word -- and with no runner-up that cleared the old score>=2 gate. But those are the SAME
+    // evidence counted twice: any contained name necessarily shares a word with the string
+    // containing it. So a generic PARENT campaign's token was applied silently to a specific
+    // event's links, and a misattributed token is invisible because the links still work.
+    const res = toUtmLookupResult(payload({ id: 'generic', name: 'KubeCon', utm: 'generic-token' }), 'KubeCon NA 2026');
+
+    expect(res.found, 'a generic contained name was auto-applied').toBe(false);
+    expect(res.hs_utm).toBeNull();
+    // Still OFFERED -- the operator picks it if it really is the right campaign.
+    expect(res.all_matches).toEqual([{ name: 'KubeCon', hs_utm: 'generic-token' }]);
+  });
+
+  it('auto-applies an exact match despite case and whitespace differences', () => {
+    // Normalised, not literal: an operator pasting a differently-spaced name should not lose the
+    // one-click path, since neither case nor run-length distinguishes two real campaigns.
+    const res = toUtmLookupResult(payload({ id: 'na', name: 'kubecon  na 2026', utm: 'na-token' }), 'KubeCon NA 2026');
+
+    expect(res.found).toBe(true);
+    expect(res.hs_utm).toBe('na-token');
+  });
+
   it('still auto-applies an unambiguous winner', () => {
     // The common case must stay one click: an exact name beats a same-token rival outright.
     const res = toUtmLookupResult(

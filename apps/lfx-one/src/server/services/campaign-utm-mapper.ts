@@ -25,16 +25,6 @@ import type {
 // ---------------------------------------------------------------------------
 
 /**
- * The lowest score that may be applied without a human choosing it.
- *
- * scoreCampaignName() adds three independent signals: exact name, containment either way, and a shared word
- * longer than three characters. A score of 1 is a SINGLE weak signal — "KubeCon Europe 2026"
- * earns it against "KubeCon NA 2026" purely by sharing one word — so requiring 2 means at least
- * two signals agree before a token is applied to an event without anyone looking at it.
- */
-const MIN_CONFIDENT_SCORE = 2;
-
-/**
  * Score a candidate campaign name against the query. SHARED by both lookup paths.
  *
  * Three additive signals: an exact match, a containment either way, and a shared word longer
@@ -44,6 +34,38 @@ const MIN_CONFIDENT_SCORE = 2;
  * below was added because the two copies had diverged without it, and the legacy path is now
  * this function rather than a second copy of it.
  */
+/**
+ * Whether a candidate's evidence is strong enough to apply WITHOUT a human choosing it.
+ *
+ * A score of 2 was the gate, on the stated belief that it meant "two independent signals agree".
+ * It does not. For the query "KubeCon NA 2026" the generic name "KubeCon" scores 2 — one point
+ * for containment, one for a shared word — but those are the SAME evidence counted twice: any
+ * contained name necessarily shares a word with the string containing it. With no runner-up, a
+ * generic parent campaign's token was therefore applied silently to a specific event's links,
+ * and a misattributed token is invisible because the links still work.
+ *
+ * So the gate asks what the evidence IS, not how much of it there is. An exact normalised match
+ * is the one signal that cannot be produced by a substring coincidence. Everything else — a
+ * contained name, a shared token — is offered to the operator instead, which is what the
+ * candidate list exists for.
+ *
+ * Deliberately NOT folded into scoreCampaignName: that score also drives the ORDER users see,
+ * and the ordering is the legacy path's on purpose. This narrows what may be applied unattended
+ * without changing what gets ranked first.
+ */
+function isConfidentMatch(name: string, query: string): boolean {
+  return normaliseForMatch(name) !== '' && normaliseForMatch(name) === normaliseForMatch(query);
+}
+
+/**
+ * Case, surrounding space and internal run-length collapsed, so "KubeCon  NA 2026" and
+ * "kubecon na 2026" are the same name. Nothing else is stripped: punctuation and word order
+ * distinguish real campaigns from each other.
+ */
+function normaliseForMatch(value: string): string {
+  return value.trim().toLowerCase().replace(/\s+/g, ' ');
+}
+
 export function scoreCampaignName(name: string, query: string): number {
   const nameLower = name.toLowerCase();
   const queryLower = query.toLowerCase();
@@ -127,8 +149,11 @@ export function toUtmLookupResult(payload: CampaignServiceHubSpotCampaigns, quer
   // Unambiguous means the top score is strictly higher than the next one AND strong enough to be
   // more than a shared token: a lone weak match is still a guess, so it is offered rather than
   // applied. The candidates are returned either way, so the operator picks instead of the sort.
+  // Strictly-higher-than-runner-up is still required: two candidates that BOTH match exactly are
+  // ambiguous no matter how strong each one's evidence is, and picking either would be the
+  // creation-order tie-break this guard exists to stop.
   const runnerUp = scored[1]?.score ?? 0;
-  const unambiguous = scored[0].score >= MIN_CONFIDENT_SCORE && scored[0].score > runnerUp;
+  const unambiguous = isConfidentMatch(scored[0].campaign.name, query) && scored[0].score > runnerUp;
 
   const candidates = scored
     .map((s) => ({ name: s.campaign.name, hs_utm: utmTokenOf(s.campaign) }))
