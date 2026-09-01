@@ -10,16 +10,6 @@ import type {
   CampaignBriefLoadResult,
   CampaignBriefOutput,
   CampaignBriefPersistResult,
-  CampaignMetricsWindow,
-  CampaignServiceAudience,
-  CampaignServiceCampaignResolution,
-  CampaignServiceHubSpotCampaign,
-  CampaignServiceHubSpotCampaigns,
-  CampaignServiceKeywordActionInput,
-  CampaignServiceKeywordActions,
-  CampaignServiceKeywords,
-  HubSpotEmailSearchResult,
-  HubSpotMarketingEmail,
   CampaignEventDetails,
   CampaignGoal,
   CampaignIndexDoc,
@@ -43,6 +33,13 @@ import type {
   QueryServiceResponse,
   RedditAdVariant,
   RedditBriefCopy,
+  CampaignServiceAudience,
+  CampaignServiceCampaignResolution,
+  CampaignServiceHubSpotCampaign,
+  CampaignServiceHubSpotCampaigns,
+  CampaignServiceKeywordActionInput,
+  CampaignServiceKeywordActions,
+  CampaignServiceKeywords,
 } from '@lfx-one/shared/interfaces';
 import type { Request } from 'express';
 
@@ -144,7 +141,10 @@ function toAudienceStatus(status: string): CampaignAudienceStatus {
  * Local to this file for the same reason the brief shapes are: it is a WIRE type, and exporting
  * it would invite the app to depend on upstream naming that this layer exists to translate.
  */
-interface CampaignServiceAudience {
+// Renamed from CampaignServiceAudience: the SHARED type of that name is the Google Ads
+// age/gender/device breakdown, and this is the HubSpot audience LIST row -- two different shapes
+// that collided when this branch began importing the shared one.
+interface CampaignServiceAudienceList {
   id: string;
   project_id: string;
   brief_id: string;
@@ -830,7 +830,7 @@ export class CampaignServiceClient {
     try {
       // Fifth argument is `query`, sixth is `data` — this call has neither. Passing anything
       // fifth would serialise it into the query string and send no body.
-      const response = await this.microserviceProxy.proxyRequestWithResponse<CampaignServiceAudience>(
+      const response = await this.microserviceProxy.proxyRequestWithResponse<CampaignServiceAudienceList>(
         req,
         'LFX_V2_CAMPAIGN_SERVICE',
         path,
