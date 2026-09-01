@@ -42,7 +42,7 @@ export class ProjectDashboardComponent {
 
   public readonly selectedProject = computed(() => this.projectContextService.activeContext());
   private readonly formationEnabled = this.featureFlagService.getBooleanFlag(FORMATION_ENABLED_FLAG, false);
-  /** GH-1958: the checklist section only renders for a project in a Formation - * stage, dark-launched behind `formation-enabled`. */
+  /** GH-1958: the checklist section only renders for a project in a "Formation - *" stage, dark-launched behind `formation-enabled`. */
   protected readonly isFormationStageProject = computed(() => this.formationEnabled() && isFormationStage(this.projectService.project()?.stage));
   protected readonly staffHeading = 'Project Staff';
 

@@ -303,6 +303,29 @@ describe('FormationService', () => {
       );
     });
 
+    it('does not log a spurious note_added activity when the drawer resubmits an empty notes textarea on a freshly generated (notes: null) item', async () => {
+      const { formation, item } = seedItem({ notes: null, due_date: null });
+      getProjectById.mockResolvedValue({ writer: true });
+
+      const before = getActivityForItem(formation.uid, item.uid).length;
+      const result = await service.updateFormationItem(buildReq(), item.uid, { notes: '', due_date: '2026-06-01T00:00:00.000Z' });
+
+      expect(result.notes).toBeNull();
+      expect(getActivityForItem(formation.uid, item.uid)).toHaveLength(before + 1);
+      expect(getActivityForItem(formation.uid, item.uid).some((activity) => activity.type === 'note_added')).toBe(false);
+      expect(getActivityForItem(formation.uid, item.uid).some((activity) => activity.type === 'due_date_changed')).toBe(true);
+    });
+
+    it('does log a note_added activity when notes actually changes', async () => {
+      const { formation, item } = seedItem({ notes: null });
+      getProjectById.mockResolvedValue({ writer: true });
+
+      const result = await service.updateFormationItem(buildReq(), item.uid, { notes: 'blocked on legal review' });
+
+      expect(result.notes).toBe('blocked on legal review');
+      expect(getActivityForItem(formation.uid, item.uid).some((activity) => activity.type === 'note_added')).toBe(true);
+    });
+
     it('does not log a spurious assignee-changed activity when owner_username is resubmitted unchanged', async () => {
       const { formation, item } = seedItem({ owner: { username: 'alex.rivera', name: 'Alex Rivera' } });
       getProjectById.mockResolvedValue({ writer: true });
