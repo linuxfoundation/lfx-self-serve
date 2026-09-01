@@ -480,6 +480,10 @@ export interface VoteParticipationStats {
   totalResponses: number;
   /** Participation rate as percentage (0-100) */
   participationRate: number;
+  /** Number of voters who abstained — a subset of totalResponses (upstream counts abstentions as cast responses but excludes them from choice tallies) */
+  abstainedVoters: number;
+  /** Abstentions as a percentage of all responses cast (0-100) */
+  abstainedRate: number;
 }
 
 /**

@@ -6,25 +6,15 @@ import { Component, input, Signal } from '@angular/core';
 import { Committee } from '@lfx-one/shared/interfaces';
 import { FormGroup, ReactiveFormsModule } from '@angular/forms';
 import { CalendarComponent } from '@components/calendar/calendar.component';
-import { CheckboxComponent } from '@components/checkbox/checkbox.component';
 import { CommitteeSelectorComponent } from '@components/committee-selector/committee-selector.component';
 import { InputTextComponent } from '@components/input-text/input-text.component';
 import { SelectComponent } from '@components/select/select.component';
 import { TextareaComponent } from '@components/textarea/textarea.component';
-import { COMMITTEE_LABEL, VOTE_ELIGIBLE_PARTICIPANTS, VOTE_LABEL } from '@lfx-one/shared/constants';
+import { COMMITTEE_LABEL, VOTE_ALLOW_ABSTAIN_OPTIONS, VOTE_ELIGIBLE_PARTICIPANTS, VOTE_LABEL } from '@lfx-one/shared/constants';
 
 @Component({
   selector: 'lfx-vote-basics',
-  imports: [
-    ReactiveFormsModule,
-    InputTextComponent,
-    TextareaComponent,
-    SelectComponent,
-    CalendarComponent,
-    CheckboxComponent,
-    CommitteeSelectorComponent,
-    LowerCasePipe,
-  ],
+  imports: [ReactiveFormsModule, InputTextComponent, TextareaComponent, SelectComponent, CalendarComponent, CommitteeSelectorComponent, LowerCasePipe],
   templateUrl: './vote-basics.component.html',
 })
 export class VoteBasicsComponent {
@@ -38,6 +28,7 @@ export class VoteBasicsComponent {
   public readonly committeeLabel = COMMITTEE_LABEL;
   public readonly voteLabel = VOTE_LABEL;
   public readonly eligibleParticipantsOptions = [...VOTE_ELIGIBLE_PARTICIPANTS];
+  public readonly allowAbstainOptions = [...VOTE_ALLOW_ABSTAIN_OPTIONS];
   public readonly minDate = (() => {
     const tomorrow = new Date();
     tomorrow.setDate(tomorrow.getDate() + 1);

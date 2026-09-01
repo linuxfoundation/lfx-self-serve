@@ -22,6 +22,8 @@ import type {
   UpdateVoteRequest,
   Vote,
   VoteFormValue,
+  VoteParticipationStats,
+  VoteResultsResponse,
 } from '../interfaces/poll.interface';
 
 /**
@@ -124,6 +126,28 @@ export function mapVoteToFormValue(vote: Vote): VoteFormValue {
     questions: (vote.poll_questions?.filter((question) => !isDraftPlaceholderPollQuestion(question)) ?? []).map(mapApiQuestionToFormValue),
     commentPrompts: (vote.poll_comment_prompts ?? []).map(mapApiCommentPromptToFormValue),
   };
+}
+
+/**
+ * Computes participation stats for the results drawer from the results API payload
+ * @description Upstream (itx-service-voting) counts abstentions in `num_votes_cast` but excludes
+ * them from per-choice tallies, so `abstainedVoters` is always a subset of `totalResponses` and
+ * `abstainedRate` is their share of all responses cast (choice percentages use a different base).
+ * @param results - VoteResultsResponse from the results API, or null when not yet loaded
+ * @returns VoteParticipationStats for the participation card and abstain row
+ */
+export function computeVoteParticipationStats(results: VoteResultsResponse | null): VoteParticipationStats {
+  if (!results) {
+    return { eligibleVoters: 0, totalResponses: 0, participationRate: 0, abstainedVoters: 0, abstainedRate: 0 };
+  }
+
+  const eligibleVoters = results.num_recipients || 0;
+  const totalResponses = results.num_votes_cast || 0;
+  const abstainedVoters = results.num_abstained || 0;
+  const participationRate = eligibleVoters > 0 ? Math.round((totalResponses / eligibleVoters) * 100) : 0;
+  const abstainedRate = totalResponses > 0 ? Math.round((abstainedVoters / totalResponses) * 100) : 0;
+
+  return { eligibleVoters, totalResponses, participationRate, abstainedVoters, abstainedRate };
 }
 
 /**

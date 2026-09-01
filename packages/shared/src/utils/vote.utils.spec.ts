@@ -11,8 +11,15 @@ import '@angular/compiler';
 import { describe, expect, it } from 'vitest';
 
 import { PollStatus } from '../enums';
-import type { Vote, VoteFormValue } from '../interfaces/poll.interface';
-import { buildCreateVoteRequest, buildDraftUpdateVoteRequest, buildDraftVoteRequest, buildUpdateVoteRequest, mapVoteToFormValue } from './vote.utils';
+import type { Vote, VoteFormValue, VoteResultsResponse } from '../interfaces/poll.interface';
+import {
+  buildCreateVoteRequest,
+  buildDraftUpdateVoteRequest,
+  buildDraftVoteRequest,
+  buildUpdateVoteRequest,
+  computeVoteParticipationStats,
+  mapVoteToFormValue,
+} from './vote.utils';
 
 /** Minimal VoteFormValue fixture — the request builders only read the fields set here. */
 function formValue(overrides: Partial<VoteFormValue> = {}): VoteFormValue {
@@ -77,5 +84,40 @@ describe('mapVoteToFormValue', () => {
 
   it('defaults allow_abstain to false when the vote predates the field', () => {
     expect(mapVoteToFormValue(vote()).allow_abstain).toBe(false);
+  });
+});
+
+describe('computeVoteParticipationStats', () => {
+  /** Minimal VoteResultsResponse fixture — the stats computation only reads the num_* fields. */
+  function results(overrides: Partial<VoteResultsResponse> = {}): VoteResultsResponse {
+    return {
+      poll_results: [],
+      comment_results: [],
+      num_recipients: 4,
+      num_votes_cast: 3,
+      num_abstained: 1,
+      poll_end_time: '2025-06-01T00:00:00Z',
+      ...overrides,
+    };
+  }
+
+  it('returns zeros when results have not loaded', () => {
+    expect(computeVoteParticipationStats(null)).toEqual({ eligibleVoters: 0, totalResponses: 0, participationRate: 0, abstainedVoters: 0, abstainedRate: 0 });
+  });
+
+  it('maps num_abstained to abstainedVoters', () => {
+    expect(computeVoteParticipationStats(results()).abstainedVoters).toBe(1);
+  });
+
+  it('computes abstainedRate as the rounded share of all responses cast', () => {
+    expect(computeVoteParticipationStats(results()).abstainedRate).toBe(33);
+  });
+
+  it('guards abstainedRate against zero responses', () => {
+    expect(computeVoteParticipationStats(results({ num_votes_cast: 0, num_abstained: 0 })).abstainedRate).toBe(0);
+  });
+
+  it('keeps participationRate as the share of eligible voters (abstentions count as responses)', () => {
+    expect(computeVoteParticipationStats(results()).participationRate).toBe(75);
   });
 });

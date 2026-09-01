@@ -381,6 +381,10 @@
               <p-skeleton width="80px" height="40px"></p-skeleton>
               <p-skeleton width="80px" height="40px"></p-skeleton>
               <p-skeleton width="80px" height="40px"></p-skeleton>
+              @if (voteData.allow_abstain) {
+                <!-- 4th "Abstained" stat in the participation card — keep the skeleton count in sync to avoid a layout shift on load. -->
+                <p-skeleton width="80px" height="40px"></p-skeleton>
+              }
             </div>
             <p-skeleton width="100%" height="8px"></p-skeleton>
           </div>
@@ -388,6 +392,13 @@
           <div class="flex flex-col gap-4">
             <p-skeleton width="150px" height="24px"></p-skeleton>
             @for (i of [1, 2, 3]; track i) {
+              <div class="rounded-lg border border-slate-200 p-4 flex flex-col gap-2">
+                <p-skeleton width="60%" height="16px"></p-skeleton>
+                <p-skeleton width="100%" height="8px"></p-skeleton>
+              </div>
+            }
+            @if (voteData.allow_abstain) {
+              <!-- Muted "Abstain" row appended to the Live/Final Results option lists — reserve its space while loading. -->
               <div class="rounded-lg border border-slate-200 p-4 flex flex-col gap-2">
                 <p-skeleton width="60%" height="16px"></p-skeleton>
                 <p-skeleton width="100%" height="8px"></p-skeleton>
@@ -426,6 +437,13 @@
                 <p class="text-xs text-slate-500">Response Rate</p>
                 <p class="font-semibold text-blue-600 text-lg">{{ participationStats().participationRate }}%</p>
               </div>
+              @if (voteData.allow_abstain) {
+                <!-- Abstentions count as cast responses upstream but are excluded from choice tallies; shown only for votes created with allow_abstain. -->
+                <div class="text-center flex-1" data-testid="vote-results-abstained-stat">
+                  <p class="text-xs text-slate-500">Abstained</p>
+                  <p class="font-semibold text-slate-900 text-lg">{{ participationStats().abstainedVoters }}</p>
+                </div>
+              }
             </div>
             <div class="w-full bg-slate-200 rounded-full h-2 overflow-hidden">
               <div class="h-full bg-blue-500 transition-all" [style.width.%]="participationStats().participationRate"></div>
@@ -534,6 +552,23 @@
                 </div>
               </div>
             }
+
+            @if (voteData.allow_abstain) {
+              <!-- Vote-level abstention row (not per-question) — muted and never winner-styled.
+                   abstainedRate is the share of all responses cast; choice percentages above exclude abstentions. -->
+              <div class="flex flex-col gap-1.5" data-testid="vote-results-option-abstain">
+                <div class="flex items-center justify-between text-sm">
+                  <span class="font-normal italic text-slate-500">Abstain</span>
+                  <span class="font-normal text-slate-500">
+                    {{ participationStats().abstainedVoters }} {{ participationStats().abstainedVoters === 1 ? 'abstention' : 'abstentions' }} ·
+                    {{ participationStats().abstainedRate }}%
+                  </span>
+                </div>
+                <div class="h-2 bg-slate-200 rounded-full overflow-hidden">
+                  <div class="h-full rounded-full bg-slate-300 transition-all" [style.width.%]="participationStats().abstainedRate"></div>
+                </div>
+              </div>
+            }
           </div>
 
           <div class="pt-4 border-t border-slate-200 flex flex-col gap-4">
@@ -551,6 +586,13 @@
                   <p class="text-xs text-slate-500">Response Rate</p>
                   <p class="font-semibold text-blue-600 text-lg">{{ participationStats().participationRate }}%</p>
                 </div>
+                @if (voteData.allow_abstain) {
+                  <!-- Abstentions count as cast responses upstream but are excluded from choice tallies; shown only for votes created with allow_abstain. -->
+                  <div class="text-center flex-1" data-testid="vote-results-abstained-stat">
+                    <p class="text-xs text-slate-500">Abstained</p>
+                    <p class="font-semibold text-slate-900 text-lg">{{ participationStats().abstainedVoters }}</p>
+                  </div>
+                }
               </div>
 
               <div class="w-full bg-slate-200 rounded-full h-2 overflow-hidden">
@@ -599,6 +641,13 @@
                 <p class="text-xs text-slate-500">Response Rate</p>
                 <p class="font-semibold text-blue-600 text-lg">{{ participationStats().participationRate }}%</p>
               </div>
+              @if (voteData.allow_abstain) {
+                <!-- Abstentions count as cast responses upstream but are excluded from choice tallies; shown only for votes created with allow_abstain. -->
+                <div class="text-center flex-1" data-testid="vote-results-abstained-stat">
+                  <p class="text-xs text-slate-500">Abstained</p>
+                  <p class="font-semibold text-slate-900 text-lg">{{ participationStats().abstainedVoters }}</p>
+                </div>
+              }
             </div>
 
             <div class="w-full bg-slate-200 rounded-full h-2 overflow-hidden">
@@ -678,6 +727,25 @@
                       </div>
                     </div>
                   }
+                </div>
+              </div>
+            }
+
+            @if (voteData.allow_abstain) {
+              <!-- Vote-level abstention row (not per-question) — muted and never winner-styled.
+                   abstainedRate is the share of all responses cast; choice percentages above exclude abstentions. -->
+              <div class="rounded-lg border border-slate-200 bg-slate-50 p-4" data-testid="vote-results-option-abstain">
+                <div class="flex items-center justify-between mb-2">
+                  <span class="text-sm font-medium italic text-slate-500">Abstain</span>
+                  <div class="flex items-center gap-2">
+                    <span class="text-sm font-semibold text-slate-600">
+                      {{ participationStats().abstainedVoters }} {{ participationStats().abstainedVoters === 1 ? 'abstention' : 'abstentions' }}
+                    </span>
+                    <span class="text-sm text-slate-500">({{ participationStats().abstainedRate }}%)</span>
+                  </div>
+                </div>
+                <div class="w-full bg-white rounded-full h-2 overflow-hidden">
+                  <div class="h-full bg-slate-400 transition-all" [style.width.%]="participationStats().abstainedRate"></div>
                 </div>
               </div>
             }

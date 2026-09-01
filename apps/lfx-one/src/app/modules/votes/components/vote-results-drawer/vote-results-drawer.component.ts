@@ -20,7 +20,13 @@ import {
   VoteResultsResponse,
 } from '@lfx-one/shared/interfaces';
 import { VOTE_COMMENT_RESULTS_PAGE_SIZE, VOTE_COMMENT_RESULTS_ROWS_PER_PAGE_OPTIONS } from '@lfx-one/shared/constants';
-import { getVoteEndedEarlyDetailTooltip, isVoteEndedEarly, sortCommentResponsesByRecency, splitIntoParagraphs } from '@lfx-one/shared/utils';
+import {
+  computeVoteParticipationStats,
+  getVoteEndedEarlyDetailTooltip,
+  isVoteEndedEarly,
+  sortCommentResponsesByRecency,
+  splitIntoParagraphs,
+} from '@lfx-one/shared/utils';
 import { LinkifyPipe } from '@pipes/linkify.pipe';
 import { PollStatusLabelPipe } from '@pipes/poll-status-label.pipe';
 import { PollStatusSeverityPipe } from '@pipes/poll-status-severity.pipe';
@@ -222,18 +228,7 @@ export class VoteResultsDrawerComponent {
   }
 
   private initParticipationStats(): Signal<VoteParticipationStats> {
-    return computed(() => {
-      const results = this.voteResults();
-      if (!results) {
-        return { eligibleVoters: 0, totalResponses: 0, participationRate: 0 };
-      }
-
-      const eligibleVoters = results.num_recipients || 0;
-      const totalResponses = results.num_votes_cast || 0;
-      const participationRate = eligibleVoters > 0 ? Math.round((totalResponses / eligibleVoters) * 100) : 0;
-
-      return { eligibleVoters, totalResponses, participationRate };
-    });
+    return computed(() => computeVoteParticipationStats(this.voteResults()));
   }
 
   private initQuestionsWithResults(): Signal<VoteResultsQuestion[]> {
