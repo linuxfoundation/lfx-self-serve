@@ -140,16 +140,18 @@ export class ProfileClasComponent {
   // --- Sign CLA hand-off (#1251) -------------------------------------------
 
   /**
-   * Also disabled while the list is still loading (#1914). Both dialogs read the loaded
-   * agreements — the picker to tag a group they already signed, the identity step to gray out
-   * the identity that signed it — and an empty list is indistinguishable from having signed
-   * nothing, so a click landing first would offer a signature they already hold.
+   * Also disabled until the list has loaded, and while it has failed to load (#1914). Both dialogs
+   * read the loaded agreements — the picker to tag a group they already signed, the identity step
+   * to gray out the identity that signed it — and in both states the list is empty, which is
+   * indistinguishable from having signed nothing. Offering the flow then would walk them into the
+   * duplicate signing this change exists to prevent.
    */
-  protected readonly signDisabled = computed(() => this.impersonating() || this.loading());
+  protected readonly signDisabled = computed(() => this.impersonating() || this.loading() || this.error());
 
   protected readonly signDisabledReason = computed<string | undefined>(() => {
     if (this.impersonating()) return 'This action is unavailable while impersonating another user';
     if (this.loading()) return 'Available once your CLAs have loaded';
+    if (this.error()) return 'Available once your CLAs load — select Retry to reload them';
     return undefined;
   });
 

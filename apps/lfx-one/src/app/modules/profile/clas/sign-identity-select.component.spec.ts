@@ -302,11 +302,20 @@ describe('SignIdentitySelectComponent', () => {
       await setup({ claGroupAgreements: signedAs('octocat') });
 
       const card = fixture.debugElement.query(By.css('[data-testid="sign-identity-select-github-12345"]'));
-      expect(card.parent?.injector.get(Tooltip, null)?.content).toBe(REASON);
-      // A tooltip is hover-only, so the reason is repeated where a screen reader will reach it —
-      // after the handle, so which account is refused stays clear.
+      expect(card.injector.get(Tooltip, null)?.content).toBe(REASON);
+      // The reason is also repeated where a screen reader will reach it — after the handle, so
+      // which account is refused stays clear.
       expect(card.nativeElement.textContent).toContain('octocat');
       expect(card.nativeElement.textContent).toContain(REASON);
+    });
+
+    it('keeps the grayed card reachable, so the reason is not hover-only', async () => {
+      await setup({ claGroupAgreements: signedAs('octocat') });
+
+      // Removing it from the tab order would leave a keyboard-only contributor with no way to
+      // ask why the account is unavailable — the tooltip also answers to focus, not just hover.
+      expect(query('sign-identity-select-github-12345')?.getAttribute('tabindex')).toBe('0');
+      expect(fixture.debugElement.query(By.css('[data-testid="sign-identity-select-github-12345"]')).injector.get(Tooltip, null)?.tooltipEvent).toBe('both');
     });
 
     it('refuses to submit it even if the card is reached another way', async () => {

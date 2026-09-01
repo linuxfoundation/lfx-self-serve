@@ -8,7 +8,6 @@ import { GERRIT_IDENTITY_VALUE, SIGN_IDENTITY_COPY, SIGN_IDENTITY_PLATFORM_LABEL
 import type { GithubAccountChoice, SignIdentityDialogData, SignIdentitySelectResult } from '@lfx-one/shared/interfaces';
 import { alreadySignedAgreementForIdentity, alreadySignedIdentityTooltip } from '@lfx-one/shared/utils';
 import { DynamicDialogConfig, DynamicDialogRef } from 'primeng/dynamicdialog';
-import { TooltipModule } from 'primeng/tooltip';
 
 import { ButtonComponent } from '@components/button/button.component';
 import { SelectableCardComponent } from '@components/selectable-card/selectable-card.component';
@@ -76,7 +75,7 @@ import { SelectableCardComponent } from '@components/selectable-card/selectable-
  */
 @Component({
   selector: 'lfx-sign-identity-select',
-  imports: [ReactiveFormsModule, ButtonComponent, SelectableCardComponent, TooltipModule],
+  imports: [ReactiveFormsModule, ButtonComponent, SelectableCardComponent],
   templateUrl: './sign-identity-select.component.html',
   changeDetection: ChangeDetectionStrategy.OnPush,
 })

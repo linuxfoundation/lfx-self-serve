@@ -127,12 +127,14 @@ Results are matched per **CLA group**, not per project. A project with more than
 
 Which statuses grey out an identity in the next step:
 
-| Status on your existing CLA | Identity greyed out? | What to do instead                                                                                                                         |
-| --------------------------- | -------------------- | ------------------------------------------------------------------------------------------------------------------------------------------ |
-| **Valid**                   | Yes                  | Nothing — that identity is already covered                                                                                                 |
-| **Needs attention** (ECLA)  | Yes                  | Signing again does not restore coverage. Use **Request approval** on the CLAs row to ask your employer's CLA managers to approve you again |
-| **Revoked** (ECLA)          | Yes                  | This is a sanctions-screening outcome and cannot be changed from Self Serve                                                                |
-| **Invalidated**             | No                   | That agreement no longer covers you, so you can sign again with the same identity                                                          |
+| Status on your existing CLA      | Identity greyed out? | What to do instead                                                                                                                         |
+| -------------------------------- | -------------------- | ------------------------------------------------------------------------------------------------------------------------------------------ |
+| **Valid**                        | Yes                  | Nothing — that identity is already covered                                                                                                 |
+| **Needs attention** (ECLA)       | Yes                  | Signing again does not restore coverage. Use **Request approval** on the CLAs row to ask your employer's CLA managers to approve you again |
+| **Revoked** (ECLA)               | Yes                  | This is a sanctions-screening outcome and cannot be changed from Self Serve                                                                |
+| **Superseded**                   | Yes                  | A newer version of the agreement has replaced this one, so signing again under that identity changes nothing                               |
+| **—** (no status recorded, ECLA) | Yes                  | The status could not be read, so the identity stays greyed out rather than offer you a signature that may do nothing                       |
+| **Invalidated**                  | No                   | That agreement no longer covers you, so you can sign again with the same identity                                                          |
 
 ## How do I ask my CLA manager to approve or remove my ECLA?
 

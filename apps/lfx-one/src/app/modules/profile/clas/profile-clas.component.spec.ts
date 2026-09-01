@@ -568,6 +568,8 @@ describe('ProfileClasComponent — Sign CLA hand-off and identity selection (#12
       agreements?: MyClaAgreement[];
       /** Leaves the My CLAs request unresolved, so the loading state is assertable (#1914). */
       pending?: boolean;
+      /** Fails the My CLAs request, so the load-failure state is assertable (#1914). */
+      failed?: boolean;
     } = {}
   ): Promise<ComponentFixture<ProfileClasComponent>> {
     location = { href: HOME, origin: ORIGIN };
@@ -634,7 +636,11 @@ describe('ProfileClasComponent — Sign CLA hand-off and identity selection (#12
         {
           provide: MyClasService,
           useValue: {
-            getMyClas: vi.fn(() => (options.pending ? NEVER : of(options.agreements ? { ...EMPTY_CLAS, agreements: options.agreements } : EMPTY_CLAS))),
+            getMyClas: vi.fn(() => {
+              if (options.pending) return NEVER;
+              if (options.failed) return throwError(() => new Error('my CLAs unavailable'));
+              return of(options.agreements ? { ...EMPTY_CLAS, agreements: options.agreements } : EMPTY_CLAS);
+            }),
             getPdfUrl: vi.fn(),
             getClaGroupOptions: vi.fn(() => of({ ...SEARCH_RESULTS, results: [selectedGroup] })),
             getGithubAccounts,
@@ -799,6 +805,16 @@ describe('ProfileClasComponent — Sign CLA hand-off and identity selection (#12
 
   it('does not open the picker until the CLA list has loaded', async () => {
     const fixture = await setup({ pending: true });
+
+    await sign(fixture);
+
+    expect(open).not.toHaveBeenCalled();
+  });
+
+  it('does not open the picker when the CLA list failed to load', async () => {
+    // A failed load and having signed nothing both present as an empty list, so opening here
+    // would tag no group and gray out no identity — the duplicate signing this change prevents.
+    const fixture = await setup({ failed: true });
 
     await sign(fixture);
 

@@ -5,11 +5,12 @@ import { NgClass } from '@angular/common';
 import { Component, computed, input, Signal } from '@angular/core';
 import { toObservable, toSignal } from '@angular/core/rxjs-interop';
 import { FormGroup, ReactiveFormsModule } from '@angular/forms';
+import { TooltipModule } from 'primeng/tooltip';
 import { of, startWith, switchMap } from 'rxjs';
 
 @Component({
   selector: 'lfx-selectable-card',
-  imports: [NgClass, ReactiveFormsModule],
+  imports: [NgClass, ReactiveFormsModule, TooltipModule],
   templateUrl: './selectable-card.component.html',
 })
 export class SelectableCardComponent {
@@ -22,11 +23,13 @@ export class SelectableCardComponent {
   /** Disables this card alone, leaving the rest of the group selectable. */
   public readonly disabled = input<boolean>(false);
   /**
-   * Why this card is disabled, for assistive tech. Rendered inside the card and visually hidden,
-   * so it is announced after the label rather than instead of it, and a reason that only exists
-   * in a hover tooltip is not lost to anyone who cannot hover.
+   * Why this card is disabled. Rendered twice from the one input so no contributor has to hover
+   * to learn it: visually hidden inside the card, so it is announced after the label rather than
+   * instead of it, and as a tooltip on hover *or* keyboard focus. A disabled card stays in the tab
+   * order and says so with `aria-disabled`, rather than being removed from it — a card taken out
+   * of the tab order is one a keyboard-only contributor can never ask about.
    */
-  public readonly assistiveNote = input<string>('');
+  public readonly disabledReason = input<string>('');
   public readonly styleClass = input<string>('');
   public readonly testId = input<string>('');
 
