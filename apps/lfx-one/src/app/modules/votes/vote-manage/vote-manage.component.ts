@@ -655,7 +655,7 @@ export class VoteManageComponent {
     // committee writer on a context-less edit link while this predicate evicts them. undefined stays
     // pending; null resolves the leg immediately so it never counts as pending.
     const committeeUid$: Observable<string | null | undefined> = editVoteId
-      ? toObservable(this.vote).pipe(map((vote) => (vote ? (vote.committee_uid ?? null) : undefined)))
+      ? toObservable(this.vote).pipe(map((vote) => (vote ? (vote.committee_uid ?? this.committeeUidFromUrl) : undefined)))
       : of(this.committeeUidFromUrl);
     const committeeAccess = toSignal(
       committeeUid$.pipe(
