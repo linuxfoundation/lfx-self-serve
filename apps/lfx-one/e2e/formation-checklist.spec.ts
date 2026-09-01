@@ -131,4 +131,71 @@ test.describe('Formation Checklist section (GH-1958)', () => {
     await expect(button.locator('button')).toBeDisabled();
     await expect(page.getByTestId(`formation-checklist-row-action-${linkItem.uid}`)).toContainText('Link unavailable');
   });
+
+  test('a drawer write is retired by the uid it was issued for, not by whichever item the drawer currently shows', async ({ page }) => {
+    // Pins the regression across three prior fix commits on this branch: writeStarted/writeEnded
+    // used to resolve the uid from the section's *current* drawerItemUid() signal, so switching to a
+    // different item before an earlier write's response landed would clear the wrong item's guard —
+    // stranding the original item's buttons disabled forever while dropping the new item's own guard
+    // early (re-opening the exact double-write race these commits exist to prevent).
+    await stubFormationFlag(page, true);
+    await mockFormationChecklistApis(page, { project: buildBaseProject(FORMATION_PROJECT_SLUG) });
+
+    const formation = getMockFormation(FORMATION_PROJECT_SLUG);
+    if (!formation) throw new Error('Expected a seeded mock formation for this slug.');
+    const items = getMockFormationItems(formation.uid);
+
+    // Each PATCH .../complete is held open until this test explicitly releases it, keyed by uid —
+    // lets two different items' writes stay in flight at once, which is what this regression needs.
+    const pendingResolvers = new Map<string, () => void>();
+    await page.route('**/api/formation-items/*/complete', async (route) => {
+      const segments = new URL(route.request().url()).pathname.split('/');
+      const uid = decodeURIComponent(segments[segments.length - 2] ?? '');
+      await new Promise<void>((resolve) => pendingResolvers.set(uid, resolve));
+      const item = items.find((candidate) => candidate.uid === uid);
+      await route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify({ ...item, status: 'done', skip_reason: null }) });
+    });
+
+    await gotoProjectOverview(page, FORMATION_PROJECT_SLUG);
+
+    const uidA = 'formation-item:cascade-data-alliance:contribution-agreement-executed';
+    const uidB = 'formation-item:cascade-data-alliance:domain-and-dns-transfer';
+    const drawer = page.getByTestId('formation-item-drawer');
+    const markComplete = page.getByTestId('formation-item-drawer-mark-complete').locator('button');
+
+    // Start A's write, then close the drawer while it's still in flight — nothing gates onClose() on
+    // a pending write, and neither does the mask/ESC dismiss p-drawer offers by default.
+    await page.getByTestId(`formation-checklist-row-title-${uidA}`).click();
+    await expect(drawer).toBeVisible({ timeout: DATA_LOAD_TIMEOUT });
+    await markComplete.click();
+    await expect(markComplete).toBeDisabled();
+    await page.getByTestId('formation-item-drawer-close').click();
+    await expect(drawer).toBeHidden();
+
+    // Open a different item and start its own write too — the drawer (and drawerItemUid()) now
+    // points at B while A's write is still unresolved.
+    await page.getByTestId(`formation-checklist-row-title-${uidB}`).click();
+    await expect(drawer).toBeVisible();
+    await markComplete.click();
+    await expect(markComplete).toBeDisabled();
+
+    // Release A's held response. If writeEnded resolved the uid from the section's current
+    // drawerItemUid() (B) instead of the uid the write was actually issued for (A), this would
+    // incorrectly clear B's guard and B's button would re-enable here, before B's own request
+    // has resolved.
+    pendingResolvers.get(uidA)?.();
+    await page.waitForTimeout(300);
+    await expect(markComplete).toBeDisabled();
+
+    // Release B's held response too — now B's own write really is done, and its button recovers.
+    pendingResolvers.get(uidB)?.();
+    await expect(markComplete).toBeEnabled({ timeout: DATA_LOAD_TIMEOUT });
+
+    // A's guard must have been correctly retired when its response was released above — reopening it
+    // must not still show it stuck disabled forever.
+    await page.getByTestId('formation-item-drawer-close').click();
+    await page.getByTestId(`formation-checklist-row-title-${uidA}`).click();
+    await expect(drawer).toBeVisible();
+    await expect(markComplete).toBeEnabled({ timeout: DATA_LOAD_TIMEOUT });
+  });
 });
