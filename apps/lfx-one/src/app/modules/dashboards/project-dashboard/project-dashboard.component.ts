@@ -90,7 +90,10 @@ export class ProjectDashboardComponent {
         switchMap((project) =>
           this.permissionsService.getProjectSettings(project.uid).pipe(
             map((settings) => settings.announcement_date || null),
-            catchError(() => of(null))
+            catchError((error) => {
+              console.error('Project dashboard: failed to load announcement date', error);
+              return of(null);
+            })
           )
         )
       ),

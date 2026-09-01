@@ -12,7 +12,7 @@
       </div>
       @if (formationFlagEnabled() && isFormation()) {
         <p class="text-sm text-gray-500" data-testid="project-dashboard-formation-subtitle">
-          Stage Formation · {{ formationSubStage() }} · Announcement date {{ announcementDate() | date }}
+          Stage Formation · {{ formationSubStage() }} · Announcement date {{ (announcementDate() | date) || 'Not set' }}
         </p>
       }
     </div>
