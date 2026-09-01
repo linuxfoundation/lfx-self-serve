@@ -110,7 +110,13 @@ export class ProjectPickerComponent {
           // error escaping switchMap here would permanently kill `results()` for the rest of the
           // component's lifetime (no retry), which is worse than one redundant handler. Matches
           // `ProposeComponent.initDuplicateNameMatch`'s same defensive `catchError` on the same call.
-          return this.projectService.searchProjects(trimmed).pipe(catchError(() => of([])));
+          // Logged (not silent) so the guard is observable if it ever does fire.
+          return this.projectService.searchProjects(trimmed).pipe(
+            catchError((error) => {
+              console.error('Parent project search failed:', error);
+              return of([]);
+            })
+          );
         })
       ),
       { initialValue: [] }
