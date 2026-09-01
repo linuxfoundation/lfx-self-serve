@@ -28,6 +28,8 @@ export class FormationItemDrawerComponent {
   private readonly formationService = inject(FormationService);
   private readonly messageService = inject(MessageService);
 
+  public readonly visible = model<boolean>(false);
+
   public readonly itemUid = input<string | null>(null);
   /**
    * True while the section has *any* mutation in flight for this item — a row action
@@ -63,8 +65,6 @@ export class FormationItemDrawerComponent {
     ownerUsername: new FormControl<string>(''),
     dueDate: new FormControl<Date | null>(null),
   });
-
-  public readonly visible = model<boolean>(false);
 
   private readonly reload$ = new Subject<void>();
 
