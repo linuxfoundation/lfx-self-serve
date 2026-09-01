@@ -113,6 +113,13 @@ export class FormationApiMockHelper {
         return;
       }
       const item = findItem(route.request().url());
+      if (!item) {
+        // Fixture drift (a test targets a uid not in the cascade-data-alliance fixture, or the
+        // fixture's uid scheme changed) — fail loudly rather than silently falling back to the
+        // partial { status } body this mock was changed to stop producing.
+        await route.fulfill({ status: 404, contentType: 'application/json', body: JSON.stringify({ error: 'No mock item for this uid' }) });
+        return;
+      }
       await route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify({ ...item, status: 'done', skip_reason: null }) });
     });
     await page.route('**/api/formation-items/*/skip', async (route) => {
@@ -121,6 +128,10 @@ export class FormationApiMockHelper {
         return;
       }
       const item = findItem(route.request().url());
+      if (!item) {
+        await route.fulfill({ status: 404, contentType: 'application/json', body: JSON.stringify({ error: 'No mock item for this uid' }) });
+        return;
+      }
       await route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify({ ...item, status: 'skipped' }) });
     });
     await page.route('**/api/formation-items/*/request', async (route) => {
@@ -129,6 +140,10 @@ export class FormationApiMockHelper {
         return;
       }
       const item = findItem(route.request().url());
+      if (!item) {
+        await route.fulfill({ status: 404, contentType: 'application/json', body: JSON.stringify({ error: 'No mock item for this uid' }) });
+        return;
+      }
       await route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify({ ...item, status: 'waiting_on_partner' }) });
     });
   }
