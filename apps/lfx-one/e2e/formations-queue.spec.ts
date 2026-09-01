@@ -139,8 +139,12 @@ test.describe('Formations queue (GH-1958)', () => {
     await expect(page.getByTestId('formations-table')).toBeVisible({ timeout: SIDEBAR_LOAD_TIMEOUT });
 
     // harbor-data-exchange is the seeded 'proposed' row — the only sub_stage that renders Accept/Decline.
+    // onAccept's success handler unconditionally calls refresh$.next() after deciding whether to show
+    // the popup-blocked toast — waiting for that refetch response is the settle point that guarantees
+    // the toast decision has already been made before the next assertion checks for it.
     const [popup] = await Promise.all([
       page.waitForEvent('popup'),
+      page.waitForResponse((res) => res.request().method() === 'GET' && res.url().includes('/api/formations')),
       page.getByTestId('formations-table-accept-formation:harbor-data-exchange').locator('button').click(),
     ]);
     expect(popup.url()).toContain('admin.linuxfoundation.org');

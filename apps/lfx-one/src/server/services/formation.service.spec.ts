@@ -270,6 +270,9 @@ describe('FormationService', () => {
       await service.skipFormationItem(buildReq(), item.uid, 'a sensitive skip justification');
 
       const infoCalls = vi.mocked(logger.info).mock.calls;
+      // Anchor on the call actually existing — otherwise a logger.info() that fired zero times
+      // would pass this assertion too, which defeats the point of the test.
+      expect(infoCalls.some((call) => call[1] === 'skip_formation_item')).toBe(true);
       expect(infoCalls.some((call) => JSON.stringify(call).includes('sensitive skip justification'))).toBe(false);
     });
   });

@@ -103,13 +103,13 @@ export class FormationsTableComponent {
     this.decline.emit(row);
   }
 
-  private emitFilters(): void {
-    const tab = this.statusTab();
-    this.filtersChange.emit({ subStage: tab === 'all' ? undefined : (tab as FormationSubStage), search: this.searchValue() });
-  }
-
   /** PrimeNG types the `#body` row context `any` — precomputing the chip label/severity here lets the template do a plain property read instead of a method call. */
   private initDisplayRows(): Signal<FormationTableRow[]> {
     return computed(() => this.rows().map((row) => ({ ...row, stageLabel: SUB_STAGE_LABEL[row.sub_stage], stageSeverity: SUB_STAGE_SEVERITY[row.sub_stage] })));
+  }
+
+  private emitFilters(): void {
+    const tab = this.statusTab();
+    this.filtersChange.emit({ subStage: tab === 'all' ? undefined : (tab as FormationSubStage), search: this.searchValue() });
   }
 }
