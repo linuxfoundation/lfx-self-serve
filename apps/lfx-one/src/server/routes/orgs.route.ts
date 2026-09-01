@@ -207,6 +207,13 @@ function buildOrgsRouter(): Router {
   router.get('/:orgUid/lens/projects/:projectSlug/trend', (req, res, next) => orgLensProjectDetailController.getTrendBlock(req, res, next));
   router.get('/:orgUid/lens/projects/:projectSlug/leaderboard/technical', (req, res, next) => orgLensProjectDetailController.getTechnicalBoard(req, res, next));
   router.get('/:orgUid/lens/projects/:projectSlug/leaderboard/ecosystem', (req, res, next) => orgLensProjectDetailController.getEcosystemBoard(req, res, next));
+  // LFXV2-2934 — score breakdown for one clicked leaderboard row, per dimension.
+  router.get('/:orgUid/lens/projects/:projectSlug/leaderboard/technical/organizations/:organizationId', (req, res, next) =>
+    orgLensProjectDetailController.getTechnicalBreakdown(req, res, next)
+  );
+  router.get('/:orgUid/lens/projects/:projectSlug/leaderboard/ecosystem/organizations/:organizationId', (req, res, next) =>
+    orgLensProjectDetailController.getEcosystemBreakdown(req, res, next)
+  );
   // LFXV2-1885 DN9 — per-card drawer roster (server-side paginated), fetched lazily on drawer open.
   router.get('/:orgUid/lens/projects/:projectSlug/cards/:cardKey/roster', (req, res, next) => orgLensProjectDetailController.getCardRoster(req, res, next));
   router.get('/:orgUid/lens/projects/:projectSlug/cards/:cardKey', (req, res, next) => orgLensProjectDetailController.getCardDrawer(req, res, next));

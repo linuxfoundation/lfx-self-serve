@@ -10,6 +10,7 @@ export * from './file.utils';
 export * from './form.utils';
 export * from './html-utils';
 export * from './iso-timestamp.utils';
+export * from './mailing-list.utils';
 export * from './meeting-calendar.utils';
 export * from './meeting.utils';
 export * from './meeting-privacy.utils';

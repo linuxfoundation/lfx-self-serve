@@ -69,7 +69,7 @@ export class MentionBookmarkService {
       this.messageService.add({
         severity: 'warn',
         summary: 'Bookmark limit reached',
-        detail: `You can bookmark up to ${MENTION_IDS_MAX_VALUES} mentions per project.`,
+        detail: `You can bookmark up to ${MENTION_IDS_MAX_VALUES} mentions per foundation.`,
       });
       return;
     }

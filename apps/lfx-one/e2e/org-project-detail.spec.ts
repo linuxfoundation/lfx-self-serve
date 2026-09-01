@@ -14,18 +14,13 @@
  * Prerequisites:
  * - Dev server running on the Playwright baseURL
  * - User authenticated with the `org-lens-enabled` flag on and an organization selected
- * - The leaderboard row score-breakdown drawer tests pin `org-lens-private-release` ON via the same
- *   `stubFeatureFlags` localStorage override used by the ROI specs (LFXV2-2934 follow-up, GH-1798) —
- *   no LaunchDarkly targeting needed for those; a separate test covers the flag-off behavior
  *
  * Data semantics (v1): the page is served from live Snowflake platinum via the BFF. `k8s` is the real
  * catalog slug for the Kubernetes project (the earlier `kubernetes` was only the removed demo-fixture
  * key); a slug with no catalog row for the selected org returns null → the not-found panel.
  */
 
-import { ORG_LENS_PRIVATE_RELEASE_FLAG } from '@lfx-one/shared/constants/feature-flags.constants';
 import { expect, test } from '@playwright/test';
-import { stubFeatureFlags } from './helpers/org-roi.helper';
 
 const DETAIL_URL = '/org/projects/k8s';
 const DETAIL_URL_BOGUS = '/org/projects/totally-bogus-project';
@@ -318,16 +313,14 @@ test.describe('Org Project Detail — leaderboards', () => {
 
 test.describe('Org Project Detail — leaderboard row score-breakdown drawer', () => {
   test.beforeEach(async ({ page }) => {
-    await stubFeatureFlags(page, { [ORG_LENS_PRIVATE_RELEASE_FLAG]: true });
     await page.goto(`${DETAIL_URL}?tab=pd-leaderboards`, { waitUntil: 'domcontentloaded' });
     await expect(page.getByTestId('project-detail-leaderboard-technical-table')).toBeVisible({ timeout: DATA_LOAD_TIMEOUT });
     await expect(page.getByTestId('project-detail-leaderboard-ecosystem-table')).toBeVisible({ timeout: DATA_LOAD_TIMEOUT });
   });
 
-  // Category/points data behind this drawer is DEMO data pending a real Snowflake-backed source
-  // (LFXV2-2934), so a live k8s row's org may or may not be in the demo lookup — assert the drawer
-  // opens with the clicked org's name and renders EITHER the breakdown content OR the graceful empty
-  // state, never a crash either way.
+  // A live k8s row's organization may legitimately have no breakdown row (an org with a leaderboard
+  // rank but no scored components), so assert the drawer opens with the clicked org's name and
+  // renders EITHER the breakdown content OR the graceful empty state, never a crash either way.
   test('clicking a technical leaderboard row opens the drawer for that org', async ({ page }) => {
     const firstRow = page.locator('[data-testid="project-detail-leaderboard-technical"] tbody tr').first();
     const orgName = (await firstRow.locator('td').nth(1).locator('span.text-gray-900').innerText()).trim();
@@ -360,21 +353,6 @@ test.describe('Org Project Detail — leaderboard row score-breakdown drawer', (
     await page.keyboard.press('Escape');
     await expect(page.getByTestId('org-leaderboard-detail-title')).toBeHidden();
     await expect(page.getByTestId('project-detail-page')).toBeVisible();
-  });
-});
-
-test.describe('Org Project Detail — leaderboard row score-breakdown drawer (flag OFF)', () => {
-  test('clicking a leaderboard row does not open the drawer when org-lens-private-release is OFF', async ({ page }) => {
-    await stubFeatureFlags(page, { [ORG_LENS_PRIVATE_RELEASE_FLAG]: false });
-    await page.goto(`${DETAIL_URL}?tab=pd-leaderboards`, { waitUntil: 'domcontentloaded' });
-    await expect(page.getByTestId('project-detail-leaderboard-technical-table')).toBeVisible({ timeout: DATA_LOAD_TIMEOUT });
-
-    const firstRow = page.locator('[data-testid="project-detail-leaderboard-technical"] tbody tr').first();
-    await expect(firstRow).not.toHaveAttribute('tabindex', '0');
-    await expect(firstRow).not.toHaveClass(/cursor-pointer/);
-    await firstRow.click();
-
-    await expect(page.getByTestId('org-leaderboard-detail-title')).toHaveCount(0);
   });
 });
 

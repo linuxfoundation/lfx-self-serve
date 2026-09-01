@@ -89,7 +89,7 @@ export class SavedFilterService {
       this.messageService.add({
         severity: 'warn',
         summary: 'Saved view limit reached',
-        detail: `You can save up to ${MAX_SAVED_FILTERS_PER_PROJECT} views per project.`,
+        detail: `You can save up to ${MAX_SAVED_FILTERS_PER_PROJECT} views per foundation.`,
       });
       return null;
     }

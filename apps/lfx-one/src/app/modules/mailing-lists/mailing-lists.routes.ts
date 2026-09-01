@@ -27,6 +27,6 @@ export const MAILING_LIST_ROUTES: Routes = [
     path: ':id/edit',
     loadComponent: () => import('./mailing-list-manage/mailing-list-manage.component').then((m) => m.MailingListManageComponent),
     canActivate: [authGuard, writerGuard],
-    data: { writeFeature: 'mailing-lists' },
+    data: { writeFeature: 'mailing-lists', entityScopedSlug: true },
   },
 ];
