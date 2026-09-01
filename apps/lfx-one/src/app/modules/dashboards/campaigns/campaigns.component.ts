@@ -745,8 +745,9 @@ export class CampaignsComponent {
     // of something they can no longer see or change. Hiding the current choice is the one thing a
     // ranking heuristic must never do.
     //
-    // Splicing to the TOP rather than re-ranking: it is the row the operator chose, so it belongs
-    // where they will look for it. The cap is still honoured — this replaces a row, never appends.
+    // Spliced into the LAST drawn slot rather than re-ranked: it is the row the operator chose,
+    // so it must stay reachable, but it has not earned the top. The cap is still honoured — this
+    // replaces a row, never appends. See the comment on the splice itself for why not index 0.
     const selectedId = this.selectedEmailTemplateId();
     if (selectedId !== '' && !drawn.some((t) => t.id === selectedId)) {
       const selected = ranked.find((t) => t.id === selectedId);
