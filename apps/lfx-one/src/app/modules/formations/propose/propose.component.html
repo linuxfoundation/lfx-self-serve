@@ -80,7 +80,10 @@
       </div>
 
       <div>
-        <label for="trademark-status" class="mb-1 block text-sm font-medium text-gray-700">Trademark status <span class="text-red-500">*</span></label>
+        <!-- p-select's focusable node is a <span role="combobox">, not a labelable element, so
+             <label for> can't name it — aria-labelledby is the correct association (ARIA APG
+             combobox pattern). See the sibling license/chat-platform/agreement-type fields. -->
+        <label id="trademark-status-label" class="mb-1 block text-sm font-medium text-gray-700">Trademark status <span class="text-red-500">*</span></label>
         <lfx-select
           size="small"
           [form]="form"
@@ -89,7 +92,8 @@
           placeholder="Select trademark status"
           styleClass="w-full"
           appendTo="body"
-          [id]="'trademark-status'"
+          [inputId]="'trademark-status'"
+          [ariaLabelledBy]="'trademark-status-label'"
           data-testid="propose-trademark-status"></lfx-select>
         @if (form.get('trademark_status')?.errors?.['required'] && form.get('trademark_status')?.touched) {
           <p class="mt-1 text-xs text-red-600">Trademark status is required</p>
@@ -108,6 +112,7 @@
           nameControl="contributing_org_name"
           domainControl="contributing_org_website_url"
           idControl="contributing_org_id"
+          [inputId]="'contributing-org'"
           placeholder="Search for organization..."
           styleClass="w-full"
           dataTestId="propose-contributing-org"
@@ -230,7 +235,7 @@
 
       <div class="grid grid-cols-1 gap-4 md:grid-cols-2">
         <div>
-          <label for="license" class="mb-1 block text-sm font-medium text-gray-700">License <span class="text-red-500">*</span></label>
+          <label id="license-label" class="mb-1 block text-sm font-medium text-gray-700">License <span class="text-red-500">*</span></label>
           <lfx-select
             size="small"
             [form]="form"
@@ -239,14 +244,15 @@
             placeholder="Select license"
             styleClass="w-full"
             appendTo="body"
-            [id]="'license'"
+            [inputId]="'license'"
+            [ariaLabelledBy]="'license-label'"
             data-testid="propose-license"></lfx-select>
           @if (form.get('license')?.errors?.['required'] && form.get('license')?.touched) {
             <p class="mt-1 text-xs text-red-600">License is required</p>
           }
         </div>
         <div>
-          <label for="chat-platform" class="mb-1 block text-sm font-medium text-gray-700">Chat platform <span class="text-red-500">*</span></label>
+          <label id="chat-platform-label" class="mb-1 block text-sm font-medium text-gray-700">Chat platform <span class="text-red-500">*</span></label>
           <lfx-select
             size="small"
             [form]="form"
@@ -255,14 +261,15 @@
             placeholder="Select chat platform"
             styleClass="w-full"
             appendTo="body"
-            [id]="'chat-platform'"
+            [inputId]="'chat-platform'"
+            [ariaLabelledBy]="'chat-platform-label'"
             data-testid="propose-chat-platform"></lfx-select>
           @if (form.get('chat_platform')?.errors?.['required'] && form.get('chat_platform')?.touched) {
             <p class="mt-1 text-xs text-red-600">Chat platform is required</p>
           }
         </div>
         <div>
-          <label for="agreement-type" class="mb-1 block text-sm font-medium text-gray-700">CLA / DCO <span class="text-red-500">*</span></label>
+          <label id="agreement-type-label" class="mb-1 block text-sm font-medium text-gray-700">CLA / DCO <span class="text-red-500">*</span></label>
           <lfx-select
             size="small"
             [form]="form"
@@ -271,7 +278,8 @@
             placeholder="Select agreement type"
             styleClass="w-full"
             appendTo="body"
-            [id]="'agreement-type'"
+            [inputId]="'agreement-type'"
+            [ariaLabelledBy]="'agreement-type-label'"
             data-testid="propose-agreement-type"></lfx-select>
           @if (form.get('agreement_type')?.errors?.['required'] && form.get('agreement_type')?.touched) {
             <p class="mt-1 text-xs text-red-600">CLA / DCO is required</p>

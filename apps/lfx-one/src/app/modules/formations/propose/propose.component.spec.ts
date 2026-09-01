@@ -280,17 +280,33 @@ describe('ProposeComponent', () => {
     expect(errorEl()).not.toBeNull();
   });
 
-  it('labels each field with a real <label for> association, not a static id that also lands on the lfx-* host and shadows it', async () => {
+  it("labels every <label for> target with a real, labelable control — derived from the DOM so a broken id can't drift back in unnoticed", async () => {
     const { fixture } = await createComponentWithFixture();
     const el: HTMLElement = fixture.nativeElement;
-    // Every id referenced by a <label for> must resolve to exactly one element, and that element
-    // must be the native, labelable control (not the custom <lfx-input-text>/<lfx-select>/
-    // <lfx-textarea> host a bound [id] avoids, but a static id="..." attribute does not).
-    const ids = ['project-name', 'legal-contact-first-name', 'new-contact-first-name', 'license', 'mission-statement', 'website'];
-    for (const id of ids) {
-      const matches = el.querySelectorAll(`[id="${id}"]`);
-      expect(matches).toHaveLength(1);
-      expect(matches[0].tagName).not.toMatch(/^LFX-/);
+    // A static id="..." on an lfx-* host lands on both the host and the inner native control
+    // (shadowing the label); a bound [id] avoids that — but for p-select specifically, its
+    // focusable node is a <span role="combobox">, which isn't a labelable element at all, so even
+    // a correctly-bound id can't satisfy a <label for>. Positively assert the resolved element is
+    // one of the tags a <label for> can actually name, covering every field on the form rather
+    // than a hand-picked subset.
+    const labelableTags = new Set(['INPUT', 'TEXTAREA', 'SELECT']);
+    const labels = Array.from(el.querySelectorAll<HTMLLabelElement>('label[for]'));
+    expect(labels.length).toBeGreaterThan(0);
+    for (const label of labels) {
+      const matches = el.querySelectorAll(`[id="${label.htmlFor}"]`);
+      expect(matches, `label[for="${label.htmlFor}"]`).toHaveLength(1);
+      expect(labelableTags.has(matches[0].tagName), `label[for="${label.htmlFor}"] -> <${matches[0].tagName}>`).toBe(true);
+    }
+  });
+
+  it('names each p-select combobox via aria-labelledby, since its focusable node is a <span role="combobox"> that <label for> cannot target', async () => {
+    const { fixture } = await createComponentWithFixture();
+    const el: HTMLElement = fixture.nativeElement;
+    const selectLabelIds = ['trademark-status-label', 'license-label', 'chat-platform-label', 'agreement-type-label'];
+    for (const labelId of selectLabelIds) {
+      expect(el.querySelector(`#${labelId}`), `#${labelId}`).not.toBeNull();
+      const combobox = el.querySelector(`[role="combobox"][aria-labelledby="${labelId}"]`);
+      expect(combobox, `[role="combobox"][aria-labelledby="${labelId}"]`).not.toBeNull();
     }
   });
 });

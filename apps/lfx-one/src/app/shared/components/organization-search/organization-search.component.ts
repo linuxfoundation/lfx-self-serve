@@ -29,6 +29,9 @@ export class OrganizationSearchComponent {
   public inputStyleClass = input<string>();
   public panelStyleClass = input<string>();
   public dataTestId = input<string>('organization-search');
+  /** id for the search-mode input, so a caller's own `<label for>` can name this field. Manual
+   *  mode's name/website fields already have their own ids (`{domainControl()}-input`). */
+  public inputId = input<string>();
   public disabled = input<boolean>(false);
   /** When false, the field keeps the user-selected name instead of being overwritten with the
    *  CDP canonical name returned by /api/organizations/resolve. Defaults to true for backward

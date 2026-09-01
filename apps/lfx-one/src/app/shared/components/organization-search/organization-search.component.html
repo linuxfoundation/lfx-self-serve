@@ -19,6 +19,7 @@
           [inputStyleClass]="inputStyleClass()"
           [panelStyleClass]="panelStyleClass()"
           [dataTestId]="dataTestId()"
+          [inputId]="inputId()"
           optionLabel="name"
           optionValue="name"
           appendTo="body"
@@ -71,7 +72,13 @@
             }
           }
           <div class="min-w-0 flex-1">
-            <lfx-input-text [form]="form()" [control]="nameControl()!" placeholder="Enter organization name" styleClass="w-full" size="small" />
+            <lfx-input-text
+              [form]="form()"
+              [control]="nameControl()!"
+              [id]="inputId()"
+              placeholder="Enter organization name"
+              styleClass="w-full"
+              size="small" />
           </div>
         </div>
       }
