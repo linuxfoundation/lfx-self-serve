@@ -7,7 +7,7 @@ import { FormControl, FormGroup, ReactiveFormsModule } from '@angular/forms';
 import { InputTextComponent } from '@components/input-text/input-text.component';
 import { Project } from '@lfx-one/shared/interfaces';
 import { ProjectService } from '@services/project.service';
-import { combineLatest, debounceTime, distinctUntilChanged, EMPTY, merge, of, startWith, switchMap } from 'rxjs';
+import { catchError, combineLatest, debounceTime, distinctUntilChanged, EMPTY, merge, of, startWith, switchMap } from 'rxjs';
 
 /**
  * Parent-project picker for the intake form's Parent section. Deliberately not
@@ -105,9 +105,12 @@ export class ProjectPickerComponent {
         switchMap((term) => {
           const trimmed = term.trim();
           if (trimmed.length < 2) return of([]);
-          // No catchError here — ProjectService.searchProjects already degrades to `of([])`
-          // internally (with its own console.error), so a second handler here is unreachable.
-          return this.projectService.searchProjects(trimmed);
+          // ProjectService.searchProjects already degrades to `of([])` internally today, so this
+          // is currently unreachable — kept anyway as a terminal guard on a `toSignal` stream: an
+          // error escaping switchMap here would permanently kill `results()` for the rest of the
+          // component's lifetime (no retry), which is worse than one redundant handler. Matches
+          // `ProposeComponent.initDuplicateNameMatch`'s same defensive `catchError` on the same call.
+          return this.projectService.searchProjects(trimmed).pipe(catchError(() => of([])));
         })
       ),
       { initialValue: [] }

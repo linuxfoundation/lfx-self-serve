@@ -71,11 +71,11 @@ describe('FormationService', () => {
     });
 
     it('records who submitted and when', async () => {
-      getEffectiveUsername.mockReturnValue('mdixit');
+      getEffectiveUsername.mockReturnValue('proposer2');
 
       const formation = await service.createFormation(req, intake());
 
-      expect(formation.submitted_by).toBe('mdixit');
+      expect(formation.submitted_by).toBe('proposer2');
       expect(new Date(formation.submitted_at).getTime()).not.toBeNaN();
     });
 
@@ -143,16 +143,19 @@ describe('FormationService', () => {
       expect(store().has(stale.uid)).toBe(false);
     });
 
-    it('also prunes on a read, not just a create — a pod that only serves GETs still bounds retention', async () => {
+    it('also prunes on a read, not just a create — selectively, without dropping a still-live sibling entry', async () => {
       vi.useFakeTimers();
       vi.setSystemTime(new Date('2026-08-01T00:00:00.000Z'));
       const stale = await service.createFormation(req, intake());
+
+      vi.setSystemTime(new Date('2026-08-01T00:59:00.000Z')); // created before stale expires
       const fresh = await service.createFormation(req, intake({ project_name: 'Fresh Project' }));
 
-      vi.setSystemTime(new Date('2026-08-01T01:00:01.000Z')); // just past the 1-hour TTL
-      await service.getFormationByUid(req, fresh.uid); // read alone — no intervening create
+      vi.setSystemTime(new Date('2026-08-01T01:00:01.000Z')); // stale is now past TTL, fresh is not
+      const fetched = await service.getFormationByUid(req, fresh.uid); // read alone — no intervening create
 
       expect(store().has(stale.uid)).toBe(false);
+      expect(fetched).not.toBeNull(); // the read pruned its stale sibling without dropping this live entry
     });
   });
 });

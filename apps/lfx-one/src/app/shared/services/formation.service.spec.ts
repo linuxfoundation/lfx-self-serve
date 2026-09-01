@@ -21,6 +21,11 @@ describe('FormationService', () => {
 
   afterEach(() => {
     httpMock.verify();
+    // Not inline `errorSpy.mockRestore()` in the two console.error tests below — a failing
+    // assertion above an inline restore would leave console.error stubbed for the rest of the
+    // file (and the second test's own spy would then restore to the first test's stub, not the
+    // original).
+    vi.restoreAllMocks();
   });
 
   it('posts the intake payload to /api/formations and emits the created formation', async () => {
@@ -67,7 +72,6 @@ describe('FormationService', () => {
 
     expect(await promise).toBeNull();
     expect(errorSpy).not.toHaveBeenCalled();
-    errorSpy.mockRestore();
   });
 
   it('degrades to null AND logs on a non-404 failure — a real error should not be indistinguishable from an unknown uid', async () => {
@@ -80,6 +84,5 @@ describe('FormationService', () => {
 
     expect(await promise).toBeNull();
     expect(errorSpy).toHaveBeenCalled();
-    errorSpy.mockRestore();
   });
 });
