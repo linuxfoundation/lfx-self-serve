@@ -123,11 +123,11 @@ In the **Sign a CLA** dialog, a result you already hold a CLA for is tagged **Al
 
 The result stays selectable, because holding a CLA under one identity does not stop you signing under another. If you have two GitHub accounts linked to your profile and signed with one of them, you can still sign with the other.
 
-The tag names an account only when EasyCLA recorded one. Continue past the result and the identity step greys out the identity that signed — but only when the account on the agreement is one of the GitHub accounts linked to your profile, or the CLA was signed under your LF identity through Gerrit. Where no account was recorded, or the CLA was signed through GitLab, the result is still tagged and every identity stays selectable.
+The tag names an account only when EasyCLA recorded one. Continue past the result and the identity step greys out the identity that signed — but only when the account on the agreement is one of the GitHub accounts linked to your profile, or the CLA was signed under your LF identity through Gerrit. Where no account was recorded on a CLA signed through GitHub, or the CLA was signed through GitLab, the result is still tagged and every identity stays selectable. A CLA signed through Gerrit greys out your LF identity whether or not an account was recorded.
 
 Results are matched per **CLA group**, not per project. A project with more than one CLA group only tags the group you signed.
 
-Every status your CLAs can show, and whether it greys out an identity in the next step, once the account on the agreement is one you have linked:
+How each status on an existing CLA affects the identity step, once the account on the agreement is one you have linked:
 
 | Status on your existing CLA      | Identity greyed out? | What to do instead                                                                                                                         |
 | -------------------------------- | -------------------- | ------------------------------------------------------------------------------------------------------------------------------------------ |

@@ -314,8 +314,32 @@ describe('SignIdentitySelectComponent', () => {
 
       // Removing it from the tab order would leave a keyboard-only contributor with no way to
       // ask why the account is unavailable — the tooltip also answers to focus, not just hover.
-      expect(query('sign-identity-select-github-12345')?.getAttribute('tabindex')).toBe('0');
-      expect(fixture.debugElement.query(By.css('[data-testid="sign-identity-select-github-12345"]')).injector.get(Tooltip, null)?.tooltipEvent).toBe('both');
+      const card = fixture.debugElement.query(By.css('[data-testid="sign-identity-select-github-12345"]'));
+      expect(card.nativeElement.getAttribute('tabindex')).toBe('0');
+      expect(card.injector.get(Tooltip, null)?.tooltipEvent).toBe('both');
+    });
+
+    it.each([
+      ['Enter', 'Enter'],
+      ['Space', ' '],
+    ])('refuses a %s keypress on the grayed card', async (_label, key) => {
+      await setup({ claGroupAgreements: signedAs('octocat') });
+
+      // Keeping the card focusable put Enter/Space on a live path: the only thing that stops it
+      // selecting the account is the card's own disabled guard, so assert the key leaves the
+      // control exactly as it was rather than trusting that guard to stay.
+      const identity = (fixture.componentInstance as any).selectForm.controls.identity;
+      const before = identity.value;
+
+      fixture.debugElement
+        .query(By.css('[data-testid="sign-identity-select-github-12345"]'))
+        .nativeElement.dispatchEvent(new KeyboardEvent('keydown', { key, bubbles: true }));
+      fixture.detectChanges();
+      await fixture.whenStable();
+      (fixture.componentInstance as any).onContinue();
+
+      expect(identity.value).toBe(before);
+      expect(close).not.toHaveBeenCalled();
     });
 
     it('refuses to submit it even if the card is reached another way', async () => {
