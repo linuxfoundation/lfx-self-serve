@@ -1,7 +1,6 @@
 // Copyright The Linux Foundation and each contributor to LFX.
 // SPDX-License-Identifier: MIT
 
-import { EVENT_SOURCE_BACKFILL } from './events.constants';
 import { PDFTemplateDetails } from '../interfaces/events.interface';
 
 export const DEFAULT_TEMPLATE: PDFTemplateDetails = {
@@ -37,11 +36,11 @@ export const LF_OPEN_SOURCE_OVERRIDE: Pick<PDFTemplateDetails, 'link' | 'name' |
 };
 
 /**
- * Event source + country pair that triggers the LF Open Source override. EVENT_SOURCE
- * stands in for REGISTRATION_SOURCE, which the Platinum view does not expose — see GH-1695.
+ * Country that, paired with a backfill EVENT_SOURCE (see isBackfillEventSource), triggers the
+ * LF Open Source override. EVENT_SOURCE stands in for REGISTRATION_SOURCE, which the Platinum
+ * view does not expose — see GH-1695.
  */
 export const LF_OPEN_SOURCE_OVERRIDE_MATCH = {
-  EVENT_SOURCE: EVENT_SOURCE_BACKFILL,
   EVENT_COUNTRY: 'China',
 } as const;
 
