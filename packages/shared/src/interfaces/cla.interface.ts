@@ -146,8 +146,11 @@ export type ClaGroupOrgSource = 'github' | 'gitlab' | 'gerrit';
  * A repository-hosting organization linked to a CLA Group: a GitHub organization, a GitLab
  * group, or a Gerrit instance.
  *
- * Provenance for display only. An empty `organizations` list does not mean "not on GitHub" —
- * it means nothing is linked or nothing resolved, so no control flow may be derived from it.
+ * A source being **present** here is evidence, and `claSignRoute` reads it to decide which
+ * identity the sign step offers. A source being **absent** is not evidence of anything: an
+ * empty list means nothing is linked or nothing resolved, not "not on GitHub". CLA Groups in
+ * that state are searchable by name and signable today, so a rule shaped "no GitHub
+ * organization ⇒ not GitHub" would misroute them. Read presence only.
  */
 export interface ClaGroupOrg {
   /** Organization, group, or Gerrit instance name. */
@@ -242,13 +245,47 @@ export interface GithubAccountChoice extends GithubAccountOption {
 }
 
 /**
- * What the GitHub account step closes with, beyond `null` for a dismissal (#1917).
+ * Which identities the sign step offers, decided by the selected CLA Group's linked
+ * organizations (#2002). Also the copy set the step is framed with, since a contributor
+ * being asked for a Gerrit identity must not be told the group is linked to GitHub.
  *
- * The two outcomes are kept apart because dismissing the empty state and asking to link an
- * account both leave the picker with no account chosen, and only one of them should move the
- * contributor off the page they started from.
+ * `github-or-gerrit` is not derivable from the two lists the step receives: a mixed group
+ * whose contributor has no linked GitHub account arrives with an empty account list, which
+ * is indistinguishable from the Gerrit-only case unless the variant says otherwise.
  */
-export type GithubAccountSelectResult = { githubId: string } | { linkAccounts: true };
+export type SignIdentityVariant = 'github' | 'gerrit' | 'github-or-gerrit';
+
+/**
+ * Which route a selected CLA Group takes. Every route but one opens the sign identity step;
+ * GitLab is the exception, because Self Serve holds no verifiable GitLab identity to offer.
+ */
+export type ClaSignRoute = SignIdentityVariant | 'gitlab-unsupported';
+
+/** What the sign identity step is given to render (#1252, #1917, #2002). */
+export interface SignIdentityDialogData {
+  variant: SignIdentityVariant;
+  /** Linked GitHub accounts, from the server. Empty on the `gerrit` variant, which never fetches them. */
+  accounts: GithubAccountOption[];
+  /**
+   * The contributor's LF username, offered as their Gerrit identity. Absent ⇒ no Gerrit card.
+   *
+   * Unlike `accounts` this does not come from the server, and that is safe only because it is
+   * never submitted — see the step's own class doc before changing it.
+   */
+  gerritUsername?: string;
+}
+
+/**
+ * What the sign identity step closes with, beyond `null` for a dismissal (#1917, #2002).
+ *
+ * Discriminated on `kind` rather than narrowed by `in`. With two members the narrowing read
+ * better; with three, one of which carries no payload at all, a tag is what keeps a Gerrit
+ * choice from being mistaken for a GitHub one that lost its account number.
+ *
+ * The link request is kept apart from a dismissal because both leave the step with no identity
+ * chosen, and only one of them should move the contributor off the page they started from.
+ */
+export type SignIdentitySelectResult = { kind: 'github'; githubId: string } | { kind: 'gerrit' } | { linkAccounts: true };
 
 /** Response for `GET /api/me/clas/github-accounts`. */
 export interface GithubAccountOptions {
