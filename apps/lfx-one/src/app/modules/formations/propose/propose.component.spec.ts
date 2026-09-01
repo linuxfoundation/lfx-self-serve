@@ -10,7 +10,7 @@ import { Formation, Project } from '@lfx-one/shared/interfaces';
 import { FormationService } from '@services/formation.service';
 import { ProjectService } from '@services/project.service';
 import { MessageService } from 'primeng/api';
-import { of, throwError } from 'rxjs';
+import { of, Subject, throwError } from 'rxjs';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 
 import { ProposeComponent } from './propose.component';
@@ -128,6 +128,20 @@ describe('ProposeComponent', () => {
 
     expect(getProject).toHaveBeenCalledWith('my-foundation', false);
     expect(component.form.get('parent_project_uid')?.value).toBe('parent-uid-1');
+  });
+
+  it('does not let a slow ?parent= prefill overwrite a parent the user already picked by hand', async () => {
+    const prefillProject = { uid: 'parent-uid-1', slug: 'my-foundation', name: 'My Foundation' } as Project;
+    const prefill$ = new Subject<Project>();
+    getProject.mockReturnValue(prefill$);
+
+    const component = await createComponent({ parent: 'my-foundation' });
+    // Simulate the user picking a different parent (e.g. via the picker's own search) before the
+    // slow ?parent= lookup resolves.
+    component.form.patchValue({ parent_project_uid: 'user-picked-uid' });
+    prefill$.next(prefillProject);
+
+    expect(component.form.get('parent_project_uid')?.value).toBe('user-picked-uid');
   });
 
   it('adds and removes an additional ("who else") contact', async () => {

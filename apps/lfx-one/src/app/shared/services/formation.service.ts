@@ -21,7 +21,15 @@ export class FormationService {
   public getFormationByUid(uid: string): Observable<Formation | null> {
     return this.http.get<Formation>(`/api/formations/${encodeURIComponent(uid)}`).pipe(
       take(1),
-      catchError(() => of(null))
+      catchError((error) => {
+        // A 404 here is an expected outcome (unknown uid, wrong pod, or not the proposer — see
+        // formation.service.ts server-side), not an error worth logging; anything else (network
+        // failure, 5xx) is, so the confirmation page's not-found state doesn't silently hide it.
+        if (error?.status !== 404) {
+          console.error('Failed to fetch formation:', error);
+        }
+        return of(null);
+      })
     );
   }
 }

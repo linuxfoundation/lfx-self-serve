@@ -31,8 +31,12 @@ import { logger } from './logger.service';
  *   router state instead of relying on this store for the primary redirect — the GET/this store
  *   is a best-effort fallback for a direct or refreshed confirmation link only, and a known
  *   fixture limitation there (not a bug), flagged in the PR description.
- * - Entries are pruned after `FORMATION_STORE_TTL_MS` (see `pruneExpired`) so a long-lived pod
- *   doesn't retain submitted contact PII (legal contact, additional contacts) indefinitely.
+ * - Entries older than `FORMATION_STORE_TTL_MS` are swept (see `pruneExpired`) on every create
+ *   AND every read, so a long-lived pod doesn't retain submitted contact PII (legal contact,
+ *   additional contacts) past that window as long as it keeps receiving formation traffic. A pod
+ *   that stops receiving ANY `/api/formations*` request after storing an entry has nothing left
+ *   to trigger the sweep, so that entry lives until the pod restarts — accepted for a fixture
+ *   with an already-documented per-pod lifetime, rather than adding a background timer.
  * - Every response carries `data_source: 'mock'` (the same in-band provenance convention as
  *   `CommitteeEngagementResponse.data_source`) so a client can always tell fabricated data from
  *   real data once #1957 lands and this class grows a live branch.
@@ -77,7 +81,6 @@ export class FormationService {
 
     logger.info(req, 'create_formation', 'formation-service is not built yet (#1957) — returning a fabricated fixture record, not a real formation', {
       uid,
-      submitted_by: submittedBy,
     });
     logger.info(req, 'create_formation', 'TODO(#1957): proposer participant grant is simulated — the real formation service writes this tuple on submit', {
       uid,
@@ -104,6 +107,8 @@ export class FormationService {
    * to reuse; add one when #1955/#1958 lands it).
    */
   public async getFormationByUid(req: Request, uid: string): Promise<Formation | null> {
+    FormationService.pruneExpired();
+
     logger.debug(req, 'get_formation_by_uid', 'Reading fixture-backed formation record', { uid });
     const formation = FormationService.store.get(uid);
     if (!formation) {

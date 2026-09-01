@@ -1,7 +1,7 @@
 // Copyright The Linux Foundation and each contributor to LFX.
 // SPDX-License-Identifier: MIT
 
-import { Component, computed, inject, input, output, Signal, signal } from '@angular/core';
+import { Component, computed, inject, input, Signal, signal } from '@angular/core';
 import { takeUntilDestroyed, toObservable, toSignal } from '@angular/core/rxjs-interop';
 import { FormControl, FormGroup, ReactiveFormsModule } from '@angular/forms';
 import { InputTextComponent } from '@components/input-text/input-text.component';
@@ -25,21 +25,19 @@ import { catchError, combineLatest, debounceTime, distinctUntilChanged, EMPTY, m
 export class ProjectPickerComponent {
   private readonly projectService = inject(ProjectService);
 
-  public form = input.required<FormGroup>();
+  public readonly form = input.required<FormGroup>();
   /** Name of the parent-form control holding the selected project's uid (null = "let LF decide"). */
-  public uidControl = input.required<string>();
+  public readonly uidControl = input.required<string>();
   /** A project resolved asynchronously by the parent (e.g. a `?parent=` slug lookup) whose uid
    *  was already patched into `uidControl` before this component could reflect it in its own
    *  display — pass it through here so the picker shows the pick instead of an empty search box. */
-  public initialSelection = input<Project | null>(null);
-
-  public readonly onProjectSelect = output<Project>();
+  public readonly initialSelection = input<Project | null>(null);
 
   protected readonly searchForm = new FormGroup({ query: new FormControl('', { nonNullable: true }) });
 
   /** The selected project's display name, shown in place of the search box once a pick is made. */
-  public readonly selectedName = signal<string | null>(null);
-  public readonly hasSelection = signal(false);
+  protected readonly selectedName = signal<string | null>(null);
+  protected readonly hasSelection = signal(false);
 
   private readonly query: Signal<string> = toSignal(this.searchForm.controls.query.valueChanges, { initialValue: '' });
   protected readonly hasQuery: Signal<boolean> = computed(() => this.query().trim().length >= 2);
@@ -64,25 +62,28 @@ export class ProjectPickerComponent {
       });
 
     // Reflect a parent-resolved prefill (see `initialSelection`'s doc) once it arrives — its uid
-    // is already on the form, so this only needs to update this component's own display state.
+    // is already on the form, so this only needs to update this component's own display state,
+    // not re-run `select()`: that would also wipe an in-progress search query. Skipped entirely
+    // once the user has made their own pick (`hasSelection()`), so a slow prefill resolving after
+    // a manual selection can't silently overwrite it.
     toObservable(this.initialSelection)
       .pipe(takeUntilDestroyed())
       .subscribe((project) => {
-        if (project) {
-          this.select(project);
+        if (project && !this.hasSelection()) {
+          this.selectedName.set(project.name);
+          this.hasSelection.set(true);
         }
       });
   }
 
-  public select(project: Project): void {
+  protected select(project: Project): void {
     this.form().get(this.uidControl())?.setValue(project.uid);
     this.selectedName.set(project.name);
     this.hasSelection.set(true);
     this.searchForm.controls.query.setValue('');
-    this.onProjectSelect.emit(project);
   }
 
-  public clear(): void {
+  protected clear(): void {
     this.form().get(this.uidControl())?.setValue(null);
     this.selectedName.set(null);
     this.hasSelection.set(false);

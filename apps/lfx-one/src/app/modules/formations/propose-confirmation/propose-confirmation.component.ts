@@ -42,10 +42,14 @@ export class ProposeConfirmationComponent {
 
   /** The "Create in admin tool" CTA names an internal staff workflow — hide it (and the fixture's
    *  "Staff only" framing) from an ordinary proposer landing on their own confirmation page. No
-   *  `formation_admin` FGA check exists in this repo yet (#1955/#1958 will add one); this persona
-   *  signal is the nearest existing gate. */
+   *  `formation_admin` FGA check exists in this repo yet (#1955/#1958 will add one); reuses
+   *  `PersonaService.canViewExecutiveDashboards` (the same "EDs and LF Staff" predicate Foundation
+   *  Health / Marketing Overview / Social Listening gate on) rather than re-deriving it, plus a
+   *  local `personaLoaded` gate that signal doesn't have — `isLFStaff`/`currentPersona` populate
+   *  from an async fetch, so reading them before it resolves would show a staff viewer the
+   *  proposer-safe copy for a moment; failing closed until loaded is the safe direction. */
   protected readonly isStaffOrExecutiveDirector: Signal<boolean> = computed(
-    () => this.personaService.isLFStaff() || this.personaService.currentPersona() === 'executive-director'
+    () => this.personaService.personaLoaded() && this.personaService.canViewExecutiveDashboards()
   );
 
   protected readonly submittedOnLabel: Signal<string> = computed(() => {

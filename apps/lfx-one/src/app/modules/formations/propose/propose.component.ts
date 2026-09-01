@@ -240,7 +240,9 @@ export class ProposeComponent {
       .getProject(parentSlug, false)
       .pipe(takeUntilDestroyed(this.destroyRef))
       .subscribe((project) => {
-        if (project) {
+        // Skip if the user already picked a parent by hand while this lookup was in flight —
+        // a slow prefill resolving after a manual pick must not silently overwrite it.
+        if (project && !this.form.get('parent_project_uid')?.value) {
           this.form.patchValue({ parent_project_uid: project.uid });
           this.prefilledParentProject.set(project);
         }

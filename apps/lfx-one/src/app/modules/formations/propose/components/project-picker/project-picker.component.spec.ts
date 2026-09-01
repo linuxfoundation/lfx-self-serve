@@ -11,11 +11,17 @@ import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { ProjectPickerComponent } from './project-picker.component';
 
 const project = { uid: 'project-uid-1', slug: 'my-foundation', name: 'My Foundation' } as Project;
+const otherProject = { uid: 'project-uid-2', slug: 'other-foundation', name: 'Other Foundation' } as Project;
 
 describe('ProjectPickerComponent', () => {
   let fixture: ComponentFixture<ProjectPickerComponent>;
   let searchProjects: ReturnType<typeof vi.fn>;
   let form: FormGroup;
+
+  // Not a production visibility change: `select`/`clear`/`hasSelection`/`selectedName`/
+  // `searchForm` stay `protected` (template-only surface) — an `any`-typed accessor skips
+  // TypeScript's protected check for tests without widening the component's public contract.
+  const instance = (): any => fixture.componentInstance;
 
   beforeEach(async () => {
     searchProjects = vi.fn().mockReturnValue(of([]));
@@ -33,21 +39,21 @@ describe('ProjectPickerComponent', () => {
   });
 
   it('sets the uid control and shows the selected name once a search result is picked', () => {
-    fixture.componentInstance.select(project);
+    instance().select(project);
 
     expect(form.get('parent_project_uid')?.value).toBe('project-uid-1');
-    expect(fixture.componentInstance.hasSelection()).toBe(true);
-    expect(fixture.componentInstance.selectedName()).toBe('My Foundation');
+    expect(instance().hasSelection()).toBe(true);
+    expect(instance().selectedName()).toBe('My Foundation');
   });
 
   it('clear() resets the uid control and the display', () => {
-    fixture.componentInstance.select(project);
+    instance().select(project);
 
-    fixture.componentInstance.clear();
+    instance().clear();
 
     expect(form.get('parent_project_uid')?.value).toBeNull();
-    expect(fixture.componentInstance.hasSelection()).toBe(false);
-    expect(fixture.componentInstance.selectedName()).toBeNull();
+    expect(instance().hasSelection()).toBe(false);
+    expect(instance().selectedName()).toBeNull();
   });
 
   it('reflects a parent-resolved initialSelection (the async ?parent= prefill case) even though the uid was already set externally', () => {
@@ -56,11 +62,44 @@ describe('ProjectPickerComponent', () => {
     fixture.componentRef.setInput('initialSelection', project);
     fixture.detectChanges();
 
-    expect(fixture.componentInstance.hasSelection()).toBe(true);
-    expect(fixture.componentInstance.selectedName()).toBe('My Foundation');
+    expect(instance().hasSelection()).toBe(true);
+    expect(instance().selectedName()).toBe('My Foundation');
   });
 
-  it('renders the "not sure" hint and no results dropdown for a query under 2 characters', () => {
+  it('does not let a slow-resolving initialSelection overwrite a selection the user already made by hand', () => {
+    instance().select(otherProject);
+
+    fixture.componentRef.setInput('initialSelection', project);
+    fixture.detectChanges();
+
+    expect(form.get('parent_project_uid')?.value).toBe('project-uid-2');
+    expect(instance().selectedName()).toBe('Other Foundation');
+  });
+
+  it('does not query until the search term reaches 2 characters, then does', async () => {
+    vi.useFakeTimers();
+    try {
+      // Construct under fake timers so `initResults`'s own `startWith('')` debounce timer (fired
+      // at construction, from the `beforeEach` fixture) doesn't leave a stray real-clock timer
+      // racing the fake-clock assertions below.
+      fixture = TestBed.createComponent(ProjectPickerComponent);
+      fixture.componentRef.setInput('form', form);
+      fixture.componentRef.setInput('uidControl', 'parent_project_uid');
+      fixture.detectChanges();
+
+      instance().searchForm.controls.query.setValue('a');
+      await vi.advanceTimersByTimeAsync(300);
+      expect(searchProjects).not.toHaveBeenCalled();
+
+      instance().searchForm.controls.query.setValue('ac');
+      await vi.advanceTimersByTimeAsync(300);
+      expect(searchProjects).toHaveBeenCalledWith('ac');
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  it('renders the "not sure" hint and no results dropdown before any query', () => {
     const el: HTMLElement = fixture.nativeElement;
     expect(el.querySelector('[data-testid="propose-project-picker-results"]')).toBeNull();
     expect(el.textContent).toContain('Not sure?');

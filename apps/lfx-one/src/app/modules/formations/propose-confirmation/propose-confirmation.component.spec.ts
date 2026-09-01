@@ -55,17 +55,19 @@ describe('ProposeConfirmationComponent', () => {
   let fixture: ComponentFixture<ProposeConfirmationComponent>;
   let getFormationByUid: ReturnType<typeof vi.fn>;
   let getCurrentNavigation: ReturnType<typeof vi.fn>;
-  let isLFStaff: ReturnType<typeof signal<boolean>>;
+  let canViewExecutiveDashboards: ReturnType<typeof signal<boolean>>;
+  let personaLoaded: ReturnType<typeof signal<boolean>>;
 
-  async function setup(uid: string | null, options: { staff?: boolean } = {}): Promise<void> {
-    isLFStaff.set(options.staff ?? true);
+  async function setup(uid: string | null, options: { staff?: boolean; personaLoaded?: boolean } = {}): Promise<void> {
+    canViewExecutiveDashboards.set(options.staff ?? true);
+    personaLoaded.set(options.personaLoaded ?? true);
 
     await TestBed.configureTestingModule({
       imports: [ProposeConfirmationComponent],
       providers: [
         { provide: FormationService, useValue: { getFormationByUid } },
         { provide: Router, useValue: { getCurrentNavigation } },
-        { provide: PersonaService, useValue: { isLFStaff, currentPersona: signal('contributor') } },
+        { provide: PersonaService, useValue: { canViewExecutiveDashboards, personaLoaded } },
         {
           provide: ActivatedRoute,
           useValue: { paramMap: of(convertToParamMap(uid ? { formationUid: uid } : {})) },
@@ -81,7 +83,8 @@ describe('ProposeConfirmationComponent', () => {
     getFormationByUid = vi.fn();
     // No in-flight navigation state by default — exercises the GET-by-uid fallback path.
     getCurrentNavigation = vi.fn().mockReturnValue(null);
-    isLFStaff = signal(true);
+    canViewExecutiveDashboards = signal(true);
+    personaLoaded = signal(true);
   });
 
   it('renders the "Record not yet created" fallback state with a staff admin-tool link for a staff viewer', async () => {
@@ -108,6 +111,16 @@ describe('ProposeConfirmationComponent', () => {
     expect(el.querySelector('[data-testid="propose-confirmation-not-created"]')).toBeTruthy();
     expect(el.querySelector('[data-testid="propose-confirmation-admin-link"]')).toBeNull();
     expect(el.textContent).not.toContain('Staff only');
+    expect(el.textContent).toContain('The formation team will follow up');
+  });
+
+  it('fails closed to the proposer-safe copy while persona data is still loading, even for a staff viewer', async () => {
+    getFormationByUid.mockReturnValue(of(buildFormation({ project_uid: null })));
+
+    await setup('formation-1', { staff: true, personaLoaded: false });
+
+    const el: HTMLElement = fixture.nativeElement;
+    expect(el.querySelector('[data-testid="propose-confirmation-admin-link"]')).toBeNull();
     expect(el.textContent).toContain('The formation team will follow up');
   });
 

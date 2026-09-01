@@ -48,6 +48,10 @@ describe('FormationService', () => {
     getEffectiveUsername.mockReset();
     getEffectiveUsername.mockReturnValue('proposer1');
     service = new FormationService();
+    // The fixture store is a module-level static Map shared across every test in this file
+    // (mirrors the real per-pod, not per-instance, lifetime) — clear it so one test's entries
+    // can't leak into another's assertions, especially the TTL tests below that rewind the clock.
+    (FormationService as unknown as { store: Map<string, unknown> }).store.clear();
   });
 
   describe('createFormation', () => {
@@ -133,6 +137,19 @@ describe('FormationService', () => {
 
       const fetched = await service.getFormationByUid(req, stale.uid);
       expect(fetched).toBeNull();
+    });
+
+    it('also prunes on a read, not just a create — a pod that only serves GETs still bounds retention', async () => {
+      vi.useFakeTimers();
+      vi.setSystemTime(new Date('2026-08-01T00:00:00.000Z'));
+      const stale = await service.createFormation(req, intake());
+      const fresh = await service.createFormation(req, intake({ project_name: 'Fresh Project' }));
+
+      vi.setSystemTime(new Date('2026-08-01T01:00:01.000Z')); // just past the 1-hour TTL
+      await service.getFormationByUid(req, fresh.uid); // read alone — no intervening create
+
+      const fetchedStale = await service.getFormationByUid(req, stale.uid);
+      expect(fetchedStale).toBeNull();
     });
   });
 });
