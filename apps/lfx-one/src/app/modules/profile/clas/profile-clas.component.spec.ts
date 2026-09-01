@@ -716,7 +716,7 @@ describe('ProfileClasComponent — Sign CLA hand-off and identity selection (#12
     // control on the profile. The server is still the guard.
     expect(query(fixture, 'sign-cla-action')).not.toBeNull();
     expect(signButton(fixture)?.disabled).toBe(true);
-    expect(signButton(fixture)?.getAttribute('aria-label')).toBe('This action is unavailable while impersonating another user');
+    expect(signButton(fixture)?.getAttribute('aria-label')).toBe('Sign CLA — unavailable while impersonating another user');
   });
 
   it('opens no picker when Sign CLA is reached while impersonating', async () => {

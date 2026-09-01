@@ -219,12 +219,21 @@ export interface ClaGroupSelectDialogData {
 export interface AlreadySignedNote {
   /** Inline tag, naming the identity that signed it. */
   chip: string;
-  /** Fuller sentence: which kind, whose employer on an ECLA, and that another identity may sign. */
+  /**
+   * Fuller sentence: which kind, and whose employer on an ECLA. It closes by offering another
+   * identity only on a route that has one to offer — never on a GitLab-only or Gerrit-only group.
+   */
   tooltip: string;
 }
 
-/** Which identity a card in the sign-identity step offers. */
-export type SignIdentityRef = { platform: 'github'; username: string } | { platform: 'gerrit' };
+/**
+ * Which identity a card in the sign-identity step offers.
+ *
+ * A GitHub card carries both keys because the producer records whichever it had: it derives the
+ * signed identity as the handle when there is one and the account number when there is not, so a
+ * card that compared only the handle would miss every agreement recorded against the number.
+ */
+export type SignIdentityRef = { platform: 'github'; username?: string; githubId: string } | { platform: 'gerrit' };
 
 /** Picker row: a search result with display fields precomputed so the template calls nothing. */
 export interface ClaGroupOptionView extends ClaGroupOption {

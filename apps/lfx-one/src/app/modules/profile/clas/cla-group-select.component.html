@@ -81,15 +81,17 @@ SPDX-License-Identifier: MIT
                   <span class="block min-w-0 truncate text-sm font-medium text-slate-900">{{ option.primaryName }}</span>
                   @if (alreadySigned) {
                     <span
-                      class="min-w-0 truncate rounded bg-slate-100 px-1.5 py-0.5 text-[0.65rem] font-medium text-slate-500"
+                      class="max-w-48 shrink-0 truncate rounded bg-slate-100 px-1.5 py-0.5 text-[0.65rem] font-medium text-slate-500"
                       [attr.data-testid]="'cla-group-select-already-signed-' + option.claGroupId">
                       {{ alreadySigned.chip }}
                     </span>
                     <!--
-                      Which agreement they already hold, and that another identity can still sign it,
-                      lives only in a hover tooltip, which assistive tech never reaches. Carried here as
-                      an `aria-describedby` target rather than an `aria-label`, so the option still
-                      announces its project name first and the note after it.
+                      Which agreement they already hold — and, where the route has one to offer,
+                      that another identity can still sign it — lives only in a hover tooltip, which
+                      assistive tech never reaches. Carried here as an `aria-describedby` target
+                      rather than an `aria-label`, so the option still announces its project name
+                      first and the note after it. The chip is capped rather than shrinkable: it
+                      names the identity, so a long project name must not truncate it away.
                     -->
                     <span class="sr-only" [id]="'cla-group-already-signed-' + option.claGroupId">{{ alreadySigned.tooltip }}</span>
                   }

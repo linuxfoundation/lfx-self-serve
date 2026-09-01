@@ -287,11 +287,11 @@ describe('alreadySignedAgreementForIdentity', () => {
   ];
 
   it('matches a GitHub handle regardless of case', () => {
-    expect(alreadySignedAgreementForIdentity(held, { platform: 'github', username: 'jellis' })?.id).toBe('s1');
+    expect(alreadySignedAgreementForIdentity(held, { platform: 'github', username: 'jellis', githubId: '12345' })?.id).toBe('s1');
   });
 
   it('leaves the contributor a second GitHub account to sign with', () => {
-    expect(alreadySignedAgreementForIdentity(held, { platform: 'github', username: 'jellis-work' })).toBeUndefined();
+    expect(alreadySignedAgreementForIdentity(held, { platform: 'github', username: 'jellis-work', githubId: '67890' })).toBeUndefined();
   });
 
   it('matches the Gerrit identity on the platform alone', () => {
@@ -301,7 +301,7 @@ describe('alreadySignedAgreementForIdentity', () => {
 
   it('never blocks a GitHub card on an agreement with no recorded identity', () => {
     const blank = [agreement({ claGroupId: 'cg-1', signedVia: 'github', signedAs: '   ' })];
-    expect(alreadySignedAgreementForIdentity(blank, { platform: 'github', username: 'jellis' })).toBeUndefined();
+    expect(alreadySignedAgreementForIdentity(blank, { platform: 'github', username: 'jellis', githubId: '12345' })).toBeUndefined();
   });
 
   it('still blocks the Gerrit card on an agreement with no recorded identity', () => {
@@ -312,9 +312,19 @@ describe('alreadySignedAgreementForIdentity', () => {
     expect(alreadySignedAgreementForIdentity(blank, { platform: 'gerrit' })?.claGroupId).toBe('cg-1');
   });
 
+  it('matches the account number when that is what the producer recorded', () => {
+    // The producer derives one identity string per agreement — the handle when it had one, the
+    // account number when it did not. Comparing only the handle would leave the very account
+    // that signed selectable, which is the redundant signature this is meant to prevent.
+    const byNumber = [agreement({ id: 's3', claGroupId: 'cg-1', signedVia: 'github', signedAs: '12345' })];
+
+    expect(alreadySignedAgreementForIdentity(byNumber, { platform: 'github', username: '', githubId: '12345' })?.id).toBe('s3');
+    expect(alreadySignedAgreementForIdentity(byNumber, { platform: 'github', username: 'jellis', githubId: '67890' })).toBeUndefined();
+  });
+
   it('does not block on an invalidated agreement', () => {
     const invalidated = [agreement({ claGroupId: 'cg-1', status: 'invalidated', signedVia: 'github', signedAs: 'jellis' })];
-    expect(alreadySignedAgreementForIdentity(invalidated, { platform: 'github', username: 'jellis' })).toBeUndefined();
+    expect(alreadySignedAgreementForIdentity(invalidated, { platform: 'github', username: 'jellis', githubId: '12345' })).toBeUndefined();
   });
 });
 

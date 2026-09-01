@@ -304,10 +304,12 @@ export function alreadySignedGroupTooltip(agreement: MyClaAgreement, route: ClaS
  * The agreement this one identity already signed for the group, if any — the check that
  * actually blocks (#1914).
  *
- * Matching is on the recorded **handle**, not the GitHub account number, because the My CLAs
- * list carries no account number to compare. That is acceptable here and nowhere else: this
- * decides whether to gray a card, while the hand-off still submits `githubId`, and EasyCLA
- * re-derives the attested set from the caller's own token regardless of what is sent.
+ * The producer records one identity string per agreement, derived as the GitHub handle when it
+ * had one and the account number when it did not. So the GitHub branch compares against both
+ * keys the card carries. The number is an exact, stable match; the handle is best-effort, since
+ * handles get renamed and reclaimed. Both are acceptable here and nowhere else: this decides
+ * whether to gray a card, while the hand-off still submits `githubId`, and EasyCLA re-derives
+ * the attested set from the caller's own token regardless of what is sent.
  *
  * **On the GitHub branch only**, an agreement with no recorded identity matches nothing and
  * blocks no card. Naming a card as already-signed on the strength of a blank is the worse error:
@@ -324,7 +326,10 @@ export function alreadySignedAgreementForIdentity(agreements: readonly MyClaAgre
     if (agreement.signedVia !== 'github') return false;
 
     const signedAs = agreement.signedAs?.trim().toLowerCase();
-    return !!signedAs && signedAs === identity.username.trim().toLowerCase();
+    if (!signedAs) return false;
+
+    const username = identity.username?.trim().toLowerCase();
+    return signedAs === identity.githubId.trim().toLowerCase() || (!!username && signedAs === username);
   });
 }
 

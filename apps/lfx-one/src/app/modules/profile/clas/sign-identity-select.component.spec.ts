@@ -298,6 +298,15 @@ describe('SignIdentitySelectComponent', () => {
       expect(query('sign-identity-select-github-67890')?.getAttribute('aria-disabled')).toBe('false');
     });
 
+    it('grays the account the producer recorded by number rather than handle', async () => {
+      // Agreements carry one identity string, which is the account number when no handle was
+      // recorded. Matching only the handle would leave the account that signed selectable.
+      await setup({ claGroupAgreements: signedAs('12345') });
+
+      expect(query('sign-identity-select-github-12345')?.getAttribute('aria-disabled')).toBe('true');
+      expect(query('sign-identity-select-github-67890')?.getAttribute('aria-disabled')).toBe('false');
+    });
+
     it('says why, in the tooltip and to assistive tech', async () => {
       await setup({ claGroupAgreements: signedAs('octocat') });
 

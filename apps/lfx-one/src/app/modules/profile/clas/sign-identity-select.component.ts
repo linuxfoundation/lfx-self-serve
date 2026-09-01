@@ -176,7 +176,7 @@ export class SignIdentitySelectComponent {
 
     const byGithubId = new Map<string, MyClaAgreement>();
     for (const account of accounts) {
-      const held = account.githubUsername ? alreadySignedAgreementForIdentity(agreements, { platform: 'github', username: account.githubUsername }) : undefined;
+      const held = alreadySignedAgreementForIdentity(agreements, { platform: 'github', username: account.githubUsername, githubId: account.githubId });
       if (held) byGithubId.set(account.githubId, held);
     }
 

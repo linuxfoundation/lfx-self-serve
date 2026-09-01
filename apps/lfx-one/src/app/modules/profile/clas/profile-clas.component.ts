@@ -148,10 +148,15 @@ export class ProfileClasComponent {
    */
   protected readonly signDisabled = computed(() => this.impersonating() || this.loading() || this.error());
 
+  /**
+   * Reads as the button's accessible name while it is disabled, so it has to name the action
+   * before the reason — an aria-label replaces the label rather than adding to it, and a reason
+   * on its own would leave a screen reader with no idea which action is unavailable.
+   */
   protected readonly signDisabledReason = computed<string | undefined>(() => {
-    if (this.impersonating()) return 'This action is unavailable while impersonating another user';
-    if (this.loading()) return 'Available once your CLAs have loaded';
-    if (this.error()) return 'Available once your CLAs load — select Retry to reload them';
+    if (this.impersonating()) return 'Sign CLA — unavailable while impersonating another user';
+    if (this.loading()) return 'Sign CLA — available once your CLAs have loaded';
+    if (this.error()) return 'Sign CLA — available once your CLAs load; select Retry to reload them';
     return undefined;
   });
 
