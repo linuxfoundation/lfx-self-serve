@@ -264,6 +264,20 @@ describe('alreadySignedGroupTooltip', () => {
       'You already have an ICLA for this CLA group. Signed as jellis (GitLab).'
     );
   });
+
+  it('promises no other identity on a Gerrit-only group, which offers exactly one card', () => {
+    // The next step offers only the contributor's own LF identity there, so no GitHub account
+    // they link can sign this group — naming one as the way out would be a dead end.
+    expect(alreadySignedGroupTooltip(agreement({ kind: 'ICLA', signedVia: 'gerrit', signedAs: 'jellis-lf' }), 'gerrit')).toBe(
+      'You already have an ICLA for this CLA group. Signed as jellis-lf (Gerrit).'
+    );
+  });
+
+  it('keeps the sentence where more than one identity is on offer', () => {
+    expect(alreadySignedGroupTooltip(agreement({ kind: 'ICLA', signedVia: 'github', signedAs: 'jellis' }), 'github-or-gerrit')).toBe(
+      'You already have an ICLA for this CLA group. Signed as jellis (GitHub). If you have another identity linked, you can still sign with it.'
+    );
+  });
 });
 
 describe('alreadySignedAgreementForIdentity', () => {
@@ -306,9 +320,13 @@ describe('alreadySignedAgreementForIdentity', () => {
 
 describe('alreadySignedIdentityTooltip', () => {
   it('says which kind this account already holds and to pick another', () => {
-    expect(alreadySignedIdentityTooltip(agreement({ kind: 'ICLA' }))).toBe(
+    expect(alreadySignedIdentityTooltip(agreement({ kind: 'ICLA' }), true)).toBe(
       'You already have an ICLA for this CLA group signed with this account. Choose another identity to sign again.'
     );
+  });
+
+  it('states the position without prescribing a way out when nothing else is selectable', () => {
+    expect(alreadySignedIdentityTooltip(agreement({ kind: 'ICLA' }), false)).toBe('You already have an ICLA for this CLA group signed with this account.');
   });
 });
 

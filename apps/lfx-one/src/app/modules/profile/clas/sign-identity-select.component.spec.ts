@@ -322,7 +322,7 @@ describe('SignIdentitySelectComponent', () => {
     it.each([
       ['Enter', 'Enter'],
       ['Space', ' '],
-    ])('refuses a %s keypress on the grayed card', async (_label, key) => {
+    ])('refuses the %s key on the grayed card', async (_label, key) => {
       await setup({ claGroupAgreements: signedAs('octocat') });
 
       // Keeping the card focusable put Enter/Space on a live path: the only thing that stops it
@@ -340,6 +340,20 @@ describe('SignIdentitySelectComponent', () => {
 
       expect(identity.value).toBe(before);
       expect(close).not.toHaveBeenCalled();
+    });
+
+    it('still selects a card that has not signed, from the keyboard', async () => {
+      await setup({ claGroupAgreements: signedAs('octocat') });
+
+      // The mirror of the refusal above. Without it, deleting the card's (keydown) binding would
+      // leave that test green — nothing else here proves a dispatched key reaches the handler.
+      fixture.debugElement
+        .query(By.css('[data-testid="sign-identity-select-github-67890"]'))
+        .nativeElement.dispatchEvent(new KeyboardEvent('keydown', { key: 'Enter', bubbles: true }));
+      fixture.detectChanges();
+      await fixture.whenStable();
+
+      expect((fixture.componentInstance as any).selectForm.controls.identity.value).toBe('67890');
     });
 
     it('refuses to submit it even if the card is reached another way', async () => {
@@ -378,6 +392,16 @@ describe('SignIdentitySelectComponent', () => {
 
       expect(query('sign-identity-select-github-12345')?.getAttribute('aria-disabled')).toBe('false');
       expect(query('sign-identity-select-github-67890')?.getAttribute('aria-disabled')).toBe('false');
+    });
+
+    it('tells them to choose another identity only when one is left to choose', async () => {
+      // A Gerrit-only step offers exactly one card. Once it is grayed there is nothing else to
+      // pick, so prescribing a way out would name the one thing they cannot do.
+      await setup({ variant: 'gerrit', accounts: [], gerritUsername: GERRIT_USER, claGroupAgreements: signedAs('jdoe', 'gerrit') });
+
+      expect(fixture.debugElement.query(By.css('[data-testid="sign-identity-select-gerrit"]')).injector.get(Tooltip, null)?.content).toBe(
+        'You already have an ICLA for this CLA group signed with this account.'
+      );
     });
   });
 });

@@ -127,7 +127,7 @@ The tag names an account only when EasyCLA recorded one. Continue past the resul
 
 Results are matched per **CLA group**, not per project. A project with more than one CLA group only tags the group you signed.
 
-How each status on an existing CLA affects the identity step, once the account on the agreement is one you have linked:
+How each status on an existing CLA affects the identity step, once that agreement matches an identity offered in the step:
 
 | Status on your existing CLA      | Identity greyed out? | What to do instead                                                                                                                         |
 | -------------------------------- | -------------------- | ------------------------------------------------------------------------------------------------------------------------------------------ |

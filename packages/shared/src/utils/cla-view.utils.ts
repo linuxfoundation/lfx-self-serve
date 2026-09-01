@@ -280,20 +280,22 @@ export function alreadySignedChipLabel(agreement: MyClaAgreement): string {
  * Tooltip on a tagged Sign a CLA result (#1914). Names the kind they already hold, the employer
  * covering an ECLA, and — since the row is still selectable — that another identity may sign it.
  *
- * The closing sentence is conditional on purpose. The agreements list says nothing about how
- * many identities are linked, so it cannot promise a second one exists: a contributor with a
- * single account would be told another identity can sign and then reach a step offering only
- * the card that already signed.
+ * The closing sentence is dropped on any route that cannot offer a second identity, because
+ * there it names an escape that does not exist: `gerrit` offers exactly one card, the
+ * contributor's own LF identity, and `gitlab-unsupported` offers none at all — Self Serve cannot
+ * sign a GitLab-only group, so the block is the route rather than the account.
  *
- * It is dropped altogether on a GitLab-only group, where the block is the route rather than the
- * identity — Self Serve cannot sign one at all, so no identity they link would help.
+ * Where it is kept it stays conditional, because the agreements list says nothing about how many
+ * identities are linked or whether they too have signed. A route that offers several identities
+ * is the most this can honestly claim; the identity step is what knows which ones are refused.
  */
 export function alreadySignedGroupTooltip(agreement: MyClaAgreement, route: ClaSignRoute): string {
   const kind = agreement.kind === 'ECLA' ? 'an ECLA' : 'an ICLA';
   const company = agreement.kind === 'ECLA' ? agreement.companyName?.trim() : undefined;
   const held = company ? `You already have ${kind} for this CLA group, covered by ${company}.` : `You already have ${kind} for this CLA group.`;
   const signed = signedAsLine(agreement.signedVia, agreement.signedAs);
-  const another = route === 'gitlab-unsupported' ? '' : ' If you have another identity linked, you can still sign with it.';
+  const offersOneIdentityAtMost = route === 'gerrit' || route === 'gitlab-unsupported';
+  const another = offersOneIdentityAtMost ? '' : ' If you have another identity linked, you can still sign with it.';
 
   return `${signed ? `${held} ${signed}.` : held}${another}`;
 }
@@ -326,10 +328,19 @@ export function alreadySignedAgreementForIdentity(agreements: readonly MyClaAgre
   });
 }
 
-/** Tooltip on a grayed-out identity card: this account is the one already on the agreement. */
-export function alreadySignedIdentityTooltip(agreement: MyClaAgreement): string {
+/**
+ * Tooltip on a grayed-out identity card: this account is the one already on the agreement.
+ *
+ * Points at another identity only when the step actually offers one that has not signed. A
+ * Gerrit-only step offers a single card, so once that card is grayed there is nothing left to
+ * choose, and "choose another identity" would be the one instruction the contributor cannot
+ * follow. Stating the position without prescribing a way out is the honest form there.
+ */
+export function alreadySignedIdentityTooltip(agreement: MyClaAgreement, anotherSelectable: boolean): string {
   const kind = agreement.kind === 'ECLA' ? 'an ECLA' : 'an ICLA';
-  return `You already have ${kind} for this CLA group signed with this account. Choose another identity to sign again.`;
+  const held = `You already have ${kind} for this CLA group signed with this account.`;
+
+  return anotherSelectable ? `${held} Choose another identity to sign again.` : held;
 }
 
 /** Maps a producer search result to the picker view model. */
