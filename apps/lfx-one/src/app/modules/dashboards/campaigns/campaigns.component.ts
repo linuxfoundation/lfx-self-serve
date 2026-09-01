@@ -751,7 +751,13 @@ export class CampaignsComponent {
     if (selectedId !== '' && !drawn.some((t) => t.id === selectedId)) {
       const selected = ranked.find((t) => t.id === selectedId);
       if (selected) {
-        return [selected, ...drawn.slice(0, HUBSPOT_TEMPLATE_RENDER_LIMIT - 1)];
+        // APPENDED, not promoted to index 0. Prepending kept the row visible but put a
+        // zero-scoring template above every matching one, which contradicts the ranking
+        // invariant this feature rests on -- the first row is meant to be the best suggestion.
+        // The last slot keeps the operator's current choice reachable without claiming it ranks
+        // highest, and the cap is still honoured because this replaces a row rather than adding
+        // one.
+        return [...drawn.slice(0, HUBSPOT_TEMPLATE_RENDER_LIMIT - 1), selected];
       }
     }
     return drawn;
