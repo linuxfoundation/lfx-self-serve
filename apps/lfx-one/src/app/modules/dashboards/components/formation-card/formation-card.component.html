@@ -1,7 +1,7 @@
 <!-- Copyright The Linux Foundation and each contributor to LFX. -->
 <!-- SPDX-License-Identifier: MIT -->
 
-@if (loading() || hasError() || loaded()) {
+@if (project(); as p) {
   <div class="flex flex-col gap-4 w-full" data-testid="formation-card">
     <div class="flex items-center gap-3">
       <h2 class="flex items-center gap-2 shrink-0 text-base font-medium text-gray-900">
@@ -11,104 +11,101 @@
       <div class="flex-1 border-t border-gray-200 self-center"></div>
     </div>
 
+    @if (formationSubStage(); as subStage) {
+      <lfx-tag [value]="subStage" [rounded]="true" styleClass="!bg-violet-100 !text-violet-700 border border-violet-200 self-start" />
+    }
+
     @if (loading()) {
       <div class="flex flex-col gap-3">
-        <p-skeleton width="6rem" height="1.25rem" />
         <p-skeleton width="10rem" height="0.875rem" />
         <p-skeleton width="100%" height="0.875rem" />
       </div>
     } @else if (hasError()) {
       <div class="flex flex-col items-center justify-center gap-2 py-4" data-testid="formation-card-error">
         <i class="fa-light fa-circle-exclamation text-xl text-gray-400"></i>
-        <span class="text-xs text-gray-600">Couldn&apos;t load Formation details</span>
+        <span class="text-xs text-gray-600">Couldn&apos;t load Formation contacts</span>
         <span class="text-xs text-gray-400">Refresh the page to try again</span>
       </div>
     } @else {
-      <div class="flex flex-col gap-4">
-        @if (formationSubStage(); as subStage) {
-          <lfx-tag [value]="subStage" [rounded]="true" styleClass="!bg-violet-100 !text-violet-700 border border-violet-200 self-start" />
-        }
+      <div class="flex flex-col gap-1">
+        <span class="text-xs text-gray-500">Announcement date</span>
+        <span class="text-sm text-gray-900">{{ announcementDateLabel() }}</span>
+      </div>
 
-        <div class="flex flex-col gap-1">
-          <span class="text-xs text-gray-500">Announcement date</span>
-          <span class="text-sm text-gray-900">{{ (settings()?.announcement_date | date) || 'Not set' }}</span>
-        </div>
-
-        <div class="flex flex-col gap-3">
-          @for (row of staff(); track row.key) {
-            <div class="flex items-start gap-3" [attr.data-testid]="'formation-card-row-' + row.key">
-              @if (row.user; as u) {
-                <lfx-avatar [image]="u.avatar ?? ''" [label]="u.name || u.email" shape="circle" size="normal" styleClass="w-9 h-9 text-xs" />
-                <div class="flex flex-col gap-0.5 min-w-0 flex-1">
-                  <span class="text-sm font-medium text-gray-900 truncate" [attr.title]="u.name || u.email">{{ u.name || u.email }}</span>
-                  <span class="text-xs text-gray-500">{{ row.label }}</span>
-                </div>
-              } @else {
-                <div class="flex items-center justify-center w-9 h-9 rounded-full bg-gray-100 shrink-0">
-                  <i class="fa-light fa-user text-gray-400 text-sm"></i>
-                </div>
-                <div class="flex flex-col gap-0.5 min-w-0 flex-1">
-                  <span class="text-sm text-gray-500">Not Set</span>
-                  <span class="text-xs text-gray-500">{{ row.label }}</span>
-                </div>
-              }
-            </div>
-          }
-        </div>
-
-        <div class="flex flex-col gap-1">
-          <span class="text-xs text-gray-500">Slug</span>
-          <span class="text-sm text-gray-900">{{ project()?.slug }}</span>
-        </div>
-
-        @if (repositoryUrl() || project()?.logo_url) {
-          <div class="flex flex-col gap-2" data-testid="formation-card-intake">
-            <span class="text-xs text-gray-500">Intake</span>
-            @if (repositoryUrl(); as url) {
-              <a
-                [href]="url"
-                [title]="url"
-                target="_blank"
-                rel="noopener noreferrer"
-                class="text-sm text-blue-500 hover:underline truncate"
-                data-testid="formation-card-repository-link">
-                {{ url }}
-              </a>
-            }
-            @if (project()?.logo_url; as logoUrl) {
-              <img [src]="logoUrl" alt="Project logo" class="h-8 w-auto object-contain" />
+      <div class="flex flex-col gap-3">
+        @for (row of staff(); track row.key) {
+          <div class="flex items-start gap-3" [attr.data-testid]="'formation-card-row-' + row.key">
+            @if (row.user; as u) {
+              <lfx-avatar [image]="u.avatar ?? ''" [label]="u.name || u.email" shape="circle" size="normal" styleClass="w-9 h-9 text-xs" />
+              <div class="flex flex-col gap-0.5 min-w-0 flex-1">
+                <span class="text-sm font-medium text-gray-900 truncate" [attr.title]="u.name || u.email">{{ u.name || u.email }}</span>
+                <span class="text-xs text-gray-500">{{ row.label }}</span>
+              </div>
+            } @else {
+              <div class="flex items-center justify-center w-9 h-9 rounded-full bg-gray-100 shrink-0">
+                <i class="fa-light fa-user text-gray-400 text-sm"></i>
+              </div>
+              <div class="flex flex-col gap-0.5 min-w-0 flex-1">
+                <span class="text-sm text-gray-500">Not Set</span>
+                <span class="text-xs text-gray-500">{{ row.label }}</span>
+              </div>
             }
           </div>
         }
+      </div>
+    }
 
-        <p class="text-xs text-gray-500">Stage and legal entity are set by the formation team in the admin tool and appear here within minutes.</p>
+    <div class="flex flex-col gap-1">
+      <span class="text-xs text-gray-500">Slug</span>
+      <span class="text-sm text-gray-900">{{ p.slug }}</span>
+    </div>
 
-        @if (isLFStaff() && sfid()) {
-          <div class="flex flex-col gap-2 pt-2 border-t border-gray-200" data-testid="formation-card-admin-links">
-            <div class="flex items-center gap-2">
-              <a
-                [href]="editStageUrl()"
-                target="_blank"
-                rel="noopener noreferrer"
-                class="text-sm text-blue-500 hover:underline"
-                data-testid="formation-card-edit-stage-link">
-                Edit stage in admin tool ↗
-              </a>
-              <lfx-tag value="Staff only" severity="secondary" [rounded]="true" />
-            </div>
-            <div class="flex items-center gap-2">
-              <a
-                [href]="setUpUrl()"
-                target="_blank"
-                rel="noopener noreferrer"
-                class="text-sm text-blue-500 hover:underline"
-                data-testid="formation-card-set-up-link">
-                Set up in admin tool ↗
-              </a>
-              <lfx-tag value="Staff only" severity="secondary" [rounded]="true" />
-            </div>
-          </div>
+    @if (repositoryUrl() || p.logo_url) {
+      <div class="flex flex-col gap-2" data-testid="formation-card-intake">
+        <span class="text-xs text-gray-500">Intake</span>
+        @if (repositoryUrl(); as url) {
+          <a
+            [href]="url"
+            [title]="url"
+            target="_blank"
+            rel="noopener noreferrer"
+            class="text-sm text-blue-500 hover:underline truncate"
+            data-testid="formation-card-repository-link">
+            {{ url }}
+          </a>
         }
+        @if (p.logo_url; as logoUrl) {
+          <img [src]="logoUrl" alt="Project logo" class="h-8 w-auto object-contain" />
+        }
+      </div>
+    }
+
+    <p class="text-xs text-gray-500">Stage and legal entity are set by the formation team in the admin tool and appear here within minutes.</p>
+
+    @if (isLFStaff() && sfid()) {
+      <div class="flex flex-col gap-2 pt-2 border-t border-gray-200" data-testid="formation-card-admin-links">
+        <div class="flex items-center gap-2">
+          <a
+            [href]="editStageUrl()"
+            target="_blank"
+            rel="noopener noreferrer"
+            class="text-sm text-blue-500 hover:underline"
+            data-testid="formation-card-edit-stage-link">
+            Edit stage in admin tool ↗
+          </a>
+          <lfx-tag value="Staff only" severity="secondary" [rounded]="true" />
+        </div>
+        <div class="flex items-center gap-2">
+          <a
+            [href]="setUpUrl()"
+            target="_blank"
+            rel="noopener noreferrer"
+            class="text-sm text-blue-500 hover:underline"
+            data-testid="formation-card-set-up-link">
+            Set up in admin tool ↗
+          </a>
+          <lfx-tag value="Staff only" severity="secondary" [rounded]="true" />
+        </div>
       </div>
     }
   </div>

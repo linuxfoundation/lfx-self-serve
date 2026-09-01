@@ -1,11 +1,11 @@
 // Copyright The Linux Foundation and each contributor to LFX.
 // SPDX-License-Identifier: MIT
 
-import { DatePipe } from '@angular/common';
 import { Component, computed, inject, Signal } from '@angular/core';
 import { toObservable, toSignal } from '@angular/core/rxjs-interop';
 import { FORMATION_ENABLED_FLAG } from '@lfx-one/shared/constants';
 import { PendingActionItem } from '@lfx-one/shared/interfaces';
+import { formatIsoDateLabel } from '@lfx-one/shared/utils';
 import { FeatureFlagService } from '@services/feature-flag.service';
 import { PermissionsService } from '@services/permissions.service';
 import { ProjectContextService } from '@services/project-context.service';
@@ -30,7 +30,6 @@ import { RecentProgressComponent } from '../components/recent-progress/recent-pr
     DashboardSidebarComponent,
     DashboardCastDrawerHostComponent,
     TagComponent,
-    DatePipe,
   ],
   templateUrl: './project-dashboard.component.html',
   styleUrl: './project-dashboard.component.scss',
@@ -52,11 +51,13 @@ export class ProjectDashboardComponent {
   protected readonly formationSubStage = this.projectContextService.activeProjectFormationSubStage;
 
   public readonly pendingActions: Signal<PendingActionItem[]>;
-  protected readonly announcementDate: Signal<string | null>;
+  private readonly announcementDate: Signal<string | null>;
+  protected readonly announcementDateLabel: Signal<string>;
 
   public constructor() {
     this.pendingActions = this.initPendingActions();
     this.announcementDate = this.initAnnouncementDate();
+    this.announcementDateLabel = this.initAnnouncementDateLabel();
   }
 
   public handleActionClick(): void {
@@ -99,5 +100,12 @@ export class ProjectDashboardComponent {
       ),
       { initialValue: null }
     );
+  }
+
+  private initAnnouncementDateLabel(): Signal<string> {
+    return computed(() => {
+      const date = this.announcementDate();
+      return date ? formatIsoDateLabel(date) : 'Not set';
+    });
   }
 }

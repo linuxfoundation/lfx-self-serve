@@ -281,7 +281,10 @@ export class ProjectContextService {
             return of(null);
           }
           // getProject already catches its own errors and logs, resolving to null — no outer catchError needed.
-          return this.projectService.getProject(ctx.slug, false);
+          // startWith(null) clears the previous project immediately on switch, so canWrite/Formation
+          // signals don't briefly read the prior project while the new fetch is in flight (matches
+          // initSelectedFoundationSfid's pattern below).
+          return this.projectService.getProject(ctx.slug, false).pipe(startWith(null));
         })
       ),
       { initialValue: null }

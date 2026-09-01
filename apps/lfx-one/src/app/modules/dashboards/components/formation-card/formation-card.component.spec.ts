@@ -84,7 +84,6 @@ describe('FormationCardComponent', () => {
     }).compileComponents();
 
     fixture = TestBed.createComponent(FormationCardComponent);
-    fixture.componentRef.setInput('projectUid', 'proj-1');
     await fixture.whenStable();
     fixture.detectChanges();
   }
@@ -135,6 +134,14 @@ describe('FormationCardComponent', () => {
     expect(fixture.nativeElement.querySelector('[data-testid="formation-card-admin-links"]')).toBeNull();
   });
 
+  it('formats the announcement date via the shared ISO-date label, and falls back to "Not set"', async () => {
+    await render('Formation - Engaged', false);
+    expect(text()).toContain('Sep 1, 2026');
+
+    await render('Formation - Engaged', false, { settingsResult: of({ ...settings(), announcement_date: '' }) });
+    expect(text()).toContain('Not set');
+  });
+
   it('renders the intake repository link', async () => {
     await render('Formation - Engaged', false);
 
@@ -148,10 +155,13 @@ describe('FormationCardComponent', () => {
     expect(fixture.nativeElement.querySelector('[data-testid="formation-card-repository-link"]')).toBeNull();
   });
 
-  it('shows the error state when the settings fetch fails, and hides the admin-tool links', async () => {
+  it('shows the error state when the settings fetch fails, without hiding data that already loaded (the sub-stage pill, slug, and admin links)', async () => {
     await render('Formation - Engaged', true, { settingsResult: throwError(() => new Error('network error')) });
 
     expect(fixture.nativeElement.querySelector('[data-testid="formation-card-error"]')).not.toBeNull();
-    expect(fixture.nativeElement.querySelector('[data-testid="formation-card-admin-links"]')).toBeNull();
+    expect(text()).toContain('Engaged');
+    expect(text()).toContain('project-one');
+    // Admin links depend on isLFStaff/sfid, not on the failed settings fetch — they must still show.
+    expect(fixture.nativeElement.querySelector('[data-testid="formation-card-admin-links"]')).not.toBeNull();
   });
 });
