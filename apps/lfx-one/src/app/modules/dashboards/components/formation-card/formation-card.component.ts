@@ -8,7 +8,7 @@ import { TagComponent } from '@components/tag/tag.component';
 import { environment } from '@environments/environment';
 import { PROJECT_STAFF_ROWS } from '@lfx-one/shared/constants';
 import { ProjectSettings, ProjectStaffRow } from '@lfx-one/shared/interfaces';
-import { formatIsoDateLabel, isValidUrl } from '@lfx-one/shared/utils';
+import { formatAnnouncementDateLabel, isValidUrl } from '@lfx-one/shared/utils';
 import { PermissionsService } from '@services/permissions.service';
 import { PersonaService } from '@services/persona.service';
 import { ProjectContextService } from '@services/project-context.service';
@@ -38,11 +38,12 @@ export class FormationCardComponent {
   private readonly projectContextService = inject(ProjectContextService);
   private readonly projectService = inject(ProjectService);
 
-  // `loading`/`hasError` track the settings fetch only — the sub-stage pill, slug, intake fields,
-  // and admin links all come from `project()`/`sfid()`, which are already resolved by the time
-  // this card can render at all (the sidebar only mounts it once `isActiveProjectInFormation()` is
-  // true, which requires a non-null `activeProject`). The template renders those independently of
-  // this two-state gate, which only covers the staff-rows and announcement-date section.
+  // `loading`/`hasError` track the settings fetch only. The sub-stage pill, slug, and intake fields
+  // come from `project()`, which is already resolved by the time this card can render at all (the
+  // sidebar only mounts it once `isActiveProjectInFormation()` is true, which requires a non-null
+  // `activeProject`) — the admin links additionally wait on `sfid()`, its own independent fetch
+  // that starts `null`. The template renders all of that independently of this two-state gate,
+  // which only covers the staff-rows and announcement-date section.
   protected readonly loading = signal(true);
   protected readonly hasError = signal(false);
 
@@ -98,10 +99,7 @@ export class FormationCardComponent {
   }
 
   private initAnnouncementDateLabel(): Signal<string> {
-    return computed(() => {
-      const date = this.settings()?.announcement_date;
-      return date ? formatIsoDateLabel(date) : 'Not set';
-    });
+    return computed(() => formatAnnouncementDateLabel(this.settings()?.announcement_date));
   }
 
   /** `null` when missing, or when the scheme isn't a validated http(s) URL — never bind an unvalidated URL to `[href]`. */

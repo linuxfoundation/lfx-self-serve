@@ -9,7 +9,7 @@ import { Router } from '@angular/router';
 import { Project, ProjectContext } from '@lfx-one/shared/interfaces';
 import { MessageService } from 'primeng/api';
 import { SsrCookieService } from 'ngx-cookie-service-ssr';
-import { of } from 'rxjs';
+import { of, Subject } from 'rxjs';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 
 import { CookieRegistryService } from './cookie-registry.service';
@@ -123,5 +123,25 @@ describe('ProjectContextService — Formation signals (GH-1955)', () => {
     TestBed.inject(ApplicationRef).tick();
 
     expect(service.canWrite()).toBe(true);
+  });
+
+  it('never emits a transient null/false while a project switch is in flight — evictOnWriteAccessLoss (vote/survey/mailing-list manage pages) takes the first canWrite=false as a permanent access loss', () => {
+    getProject.mockReturnValue(of({ ...project('Active'), writer: true }));
+    service.setProject({ ...CONTEXT, uid: 'p1' }, false);
+    TestBed.inject(ApplicationRef).tick();
+    expect(service.canWrite()).toBe(true);
+
+    const pending = new Subject<Project | null>();
+    getProject.mockReturnValue(pending);
+    service.setProject({ ...CONTEXT, uid: 'p2' }, false);
+    TestBed.inject(ApplicationRef).tick();
+
+    // Still p1's value while p2's fetch is in flight — no premature false/null flip.
+    expect(service.activeProject()).not.toBeNull();
+    expect(service.canWrite()).toBe(true);
+
+    pending.next({ ...project('Active'), writer: false });
+    TestBed.inject(ApplicationRef).tick();
+    expect(service.canWrite()).toBe(false);
   });
 });
