@@ -38,13 +38,18 @@ export class ProjectPickerComponent {
   /** The selected project's display name, shown in place of the search box once a pick is made. */
   protected readonly selectedName = signal<string | null>(null);
   protected readonly hasSelection = signal(false);
+  /**
+   * True from the keystroke that makes `hasQuery()` true until that search's results (or an
+   * empty set) arrive — gates the "No matching projects" message so it doesn't flash false
+   * during either the `debounceTime` or the HTTP round trip. Set on the RAW (undebounced) query
+   * change in the constructor, not inside the debounced pipe in `initResults` — setting it only
+   * after `debounceTime(300)` would leave the debounce window itself unguarded, which is exactly
+   * the gap this signal exists to close. Cleared once `initResults`'s inner search completes.
+   */
+  protected readonly searching = signal(false);
 
   private readonly query: Signal<string> = toSignal(this.searchForm.controls.query.valueChanges, { initialValue: '' });
   protected readonly hasQuery: Signal<boolean> = computed(() => this.query().trim().length >= 2);
-  /** True from the moment a >=2-char query starts its search until results (or an empty set)
-   *  arrive — gates the "No matching projects" message so it doesn't flash during the
-   *  `debounceTime` + HTTP round trip, before `results()` has had a chance to update. */
-  protected readonly searching = signal(false);
   protected readonly results: Signal<Project[]> = this.initResults();
 
   public constructor() {
@@ -78,6 +83,12 @@ export class ProjectPickerComponent {
           this.hasSelection.set(true);
         }
       });
+
+    // Raw (undebounced) — see `searching`'s doc comment for why this can't live inside the
+    // debounced pipe in `initResults`.
+    this.searchForm.controls.query.valueChanges.pipe(takeUntilDestroyed()).subscribe((term) => {
+      this.searching.set(term.trim().length >= 2);
+    });
   }
 
   protected select(project: Project): void {
@@ -109,10 +120,8 @@ export class ProjectPickerComponent {
         switchMap((term) => {
           const trimmed = term.trim();
           if (trimmed.length < 2) {
-            this.searching.set(false);
             return of([]);
           }
-          this.searching.set(true);
           // No catchError here: ProjectService.searchProjects already logs (console.error) and
           // degrades to of([]) internally, and frontend-checklist.md §14.6 ("Handle errors in one
           // place") is explicit that a component-level catchError over an already-handled stream

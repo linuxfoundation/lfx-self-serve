@@ -61,8 +61,8 @@ export class ProposeComponent {
   // Forms
   public readonly form: FormGroup = this.createFormGroup();
   public readonly newContactForm = new FormGroup({
-    first_name: new FormControl('', { nonNullable: true, validators: [Validators.required] }),
-    last_name: new FormControl('', { nonNullable: true, validators: [Validators.required] }),
+    first_name: new FormControl('', { nonNullable: true, validators: [trimmedRequired()] }),
+    last_name: new FormControl('', { nonNullable: true, validators: [trimmedRequired()] }),
     email: new FormControl('', { nonNullable: true, validators: [Validators.required, Validators.email] }),
   });
 
@@ -77,6 +77,10 @@ export class ProposeComponent {
   // Simple WritableSignals
   public submitting = signal(false);
   public additionalContacts = signal<FormationContact[]>([]);
+  /** True only after a real "Add" click on `newContactForm` — distinct from that form's own
+   *  `touched` state, which blurring through its fields (with no intent to add anyone) would
+   *  also set, showing an "incomplete" error to a user who never asked to add a contact. */
+  protected newContactAttempted = signal(false);
   /** Set once the `?parent=` prefill resolves, so `lfx-project-picker` can reflect the async pick — see `initialSelection` on that component. */
   protected prefilledParentProject = signal<Project | null>(null);
   protected logoFilename = signal<string | null>(null);
@@ -122,15 +126,13 @@ export class ProposeComponent {
   }
 
   public addContact(): void {
+    this.newContactAttempted.set(true);
     if (this.newContactForm.invalid) {
       this.newContactForm.markAllAsTouched();
       return;
     }
     const { first_name, last_name, email } = this.newContactForm.getRawValue();
     const trimmedEmail = email.trim();
-    if (!first_name.trim() || !last_name.trim() || !trimmedEmail) {
-      return;
-    }
     // Guards @for's `track contact.email` in the template — two entries with the same email would
     // otherwise produce a duplicate track key.
     const legalContactEmail = (this.form.get('legal_contact.email')?.value ?? '').trim().toLowerCase();
@@ -144,6 +146,7 @@ export class ProposeComponent {
     }
     this.additionalContacts.update((contacts) => [...contacts, { first_name: first_name.trim(), last_name: last_name.trim(), email: trimmedEmail }]);
     this.newContactForm.reset({ first_name: '', last_name: '', email: '' });
+    this.newContactAttempted.set(false);
   }
 
   public removeContact(index: number): void {
@@ -195,8 +198,8 @@ export class ProposeComponent {
       contributing_org_id: new FormControl<string | null>(null),
       contributing_org_website_url: new FormControl(''),
       legal_contact: new FormGroup({
-        first_name: new FormControl('', [Validators.required]),
-        last_name: new FormControl('', [Validators.required]),
+        first_name: new FormControl('', [trimmedRequired()]),
+        last_name: new FormControl('', [trimmedRequired()]),
         email: new FormControl('', [Validators.required, Validators.email]),
       }),
       license: new FormControl('', [Validators.required]),

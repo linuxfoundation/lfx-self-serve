@@ -236,4 +236,27 @@ describe('ProposeComponent', () => {
     expect(component.additionalContacts()).toEqual([]);
     expect(component.newContactForm.get('email')?.errors?.['duplicateEmail']).toBe(true);
   });
+
+  it('rejects a whitespace-only "who else" name — trimmedRequired, not Validators.required, so it cannot pass as non-empty', async () => {
+    const component = await createComponent();
+
+    component.newContactForm.setValue({ first_name: '   ', last_name: 'Lee', email: 'sam@example.test' });
+    component.addContact();
+
+    expect(component.additionalContacts()).toEqual([]);
+    expect(component.newContactForm.get('first_name')?.errors?.['trimmedRequired']).toBe(true);
+  });
+
+  it('only shows the "who else" incomplete error after a real Add attempt, not merely blurring the fields', async () => {
+    const component = await createComponent();
+    const protectedAccess = component as any;
+
+    component.newContactForm.get('first_name')?.markAsTouched();
+
+    expect(protectedAccess.newContactAttempted()).toBe(false);
+
+    component.addContact();
+
+    expect(protectedAccess.newContactAttempted()).toBe(true);
+  });
 });

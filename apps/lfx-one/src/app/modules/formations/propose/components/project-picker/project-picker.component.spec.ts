@@ -140,6 +140,12 @@ describe('ProjectPickerComponent', () => {
       const search$ = new Subject<Project[]>();
       searchProjects.mockReturnValueOnce(search$);
       instance().searchForm.controls.query.setValue('ab');
+
+      // Asserted BEFORE advancing the fake clock at all — proves `searching` flips synchronously
+      // on the raw keystroke, not only after `debounceTime(300)` elapses (the bug this test guards
+      // against: the debounce window itself briefly rendering "No matching projects.").
+      expect(instance().searching()).toBe(true);
+
       await vi.advanceTimersByTimeAsync(300);
 
       expect(instance().searching()).toBe(true);

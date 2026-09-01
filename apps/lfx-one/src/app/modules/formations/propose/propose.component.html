@@ -123,7 +123,7 @@
               placeholder="First name"
               styleClass="w-full"
               data-testid="propose-legal-contact-first-name"></lfx-input-text>
-            @if (form.get('legal_contact.first_name')?.errors?.['required'] && form.get('legal_contact.first_name')?.touched) {
+            @if (form.get('legal_contact.first_name')?.errors?.['trimmedRequired'] && form.get('legal_contact.first_name')?.touched) {
               <p class="mt-1 text-xs text-red-600">First name is required</p>
             }
           </div>
@@ -135,7 +135,7 @@
               placeholder="Last name"
               styleClass="w-full"
               data-testid="propose-legal-contact-last-name"></lfx-input-text>
-            @if (form.get('legal_contact.last_name')?.errors?.['required'] && form.get('legal_contact.last_name')?.touched) {
+            @if (form.get('legal_contact.last_name')?.errors?.['trimmedRequired'] && form.get('legal_contact.last_name')?.touched) {
               <p class="mt-1 text-xs text-red-600">Last name is required</p>
             }
           </div>
@@ -194,7 +194,7 @@
         </div>
         @if (newContactForm.get('email')?.errors?.['duplicateEmail']) {
           <p class="text-xs text-red-600" data-testid="propose-new-contact-duplicate-email">That email is already on this proposal.</p>
-        } @else if (newContactForm.invalid && newContactForm.touched) {
+        } @else if (newContactForm.invalid && newContactAttempted()) {
           <p class="text-xs text-red-600" data-testid="propose-new-contact-incomplete">Enter a first name, last name, and valid email to add this contact.</p>
         }
       </div>
