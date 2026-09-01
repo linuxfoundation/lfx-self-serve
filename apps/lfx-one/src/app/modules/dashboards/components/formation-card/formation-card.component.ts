@@ -38,15 +38,13 @@ export class FormationCardComponent {
   private readonly projectContextService = inject(ProjectContextService);
   private readonly projectService = inject(ProjectService);
 
-  // `loading`, `hasError`, and `loaded` track the settings fetch only — the sub-stage pill, slug,
-  // intake fields, and admin links all come from `project()`/`sfid()`, which are already resolved
-  // by the time this card can render at all (the sidebar only mounts it once
-  // `isActiveProjectInFormation()` is true, which requires a non-null `activeProject`). The
-  // template renders those independently of this tri-state, which only gates the staff-rows and
-  // announcement-date section.
+  // `loading`/`hasError` track the settings fetch only — the sub-stage pill, slug, intake fields,
+  // and admin links all come from `project()`/`sfid()`, which are already resolved by the time
+  // this card can render at all (the sidebar only mounts it once `isActiveProjectInFormation()` is
+  // true, which requires a non-null `activeProject`). The template renders those independently of
+  // this two-state gate, which only covers the staff-rows and announcement-date section.
   protected readonly loading = signal(true);
   protected readonly hasError = signal(false);
-  protected readonly loaded = signal(false);
 
   protected readonly isLFStaff = computed(() => this.personaService.isLFStaff());
 
@@ -70,19 +68,16 @@ export class FormationCardComponent {
         tap(() => {
           this.loading.set(true);
           this.hasError.set(false);
-          this.loaded.set(false);
         }),
         switchMap((uid) =>
           this.permissionsService.getProjectSettings(uid).pipe(
             tap(() => {
               this.loading.set(false);
-              this.loaded.set(true);
             }),
             catchError((error) => {
               console.error('Formation card: failed to load project settings', error);
               this.loading.set(false);
               this.hasError.set(true);
-              this.loaded.set(false);
               return of(null);
             })
           )
