@@ -4,15 +4,17 @@
 import { ComponentFixture, TestBed } from '@angular/core/testing';
 import { signal, WritableSignal } from '@angular/core';
 import { Project, ProjectSettings } from '@lfx-one/shared/interfaces';
+import { getFormationSubStageLabel } from '@lfx-one/shared/utils';
 import { PermissionsService } from '@services/permissions.service';
 import { PersonaService } from '@services/persona.service';
+import { ProjectContextService } from '@services/project-context.service';
 import { ProjectService } from '@services/project.service';
-import { of } from 'rxjs';
+import { Observable, of, throwError } from 'rxjs';
 import { describe, expect, it } from 'vitest';
 
 import { FormationCardComponent } from './formation-card.component';
 
-function project(stage: string): Project {
+function project(stage: string, overrides: Partial<Project> = {}): Project {
   return {
     uid: 'proj-1',
     slug: 'project-one',
@@ -35,6 +37,7 @@ function project(stage: string): Project {
     created_at: '',
     updated_at: '',
     mailing_list_count: 0,
+    ...overrides,
   } as Project;
 }
 
@@ -56,15 +59,27 @@ describe('FormationCardComponent', () => {
   let fixture: ComponentFixture<FormationCardComponent>;
   let isLFStaff: WritableSignal<boolean>;
 
-  async function render(stage: string, staff: boolean, sfid: string | null = 'sfid-1'): Promise<void> {
+  async function render(
+    stage: string,
+    staff: boolean,
+    options: { sfid?: string | null; settingsResult?: Observable<ProjectSettings>; projectOverrides?: Partial<Project> } = {}
+  ): Promise<void> {
+    const { sfid = 'sfid-1', settingsResult = of(settings()), projectOverrides = {} } = options;
     isLFStaff = signal(staff);
     TestBed.resetTestingModule();
     await TestBed.configureTestingModule({
       imports: [FormationCardComponent],
       providers: [
-        { provide: ProjectService, useValue: { getProject: () => of(project(stage)), getProjectSfid: () => of(sfid) } },
-        { provide: PermissionsService, useValue: { getProjectSettings: () => of(settings()) } },
+        { provide: ProjectService, useValue: { getProjectSfid: () => of(sfid) } },
+        { provide: PermissionsService, useValue: { getProjectSettings: () => settingsResult } },
         { provide: PersonaService, useValue: { isLFStaff } },
+        {
+          provide: ProjectContextService,
+          useValue: {
+            activeProject: signal(project(stage, projectOverrides)),
+            activeProjectFormationSubStage: signal(getFormationSubStageLabel(stage)),
+          },
+        },
       ],
     }).compileComponents();
 
@@ -105,7 +120,7 @@ describe('FormationCardComponent', () => {
   });
 
   it('shows the admin-tool links and "Staff only" chip for an LF-staff user with a resolved SFID', async () => {
-    await render('Formation - Engaged', true, 'sfid-1');
+    await render('Formation - Engaged', true, { sfid: 'sfid-1' });
 
     const links = fixture.nativeElement.querySelector('[data-testid="formation-card-admin-links"]');
     expect(links).not.toBeNull();
@@ -115,7 +130,7 @@ describe('FormationCardComponent', () => {
   });
 
   it('hides the admin-tool links for an LF-staff user with no v1 mapping (null SFID)', async () => {
-    await render('Formation - Engaged', true, null);
+    await render('Formation - Engaged', true, { sfid: null });
 
     expect(fixture.nativeElement.querySelector('[data-testid="formation-card-admin-links"]')).toBeNull();
   });
@@ -125,5 +140,18 @@ describe('FormationCardComponent', () => {
 
     expect(fixture.nativeElement.querySelector('[data-testid="formation-card-intake"]')).not.toBeNull();
     expect(text()).toContain('https://github.com/example/repo');
+  });
+
+  it('never binds a repository_url with an unsafe scheme to the intake link', async () => {
+    await render('Formation - Engaged', false, { projectOverrides: { repository_url: 'javascript:alert(1)' } });
+
+    expect(fixture.nativeElement.querySelector('[data-testid="formation-card-repository-link"]')).toBeNull();
+  });
+
+  it('shows the error state when the settings fetch fails, and hides the admin-tool links', async () => {
+    await render('Formation - Engaged', true, { settingsResult: throwError(() => new Error('network error')) });
+
+    expect(fixture.nativeElement.querySelector('[data-testid="formation-card-error"]')).not.toBeNull();
+    expect(fixture.nativeElement.querySelector('[data-testid="formation-card-admin-links"]')).toBeNull();
   });
 });

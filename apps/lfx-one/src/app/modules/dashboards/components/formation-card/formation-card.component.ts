@@ -1,23 +1,20 @@
 // Copyright The Linux Foundation and each contributor to LFX.
 // SPDX-License-Identifier: MIT
 
-import { isPlatformBrowser } from '@angular/common';
-import { Component, computed, inject, input, PLATFORM_ID, signal, Signal } from '@angular/core';
+import { DatePipe } from '@angular/common';
+import { Component, computed, inject, input, signal, Signal } from '@angular/core';
 import { toObservable, toSignal } from '@angular/core/rxjs-interop';
 import { AvatarComponent } from '@components/avatar/avatar.component';
 import { TagComponent } from '@components/tag/tag.component';
 import { environment } from '@environments/environment';
 import { PROJECT_STAFF_ROWS } from '@lfx-one/shared/constants';
-import { Project, ProjectSettings, ProjectStaffRowConfig, UserInfo } from '@lfx-one/shared/interfaces';
-import { getFormationSubStageLabel } from '@lfx-one/shared/utils';
+import { ProjectSettings, ProjectStaffRow } from '@lfx-one/shared/interfaces';
 import { PermissionsService } from '@services/permissions.service';
 import { PersonaService } from '@services/persona.service';
+import { ProjectContextService } from '@services/project-context.service';
 import { ProjectService } from '@services/project.service';
 import { SkeletonModule } from 'primeng/skeleton';
-import { TooltipModule } from 'primeng/tooltip';
-import { catchError, combineLatest, filter, map, of, switchMap, tap } from 'rxjs';
-
-type StaffRow = ProjectStaffRowConfig & { user: UserInfo | null | undefined };
+import { catchError, filter, of, switchMap, tap } from 'rxjs';
 
 /**
  * The Formation sidebar card (GH-1955) — sub-stage pill, announcement date, the same
@@ -25,61 +22,39 @@ type StaffRow = ProjectStaffRowConfig & { user: UserInfo | null | undefined };
  * shows above it, intake fields (repository/logo), and — for `PersonaService.isLFStaff` only —
  * deep links into the admin tool. Rendered only while the project is Draft/Formation; see
  * `ProjectContextService.isActiveProjectInFormation`.
+ *
+ * Reads `ProjectContextService.activeProject` for project fields rather than an independent
+ * `getProject` call — this card only ever renders for the currently active project, so the
+ * context service's already-in-flight fetch is the correct (and only) source.
  */
 @Component({
   selector: 'lfx-formation-card',
-  imports: [AvatarComponent, TagComponent, SkeletonModule, TooltipModule],
+  imports: [AvatarComponent, TagComponent, SkeletonModule, DatePipe],
   templateUrl: './formation-card.component.html',
 })
 export class FormationCardComponent {
   private readonly permissionsService = inject(PermissionsService);
   private readonly personaService = inject(PersonaService);
-  private readonly platformId = inject(PLATFORM_ID);
+  private readonly projectContextService = inject(ProjectContextService);
   private readonly projectService = inject(ProjectService);
 
   public readonly projectUid = input.required<string>();
 
-  // `loading`, `hasError`, and `loaded` are tracked separately so the template can distinguish
-  // fetching, fetch failed, and fetch succeeded — mirrors `ProjectStaffCardComponent`.
+  // `loading`, `hasError`, and `loaded` track the settings fetch only — mirrors
+  // `ProjectStaffCardComponent`. `project` comes from `ProjectContextService`, which already
+  // resolves fetch failures to `null` (same convention as `canWrite`), so there's no separate
+  // error state to track for it.
   protected readonly loading = signal(true);
   protected readonly hasError = signal(false);
   protected readonly loaded = signal(false);
 
-  protected readonly isBrowser = isPlatformBrowser(this.platformId);
   protected readonly isLFStaff = computed(() => this.personaService.isLFStaff());
 
-  private readonly combined: Signal<{ project: Project | null; settings: ProjectSettings | null } | null> = toSignal(
-    toObservable(this.projectUid).pipe(
-      filter((uid): uid is string => !!uid),
-      tap(() => {
-        this.loading.set(true);
-        this.hasError.set(false);
-        this.loaded.set(false);
-      }),
-      switchMap((uid) =>
-        combineLatest([this.projectService.getProject(uid, false), this.permissionsService.getProjectSettings(uid)]).pipe(
-          map(([project, settings]) => ({ project, settings })),
-          tap(() => {
-            this.loading.set(false);
-            this.loaded.set(true);
-          }),
-          catchError(() => {
-            this.loading.set(false);
-            this.hasError.set(true);
-            this.loaded.set(false);
-            return of(null);
-          })
-        )
-      )
-    ),
-    { initialValue: null }
-  );
+  protected readonly project = this.projectContextService.activeProject;
+  protected readonly formationSubStage = this.projectContextService.activeProjectFormationSubStage;
 
-  protected readonly project: Signal<Project | null> = computed(() => this.combined()?.project ?? null);
-  protected readonly settings: Signal<ProjectSettings | null> = computed(() => this.combined()?.settings ?? null);
-  protected readonly formationSubStage: Signal<string | null> = computed(() => getFormationSubStageLabel(this.project()?.stage));
-
-  protected readonly staff: Signal<StaffRow[]> = computed(() => {
+  protected readonly settings: Signal<ProjectSettings | null> = this.initSettings();
+  protected readonly staff: Signal<ProjectStaffRow[]> = computed(() => {
     const s = this.settings();
     return PROJECT_STAFF_ROWS.map((row) => ({
       ...row,
@@ -87,13 +62,19 @@ export class FormationCardComponent {
     }));
   });
 
-  protected readonly sfid: Signal<string | null> = toSignal(
-    toObservable(this.projectUid).pipe(
-      filter((uid): uid is string => !!uid),
-      switchMap((uid) => this.projectService.getProjectSfid(uid).pipe(catchError(() => of(null))))
-    ),
-    { initialValue: null }
-  );
+  /** `null` when missing, or when the scheme isn't http(s) — never bind an unvalidated URL to `[href]`. */
+  protected readonly repositoryUrl: Signal<string | null> = computed(() => {
+    const url = this.project()?.repository_url;
+    if (!url) return null;
+    try {
+      const parsed = new URL(url);
+      return parsed.protocol === 'http:' || parsed.protocol === 'https:' ? url : null;
+    } catch {
+      return null;
+    }
+  });
+
+  protected readonly sfid: Signal<string | null> = this.initSfid();
 
   /**
    * Both deep links use the same `/project/:sfid` PCC route with a distinguishing query param —
@@ -109,10 +90,45 @@ export class FormationCardComponent {
     return sfid ? `${this.pccBaseUrl()}/project/${sfid}?tab=setup` : '';
   });
 
-  protected openAdminTool(url: string): void {
-    if (typeof window !== 'undefined' && url) {
-      window.open(url, '_blank', 'noopener,noreferrer');
-    }
+  private initSettings(): Signal<ProjectSettings | null> {
+    return toSignal(
+      toObservable(this.projectUid).pipe(
+        filter((uid): uid is string => !!uid),
+        tap(() => {
+          this.loading.set(true);
+          this.hasError.set(false);
+          this.loaded.set(false);
+        }),
+        switchMap((uid) =>
+          this.permissionsService.getProjectSettings(uid).pipe(
+            tap(() => {
+              this.loading.set(false);
+              this.loaded.set(true);
+            }),
+            catchError((error) => {
+              console.error('Formation card: failed to load project settings', error);
+              this.loading.set(false);
+              this.hasError.set(true);
+              this.loaded.set(false);
+              return of(null);
+            })
+          )
+        )
+      ),
+      { initialValue: null }
+    );
+  }
+
+  // `ProjectService.getProjectSfid` already logs and resolves to `null` on failure — no additional
+  // catchError needed here.
+  private initSfid(): Signal<string | null> {
+    return toSignal(
+      toObservable(this.projectUid).pipe(
+        filter((uid): uid is string => !!uid),
+        switchMap((uid) => this.projectService.getProjectSfid(uid))
+      ),
+      { initialValue: null }
+    );
   }
 
   private pccBaseUrl(): string {

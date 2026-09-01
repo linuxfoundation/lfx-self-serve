@@ -77,6 +77,9 @@ export interface ProjectStaffRowConfig {
   icon: string;
 }
 
+/** A `ProjectStaffRowConfig` resolved against a project's actual settings — shared by `ProjectStaffCardComponent` and `FormationCardComponent`. */
+export type ProjectStaffRow = ProjectStaffRowConfig & { user: UserInfo | null | undefined };
+
 export interface ProjectSlugToIdResponse {
   uid: string;
   slug: string;

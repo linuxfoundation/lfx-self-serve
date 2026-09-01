@@ -7,7 +7,7 @@ import { toObservable, toSignal } from '@angular/core/rxjs-interop';
 import { Router } from '@angular/router';
 import { MARKETING_OPS_FGA_ENABLED_FLAG, SELECTED_FOUNDATION_COOKIE_KEY, SELECTED_PROJECT_COOKIE_KEY } from '@lfx-one/shared/constants';
 import { Project, ProjectContext } from '@lfx-one/shared/interfaces';
-import { getFormationSubStageLabel, isBoardScopedPersona, isSameProjectContext } from '@lfx-one/shared/utils';
+import { getFormationSubStageLabel, isBoardScopedPersona, isFormationStage, isSameProjectContext } from '@lfx-one/shared/utils';
 import { SsrCookieService } from 'ngx-cookie-service-ssr';
 import { catchError, combineLatest, filter, of, startWith, switchMap } from 'rxjs';
 
@@ -81,22 +81,26 @@ export class ProjectContextService {
   /** The context kind the current route declares (see {@link routeLensKind}), exposed read-only. */
   public readonly activeRouteLensKind: Signal<'foundation' | 'project' | null> = computed(() => this.routeLensKind());
 
-  /** Full `Project` for the current active context — shared by `canWrite` and the Formation signals below so both ride one fetch. */
-  private readonly activeProjectDetails: Signal<Project | null> = this.initActiveProjectDetails();
+  /**
+   * Full `Project` for the current active context — shared by `canWrite` and the Formation
+   * signals below so all three ride one fetch. Read this (not a fresh `getProject` call) for any
+   * other field the currently active project needs — see `FormationCardComponent` (GH-1955).
+   */
+  public readonly activeProject: Signal<Project | null> = this.initActiveProjectDetails();
 
   /** Writer permission for the current active context — drives CTA visibility across dashboards. */
-  public readonly canWrite: Signal<boolean> = computed(() => this.activeProjectDetails()?.writer === true);
+  public readonly canWrite: Signal<boolean> = computed(() => this.activeProject()?.writer === true);
 
   /**
    * Formation sub-stage label for the current active context (e.g. `'Engaged'`), or `null`
    * outside Formation. Single source of truth for the project dashboard's Formation badge and
-   * sidebar card, and the stage-scoped Formation nav item (GH-1955) — do not add a fourth
-   * independent `getProject` fetch for this; read these two signals instead.
+   * sidebar card (GH-1955) — do not add a fourth independent `getProject` fetch for this; read
+   * these two signals instead.
    */
-  public readonly activeProjectFormationSubStage: Signal<string | null> = computed(() => getFormationSubStageLabel(this.activeProjectDetails()?.stage));
+  public readonly activeProjectFormationSubStage: Signal<string | null> = computed(() => getFormationSubStageLabel(this.activeProject()?.stage));
 
   /** True when the current active context is in Draft or any Formation sub-stage. */
-  public readonly isActiveProjectInFormation: Signal<boolean> = computed(() => this.activeProjectFormationSubStage() !== null);
+  public readonly isActiveProjectInFormation: Signal<boolean> = computed(() => isFormationStage(this.activeProject()?.stage));
 
   /** Salesforce 18-char ID for the active foundation — resolves PCC deep-link targets. `null` while resolving or unavailable. */
   public readonly selectedFoundationSfid: Signal<string | null> = this.initSelectedFoundationSfid();
