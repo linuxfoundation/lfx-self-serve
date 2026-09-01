@@ -47,7 +47,9 @@ describe('FoundationProjectsComponent — "Add a project" entry point (GH-1962)'
         { provide: LensService, useValue: { setLens: vi.fn() } },
         { provide: FeatureFlagService, useValue: { getBooleanFlag: () => formationEnabled } },
         { provide: Router, useValue: router },
-        // Only needed because the table rows render a routerLink; this spec doesn't exercise it.
+        // Only needed because ButtonComponent (lfx-button, used by the "Add a project" CTA
+        // itself) binds a `routerLink` input internally — Angular's RouterLink directive
+        // requires ActivatedRoute even when routerLink is never set on this page.
         { provide: ActivatedRoute, useValue: {} },
       ],
     }).compileComponents();
