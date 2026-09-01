@@ -5,7 +5,7 @@ import { provideHttpClient } from '@angular/common/http';
 import { HttpTestingController, provideHttpClientTesting } from '@angular/common/http/testing';
 import { TestBed } from '@angular/core/testing';
 import { Formation } from '@lfx-one/shared/interfaces';
-import { afterEach, beforeEach, describe, expect, it } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
 import { FormationService } from './formation.service';
 
@@ -57,7 +57,8 @@ describe('FormationService', () => {
     await promise;
   });
 
-  it('degrades to null when the get request fails — the confirmation page renders its own not-found state', async () => {
+  it('degrades to null on a 404 without logging — an unknown/wrong-pod/wrong-user uid is an expected outcome', async () => {
+    const errorSpy = vi.spyOn(console, 'error').mockImplementation(() => {});
     const result$ = service.getFormationByUid('unknown');
 
     const promise = new Promise<Formation | null>((resolve) => result$.subscribe(resolve));
@@ -65,5 +66,20 @@ describe('FormationService', () => {
     req.flush('Not found', { status: 404, statusText: 'Not Found' });
 
     expect(await promise).toBeNull();
+    expect(errorSpy).not.toHaveBeenCalled();
+    errorSpy.mockRestore();
+  });
+
+  it('degrades to null AND logs on a non-404 failure — a real error should not be indistinguishable from an unknown uid', async () => {
+    const errorSpy = vi.spyOn(console, 'error').mockImplementation(() => {});
+    const result$ = service.getFormationByUid('formation-1');
+
+    const promise = new Promise<Formation | null>((resolve) => result$.subscribe(resolve));
+    const req = httpMock.expectOne('/api/formations/formation-1');
+    req.flush('Server error', { status: 500, statusText: 'Server Error' });
+
+    expect(await promise).toBeNull();
+    expect(errorSpy).toHaveBeenCalled();
+    errorSpy.mockRestore();
   });
 });

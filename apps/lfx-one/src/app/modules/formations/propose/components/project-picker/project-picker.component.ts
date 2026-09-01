@@ -7,7 +7,7 @@ import { FormControl, FormGroup, ReactiveFormsModule } from '@angular/forms';
 import { InputTextComponent } from '@components/input-text/input-text.component';
 import { Project } from '@lfx-one/shared/interfaces';
 import { ProjectService } from '@services/project.service';
-import { catchError, combineLatest, debounceTime, distinctUntilChanged, EMPTY, merge, of, startWith, switchMap } from 'rxjs';
+import { combineLatest, debounceTime, distinctUntilChanged, EMPTY, merge, of, startWith, switchMap } from 'rxjs';
 
 /**
  * Parent-project picker for the intake form's Parent section. Deliberately not
@@ -77,14 +77,21 @@ export class ProjectPickerComponent {
   }
 
   protected select(project: Project): void {
-    this.form().get(this.uidControl())?.setValue(project.uid);
+    // markAsDirty (not just setValue) so a real user pick is distinguishable from the
+    // `?parent=` prefill's own patchValue — see `ProposeComponent.prefillParentFromQueryParam`,
+    // which checks this control's `dirty` flag before applying a slow-resolving prefill.
+    const control = this.form().get(this.uidControl());
+    control?.setValue(project.uid);
+    control?.markAsDirty();
     this.selectedName.set(project.name);
     this.hasSelection.set(true);
     this.searchForm.controls.query.setValue('');
   }
 
   protected clear(): void {
-    this.form().get(this.uidControl())?.setValue(null);
+    const control = this.form().get(this.uidControl());
+    control?.setValue(null);
+    control?.markAsDirty();
     this.selectedName.set(null);
     this.hasSelection.set(false);
   }
@@ -98,7 +105,9 @@ export class ProjectPickerComponent {
         switchMap((term) => {
           const trimmed = term.trim();
           if (trimmed.length < 2) return of([]);
-          return this.projectService.searchProjects(trimmed).pipe(catchError(() => of([])));
+          // No catchError here — ProjectService.searchProjects already degrades to `of([])`
+          // internally (with its own console.error), so a second handler here is unreachable.
+          return this.projectService.searchProjects(trimmed);
         })
       ),
       { initialValue: [] }

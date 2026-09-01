@@ -136,12 +136,30 @@ describe('ProposeComponent', () => {
     getProject.mockReturnValue(prefill$);
 
     const component = await createComponent({ parent: 'my-foundation' });
-    // Simulate the user picking a different parent (e.g. via the picker's own search) before the
-    // slow ?parent= lookup resolves.
-    component.form.patchValue({ parent_project_uid: 'user-picked-uid' });
+    // Simulate the user picking a different parent via the picker (setValue + markAsDirty, same
+    // as ProjectPickerComponent.select()) before the slow ?parent= lookup resolves.
+    const control = component.form.get('parent_project_uid');
+    control?.setValue('user-picked-uid');
+    control?.markAsDirty();
     prefill$.next(prefillProject);
 
     expect(component.form.get('parent_project_uid')?.value).toBe('user-picked-uid');
+  });
+
+  it('does not let a slow ?parent= prefill reinstate a parent the user explicitly cleared', async () => {
+    const prefillProject = { uid: 'parent-uid-1', slug: 'my-foundation', name: 'My Foundation' } as Project;
+    const prefill$ = new Subject<Project>();
+    getProject.mockReturnValue(prefill$);
+
+    const component = await createComponent({ parent: 'my-foundation' });
+    // Simulate the user clicking "Change" on an already-prefilled picker (ProjectPickerComponent.clear():
+    // setValue(null) + markAsDirty) before this (now-redundant) lookup resolves.
+    const control = component.form.get('parent_project_uid');
+    control?.setValue(null);
+    control?.markAsDirty();
+    prefill$.next(prefillProject);
+
+    expect(component.form.get('parent_project_uid')?.value).toBeNull();
   });
 
   it('adds and removes an additional ("who else") contact', async () => {

@@ -123,6 +123,11 @@ describe('FormationService', () => {
   });
 
   describe('fixture store TTL', () => {
+    // Asserts against the store directly, not via getFormationByUid — that method now also
+    // prunes (see the "read" test below), so routing the assertion through it can't distinguish
+    // "this call's own prune site did it" from "the read at assertion time did it".
+    const store = (): Map<string, unknown> => (FormationService as unknown as { store: Map<string, unknown> }).store;
+
     afterEach(() => {
       vi.useRealTimers();
     });
@@ -135,8 +140,7 @@ describe('FormationService', () => {
       vi.setSystemTime(new Date('2026-08-01T01:00:01.000Z')); // just past the 1-hour TTL
       await service.createFormation(req, intake({ project_name: 'Fresh Project' }));
 
-      const fetched = await service.getFormationByUid(req, stale.uid);
-      expect(fetched).toBeNull();
+      expect(store().has(stale.uid)).toBe(false);
     });
 
     it('also prunes on a read, not just a create — a pod that only serves GETs still bounds retention', async () => {
@@ -148,8 +152,7 @@ describe('FormationService', () => {
       vi.setSystemTime(new Date('2026-08-01T01:00:01.000Z')); // just past the 1-hour TTL
       await service.getFormationByUid(req, fresh.uid); // read alone — no intervening create
 
-      const fetchedStale = await service.getFormationByUid(req, stale.uid);
-      expect(fetchedStale).toBeNull();
+      expect(store().has(stale.uid)).toBe(false);
     });
   });
 });

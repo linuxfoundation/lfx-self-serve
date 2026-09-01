@@ -46,12 +46,19 @@ describe('ProjectPickerComponent', () => {
     expect(instance().selectedName()).toBe('My Foundation');
   });
 
-  it('clear() resets the uid control and the display', () => {
+  it('marks the uid control dirty on select() — ProposeComponent.prefillParentFromQueryParam relies on this to detect a real user pick', () => {
+    instance().select(project);
+
+    expect(form.get('parent_project_uid')?.dirty).toBe(true);
+  });
+
+  it('clear() resets the uid control and the display, and marks it dirty too', () => {
     instance().select(project);
 
     instance().clear();
 
     expect(form.get('parent_project_uid')?.value).toBeNull();
+    expect(form.get('parent_project_uid')?.dirty).toBe(true);
     expect(instance().hasSelection()).toBe(false);
     expect(instance().selectedName()).toBeNull();
   });

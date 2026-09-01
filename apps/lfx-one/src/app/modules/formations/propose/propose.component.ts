@@ -240,9 +240,11 @@ export class ProposeComponent {
       .getProject(parentSlug, false)
       .pipe(takeUntilDestroyed(this.destroyRef))
       .subscribe((project) => {
-        // Skip if the user already picked a parent by hand while this lookup was in flight —
-        // a slow prefill resolving after a manual pick must not silently overwrite it.
-        if (project && !this.form.get('parent_project_uid')?.value) {
+        // Gated on `dirty`, not the control's value: a value-only check can't tell "never
+        // touched" apart from "the user explicitly cleared it back to null" (ProjectPickerComponent
+        // marks the control dirty on both select() and clear()) — a still-in-flight prefill must
+        // not silently reinstate a parent the user just chose to remove.
+        if (project && !this.form.get('parent_project_uid')?.dirty) {
           this.form.patchValue({ parent_project_uid: project.uid });
           this.prefilledParentProject.set(project);
         }
