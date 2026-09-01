@@ -33,6 +33,7 @@ import createPickerRouter from './routes/create-picker.route';
 import documentsRouter from './routes/documents.route';
 import enrollmentRouter from './routes/enrollment.route';
 import eventsRouter from './routes/events.route';
+import formationsRouter from './routes/formations.route';
 import impersonationRouter from './routes/impersonation.route';
 import mailingListsRouter from './routes/mailing-lists.route';
 import meetingsRouter from './routes/meetings.route';
@@ -338,6 +339,10 @@ app.use('/api/surveys', surveysRouter);
 app.use('/api/copilot', copilotRouter);
 app.use('/api/documents', documentsRouter);
 app.use('/api/events', eventsRouter);
+// Formation checklist + Formations queue (GH-1958) — router's own paths (/projects/:slug/formation,
+// /formation-items/:uid, /formations) don't share one resource prefix, so it's mounted bare at /api
+// rather than under a single resource segment like the routers above.
+app.use('/api', formationsRouter);
 app.use('/api/badges', badgesRouter);
 app.use('/api/campaigns', campaignsRouter);
 app.use('/api/impersonate', impersonationRouter);

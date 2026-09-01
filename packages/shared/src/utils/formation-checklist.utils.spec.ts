@@ -84,6 +84,16 @@ describe('deriveFormationReadinessSummary', () => {
     expect(noGatingItems.isActivating).toBe(false);
   });
 
+  it('ignores a status value outside the known union rather than corrupting counts into NaN', () => {
+    const items = [item({ status: 'done' }), item({ status: 'weird_future_status' as FormationItemStatus })];
+
+    const summary = deriveFormationReadinessSummary(items);
+
+    expect(summary.counts.done).toBe(1);
+    expect(Number.isNaN(summary.counts.not_started)).toBe(false);
+    expect(summary.totalItems).toBe(2);
+  });
+
   it('returns zeroed counts and no segments for an empty item list', () => {
     const summary = deriveFormationReadinessSummary([]);
 

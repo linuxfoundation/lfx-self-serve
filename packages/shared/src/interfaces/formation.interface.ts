@@ -44,7 +44,7 @@ export interface Formation {
   sub_stage: FormationSubStage;
   /** ISO date. Null until a gating item sets it. */
   announcement_date: string | null;
-  /** Derived: every gating item `done` AND `announcement_date` set. TODO(#1957): backend-derived once real; see `deriveFormationReadinessSummary`. */
+  /** Derived: every gating item `done` (and at least one gating item exists). TODO(#1957): backend-derived once real; see `deriveFormationReadinessSummary`, which computes this identically. */
   is_activating: boolean;
   gating_items_open: number;
   gating_items_total: number;
@@ -158,8 +158,8 @@ export interface FormationTemplateItem {
   title: string;
   is_gating: boolean;
   owner_team: string | null;
+  /** `'status_only'` IS the status-only signal — there is no separate boolean to keep in sync with it. */
   action: FormationItemAction;
-  status_only: boolean;
 }
 
 /** Response body for `GET /api/projects/:slug/formation`. */

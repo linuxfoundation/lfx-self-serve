@@ -23,7 +23,11 @@ export function deriveFormationReadinessSummary(items: FormationItem[]): Formati
   let totalGatingItems = 0;
 
   for (const item of items) {
-    counts[item.status] += 1;
+    // Items cross a wire boundary (see TODO(#1957) on FormationChecklistResponse) — a status value
+    // the frontend doesn't know yet must not corrupt the tally into NaN.
+    if (item.status in counts) {
+      counts[item.status] += 1;
+    }
     if (item.is_gating) {
       totalGatingItems += 1;
       if (item.status !== 'done') openGatingItems += 1;
