@@ -5,9 +5,7 @@ import { FORMATION_QUEUE_SUB_STAGES } from '@lfx-one/shared/constants';
 import type { FormationSubStage } from '@lfx-one/shared/interfaces';
 import { NextFunction, Request, Response } from 'express';
 
-import { AuthorizationError } from '../errors';
 import { validateUidParameter } from '../helpers/validation.helper';
-import { formationItemAccessService } from '../services/formation-item-access.service';
 import { formationService } from '../services/formation.service';
 import { logger } from '../services/logger.service';
 
@@ -42,8 +40,10 @@ export const getFormationItem = async (req: Request, res: Response, next: NextFu
 };
 
 /**
- * `gate_writer` is checked here (not a route-level middleware) — unlike `requireAuditor`, the
- * gate depends on `item.is_gating`, which must be fetched before a decision can be made.
+ * `gate_writer` is enforced inside `formationService.completeFormationItem` (`assertCanComplete`),
+ * not a route-level middleware — unlike `requireAuditor`, the gate depends on `item.is_gating`,
+ * which must be fetched before a decision can be made. It throws `AuthorizationError`, which
+ * propagates to `next(error)` below like any other service error.
  */
 export const completeFormationItem = async (req: Request, res: Response, next: NextFunction) => {
   const { uid } = req.params;
@@ -54,20 +54,6 @@ export const completeFormationItem = async (req: Request, res: Response, next: N
   }
 
   try {
-    const item = await formationService.getFormationItemOrThrow(req, uid);
-    const canComplete = await formationItemAccessService.canComplete(req, item);
-    if (!canComplete) {
-      next(
-        new AuthorizationError('gate_writer access required to complete this item', {
-          operation: 'complete_formation_item',
-          service: 'authorization',
-          path: req.path,
-          code: 'GATE_WRITER_REQUIRED',
-        })
-      );
-      return;
-    }
-
     const result = await formationService.completeFormationItem(req, uid, req.body?.notes);
     logger.success(req, 'complete_formation_item', startTime, { uid });
     return res.json(result);
@@ -85,20 +71,6 @@ export const skipFormationItem = async (req: Request, res: Response, next: NextF
   }
 
   try {
-    const item = await formationService.getFormationItemOrThrow(req, uid);
-    const canComplete = await formationItemAccessService.canComplete(req, item);
-    if (!canComplete) {
-      next(
-        new AuthorizationError('gate_writer access required to skip this item', {
-          operation: 'skip_formation_item',
-          service: 'authorization',
-          path: req.path,
-          code: 'GATE_WRITER_REQUIRED',
-        })
-      );
-      return;
-    }
-
     const result = await formationService.skipFormationItem(req, uid, req.body?.reason);
     logger.success(req, 'skip_formation_item', startTime, { uid });
     return res.json(result);

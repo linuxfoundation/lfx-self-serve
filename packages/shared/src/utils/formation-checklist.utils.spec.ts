@@ -94,6 +94,15 @@ describe('deriveFormationReadinessSummary', () => {
     expect(summary.totalItems).toBe(2);
   });
 
+  it('ignores an inherited Object.prototype key (e.g. "toString") rather than corrupting counts via the prototype chain', () => {
+    const items = [item({ status: 'done' }), item({ status: 'toString' as FormationItemStatus })];
+
+    const summary = deriveFormationReadinessSummary(items);
+
+    expect(summary.counts.done).toBe(1);
+    expect(typeof summary.counts.toString).toBe('function');
+  });
+
   it('returns zeroed counts and no segments for an empty item list', () => {
     const summary = deriveFormationReadinessSummary([]);
 
