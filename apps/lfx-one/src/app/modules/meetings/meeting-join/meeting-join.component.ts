@@ -1450,6 +1450,12 @@ export class MeetingJoinComponent implements OnInit {
               // occurrence, so fall back to empty instead.
               console.error(`Failed to refresh registrants for meeting ${meeting.id}:`, error);
               const isSameRoster = this.registrantsRosterKey() === this.buildRegistrantsRosterKey(meeting.id, occurrenceId);
+              if (!isSameRoster) {
+                // Discarding a stale roster for a different meeting/occurrence — clear the key so a
+                // later failure back on THIS meeting/occurrence doesn't mistake the resulting empty
+                // list for a confirmed roster and let a guest-add snapshot `before = 0`.
+                this.registrantsRosterKey.set(null);
+              }
               return of(isSameRoster ? this.registrants() : []);
             }),
             finalize(() => this.registrantsLoading.set(false))
