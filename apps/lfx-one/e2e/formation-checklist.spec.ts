@@ -172,12 +172,13 @@ test.describe('Formation Checklist section (GH-1958)', () => {
     await gotoProjectOverview(page, FORMATION_PROJECT_SLUG);
 
     const drawer = page.getByTestId('formation-item-drawer');
-    const markComplete = page.getByTestId('formation-item-drawer-mark-complete').locator('button');
-    // PrimeNG renders this icon inside a button only while that button's own `loading` input is true
-    // — unlike [disabled] (driven by busy(), which also includes the section-owned mutationInFlight
-    // and so stays true regardless of the drawer's own tracking), this is the one observable signal
-    // that actually discriminates the drawer-internal completingUids/savingDetailsUids fix.
-    const spinner = markComplete.locator('[data-p-icon="spinner"]');
+    const markCompleteHost = page.getByTestId('formation-item-drawer-mark-complete');
+    const markComplete = markCompleteHost.locator('button');
+    // lfx-button reflects its own `loading` input as a `data-loading` host attribute — unlike
+    // [disabled] (driven by busy(), which also includes the section-owned mutationInFlight and so
+    // stays true regardless of the drawer's own tracking), this is the one observable signal that
+    // actually discriminates the drawer-internal completingUids/savingDetailsUids fix.
+    const expectSpinner = (): Promise<void> => expect(markCompleteHost).toHaveAttribute('data-loading', 'true');
 
     // Clicking Mark complete only proves the client set its own optimistic [disabled] state — it
     // does not prove the request has actually reached Playwright's route interceptor yet. Poll for
@@ -203,7 +204,7 @@ test.describe('Formation Checklist section (GH-1958)', () => {
     await openItem(itemA.uid);
     await markComplete.click();
     await expect(markComplete).toBeDisabled();
-    await expect(spinner).toBeVisible();
+    await expectSpinner();
     await page.getByTestId('formation-item-drawer-close').click();
     await expect(drawer).toBeHidden();
 
@@ -211,7 +212,7 @@ test.describe('Formation Checklist section (GH-1958)', () => {
     await openItem(itemB.uid);
     await markComplete.click();
     await expect(markComplete).toBeDisabled();
-    await expect(spinner).toBeVisible();
+    await expectSpinner();
 
     // Close B and reopen A. With the old single-slot completingUid, starting B's write just above
     // would have overwritten A's tracked uid — so A's own spinner would be missing here even though
@@ -220,7 +221,7 @@ test.describe('Formation Checklist section (GH-1958)', () => {
     await page.getByTestId('formation-item-drawer-close').click();
     await openItem(itemA.uid);
     await expect(markComplete).toBeDisabled();
-    await expect(spinner).toBeVisible();
+    await expectSpinner();
     await page.getByTestId('formation-item-drawer-close').click();
     await expect(drawer).toBeHidden();
 
@@ -236,7 +237,7 @@ test.describe('Formation Checklist section (GH-1958)', () => {
     // A's.
     await openItem(itemB.uid);
     await expect(markComplete).toBeDisabled();
-    await expect(spinner).toBeVisible();
+    await expectSpinner();
 
     // Release B's held response too — now B's own write really is done. B is still what the drawer
     // shows, so this is a real (uid-matching) completion — onDrawerItemChanged closes the drawer
