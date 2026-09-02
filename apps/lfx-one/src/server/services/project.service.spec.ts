@@ -1595,3 +1595,118 @@ describe('ProjectService — getHealthMetricsDaily', () => {
     expect(execute.mock.calls[0][0]).toContain('AVG(HEALTH_SCORE_V2)');
   });
 });
+
+describe('ProjectService — enrichWithProjectData', () => {
+  let service: ProjectService;
+
+  // Membership-funded + Active + not an Internal Allocation, per the real computeIsFoundation.
+  function foundationProject(uid: string, overrides: Partial<Project> = {}): Project {
+    return {
+      uid,
+      slug: uid,
+      name: `name-${uid}`,
+      stage: 'Active',
+      legal_entity_type: '',
+      funding: 'Funded' as ProjectFunding,
+      funding_model: ['Membership'],
+      ...overrides,
+    } as Project;
+  }
+  // Missing the Membership funding model — the real computeIsFoundation returns false.
+  function childProject(uid: string, parentUid: string, overrides: Partial<Project> = {}): Project {
+    return {
+      uid,
+      slug: uid,
+      name: `name-${uid}`,
+      stage: 'Active',
+      legal_entity_type: '',
+      funding: 'Funded' as ProjectFunding,
+      funding_model: [],
+      parent_uid: parentUid,
+      ...overrides,
+    } as Project;
+  }
+
+  beforeEach(() => {
+    proxyRequest.mockReset();
+    service = new ProjectService();
+  });
+
+  it('deduplicates project_uids into a single batched lookup', async () => {
+    const getProjectsByIds = vi.spyOn(service, 'getProjectsByIds').mockResolvedValue(new Map());
+
+    await service.enrichWithProjectData(req, [{ project_uid: 'a' }, { project_uid: 'a' }, { project_uid: 'b' }]);
+
+    expect(getProjectsByIds).toHaveBeenCalledTimes(1);
+    expect(getProjectsByIds).toHaveBeenCalledWith(req, ['a', 'b']);
+  });
+
+  it('prefers freshly fetched project fields over the item payload and computes is_foundation from the fresh project', async () => {
+    vi.spyOn(service, 'getProjectsByIds').mockResolvedValue(
+      new Map([
+        ['fdn', foundationProject('fdn', { name: 'Fresh Foundation', slug: 'fresh-fdn' })],
+        ['child', childProject('child', 'fdn', { name: 'Fresh Child', slug: 'fresh-child' })],
+      ])
+    );
+
+    const result = await service.enrichWithProjectData(req, [
+      { project_uid: 'fdn', project_name: 'stale', project_slug: 'stale', is_foundation: false, parent_project_uid: '' },
+      { project_uid: 'child', project_name: 'stale', project_slug: 'stale', is_foundation: true, parent_project_uid: 'stale-parent' },
+    ]);
+
+    // Fresh fields win on every mapped column — including is_foundation flipping both ways
+    // (stale false -> computed true for the foundation; stale true -> computed false for the child).
+    expect(result).toEqual([
+      { project_uid: 'fdn', project_name: 'Fresh Foundation', project_slug: 'fresh-fdn', is_foundation: true, parent_project_uid: '' },
+      { project_uid: 'child', project_name: 'Fresh Child', project_slug: 'fresh-child', is_foundation: false, parent_project_uid: 'fdn' },
+    ]);
+  });
+
+  it('keeps payload fallbacks and leaves is_foundation undefined (not false) for unresolved projects', async () => {
+    vi.spyOn(service, 'getProjectsByIds').mockResolvedValue(new Map());
+
+    const result = await service.enrichWithProjectData(req, [
+      { project_uid: 'gone', project_name: 'Payload Name', project_slug: 'payload-slug', parent_project_uid: 'payload-parent' },
+      { project_uid: 'gone2', project_name: 'Tiered', project_slug: 'tiered', is_foundation: true, parent_project_uid: 'p' },
+    ]);
+
+    expect(result[0]).toEqual({
+      project_uid: 'gone',
+      project_name: 'Payload Name',
+      project_slug: 'payload-slug',
+      parent_project_uid: 'payload-parent',
+      is_foundation: undefined,
+    });
+    // The fail-soft contract: consumers treat undefined as "tier unknown" and fall back safely;
+    // a coerced false would mislabel a foundation-owned entity as project-owned.
+    expect(result[0].is_foundation).toBeUndefined();
+    // An item's own tier signal survives the ?? fallback untouched.
+    expect(result[1].is_foundation).toBe(true);
+  });
+
+  it('resolves the projects the batch returns and falls back per-row for the rest', async () => {
+    vi.spyOn(service, 'getProjectsByIds').mockResolvedValue(new Map([['ok', childProject('ok', 'fdn', { name: 'Resolved', slug: 'resolved' })]]));
+
+    const result = await service.enrichWithProjectData(req, [
+      { project_uid: 'ok', project_name: 'stale', project_slug: 'stale', parent_project_uid: 'stale' },
+      { project_uid: 'skipped', project_name: 'Kept', project_slug: 'kept', parent_project_uid: 'kept-parent' },
+    ]);
+
+    expect(result[0]).toMatchObject({ project_name: 'Resolved', project_slug: 'resolved', is_foundation: false, parent_project_uid: 'fdn' });
+    expect(result[1]).toMatchObject({ project_name: 'Kept', project_slug: 'kept', parent_project_uid: 'kept-parent' });
+    expect(result[1].is_foundation).toBeUndefined();
+  });
+
+  it('keeps item-level fields untouched when every batch fails', async () => {
+    // getProjectsByIds warn-and-skips failed batches internally, so a full query-service outage
+    // surfaces here as an empty map — the same net merge outcome as the old all-null per-item
+    // failures, with no exception escaping the enrichment.
+    vi.spyOn(service, 'getProjectsByIds').mockResolvedValue(new Map());
+
+    const result = await service.enrichWithProjectData(req, [
+      { project_uid: 'x', project_name: 'Last Known', project_slug: 'last-known', is_foundation: true, parent_project_uid: 'p' },
+    ]);
+
+    expect(result[0]).toMatchObject({ project_name: 'Last Known', project_slug: 'last-known', is_foundation: true, parent_project_uid: 'p' });
+  });
+});
