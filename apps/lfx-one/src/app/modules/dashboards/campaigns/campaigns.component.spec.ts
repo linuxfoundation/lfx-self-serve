@@ -3876,6 +3876,33 @@ describe('CampaignsComponent — HubSpot template picker', () => {
      * threshold alone. An unrelated "Nairobi newsletter" is then auto-selected.
      */
     /**
+     * TWO generic terms must not add up to a suggestion.
+     *
+     * Excluding generic words from the DOUBLE weight was not enough: each still scored
+     * `EVENT_TERM_WEIGHT`, so two of them summed to exactly the threshold (3 + 3 = 6) and
+     * auto-selected on vocabulary that describes neither the event nor the template. Every
+     * matching term here -- `community`, `training` -- is in `EVENT_TERM_GENERIC`, so the
+     * non-generic evidence is zero and nothing may be offered.
+     *
+     * This is the case that separates ranking from justification: the template is a perfectly
+     * reasonable ORDERING for these terms, and still not evidence that it is the right one.
+     */
+    it('withholds a suggestion when only generic terms match, however many', () => {
+      showPicker();
+      picker().emailBriefOutput.set(briefFor('Community Training Workshop', 'community-training-workshop'));
+      picker().searchEmailTemplates('');
+      respond({
+        enabled: true,
+        error: null,
+        possiblyTruncated: false,
+        emails: [{ id: 'generic', name: 'Community training newsletter', subject: 'Monthly update' }] as HubSpotMarketingEmail[],
+      });
+
+      expect(picker().emailTemplateSuggestionId()).toBe('');
+      expect(picker().selectedEmailTemplateId()).toBe('');
+    });
+
+    /**
      * An UN-ENUMERATED generic long word must not decide alone.
      *
      * The deny-list closes the words someone has already noticed; the proxy behind it is the real

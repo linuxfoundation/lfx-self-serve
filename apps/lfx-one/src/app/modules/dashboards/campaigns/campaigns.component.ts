@@ -2668,7 +2668,14 @@ export class CampaignsComponent {
       }
     }
 
-    if (best === null || bestScore < EVENT_TEMPLATE_SUGGESTION_MIN_SCORE) {
+    // The threshold is applied to the NON-GENERIC evidence, not to the full match score.
+    //
+    // `bestScore` ranks; it counts generic words because among templates the event has already
+    // identified, a generic word usefully separates them. It cannot be what justifies offering a
+    // suggestion at all: two generic terms sum to exactly EVENT_TEMPLATE_SUGGESTION_MIN_SCORE, so
+    // "Community Training Workshop" would auto-select "Community training newsletter" on
+    // vocabulary that describes neither event.
+    if (best === null || this.eventSuggestionScore(best, eventTerms) < EVENT_TEMPLATE_SUGGESTION_MIN_SCORE) {
       return;
     }
 
@@ -2676,7 +2683,10 @@ export class CampaignsComponent {
     // The DECISIVE terms only. These are what justified offering the suggestion at all, and they
     // are what an operator needs to judge it -- listing a city or year match here would present
     // as a reason something that could never have been sufficient on its own.
-    this.emailTemplateSuggestionTerms.set(this.matchedEventTerms(best, eventTerms.decisive));
+    // Generic terms are filtered out for the same reason they cannot justify the suggestion: a
+    // reason the operator is shown must be a reason that counted. Listing "community" beside a
+    // suggestion the word could never have earned overstates the evidence.
+    this.emailTemplateSuggestionTerms.set(this.matchedEventTerms(best, eventTerms.decisive).filter((t) => !EVENT_TERM_GENERIC.has(t)));
 
     // Pre-fill ONLY an untouched selection. `selectedEmailTemplateId` is the operator's, and a
     // suggestion that overwrites a deliberate choice is a bug wearing a feature's clothes.
@@ -2722,6 +2732,27 @@ export class CampaignsComponent {
       (score, term) => score + (term.length >= EVENT_TERM_DISTINCTIVE_LENGTH && !EVENT_TERM_GENERIC.has(term) ? EVENT_TERM_WEIGHT * 2 : EVENT_TERM_WEIGHT),
       0
     );
+  }
+
+  /**
+   * The part of the match score that may JUSTIFY a pre-selection, as opposed to merely rank one.
+   *
+   * Excluding generic terms from the double weight was not enough. They still scored
+   * `EVENT_TERM_WEIGHT` apiece, so TWO of them reached `EVENT_TEMPLATE_SUGGESTION_MIN_SCORE`
+   * (3 + 3 = 6) and auto-selected on generic vocabulary alone: "Community Training Workshop"
+   * against a template named "Community training newsletter" scores 6 with every matching term
+   * in `EVENT_TERM_GENERIC`. That is the exact claim the deny-list was introduced to make true --
+   * generic words may rank, but they cannot be the evidence that this is the right template.
+   *
+   * So ranking and justification are now different questions asked of the same matches.
+   * `eventMatchScore` still counts everything, because among templates the event has ALREADY
+   * identified a generic word is a real signal of which one. This one counts only non-generic
+   * terms, and it is what the threshold is applied to.
+   */
+  private eventSuggestionScore(template: HubSpotMarketingEmail, terms: EventTemplateTerms): number {
+    return this.matchedEventTerms(template, terms.decisive)
+      .filter((term) => !EVENT_TERM_GENERIC.has(term))
+      .reduce((score, term) => score + (term.length >= EVENT_TERM_DISTINCTIVE_LENGTH ? EVENT_TERM_WEIGHT * 2 : EVENT_TERM_WEIGHT), 0);
   }
 
   /**
