@@ -26,6 +26,9 @@ router.put('/:uid/participants/:participantId', (req, res, next) => pastMeetingC
 // Delete a past meeting participant
 router.delete('/:uid/participants/:participantId', (req, res, next) => pastMeetingController.deletePastMeetingParticipant(req, res, next));
 
+// Manually trigger AI-assisted attendance reconciliation for a past meeting occurrence
+router.post('/:uid/reconcile', (req, res, next) => pastMeetingController.reconcilePastMeetingParticipants(req, res, next));
+
 // Get past meeting recording by UID
 router.get('/:uid/recording', (req, res, next) => pastMeetingController.getPastMeetingRecording(req, res, next));
 

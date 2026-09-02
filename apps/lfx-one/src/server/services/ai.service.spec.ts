@@ -23,6 +23,7 @@ vi.mock('@lfx-one/shared/constants', async () => {
     AI_BRIEF_ACTION_ITEMS_SYSTEM_PROMPT: 'brief action items prompt',
     AI_MODEL: 'mock-model',
     AI_NEWSLETTER_SYSTEM_PROMPT: 'newsletter prompt',
+    AI_RECONCILIATION_SYSTEM_PROMPT: 'reconciliation prompt',
     AI_REQUEST_CONFIG: actual.AI_REQUEST_CONFIG,
     DURATION_ESTIMATION: { BASE_DURATION: 15, TIME_PER_ITEM: 10, MINIMUM_DURATION: 30, MAXIMUM_DURATION: 240 },
     NEWSLETTER_AI_MAX_TOKENS: 12_000,
@@ -268,5 +269,102 @@ describe('AiService.generateNewsletter', () => {
 
     expect(timeoutSpy).toHaveBeenCalledWith(AI_REQUEST_CONFIG.NEWSLETTER_TIMEOUT_MS);
     expect(AI_REQUEST_CONFIG.NEWSLETTER_TIMEOUT_MS).toBeGreaterThan(AI_REQUEST_CONFIG.TIMEOUT_MS);
+  });
+});
+
+describe('AiService.reconcileAttendees (GH-1672 / PCC-1452 port)', () => {
+  let fetchMock: ReturnType<typeof vi.fn>;
+  let service: AiService;
+  const originalEnv = { ...process.env };
+
+  const candidates = [
+    { candidate_id: 'c0', source: 'invitee' as const, first_name: 'Alice', last_name: 'Smith', email: 'alice@example.com' },
+    { candidate_id: 'c1', source: 'committee_member' as const, first_name: 'Bob', last_name: 'Jones' },
+  ];
+  const attendees = [{ attendee_id: 'a0', zoom_user_name: 'Alice S' }];
+
+  beforeEach(() => {
+    vi.clearAllMocks();
+    process.env = { ...originalEnv, AI_PROXY_URL: 'https://ai-proxy.example.com', AI_API_KEY: 'test-key' };
+    fetchMock = vi.fn();
+    vi.stubGlobal('fetch', fetchMock);
+    service = new AiService();
+  });
+
+  afterEach(() => {
+    vi.unstubAllGlobals();
+    vi.restoreAllMocks();
+    process.env = { ...originalEnv };
+  });
+
+  it('returns the matches on a well-formed response', async () => {
+    fetchMock.mockResolvedValue(mockChatResponse(JSON.stringify({ matches: [{ attendee_id: 'a0', matched_candidate_id: 'c0', confidence: 'high' }] })));
+
+    const result = await service.reconcileAttendees(req, { attendees, candidates });
+
+    expect(result.matches).toEqual([{ attendee_id: 'a0', matched_candidate_id: 'c0', confidence: 'high' }]);
+  });
+
+  it('rejects a matched_candidate_id that does not resolve against the request candidates (hallucination guard)', async () => {
+    fetchMock.mockResolvedValue(
+      mockChatResponse(JSON.stringify({ matches: [{ attendee_id: 'a0', matched_candidate_id: 'does-not-exist', confidence: 'high' }] }))
+    );
+
+    const result = await service.reconcileAttendees(req, { attendees, candidates });
+
+    // Note: this method only nulls the unresolvable candidate_id — it does not itself downgrade
+    // confidence. The caller (AttendanceReconciliationService.matchWithAi) is what treats a
+    // resolved-confidence + null-candidate combination as 'none' before ever considering auto-apply.
+    expect(result.matches).toEqual([{ attendee_id: 'a0', matched_candidate_id: null, confidence: 'high' }]);
+  });
+
+  it('defaults an attendee_id omitted from the response to confidence none instead of dropping it', async () => {
+    fetchMock.mockResolvedValue(mockChatResponse(JSON.stringify({ matches: [] })));
+
+    const result = await service.reconcileAttendees(req, { attendees, candidates });
+
+    expect(result.matches).toEqual([{ attendee_id: 'a0', matched_candidate_id: null, confidence: 'none' }]);
+  });
+
+  it('normalizes an invalid confidence value to none rather than trusting the model', async () => {
+    fetchMock.mockResolvedValue(mockChatResponse(JSON.stringify({ matches: [{ attendee_id: 'a0', matched_candidate_id: 'c0', confidence: 'certain' }] })));
+
+    const result = await service.reconcileAttendees(req, { attendees, candidates });
+
+    expect(result.matches).toEqual([{ attendee_id: 'a0', matched_candidate_id: 'c0', confidence: 'none' }]);
+  });
+
+  it('throws on a response with no choices', async () => {
+    fetchMock.mockResolvedValue({ ok: true, status: 200, statusText: 'OK', json: async () => ({ choices: [] }) } as unknown as Response);
+
+    await expect(service.reconcileAttendees(req, { attendees, candidates })).rejects.toThrow(/Failed to reconcile attendees/);
+  });
+
+  it('throws on empty response content', async () => {
+    fetchMock.mockResolvedValue(mockChatResponse(''));
+
+    await expect(service.reconcileAttendees(req, { attendees, candidates })).rejects.toThrow(/Failed to reconcile attendees/);
+  });
+
+  it('throws on malformed JSON content', async () => {
+    fetchMock.mockResolvedValue(mockChatResponse('not json'));
+
+    await expect(service.reconcileAttendees(req, { attendees, candidates })).rejects.toThrow(/Failed to reconcile attendees/);
+  });
+
+  it('throws when matches is not an array', async () => {
+    fetchMock.mockResolvedValue(mockChatResponse(JSON.stringify({ matches: 'not an array' })));
+
+    await expect(service.reconcileAttendees(req, { attendees, candidates })).rejects.toThrow(/Failed to reconcile attendees/);
+  });
+
+  it('falls back to "unknown" in the prompt when zoom_user_name is falsy', async () => {
+    fetchMock.mockResolvedValue(mockChatResponse(JSON.stringify({ matches: [] })));
+
+    await service.reconcileAttendees(req, { attendees: [{ attendee_id: 'a1', zoom_user_name: '' }], candidates });
+
+    const [, options] = fetchMock.mock.calls[0];
+    const body = JSON.parse(options.body);
+    expect(body.messages[1].content).toContain('zoom_display_name: "unknown"');
   });
 });
