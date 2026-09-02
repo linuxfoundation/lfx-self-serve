@@ -6,7 +6,9 @@
     <ng-template let-message pTemplate="message">
       <lfx-toast-message [message]="message">
         @if (message.data?.showSupport) {
-          <button type="button" lfxOpenIntercom class="toast-action" data-testid="my-events-salesforce-error-contact-support">Contact Support</button>
+          <button type="button" lfxOpenIntercom class="toast-action self-start" data-testid="my-events-salesforce-error-contact-support">
+            Contact Support
+          </button>
         }
       </lfx-toast-message>
     </ng-template>

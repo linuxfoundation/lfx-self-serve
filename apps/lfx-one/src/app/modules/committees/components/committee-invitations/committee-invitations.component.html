@@ -7,7 +7,7 @@
       @if (message.data?.uid) {
         <button
           type="button"
-          class="toast-action"
+          class="toast-action self-start"
           (click)="onUndoDecline({ uid: message.data.uid, committeeUid: message.data.committeeUid })"
           aria-label="Undo declining the invitation"
           data-testid="committee-invitations-toast-undo">
