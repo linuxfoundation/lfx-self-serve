@@ -225,14 +225,40 @@ export class PlanningTabComponent implements OnInit {
    *
    * Keying by foundation and retaining across switches satisfies both: the record only ever
    * suppresses Create under the foundation the create was made from, and returning there still
-   * finds it. Two foundations sharing one portal is the residual gap, and it is covered by the
-   * in-flight guard for the window the duplicate actually occurs in.
+   * finds it.
    *
-   * (Original note, still true: no lookup or create response carries a portal id, so keying on
-   * the portal itself is not available to this component.)
+   * TWO FOUNDATIONS ON ONE PORTAL is handled by `hsCreatedEventNames` below, NOT by this set,
+   * and NOT by the in-flight guard -- an earlier version of this note claimed the latter and was
+   * wrong. `hsCreatesInFlight` falls to zero when the POST settles, and the duplicate window is
+   * HubSpot's INDEXING lag, which begins there. The two windows are adjacent, not overlapping.
    *
+   * (Still true: no lookup or create response carries a portal id, so keying on the portal
+   * itself is not available to this component. See `hsCreatedEventNames` for what is done
+   * instead.)
    */
   private readonly hsCreatedEvents = signal(new Set<string>());
+
+  /**
+   * Event NAMES a create has succeeded for, under any foundation.
+   *
+   * Two foundations can share one HubSpot portal, and campaign names live in one namespace per
+   * portal. So a create under A means an event-named campaign may exist for an operator now
+   * standing in B -- and B's own lookup can legitimately come back empty while HubSpot indexes.
+   *
+   * This deliberately does NOT suppress Create, which is what made an event-only key
+   * unrecoverable in dealako's round 4: a create under portal A withheld Create for that name
+   * under every OTHER portal, permanently, because the re-check reads the new portal and can
+   * never clear the record.
+   *
+   * It does exactly one thing: turns a would-be confident "No campaign found" into the honest
+   * UNCONFIRMED reading, so the operator is told the name may already be taken on this portal
+   * and can check before creating. Create stays available -- a different foundation may well be
+   * a different portal, and refusing there is the round-4 lockout.
+   *
+   * Never cleared. The window it describes is unbounded (indexing lag has no stated ceiling) and
+   * it costs one extra sentence in a status line, not a blocked control.
+   */
+  private readonly hsCreatedEventNames = signal(new Set<string>());
   /**
    * How many times a re-check has come back EMPTY for a possibly-created event.
    *
@@ -831,6 +857,7 @@ export class PlanningTabComponent implements OnInit {
           // let the panel re-offer Create for an event that now has one.
           if (result?.created) {
             this.hsCreatedEvents.update((seen) => new Set(seen).add(`${capturedFoundation}|${capturedEvent}`));
+            this.hsCreatedEventNames.update((seen) => new Set(seen).add(capturedEvent));
           }
           // Generation first, then panelStillShows — the same pair the lookup arms use. An
           // A -> B -> A round trip makes panelStillShows match a SUPERSEDED create again, and
@@ -889,6 +916,7 @@ export class PlanningTabComponent implements OnInit {
           const failStatus = typeof err === 'object' && err !== null && 'status' in err ? Number((err as { status: unknown }).status) : 0;
           if (!isDefiniteRefusal(failStatus)) {
             this.hsCreatedEvents.update((seen) => new Set(seen).add(`${capturedFoundation}|${capturedEvent}`));
+            this.hsCreatedEventNames.update((seen) => new Set(seen).add(capturedEvent));
           }
           if (this.createIsCurrent(generation)) {
             this.hsCreating.set(false);
@@ -1652,6 +1680,25 @@ export class PlanningTabComponent implements OnInit {
             this.hsUnconfirmed.set(true);
             this.hsMatches.set(result?.all_matches ?? []);
             this.hsStatus.set('Created, but HubSpot has not indexed it yet — re-check to confirm. Create stays disabled so the campaign is not duplicated.');
+          } else if (this.hsCreatedEventNames().has(eventName)) {
+            // Nothing found under THIS foundation, but a create for this event name succeeded
+            // under another one this session -- and two foundations can share a HubSpot portal,
+            // where campaign names are a single namespace.
+            //
+            // Reported as unconfirmed rather than not-found, WITHOUT withholding Create. A
+            // different foundation may be a different portal, in which case creating is exactly
+            // right; withholding there is dealako's round-4 lockout, which had no recovery at
+            // all. So this buys the operator a warning, not a decision: the name may already be
+            // taken on this portal, check before you create.
+            //
+            // The in-flight guard does not cover this. It falls to zero when the POST settles,
+            // and the duplicate window is HubSpot's INDEXING lag, which starts there.
+            this.hsNotFound.set(true);
+            this.hsUnconfirmed.set(true);
+            this.hsMatches.set(result?.all_matches ?? []);
+            this.hsStatus.set(
+              `No match under this project — but a campaign named for this event was created earlier in this session. If these projects share a HubSpot portal it already exists; check HubSpot before creating a second one.`
+            );
           } else {
             this.hsNotFound.set(true);
             // Carried on the NOT-FOUND path too. An ambiguous lookup — a tie, or a match too weak

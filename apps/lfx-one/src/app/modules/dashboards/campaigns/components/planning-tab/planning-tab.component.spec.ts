@@ -1647,6 +1647,42 @@ describe('PlanningTabComponent — HubSpot UTM states', () => {
     expect(instance()['hsCreateBlocked'](), 'inconclusive searches retired the record and re-offered Create').toBe(true);
   });
 
+  it('warns under a DIFFERENT foundation without withholding Create', () => {
+    // Copilot, raised twice: two foundations can share one HubSpot portal, where campaign names
+    // are one namespace. After a create under A settles, hsCreatesInFlight is zero and B's own
+    // lookup can be legitimately empty while HubSpot indexes -- so B saw a confident
+    // "No campaign found" for a campaign that already exists on its portal.
+    //
+    // The in-flight guard never covered this: it falls to zero when the POST settles, and the
+    // duplicate window is the INDEXING lag that starts there.
+    const ctx = TestBed.inject(ProjectContextService);
+    const empty = { found: false, hs_utm: null, campaign_name: '', all_matches: [], capped: false, inconclusive: false };
+
+    runLookup(empty, 'KubeCon NA 2026');
+    create.mockReturnValue(
+      new Observable((o) => {
+        o.next({ created: true, hs_utm: null, campaign_name: 'Kubecon Na 2026' });
+        o.complete();
+      })
+    );
+    (fixture.componentInstance as unknown as { createInHubSpot(): void }).createInHubSpot();
+    fixture.detectChanges();
+
+    // A DIFFERENT foundation, same event. Its own lookup is empty -- HubSpot has not indexed it.
+    ctx.setFoundation({ uid: 'foundation-b-uid', slug: 'foundation-b', name: 'Foundation B' }, false);
+    fixture.detectChanges();
+    runLookup(empty, 'KubeCon NA 2026');
+
+    expect(String(instance()['hsStatus']()), 'reported a confident absence for a name that may exist on this portal').toMatch(
+      /created earlier in this session/
+    );
+    expect(instance()['hsUnconfirmed'](), 'the cross-foundation warning did not surface').toBe(true);
+    // The round-4 constraint, asserted alongside: an event-only key that WITHHOLDS Create is
+    // unrecoverable, because the re-check reads the new portal and can never clear the record.
+    // A different foundation may be a different portal, where creating is exactly right.
+    expect(instance()['hsCreateBlocked'](), 'withheld Create under another foundation -- the round-4 lockout').toBe(false);
+  });
+
   it('treats an authorization refusal as definite, not unconfirmed', () => {
     // Copilot (blocking): 401/403 were DEFINITE at the record site and UNCONFIRMED at the message
     // site -- two hand-maintained status lists that drifted. The record was correctly not
