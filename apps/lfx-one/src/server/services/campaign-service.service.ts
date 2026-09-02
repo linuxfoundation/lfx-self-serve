@@ -1402,8 +1402,11 @@ export class CampaignServiceClient {
    * check belongs with the operator who can read the candidate names. Search first, warn, then
    * create.
    *
-   * The created campaign is visible to EVERY foundation's campaign managers, whatever project
-   * scoped the request.
+   * The created campaign lands in a PORTAL-WIDE namespace: visible to everyone working in the
+   * HubSpot portal this project's connection points at, whatever project scoped the request.
+   * That is the boundary — not "every foundation", which overstates it, and not "this project",
+   * which understates it. Two projects connected to the same portal share the namespace; two
+   * connected to different portals do not.
    *
    * The name is the SIXTH argument (body), not the fifth (query): a POST payload in the query
    * position sends no body at all, and upstream would reject it as a request naming no campaign.
