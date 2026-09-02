@@ -201,7 +201,7 @@ export class AttendanceReconciliationService {
   /**
    * Identity comparator for candidate-pool dedup. Local to this service — does not depend on
    * PR #2060's `isSamePerson` (unmerged, non-stacked branch). Mirrors that comparator's branch
-   * order: prefer username (this repo's LFID-equivalent), then overlapping email, then
+   * order: prefer overlapping email, then username (this repo's LFID-equivalent), then
    * normalized name — an email match takes priority over username asymmetry, so two records
    * sharing an email still merge even if only one carries a username.
    */
