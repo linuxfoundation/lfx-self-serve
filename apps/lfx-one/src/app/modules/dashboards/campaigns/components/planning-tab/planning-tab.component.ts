@@ -55,15 +55,6 @@ const isDefiniteRefusal = (status: number): boolean => status === 400 || status 
 
 type PlanningStep = 'input' | 'generating' | 'review';
 
-/**
- * How many empty re-checks retire a possibly-created record.
- *
- * TWO, not one: a campaign that actually landed appears well within a deliberate second look, so
- * a single miss is genuinely ambiguous while a second is much better explained by "never
- * created". One would surrender the indexing-lag protection the record exists for; none at all
- * left Create permanently withheld after a create that never reached HubSpot.
- */
-
 @Component({
   selector: 'lfx-planning-tab',
   imports: [ReactiveFormsModule, ButtonComponent, InputTextComponent, NgClass],
@@ -206,7 +197,11 @@ export class PlanningTabComponent implements OnInit {
    * dispatched BEFORE a foundation switch has not settled yet.
    */
   /**
-   * Events a create has SUCCEEDED for, keyed `foundation|event`.
+   * Events a create MAY have made a campaign for, keyed `foundation|event`.
+   *
+   * Written by both arms: a confirmed `created: true`, and any create failure that is not a
+   * definite refusal, where the POST may still have committed. `hsCreatedConfirmed` below marks
+   * which -- suppression treats them alike, the status line does not.
    *
    * A superseded create still makes a real campaign upstream. Discarding its result for
    * RENDERING is right -- the operator moved on -- but forgetting it happened let the panel
@@ -259,6 +254,23 @@ export class PlanningTabComponent implements OnInit {
    * it costs one extra sentence in a status line, not a blocked control.
    */
   private readonly hsCreatedEventNames = signal(new Set<string>());
+
+  /**
+   * The subset of `hsCreatedEvents` keys whose create was CONFIRMED -- the response said so.
+   *
+   * The record is written from two arms that know very different things. The success arm saw
+   * `created: true`, so a campaign exists and is merely unindexed. The error arm writes on any
+   * status that is not a definite refusal, where nothing may have happened at all.
+   *
+   * Without this distinction the re-check branch told both stories as "Created, but HubSpot has
+   * not indexed it yet" -- asserted as fact. For the transport-503 class that is the very harm
+   * the error arm warns about: sending an operator to check HubSpot for a campaign that was
+   * never attempted (dealako, round 6).
+   *
+   * Suppression does not read this. Both classes still block Create, because an unconfirmed
+   * create may have landed. It changes only what the operator is TOLD.
+   */
+  private readonly hsCreatedConfirmed = signal(new Set<string>());
   /**
    * How many times a re-check has come back EMPTY for a possibly-created event.
    *
@@ -857,6 +869,8 @@ export class PlanningTabComponent implements OnInit {
           // let the panel re-offer Create for an event that now has one.
           if (result?.created) {
             this.hsCreatedEvents.update((seen) => new Set(seen).add(`${capturedFoundation}|${capturedEvent}`));
+            // CONFIRMED: the response said created. Only this arm records that.
+            this.hsCreatedConfirmed.update((seen) => new Set(seen).add(`${capturedFoundation}|${capturedEvent}`));
             this.hsCreatedEventNames.update((seen) => new Set(seen).add(capturedEvent));
           }
           // Generation first, then panelStillShows — the same pair the lookup arms use. An
@@ -908,11 +922,12 @@ export class PlanningTabComponent implements OnInit {
           // was then re-enabled for a campaign that exists.
           //
           // Erring toward recording is right here: a spurious record withholds Create while a
-          // missing one writes a duplicate nobody can delete. The record is BOUNDED rather than
-          // permanent -- two empty re-checks retire it (see CREATED_RECHECK_MISS_LIMIT). An
-          // earlier version of this comment claimed the re-check cleared it when no such exit
-          // existed, which left Create withheld forever after a create that never reached
-          // HubSpot.
+          // missing one writes a duplicate nobody can delete. The record lasts the SESSION and is
+          // cleared only by a lookup positively finding the campaign -- there is deliberately no
+          // count-based expiry, because an empty search under an eventually-consistent index
+          // proves lag, not absence. An operator whose create never landed recovers by creating
+          // it in HubSpot directly, and the re-check status says so for this class rather than
+          // asserting the campaign was created.
           const failStatus = typeof err === 'object' && err !== null && 'status' in err ? Number((err as { status: unknown }).status) : 0;
           if (!isDefiniteRefusal(failStatus)) {
             this.hsCreatedEvents.update((seen) => new Set(seen).add(`${capturedFoundation}|${capturedEvent}`));
@@ -1679,7 +1694,16 @@ export class PlanningTabComponent implements OnInit {
             // the right cost next to silently duplicating spend.
             this.hsUnconfirmed.set(true);
             this.hsMatches.set(result?.all_matches ?? []);
-            this.hsStatus.set('Created, but HubSpot has not indexed it yet — re-check to confirm. Create stays disabled so the campaign is not duplicated.');
+            // Say only what this record's ORIGIN knows. A confirmed create means the campaign
+            // exists and is merely unindexed; an unconfirmed one means the outcome was never
+            // established, and asserting "Created" there sends the operator to look for
+            // something that may never have been attempted -- the harm the error arm warns
+            // about at the write site (dealako, round 6). Suppression is the same either way.
+            this.hsStatus.set(
+              this.hsCreatedConfirmed().has(`${capturedFoundation}|${eventName}`)
+                ? 'Created, but HubSpot has not indexed it yet — re-check to confirm. Create stays disabled so the campaign is not duplicated.'
+                : 'The earlier attempt did not confirm whether it created this campaign, and no match is visible yet — it may be unindexed, or may never have been created. Check HubSpot before creating another; re-check once it appears.'
+            );
           } else if (this.hsCreatedEventNames().has(eventName)) {
             // Nothing found under THIS foundation, but a create for this event name succeeded
             // under another one this session -- and two foundations can share a HubSpot portal,

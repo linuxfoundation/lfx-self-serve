@@ -1647,6 +1647,35 @@ describe('PlanningTabComponent — HubSpot UTM states', () => {
     expect(instance()['hsCreateBlocked'](), 'inconclusive searches retired the record and re-offered Create').toBe(true);
   });
 
+  it('does not claim "Created" for a create that never confirmed', () => {
+    // dealako, round 6 (blocking): the record is written by two arms that know different things.
+    // The success arm saw `created: true`. The ERROR arm writes on any status that is not a
+    // definite refusal -- a transport 503, where nothing may have happened at all. Telling both
+    // "Created, but HubSpot has not indexed it yet" asserts as fact something only one of them
+    // established, and for the 503 class it sends the operator to hunt for a campaign that was
+    // never attempted -- the exact harm the error arm warns about at its own write site.
+    const empty = { found: false, hs_utm: null, campaign_name: '', all_matches: [], capped: false, inconclusive: false };
+    runLookup(empty, 'KubeCon NA 2026');
+    create.mockReturnValue(throwError(() => ({ status: 503 })));
+    (fixture.componentInstance as unknown as { createInHubSpot(): void }).createInHubSpot();
+    fixture.detectChanges();
+
+    lookup.mockReturnValue(
+      new Observable((o) => {
+        o.next(empty);
+        o.complete();
+      })
+    );
+    (fixture.componentInstance as unknown as { recheckHubSpot(): void }).recheckHubSpot();
+    fixture.detectChanges();
+
+    const status = String(instance()['hsStatus']());
+    expect(status, 'asserted "Created" for an outcome that was never confirmed').not.toMatch(/^Created\b/);
+    expect(status, 'did not tell the operator the create may never have happened').toMatch(/may never have been created/);
+    // Suppression is unchanged: an unconfirmed create may still have landed.
+    expect(instance()['hsCreateBlocked'](), 'honest copy came at the cost of the duplicate guard').toBe(true);
+  });
+
   it('warns under a DIFFERENT foundation without withholding Create', () => {
     // Copilot, raised twice: two foundations can share one HubSpot portal, where campaign names
     // are one namespace. After a create under A settles, hsCreatesInFlight is zero and B's own
