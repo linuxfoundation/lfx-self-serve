@@ -1011,7 +1011,7 @@ describe('WeeklyBriefService', () => {
       );
     });
 
-    it('DOES truncate with an empty source_refs when a full raw page is entirely future-stamped noise — the whole point of a wholly-new copy path (GH-1998) would be untested if every truncation case left mappable events on the page', async () => {
+    it('produces truncated: true with an empty source_refs when a full raw page is entirely future-stamped noise — this service-level state (not the copy that renders it, already covered by the component/e2e specs) is what is uniquely tested here (GH-1998)', async () => {
       delete process.env['WEEKLY_BRIEF_BACKEND'];
       getCommitteeBaseMock.mockResolvedValue({ uid: 'committee-1', category: 'Board' });
 

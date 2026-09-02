@@ -1481,15 +1481,16 @@ export class WeeklyBriefService {
       if (data.length >= ACTIVITY_FEED_MAX_PAGE_SIZE) {
         // WARN, not DEBUG — unlike the vote-leg drop above (a modeled, expected shape for one
         // committee on one vote), a full page is graceful degradation of the tally itself: every
-        // consumer of this response is now getting a floor instead of the true count, repeating on
-        // every GET /current until the committee's volume drops. That's exactly the
+        // consumer of this response is now getting a lower bound, not proof of partiality (see
+        // WeeklyBriefCurrentActivity.truncated's own doc comment), repeating on every GET /current
+        // until the committee's volume drops. That's exactly the
         // "error conditions with graceful degradation (returning null/empty arrays)" WARN
         // criterion in .claude/rules/logging-patterns.md, and worth an operator noticing if
         // ACTIVITY_FEED_MAX_PAGE_SIZE needs raising for this committee.
         logger.warning(
           req,
           'get_weekly_brief_current_activity',
-          'Current-week activity fills a full page — publishing source_refs as a floor with truncated: true rather than a count stated as fact',
+          'Current-week activity fills a full page — publishing source_refs as a lower bound via truncated: true, not proof of partiality',
           {
             committee_id: committeeId,
           }

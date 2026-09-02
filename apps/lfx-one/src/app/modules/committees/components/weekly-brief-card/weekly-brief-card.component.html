@@ -56,11 +56,11 @@
       <!-- GH-1998: current-week activity filled a full upstream page, so source_refs above is a
            lower bound, not proof of partiality (see WeeklyBriefCurrentActivity.truncated's own
            doc comment) — styled after org-roi-projects-bar.component.html's own truncation-note
-           precedent (that one gets its gap from a parent flex-col container;
-           this note is a bare sibling of the tally above with no such wrapper, so mt-2 is the
-           local substitute for that gap, not a pixel match to it). Placed after the expanded
-           @for above (not before it) so the per-kind toggle buttons stay DOM-adjacent to the
-           content their aria-controls targets. -->
+           precedent (that one gets its gap from a parent flex-col container; this note is a bare
+           sibling of the tally above with no such wrapper, so mt-2 is the local substitute for
+           that gap, not a pixel match to it). Placed after the expanded @for above (not before
+           it) so the per-kind toggle buttons stay DOM-adjacent to the content their aria-controls
+           targets. -->
       <p
         class="mt-2 flex items-start gap-2 rounded-md bg-gray-50 px-3 py-2.5 text-xs text-gray-600"
         data-testid="weekly-brief-card-current-activity-truncation-note">

@@ -746,7 +746,7 @@ describe('WeeklyBriefCardComponent — Current activity tally (GH-1922)', () => 
     expect(tally.getAttribute('aria-label')).toContain('activity may be incomplete');
     const note = fixture.nativeElement.querySelector('[data-testid="weekly-brief-card-current-activity-truncation-note"]');
     expect(note).not.toBeNull();
-    expect(note.textContent as string).toContain('Activity this week may be incomplete');
+    expect(note.textContent as string).toContain('The activity feed hit its page limit, so this week may have had more');
     expect(note.textContent as string).toContain('see Recent Activity below for the latest events');
   });
 

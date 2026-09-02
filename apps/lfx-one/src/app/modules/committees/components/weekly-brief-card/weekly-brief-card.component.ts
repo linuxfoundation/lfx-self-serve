@@ -283,7 +283,7 @@ export class WeeklyBriefCardComponent {
   protected readonly currentActivityTruncationNote: Signal<string> = computed(() =>
     this.currentActivity().length
       ? 'This count may be incomplete — see Recent Activity below for the latest events.'
-      : 'Activity this week may be incomplete — see Recent Activity below for the latest events.'
+      : 'The activity feed hit its page limit, so this week may have had more — see Recent Activity below for the latest events.'
   );
 
   // The server's raw truncated flag — do not additionally gate this on currentActivity().length.

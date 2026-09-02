@@ -1106,7 +1106,7 @@ test.describe('WG Weekly Brief card — "This week so far" activity tally (GH-19
 
     const note = page.getByTestId('weekly-brief-card-current-activity-truncation-note');
     await expect(note).toBeVisible();
-    await expect(note).toContainText('Activity this week may be incomplete');
+    await expect(note).toContainText('The activity feed hit its page limit, so this week may have had more');
     await expect(note).toContainText('see Recent Activity below for the latest events');
   });
 });
