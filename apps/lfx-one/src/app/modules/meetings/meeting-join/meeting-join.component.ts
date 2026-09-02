@@ -225,6 +225,10 @@ export class MeetingJoinComponent implements OnInit {
   // time-based fallback for non-hyphenated URLs where past-ness is only knowable from the clock.
   protected loadedViaPastMeetingId = signal(false);
   protected pastMeetingFullAccess = signal(false);
+  // Set when the meeting fetch settles with an error that doesn't navigate away (e.g. a 5xx or
+  // network failure) — 404/403/400 already redirect to /meetings/not-found, so this only covers
+  // the terminal, non-navigating case where the skeleton would otherwise spin forever (GH-2041).
+  protected meetingLoadFailed = signal(false);
   private refreshTrigger$ = new BehaviorSubject<void>(undefined);
   private pastMeetingAttachmentsRefresh$ = new BehaviorSubject<void>(undefined);
   // Set immediately on self-registration success so the UI responds before the meeting refetch
@@ -760,6 +764,8 @@ export class MeetingJoinComponent implements OnInit {
       switchMap(([params, queryParams]) => {
         const meetingId = params.get('id');
         this.password.set(queryParams.get('password'));
+        // Clear any prior terminal-error state so a route change or retry gets a fresh attempt.
+        this.meetingLoadFailed.set(false);
 
         if (!meetingId) {
           this.router.navigate(['/meetings/not-found']);
@@ -782,6 +788,8 @@ export class MeetingJoinComponent implements OnInit {
             catchError((error) => {
               if ([404, 403, 400].includes(error.status)) {
                 this.router.navigate(['/meetings/not-found']);
+              } else {
+                this.meetingLoadFailed.set(true);
               }
               return EMPTY;
             })
@@ -816,6 +824,8 @@ export class MeetingJoinComponent implements OnInit {
               }
               if ([403, 400].includes(error.status)) {
                 this.router.navigate(['/meetings/not-found']);
+              } else {
+                this.meetingLoadFailed.set(true);
               }
               return EMPTY;
             })
@@ -1333,8 +1343,8 @@ export class MeetingJoinComponent implements OnInit {
   // `meeting` re-emits a new object for the same resource on hydration refetch (the seeded value
   // is replaced once `meeting$` resolves) — dedupe on the pair that actually determines whether a
   // past-meeting resource fetch should (re)run, so that refetch doesn't cancel/restart every one
-  // of these fan-out requests for no reason. `extra` carries an explicit refresh trigger through
-  // undeduped, since its whole purpose is to force a refetch even when the resource key is stable.
+  // of these fan-out requests for no reason. `refreshTrigger` carries an explicit refresh signal
+  // through undeduped, since its whole purpose is to force a refetch even when the key is stable.
   private pastMeetingResourceKey$<T>(refreshTrigger: Observable<T>): Observable<{ hasAccess: boolean; id: string | null }> {
     // `refreshTrigger` emissions must always force a refetch, even when `hasAccess`/`id` are
     // unchanged — tagging each emission with a monotonically increasing tick (rather than the

@@ -31,7 +31,13 @@ describe('MeetingJoinComponent', () => {
   const MEETING_JOIN_STATE_KEY = makeStateKey<MeetingJoinPageState>('meetingJoinState');
 
   let getPublicMeeting: ReturnType<typeof vi.fn>;
+  let getPublicPastMeeting: ReturnType<typeof vi.fn>;
   let getMyMeetingRegistrants: ReturnType<typeof vi.fn>;
+  let getPastMeetingSummary: ReturnType<typeof vi.fn>;
+  let getPastMeetingRecording: ReturnType<typeof vi.fn>;
+  let getPastMeetingAttachments: ReturnType<typeof vi.fn>;
+  let getPastMeetingParticipants: ReturnType<typeof vi.fn>;
+  let getPastMeetingTranscript: ReturnType<typeof vi.fn>;
   let paramMap$: BehaviorSubject<ParamMap>;
   let queryParamMap$: BehaviorSubject<ParamMap>;
   let authenticated: ReturnType<typeof signal<boolean>>;
@@ -96,7 +102,13 @@ describe('MeetingJoinComponent', () => {
     queryParamMap$ = new BehaviorSubject<ParamMap>(convertToParamMap({}));
 
     getPublicMeeting = vi.fn().mockReturnValue(of({ meeting: buildMeeting(), project: buildProject() }));
+    getPublicPastMeeting = vi.fn().mockReturnValue(throwError(() => ({ status: 404 })));
     getMyMeetingRegistrants = vi.fn().mockReturnValue(of([]));
+    getPastMeetingSummary = vi.fn().mockReturnValue(of(null));
+    getPastMeetingRecording = vi.fn().mockReturnValue(of(null));
+    getPastMeetingAttachments = vi.fn().mockReturnValue(of([]));
+    getPastMeetingParticipants = vi.fn().mockReturnValue(of([]));
+    getPastMeetingTranscript = vi.fn().mockReturnValue(of(null));
 
     TestBed.configureTestingModule({
       imports: [MeetingJoinComponent],
@@ -123,14 +135,18 @@ describe('MeetingJoinComponent', () => {
           provide: MeetingService,
           useValue: {
             getPublicMeeting,
-            getPublicPastMeeting: vi.fn().mockReturnValue(throwError(() => ({ status: 404 }))),
+            getPublicPastMeeting,
             getPublicMeetingOccurrences: vi.fn().mockReturnValue(of({ past: [], future: [] })),
             getPublicMeetingJoinUrl: vi.fn().mockReturnValue(of({ link: undefined })),
             getMyMeetingRegistrants,
             getMeetingAttachments: vi.fn().mockReturnValue(of([])),
             getMeetingRsvpForCurrentUser: vi.fn().mockReturnValue(of(null)),
             getMeetingRegistrants: vi.fn().mockReturnValue(of([])),
-            getPastMeetingParticipants: vi.fn().mockReturnValue(of([])),
+            getPastMeetingSummary,
+            getPastMeetingRecording,
+            getPastMeetingAttachments,
+            getPastMeetingParticipants,
+            getPastMeetingTranscript,
             stripMetadata: vi.fn(),
             createRegistrantFormGroup: vi.fn(
               () =>
@@ -328,6 +344,11 @@ describe('MeetingJoinComponent', () => {
       expect(component.meeting()?.id).toBe(MEETING_ID);
       expect(transferState.get(MEETING_JOIN_STATE_KEY, null)).toBeNull();
 
+      // Drive an actual CD pass and assert the DOM itself, not just the signal — a swapped
+      // `@if`/`@else` branch in the template would still leave the signal assertion above green.
+      fixture.detectChanges();
+      expect(fixture.nativeElement.querySelector('[data-testid="meeting-join-skeleton"]')).toBeNull();
+
       await TestBed.inject(ApplicationRef).whenStable();
     });
 
@@ -365,13 +386,57 @@ describe('MeetingJoinComponent', () => {
       await TestBed.inject(ApplicationRef).whenStable();
     });
 
-    it('ignores TransferState and starts undefined when the server has not seeded anything', async () => {
+    it('falls back to the fetched meeting when the server has not seeded anything', async () => {
       const component = await createComponent();
 
       // The mocked fetch resolves synchronously in this suite, so by the time `createComponent`
-      // returns the real (post-fetch) meeting is already in place — the assertion that matters is
-      // that it came from the fetch, not a stray seed leaking across tests.
+      // returns the real (post-fetch) meeting is already in place. The undefined-on-first-render
+      // case (no seed, fetch not yet resolved) is covered separately above — this test's job is to
+      // prove the value came from the fetch itself, not a stray seed leaking across tests.
+      expect(getPublicMeeting).toHaveBeenCalled();
       expect(component.meeting()?.id).toBe(MEETING_ID);
+    });
+
+    it('dedupes the five past-meeting fan-out fetches on a same-resource re-emission, but still lets a materials refresh force the attachments fetch', async () => {
+      const PAST_COMPOSITE_ID = '1-1700000000000';
+      paramMap$.next(convertToParamMap({ id: PAST_COMPOSITE_ID }));
+      getPublicPastMeeting.mockReturnValue(of({ meeting: buildMeeting(), project: buildProject(), full_access: true }));
+
+      const component = await createComponent();
+
+      expect(getPastMeetingSummary).toHaveBeenCalledTimes(1);
+      expect(getPastMeetingSummary).toHaveBeenCalledWith(MEETING_ID);
+      expect(getPastMeetingRecording).toHaveBeenCalledTimes(1);
+      expect(getPastMeetingAttachments).toHaveBeenCalledTimes(1);
+      expect(getPastMeetingParticipants).toHaveBeenCalledTimes(1);
+      expect(getPastMeetingTranscript).toHaveBeenCalledTimes(1);
+
+      // Re-trigger `meeting$` for the SAME resource — `map` in `initializeMeeting()` builds a new
+      // object on every emission, so this reproduces the "meeting re-emits a new object for the
+      // same resource on hydration refetch" case `pastMeetingResourceKey$` dedupes against.
+      paramMap$.next(convertToParamMap({ id: PAST_COMPOSITE_ID }));
+      await new Promise((resolve) => setTimeout(resolve, 0));
+      await TestBed.inject(ApplicationRef).whenStable();
+
+      expect(getPastMeetingSummary).toHaveBeenCalledTimes(1);
+      expect(getPastMeetingRecording).toHaveBeenCalledTimes(1);
+      expect(getPastMeetingAttachments).toHaveBeenCalledTimes(1);
+      expect(getPastMeetingParticipants).toHaveBeenCalledTimes(1);
+      expect(getPastMeetingTranscript).toHaveBeenCalledTimes(1);
+
+      // A materials change still forces a refetch of attachments specifically, via the dedicated
+      // `pastMeetingAttachmentsRefresh$` trigger — the dedup only suppresses re-fetches that aren't
+      // asking for one, it must not swallow an explicit refresh request.
+      component.onMaterialsChanged();
+      await TestBed.inject(ApplicationRef).whenStable();
+
+      expect(getPastMeetingAttachments).toHaveBeenCalledTimes(2);
+      // The other four fan-out streams are gated on a one-shot `of(null)` trigger, so they must be
+      // unaffected by the attachments-specific refresh subject.
+      expect(getPastMeetingSummary).toHaveBeenCalledTimes(1);
+      expect(getPastMeetingRecording).toHaveBeenCalledTimes(1);
+      expect(getPastMeetingParticipants).toHaveBeenCalledTimes(1);
+      expect(getPastMeetingTranscript).toHaveBeenCalledTimes(1);
     });
 
     it('persists the resolved meeting to TransferState on the server once the fetch settles', async () => {
