@@ -1085,7 +1085,11 @@ export class CampaignController {
         // is invisible from the response alone.
         logger.success(req, 'hubspot_utm_lookup', startTime, {
           viaCampaignService: true,
-          matches: payload.campaigns.length,
+          // Guarded: `toUtmLookupResult` fail-closes on a malformed envelope (`{}` or a body with
+          // no `campaigns` array) and returns `inconclusive: true` -- a TESTED safe path. Reading
+          // `.length` off it unguarded threw a TypeError before `res.json(result)`, converting
+          // that deliberate safe answer into a 500 (dealako, blocking).
+          matches: Array.isArray(payload?.campaigns) ? payload.campaigns.length : null,
           found: result.found,
         });
         res.json(result);

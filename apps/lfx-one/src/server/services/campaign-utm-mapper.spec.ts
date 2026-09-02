@@ -282,3 +282,17 @@ describe('toUtmLookupResult capped', () => {
     expect(res.hs_utm).toBe('na-token');
   });
 });
+
+describe('scoreCampaignName — blank query', () => {
+  it('scores ZERO for a whitespace-only query instead of weak-matching everything', () => {
+    // dealako (#2079): the controller accepts an untrimmed `event_name`, so `queryLower` can be
+    // '' after normalisation -- and `nameLower.includes('')` is true for EVERY campaign. Each one
+    // then scored >= 1 on containment, so a blank query weak-matched the entire portal and could
+    // auto-apply an unrelated campaign's UTM into a brief. Mirror of the blank-NAME guard that
+    // was already there.
+    expect(scoreCampaignName('KubeCon NA 2026', '   ')).toBe(0);
+    expect(scoreCampaignName('Anything At All', '')).toBe(0);
+    // And a real query still scores.
+    expect(scoreCampaignName('KubeCon NA 2026', 'KubeCon NA 2026')).toBeGreaterThan(0);
+  });
+});

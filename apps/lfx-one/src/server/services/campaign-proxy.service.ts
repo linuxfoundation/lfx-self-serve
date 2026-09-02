@@ -3,7 +3,7 @@
 
 import { AI_MODEL, CAMPAIGN_DELIVERY_TYPES, JOB_LOST_MESSAGE, META_CHAR_LIMITS } from '@lfx-one/shared/constants';
 
-import { scoreCampaignName } from './campaign-utm-mapper';
+import { isConfidentMatch, scoreCampaignName } from './campaign-utm-mapper';
 
 import type {
   BulkKeywordActionRequest,
@@ -271,12 +271,20 @@ async function hubspotSearchCampaign(eventName: string): Promise<HubSpotUtmResul
   // mapper path already has rather than inheriting a tie-break from HubSpot's row order.
   const ambiguous = matches.length > 1 && matches[1].score === best.score;
 
+  // And the SAME confidence bar the mapper path applies. Refusing ties alone still auto-applied a
+  // lone WEAK match -- a single campaign sharing one long word with the event name scored 1 and
+  // won by default, writing its UTM into the brief's links unattended. The mapper requires an
+  // exact normalised match before `found: true`; two paths behind one flag must not disagree
+  // about what counts as a match, or flipping the flag silently changes which campaign a brief
+  // attributes to (dealako, #2079).
+  const confident = isConfidentMatch(best.name, eventName);
+
   // A CAPPED search cannot auto-apply a token, even when it found a match. The result set is
   // incomplete by definition, so an equal-or-better campaign may be sitting outside it, and the
   // planning tab applies a `found` token immediately — it only consults `inconclusive` on the
   // not-found path. Returning found:true here would silently pick a worse match and write its
   // UTM into the event's links. The candidates still travel, so the operator picks.
-  if (capped || ambiguous) {
+  if (capped || ambiguous || !confident) {
     return {
       found: false,
       hsUtm: null,

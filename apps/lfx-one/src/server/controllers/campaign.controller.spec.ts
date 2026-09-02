@@ -2562,6 +2562,22 @@ describe('CampaignController HubSpot UTM', () => {
       expect(next).not.toHaveBeenCalled();
     });
 
+    it('answers a malformed upstream envelope with the mapper safe result, not a 500', async () => {
+      // dealako (#2079, blocking): `toUtmLookupResult` deliberately fail-closes on a body with no
+      // `campaigns` array and returns `inconclusive: true` -- a TESTED safe path. The success log
+      // then read `payload.campaigns.length` unguarded and threw a TypeError before
+      // `res.json(result)`, converting that deliberate safe answer into a generic 500.
+      isServerFeatureEnabled.mockImplementation(onlyUtm);
+      svcSearchHsCampaigns.mockResolvedValueOnce({ capped: false } as never);
+
+      await controller.lookupHubSpotUtm(utmReq({ project: 'tlf', event_name: 'KubeCon NA 2026' }), res, next);
+
+      expect(next, 'the fail-closed lookup was turned into an error by its own success log').not.toHaveBeenCalled();
+      const body = vi.mocked(res.json).mock.calls[0][0] as { found: boolean; inconclusive: boolean };
+      expect(body.found).toBe(false);
+      expect(body.inconclusive, 'a malformed envelope must not read as proven absence').toBe(true);
+    });
+
     it('keeps the legacy path when the flag is off', async () => {
       isServerFeatureEnabled.mockReturnValue(false);
 

@@ -1596,6 +1596,42 @@ export class PlanningTabComponent implements OnInit {
    * used to handle it here was removed with it rather than left as unreachable code.
    */
   /**
+   * Retire the possibly-created record for an event a lookup has POSITIVELY found.
+   *
+   * This is the record's only exit, and the design depends on it: Create stays suppressed for the
+   * session precisely because an empty search proves nothing under an eventually-consistent
+   * index. Finding the campaign is the one thing that DOES settle it -- so without this, the
+   * suppression is permanent for the component's lifetime and the "cleared only by a positive
+   * find" contract is a claim with no implementation behind it (dealako, #2079).
+   *
+   * Clears every set keyed on this event so the confirmed-marker and the cross-foundation
+   * name fence cannot outlive the record they annotate.
+   */
+  private retireCreatedRecord(foundation: string, eventName: string): void {
+    const key = `${foundation}|${eventName}`;
+    this.hsCreatedEvents.update((seen) => {
+      const next = new Set(seen);
+      next.delete(key);
+      return next;
+    });
+    this.hsCreatedConfirmed.update((seen) => {
+      const next = new Set(seen);
+      next.delete(key);
+      return next;
+    });
+    this.hsCreatedEventNames.update((seen) => {
+      const next = new Set(seen);
+      next.delete(eventName);
+      return next;
+    });
+    this.hsCreatedNamesConfirmed.update((seen) => {
+      const next = new Set(seen);
+      next.delete(eventName);
+      return next;
+    });
+  }
+
+  /**
    * Repair a panel whose rendered state a just-written create record contradicts.
    *
    * The records are written BEFORE the ownership guards, deliberately -- a superseded create
@@ -1726,10 +1762,18 @@ export class PlanningTabComponent implements OnInit {
           // upstream. The legacy path never surfaced this because it fabricated a token from the
           // id and name whenever HubSpot had none.
           if (result?.found && result.hs_utm) {
+            // POSITIVE evidence: the campaign exists. This is the record's only exit -- see
+            // retireCreatedRecord. Done before the render guards for the same reason the create
+            // arms record before them: the fact is true whether or not this panel still shows it.
+            this.retireCreatedRecord(capturedFoundation, capturedEvent);
             this.hsUtm.set(result.hs_utm);
             this.hsMatches.set(result.all_matches ?? []);
             this.hsStatus.set(`Found: ${result.campaign_name}`);
           } else if (result?.found) {
+            // Tokenless, but still FOUND -- equally positive evidence that the campaign exists,
+            // so it retires the record too. Gating retirement on `hs_utm` would leave Create
+            // suppressed forever for a campaign HubSpot has simply not tokenised.
+            this.retireCreatedRecord(capturedFoundation, capturedEvent);
             // Found, but untokened. The brief gets no utm — which is honest, since HubSpot has
             // none to report against — and Create stays hidden so nobody duplicates it.
             this.hsMatches.set(result.all_matches ?? []);

@@ -724,6 +724,26 @@ describe('CampaignProxyService HubSpot campaign lookup', () => {
     expect(result.inconclusive).toBe(true);
   });
 
+  it('refuses a LONE weak match, matching the mapper path', async () => {
+    // dealako (#2079): refusing ties alone still auto-applied a single weak match. One campaign
+    // sharing one long word with the event name scores on containment and wins by default, and
+    // the planning tab writes its UTM straight into the brief's links.
+    //
+    // The mapper path requires an exact NORMALISED match before `found: true`. Two paths behind
+    // one flag must not disagree about what counts as a match, or flipping
+    // LFX_CUTOVER_CAMPAIGN_SERVICE_HUBSPOT_UTM silently changes which campaign a brief attributes
+    // to -- and this is the production default, so the weak answer is the one shipping today.
+    hsResponds({ total: 1, results: [{ id: '9', properties: { hs_name: 'KubeCon EU 2025 Sponsor Booth', hs_utm: 'unrelated-token' } }] });
+
+    const result = await service.lookupHubSpotUtm(req, 'KubeCon NA 2026');
+
+    expect(result.found, 'auto-applied a weak single match the mapper path would refuse').toBe(false);
+    expect(result.hs_utm).toBeNull();
+    // The candidate still travels, so the operator can pick it deliberately.
+    expect(result.all_matches).toHaveLength(1);
+    expect(result.inconclusive).toBe(true);
+  });
+
   it('carries a real hs_utm through untouched', async () => {
     // The other direction, so the guard above cannot be satisfied by nulling every token.
     hsResponds({ total: 1, results: [{ id: '42', properties: { hs_name: 'KubeCon EU 2026', hs_utm: 'kubecon-eu-2026' } }] });

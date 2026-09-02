@@ -43,7 +43,7 @@ import type {
  * and the ordering is the legacy path's on purpose. This narrows what may be applied unattended
  * without changing what gets ranked first.
  */
-function isConfidentMatch(name: string, query: string): boolean {
+export function isConfidentMatch(name: string, query: string): boolean {
   return normaliseForMatch(name) !== '' && normaliseForMatch(name) === normaliseForMatch(query);
 }
 
@@ -79,6 +79,13 @@ export function scoreCampaignName(name: string, query: string): number {
   // scores 1 — beating a genuinely unrelated named campaign, which scores 0. The winner's UTM
   // is then applied to this event, attributing its traffic to a campaign nobody named. The
   // name is legitimately empty on a campaign-service hit, so this is reachable, not defensive.
+  // A blank QUERY is the mirror of the blank-name case below and needs the same refusal:
+  // `nameLower.includes('')` is true for every campaign, so a whitespace-only `event_name` --
+  // which the controller accepts untrimmed -- weak-matches the entire portal and can license an
+  // auto-apply against an unrelated campaign (dealako, #2079).
+  if (queryLower === '') {
+    return 0;
+  }
   if (nameLower.trim() === '') {
     return 0;
   }

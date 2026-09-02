@@ -1883,6 +1883,31 @@ describe('PlanningTabComponent — HubSpot UTM states', () => {
     expect(instance()['hsUnconfirmed'](), 'operator left with no re-check control').toBe(true);
   });
 
+  it('retires the record on a TOKENLESS positive find too', () => {
+    // dealako (#2079, blocking): neither found arm removed the entry, so `hsCreateBlocked` stayed
+    // true for the component's lifetime and the "cleared only by a positive find" contract had no
+    // implementation behind it. This is the tokenless half -- gating retirement on `hs_utm` would
+    // leave Create suppressed forever for a campaign HubSpot has simply not tokenised yet.
+    const empty = { found: false, hs_utm: null, campaign_name: '', all_matches: [], capped: false, inconclusive: false };
+    runLookup(empty, 'KubeCon NA 2026');
+    create.mockReturnValue(throwError(() => ({ status: 503 })));
+    (fixture.componentInstance as unknown as { createInHubSpot(): void }).createInHubSpot();
+    fixture.detectChanges();
+    expect(instance()['hsCreateBlocked'](), 'precondition: the unconfirmed create should block').toBe(true);
+
+    // FOUND, but HubSpot has assigned no token yet.
+    lookup.mockReturnValue(
+      new Observable((o) => {
+        o.next({ found: true, hs_utm: null, campaign_name: 'KubeCon NA 2026', all_matches: [], capped: false, inconclusive: false });
+        o.complete();
+      })
+    );
+    (fixture.componentInstance as unknown as { recheckHubSpot(): void }).recheckHubSpot();
+    fixture.detectChanges();
+
+    expect(instance()['hsCreateBlocked'](), 'a positive find left Create suppressed for the session').toBe(false);
+  });
+
   it('retires the record when a re-check POSITIVELY finds the campaign', () => {
     // dealako, round 5 (blocking): the record must have an exit, or an operator is stranded
     // until a reload. The exit is positive evidence -- the lookup actually finding it -- which
