@@ -1007,6 +1007,150 @@ export const CAMPAIGN_METRICS_WINDOWS = ['today', 'yesterday', 'last_7_days', 'l
 export const EMAIL_BRIEF_REQUIRED_HINT = 'Generate a brief on the Plan tab first.';
 
 /**
+ * How much harder an EVENT term counts than an email-type keyword when ranking clone templates.
+ *
+ * Within one portal that runs several events, "which event is this" discriminates far harder than
+ * "which stage of the sequence": a KubeCon registration push and an MCP Dev Summit registration
+ * push score identically on type keywords, and only the event term tells them apart.
+ *
+ * It does NOT guarantee an event hit outranks every type-only match, and an earlier version of this
+ * comment wrongly claimed it did on the grounds that "types carry at most three keywords" -- they
+ * carry four to seven (`final-countdown` has seven), so a type-only match can reach 7 and outrank a
+ * single short event hit at 3. What the weight buys is that a template matching BOTH sorts above one
+ * matching only the type, which is the ordering that matters. The suggestion does not rely on rank
+ * at all: it scores the event alone and is spliced into the rendered list if ranking cuts it.
+ */
+export const EVENT_TERM_WEIGHT = 3;
+
+/**
+ * The lowest event score that may PRE-SELECT a template rather than merely rank it.
+ *
+ * Two independent event hits, or one weighted hit. Below this the suggestion is withheld entirely
+ * and the operator picks by hand, which is the honest outcome: a confidently wrong pre-selection
+ * clones another event's branding into a real HubSpot draft, and because it looks decided nobody
+ * re-reads it. Ranking still applies -- a weak signal is worth ordering by, just not deciding by.
+ */
+export const EVENT_TEMPLATE_SUGGESTION_MIN_SCORE = 6;
+
+/**
+ * Length at which a matched event term is treated as evidence on its own.
+ *
+ * Corroboration by a second term is the usual bar, but it is the wrong bar for a distinctive brand
+ * token. Verified against the live portal: "KubeCon North America" reduces to
+ * `kubecon | salt | lake | city`, and "KubeCon NA 2026 - Registration" matches only `kubecon` --
+ * one hit, withheld, despite naming the event unambiguously. Meanwhile a short token like `dev`
+ * or `mcp` really does need corroboration, because it occurs in unrelated template names.
+ *
+ * Six characters is where the two groups separate in practice (`kubecon`, `nairobi`, `pytorch`,
+ * `zephyr` above it; `dev`, `mcp`, `city`, `salt`, `lake` below), so a single long-token hit is
+ * scored double and clears the threshold alone while a short one still cannot.
+ */
+export const EVENT_TERM_DISTINCTIVE_LENGTH = 6;
+
+/**
+ * Words that are long enough to look distinctive but carry no event identity.
+ *
+ * `EVENT_TERM_DISTINCTIVE_LENGTH` uses length as a proxy for distinctiveness, and the proxy is
+ * wrong for a whole class of words: `register`, `webinar`, `keynote`, `session`, `speaker`,
+ * `reminder` are all six-plus characters and all generic, so each cleared the suggestion threshold
+ * on a SINGLE hit and pre-selected an unrelated template.
+ *
+ * These are excluded from the distinctive DOUBLE weight rather than dropped from matching
+ * entirely: they still order templates that already name the event, they just cannot be the reason
+ * one is suggested. Distinct from EVENT_TERM_STOPWORDS, which removes a token from matching
+ * altogether.
+ *
+ * A vocabulary is still a list and still needs appending, and an UN-LISTED generic word still
+ * produces a confidently wrong suggestion -- it takes the double weight and clears the threshold
+ * alone, exactly as before. An earlier version of this note claimed the opposite (a missed
+ * suggestion rather than a wrong one), which inverted the actual failure mode.
+ *
+ * What listing a word changes is that word: it drops to single weight, so it can rank but cannot
+ * justify a suggestion by itself. The remaining limit is pinned by the spec test
+ * "still pre-selects on an un-enumerated generic long word (known limit)", so it is measured
+ * rather than assumed away.
+ */
+export const EVENT_TERM_GENERIC: ReadonlySet<string> = new Set([
+  'register',
+  'registration',
+  'webinar',
+  'keynote',
+  'session',
+  'sessions',
+  'speaker',
+  'speakers',
+  'reminder',
+  'newsletter',
+  'announcement',
+  'invitation',
+  'schedule',
+  'agenda',
+  'program',
+  'update',
+  'updates',
+  'welcome',
+  'community',
+  'training',
+  'workshop',
+]);
+
+/**
+ * Words dropped from an event name before it is used to match template names.
+ *
+ * Every one of these appears in ordinary event titles AND in unrelated template names, so keeping
+ * them manufactures hits that mean nothing -- "2026" matches every template written this year, and
+ * "summit" matches every summit in the portal. Short tokens are dropped separately by length.
+ */
+export const EVENT_TERM_STOPWORDS: readonly string[] = [
+  'the',
+  'and',
+  'for',
+  'con',
+  'conference',
+  'summit',
+  'event',
+  'events',
+  'day',
+  'days',
+  'annual',
+  'north',
+  'south',
+  'america',
+  'europe',
+  'asia',
+  // GENERIC, whatever their length. Length was standing in for distinctiveness, and the six-plus
+  // character ones broke that proxy outright: a single hit scored double and cleared the
+  // threshold alone, so "Open Source Summit" reduced to `open` + `source` and `source`
+  // pre-selected an unrelated "Source newsletter". A confident wrong pick is the one outcome the
+  // suggestion must never produce.
+  //
+  // `forum` (5) and `expo` (4) are shorter than that and do NOT clear the threshold alone. They
+  // are here because they are just as generic and still inflate a score toward it -- the list is
+  // about the words carrying no event identity, not about their length. An earlier version of
+  // this note said they were all six-plus characters, which two of them are not.
+  'source',
+  'global',
+  'online',
+  'virtual',
+  'storage',
+  'meetup',
+  'forum',
+  'expo',
+];
+
+/**
+ * Matches a year-shaped token, which is dropped from event terms whatever the year.
+ *
+ * Years were originally enumerated in the stopword list, which made the protection EXPIRE: in 2028
+ * an `Open Source Summit 2028` brief and an unrelated `Open newsletter 2028` template would match
+ * `open` plus `2028`, reach the threshold, and be pre-selected. A pattern cannot go stale.
+ *
+ * Deliberately narrow — four digits beginning 19 or 20. A bare `\d{4}` would also drop conference
+ * numbers and venue codes that really do identify an event.
+ */
+export const EVENT_TERM_YEAR_PATTERN = /^(19|20)\d{2}$/;
+
+/**
  * The twelve email types an event programme sends, in lifecycle order, each mapped to the stage
  * campaign-service generates from.
  *

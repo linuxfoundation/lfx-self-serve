@@ -152,6 +152,31 @@ export interface CampaignBriefRequest {
   previousCopy?: Record<string, unknown>;
 }
 
+/**
+ * The event's terms, split by how much authority each kind carries when suggesting a template.
+ *
+ * Three kinds rather than one list, because they answer different questions and conflating them
+ * produced two real false positives:
+ *
+ * - `decisive` (event name and slug) is the ONLY kind that may push a template over the
+ *   suggestion threshold. These identify the event itself.
+ * - `ranking` (city) orders results but can never justify a suggestion on its own. Operators do
+ *   name templates by city, so the terms are worth sorting by -- but "Salt Lake City visitor
+ *   guide" matched `salt`, `lake` and `city` for a KubeCon brief and cleared the threshold with
+ *   no event term at all.
+ * - `year` breaks ties and nothing more. Dropping it made annual editions score identically, so
+ *   the server's order chose between "KubeCon NA 2025" and "KubeCon NA 2026"; counting it toward
+ *   the threshold would let "Open newsletter 2028" match an "Open Source Summit 2028" brief.
+ */
+export interface EventTemplateTerms {
+  /** Name and slug tokens. The only kind that can reach the suggestion threshold. */
+  decisive: string[];
+  /** City tokens. Improve ordering; never sufficient for a suggestion. */
+  ranking: string[];
+  /** The event's year, if it names one. A tie-break between otherwise-equal templates. */
+  year: string;
+}
+
 export interface CampaignEventDetails {
   name: string;
   dates: string;
