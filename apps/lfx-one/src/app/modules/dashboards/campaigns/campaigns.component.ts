@@ -768,6 +768,16 @@ export class CampaignsComponent {
    */
   protected readonly emailTemplateSelectionIsSuggested = signal<boolean>(false);
 
+  /**
+   * The selected template's ROW, retained so it can be rendered even when the current search does
+   * not return it.
+   *
+   * `emailTemplatesRendered` splices the selected row back in when ranking pushes it past the
+   * cap, but it looked the row up in the CURRENT results -- so a narrowed search that excluded it
+   * left nothing to splice. The selection survived as an id, invisible, and still stageable.
+   */
+  private readonly selectedEmailTemplateRow = signal<HubSpotMarketingEmail | null>(null);
+
   /** Which event terms the suggested template matched on, so the operator can judge it themselves. */
   protected readonly emailTemplateSuggestionTerms = signal<readonly string[]>([]);
 
@@ -838,6 +848,19 @@ export class CampaignsComponent {
     // reorder what survived -- a matching template past the cap would be cut before it could rise,
     // which is exactly the template the operator was looking for.
     const ranked = this.rankTemplatesForSelectedType(templates);
+
+    // A selection MISSING from the results is a different case from one pushed past the cap, and
+    // the splice below only covered the second. A narrowed search can return a set that does not
+    // contain the operator's choice at all -- then `ranked` is short, this returned early, and the
+    // selection stayed live but off screen while `canStageEmail` (which reads the id, not the
+    // list) kept staging enabled. The retained row is appended so the choice stays visible and
+    // changeable; it is not re-ranked, because it did not match this search.
+    const missingId = this.selectedEmailTemplateId();
+    const retained = this.selectedEmailTemplateRow();
+    if (missingId !== '' && retained !== null && !ranked.some((t) => t.id === missingId)) {
+      return [...ranked.slice(0, HUBSPOT_TEMPLATE_RENDER_LIMIT - 1), retained];
+    }
+
     if (ranked.length <= HUBSPOT_TEMPLATE_RENDER_LIMIT) {
       return ranked;
     }
@@ -864,7 +887,7 @@ export class CampaignsComponent {
     // for why not index 0.
     const selectedId = this.selectedEmailTemplateId();
     if (selectedId !== '' && !drawn.some((t) => t.id === selectedId)) {
-      const selected = ranked.find((t) => t.id === selectedId);
+      const selected = ranked.find((t) => t.id === selectedId) ?? this.selectedEmailTemplateRow() ?? undefined;
       if (selected) {
         // APPENDED, not promoted to index 0. Prepending kept the row visible but put a
         // zero-scoring template above every matching one, which contradicts the ranking
@@ -1409,6 +1432,7 @@ export class CampaignsComponent {
         this.emailChannelEnabled.set(null);
         this.emailTemplatesError.set(null);
         this.selectedEmailTemplateId.set('');
+        this.selectedEmailTemplateRow.set(null);
         // The brief-derived state too. `emailBriefId` is scoped to a (project, event) row, and
         // `ensureEmailBriefId` returns the cached id when set -- so carrying it across a
         // foundation switch points the audience build, the copy generation and the staged draft
@@ -1807,6 +1831,7 @@ export class CampaignsComponent {
     const templates = this.emailTemplates();
     if (templates !== null && this.emailTemplateSelectionIsSuggested()) {
       this.selectedEmailTemplateId.set('');
+      this.selectedEmailTemplateRow.set(null);
       this.applyEventTemplateSuggestion(templates);
     }
     this.emailCopy.set(null);
@@ -2184,6 +2209,11 @@ export class CampaignsComponent {
     // A hand-pick is the operator's, even when it happens to be the same row the suggestion chose.
     this.emailTemplateSelectionIsSuggested.set(false);
     this.selectedEmailTemplateId.set(id);
+    // Keep the ROW, not just the id. A later narrowed search can return a result set that does
+    // not contain it, and `emailTemplatesRendered` can only splice a row it can still find -- so
+    // without this the selection went invisible while `canStageEmail` stayed enabled on the id
+    // alone, and staging would clone a template no longer on screen.
+    this.selectedEmailTemplateRow.set(this.emailTemplates()?.find((t) => t.id === id) ?? null);
   }
 
   /** Retry a failed campaign list — the action the failure state exists to offer. */
@@ -2655,6 +2685,7 @@ export class CampaignsComponent {
   private releaseSuggestedSelection(): void {
     if (this.emailTemplateSelectionIsSuggested()) {
       this.selectedEmailTemplateId.set('');
+      this.selectedEmailTemplateRow.set(null);
       this.emailTemplateSelectionIsSuggested.set(false);
     }
     this.emailTemplateSuggestionId.set('');
@@ -3584,6 +3615,7 @@ export class CampaignsComponent {
     // silently suppresses the new suggestion, since the derivation only ever fills an empty
     // selection. That is the feature failing exactly where it is most useful -- the second event.
     this.selectedEmailTemplateId.set('');
+    this.selectedEmailTemplateRow.set(null);
     // Cleared WITH the id it describes: the flag means "the CURRENT selection is system-owned",
     // and there is no current selection once the line above runs.
     //

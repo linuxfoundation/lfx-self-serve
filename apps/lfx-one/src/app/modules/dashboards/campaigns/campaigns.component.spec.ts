@@ -4738,6 +4738,59 @@ describe('CampaignsComponent — HubSpot template picker', () => {
       });
 
       expect(picker().selectedEmailTemplateId()).toBe('hand');
+      // RENDERED, not merely retained. Asserting the id alone locked in an invisible-but-stageable
+      // selection: `emailTemplatesRendered` spliced the selected row back only when it could find it
+      // in the CURRENT results, so a narrowed search that excluded it left the operator able to stage
+      // a template no longer on screen. `canStageEmail` reads the id, not the list.
+      expect(
+        picker()
+          .emailTemplatesRendered()
+          .map((t) => t.id)
+      ).toContain('hand');
+    });
+
+    /**
+     * The retained row must be released with the selection it belongs to.
+     *
+     * `selectedEmailTemplateRow` keeps the chosen template so a narrowed search cannot hide it.
+     * That retention has to end when the selection does, or the row outlives its own id and gets
+     * appended to a later, unrelated result set -- a template from a previous brief rendered as
+     * though the operator had just picked it. Removing all four clear sites left every other test
+     * green, so nothing covered this until now.
+     */
+    it('stops rendering the retained row once the selection is cleared', () => {
+      showPicker();
+      picker().searchEmailTemplates('');
+      respond({
+        enabled: true,
+        error: null,
+        possiblyTruncated: false,
+        emails: [
+          { id: 'mcp', name: 'MCP Dev Summit Nairobi registration' },
+          { id: 'hand', name: 'Something the operator knows about' },
+        ] as HubSpotMarketingEmail[],
+      });
+      picker().onSelectEmailTemplate('hand');
+
+      picker().searchEmailTemplates('newsletter');
+      respond({ enabled: true, error: null, possiblyTruncated: false, emails: [{ id: 'other', name: 'Monthly newsletter' }] as HubSpotMarketingEmail[] });
+      expect(
+        picker()
+          .emailTemplatesRendered()
+          .map((t) => t.id)
+      ).toContain('hand');
+
+      // The operator picks a row from the CURRENT results; the old retained row must go with the
+      // selection it belonged to.
+      picker().onSelectEmailTemplate('other');
+      fixture.detectChanges();
+
+      expect(picker().selectedEmailTemplateId()).toBe('other');
+      expect(
+        picker()
+          .emailTemplatesRendered()
+          .map((t) => t.id)
+      ).not.toContain('hand');
     });
 
     /** But a city match still ranks, once the event itself is identified. */
