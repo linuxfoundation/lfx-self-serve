@@ -869,7 +869,12 @@ export class PlanningTabComponent implements OnInit {
           // existed, which left Create withheld forever after a create that never reached
           // HubSpot.
           const failStatus = typeof err === 'object' && err !== null && 'status' in err ? Number((err as { status: unknown }).status) : 0;
-          if (failStatus !== 400 && failStatus !== 404) {
+          // 401/403 join 400/404 as DEFINITE. requireCampaignManager refuses an unauthorised
+          // project before the POST reaches the controller, so nothing was created -- recording
+          // it told the operator a campaign may exist and made them spend two futile re-checks
+          // to clear a record that never should have been written.
+          const definiteRefusal = failStatus === 400 || failStatus === 401 || failStatus === 403 || failStatus === 404;
+          if (!definiteRefusal) {
             this.hsCreatedEvents.update((seen) => new Set(seen).add(`${capturedFoundation}|${capturedEvent}`));
           }
           if (this.createIsCurrent(generation)) {
@@ -1620,6 +1625,15 @@ export class PlanningTabComponent implements OnInit {
               // would be the round-4 lockout reached through the failure path.
               this.hsCreatedEvents.update((seen) => {
                 const next = new Set(seen);
+                next.delete(key);
+                return next;
+              });
+              // The COUNT goes with it. Left at the limit, the next unconfirmed create for this
+              // same event retires on its FIRST empty re-check -- the two-check protection spent
+              // on the previous attempt -- which is worse than never having it, because the
+              // retry is exactly when a duplicate is most likely.
+              this.hsCreatedRecheckMisses.update((m) => {
+                const next = new Map(m);
                 next.delete(key);
                 return next;
               });

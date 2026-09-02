@@ -74,7 +74,12 @@ async function globalSetup(config: FullConfig) {
     console.log('✅ Authentication successful. State saved.');
   } catch (error) {
     console.error('❌ Authentication failed:', error);
-    console.log('   Tests requiring authentication will be skipped.');
+    // NOT "will be skipped": the guards key on the credential ENV VARS being absent, and they
+    // are present here -- authentication is what failed. Those specs will therefore run
+    // unauthenticated and fail on their own assertions, so the message must not imply the run
+    // is clean.
+    console.log('   Credentials were supplied but authentication failed, so authenticated specs will RUN and fail.');
+    console.log('   Fix the credentials, or unset TEST_USERNAME/TEST_PASSWORD to skip those specs instead.');
     // Same guarantee as the missing-credentials path above. This branch also PROMISES a skip,
     // and without a state file the projects' `storageState` fails while constructing the `page`
     // fixture -- so the suite errors on a missing file instead of skipping, naming the wrong

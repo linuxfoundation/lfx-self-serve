@@ -1615,6 +1615,41 @@ describe('PlanningTabComponent — HubSpot UTM states', () => {
     expect(instance()['hsCreateBlocked'](), 'Create was re-offered after a create that may have committed').toBe(true);
   });
 
+  it('gives a RETRIED unconfirmed create its own two re-checks', () => {
+    // Retiring the record left the miss count at the limit, so the next unconfirmed create for
+    // the same event retired on its FIRST empty re-check -- the protection spent on the previous
+    // attempt. Worse than never having it, because a retry is exactly when a duplicate is most
+    // likely: the first create may well have landed.
+    const empty = { found: false, hs_utm: null, campaign_name: '', all_matches: [], capped: false, inconclusive: false };
+    const recheck = () => {
+      lookup.mockReturnValue(
+        new Observable((s) => {
+          s.next(empty);
+          s.complete();
+        })
+      );
+      (fixture.componentInstance as unknown as { recheckHubSpot(): void }).recheckHubSpot();
+      fixture.detectChanges();
+    };
+    const unconfirmedCreate = () => {
+      create.mockReturnValue(throwError(() => ({ status: 503 })));
+      (fixture.componentInstance as unknown as { createInHubSpot(): void }).createInHubSpot();
+      fixture.detectChanges();
+    };
+
+    runLookup(empty, 'KubeCon NA 2026');
+    unconfirmedCreate();
+    recheck();
+    recheck();
+    expect(instance()['hsCreateBlocked'](), 'first record should have retired').toBe(false);
+
+    // SECOND unconfirmed create for the same event. It must get a fresh pair of re-checks.
+    unconfirmedCreate();
+    recheck();
+
+    expect(instance()['hsCreateBlocked'](), 'the retried create retired on its FIRST re-check, reusing a spent count').toBe(true);
+  });
+
   it('retires a possibly-created record after two empty re-checks', () => {
     // dealako, round 5 (blocking): the record had NO exit. A create that failed with a transport
     // 503 -- request never left, so nothing was created -- recorded the event, and every later
@@ -1655,6 +1690,21 @@ describe('PlanningTabComponent — HubSpot UTM states', () => {
     recheck();
     expect(instance()['hsCreateBlocked'](), 'Create stayed withheld forever after a create that never reached HubSpot').toBe(false);
     expect(instance()['hsNotFound'](), 'the create block is gated on hsNotFound, so it must be set to render').toBe(true);
+  });
+
+  it.each([
+    ['401', 401],
+    ['403', 403],
+  ])('does NOT record a %s, which is refused at the boundary', (_label, status) => {
+    // requireCampaignManager refuses an unauthorised project BEFORE the POST reaches the
+    // controller, so nothing was created. Recording it told the operator a campaign may exist
+    // and made them spend two futile re-checks clearing a record that should never have existed.
+    runLookup({ found: false, hs_utm: null, campaign_name: '', all_matches: [], capped: false, inconclusive: false }, 'KubeCon NA 2026');
+    create.mockReturnValue(throwError(() => ({ status })));
+    (fixture.componentInstance as unknown as { createInHubSpot(): void }).createInHubSpot();
+    fixture.detectChanges();
+
+    expect(instance()['hsCreateBlocked'](), 'a boundary refusal was recorded as possibly-created').toBe(false);
   });
 
   it('does NOT record a 400, which proves nothing was created', () => {
