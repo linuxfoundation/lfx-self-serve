@@ -2168,6 +2168,40 @@ describe('OptimizationTabComponent — keyword action outcome states', () => {
     expect(toast.severity).toBe('success');
   });
 
+  it('reports a MIXED batch as unconfirmed, not failed', () => {
+    // Copilot: the summary ordered `failed` above `unconfirmed`, so a batch carrying both was
+    // announced as "Remove failed" -- and a definite failure reads as safe to retry. One of those
+    // rows MAY have applied, and re-running an irreversible REMOVE over it is the duplicate this
+    // whole classification exists to prevent. The error arm twenty lines below states the same
+    // rule in prose; the summary line contradicted it.
+    const campaignService = TestBed.inject(CampaignService) as unknown as {
+      executeKeywordActions: ReturnType<typeof vi.fn>;
+    };
+    const inFlight = new Subject<{ results: ({ success: boolean; message: string } | undefined)[] }>();
+    campaignService.executeKeywordActions = vi.fn().mockReturnValue(inFlight.asObservable());
+
+    const component = fixture.componentInstance as unknown as {
+      bulkKeywordAction(keywords: unknown[], action: string): void;
+    };
+    component.bulkKeywordAction(
+      [
+        { campaignId: 'c1', adGroupId: 'ag1', criterionId: 'cr1' },
+        { campaignId: 'c1', adGroupId: 'ag1', criterionId: 'cr2' },
+      ],
+      'REMOVE'
+    );
+    fixture.destroy();
+
+    // One DEFINITE failure, one row with no result at all -- positional absence is unconfirmed.
+    inFlight.next({ results: [{ success: false, message: 'adGroupId must be numeric' }, undefined] });
+    inFlight.complete();
+
+    expect(keywordMessageAdd).toHaveBeenCalledTimes(1);
+    const toast = keywordMessageAdd.mock.calls[0][0];
+    expect(toast.severity, 'a batch containing an unconfirmed row was reported as a definite failure').toBe('warn');
+    expect(String(toast.summary), 'summary invited a retry over a row that may already have applied').toMatch(/not confirmed/);
+  });
+
   it('warns stickily when a bulk action the operator left behind does not confirm', () => {
     // The arm that matters most: a partially-unconfirmed bulk REMOVE, surfaced after the table
     // that would have shown the per-row detail is gone. Sticky, because a message that times out

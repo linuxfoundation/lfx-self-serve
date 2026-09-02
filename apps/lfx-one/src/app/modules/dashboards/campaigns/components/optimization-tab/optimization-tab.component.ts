@@ -932,8 +932,12 @@ export class OptimizationTabComponent implements OnInit {
           // who switched tabs cannot see. Reports the worst state in the batch, because a
           // partially-unconfirmed bulk REMOVE is the case that needs acting on.
           const outcomes = keys.map((_, i) => this.positionalOutcome(res.results[i]).state);
-          // Ordered worst-first, so the first hit wins.
-          const worst = (['failed', 'unconfirmed', 'done'] as const).find((state) => outcomes.includes(state)) ?? 'done';
+          // UNCONFIRMED OUTRANKS FAILED, which is the opposite of the intuitive ordering and is
+          // the same rule the error arm states twenty lines below: a definite failure did NOT
+          // apply, so retrying it is safe; an unconfirmed row MAY have applied, so retrying can
+          // duplicate an irreversible REMOVE. A batch carrying both was summarised as "Remove
+          // failed", which invites exactly that retry (Copilot).
+          const worst = (['unconfirmed', 'failed', 'done'] as const).find((state) => outcomes.includes(state)) ?? 'done';
           this.announceKeywordOutcome(
             action,
             keys.length,
