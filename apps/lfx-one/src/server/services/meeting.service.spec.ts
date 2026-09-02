@@ -695,3 +695,61 @@ describe('MeetingService.getAuthorizedRegistrantsForImport', () => {
     expect(query.page_size).toBe(51);
   });
 });
+
+describe('MeetingService participant write methods', () => {
+  let service: MeetingService;
+
+  beforeEach(() => {
+    proxyRequest.mockReset();
+    service = new MeetingService();
+  });
+
+  it('createPastMeetingParticipant posts to the participants endpoint with the given body', async () => {
+    const created = { id: 'p-1', past_meeting_id: 'pm-1', meeting_id: 'mtg-1', is_attended: true, zoom_user_name: 'Alice Z' };
+    proxyRequest.mockResolvedValueOnce(created);
+
+    const result = await service.createPastMeetingParticipant(req, 'pm-1', { is_attended: true, zoom_user_name: 'Alice Z' });
+
+    expect(proxyRequest).toHaveBeenCalledTimes(1);
+    const [, , path, method, , body] = proxyRequest.mock.calls[0];
+    expect(path).toBe('/itx/past_meetings/pm-1/participants');
+    expect(method).toBe('POST');
+    expect(body).toEqual({ is_attended: true, zoom_user_name: 'Alice Z' });
+    expect(result).toEqual(created);
+  });
+
+  it('updatePastMeetingParticipant puts to the participant endpoint with the participant id in the path', async () => {
+    const updated = { id: 'p-1', past_meeting_id: 'pm-1', meeting_id: 'mtg-1', is_verified: true };
+    proxyRequest.mockResolvedValueOnce(updated);
+
+    const result = await service.updatePastMeetingParticipant(req, 'pm-1', 'p-1', { is_verified: true });
+
+    expect(proxyRequest).toHaveBeenCalledTimes(1);
+    const [, , path, method, , body] = proxyRequest.mock.calls[0];
+    expect(path).toBe('/itx/past_meetings/pm-1/participants/p-1');
+    expect(method).toBe('PUT');
+    expect(body).toEqual({ is_verified: true });
+    expect(result).toEqual(updated);
+  });
+
+  it('deletePastMeetingParticipant deletes the participant endpoint and returns nothing', async () => {
+    proxyRequest.mockResolvedValueOnce(undefined);
+
+    const result = await service.deletePastMeetingParticipant(req, 'pm-1', 'p-1');
+
+    expect(proxyRequest).toHaveBeenCalledTimes(1);
+    const [, , path, method] = proxyRequest.mock.calls[0];
+    expect(path).toBe('/itx/past_meetings/pm-1/participants/p-1');
+    expect(method).toBe('DELETE');
+    expect(result).toBeUndefined();
+  });
+
+  it('encodes past meeting id and participant id in the URL', async () => {
+    proxyRequest.mockResolvedValueOnce({ id: 'p/1', past_meeting_id: 'pm 1', meeting_id: 'mtg-1' });
+
+    await service.updatePastMeetingParticipant(req, 'pm 1', 'p/1', {});
+
+    const [, , path] = proxyRequest.mock.calls[0];
+    expect(path).toBe('/itx/past_meetings/pm%201/participants/p%2F1');
+  });
+});
