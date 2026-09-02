@@ -1384,11 +1384,15 @@ export interface PublicPastMeetingResponse {
  * scratch. `loadedViaPastMeetingId` / `pastMeetingFullAccess` are carried alongside `meeting`
  * because `MeetingJoinComponent.initializeMeeting()` sets them as side effects of the same
  * fetch — seeding the meeting alone would lose the past-meeting branch on hydration.
+ * `meeting` is `null` and `meetingLoadFailed` is `true` for the terminal, non-navigating error
+ * branch (a 5xx/network failure) — without seeding that branch too, the client would hydrate
+ * `meetingLoadFailed` back to `false` and tear down the SSR-rendered error view.
  */
 export interface MeetingJoinPageState {
-  meeting: Meeting & { project: PublicMeetingProject };
+  meeting: (Meeting & { project: PublicMeetingProject }) | null;
   loadedViaPastMeetingId: boolean;
   pastMeetingFullAccess: boolean;
+  meetingLoadFailed: boolean;
 }
 
 /**

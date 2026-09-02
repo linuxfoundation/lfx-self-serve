@@ -333,6 +333,7 @@ describe('MeetingJoinComponent', () => {
         meeting: { ...buildMeeting(), project: buildProject() },
         loadedViaPastMeetingId: false,
         pastMeetingFullAccess: false,
+        meetingLoadFailed: false,
       });
 
       await TestBed.compileComponents();
@@ -358,6 +359,7 @@ describe('MeetingJoinComponent', () => {
         meeting: { ...buildMeeting(), project: buildProject() },
         loadedViaPastMeetingId: true,
         pastMeetingFullAccess: true,
+        meetingLoadFailed: false,
       });
 
       await TestBed.compileComponents();
@@ -447,9 +449,62 @@ describe('MeetingJoinComponent', () => {
 
       const transferState = TestBed.inject(TransferState);
       const seeded = transferState.get(MEETING_JOIN_STATE_KEY, null);
-      expect(seeded?.meeting.id).toBe(MEETING_ID);
+      expect(seeded?.meeting?.id).toBe(MEETING_ID);
       expect(seeded?.loadedViaPastMeetingId).toBe(false);
       expect(seeded?.pastMeetingFullAccess).toBe(false);
+      expect(seeded?.meetingLoadFailed).toBe(false);
+    });
+
+    // Bot review follow-up on PR #2046 (copilot-pull-request-reviewer, cursor): the terminal-error
+    // branch wasn't seeded to `TransferState`, so hydration reintroduced the exact blank-flash bug
+    // this PR fixes — the client started `meetingLoadFailed` at `false` and tore down the
+    // SSR-rendered error view in favor of the skeleton.
+    it('persists the terminal-error branch to TransferState on the server on a non-navigating fetch failure', async () => {
+      TestBed.overrideProvider(PLATFORM_ID, { useValue: 'server' });
+      getPublicMeeting.mockReturnValue(throwError(() => ({ status: 500 })));
+
+      await createComponent();
+      await TestBed.inject(ApplicationRef).whenStable();
+
+      const transferState = TestBed.inject(TransferState);
+      const seeded = transferState.get(MEETING_JOIN_STATE_KEY, null);
+      expect(seeded?.meeting).toBeNull();
+      expect(seeded?.meetingLoadFailed).toBe(true);
+      expect(TestBed.inject(Router).navigate).not.toHaveBeenCalledWith(['/meetings/not-found']);
+    });
+
+    it('paints the error branch synchronously from a seeded terminal-error transfer state, with no skeleton flash', async () => {
+      const transferState = TestBed.inject(TransferState);
+      transferState.set(MEETING_JOIN_STATE_KEY, {
+        meeting: null,
+        loadedViaPastMeetingId: false,
+        pastMeetingFullAccess: false,
+        meetingLoadFailed: true,
+      });
+
+      await TestBed.compileComponents();
+      const fixture = TestBed.createComponent(MeetingJoinComponent);
+      const component = fixture.componentInstance;
+
+      // Assert before any stabilization — this is exactly the race the bots flagged: the seed must
+      // be applied before the first CD pass, or the skeleton renders instead of the error view.
+      expect((component as unknown as { meetingLoadFailed: () => boolean }).meetingLoadFailed()).toBe(true);
+
+      fixture.detectChanges();
+      expect(fixture.nativeElement.querySelector('[data-testid="meeting-join-error"]')).not.toBeNull();
+      expect(fixture.nativeElement.querySelector('[data-testid="meeting-join-skeleton"]')).toBeNull();
+
+      await TestBed.inject(ApplicationRef).whenStable();
+    });
+
+    it('sets meetingLoadFailed (not a not-found redirect) when the nested past-meeting fallback fails with a non-terminal status', async () => {
+      getPublicMeeting.mockReturnValue(throwError(() => ({ status: 404 })));
+      getPublicPastMeeting.mockReturnValue(throwError(() => ({ status: 500 })));
+
+      const component = await createComponent();
+
+      expect((component as unknown as { meetingLoadFailed: () => boolean }).meetingLoadFailed()).toBe(true);
+      expect(TestBed.inject(Router).navigate).not.toHaveBeenCalledWith(['/meetings/not-found']);
     });
   });
 });

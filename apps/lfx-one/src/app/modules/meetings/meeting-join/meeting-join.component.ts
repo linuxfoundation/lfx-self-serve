@@ -365,7 +365,11 @@ export class MeetingJoinComponent implements OnInit {
     if (transferredMeeting) {
       this.loadedViaPastMeetingId.set(transferredMeeting.loadedViaPastMeetingId);
       this.pastMeetingFullAccess.set(transferredMeeting.pastMeetingFullAccess);
-      this.project.set(transferredMeeting.meeting.project);
+      if (transferredMeeting.meetingLoadFailed) {
+        this.meetingLoadFailed.set(true);
+      } else if (transferredMeeting.meeting) {
+        this.project.set(transferredMeeting.meeting.project);
+      }
     }
 
     // Set synchronously from the route snapshot before `meeting` is exposed below —
@@ -789,7 +793,7 @@ export class MeetingJoinComponent implements OnInit {
               if ([404, 403, 400].includes(error.status)) {
                 this.router.navigate(['/meetings/not-found']);
               } else {
-                this.meetingLoadFailed.set(true);
+                this.setMeetingLoadFailed();
               }
               return EMPTY;
             })
@@ -816,8 +820,12 @@ export class MeetingJoinComponent implements OnInit {
                     meeting: res.meeting,
                     project: res.project,
                   })),
-                  catchError(() => {
-                    this.router.navigate(['/meetings/not-found']);
+                  catchError((fallbackError) => {
+                    if ([404, 403, 400].includes(fallbackError.status)) {
+                      this.router.navigate(['/meetings/not-found']);
+                    } else {
+                      this.setMeetingLoadFailed();
+                    }
                     return EMPTY;
                   })
                 );
@@ -825,7 +833,7 @@ export class MeetingJoinComponent implements OnInit {
               if ([403, 400].includes(error.status)) {
                 this.router.navigate(['/meetings/not-found']);
               } else {
-                this.meetingLoadFailed.set(true);
+                this.setMeetingLoadFailed();
               }
               return EMPTY;
             })
@@ -844,6 +852,7 @@ export class MeetingJoinComponent implements OnInit {
             meeting: res,
             loadedViaPastMeetingId: this.loadedViaPastMeetingId(),
             pastMeetingFullAccess: this.pastMeetingFullAccess(),
+            meetingLoadFailed: false,
           });
         }
       })
@@ -851,8 +860,26 @@ export class MeetingJoinComponent implements OnInit {
 
     // Two overload shapes rather than one `initialValue: seed?.meeting` call — `toSignal`'s
     // `initialValue` overload requires a value assignable to `T`, not `T | undefined`, so the
-    // branch is on `seed` itself rather than threading the optionality through the option object.
-    return (seed ? toSignal(meeting$, { initialValue: seed.meeting }) : toSignal(meeting$)) as Signal<Meeting & { project: PublicMeetingProject }>;
+    // branch is on `seed?.meeting` itself rather than threading the optionality through the
+    // option object. A seed carrying the terminal-error branch (`meeting: null`) falls through to
+    // the no-initial-value overload — `meetingLoadFailed` (seeded synchronously in the
+    // constructor) already renders the SSR-matching error branch before this signal settles.
+    return (seed?.meeting ? toSignal(meeting$, { initialValue: seed.meeting }) : toSignal(meeting$)) as Signal<Meeting & { project: PublicMeetingProject }>;
+  }
+
+  // Persists the terminal-error branch during SSR so the client hydrates to the same error view
+  // instead of starting `meetingLoadFailed` at `false` and tearing down the SSR-rendered error
+  // content (GH-2041 follow-up). Mirrors the success-path `TransferState` write in `initializeMeeting`.
+  private setMeetingLoadFailed(): void {
+    this.meetingLoadFailed.set(true);
+    if (isPlatformServer(this.platformId)) {
+      this.transferState.set(this.stateKey, {
+        meeting: null,
+        loadedViaPastMeetingId: this.loadedViaPastMeetingId(),
+        pastMeetingFullAccess: this.pastMeetingFullAccess(),
+        meetingLoadFailed: true,
+      });
+    }
   }
 
   private initializeCurrentOccurrence(): Signal<MeetingOccurrence | null> {
