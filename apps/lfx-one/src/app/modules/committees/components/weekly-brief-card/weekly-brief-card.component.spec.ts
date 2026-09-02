@@ -592,6 +592,9 @@ describe('WeeklyBriefCardComponent — Current activity tally (GH-1922)', () => 
 
     const el = fixture.nativeElement.querySelector('[data-testid="weekly-brief-card-current-activity"]');
     expect(el).not.toBeNull();
+    // Negative side of the GH-1998 truncation-note tests below: a populated, non-truncated
+    // tally must not carry the note — only isTruncated() gates it in.
+    expect(fixture.nativeElement.querySelector('[data-testid="weekly-brief-card-current-activity-truncation-note"]')).toBeNull();
     const text = (el.textContent as string).replace(/\s+/g, ' ').trim();
     expect(text).toContain('This week so far:');
     expect(text).toContain('1 meeting held');

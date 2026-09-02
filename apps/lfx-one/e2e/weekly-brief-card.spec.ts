@@ -991,6 +991,9 @@ test.describe('WG Weekly Brief card — "This week so far" activity tally (GH-19
     await expect(tally).toContainText('This week so far:');
     await expect(tally).toContainText('1 meeting held');
     await expect(tally).toContainText('1 vote closed');
+    // Negative side of the GH-1998 truncation-note tests below: a populated, non-truncated
+    // tally must not carry the note.
+    await expect(page.getByTestId('weekly-brief-card-current-activity-truncation-note')).toHaveCount(0);
 
     const toggle = page.getByTestId('weekly-brief-card-current-activity-toggle-meeting');
     await expect(toggle).toHaveAttribute('aria-expanded', 'false');
