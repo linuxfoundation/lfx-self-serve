@@ -51,7 +51,7 @@ export class AttendanceReconciliationService {
     pastMeetingUid: string,
     pastMeeting: PastMeeting
   ): Promise<ReconcilePastMeetingParticipantsResponse> {
-    const startTime = logger.startOperation(undefined, 'reconcile_past_meeting_participants', {
+    const startTime = logger.startOperation(req, 'reconcile_attendance_pool', {
       past_meeting_id: pastMeetingUid,
     });
 
@@ -59,7 +59,7 @@ export class AttendanceReconciliationService {
     const unverified = participants.filter((p) => p.is_attended && !p.is_verified);
 
     if (unverified.length === 0) {
-      logger.success(undefined, 'reconcile_past_meeting_participants', startTime, { unverified_count: 0 });
+      logger.success(req, 'reconcile_attendance_pool', startTime, { unverified_count: 0 });
       return { results: [], candidate_pool_size: 0, auto_applied_count: 0, needs_review_count: 0 };
     }
 
@@ -85,7 +85,7 @@ export class AttendanceReconciliationService {
     const autoAppliedCount = results.filter((r) => r.auto_applied).length;
     const needsReviewCount = results.filter((r) => !r.auto_applied).length;
 
-    logger.success(undefined, 'reconcile_past_meeting_participants', startTime, {
+    logger.success(req, 'reconcile_attendance_pool', startTime, {
       unverified_count: unverified.length,
       candidate_pool_size: candidates.length,
       auto_applied_count: autoAppliedCount,
@@ -219,6 +219,17 @@ export class AttendanceReconciliationService {
   }
 
   /**
+   * A raw, not-yet-identified Zoom attendee (the exact population this feature targets) has no
+   * reason to carry a populated `first_name`/`last_name` — those are enrichment fields set once a
+   * match is found. `zoom_user_name` is the only display name guaranteed to exist for such an
+   * attendee, so it must be preferred over reconstructing from first/last name, which is empty for
+   * the very attendees this service is trying to match.
+   */
+  private getDisplayName(attendee: PastMeetingParticipant): string {
+    return attendee.zoom_user_name || `${attendee.first_name} ${attendee.last_name}`.trim();
+  }
+
+  /**
    * Cheap deterministic pass: exact email match, then username match. No LLM call — only the
    * genuinely ambiguous remainder is handed to `matchWithAi`.
    */
@@ -243,7 +254,7 @@ export class AttendanceReconciliationService {
       if (match) {
         deterministic.push({
           attendee_id: attendee.uid,
-          zoom_user_name: `${attendee.first_name} ${attendee.last_name}`.trim(),
+          zoom_user_name: this.getDisplayName(attendee),
           confidence: 'high',
           method: 'deterministic',
           matched_candidate: match,
@@ -272,7 +283,7 @@ export class AttendanceReconciliationService {
     if (!this.aiService.isAiConfigured()) {
       return remainder.map((attendee) => ({
         attendee_id: attendee.uid,
-        zoom_user_name: `${attendee.first_name} ${attendee.last_name}`.trim(),
+        zoom_user_name: this.getDisplayName(attendee),
         confidence: 'none',
         method: 'ai',
         auto_applied: false,
@@ -287,7 +298,7 @@ export class AttendanceReconciliationService {
     const chunkResults = await Promise.all(
       chunks.map(async (chunk) => {
         const response = await this.aiService.reconcileAttendees(req, {
-          attendees: chunk.map((a) => ({ attendee_id: a.uid, zoom_user_name: `${a.first_name} ${a.last_name}`.trim() })),
+          attendees: chunk.map((a) => ({ attendee_id: a.uid, zoom_user_name: this.getDisplayName(a) })),
           candidates,
         });
 
@@ -303,7 +314,7 @@ export class AttendanceReconciliationService {
 
           return {
             attendee_id: attendee.uid,
-            zoom_user_name: `${attendee.first_name} ${attendee.last_name}`.trim(),
+            zoom_user_name: this.getDisplayName(attendee),
             confidence,
             method: 'ai' as const,
             matched_candidate: matchedCandidate,
@@ -339,10 +350,10 @@ export class AttendanceReconciliationService {
       await this.meetingService.updatePastMeetingParticipant(req, pastMeetingUid, attendeeId, update);
       return true;
     } catch (error) {
-      logger.warning(undefined, 'reconcile_past_meeting_participants', 'Failed to auto-apply high-confidence match, leaving for review', {
+      logger.warning(req, 'reconcile_attendance_pool', 'Failed to auto-apply high-confidence match, leaving for review', {
         past_meeting_id: pastMeetingUid,
         attendee_id: attendeeId,
-        error: error instanceof Error ? error.message : 'Unknown error',
+        err: error,
       });
       return false;
     }
