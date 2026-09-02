@@ -10,7 +10,7 @@ import { InputTextComponent } from '@components/input-text/input-text.component'
 import { CAMPAIGN_GOALS, CAMPAIGN_PLATFORMS } from '@lfx-one/shared/constants';
 import { CampaignService } from '@services/campaign.service';
 import { ProjectContextService } from '@services/project-context.service';
-import { catchError, combineLatest, debounceTime, distinctUntilChanged, filter, finalize, map, of, skip, Subject, Subscription, switchMap } from 'rxjs';
+import { catchError, combineLatest, debounceTime, distinctUntilChanged, filter, finalize, map, of, skip, Subject, Subscription, switchMap, take } from 'rxjs';
 
 import type {
   CampaignBriefLoadResult,
@@ -856,7 +856,19 @@ export class PlanningTabComponent implements OnInit {
     this.campaignService
       .createHubSpotUtm(capturedFoundation, capturedEvent)
       .pipe(
-        takeUntilDestroyed(this.destroyRef),
+        // `take(1)`, NOT `takeUntilDestroyed` -- the same call the optimization tab's keyword
+        // mutations make, for the same reason. This is a NON-IDEMPOTENT create against a
+        // portal-wide namespace: binding it to the view meant navigating away aborted the request
+        // mid-flight, so neither arm recorded the outcome even though campaign-service may
+        // already have created the campaign. Returning before HubSpot indexes it then re-offered
+        // Create -- the duplicate this whole component guards against, reached by leaving the
+        // page (Copilot).
+        //
+        // `take(1)` still bounds the subscription: an HttpClient request is finite and
+        // self-completing, so nothing leaks. It just does not CANCEL. The signal writes in the
+        // arms become inert once the component is gone, which is harmless; what matters is that
+        // the possibly-created record is written, and that happens before the render guards.
+        take(1),
         // finalize, not the two arms, so the count cannot leak. next/error cover every outcome
         // this service produces today, but a completion without emission would leave the create
         // counted forever and permanently withdraw the offer -- a worse failure than the

@@ -1883,6 +1883,34 @@ describe('PlanningTabComponent — HubSpot UTM states', () => {
     expect(instance()['hsUnconfirmed'](), 'operator left with no re-check control').toBe(true);
   });
 
+  it('records a create the operator navigated away from', () => {
+    // Copilot (planning-tab:860): the create was bound to `takeUntilDestroyed`, so leaving the
+    // page ABORTED a non-idempotent POST mid-flight. Neither arm ran, so nothing recorded that a
+    // campaign may exist -- and campaign-service may already have created it. Returning before
+    // HubSpot indexed it then re-offered Create, which is the duplicate this component exists to
+    // prevent, reached by navigating away.
+    //
+    // Same fix and reasoning as the optimization tab's keyword mutations: `take(1)` bounds the
+    // subscription without cancelling it.
+    const empty = { found: false, hs_utm: null, campaign_name: '', all_matches: [], capped: false, inconclusive: false };
+    const pending = new Subject<unknown>();
+    runLookup(empty, 'KubeCon NA 2026');
+    create.mockReturnValue(pending);
+    (fixture.componentInstance as unknown as { createInHubSpot(): void }).createInHubSpot();
+    fixture.detectChanges();
+
+    const component = fixture.componentInstance as unknown as { hsCreatedEvents(): Set<string> };
+    fixture.destroy();
+
+    // The create SUCCEEDS after the operator has left.
+    pending.next({ created: true, hs_utm: null, campaign_name: 'Kubecon Na 2026' });
+    pending.complete();
+
+    // The record is written even though no panel is left to render it -- that is the whole point:
+    // it is what stops Create being re-offered for a campaign that now exists.
+    expect(component.hsCreatedEvents().size, 'the create was cancelled by navigation, or its outcome dropped').toBeGreaterThan(0);
+  });
+
   it('retires the record on a TOKENLESS positive find too', () => {
     // dealako (#2079, blocking): neither found arm removed the entry, so `hsCreateBlocked` stayed
     // true for the component's lifetime and the "cleared only by a positive find" contract had no
