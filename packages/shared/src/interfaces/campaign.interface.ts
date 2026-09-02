@@ -1837,32 +1837,6 @@ export interface HubSpotUtmLookupResult {
   hs_utm: string | null;
   campaign_name: string;
   all_matches: { name: string; hs_utm: string }[];
-  /**
-   * True when the search cannot be PROVEN complete.
-   *
-   * Not strictly truncation, which is what an earlier version of this comment claimed. Both
-   * producers set it more broadly: campaign-service reports it when HubSpot's `total` is absent
-   * or contradicts the returned count (`resp.Total == nil || *resp.Total != len(out)`), and the
-   * legacy path did the same for an omitted or unusable total. A response that cannot describe
-   * its own completeness must not resolve to the proven absence that licenses a create.
-   *
-   * So a consumer may use this to SUPPRESS a create, but must not tell the operator that HubSpot
-   * matched more than it returned — that is only one of the reasons this is set, and stating it
-   * for an absent total sends them to narrow a term when the real remedy is to check the name.
-   */
-  capped: boolean;
-
-  /**
-   * True when a match may exist that this result does not show — for ANY reason.
-   *
-   * The union of `capped` and "upstream returned rows that local scoring rejected". Both mean
-   * absence is not proof of non-existence, which is what the UI acts on: it offers the create
-   * only when this is false, because creating on an inconclusive search duplicates a campaign
-   * in a shared namespace. Kept separate from `capped` so the UI never claims HubSpot truncated
-   * a result it did not truncate — the two answers differ in what the operator should DO
-   * (narrow the term vs check the name), and one flag could not say both.
-   */
-  inconclusive: boolean;
 }
 
 export interface HubSpotUtmCreateResult {
