@@ -817,6 +817,10 @@ describe('WeeklyBriefService', () => {
       // also pass on the OTHER two states (undefined, or toBeDefined() on null), and this
       // feature's whole point is that absent/null/present are three distinct states, not two.
       expect(result.current_activity).toEqual(expect.objectContaining({ source_refs: expect.any(Array) }));
+      // GH-1998: the gate fires on data.length, not source_refs.length — a below-the-cap page
+      // must not carry the flag at all (not even `truncated: false`), so the client's `!!` read
+      // stays honest.
+      expect(result.current_activity).not.toHaveProperty('truncated');
       const refs = result.current_activity?.source_refs ?? [];
       expect(refs).toHaveLength(4);
       expect(refs.map((ref) => ref.kind).sort()).toEqual(['doc', 'meeting', 'other', 'vote']);
@@ -1030,6 +1034,9 @@ describe('WeeklyBriefService', () => {
       // not.toBeNull()/toBeDefined() alone.
       expect(result.current_activity).toEqual(expect.objectContaining({ source_refs: expect.any(Array) }));
       expect(result.current_activity?.source_refs).toHaveLength(1);
+      // A saturating page_token is a near-miss for the truncation gate — pin that it doesn't
+      // also trip it (the gate is data.length-only, see buildCurrentActivity's own comment).
+      expect(result.current_activity).not.toHaveProperty('truncated');
     });
 
     it('renders a genuine quiet week as current_activity present with an empty source_refs array, not absent', async () => {
@@ -1294,6 +1301,9 @@ describe('WeeklyBriefService', () => {
 
       expect(result.current_activity).toEqual(expect.objectContaining({ source_refs: expect.any(Array) }));
       expect(result.current_activity?.source_refs).toHaveLength(1);
+      // A saturated leg is also a near-miss for the truncation gate — pin that it doesn't also
+      // trip it (the gate is data.length-only, see buildCurrentActivity's own comment).
+      expect(result.current_activity).not.toHaveProperty('truncated');
     });
 
     it('degrades to current_activity: undefined once WEEKLY_BRIEF_CURRENT_ACTIVITY_BUDGET_MS elapses, rather than letting a slow (not erroring) upstream hold the whole response hostage', async () => {
