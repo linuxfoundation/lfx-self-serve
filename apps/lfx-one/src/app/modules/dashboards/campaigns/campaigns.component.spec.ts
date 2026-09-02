@@ -6027,6 +6027,11 @@ describe('CampaignsComponent email monitor', () => {
   });
 
   it('offers Refresh in the recoverable idle state a reset leaves behind', () => {
+    // Establish the slug EXPLICITLY rather than inheriting whatever the shared TestBed happens
+    // to hold. `canRefreshEmailMetrics` is now gated on it, and these positive assertions were
+    // passing only because another suite leaks 'foundation-b' through the shared context -- a
+    // dependency that would break them for a reason unrelated to what they test.
+    TestBed.inject(ProjectContextService).setFoundation({ uid: 'f-m', slug: 'tlf', name: 'The Linux Foundation' } as never, false);
     // Drives the REAL reset rather than hand-setting the signals it clears.
     //
     // An earlier version of this test set `emailBriefId` to a nonempty value and asserted true.
@@ -6059,6 +6064,18 @@ describe('CampaignsComponent email monitor', () => {
    *
    * Asserted on RENDERED text: a pipe unit test would pass even if the template stopped using it.
    */
+  it('renders a rate below 0.005% as <0.01%, never a false zero', () => {
+    // 1 click in 100,000 delivered is 0.001%. `toFixed(2)` rounds that to "0.00%" -- the same
+    // false zero one decimal gave at 0.01%, just further out. The counter says 1; the rate must
+    // not say nothing happened. A genuine zero still prints as 0.00%.
+    load([okRow({ sent: 100000, delivered: 100000, opens: 50000, clicks: 1, bounces: 0, unsubscribes: 0 })]);
+
+    const el = fixture.nativeElement as HTMLElement;
+    expect(el.querySelector('[data-testid="campaigns-email-metric-click-rate"]')?.textContent).toContain('<0.01%');
+    // A measured zero is not a tiny number and must not borrow the same treatment.
+    expect(el.querySelector('[data-testid="campaigns-email-metric-bounce-rate"]')?.textContent).toContain('0.00%');
+  });
+
   it('renders a real sub-0.1% click and bounce rate rather than 0.0%', () => {
     load([okRow({ sent: 10000, delivered: 10000, opens: 5000, clicks: 1, bounces: 2, unsubscribes: 0 })]);
 
@@ -6071,6 +6088,11 @@ describe('CampaignsComponent email monitor', () => {
   });
 
   it('picks up an ownership entry recorded AFTER the computed was first read', () => {
+    // Establish the slug EXPLICITLY rather than inheriting whatever the shared TestBed happens
+    // to hold. `canRefreshEmailMetrics` is now gated on it, and these positive assertions were
+    // passing only because another suite leaks 'foundation-b' through the shared context -- a
+    // dependency that would break them for a reason unrelated to what they test.
+    TestBed.inject(ProjectContextService).setFoundation({ uid: 'f-m', slug: 'tlf', name: 'The Linux Foundation' } as never, false);
     // `knownBriefIds` is a plain Map, so a computed reading it is evaluated once and never
     // invalidated when an entry lands. That is why writes go through `rememberBriefId`, which
     // bumps a signal the computed depends on.

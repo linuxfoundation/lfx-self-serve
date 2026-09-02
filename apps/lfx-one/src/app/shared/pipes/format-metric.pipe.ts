@@ -73,6 +73,15 @@ export class MetricPercentPipe implements PipeTransform {
 @Pipe({ standalone: true, name: 'metricLowPercent', pure: true })
 export class MetricLowPercentPipe implements PipeTransform {
   public transform(value: number | null): string {
-    return value === null ? '—' : `${formatPercent(value, 2)}%`;
+    if (value === null) {
+      return '—';
+    }
+    // Two decimals still round a nonzero rate below 0.005% to "0.00%", which is the same false
+    // zero one decimal produced -- smaller, but the same lie beside a nonzero counter. A real
+    // measurement that is merely tiny is reported as tiny; only a genuine zero prints as zero.
+    if (value > 0 && value < 0.01) {
+      return '<0.01%';
+    }
+    return `${formatPercent(value, 2)}%`;
   }
 }
