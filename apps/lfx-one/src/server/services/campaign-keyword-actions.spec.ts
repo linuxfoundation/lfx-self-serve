@@ -323,6 +323,19 @@ describe('classifyMutationFailure — what proves upstream answered', () => {
     expect(msg, 'a non-numeric code was accepted as an upstream answer').toContain(CAMPAIGN_OUTCOME_UNCONFIRMED);
   });
 
+  it('refuses a code that AGREES with the status but is not a status', () => {
+    // The isolating case for the numeric-shape check. dealako, round 5: the `{code:'oops'}`
+    // fixture is caught by the AGREEMENT check too, so deleting the shape check leaves it green
+    // and the guard stays in the state the round-4 item objected to.
+    //
+    // Only a code that matches its status while not being status-SHAPED separates them: a
+    // gateway inventing `{code:'5030'}` under a 5030 would otherwise be accepted as an upstream
+    // answer, which is exactly what the shape check exists to refuse.
+    const msg = classifyMutationFailure(new MicroserviceError('made up', 5030, 'ERR', { errorBody: { code: '5030', message: 'made up' } }));
+
+    expect(msg, 'a non-status code that agreed with its status was accepted').toContain(CAMPAIGN_OUTCOME_UNCONFIRMED);
+  });
+
   it('refuses a body whose code DISAGREES with the status received', () => {
     // A relayed body cannot vouch for a response something else rewrote: code 500 arriving under
     // a 503 means the two came from different places.

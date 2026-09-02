@@ -212,18 +212,6 @@ export class PlanningTabComponent implements OnInit {
    * (Original note, still true: no lookup or create response carries a portal id, so keying on
    * the portal itself is not available to this component.)
    *
-   * An earlier version keyed on `foundation|event`, justified as "a different foundation is a
-   * different portal". That premise is false, and this repo says so a few files over: HubSpot's
-   * campaign namespace is the whole PORTAL, and two projects pointing at the same portal is
-   * "common under the LF umbrella" (campaign-service.service.ts:1374). So switching to a sibling
-   * foundation on the same portal re-offered Create for a campaign that already existed there --
-   * the exact duplicate this guard exists to stop.
-   *
-   * The client cannot key on the portal instead: no lookup or create response carries a portal
-   * id, so that identity is simply not available here. Between the two errors this fails toward
-   * the recoverable one -- a create genuinely needed under a DIFFERENT portal is momentarily
-   * withheld, and the re-check that the blocked state offers resolves it as soon as the lookup
-   * answers for that portal. The other direction writes a duplicate nobody can delete.
    */
   private readonly hsCreatedEvents = signal(new Set<string>());
   /**

@@ -2066,10 +2066,9 @@ function toUpstreamEventDetails(details: CampaignEventDetails): Record<string, u
  * proof nothing happened), which would otherwise make it "controlled" and put raw transport text
  * — "Request failed: fetch failed" — where an operator-facing remedy belongs. Those are
  * distinguished from a 503 the service deliberately returned by their ORIGIN, tested as
- * `originalError !== undefined || code === 'TIMEOUT'`. Both halves are needed and neither is an
- * absolute: the connection-failure sites attach `originalError`, while the two timeout sites
- * carry only the TIMEOUT code — an earlier version of this doc claimed EVERY transport site sets
- * originalError, which is false and would have made the second half look redundant.
+ * `transportFailure === true` — a flag the throwing site DECLARES. Not `originalError`, which
+ * seven non-transport services also populate from a caught error, and not the syscall code,
+ * which an ingress 503 mimics exactly.
  *
  * NOT the `NETWORK_ERROR` code, which executeRequest emits only as a fallback when `cause.code`
  * is absent — see the guard's own comment below.

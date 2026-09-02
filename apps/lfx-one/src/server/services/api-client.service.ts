@@ -120,8 +120,10 @@ export class ApiClientService {
       if (error instanceof Error) {
         if (error.name === 'AbortError' || error.name === 'TimeoutError') {
           throw new MicroserviceError(`Request timeout after ${this.config.timeout}ms`, 408, 'TIMEOUT', {
-            // originalError so the response carries `transport: true`: a timeout is BFF-raised
-            // like any other transport failure, and a consumer must not have to special-case 408.
+            // transportFailure so the response carries `transport: true`: a timeout is
+            // BFF-raised like any other transport failure, and a consumer must not have to
+            // special-case 408. The marker comes from THIS flag, not from originalError --
+            // seven non-transport services set that too.
             originalError: error,
             transportFailure: true,
             operation: 'api_client_stream_timeout',
@@ -333,8 +335,10 @@ export class ApiClientService {
       if (error instanceof Error) {
         if (error.name === 'AbortError' || error.name === 'TimeoutError') {
           throw new MicroserviceError(`Request timeout after ${options.timeoutMs ?? this.config.timeout}ms`, 408, 'TIMEOUT', {
-            // originalError so the response carries `transport: true`: a timeout is BFF-raised
-            // like any other transport failure, and a consumer must not have to special-case 408.
+            // transportFailure so the response carries `transport: true`: a timeout is
+            // BFF-raised like any other transport failure, and a consumer must not have to
+            // special-case 408. The marker comes from THIS flag, not from originalError --
+            // seven non-transport services set that too.
             originalError: error,
             transportFailure: true,
             operation: options.binary ? 'api_client_binary_timeout' : 'api_client_timeout',

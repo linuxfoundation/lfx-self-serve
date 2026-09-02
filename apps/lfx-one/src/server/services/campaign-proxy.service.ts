@@ -134,7 +134,10 @@ interface HubSpotUtmResult {
   campaignId: string | null;
   allMatches: { name: string; hsUtm: string }[];
   /**
-   * True when HubSpot matched MORE campaigns than this search returned.
+   * True when the search could NOT be shown to be complete. That covers HubSpot reporting more
+   * matches than it returned, and equally an absent `total`, a non-finite one, or one that
+   * contradicts the returned count — all of which fail CLOSED, because "we cannot tell" must not
+   * be reported as the proven absence a caller acts on by creating a campaign.
    *
    * It exists because ABSENCE IS NOT PROOF. The search is a capped, unpaged query, and the
    * caller acts on `found: false` by offering to create a campaign in a namespace every

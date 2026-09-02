@@ -75,6 +75,11 @@ async function globalSetup(config: FullConfig) {
   } catch (error) {
     console.error('❌ Authentication failed:', error);
     console.log('   Tests requiring authentication will be skipped.');
+    // Same guarantee as the missing-credentials path above. This branch also PROMISES a skip,
+    // and without a state file the projects' `storageState` fails while constructing the `page`
+    // fixture -- so the suite errors on a missing file instead of skipping, naming the wrong
+    // cause. A partially-written file from a failed run is overwritten rather than trusted.
+    await writeEmptyStorageState();
   } finally {
     await browser.close();
   }
