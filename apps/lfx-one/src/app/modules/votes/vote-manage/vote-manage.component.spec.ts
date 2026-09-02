@@ -214,5 +214,6 @@ describe('VoteManageComponent', () => {
     await TestBed.inject(ApplicationRef).whenStable();
 
     expect(router.navigateByUrl).toHaveBeenCalled();
+    expect(router.parseUrl).toHaveBeenCalledWith(expect.stringMatching(/^\/(project|foundation)\/overview$/));
   });
 });
