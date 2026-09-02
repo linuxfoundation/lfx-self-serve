@@ -200,9 +200,9 @@ export interface Vote {
   project_uid: string;
   /** Project display name. Carried by indexed list rows (and optionally by the upstream detail payload); the authenticated BFF detail response (GET /api/votes/:uid) re-enriches it canonically from the project record. */
   project_name?: string;
-  /** Project URL slug. Carried by indexed list rows; BFF-enriched on the authenticated detail response (GET /api/votes/:uid) so clients can reconcile project context from the vote itself. */
+  /** Project URL slug. BFF-enriched on list rows (GET /api/votes) and the authenticated detail response — the vote index itself does not carry it — so clients can reconcile project context from the vote itself. */
   project_slug?: string;
-  /** Whether the project is a foundation (top-level entity). Carried by indexed list rows; BFF-enriched on the authenticated detail response — drives canonical edit-link tiering (`/foundation/...` vs `/project/...`). */
+  /** Whether the project is a foundation (top-level entity). BFF-enriched on list rows (GET /api/votes) and the authenticated detail response — the vote index does not carry it — drives canonical edit-link tiering (`/foundation/...` vs `/project/...`). */
   is_foundation?: boolean;
   /** Parent project UID (for subprojects under a foundation). List payloads only — deliberately excluded from BFF detail enrichment (see entity-project-enrichment.helper). */
   parent_project_uid?: string;

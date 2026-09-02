@@ -61,7 +61,12 @@ export class VoteService {
       params
     );
 
-    const votes = resources.map((resource) => this.normalizeIndexedVote(req, resource.data));
+    // Enrich list rows with canonical project fields — the vote index (VoteData) carries only
+    // project_uid/name, so without this, consumers deriving per-row edit links get no slug/tier.
+    const votes = await this.projectService.enrichWithProjectData(
+      req,
+      resources.map((resource) => this.normalizeIndexedVote(req, resource.data))
+    );
 
     logger.debug(req, 'get_votes', 'Completed vote fetch', {
       final_count: votes.length,

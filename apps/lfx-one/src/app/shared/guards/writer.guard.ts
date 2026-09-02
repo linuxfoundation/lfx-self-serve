@@ -27,11 +27,13 @@ import { hasMeetingWriteAccess, resolveEntityWriteSlug } from '../utils/write-ac
  *    only for routes with `data.writeFeature === 'meetings'`.
  * 3. `committee.writer` — committee writer; accepted only when `writeFeature` is one of
  *    `'meetings'`, `'surveys'`, or `'votes'` and a committee uid is available — from the probed
- *    entity itself on `entityScopedSlug` edit routes (URL params are attacker-controlled), else
- *    from the `committee_uid` query param (create routes). The backend ruleset allows
- *    committee:uid#writer to create resources associated with their committee.
+ *    entity itself when its probe surfaces one (today only the votes probe carries
+ *    `committee_uid`; the meetings probe falls through to the URL param), else from the
+ *    `committee_uid` query param (create routes; attacker-controlled, which is why the entity
+ *    value wins when present). The backend ruleset allows committee:uid#writer to create
+ *    resources associated with their committee.
  *
- * Slug resolution: on routes flagged `data.entityScopedSlug` (meeting/group/vote edit), resolves
+ * Slug resolution: on routes flagged `data.entityScopedSlug` (meeting/group/mailing-list/vote edit), resolves
  * the slug from the entity itself first — the active context can belong to a different project
  * when the edit link carried no `?project=`. A non-404 failure on that read resolves no slug at all,
  * so the guard redirects instead of authorizing against a stale context; a flagged route with no
@@ -123,9 +125,10 @@ export const writerGuard: CanActivateFn = (route: ActivatedRouteSnapshot) => {
       const supportsCommitteeWriter = writeFeature != null && COMMITTEE_WRITE_FEATURES.includes(writeFeature);
 
       // Committee writers can create entities for their committee via ?committee_uid=. On
-      // entity-scoped edit routes the probed entity's own committee wins — a URL param naming an
-      // unrelated committee must not admit its writer, and an absent param must not deny the
-      // entity's real committee writer.
+      // entity-scoped edit routes the probed entity's own committee wins when the probe carries
+      // one (only the votes probe returns committee_uid today) — a URL param naming an unrelated
+      // committee must not admit its writer, and an absent param must not deny the entity's real
+      // committee writer.
       const effectiveCommitteeUid = entityCommitteeUid ?? committeeUid;
       // getCommittee's tap() side effect is safe here: deny blocks navigation; allow overwrites.
       const checkCommittee = (): Observable<true | ReturnType<typeof deny>> =>

@@ -2,9 +2,9 @@
 // SPDX-License-Identifier: MIT
 
 import { ChangeDetectionStrategy, Component, computed, DestroyRef, inject, Signal, signal } from '@angular/core';
-import { takeUntilDestroyed, toObservable, toSignal } from '@angular/core/rxjs-interop';
+import { toObservable, toSignal } from '@angular/core/rxjs-interop';
 import { FormArray, FormControl, FormGroup, ReactiveFormsModule, Validators } from '@angular/forms';
-import { ActivatedRoute, NavigationEnd, Router, RouterLink } from '@angular/router';
+import { ActivatedRoute, Router, RouterLink } from '@angular/router';
 import { ButtonComponent } from '@components/button/button.component';
 import { MessageComponent } from '@components/message/message.component';
 import {
@@ -15,14 +15,13 @@ import {
   VOTE_QUESTION_MIN_LENGTH,
   VOTE_TOTAL_STEPS,
 } from '@lfx-one/shared/constants';
-import { Committee, CommitteeReference, EntityWithProject, ProjectContext, Vote, VoteFormValue } from '@lfx-one/shared/interfaces';
+import { Committee, CommitteeReference, EntityWithProject, Vote, VoteFormValue } from '@lfx-one/shared/interfaces';
 import { CommitteeService } from '@services/committee.service';
 import {
   buildCreateVoteRequest,
   buildDraftUpdateVoteRequest,
   buildDraftVoteRequest,
   buildUpdateVoteRequest,
-  computeIsFoundation,
   mapVoteToFormValue,
   markFormControlsAsTouched,
 } from '@lfx-one/shared/utils';
@@ -33,13 +32,13 @@ import { VoteService } from '@services/vote.service';
 import { ConfirmationService, MessageService } from 'primeng/api';
 import { ConfirmDialogModule } from 'primeng/confirmdialog';
 import { StepperModule } from 'primeng/stepper';
-import { catchError, combineLatest, distinctUntilChanged, filter, map, merge, Observable, of, switchMap, take, tap } from 'rxjs';
+import { catchError, combineLatest, distinctUntilChanged, filter, map, Observable, of, switchMap, take, tap } from 'rxjs';
 
 import { VoteBasicsComponent } from '../components/vote-basics/vote-basics.component';
 import { VoteQuestionComponent } from '../components/vote-question/vote-question.component';
 import { VoteReviewComponent } from '../components/vote-review/vote-review.component';
 import { evictOnWriteAccessLoss } from '@shared/utils/evict-on-write-access-loss.util';
-import { applyEntityProjectContext, canonicalizeTierPrefix, syncEntityProjectContext } from '@shared/utils/entity-project-context.util';
+import { syncEntityProjectContext, syncEntityProjectContextFallback } from '@shared/utils/entity-project-context.util';
 import { resolveEntityWriteSlug } from '@shared/utils/write-access.util';
 
 @Component({
@@ -89,11 +88,6 @@ export class VoteManageComponent {
   public readonly confirmingOpenVote = signal<boolean>(false);
   public readonly loading = signal<boolean>(false);
   private readonly internalStep = signal<number>(1);
-  private readonly contextFallbackRetried = new Set<string>();
-  // Resolved fallback contexts by vote uid — plain Map, never read reactively. getProject caches
-  // its null result (shareReplay), so without this the once-only fresh-fetch resolution would be
-  // lost on the next NavigationEnd and MainLayout's route-lens re-assert would clobber it.
-  private readonly resolvedContextCache = new Map<string, { context: ProjectContext; isFoundation: boolean }>();
   private readonly committeeUidFromUrl = this.route.snapshot.queryParamMap.get('committee_uid');
 
   // Complex computed/toSignal signals
@@ -107,7 +101,7 @@ export class VoteManageComponent {
   public readonly isLastStep: Signal<boolean> = this.initIsLastStep();
   public currentStep: Signal<number> = this.initCurrentStep();
   public readonly isDraftSavable: Signal<boolean> = this.initIsDraftSavable();
-  public readonly voteEntityContext: Signal<EntityWithProject | null> = this.initVoteEntityContext();
+  private readonly voteEntityContext: Signal<EntityWithProject | null> = this.initVoteEntityContext();
   private readonly writeAccess: Signal<boolean> = this.initWriteAccess();
 
   public constructor() {
@@ -121,7 +115,11 @@ export class VoteManageComponent {
       preferEntityKind: true,
       canonicalizeRoute: true,
     });
-    this.initVoteContextFallback();
+    syncEntityProjectContextFallback(this.voteEntityContext, this.projectService, this.projectContextService, this.router, this.destroyRef, {
+      entityKind: 'vote',
+      freshFetch: (uid) => this.voteService.fetchVote(uid, { skipCache: true }),
+      canonicalizeRoute: true,
+    });
   }
 
   public nextStep(): void {
@@ -650,13 +648,25 @@ export class VoteManageComponent {
       )
       // No initialValue: undefined doubles as the leg's pending state (see the doc above).
     );
-    // Committee leg: edit mode derives the uid from the loaded vote's own committee (URL only as
-    // fallback), mirroring writerGuard's entity-scoped resolution — otherwise the guard admits a
-    // committee writer on a context-less edit link while this predicate evicts them. undefined stays
-    // pending; null resolves the leg immediately so it never counts as pending.
-    const committeeUid$: Observable<string | null | undefined> = editVoteId
-      ? toObservable(this.vote).pipe(map((vote) => (vote ? (vote.committee_uid ?? this.committeeUidFromUrl) : undefined)))
-      : of(this.committeeUidFromUrl);
+    // Edit mode derives the uid from the loaded vote's own committee (URL only as fallback),
+    // mirroring writerGuard's entity-scoped resolution. Hoisted: toObservable needs the injection
+    // context, so it can't be created lazily inside the switchMap below.
+    const editCommitteeUid$: Observable<string | null | undefined> = toObservable(this.vote).pipe(
+      map((vote) => (vote ? (vote.committee_uid ?? this.committeeUidFromUrl) : undefined))
+    );
+    // Gated on the project leg resolving false: a granted project leg makes the committee fetch
+    // moot, and while it's pending this leg stays pending too. undefined stays pending; null resolves immediately.
+    const committeeUid$: Observable<string | null | undefined> = toObservable(projectAccess).pipe(
+      filter((project): project is boolean => project !== undefined),
+      distinctUntilChanged(),
+      switchMap((project) => {
+        if (project) {
+          // Project leg granted — resolve the committee leg without firing the HTTP probe.
+          return of<string | null>(null);
+        }
+        return editVoteId ? editCommitteeUid$ : of(this.committeeUidFromUrl);
+      })
+    );
     const committeeAccess = toSignal(
       committeeUid$.pipe(
         filter((uid): uid is string | null => uid !== undefined),
@@ -683,83 +693,6 @@ export class VoteManageComponent {
       }
       return false;
     });
-  }
-
-  /**
-   * Fallback for BFF-enrichment failure (project_uid without project_slug): resolves the project by uid,
-   * re-applied on NavigationEnd; if the relation-gated lookup returns null, one fresh vote re-fetch tries the ungated enrichment.
-   */
-  private initVoteContextFallback(): void {
-    const unresolvedEntity$ = toObservable(this.voteEntityContext).pipe(distinctUntilChanged((a, b) => a?.uid === b?.uid && a?.project_uid === b?.project_uid));
-    const navigationReapply$ = this.router.events.pipe(
-      filter((event) => event instanceof NavigationEnd),
-      map(() => this.voteEntityContext())
-    );
-    merge(unresolvedEntity$, navigationReapply$)
-      .pipe(
-        filter((entity): entity is EntityWithProject => !!entity?.project_uid && !entity.project_slug),
-        switchMap((entity) => {
-          const cached = this.resolvedContextCache.get(entity.uid);
-          if (cached) {
-            return of(cached);
-          }
-          return this.projectService.getProject(entity.project_uid, false).pipe(
-            switchMap((project) => {
-              if (!project) {
-                return this.resolveContextFromFreshVote(entity);
-              }
-              const context: ProjectContext = { uid: project.uid, name: project.name, slug: project.slug };
-              return of({ context, isFoundation: computeIsFoundation(project) });
-            })
-          );
-        }),
-        takeUntilDestroyed(this.destroyRef)
-      )
-      .subscribe((resolved) => {
-        if (!resolved) {
-          return;
-        }
-        // Mirror syncEntityProjectContext: only write ?project= to the URL when already present.
-        const syncUrl = 'project' in this.router.parseUrl(this.router.url).queryParams;
-        applyEntityProjectContext(this.projectContextService, resolved.context, resolved.isFoundation, syncUrl);
-        // Heal a wrong-tier URL the same way the enriched sync path does (GH-1568).
-        canonicalizeTierPrefix(this.router, resolved.isFoundation, resolved.context.slug);
-      });
-  }
-
-  // Last resort for initVoteContextFallback: the ungated detail enrichment can supply the
-  // project the relation-gated lookup withheld. Emits null when it can't, leaving context untouched.
-  private resolveContextFromFreshVote(entity: EntityWithProject): Observable<{ context: ProjectContext; isFoundation: boolean } | null> {
-    if (this.contextFallbackRetried.has(entity.uid)) {
-      return of(null);
-    }
-    this.contextFallbackRetried.add(entity.uid);
-    // Bypass the shared detail cache — this is the fresh re-fetch that polls for enrichment a cached payload may predate.
-    return this.voteService.fetchVote(entity.uid, { skipCache: true }).pipe(
-      map((vote) => {
-        if (!vote?.project_slug) {
-          console.warn(`Unable to resolve project context for vote ${entity.uid}: detail payload carries no project_slug`);
-          return null;
-        }
-        const resolved = {
-          context: {
-            uid: vote.project_uid,
-            name: vote.project_name || vote.project_slug,
-            slug: vote.project_slug,
-          },
-          isFoundation: vote.is_foundation === true,
-        };
-        this.resolvedContextCache.set(entity.uid, resolved);
-        return resolved;
-      }),
-      catchError((error) => {
-        // Transient failures (network, 5xx) shouldn't burn the retry — release the uid so a later
-        // NavigationEnd re-apply can attempt the fresh fetch again.
-        this.contextFallbackRetried.delete(entity.uid);
-        console.warn(`Unable to resolve project context for vote ${entity.uid}:`, error);
-        return of(null);
-      })
-    );
   }
 
   private canNavigateToStep(step: number): boolean {

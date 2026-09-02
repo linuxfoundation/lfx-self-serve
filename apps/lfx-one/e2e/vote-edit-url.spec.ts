@@ -17,6 +17,7 @@
  *   - apps/lfx-one/.env populated with TEST_USERNAME / TEST_PASSWORD
  */
 
+import { LENS_COOKIE_KEY, SELECTED_FOUNDATION_COOKIE_KEY } from '@lfx-one/shared/constants';
 import { expect, Page, Route, test } from '@playwright/test';
 
 test.setTimeout(60_000);
@@ -34,9 +35,6 @@ const FOUNDATION_VOTE_UID = 'v0000000-0000-0000-0000-00000000d101';
 const PROJECT_VOTE_UID = 'v0000000-0000-0000-0000-00000000d102';
 const UNENRICHED_VOTE_UID = 'v0000000-0000-0000-0000-00000000d103';
 const UNENRICHED_PROJECT_UID = 'p0000000-0000-0000-0000-00000000d109';
-
-const LENS_COOKIE = 'lfx-active-lens';
-const SELECTED_FOUNDATION_COOKIE_KEY = 'lfx-selected-foundation';
 
 function fulfillJson(route: Route, body: unknown): Promise<void> {
   return route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify(body) });
@@ -104,7 +102,7 @@ function buildVoteDetail(uid: string, projectUid: string, projectSlug: string, p
 
 async function seedFoundationLens(page: Page): Promise<void> {
   await page.context().addCookies([
-    { name: LENS_COOKIE, value: 'foundation', domain: 'localhost', path: '/', sameSite: 'Lax' },
+    { name: LENS_COOKIE_KEY, value: 'foundation', domain: 'localhost', path: '/', sameSite: 'Lax' },
     {
       name: SELECTED_FOUNDATION_COOKIE_KEY,
       value: encodeURIComponent(JSON.stringify({ uid: FOUNDATION_UID, slug: FOUNDATION_SLUG, name: 'Test Foundation' })),
