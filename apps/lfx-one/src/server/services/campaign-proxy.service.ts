@@ -2097,17 +2097,36 @@ function buildCampaignName(body: CampaignCreateRequest, campaignType: string): s
   return `Events | ${eventName} | ${region} | Conversions | ${targeting} | ${adFormat} | ${project} | ${funnel} | ${dateSuffix}`;
 }
 
-function buildFinalUrl(body: CampaignCreateRequest, platform = 'search'): string {
+/**
+ * The tracking URL a dispatched ad points at.
+ *
+ * EXPORTED so the utm_campaign omission can be pinned directly. It is the one behaviour here a
+ * caller cannot observe through the create path without a live dispatch, and it decides whether
+ * a link is honestly untagged or carries a token HubSpot never issued.
+ */
+export function buildFinalUrl(body: CampaignCreateRequest, platform = 'search'): string {
   const base = body.registrationUrl.replace(/\/$/, '');
   const slug = body.eventSlug || body.eventName.toLowerCase().replace(/\s+/g, '-');
   const termSlug = body.eventName ? body.eventName.replace(/\s+/g, '-').toLowerCase() : slug;
   const params = new URLSearchParams({
     utm_source: 'google',
     utm_medium: platform === 'search' ? 'paid-search' : 'display',
-    utm_campaign: body.hsToken || slug,
     utm_term: termSlug,
     utm_content: platform,
   });
+  // utm_campaign is OMITTED when HubSpot issued no token, rather than falling back to the event
+  // slug. `hsToken || slug` fabricated a plausible-looking token HubSpot never minted, which is
+  // the exact behaviour this cutover removes from the lookup path -- reinstated one layer down,
+  // where it is harder to see. A fabricated token is indistinguishable from a real one and sends
+  // the traffic to a campaign HubSpot cannot report on; an ABSENT parameter is visibly absent,
+  // and every downstream analytics tool treats it as untagged rather than mis-tagged.
+  //
+  // Not a refusal: a campaign with no token yet is a legitimate state the caller already models
+  // (`hs_utm` is `string | null`), so blocking dispatch would be a worse answer than shipping a
+  // link that is honestly untagged on that one parameter.
+  if (body.hsToken) {
+    params.set('utm_campaign', body.hsToken);
+  }
   const sep = base.includes('?') ? '&' : '?';
   return `${base}${sep}${params.toString()}`;
 }

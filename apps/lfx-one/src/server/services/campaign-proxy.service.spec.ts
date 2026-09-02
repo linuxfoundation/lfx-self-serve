@@ -25,7 +25,7 @@ vi.mock('../helpers/url-validation', () => ({
 import { CAMPAIGN_DELIVERY_TYPES } from '@lfx-one/shared/constants';
 import type { Request } from 'express';
 
-import { CampaignProxyService } from './campaign-proxy.service';
+import { buildFinalUrl, CampaignProxyService } from './campaign-proxy.service';
 
 const req = {} as unknown as Request;
 
@@ -652,6 +652,26 @@ describe('CampaignProxyService HubSpot campaign lookup', () => {
     // And it is not offered as a selectable alternative either: the picker writes the chosen
     // token into the field, so a tokenless row has nothing to select.
     expect(result.all_matches).toEqual([]);
+  });
+
+  it.each([
+    ['omits utm_campaign entirely when HubSpot issued no token', undefined, false],
+    ['carries a real token through', 'kubecon-na-2026', true],
+  ])('%s', (_label, hsToken, expectPresent) => {
+    // `body.hsToken || slug` fabricated a plausible event-slug token HubSpot never minted -- the
+    // exact behaviour this cutover removes from the LOOKUP path, reinstated one layer down in
+    // the tracking URL where it is harder to see. A fabricated token is indistinguishable from a
+    // real one and attributes traffic to a campaign HubSpot cannot report on; an absent
+    // parameter is visibly absent and reads as untagged rather than mis-tagged.
+    const url = buildFinalUrl(
+      { registrationUrl: 'https://events.example.com/kubecon', eventName: 'KubeCon NA 2026', eventSlug: 'kubecon-na-2026', hsToken } as never,
+      'search'
+    );
+
+    expect(url.includes('utm_campaign='), 'utm_campaign presence').toBe(expectPresent);
+    if (expectPresent) expect(url).toContain('utm_campaign=kubecon-na-2026');
+    // utm_term legitimately carries the slug, so the assertion above must be on the PARAMETER.
+    expect(url).toContain('utm_term=kubecon-na-2026');
   });
 
   it("does not take another campaign's token after creating one", async () => {
