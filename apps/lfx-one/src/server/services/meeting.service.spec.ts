@@ -939,13 +939,13 @@ describe('MeetingService participant write methods', () => {
     const created = { id: 'p-1', past_meeting_id: 'pm-1', meeting_id: 'mtg-1', is_attended: true, zoom_user_name: 'Alice Z' };
     proxyRequest.mockResolvedValueOnce(created);
 
-    const result = await service.createPastMeetingParticipant(req, 'pm-1', { is_attended: true, zoom_user_name: 'Alice Z' });
+    const result = await service.createPastMeetingParticipant(req, 'pm-1', { is_attended: true, is_unknown: false });
 
     expect(proxyRequest).toHaveBeenCalledTimes(1);
     const [, , path, method, , body] = proxyRequest.mock.calls[0];
     expect(path).toBe('/itx/past_meetings/pm-1/participants');
     expect(method).toBe('POST');
-    expect(body).toEqual({ is_attended: true, zoom_user_name: 'Alice Z' });
+    expect(body).toEqual({ is_attended: true, is_unknown: false });
     expect(result).toEqual(created);
   });
 

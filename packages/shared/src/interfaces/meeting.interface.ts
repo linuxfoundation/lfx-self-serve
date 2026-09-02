@@ -1018,14 +1018,6 @@ export interface ITXCreatePastMeetingParticipantRequest {
   is_verified?: boolean;
   /** Whether the attendee is marked as unknown (attendee only) */
   is_unknown?: boolean;
-  /** Whether the attendee record was last updated via AI reconciliation (attendee only) */
-  is_ai_reconciled?: boolean;
-  /** Whether the attendee was automatically matched to an invitee by name (attendee only) */
-  is_auto_matched?: boolean;
-  /** Zoom display name of the attendee (attendee only) */
-  zoom_user_name?: string;
-  /** Full name of the invitee the attendee was matched to (attendee only) */
-  mapped_invitee_name?: string;
   /** Array of session objects with join/leave times (attendee only) */
   sessions?: ITXParticipantSession[];
 }
