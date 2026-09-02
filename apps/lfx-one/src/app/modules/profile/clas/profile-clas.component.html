@@ -109,14 +109,15 @@ SPDX-License-Identifier: MIT
               </div>
             </td>
 
-            <td class="px-5 py-3.5">
+            <td class="px-5 py-3.5 align-middle">
               @if (row.agreement.kind === 'ECLA') {
                 <lfx-badge
                   [value]="row.agreement.companyName ? 'ECLA · ' + row.agreement.companyName : 'ECLA'"
                   severity="secondary"
-                  styleClass="!bg-purple-100 !text-purple-800" />
+                  styleClass="!bg-purple-100 !text-purple-800 !h-auto !min-h-5 !max-w-full !whitespace-normal !leading-snug !py-0.5"
+                  [attr.data-testid]="'agreement-type-' + row.id" />
               } @else {
-                <lfx-badge value="ICLA" severity="info" />
+                <lfx-badge value="ICLA" severity="info" [attr.data-testid]="'agreement-type-' + row.id" />
               }
             </td>
 

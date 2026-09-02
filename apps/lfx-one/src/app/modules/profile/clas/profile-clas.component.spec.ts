@@ -24,6 +24,7 @@ import type {
   SignIdentityDialogData,
   SignIdentitySelectResult,
 } from '@lfx-one/shared/interfaces';
+import { BadgeComponent } from '@components/badge/badge.component';
 import { ButtonComponent } from '@components/button/button.component';
 import { MenuComponent } from '@components/menu/menu.component';
 import { TagComponent } from '@components/tag/tag.component';
@@ -217,6 +218,17 @@ describe('ProfileClasComponent', () => {
 
     expect(headers()).toEqual(['Project', 'Type', 'Status', 'Signed', 'Actions']);
     expect(fixture.nativeElement.textContent).not.toContain('Document');
+  });
+
+  it('lets a long ECLA company name wrap inside a height-auto type pill', async () => {
+    await render([agreement({ id: 's-long', kind: 'ECLA', companyName: 'The Linux Foundation', pdfAvailable: false })]);
+
+    const badge = fixture.debugElement.query(By.css('[data-testid="agreement-type-s-long"]'));
+    expect(badge).toBeTruthy();
+    expect(badge.componentInstance).toBeInstanceOf(BadgeComponent);
+    expect(badge.componentInstance.value()).toBe('ECLA · The Linux Foundation');
+    expect(badge.componentInstance.styleClass()).toContain('!h-auto');
+    expect(badge.componentInstance.styleClass()).toContain('!whitespace-normal');
   });
 
   it('offers an enabled Download PDF item on an ICLA row with a document', async () => {
