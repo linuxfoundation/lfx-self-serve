@@ -130,9 +130,9 @@ export function mapVoteToFormValue(vote: Vote): VoteFormValue {
 
 /**
  * Computes participation stats for the results drawer from the results API payload
- * @description Upstream (itx-service-voting) counts abstentions in `num_votes_cast` but excludes
- * them from per-choice tallies, so `abstainedVoters` is always a subset of `totalResponses` and
- * `abstainedRate` is their share of all responses cast (choice percentages use a different base).
+ * @description Upstream (itx-service-voting) counts abstentions in `num_votes_cast` but excludes them from
+ * per-choice tallies, so `abstainedVoters` is a subset of `totalResponses`; `abstainedRate` is their share of all
+ * responses cast — the same `num_votes_cast` base upstream uses for per-choice percentages, so the two always agree.
  * @param results - VoteResultsResponse from the results API, or null when not yet loaded
  * @returns VoteParticipationStats for the participation card and abstain row
  */

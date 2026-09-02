@@ -306,7 +306,7 @@
                   </div>
                 </div>
               }
-              @if (voteData.allow_abstain && !voteResultsError()) {
+              @if (showAbstain() && !voteResultsError()) {
                 <!-- Vote-level abstention row — muted and never winner-styled; choice percentages above exclude abstentions. -->
                 <div class="rounded-lg border border-slate-200 bg-slate-50 p-4" data-testid="vote-results-voter-option-abstain">
                   <div class="flex items-center justify-between mb-2">
@@ -362,7 +362,7 @@
                   </div>
                 </div>
               }
-              @if (voteData.allow_abstain && !voteResultsError()) {
+              @if (showAbstain() && !voteResultsError()) {
                 <!-- Vote-level abstention row — muted and never winner-styled; ranked tallies above exclude abstentions. -->
                 <div class="rounded-lg border border-slate-200 bg-slate-50 p-4" data-testid="vote-results-voter-option-abstain">
                   <div class="flex items-center justify-between mb-2">
@@ -471,8 +471,8 @@
                 <p class="text-xs text-slate-500">Response Rate</p>
                 <p class="font-semibold text-blue-600 text-lg">{{ participationStats().participationRate }}%</p>
               </div>
-              @if (voteData.allow_abstain) {
-                <!-- Abstentions count as cast responses upstream but are excluded from choice tallies; shown only for votes created with allow_abstain. -->
+              @if (showAbstain() && !voteResultsError()) {
+                <!-- Abstentions count as cast responses upstream but are excluded from choice tallies; shown when the vote allows abstain or results report abstentions. -->
                 <div class="text-center flex-1" data-testid="vote-results-abstained-stat">
                   <p class="text-xs text-slate-500">Abstained</p>
                   <p class="font-semibold text-slate-900 text-lg">{{ participationStats().abstainedVoters }}</p>
@@ -587,7 +587,7 @@
               </div>
             }
 
-            @if (voteData.allow_abstain) {
+            @if (showAbstain() && !voteResultsError()) {
               <!-- Vote-level abstention row (not per-question) — muted and never winner-styled.
                    abstainedRate is the share of all responses cast; choice percentages above exclude abstentions. -->
               <div class="flex flex-col gap-1.5" data-testid="vote-results-option-abstain">
@@ -620,8 +620,8 @@
                   <p class="text-xs text-slate-500">Response Rate</p>
                   <p class="font-semibold text-blue-600 text-lg">{{ participationStats().participationRate }}%</p>
                 </div>
-                @if (voteData.allow_abstain) {
-                  <!-- Abstentions count as cast responses upstream but are excluded from choice tallies; shown only for votes created with allow_abstain. -->
+                @if (showAbstain() && !voteResultsError()) {
+                  <!-- Abstentions count as cast responses upstream but are excluded from choice tallies; shown when the vote allows abstain or results report abstentions. -->
                   <div class="text-center flex-1" data-testid="vote-results-abstained-stat">
                     <p class="text-xs text-slate-500">Abstained</p>
                     <p class="font-semibold text-slate-900 text-lg">{{ participationStats().abstainedVoters }}</p>
@@ -675,8 +675,8 @@
                 <p class="text-xs text-slate-500">Response Rate</p>
                 <p class="font-semibold text-blue-600 text-lg">{{ participationStats().participationRate }}%</p>
               </div>
-              @if (voteData.allow_abstain) {
-                <!-- Abstentions count as cast responses upstream but are excluded from choice tallies; shown only for votes created with allow_abstain. -->
+              @if (showAbstain() && !voteResultsError()) {
+                <!-- Abstentions count as cast responses upstream but are excluded from choice tallies; shown when the vote allows abstain or results report abstentions. -->
                 <div class="text-center flex-1" data-testid="vote-results-abstained-stat">
                   <p class="text-xs text-slate-500">Abstained</p>
                   <p class="font-semibold text-slate-900 text-lg">{{ participationStats().abstainedVoters }}</p>
@@ -765,7 +765,7 @@
               </div>
             }
 
-            @if (voteData.allow_abstain) {
+            @if (showAbstain() && !voteResultsError()) {
               <!-- Vote-level abstention row (not per-question) — muted and never winner-styled.
                    abstainedRate is the share of all responses cast; choice percentages above exclude abstentions. -->
               <div class="rounded-lg border border-slate-200 bg-slate-50 p-4" data-testid="vote-results-option-abstain">
