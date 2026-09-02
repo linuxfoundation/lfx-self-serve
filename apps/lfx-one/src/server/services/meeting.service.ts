@@ -955,7 +955,9 @@ export class MeetingService {
 
   /**
    * Fetches past meeting participants by past meeting UID.
-   * Deduplicates by email — the query service can emit multiple records per person.
+   * Deduplicates by pairwise identity match — the query service can emit multiple records per
+   * person, and a single derived key (e.g. prefer email, else uid) can't correctly merge two
+   * records whose strongest available signal differs (one has a username, the other only an email).
    */
   public async getPastMeetingParticipants(req: Request, pastMeetingUid: string): Promise<PastMeetingParticipant[]> {
     logger.debug(req, 'get_past_meeting_participants', 'Fetching past meeting participants', {
@@ -974,18 +976,17 @@ export class MeetingService {
       })
     );
 
-    const seen = new Map<string, PastMeetingParticipant>();
+    const merged: PastMeetingParticipant[] = [];
     for (const participant of raw) {
-      const normalizedEmail = participant.email?.trim().toLowerCase();
-      const key = normalizedEmail || participant.uid;
-      const existing = seen.get(key);
-      if (!existing) {
-        seen.set(key, participant);
+      const existingIndex = merged.findIndex((candidate) => this.isSamePerson(candidate, participant));
+      if (existingIndex === -1) {
+        merged.push(participant);
         continue;
       }
+      const existing = merged[existingIndex];
       const preferred = participant.is_attended && !existing.is_attended ? participant : existing;
       const other = preferred === participant ? existing : participant;
-      seen.set(key, {
+      merged[existingIndex] = {
         ...preferred,
         is_attended: existing.is_attended || participant.is_attended,
         is_invited: existing.is_invited || participant.is_invited,
@@ -996,10 +997,10 @@ export class MeetingService {
         job_title: preferred.job_title ?? other.job_title,
         org_name: preferred.org_name ?? other.org_name,
         username: preferred.username ?? other.username,
-      });
+      };
     }
 
-    return [...seen.values()];
+    return merged;
   }
 
   /**
@@ -1933,5 +1934,36 @@ export class MeetingService {
       recurrence_type: recurrence.type,
     });
     return { ...recurrence, end_date_time: neverEndDate };
+  }
+
+  /**
+   * Compares two participant records for identity equality: prefer LFID username when both have
+   * one, else overlapping email, else normalized display name. A single derived key can't do this
+   * since which signal is "strongest" differs per record (e.g. a guest who later links an LFX
+   * account on a subsequent occurrence).
+   */
+  private isSamePerson(a: PastMeetingParticipant, b: PastMeetingParticipant): boolean {
+    if (a.username && b.username) {
+      return a.username === b.username;
+    }
+
+    const aEmail = a.email?.trim().toLowerCase();
+    const bEmail = b.email?.trim().toLowerCase();
+    if (aEmail || bEmail) {
+      return !!aEmail && aEmail === bEmail;
+    }
+
+    if (a.username || b.username) {
+      return false;
+    }
+
+    const aName = this.normalizeParticipantName(a);
+    const bName = this.normalizeParticipantName(b);
+    return !!aName && aName === bName;
+  }
+
+  /** Normalized display name for identity comparison. */
+  private normalizeParticipantName(participant: PastMeetingParticipant): string {
+    return `${participant.first_name} ${participant.last_name}`.trim().toLowerCase();
   }
 }
