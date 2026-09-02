@@ -843,6 +843,19 @@ export class PlanningTabComponent implements OnInit {
           }
         },
         error: (err: unknown) => {
+          // Recorded on an UNCONFIRMED failure too, and before the ownership guards for the same
+          // reason the success arm is. A 400/404 proves nothing was created, but every other
+          // outcome -- a lost connection, a timeout, a 5xx -- means the POST MAY have committed.
+          // Recording only definite successes left this gap: the offered re-check can return an
+          // empty result while HubSpot is still indexing the campaign that did land, and Create
+          // was then re-enabled for a campaign that exists.
+          //
+          // Erring toward recording is right here: a spurious record withholds Create and leaves
+          // the re-check to clear it, while a missing one writes a duplicate nobody can delete.
+          const failStatus = typeof err === 'object' && err !== null && 'status' in err ? Number((err as { status: unknown }).status) : 0;
+          if (failStatus !== 400 && failStatus !== 404) {
+            this.hsCreatedEvents.update((seen) => new Set(seen).add(`${capturedFoundation}|${capturedEvent}`));
+          }
           if (this.createIsCurrent(generation)) {
             this.hsCreating.set(false);
           }

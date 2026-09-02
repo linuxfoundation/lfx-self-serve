@@ -1596,6 +1596,36 @@ describe('PlanningTabComponent — HubSpot UTM states', () => {
     expect(String(instance()['hsStatus']())).toContain('check the name');
   });
 
+  it.each([
+    ['a 503', 503],
+    ['a status-less transport failure', 0],
+  ])('records a possibly-created campaign after %s, so a re-check cannot re-offer Create', (_label, status) => {
+    // An UNCONFIRMED create may well have committed. Recording only definite successes left a
+    // duplicate path: the offered re-check can return empty while HubSpot is still indexing the
+    // campaign that did land, and Create was re-enabled for a campaign that exists.
+    runLookup({ found: false, hs_utm: null, campaign_name: '', all_matches: [], capped: false, inconclusive: false }, 'KubeCon NA 2026');
+    create.mockReturnValue(throwError(() => (status ? { status } : new Error('socket hang up'))));
+    (fixture.componentInstance as unknown as { createInHubSpot(): void }).createInHubSpot();
+    fixture.detectChanges();
+
+    // The re-check comes back empty -- HubSpot has not indexed it yet.
+    runLookup({ found: false, hs_utm: null, campaign_name: '', all_matches: [], capped: false, inconclusive: false }, 'KubeCon NA 2026');
+    fixture.detectChanges();
+
+    expect(instance()['hsCreateBlocked'](), 'Create was re-offered after a create that may have committed').toBe(true);
+  });
+
+  it('does NOT record a 400, which proves nothing was created', () => {
+    // The other direction: over-recording would withhold Create after a refusal the operator can
+    // actually fix by correcting the name, which is the case the offer exists for.
+    runLookup({ found: false, hs_utm: null, campaign_name: '', all_matches: [], capped: false, inconclusive: false }, 'KubeCon NA 2026');
+    create.mockReturnValue(throwError(() => ({ status: 400, error: { error: 'name rejected' } })));
+    (fixture.componentInstance as unknown as { createInHubSpot(): void }).createInHubSpot();
+    fixture.detectChanges();
+
+    expect(instance()['hsCreateBlocked'](), 'withheld Create after a definite refusal').toBe(false);
+  });
+
   it('keeps re-check available when the campaign is found but still tokenless', () => {
     // After a create returns without hs_utm, the first re-check can legitimately FIND the
     // campaign before HubSpot has assigned its token. The lookup clears hsUnconfirmed when it
@@ -1929,7 +1959,11 @@ describe('PlanningTabComponent — HubSpot UTM states', () => {
     expect(create.mock.calls.length, 'a round trip let a second create through').toBe(callsBefore);
     expect(instance()['hsCreateBlocked']()).toBe(true);
 
-    first.error(new Error('stale create failed'));
+    // A 400: the ONE class of failure that proves nothing was created, so the offer may return.
+    // A status-less error would now be recorded as possibly-created instead -- deliberately,
+    // since it cannot prove the POST did not commit -- and this test is about generation
+    // ownership, not about that classification.
+    first.error(Object.assign(new Error('stale create failed'), { status: 400 }));
     fixture.detectChanges();
 
     // Settled, so the offer returns -- and the stale response still must not have rendered.
