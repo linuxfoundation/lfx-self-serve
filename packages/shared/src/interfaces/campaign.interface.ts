@@ -1819,39 +1819,6 @@ export interface HubSpotEmailSearchResult {
 // ---------------------------------------------------------------------------
 
 /**
- * One campaign as campaign-service returns it.
- *
- * `utm` is OPTIONAL because a campaign can exist with no token configured — a real state, not a
- * missing answer. The legacy BFF path fabricated a token from the id and name when HubSpot had
- * none; upstream does not, and neither does the conversion, because a fabricated token attributes
- * traffic to a campaign HubSpot cannot report on.
- */
-export interface CampaignServiceHubSpotCampaign {
-  id: string;
-  name: string;
-  utm?: string;
-  start_date?: string;
-}
-
-export interface CampaignServiceHubSpotCampaigns {
-  campaigns: CampaignServiceHubSpotCampaign[];
-  /**
-   * Mirrors campaign-service's `capped` on `GET /projects/{id}/connection-hubspot/campaigns`.
-   *
-   * True when the search could NOT be shown to be COMPLETE — which is broader than "truncated".
-   * It covers HubSpot reporting more matches than it returned, and equally the cases where
-   * completeness is simply unknown: an absent `total`, or one that contradicts the rows (negative,
-   * or fewer than were returned). All of them fail CLOSED, because "we cannot tell" must not be
-   * reported as the proven absence a caller acts on.
-   *
-   * While it is true, absence from `campaigns` is NOT proof the campaign does not exist, and the
-   * UI must not offer an unqualified create — that would duplicate a campaign in a namespace
-   * shared by everyone on the portal.
-   */
-  capped: boolean;
-}
-
-/**
  * One keyword action's outcome as the UI stores it.
  *
  * `state` is derived ONCE when the result is recorded, not in the template: a keyword action has

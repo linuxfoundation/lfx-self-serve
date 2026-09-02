@@ -43,6 +43,7 @@ import {
   normalizeCampaignStatus,
 } from '@lfx-one/shared/constants';
 import { AdsCurrencyPipe, AdsPctPipe, EventLabelPipe, PacingClassPipe, PriorityClassPipe, QualityScoreClassPipe } from '@pipes/campaign-optimization.pipe';
+import { extractErrorMessage } from '@shared/utils/http-error.utils';
 import { CampaignService } from '@services/campaign.service';
 import { MessageService } from 'primeng/api';
 import { skip, take, type Subscription } from 'rxjs';
@@ -724,7 +725,12 @@ export class OptimizationTabComponent implements OnInit {
           this.loading.set(false);
         },
         error: (err) => {
-          this.error.set(err?.error?.message || err?.message || 'Failed to load optimization data');
+          // `extractErrorMessage`, not `err?.error?.message`. BaseApiError.toResponse serialises
+          // the operator-facing text as `{ error: string }` (base.error.ts:78), so `.error.message`
+          // is undefined for every error this path produces and the operator got Angular's generic
+          // "Http failure response for <url>" instead of the actionable upstream reason. The same
+          // reading already exists in `toTransportOutcome`; these loaders never got it (Copilot).
+          this.error.set(extractErrorMessage(err, 'Failed to load optimization data'));
           this.loading.set(false);
         },
       });
@@ -741,7 +747,12 @@ export class OptimizationTabComponent implements OnInit {
           this.keywordsLoading.set(false);
         },
         error: (err) => {
-          this.keywordsError.set(err?.error?.message || err?.message || 'Failed to load keyword data');
+          // `extractErrorMessage`, not `err?.error?.message`. BaseApiError.toResponse serialises
+          // the operator-facing text as `{ error: string }` (base.error.ts:78), so `.error.message`
+          // is undefined for every error this path produces and the operator got Angular's generic
+          // "Http failure response for <url>" instead of the actionable upstream reason. The same
+          // reading already exists in `toTransportOutcome`; these loaders never got it (Copilot).
+          this.keywordsError.set(extractErrorMessage(err, 'Failed to load keyword data'));
           this.keywordsLoading.set(false);
         },
       });
@@ -772,7 +783,7 @@ export class OptimizationTabComponent implements OnInit {
         },
         error: (err: unknown) => {
           const httpErr = err as { error?: { message?: string }; message?: string };
-          this.linkedInError.set(httpErr?.error?.message || httpErr?.message || 'Failed to load LinkedIn data');
+          this.linkedInError.set(extractErrorMessage(httpErr, 'Failed to load LinkedIn data'));
           this.linkedInLoading.set(false);
         },
       });
@@ -809,7 +820,7 @@ export class OptimizationTabComponent implements OnInit {
         },
         error: (err: unknown) => {
           const httpErr = err as { error?: { message?: string }; message?: string };
-          this.redditError.set(httpErr?.error?.message || httpErr?.message || 'Failed to load Reddit data');
+          this.redditError.set(extractErrorMessage(httpErr, 'Failed to load Reddit data'));
           this.redditLoading.set(false);
         },
       });
@@ -846,7 +857,7 @@ export class OptimizationTabComponent implements OnInit {
         },
         error: (err: unknown) => {
           const httpErr = err as { error?: { message?: string }; message?: string };
-          this.metaError.set(httpErr?.error?.message || httpErr?.message || 'Failed to load Meta data');
+          this.metaError.set(extractErrorMessage(httpErr, 'Failed to load Meta data'));
           this.metaLoading.set(false);
         },
       });
@@ -1140,7 +1151,7 @@ export class OptimizationTabComponent implements OnInit {
         error: (err: unknown) => {
           if (linkedInSlug !== this.activeFoundationSlug()) return;
           const httpErr = err as { error?: { message?: string }; message?: string };
-          this.linkedInError.set(httpErr?.error?.message || httpErr?.message || 'Failed to load LinkedIn accounts');
+          this.linkedInError.set(extractErrorMessage(httpErr, 'Failed to load LinkedIn accounts'));
         },
       });
     const redditSlug = this.activeFoundationSlug();
@@ -1159,7 +1170,7 @@ export class OptimizationTabComponent implements OnInit {
         error: (err: unknown) => {
           if (redditSlug !== this.activeFoundationSlug()) return;
           const httpErr = err as { error?: { message?: string }; message?: string };
-          this.redditError.set(httpErr?.error?.message || httpErr?.message || 'Failed to load Reddit accounts');
+          this.redditError.set(extractErrorMessage(httpErr, 'Failed to load Reddit accounts'));
         },
       });
     const metaSlug = this.activeFoundationSlug();
@@ -1178,7 +1189,7 @@ export class OptimizationTabComponent implements OnInit {
         error: (err: unknown) => {
           if (metaSlug !== this.activeFoundationSlug()) return;
           const httpErr = err as { error?: { message?: string }; message?: string };
-          this.metaError.set(httpErr?.error?.message || httpErr?.message || 'Failed to load Meta accounts');
+          this.metaError.set(extractErrorMessage(httpErr, 'Failed to load Meta accounts'));
         },
       });
   }
