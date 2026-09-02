@@ -7,8 +7,10 @@ import { ApiClientService } from './api-client.service';
 import { MicroserviceError } from '../errors/microservice.error';
 
 /**
- * Every fetch rejection must arrive classified, because `transport: true` (derived from
- * `originalError` in BaseApiError.toResponse) is what several consumers now use to tell a
+ * Every fetch rejection must arrive classified, because `transport: true` -- emitted by
+ * BaseApiError.toResponse from the explicit `transportFailure` flag the throwing site sets, NOT
+ * from `originalError`, which seven non-transport services also populate -- is what consumers use
+ * to tell a
  * BFF-raised failure from a deliberate upstream one -- including the newsletter panel, where the
  * difference decides whether an operator is told "scheduling is off, use Send now" on what is
  * actually a transient outage.

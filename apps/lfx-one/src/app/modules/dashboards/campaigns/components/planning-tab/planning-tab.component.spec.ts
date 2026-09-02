@@ -1517,6 +1517,17 @@ describe('PlanningTabComponent — HubSpot UTM states', () => {
     // that name under every other portal, above a false "Created in HubSpot" status -- and the
     // re-check reads the new portal, never finds it, and cannot clear the record. The key now
     // carries the foundation, so the suppression applies only where the create was made.
+    //
+    // KNOWN RESIDUAL RISK, recorded rather than hidden (Copilot, and it is right): foundation B
+    // may share A's portal, in which case this not-found is HubSpot's post-create indexing lag
+    // and offering Create can duplicate the campaign created at the start of this test. The
+    // component cannot tell -- no lookup or create response carries a portal id.
+    //
+    // Chosen deliberately over the alternative, which dealako blocked: withholding here made
+    // Create permanently unreachable under every OTHER portal with no way to recover. A
+    // recoverable duplicate risk beats an unrecoverable lockout, and the in-flight guard still
+    // covers the window where the duplicate is actually likely. When the response carries portal
+    // identity, this expectation should flip to asserting the shared-portal case stays blocked.
     expect(instance()['hsCreateBlocked'](), 'Create stayed withheld under a portal where the campaign may not exist').toBe(false);
     expect(instance()['hsNotFound'](), 'should be a normal not-found under the new portal').toBe(true);
   });
