@@ -88,13 +88,14 @@ export class CertificateService {
   /**
    * Country trimmed/lowercased against casing drift in imported CSV data, and whole-string so
    * 'Hong Kong (SAR China)' doesn't match.
-   * Source half defers to isBackfillEventSource() for one source of truth; its ' \t\n\r' strip
-   * is narrower than trim() (see event.utils.spec.ts). Unmatched values keep the base template.
+   * Source half defers to isBackfillEventSource() for one source of truth, pre-trimmed here since
+   * its ' \t\n\r' strip (kept narrow for Snowflake SQL parity, see event.utils.ts) is too narrow
+   * for this JS-only comparison. Unmatched values keep the base template.
    */
   private requiresLfOpenSourceOverride(event: CertificateEventRow): boolean {
     const country = event.EVENT_COUNTRY?.trim().toLowerCase();
 
-    return isBackfillEventSource(event.EVENT_SOURCE) && country === LF_OPEN_SOURCE_OVERRIDE_MATCH.EVENT_COUNTRY.toLowerCase();
+    return isBackfillEventSource(event.EVENT_SOURCE?.trim()) && country === LF_OPEN_SOURCE_OVERRIDE_MATCH.EVENT_COUNTRY.toLowerCase();
   }
 
   private async getEventRow(req: Request, eventId: string, userEmail: string): Promise<CertificateEventRow> {

@@ -16,10 +16,11 @@ const pdfMocks = vi.hoisted(() => ({
 
 vi.mock('@lfx-one/shared/interfaces', () => ({}));
 vi.mock('@lfx-one/shared/utils', async () => {
+  // Spread (not hand-pick) so a future second util import fails loudly instead of resolving undefined.
   const eventUtils = await vi.importActual<typeof import('../../../../../packages/shared/src/utils/event.utils')>(
     '../../../../../packages/shared/src/utils/event.utils'
   );
-  return { isBackfillEventSource: eventUtils.isBackfillEventSource };
+  return { ...eventUtils };
 });
 vi.mock('./snowflake.service', () => ({
   SnowflakeService: { getInstance: () => ({ execute: snowflakeMocks.execute }) },
@@ -202,6 +203,7 @@ describe('CertificateService', () => {
       ['padded lowercase country', { EVENT_COUNTRY: ' china ' }],
       ['capitalised source', { EVENT_SOURCE: 'Backfill' }],
       ['padded source', { EVENT_SOURCE: ' BACKFILL ' }],
+      ['source padded with a non-breaking space', { EVENT_SOURCE: ' backfill ' }],
     ])('applies the override despite %s', async (_label, overrides) => {
       mockRow(overrides);
 
