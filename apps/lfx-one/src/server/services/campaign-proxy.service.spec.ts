@@ -654,6 +654,30 @@ describe('CampaignProxyService HubSpot campaign lookup', () => {
     expect(result.all_matches).toEqual([]);
   });
 
+  it("does not take another campaign's token after creating one", async () => {
+    // The create path follows up with a FUZZY name search at limit:1, so results[0] is whatever
+    // HubSpot ranked first for that name -- on a portal with an older similarly named campaign,
+    // that is not the campaign just created. Taking it assigned the OLD campaign's token and id
+    // to the NEW one, so the new campaign's links would have reported into the old campaign's
+    // attribution. Only the row carrying our uuid can describe our campaign.
+    fetchMock
+      // 1. the create itself
+      .mockResolvedValueOnce({ ok: true, status: 201, json: async () => ({ id: 'new-uuid' }), text: async () => '{}' })
+      // 2. the follow-up search returns an OLDER campaign of a similar name
+      .mockResolvedValueOnce({
+        ok: true,
+        status: 200,
+        json: async () => ({ results: [{ id: 'old-uuid', properties: { hs_utm: 'someone-elses-token' } }] }),
+        text: async () => '{}',
+      });
+
+    const result = await service.createHubSpotUtm(req, 'KubeCon NA 2026');
+
+    expect(result.hs_utm, "took another campaign's UTM token").not.toBe('someone-elses-token');
+    expect(result.hs_utm).toBeNull();
+    expect(result.created).toBe(true);
+  });
+
   it('refuses to auto-apply when two candidates tie on score', async () => {
     // scoreCampaignName now compares NORMALISED names, so two campaigns differing only by
     // whitespace score the SAME where the double-space row used to lose outright. `sort` is
