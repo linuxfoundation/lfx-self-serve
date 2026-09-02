@@ -440,6 +440,17 @@ export class OptimizationTabComponent implements OnInit {
    * Qualifying every legacy response would be its own false statement.
    */
   protected readonly keywordsPartial = computed(() => this.keywordsData()?.truncated === true);
+  /**
+   * Completeness was never established: `truncated` is absent, which the contract defines as
+   * UNKNOWN rather than complete.
+   *
+   * Kept distinct from `keywordsPartial` because the two license different sentences. An
+   * unqualified "all keywords with spend are generating conversions" is a claim about EVERY
+   * keyword, and making it over a set nobody proved complete hides exactly the waste it says is
+   * absent. Reporting unknown as truncated would be its own false statement, so the template
+   * gets a third arm rather than folding this into either boolean.
+   */
+  protected readonly keywordsCompletenessUnknown = computed(() => this.keywordsData()?.truncated === undefined);
   /** How many keywords were actually examined, for the qualified all-clear. */
   protected readonly keywordsExamined = computed(() => this.keywordsData()?.keywords.length ?? 0);
   protected readonly hasLowQualityKeywords = computed(() => this.lowQualityKeywords().length > 0);

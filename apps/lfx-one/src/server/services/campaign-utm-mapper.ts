@@ -67,8 +67,13 @@ function normaliseForMatch(value: string): string {
 }
 
 export function scoreCampaignName(name: string, query: string): number {
-  const nameLower = name.toLowerCase();
-  const queryLower = query.toLowerCase();
+  // NORMALISED, not merely lowercased, so the ranking agrees with isConfidentMatch(). Collapsing
+  // case alone left "KubeCon  NA 2026" (double space) scoring 1 against "KubeCon NA 2026" while
+  // normalising to an EXACT match: the auto-apply gate requires the winner to outscore the
+  // runner-up, so the one candidate confident enough to apply could be ranked below weaker ones
+  // and then refused. Two functions deciding the same question must agree on what a name is.
+  const nameLower = normaliseForMatch(name);
+  const queryLower = normaliseForMatch(query);
   // A blank name cannot match anything, and must be refused BEFORE the containment test:
   // every string contains '', so `queryLower.includes('')` is true and an unnamed campaign
   // scores 1 — beating a genuinely unrelated named campaign, which scores 0. The winner's UTM

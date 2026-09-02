@@ -1999,13 +1999,21 @@ describe('OptimizationTabComponent — wasted-keyword all-clear completeness', (
     expect(q('wasted-keywords-partial-clear')).toBeNull();
   });
 
-  // Absence means UNKNOWN on the legacy path (a bare LIMIT with no probe), and qualifying every
-  // legacy response would be its own false statement.
-  it('treats an absent truncation flag as unknown rather than partial', () => {
+  /**
+   * Absence means UNKNOWN on the legacy path (a bare LIMIT with no probe). This used to render
+   * the UNQUALIFIED all-clear -- "all keywords with spend are generating conversions" -- which is
+   * a claim about EVERY keyword made over a set nobody established was whole, hiding exactly the
+   * waste it says is absent. Reporting it as truncated would be the opposite false statement, so
+   * unknown gets its own sentence.
+   */
+  it('does not claim a full all-clear when completeness was never established', () => {
     renderKeywords(undefined);
 
-    expect(q('wasted-keywords-all-clear')).not.toBeNull();
-    expect(q('wasted-keywords-partial-clear')).toBeNull();
+    expect(q('wasted-keywords-all-clear'), 'an unqualified all-clear over an unverified set').toBeNull();
+    expect(q('wasted-keywords-partial-clear'), 'unknown must not be reported as truncated either').toBeNull();
+    const unverified = q('wasted-keywords-unverified-clear');
+    expect(unverified).not.toBeNull();
+    expect(unverified?.textContent).toContain('could not be established');
   });
 });
 

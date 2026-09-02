@@ -217,6 +217,14 @@ describe('toUtmLookupResult capped', () => {
     expect(res.all_matches).toEqual([{ name: 'KubeCon', hs_utm: 'generic-token' }]);
   });
 
+  it('ranks a whitespace variant as high as the exact spelling it normalises to', () => {
+    // The GATE normalised whitespace but the SCORE did not, so "KubeCon  NA 2026" (double space)
+    // scored 1 while normalising to an exact match -- and because auto-apply requires the winner
+    // to outscore the runner-up, the one candidate confident enough to apply could rank BELOW
+    // weaker ones and be refused. Two functions deciding the same question must agree.
+    expect(scoreCampaignName('KubeCon  NA 2026', 'KubeCon NA 2026')).toBe(scoreCampaignName('KubeCon NA 2026', 'KubeCon NA 2026'));
+  });
+
   it('auto-applies an exact match despite case and whitespace differences', () => {
     // Normalised, not literal: an operator pasting a differently-spaced name should not lose the
     // one-click path, since neither case nor run-length distinguishes two real campaigns.

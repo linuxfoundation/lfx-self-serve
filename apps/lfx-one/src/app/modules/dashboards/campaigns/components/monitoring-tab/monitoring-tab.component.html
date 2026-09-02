@@ -280,6 +280,15 @@
                 <i class="fa-light fa-circle-info mr-1" aria-hidden="true"></i>
                 Totals cover the top {{ keywords().length }} keywords by impressions, not every keyword in this project.
               </p>
+            } @else if (keywordTotalsUnverified()) {
+              <!--
+                Completeness UNKNOWN. States what the numbers cover without claiming they are
+                every keyword -- the legacy read applies a bare LIMIT and cannot tell.
+              -->
+              <p class="mb-2 text-xs text-gray-500" data-testid="keyword-totals-unverified">
+                <i class="fa-light fa-circle-info mr-1" aria-hidden="true"></i>
+                Totals cover the {{ keywords().length }} keywords read for this project.
+              </p>
             }
             <div class="grid grid-cols-2 gap-3 md:grid-cols-5" data-testid="keyword-totals">
               <div class="rounded-md border border-gray-200 bg-white px-3 py-2">

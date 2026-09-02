@@ -274,7 +274,12 @@ describe('MonitoringTabComponent — keyword totals completeness', () => {
   it('treats an absent truncation flag as unknown rather than partial', () => {
     render(keywordsResponse());
 
+    // Not captioned as truncated -- that would be a false statement about every legacy response.
     expect(partialCaption()).toBeNull();
     expect(fixture.nativeElement.querySelector('[data-testid="keyword-totals"]')).not.toBeNull();
+    // But it does say WHICH keywords the numbers cover, without claiming they are all of them.
+    const unverified = fixture.nativeElement.querySelector('[data-testid="keyword-totals-unverified"]');
+    expect(unverified, 'unknown completeness rendered no caption at all').not.toBeNull();
+    expect(unverified?.textContent).toContain('keywords read for this project');
   });
 });

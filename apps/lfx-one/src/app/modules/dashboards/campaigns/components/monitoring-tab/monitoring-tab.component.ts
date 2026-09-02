@@ -143,6 +143,15 @@ export class MonitoringTabComponent implements OnInit {
    * response as partial; treating it as complete is the status quo those numbers already carry.
    */
   protected readonly keywordTotalsPartial = computed(() => this.keywordsData()?.truncated === true);
+  /**
+   * Completeness was never established (`truncated` absent = UNKNOWN per the contract).
+   *
+   * Weaker consequence here than on the optimization tab, deliberately. This tab attaches no
+   * claim to the totals when the flag is false -- it simply omits the "(top N)" qualifier -- so
+   * the failure mode is a missing caveat, not a false statement. The caption below says which
+   * keywords the numbers cover WITHOUT asserting they are all of them.
+   */
+  protected readonly keywordTotalsUnverified = computed(() => this.keywordsData()?.truncated === undefined);
   protected readonly hasKeywords = computed(() => this.keywords().length > 0);
   protected readonly keywordTotalPages = computed(() => Math.max(1, Math.ceil(this.keywords().length / KEYWORD_PAGE_SIZE)));
   protected readonly hasKeywordPrevPage = computed(() => this.keywordPage() > 1);

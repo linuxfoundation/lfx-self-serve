@@ -361,6 +361,16 @@
             <p class="text-sm text-green-700" data-testid="wasted-keywords-partial-clear">
               No wasted spend among the top {{ keywordsExamined() }} keywords by impressions. Keywords beyond that were not checked.
             </p>
+          } @else if (keywordsCompletenessUnknown()) {
+            <!--
+              Completeness UNKNOWN, not proven complete. The legacy read applies a bare LIMIT with
+              no probe for a further row, so it cannot say whether more keywords exist. An
+              unqualified all-clear here would be a claim about every keyword, made over a set
+              nobody established was whole -- hiding the very waste it says is absent.
+            -->
+            <p class="text-sm text-green-700" data-testid="wasted-keywords-unverified-clear">
+              No wasted spend among the {{ keywordsExamined() }} keywords checked. Whether more keywords exist could not be established.
+            </p>
           } @else {
             <p class="text-sm text-green-700" data-testid="wasted-keywords-all-clear">All keywords with spend are generating conversions.</p>
           }
