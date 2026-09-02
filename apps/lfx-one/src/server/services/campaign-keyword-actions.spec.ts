@@ -369,6 +369,12 @@ describe('applyKeywordActionsViaCampaignService — the fan-out stop', () => {
         ],
       },
     ],
+    // A missing or null `matches` under count 0: `matches?.length ?? 0` coerced these to zero,
+    // which AGREED with the count, so they passed the check and were reported "not managed
+    // here" -- telling the operator to stop retrying a campaign that may be theirs. An absent
+    // array is upstream failing to answer, not answering "none".
+    ['a missing matches array', { match_count: 0 }],
+    ['a null matches array', { match_count: 0, matches: null }],
     [
       // count 0 with a NON-empty array. The agreement guard was MOVED above the match_count===0
       // arm precisely so this reaches it: answering "not managed here" on a self-contradictory

@@ -397,7 +397,12 @@ export async function applyKeywordActionsViaCampaignService(
       // where a match is consumed. `match_count: 0` with a NON-empty `matches` is upstream
       // contradicting itself, and answering "not managed here" on it would tell the operator to
       // stop retrying a campaign that may well be theirs.
-      if (resolution.match_count !== (resolution.matches?.length ?? 0)) {
+      // `matches` must BE an array before its length means anything. `matches?.length ?? 0`
+      // coerced a missing or null array to zero, which then AGREED with `match_count: 0` -- so a
+      // malformed 2xx passed this check and the next branch reported "not managed here",
+      // telling the operator to stop retrying a campaign that may well be theirs. An absent
+      // array is upstream failing to answer the question, not answering it with "none".
+      if (!Array.isArray(resolution.matches) || resolution.match_count !== resolution.matches.length) {
         results.push(...failedResults(group, body.action, CAMPAIGN_LOOKUP_FAILED));
         continue;
       }
