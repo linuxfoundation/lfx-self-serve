@@ -1615,6 +1615,36 @@ describe('PlanningTabComponent — HubSpot UTM states', () => {
     expect(instance()['hsCreateBlocked'](), 'Create was re-offered after a create that may have committed').toBe(true);
   });
 
+  it('does not retire the record on INCONCLUSIVE re-checks', () => {
+    // A capped or otherwise incomplete search has not established absence, so counting it as a
+    // miss would retire the protection on evidence that proves nothing -- and re-enable Create
+    // after an unconfirmed POST that may well have landed. Same "absence is not proof" rule the
+    // create offer runs on, applied to what RETIRES it.
+    const inconclusive = { found: false, hs_utm: null, campaign_name: '', all_matches: [], capped: true, inconclusive: true };
+    const recheckWith = (r: unknown) => {
+      lookup.mockReturnValue(
+        new Observable((s) => {
+          s.next(r);
+          s.complete();
+        })
+      );
+      (fixture.componentInstance as unknown as { recheckHubSpot(): void }).recheckHubSpot();
+      fixture.detectChanges();
+    };
+
+    runLookup({ found: false, hs_utm: null, campaign_name: '', all_matches: [], capped: false, inconclusive: false }, 'KubeCon NA 2026');
+    create.mockReturnValue(throwError(() => ({ status: 503 })));
+    (fixture.componentInstance as unknown as { createInHubSpot(): void }).createInHubSpot();
+    fixture.detectChanges();
+
+    // Three inconclusive re-checks -- more than the limit -- must not retire anything.
+    recheckWith(inconclusive);
+    recheckWith(inconclusive);
+    recheckWith(inconclusive);
+
+    expect(instance()['hsCreateBlocked'](), 'inconclusive searches retired the record and re-offered Create').toBe(true);
+  });
+
   it('gives a RETRIED unconfirmed create its own two re-checks', () => {
     // Retiring the record left the miss count at the limit, so the next unconfirmed create for
     // the same event retired on its FIRST empty re-check -- the protection spent on the previous

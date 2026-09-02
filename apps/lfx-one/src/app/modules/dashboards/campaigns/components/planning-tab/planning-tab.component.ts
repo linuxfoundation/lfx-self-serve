@@ -1616,8 +1616,16 @@ export class PlanningTabComponent implements OnInit {
             // The unconfirmed state is the honest one and already carries the only control that
             // settles the question: a re-check, which reads back the token HubSpot will assign.
             const key = `${capturedFoundation}|${eventName}`;
-            const misses = (this.hsCreatedRecheckMisses().get(key) ?? 0) + 1;
-            this.hsCreatedRecheckMisses.update((m) => new Map(m).set(key, misses));
+            // Only a PROVEN-COMPLETE miss counts. An inconclusive search -- capped, or one whose
+            // completeness could not be shown -- has not established that the campaign is absent,
+            // so two of them would retire the record and re-enable Create on evidence that proves
+            // nothing. That is the same "absence is not proof" rule the create offer itself runs
+            // on, applied to the thing that RETIRES the protection.
+            const provenMiss = result?.inconclusive !== true && result?.capped !== true;
+            const misses = provenMiss ? (this.hsCreatedRecheckMisses().get(key) ?? 0) + 1 : (this.hsCreatedRecheckMisses().get(key) ?? 0);
+            if (provenMiss) {
+              this.hsCreatedRecheckMisses.update((m) => new Map(m).set(key, misses));
+            }
             if (misses >= CREATED_RECHECK_MISS_LIMIT) {
               // Settled the other way: it is not appearing, so it was almost certainly never
               // created -- the unconfirmed failure that recorded it never reached HubSpot. Drop
