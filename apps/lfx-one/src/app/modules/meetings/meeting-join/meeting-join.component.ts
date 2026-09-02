@@ -363,6 +363,12 @@ export class MeetingJoinComponent implements OnInit {
       this.project.set(transferredMeeting.meeting.project);
     }
 
+    // Set synchronously from the route snapshot before `meeting` is exposed below —
+    // `initializeSeriesOccurrences()` subscribes to `meeting` immediately and would otherwise
+    // read `password` before the debounced pipeline (line ~755) gets a chance to set it,
+    // sending a password-gated recurring meeting's occurrences request with no password.
+    this.password.set(this.activatedRoute.snapshot.queryParamMap.get('password'));
+
     this.meeting = this.initializeMeeting(transferredMeeting);
     this.currentOccurrence = this.initializeCurrentOccurrence();
     this.displayRecurrence = computed(() => resolveOccurrenceRecurrence(this.meeting(), this.currentOccurrence()));
@@ -780,10 +786,16 @@ export class MeetingJoinComponent implements OnInit {
             })
           );
         } else {
-          // No hyphen — could be upcoming or past. Try upcoming first.
-          this.loadedViaPastMeetingId.set(false);
-          this.pastMeetingFullAccess.set(false);
+          // No hyphen — could be upcoming or past. Try upcoming first. Flags are reset to
+          // "upcoming" only once that lookup actually succeeds (tap below), not eagerly here —
+          // a seeded past-meeting id re-entering this branch on hydration (e.g. refreshTrigger$)
+          // would otherwise flip to the upcoming/default view and cancel the past-meeting's
+          // summary/recording/attachments/participant streams before the 404 fallback resolves.
           result$ = this.meetingService.getPublicMeeting(meetingId, this.password()).pipe(
+            tap(() => {
+              this.loadedViaPastMeetingId.set(false);
+              this.pastMeetingFullAccess.set(false);
+            }),
             catchError((error) => {
               if (error.status === 404) {
                 return this.meetingService.getPublicPastMeeting(meetingId).pipe(
