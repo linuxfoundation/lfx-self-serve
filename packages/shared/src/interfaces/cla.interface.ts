@@ -86,7 +86,8 @@ export interface MyClaAgreement {
   companyName?: string;
   /**
    * RFC3339 instant the agreement was signed. A bare `YYYY-MM-DD` is accepted
-   * and rendered as that UTC calendar day.
+   * and rendered as that UTC calendar day. Empty string when the producer sent
+   * no date (`cla.service` normalizes the absent field).
    */
   signedOn: string;
   /**
@@ -486,7 +487,11 @@ export interface ClaRow {
   id: string;
   agreement: MyClaAgreement;
   status: ClaRowStatus;
-  /** Date-only Sign Date in the viewer's local timezone; `'—'` when empty or unparseable. */
+  /**
+   * Sign Date: an instant renders in the viewer's local timezone, a bare
+   * `YYYY-MM-DD` as that UTC calendar day; `'—'` when empty, unparseable, or
+   * an impossible calendar date.
+   */
   signedOnLabel: string;
   /** Second line under the signed date; absent when the producer sent no identity. */
   signedAsLine?: string;
