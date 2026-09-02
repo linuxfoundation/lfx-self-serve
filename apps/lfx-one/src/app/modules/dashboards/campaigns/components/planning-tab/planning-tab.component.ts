@@ -883,6 +883,44 @@ export class PlanningTabComponent implements OnInit {
             this.hsCreatedEventNames.update((seen) => new Set(seen).add(capturedEvent));
             this.hsCreatedNamesConfirmed.update((seen) => new Set(seen).add(capturedEvent));
           }
+          // RECONCILE THE PANEL the record just contradicted, before the ownership guards drop
+          // this result.
+          //
+          // The records above are written unconditionally, deliberately -- a superseded create
+          // still made a real campaign. But a lookup that already returned not-found has left
+          // `hsNotFound` true, and the new record makes `hsCreateBlocked` true too. That pair is
+          // a dead end: a disabled Create button beneath "No campaign found", with no re-check
+          // offered, recoverable only by reloading the page.
+          //
+          // Reached by an ordinary A -> B -> A round trip where the stale create settles after
+          // the replacement lookup returned. Narrow on purpose: only when the record the stale
+          // create just wrote is the one the CURRENT panel would read. Anything else is a result
+          // for a panel the operator has left, and still belongs to the guards below.
+          if (result?.created && this.hsNotFound()) {
+            const panelKey = `${this.activeFoundationSlug()}|${this.currentEvent()}`;
+            if (this.hsCreatedEvents().has(panelKey)) {
+              // SAME foundation: the record blocks Create here, so a not-found panel beneath a
+              // disabled button is the dead end. Clear it and offer the re-check.
+              this.hsNotFound.set(false);
+              this.hsUnconfirmed.set(true);
+              this.hsStatus.set(
+                this.hsCreatedConfirmed().has(panelKey)
+                  ? 'Created, but HubSpot has not indexed it yet — re-check to confirm. Create stays disabled so the campaign is not duplicated.'
+                  : 'A create for this event settled after this panel loaded and has not been confirmed — re-check before creating another.'
+              );
+            } else if (this.hsCreatedEventNames().has(this.currentEvent())) {
+              // DIFFERENT foundation: Create stays available, because this may be a different
+              // portal -- withholding is the round-4 lockout. But the panel rendered its
+              // not-found before the record existed, so it never showed the shared-portal
+              // warning. Same wording the lookup branch uses, for the same state.
+              this.hsUnconfirmed.set(true);
+              this.hsStatus.set(
+                this.hsCreatedNamesConfirmed().has(this.currentEvent())
+                  ? `No match under this project — but a campaign named for this event was created earlier in this session. If these projects share a HubSpot portal it already exists; check HubSpot before creating a second one.`
+                  : `No match under this project — but a create was ATTEMPTED for this event name earlier in this session and never confirmed. If these projects share a HubSpot portal one may already exist; check HubSpot before creating another.`
+              );
+            }
+          }
           // Generation first, then panelStillShows — the same pair the lookup arms use. An
           // A -> B -> A round trip makes panelStillShows match a SUPERSEDED create again, and
           // rendering its result would write a token from a create the operator has moved past.

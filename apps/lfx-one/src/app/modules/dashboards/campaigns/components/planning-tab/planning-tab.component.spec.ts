@@ -1676,6 +1676,67 @@ describe('PlanningTabComponent — HubSpot UTM states', () => {
     expect(instance()['hsCreateBlocked'](), 'honest copy came at the cost of the duplicate guard').toBe(true);
   });
 
+  it('warns on A->B when the stale create settles after B already looked up', () => {
+    // Copilot's SECOND symptom on the same early return: on a one-way A -> B, B's lookup returns
+    // not-found while the create is in flight. Once it settles, hsCreatesInFlight falls to zero
+    // and Create is enabled again -- correct, B may be a different portal -- but B's panel never
+    // got the shared-portal warning, because the record arrived after its lookup rendered.
+    const ctx = TestBed.inject(ProjectContextService);
+    const empty = { found: false, hs_utm: null, campaign_name: '', all_matches: [], capped: false, inconclusive: false };
+    const pending = new Subject<unknown>();
+
+    runLookup(empty, 'KubeCon NA 2026');
+    create.mockReturnValue(pending);
+    (fixture.componentInstance as unknown as { createInHubSpot(): void }).createInHubSpot();
+    fixture.detectChanges();
+
+    ctx.setFoundation({ uid: 'foundation-b-uid', slug: 'foundation-b', name: 'Foundation B' }, false);
+    fixture.detectChanges();
+    runLookup(empty, 'KubeCon NA 2026');
+
+    pending.next({ created: true, hs_utm: null, campaign_name: 'Kubecon Na 2026' });
+    pending.complete();
+    fixture.detectChanges();
+
+    // Create stays available -- B may be a different portal (round-4 constraint).
+    expect(instance()['hsCreateBlocked'](), 'withheld Create under another foundation').toBe(false);
+    // But the operator must be told the name may already be taken on a shared portal.
+    expect(String(instance()['hsStatus']()), 'no shared-portal warning after the stale create settled').toMatch(/created earlier in this session/);
+  });
+
+  it('reconciles the panel when a stale create settles after the new lookup', () => {
+    // Copilot: records are written BEFORE the ownership guards (right -- a superseded create
+    // still made a real campaign), but the early return then leaves the PANEL untouched. So on
+    // A -> B -> A the sets say "blocked" while the rendered state still says not-found:
+    // hsCreateBlocked true, hsNotFound true, hsUnconfirmed false. A disabled Create with no
+    // re-check control and no explanation -- recoverable only by reload.
+    const ctx = TestBed.inject(ProjectContextService);
+    const empty = { found: false, hs_utm: null, campaign_name: '', all_matches: [], capped: false, inconclusive: false };
+    const pending = new Subject<unknown>();
+
+    runLookup(empty, 'KubeCon NA 2026');
+    create.mockReturnValue(pending);
+    (fixture.componentInstance as unknown as { createInHubSpot(): void }).createInHubSpot();
+    fixture.detectChanges();
+
+    // A -> B -> A while the create is still in flight.
+    ctx.setFoundation({ uid: 'foundation-b-uid', slug: 'foundation-b', name: 'Foundation B' }, false);
+    fixture.detectChanges();
+    ctx.setFoundation({ uid: 'foundation-a-uid', slug: 'foundation-a', name: 'Foundation A' }, false);
+    fixture.detectChanges();
+
+    // The new lookup under A returns not-found FIRST...
+    runLookup(empty, 'KubeCon NA 2026');
+    // ...and only then does the superseded create settle, successfully.
+    pending.next({ created: true, hs_utm: null, campaign_name: 'Kubecon Na 2026' });
+    pending.complete();
+    fixture.detectChanges();
+
+    expect(instance()['hsCreateBlocked'](), 'precondition: the record should block Create').toBe(true);
+    expect(instance()['hsNotFound'](), 'stranded: a disabled Create above a false not-found').toBe(false);
+    expect(instance()['hsUnconfirmed'](), 'stranded: no re-check control to recover through').toBe(true);
+  });
+
   it('does not claim "created" cross-foundation for an unconfirmed attempt', () => {
     // Copilot: `hsCreatedEventNames` is written by BOTH create arms, so the cross-foundation
     // warning asserted "was created earlier in this session" for entries whose request may never
