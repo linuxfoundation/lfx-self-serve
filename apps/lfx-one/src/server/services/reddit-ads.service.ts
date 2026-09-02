@@ -398,7 +398,6 @@ function buildRedditCampaignName(config: RedditCampaignCreateRequest): string {
 // through a full campaign create would test the dispatch plumbing instead of the rule.
 export function buildRedditUtmUrl(config: RedditCampaignCreateRequest, variantIndex: number): string {
   const base = config.registrationUrl.replace(/\/$/, '');
-  const slug = config.eventSlug || config.eventName.toLowerCase().replace(/\s+/g, '-');
   const params = new URLSearchParams({
     utm_source: 'reddit',
     utm_medium: 'paid-social',

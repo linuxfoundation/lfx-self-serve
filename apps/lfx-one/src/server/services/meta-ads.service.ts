@@ -245,7 +245,6 @@ function buildMetaCampaignName(config: MetaCampaignCreateRequest): string {
 // through a full campaign create would test the dispatch plumbing instead of the rule.
 export function buildMetaUtmUrl(config: MetaCampaignCreateRequest, variantIndex: number): string {
   const base = config.registrationUrl.replace(/\/$/, '');
-  const slug = config.eventSlug || config.eventName.toLowerCase().replace(/\s+/g, '-');
   const params = new URLSearchParams({
     utm_source: 'meta',
     utm_medium: 'paid-social',
