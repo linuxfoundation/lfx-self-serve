@@ -653,7 +653,7 @@ export class ProfileClasComponent {
             icon: this.statusIcon(agreement.status),
             note: this.statusNote(agreement),
           },
-          signedOnLabel: formatClaSignedOn(agreement.signedOn) || '—',
+          signedOnLabel: formatClaSignedOn(agreement.signedOn),
           signedAsLine: m2 ? signedAsLine(agreement.signedVia, agreement.signedAs) : undefined,
           menuItems,
           hasActions: menuItems.length > 0,

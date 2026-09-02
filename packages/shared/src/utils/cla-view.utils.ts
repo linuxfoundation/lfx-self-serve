@@ -114,6 +114,8 @@ export function claStatusSeverity(status: ClaStatus): TagSeverity {
   }
 }
 
+const CLA_SIGNED_ON_DATE_ONLY = /^\d{4}-\d{2}-\d{2}$/;
+
 /**
  * Date-only Sign Date for My CLAs (#2032).
  *
@@ -124,18 +126,26 @@ export function claStatusSeverity(status: ClaStatus): TagSeverity {
  * next UTC date. Omitting `timeZone` uses the viewer's local zone; pass an IANA
  * name in tests so CI (UTC) can still pin the Pacific case.
  *
- * Empty / unparseable → `''` so the cell can show an em dash.
+ * A bare `YYYY-MM-DD` parses as UTC midnight (ECMA-262), so it is pinned to UTC
+ * to keep that calendar day — the reverse of the instant case.
+ *
+ * Safe here only because the CLAs rows never render under SSR (`initState`
+ * returns unloaded off-browser). Do not call from a server-rendered path
+ * without passing an explicit `timeZone` (see `formatHubSpotUpdatedAt`).
+ *
+ * Empty / unparseable → `'—'` (same placeholder as `claStatusLabel('unknown')`).
  */
 export function formatClaSignedOn(iso: string, timeZone?: string): string {
   const trimmed = iso.trim();
-  if (!trimmed) return '';
+  if (!trimmed) return '—';
   const date = new Date(trimmed);
-  if (Number.isNaN(date.getTime())) return '';
+  if (Number.isNaN(date.getTime())) return '—';
+  const zone = CLA_SIGNED_ON_DATE_ONLY.test(trimmed) ? 'UTC' : timeZone;
   return date.toLocaleDateString('en-US', {
     month: 'short',
     day: 'numeric',
     year: 'numeric',
-    ...(timeZone ? { timeZone } : {}),
+    ...(zone ? { timeZone: zone } : {}),
   });
 }
 

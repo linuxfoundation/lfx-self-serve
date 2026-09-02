@@ -30,7 +30,7 @@ import {
 } from './cla-view.utils';
 
 function agreement(overrides: Partial<MyClaAgreement> = {}): MyClaAgreement {
-  return { id: 's1', kind: 'ICLA', claGroupName: 'P', signedOn: '2022-01-01', status: 'valid', pdfAvailable: true, ...overrides };
+  return { id: 's1', kind: 'ICLA', claGroupName: 'P', signedOn: '2022-01-01T18:40:42Z', status: 'valid', pdfAvailable: true, ...overrides };
 }
 
 function identity(overrides: Partial<MyClasIdentitySummary> = {}): MyClasIdentitySummary {
@@ -172,10 +172,34 @@ describe('formatClaSignedOn', () => {
     expect(formatClaSignedOn('2026-05-08T23:24:50.232159+00:00', 'UTC')).toBe('May 8, 2026');
   });
 
-  it('returns empty for missing, blank, or unparseable values so the cell can show an em dash', () => {
-    expect(formatClaSignedOn('')).toBe('');
-    expect(formatClaSignedOn('   ')).toBe('');
-    expect(formatClaSignedOn('not-a-date')).toBe('');
+  it('pins a bare YYYY-MM-DD to UTC so a negative-offset host does not shift the calendar day', () => {
+    expect(formatClaSignedOn('2022-01-01')).toBe('Jan 1, 2022');
+    expect(formatClaSignedOn('2022-01-01', 'America/Los_Angeles')).toBe('Jan 1, 2022');
+  });
+
+  it('omits timeZone on the production no-argument path so a UTC re-pin fails this test', () => {
+    const seen: (Intl.DateTimeFormatOptions | undefined)[] = [];
+    const original = Date.prototype.toLocaleDateString;
+    // eslint-disable-next-line no-extend-native
+    Date.prototype.toLocaleDateString = function (locales?: unknown, options?: Intl.DateTimeFormatOptions): string {
+      seen.push(options);
+      return original.call(this, locales as string, options);
+    };
+    try {
+      formatClaSignedOn(afternoonPacific);
+    } finally {
+      // eslint-disable-next-line no-extend-native
+      Date.prototype.toLocaleDateString = original;
+    }
+
+    expect(seen.length).toBeGreaterThan(0);
+    expect(seen.every((o) => o?.timeZone === undefined)).toBe(true);
+  });
+
+  it('returns an em dash for missing, blank, or unparseable values', () => {
+    expect(formatClaSignedOn('')).toBe('—');
+    expect(formatClaSignedOn('   ')).toBe('—');
+    expect(formatClaSignedOn('not-a-date')).toBe('—');
   });
 });
 

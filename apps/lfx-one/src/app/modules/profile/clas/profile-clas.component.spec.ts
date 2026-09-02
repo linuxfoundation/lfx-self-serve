@@ -48,7 +48,7 @@ describe('ProfileClasComponent', () => {
     id: 's1',
     kind: 'ICLA',
     claGroupName: 'Project One',
-    signedOn: '2022-01-01',
+    signedOn: '2022-01-01T18:40:42Z',
     status: 'valid',
     pdfAvailable: true,
     ...overrides,
@@ -426,6 +426,10 @@ describe('ProfileClasComponent', () => {
     return fixture.nativeElement.querySelector(`[data-testid="agreement-signed-as-${id}"]`);
   }
 
+  function signedOn(id: string): HTMLElement | null {
+    return fixture.nativeElement.querySelector(`[data-testid="agreement-signed-on-${id}"]`);
+  }
+
   it('renders Signed as {identity} (GitHub) / (GitLab) / (Gerrit) under the date', async () => {
     await render([
       agreement({ id: 's-gh', signedVia: 'github', signedAs: 'jellis' }),
@@ -474,12 +478,19 @@ describe('ProfileClasComponent', () => {
     expect(signedAs('s-as-only')?.tagName.toLowerCase()).not.toBe('a');
   });
 
+  it('renders an em dash when signedOn is empty or unparseable', async () => {
+    await render([agreement({ id: 's-empty', signedOn: '' }), agreement({ id: 's-bad', signedOn: 'not-a-date' })]);
+
+    expect(signedOn('s-empty')?.textContent?.trim()).toBe('—');
+    expect(signedOn('s-bad')?.textContent?.trim()).toBe('—');
+  });
+
   it('hides Sign CLA, Status, kebab, and Signed as when my-clas-m2-enabled is off', async () => {
     await render(
       [
         agreement({
           id: 's-m1',
-          signedOn: '2022-01-01',
+          signedOn: '2022-01-01T18:40:42Z',
           signedVia: 'github',
           signedAs: 'jellis',
           pdfAvailable: true,

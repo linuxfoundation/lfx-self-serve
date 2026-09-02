@@ -84,7 +84,10 @@ export interface MyClaAgreement {
   claManager?: boolean;
   /** Employer company name — present for ECLA only. */
   companyName?: string;
-  /** ISO date the agreement was signed. */
+  /**
+   * RFC3339 instant the agreement was signed. A bare `YYYY-MM-DD` is accepted
+   * and rendered as that UTC calendar day.
+   */
   signedOn: string;
   /**
    * Platform this agreement was signed via, when the producer sent one.
