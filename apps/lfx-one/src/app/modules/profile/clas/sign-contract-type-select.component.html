@@ -7,29 +7,25 @@ SPDX-License-Identifier: MIT
   <p class="mb-4 text-sm text-slate-600">{{ copy.body }}</p>
 
   <div role="listbox" aria-label="Contributor types" class="flex flex-col gap-3">
-    @if (iclaEnabled()) {
-      <div class="flex flex-col gap-1">
-        <lfx-selectable-card
-          [form]="selectForm"
-          control="contractType"
-          [value]="individualValue"
-          [label]="copy.individual.label"
-          testId="sign-contract-type-select-individual" />
-        <p class="pl-1 text-xs leading-relaxed text-slate-500">{{ copy.individual.description }}</p>
-      </div>
-    }
+    <div class="flex flex-col gap-1">
+      <lfx-selectable-card
+        [form]="selectForm"
+        control="contractType"
+        [value]="individualValue"
+        [label]="copy.individual.label"
+        testId="sign-contract-type-select-individual" />
+      <p class="pl-1 text-xs leading-relaxed text-slate-500">{{ copy.individual.description }}</p>
+    </div>
 
-    @if (cclaEnabled()) {
-      <div class="flex flex-col gap-1">
-        <lfx-selectable-card
-          [form]="selectForm"
-          control="contractType"
-          [value]="corporateValue"
-          [label]="copy.corporate.label"
-          testId="sign-contract-type-select-corporate" />
-        <p class="pl-1 text-xs leading-relaxed text-slate-500">{{ copy.corporate.description }}</p>
-      </div>
-    }
+    <div class="flex flex-col gap-1">
+      <lfx-selectable-card
+        [form]="selectForm"
+        control="contractType"
+        [value]="corporateValue"
+        [label]="copy.corporate.label"
+        testId="sign-contract-type-select-corporate" />
+      <p class="pl-1 text-xs leading-relaxed text-slate-500">{{ copy.corporate.description }}</p>
+    </div>
   </div>
 
   <div class="mt-4 flex justify-end gap-2.5">

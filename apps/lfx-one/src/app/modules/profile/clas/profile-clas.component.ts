@@ -23,7 +23,6 @@ import type {
   MyClaAgreement,
   MyClasState,
   PrepareSignResponse,
-  SignContractTypeDialogData,
   SignContractTypeSelectResult,
   SignIdentityDialogData,
   SignIdentitySelectResult,
@@ -433,18 +432,15 @@ export class ProfileClasComponent {
 
     this.signDialogOpen.set(true);
 
-    const data: SignContractTypeDialogData = {
-      iclaEnabled: true,
-      cclaEnabled: true,
-    };
-
+    // No data: the step renders both cards unconditionally, and it is only reachable for a group
+    // that enables both. Passing the flags it would have to ignore invites a later caller to open
+    // it for a single-type group, which is the hand-off this branch exists to make without asking.
     const dialogRef = this.dialogService.open(SignContractTypeSelectComponent, {
       header: SIGN_CONTRACT_TYPE_COPY.header,
       width: '32rem',
       modal: true,
       closable: true,
       dismissableMask: true,
-      data,
     }) as DynamicDialogRef;
 
     this.whenDialogSettles<SignContractTypeSelectResult>(dialogRef, (result) => {

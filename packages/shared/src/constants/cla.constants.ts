@@ -61,7 +61,7 @@ export const GERRIT_CONTRACT_TYPE_CORPORATE = 'corporate';
  */
 export const SIGN_CONTRACT_TYPE_COPY = {
   header: 'What type of contributor are you?',
-  body: 'Choose how you will sign for this project — you will be redirected to EasyCLA to complete it.',
+  body: "Choose how you'll sign for this project — you'll be redirected to EasyCLA to complete it.",
   individual: {
     label: 'Individual Contributor',
     description:

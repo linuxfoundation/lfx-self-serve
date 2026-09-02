@@ -345,13 +345,12 @@ export type SignIdentitySelectResult = { kind: 'github'; githubId: string } | { 
 /** Console Gerrit route contract-type segment (#2066). */
 export type GerritContractType = 'individual' | 'corporate';
 
-/** What the Gerrit contract-type step is given to render (#2066). */
-export interface SignContractTypeDialogData {
-  iclaEnabled: boolean;
-  cclaEnabled: boolean;
-}
-
-/** What the contract-type step closes with, or `null` for a dismissal (#2066). */
+/**
+ * What the contract-type step closes with, or `null` for a dismissal (#2066).
+ *
+ * The step takes no input data: it opens only for a group with both types enabled, so there is
+ * nothing about the group left for it to branch on.
+ */
 export interface SignContractTypeSelectResult {
   contractType: GerritContractType;
 }

@@ -574,7 +574,7 @@ describe('ProfileClasComponent — Sign CLA hand-off and identity selection (#12
   /** Records dialog opens in order, so "which dialog, and was it opened at all" is assertable. */
   let opened: unknown[];
   /** Records what each dialog was opened with, so the identity step's inputs are assertable. */
-  let openedWith: { component: unknown; config: { header?: string; data?: SignIdentityDialogData | ClaGroupSelectDialogData | { iclaEnabled?: boolean } } }[];
+  let openedWith: { component: unknown; config: { header?: string; data?: SignIdentityDialogData | ClaGroupSelectDialogData } }[];
 
   async function setup(
     options: {
@@ -1338,6 +1338,39 @@ describe('ProfileClasComponent — Sign CLA hand-off and identity selection (#12
     await sign(fixture);
 
     expect(location.href).toContain('/#/cla/gerrit/project/cg-1/corporate');
+  });
+
+  it('navigates nowhere and releases Sign CLA when the contract-type step is dismissed', async () => {
+    const fixture = await setup({
+      organizations: [org('gerrit')],
+      iclaEnabled: true,
+      cclaEnabled: true,
+      accountClosesWith: { kind: 'gerrit' },
+      contractTypeClosesWith: null,
+    });
+
+    await sign(fixture);
+
+    // The identity was confirmed but the agreement type was not. Falling through to `individual`
+    // here would sign an agreement the contributor withdrew from choosing, which is #2066 again.
+    expect(location.href).toBe(HOME);
+    expect(isStarting(fixture)).toBe(false);
+  });
+
+  it('releases Sign CLA when the contract-type step is destroyed without onClose (header X)', async () => {
+    const fixture = await setup({
+      organizations: [org('gerrit')],
+      iclaEnabled: true,
+      cclaEnabled: true,
+      accountClosesWith: { kind: 'gerrit' },
+      dismissContractType: 'destroy',
+    });
+
+    await sign(fixture);
+    await Promise.resolve();
+
+    expect(location.href).toBe(HOME);
+    expect(isStarting(fixture)).toBe(false);
   });
 
   it('stops rather than navigating when neither contract type is enabled', async () => {

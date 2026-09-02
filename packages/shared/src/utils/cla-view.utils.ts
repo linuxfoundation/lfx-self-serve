@@ -25,6 +25,7 @@ import type {
   ClaSignedVia,
   ClaSignRoute,
   ClaStatus,
+  GerritContractType,
   MyClaAgreement,
   MyClasIdentitySummary,
   SignIdentityRef,
@@ -257,7 +258,7 @@ export function claSignRoute(organizations: ClaGroupOrg[]): ClaSignRoute {
  * Returns `null` rather than a malformed address when the base or the group id is unusable,
  * so the caller reports a failure instead of navigating somewhere that cannot work.
  */
-export function gerritSignUrl(consoleBaseUrl: string, claGroupId: string, returnUrl: string, contractType: 'individual' | 'corporate'): string | null {
+export function gerritSignUrl(consoleBaseUrl: string, claGroupId: string, returnUrl: string, contractType: GerritContractType): string | null {
   // Trailing slashes are stripped by scanning, not by an anchored `/\/+$/`: that pattern
   // backtracks polynomially on a long run of slashes, which CodeQL flags as a ReDoS even
   // though this particular input is build-time configuration.
@@ -275,9 +276,11 @@ export function gerritSignUrl(consoleBaseUrl: string, claGroupId: string, return
     return null;
   }
 
+  // The segment is the contract type verbatim. Coercing an unrecognized value to `individual`
+  // would reinstate #2066's silent default in the one function that decides the route, so the
+  // type is the only guard — a bad caller must fail to compile, not sign the wrong agreement.
   const redirect = encodeURIComponent(returnUrl);
-  const segment = contractType === GERRIT_CONTRACT_TYPE_CORPORATE ? GERRIT_CONTRACT_TYPE_CORPORATE : GERRIT_CONTRACT_TYPE_INDIVIDUAL;
-  return `${base}/${GERRIT_CONSOLE_ROUTE_PREFIX}/${encodeURIComponent(groupId)}/${segment}?redirect=${redirect}`;
+  return `${base}/${GERRIT_CONSOLE_ROUTE_PREFIX}/${encodeURIComponent(groupId)}/${contractType}?redirect=${redirect}`;
 }
 
 /**
@@ -286,10 +289,10 @@ export function gerritSignUrl(consoleBaseUrl: string, claGroupId: string, return
  * Returns `chooser` when both ICLA and CCLA are enabled; a concrete type when exactly one is;
  * `none` when neither is — the caller must fail visibly rather than navigate.
  */
-export function resolveGerritContractType(iclaEnabled: boolean, cclaEnabled: boolean): 'individual' | 'corporate' | 'chooser' | 'none' {
+export function resolveGerritContractType(iclaEnabled: boolean, cclaEnabled: boolean): GerritContractType | 'chooser' | 'none' {
   if (iclaEnabled && cclaEnabled) return 'chooser';
-  if (iclaEnabled) return 'individual';
-  if (cclaEnabled) return 'corporate';
+  if (iclaEnabled) return GERRIT_CONTRACT_TYPE_INDIVIDUAL;
+  if (cclaEnabled) return GERRIT_CONTRACT_TYPE_CORPORATE;
   return 'none';
 }
 
