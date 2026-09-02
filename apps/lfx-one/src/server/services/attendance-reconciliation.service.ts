@@ -294,30 +294,50 @@ export class AttendanceReconciliationService {
 
     const chunkResults = await Promise.all(
       chunks.map(async (chunk) => {
-        const response = await this.aiService.reconcileAttendees(req, {
-          attendees: chunk.map((a) => ({ attendee_id: a.uid, zoom_user_name: this.getDisplayName(a) })),
-          candidates,
-        });
+        try {
+          const response = await this.aiService.reconcileAttendees(req, {
+            attendees: chunk.map((a) => ({ attendee_id: a.uid, zoom_user_name: this.getDisplayName(a) })),
+            candidates,
+          });
 
-        const byId = new Map(response.matches.map((m) => [m.attendee_id, m]));
+          const byId = new Map(response.matches.map((m) => [m.attendee_id, m]));
 
-        return chunk.map((attendee) => {
-          const match = byId.get(attendee.uid);
-          const matchedCandidate = match?.matched_candidate_id ? candidates.find((c) => c.candidate_id === match.matched_candidate_id) : undefined;
+          return chunk.map((attendee) => {
+            const match = byId.get(attendee.uid);
+            const matchedCandidate = match?.matched_candidate_id ? candidates.find((c) => c.candidate_id === match.matched_candidate_id) : undefined;
 
-          // Model omitted this attendee, or returned an unresolvable/hallucinated candidate_id —
-          // both degrade to 'none' rather than being silently dropped or trusted blindly.
-          const confidence = match && (matchedCandidate || !match.matched_candidate_id) ? match.confidence : ('none' as const);
+            // Only trust the model's stated confidence when its candidate_id actually resolved.
+            // A resolved-confidence + no-candidate combination (omitted attendee, hallucinated
+            // candidate_id, or a spec-violating null-candidate-but-non-none-confidence response)
+            // always degrades to 'none' rather than surfacing a misleading confidence with nothing
+            // attached to it.
+            const confidence = match && matchedCandidate ? match.confidence : ('none' as const);
 
-          return {
+            return {
+              attendee_id: attendee.uid,
+              zoom_user_name: this.getDisplayName(attendee),
+              confidence,
+              method: 'ai' as const,
+              matched_candidate: matchedCandidate,
+              auto_applied: false,
+            };
+          });
+        } catch (error) {
+          // A transient AI failure on one chunk must not sink the whole reconciliation call —
+          // the deterministic matches already computed for other attendees would otherwise be
+          // lost along with it. Degrade this chunk to 'none' so it queues for review instead.
+          logger.warning(req, 'reconcile_attendance_pool', 'AI reconciliation chunk failed, queuing attendees for review', {
+            attendee_count: chunk.length,
+            err: error,
+          });
+          return chunk.map((attendee) => ({
             attendee_id: attendee.uid,
             zoom_user_name: this.getDisplayName(attendee),
-            confidence,
+            confidence: 'none' as const,
             method: 'ai' as const,
-            matched_candidate: matchedCandidate,
             auto_applied: false,
-          };
-        });
+          }));
+        }
       })
     );
 

@@ -218,5 +218,37 @@ describe('AttendanceReconciliationService', () => {
       expect(result.needs_review_count).toBe(1);
       expect(result.auto_applied_count).toBe(0);
     });
+
+    it('queues the whole chunk for review instead of failing the request when the AI call throws', async () => {
+      getPastMeetingParticipants.mockResolvedValue([
+        buildParticipant({ uid: 'attendee-1', email: 'alice@example.com', is_attended: true, is_verified: false }),
+        buildParticipant({ uid: 'invitee-1', email: 'alice@example.com', is_invited: true, is_attended: false }),
+        buildParticipant({ uid: 'attendee-2', email: '', is_attended: true, is_verified: false }),
+      ]);
+      isAiConfigured.mockReturnValue(true);
+      reconcileAttendees.mockRejectedValue(new Error('upstream AI timeout'));
+
+      const result = await service.reconcilePastMeetingParticipants(req, 'occ-1', pastMeeting);
+
+      // The deterministic email match for attendee-1 must survive even though the AI call for
+      // the ambiguous remainder (attendee-2) throws.
+      const deterministic = result.results.find((r) => r.attendee_id === 'attendee-1');
+      expect(deterministic).toMatchObject({ confidence: 'high', method: 'deterministic' });
+
+      const aiFailed = result.results.find((r) => r.attendee_id === 'attendee-2');
+      expect(aiFailed).toMatchObject({ confidence: 'none', method: 'ai', auto_applied: false });
+    });
+
+    it('downgrades a spec-violating response (non-none confidence with no resolvable candidate_id) to none', async () => {
+      getPastMeetingParticipants.mockResolvedValue([buildParticipant({ uid: 'attendee-1', email: '', is_attended: true, is_verified: false })]);
+      isAiConfigured.mockReturnValue(true);
+      reconcileAttendees.mockResolvedValue({
+        matches: [{ attendee_id: 'attendee-1', matched_candidate_id: null, confidence: 'high' }],
+      });
+
+      const result = await service.reconcilePastMeetingParticipants(req, 'occ-1', pastMeeting);
+
+      expect(result.results[0]).toMatchObject({ confidence: 'none', auto_applied: false, matched_candidate: undefined });
+    });
   });
 });
