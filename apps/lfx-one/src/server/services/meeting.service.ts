@@ -13,7 +13,10 @@ import {
   CreateMeetingRequest,
   CreateMeetingRsvpRequest,
   ITXCreateMeetingResponseRequest,
+  ITXCreatePastMeetingParticipantRequest,
   ITXMeetingResponseResult,
+  ITXPastMeetingParticipantResult,
+  ITXUpdatePastMeetingParticipantRequest,
   Meeting,
   MeetingAttachment,
   MeetingJoinURL,
@@ -1799,6 +1802,67 @@ export class MeetingService {
       req,
       'LFX_V2_SERVICE',
       `/itx/past_meetings/${encodeURIComponent(pastMeetingUid)}/attachments/${encodeURIComponent(attachmentUid)}`,
+      'DELETE'
+    );
+  }
+
+  /**
+   * Creates a new past meeting participant (invitee and/or attendee record) via ITX proxy
+   */
+  public async createPastMeetingParticipant(
+    req: Request,
+    pastMeetingUid: string,
+    participantData: ITXCreatePastMeetingParticipantRequest
+  ): Promise<ITXPastMeetingParticipantResult> {
+    logger.debug(req, 'create_past_meeting_participant', 'Creating past meeting participant', { past_meeting_id: pastMeetingUid });
+
+    return this.microserviceProxy.proxyRequest<ITXPastMeetingParticipantResult>(
+      req,
+      'LFX_V2_SERVICE',
+      `/itx/past_meetings/${encodeURIComponent(pastMeetingUid)}/participants`,
+      'POST',
+      undefined,
+      participantData
+    );
+  }
+
+  /**
+   * Updates a past meeting participant's invitee and/or attendee record via ITX proxy
+   */
+  public async updatePastMeetingParticipant(
+    req: Request,
+    pastMeetingUid: string,
+    participantId: string,
+    participantData: ITXUpdatePastMeetingParticipantRequest
+  ): Promise<ITXPastMeetingParticipantResult> {
+    logger.debug(req, 'update_past_meeting_participant', 'Updating past meeting participant', {
+      past_meeting_id: pastMeetingUid,
+      participant_id: participantId,
+    });
+
+    return this.microserviceProxy.proxyRequest<ITXPastMeetingParticipantResult>(
+      req,
+      'LFX_V2_SERVICE',
+      `/itx/past_meetings/${encodeURIComponent(pastMeetingUid)}/participants/${encodeURIComponent(participantId)}`,
+      'PUT',
+      undefined,
+      participantData
+    );
+  }
+
+  /**
+   * Deletes a past meeting participant via ITX proxy
+   */
+  public async deletePastMeetingParticipant(req: Request, pastMeetingUid: string, participantId: string): Promise<void> {
+    logger.debug(req, 'delete_past_meeting_participant', 'Deleting past meeting participant', {
+      past_meeting_id: pastMeetingUid,
+      participant_id: participantId,
+    });
+
+    await this.microserviceProxy.proxyRequest<void>(
+      req,
+      'LFX_V2_SERVICE',
+      `/itx/past_meetings/${encodeURIComponent(pastMeetingUid)}/participants/${encodeURIComponent(participantId)}`,
       'DELETE'
     );
   }
