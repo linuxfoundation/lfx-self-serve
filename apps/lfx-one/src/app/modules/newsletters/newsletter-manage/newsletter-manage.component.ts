@@ -1058,11 +1058,33 @@ export class NewsletterManageComponent {
    */
   private handleScheduleError(err: HttpErrorResponse, id: string): void {
     const upstreamCode = err?.error?.upstreamCode;
-    if (err.status === 503) {
+    // A 503 alone no longer identifies "scheduling is switched off here". The BFF now raises 503
+    // for its own TRANSPORT failures too (a lost connection is an unconfirmed outcome, not proof
+    // nothing happened), so a transient network blip would otherwise be reported as a disabled
+    // feature -- and this branch tells the operator to Send now instead, which would send a
+    // newsletter immediately that they had deliberately scheduled for later.
+    //
+    // The transport codes travel to the browser on `error.code` (BaseApiError.toResponse), so
+    // the two are separable: a deliberate upstream 503 carries none of them.
+    const transportCode = err?.error?.code;
+    const isTransport = transportCode === 'TIMEOUT' || transportCode === 'NETWORK_ERROR' || /^(ECONN|ENOTFOUND|EAI_|UND_ERR)/.test(String(transportCode ?? ''));
+    if (err.status === 503 && !isTransport) {
       this.messageService.add({
         severity: 'error',
         summary: 'Scheduling unavailable',
         detail: "Scheduling isn't available in this environment. Use Send now instead.",
+        life: 8000,
+      });
+      return;
+    }
+    if (err.status === 503 && isTransport) {
+      // Says what is actually known: the request did not complete. Deliberately does NOT steer
+      // toward Send now -- the schedule may or may not have been armed, and an immediate send on
+      // top of an armed schedule is the one outcome that cannot be undone.
+      this.messageService.add({
+        severity: 'error',
+        summary: 'Could not reach the newsletter service',
+        detail: 'The schedule may not have been saved. Reload to check its status before trying again.',
         life: 8000,
       });
       return;
