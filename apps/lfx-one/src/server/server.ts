@@ -501,6 +501,11 @@ app.use('/**', async (req: Request, res: Response, next: NextFunction) => {
         return next();
       }
 
+      // The rendered HTML can carry per-user data (auth context, host_key/can_view_host_key on
+      // meeting pages), so it must never be served from a shared/intermediary cache to another user.
+      response.headers.set('Cache-Control', 'private, no-store');
+      response.headers.set('Vary', 'Cookie');
+
       // Web `Response.status` is read-only, so rebuild with 404 when the render flagged not-found.
       // Buffer the body first (404 pages are small) so we never hand a consumed stream to the new Response.
       if (renderContext.notFound && response.status === 200) {
