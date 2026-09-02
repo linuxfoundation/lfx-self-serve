@@ -306,6 +306,23 @@
                   </div>
                 </div>
               }
+              @if (voteData.allow_abstain) {
+                <!-- Vote-level abstention row — muted and never winner-styled; choice percentages above exclude abstentions. -->
+                <div class="rounded-lg border border-slate-200 bg-slate-50 p-4" data-testid="vote-results-voter-option-abstain">
+                  <div class="flex items-center justify-between mb-2">
+                    <span class="text-sm font-medium italic text-slate-500">Abstain</span>
+                    <div class="flex items-center gap-2">
+                      <span class="text-sm font-semibold text-slate-600">
+                        {{ participationStats().abstainedVoters }} {{ participationStats().abstainedVoters === 1 ? 'abstention' : 'abstentions' }}
+                      </span>
+                      <span class="text-sm text-slate-500">({{ participationStats().abstainedRate }}%)</span>
+                    </div>
+                  </div>
+                  <div class="w-full bg-white rounded-full h-2 overflow-hidden">
+                    <div class="h-full bg-slate-400 transition-all" [style.width.%]="participationStats().abstainedRate"></div>
+                  </div>
+                </div>
+              }
               @if (voteResultsError()) {
                 <p class="text-sm text-rose-700" data-testid="vote-results-voter-error">Couldn't load final results. Try reopening this vote.</p>
               } @else if (hasZeroVotes()) {
@@ -345,9 +362,26 @@
                   </div>
                 </div>
               }
+              @if (voteData.allow_abstain) {
+                <!-- Vote-level abstention row — muted and never winner-styled; ranked tallies above exclude abstentions. -->
+                <div class="rounded-lg border border-slate-200 bg-slate-50 p-4" data-testid="vote-results-voter-option-abstain">
+                  <div class="flex items-center justify-between mb-2">
+                    <span class="text-sm font-medium italic text-slate-500">Abstain</span>
+                    <div class="flex items-center gap-2">
+                      <span class="text-sm font-semibold text-slate-600">
+                        {{ participationStats().abstainedVoters }} {{ participationStats().abstainedVoters === 1 ? 'abstention' : 'abstentions' }}
+                      </span>
+                      <span class="text-sm text-slate-500">({{ participationStats().abstainedRate }}%)</span>
+                    </div>
+                  </div>
+                  <div class="w-full bg-white rounded-full h-2 overflow-hidden">
+                    <div class="h-full bg-slate-400 transition-all" [style.width.%]="participationStats().abstainedRate"></div>
+                  </div>
+                </div>
+              }
               @if (voteResultsError()) {
                 <p class="text-sm text-rose-700" data-testid="vote-results-voter-error">Couldn't load final results. Try reopening this vote.</p>
-              } @else if (rankedQuestions().length === 0) {
+              } @else if (rankedQuestions().length === 0 && participationStats().abstainedVoters === 0) {
                 <p class="text-sm text-slate-500" data-testid="vote-results-voter-zero-responses">No votes were submitted.</p>
               }
             </div>
@@ -397,8 +431,8 @@
                 <p-skeleton width="100%" height="8px"></p-skeleton>
               </div>
             }
-            @if (voteData.allow_abstain) {
-              <!-- Muted "Abstain" row appended to the Live/Final Results option lists — reserve its space while loading. -->
+            @if (voteData.allow_abstain && isGenericPoll()) {
+              <!-- Muted "Abstain" row appended to the generic Live/Final Results option lists — reserve its space while loading. -->
               <div class="rounded-lg border border-slate-200 p-4 flex flex-col gap-2">
                 <p-skeleton width="60%" height="16px"></p-skeleton>
                 <p-skeleton width="100%" height="8px"></p-skeleton>

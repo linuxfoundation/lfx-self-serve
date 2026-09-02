@@ -471,6 +471,8 @@ export class VoteResultsDrawerComponent {
 
   private initHasZeroVotes(): Signal<boolean> {
     return computed(() => {
+      // Abstentions are cast responses upstream but excluded from choice tallies — they must not read as "no votes".
+      if (this.participationStats().abstainedVoters > 0) return false;
       const qs = this.questionsWithResults();
       if (!qs.length) return true;
       return qs.every((q) => q.totalVotes === 0);
