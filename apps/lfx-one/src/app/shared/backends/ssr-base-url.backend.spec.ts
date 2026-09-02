@@ -1,6 +1,7 @@
 // Copyright The Linux Foundation and each contributor to LFX.
 // SPDX-License-Identifier: MIT
 
+import { PlatformLocation } from '@angular/common';
 import { FetchBackend, HttpRequest } from '@angular/common/http';
 import { TestBed } from '@angular/core/testing';
 import { of } from 'rxjs';
@@ -18,7 +19,11 @@ describe('SsrBaseUrlBackend', () => {
     handle = vi.fn().mockReturnValue(of({}));
 
     TestBed.configureTestingModule({
-      providers: [SsrBaseUrlBackend, { provide: FetchBackend, useValue: { handle } }],
+      providers: [
+        SsrBaseUrlBackend,
+        { provide: FetchBackend, useValue: { handle } },
+        { provide: PlatformLocation, useValue: { protocol: 'https:', hostname: 'lfx.example.org', port: '' } },
+      ],
     });
     backend = TestBed.inject(SsrBaseUrlBackend);
   });
@@ -81,5 +86,14 @@ describe('SsrBaseUrlBackend', () => {
     backend.handle(req);
 
     expect(handle).toHaveBeenCalledWith(expect.objectContaining({ url: 'https://lfx.example.org/assets/logo.svg' }));
+  });
+
+  it('leaves third-party absolute URLs untouched even when the path starts with /api/', () => {
+    process.env['PORT'] = '4321';
+    const req = new HttpRequest('GET', 'https://vendor.example/api/resource');
+
+    backend.handle(req);
+
+    expect(handle).toHaveBeenCalledWith(expect.objectContaining({ url: 'https://vendor.example/api/resource' }));
   });
 });
