@@ -1615,6 +1615,48 @@ describe('PlanningTabComponent — HubSpot UTM states', () => {
     expect(instance()['hsCreateBlocked'](), 'Create was re-offered after a create that may have committed').toBe(true);
   });
 
+  it('retires a possibly-created record after two empty re-checks', () => {
+    // dealako, round 5 (blocking): the record had NO exit. A create that failed with a transport
+    // 503 -- request never left, so nothing was created -- recorded the event, and every later
+    // lookup then hit the possibly-created branch, which never sets hsNotFound. The create block
+    // is gated on hsNotFound, so no button rendered; the re-check re-entered the same branch
+    // forever; a foundation round trip and retyping the url both failed to clear it. Reload only.
+    const empty = { found: false, hs_utm: null, campaign_name: '', all_matches: [], capped: false, inconclusive: false };
+    // The helper round-trips the name through a URL slug, so the component sees 'Kubecon Na
+    // 2026'. Using the same spelling throughout is what a real session does -- create and lookup
+    // both derive it from extractEventName(url) -- and mixing them here silently keyed the
+    // record under a name no later lookup would match.
+    runLookup(empty, 'KubeCon NA 2026');
+    create.mockReturnValue(throwError(() => ({ status: 503 })));
+    (fixture.componentInstance as unknown as { createInHubSpot(): void }).createInHubSpot();
+    fixture.detectChanges();
+
+    // Driven through recheckHubSpot(), the REAL control. A repeated runLookup is a no-op --
+    // lookupHubSpot returns early when lastLookedUpEvent already matches -- which is exactly the
+    // mechanism that made the lockout unrecoverable, and testing through it would have proved
+    // nothing. recheckHubSpot clears that field first, which is why it is the recovery path.
+    const recheck = () => {
+      lookup.mockReturnValue(
+        new Observable((s) => {
+          s.next(empty);
+          s.complete();
+        })
+      );
+      (fixture.componentInstance as unknown as { recheckHubSpot(): void }).recheckHubSpot();
+      fixture.detectChanges();
+    };
+
+    // First re-check: still ambiguous, so the record holds and Create stays withheld.
+    recheck();
+    expect(instance()['hsCreateBlocked'](), 'released on the FIRST miss, losing indexing-lag protection').toBe(true);
+    expect(instance()['hsNotFound']()).toBe(false);
+
+    // Second: it is not appearing, so it was almost certainly never created. Create returns.
+    recheck();
+    expect(instance()['hsCreateBlocked'](), 'Create stayed withheld forever after a create that never reached HubSpot').toBe(false);
+    expect(instance()['hsNotFound'](), 'the create block is gated on hsNotFound, so it must be set to render').toBe(true);
+  });
+
   it('does NOT record a 400, which proves nothing was created', () => {
     // The other direction: over-recording would withhold Create after a refusal the operator can
     // actually fix by correcting the name, which is the case the offer exists for.

@@ -35,6 +35,16 @@ import type {
 
 type PlanningStep = 'input' | 'generating' | 'review';
 
+/**
+ * How many empty re-checks retire a possibly-created record.
+ *
+ * TWO, not one: a campaign that actually landed appears well within a deliberate second look, so
+ * a single miss is genuinely ambiguous while a second is much better explained by "never
+ * created". One would surrender the indexing-lag protection the record exists for; none at all
+ * left Create permanently withheld after a create that never reached HubSpot.
+ */
+const CREATED_RECHECK_MISS_LIMIT = 2;
+
 @Component({
   selector: 'lfx-planning-tab',
   imports: [ReactiveFormsModule, ButtonComponent, InputTextComponent, NgClass],
@@ -216,6 +226,20 @@ export class PlanningTabComponent implements OnInit {
    * answers for that portal. The other direction writes a duplicate nobody can delete.
    */
   private readonly hsCreatedEvents = signal(new Set<string>());
+  /**
+   * How many times a re-check has come back EMPTY for a possibly-created event.
+   *
+   * The record has to expire, because it is written on unconfirmed failures too -- and an
+   * unconfirmed failure includes the case where the request never left the BFF, so nothing was
+   * created and nothing ever will appear. Without an exit, that permanently withheld Create
+   * under a false "Created in HubSpot", recoverable only by reload (dealako, round 5).
+   *
+   * Two consecutive empty re-checks settle it: HubSpot indexing is fast enough that a campaign
+   * which actually landed shows up well within a deliberate second look, so a second miss is
+   * much better explained by "it was never created". Erring on TWO rather than one keeps the
+   * duplicate protection for the indexing-lag case it exists for.
+   */
+  private readonly hsCreatedRecheckMisses = signal(new Map<string, number>());
   /**
    * The event the panel is currently showing, as a SIGNAL.
    *
@@ -850,8 +874,12 @@ export class PlanningTabComponent implements OnInit {
           // empty result while HubSpot is still indexing the campaign that did land, and Create
           // was then re-enabled for a campaign that exists.
           //
-          // Erring toward recording is right here: a spurious record withholds Create and leaves
-          // the re-check to clear it, while a missing one writes a duplicate nobody can delete.
+          // Erring toward recording is right here: a spurious record withholds Create while a
+          // missing one writes a duplicate nobody can delete. The record is BOUNDED rather than
+          // permanent -- two empty re-checks retire it (see CREATED_RECHECK_MISS_LIMIT). An
+          // earlier version of this comment claimed the re-check cleared it when no such exit
+          // existed, which left Create withheld forever after a create that never reached
+          // HubSpot.
           const failStatus = typeof err === 'object' && err !== null && 'status' in err ? Number((err as { status: unknown }).status) : 0;
           if (failStatus !== 400 && failStatus !== 404) {
             this.hsCreatedEvents.update((seen) => new Set(seen).add(`${capturedFoundation}|${capturedEvent}`));
@@ -1594,9 +1622,27 @@ export class PlanningTabComponent implements OnInit {
             //
             // The unconfirmed state is the honest one and already carries the only control that
             // settles the question: a re-check, which reads back the token HubSpot will assign.
-            this.hsUnconfirmed.set(true);
-            this.hsStatus.set('Created in HubSpot — waiting for it to appear. Re-check to read its UTM token.');
-            this.hsMatches.set(result?.all_matches ?? []);
+            const key = `${capturedFoundation}|${eventName}`;
+            const misses = (this.hsCreatedRecheckMisses().get(key) ?? 0) + 1;
+            this.hsCreatedRecheckMisses.update((m) => new Map(m).set(key, misses));
+            if (misses >= CREATED_RECHECK_MISS_LIMIT) {
+              // Settled the other way: it is not appearing, so it was almost certainly never
+              // created -- the unconfirmed failure that recorded it never reached HubSpot. Drop
+              // the record and report an ordinary not-found, which restores Create. Leaving it
+              // would be the round-4 lockout reached through the failure path.
+              this.hsCreatedEvents.update((seen) => {
+                const next = new Set(seen);
+                next.delete(key);
+                return next;
+              });
+              this.hsNotFound.set(true);
+              this.hsMatches.set(result?.all_matches ?? []);
+              this.hsStatus.set('No matching campaign in HubSpot — the earlier attempt does not appear to have created one.');
+            } else {
+              this.hsUnconfirmed.set(true);
+              this.hsStatus.set('Created in HubSpot — waiting for it to appear. Re-check to read its UTM token.');
+              this.hsMatches.set(result?.all_matches ?? []);
+            }
           } else {
             this.hsNotFound.set(true);
             // Carried on the NOT-FOUND path too. An ambiguous lookup — a tie, or a match too weak
