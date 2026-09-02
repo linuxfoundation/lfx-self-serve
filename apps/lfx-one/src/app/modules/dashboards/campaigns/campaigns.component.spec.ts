@@ -4498,6 +4498,10 @@ describe('CampaignsComponent email monitor', () => {
     loadEmailMetrics(): void;
     canRefreshEmailMetrics(): boolean;
     emailBriefOutput: { set(v: unknown): void };
+    onEmailProceedToImplementation(brief: unknown): void;
+    rememberBriefId(key: string, value: { id: string; etag: string | null }): void;
+    ownershipKey(projectSlug: string, brief: unknown): string | null;
+    activeFoundationSlug(): string;
   }
 
   const internals = (): MonitorInternals => fixture.componentInstance as unknown as MonitorInternals;
@@ -4957,14 +4961,82 @@ describe('CampaignsComponent email monitor', () => {
   });
 
   it('offers Refresh in the recoverable idle state a reset leaves behind', () => {
-    // The signal is cleared exactly as `resetEmailBriefDerivedState` leaves it, but the brief is
-    // still on screen -- this is the case the narrowed predicate was widened for, and it must not
-    // regress into "disabled everywhere idle".
-    internals().emailBriefId.set('b-monitor');
+    // Drives the REAL reset rather than hand-setting the signals it clears.
+    //
+    // An earlier version of this test set `emailBriefId` to a nonempty value and asserted true.
+    // That returns through the direct-id branch and never reaches the ownership fallback, so
+    // deleting the fallback entirely left all 201 specs green -- the test agreed with itself.
+    // Here the id is cleared by `resetEmailBriefDerivedState` (via the proceed handler that calls
+    // it), so the ONLY thing that can make Refresh available is the ownership cache. That is the
+    // whole point of the recoverable-idle case.
+    const brief = { eventDetails: { name: 'KubeCon Europe 2026', slug: 'kubecon-eu-2026' } };
+    const key = internals().ownershipKey(internals().activeFoundationSlug(), brief);
+    expect(key).not.toBeNull();
+    internals().rememberBriefId(key as string, { id: 'b-owned', etag: '"1"' });
+
+    internals().onEmailProceedToImplementation(brief);
     internals().emailMetricsState.set('idle');
     fixture.detectChanges();
 
+    // The reset cleared the signal; only the cache can answer now.
     expect(internals().canRefreshEmailMetrics()).toBe(true);
+  });
+
+  /**
+   * A real sub-0.1% rate must not render as `0.0%`.
+   *
+   * `MetricPercentPipe` formats to one decimal, so 1 click in 10,000 delivered (0.01%) printed as
+   * `0.0%` -- a zero sitting beside a click counter reading 1, which reads as "no clicks" rather
+   * than "very few". The em dash keeps meaning "no denominator", so rounding up is not an option
+   * either. Click and bounce now use two decimals, matching the CTR convention already set in the
+   * marketing-impact email tab; delivery and open keep one, being large.
+   *
+   * Asserted on RENDERED text: a pipe unit test would pass even if the template stopped using it.
+   */
+  it('renders a real sub-0.1% click and bounce rate rather than 0.0%', () => {
+    load([okRow({ sent: 10000, delivered: 10000, opens: 5000, clicks: 1, bounces: 2, unsubscribes: 0 })]);
+
+    const el = fixture.nativeElement as HTMLElement;
+    expect(el.querySelector('[data-testid="campaigns-email-metric-click-rate"]')?.textContent).toContain('0.01%');
+    expect(el.querySelector('[data-testid="campaigns-email-metric-bounce-rate"]')?.textContent).toContain('0.02%');
+    // The large rates stay at one decimal -- a second is noise, and this pins that the change was
+    // scoped to the low-rate pair rather than applied to every percentage on the panel.
+    expect(el.querySelector('[data-testid="campaigns-email-metric-delivery-rate"]')?.textContent).toContain('100.0%');
+  });
+
+  it('picks up an ownership entry recorded AFTER the computed was first read', () => {
+    // `knownBriefIds` is a plain Map, so a computed reading it is evaluated once and never
+    // invalidated when an entry lands. That is why writes go through `rememberBriefId`, which
+    // bumps a signal the computed depends on.
+    //
+    // The ORDER is the whole test: read first (caching false), then write. A version-less
+    // implementation stays false forever here and the button is stuck disabled through exactly
+    // the recoverable case it was widened for -- while a test that writes before the first read
+    // passes either way.
+    const brief = { eventDetails: { name: 'KubeCon Europe 2026', slug: 'kubecon-eu-2026' } };
+    internals().onEmailProceedToImplementation(brief);
+    internals().emailMetricsState.set('idle');
+    fixture.detectChanges();
+
+    // First read: no entry yet, so this caches `false`.
+    expect(internals().canRefreshEmailMetrics()).toBe(false);
+
+    const key = internals().ownershipKey(internals().activeFoundationSlug(), brief);
+    internals().rememberBriefId(key as string, { id: 'b-late', etag: null });
+    fixture.detectChanges();
+
+    expect(internals().canRefreshEmailMetrics()).toBe(true);
+  });
+
+  it('does not offer Refresh when the ownership cache holds no row for this event', () => {
+    // Same shape, cache deliberately empty: proves the previous test passes BECAUSE of the entry
+    // rather than because the reset happens to leave something else enabled.
+    const brief = { eventDetails: { name: 'KubeCon Europe 2026', slug: 'kubecon-eu-2026' } };
+    internals().onEmailProceedToImplementation(brief);
+    internals().emailMetricsState.set('idle');
+    fixture.detectChanges();
+
+    expect(internals().canRefreshEmailMetrics()).toBe(false);
   });
 
   it('does not offer Refresh while a load is already in flight', () => {

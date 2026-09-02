@@ -57,3 +57,22 @@ export class MetricPercentPipe implements PipeTransform {
     return value === null ? '—' : `${formatPercent(value)}%`;
   }
 }
+
+/**
+ * Percentage to TWO decimals, for rates that live below 1%.
+ *
+ * One decimal renders a real 0.01% click rate as `0.0%` -- a zero printed beside a nonzero click
+ * counter, which reads as "nothing happened" rather than "a little happened". The em dash still
+ * means the rate could not be computed at all (no denominator), and that distinction is the whole
+ * reason this cannot just round up.
+ *
+ * Two decimals, not more: this follows the convention already set for CTR in the marketing-impact
+ * email tab (`formatPercent(et.ctr, 2)`), where open rate keeps one decimal for the same reason
+ * delivery does here -- it is a large number and a second decimal is noise.
+ */
+@Pipe({ standalone: true, name: 'metricLowPercent', pure: true })
+export class MetricLowPercentPipe implements PipeTransform {
+  public transform(value: number | null): string {
+    return value === null ? '—' : `${formatPercent(value, 2)}%`;
+  }
+}

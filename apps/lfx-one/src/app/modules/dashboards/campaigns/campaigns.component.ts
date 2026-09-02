@@ -2,7 +2,7 @@
 // SPDX-License-Identifier: MIT
 
 import { DecimalPipe, isPlatformBrowser } from '@angular/common';
-import { MetricPercentPipe } from '@app/shared/pipes/format-metric.pipe';
+import { MetricLowPercentPipe, MetricPercentPipe } from '@app/shared/pipes/format-metric.pipe';
 import { Component, computed, DestroyRef, inject, PLATFORM_ID, signal } from '@angular/core';
 import { takeUntilDestroyed, toObservable } from '@angular/core/rxjs-interop';
 import { FormControl, FormGroup, ReactiveFormsModule } from '@angular/forms';
@@ -58,6 +58,7 @@ import { PlanningTabComponent } from './components/planning-tab/planning-tab.com
   imports: [
     DecimalPipe,
     MetricPercentPipe,
+    MetricLowPercentPipe,
     ReactiveFormsModule,
     ButtonComponent,
     SelectComponent,
