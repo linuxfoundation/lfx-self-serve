@@ -2834,6 +2834,22 @@ export class CampaignsComponent {
    * identified a generic word is a real signal of which one. This one counts only non-generic
    * terms, and it is what the threshold is applied to.
    */
+  //
+  // KNOWN LIMIT, measured rather than assumed: a single unlisted term of six-plus characters
+  // clears the threshold alone, and the selected id becomes `hubspotConfig.sourceEmailId` when
+  // the operator stages. So "Developer Conference" pre-selects an unrelated "Developer
+  // newsletter" until `developer` is added to the deny-list.
+  //
+  // Corroboration (require a second non-generic term) was the obvious fix and is WRONG here:
+  // real events yield exactly ONE decisive term. "KubeCon Europe 2026" -> [kubecon],
+  // "PyTorch Conference 2026" -> [pytorch], "Developer Conference" -> [developer]. The year is
+  // a tie-break, the city is ranking-only, and "Europe"/"Conference" are stopword or generic. So
+  // corroboration would withhold every real suggestion, not just the risky one -- it cannot
+  // separate `kubecon` from `developer`, because nothing about their SHAPE differs.
+  //
+  // Distinguishing them needs a source of event identity this component does not have (an
+  // allow-list, a brand mapping, or an upstream confidence signal). That is a design change, so
+  // the limit is pinned by a test rather than papered over here.
   private eventSuggestionScore(template: HubSpotMarketingEmail, terms: EventTemplateTerms): number {
     return this.matchedEventTerms(template, terms.decisive)
       .filter((term) => !EVENT_TERM_GENERIC.has(term))
