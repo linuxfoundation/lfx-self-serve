@@ -2515,14 +2515,3 @@ describe('CampaignController.executeKeywordActions via campaign-service', () => 
     expect(body.results.map((r) => r.keyword).sort()).toEqual(['Criterion 1', 'Criterion 2', 'Criterion 3']);
   });
 });
-
-/**
- * The HubSpot UTM lookup and create behind `CampaignServiceHubSpotUtm`.
- *
- * The mapping arithmetic has its own tests in `campaign-utm-mapper.spec.ts`. What is only
- * decidable HERE is the layer boundary: which backend a request reaches, that the flag is read
- * per-flag rather than as a blanket toggle, that the project the campaign-service arm scopes by
- * is required rather than defaulted, and that an upstream failure reaches the error middleware
- * instead of being answered with a 200 the panel reads as a real "not found" -- which is the one
- * answer it acts on by CREATING a campaign.
- */
