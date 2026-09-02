@@ -1,7 +1,7 @@
 // Copyright The Linux Foundation and each contributor to LFX.
 // SPDX-License-Identifier: MIT
 
-import { DatePipe, DOCUMENT, isPlatformBrowser } from '@angular/common';
+import { DOCUMENT, isPlatformBrowser } from '@angular/common';
 import { ChangeDetectionStrategy, Component, computed, DestroyRef, inject, PLATFORM_ID, Signal, signal, viewChildren } from '@angular/core';
 import { takeUntilDestroyed, toSignal } from '@angular/core/rxjs-interop';
 import { Router, RouterLink } from '@angular/router';
@@ -19,7 +19,17 @@ import type {
   SignIdentitySelectResult,
   SignIdentityVariant,
 } from '@lfx-one/shared/interfaces';
-import { claSignRoute, claStatusLabel, claStatusSeverity, downloadFromUrl, gerritSignUrl, isMyClasEmpty, signedAsLine } from '@lfx-one/shared/utils';
+import {
+  alreadySignedAgreementsForGroup,
+  claSignRoute,
+  claStatusLabel,
+  claStatusSeverity,
+  downloadFromUrl,
+  formatClaSignedOn,
+  gerritSignUrl,
+  isMyClasEmpty,
+  signedAsLine,
+} from '@lfx-one/shared/utils';
 import { MenuItem, MessageService } from 'primeng/api';
 import { DialogService, DynamicDialogRef } from 'primeng/dynamicdialog';
 import { ToastModule } from 'primeng/toast';
@@ -57,18 +67,7 @@ import { SignIdentitySelectComponent } from './sign-identity-select.component';
  */
 @Component({
   selector: 'lfx-profile-clas',
-  imports: [
-    DatePipe,
-    RouterLink,
-    BadgeComponent,
-    ButtonComponent,
-    EmptyStateComponent,
-    MenuComponent,
-    MessageComponent,
-    TableComponent,
-    TagComponent,
-    ToastModule,
-  ],
+  imports: [RouterLink, BadgeComponent, ButtonComponent, EmptyStateComponent, MenuComponent, MessageComponent, TableComponent, TagComponent, ToastModule],
   providers: [MessageService, DialogService],
   templateUrl: './profile-clas.component.html',
   changeDetection: ChangeDetectionStrategy.OnPush,
@@ -130,6 +129,27 @@ export class ProfileClasComponent {
 
   // --- Sign CLA hand-off (#1251) -------------------------------------------
 
+  /**
+   * Also disabled until the list has loaded, and while it has failed to load (#1914). Both dialogs
+   * read the loaded agreements — the picker to tag a group they already signed, the identity step
+   * to gray out the identity that signed it — and in both states the list is empty, which is
+   * indistinguishable from having signed nothing. Offering the flow then would walk them into the
+   * duplicate signing this change exists to prevent.
+   */
+  protected readonly signDisabled = computed(() => this.impersonating() || this.loading() || this.error());
+
+  /**
+   * Reads as the button's accessible name while it is disabled, so it has to name the action
+   * before the reason — an aria-label replaces the label rather than adding to it, and a reason
+   * on its own would leave a screen reader with no idea which action is unavailable.
+   */
+  protected readonly signDisabledReason = computed<string | undefined>(() => {
+    if (this.impersonating()) return 'Sign CLA — unavailable while impersonating another user';
+    if (this.loading()) return 'Sign CLA — available once your CLAs have loaded';
+    if (this.error()) return 'Sign CLA — available once your CLAs load; select Retry to reload them';
+    return undefined;
+  });
+
   protected retry(): void {
     this.refresh$.next();
   }
@@ -157,7 +177,7 @@ export class ProfileClasComponent {
     // `impersonating()` is re-checked here and not only on the button: the button is now rendered
     // rather than withheld, so a keyboard or programmatic activation can reach this method, and
     // opening the picker would walk the administrator to a prepare the server refuses.
-    if (!this.myClasM2Enabled() || this.impersonating() || this.starting() || this.signDialogOpen()) return;
+    if (!this.myClasM2Enabled() || this.signDisabled() || this.starting() || this.signDialogOpen()) return;
     this.signDialogOpen.set(true);
 
     const dialogRef = this.dialogService.open(ClaGroupSelectComponent, {
@@ -166,6 +186,7 @@ export class ProfileClasComponent {
       modal: true,
       closable: true,
       dismissableMask: true,
+      data: { agreements: this.agreements() },
     }) as DynamicDialogRef;
 
     this.whenDialogSettles<ClaGroupOption>(dialogRef, (option) => {
@@ -311,7 +332,17 @@ export class ProfileClasComponent {
     this.starting.set(false);
     this.signDialogOpen.set(true);
 
-    const data: SignIdentityDialogData = { variant: effectiveVariant, accounts, ...(gerritUsername ? { gerritUsername } : {}) };
+    // What they already hold for *this* group, so the step can gray out the identity that signed
+    // it. Passed as agreements rather than a precomputed verdict because only the step knows
+    // which identities it ended up offering.
+    const claGroupAgreements = alreadySignedAgreementsForGroup(this.agreements(), option.claGroupId);
+
+    const data: SignIdentityDialogData = {
+      variant: effectiveVariant,
+      accounts,
+      ...(gerritUsername ? { gerritUsername } : {}),
+      ...(claGroupAgreements.length > 0 ? { claGroupAgreements } : {}),
+    };
 
     const dialogRef = this.dialogService.open(SignIdentitySelectComponent, {
       header: SIGN_IDENTITY_COPY[effectiveVariant].header,
@@ -622,6 +653,7 @@ export class ProfileClasComponent {
             icon: this.statusIcon(agreement.status),
             note: this.statusNote(agreement),
           },
+          signedOnLabel: formatClaSignedOn(agreement.signedOn),
           signedAsLine: m2 ? signedAsLine(agreement.signedVia, agreement.signedAs) : undefined,
           menuItems,
           hasActions: menuItems.length > 0,
