@@ -35,6 +35,8 @@ import type {
   RedditBriefCopy,
   CampaignServiceAudience,
   CampaignServiceCampaignResolution,
+  CampaignServiceHubSpotCampaign,
+  CampaignServiceHubSpotCampaigns,
   CampaignServiceKeywordActionInput,
   CampaignServiceKeywordActions,
   CampaignServiceKeywords,
@@ -1358,6 +1360,81 @@ export class CampaignServiceClient {
       'GET',
       window ? { window } : undefined
     );
+  }
+
+  /**
+   * Find LF HubSpot campaigns by name, to read back an existing campaign's utm token.
+   *
+   * THE ANSWER IS PORTAL-WIDE: HubSpot's campaign namespace is the whole portal, so this
+   * returns every campaign in it regardless of which project scoped the request.
+   *
+   * `projectSlug` gates permission AND selects WHICH portal is visible — campaign-service
+   * resolves the HubSpot credential from it, and connections are stored per project with their
+   * own token and portal_id. Two projects therefore see the same campaigns only when they point
+   * at the same portal, which is common under the LF umbrella but is not a guarantee. Calling
+   * this LF-global would have a future caller ignore a real connection-selection boundary.
+   *
+   * An empty `campaigns` array is a 200, not a 404 — "nothing is named that" is the answer the
+   * caller acts on by offering to create one, so callers must check the array rather than
+   * relying on this to throw.
+   */
+  public async searchHubSpotCampaigns(req: Request, projectSlug: string, query: string): Promise<CampaignServiceHubSpotCampaigns> {
+    if (projectSlug === '' || query === '') {
+      throw new Error('A HubSpot campaign search requires both the project and a search term.');
+    }
+    return this.microserviceProxy.proxyRequest<CampaignServiceHubSpotCampaigns>(
+      req,
+      'LFX_V2_CAMPAIGN_SERVICE',
+      `/projects/${encodeURIComponent(projectSlug)}/connection-hubspot/campaigns`,
+      'GET',
+      { q: query }
+    );
+  }
+
+  /**
+   * Create a portal-wide HubSpot campaign, returning the token when the response carries one.
+   *
+   * Which portal is the project's connection's, not necessarily the LF's own — see
+   * searchHubSpotCampaigns above.
+   *
+   * IT ALWAYS CREATES and performs no duplicate check — upstream documents why: a
+   * search-then-create still races a concurrent caller and cannot prevent a duplicate, so the
+   * check belongs with the operator who can read the candidate names. Search first, warn, then
+   * create.
+   *
+   * The created campaign lands in a PORTAL-WIDE namespace: visible to everyone working in the
+   * HubSpot portal this project's connection points at, whatever project scoped the request.
+   * That is the boundary — not "every foundation", which overstates it, and not "this project",
+   * which understates it. Two projects connected to the same portal share the namespace; two
+   * connected to different portals do not.
+   *
+   * The name is the SIXTH argument (body), not the fifth (query): a POST payload in the query
+   * position sends no body at all, and upstream would reject it as a request naming no campaign.
+   */
+  public async createHubSpotCampaign(req: Request, projectSlug: string, name: string): Promise<CampaignServiceHubSpotCampaign> {
+    if (projectSlug === '' || name === '') {
+      throw new Error('A HubSpot campaign creation requires both the project and a campaign name.');
+    }
+    const created = await this.microserviceProxy.proxyRequest<CampaignServiceHubSpotCampaign>(
+      req,
+      'LFX_V2_CAMPAIGN_SERVICE',
+      `/projects/${encodeURIComponent(projectSlug)}/connection-hubspot/campaigns`,
+      'POST',
+      undefined,
+      { name }
+    );
+    // VALIDATED, not merely cast. proxyRequest types the body it returns but does not check it,
+    // and this is a non-idempotent create: `toUtmCreateResult` hard-codes `created: true`, so a
+    // 2xx carrying `{}` -- a rewritten gateway body, a contract drift -- would report a campaign
+    // that may not exist, with an undefined name, and the UI would then block Create for it. The
+    // operator is told it worked and left unable to try again.
+    //
+    // `id` and `name` are both required by the contract (campaign.interface.ts:1804). Failing
+    // here surfaces as a create error, which is recoverable, rather than a fabricated success.
+    if (typeof created?.id !== 'string' || created.id === '' || typeof created?.name !== 'string') {
+      throw new Error('The campaign service reported a create but returned no usable campaign.');
+    }
+    return created;
   }
 
   /**

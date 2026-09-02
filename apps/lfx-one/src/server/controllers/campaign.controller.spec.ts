@@ -27,6 +27,8 @@ const {
   svcApplyKeywordActions,
   legacyKeywordActions,
   svcGetAudience,
+  svcSearchHsCampaigns,
+  svcCreateHsCampaign,
   legacyLookupUtm,
   legacyCreateUtm,
   legacyGetKeywords,
@@ -83,6 +85,8 @@ vi.mock('../services/campaign-service.service', async (importOriginal) => {
       public resolveGoogleAdsCampaign = svcResolveCampaign;
       public applyKeywordActions = svcApplyKeywordActions;
       public getGoogleAdsAudience = svcGetAudience;
+      public searchHubSpotCampaigns = svcSearchHsCampaigns;
+      public createHubSpotCampaign = svcCreateHsCampaign;
     },
   };
 });
