@@ -143,8 +143,8 @@ export interface MeetingCommittee {
  * `v1_meeting` projection. Used to display the meeting organizer's name.
  */
 export interface MeetingUserInfo {
-  /** Display name of the user */
-  name: string;
+  /** Display name of the user — omitted when the upstream audit stamper falls back to a degraded profile */
+  name?: string;
   /** LFID username of the user */
   username: string;
   /** Email address of the user */
@@ -1018,6 +1018,14 @@ export interface ITXCreatePastMeetingParticipantRequest {
   is_verified?: boolean;
   /** Whether the attendee is marked as unknown (attendee only) */
   is_unknown?: boolean;
+  /** Whether the attendee record was created via AI reconciliation (attendee only) */
+  is_ai_reconciled?: boolean;
+  /** Whether the attendee name was auto-matched to a registrant's email (attendee only) */
+  is_auto_matched?: boolean;
+  /** Zoom display name of the attendee (attendee only) */
+  zoom_user_name?: string;
+  /** Full name of the invitee the attendee was matched to (attendee only) */
+  mapped_invitee_name?: string;
   /** Array of session objects with join/leave times (attendee only) */
   sessions?: ITXParticipantSession[];
 }
@@ -1057,6 +1065,14 @@ export interface ITXUpdatePastMeetingParticipantRequest {
   committee_voting_status?: string;
   /** Whether the attendee has been verified (attendee only) */
   is_verified?: boolean;
+  /** Whether the attendee record was updated via AI reconciliation (attendee only) */
+  is_ai_reconciled?: boolean;
+  /** Whether the attendee name was auto-matched to a registrant's email (attendee only) */
+  is_auto_matched?: boolean;
+  /** Zoom display name of the attendee (attendee only) */
+  zoom_user_name?: string;
+  /** Full name of the invitee the attendee was matched to (attendee only) */
+  mapped_invitee_name?: string;
 }
 
 /**
@@ -1196,6 +1212,13 @@ export interface ReconcilePastMeetingParticipantsResponse {
   candidate_pool_size: number;
   auto_applied_count: number;
   needs_review_count: number;
+  /**
+   * True when one or more candidate-pool sources (committee members, a prior occurrence's
+   * participants) failed to fetch and were silently dropped rather than included. High-confidence
+   * auto-apply is disabled for a degraded pool — a missing source could hide the true match for a
+   * candidate that would otherwise auto-apply incorrectly, so results are queued for review instead.
+   */
+  pool_degraded: boolean;
 }
 
 /** Attendance filter for the past-meeting participant list. */
