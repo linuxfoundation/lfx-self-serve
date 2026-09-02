@@ -1415,7 +1415,7 @@ export class CampaignServiceClient {
     if (projectSlug === '' || name === '') {
       throw new Error('A HubSpot campaign creation requires both the project and a campaign name.');
     }
-    return this.microserviceProxy.proxyRequest<CampaignServiceHubSpotCampaign>(
+    const created = await this.microserviceProxy.proxyRequest<CampaignServiceHubSpotCampaign>(
       req,
       'LFX_V2_CAMPAIGN_SERVICE',
       `/projects/${encodeURIComponent(projectSlug)}/connection-hubspot/campaigns`,
@@ -1423,6 +1423,18 @@ export class CampaignServiceClient {
       undefined,
       { name }
     );
+    // VALIDATED, not merely cast. proxyRequest types the body it returns but does not check it,
+    // and this is a non-idempotent create: `toUtmCreateResult` hard-codes `created: true`, so a
+    // 2xx carrying `{}` -- a rewritten gateway body, a contract drift -- would report a campaign
+    // that may not exist, with an undefined name, and the UI would then block Create for it. The
+    // operator is told it worked and left unable to try again.
+    //
+    // `id` and `name` are both required by the contract (campaign.interface.ts:1804). Failing
+    // here surfaces as a create error, which is recoverable, rather than a fabricated success.
+    if (typeof created?.id !== 'string' || created.id === '' || typeof created?.name !== 'string') {
+      throw new Error('The campaign service reported a create but returned no usable campaign.');
+    }
+    return created;
   }
 
   /**

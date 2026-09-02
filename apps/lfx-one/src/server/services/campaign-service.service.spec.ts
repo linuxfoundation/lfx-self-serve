@@ -2945,8 +2945,31 @@ describe('CampaignServiceClient google ads insight reads', () => {
       expect(proxyRequest.mock.calls[0]).toHaveLength(5);
     });
 
+    it.each([
+      ['an empty object', {}],
+      ['a missing id', { name: 'KubeCon NA 2026' }],
+      ['a blank id', { id: '', name: 'KubeCon NA 2026' }],
+      ['a missing name', { id: 'c-1' }],
+    ])('refuses %s rather than reporting a fabricated create', async (_label, body) => {
+      // toUtmCreateResult hard-codes `created: true`, so an unvalidated 2xx would report a campaign
+      // that may not exist -- and the UI then blocks Create for it, telling the operator it worked
+      // while leaving them unable to retry. A non-idempotent create must not be inferred from a
+      // status code alone.
+      proxyRequest.mockResolvedValue(body);
+
+      await expect(new CampaignServiceClient().createHubSpotCampaign(req, 'cncf', 'KubeCon NA 2026')).rejects.toThrow(/no usable campaign/i);
+    });
+
+    it('accepts a well-formed create response', async () => {
+      proxyRequest.mockResolvedValue({ id: 'c-1', name: 'KubeCon NA 2026', utm: 'tok' });
+
+      await expect(new CampaignServiceClient().createHubSpotCampaign(req, 'cncf', 'KubeCon NA 2026')).resolves.toMatchObject({ id: 'c-1' });
+    });
+
     it('sends the campaign name as a BODY, not a query parameter', async () => {
-      proxyRequest.mockResolvedValue({ id: 'c-1' });
+      // A COMPLETE response: the create path now validates id and name, so a fixture missing
+      // either would fail for a reason unrelated to argument placement.
+      proxyRequest.mockResolvedValue({ id: 'c-1', name: 'KubeCon NA 2026' });
 
       await new CampaignServiceClient().createHubSpotCampaign(req, 'cncf', 'KubeCon NA 2026');
 
