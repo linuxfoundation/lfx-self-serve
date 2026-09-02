@@ -283,7 +283,7 @@ export class WeeklyBriefCardComponent {
   protected readonly currentActivityTruncationNote: Signal<string> = computed(() =>
     this.currentActivity().length
       ? 'This count may be incomplete — see Recent Activity below for the latest events.'
-      : 'Activity this week could not be fully counted — see Recent Activity below for the latest events.'
+      : 'Activity this week may be incomplete — see Recent Activity below for the latest events.'
   );
 
   // The server's raw truncated flag — do not additionally gate this on currentActivity().length.
@@ -298,10 +298,10 @@ export class WeeklyBriefCardComponent {
   // claim this whole fix exists to avoid, just relocated to the tally line instead of the note.
   // Read by both the visible @else span and currentActivityLine (its aria-label) below, so the
   // two can't drift out of sync the way "no activity yet" vs. the note text did before this fix.
-  protected readonly currentActivityEmptyText: Signal<string> = computed(() => (this.isTruncated() ? "activity couldn't be counted" : 'no activity yet'));
+  protected readonly currentActivityEmptyText: Signal<string> = computed(() => (this.isTruncated() ? 'activity may be incomplete' : 'no activity yet'));
 
   // "This week so far: 1 meeting held, 1 vote closed" / "This week so far: no activity yet" /
-  // "This week so far: activity couldn't be counted". The truncation note (GH-1998) is a separate
+  // "This week so far: activity may be incomplete". The truncation note (GH-1998) is a separate
   // visible element (see the template), not folded in here — this stays the accessible name for
   // the tally group alone, so a screen reader doesn't hear the note announced twice (once for
   // this group, once for its own sibling paragraph).

@@ -1101,12 +1101,12 @@ test.describe('WG Weekly Brief card — "This week so far" activity tally (GH-19
 
     const tally = page.getByTestId('weekly-brief-card-current-activity');
     await expect(tally).toBeVisible({ timeout: DATA_LOAD_TIMEOUT });
-    await expect(tally).toContainText("activity couldn't be counted");
+    await expect(tally).toContainText('activity may be incomplete');
     await expect(tally).not.toContainText('no activity yet');
 
     const note = page.getByTestId('weekly-brief-card-current-activity-truncation-note');
     await expect(note).toBeVisible();
-    await expect(note).toContainText('could not be fully counted');
+    await expect(note).toContainText('Activity this week may be incomplete');
     await expect(note).toContainText('see Recent Activity below for the latest events');
   });
 });
