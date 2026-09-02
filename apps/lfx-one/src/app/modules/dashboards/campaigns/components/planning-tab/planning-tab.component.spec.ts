@@ -1676,6 +1676,30 @@ describe('PlanningTabComponent — HubSpot UTM states', () => {
     expect(instance()['hsCreateBlocked'](), 'honest copy came at the cost of the duplicate guard').toBe(true);
   });
 
+  it('does not claim "created" cross-foundation for an unconfirmed attempt', () => {
+    // Copilot: `hsCreatedEventNames` is written by BOTH create arms, so the cross-foundation
+    // warning asserted "was created earlier in this session" for entries whose request may never
+    // have left the BFF. Same defect dealako blocked on for the same-foundation message -- I
+    // fixed that one and left its sibling saying the same untrue thing.
+    const ctx = TestBed.inject(ProjectContextService);
+    const empty = { found: false, hs_utm: null, campaign_name: '', all_matches: [], capped: false, inconclusive: false };
+
+    runLookup(empty, 'KubeCon NA 2026');
+    create.mockReturnValue(throwError(() => ({ status: 503 })));
+    (fixture.componentInstance as unknown as { createInHubSpot(): void }).createInHubSpot();
+    fixture.detectChanges();
+
+    ctx.setFoundation({ uid: 'foundation-b-uid', slug: 'foundation-b', name: 'Foundation B' }, false);
+    fixture.detectChanges();
+    runLookup(empty, 'KubeCon NA 2026');
+
+    const status = String(instance()['hsStatus']());
+    expect(status, 'asserted a campaign was created on the strength of an unconfirmed attempt').not.toMatch(/was created earlier/);
+    expect(status, 'dropped the shared-portal warning entirely').toMatch(/ATTEMPTED/);
+    // Still not withheld: a different foundation may be a different portal (round-4 constraint).
+    expect(instance()['hsCreateBlocked'](), 'withheld Create under another foundation').toBe(false);
+  });
+
   it('warns under a DIFFERENT foundation without withholding Create', () => {
     // Copilot, raised twice: two foundations can share one HubSpot portal, where campaign names
     // are one namespace. After a create under A settles, hsCreatesInFlight is zero and B's own

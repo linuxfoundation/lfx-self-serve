@@ -271,6 +271,15 @@ export class PlanningTabComponent implements OnInit {
    * create may have landed. It changes only what the operator is TOLD.
    */
   private readonly hsCreatedConfirmed = signal(new Set<string>());
+
+  /**
+   * The subset of `hsCreatedEventNames` whose create was CONFIRMED.
+   *
+   * Separate from `hsCreatedConfirmed` because that one is keyed `foundation|event` and this
+   * question is asked from a DIFFERENT foundation, where that key cannot match. Same distinction,
+   * different lookup.
+   */
+  private readonly hsCreatedNamesConfirmed = signal(new Set<string>());
   /**
    * How many times a re-check has come back EMPTY for a possibly-created event.
    *
@@ -872,6 +881,7 @@ export class PlanningTabComponent implements OnInit {
             // CONFIRMED: the response said created. Only this arm records that.
             this.hsCreatedConfirmed.update((seen) => new Set(seen).add(`${capturedFoundation}|${capturedEvent}`));
             this.hsCreatedEventNames.update((seen) => new Set(seen).add(capturedEvent));
+            this.hsCreatedNamesConfirmed.update((seen) => new Set(seen).add(capturedEvent));
           }
           // Generation first, then panelStillShows — the same pair the lookup arms use. An
           // A -> B -> A round trip makes panelStillShows match a SUPERSEDED create again, and
@@ -1720,8 +1730,14 @@ export class PlanningTabComponent implements OnInit {
             this.hsNotFound.set(true);
             this.hsUnconfirmed.set(true);
             this.hsMatches.set(result?.all_matches ?? []);
+            // Same honesty rule as the same-foundation branch: this set is written by BOTH create
+            // arms, so "was created" is only true for the confirmed one. An unconfirmed entry may
+            // describe a request that never left the BFF, and asserting a campaign exists on a
+            // shared portal on that basis is a warning about nothing.
             this.hsStatus.set(
-              `No match under this project — but a campaign named for this event was created earlier in this session. If these projects share a HubSpot portal it already exists; check HubSpot before creating a second one.`
+              this.hsCreatedNamesConfirmed().has(eventName)
+                ? `No match under this project — but a campaign named for this event was created earlier in this session. If these projects share a HubSpot portal it already exists; check HubSpot before creating a second one.`
+                : `No match under this project — but a create was ATTEMPTED for this event name earlier in this session and never confirmed. If these projects share a HubSpot portal one may already exist; check HubSpot before creating another.`
             );
           } else {
             this.hsNotFound.set(true);
