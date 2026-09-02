@@ -352,6 +352,19 @@ describe('MeetingJoinComponent', () => {
       await TestBed.inject(ApplicationRef).whenStable();
     });
 
+    it('shows the skeleton on the initial render when there is no seed and the fetch has not resolved yet', async () => {
+      await TestBed.compileComponents();
+      const fixture = TestBed.createComponent(MeetingJoinComponent);
+      fixture.detectChanges();
+
+      // `debounceTime(0)` defers even a synchronous mocked response past this first CD pass, so
+      // `meeting()` is still undefined here and the `@else` skeleton branch must be what renders.
+      expect(fixture.componentInstance.meeting()).toBeUndefined();
+      expect(fixture.nativeElement.querySelector('[data-testid="meeting-join-skeleton"]')).not.toBeNull();
+
+      await TestBed.inject(ApplicationRef).whenStable();
+    });
+
     it('ignores TransferState and starts undefined when the server has not seeded anything', async () => {
       const component = await createComponent();
 
