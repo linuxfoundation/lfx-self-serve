@@ -305,6 +305,37 @@ describe('classifyMutationFailure', () => {
   });
 });
 
+/**
+ * The two predicates that decide whether campaign-service ACTUALLY answered, pinned directly.
+ *
+ * dealako, round 4: both shipped unpinned -- reverting either left the suite green. Their stated
+ * purpose is to stop a gateway-relayed body vouching for a response the gateway rewrote, and that
+ * is exactly what an untested guard cannot promise.
+ */
+describe('classifyMutationFailure — what proves upstream answered', () => {
+  it('refuses a body whose code is not the numeric status shape', () => {
+    // A gateway can emit `{code: 'SERVICE_UNAVAILABLE'}`. campaign-service never does: every one
+    // of its 185 error sites carries the numeric status as a string.
+    const msg = classifyMutationFailure(
+      new MicroserviceError('Service Unavailable', 503, 'ERR', { errorBody: { code: 'oops', message: 'Service Unavailable' } })
+    );
+
+    expect(msg, 'a non-numeric code was accepted as an upstream answer').toContain(CAMPAIGN_OUTCOME_UNCONFIRMED);
+  });
+
+  it('refuses a body whose code DISAGREES with the status received', () => {
+    // A relayed body cannot vouch for a response something else rewrote: code 500 arriving under
+    // a 503 means the two came from different places.
+    const msg = classifyMutationFailure(
+      new MicroserviceError('the keyword actions could not be applied', 503, 'ERR', {
+        errorBody: { code: '500', message: 'the keyword actions could not be applied' },
+      })
+    );
+
+    expect(msg, 'a code/status mismatch was accepted as an upstream answer').toContain(CAMPAIGN_OUTCOME_UNCONFIRMED);
+  });
+});
+
 describe('applyKeywordActionsViaCampaignService — the fan-out stop', () => {
   afterEach(() => {
     vi.restoreAllMocks();

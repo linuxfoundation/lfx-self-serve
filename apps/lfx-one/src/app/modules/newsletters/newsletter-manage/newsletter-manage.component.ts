@@ -4,7 +4,7 @@
 import { isPlatformBrowser } from '@angular/common';
 import { HttpErrorResponse } from '@angular/common/http';
 
-import { isUpstreamAnswer } from '../../../shared/utils/upstream-error.utils';
+import { isSchedulingDisabledReply } from '../../../shared/utils/upstream-error.utils';
 import { Component, computed, DestroyRef, effect, inject, Injector, PLATFORM_ID, signal, Signal } from '@angular/core';
 import { takeUntilDestroyed, toObservable, toSignal } from '@angular/core/rxjs-interop';
 import { FormControl, FormGroup, ReactiveFormsModule } from '@angular/forms';
@@ -1085,7 +1085,7 @@ export class NewsletterManageComponent {
     // outage rather than "scheduling is switched off in this environment". Only
     // `provider_unavailable` carries that meaning, and steering someone to Send now on anything
     // else sends a newsletter immediately that they had deliberately scheduled.
-    if (err.status === 503 && isUpstreamAnswer(err) && upstreamCode === 'provider_unavailable') {
+    if (isSchedulingDisabledReply(err)) {
       this.messageService.add({
         severity: 'error',
         summary: 'Scheduling unavailable',

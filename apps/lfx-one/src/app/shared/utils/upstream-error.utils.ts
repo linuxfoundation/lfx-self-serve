@@ -43,3 +43,26 @@ export function isUpstreamAnswer(err: HttpErrorResponse | null | undefined): boo
 export function isBffTransportFailure(err: HttpErrorResponse | null | undefined): boolean {
   return (err?.error as { transport?: unknown } | null | undefined)?.transport === true;
 }
+
+/**
+ * Whether a 503 is the newsletter service saying scheduling is switched off in this environment.
+ *
+ * Extracted so the decision can be pinned without standing up NewsletterManageComponent's full
+ * DI graph -- the branch it drives had no test at any level (dealako, round 4), and it is the one
+ * that tells an operator to Send now, which sends immediately a newsletter they had deliberately
+ * scheduled for later.
+ *
+ * THREE conditions, and each excludes a different impostor:
+ *   - status 503 at all;
+ *   - the newsletter service formed the response (isUpstreamAnswer) -- an ingress or gateway 503
+ *     carries no upstreamCode and is not the service speaking;
+ *   - the reason is `provider_unavailable` specifically -- the service can also answer 503
+ *     because a dependency of ITS own is briefly down, which is transient, not a disabled
+ *     feature.
+ */
+export function isSchedulingDisabledReply(err: HttpErrorResponse | null | undefined): boolean {
+  if (err?.status !== 503 || !isUpstreamAnswer(err)) {
+    return false;
+  }
+  return (err.error as { upstreamCode?: unknown } | null | undefined)?.upstreamCode === 'provider_unavailable';
+}

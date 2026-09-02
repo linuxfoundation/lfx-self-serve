@@ -4,7 +4,7 @@
 import { HttpErrorResponse } from '@angular/common/http';
 import { describe, expect, it } from 'vitest';
 
-import { isBffTransportFailure, isUpstreamAnswer } from './upstream-error.utils';
+import { isBffTransportFailure, isSchedulingDisabledReply, isUpstreamAnswer } from './upstream-error.utils';
 
 const res = (body: unknown, status = 503): HttpErrorResponse => new HttpErrorResponse({ status, error: body });
 
@@ -52,5 +52,32 @@ describe('isBffTransportFailure', () => {
     const ingress = res({ code: 'SERVICE_UNAVAILABLE' });
     expect(isUpstreamAnswer(ingress)).toBe(false);
     expect(isBffTransportFailure(ingress)).toBe(false);
+  });
+});
+
+/**
+ * The branch that tells an operator to "Send now". Getting this wrong sends a newsletter
+ * immediately that they had deliberately scheduled for later, so each impostor is asserted
+ * separately rather than trusting the composite.
+ */
+describe('isSchedulingDisabledReply', () => {
+  it('accepts the service saying scheduling is off', () => {
+    expect(isSchedulingDisabledReply(res({ upstreamCode: 'provider_unavailable' }))).toBe(true);
+  });
+
+  it.each([
+    ['a BFF transport 503', { transport: true, code: 'ECONNRESET' }],
+    ['an ingress 503 that never reached the BFF', { code: 'SERVICE_UNAVAILABLE' }],
+    ['a gateway body', { message: 'Service Unavailable' }],
+    // The service DID answer -- but about a dependency of its own, not about the feature.
+    ['the service reporting its own dependency down', { upstreamCode: 'downstream_timeout' }],
+    ['no body', null],
+  ])('refuses %s', (_label, body) => {
+    expect(isSchedulingDisabledReply(res(body))).toBe(false);
+  });
+
+  it('refuses the right reason on the wrong status', () => {
+    // A 500 carrying provider_unavailable is not the disabled-feature reply either.
+    expect(isSchedulingDisabledReply(res({ upstreamCode: 'provider_unavailable' }, 500))).toBe(false);
   });
 });
