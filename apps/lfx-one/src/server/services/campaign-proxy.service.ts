@@ -3,8 +3,6 @@
 
 import { AI_MODEL, CAMPAIGN_DELIVERY_TYPES, JOB_LOST_MESSAGE, META_CHAR_LIMITS } from '@lfx-one/shared/constants';
 
-import { scoreCampaignName } from './campaign-utm-mapper';
-
 import type {
   BulkKeywordActionRequest,
   BulkKeywordActionResponse,
@@ -20,7 +18,6 @@ import type {
   CampaignSSEEventType,
   CampaignStatusUpdateRequest,
   CampaignStatusUpdateResult,
-  HubSpotUtmLookupResult,
   KeywordActionResponse,
   LinkedInCampaignCreateResult,
   MetaCampaignCreateResult,
@@ -113,50 +110,12 @@ export async function gaqlSearch(query: string): Promise<unknown[]> {
 
 const HS_BASE = 'https://api.hubapi.com';
 
-/**
- * HubSpot's own per-request maximum for CRM search — 200 since September 2024
- * (https://developers.hubspot.com/changelog/increasing-our-api-limits), raised from 100. IT IS A CAP, NOT A PAGE — this code does not
- * follow `paging.next.after`, so a campaign ranked below it is not returned. See `capped` on
- * HubSpotUtmResult for why that matters.
- *
- * Raised from 10 DELIBERATELY on this legacy path, even though the cutover flag defaults off.
- * The `capped` signal this file now returns is what suppresses the create offer, and at a limit
- * of 10 almost every search on a busy portal reports capped — an operator who can never create
- * a campaign is worse off than one who occasionally sees a stale warning. The two changes only
- * make sense together, which is why this is not held back behind the flag.
- */
-const HS_SEARCH_LIMIT = 200;
-
 interface HubSpotUtmResult {
   found: boolean;
   hsUtm: string | null;
   campaignName: string;
   campaignId: string | null;
   allMatches: { name: string; hsUtm: string }[];
-  /**
-   * True when the search could NOT be shown to be complete. That covers HubSpot reporting more
-   * matches than it returned, and equally an absent `total`, a non-finite one, or one that
-   * contradicts the returned count — all of which fail CLOSED, because "we cannot tell" must not
-   * be reported as the proven absence a caller acts on by creating a campaign.
-   *
-   * It exists because ABSENCE IS NOT PROOF. The search is a capped, unpaged query, and the
-   * caller acts on `found: false` by offering to create a campaign in a namespace every
-   * foundation shares — so a campaign ranked below the cap becomes a duplicate. Mirrors
-   * campaign-service's own `capped` (`internal/platform/hubspot/campaign.go`).
-   */
-  capped: boolean;
-  /**
-   * True when a match may exist that this result does not show, for ANY reason — the union of
-   * `capped` and "HubSpot returned rows that the local scorer rejected". It is what a caller
-   * acts on.
-   *
-   * `capped` is narrower but is NOT "HubSpot truncated", which an earlier version of this line
-   * claimed: it is also set when `total` is absent, non-finite, negative, or disagrees with the
-   * returned count. The meaning is COMPLETENESS UNPROVEN, and the wire contract and UI both rely
-   * on that broader reading -- documenting it as truncation invites a caller to state a fact the
-   * response never established.
-   */
-  inconclusive: boolean;
 }
 
 function hsHeaders(): Record<string, string> {
@@ -165,17 +124,8 @@ function hsHeaders(): Record<string, string> {
   return { Authorization: `Bearer ${token}`, 'Content-Type': 'application/json' };
 }
 
-/**
- * A campaign with no `hs_utm` has NO TOKEN, and null is the only honest answer.
- *
- * This used to return `${campaignId}-${name}`, which is not a token HubSpot ever issued: a link
- * built from it attributes traffic to a campaign HubSpot cannot report on, so the spend appears
- * to be tracked while the attribution silently goes nowhere. An absent token is a real state
- * (see campaign-service's Campaign.UTM), and the caller must show it as absent rather than
- * receive a plausible-looking string it cannot distinguish from a real one.
- */
-function hsUtmOrNull(properties: Record<string, string>): string | null {
-  return properties['hs_utm'] || null;
+function buildUtmTokenFallback(campaignId: string, name: string): string {
+  return `${campaignId}-${name}`;
 }
 
 async function hubspotSearchCampaign(eventName: string): Promise<HubSpotUtmResult> {
@@ -184,10 +134,7 @@ async function hubspotSearchCampaign(eventName: string): Promise<HubSpotUtmResul
     headers: hsHeaders(),
     body: JSON.stringify({
       query: eventName,
-      // 200 is HubSpot's own per-request maximum. Raised from 10 to make the gap between "not in
-      // the returned matches" and "does not exist" as small as one request can make it, because
-      // the caller reads absence as licence to create. `capped` below reports when a gap remains.
-      limit: HS_SEARCH_LIMIT,
+      limit: 10,
       properties: ['hs_name', 'hs_utm', 'hs_start_date'],
     }),
     signal: AbortSignal.timeout(15_000),
@@ -198,37 +145,22 @@ async function hubspotSearchCampaign(eventName: string): Promise<HubSpotUtmResul
     throw new Error(`HubSpot search failed (${response.status}): ${text}`);
   }
 
-  const data = (await response.json()) as { results?: { id: string; properties: Record<string, string> }[]; total?: number };
-  // A MALFORMED 2xx must not read as "nothing matched". A genuinely empty search returns
-  // `{"results":[]}`; a body with no `results` array at all is a response we could not parse,
-  // and defaulting it to `[]` turns that into an authoritative absence — which the caller acts
-  // on by creating a campaign. Mirrors the same fail-closed rule campaign-service applies.
-  if (!Array.isArray(data.results)) {
-    throw new Error('HubSpot search returned a 2xx with no results array (malformed response)');
-  }
-  const results = data.results;
-  // Derived from HubSpot's own total, never from `results.length === HS_SEARCH_LIMIT`: an
-  // exactly-full page and a truncated one are the same length, so a length test would warn on
-  // complete result sets and teach operators to ignore the warning.
-  //
-  // An ABSENT or nonsensical total means completeness is UNKNOWN, not zero. Defaulting to 0 made
-  // `capped` false and reported the search as proven-complete, which is the licence to create.
-  const total = typeof data.total === 'number' && Number.isFinite(data.total) ? data.total : null;
-  const capped = total === null || total !== results.length;
+  const data = (await response.json()) as { results?: { id: string; properties: Record<string, string> }[] };
+  const results = data.results ?? [];
 
   if (results.length === 0) {
-    return { found: false, hsUtm: null, campaignName: '', campaignId: null, allMatches: [], capped, inconclusive: capped };
+    return { found: false, hsUtm: null, campaignName: '', campaignId: null, allMatches: [] };
   }
 
+  const queryLower = eventName.toLowerCase();
   const scored = results.map((c) => {
     const name = c.properties['hs_name'] || '';
-    const hsUtm = hsUtmOrNull(c.properties);
-    // ONE scorer, shared with the campaign-service path. These were separate copies and had
-    // already diverged: this one carried no blank-name guard, so a campaign with an empty name
-    // scored 1 — every string contains '' — and could beat a genuinely unrelated named campaign,
-    // applying its UTM to this event. Sharing the function fixes that here and stops the two
-    // paths ranking the same candidates differently.
-    const score = scoreCampaignName(name, eventName);
+    const hsUtm = c.properties['hs_utm'] || buildUtmTokenFallback(c.id, name);
+    const nameLower = name.toLowerCase();
+    const score =
+      (nameLower === queryLower ? 1 : 0) +
+      (queryLower.includes(nameLower) || nameLower.includes(queryLower) ? 1 : 0) +
+      (queryLower.split(' ').filter((w) => w.length > 3 && nameLower.includes(w)).length > 0 ? 1 : 0);
     return { id: c.id, name, hsUtm, score };
   });
 
@@ -236,66 +168,16 @@ async function hubspotSearchCampaign(eventName: string): Promise<HubSpotUtmResul
   const matches = scored.filter((s) => s.score > 0);
 
   if (matches.length === 0) {
-    // Nothing scored above zero. HubSpot's own fuzzy search DID match these rows, so this is a
-    // local scoring decision, not an absence — INCONCLUSIVE, but not truncation. Reporting it
-    // as `capped` would have the UI state that HubSpot matched more than it returned, which is
-    // false here, and send the operator to narrow a term when the remedy is to check the name.
-    return {
-      found: false,
-      hsUtm: null,
-      campaignName: '',
-      campaignId: null,
-      allMatches: [],
-      capped,
-      inconclusive: capped || results.length > 0,
-    };
+    return { found: false, hsUtm: null, campaignName: '', campaignId: null, allMatches: [] };
   }
 
   const best = matches[0];
-  // A match with NO token cannot be offered as a selectable alternative: the picker writes the
-  // chosen token into the field, and a null one would either blank it or need a fabricated
-  // stand-in — the exact bug hsUtmOrNull exists to prevent. Such a campaign is real, so it still
-  // counts as a match for `found` (which is what suppresses the duplicate create); it just has
-  // nothing to select.
-  const tokened = matches.filter((m): m is typeof m & { hsUtm: string } => m.hsUtm !== null);
-
-  // A TIE cannot auto-apply either, for the same reason the capped branch cannot. `sort` is
-  // stable, so `matches[0]` on equal scores is whichever row HubSpot happened to return first —
-  // an ordering that says nothing about relevance — and the planning tab writes a `found` token
-  // straight into the event's links with no operator step.
-  //
-  // Newly reachable: scoreCampaignName now compares NORMALISED names so it agrees with the
-  // mapper's confidence gate, which means two campaigns differing only by case or whitespace now
-  // SCORE THE SAME where the double-space row used to lose outright. This path is the production
-  // default (LFX_CUTOVER_CAMPAIGN_SERVICE_HUBSPOT_UTM ships false), so it needs the gate the
-  // mapper path already has rather than inheriting a tie-break from HubSpot's row order.
-  const ambiguous = matches.length > 1 && matches[1].score === best.score;
-
-  // A CAPPED search cannot auto-apply a token, even when it found a match. The result set is
-  // incomplete by definition, so an equal-or-better campaign may be sitting outside it, and the
-  // planning tab applies a `found` token immediately — it only consults `inconclusive` on the
-  // not-found path. Returning found:true here would silently pick a worse match and write its
-  // UTM into the event's links. The candidates still travel, so the operator picks.
-  if (capped || ambiguous) {
-    return {
-      found: false,
-      hsUtm: null,
-      campaignName: '',
-      campaignId: null,
-      allMatches: tokened.map((m) => ({ name: m.name, hsUtm: m.hsUtm })),
-      capped,
-      inconclusive: true,
-    };
-  }
-
   return {
     found: true,
     hsUtm: best.hsUtm,
     campaignName: best.name,
     campaignId: best.id,
-    allMatches: tokened.map((m) => ({ name: m.name, hsUtm: m.hsUtm })),
-    capped,
-    inconclusive: capped,
+    allMatches: matches.map((m) => ({ name: m.name, hsUtm: m.hsUtm })),
   };
 }
 
@@ -332,62 +214,24 @@ async function hubspotCreateCampaign(eventName: string): Promise<HubSpotUtmResul
   if (searchResponse?.ok) {
     const searchData = (await searchResponse.json()) as { results?: { id: string; properties: Record<string, string> }[] };
     const results = searchData.results ?? [];
-    // Matched by ID, not by position. This is a fuzzy name search with `limit: 1`, so results[0]
-    // is whatever HubSpot ranked first for the name -- which, on a portal that already has an
-    // older similarly named campaign, is not the campaign we just created. Taking it assigned
-    // ANOTHER campaign's token (and its id) to this one, so the new campaign's links would have
-    // reported into the old campaign's attribution. The only row that can describe this campaign
-    // is the one carrying its uuid.
-    const own = results.find((r) => r.id === campaignUuid);
-    if (own) {
-      campaignId = own.id;
-      hsUtm = own.properties['hs_utm'] || null;
+    if (results.length > 0) {
+      campaignId = results[0].id;
+      hsUtm = results[0].properties['hs_utm'] || null;
     }
   }
 
-  // hsUtm stays null when HubSpot has not assigned one yet. `found: true` reports that the
-  // campaign WAS created — that is what the caller must not retry — while a null token says the
-  // attribution link cannot be built yet. Inventing one here would be worse than saying so.
-  //
-  // capped is false and not merely omitted: this result describes a campaign that was just
-  // created, so there is no search whose completeness could be in doubt.
-  return {
-    found: true,
-    hsUtm,
-    campaignName: eventName,
-    campaignId,
-    allMatches: hsUtm === null ? [] : [{ name: eventName, hsUtm }],
-    capped: false,
-    inconclusive: false,
-  };
+  if (!hsUtm) {
+    hsUtm = buildUtmTokenFallback(campaignUuid, eventName);
+  }
+
+  return { found: true, hsUtm, campaignName: eventName, campaignId, allMatches: [{ name: eventName, hsUtm: hsUtm! }] };
 }
 
 async function resolveHubSpotUtm(eventName: string): Promise<string | null> {
   if (!getEnv('HUBSPOT_ACCESS_TOKEN')) return null;
 
   const searchResult = await hubspotSearchCampaign(eventName);
-  if (searchResult.found) {
-    // Keyed on `found`, NOT on `found && hsUtm`. A campaign that EXISTS but has no token yet is
-    // still a campaign, and creating a second one for the same event is not a way to obtain the
-    // first one's token — it duplicates a campaign in an account-wide namespace, on every brief
-    // generation. Before tokenless matches returned null this branch was reached with a
-    // fabricated token, which hid the distinction; now it must be made explicitly.
-    //
-    // A null return means "no token to attribute with", which callers already handle.
-    return searchResult.hsUtm;
-  }
-  // Nothing matched, but the search may not have SETTLED the question — in which case absence
-  // is not proof, and creating is how a duplicate gets made. The lookup surface asks the
-  // operator to narrow the search; this one has no operator to ask, so it declines to create
-  // rather than guess.
-  //
-  // Keyed on `inconclusive`, NOT `capped`. Those were one field until `capped` was narrowed to
-  // mean truncation only, and this guard has to ask the WIDER question: a search HubSpot
-  // answered in full, whose rows the local scorer rejected, reports `capped: false` while one
-  // of those rows may be exactly the campaign a create would duplicate.
-  if (searchResult.inconclusive) {
-    return null;
-  }
+  if (searchResult.found && searchResult.hsUtm) return searchResult.hsUtm;
 
   const createResult = await hubspotCreateCampaign(eventName);
   return createResult.hsUtm;
@@ -763,17 +607,16 @@ const GEO_TARGET_MAP: Record<string, string> = {
 export class CampaignProxyService {
   // === HubSpot UTM lookup/create ===
 
-  public async lookupHubSpotUtm(_req: Request, eventName: string): Promise<HubSpotUtmLookupResult> {
+  public async lookupHubSpotUtm(
+    _req: Request,
+    eventName: string
+  ): Promise<{ found: boolean; hs_utm: string | null; campaign_name: string; all_matches: { name: string; hs_utm: string }[] }> {
     const result = await hubspotSearchCampaign(eventName);
     return {
       found: result.found,
       hs_utm: result.hsUtm,
       campaign_name: result.campaignName,
       all_matches: result.allMatches.map((m) => ({ name: m.name, hs_utm: m.hsUtm })),
-      // Carried to the UI because it changes what `found: false` MEANS. Dropped here, the panel
-      // reads "no matches" as "no such campaign" and offers an unqualified create.
-      capped: result.capped,
-      inconclusive: result.inconclusive,
     };
   }
 
@@ -2106,36 +1949,17 @@ function buildCampaignName(body: CampaignCreateRequest, campaignType: string): s
   return `Events | ${eventName} | ${region} | Conversions | ${targeting} | ${adFormat} | ${project} | ${funnel} | ${dateSuffix}`;
 }
 
-/**
- * The tracking URL a dispatched ad points at.
- *
- * EXPORTED so the utm_campaign omission can be pinned directly. It is the one behaviour here a
- * caller cannot observe through the create path without a live dispatch, and it decides whether
- * a link is honestly untagged or carries a token HubSpot never issued.
- */
-export function buildFinalUrl(body: CampaignCreateRequest, platform = 'search'): string {
+function buildFinalUrl(body: CampaignCreateRequest, platform = 'search'): string {
   const base = body.registrationUrl.replace(/\/$/, '');
   const slug = body.eventSlug || body.eventName.toLowerCase().replace(/\s+/g, '-');
   const termSlug = body.eventName ? body.eventName.replace(/\s+/g, '-').toLowerCase() : slug;
   const params = new URLSearchParams({
     utm_source: 'google',
     utm_medium: platform === 'search' ? 'paid-search' : 'display',
+    utm_campaign: body.hsToken || slug,
     utm_term: termSlug,
     utm_content: platform,
   });
-  // utm_campaign is OMITTED when HubSpot issued no token, rather than falling back to the event
-  // slug. `hsToken || slug` fabricated a plausible-looking token HubSpot never minted, which is
-  // the exact behaviour this cutover removes from the lookup path -- reinstated one layer down,
-  // where it is harder to see. A fabricated token is indistinguishable from a real one and sends
-  // the traffic to a campaign HubSpot cannot report on; an ABSENT parameter is visibly absent,
-  // and every downstream analytics tool treats it as untagged rather than mis-tagged.
-  //
-  // Not a refusal: a campaign with no token yet is a legitimate state the caller already models
-  // (`hs_utm` is `string | null`), so blocking dispatch would be a worse answer than shipping a
-  // link that is honestly untagged on that one parameter.
-  if (body.hsToken) {
-    params.set('utm_campaign', body.hsToken);
-  }
   const sep = base.includes('?') ? '&' : '?';
   return `${base}${sep}${params.toString()}`;
 }
