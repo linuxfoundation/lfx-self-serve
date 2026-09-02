@@ -1704,6 +1704,37 @@ describe('PlanningTabComponent — HubSpot UTM states', () => {
     expect(String(instance()['hsStatus']()), 'no shared-portal warning after the stale create settled').toMatch(/created earlier in this session/);
   });
 
+  it('reconciles the panel when a stale create FAILS after the new lookup', () => {
+    // cursor: the reconciliation was gated on `result?.created`, so it lived only in the success
+    // arm. The error arm writes the same two records and then returns on a non-current
+    // generation, so a 503 after a foundation switch stranded the panel exactly as a stale
+    // success did. Fixing the symptom in one arm is what let this survive.
+    const ctx = TestBed.inject(ProjectContextService);
+    const empty = { found: false, hs_utm: null, campaign_name: '', all_matches: [], capped: false, inconclusive: false };
+    const pending = new Subject<unknown>();
+
+    runLookup(empty, 'KubeCon NA 2026');
+    create.mockReturnValue(pending);
+    (fixture.componentInstance as unknown as { createInHubSpot(): void }).createInHubSpot();
+    fixture.detectChanges();
+
+    ctx.setFoundation({ uid: 'foundation-b-uid', slug: 'foundation-b', name: 'Foundation B' }, false);
+    fixture.detectChanges();
+    ctx.setFoundation({ uid: 'foundation-a-uid', slug: 'foundation-a', name: 'Foundation A' }, false);
+    fixture.detectChanges();
+    runLookup(empty, 'KubeCon NA 2026');
+
+    // The superseded create FAILS, unconfirmed -- the POST may still have committed.
+    pending.error({ status: 503 });
+    fixture.detectChanges();
+
+    expect(instance()['hsCreateBlocked'](), 'precondition: an unconfirmed record should block Create').toBe(true);
+    expect(instance()['hsNotFound'](), 'stranded: a disabled Create above a false not-found').toBe(false);
+    expect(instance()['hsUnconfirmed'](), 'stranded: no re-check control to recover through').toBe(true);
+    // And it must not claim the campaign was created -- nothing confirmed it.
+    expect(String(instance()['hsStatus']()), 'asserted "Created" for an unconfirmed failure').not.toMatch(/^Created/);
+  });
+
   it('reconciles the panel when a stale create settles after the new lookup', () => {
     // Copilot: records are written BEFORE the ownership guards (right -- a superseded create
     // still made a real campaign), but the early return then leaves the PANEL untouched. So on

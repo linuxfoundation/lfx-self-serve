@@ -896,31 +896,7 @@ export class PlanningTabComponent implements OnInit {
           // the replacement lookup returned. Narrow on purpose: only when the record the stale
           // create just wrote is the one the CURRENT panel would read. Anything else is a result
           // for a panel the operator has left, and still belongs to the guards below.
-          if (result?.created && this.hsNotFound()) {
-            const panelKey = `${this.activeFoundationSlug()}|${this.currentEvent()}`;
-            if (this.hsCreatedEvents().has(panelKey)) {
-              // SAME foundation: the record blocks Create here, so a not-found panel beneath a
-              // disabled button is the dead end. Clear it and offer the re-check.
-              this.hsNotFound.set(false);
-              this.hsUnconfirmed.set(true);
-              this.hsStatus.set(
-                this.hsCreatedConfirmed().has(panelKey)
-                  ? 'Created, but HubSpot has not indexed it yet — re-check to confirm. Create stays disabled so the campaign is not duplicated.'
-                  : 'A create for this event settled after this panel loaded and has not been confirmed — re-check before creating another.'
-              );
-            } else if (this.hsCreatedEventNames().has(this.currentEvent())) {
-              // DIFFERENT foundation: Create stays available, because this may be a different
-              // portal -- withholding is the round-4 lockout. But the panel rendered its
-              // not-found before the record existed, so it never showed the shared-portal
-              // warning. Same wording the lookup branch uses, for the same state.
-              this.hsUnconfirmed.set(true);
-              this.hsStatus.set(
-                this.hsCreatedNamesConfirmed().has(this.currentEvent())
-                  ? `No match under this project — but a campaign named for this event was created earlier in this session. If these projects share a HubSpot portal it already exists; check HubSpot before creating a second one.`
-                  : `No match under this project — but a create was ATTEMPTED for this event name earlier in this session and never confirmed. If these projects share a HubSpot portal one may already exist; check HubSpot before creating another.`
-              );
-            }
-          }
+          this.reconcilePanelAfterStaleCreate();
           // Generation first, then panelStillShows — the same pair the lookup arms use. An
           // A -> B -> A round trip makes panelStillShows match a SUPERSEDED create again, and
           // rendering its result would write a token from a create the operator has moved past.
@@ -980,6 +956,11 @@ export class PlanningTabComponent implements OnInit {
           if (!isDefiniteRefusal(failStatus)) {
             this.hsCreatedEvents.update((seen) => new Set(seen).add(`${capturedFoundation}|${capturedEvent}`));
             this.hsCreatedEventNames.update((seen) => new Set(seen).add(capturedEvent));
+            // The SAME reconciliation the success arm does. This arm writes the same two records
+            // and then returns on a non-current generation, so without this a 503 or timeout
+            // after a foundation switch stranded the panel exactly as a stale success did
+            // (cursor). Gating the repair on `created` fixed the symptom in one arm only.
+            this.reconcilePanelAfterStaleCreate();
           }
           if (this.createIsCurrent(generation)) {
             this.hsCreating.set(false);
@@ -1614,6 +1595,46 @@ export class PlanningTabComponent implements OnInit {
    * of a 2xx whose campaign already exists, so it is unconfirmed rather than proof. The arm that
    * used to handle it here was removed with it rather than left as unreachable code.
    */
+  /**
+   * Repair a panel whose rendered state a just-written create record contradicts.
+   *
+   * The records are written BEFORE the ownership guards, deliberately -- a superseded create
+   * still made a real campaign upstream. But the guards then drop the result, leaving the PANEL
+   * as the earlier lookup rendered it. So a stale create settling after the replacement lookup
+   * returned leaves the sets and the screen disagreeing.
+   *
+   * Same foundation: `hsNotFound` true and `hsCreateBlocked` true is a dead end -- a disabled
+   * Create beneath "No campaign found", with no re-check offered and no exit but a reload.
+   *
+   * Different foundation: Create stays available, because this may be a different portal and
+   * withholding there is the round-4 lockout. The panel simply never showed the shared-portal
+   * warning, because it rendered before the record existed.
+   *
+   * Called from BOTH create arms. Only the success arm knows a campaign exists; the wording
+   * asks `hsCreatedConfirmed`/`hsCreatedNamesConfirmed` rather than assuming, so a reconciled
+   * panel makes no claim the record does not support.
+   */
+  private reconcilePanelAfterStaleCreate(): void {
+    if (!this.hsNotFound()) return;
+    const panelKey = `${this.activeFoundationSlug()}|${this.currentEvent()}`;
+    if (this.hsCreatedEvents().has(panelKey)) {
+      this.hsNotFound.set(false);
+      this.hsUnconfirmed.set(true);
+      this.hsStatus.set(
+        this.hsCreatedConfirmed().has(panelKey)
+          ? 'Created, but HubSpot has not indexed it yet — re-check to confirm. Create stays disabled so the campaign is not duplicated.'
+          : 'A create for this event settled after this panel loaded and has not been confirmed — re-check before creating another.'
+      );
+    } else if (this.hsCreatedEventNames().has(this.currentEvent())) {
+      this.hsUnconfirmed.set(true);
+      this.hsStatus.set(
+        this.hsCreatedNamesConfirmed().has(this.currentEvent())
+          ? `No match under this project — but a campaign named for this event was created earlier in this session. If these projects share a HubSpot portal it already exists; check HubSpot before creating a second one.`
+          : `No match under this project — but a create was ATTEMPTED for this event name earlier in this session and never confirmed. If these projects share a HubSpot portal one may already exist; check HubSpot before creating another.`
+      );
+    }
+  }
+
   private createFailureMessage(status: number, err?: unknown): string {
     // UPSTREAM'S OWN WORDS WIN on a 400. campaign-service uses 400 for 39 distinct reasons --
     // "a campaign creation requires a non-empty name", yes, but also "invalid credentials
