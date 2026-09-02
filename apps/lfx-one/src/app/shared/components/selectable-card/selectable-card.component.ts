@@ -30,6 +30,15 @@ export class SelectableCardComponent {
    * of the tab order is one a keyboard-only contributor can never ask about.
    */
   public readonly disabledReason = input<string>('');
+  /**
+   * ID of an element describing this card, for cards whose meaning lives in adjacent prose.
+   *
+   * The option element is the only thing focus lands on, so text merely sitting next to the card
+   * is never announced — a reader hears the label and nothing else. Where that adjacent text *is*
+   * the decision rather than a gloss on it, pass its ID here. Empty leaves the attribute off
+   * rather than setting it blank, which would name a nonexistent element.
+   */
+  public readonly describedBy = input<string>('');
   public readonly styleClass = input<string>('');
   public readonly testId = input<string>('');
 

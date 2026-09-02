@@ -167,10 +167,12 @@ export interface ClaGroupOrg {
 /**
  * A CLA Group the contributor can choose to sign against (Sign CLA hand-off, #1251).
  *
- * The hand-off needs `claGroupId` and nothing else; every other field is here so the picker
- * can show which group this is and why it matched. Consumers MUST ignore unknown fields
- * rather than validate exhaustively, so the search can keep enriching this without touching
- * the hand-off.
+ * The hand-off needs `claGroupId`, plus `iclaEnabled` / `cclaEnabled` on the Gerrit route, where
+ * they decide the contract type and whether the contributor is asked for it (#2066). Every other
+ * field is here so the picker can show which group this is and why it matched. Consumers MUST
+ * ignore unknown fields rather than validate exhaustively, so the search can keep enriching this
+ * without touching the hand-off — but the enablement flags are not that kind of field: dropping
+ * them in a mapper reinstates #2066's silent default rather than degrading the display.
  *
  * Both display names are optional because the producer omits each independently: `projectName`
  * when the group maps to several projects with no foundation marker, `claGroupName` when the
@@ -187,6 +189,10 @@ export interface ClaGroupOption {
   matchTypes: ClaGroupMatchType[];
   /** All linked organizations, sorted by source then name upstream. May be empty. */
   organizations: ClaGroupOrg[];
+  /** Whether the group accepts an individual (ICLA) agreement — used for Gerrit contract-type routing (#2066). */
+  iclaEnabled?: boolean;
+  /** Whether the group accepts a corporate (CCLA) agreement — used for Gerrit contract-type routing (#2066). */
+  cclaEnabled?: boolean;
   /** Full repository name the term resolved to — set only when `matchTypes` includes `repository`. */
   matchedRepositoryName?: string;
   matchedRepositoryURL?: string;
@@ -337,6 +343,19 @@ export interface SignIdentityDialogData {
  * chosen, and only one of them should move the contributor off the page they started from.
  */
 export type SignIdentitySelectResult = { kind: 'github'; githubId: string } | { kind: 'gerrit' } | { linkAccounts: true };
+
+/** Console Gerrit route contract-type segment (#2066). */
+export type GerritContractType = 'individual' | 'corporate';
+
+/**
+ * What the contract-type step closes with, or `null` for a dismissal (#2066).
+ *
+ * The step takes no input data: it opens only for a group with both types enabled, so there is
+ * nothing about the group left for it to branch on.
+ */
+export interface SignContractTypeSelectResult {
+  contractType: GerritContractType;
+}
 
 /** Response for `GET /api/me/clas/github-accounts`. */
 export interface GithubAccountOptions {

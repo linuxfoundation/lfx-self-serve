@@ -24,6 +24,7 @@ import type {
   PrepareSignResponse,
   SignIdentityDialogData,
   SignIdentitySelectResult,
+  SignContractTypeSelectResult,
 } from '@lfx-one/shared/interfaces';
 import { BadgeComponent } from '@components/badge/badge.component';
 import { ButtonComponent } from '@components/button/button.component';
@@ -41,6 +42,7 @@ import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { ClaGroupSelectComponent } from './cla-group-select.component';
 import { GitlabUnsupportedComponent } from './gitlab-unsupported.component';
 import { ProfileClasComponent } from './profile-clas.component';
+import { SignContractTypeSelectComponent } from './sign-contract-type-select.component';
 import { SignIdentitySelectComponent } from './sign-identity-select.component';
 
 describe('ProfileClasComponent', () => {
@@ -586,7 +588,11 @@ describe('ProfileClasComponent — Sign CLA hand-off and identity selection (#12
       dismissAccount?: 'close' | 'destroy' | 'hold';
       /** Linked organizations on the selected group — the sole input to the routing decision. */
       organizations?: ClaGroupOrg[];
+      iclaEnabled?: boolean;
+      cclaEnabled?: boolean;
       viewerUsername?: string | null;
+      contractTypeClosesWith?: SignContractTypeSelectResult | null;
+      dismissContractType?: 'close' | 'destroy' | 'hold';
       /** Loaded My CLAs list handed to the group picker (#1914). */
       agreements?: MyClaAgreement[];
       /** Leaves the My CLAs request unresolved, so the loading state is assertable (#1914). */
@@ -605,7 +611,12 @@ describe('ProfileClasComponent — Sign CLA hand-off and identity selection (#12
     // rather than a bare TypeError. Production must never reach it (FR-004).
     buildSignUrlFor = vi.fn(() => SIGN_URL);
 
-    const selectedGroup: ClaGroupOption = { ...CLA_GROUP, organizations: options.organizations ?? [] };
+    const selectedGroup: ClaGroupOption = {
+      ...CLA_GROUP,
+      organizations: options.organizations ?? [],
+      iclaEnabled: options.iclaEnabled ?? true,
+      cclaEnabled: options.cclaEnabled ?? false,
+    };
 
     open = vi.fn((component: unknown, config?: { header?: string; data?: SignIdentityDialogData | ClaGroupSelectDialogData }) => {
       opened.push(component);
@@ -614,6 +625,12 @@ describe('ProfileClasComponent — Sign CLA hand-off and identity selection (#12
         return dialogEvents(
           'accountClosesWith' in options ? options.accountClosesWith : { kind: 'github', githubId: '12345' },
           options.dismissAccount ?? 'close'
+        );
+      }
+      if (component === SignContractTypeSelectComponent) {
+        return dialogEvents(
+          'contractTypeClosesWith' in options ? options.contractTypeClosesWith : { contractType: 'individual' },
+          options.dismissContractType ?? 'close'
         );
       }
       if (component === GitlabUnsupportedComponent) {
@@ -1279,6 +1296,96 @@ describe('ProfileClasComponent — Sign CLA hand-off and identity selection (#12
     // Composed from our own origin rather than taken from a header, and encoded so its own
     // query string cannot merge into the Console's.
     expect(location.href).toContain(`redirect=${encodeURIComponent(HOME)}`);
+  });
+
+  it('shows the contract-type step when both ICLA and CCLA are enabled', async () => {
+    const fixture = await setup({
+      organizations: [org('gerrit')],
+      iclaEnabled: true,
+      cclaEnabled: true,
+      accountClosesWith: { kind: 'gerrit' },
+    });
+
+    await sign(fixture);
+
+    expect(opened).toContain(SignContractTypeSelectComponent);
+    expect(location.href).toContain('/#/cla/gerrit/project/cg-1/individual');
+  });
+
+  it('hands off at corporate when only CCLA is enabled', async () => {
+    const fixture = await setup({
+      organizations: [org('gerrit')],
+      iclaEnabled: false,
+      cclaEnabled: true,
+      accountClosesWith: { kind: 'gerrit' },
+    });
+
+    await sign(fixture);
+
+    expect(opened).not.toContain(SignContractTypeSelectComponent);
+    expect(location.href).toContain('/#/cla/gerrit/project/cg-1/corporate');
+  });
+
+  it('navigates at corporate when the contributor picks Corporate Contributor', async () => {
+    const fixture = await setup({
+      organizations: [org('gerrit')],
+      iclaEnabled: true,
+      cclaEnabled: true,
+      accountClosesWith: { kind: 'gerrit' },
+      contractTypeClosesWith: { contractType: 'corporate' },
+    });
+
+    await sign(fixture);
+
+    expect(location.href).toContain('/#/cla/gerrit/project/cg-1/corporate');
+  });
+
+  it('navigates nowhere and releases Sign CLA when the contract-type step is dismissed', async () => {
+    const fixture = await setup({
+      organizations: [org('gerrit')],
+      iclaEnabled: true,
+      cclaEnabled: true,
+      accountClosesWith: { kind: 'gerrit' },
+      contractTypeClosesWith: null,
+    });
+
+    await sign(fixture);
+
+    // The identity was confirmed but the agreement type was not. Falling through to `individual`
+    // here would sign an agreement the contributor withdrew from choosing, which is #2066 again.
+    expect(location.href).toBe(HOME);
+    expect(isStarting(fixture)).toBe(false);
+  });
+
+  it('releases Sign CLA when the contract-type step is destroyed without onClose (header X)', async () => {
+    const fixture = await setup({
+      organizations: [org('gerrit')],
+      iclaEnabled: true,
+      cclaEnabled: true,
+      accountClosesWith: { kind: 'gerrit' },
+      dismissContractType: 'destroy',
+    });
+
+    await sign(fixture);
+    await Promise.resolve();
+
+    expect(location.href).toBe(HOME);
+    expect(isStarting(fixture)).toBe(false);
+  });
+
+  it('stops rather than navigating when neither contract type is enabled', async () => {
+    const fixture = await setup({
+      organizations: [org('gerrit')],
+      iclaEnabled: false,
+      cclaEnabled: false,
+      accountClosesWith: { kind: 'gerrit' },
+    });
+
+    await sign(fixture);
+
+    expect(opened).not.toContain(SignContractTypeSelectComponent);
+    expect(location.href).toBe(HOME);
+    expect(messageAdd).toHaveBeenCalledWith(expect.objectContaining({ severity: 'error' }));
   });
 
   // Blank and absent are one case, not two: the dialog trims before it builds the card, so a
