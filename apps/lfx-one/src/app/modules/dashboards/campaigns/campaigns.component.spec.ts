@@ -30,7 +30,7 @@ import { provideRouter } from '@angular/router';
 import { CampaignService } from '@services/campaign.service';
 import { FeatureFlagService } from '@services/feature-flag.service';
 import { PersonaService } from '@services/persona.service';
-import { HUBSPOT_TEMPLATE_RENDER_LIMIT } from '@lfx-one/shared/constants';
+import { EVENT_TERM_GENERIC, HUBSPOT_TEMPLATE_RENDER_LIMIT } from '@lfx-one/shared/constants';
 import type { HubSpotMarketingEmail } from '@lfx-one/shared/interfaces';
 import { ProjectContextService } from '@services/project-context.service';
 import { MessageService } from 'primeng/api';
@@ -3876,6 +3876,62 @@ describe('CampaignsComponent — HubSpot template picker', () => {
      * threshold alone. An unrelated "Nairobi newsletter" is then auto-selected.
      */
     /**
+     * An UN-LISTED generic long word still pre-selects, and that is the known trade-off.
+     *
+     * `EVENT_TERM_GENERIC` is a vocabulary, so a generic word nobody has added yet -- `developer`
+     * -- still scores the double weight and clears the threshold alone. This test pins the
+     * CURRENT behaviour rather than asserting it is correct: the honest statement of the limit is
+     * that the deny-list closes words someone has noticed, and the next un-noticed one is a fresh
+     * false positive.
+     *
+     * It is here so the limit is visible and measured. If the scoring ever becomes structural --
+     * corroboration, or evidence weighted by rarity -- this test flips to `toBe('')` and the
+     * change is deliberate rather than silent.
+     */
+    it('still pre-selects on an un-enumerated generic long word (known limit)', () => {
+      showPicker();
+      expect(EVENT_TERM_GENERIC.has('developer')).toBe(false);
+      picker().emailBriefOutput.set(briefFor('Developer Conference', 'developer-conference'));
+      picker().searchEmailTemplates('');
+      respond({
+        enabled: true,
+        error: null,
+        possiblyTruncated: false,
+        emails: [{ id: 'unrelated', name: 'Developer newsletter', subject: 'Monthly update' }] as HubSpotMarketingEmail[],
+      });
+
+      expect(picker().emailTemplateSuggestionId()).toBe('unrelated');
+    });
+
+    /**
+     * An ASCII slug must not smuggle the city back into the decisive set.
+     *
+     * `cityTokens` is built from `details.city`, which arrives accented -- "München" tokenizes to
+     * `münchen`. The decisive pass reads the NAME and the SLUG, and LF slugs are ASCII, so the
+     * same city arrives as `munchen`. Comparing raw strings, the two are different words: the
+     * accented form was excluded while the ASCII one became decisive and, being seven characters,
+     * cleared the threshold on its own -- auto-selecting a template that merely names the city.
+     *
+     * That is the accented spelling of the city-decides-alone false positive, so it is fixed the
+     * same way: membership is tested on a fold, while the terms themselves stay accented because
+     * they still have to match accented template names.
+     */
+    it('does not let an ASCII-folded city in the slug become decisive', () => {
+      showPicker();
+      picker().emailBriefOutput.set(briefFor('Cloud Summit', 'cloud-summit-munchen-2026', 'München'));
+      picker().searchEmailTemplates('');
+      respond({
+        enabled: true,
+        error: null,
+        possiblyTruncated: false,
+        emails: [{ id: 'city-only', name: 'Munchen visitor newsletter', subject: 'Monthly update' }] as HubSpotMarketingEmail[],
+      });
+
+      expect(picker().emailTemplateSuggestionId()).toBe('');
+      expect(picker().selectedEmailTemplateId()).toBe('');
+    });
+
+    /**
      * TWO generic terms must not add up to a suggestion.
      *
      * Excluding generic words from the DOUBLE weight was not enough: each still scored
@@ -3910,8 +3966,13 @@ describe('CampaignsComponent — HubSpot template picker', () => {
      * so `register`, `webinar`, `keynote`, `session` and `speaker` all clear it on a single hit --
      * none of them on the list, each a fresh false positive until someone appends it.
      *
-     * Uses `speaker`, deliberately NOT in EVENT_TERM_STOPWORDS, so this fails again the moment the
-     * fix regresses to enumeration.
+     * Uses `speaker`, which IS in `EVENT_TERM_GENERIC` -- so this pins the deny-list, not the
+     * structure. An earlier version of this docstring claimed `speaker` was un-enumerated and
+     * that the test therefore caught a regression to enumeration; it checked the wrong list
+     * (`EVENT_TERM_STOPWORDS`, which indeed does not contain it) and the claim was false.
+     *
+     * The un-listed case is covered separately below, and it documents a real remaining
+     * trade-off rather than a guarantee.
      */
     it('withholds a suggestion when a single generic long word is the only match', () => {
       showPicker();

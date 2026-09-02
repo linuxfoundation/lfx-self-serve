@@ -847,9 +847,10 @@ export class CampaignsComponent {
     // longer see or change, and in the second case the banner announces a pre-selection no visible
     // row carries. Hiding the current choice is the one thing a ranking heuristic must never do.
     //
-    // Splicing to the TOP rather than re-ranking: it is the row the operator chose (or was chosen
-    // for them), so it belongs where they will look. The cap holds — this replaces a row, never
-    // appends one.
+    // Spliced into the LAST drawn slot rather than re-ranked: it is the row the operator chose
+    // (or was chosen for them), so it must stay reachable, but it has not earned the top. The cap
+    // holds — this replaces a row rather than adding one. See the comment on the splice itself
+    // for why not index 0.
     const selectedId = this.selectedEmailTemplateId();
     if (selectedId !== '' && !drawn.some((t) => t.id === selectedId)) {
       const selected = ranked.find((t) => t.id === selectedId);
@@ -2861,11 +2862,26 @@ export class CampaignsComponent {
     // characters it cleared the threshold alone, auto-selecting an unrelated "Nairobi newsletter".
     // The city is meant to rank, never to justify a suggestion, and that is only true if the same
     // token cannot be both.
+    // FOLDED for the comparison only. The city arrives accented ("München" -> `münchen`) while an
+    // LF slug is ASCII ("kubecon-munchen-2026" -> `munchen`), so a set of raw tokens could not
+    // recognise them as the same word: `münchen` was excluded from decisive while `munchen`, the
+    // form that actually reaches the scorer, sailed through and could justify a suggestion alone.
+    // That is the accented spelling of the exact false positive the exclusion exists to stop.
+    //
+    // Folding is applied ONLY when testing membership. The terms themselves stay accented,
+    // because the boundary matcher is built from the same alphabet and an accented term has to
+    // match an accented template name.
+    const fold = (token: string): string => token.normalize('NFD').replace(/\p{M}+/gu, '');
+    // Two sets, deliberately: `cityTokens` keeps the ORIGINAL spelling because it becomes the
+    // ranking terms, which are matched against template names and must stay accented.
+    // `cityFolded` exists only to answer "is this decisive candidate the city?".
     const cityTokens = new Set<string>();
+    const cityFolded = new Set<string>();
     for (const token of split(details.city ?? '')) {
       const cleaned = token.toLowerCase();
       if (usable(cleaned) && !EVENT_TERM_YEAR_PATTERN.test(cleaned)) {
         cityTokens.add(cleaned);
+        cityFolded.add(fold(cleaned));
       }
     }
 
@@ -2883,7 +2899,7 @@ export class CampaignsComponent {
         continue;
       }
       // A city token is never decisive, wherever it appears. It stays in `ranking` below.
-      if (usable(cleaned) && !cityTokens.has(cleaned)) {
+      if (usable(cleaned) && !cityFolded.has(fold(cleaned))) {
         decisive.add(cleaned);
       }
     }

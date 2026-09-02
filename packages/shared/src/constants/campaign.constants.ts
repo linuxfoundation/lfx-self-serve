@@ -996,8 +996,15 @@ export const EVENT_TERM_DISTINCTIVE_LENGTH = 6;
  * one is suggested. Distinct from EVENT_TERM_STOPWORDS, which removes a token from matching
  * altogether.
  *
- * A vocabulary is still a list and still needs appending. What changed is the failure mode: an
- * un-listed generic word now produces a MISSED suggestion rather than a confidently wrong one.
+ * A vocabulary is still a list and still needs appending, and an UN-LISTED generic word still
+ * produces a confidently wrong suggestion -- it takes the double weight and clears the threshold
+ * alone, exactly as before. An earlier version of this note claimed the opposite (a missed
+ * suggestion rather than a wrong one), which inverted the actual failure mode.
+ *
+ * What listing a word changes is that word: it drops to single weight, so it can rank but cannot
+ * justify a suggestion by itself. The remaining limit is pinned by the spec test
+ * "still pre-selects on an un-enumerated generic long word (known limit)", so it is measured
+ * rather than assumed away.
  */
 export const EVENT_TERM_GENERIC: ReadonlySet<string> = new Set([
   'register',
