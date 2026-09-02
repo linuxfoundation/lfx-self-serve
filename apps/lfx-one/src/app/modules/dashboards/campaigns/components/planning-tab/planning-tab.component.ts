@@ -888,11 +888,19 @@ export class PlanningTabComponent implements OnInit {
           // Recorded BEFORE the ownership guards, deliberately. A superseded create still made a
           // real campaign upstream; discarding its RESULT is right, but forgetting it happened
           // let the panel re-offer Create for an event that now has one.
+          // EVERY emitted response records a possibly-created campaign, not just a truthy
+          // `created`. A response that arrived but did not say so -- a malformed body, a missing
+          // flag -- is exactly the "may or may not have been created" case the else arm below
+          // already tells the operator about, and it was writing no record at all. A later empty
+          // lookup then found nothing and restored Create, so a POST that DID commit could be
+          // duplicated by the very message warning about it (Copilot).
+          //
+          // The confirmed marker still requires the flag: recording possibly-created is a
+          // suppression decision, saying "Created" is a claim about fact.
+          this.hsCreatedEvents.update((seen) => new Set(seen).add(`${capturedFoundation}|${capturedEvent}`));
+          this.hsCreatedEventNames.update((seen) => new Set(seen).add(capturedEvent));
           if (result?.created) {
-            this.hsCreatedEvents.update((seen) => new Set(seen).add(`${capturedFoundation}|${capturedEvent}`));
-            // CONFIRMED: the response said created. Only this arm records that.
             this.hsCreatedConfirmed.update((seen) => new Set(seen).add(`${capturedFoundation}|${capturedEvent}`));
-            this.hsCreatedEventNames.update((seen) => new Set(seen).add(capturedEvent));
             this.hsCreatedNamesConfirmed.update((seen) => new Set(seen).add(capturedEvent));
           }
           // RECONCILE THE PANEL the record just contradicted, before the ownership guards drop
@@ -1631,6 +1639,18 @@ export class PlanningTabComponent implements OnInit {
       next.delete(key);
       return next;
     });
+    // The NAME fences are global -- they answer "was a campaign with this name created under ANY
+    // foundation this session?" -- so they may only be dropped once no foundation-keyed record
+    // for this event survives. Deleting them alongside a single `foundation|event` record removed
+    // foundation B's shared-portal warning because A resolved, and a third foundation on B's
+    // portal could then see a confident not-found during indexing lag (Copilot, raised twice).
+    //
+    // Computed from the keyed set AFTER its own delete above, so this reads the post-retirement
+    // state rather than assuming it.
+    const stillHeldElsewhere = [...this.hsCreatedEvents()].some((k) => k.slice(k.indexOf('|') + 1) === eventName);
+    if (stillHeldElsewhere) {
+      return;
+    }
     this.hsCreatedEventNames.update((seen) => {
       const next = new Set(seen);
       next.delete(eventName);

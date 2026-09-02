@@ -1883,6 +1883,71 @@ describe('PlanningTabComponent — HubSpot UTM states', () => {
     expect(instance()['hsUnconfirmed'](), 'operator left with no re-check control').toBe(true);
   });
 
+  it('records a possibly-created campaign when the response omits created', () => {
+    // Copilot: only a truthy `created` was recorded, but the else arm tells the operator the
+    // campaign "may or may not have been created". So a POST that COMMITTED and returned a
+    // malformed body wrote no record -- and the next empty lookup restored Create, letting the
+    // operator duplicate it by acting on the very warning that described the risk.
+    const empty = { found: false, hs_utm: null, campaign_name: '', all_matches: [], capped: false, inconclusive: false };
+    runLookup(empty, 'KubeCon NA 2026');
+    // 2xx, but the body does not say `created`.
+    create.mockReturnValue(
+      new Observable((o) => {
+        o.next({ hs_utm: null, campaign_name: '' });
+        o.complete();
+      })
+    );
+    (fixture.componentInstance as unknown as { createInHubSpot(): void }).createInHubSpot();
+    fixture.detectChanges();
+
+    expect(instance()['hsCreateBlocked'](), 'an unconfirmed 2xx left Create on offer').toBe(true);
+    // And it must NOT claim the campaign was created -- nothing confirmed it.
+    expect(String(instance()['hsStatus']()), 'asserted a create the response never confirmed').not.toMatch(/^Created/);
+  });
+
+  it('keeps the shared-portal fence while ANOTHER foundation still holds a record', () => {
+    // Copilot, raised twice: the name fences are GLOBAL -- "was this name created under any
+    // foundation this session?" -- but retirement deleted them alongside a single
+    // `foundation|event` record. So a positive find under A removed B's shared-portal warning,
+    // and a third foundation on B's portal could then see a confident not-found during lag.
+    const ctx = TestBed.inject(ProjectContextService);
+    const empty = { found: false, hs_utm: null, campaign_name: '', all_matches: [], capped: false, inconclusive: false };
+    const confirmed = { created: true, hs_utm: null, campaign_name: 'Kubecon Na 2026' };
+
+    // Foundation A creates.
+    runLookup(empty, 'KubeCon NA 2026');
+    create.mockReturnValue(
+      new Observable((o) => {
+        o.next(confirmed);
+        o.complete();
+      })
+    );
+    (fixture.componentInstance as unknown as { createInHubSpot(): void }).createInHubSpot();
+    fixture.detectChanges();
+
+    // Foundation B creates the SAME event name.
+    ctx.setFoundation({ uid: 'foundation-b-uid', slug: 'foundation-b', name: 'Foundation B' }, false);
+    fixture.detectChanges();
+    runLookup(empty, 'KubeCon NA 2026');
+    (fixture.componentInstance as unknown as { createInHubSpot(): void }).createInHubSpot();
+    fixture.detectChanges();
+
+    // Back to A, where the lookup now POSITIVELY finds it -- retiring A's record only.
+    ctx.setFoundation({ uid: 'foundation-a-uid', slug: 'foundation-a', name: 'Foundation A' }, false);
+    fixture.detectChanges();
+    lookup.mockReturnValue(
+      new Observable((o) => {
+        o.next({ found: true, hs_utm: 'kubecon-na-2026', campaign_name: 'KubeCon NA 2026', all_matches: [], capped: false, inconclusive: false });
+        o.complete();
+      })
+    );
+    (fixture.componentInstance as unknown as { recheckHubSpot(): void }).recheckHubSpot();
+    fixture.detectChanges();
+
+    const component = fixture.componentInstance as unknown as { hsCreatedEventNames(): Set<string> };
+    expect(component.hsCreatedEventNames().has('Kubecon Na 2026'), "A's resolution dropped the fence B still needs").toBe(true);
+  });
+
   it('records a create the operator navigated away from', () => {
     // Copilot (planning-tab:860): the create was bound to `takeUntilDestroyed`, so leaving the
     // page ABORTED a non-idempotent POST mid-flight. Neither arm ran, so nothing recorded that a
