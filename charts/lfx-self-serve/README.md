@@ -209,15 +209,20 @@ skips the id-shape check entirely and answers a terminal `not_found` for a campa
 running and spending. On rollback, turn `..._CREATE` off first and keep `..._JOBS` on until
 outstanding UUID jobs have drained.
 
-The cutover is four flags, and they must reach the cluster ONE AT A TIME, each converging before
-the next:
+The **create pipeline** is four of the flags above, and they must reach the cluster ONE AT A
+TIME, each converging before the next:
 
 ```text
 JOBS  →  BRIEFS  →  STATUS_TOGGLE  →  CREATE
 ```
 
-**This is a deploy constraint, not a merge one.** All four now default to `"true"` in this chart,
-and nothing in CI staggers them — a single rollout of this chart turns them all on at once, which
+The other four flags in the table -- `..._DEMAND_GEN`, `..._INSIGHTS`, `..._KEYWORD_ACTIONS` and
+`..._HUBSPOT_UTM` -- are NOT part of this enable order and all default OFF. They gate later,
+independent moves, each with its own prerequisite noted in the table; nothing below applies to
+them.
+
+**This is a deploy constraint, not a merge one.** All four of the create-pipeline flags now
+default to `"true"` in this chart, and nothing in CI staggers them — a single rollout of this chart turns them all on at once, which
 is the failure mode each ordering note below exists to prevent. Stage it with per-release value
 overrides: deploy with the not-yet-due flags overridden `""`, let each converge, then drop its
 override.
