@@ -5,7 +5,8 @@ import { ChangeDetectionStrategy, Component, computed, inject, Signal, signal } 
 import { takeUntilDestroyed } from '@angular/core/rxjs-interop';
 import { FormControl, FormGroup, ReactiveFormsModule } from '@angular/forms';
 import { GERRIT_IDENTITY_VALUE, SIGN_IDENTITY_COPY, SIGN_IDENTITY_PLATFORM_LABELS } from '@lfx-one/shared/constants';
-import type { GithubAccountChoice, SignIdentityDialogData, SignIdentitySelectResult } from '@lfx-one/shared/interfaces';
+import type { GithubAccountChoice, MyClaAgreement, SignIdentityDialogData, SignIdentitySelectResult } from '@lfx-one/shared/interfaces';
+import { alreadySignedAgreementForIdentity, alreadySignedIdentityTooltip } from '@lfx-one/shared/utils';
 import { DynamicDialogConfig, DynamicDialogRef } from 'primeng/dynamicdialog';
 
 import { ButtonComponent } from '@components/button/button.component';
@@ -57,6 +58,17 @@ import { SelectableCardComponent } from '@components/selectable-card/selectable-
  * 32rem dialog. The action still takes that component's own outlined treatment, so the two
  * agree on everything but size.
  *
+ * ## Identities that have already signed
+ *
+ * An identity already on an agreement for this CLA group is grayed out with the reason (#1914).
+ * This is the step that refuses, rather than the CLA-group picker before it: a contributor with
+ * two linked accounts who signed under one of them can still sign under the other, so refusing
+ * the whole group would deny a signature they are entitled to give. The group is only tagged.
+ *
+ * Refusing here is a courtesy, not a guarantee — EasyCLA reuses an existing signature rather
+ * than duplicating it, so what this prevents is a contributor being walked through a ceremony
+ * whose outcome they already have.
+ *
  * Closes with the chosen identity, with `linkAccounts` if they asked to link one, or `null` if
  * they backed out. A GitHub choice carries the account number alone, because the parent already
  * holds the list and resolves the rest from it rather than taking a handle from here.
@@ -86,6 +98,14 @@ export class SignIdentitySelectComponent {
   protected readonly copy = SIGN_IDENTITY_COPY[this.config.data?.variant ?? 'github'];
 
   /**
+   * Which of the offered identities already hold a CLA for this group, resolved in one pass
+   * before any copy is written. The refusal message names another identity only when one is
+   * genuinely selectable, so how many are left has to be known before the tooltips exist — and
+   * resolving it once keeps the two cards' verdicts from coming from separate evaluations.
+   */
+  private readonly alreadySigned = this.resolveAlreadySigned();
+
+  /**
    * The handle can be blank: the server maps a missing `profileData.nickname` to `''` rather
    * than guessing one. Labelling that option with the account number keeps the two accounts
    * distinguishable. The blank handle itself is left alone — what gets recorded is not this
@@ -96,15 +116,16 @@ export class SignIdentitySelectComponent {
    * suffix they read as duplicates. The number fallback is exempt: it already names the
    * platform, and suffixing it would say GitHub twice.
    */
-  protected readonly accounts = signal<GithubAccountChoice[]>(
-    (this.config.data?.accounts ?? []).map((account) => ({
-      ...account,
-      label: account.githubUsername ? this.withPlatform(account.githubUsername, SIGN_IDENTITY_PLATFORM_LABELS.github) : `GitHub account ${account.githubId}`,
-    }))
-  );
+  protected readonly accounts = signal<GithubAccountChoice[]>(this.initAccounts());
 
   /** The contributor's LF username as their Gerrit identity, or null when Gerrit is not on offer. */
   protected readonly gerritLabel = signal<string | null>(this.initGerritLabel());
+
+  /**
+   * Why the Gerrit card cannot sign, when the contributor already signed this group under their
+   * LF identity (#1914). Undefined ⇒ selectable.
+   */
+  protected readonly gerritAlreadySignedTooltip = signal<string | undefined>(this.initGerritAlreadySignedTooltip());
 
   protected readonly selectedId = signal<string | null>(null);
   protected readonly hasIdentities: Signal<boolean> = computed(() => this.accounts().length > 0 || this.gerritLabel() !== null);
@@ -115,7 +136,7 @@ export class SignIdentitySelectComponent {
 
   protected onContinue(): void {
     const selected = this.selectedId();
-    if (!selected) return;
+    if (!selected || this.isAlreadySigned(selected)) return;
 
     if (selected === GERRIT_IDENTITY_VALUE) {
       this.ref.close({ kind: 'gerrit' } satisfies SignIdentitySelectResult);
@@ -137,6 +158,51 @@ export class SignIdentitySelectComponent {
     this.ref.close({ linkAccounts: true } satisfies SignIdentitySelectResult);
   }
 
+  /** Whether the chosen card is one the contributor has already signed this group with. */
+  private isAlreadySigned(identityValue: string): boolean {
+    if (identityValue === GERRIT_IDENTITY_VALUE) return !!this.gerritAlreadySignedTooltip();
+    return this.accounts().some((account) => account.githubId === identityValue && !!account.alreadySignedTooltip);
+  }
+
+  /**
+   * Resolves the already-signed verdict for every identity the step offers, plus whether any
+   * offered identity is still selectable. A Gerrit card counts as offered on the same test
+   * `initGerritLabel` uses, so the two cannot disagree about whether it is on the step at all.
+   */
+  private resolveAlreadySigned(): { byGithubId: Map<string, MyClaAgreement>; gerrit: MyClaAgreement | undefined; anotherSelectable: boolean } {
+    const agreements = this.config.data?.claGroupAgreements ?? [];
+    const accounts = this.config.data?.accounts ?? [];
+    const gerritOffered = !!this.config.data?.gerritUsername?.trim();
+
+    // Every handle on the step, so the matcher can tell a recorded account number from a handle
+    // that happens to be all digits.
+    const offeredHandles = accounts.map((account) => account.githubUsername);
+
+    const byGithubId = new Map<string, MyClaAgreement>();
+    for (const account of accounts) {
+      const identity = { platform: 'github', username: account.githubUsername, githubId: account.githubId } as const;
+      const held = alreadySignedAgreementForIdentity(agreements, identity, offeredHandles);
+      if (held) byGithubId.set(account.githubId, held);
+    }
+
+    const gerrit = gerritOffered ? alreadySignedAgreementForIdentity(agreements, { platform: 'gerrit' }, offeredHandles) : undefined;
+    const selectable = accounts.filter((account) => !byGithubId.has(account.githubId)).length + (gerritOffered && !gerrit ? 1 : 0);
+
+    return { byGithubId, gerrit, anotherSelectable: selectable > 0 };
+  }
+
+  private initAccounts(): GithubAccountChoice[] {
+    return (this.config.data?.accounts ?? []).map((account) => {
+      const held = this.alreadySigned.byGithubId.get(account.githubId);
+
+      return {
+        ...account,
+        label: account.githubUsername ? this.withPlatform(account.githubUsername, SIGN_IDENTITY_PLATFORM_LABELS.github) : `GitHub account ${account.githubId}`,
+        ...(held ? { alreadySignedTooltip: alreadySignedIdentityTooltip(held, this.alreadySigned.anotherSelectable) } : {}),
+      };
+    });
+  }
+
   /**
    * The Gerrit card's label, and the only place a value that did not come from the server is
    * turned into something the contributor can pick. Read the class doc above before treating
@@ -146,6 +212,18 @@ export class SignIdentitySelectComponent {
     const username = this.config.data?.gerritUsername?.trim();
     if (!username) return null;
     return this.withPlatform(username, SIGN_IDENTITY_PLATFORM_LABELS.gerrit);
+  }
+
+  /**
+   * Only meaningful when a Gerrit card is on offer at all — read off the `gerritLabel` signal,
+   * declared above this one, so the card's visibility and its already-signed verdict cannot
+   * come from two independent evaluations of the same question.
+   */
+  private initGerritAlreadySignedTooltip(): string | undefined {
+    if (!this.gerritLabel()) return undefined;
+
+    const held = this.alreadySigned.gerrit;
+    return held ? alreadySignedIdentityTooltip(held, this.alreadySigned.anotherSelectable) : undefined;
   }
 
   /** Suffixes the platform on a mixed list only; a single-source list needs no disambiguation. */

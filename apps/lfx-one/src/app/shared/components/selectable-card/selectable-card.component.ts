@@ -5,11 +5,12 @@ import { NgClass } from '@angular/common';
 import { Component, computed, input, Signal } from '@angular/core';
 import { toObservable, toSignal } from '@angular/core/rxjs-interop';
 import { FormGroup, ReactiveFormsModule } from '@angular/forms';
+import { TooltipModule } from 'primeng/tooltip';
 import { of, startWith, switchMap } from 'rxjs';
 
 @Component({
   selector: 'lfx-selectable-card',
-  imports: [NgClass, ReactiveFormsModule],
+  imports: [NgClass, ReactiveFormsModule, TooltipModule],
   templateUrl: './selectable-card.component.html',
 })
 export class SelectableCardComponent {
@@ -19,6 +20,16 @@ export class SelectableCardComponent {
   public readonly value = input<string>();
   public readonly label = input.required<string>();
   public readonly toggle = input<boolean>(false);
+  /** Disables this card alone, leaving the rest of the group selectable. */
+  public readonly disabled = input<boolean>(false);
+  /**
+   * Why this card is disabled. Rendered twice from the one input so no contributor has to hover
+   * to learn it: visually hidden inside the card, so it is announced after the label rather than
+   * instead of it, and as a tooltip on hover *or* keyboard focus. A disabled card stays in the tab
+   * order and says so with `aria-disabled`, rather than being removed from it — a card taken out
+   * of the tab order is one a keyboard-only contributor can never ask about.
+   */
+  public readonly disabledReason = input<string>('');
   public readonly styleClass = input<string>('');
   public readonly testId = input<string>('');
 
@@ -47,10 +58,13 @@ export class SelectableCardComponent {
   }
 
   protected onKeydown(event: KeyboardEvent): void {
-    if (!this.isDisabled() && (event.key === 'Enter' || event.key === ' ')) {
-      event.preventDefault();
-      this.onCardClick();
-    }
+    if (event.key !== 'Enter' && event.key !== ' ') return;
+
+    // Consumed even when the card is disabled. A disabled card stays focusable so its reason can
+    // be read, and leaving Space to the browser there would scroll the page out from under the
+    // reader instead of doing nothing.
+    event.preventDefault();
+    if (!this.isDisabled()) this.onCardClick();
   }
 
   // === Private Initializers ===
@@ -85,6 +99,8 @@ export class SelectableCardComponent {
 
   private initIsDisabled(): Signal<boolean> {
     return computed(() => {
+      if (this.disabled()) return true;
+
       const formGroup = this.form();
       const controlName = this.control();
       return formGroup.get(controlName)?.disabled ?? false;

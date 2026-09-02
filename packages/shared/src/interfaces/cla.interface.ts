@@ -206,6 +206,35 @@ export interface ClaGroupSearchResponse {
   results: ClaGroupOption[];
 }
 
+/**
+ * What the Sign a CLA group picker is given so it can tag groups the contributor already
+ * holds (#1914). The list is the one already loaded on the CLAs tab — the picker does not
+ * fetch it again.
+ */
+export interface ClaGroupSelectDialogData {
+  agreements: MyClaAgreement[];
+}
+
+/** What a tagged picker row shows: the inline tag, and the sentence behind it. */
+export interface AlreadySignedNote {
+  /** Inline tag, naming the identity that signed it. */
+  chip: string;
+  /**
+   * Fuller sentence: which kind, and whose employer on an ECLA. It closes by offering another
+   * identity only on a route that has one to offer — never on a GitLab-only or Gerrit-only group.
+   */
+  tooltip: string;
+}
+
+/**
+ * Which identity a card in the sign-identity step offers.
+ *
+ * A GitHub card carries both keys because the producer records whichever it had: it derives the
+ * signed identity as the handle when there is one and the account number when there is not, so a
+ * card that compared only the handle would miss every agreement recorded against the number.
+ */
+export type SignIdentityRef = { platform: 'github'; username?: string; githubId: string } | { platform: 'gerrit' };
+
 /** Picker row: a search result with display fields precomputed so the template calls nothing. */
 export interface ClaGroupOptionView extends ClaGroupOption {
   primaryName: string;
@@ -233,7 +262,13 @@ export interface ClaGroupOrgView {
 export interface GithubAccountOption {
   /** Immutable GitHub account number. Handles get renamed and reclaimed; this does not. */
   githubId: string;
-  /** Display handle. Never matched on. */
+  /**
+   * Display handle, and never an identity key on its own. It has two consumers beyond display:
+   * it rides alongside `githubId` on prepare-sign, where the producer resolves the pair against
+   * each other, and it is compared against the handle an existing agreement recorded so the
+   * identity step can gray the account that already signed. Renames and reclaims make it
+   * unreliable for both, which is why `githubId` is what actually addresses the account.
+   */
   githubUsername: string;
   avatarUrl?: string;
 }
@@ -242,6 +277,11 @@ export interface GithubAccountOption {
 export interface GithubAccountChoice extends GithubAccountOption {
   /** `githubUsername`, or a numbered fallback when the handle is blank. */
   label: string;
+  /**
+   * Why this account cannot sign the chosen CLA group, when it already has (#1914). Present
+   * ⇒ the card is grayed out and carries this as its tooltip.
+   */
+  alreadySignedTooltip?: string;
 }
 
 /**
@@ -273,6 +313,13 @@ export interface SignIdentityDialogData {
    * never submitted — see the step's own class doc before changing it.
    */
   gerritUsername?: string;
+  /**
+   * What the contributor already holds for the CLA group they picked, so the step can gray out
+   * the identity that signed it (#1914). This is where the already-signed block lives: one
+   * contributor can hold several identities, so the group itself stays selectable and only the
+   * identity already on an agreement is refused.
+   */
+  claGroupAgreements?: MyClaAgreement[];
 }
 
 /**

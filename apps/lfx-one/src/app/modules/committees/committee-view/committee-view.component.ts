@@ -14,6 +14,7 @@ import { ButtonComponent } from '@components/button/button.component';
 import { CardComponent } from '@components/card/card.component';
 import { TagComponent } from '@components/tag/tag.component';
 import { RouteLoadingComponent } from '@components/loading/route-loading.component';
+import { ToastMessageComponent } from '@components/toast-message/toast-message.component';
 import {
   Committee,
   CommitteeInvite,
@@ -119,6 +120,7 @@ const ACCESS_RETRY_INTERVAL_MS = 400;
     CardComponent,
     TagComponent,
     RouteLoadingComponent,
+    ToastMessageComponent,
     DatePipe,
     NgClass,
     PopoverModule,

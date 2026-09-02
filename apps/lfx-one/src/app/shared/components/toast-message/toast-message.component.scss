@@ -1,0 +1,8 @@
+// Copyright The Linux Foundation and each contributor to LFX.
+// SPDX-License-Identifier: MIT
+
+// :host must vanish from the box tree so the inner flex row stays a direct item
+// of PrimeNG's .p-toast-message-content — keeps the close button flush right (mirrors foundation-row.component.scss).
+:host {
+  display: contents;
+}

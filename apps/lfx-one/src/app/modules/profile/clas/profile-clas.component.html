@@ -12,7 +12,7 @@ SPDX-License-Identifier: MIT
 
     <!--
     Page-level, not per-row: signing a new CLA has no row to act on yet. Rendered whenever the M2
-    overlay is on, then disabled while impersonating rather than withheld.
+    overlay is on, then disabled rather than withheld — see `signDisabled` for when and why.
     -->
     @if (myClasM2Enabled()) {
       <lfx-button
@@ -20,8 +20,8 @@ SPDX-License-Identifier: MIT
         icon="fa-light fa-file-signature"
         size="small"
         [loading]="starting()"
-        [disabled]="impersonating()"
-        [ariaLabel]="impersonating() ? 'This action is unavailable while impersonating another user' : undefined"
+        [disabled]="signDisabled()"
+        [ariaLabel]="signDisabledReason()"
         data-testid="sign-cla-action"
         (onClick)="openSignDialog()" />
     }
@@ -109,14 +109,15 @@ SPDX-License-Identifier: MIT
               </div>
             </td>
 
-            <td class="px-5 py-3.5">
+            <td class="px-5 py-3.5 align-middle">
               @if (row.agreement.kind === 'ECLA') {
                 <lfx-badge
                   [value]="row.agreement.companyName ? 'ECLA · ' + row.agreement.companyName : 'ECLA'"
                   severity="secondary"
-                  styleClass="!bg-purple-100 !text-purple-800" />
+                  styleClass="!bg-purple-100 !text-purple-800 !h-auto !min-h-5 !max-w-full !whitespace-normal !leading-snug !py-0.5"
+                  [attr.data-testid]="'agreement-type-' + row.id" />
               } @else {
-                <lfx-badge value="ICLA" severity="info" />
+                <lfx-badge value="ICLA" severity="info" [attr.data-testid]="'agreement-type-' + row.id" />
               }
             </td>
 

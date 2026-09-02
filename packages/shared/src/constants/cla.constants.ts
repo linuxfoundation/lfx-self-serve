@@ -110,6 +110,13 @@ export const GITLAB_UNSUPPORTED_MESSAGE = 'Signing CLA using GitLab is not suppo
  */
 export const GITLAB_UNSUPPORTED_HEADER = 'GitLab CLA signing';
 
+/**
+ * Chip on a Sign a CLA search result the contributor already holds a CLA for (#1914).
+ * The tooltip on that row carries the sentence that says which agreement; this is only
+ * the short label that makes the grayed-out state readable without hovering.
+ */
+export const ALREADY_SIGNED_CLA_LABEL = 'Already signed';
+
 /** Hover tooltips on a right-edge kebab open off-screen; keep the CCLA reason in the item. */
 export const ECLA_COVERED_DOWNLOAD_LABEL = 'Download PDF<br><span class="mt-0.5 block text-xs font-normal">Covered by Corporate CLA (CCLA)</span>';
 
