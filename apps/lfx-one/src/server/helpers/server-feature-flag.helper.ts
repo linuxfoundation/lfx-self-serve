@@ -306,6 +306,7 @@ export enum ServerFeatureFlag {
    * service, so flipping back restores the previous BACKEND. It does not restore fabricated
    * tokens or the old search limit — those changed on both paths.
    */
+  CampaignServiceHubSpotUtm = 'LFX_CUTOVER_CAMPAIGN_SERVICE_HUBSPOT_UTM',
 
   /**
    * Gates `committee.service.ts`'s `updateCommittee` (the `chat_webhook_url` write) and
