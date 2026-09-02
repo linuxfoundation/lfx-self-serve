@@ -282,12 +282,16 @@
               </p>
             } @else if (keywordTotalsUnverified()) {
               <!--
-                Completeness UNKNOWN. States what the numbers cover without claiming they are
-                every keyword -- the legacy read applies a bare LIMIT and cannot tell.
+                Completeness UNKNOWN, and NOT scoped to this project.
+                An absent `truncated` identifies the LEGACY read, whose GAQL query carries no
+                project filter at all -- it is account-wide across every foundation on the shared
+                Google Ads customer id. So this caption must not say "for this project": that
+                would tell an ED that another foundation's rows are theirs, which is precisely
+                the cross-foundation leak the cutover closes.
               -->
               <p class="mb-2 text-xs text-gray-500" data-testid="keyword-totals-unverified">
                 <i class="fa-light fa-circle-info mr-1" aria-hidden="true"></i>
-                Totals cover the {{ keywords().length }} keywords read for this project.
+                Totals cover the {{ keywords().length }} keywords returned by the ad account, which may include other foundations' campaigns.
               </p>
             }
             <div class="grid grid-cols-2 gap-3 md:grid-cols-5" data-testid="keyword-totals">

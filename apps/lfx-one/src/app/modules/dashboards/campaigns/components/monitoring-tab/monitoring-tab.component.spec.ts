@@ -284,6 +284,9 @@ describe('MonitoringTabComponent — keyword totals completeness', () => {
     // But it does say WHICH keywords the numbers cover, without claiming they are all of them.
     const unverified = fixture.nativeElement.querySelector('[data-testid="keyword-totals-unverified"]');
     expect(unverified, 'unknown completeness rendered no caption at all').not.toBeNull();
-    expect(unverified?.textContent).toContain('keywords read for this project');
+    // Must NOT claim project scope: an absent `truncated` identifies the legacy read, whose
+    // query has no project filter and spans every foundation on the shared ad account.
+    expect(unverified?.textContent).toContain('returned by the ad account');
+    expect(unverified?.textContent).not.toContain('this project');
   });
 });
