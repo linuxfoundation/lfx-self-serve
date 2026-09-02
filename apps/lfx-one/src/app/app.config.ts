@@ -3,7 +3,7 @@
 
 import { provideHttpClient, withFetch, withInterceptors } from '@angular/common/http';
 import { ApplicationConfig, ErrorHandler, provideZonelessChangeDetection } from '@angular/core';
-import { provideClientHydration, withEventReplay, withHttpTransferCacheOptions, withIncrementalHydration } from '@angular/platform-browser';
+import { provideClientHydration, withEventReplay, withIncrementalHydration } from '@angular/platform-browser';
 import { provideAnimationsAsync } from '@angular/platform-browser/animations/async';
 import { provideRouter, withInMemoryScrolling, withPreloading } from '@angular/router';
 import { lfxCardTheme, lfxDataTableTheme } from '@lfx-one/shared';
@@ -38,13 +38,12 @@ export const appConfig: ApplicationConfig = {
     provideZonelessChangeDetection(),
     { provide: ErrorHandler, useClass: ChunkLoadErrorHandler },
     provideRouter(routes, withPreloading(CustomPreloadingStrategy), withInMemoryScrolling({ scrollPositionRestoration: 'top', anchorScrolling: 'enabled' })),
-    // `includeHeaders` lists *response* headers to carry into the transfer cache — it does not
-    // affect request-auth eligibility. `authenticationInterceptor` sends a `Cookie` request header
-    // (not `Authorization`), and Angular's transfer cache only excludes requests carrying
-    // `authorization`/`proxy-authorization` headers, so authenticated responses are already
-    // cacheable without this option. The prior `includeHeaders: ['Authorization']` was a no-op that
-    // would additionally have opted an `Authorization` response header into the serialized HTML.
-    provideClientHydration(withEventReplay(), withIncrementalHydration(), withHttpTransferCacheOptions({})),
+    // `includeHeaders` selects which *response* headers get serialized into the transfer cache
+    // state — it has no effect on which requests are eligible for caching. The prior
+    // `includeHeaders: ['Authorization']` was the wrong option for its intended purpose (a no-op)
+    // and mildly harmful, since it would have opted an `Authorization` response header into the
+    // serialized SSR HTML.
+    provideClientHydration(withEventReplay(), withIncrementalHydration()),
     provideHttpClient(withFetch(), withInterceptors([authenticationInterceptor, ssrBaseUrlInterceptor])),
     provideAnimationsAsync(),
     providePrimeNG({
