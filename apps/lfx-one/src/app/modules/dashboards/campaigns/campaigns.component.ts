@@ -2098,19 +2098,6 @@ export class CampaignsComponent {
     this.onProceedToImplementation(brief, true, approved);
   }
 
-  /**
-   * Read the email channel's metrics for the current brief.
-   *
-   * Re-read on every entry rather than cached, matching `loadBriefCampaigns` on the paid side and
-   * for the same reason: on this channel the numbers change when a HUMAN presses send in HubSpot,
-   * entirely outside this app. A cached read would show an operator the state from before the
-   * send they just performed, which is the one moment they are most likely to be looking.
-   *
-   * No `window` is passed. campaign-service resolves a per-platform default, and on this channel
-   * the window does not scope the counters at all — it selects which emails are in scope by send
-   * date, and the counters returned are then that email's totals TO DATE. Sending a window from
-   * here would imply a period the numbers do not cover.
-   */
   /** Single write path for `knownBriefIds`, so `knownBriefIdsVersion` cannot drift from the map. */
   private rememberBriefId(key: string, value: { id: string; etag: string | null; absence?: 'overwrite' | 'unknown' }): void {
     this.knownBriefIds.set(key, value);
@@ -2155,6 +2142,19 @@ export class CampaignsComponent {
     return key !== null && (this.knownBriefIds.get(key)?.id ?? '') !== '';
   });
 
+  /**
+   * Read the email channel's metrics for the current brief.
+   *
+   * Re-read on every entry rather than cached, matching `loadBriefCampaigns` on the paid side and
+   * for the same reason: on this channel the numbers change when a HUMAN presses send in HubSpot,
+   * entirely outside this app. A cached read would show an operator the state from before the
+   * send they just performed, which is the one moment they are most likely to be looking.
+   *
+   * No `window` is passed. campaign-service resolves a per-platform default, and on this channel
+   * the window does not scope the counters at all — it selects which emails are in scope by send
+   * date, and the counters returned are then that email's totals TO DATE. Sending a window from
+   * here would imply a period the numbers do not cover.
+   */
   protected loadEmailMetrics(): void {
     const projectSlug = this.activeFoundationSlug();
     // Fall back to the OWNED id when the signal is empty. `resetEmailBriefDerivedState` clears

@@ -4628,6 +4628,19 @@ describe('CampaignsComponent email monitor', () => {
     expect(rates.click).toBeNull();
     expect(rates.delivery).toBeNull();
     expect(fixture.nativeElement.querySelector('[data-testid="campaigns-email-metrics-nothing-sent"]')).not.toBeNull();
+
+    // RENDERING, not just the computed values. The three assertions above passed while all four
+    // rate lines still rendered as "— of sent" / "— of delivered" beside the counters: a null
+    // rate suppresses the NUMBER, not the line. The test's own name claimed the lines were
+    // suppressed, so it read as covering this and did not.
+    const el = fixture.nativeElement as HTMLElement;
+    for (const id of ['delivery-rate', 'open-rate', 'click-rate', 'bounce-rate']) {
+      expect(el.querySelector(`[data-testid="campaigns-email-metric-${id}"]`)).toBeNull();
+    }
+    // The COUNTERS stay. "0 sent" is a true measurement and the answer the operator came for --
+    // suppressing those too would leave the panel saying nothing at all.
+    expect(el.querySelector('[data-testid="campaigns-email-metric-sent"]')?.textContent).toContain('0');
+    expect(el.querySelector('[data-testid="campaigns-email-metric-delivered"]')).not.toBeNull();
   });
 
   /**

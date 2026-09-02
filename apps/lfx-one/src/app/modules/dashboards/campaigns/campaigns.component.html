@@ -702,7 +702,11 @@
                       <!--
                       HubSpot answered and counted no sends. This is NOT the `not_ready` case —
                       the read succeeded — but opens and clicks of 0 are still not a performance
-                      result, so the rate cards are suppressed rather than rendered as 0.0%.
+                      result, so the RATE lines are suppressed rather than rendered as an em dash
+                      beside every counter. The counters themselves stay: "0 sent" is a true
+                      measurement and the answer the operator came for. Each rate span below
+                      carries its own `!emailMetricsNothingSent()` guard, because the counter and
+                      its rate are siblings in the grid and only the rate is meaningless here.
                     -->
                       <div
                         class="flex items-start gap-3 rounded-lg border border-amber-200 bg-amber-50 px-4 py-3"
@@ -725,9 +729,11 @@
                         <span class="text-xl font-semibold text-gray-900" data-testid="campaigns-email-metric-delivered">{{
                           totals.delivered | number: '1.0-0'
                         }}</span>
-                        <span class="text-xs text-gray-500" data-testid="campaigns-email-metric-delivery-rate"
-                          >{{ emailMetricsRates().delivery | metricPercent }} of sent</span
-                        >
+                        @if (!emailMetricsNothingSent()) {
+                          <span class="text-xs text-gray-500" data-testid="campaigns-email-metric-delivery-rate"
+                            >{{ emailMetricsRates().delivery | metricPercent }} of sent</span
+                          >
+                        }
                       </div>
                       <div class="flex flex-col gap-1 rounded-lg border border-gray-200 px-4 py-3">
                         <span class="text-xs font-medium uppercase tracking-wide text-gray-500">Opens</span>
@@ -736,27 +742,33 @@
                         Over DELIVERED, not sent — an email that bounced was never a chance to
                         open, and HubSpot's own reporting uses the same denominator.
                       -->
-                        <span class="text-xs text-gray-500" data-testid="campaigns-email-metric-open-rate"
-                          >{{ emailMetricsRates().open | metricPercent }} of delivered</span
-                        >
+                        @if (!emailMetricsNothingSent()) {
+                          <span class="text-xs text-gray-500" data-testid="campaigns-email-metric-open-rate"
+                            >{{ emailMetricsRates().open | metricPercent }} of delivered</span
+                          >
+                        }
                       </div>
                       <div class="flex flex-col gap-1 rounded-lg border border-gray-200 px-4 py-3">
                         <span class="text-xs font-medium uppercase tracking-wide text-gray-500">Clicks</span>
                         <span class="text-xl font-semibold text-gray-900" data-testid="campaigns-email-metric-clicks">{{
                           totals.clicks | number: '1.0-0'
                         }}</span>
-                        <span class="text-xs text-gray-500" data-testid="campaigns-email-metric-click-rate"
-                          >{{ emailMetricsRates().click | metricLowPercent }} of delivered</span
-                        >
+                        @if (!emailMetricsNothingSent()) {
+                          <span class="text-xs text-gray-500" data-testid="campaigns-email-metric-click-rate"
+                            >{{ emailMetricsRates().click | metricLowPercent }} of delivered</span
+                          >
+                        }
                       </div>
                       <div class="flex flex-col gap-1 rounded-lg border border-gray-200 px-4 py-3">
                         <span class="text-xs font-medium uppercase tracking-wide text-gray-500">Bounces</span>
                         <span class="text-xl font-semibold text-gray-900" data-testid="campaigns-email-metric-bounces">{{
                           totals.bounces | number: '1.0-0'
                         }}</span>
-                        <span class="text-xs text-gray-500" data-testid="campaigns-email-metric-bounce-rate"
-                          >{{ emailMetricsRates().bounce | metricLowPercent }} of sent</span
-                        >
+                        @if (!emailMetricsNothingSent()) {
+                          <span class="text-xs text-gray-500" data-testid="campaigns-email-metric-bounce-rate"
+                            >{{ emailMetricsRates().bounce | metricLowPercent }} of sent</span
+                          >
+                        }
                       </div>
                       <div class="flex flex-col gap-1 rounded-lg border border-gray-200 px-4 py-3">
                         <span class="text-xs font-medium uppercase tracking-wide text-gray-500">Unsubscribes</span>
