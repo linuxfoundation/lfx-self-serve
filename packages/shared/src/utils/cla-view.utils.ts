@@ -28,6 +28,7 @@ import type {
   MyClasIdentitySummary,
   SignIdentityRef,
 } from '../interfaces/cla.interface';
+import { formatIsoDateLabel } from './date-time.utils';
 
 /**
  * Profile subtab list, with the read-only "CLAs" tab appended (before Transactions)
@@ -133,19 +134,30 @@ const CLA_SIGNED_ON_DATE_ONLY = /^\d{4}-\d{2}-\d{2}$/;
  * returns unloaded off-browser). Do not call from a server-rendered path
  * without passing an explicit `timeZone` (see `formatHubSpotUpdatedAt`).
  *
- * Empty / unparseable → `'—'` (same placeholder as `claStatusLabel('unknown')`).
+ * Empty, unparseable, or an impossible calendar date (Feb 31) → `'—'`
+ * (same placeholder as `claStatusLabel('unknown')`).
  */
 export function formatClaSignedOn(iso: string, timeZone?: string): string {
   const trimmed = iso.trim();
   if (!trimmed) return '—';
+
+  if (CLA_SIGNED_ON_DATE_ONLY.test(trimmed)) {
+    const label = formatIsoDateLabel(trimmed);
+    return label === trimmed ? '—' : label;
+  }
+
+  const datePart = trimmed.slice(0, 10);
+  if (CLA_SIGNED_ON_DATE_ONLY.test(datePart) && formatIsoDateLabel(datePart) === datePart) {
+    return '—';
+  }
+
   const date = new Date(trimmed);
   if (Number.isNaN(date.getTime())) return '—';
-  const zone = CLA_SIGNED_ON_DATE_ONLY.test(trimmed) ? 'UTC' : timeZone;
   return date.toLocaleDateString('en-US', {
     month: 'short',
     day: 'numeric',
     year: 'numeric',
-    ...(zone ? { timeZone: zone } : {}),
+    ...(timeZone ? { timeZone } : {}),
   });
 }
 

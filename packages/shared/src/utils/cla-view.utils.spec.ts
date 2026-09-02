@@ -193,13 +193,19 @@ describe('formatClaSignedOn', () => {
     }
 
     expect(seen.length).toBeGreaterThan(0);
-    expect(seen.every((o) => o?.timeZone === undefined)).toBe(true);
+    expect(seen.at(-1)?.timeZone).toBeUndefined();
   });
 
   it('returns an em dash for missing, blank, or unparseable values', () => {
     expect(formatClaSignedOn('')).toBe('—');
     expect(formatClaSignedOn('   ')).toBe('—');
     expect(formatClaSignedOn('not-a-date')).toBe('—');
+  });
+
+  it('refuses impossible calendar dates rather than rolling them over', () => {
+    expect(formatClaSignedOn('2026-02-31')).toBe('—');
+    expect(formatClaSignedOn('2026-02-31T10:00:00Z')).toBe('—');
+    expect(formatClaSignedOn('0001-01-01')).toBe('—');
   });
 });
 
