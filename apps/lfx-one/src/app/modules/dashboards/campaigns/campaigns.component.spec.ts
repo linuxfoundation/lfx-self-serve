@@ -4497,6 +4497,7 @@ describe('CampaignsComponent email monitor', () => {
     emailMetricsRates(): { delivery: number | null; open: number | null; click: number | null; bounce: number | null };
     loadEmailMetrics(): void;
     canRefreshEmailMetrics(): boolean;
+    activeFoundationSlug(): string;
     emailBriefOutput: { set(v: unknown): void };
     onEmailProceedToImplementation(brief: unknown): void;
     rememberBriefId(key: string, value: { id: string; etag: string | null }): void;
@@ -5033,6 +5034,24 @@ describe('CampaignsComponent email monitor', () => {
     // rather than because the reset happens to leave something else enabled.
     const brief = { eventDetails: { name: 'KubeCon Europe 2026', slug: 'kubecon-eu-2026' } };
     internals().onEmailProceedToImplementation(brief);
+    internals().emailMetricsState.set('idle');
+    fixture.detectChanges();
+
+    expect(internals().canRefreshEmailMetrics()).toBe(false);
+  });
+
+  it('does not offer Refresh without a foundation slug', () => {
+    // `loadEmailMetrics` early-returns to idle on an empty slug, so offering a refresh there is a
+    // button whose only possible outcome is the state it started in.
+    //
+    // Drive the slug empty through the real service rather than assuming the harness leaves it
+    // so -- it does not: another suite's `setFoundation` leaks 'foundation-b' through the shared
+    // TestBed, and asserting the precondition is what caught that. A blank slug is a real shape
+    // (a context that has not resolved), not an artificial one.
+    TestBed.inject(ProjectContextService).setFoundation({ uid: 'f-x', slug: '', name: 'Unresolved' } as never, false);
+    fixture.detectChanges();
+    expect(internals().activeFoundationSlug()).toBe('');
+    internals().emailBriefId.set('b-monitor');
     internals().emailMetricsState.set('idle');
     fixture.detectChanges();
 

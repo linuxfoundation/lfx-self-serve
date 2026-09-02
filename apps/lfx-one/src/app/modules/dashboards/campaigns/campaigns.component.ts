@@ -2127,11 +2127,19 @@ export class CampaignsComponent {
    * which gives an operator -- and a screen-reader user -- no way to tell "nothing to load" from
    * "the load failed silently".
    *
-   * This resolves the brief id exactly the way `loadEmailMetrics` does, so the two cannot
-   * disagree about whether a refresh is possible.
+   * Mirrors BOTH preconditions `loadEmailMetrics` enforces -- a non-empty foundation slug and a
+   * resolvable brief id, resolved the same way (signal first, ownership fallback second) -- so
+   * the two cannot disagree about whether a refresh is possible.
    */
   protected readonly canRefreshEmailMetrics = computed<boolean>(() => {
     if (this.emailMetricsState() === 'loading') {
+      return false;
+    }
+    // The slug is the OTHER precondition `loadEmailMetrics` enforces: it early-returns to idle
+    // when `projectSlug === ''`, so without this the button offered a refresh that could only
+    // land back where it started. Checked first, because it holds regardless of how the brief id
+    // resolves.
+    if (this.activeFoundationSlug() === '') {
       return false;
     }
     if (this.emailBriefId() !== '') {
