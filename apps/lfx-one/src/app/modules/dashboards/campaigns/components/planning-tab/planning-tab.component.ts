@@ -283,15 +283,15 @@ export class PlanningTabComponent implements OnInit {
   /**
    * How many times a re-check has come back EMPTY for a possibly-created event.
    *
-   * The record has to expire, because it is written on unconfirmed failures too -- and an
+   * The record needs an EXIT, because it is written on unconfirmed failures too -- and an
    * unconfirmed failure includes the case where the request never left the BFF, so nothing was
-   * created and nothing ever will appear. Without an exit, that permanently withheld Create
-   * under a false "Created in HubSpot", recoverable only by reload (dealako, round 5).
+   * created and nothing ever will appear. Without one, that permanently withheld Create under a
+   * false "Created in HubSpot", recoverable only by reload (dealako, round 5). "Expire" is the
+   * wrong word for it: the record is cleared by EVIDENCE, never by elapsed time or attempts.
    *
-   * Two consecutive empty re-checks settle it: HubSpot indexing is fast enough that a campaign
-   * which actually landed shows up well within a deliberate second look, so a second miss is
-   * much better explained by "it was never created". Erring on TWO rather than one keeps the
-   * duplicate protection for the indexing-lag case it exists for.
+   * The exit is a POSITIVE find, not a miss count -- see `retireCreatedRecord`. An earlier
+   * revision retired the record after two empty re-checks; that could never be correct, because
+   * an empty search under an eventually-consistent index proves lag, not absence.
    */
   /**
    * The event the panel is currently showing, as a SIGNAL.
