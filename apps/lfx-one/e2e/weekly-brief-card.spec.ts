@@ -288,8 +288,12 @@ async function mockCurrentBrief(page: Page, initial: WeeklyBriefCurrentResponse)
   let current = initial;
   // Await the route registration so it's installed before any page.goto()
   // — `void page.route(...)` races with navigation and can leak through to
-  // the network on fast runs.
-  await page.route(`**/api/committees/${TEST_COMMITTEE_UID}/weekly-briefs/current`, async (route) => {
+  // the network on fast runs. Trailing `*` on the glob (GH-1922) — the client now appends
+  // `?includeCurrentActivity=...` to this exact URL (weekly-brief.service.ts's getWeeklyBrief),
+  // and Playwright's route glob anchors against the full URL including the query string, so a
+  // bare glob silently stops matching and every test using this mock falls through to the live
+  // dev backend instead of the fixture.
+  await page.route(`**/api/committees/${TEST_COMMITTEE_UID}/weekly-briefs/current*`, async (route) => {
     if (route.request().method() !== 'GET') {
       await route.fallback();
       return;
@@ -963,6 +967,87 @@ test.describe('WG Weekly Brief card — Sources disclosure & dedupe (LFXV2-3335)
   });
 });
 
+test.describe('WG Weekly Brief card — "This week so far" activity tally (GH-1922)', () => {
+  test('renders the multi-kind caption for a governance committee and expands a kind to its underlying items', async ({ page }) => {
+    await mockCommitteeShell(page, { category: 'Board' });
+    await mockCurrentBrief(page, {
+      brief: GENERATED_BRIEF,
+      throttle: USED_THROTTLE_AFTER_GENERATE,
+      current_activity: {
+        window_start: '2026-08-24T00:00:00.000Z',
+        window_end: '2026-08-27T12:00:00.000Z',
+        source_refs: [
+          { id: 'act-meeting-1', kind: 'meeting', title: 'Board Sync' },
+          { id: 'act-vote-1', kind: 'vote', title: 'Q3 Resolution' },
+        ],
+      },
+    });
+
+    await page.goto(COMMITTEE_URL, { waitUntil: 'domcontentloaded' });
+    await expect(page).not.toHaveURL(/auth0\.com/);
+
+    const tally = page.getByTestId('weekly-brief-card-current-activity');
+    await expect(tally).toBeVisible({ timeout: DATA_LOAD_TIMEOUT });
+    await expect(tally).toContainText('This week so far:');
+    await expect(tally).toContainText('1 meeting held');
+    await expect(tally).toContainText('1 vote closed');
+
+    const toggle = page.getByTestId('weekly-brief-card-current-activity-toggle-meeting');
+    await expect(toggle).toHaveAttribute('aria-expanded', 'false');
+    await expect(page.getByTestId('weekly-brief-card-current-activity-items-meeting')).toHaveCount(0);
+
+    await toggle.click();
+    await expect(toggle).toHaveAttribute('aria-expanded', 'true');
+    await expect(page.getByTestId('weekly-brief-card-current-activity-items-meeting')).toContainText('Board Sync');
+  });
+
+  test('does not render for a non-governance committee, even with current-week activity present', async ({ page }) => {
+    await mockCommitteeShell(page); // default category: 'Working Group'
+    await mockCurrentBrief(page, {
+      brief: GENERATED_BRIEF,
+      throttle: USED_THROTTLE_AFTER_GENERATE,
+      current_activity: {
+        window_start: '2026-08-24T00:00:00.000Z',
+        window_end: '2026-08-27T12:00:00.000Z',
+        source_refs: [{ id: 'act-meeting-1', kind: 'meeting', title: 'Some Meeting' }],
+      },
+    });
+
+    await page.goto(COMMITTEE_URL, { waitUntil: 'domcontentloaded' });
+    await expect(page).not.toHaveURL(/auth0\.com/);
+    await expect(page.getByTestId('weekly-brief-card-body')).toBeVisible({ timeout: DATA_LOAD_TIMEOUT });
+
+    await expect(page.getByTestId('weekly-brief-card-current-activity')).toHaveCount(0);
+  });
+
+  test('renders nothing (not "no activity yet") when current_activity is absent — a server-side degrade', async ({ page }) => {
+    await mockCommitteeShell(page, { category: 'Board' });
+    await mockCurrentBrief(page, { brief: GENERATED_BRIEF, throttle: USED_THROTTLE_AFTER_GENERATE });
+
+    await page.goto(COMMITTEE_URL, { waitUntil: 'domcontentloaded' });
+    await expect(page).not.toHaveURL(/auth0\.com/);
+    await expect(page.getByTestId('weekly-brief-card-body')).toBeVisible({ timeout: DATA_LOAD_TIMEOUT });
+
+    await expect(page.getByTestId('weekly-brief-card-current-activity')).toHaveCount(0);
+  });
+
+  test('renders "no activity yet" when current_activity is present but empty — a genuine quiet week-so-far, distinct from the absent case above', async ({
+    page,
+  }) => {
+    await mockCommitteeShell(page, { category: 'Board' });
+    await mockCurrentBrief(page, {
+      brief: GENERATED_BRIEF,
+      throttle: USED_THROTTLE_AFTER_GENERATE,
+      current_activity: { window_start: '2026-08-24T00:00:00.000Z', window_end: '2026-08-27T12:00:00.000Z', source_refs: [] },
+    });
+
+    await page.goto(COMMITTEE_URL, { waitUntil: 'domcontentloaded' });
+    await expect(page).not.toHaveURL(/auth0\.com/);
+
+    await expect(page.getByTestId('weekly-brief-card-current-activity')).toContainText('no activity yet', { timeout: DATA_LOAD_TIMEOUT });
+  });
+});
+
 test.describe('WG Weekly Brief card — Edit → Save round-trip', () => {
   test('PUT request carries the modified brief text, and UI re-renders with the "Edited" badge', async ({ page }) => {
     await mockCommitteeShell(page);
@@ -973,7 +1058,7 @@ test.describe('WG Weekly Brief card — Edit → Save round-trip', () => {
     const editedText = 'Edited brief — manish reviewed and tightened the language for the maintainers list.';
     const editedBrief: WeeklyBrief = { ...GENERATED_BRIEF, state: 'edited', brief_text: editedText, revision: GENERATED_BRIEF.revision + 1 };
 
-    await page.route(`**/api/committees/${TEST_COMMITTEE_UID}/weekly-briefs/current`, async (route) => {
+    await page.route(`**/api/committees/${TEST_COMMITTEE_UID}/weekly-briefs/current*`, async (route) => {
       if (route.request().method() === 'PUT') {
         capturedPutBody = route.request().postDataJSON() as { brief_text?: string; revision?: number };
         // After save, GET should return the edited brief.
@@ -1039,7 +1124,7 @@ test.describe('WG Weekly Brief card — Generate from empty', () => {
     // re-evaluating and remounting the card) can add an extra initial-load GET that
     // would desync a count-based sequence.
     let generateAccepted = false;
-    await page.route(`**/api/committees/${TEST_COMMITTEE_UID}/weekly-briefs/current`, async (route) => {
+    await page.route(`**/api/committees/${TEST_COMMITTEE_UID}/weekly-briefs/current*`, async (route) => {
       if (route.request().method() !== 'GET') {
         await route.fallback();
         return;
@@ -1115,7 +1200,7 @@ test.describe('WG Weekly Brief card — loads directly into the generating state
     // identical reason — this test hadn't been updated to match).
     let getCount = 0;
     let showTerminal = false;
-    await page.route(`**/api/committees/${TEST_COMMITTEE_UID}/weekly-briefs/current`, async (route) => {
+    await page.route(`**/api/committees/${TEST_COMMITTEE_UID}/weekly-briefs/current*`, async (route) => {
       if (route.request().method() !== 'GET') {
         await route.fallback();
         return;
@@ -1161,7 +1246,7 @@ test.describe('WG Weekly Brief card — read failure (flag ON)', () => {
     // until the test itself flips `retried` right before the explicit Retry click, so any
     // number of incidental remount GETs still land on the failure branch.
     let retried = false;
-    await page.route(`**/api/committees/${TEST_COMMITTEE_UID}/weekly-briefs/current`, async (route) => {
+    await page.route(`**/api/committees/${TEST_COMMITTEE_UID}/weekly-briefs/current*`, async (route) => {
       if (!retried) {
         await route.fulfill({
           status: 503,

@@ -973,7 +973,7 @@ export const JOB_LOST_MESSAGE = 'Lost connection to the campaign creation proces
  *
  * This caps the RENDER, not the result: `emailTemplates` keeps every row it was given, so the
  * count the picker reports is the true total. The list is not silently shortened — the template
- * states "Showing the first N of M" whenever this bites, because a list that is quietly cut off
+ * states "Showing N of M" whenever this bites, because a list that is quietly cut off
  * reads as a complete answer and sends someone hunting for a template that was fetched but never
  * drawn.
  *

@@ -8,7 +8,7 @@ import { NextFunction, Request, Response } from 'express';
 import { ServiceValidationError } from '../errors';
 import { assertCommitteeRead } from '../helpers/committee-read-access.helper';
 import { assertCommitteeWrite } from '../helpers/committee-write-access.helper';
-import { validateUidParameter } from '../helpers/validation.helper';
+import { getStringQueryParam, validateUidParameter } from '../helpers/validation.helper';
 import { logger } from '../services/logger.service';
 import { WeeklyBriefService } from '../services/weekly-brief.service';
 
@@ -177,7 +177,14 @@ export class WeeklyBriefController {
 
       await assertCommitteeRead(req, committeeId, 'get_weekly_brief_current');
 
-      const result = await this.weeklyBriefService.getCurrentBrief(req, committeeId);
+      // Lets the client (weekly-brief-card.component.ts — both its initial load and its poll
+      // loop's pollUntilTerminal) opt out of the current_activity (GH-1922) fan-out — see
+      // WeeklyBriefService#getCurrentBrief's doc comment for why that matters. Only `=false`
+      // (whitespace-trimmed, so `=%20false` still opts out rather than silently falling back to
+      // included) opts out; any other value (including absent, or a repeated-key array from
+      // getStringQueryParam narrowing that to undefined) keeps the default-included behavior.
+      const includeCurrentActivity = getStringQueryParam(req, 'includeCurrentActivity')?.trim() !== 'false';
+      const result = await this.weeklyBriefService.getCurrentBrief(req, committeeId, { includeCurrentActivity });
 
       logger.success(req, 'get_weekly_brief_current', startTime, {
         committee_id: committeeId,
@@ -186,9 +193,10 @@ export class WeeklyBriefController {
         revision: result.brief?.revision,
       });
 
-      // caller_rating and staleness (GH-1966) are both per-user/per-request BFF enrichments
-      // derived from FGA-filtered activity — must not sit in a shared or intermediary cache,
-      // same rationale as CommitteeActivityController.
+      // caller_rating, staleness (GH-1966), and current_activity (GH-1922) are all
+      // per-user/per-request BFF enrichments derived from FGA-filtered activity — must not sit
+      // in a shared or intermediary cache, same rationale as the sibling
+      // CommitteeActivityController.
       res.setHeader('Cache-Control', 'no-store');
       res.json(result);
     } catch (error) {

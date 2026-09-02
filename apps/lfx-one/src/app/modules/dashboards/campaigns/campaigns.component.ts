@@ -727,7 +727,41 @@ export class CampaignsComponent {
   protected readonly emailTemplatesRendered = computed<HubSpotMarketingEmail[]>(() => {
     const templates = this.emailTemplates();
     if (templates === null) return [];
-    return templates.length > HUBSPOT_TEMPLATE_RENDER_LIMIT ? templates.slice(0, HUBSPOT_TEMPLATE_RENDER_LIMIT) : templates;
+    // RANK BEFORE SLICING. The cap keeps the first N rows, so ranking afterwards could only
+    // reorder what survived -- a matching template past the cap would be cut before it could rise,
+    // which is exactly the template the operator was looking for.
+    const ranked = this.rankTemplatesForSelectedType(templates);
+    if (ranked.length <= HUBSPOT_TEMPLATE_RENDER_LIMIT) {
+      return ranked;
+    }
+    const drawn = ranked.slice(0, HUBSPOT_TEMPLATE_RENDER_LIMIT);
+
+    // The SELECTED row is always drawn, even when reranking pushes it past the cap.
+    //
+    // Ranking depends on the chosen email TYPE, so switching type reorders the list under a
+    // selection the operator already made: with enough matches for the new type, the selected row
+    // drops below the cap and vanishes. Nothing else notices — `canStageEmail` stays enabled and
+    // `onStageEmailSend` still clones that now-invisible template, so the operator stages a clone
+    // of something they can no longer see or change. Hiding the current choice is the one thing a
+    // ranking heuristic must never do.
+    //
+    // Spliced into the LAST drawn slot rather than re-ranked: it is the row the operator chose,
+    // so it must stay reachable, but it has not earned the top. The cap is still honoured — this
+    // replaces a row, never appends. See the comment on the splice itself for why not index 0.
+    const selectedId = this.selectedEmailTemplateId();
+    if (selectedId !== '' && !drawn.some((t) => t.id === selectedId)) {
+      const selected = ranked.find((t) => t.id === selectedId);
+      if (selected) {
+        // APPENDED, not promoted to index 0. Prepending kept the row visible but put a
+        // zero-scoring template above every matching one, which contradicts the ranking
+        // invariant this feature rests on -- the first row is meant to be the best suggestion.
+        // The last slot keeps the operator's current choice reachable without claiming it ranks
+        // highest, and the cap is still honoured because this replaces a row rather than adding
+        // one.
+        return [...drawn.slice(0, HUBSPOT_TEMPLATE_RENDER_LIMIT - 1), selected];
+      }
+    }
+    return drawn;
   });
 
   /** How many rows the search returned, as opposed to how many are drawn. */
@@ -737,7 +771,12 @@ export class CampaignsComponent {
   protected readonly emailTemplatesRenderCapped = computed<boolean>(() => this.emailTemplateRenderTotal() > HUBSPOT_TEMPLATE_RENDER_LIMIT);
 
   /**
-   * The "showing the first N of M" line.
+   * The "showing N of M" line.
+   *
+   * NOT "the first N of M": when a selected template ranks past the cap it is spliced into the
+   * last drawn slot, so the rows on screen are the first N-1 ranked plus that one. The count and
+   * the total stay exact either way — only "first" would have been false, and false in precisely
+   * the case the splice exists for.
    *
    * States the cap as FACT, unlike the `possiblyTruncated` banner beside it, which says "may be"
    * because a capped 500 and a complete 500 are indistinguishable upstream. Here both numbers are
@@ -747,7 +786,11 @@ export class CampaignsComponent {
    */
   protected readonly emailTemplatesRenderCapMessage = computed<string>(() =>
     this.emailTemplatesRenderCapped()
-      ? `Showing the first ${HUBSPOT_TEMPLATE_RENDER_LIMIT} of ${this.emailTemplateRenderTotal()}. Search to narrow the list.`
+      ? // "Showing N of M", not "the FIRST N of M". When a selected template ranks past the cap it
+        // is spliced into the LAST slot, so the drawn rows are the first N-1 plus that row -- and the
+        // stronger claim would be false in exactly the case the splice exists for. The count and
+        // the total are both still true; only the word "first" was not.
+        `Showing ${HUBSPOT_TEMPLATE_RENDER_LIMIT} of ${this.emailTemplateRenderTotal()}. Search to narrow the list.`
       : ''
   );
 
@@ -2055,6 +2098,51 @@ export class CampaignsComponent {
           }
         },
       });
+  }
+
+  /**
+   * Order templates by how well they match the selected email type, best first.
+   *
+   * A SUGGESTION, not a filter. Every template stays in the list and stays selectable: the corpus
+   * is whatever the portal happens to hold, an operator may know a template the keywords do not
+   * describe, and hiding rows would turn a ranking heuristic into a decision they cannot see or
+   * undo. Cloning writes a real HubSpot draft -- the wrong clone inherits the wrong structure, and
+   * with a multi-widget template the body cannot be replaced at all.
+   *
+   * STABLE: ties keep the server's newest-first order, so an unmatched list is byte-identical to
+   * what the picker showed before ranking existed.
+   */
+  private rankTemplatesForSelectedType(templates: HubSpotMarketingEmail[]): HubSpotMarketingEmail[] {
+    const keywords = CAMPAIGN_EMAIL_TYPES.find((t) => t.id === this.selectedEmailTypeId())?.keywords ?? [];
+    if (keywords.length === 0) {
+      return templates;
+    }
+    // Score once per row rather than inside the comparator: a comparator that lowercases and
+    // scans both operands runs O(n log n) times over strings that never change.
+    const scored = templates.map((template, index) => ({
+      template,
+      index,
+      score: this.templateKeywordScore(template, keywords),
+    }));
+    // `index` breaks ties, which is what makes this stable across engines rather than relying on
+    // Array.prototype.sort's stability guarantee holding for every input shape.
+    scored.sort((a, b) => b.score - a.score || a.index - b.index);
+    return scored.map((s) => s.template);
+  }
+
+  /**
+   * How many of the type's keywords appear in a template's name or subject.
+   *
+   * Name and subject are searched INDEPENDENTLY rather than concatenated: joining them would let a
+   * keyword match across the boundary between two unrelated fields.
+   */
+  private templateKeywordScore(template: HubSpotMarketingEmail, keywords: readonly string[]): number {
+    const name = (template.name ?? '').toLowerCase();
+    const subject = (template.subject ?? '').toLowerCase();
+    return keywords.reduce((score, kw) => {
+      const needle = kw.toLowerCase();
+      return score + (name.includes(needle) || subject.includes(needle) ? 1 : 0);
+    }, 0);
   }
 
   /**

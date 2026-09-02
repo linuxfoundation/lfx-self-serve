@@ -8,7 +8,7 @@ import { ApplicationRef, signal } from '@angular/core';
 import { TestBed } from '@angular/core/testing';
 import { FormControl, FormGroup } from '@angular/forms';
 import { ActivatedRoute, convertToParamMap, ParamMap, Router } from '@angular/router';
-import { Meeting, MeetingRegistrant, PublicMeetingProject, User } from '@lfx-one/shared/interfaces';
+import { Meeting, MeetingOccurrence, MeetingRegistrant, PublicMeetingProject, User } from '@lfx-one/shared/interfaces';
 import { MeetingService } from '@services/meeting.service';
 import { PlausibleService } from '@services/plausible.service';
 import { ProjectContextService } from '@services/project-context.service';
@@ -22,7 +22,7 @@ import { MeetingJoinComponent } from './meeting-join.component';
 
 // Regression coverage for GH-1731's guest-add orchestration: the join page maintains an optimistic
 // pad of guest-add counts (onRegistrantsRefreshRequested) that reconcileOptimisticPad reconciles
-// against the roster refetch, and a `registrantsMeetingKey` guard that prevents a failed refetch
+// against the roster refetch, and a `registrantsRosterKey` guard that prevents a failed refetch
 // from leaking a previous meeting's roster into a newly-navigated meeting. Both were fixed during
 // PR #1748 review: a null baseline no longer gets treated as "absorbed" (dealako's ask).
 describe('MeetingJoinComponent', () => {
@@ -107,7 +107,14 @@ describe('MeetingJoinComponent', () => {
           useValue: {
             paramMap: paramMap$.asObservable(),
             queryParamMap: queryParamMap$.asObservable(),
-            snapshot: { paramMap: paramMap$.value, queryParamMap: queryParamMap$.value },
+            snapshot: {
+              get paramMap() {
+                return paramMap$.value;
+              },
+              get queryParamMap() {
+                return queryParamMap$.value;
+              },
+            },
           },
         },
         { provide: Router, useValue: { navigate: vi.fn() } },
@@ -228,6 +235,71 @@ describe('MeetingJoinComponent', () => {
     // also intercept Angular's own zoneless scheduling internals — a real macrotask tick is required
     // to flush the debounce deterministically.
     paramMap$.next(convertToParamMap({ id: MEETING_ID_2 }));
+    await new Promise((resolve) => setTimeout(resolve, 0));
+    await TestBed.inject(ApplicationRef).whenStable();
+
+    expect((component as unknown as { registrants: () => MeetingRegistrant[] }).registrants()).toEqual([]);
+  });
+
+  it('preserves the roster and the optimistic pad when a refetch for the SAME meeting+occurrence fails', async () => {
+    getMyMeetingRegistrants
+      .mockReturnValueOnce(of(buildRegistrants(10)))
+      .mockReturnValueOnce(throwError(() => new Error('roster fetch failed')))
+      .mockReturnValueOnce(of(buildRegistrants(11)));
+
+    const component = await createComponent();
+    expect((component as unknown as { registrants: () => MeetingRegistrant[] }).registrants()).toHaveLength(10);
+
+    component.onRegistrantsRefreshRequested(2);
+    await TestBed.inject(ApplicationRef).whenStable();
+
+    // The failed refetch belongs to the same meeting+occurrence as the last confirmed roster, so
+    // it must fall back to the existing `registrants()` snapshot rather than an empty list, and
+    // must not treat that fallback as a roster of length 0 that would zero out the pending pad.
+    expect((component as unknown as { registrants: () => MeetingRegistrant[] }).registrants()).toHaveLength(10);
+    expect(component.additionalRegistrantsCount()).toBe(2);
+    expect((component as unknown as { registrantsLoading: () => boolean }).registrantsLoading()).toBe(false);
+
+    // A follow-up refetch that actually observes growth is the only way to prove the pad above
+    // isn't just a leftover value the failure path left untouched — it must still be able to
+    // converge once the query-service index catches up.
+    component.onRegistrantsRefreshRequested(0);
+    await TestBed.inject(ApplicationRef).whenStable();
+
+    expect((component as unknown as { registrants: () => MeetingRegistrant[] }).registrants()).toHaveLength(11);
+    expect(component.additionalRegistrantsCount()).toBe(1);
+  });
+
+  it("falls back to an empty roster instead of leaking a previous occurrence's roster when the refetch for a newly-selected occurrence fails", async () => {
+    const buildOccurrence = (occurrenceId: string, startTime: string) =>
+      ({ occurrence_id: occurrenceId, start_time: startTime, duration: 60 }) as unknown as MeetingOccurrence;
+    const OCCURRENCE_A = buildOccurrence('occurrence-a', FUTURE_START_TIME);
+    const OCCURRENCE_B = buildOccurrence('occurrence-b', '2099-01-02T00:00:00.000Z');
+    getPublicMeeting.mockReturnValue(
+      of({
+        meeting: buildMeeting({ recurrence: { type: 2, repeat_interval: 1 }, occurrences: [OCCURRENCE_A, OCCURRENCE_B] }),
+        project: buildProject(),
+      })
+    );
+    // The recurring meeting's `currentOccurrence` computed settles from `null` to occurrence A in a
+    // separate reactive tick from `meeting` itself resolving, so setup can issue more than one
+    // registrant fetch before things settle. Keep every setup-phase fetch successful and queue the
+    // failure only for the deliberate occurrence switch below, so the failure lands exactly where
+    // the test means it to (a fixed once/once pairing here previously let setup silently consume
+    // both mocks, leaving the switch to fall through to the default `of([])` mock instead).
+    getMyMeetingRegistrants.mockReturnValue(of(buildRegistrants(10)));
+
+    const component = await createComponent();
+    expect((component as unknown as { registrants: () => MeetingRegistrant[] }).registrants()).toHaveLength(10);
+
+    getMyMeetingRegistrants.mockReturnValueOnce(throwError(() => new Error('roster fetch failed')));
+
+    // Select the second occurrence in the series — same meeting, different `occurrence_id` —
+    // so a regression that dropped the occurrence segment from `buildRegistrantsRosterKey` would
+    // wrongly treat this as the same confirmed roster and fall back to it instead of `[]`.
+    // The meeting-fetch pipeline debounces route-param changes via a real (non-zone-tracked) RxJS
+    // timer (see the meeting-switch test above), so a real macrotask tick is required to flush it.
+    queryParamMap$.next(convertToParamMap({ occurrence: String(new Date(OCCURRENCE_B.start_time).getTime()) }));
     await new Promise((resolve) => setTimeout(resolve, 0));
     await TestBed.inject(ApplicationRef).whenStable();
 
