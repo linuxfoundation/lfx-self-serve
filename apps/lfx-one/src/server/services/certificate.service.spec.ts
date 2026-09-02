@@ -16,11 +16,25 @@ const pdfMocks = vi.hoisted(() => ({
 
 vi.mock('@lfx-one/shared/interfaces', () => ({}));
 vi.mock('@lfx-one/shared/utils', async () => {
-  // Spread event.utils so added exports from this module are available; other util modules still need their own importActual.
   const eventUtils = await vi.importActual<typeof import('../../../../../packages/shared/src/utils/event.utils')>(
     '../../../../../packages/shared/src/utils/event.utils'
   );
-  return { ...eventUtils };
+  // A plain `{ isBackfillEventSource }` object would make any *other* barrel export the service
+  // under test starts using resolve to `undefined` — surfacing as an opaque "X is not a function"
+  // wherever it's called, far from this mock. The Proxy throws immediately, at the missing
+  // property, naming this file as the place to add the new export.
+  return new Proxy(
+    { isBackfillEventSource: eventUtils.isBackfillEventSource },
+    {
+      get(target, prop, receiver) {
+        // `'then'` is probed by JS's own Promise-resolution algorithm (this factory is async, and
+        // its return value gets duck-typed) — answering `undefined` here says "not a thenable"
+        // without tripping the guard below.
+        if (prop === 'then' || prop in target) return Reflect.get(target, prop, receiver);
+        throw new Error(`certificate.service.spec.ts's '@lfx-one/shared/utils' mock doesn't stub '${String(prop)}' — add it to the mock in this file.`);
+      },
+    }
+  );
 });
 vi.mock('./snowflake.service', () => ({
   SnowflakeService: { getInstance: () => ({ execute: snowflakeMocks.execute }) },
