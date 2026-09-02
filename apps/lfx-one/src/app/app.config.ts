@@ -38,7 +38,13 @@ export const appConfig: ApplicationConfig = {
     provideZonelessChangeDetection(),
     { provide: ErrorHandler, useClass: ChunkLoadErrorHandler },
     provideRouter(routes, withPreloading(CustomPreloadingStrategy), withInMemoryScrolling({ scrollPositionRestoration: 'top', anchorScrolling: 'enabled' })),
-    provideClientHydration(withEventReplay(), withIncrementalHydration(), withHttpTransferCacheOptions({ includeHeaders: ['Authorization'] })),
+    // `includeHeaders` lists *response* headers to carry into the transfer cache — it does not
+    // affect request-auth eligibility. `authenticationInterceptor` sends a `Cookie` request header
+    // (not `Authorization`), and Angular's transfer cache only excludes requests carrying
+    // `authorization`/`proxy-authorization` headers, so authenticated responses are already
+    // cacheable without this option. The prior `includeHeaders: ['Authorization']` was a no-op that
+    // would additionally have opted an `Authorization` response header into the serialized HTML.
+    provideClientHydration(withEventReplay(), withIncrementalHydration(), withHttpTransferCacheOptions({})),
     provideHttpClient(withFetch(), withInterceptors([authenticationInterceptor, ssrBaseUrlInterceptor])),
     provideAnimationsAsync(),
     providePrimeNG({
