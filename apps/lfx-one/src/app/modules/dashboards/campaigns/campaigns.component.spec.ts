@@ -2964,9 +2964,9 @@ describe('CampaignsComponent — email delivery channel', () => {
       internals().emailTemplates.set(templates as never);
       (internals() as unknown as { onSelectEmailType(id: string): void }).onSelectEmailType('thank-you-survey');
 
-      // Ranking AFTER the slice could only reorder the first HUBSPOT_TEMPLATE_RENDER_LIMIT rows --
-      // the one template the operator
-      // was looking for would have been cut before it could rise.
+      // Ranking AFTER the slice could only reorder the first HUBSPOT_TEMPLATE_RENDER_LIMIT
+      // rows -- the one template the operator was looking for would have been cut before it
+      // could rise.
       expect(internals().emailTemplatesRendered()[0].id).toBe('match');
     });
 
@@ -2982,10 +2982,16 @@ describe('CampaignsComponent — email delivery channel', () => {
     it('does not score a keyword split across the name and subject boundary', () => {
       selectEmail();
       internals().emailTemplates.set([
-        // A REAL match, listed second by the server -- it must rise to the top on score alone.
-        { id: 'real', name: 'Post-event survey', subject: 'Share feedback' },
-        // Splits `thank you` across the two fields. Scores 0 independently, 1 under concatenation.
+        // The SPLIT row is listed FIRST by the server, so the server order and the correct order
+        // disagree. That is what makes this test able to fail: with the real match listed first,
+        // `['real','split']` holds under a concatenating scorer too, and the assertion proved
+        // nothing.
+        //
+        // Splits `thank you` across the two fields. Scores 0 independently, 1 under concatenation
+        // -- and 1 is enough to hold its incoming position ahead of a row that scores 0.
         { id: 'split', name: 'Speaker Thank', subject: 'you are invited' },
+        // A REAL match, listed second: it must rise to the top on score alone.
+        { id: 'real', name: 'Post-event survey', subject: 'Share feedback' },
       ] as never);
       (internals() as unknown as { onSelectEmailType(id: string): void }).onSelectEmailType('thank-you-survey');
 
