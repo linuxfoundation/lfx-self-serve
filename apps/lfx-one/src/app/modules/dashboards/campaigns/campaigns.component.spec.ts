@@ -1824,6 +1824,10 @@ describe('CampaignsComponent — email delivery channel', () => {
   // against a shape that no longer exists. The cast still cannot catch a RENAME — that is the
   // cost of reaching protected members, and the reason the assertions below stay behavioural.
   interface Internals {
+    /** The rows the picker draws, after type ranking and the render cap. */
+    emailTemplatesRendered: Signal<{ id: string }[]>;
+    emailTemplatesRenderCapMessage: Signal<string>;
+    emailTemplates: WritableSignal<unknown[] | null>;
     selectedDeliveryType: Signal<CampaignDeliveryType>;
     selectedTab: WritableSignal<CampaignTab>;
     selectedEmailTab: WritableSignal<Exclude<CampaignTab, 'optimization'>>;
@@ -2913,6 +2917,208 @@ describe('CampaignsComponent — email delivery channel', () => {
       // campaign-service enumerates STAGES, not type ids -- sending 'thank-you-survey' would be
       // refused by its enum. Several types share a stage, which is why the two are distinct.
       expect(gen).toHaveBeenCalledWith('tlf', 'brief-77', 'Post-Event');
+    });
+
+    it('ranks templates matching the selected type first, without removing any', () => {
+      selectEmail();
+      const templates = [
+        { id: '1', name: 'Registration reminder', subject: 'Register now' },
+        { id: '2', name: 'Post-event thank you', subject: 'Survey inside' },
+        { id: '3', name: 'Unrelated newsletter', subject: 'Monthly update' },
+      ];
+      internals().emailTemplates.set(templates as never);
+      (internals() as unknown as { onSelectEmailType(id: string): void }).onSelectEmailType('thank-you-survey');
+
+      const rendered = internals().emailTemplatesRendered();
+
+      // The match rises...
+      expect(rendered[0].id).toBe('2');
+      // ...but NOTHING is removed. A filter would hide a template the operator may know is right
+      // and the keywords do not describe, and cloning writes a real HubSpot draft.
+      expect(rendered.map((t: { id: string }) => t.id).sort()).toEqual(['1', '2', '3']);
+    });
+
+    it('leaves the order untouched when nothing matches', () => {
+      selectEmail();
+      const templates = [
+        { id: '1', name: 'Alpha', subject: 'One' },
+        { id: '2', name: 'Beta', subject: 'Two' },
+      ];
+      internals().emailTemplates.set(templates as never);
+      (internals() as unknown as { onSelectEmailType(id: string): void }).onSelectEmailType('thank-you-survey');
+
+      // Ties keep the server's newest-first order, so an unmatched list is identical to what the
+      // picker showed before ranking existed.
+      expect(
+        internals()
+          .emailTemplatesRendered()
+          .map((t: { id: string }) => t.id)
+      ).toEqual(['1', '2']);
+    });
+
+    it('ranks before the render cap, so a match beyond it can still surface', () => {
+      selectEmail();
+      // 600 unmatched rows, then the match -- comfortably past HUBSPOT_TEMPLATE_RENDER_LIMIT.
+      const templates = Array.from({ length: 600 }, (_, i) => ({ id: `u${i}`, name: 'Unrelated', subject: 'Monthly update' }));
+      templates.push({ id: 'match', name: 'Post-event thank you', subject: 'Survey inside' });
+      internals().emailTemplates.set(templates as never);
+      (internals() as unknown as { onSelectEmailType(id: string): void }).onSelectEmailType('thank-you-survey');
+
+      // Ranking AFTER the slice could only reorder the first HUBSPOT_TEMPLATE_RENDER_LIMIT
+      // rows -- the one template the operator was looking for would have been cut before it
+      // could rise.
+      expect(internals().emailTemplatesRendered()[0].id).toBe('match');
+    });
+
+    /**
+     * Name and subject are searched INDEPENDENTLY, never concatenated.
+     *
+     * Every other fixture puts each keyword wholly inside one field, so an implementation that
+     * joined the two would score identically and pass them all. This is the case that separates
+     * them: `thank you` is a multi-word type keyword, and a template whose name ends "Thank" and
+     * whose subject begins "you" must NOT score for it -- a match across the boundary between two
+     * unrelated fields is a coincidence of adjacency, not a description of the template.
+     */
+    it('does not score a keyword split across the name and subject boundary', () => {
+      selectEmail();
+      internals().emailTemplates.set([
+        // The SPLIT row is listed FIRST by the server, so the server order and the correct order
+        // disagree. That is what makes this test able to fail: with the real match listed first,
+        // `['real','split']` holds under a concatenating scorer too, and the assertion proved
+        // nothing.
+        //
+        // Splits `thank you` across the two fields. Scores 0 independently, 1 under concatenation
+        // -- and 1 is enough to hold its incoming position ahead of a row that scores 0.
+        { id: 'split', name: 'Speaker Thank', subject: 'you are invited' },
+        // A REAL match, listed second: it must rise to the top on score alone.
+        { id: 'real', name: 'Post-event survey', subject: 'Share feedback' },
+      ] as never);
+      (internals() as unknown as { onSelectEmailType(id: string): void }).onSelectEmailType('thank-you-survey');
+
+      // ORDER is the observable, and the fixture is built so it changes: 'real' matches three
+      // keywords, 'split' matches none -- unless the fields are joined, when it matches one. Two
+      // rows that both score 0 would keep the server's order under either implementation, which
+      // is why an earlier version of this test could not fail.
+      expect(
+        internals()
+          .emailTemplatesRendered()
+          .map((t) => t.id)
+      ).toEqual(['real', 'split']);
+      // The split row must not have scored at all. With a concatenating scorer it scores 1, and
+      // a row scoring 1 sorts above every 0-scoring row -- so a THIRD, unmatched row makes the
+      // difference visible in the ordering rather than only in an internal number.
+      internals().emailTemplates.set([
+        { id: 'zero', name: 'Quarterly update', subject: 'Newsletter' },
+        { id: 'split', name: 'Speaker Thank', subject: 'you are invited' },
+      ] as never);
+      expect(
+        internals()
+          .emailTemplatesRendered()
+          .map((t) => t.id),
+        'the split phrase scored, so the fields were concatenated'
+      ).toEqual(['zero', 'split']);
+    });
+
+    /**
+     * The type score must COUNT matched keywords, not merely report that one matched.
+     *
+     * Every prior case compared a multi-keyword match against zero-score rows, so collapsing the
+     * reduce to a boolean left them all green — ranking would silently stop distinguishing a
+     * three-keyword match from a one-keyword one, which is the whole point of scoring.
+     */
+    it('ranks a template matching more type keywords above one matching fewer', () => {
+      selectEmail();
+      // `final-countdown` carries seven keywords. The first row matches one, the second several,
+      // and BOTH are non-zero — so only a counting score can order them.
+      internals().emailTemplates.set([
+        { id: 'one', name: 'Deadline reminder', subject: 'Sign up' },
+        { id: 'many', name: 'Final countdown: last chance, closing soon', subject: 'Deadline' },
+      ] as never);
+      (internals() as unknown as { onSelectEmailType(id: string): void }).onSelectEmailType('final-countdown');
+
+      expect(
+        internals()
+          .emailTemplatesRendered()
+          .map((t) => t.id)
+      ).toEqual(['many', 'one']);
+    });
+
+    /**
+     * The index tie-break at a NON-ZERO score. Testing it only at score 0 leaves the comparator's
+     * `|| a.index - b.index` unverified for the case it exists for: several templates matching the
+     * type equally, where the server's newest-first order must survive the sort.
+     */
+    it('keeps the server order among templates that score equally above zero', () => {
+      selectEmail();
+      // All three carry the same type keyword, so they score identically and only `index` orders
+      // them. Ids are deliberately NOT alphabetical, so a comparator falling back to any other
+      // key would reorder them visibly.
+      internals().emailTemplates.set([
+        { id: 'zebra', name: 'Post-event thank you', subject: 'Survey inside' },
+        { id: 'alpha', name: 'Post-event thank you', subject: 'Survey inside' },
+        { id: 'mike', name: 'Post-event thank you', subject: 'Survey inside' },
+      ] as never);
+      (internals() as unknown as { onSelectEmailType(id: string): void }).onSelectEmailType('thank-you-survey');
+
+      expect(
+        internals()
+          .emailTemplatesRendered()
+          .map((t) => t.id)
+      ).toEqual(['zebra', 'alpha', 'mike']);
+    });
+
+    /**
+     * The cap banner must not claim "the FIRST 100" once a spliced row is among them — that is
+     * false in exactly the case the splice exists for.
+     */
+    it('does not claim the drawn rows are the first N when a selection was spliced in', () => {
+      selectEmail();
+      const templates: { id: string; name: string; subject: string }[] = [{ id: 'chosen', name: 'Bespoke', subject: 'Nothing' }];
+      for (let i = 0; i < 600; i++) {
+        templates.push({ id: `t${i}`, name: 'Post-event thank you', subject: 'Survey inside' });
+      }
+      internals().emailTemplates.set(templates as never);
+      (internals() as unknown as { onSelectEmailTemplate(id: string): void }).onSelectEmailTemplate('chosen');
+      (internals() as unknown as { onSelectEmailType(id: string): void }).onSelectEmailType('thank-you-survey');
+
+      // Present but NOT promoted: the spliced row takes the last slot, so the first row remains a
+      // genuine ranking result. That is what makes the banner's "Showing N of M" honest.
+      const drawn = internals().emailTemplatesRendered();
+      expect(drawn[drawn.length - 1].id).toBe('chosen');
+      expect(internals().emailTemplatesRenderCapMessage()).not.toContain('first');
+    });
+
+    /**
+     * Reranking must never HIDE the operator's current choice.
+     *
+     * Ranking depends on the chosen type, so switching type reorders the list under a selection
+     * already made: with enough matches for the new type the selected row drops below the render
+     * cap and disappears. Nothing else notices — `canStageEmail` stays enabled and staging still
+     * clones that now-invisible template, so the operator stages a clone of something they can no
+     * longer see or change.
+     */
+    it('keeps the selected template visible after a type change reranks the list', () => {
+      selectEmail();
+      // The operator's pick names no type keyword, so reranking sinks it; the 600 rows that follow
+      // all match the new type and crowd it out of the first 100 drawn.
+      const templates: { id: string; name: string; subject: string }[] = [{ id: 'chosen', name: 'Bespoke template', subject: 'Nothing in particular' }];
+      for (let i = 0; i < 600; i++) {
+        templates.push({ id: `t${i}`, name: 'Post-event thank you', subject: 'Survey inside' });
+      }
+      internals().emailTemplates.set(templates as never);
+      (internals() as unknown as { onSelectEmailTemplate(id: string): void }).onSelectEmailTemplate('chosen');
+      (internals() as unknown as { onSelectEmailType(id: string): void }).onSelectEmailType('thank-you-survey');
+
+      const rendered = internals().emailTemplatesRendered();
+      expect(rendered.some((t) => t.id === 'chosen')).toBe(true);
+      // In the LAST slot, not the first. Promoting it kept the row visible but put a zero-scoring
+      // template above every matching one, which contradicts the ranking invariant: the first row
+      // is meant to be the best suggestion. Visible-but-not-promoted satisfies both.
+      expect(rendered[rendered.length - 1].id).toBe('chosen');
+      // And the first row is still a genuine match, which is the invariant that was broken.
+      expect(rendered[0].id).not.toBe('chosen');
+      // The cap is still honoured — the splice replaces a row rather than appending one.
+      expect(rendered.length).toBe(HUBSPOT_TEMPLATE_RENDER_LIMIT);
     });
 
     it('renders the selector defaulted to the registration push type', () => {
@@ -4201,7 +4407,7 @@ describe('CampaignsComponent — HubSpot template picker correctness', () => {
    * thousands of rows. The render is capped — and the UI must SAY the render was capped.
    *
    * Asserts the exact sentence and both numbers, not merely that a banner exists: a banner
-   * reading "Showing the first 100 of 100" would satisfy an existence check while telling the
+   * reading "Showing 100 of 100" would satisfy an existence check while telling the
    * user nothing true.
    */
   it('caps how many templates it renders and says so, without discarding the rest', () => {
@@ -4220,10 +4426,10 @@ describe('CampaignsComponent — HubSpot template picker correctness', () => {
 
     // The truth about the cut is stated, with the real total — not the drawn count.
     const banner = root.querySelector('[data-testid="campaigns-email-templates-render-capped"]')?.textContent?.trim();
-    expect(banner).toBe(`Showing the first ${HUBSPOT_TEMPLATE_RENDER_LIMIT} of ${HUBSPOT_TEMPLATE_RENDER_LIMIT + 37}. Search to narrow the list.`);
+    expect(banner).toBe(`Showing ${HUBSPOT_TEMPLATE_RENDER_LIMIT} of ${HUBSPOT_TEMPLATE_RENDER_LIMIT + 37}. Search to narrow the list.`);
 
     // A screen-reader user cannot see the banner, so the same fact reaches the live region.
-    expect(picker().emailTemplatesAnnouncement()).toContain(`Showing the first ${HUBSPOT_TEMPLATE_RENDER_LIMIT} of ${HUBSPOT_TEMPLATE_RENDER_LIMIT + 37}`);
+    expect(picker().emailTemplatesAnnouncement()).toContain(`Showing ${HUBSPOT_TEMPLATE_RENDER_LIMIT} of ${HUBSPOT_TEMPLATE_RENDER_LIMIT + 37}`);
 
     // The rows were not thrown away — the cap is a render limit, not a truncation of the result.
     expect(picker().emailTemplates()?.length).toBe(HUBSPOT_TEMPLATE_RENDER_LIMIT + 37);
