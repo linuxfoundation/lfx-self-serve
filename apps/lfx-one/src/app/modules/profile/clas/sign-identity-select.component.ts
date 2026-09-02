@@ -98,6 +98,14 @@ export class SignIdentitySelectComponent {
   protected readonly copy = SIGN_IDENTITY_COPY[this.config.data?.variant ?? 'github'];
 
   /**
+   * Which of the offered identities already hold a CLA for this group, resolved in one pass
+   * before any copy is written. The refusal message names another identity only when one is
+   * genuinely selectable, so how many are left has to be known before the tooltips exist — and
+   * resolving it once keeps the two cards' verdicts from coming from separate evaluations.
+   */
+  private readonly alreadySigned = this.resolveAlreadySigned();
+
+  /**
    * The handle can be blank: the server maps a missing `profileData.nickname` to `''` rather
    * than guessing one. Labelling that option with the account number keeps the two accounts
    * distinguishable. The blank handle itself is left alone — what gets recorded is not this
@@ -108,14 +116,6 @@ export class SignIdentitySelectComponent {
    * suffix they read as duplicates. The number fallback is exempt: it already names the
    * platform, and suffixing it would say GitHub twice.
    */
-  /**
-   * Which of the offered identities already hold a CLA for this group, resolved in one pass
-   * before any copy is written. The refusal message names another identity only when one is
-   * genuinely selectable, so how many are left has to be known before the tooltips exist — and
-   * resolving it once keeps the two cards' verdicts from coming from separate evaluations.
-   */
-  private readonly alreadySigned = this.resolveAlreadySigned();
-
   protected readonly accounts = signal<GithubAccountChoice[]>(this.initAccounts());
 
   /** The contributor's LF username as their Gerrit identity, or null when Gerrit is not on offer. */

@@ -58,10 +58,13 @@ export class SelectableCardComponent {
   }
 
   protected onKeydown(event: KeyboardEvent): void {
-    if (!this.isDisabled() && (event.key === 'Enter' || event.key === ' ')) {
-      event.preventDefault();
-      this.onCardClick();
-    }
+    if (event.key !== 'Enter' && event.key !== ' ') return;
+
+    // Consumed even when the card is disabled. A disabled card stays focusable so its reason can
+    // be read, and leaving Space to the browser there would scroll the page out from under the
+    // reader instead of doing nothing.
+    event.preventDefault();
+    if (!this.isDisabled()) this.onCardClick();
   }
 
   // === Private Initializers ===

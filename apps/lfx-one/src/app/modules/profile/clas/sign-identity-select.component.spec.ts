@@ -307,6 +307,22 @@ describe('SignIdentitySelectComponent', () => {
       expect(query('sign-identity-select-github-67890')?.getAttribute('aria-disabled')).toBe('false');
     });
 
+    it('reads a numeric recorded identity as a handle when a card on the step carries it', async () => {
+      // Login `12345` is a real account whose number is something else entirely. The component
+      // has to feed every handle on offer into the matcher so a recorded `12345` greys the
+      // numerically-named card alone, not an unrelated account whose id happens to be `12345`.
+      await setup({
+        accounts: [
+          { githubId: '18281050', githubUsername: '12345' },
+          { githubId: '12345', githubUsername: 'jellis' },
+        ],
+        claGroupAgreements: signedAs('12345'),
+      });
+
+      expect(query('sign-identity-select-github-18281050')?.getAttribute('aria-disabled')).toBe('true');
+      expect(query('sign-identity-select-github-12345')?.getAttribute('aria-disabled')).toBe('false');
+    });
+
     it('says why, in the tooltip and to assistive tech', async () => {
       await setup({ claGroupAgreements: signedAs('octocat') });
 
@@ -340,15 +356,18 @@ describe('SignIdentitySelectComponent', () => {
       const identity = (fixture.componentInstance as any).selectForm.controls.identity;
       const before = identity.value;
 
-      fixture.debugElement
-        .query(By.css('[data-testid="sign-identity-select-github-12345"]'))
-        .nativeElement.dispatchEvent(new KeyboardEvent('keydown', { key, bubbles: true }));
+      const event = new KeyboardEvent('keydown', { key, bubbles: true, cancelable: true });
+      fixture.debugElement.query(By.css('[data-testid="sign-identity-select-github-12345"]')).nativeElement.dispatchEvent(event);
       fixture.detectChanges();
       await fixture.whenStable();
       (fixture.componentInstance as any).onContinue();
 
       expect(identity.value).toBe(before);
       expect(close).not.toHaveBeenCalled();
+
+      // Refusing the key is not the same as ignoring it. The card is deliberately still
+      // focusable, so an unconsumed Space would scroll the dialog away instead of doing nothing.
+      expect(event.defaultPrevented).toBe(true);
     });
 
     it('still selects a card that has not signed, from the keyboard', async () => {
@@ -409,6 +428,17 @@ describe('SignIdentitySelectComponent', () => {
       await setup({ variant: 'gerrit', accounts: [], gerritUsername: GERRIT_USER, claGroupAgreements: signedAs('jdoe', 'gerrit') });
 
       expect(fixture.debugElement.query(By.css('[data-testid="sign-identity-select-gerrit"]')).injector.get(Tooltip, null)?.content).toBe(
+        'You already have an ICLA for this CLA group signed with this account.'
+      );
+    });
+
+    it('does not tell a single linked GitHub account to choose another identity', async () => {
+      // The most common dead-end this change set out to remove: one account, already signed,
+      // nothing else on the step. The false branch of `anotherSelectable` has to be wired through
+      // initAccounts, not only through the Gerrit call site.
+      await setup({ accounts: [OCTOCAT], claGroupAgreements: signedAs('octocat') });
+
+      expect(fixture.debugElement.query(By.css('[data-testid="sign-identity-select-github-12345"]')).injector.get(Tooltip, null)?.content).toBe(
         'You already have an ICLA for this CLA group signed with this account.'
       );
     });
