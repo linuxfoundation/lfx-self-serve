@@ -318,6 +318,15 @@ export class ApiClientService {
 
       return apiResponse;
     } catch (error: unknown) {
+      // ALREADY CLASSIFIED errors leave untouched. The non-2xx MicroserviceError is thrown inside
+      // this same try (see the !response.ok arm above), so a catch-all fallback re-wraps it: a
+      // genuine 403 would depart as a 503 carrying transport:true, and every consumer's
+      // definite-vs-unconfirmed split would collapse -- an upstream refusal that provably never
+      // dispatched would start reading as "may have happened, do not retry". This guard is what
+      // keeps the fallback below scoped to actual fetch rejections.
+      if (error instanceof MicroserviceError) {
+        throw error;
+      }
       if (error instanceof Error) {
         if (error.name === 'AbortError' || error.name === 'TimeoutError') {
           throw new MicroserviceError(`Request timeout after ${options.timeoutMs ?? this.config.timeout}ms`, 408, 'TIMEOUT', {
