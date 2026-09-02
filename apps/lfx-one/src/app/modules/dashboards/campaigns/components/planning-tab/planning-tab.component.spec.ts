@@ -1489,6 +1489,20 @@ describe('PlanningTabComponent — HubSpot UTM states', () => {
     expect(instance()['hsUtm'](), "foundation A's token survived into foundation B").toBe('foundation-b-token');
   });
 
+  it('keeps re-check available when the campaign is found but still tokenless', () => {
+    // After a create returns without hs_utm, the first re-check can legitimately FIND the
+    // campaign before HubSpot has assigned its token. The lookup clears hsUnconfirmed when it
+    // starts, and this branch never restored it -- so the only control that settles the question
+    // disappeared and the operator was stranded until a reload.
+    runLookup({ found: true, hs_utm: null, campaign_name: 'KubeCon NA 2026', all_matches: [], capped: false, inconclusive: false }, 'KubeCon NA 2026');
+    fixture.detectChanges();
+
+    expect(instance()['hsUnconfirmed'](), 're-check vanished on a found-but-tokenless campaign').toBe(true);
+    expect(String(instance()['hsStatus']())).toContain('no UTM token');
+    // Create stays hidden -- the campaign exists, so offering it would duplicate.
+    expect(instance()['hsNotFound']()).toBe(false);
+  });
+
   /**
    * The hazard this file already named -- "which is how a duplicate campaign gets made in a
    * shared namespace" -- is now closed one step EARLIER than these tests assumed.

@@ -1474,6 +1474,12 @@ export class PlanningTabComponent implements OnInit {
             // none to report against — and Create stays hidden so nobody duplicates it.
             this.hsMatches.set(result.all_matches ?? []);
             this.hsStatus.set(`Found: ${result.campaign_name} — no UTM token set in HubSpot`);
+            // Re-check stays available. The lookup cleared hsUnconfirmed when it started, and
+            // this is exactly the state where another read is worth taking: after a create
+            // returns without hs_utm, the first re-check can legitimately FIND the campaign
+            // before HubSpot has assigned its token. Leaving the flag down removed the only
+            // control that settles it, stranding the operator until a reload.
+            this.hsUnconfirmed.set(true);
           } else {
             this.hsNotFound.set(true);
             // Carried on the NOT-FOUND path too. An ambiguous lookup — a tie, or a match too weak

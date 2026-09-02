@@ -107,10 +107,20 @@ function utmTokenOf(c: CampaignServiceHubSpotCampaign): string | null {
 /**
  * Convert campaign-service's match list into the UI's lookup result.
  *
- * `found` is true when at least one candidate SCORED, not merely when the array was non-empty.
- * Upstream's search is fuzzy, so it can return rows sharing only a stray token with the query;
- * the legacy path filtered those out and reported not-found, and a caller offering "create this
- * campaign" needs that same answer.
+ * `found` gates whether a NON-IDEMPOTENT create is offered, so it states the strong condition,
+ * not merely "something scored". All three must hold:
+ *
+ *   1. the winner is an EXACT normalised match (isConfidentMatch) -- a contained or
+ *      token-sharing name is offered to the operator instead, never applied unattended;
+ *   2. NO other candidate is equally exact, because a tie would be broken by HubSpot's row
+ *      order, which says nothing about relevance;
+ *   3. the search was not capped, since an equal-or-better campaign may sit outside a result
+ *      set that could not be shown to be complete.
+ *
+ * So a candidate can score and `found` still be false -- weak, tied, or capped. That is
+ * deliberate: every one of those cases returns the candidates for a human to choose from, and
+ * the earlier wording ("true when at least one candidate SCORED") described neither the code
+ * nor the guarantee a caller needs before creating.
  *
  * `all_matches` carries only campaigns that HAVE a token, because its declared element type is
  * `{ name, hs_utm }` with a non-nullable string — a tokenless campaign cannot be represented in
