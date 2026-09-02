@@ -1313,6 +1313,44 @@ export class CampaignsComponent {
    */
   private readonly boundaryMatchers = new Map<string, RegExp>();
 
+  /**
+   * Whether Refresh can actually load anything.
+   *
+   * `idle` is two different states wearing one name: a Monitor parked by a reset whose owned row
+   * is still resolvable (recoverable -- Refresh works), and a genuine no-brief context where
+   * `loadEmailMetrics` resolves `briefId === ''` and early-returns to the same idle it started
+   * from. Gating on `state !== 'loading'` alone renders an enabled button beside the second one,
+   * which gives an operator -- and a screen-reader user -- no way to tell "nothing to load" from
+   * "the load failed silently".
+   *
+   * Mirrors BOTH preconditions `loadEmailMetrics` enforces -- a non-empty foundation slug and a
+   * resolvable brief id, resolved the same way (signal first, ownership fallback second) -- so
+   * the two cannot disagree about whether a refresh is possible.
+   */
+  protected readonly canRefreshEmailMetrics = computed<boolean>(() => {
+    if (this.emailMetricsState() === 'loading') {
+      return false;
+    }
+    // The slug is the OTHER precondition `loadEmailMetrics` enforces: it early-returns to idle
+    // when `projectSlug === ''`, so without this the button offered a refresh that could only
+    // land back where it started. Checked first, because it holds regardless of how the brief id
+    // resolves.
+    if (this.activeFoundationSlug() === '') {
+      return false;
+    }
+    if (this.emailBriefId() !== '') {
+      return true;
+    }
+    // Establishes the dependency: the fallback below reads an untracked Map.
+    this.knownBriefIdsVersion();
+    const brief = this.emailBriefOutput();
+    if (brief === null) {
+      return false;
+    }
+    const key = this.ownershipKey(this.activeFoundationSlug(), brief);
+    return key !== null && (this.knownBriefIds.get(key)?.id ?? '') !== '';
+  });
+
   public constructor() {
     // Discard the persistence state when the selected foundation changes — see
     // `activeFoundationSlug`. The generation bump is what stops a save already in flight for the
@@ -2234,50 +2272,6 @@ export class CampaignsComponent {
     this.onProceedToImplementation(brief, true, approved);
   }
 
-  /** Single write path for `knownBriefIds`, so `knownBriefIdsVersion` cannot drift from the map. */
-  private rememberBriefId(key: string, value: { id: string; etag: string | null; absence?: 'overwrite' | 'unknown' }): void {
-    this.knownBriefIds.set(key, value);
-    this.knownBriefIdsVersion.update((v) => v + 1);
-  }
-
-  /**
-   * Whether Refresh can actually load anything.
-   *
-   * `idle` is two different states wearing one name: a Monitor parked by a reset whose owned row
-   * is still resolvable (recoverable -- Refresh works), and a genuine no-brief context where
-   * `loadEmailMetrics` resolves `briefId === ''` and early-returns to the same idle it started
-   * from. Gating on `state !== 'loading'` alone renders an enabled button beside the second one,
-   * which gives an operator -- and a screen-reader user -- no way to tell "nothing to load" from
-   * "the load failed silently".
-   *
-   * Mirrors BOTH preconditions `loadEmailMetrics` enforces -- a non-empty foundation slug and a
-   * resolvable brief id, resolved the same way (signal first, ownership fallback second) -- so
-   * the two cannot disagree about whether a refresh is possible.
-   */
-  protected readonly canRefreshEmailMetrics = computed<boolean>(() => {
-    if (this.emailMetricsState() === 'loading') {
-      return false;
-    }
-    // The slug is the OTHER precondition `loadEmailMetrics` enforces: it early-returns to idle
-    // when `projectSlug === ''`, so without this the button offered a refresh that could only
-    // land back where it started. Checked first, because it holds regardless of how the brief id
-    // resolves.
-    if (this.activeFoundationSlug() === '') {
-      return false;
-    }
-    if (this.emailBriefId() !== '') {
-      return true;
-    }
-    // Establishes the dependency: the fallback below reads an untracked Map.
-    this.knownBriefIdsVersion();
-    const brief = this.emailBriefOutput();
-    if (brief === null) {
-      return false;
-    }
-    const key = this.ownershipKey(this.activeFoundationSlug(), brief);
-    return key !== null && (this.knownBriefIds.get(key)?.id ?? '') !== '';
-  });
-
   /**
    * Read the email channel's metrics for the current brief.
    *
@@ -2347,6 +2341,11 @@ export class CampaignsComponent {
           this.emailMetricsError.set('Could not read email performance. Retry, or check the HubSpot connection.');
         },
       });
+  }
+  /** Single write path for `knownBriefIds`, so `knownBriefIdsVersion` cannot drift from the map. */
+  private rememberBriefId(key: string, value: { id: string; etag: string | null; absence?: 'overwrite' | 'unknown' }): void {
+    this.knownBriefIds.set(key, value);
+    this.knownBriefIdsVersion.update((v) => v + 1);
   }
 
   /**

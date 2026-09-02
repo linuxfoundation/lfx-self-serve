@@ -5555,7 +5555,6 @@ describe('CampaignsComponent email monitor', () => {
     onEmailProceedToImplementation(brief: unknown): void;
     rememberBriefId(key: string, value: { id: string; etag: string | null }): void;
     ownershipKey(projectSlug: string, brief: unknown): string | null;
-    activeFoundationSlug(): string;
   }
 
   const internals = (): MonitorInternals => fixture.componentInstance as unknown as MonitorInternals;
