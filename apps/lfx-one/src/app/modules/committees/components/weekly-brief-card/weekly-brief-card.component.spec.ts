@@ -661,8 +661,12 @@ describe('WeeklyBriefCardComponent — Current activity tally (GH-1922)', () => 
     const el = fixture.nativeElement.querySelector('[data-testid="weekly-brief-card-current-activity"]');
     expect(el).not.toBeNull();
     expect(el.textContent).toContain('no activity yet');
-    // isTruncated must not additionally gate on currentActivity().length — an empty-but-present,
-    // non-truncated tally is a genuine quiet week and must not carry the truncation note either.
+    // Symmetric negative to the populated-tally case above: an empty, non-truncated tally is a
+    // genuine quiet week and must not carry the note either. (The isTruncated/length-gate
+    // regression itself is covered by the truncated-and-empty case below, where truncated is
+    // actually true — here truncated is already false, so a length-gate mutation wouldn't flip
+    // this assertion.)
+    expect(component.isTruncated()).toBe(false);
     expect(fixture.nativeElement.querySelector('[data-testid="weekly-brief-card-current-activity-truncation-note"]')).toBeNull();
   });
 
