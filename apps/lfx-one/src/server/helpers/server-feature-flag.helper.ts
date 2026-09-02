@@ -276,7 +276,7 @@ export enum ServerFeatureFlag {
    * since the credential moved into campaign-service's encrypted connection store. With this off
    * the Planning tab's UTM lookup does not work at all.
    *
-   * THREE BEHAVIOURS CHANGE ON BOTH PATHS, INCLUDING WITH THIS FLAG OFF. This flag switches the
+   * FOUR BEHAVIOURS CHANGE ON BOTH PATHS, INCLUDING WITH THIS FLAG OFF. This flag switches the
    * BACKEND; it does not gate either of them.
    *
    * 1. The legacy path fabricated a utm token (`id-name`) whenever HubSpot had none, so a
@@ -296,6 +296,11 @@ export enum ServerFeatureFlag {
    *    stable — so the winner would have been whichever row HubSpot returned first. Also not
    *    gated, and for the same reason as (1): a default-off flag would leave a coin-flip
    *    deciding which campaign's UTM goes into an event's links.
+   * 4. Neither path auto-applies a LONE WEAK match any more. A single candidate sharing one
+   *    long word with the event name used to win by default; an exact NORMALISED name match is
+   *    now required before either path reports `found`. Ungated for the same reason as (1) and
+   *    (3): auto-applying a weak match writes the wrong campaign's UTM into an event's links,
+   *    and holding the correction behind a default-off flag keeps the wrong answer shipping.
    *
    * The create path writes into a PORTAL-WIDE namespace — visible to everyone working in the
    * HubSpot account the project is connected to, which is not necessarily the LF's own, since

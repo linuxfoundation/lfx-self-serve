@@ -362,6 +362,11 @@ of this change is not inert.
    HubSpot happened to return first, which says nothing about relevance. Both paths return the
    candidates for an operator to pick from instead.
 
+4. Neither path auto-applies a **lone weak match**. A single candidate sharing one long word with
+   the event name used to be applied unattended; both paths now require an exact normalised name
+   match before reporting `found`, and return the candidate for the operator to pick instead.
+   This is the change an operator is most likely to notice, because it shows on every lookup.
+
 The create path writes into a **portal-wide** namespace: the campaign is visible to everyone
 working in the HubSpot account the project is connected to, whatever project scoped the request,
 and it performs no duplicate check. Not necessarily the LF's own account — HubSpot connections
