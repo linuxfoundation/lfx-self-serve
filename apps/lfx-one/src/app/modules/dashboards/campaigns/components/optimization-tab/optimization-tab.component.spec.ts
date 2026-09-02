@@ -2026,17 +2026,19 @@ describe('OptimizationTabComponent — wasted-keyword all-clear completeness', (
  * told "Failed" about a change that may already have applied is being invited to run it twice.
  */
 describe('OptimizationTabComponent — keyword action outcome states', () => {
+  const keywordMessageAdd = vi.fn();
   let fixture: ComponentFixture<OptimizationTabComponent>;
 
   // The exact string the BFF sends (CAMPAIGN_OUTCOME_UNCONFIRMED).
   const unconfirmedMessage = 'The change was sent but the confirmation did not match the request. Check the campaign in Google Ads before retrying.';
 
   beforeEach(async () => {
+    keywordMessageAdd.mockClear();
     await TestBed.configureTestingModule({
       imports: [OptimizationTabComponent],
       providers: [
         provideNoopAnimations(),
-        { provide: MessageService, useValue: { add: vi.fn() } },
+        { provide: MessageService, useValue: { add: keywordMessageAdd } },
         {
           provide: CampaignService,
           useValue: {
@@ -2133,6 +2135,67 @@ describe('OptimizationTabComponent — keyword action outcome states', () => {
     for (const key of ['ag1-cr1', 'ag1-cr2']) {
       expect(component.actionResults()[key]?.state, `${key} read as a definite failure after a dropped bulk mutation`).toBe('unconfirmed');
     }
+  });
+
+  it('completes a keyword REMOVE the operator navigated away from, and says so', () => {
+    // Copilot: this component renders inside `@case ('optimization')`, so a tab switch DESTROYS
+    // it. Bound to `takeUntilDestroyed`, the XHR was aborted mid-flight -- an irreversible REMOVE
+    // that may already have applied upstream, with no outcome shown anywhere. The campaign toggle
+    // above already solved this with `take(1)` plus the app-root toast; the keyword paths were
+    // still on component lifetime.
+    const campaignService = TestBed.inject(CampaignService) as unknown as {
+      executeKeywordActions: ReturnType<typeof vi.fn>;
+    };
+    const inFlight = new Subject<{ results: { success: boolean; message: string }[] }>();
+    campaignService.executeKeywordActions = vi.fn().mockReturnValue(inFlight.asObservable());
+
+    const component = fixture.componentInstance as unknown as {
+      executeKeywordAction(kw: unknown, action: string): void;
+    };
+    component.executeKeywordAction({ campaignId: 'c1', adGroupId: 'ag1', criterionId: 'cr1' }, 'REMOVE');
+    fixture.destroy();
+
+    // The response arrives after the operator has left the tab.
+    inFlight.next({ results: [{ success: true, message: 'Keyword removed.' }] });
+    inFlight.complete();
+
+    // The request was NOT aborted -- the handler ran.
+    expect(keywordMessageAdd, 'the mutation was cancelled by the tab switch, or its outcome was dropped').toHaveBeenCalledTimes(1);
+    const toast = keywordMessageAdd.mock.calls[0][0];
+    // Content, not just a call: a generic string would pass a call-count assertion and tell the
+    // operator nothing about what happened.
+    expect(String(toast.summary)).toMatch(/Removed/);
+    expect(toast.severity).toBe('success');
+  });
+
+  it('warns stickily when a bulk action the operator left behind does not confirm', () => {
+    // The arm that matters most: a partially-unconfirmed bulk REMOVE, surfaced after the table
+    // that would have shown the per-row detail is gone. Sticky, because a message that times out
+    // on its own is the wrong affordance for an irreversible change that may not have applied.
+    const campaignService = TestBed.inject(CampaignService) as unknown as {
+      executeKeywordActions: ReturnType<typeof vi.fn>;
+    };
+    const inFlight = new Subject<unknown>();
+    campaignService.executeKeywordActions = vi.fn().mockReturnValue(inFlight.asObservable());
+
+    const component = fixture.componentInstance as unknown as {
+      bulkKeywordAction(keywords: unknown[], action: string): void;
+    };
+    component.bulkKeywordAction(
+      [
+        { campaignId: 'c1', adGroupId: 'ag1', criterionId: 'cr1' },
+        { campaignId: 'c1', adGroupId: 'ag1', criterionId: 'cr2' },
+      ],
+      'REMOVE'
+    );
+    fixture.destroy();
+
+    inFlight.error({ status: 503, message: 'Http failure response' });
+
+    expect(keywordMessageAdd, 'a dropped bulk mutation reached the operator nowhere').toHaveBeenCalledTimes(1);
+    const toast = keywordMessageAdd.mock.calls[0][0];
+    expect(toast.sticky, 'an unconfirmed irreversible REMOVE was allowed to time out').toBe(true);
+    expect(toast.severity, 'reported an unconfirmed outcome as a definite failure').toBe('warn');
   });
 
   it('reads a SHORT 2xx result array as unconfirmed, not as failure', () => {

@@ -861,22 +861,36 @@ export class OptimizationTabComponent implements OnInit {
         action,
         keywords: [{ campaignId: kw.campaignId, adGroupId: kw.adGroupId, criterionId: kw.criterionId, action }],
       })
-      .pipe(takeUntilDestroyed(this.destroyRef))
+      // `take(1)`, NOT `takeUntilDestroyed` -- the same call the campaign toggle above makes, for
+      // the same reason. This component lives inside `@case ('optimization')`, so switching tab
+      // DESTROYS it and `takeUntilDestroyed` would abort the request mid-flight. A keyword REMOVE
+      // is irreversible and may already have applied upstream, so aborting loses the outcome of a
+      // mutation that happened. `take(1)` still bounds the subscription -- an HttpClient request
+      // is finite and self-completing -- it just does not cancel it.
+      //
+      // The signal writes below become inert once this component is gone, which is harmless. The
+      // toast is what carries the outcome across the tab switch, because MessageService is
+      // provided at app root.
+      .pipe(take(1))
       .subscribe({
         next: (res) => {
           this.actionInProgress.update((map) => ({ ...map, [key]: false }));
           const result = res.results[0];
+          const outcome = this.positionalOutcome(result);
           this.actionResults.update((map) => ({
             ...map,
-            [key]: this.positionalOutcome(result),
+            [key]: outcome,
           }));
+          this.announceKeywordOutcome(action, 1, outcome.state, outcome.message);
         },
         error: (err) => {
           this.actionInProgress.update((map) => ({ ...map, [key]: false }));
+          const outcome = this.toTransportOutcome(err);
           this.actionResults.update((map) => ({
             ...map,
-            [key]: this.toTransportOutcome(err),
+            [key]: outcome,
           }));
+          this.announceKeywordOutcome(action, 1, outcome.state, outcome.message);
         },
       });
   }
@@ -893,7 +907,11 @@ export class OptimizationTabComponent implements OnInit {
 
     this.campaignService
       .executeKeywordActions(this.activeFoundationSlug(), { action, keywords: items })
-      .pipe(takeUntilDestroyed(this.destroyRef))
+      // `take(1)` for the same reason as the single-keyword path: a tab switch destroys this
+      // component, and aborting a BULK remove mid-flight is worse -- the fan-out is sequential
+      // upstream, so a cancelled request can leave part of the selection already mutated with no
+      // outcome shown anywhere.
+      .pipe(take(1))
       .subscribe({
         next: (res) => {
           this.actionInProgress.update((map) => {
@@ -910,6 +928,20 @@ export class OptimizationTabComponent implements OnInit {
             }
             return updated;
           });
+          // Summarised for the toast: the per-row detail lives in the table, which an operator
+          // who switched tabs cannot see. Reports the worst state in the batch, because a
+          // partially-unconfirmed bulk REMOVE is the case that needs acting on.
+          const outcomes = keys.map((_, i) => this.positionalOutcome(res.results[i]).state);
+          // Ordered worst-first, so the first hit wins.
+          const worst = (['failed', 'unconfirmed', 'done'] as const).find((state) => outcomes.includes(state)) ?? 'done';
+          this.announceKeywordOutcome(
+            action,
+            keys.length,
+            worst,
+            worst === 'done'
+              ? 'All rows in the selection completed.'
+              : 'Some rows did not complete. Open the Optimize tab to see which, and check the platform before retrying.'
+          );
         },
         error: (err) => {
           this.actionInProgress.update((map) => {
@@ -929,6 +961,7 @@ export class OptimizationTabComponent implements OnInit {
             for (const key of keys) updated[key] = outcome;
             return updated;
           });
+          this.announceKeywordOutcome(action, keys.length, outcome.state, outcome.message);
         },
       });
   }
@@ -1331,6 +1364,31 @@ export class OptimizationTabComponent implements OnInit {
    * the row's status alone. The announcement states the direction that was confirmed, so it
    * cannot promise a transition the service declined to record.
    */
+  /**
+   * Narrates a keyword action to the toast, which is the surface that SURVIVES a tab switch.
+   *
+   * `lfx-optimization-tab` renders inside `@case ('optimization')`, so leaving the tab destroys
+   * it and every signal these handlers write becomes inert. `MessageService` is provided at app
+   * root, so this is the only channel that still reaches an operator who has moved on -- the same
+   * reasoning the campaign toggle above already runs on.
+   *
+   * `sticky` for anything that is not a clean success: an unconfirmed or failed REMOVE is
+   * irreversible and still spending, which is not something to let time out on its own.
+   */
+  private announceKeywordOutcome(action: KeywordActionType, count: number, outcome: 'done' | 'failed' | 'unconfirmed', detail: string): void {
+    const noun = count === 1 ? 'keyword' : `${count} keywords`;
+    if (outcome === 'done') {
+      this.messageService.add({ severity: 'success', summary: `${action === 'pause' ? 'Paused' : 'Removed'} ${noun}`, detail, life: 5000 });
+      return;
+    }
+    this.messageService.add({
+      severity: outcome === 'unconfirmed' ? 'warn' : 'error',
+      summary: `${action === 'pause' ? 'Pause' : 'Remove'} ${outcome === 'unconfirmed' ? 'not confirmed' : 'failed'} for ${noun}`,
+      detail,
+      sticky: true,
+    });
+  }
+
   private announceToggleOutcome(direction: Exclude<CampaignToggleAction, 'unavailable'>, campaignName: string, reportedStatus: string): void {
     // The outcome goes to the toast ALONE. `p-toast` is itself a live region (`role="alert"`), so
     // announcing the completion in the local region too would speak one action twice. The region
