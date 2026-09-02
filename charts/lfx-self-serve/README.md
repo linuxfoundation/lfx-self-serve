@@ -199,7 +199,7 @@ changing a value here rather than by shipping a revert.
 | `environment.LFX_CUTOVER_CAMPAIGN_SERVICE_DEMAND_GEN`      | Allows Demand Gen Google campaigns. Requires a campaign-service that understands `googleAdsConfig.channel` (LFXV2-3257) — see below                                                           | No       | off      |
 | `environment.LFX_CUTOVER_CAMPAIGN_SERVICE_STATUS_TOGGLE`   | Serves campaign pause/resume from campaign-service, which is what makes Google Ads and LinkedIn pausable — see below                                                                          | No       | `"true"` |
 | `environment.LFX_CUTOVER_CAMPAIGN_SERVICE_INSIGHTS`        | Serves the Google Ads keyword and audience reads from campaign-service, scoped to the project's own campaigns — REQUIRES campaign-service #190 deployed first; CHANGES THE NUMBERS, see below | No       | off      |
-| `environment.LFX_CUTOVER_CAMPAIGN_SERVICE_KEYWORD_ACTIONS` | Serves keyword pause/remove from campaign-service — REQUIRES campaign-service #191 deployed first; the legacy path is already broken without the GADS\_\* vars, see below                     | No       | off      |
+| `environment.LFX_CUTOVER_CAMPAIGN_SERVICE_KEYWORD_ACTIONS` | Serves keyword pause/remove from campaign-service — REQUIRES campaign-service #191 deployed first; the legacy path is already broken without the GADS\_\* vars. NOTE: the 50-row cap on `/keywords/actions` applies even with this OFF, deliberately — see `values.yaml`                     | No       | off      |
 
 `..._JOBS` now defaults to `"true"` (LFXV2-3325), the first step of the enable order below.
 **`..._JOBS` must stay on, and comes off LAST.** With `..._CREATE` enabled campaign-service mints

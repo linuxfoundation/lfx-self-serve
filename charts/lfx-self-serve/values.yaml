@@ -639,6 +639,22 @@ environment:
   # calls getGadsClient(), which throws whenever the GADS_* variables are absent — and they were
   # deactivated deliberately. So with this off, keyword actions do not work at all; this flag is
   # what makes them work, not what changes which backend serves them.
+  # ONE CHANGE APPLIES WITH THIS FLAG OFF, and it is deliberate: the
+  # /keywords/actions endpoint now refuses a body of more than 50 keyword rows on
+  # BOTH paths, where before only a non-empty array was required.
+  #
+  # The cap sits with the other request validators, ahead of this flag, because
+  # the risk it bounds is not specific to the campaign-service path. The fan-out
+  # is per CAMPAIGN in the body -- a resolver call then a mutation call, made
+  # sequentially while the request is held open -- so one authenticated request
+  # could amplify into thousands of upstream calls against a live ad account and
+  # trip rate limiting that fails campaigns for unrelated reasons. The legacy
+  # loop has the same shape, so gating the cap on the flag would leave the
+  # default-off deployment as the UNPROTECTED one.
+  #
+  # 50 is above anything this UI can produce, so it bounds abuse rather than the
+  # product. An API consumer sending larger batches is the only caller affected,
+  # and gets a 400 naming the limit.
   LFX_CUTOVER_CAMPAIGN_SERVICE_KEYWORD_ACTIONS:
     value: "false"
   WEEKLY_BRIEF_BACKEND:
