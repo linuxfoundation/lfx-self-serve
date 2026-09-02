@@ -15,6 +15,12 @@ import {
   CAMPAIGN_TABS,
   DEFAULT_CAMPAIGN_EMAIL_TYPE_ID,
   EMAIL_BRIEF_REQUIRED_HINT,
+  EVENT_TEMPLATE_SUGGESTION_MIN_SCORE,
+  EVENT_TERM_DISTINCTIVE_LENGTH,
+  EVENT_TERM_GENERIC,
+  EVENT_TERM_STOPWORDS,
+  EVENT_TERM_YEAR_PATTERN,
+  EVENT_TERM_WEIGHT,
   HUBSPOT_TEMPLATE_RENDER_LIMIT,
   MARKETING_OPS_FGA_ENABLED_FLAG,
 } from '@lfx-one/shared/constants';
@@ -27,6 +33,7 @@ import type {
   CampaignJobOutcome,
   CampaignEmailStage,
   EmailBriefCopy,
+  EventTemplateTerms,
   CampaignCreateRequest,
   CampaignBriefPersistenceState,
   CampaignImplementationDraft,
@@ -741,6 +748,79 @@ export class CampaignsComponent {
   protected readonly emailTemplatesTruncated = signal(false);
 
   /**
+   * The template auto-derived from HubSpot for this event, if one was confident enough to offer.
+   *
+   * A SUGGESTION the operator can change, never a decision. Empty means no template scored above
+   * `EVENT_TEMPLATE_SUGGESTION_MIN_SCORE` and the picker behaves exactly as it did before -- which
+   * is the honest outcome for a portal whose templates do not name their event. Withholding a weak
+   * guess matters more than offering one: a pre-selection looks decided, so nobody re-reads it,
+   * and cloning the wrong template puts another event's branding into a real HubSpot draft.
+   */
+  protected readonly emailTemplateSuggestionId = signal<string>('');
+
+  /**
+   * Whether the CURRENT selection was made by the suggestion rather than by the operator.
+   *
+   * ID equality cannot answer this. After suggestion A, an operator can pick B and then
+   * deliberately pick A again -- the ids coincide, so an equality check would treat their explicit
+   * choice as system-owned and silently release it on the next search. Provenance is a fact about
+   * how the value was set, and only the setter knows it.
+   */
+  protected readonly emailTemplateSelectionIsSuggested = signal<boolean>(false);
+
+  /** Which event terms the suggested template matched on, so the operator can judge it themselves. */
+  protected readonly emailTemplateSuggestionTerms = signal<readonly string[]>([]);
+
+  /**
+   * The matched terms as one display string.
+   *
+   * A `computed` rather than `.join()` in the template: the checklist allows only signal reads,
+   * computed values and pipes there, and a `join` in an interpolation re-runs on every
+   * change-detection pass over an array that changes only when a search answers.
+   */
+  protected readonly emailTemplateSuggestionTermsLabel = computed<string>(() => this.emailTemplateSuggestionTerms().join(', '));
+
+  /**
+   * Screen-reader announcement for the auto-selection.
+   *
+   * The banner is a plain `<p>` inserted when the suggestion lands, and a newly inserted element
+   * is not reliably announced -- so a screen-reader user could miss that a template was chosen for
+   * them, and that it is the one staging will use. Routed through the picker's existing live
+   * region, which is already mounted and only has its CONTENTS change.
+   */
+  /**
+   * The live region's whole text, joined with a separating space.
+   *
+   * Concatenating the two computeds directly in the template ran them together --
+   * "…37 found.Template selected for this event: …" -- which a screen reader announces as one
+   * word. Joined here rather than by adding a space to either source, so neither ends with a
+   * dangling space when it is the only one present.
+   */
+  protected readonly emailTemplatesLiveAnnouncement = computed<string>(() =>
+    [this.emailTemplatesAnnouncement(), this.emailTemplateSuggestionAnnouncement()].filter((part) => part !== '').join(' ')
+  );
+
+  protected readonly emailTemplateSuggestionAnnouncement = computed<string>(() => {
+    // PROVENANCE, matching the banner: `id === selectedId` also holds when an operator overrode
+    // the suggestion and then deliberately re-picked that same row, and announcing "Template
+    // selected for this event" over their own choice is the same false claim in the one place a
+    // screen-reader user cannot see the highlight that would contradict it.
+    const id = this.emailTemplateSuggestionId();
+    if (id === '' || !this.emailTemplateSelectionIsSuggested()) {
+      return '';
+    }
+    // A template can carry a subject and no name -- it is matched on either -- and announcing an
+    // empty string reads as "Template selected for this event: . Choose another", which tells a
+    // screen-reader user nothing about what was chosen. Fall back to the subject, then to a
+    // neutral phrase rather than a blank.
+    const template = this.emailTemplates()?.find((t) => t.id === id);
+    const name = (template?.name ?? '').trim() || (template?.subject ?? '').trim() || 'an untitled template';
+    const terms = this.emailTemplateSuggestionTermsLabel();
+    const matched = terms === '' ? '' : `, matched on ${terms}`;
+    return `Template selected for this event: ${name}${matched}. Choose another to override it.`;
+  });
+
+  /**
    * The rows the picker actually DRAWS — the first `HUBSPOT_TEMPLATE_RENDER_LIMIT` of them.
    *
    * A computed rather than a slice in the template: `frontend-checklist.md` §4 allows only signal
@@ -763,17 +843,25 @@ export class CampaignsComponent {
     }
     const drawn = ranked.slice(0, HUBSPOT_TEMPLATE_RENDER_LIMIT);
 
-    // The SELECTED row is always drawn, even when reranking pushes it past the cap.
+    // The SELECTED row is always drawn, even when ranking pushes it past the cap.
     //
-    // Ranking depends on the chosen email TYPE, so switching type reorders the list under a
-    // selection the operator already made: with enough matches for the new type, the selected row
-    // drops below the cap and vanishes. Nothing else notices — `canStageEmail` stays enabled and
-    // `onStageEmailSend` still clones that now-invisible template, so the operator stages a clone
-    // of something they can no longer see or change. Hiding the current choice is the one thing a
-    // ranking heuristic must never do.
+    // TWO routes reach that state, and the guard covers both:
     //
-    // Splicing to the TOP rather than re-ranking: it is the row the operator chose, so it belongs
-    // where they will look for it. The cap is still honoured — this replaces a row, never appends.
+    //   - A TYPE CHANGE reranks the list under a selection the operator already made, so with
+    //     enough matches for the new type the selected row drops below the cap and vanishes.
+    //   - A SUGGESTED template can be cut even as it is pre-selected: ranking and the suggestion
+    //     agree on the event half but not the type half, and a tie falls to the server's original
+    //     order. Reproduced with a 7-keyword type against 300 rows matching six of them.
+    //
+    // Either way nothing else notices — `canStageEmail` stays enabled and `onStageEmailSend` still
+    // clones the now-invisible template, so the operator stages a clone of something they can no
+    // longer see or change, and in the second case the banner announces a pre-selection no visible
+    // row carries. Hiding the current choice is the one thing a ranking heuristic must never do.
+    //
+    // Spliced into the LAST drawn slot rather than re-ranked: it is the row the operator chose
+    // (or was chosen for them), so it must stay reachable, but it has not earned the top. The cap
+    // holds — this replaces a row rather than adding one. See the comment on the splice itself
+    // for why not index 0.
     const selectedId = this.selectedEmailTemplateId();
     if (selectedId !== '' && !drawn.some((t) => t.id === selectedId)) {
       const selected = ranked.find((t) => t.id === selectedId);
@@ -1210,6 +1298,15 @@ export class CampaignsComponent {
       bounce: perSent(totals.bounces),
     };
   });
+  /**
+   * Word-boundary matchers, cached by term.
+   *
+   * The same few patterns were recompiled for every template on every rank -- up to 500 rows,
+   * and once per selection click, since the splice makes ranking re-run when the selection
+   * changes. Terms come from the event and change only when the brief does, so the cache stays
+   * small and needs no invalidation: a new brief simply asks for different keys.
+   */
+  private readonly boundaryMatchers = new Map<string, RegExp>();
 
   public constructor() {
     // Discard the persistence state when the selected foundation changes — see
@@ -1656,6 +1753,19 @@ export class CampaignsComponent {
     // Invalidate any generate still in flight. Clearing the signals is not enough: the older
     // response resolves afterwards and would repopulate the panel with the previous stage's copy.
     this.emailCopyGeneration++;
+
+    // Re-derive, because the type is the tie-break. Several of one event's templates score
+    // identically on the event, and the type is what chooses between them -- so a suggestion made
+    // under Registration Push is the wrong answer once the operator switches to CFP Launch. Left
+    // alone, the stale template stayed selected and would have been the one staged.
+    //
+    // Only when the current selection IS the suggestion: a hand-picked template is the operator's
+    // and a type change is not permission to replace it.
+    const templates = this.emailTemplates();
+    if (templates !== null && this.emailTemplateSelectionIsSuggested()) {
+      this.selectedEmailTemplateId.set('');
+      this.applyEventTemplateSuggestion(templates);
+    }
     this.emailCopy.set(null);
     this.emailCopyState.set('idle');
     this.emailCopyError.set('');
@@ -1890,6 +2000,7 @@ export class CampaignsComponent {
       // The page is reachable by an ED of any foundation and templates are per-project, so a
       // missing slug must not fall back to some other portal's templates.
       this.emailTemplates.set(null);
+      this.releaseSuggestedSelection();
       // Same reason as the reset below: a stale `false` would render "Connect HubSpot" instead of
       // this message, because the template checks the channel flag first.
       this.emailChannelEnabled.set(null);
@@ -1917,6 +2028,19 @@ export class CampaignsComponent {
     // `emailTemplateQuery` already shows the later search. The foundation-switch handler clears
     // these signals but cannot stop an in-flight response from refilling them — under the NEW
     // foundation — which is the cross-portal leak that handler exists to prevent.
+    // Released at DISPATCH, not only in the terminal arms below.
+    //
+    // Every arm that clears the list also releases a system-owned selection, but all of them run
+    // AFTER the response lands. In the window between them the loading branch hides the template
+    // list while `canStageEmail` stays enabled -- it reads `selectedEmailTemplateId`, not the
+    // loading flag -- and `onStageEmailSend` snapshots that id before its first await. So an
+    // operator could stage a suggestion that the in-flight search was about to remove or reject,
+    // with the row that justified it already off screen. Releasing here closes the window.
+    //
+    // Only a SYSTEM-owned selection, same as every other call: a hand-picked template is the
+    // operator's and survives the search that is being dispatched.
+    this.releaseSuggestedSelection();
+
     const generation = ++this.emailSearchGeneration;
     const isCurrent = (): boolean => generation === this.emailSearchGeneration;
 
@@ -1934,12 +2058,14 @@ export class CampaignsComponent {
             // Not an error: HubSpot simply is not connected for this project, which is the steady
             // state everywhere the channel is not set up.
             this.emailTemplates.set(null);
+            this.releaseSuggestedSelection();
             return;
           }
           if (result.error) {
             // The service reached HubSpot and HubSpot refused. Leave the list NULL rather than
             // empty — an empty list would claim the portal has no templates.
             this.emailTemplates.set(null);
+            this.releaseSuggestedSelection();
             this.emailTemplatesError.set(result.error);
             return;
           }
@@ -1956,11 +2082,13 @@ export class CampaignsComponent {
             // NULL rather than [], for the same reason the error arms use null: only a search
             // that genuinely came back with nothing can support the empty-portal claim.
             this.emailTemplates.set(null);
+            this.releaseSuggestedSelection();
             this.emailTemplatesError.set('Could not load templates. Try again.');
             return;
           }
           this.emailTemplates.set(selectable);
           this.emailTemplatesTruncated.set(result.possiblyTruncated);
+          this.applyEventTemplateSuggestion(selectable);
         },
         error: () => {
           if (!isCurrent()) {
@@ -1969,6 +2097,7 @@ export class CampaignsComponent {
           this.emailTemplatesLoading.set(false);
           // NULL, not []. A failed search says nothing about what the portal holds.
           this.emailTemplates.set(null);
+          this.releaseSuggestedSelection();
           this.emailTemplatesError.set('Could not load templates. Try again.');
         },
       });
@@ -2009,6 +2138,8 @@ export class CampaignsComponent {
   }
 
   protected onSelectEmailTemplate(id: string): void {
+    // A hand-pick is the operator's, even when it happens to be the same row the suggestion chose.
+    this.emailTemplateSelectionIsSuggested.set(false);
     this.selectedEmailTemplateId.set(id);
   }
 
@@ -2469,20 +2600,383 @@ export class CampaignsComponent {
    */
   private rankTemplatesForSelectedType(templates: HubSpotMarketingEmail[]): HubSpotMarketingEmail[] {
     const keywords = CAMPAIGN_EMAIL_TYPES.find((t) => t.id === this.selectedEmailTypeId())?.keywords ?? [];
-    if (keywords.length === 0) {
+    const eventTerms = this.eventTemplateTerms();
+    const hasEventTerms = eventTerms.decisive.length > 0 || eventTerms.ranking.length > 0 || eventTerms.year !== '';
+    if (keywords.length === 0 && !hasEventTerms) {
       return templates;
     }
     // Score once per row rather than inside the comparator: a comparator that lowercases and
     // scans both operands runs O(n log n) times over strings that never change.
+    //
+    // ONE scorer for the event half, shared with the suggestion. They diverged in an earlier
+    // version -- ranking counted every term equally while the suggestion doubled distinctive ones
+    // -- and the two disagreeing is a visible defect, not a nuance: a single-distinctive-term match
+    // could be PRE-SELECTED while ranking below enough type-keyword matches to fall outside the
+    // 100-row render cap, so the banner announced a suggestion with no highlighted row anywhere in
+    // the list. Reproduced with a 7-keyword type (`final-countdown`) against 300 rows matching six
+    // of them: the true KubeCon template ranked 3 against their 6 and was not drawn.
+    //
+    // The EVENT outweighs the type, and deliberately: within a portal running several events,
+    // "which event is this" discriminates far harder than "which stage of the sequence". A KubeCon
+    // registration push and an MCP Dev Summit one score identically on type, and only the event
+    // term separates them -- picking the wrong one clones the wrong branding into a real draft.
     const scored = templates.map((template, index) => ({
       template,
       index,
-      score: this.templateKeywordScore(template, keywords),
+      // The rank bonus is CLAMPED here, unlike at the suggestion tie-break. There it only
+      // separates templates whose decisive scores already tie, so its magnitude is free; here it
+      // is SUMMED into the ordering, where an unclamped year weight (year * (cities+1)) could
+      // reach 7 and lift a template matching no decisive term above one that does. Capping it
+      // below EVENT_TERM_WEIGHT keeps the docblock's promise -- city and year sharpen the choice
+      // among real matches, they never manufacture one.
+      score:
+        this.templateKeywordScore(template, keywords) +
+        this.eventMatchScore(template, eventTerms) +
+        Math.min(this.eventRankBonus(template, eventTerms), EVENT_TERM_WEIGHT - 1),
     }));
     // `index` breaks ties, which is what makes this stable across engines rather than relying on
     // Array.prototype.sort's stability guarantee holding for every input shape.
     scored.sort((a, b) => b.score - a.score || a.index - b.index);
     return scored.map((s) => s.template);
+  }
+
+  /**
+   * Release a selection this feature made, and forget the suggestion.
+   *
+   * Called from BOTH the success path and every failure arm. `applyEventTemplateSuggestion` runs
+   * only after a successful listing, so the `enabled: false`, HubSpot-error, unusable-rows and
+   * transport-error arms all set `emailTemplates` to null while leaving a system-owned selection
+   * in place -- invisible, since there is no list to show it in, and still stageable.
+   */
+  private releaseSuggestedSelection(): void {
+    if (this.emailTemplateSelectionIsSuggested()) {
+      this.selectedEmailTemplateId.set('');
+      this.emailTemplateSelectionIsSuggested.set(false);
+    }
+    this.emailTemplateSuggestionId.set('');
+    this.emailTemplateSuggestionTerms.set([]);
+  }
+
+  /**
+   * Offer the template this portal already uses for this event, if one is identifiable.
+   *
+   * This is the answer to "how is it done for that event": rather than holding a per-event mapping
+   * of our own, it reads the event off the brief and finds the template whose NAME says it belongs
+   * to that event. The portal's own naming is the mapping.
+   *
+   * Three properties, each load-bearing:
+   *
+   *   - It only ever pre-fills an EMPTY selection, so an operator who has already chosen keeps
+   *     their choice across a re-search or an email-type change -- a suggestion that reinstates
+   *     itself over a hand-pick is not a suggestion.
+   *   - It withholds below `EVENT_TEMPLATE_SUGGESTION_MIN_SCORE`. A pre-selection reads as decided,
+   *     so a wrong one is unlikely to be re-examined, and cloning the wrong template puts another
+   *     event's branding into a real HubSpot draft.
+   *   - It records WHICH terms matched, so the operator can judge the suggestion rather than trust
+   *     it. A suggestion whose reasoning is invisible cannot be checked.
+   */
+  private applyEventTemplateSuggestion(templates: HubSpotMarketingEmail[]): void {
+    // Release a selection this feature made, before re-deriving against the new result set.
+    //
+    // The type-change path already did this; a SEARCH did not, and only the suggestion id was
+    // cleared. So after a narrowed search dropped the auto-selected row, that id stayed selected
+    // while the banner hid (it renders only while the suggestion IS the selection) and staging
+    // would still clone the now-invisible template -- the same silent-wrong-clone this feature
+    // exists to prevent, reached from the other direction.
+    //
+    // Only a SYSTEM-owned selection is released. A hand-picked template is the operator's and
+    // survives every search, which is why this compares against the outgoing suggestion id rather
+    // than clearing unconditionally.
+    this.releaseSuggestedSelection();
+
+    const eventTerms = this.eventTemplateTerms();
+    // DECISIVE terms only. With no name or slug tokens there is nothing that identifies the event,
+    // and city or year matches alone are not evidence it is the right template.
+    if (eventTerms.decisive.length === 0 || templates.length === 0) {
+      return;
+    }
+
+    // Scored on the EVENT alone, not the blended rank. The blended score mixes in type keywords,
+    // so a template matching only the type could clear the threshold while saying nothing about
+    // which event it belongs to -- the precise confusion this gate exists to prevent.
+    // The EVENT decides whether to suggest at all; the TYPE decides which of that event's
+    // templates. A portal that runs an event well has several of its emails -- CFP launch,
+    // registration push, final countdown -- and they score identically on the event, so a
+    // strict `>` over the server's newest-first order picked whichever was edited last. That
+    // preselected a CFP-deadline email for an operator who had chosen Registration Push, which
+    // is a wrong answer wearing the right event's name. Observed live: the three MCP Dev Summit
+    // templates tie at 12 and the newest is a "Days Left to Submit to Speak" CFP email.
+    //
+    // The type is a TIE-BREAK, never a gate: it cannot rescue a template the event did not
+    // identify, and a type that matches nothing leaves the event ordering untouched.
+    const typeKeywords = CAMPAIGN_EMAIL_TYPES.find((t) => t.id === this.selectedEmailTypeId())?.keywords ?? [];
+    let best: HubSpotMarketingEmail | null = null;
+    let bestScore = 0;
+    let bestBonus = 0;
+    let bestTypeScore = 0;
+    for (const template of templates) {
+      const score = this.eventMatchScore(template, eventTerms);
+      if (score === 0) {
+        continue;
+      }
+      // Ordered tie-breaks, most specific last-resort first: the event decides, then the year
+      // (so this year's edition beats last year's -- otherwise they tie and the server's order
+      // picks, which pre-selected a previous edition), then the city, then the email type.
+      const bonus = this.eventRankBonus(template, eventTerms);
+      const typeScore = this.templateKeywordScore(template, typeKeywords);
+      const better =
+        score > bestScore || (score === bestScore && bonus > bestBonus) || (score === bestScore && bonus === bestBonus && typeScore > bestTypeScore);
+      if (better) {
+        best = template;
+        bestScore = score;
+        bestBonus = bonus;
+        bestTypeScore = typeScore;
+      }
+    }
+
+    // The threshold is applied to the NON-GENERIC evidence, not to the full match score.
+    //
+    // `bestScore` ranks; it counts generic words because among templates the event has already
+    // identified, a generic word usefully separates them. It cannot be what justifies offering a
+    // suggestion at all: two generic terms sum to exactly EVENT_TEMPLATE_SUGGESTION_MIN_SCORE, so
+    // "Community Training Workshop" would auto-select "Community training newsletter" on
+    // vocabulary that describes neither event.
+    if (best === null || this.eventSuggestionScore(best, eventTerms) < EVENT_TEMPLATE_SUGGESTION_MIN_SCORE) {
+      return;
+    }
+
+    this.emailTemplateSuggestionId.set(best.id);
+    // The DECISIVE terms only. These are what justified offering the suggestion at all, and they
+    // are what an operator needs to judge it -- listing a city or year match here would present
+    // as a reason something that could never have been sufficient on its own.
+    // Generic terms are filtered out for the same reason they cannot justify the suggestion: a
+    // reason the operator is shown must be a reason that counted. Listing "community" beside a
+    // suggestion the word could never have earned overstates the evidence.
+    this.emailTemplateSuggestionTerms.set(this.matchedEventTerms(best, eventTerms.decisive).filter((t) => !EVENT_TERM_GENERIC.has(t)));
+
+    // Pre-fill ONLY an untouched selection. `selectedEmailTemplateId` is the operator's, and a
+    // suggestion that overwrites a deliberate choice is a bug wearing a feature's clothes.
+    //
+    // The empty check is the WHOLE guard, deliberately. A separate "was it overridden" flag was
+    // written first and removed: the only path that clears the selection is the foundation switch,
+    // which resets the brief-derived state in the same pass, so the flag could never be the reason
+    // a re-selection was refused. It was unfalsifiable — no mutation of it changed any test — and
+    // an unfalsifiable guard reads as protection that is not there.
+    if (this.selectedEmailTemplateId() === '') {
+      this.selectedEmailTemplateId.set(best.id);
+      this.emailTemplateSelectionIsSuggested.set(true);
+    }
+  }
+
+  /**
+   * How strongly a template's name says it belongs to THIS event.
+   *
+   * Long terms count double, because corroboration is the wrong bar for a distinctive brand token.
+   * Found against the live portal: "KubeCon North America" reduces to `kubecon|salt|lake|city`,
+   * and "KubeCon NA 2026 - Registration" matches only `kubecon` — one hit, which a
+   * count-everything-equally score withholds despite the template naming the event unambiguously.
+   * A short token like `dev` or `mcp` genuinely does need a second term, since it turns up in
+   * unrelated names, so the two cases must not be scored the same.
+   */
+  private eventMatchScore(template: HubSpotMarketingEmail, terms: EventTemplateTerms): number {
+    const matched = this.matchedEventTerms(template, terms.decisive);
+    // CORROBORATION, not length alone. Length was standing in for distinctiveness, and it cannot
+    // carry that weight: `register`, `webinar`, `keynote`, `session` and `speaker` are all six-plus
+    // characters and all generic, so each cleared the threshold on a single hit. The deny-list
+    // closes the words someone has already noticed; every un-listed one is a fresh false positive.
+    //
+    // A term is double-weighted only when it is long AND not a known generic. Corroboration was
+    // the first thing tried -- withhold unless a second term matched -- and it broke the case the
+    // feature exists for: "KubeCon Munchen" has two decisive terms, a template named only
+    // "KubeCon Munchen - Registrierung" matched both, but one named "KubeCon NA 2026" matched
+    // only `kubecon` and was withheld, though `kubecon` names the event unambiguously.
+    //
+    // EVENT_TERM_GENERIC is a vocabulary, not a length rule, so a word is excluded for being
+    // generic rather than for being short. It is still a list and still needs appending, but the
+    // failure mode is now a MISSED suggestion rather than a wrong one -- the safe direction.
+    return matched.reduce(
+      (score, term) => score + (term.length >= EVENT_TERM_DISTINCTIVE_LENGTH && !EVENT_TERM_GENERIC.has(term) ? EVENT_TERM_WEIGHT * 2 : EVENT_TERM_WEIGHT),
+      0
+    );
+  }
+
+  /**
+   * The part of the match score that may JUSTIFY a pre-selection, as opposed to merely rank one.
+   *
+   * Excluding generic terms from the double weight was not enough. They still scored
+   * `EVENT_TERM_WEIGHT` apiece, so TWO of them reached `EVENT_TEMPLATE_SUGGESTION_MIN_SCORE`
+   * (3 + 3 = 6) and auto-selected on generic vocabulary alone: "Community Training Workshop"
+   * against a template named "Community training newsletter" scores 6 with every matching term
+   * in `EVENT_TERM_GENERIC`. That is the exact claim the deny-list was introduced to make true --
+   * generic words may rank, but they cannot be the evidence that this is the right template.
+   *
+   * So ranking and justification are now different questions asked of the same matches.
+   * `eventMatchScore` still counts everything, because among templates the event has ALREADY
+   * identified a generic word is a real signal of which one. This one counts only non-generic
+   * terms, and it is what the threshold is applied to.
+   */
+  private eventSuggestionScore(template: HubSpotMarketingEmail, terms: EventTemplateTerms): number {
+    return this.matchedEventTerms(template, terms.decisive)
+      .filter((term) => !EVENT_TERM_GENERIC.has(term))
+      .reduce((score, term) => score + (term.length >= EVENT_TERM_DISTINCTIVE_LENGTH ? EVENT_TERM_WEIGHT * 2 : EVENT_TERM_WEIGHT), 0);
+  }
+
+  /**
+   * How well a template orders among others the event already identified.
+   *
+   * City terms and the year live here rather than in the decisive score: they sharpen the choice
+   * between templates that all name the event, and are not evidence of the event themselves.
+   *
+   * The RETURN VALUE is not bounded below a decisive term -- `year * (cities + 1)` is deliberately
+   * large so the year outranks any number of city tokens. That is safe at the suggestion
+   * tie-break, which consults it only after decisive scores have already tied. The ranking sum in
+   * `rankTemplatesForSelectedType` CLAMPS it instead, because there it is added to the score and
+   * an unclamped value could lift a template matching no decisive term above one that does. An
+   * earlier version of this note claimed the value itself was weighted below a decisive term;
+   * it is the CALLER that has to hold that line.
+   */
+  private eventRankBonus(template: HubSpotMarketingEmail, terms: EventTemplateTerms): number {
+    const city = this.matchedEventTerms(template, terms.ranking).length;
+    const year = terms.year !== '' && this.matchedEventTerms(template, [terms.year]).length > 0 ? 1 : 0;
+    // YEAR STRICTLY ABOVE CITY, not summed with it. `city + year` let extra city tokens on a
+    // STALE edition outrank the year bit on the current one: for "KubeCon North America 2026" in
+    // "Salt Lake City", the 2025 template scored salt+lake+city = 3 against the 2026 template's
+    // year = 1, so the PRIOR edition was pre-selected and its HubSpot draft staged. That is the
+    // exact failure the year tie-break was added to prevent, and the comment above this method
+    // promised an ordered year-then-city tie-break a sum cannot express.
+    //
+    // Multiplying by `ranking.length + 1` makes one year match worth more than every city token
+    // combined, so year decides first and city only orders within the same year outcome.
+    return year * (terms.ranking.length + 1) + city;
+  }
+
+  /** The cached boundary matcher for one term, compiled on first use. */
+  private boundaryMatcher(term: string): RegExp {
+    const cached = this.boundaryMatchers.get(term);
+    if (cached !== undefined) {
+      return cached;
+    }
+    // Terms carry only letters and digits (the tokenizer splits on everything else), so there
+    // are no regex metacharacters to escape.
+    const built = new RegExp(`(^|[^\\p{L}\\p{N}])${term}([^\\p{L}\\p{N}]|$)`, 'u');
+    this.boundaryMatchers.set(term, built);
+    return built;
+  }
+
+  /**
+   * Which of the event's terms a template actually matched, for the "why" shown to the operator.
+   *
+   * Matched on WORD BOUNDARIES, not `includes`. A bare substring test lets a distinctive term match
+   * inside a longer word — "KubeConference recap" would score as a KubeCon template and, because a
+   * distinctive term suggests on its own, would be pre-selected outright. The boundary is any
+   * non-alphanumeric, which keeps every real naming pattern working: `KubeCon + CloudNativeCon`,
+   * `KubeCon+CloudNativeCon` with no spaces, `KubeCon: registration`, and `Nairobi, Kenya` all
+   * still match. Verified byte-identical against the live portal's templates.
+   */
+  private matchedEventTerms(template: HubSpotMarketingEmail, eventTerms: readonly string[]): string[] {
+    const name = (template.name ?? '').toLowerCase();
+    const subject = (template.subject ?? '').toLowerCase();
+    return eventTerms.filter((term) => {
+      // The boundary class is the SAME alphabet the tokenizer splits on, so "münchen" in a
+      // template name is a whole word rather than a letter-run interrupted by the accent.
+      // Terms carry only letters and digits (the tokenizer splits on everything else), so there
+      // are no regex metacharacters to escape.
+      const bounded = this.boundaryMatcher(term);
+      return bounded.test(name) || bounded.test(subject);
+    });
+  }
+
+  /**
+   * The terms that identify THIS event in a template's name, derived from the brief.
+   *
+   * The point of the whole feature: the portal already encodes how each event's email is done, in
+   * the names its operators gave those templates. Rather than storing a per-event mapping of our
+   * own, this reads the event off the brief and asks HubSpot which templates look like it.
+   *
+   * Slug and name are tokenized the SAME way -- one `split(/[^\p{L}\p{N}]+/u)` over both, on any
+   * non-alphanumeric run -- rather than separators for one and whitespace for the other, which is
+   * what an earlier version of this note claimed. Both are then filtered:
+   * stopwords out (they match everything), tokens under three characters out (too weak to
+   * identify an event on their own). What survives is the distinctive part of the event's
+   * identity -- "kubecon", "nairobi", "pytorch".
+   *
+   * The city is included because operators frequently name templates by location where the event
+   * brand repeats annually. Themes are NOT: they describe subject matter ("cloud native",
+   * "security") and collide across unrelated events in the same portal, which is exactly the
+   * false-positive this scoring must avoid.
+   */
+  private eventTemplateTerms(): EventTemplateTerms {
+    const details = this.emailBriefOutput()?.eventDetails;
+    if (!details) {
+      return { decisive: [], ranking: [], year: '' };
+    }
+    // SPLIT on punctuation rather than deleting it. Deleting merged "KubeCon+CloudNativeCon" into
+    // one unmatchable token, and -- worse -- silently dropped accented letters, so "München"
+    // became "mnchen" and could never match a template actually named "München". The event side
+    // was mangled while the template side was not, which makes international event names
+    // permanently unsuggestable.
+    const split = (value: string): string[] => value.split(/[^\p{L}\p{N}]+/u);
+
+    // Lower-cased only. Letters outside a-z are KEPT, and the boundary matcher is built from the
+    // same alphabet, so an accented term matches an accented template name.
+    const usable = (token: string): boolean => token.length >= 3 && !EVENT_TERM_STOPWORDS.includes(token);
+
+    // CITY TOKENS FIRST, so the decisive pass below can exclude them. Built the other way round
+    // -- ranking filtered by `!decisive.has(token)` -- a city repeated in the event name stayed
+    // DECISIVE: "Regional Summit Nairobi" in Nairobi made `nairobi` decisive, and being six
+    // characters it cleared the threshold alone, auto-selecting an unrelated "Nairobi newsletter".
+    // The city is meant to rank, never to justify a suggestion, and that is only true if the same
+    // token cannot be both.
+    // FOLDED for the comparison only. The city arrives accented ("München" -> `münchen`) while an
+    // LF slug is ASCII ("kubecon-munchen-2026" -> `munchen`), so a set of raw tokens could not
+    // recognise them as the same word: `münchen` was excluded from decisive while `munchen`, the
+    // form that actually reaches the scorer, sailed through and could justify a suggestion alone.
+    // That is the accented spelling of the exact false positive the exclusion exists to stop.
+    //
+    // Folding is applied ONLY when testing membership. The terms themselves stay accented,
+    // because the boundary matcher is built from the same alphabet and an accented term has to
+    // match an accented template name.
+    const fold = (token: string): string => token.normalize('NFD').replace(/\p{M}+/gu, '');
+    // Two sets, deliberately: `cityTokens` keeps the ORIGINAL spelling because it becomes the
+    // ranking terms, which are matched against template names and must stay accented.
+    // `cityFolded` exists only to answer "is this decisive candidate the city?".
+    const cityTokens = new Set<string>();
+    const cityFolded = new Set<string>();
+    for (const token of split(details.city ?? '')) {
+      const cleaned = token.toLowerCase();
+      if (usable(cleaned) && !EVENT_TERM_YEAR_PATTERN.test(cleaned)) {
+        cityTokens.add(cleaned);
+        cityFolded.add(fold(cleaned));
+      }
+    }
+
+    const decisive = new Set<string>();
+    let year = '';
+    for (const token of [...split(details.name ?? ''), ...split(details.slug ?? '')]) {
+      const cleaned = token.toLowerCase();
+      if (EVENT_TERM_YEAR_PATTERN.test(cleaned)) {
+        // The year is a TIE-BREAK, never decisive. Dropping it entirely made annual editions
+        // score identically, so the server's order picked between "KubeCon NA 2025" and
+        // "KubeCon NA 2026" -- last year's template, pre-selected and stageable. Counting it
+        // toward the threshold instead would re-admit "Open newsletter 2028" for an
+        // "Open Source Summit 2028" brief, which is why it is neither.
+        year = year === '' ? cleaned : year;
+        continue;
+      }
+      // A city token is never decisive, wherever it appears. It stays in `ranking` below.
+      if (usable(cleaned) && !cityFolded.has(fold(cleaned))) {
+        decisive.add(cleaned);
+      }
+    }
+
+    // The CITY ranks but never decides. "Salt Lake City visitor guide" matched all three of
+    // `salt`, `lake`, `city` for a KubeCon brief and scored 9 against a threshold of 6 -- a
+    // template with no relation to the event, pre-selected on location words alone. Operators do
+    // name templates by city where a brand repeats annually, so the terms are still worth
+    // ordering by; they just cannot be the reason a suggestion is offered.
+    const ranking = cityTokens;
+
+    return { decisive: [...decisive], ranking: [...ranking], year };
   }
 
   /**
@@ -3050,5 +3544,27 @@ export class CampaignsComponent {
     this.emailMetrics.set(null);
     this.emailMetricsState.set('idle');
     this.emailMetricsError.set('');
+    // The chosen template belongs to the brief that chose it. Left set, it survives into the next
+    // event in the same foundation, where it is both WRONG (a template for the previous event) and
+    // silently suppresses the new suggestion, since the derivation only ever fills an empty
+    // selection. That is the feature failing exactly where it is most useful -- the second event.
+    this.selectedEmailTemplateId.set('');
+    // Cleared WITH the id it describes: the flag means "the CURRENT selection is system-owned",
+    // and there is no current selection once the line above runs.
+    //
+    // No bug reachable today -- the only writers of a non-empty selection are
+    // `onSelectEmailTemplate`, which sets the flag false, and the suggestion itself, which sets it
+    // true, so a stale `true` can at worst re-clear an already-empty id. It is cleared anyway
+    // because the invariant is what the rest of the class reads: `releaseSuggestedSelection` and
+    // the type-change path both branch on this flag to decide whether a selection is the
+    // operator's, and leaving it describing a discarded brief is one new writer away from
+    // discarding a hand-picked template.
+    this.emailTemplateSelectionIsSuggested.set(false);
+    // The suggestion is derived from THIS brief's event, so its id and the terms it matched on
+    // both belong to the brief and go with it. (An earlier version of this note also mentioned an
+    // override flag that could suppress later suggestions; that flag was removed when provenance
+    // replaced it, and only these two signals are reset here.)
+    this.emailTemplateSuggestionId.set('');
+    this.emailTemplateSuggestionTerms.set([]);
   }
 }

@@ -186,7 +186,9 @@
       It stays in the DOM on the other email tabs, which is harmless: the computed reads signals
       that are only written by a search, so it is empty unless one is running or has answered.
     -->
-      <div role="status" aria-live="polite" class="sr-only" data-testid="campaigns-email-templates-live">{{ emailTemplatesAnnouncement() }}</div>
+      <div role="status" aria-live="polite" class="sr-only" data-testid="campaigns-email-templates-live">
+        {{ emailTemplatesLiveAnnouncement() }}
+      </div>
 
       <!--
       Metrics-read status, mounted OUTSIDE the @switch for the same reason as the region above:
@@ -372,6 +374,36 @@
                     cut again here at the render limit.
                   -->
                     <p class="text-xs text-amber-700" data-testid="campaigns-email-templates-render-capped">{{ emailTemplatesRenderCapMessage() }}</p>
+                  }
+                  @if (emailTemplateSelectionIsSuggested() && emailTemplateSuggestionId() !== '') {
+                    <!--
+                    Gated on PROVENANCE, not on id equality. Keying it on the suggestion merely
+                    existing meant that after an operator picked a different row the banner still
+                    read "pre-selected ... for this event" beside a template the derivation never
+                    chose. Keying it on `suggestionId === selectedId` fixed that case and kept a
+                    subtler one: after suggestion A, an operator can pick B and then deliberately
+                    pick A again -- the ids coincide, so the banner claimed the system chose what
+                    the operator chose. Only the setter knows how the value was set, which is what
+                    `emailTemplateSelectionIsSuggested` records.
+                    The matched terms are shown because a suggestion whose reasoning is invisible
+                    cannot be judged: "matched on kubecon" can be checked at a glance.
+                  -->
+                    <p class="flex items-start gap-2 text-xs text-blue-800" data-testid="campaigns-email-template-suggestion">
+                      <i class="fa-light fa-wand-magic-sparkles mt-0.5" aria-hidden="true"></i>
+                      <!--
+                      One text node, not a text-@if-text sandwich. Angular collapses the leading
+                      whitespace of the trailing fragment to a single space, so the sentence
+                      rendered as "... event . Pick a different one" with a space before the stop.
+                    -->
+                      @if (emailTemplateSuggestionTerms().length > 0) {
+                        <span
+                          >Pre-selected the template this portal appears to use for this event — matched on {{ emailTemplateSuggestionTermsLabel() }}. Pick a
+                          different one to override it.</span
+                        >
+                      } @else {
+                        <span>Pre-selected the template this portal appears to use for this event. Pick a different one to override it.</span>
+                      }
+                    </p>
                   }
                   <ul class="flex flex-col gap-2" data-testid="campaigns-email-template-list">
                     @for (template of emailTemplatesRendered(); track template.id) {
