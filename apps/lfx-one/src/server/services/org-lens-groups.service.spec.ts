@@ -42,6 +42,15 @@ vi.mock('./logger.service', () => ({
 vi.mock('@lfx-one/shared/interfaces', () => ({}));
 vi.mock('@lfx-one/shared/constants', () => ({
   isBoardCategory: (category: string | null | undefined) => (category ?? '').trim().toLowerCase() === 'board',
+  VALKEY_CACHE: { ORG_LENS_GROUPS_TTL_SECONDS: 900 },
+}));
+
+// The cache layer pulls in the Valkey client, which this node suite has no business starting.
+// `withOrgGroupsCache` is stubbed as a straight pass-through to its fetcher — i.e. a permanent
+// cache miss — so these tests keep exercising the aggregation logic rather than the cache.
+vi.mock('./valkey.service', () => ({
+  buildOrgGroupsCacheKey: (orgUid: string) => `test:org-lens-groups:v1:${orgUid}`,
+  withOrgGroupsCache: (_orgUid: string, _ttl: number, fetcher: () => Promise<unknown>) => fetcher(),
 }));
 
 import type { Request } from 'express';
@@ -66,7 +75,8 @@ function seat(over: Partial<CommitteeServiceOrgSeat> = {}): CommitteeServiceOrgS
 }
 
 async function run(): Promise<OrgLensGroupsResponse> {
-  return new OrgLensGroupsService().getGroups(req, ORG_UID);
+  // `org-grant` is the shared-cache path; a staff-only caller would bypass the cache entirely.
+  return new OrgLensGroupsService().getGroups(req, ORG_UID, 'org-grant');
 }
 
 beforeEach(() => {
@@ -113,8 +123,10 @@ describe('OrgLensGroupsService.getGroups', () => {
     // the project index resolves everything, calling it with an empty array short-circuits to no
     // upstream request at all (CommitteeService.getCommitteesByIds returns early on []).
     expect(getCommitteesByIds).toHaveBeenCalledWith(req, []);
-    // No gaps to report — the enrichment INFO log is gated on there being something to log.
-    expect(logger.info).not.toHaveBeenCalled();
+    // No gaps to report — the enrichment INFO log is gated on there being something to log. Asserted
+    // against that event specifically, since every request also emits an `org_lens_groups_request`
+    // INFO line carrying the cold/warm result source.
+    expect(logger.info).not.toHaveBeenCalledWith(req, 'org_lens_groups_enrich', expect.any(String), expect.anything());
   });
 
   it('falls back to the committee-index name when the project index has no match (e.g. uepf-style gap)', async () => {

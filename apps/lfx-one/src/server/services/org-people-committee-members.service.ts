@@ -17,6 +17,7 @@ import { logger } from './logger.service';
 import { MicroserviceProxyService } from './microservice-proxy.service';
 import { OrgLensBoardCommitteeService } from './org-lens-board-committee.service';
 import { ProjectService } from './project.service';
+import { invalidateOrgGroupsCache } from './valkey.service';
 
 /**
  * Org Lens People → Committee tab (spec 027): serves the org-wide NON-Board roster (Board excluded, FR-003)
@@ -72,6 +73,15 @@ export class OrgPeopleCommitteeMembersService {
         email: body.email,
       }
     );
+
+    // The Groups page shares one aggregate per org for 15 minutes (GH-1809). That window is only
+    // defensible for upstream drift — a change the admin just made themselves must not hide behind
+    // it — and this is the one write path in this app that already operates at org grain, so the
+    // discard is a single key delete rather than a fan-out. Best-effort and deliberately not
+    // awaited-for-success: `del` never throws, and a cache fault just leaves the entry to age out.
+    // Board-seat reassignment deliberately has no equivalent hook: board-category seats are filtered
+    // out of the Groups page, so they cannot change its counts.
+    await invalidateOrgGroupsCache(orgUid);
 
     const foundationNames = await enrichFoundationNames(req, [upstream], this.projectService);
     const seat = toAssignment(upstream, foundationNames);
