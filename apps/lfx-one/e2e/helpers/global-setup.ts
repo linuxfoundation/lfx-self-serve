@@ -15,6 +15,18 @@ try {
   }
 }
 
+/**
+ * Write a storageState file with no cookies or origins.
+ *
+ * Playwright accepts this and simply starts every context unauthenticated -- which is exactly
+ * the state the skip guards then detect and report properly.
+ */
+async function writeEmptyStorageState(): Promise<void> {
+  const dir = 'playwright/.auth';
+  await fs.promises.mkdir(dir, { recursive: true });
+  await fs.promises.writeFile(path.join(dir, 'user.json'), JSON.stringify({ cookies: [], origins: [] }), 'utf8');
+}
+
 async function globalSetup(config: FullConfig) {
   const credentials = {
     username: process.env.TEST_USERNAME || '',
@@ -25,6 +37,13 @@ async function globalSetup(config: FullConfig) {
   if (!credentials.username || !credentials.password) {
     console.log('⚠️  No test credentials provided. Tests requiring authentication will be skipped.');
     console.log('   Set TEST_USERNAME and TEST_PASSWORD environment variables to enable authenticated tests.');
+    // An EMPTY state file is still written. Every project declares
+    // `storageState: 'playwright/.auth/user.json'`, which Playwright reads while constructing
+    // the `page` fixture -- so returning without it fails the fixture BEFORE any test body runs,
+    // and skipWhenAuthMissing() (which needs `page`) can never fire. On a clean checkout the
+    // whole suite ERRORED instead of skipping, naming a missing file rather than the missing
+    // credentials that caused it.
+    await writeEmptyStorageState();
     return;
   }
 
