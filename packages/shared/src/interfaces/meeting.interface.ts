@@ -1149,6 +1149,55 @@ export interface ITXPastMeetingParticipantResult {
   modified_by?: MeetingUserInfo;
 }
 
+/**
+ * How confidently an attendance-reconciliation match was made.
+ * `high` may be auto-applied; `medium`/`low`/`none` are always queued for admin review —
+ * `none` must never be silently auto-tagged as unknown (see GH-1672, PCC-1452 root cause).
+ */
+export type AttendanceReconciliationConfidence = 'high' | 'medium' | 'low' | 'none';
+
+/** Which layer of the candidate pool a reconciliation candidate came from. */
+export type AttendanceReconciliationCandidateSource = 'invitee' | 'committee_member' | 'prior_attendee';
+
+/**
+ * A known-identity candidate an unverified attendee can be matched against. Assembled from
+ * three sources (occurrence invitees, project committee members, previously-verified attendees
+ * of prior occurrences in the same series) — a single-source pool was PCC's root cause for its
+ * high "unknown" rate (PCC-1452): an attendee who joined without being an invitee on that exact
+ * occurrence had zero candidates and was unmatchable by construction.
+ */
+export interface AttendanceReconciliationCandidate {
+  /** Stable identifier for this candidate within one reconciliation run (not a persisted UID) */
+  candidate_id: string;
+  source: AttendanceReconciliationCandidateSource;
+  email?: string;
+  username?: string;
+  lf_user_id?: string;
+  first_name?: string;
+  last_name?: string;
+  org_name?: string;
+}
+
+/** Outcome of attempting to match one unverified attendee against the candidate pool. */
+export interface AttendanceReconciliationResult {
+  /** The attendee record's `id` (attendee_id) from ITXPastMeetingParticipantResult / participant uid */
+  attendee_id: string;
+  zoom_user_name?: string;
+  confidence: AttendanceReconciliationConfidence;
+  method: 'deterministic' | 'ai';
+  matched_candidate?: AttendanceReconciliationCandidate;
+  /** True when this match was written back via updatePastMeetingParticipant */
+  auto_applied: boolean;
+}
+
+/** Response from POST /api/past-meetings/:uid/reconcile. */
+export interface ReconcilePastMeetingParticipantsResponse {
+  results: AttendanceReconciliationResult[];
+  candidate_pool_size: number;
+  auto_applied_count: number;
+  needs_review_count: number;
+}
+
 /** Attendance filter for the past-meeting participant list. */
 export type PastParticipantAttendanceFilter = 'all' | 'attended' | 'absent';
 /** Invitation filter for the past-meeting participant list. */

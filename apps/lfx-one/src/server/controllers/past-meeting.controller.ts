@@ -23,6 +23,7 @@ import { ServiceValidationError } from '../errors';
 import { enrichMeetingsWithCreatedBy, stripHostKey } from '../helpers/meeting.helper';
 import { validateRequiredParameter, validateUidParameter } from '../helpers/validation.helper';
 import { AccessCheckService } from '../services/access-check.service';
+import { AttendanceReconciliationService } from '../services/attendance-reconciliation.service';
 import { logger } from '../services/logger.service';
 import { MeetingService } from '../services/meeting.service';
 
@@ -32,6 +33,7 @@ import { MeetingService } from '../services/meeting.service';
 export class PastMeetingController {
   private meetingService: MeetingService = new MeetingService();
   private accessCheckService: AccessCheckService = new AccessCheckService();
+  private attendanceReconciliationService: AttendanceReconciliationService = new AttendanceReconciliationService();
 
   /**
    * GET /past-meetings
@@ -309,6 +311,45 @@ export class PastMeetingController {
       });
 
       res.status(204).send();
+    } catch (error) {
+      next(error);
+    }
+  }
+
+  /**
+   * POST /past-meetings/:uid/reconcile
+   * Manual admin trigger (GH-1672 item 4) — matches unverified attendees against a candidate
+   * pool (invitees + committee members + previously-verified attendees of prior occurrences),
+   * auto-applying only high-confidence matches. No-match attendees are always returned for
+   * admin review, never silently auto-tagged unknown.
+   */
+  public async reconcilePastMeetingParticipants(req: Request, res: Response, next: NextFunction): Promise<void> {
+    const { uid } = req.params;
+    const startTime = logger.startOperation(req, 'reconcile_past_meeting_participants', {
+      past_meeting_id: uid,
+    });
+
+    try {
+      if (
+        !validateUidParameter(uid, req, next, {
+          operation: 'reconcile_past_meeting_participants',
+          service: 'past_meeting_controller',
+        })
+      ) {
+        return;
+      }
+
+      const pastMeeting = await this.meetingService.getPastMeetingById(req, uid);
+      const result = await this.attendanceReconciliationService.reconcilePastMeetingParticipants(req, uid, pastMeeting);
+
+      logger.success(req, 'reconcile_past_meeting_participants', startTime, {
+        past_meeting_id: uid,
+        candidate_pool_size: result.candidate_pool_size,
+        auto_applied_count: result.auto_applied_count,
+        needs_review_count: result.needs_review_count,
+      });
+
+      res.json(result);
     } catch (error) {
       next(error);
     }

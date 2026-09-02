@@ -6,6 +6,7 @@ import {
   AI_BRIEF_ACTION_ITEMS_SYSTEM_PROMPT,
   AI_MODEL,
   AI_NEWSLETTER_SYSTEM_PROMPT,
+  AI_RECONCILIATION_SYSTEM_PROMPT,
   AI_REQUEST_CONFIG,
   DURATION_ESTIMATION,
   NEWSLETTER_AI_MAX_TOKENS,
@@ -15,6 +16,7 @@ import {
 } from '@lfx-one/shared/constants';
 import { MeetingType } from '@lfx-one/shared/enums';
 import {
+  AttendanceReconciliationConfidence,
   ExtractActionItemsRequest,
   ExtractActionItemsResponse,
   GenerateAgendaRequest,
@@ -23,6 +25,8 @@ import {
   GenerateNewsletterResponse,
   OpenAIChatRequest,
   OpenAIChatResponse,
+  ReconcileAttendeesRequest,
+  ReconcileAttendeesResponse,
 } from '@lfx-one/shared/interfaces';
 import { Request } from 'express';
 
@@ -274,6 +278,136 @@ export class AiService {
       const cause = error instanceof Error ? error.message : String(error);
       throw new Error(`Failed to extract brief action items: ${cause}`);
     }
+  }
+
+  /**
+   * AI-assisted attendance reconciliation (GH-1672 / PCC-1452 port). Callers only send the
+   * ambiguous remainder left after a deterministic email/username pass, and must validate
+   * `matched_candidate_id` against the `candidates` they sent — this method itself only rejects
+   * candidate_ids that don't resolve against the request's own candidate list, not against any
+   * broader store.
+   */
+  public async reconcileAttendees(req: Request, request: ReconcileAttendeesRequest): Promise<ReconcileAttendeesResponse> {
+    this.assertConfigured();
+
+    const startTime = logger.startOperation(req, 'reconcile_attendees', {
+      attendeeCount: request.attendees.length,
+      candidateCount: request.candidates.length,
+    });
+
+    try {
+      const chatRequest: OpenAIChatRequest = {
+        model: this.model,
+        messages: [
+          { role: 'system', content: AI_RECONCILIATION_SYSTEM_PROMPT },
+          { role: 'user', content: this.buildReconciliationPrompt(request) },
+        ],
+        max_tokens: AI_REQUEST_CONFIG.MAX_TOKENS,
+        temperature: AI_REQUEST_CONFIG.TEMPERATURE,
+        response_format: {
+          type: 'json_schema',
+          json_schema: {
+            name: 'attendee_reconciliation',
+            description: 'Matched candidate (or none) and confidence tier for each attendee',
+            schema: {
+              type: 'object',
+              properties: {
+                matches: {
+                  type: 'array',
+                  items: {
+                    type: 'object',
+                    properties: {
+                      attendee_id: { type: 'string', description: 'The attendee_id from the input list' },
+                      matched_candidate_id: {
+                        type: ['string', 'null'],
+                        description: 'The candidate_id this attendee matches, or null if there is no plausible match',
+                      },
+                      confidence: {
+                        type: 'string',
+                        enum: ['high', 'medium', 'low', 'none'],
+                      },
+                    },
+                    required: ['attendee_id', 'matched_candidate_id', 'confidence'],
+                    additionalProperties: false,
+                  },
+                },
+              },
+              required: ['matches'],
+              additionalProperties: false,
+            },
+          },
+          strict: true,
+        },
+      };
+
+      const response = await this.makeAiRequest(chatRequest, AI_REQUEST_CONFIG.RECONCILIATION_TIMEOUT_MS);
+      const result = this.extractReconciliationMatches(request, response);
+
+      logger.success(req, 'reconcile_attendees', startTime, {
+        matchCount: result.matches.length,
+      });
+
+      return result;
+    } catch (error) {
+      const cause = error instanceof Error ? error.message : String(error);
+      throw new Error(`Failed to reconcile attendees: ${cause}`);
+    }
+  }
+
+  private buildReconciliationPrompt(request: ReconcileAttendeesRequest): string {
+    const attendeeLines = request.attendees.map((a) => `- attendee_id: ${a.attendee_id}, zoom_display_name: "${a.zoom_user_name || 'unknown'}"`);
+    const candidateLines = request.candidates.map(
+      (c) =>
+        `- candidate_id: ${c.candidate_id}, name: "${[c.first_name, c.last_name].filter(Boolean).join(' ') || 'unknown'}"` +
+        `${c.org_name ? `, org: "${c.org_name}"` : ''} (source: ${c.source})`
+    );
+
+    return ['Attendees to match:', ...attendeeLines, '', 'Candidate pool:', ...candidateLines].join('\n');
+  }
+
+  /**
+   * Validates the model's response against the request it was given — rejects any
+   * `matched_candidate_id` that doesn't resolve to a real candidate_id (hallucination guard),
+   * and treats any `attendee_id` the model omitted as `confidence: 'none'` rather than losing it.
+   */
+  private extractReconciliationMatches(request: ReconcileAttendeesRequest, response: OpenAIChatResponse): ReconcileAttendeesResponse {
+    if (!response.choices || response.choices.length === 0) {
+      throw new Error('No reconciliation response generated');
+    }
+
+    const content = response.choices[0].message.content;
+    if (!content || content.trim().length === 0) {
+      throw new Error('Empty reconciliation response generated');
+    }
+
+    const parsed = JSON.parse(content.trim());
+    if (!Array.isArray(parsed.matches)) {
+      throw new Error('Invalid matches array in reconciliation response');
+    }
+
+    const candidateIds = new Set(request.candidates.map((c) => c.candidate_id));
+    const byAttendeeId = new Map<string, { matched_candidate_id: string | null; confidence: AttendanceReconciliationConfidence }>();
+
+    for (const match of parsed.matches) {
+      if (!match || typeof match.attendee_id !== 'string') {
+        continue;
+      }
+      const matchedCandidateId =
+        typeof match.matched_candidate_id === 'string' && candidateIds.has(match.matched_candidate_id) ? match.matched_candidate_id : null;
+      const confidence: AttendanceReconciliationConfidence = ['high', 'medium', 'low', 'none'].includes(match.confidence) ? match.confidence : 'none';
+      byAttendeeId.set(match.attendee_id, { matched_candidate_id: matchedCandidateId, confidence });
+    }
+
+    const matches = request.attendees.map((attendee) => {
+      const found = byAttendeeId.get(attendee.attendee_id);
+      return {
+        attendee_id: attendee.attendee_id,
+        matched_candidate_id: found?.matched_candidate_id ?? null,
+        confidence: found?.confidence ?? ('none' as const),
+      };
+    });
+
+    return { matches };
   }
 
   private extractBriefActionItemsFromResponse(response: OpenAIChatResponse): ExtractActionItemsResponse {
