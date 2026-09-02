@@ -16,7 +16,7 @@ import {
   Vote,
   VoteResultsResponse,
 } from '@lfx-one/shared/interfaces';
-import { sortCommentResponsesByRecency } from '@lfx-one/shared/utils';
+import { computeIsFoundation, sortCommentResponsesByRecency } from '@lfx-one/shared/utils';
 import { Request } from 'express';
 
 import { MicroserviceError, ResourceNotFoundError } from '../errors';
@@ -63,7 +63,7 @@ export class VoteService {
 
     // Enrich list rows with canonical project fields — the vote index (VoteData) carries only
     // project_uid/name, so without this, consumers deriving per-row edit links get no slug/tier.
-    const votes = await this.projectService.enrichWithProjectData(
+    const votes = await this.enrichWithProjectMetadata(
       req,
       resources.map((resource) => this.normalizeIndexedVote(req, resource.data))
     );
@@ -444,7 +444,7 @@ export class VoteService {
         return new Date(b.end_time).getTime() - new Date(a.end_time).getTime();
       });
 
-    return this.projectService.enrichWithProjectData(req, sorted);
+    return this.enrichWithProjectMetadata(req, sorted);
   }
 
   /** POST /vote_responses requires the pre-allocated invitation row's UID — a fresh UUID returns 404 upstream. */
@@ -483,6 +483,29 @@ export class VoteService {
   // ============================================
   // Private Helpers
   // ============================================
+
+  /**
+   * Batch-enriches rows via the ungated query-service lookup — the gated `/projects/:uid` path 403s for
+   * committee writers without a project viewer relation, leaving foundation rows without slug/tier.
+   */
+  private async enrichWithProjectMetadata(req: Request, votes: Vote[]): Promise<Vote[]> {
+    const projectsByUid = await this.projectService.getProjectsByIds(
+      req,
+      votes.map((vote) => vote.project_uid)
+    );
+
+    return votes.map((vote) => {
+      const project = projectsByUid.get(vote.project_uid);
+      if (!project) return vote;
+      return {
+        ...vote,
+        project_name: project.name || vote.project_name,
+        project_slug: project.slug || vote.project_slug,
+        is_foundation: computeIsFoundation(project),
+        parent_project_uid: project.parent_uid || vote.parent_project_uid,
+      };
+    });
+  }
 
   /**
    * Normalizes a vote from the query service indexer shape (vote_uid) to the

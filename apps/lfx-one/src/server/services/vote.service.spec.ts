@@ -20,6 +20,7 @@ const { proxyRequest, proxyRequestWithResponse, pollEndpoint, fetchEntityProject
 }));
 
 vi.mock('@lfx-one/shared/utils', () => ({
+  computeIsFoundation: vi.fn(() => false),
   sortCommentResponsesByRecency: vi.fn((responses: unknown[]) => responses),
 }));
 vi.mock('./logger.service', () => ({
