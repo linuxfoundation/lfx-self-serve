@@ -212,20 +212,6 @@ export const CAMPAIGN_OUTCOME_UNCONFIRMED =
   'The change was sent but the confirmation did not match the request. Check the campaign in Google Ads before retrying.';
 
 /**
- * The message a failed keyword mutation reports, and whether it claims certainty.
- *
- * EXPORTED so it can be pinned. It lived inline and unexported, which is exactly how it shipped
- * reading `.status` -- a field `MicroserviceError` does not have. Every real proxy error therefore
- * evaluated to 0, so a definite 4xx refusal was tagged UNCONFIRMED and the actionable
- * validation/authorization message was buried behind "may or may not have been applied".
- *
- * `statusCode` first, matching `access-error.helper.ts` and `key-contact-error.helper.ts`;
- * `status` is the fallback for plain `HttpErrorResponse` shapes.
- *
- * Only a 4xx other than 408 is a boundary refusal that provably never dispatched. Transport, 408
- * and 5xx are UNCONFIRMED: the mutate may already have run, and a retried REMOVE is irreversible.
- */
-/**
  * Whether an error means the request never got a reply, as opposed to being answered.
  *
  * Only this class justifies abandoning the remaining campaigns: a 4xx other than 408 is
@@ -294,6 +280,20 @@ function upstreamAnswered(error: unknown): boolean {
   return typeof body?.message === 'string' && body.message !== '';
 }
 
+/**
+ * The message a failed keyword mutation reports, and whether it claims certainty.
+ *
+ * EXPORTED so it can be pinned. It lived inline and unexported, which is exactly how it shipped
+ * reading `.status` -- a field `MicroserviceError` does not have. Every real proxy error therefore
+ * evaluated to 0, so a definite 4xx refusal was tagged UNCONFIRMED and the actionable
+ * validation/authorization message was buried behind "may or may not have been applied".
+ *
+ * `statusCode` first, matching `access-error.helper.ts` and `key-contact-error.helper.ts`;
+ * `status` is the fallback for plain `HttpErrorResponse` shapes.
+ *
+ * Only a 4xx other than 408 is a boundary refusal that provably never dispatched. Transport, 408
+ * and 5xx are UNCONFIRMED: the mutate may already have run, and a retried REMOVE is irreversible.
+ */
 export function classifyMutationFailure(error: unknown): string {
   const e = error as { statusCode?: unknown; status?: unknown } | null | undefined;
   // Not a nested ternary: `.claude/rules` forbids them, and this reads better as a fallback chain.
@@ -372,6 +372,14 @@ export async function applyKeywordActionsViaCampaignService(
     let ref;
     try {
       const resolution = await client.resolveGoogleAdsCampaign(req, projectSlug, group.platformCampaignId);
+      // The COUNT and the ARRAY must agree, and that is checked on EVERY arm rather than only
+      // where a match is consumed. `match_count: 0` with a NON-empty `matches` is upstream
+      // contradicting itself, and answering "not managed here" on it would tell the operator to
+      // stop retrying a campaign that may well be theirs.
+      if (resolution.match_count !== (resolution.matches?.length ?? 0)) {
+        results.push(...failedResults(group, body.action, CAMPAIGN_LOOKUP_FAILED));
+        continue;
+      }
       // An unowned id is a 200 with no matches, not a throw — so this is checked, never
       // assumed. Acting on an unresolved campaign is not possible, and silently skipping it
       // would drop the keyword from the response entirely.
@@ -393,11 +401,10 @@ export async function applyKeywordActionsViaCampaignService(
       //
       // Checked here instead, where it is still a resolution problem: the campaign cannot be
       // identified, which is exactly CAMPAIGN_UNRESOLVED, and the other campaigns continue.
-      // The COUNT and the ARRAY must agree. `match_count: 1` with TWO entries is the same
-      // self-contradiction as `match_count: 1` with none, and taking matches[0] there would
-      // mutate one of two campaigns upstream never disambiguated -- the exact thing the
-      // match_count > 1 arm above refuses.
-      const match = resolution.matches?.length === 1 ? resolution.matches[0] : undefined;
+      // Count/array agreement is already established above, so this only has to check that the
+      // one entry carries usable ids: a match_count of 1 with an id-less entry is still a
+      // resolution nothing can act on.
+      const match = resolution.matches?.[0];
       if (!match?.brief_id || !match?.campaign_id) {
         // CAMPAIGN_LOOKUP_FAILED, not CAMPAIGN_UNRESOLVED. An inconsistent 2xx -- match_count
         // says 1 but the entry is absent or id-less -- does NOT establish that the campaign is

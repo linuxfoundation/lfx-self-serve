@@ -25,16 +25,6 @@ import type {
 // ---------------------------------------------------------------------------
 
 /**
- * Score a candidate campaign name against the query. SHARED by both lookup paths.
- *
- * Three additive signals: an exact match, a containment either way, and a shared word longer
- * than three characters. The ranking is the legacy path's, deliberately — changing it during a
- * backend cutover would make a behaviour change look like a backend bug, and this ordering is
- * what users have been choosing from. It is no longer "ported verbatim": the blank-name guard
- * below was added because the two copies had diverged without it, and the legacy path is now
- * this function rather than a second copy of it.
- */
-/**
  * Whether a candidate's evidence is strong enough to apply WITHOUT a human choosing it.
  *
  * A score of 2 was the gate, on the stated belief that it meant "two independent signals agree".
@@ -66,6 +56,16 @@ function normaliseForMatch(value: string): string {
   return value.trim().toLowerCase().replace(/\s+/g, ' ');
 }
 
+/**
+ * Score a candidate campaign name against the query. SHARED by both lookup paths.
+ *
+ * Three additive signals: an exact match, a containment either way, and a shared word longer
+ * than three characters. The ranking is the legacy path's, deliberately — changing it during a
+ * backend cutover would make a behaviour change look like a backend bug, and this ordering is
+ * what users have been choosing from. It is no longer "ported verbatim": the blank-name guard
+ * below was added because the two copies had diverged without it, and the legacy path is now
+ * this function rather than a second copy of it.
+ */
 export function scoreCampaignName(name: string, query: string): number {
   // NORMALISED, not merely lowercased, so the ranking agrees with isConfidentMatch(). Collapsing
   // case alone left "KubeCon  NA 2026" (double space) scoring 1 against "KubeCon NA 2026" while
@@ -151,14 +151,18 @@ export function toUtmLookupResult(payload: CampaignServiceHubSpotCampaigns, quer
   // order, which says nothing about relevance. A misattributed token is invisible — the links
   // work, and the traffic lands on another campaign's report.
   //
-  // Unambiguous means the top score is strictly higher than the next one AND strong enough to be
-  // more than a shared token: a lone weak match is still a guess, so it is offered rather than
-  // applied. The candidates are returned either way, so the operator picks instead of the sort.
-  // Strictly-higher-than-runner-up is still required: two candidates that BOTH match exactly are
-  // ambiguous no matter how strong each one's evidence is, and picking either would be the
-  // creation-order tie-break this guard exists to stop.
-  const runnerUp = scored[1]?.score ?? 0;
-  const unambiguous = isConfidentMatch(scored[0].campaign.name, query) && scored[0].score > runnerUp;
+  // Unambiguous means ONE candidate is an exact normalised match and no other is. Both halves are
+  // tested with the SAME predicate, deliberately: an earlier version confirmed the winner with
+  // isConfidentMatch (normalised) but tested the runner-up on raw score, mixing two notions of
+  // "exact". A rival differing only by trailing space is equally exact, so if it ever scored
+  // lower it would fail to block auto-apply and the winner would be picked by HubSpot's creation
+  // order — the tie-break this guard exists to stop. Scoring now normalises too, so the two
+  // agree; asking the same question of both makes that correct by construction rather than by
+  // coincidence.
+  //
+  // The candidates are returned either way, so an operator picks instead of the sort.
+  const confident = scored.filter((s) => isConfidentMatch(s.campaign.name, query));
+  const unambiguous = confident.length === 1 && confident[0] === scored[0];
 
   const candidates = scored
     .map((s) => ({ name: s.campaign.name, hs_utm: utmTokenOf(s.campaign) }))

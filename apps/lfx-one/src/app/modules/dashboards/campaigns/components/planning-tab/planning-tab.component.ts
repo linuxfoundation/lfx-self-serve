@@ -168,11 +168,17 @@ export class PlanningTabComponent implements OnInit {
    */
   protected readonly hsUnconfirmed = signal(false);
   /**
-   * The lookup could not see every campaign HubSpot matched, so "not found" is INCONCLUSIVE.
+   * "Not found" was not established, so the create offer is withheld. Carries `inconclusive`.
    *
-   * Creating on an inconclusive search duplicates a campaign in the LF-global namespace every
-   * foundation shares, and the duplicate cannot be removed from this UI. The panel asks for a
-   * narrower term instead of offering the create.
+   * Deliberately does NOT claim the lookup missed rows. `inconclusive` is
+   * `capped || campaigns.length > 0`, so it is equally true when HubSpot returned EVERYTHING and
+   * only the local scorer rejected the rows — an earlier version of this doc asserted the
+   * truncation, which is false in exactly that case and is the claim the signal two below now
+   * repudiates.
+   *
+   * Either way the consequence is the same and is why the offer is withheld: creating on a
+   * search that did not establish absence duplicates a campaign in the LF-global namespace every
+   * foundation shares, and the duplicate cannot be removed from this UI.
    */
   protected readonly hsCreateSuppressed = signal(false);
   /**

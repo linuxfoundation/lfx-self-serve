@@ -2049,9 +2049,11 @@ function toUpstreamEventDetails(details: CampaignEventDetails): Record<string, u
  * A TRANSPORT failure falls through too, and now needs saying explicitly. It used to be a 500,
  * so the 5xx rule caught it; it is now a 503 (a lost connection is an unconfirmed outcome, not a
  * proof nothing happened), which would otherwise make it "controlled" and put raw transport text
- * — "Request failed: fetch failed" — where an operator-facing remedy belongs. The BFF raises
- * those itself and tags them NETWORK_ERROR, which is what distinguishes them from a 503 the
- * service deliberately returned.
+ * — "Request failed: fetch failed" — where an operator-facing remedy belongs. Those are
+ * distinguished from a 503 the service deliberately returned by their ORIGIN: every BFF
+ * transport site sets `originalError`, and a relayed upstream error never does. NOT by the
+ * `NETWORK_ERROR` code, which executeRequest emits only as a fallback when `cause.code` is
+ * absent — see the guard's own comment below.
  */
 function upstreamMessageOr(error: unknown, fallback: string): string {
   if (!(error instanceof MicroserviceError)) {
