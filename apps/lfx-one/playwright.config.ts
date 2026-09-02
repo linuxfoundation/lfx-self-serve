@@ -35,6 +35,19 @@ const E2E_HOST = process.env['E2E_HOST'] ?? 'localhost';
 // that built its own url from E2E_HOST/E2E_PORT and ignored it put the persona cookie on a host
 // the browser never visited -- the persona silently did not apply.
 const E2E_BASE_URL = process.env['E2E_BASE_URL'] ?? `http://${E2E_HOST}:${E2E_PORT}`;
+// The port the dev server is actually LAUNCHED on, derived from the base url rather than read
+// independently. Setting only E2E_BASE_URL=http://localhost:4300 previously started Angular on
+// E2E_PORT (4200) while Playwright waited on 4300 until the 120s timeout -- a config that looks
+// correct and fails with a message pointing nowhere near the cause. Deriving it means the two
+// cannot disagree; an explicit E2E_PORT still wins when no base url is set, since it is what
+// builds the default.
+const E2E_LAUNCH_PORT = (() => {
+  try {
+    return new URL(E2E_BASE_URL).port || E2E_PORT;
+  } catch {
+    return E2E_PORT;
+  }
+})();
 
 export default defineConfig({
   testDir: './e2e',
@@ -110,7 +123,7 @@ export default defineConfig({
     // src/app/modules/docs/generated/docs-manifest, which is gitignored. Calling `ng serve`
     // alone works on a machine that has built before and cannot compile on a clean checkout —
     // so the suite would fail to launch in CI while passing locally.
-    command: `yarn docs:build && yarn ng serve --port ${E2E_PORT}`,
+    command: `yarn docs:build && yarn ng serve --port ${E2E_LAUNCH_PORT}`,
     url: E2E_BASE_URL,
     reuseExistingServer: !process.env.CI,
     timeout: 120000,

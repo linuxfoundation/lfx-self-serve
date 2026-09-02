@@ -341,6 +341,19 @@ export class ApiClientService {
             originalError: error,
           });
         }
+
+        // Fallback, mirroring the stream path above. `cause.code` is not guaranteed: fetch can
+        // reject with an Error whose cause carries none (redirect: 'error' produces exactly that
+        // shape), and those fell through to the bare `throw error` below -- reaching the client
+        // as an unmarked 500 with no originalError, so nothing downstream could tell it from a
+        // deliberate upstream response. That defeats the transport marker every consumer of
+        // `transport: true` now depends on.
+        throw new MicroserviceError(`Request failed: ${error.message}`, 503, 'NETWORK_ERROR', {
+          operation: options.binary ? 'api_client_binary_network_error' : 'api_client_network_error',
+          service: 'api_client_service',
+          path: url,
+          originalError: error,
+        });
       }
 
       throw error;
