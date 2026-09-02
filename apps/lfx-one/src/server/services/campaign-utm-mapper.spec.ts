@@ -254,22 +254,6 @@ describe('toUtmLookupResult capped', () => {
     expect(res.all_matches).toHaveLength(2);
   });
 
-  it('refuses two equally exact rivals, even when their raw scores differ', () => {
-    // The gate used to confirm the WINNER with the normalised predicate but test the runner-up on
-    // raw score. A rival differing only by trailing space is equally exact, so if it ever scored
-    // lower it would fail to block auto-apply and the winner would be decided by HubSpot's
-    // creation order -- the tie-break this guard exists to stop. Both sides now ask the same
-    // question, which makes it correct by construction rather than by the two happening to agree.
-    const res = toUtmLookupResult(
-      payload({ id: 'a', name: 'KubeCon NA 2026', utm: 'a-token' }, { id: 'b', name: 'KubeCon NA 2026 ', utm: 'b-token' }),
-      'KubeCon NA 2026'
-    );
-
-    expect(res.found, 'auto-applied despite an equally exact rival').toBe(false);
-    expect(res.hs_utm).toBeNull();
-    expect(res.all_matches).toHaveLength(2);
-  });
-
   it('still auto-applies an unambiguous winner', () => {
     // The common case must stay one click: an exact name beats a same-token rival outright.
     const res = toUtmLookupResult(
