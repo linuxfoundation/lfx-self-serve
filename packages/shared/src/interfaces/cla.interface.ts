@@ -187,6 +187,10 @@ export interface ClaGroupOption {
   matchTypes: ClaGroupMatchType[];
   /** All linked organizations, sorted by source then name upstream. May be empty. */
   organizations: ClaGroupOrg[];
+  /** Whether the group accepts an individual (ICLA) agreement — used for Gerrit contract-type routing (#2066). */
+  iclaEnabled?: boolean;
+  /** Whether the group accepts a corporate (CCLA) agreement — used for Gerrit contract-type routing (#2066). */
+  cclaEnabled?: boolean;
   /** Full repository name the term resolved to — set only when `matchTypes` includes `repository`. */
   matchedRepositoryName?: string;
   matchedRepositoryURL?: string;
@@ -337,6 +341,20 @@ export interface SignIdentityDialogData {
  * chosen, and only one of them should move the contributor off the page they started from.
  */
 export type SignIdentitySelectResult = { kind: 'github'; githubId: string } | { kind: 'gerrit' } | { linkAccounts: true };
+
+/** Console Gerrit route contract-type segment (#2066). */
+export type GerritContractType = 'individual' | 'corporate';
+
+/** What the Gerrit contract-type step is given to render (#2066). */
+export interface SignContractTypeDialogData {
+  iclaEnabled: boolean;
+  cclaEnabled: boolean;
+}
+
+/** What the contract-type step closes with, or `null` for a dismissal (#2066). */
+export interface SignContractTypeSelectResult {
+  contractType: GerritContractType;
+}
 
 /** Response for `GET /api/me/clas/github-accounts`. */
 export interface GithubAccountOptions {

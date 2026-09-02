@@ -10,8 +10,9 @@ import {
   CLA_GROUP_MATCH_TYPE_LABELS,
   CLA_GROUP_ORG_SOURCE_ICONS,
   CLA_GROUP_ORG_SOURCE_LABELS,
-  GERRIT_CONSOLE_CONTRACT_TYPE,
   GERRIT_CONSOLE_ROUTE_PREFIX,
+  GERRIT_CONTRACT_TYPE_CORPORATE,
+  GERRIT_CONTRACT_TYPE_INDIVIDUAL,
   UNNAMED_CLA_GROUP,
 } from '../constants/cla.constants';
 import { PROFILE_TABS } from '../constants/profile.constants';
@@ -256,7 +257,7 @@ export function claSignRoute(organizations: ClaGroupOrg[]): ClaSignRoute {
  * Returns `null` rather than a malformed address when the base or the group id is unusable,
  * so the caller reports a failure instead of navigating somewhere that cannot work.
  */
-export function gerritSignUrl(consoleBaseUrl: string, claGroupId: string, returnUrl: string): string | null {
+export function gerritSignUrl(consoleBaseUrl: string, claGroupId: string, returnUrl: string, contractType: 'individual' | 'corporate'): string | null {
   // Trailing slashes are stripped by scanning, not by an anchored `/\/+$/`: that pattern
   // backtracks polynomially on a long run of slashes, which CodeQL flags as a ReDoS even
   // though this particular input is build-time configuration.
@@ -275,7 +276,21 @@ export function gerritSignUrl(consoleBaseUrl: string, claGroupId: string, return
   }
 
   const redirect = encodeURIComponent(returnUrl);
-  return `${base}/${GERRIT_CONSOLE_ROUTE_PREFIX}/${encodeURIComponent(groupId)}/${GERRIT_CONSOLE_CONTRACT_TYPE}?redirect=${redirect}`;
+  const segment = contractType === GERRIT_CONTRACT_TYPE_CORPORATE ? GERRIT_CONTRACT_TYPE_CORPORATE : GERRIT_CONTRACT_TYPE_INDIVIDUAL;
+  return `${base}/${GERRIT_CONSOLE_ROUTE_PREFIX}/${encodeURIComponent(groupId)}/${segment}?redirect=${redirect}`;
+}
+
+/**
+ * Whether the Gerrit hand-off needs a contract-type step, and which segment to use when it does not (#2066).
+ *
+ * Returns `chooser` when both ICLA and CCLA are enabled; a concrete type when exactly one is;
+ * `none` when neither is — the caller must fail visibly rather than navigate.
+ */
+export function resolveGerritContractType(iclaEnabled: boolean, cclaEnabled: boolean): 'individual' | 'corporate' | 'chooser' | 'none' {
+  if (iclaEnabled && cclaEnabled) return 'chooser';
+  if (iclaEnabled) return 'individual';
+  if (cclaEnabled) return 'corporate';
+  return 'none';
 }
 
 /**

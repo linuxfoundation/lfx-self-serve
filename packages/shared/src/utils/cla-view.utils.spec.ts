@@ -23,6 +23,7 @@ import {
   formatClaSignedOn,
   gerritSignUrl,
   isMyClasEmpty,
+  resolveGerritContractType,
   shouldShowGithubCta,
   signedAsLine,
   splitAgreementsByKind,
@@ -495,19 +496,25 @@ describe('gerritSignUrl', () => {
   const RETURN_URL = 'https://app.dev.lfx.dev/profile/clas';
 
   it('composes the Console Gerrit route for the individual agreement', () => {
-    expect(gerritSignUrl('https://easycla.example.org', 'cg-1', RETURN_URL)).toBe(
+    expect(gerritSignUrl('https://easycla.example.org', 'cg-1', RETURN_URL, 'individual')).toBe(
       'https://easycla.example.org/#/cla/gerrit/project/cg-1/individual?redirect=https%3A%2F%2Fapp.dev.lfx.dev%2Fprofile%2Fclas'
     );
   });
 
+  it('composes the Console Gerrit route for the corporate agreement', () => {
+    expect(gerritSignUrl('https://easycla.example.org', 'cg-1', RETURN_URL, 'corporate')).toBe(
+      'https://easycla.example.org/#/cla/gerrit/project/cg-1/corporate?redirect=https%3A%2F%2Fapp.dev.lfx.dev%2Fprofile%2Fclas'
+    );
+  });
+
   it('tolerates a base with trailing slashes, as every configured one has', () => {
-    expect(gerritSignUrl('https://easycla.example.org//', 'cg-1', RETURN_URL)).toBe(
+    expect(gerritSignUrl('https://easycla.example.org//', 'cg-1', RETURN_URL, 'individual')).toBe(
       'https://easycla.example.org/#/cla/gerrit/project/cg-1/individual?redirect=https%3A%2F%2Fapp.dev.lfx.dev%2Fprofile%2Fclas'
     );
   });
 
   it('encodes the return address so its own query string cannot escape into ours', () => {
-    const url = gerritSignUrl('https://easycla.example.org', 'cg-1', 'https://app.example.org/profile/clas?a=1&b=2');
+    const url = gerritSignUrl('https://easycla.example.org', 'cg-1', 'https://app.example.org/profile/clas?a=1&b=2', 'individual');
 
     expect(url).toContain('redirect=https%3A%2F%2Fapp.example.org%2Fprofile%2Fclas%3Fa%3D1%26b%3D2');
     // One query parameter, not three: an unencoded return address would have added two more.
@@ -517,16 +524,34 @@ describe('gerritSignUrl', () => {
   it('returns nothing when the Console base is unset', () => {
     // The caller reports a failure instead. Navigating to a relative address would resolve it
     // against our own origin and land the contributor on a page that cannot sign anything.
-    expect(gerritSignUrl('', 'cg-1', RETURN_URL)).toBeNull();
-    expect(gerritSignUrl('   ', 'cg-1', RETURN_URL)).toBeNull();
+    expect(gerritSignUrl('', 'cg-1', RETURN_URL, 'individual')).toBeNull();
+    expect(gerritSignUrl('   ', 'cg-1', RETURN_URL, 'individual')).toBeNull();
   });
 
   it('returns nothing when the Console base is not an absolute address', () => {
-    expect(gerritSignUrl('easycla.example.org', 'cg-1', RETURN_URL)).toBeNull();
+    expect(gerritSignUrl('easycla.example.org', 'cg-1', RETURN_URL, 'individual')).toBeNull();
   });
 
   it('returns nothing when the CLA group id is missing', () => {
-    expect(gerritSignUrl('https://easycla.example.org', '', RETURN_URL)).toBeNull();
-    expect(gerritSignUrl('https://easycla.example.org', '  ', RETURN_URL)).toBeNull();
+    expect(gerritSignUrl('https://easycla.example.org', '', RETURN_URL, 'individual')).toBeNull();
+    expect(gerritSignUrl('https://easycla.example.org', '  ', RETURN_URL, 'individual')).toBeNull();
+  });
+});
+
+describe('resolveGerritContractType', () => {
+  it('returns chooser when both types are enabled', () => {
+    expect(resolveGerritContractType(true, true)).toBe('chooser');
+  });
+
+  it('returns individual when only ICLA is enabled', () => {
+    expect(resolveGerritContractType(true, false)).toBe('individual');
+  });
+
+  it('returns corporate when only CCLA is enabled', () => {
+    expect(resolveGerritContractType(false, true)).toBe('corporate');
+  });
+
+  it('returns none when neither type is enabled', () => {
+    expect(resolveGerritContractType(false, false)).toBe('none');
   });
 });
