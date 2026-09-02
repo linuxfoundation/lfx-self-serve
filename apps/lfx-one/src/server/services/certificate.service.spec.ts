@@ -182,7 +182,7 @@ describe('CertificateService', () => {
       expect(texts).toContain('On behalf of LF Open Source, LLC, we are glad you were able to join us.');
     });
 
-    it('overrides a project template logo, link, name, description and on-behalf line but keeps that project address and signature', async () => {
+    it('overrides a project template logo, link, name, description and on-behalf line but keeps that project signature', async () => {
       // Real data: event -6, KubeCon + CloudNativeCon China 2026, owned by CNCF.
       mockRow({ PROJECT_ID: CNCF_PROJECT_ID });
 
@@ -195,8 +195,8 @@ describe('CertificateService', () => {
       expect(texts).toContain('https://lfopensource.cn/');
       expect(texts.some((t) => t.startsWith('LF Open Source, LLC is pleased that you were able to attend'))).toBe(true);
       expect(texts.some((t) => t.includes('CNCF'))).toBe(false);
-      // CNCF's signature text names its own ED; the default template's is identical to CNCF's
-      // address, so asserting on the address alone wouldn't distinguish "kept" from "fell back".
+      // The default and CNCF templates share an identical address, so asserting on it can't tell
+      // "kept CNCF's template" from "fell back to default" — signature text can, since it names its ED.
       expect(texts).toContain('Priyanka Sharma\nExecutive Director');
     });
 
