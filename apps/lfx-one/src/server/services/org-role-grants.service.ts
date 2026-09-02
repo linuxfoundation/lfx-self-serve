@@ -7,6 +7,7 @@ import {
   ORG_CASCADING_CHILDREN_FETCH_CONCURRENCY,
   ORG_CASCADING_CHILDREN_PER_PARENT_HARD_CAP,
   ORG_ROLE_GRANTS_HARD_CAP,
+  QUERY_SERVICE_FILTERS_OR_BATCH_SIZE,
   VALKEY_CACHE,
 } from '@lfx-one/shared/constants';
 import {
@@ -222,11 +223,35 @@ export class OrgRoleGrantsService {
         // form matches nothing — verified against dev). Writer-vs-auditor is classified from the
         // flattened `data.members[]` shape (falling back to legacy `data.writers[]`/`data.auditors[]`) below.
         tags: [`member:${username}`],
-        per_page: ORG_ROLE_GRANTS_HARD_CAP,
+        // Request one row above the hard cap so we can detect callers who have more direct
+        // grants than the platform supports today. Upstream `MaxPageSize` is 1000
+        // (`apps/lfx-v2-query-service/pkg/constants/query.go`), so 501 stays well within bounds and
+        // no page_token fallback is required. Parameter is `page_size` — the query-service Goa DSL
+        // binds this exact key (`apps/lfx-v2-query-service/design/query-svc.go`); a legacy
+        // `per_page` here is silently ignored and the upstream defaults to `DefaultPageSize = 50`.
+        page_size: ORG_ROLE_GRANTS_HARD_CAP + 1,
       });
     } catch (error) {
       logger.warning(req, 'get_org_role_grants', 'Upstream b2b_org_settings query failed', { err: error });
       return { ...empty, upstreamFailed: true, isStaff: await staffPromise };
+    }
+
+    // Operator-visibility signal: when the caller has more direct grants than
+    // ORG_ROLE_GRANTS_HARD_CAP, emit a single structured warning per response with a stable event
+    // tag so ops can page-alert on it. The response is truncated to the cap before partitioning so
+    // the DIRECT-grant portion of the resolver, cache, and wire response never exceeds the
+    // supported ceiling. Cascading children expanded downstream by `buildResolvedMap` are bounded
+    // separately by `ORG_CASCADING_CHILDREN_PER_PARENT_HARD_CAP` per direct parent — the cap here
+    // is not a global upper bound on the resolved-map size.
+    const rawGrantCount = settingsResponse?.resources?.length ?? 0;
+    if (rawGrantCount > ORG_ROLE_GRANTS_HARD_CAP) {
+      logger.warning(req, 'get_org_role_grants', 'Raw direct-grant count exceeds supported maximum — truncating to hard cap', {
+        username_length: username.length,
+        raw_grant_count: rawGrantCount,
+        hard_cap: ORG_ROLE_GRANTS_HARD_CAP,
+        event: 'org_grant_cap_exceeded',
+      });
+      settingsResponse = { ...settingsResponse, resources: settingsResponse.resources!.slice(0, ORG_ROLE_GRANTS_HARD_CAP) };
     }
 
     const isStaff = await staffPromise;
@@ -344,24 +369,63 @@ export class OrgRoleGrantsService {
     return colonIdx === -1 ? resourceId : resourceId.substring(colonIdx + 1);
   }
 
-  /** D-003 — batch-fetch b2b_org indexed docs via a single multi-tag query; returns `uid → doc`. Uids missing from the upstream response are absent from the result. */
+  /**
+   * D-003 — batch-fetch b2b_org indexed docs, returning `uid → doc`. Uids missing from the upstream
+   * response are absent from the result.
+   *
+   * URL-length guard: `tags` is expanded into repeated query parameters (`api-client.service.ts`
+   * line ~341) so `safeUids.length` at the ORG_ROLE_GRANTS_HARD_CAP ceiling (500) would produce a
+   * ~19 KB GET — well past the repo's documented `QUERY_SERVICE_FILTERS_OR_BATCH_SIZE = 100` guard
+   * (`packages/shared/src/constants/api.constants.ts`). Chunked and fanned out with
+   * `Promise.allSettled`, following the same pattern used in `committee.service.ts` and
+   * `access-check.service.ts`. Failed chunks are logged and skipped — a partial result degrades
+   * one caller's list rather than fail-closing the entire role-grants read.
+   */
   private async fetchOrgDetailsByUids(req: Request, uids: string[]): Promise<Map<string, B2bOrgIndexedDoc>> {
     const safeUids = this.filterSafeUids(req, uids, 'fetch_org_details_by_uids');
     if (safeUids.length === 0) return new Map();
 
-    const response = await this.microserviceProxy.proxyRequest<QueryServiceResponse<B2bOrgIndexedDoc>>(req, 'LFX_V2_SERVICE', '/query/resources', 'GET', {
-      type: 'b2b_org',
-      tags: safeUids.map((uid) => `b2b_org_uid:${uid}`),
-      // +10 buffer for safety, capped at the hard cap so we never request a page larger than
-      // the upstream max-page-size (safeUids is already bounded by ORG_ROLE_GRANTS_HARD_CAP).
-      per_page: Math.min(safeUids.length + 10, ORG_ROLE_GRANTS_HARD_CAP),
-    });
+    const chunks: string[][] = [];
+    for (let i = 0; i < safeUids.length; i += QUERY_SERVICE_FILTERS_OR_BATCH_SIZE) {
+      chunks.push(safeUids.slice(i, i + QUERY_SERVICE_FILTERS_OR_BATCH_SIZE));
+    }
+
+    const settled = await Promise.allSettled(
+      chunks.map((chunk) =>
+        this.microserviceProxy.proxyRequest<QueryServiceResponse<B2bOrgIndexedDoc>>(req, 'LFX_V2_SERVICE', '/query/resources', 'GET', {
+          type: 'b2b_org',
+          tags: chunk.map((uid) => `b2b_org_uid:${uid}`),
+          // Parameter is `page_size` — see the note on the settings fetch above. Every chunk is
+          // <= QUERY_SERVICE_FILTERS_OR_BATCH_SIZE, so this is always well under the upstream
+          // MaxPageSize of 1000.
+          page_size: chunk.length,
+        })
+      )
+    );
+
+    // Total-failure fail-closed: if EVERY chunk rejected, propagate so the caller sets
+    // `upstreamFailed: true` — otherwise `computeAccessAwareOrgs` would cache an empty grant
+    // list as successful for the ~30s TTL and hide a live outage from every caller that hits it.
+    // Partial failures still degrade (some chunks land, some are lost) since a caller with
+    // 400/500 grants shouldn't lose their entire session over one flaky chunk.
+    const rejected = settled.filter((result) => result.status === 'rejected');
+    if (rejected.length === settled.length) {
+      throw new Error(`fetchOrgDetailsByUids: every chunk failed (${rejected.length}/${settled.length}); refusing to cache empty result`);
+    }
 
     const map = new Map<string, B2bOrgIndexedDoc>();
-    for (const resource of response?.resources ?? []) {
-      const uid = this.extractUid(resource.id);
-      if (uid && resource.data) {
-        map.set(uid, resource.data);
+    for (const result of settled) {
+      if (result.status === 'rejected') {
+        logger.warning(req, 'fetch_org_details_by_uids', 'One chunk of b2b_org details fetch failed; degrading to partial result', {
+          err: result.reason,
+        });
+        continue;
+      }
+      for (const resource of result.value?.resources ?? []) {
+        const uid = this.extractUid(resource.id);
+        if (uid && resource.data) {
+          map.set(uid, resource.data);
+        }
       }
     }
     return map;
@@ -405,7 +469,8 @@ export class OrgRoleGrantsService {
       const query: Record<string, unknown> = {
         type: 'b2b_org',
         tags: [`parent_b2b_org_uid:${parentUid}`],
-        per_page: 100,
+        // Parameter is `page_size` — see the note on the settings fetch above.
+        page_size: 100,
       };
       if (pageToken) query['page_token'] = pageToken;
 

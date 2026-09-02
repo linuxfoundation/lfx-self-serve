@@ -6,7 +6,7 @@ import { NAV_SEARCH_DEBOUNCE_MS } from './lens.constants';
 /** Debounce for org-selector typeahead — kept in lockstep with the project-selector. */
 export const ORG_SELECTOR_DEBOUNCE_MS = NAV_SEARCH_DEBOUNCE_MS;
 
-/** Hard cap on the role-grants `per_page` (spec SC-005b); orgs beyond this fall to no-badge. */
+/** Hard cap on the role-grants `page_size`; orgs beyond this fall to no-badge. */
 export const ORG_ROLE_GRANTS_HARD_CAP = 500;
 
 /** How many consecutive catalogue pages the BFF may skip when every row on them is already an assigned row. Bounds the upstream cost of the skip-ahead that keeps incremental load from stalling on a filtered-empty page. */

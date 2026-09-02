@@ -50,13 +50,17 @@ export function applyEntityProjectContext(
  * `activeContext` from the persona-resolved selection to the project slot for the life of the
  * page, and an entity kind contradicting the URL prefix would re-point the kind while the URL
  * still reads otherwise — both behavior changes outside this fix's scope.
+ *
+ * `canonicalizeRoute` (opt-in, requires `preferEntityKind`): once the entity's kind is known
+ * and contradicts the URL's leading `/foundation|project` segment, rewrite the URL to the
+ * entity's tier so a copied link reflects ownership (GH-1567).
  */
 export function syncEntityProjectContext<T extends EntityWithProject>(
   entitySignal: Signal<T | null>,
   projectContextService: ProjectContextService,
   router: Router,
   destroyRef: DestroyRef,
-  options?: { preferEntityKind?: boolean }
+  options?: { preferEntityKind?: boolean; canonicalizeRoute?: boolean }
 ): void {
   const entityChanges$ = toObservable(entitySignal).pipe(
     distinctUntilChanged((a, b) => a?.uid === b?.uid && a?.project_uid === b?.project_uid && a?.project_slug === b?.project_slug)
@@ -95,10 +99,33 @@ export function syncEntityProjectContext<T extends EntityWithProject>(
         // a foundation-owned entity can sit under a /project/* route (e.g. meeting edit).
         const useFoundation = entity.is_foundation ?? router.url.startsWith('/foundation/');
         applyEntityProjectContext(projectContextService, context, useFoundation, syncUrl);
+        if (options?.canonicalizeRoute && entity.is_foundation != null) {
+          canonicalizeTierPrefix(router, entity.is_foundation, entity.project_slug);
+        }
       } else if (router.url.startsWith('/foundation/')) {
         projectContextService.setFoundation(context, syncUrl);
       } else {
         projectContextService.setProject(context, syncUrl);
       }
     });
+}
+
+// Swaps only the leading tier segment so the URL reflects entity ownership (GH-1567); the
+// already-canonical no-op keeps the NavigationEnd re-apply loop-free, replaceUrl keeps history clean.
+export function canonicalizeTierPrefix(router: Router, isFoundation: boolean, projectSlug: string): void {
+  const url = router.url;
+  const isFoundationUrl = url.startsWith('/foundation/');
+  const isProjectUrl = url.startsWith('/project/');
+  if ((!isFoundationUrl && !isProjectUrl) || isFoundationUrl === isFoundation) {
+    return;
+  }
+  const from = isFoundationUrl ? '/foundation/' : '/project/';
+  const to = isFoundation ? '/foundation/' : '/project/';
+  const urlTree = router.parseUrl(to + url.slice(from.length));
+  // router.url still carries the pre-sync ?project= (the Location.replaceState sync bypasses the
+  // router) — pin the entity's slug so projectQueryParamGuard reseeds the right project.
+  if ('project' in urlTree.queryParams) {
+    urlTree.queryParams['project'] = projectSlug;
+  }
+  router.navigateByUrl(urlTree, { replaceUrl: true });
 }

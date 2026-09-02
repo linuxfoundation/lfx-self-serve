@@ -2,7 +2,7 @@
 // SPDX-License-Identifier: MIT
 
 import type { ActivityEventType } from '../interfaces/activity-event.interface';
-import { WeeklyBriefSourceSection, WeeklyBriefState } from '../interfaces/weekly-brief.interface';
+import { WeeklyBriefCurrentActivityPhrase, WeeklyBriefSourceSection, WeeklyBriefState } from '../interfaces/weekly-brief.interface';
 
 /**
  * Brief states a "Share to Mailing List" action may fire from — i.e. states
@@ -55,6 +55,82 @@ export const WEEKLY_BRIEF_ACTION_ITEM_OWNER_ROLE_MAX_LENGTH = 100;
 export const WEEKLY_BRIEF_POLL_INTERVAL_MS = 4000;
 export const WEEKLY_BRIEF_MAX_POLL_ATTEMPTS = 20;
 
+/**
+ * Bounds how long `WeeklyBriefService#buildCurrentActivity` (GH-1922) is allowed to run before
+ * `getCurrentBrief` gives up on it and renders the brief without the tally. Without this, a
+ * degraded upstream could hold the ENTIRE `GET /current` response hostage: the tally runs inside
+ * the same `Promise.all` as the brief fetch, `buildCurrentActivity` already degrades any error to
+ * `undefined` (fails soft), but that only helps if the failure is fast — a slow-but-not-erroring
+ * upstream (each of its several legs defaults to a much longer per-call timeout) would otherwise
+ * add real seconds to a response that should return in well under one.
+ *
+ * Deliberately tighter than an aggregation's own per-leg timeout would suggest, and specifically
+ * NOT sized around "comfortably longer than typical completion" the way a generous fire-and-
+ * forget timeout would be: because the tally shares `getCurrentBrief`'s `Promise.all` with the
+ * brief fetch itself, this value is a direct, worst-case tax on the PRIMARY content — the AI-
+ * generated brief text a page load is actually waiting to see — not just on an optional
+ * enrichment. A larger budget (this constant started at 10s) buys the tally more time to recover
+ * on a slow-but-alive upstream, at the direct cost of making every viewer wait that much longer
+ * to see their brief on that upstream's bad days. 3s was chosen as a value still comfortably
+ * clear of any single leg's own 30s timeout, while keeping that worst-case tax small next to a
+ * page load a viewer already expects to take a moment.
+ *
+ * This also changes which path the budget actually binds. On `weekly-brief-card.component.ts`'s
+ * initial (non-poll) load — the truly unbounded case this constant exists for, since that GET has
+ * no client-side timeout of its own — it was always the deciding bound, before and after this
+ * value's tightening. On the polling path (`pollUntilTerminal`), each tick is separately wrapped
+ * in `timeout(WEEKLY_BRIEF_POLL_INTERVAL_MS)` (4s client-side); at the original 10s this budget
+ * could never be what resolved a slow tick (the client gave up first), but at 3s — under that 4s
+ * client timeout — a slow-but-alive upstream now typically degrades server-side, inside this
+ * budget, before the client's own timeout would otherwise abandon the tick.
+ *
+ * When this constant's value resolves the race, it degrades to `undefined`, the same transient/
+ * "worth asking again" value any other `buildCurrentActivity` failure produces — self-heal from
+ * that is exactly as good (and exactly as limited) as
+ * `WEEKLY_BRIEF_CURRENT_ACTIVITY_MAX_ASK_ATTEMPTS`'s own doc comment already describes: it only
+ * happens while the card is actively polling (a generating brief), not on an initial load that
+ * lands on an already-terminal one — that known v1 gap applies here unchanged, not restated.
+ * Note the retries that budget enables are not free: the loser of the race in
+ * `buildCurrentActivityWithBudget` is never cancelled, so a persistently slow upstream can end up
+ * serving multiple overlapping fan-outs at once (one per ask attempt, up to
+ * `WEEKLY_BRIEF_CURRENT_ACTIVITY_MAX_ASK_ATTEMPTS` + the initial load) rather than being asked
+ * once and left alone — a genuine retry-amplification risk against a struggling upstream, not
+ * mitigated here (no `AbortSignal` threading, no per-committee in-flight dedupe). Structurally
+ * decoupling the tally into its own request — so a slow upstream delays only the enrichment,
+ * never the brief, and a lost race can actually be cancelled — would remove this tax and the
+ * amplification risk entirely; deliberately not done here. A known, accepted v1 limitation, not
+ * an oversight: the machinery already built around this coupling — the budget race and its
+ * `BUDGET_ELAPSED` sentinel in `weekly-brief.service.ts`'s `buildCurrentActivityWithBudget`, this
+ * file's own ask-attempt cap, and the poll's opt-out gate in `weekly-brief-card.component.ts` —
+ * exists specifically to manage it, not to hide it.
+ */
+export const WEEKLY_BRIEF_CURRENT_ACTIVITY_BUDGET_MS = 3_000;
+
+/**
+ * Caps how many poll ticks (GH-1922) keep asking the BFF to rebuild `current_activity` while it
+ * stays absent (`undefined` — see `WeeklyBriefCurrentResponse.current_activity`'s doc comment).
+ * That fan-out isn't free — a governance committee's tally costs an upstream committee read plus
+ * `CommitteeActivityService`'s own multi-call aggregation — and a persistently failing upstream
+ * would otherwise get asked again on every one of `WEEKLY_BRIEF_MAX_POLL_ATTEMPTS` ticks for an
+ * answer that keeps failing the same way. Deliberately smaller than that cap: this only bounds the
+ * *tally's* self-heal retries, not the brief's own terminal-state poll, which keeps running
+ * regardless — a card can still finish generating and simply render without the "this week so
+ * far" line once this is exhausted.
+ *
+ * Known v1 gap this cap doesn't cover: `pollUntilTerminal` (where this budget lives) only runs
+ * while the brief itself is `generating` — a page load onto an already-terminal brief (the far
+ * more common case) never invokes it at all. A transient `current_activity` degrade on that load
+ * has no self-heal PURPOSE-BUILT for it — nothing in `weekly-brief-card.component.ts` exists to
+ * retry the tally specifically. It can still recover incidentally, any time something else causes
+ * `initBriefResponseSubscription`'s GET to re-run (a navigation, a reload, `refresh$`, or a
+ * visible retry control in another render branch) — deliberately not enumerated here, since which
+ * call sites/buttons do that is exactly the kind of detail that drifts out of sync with its
+ * source as the component evolves; see that file's own call sites for the current list. Not
+ * solved by this constant — a real fix would need `initBriefResponseSubscription` to kick off its
+ * own bounded re-ask, independent of the generating-poll's budget.
+ */
+export const WEEKLY_BRIEF_CURRENT_ACTIVITY_MAX_ASK_ATTEMPTS = 3;
+
 /** States a poll of GET /current should stop on — everything else (`empty`, `generating`) keeps it running. */
 export const WEEKLY_BRIEF_TERMINAL_STATES: ReadonlySet<WeeklyBriefState> = new Set(['generated', 'edited', 'approved', 'error']);
 
@@ -102,6 +178,45 @@ export const WEEKLY_BRIEF_SOURCE_SECTIONS: readonly WeeklyBriefSourceSection[] =
   { kind: 'mailing-list', label: 'Mailing List' },
   { kind: 'doc', label: 'Documents' },
   { kind: 'members', label: 'Membership' },
+] as const;
+
+/**
+ * Verb phrasing for the "this week so far" activity-tally caption (GH-1922) — the single source
+ * of truth for which kinds the tally recognizes, their display order, and their singular/plural
+ * count text ("1 meeting held" / "2 meetings held"). Kept separate from
+ * `WEEKLY_BRIEF_SOURCE_SECTIONS` because the two solve different problems: that constant is a
+ * noun *label* for a disclosure section heading ("Meetings"), this is a verb *phrase* for a
+ * count sentence — but `weekly-brief-card.component.ts` drives the RECOGNIZED sections' order and
+ * membership from THIS list alone (via `initCurrentActivitySections`' `WEEKLY_BRIEF_CURRENT_ACTIVITY_PHRASES.map(...)`),
+ * not by cross-referencing `WEEKLY_BRIEF_SOURCE_SECTIONS` by kind for that part, so a kind present
+ * here always gets a real countText, never a placeholder. That's not the WHOLE membership story,
+ * though: the same method also appends a single trailing `other` section, its kind/label/countText
+ * all hardcoded inline rather than sourced from this list, for any `source_refs` entry whose kind
+ * this list doesn't recognize — today that's only the literal kind `other` itself, which the
+ * server-side mapper stamps on `vote_opened` and `survey_published`/`survey_closed` events (see
+ * `mapActivityEventToCurrentActivityRef`'s own doc comment in
+ * `apps/lfx-one/src/server/services/weekly-brief.service.ts`; no `source_ref` is ever literally
+ * `kind: 'vote_opened'` or `'survey_published'` — those are `ActivityEvent` types, already folded
+ * to `other` before this list ever sees them) — so a kind missing from this list doesn't vanish, it
+ * just loses its own count text and its position in the display order. The section's display
+ * LABEL, separately, IS looked up from `WEEKLY_BRIEF_SOURCE_SECTIONS` (with a `?? kind` fallback
+ * covering the reverse gap — a kind present here but missing there).
+ *
+ * `mailing-list` and `members` are forward-declared, not currently reachable: the server-side
+ * builder (`weekly-brief.service.ts#buildCurrentActivity`) sources `source_refs` from
+ * `CommitteeActivityService`, which has no mailing-list leg at all (tracked upstream —
+ * linuxfoundation/lfx-self-serve#1934) and never constructs a `member_joined`/`member_left`
+ * event (a known, permanently-deferred v1 limitation, not a tracked issue — no upstream
+ * membership-timestamp/deletion-history signal to build one from). A week whose only real
+ * activity was on one of these two kinds still renders "no activity yet" — an accepted v1 gap in
+ * what the tally can attest to, not a claim that no such activity occurred.
+ */
+export const WEEKLY_BRIEF_CURRENT_ACTIVITY_PHRASES: readonly WeeklyBriefCurrentActivityPhrase[] = [
+  { kind: 'meeting', singular: 'meeting held', plural: 'meetings held' },
+  { kind: 'vote', singular: 'vote closed', plural: 'votes closed' },
+  { kind: 'mailing-list', singular: 'mailing-list post', plural: 'mailing-list posts' },
+  { kind: 'doc', singular: 'document added', plural: 'documents added' },
+  { kind: 'members', singular: 'membership change', plural: 'membership changes' },
 ] as const;
 
 /**

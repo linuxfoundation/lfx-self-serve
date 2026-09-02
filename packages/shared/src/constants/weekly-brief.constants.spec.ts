@@ -1,19 +1,39 @@
 // Copyright The Linux Foundation and each contributor to LFX.
 // SPDX-License-Identifier: MIT
 
-// Pins WEEKLY_BRIEF_TEXT_MAX_LENGTH against upstream's documented bound. The BFF's
-// server-side vitest config mocks `@lfx-one/shared/constants` wholesale (to avoid
-// re-triggering an Angular JIT-compilation failure — see weekly-brief.controller.spec.ts),
-// so its mocked value can't catch drift if this constant ever changes. This is the one
-// place the real value is loaded and checked.
+// Pins this module's constants against the values their own consumers assume. Each `it()` below
+// states its own rationale.
 
 import { describe, expect, it } from 'vitest';
 
-import { WEEKLY_BRIEF_DEFAULT_THROTTLE, WEEKLY_BRIEF_TEXT_MAX_LENGTH } from './weekly-brief.constants';
+import {
+  WEEKLY_BRIEF_CURRENT_ACTIVITY_BUDGET_MS,
+  WEEKLY_BRIEF_DEFAULT_THROTTLE,
+  WEEKLY_BRIEF_POLL_INTERVAL_MS,
+  WEEKLY_BRIEF_TEXT_MAX_LENGTH,
+} from './weekly-brief.constants';
 
 describe('WEEKLY_BRIEF_TEXT_MAX_LENGTH', () => {
   it('matches upstream UpdateCurrentWeeklyBriefRequestBody.brief_text maxLength', () => {
     expect(WEEKLY_BRIEF_TEXT_MAX_LENGTH).toBe(20_000);
+  });
+});
+
+describe('WEEKLY_BRIEF_CURRENT_ACTIVITY_BUDGET_MS', () => {
+  it('stays under WEEKLY_BRIEF_POLL_INTERVAL_MS — its own doc comment claims a slow poll tick can now resolve server-side, inside this budget, before the client abandons the tick; a later edit to either constant that breaks that ordering would otherwise silently revert the claimed behavior with no other test failing', () => {
+    expect(WEEKLY_BRIEF_CURRENT_ACTIVITY_BUDGET_MS).toBeLessThan(WEEKLY_BRIEF_POLL_INTERVAL_MS);
+  });
+
+  // Absolute pin, alongside the relative one above —
+  // apps/lfx-one/src/server/services/weekly-brief.service.spec.ts's own budget test imports this
+  // identifier through that file's `vi.mock('@lfx-one/shared/constants', ...)` hand-copy
+  // (currently 3_000, kept in sync by hand), so a real-value change here would leave that test
+  // silently exercising a value production no longer uses, with only the relative ordering test
+  // above (which a value change could still satisfy) standing between that drift and going
+  // unnoticed. Same rationale as activity-event.constants.spec.ts's pin on
+  // ACTIVITY_FEED_MAX_PAGE_SIZE for the identical hand-copy hazard.
+  it("matches the value weekly-brief.service.spec.ts's mock factory hand-copies", () => {
+    expect(WEEKLY_BRIEF_CURRENT_ACTIVITY_BUDGET_MS).toBe(3_000);
   });
 });
 
