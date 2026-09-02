@@ -65,4 +65,21 @@ describe('SsrBaseUrlBackend', () => {
 
     expect(handle).toHaveBeenCalledWith(expect.objectContaining({ url: '/assets/logo.svg' }));
   });
+
+  it('rewrites /api/ requests already absolutized to the public origin, as done by relativeUrlsTransformerInterceptorFn', () => {
+    process.env['PORT'] = '4321';
+    const req = new HttpRequest('GET', 'https://lfx.example.org/api/meetings/1?occurrence=2');
+
+    backend.handle(req);
+
+    expect(handle).toHaveBeenCalledWith(expect.objectContaining({ url: 'http://127.0.0.1:4321/api/meetings/1?occurrence=2' }));
+  });
+
+  it('leaves absolutized requests outside /api/ and /public/api/ untouched', () => {
+    const req = new HttpRequest('GET', 'https://lfx.example.org/assets/logo.svg');
+
+    backend.handle(req);
+
+    expect(handle).toHaveBeenCalledWith(expect.objectContaining({ url: 'https://lfx.example.org/assets/logo.svg' }));
+  });
 });
