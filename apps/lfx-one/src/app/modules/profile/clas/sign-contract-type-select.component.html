@@ -6,6 +6,11 @@ SPDX-License-Identifier: MIT
 <div class="flex flex-col" data-testid="sign-contract-type-select-dialog">
   <p class="mb-4 text-sm text-slate-600">{{ copy.body }}</p>
 
+  <!--
+    Each card is described by the paragraph under it. Which type a contributor is depends on who
+    owns the work, and that is what these two sentences say — the labels alone do not distinguish
+    them. Focus lands on the card, so without `describedBy` the text is announced to nobody.
+  -->
   <div role="listbox" aria-label="Contributor types" class="flex flex-col gap-3">
     <div class="flex flex-col gap-1">
       <lfx-selectable-card
@@ -13,8 +18,11 @@ SPDX-License-Identifier: MIT
         control="contractType"
         [value]="individualValue"
         [label]="copy.individual.label"
+        describedBy="sign-contract-type-select-individual-description"
         testId="sign-contract-type-select-individual" />
-      <p class="pl-1 text-xs leading-relaxed text-slate-500">{{ copy.individual.description }}</p>
+      <p id="sign-contract-type-select-individual-description" class="pl-1 text-xs leading-relaxed text-slate-500">
+        {{ copy.individual.description }}
+      </p>
     </div>
 
     <div class="flex flex-col gap-1">
@@ -23,8 +31,11 @@ SPDX-License-Identifier: MIT
         control="contractType"
         [value]="corporateValue"
         [label]="copy.corporate.label"
+        describedBy="sign-contract-type-select-corporate-description"
         testId="sign-contract-type-select-corporate" />
-      <p class="pl-1 text-xs leading-relaxed text-slate-500">{{ copy.corporate.description }}</p>
+      <p id="sign-contract-type-select-corporate-description" class="pl-1 text-xs leading-relaxed text-slate-500">
+        {{ copy.corporate.description }}
+      </p>
     </div>
   </div>
 

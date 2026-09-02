@@ -63,6 +63,22 @@ describe('SignContractTypeSelectComponent', () => {
     expect(fixture.nativeElement.textContent).toContain(SIGN_CONTRACT_TYPE_COPY.corporate.description);
   });
 
+  it('announces each type’s description with the card it belongs to', async () => {
+    // Which type applies depends on who owns the work, and only the descriptions say so. Focus
+    // lands on the card, so a description that is merely adjacent is announced to nobody. Resolved
+    // through the DOM rather than compared as a string, because a stale or swapped id is exactly
+    // the failure this guards — and it would still read as a present `aria-describedby`.
+    for (const [testId, description] of [
+      ['sign-contract-type-select-individual', SIGN_CONTRACT_TYPE_COPY.individual.description],
+      ['sign-contract-type-select-corporate', SIGN_CONTRACT_TYPE_COPY.corporate.description],
+    ] as const) {
+      const describedBy = query(testId)?.getAttribute('aria-describedby');
+
+      expect(describedBy).toBeTruthy();
+      expect(fixture.nativeElement.querySelector(`#${describedBy}`)?.textContent).toContain(description);
+    }
+  });
+
   it('preselects nothing, and cannot be continued until a type is chosen', async () => {
     // A preselection is indistinguishable from a choice once submitted, and which agreement a
     // contributor signs is not a decision this dialog may make on their behalf.
