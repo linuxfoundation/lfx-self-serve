@@ -1081,7 +1081,7 @@ test.describe('WG Weekly Brief card — "This week so far" activity tally (GH-19
     await expect(note).toContainText('see Recent Activity below for the latest events');
   });
 
-  test('renders "activity couldn\'t be counted" (not "no activity yet") when truncated is true but every ref was filtered/unmapped away (GH-1998)', async ({
+  test('renders "activity may be incomplete" (not "no activity yet") when truncated is true but every ref was filtered/unmapped away (GH-1998)', async ({
     page,
   }) => {
     await mockCommitteeShell(page, { category: 'Board' });
