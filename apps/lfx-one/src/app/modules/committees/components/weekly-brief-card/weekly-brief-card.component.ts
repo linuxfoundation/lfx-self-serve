@@ -262,17 +262,19 @@ export class WeeklyBriefCardComponent {
   // the visible text can't drift apart on a future copy edit.
   protected readonly currentActivityPrefix = 'This week so far:';
 
-  // GH-1998: current-week activity filled a full upstream page — source_refs is a floor, not the
-  // total. Deliberately doesn't name a count: the truncation gate fires on the raw upstream page
-  // size, before the window_end filter and kind-mapping this component's own tally is built from,
-  // so a specific number here (e.g. "50+ events") could overstate what actually happened this
-  // week. Two variants, not one static string: a page full of raw events that all get
-  // filtered/unmapped away (see buildCurrentActivity's own doc comment) still carries
-  // truncated: true with an empty tally, and pairing that with "This count may be incomplete"
-  // would read as "no activity yet" when the truth is closer to "we don't actually know." Hiding
-  // the note in that case instead (as an earlier version of this fix did) would be worse — a
-  // false-complete "no activity yet" is exactly the outcome GH-1922 says to avoid; the fix is
-  // to say the honest thing, not to say nothing. Starting-point copy, flagged for product
+  // GH-1998: current-week activity filled a full upstream page — source_refs is a lower bound,
+  // not proof of partiality (see WeeklyBriefCurrentActivity.truncated's own doc comment).
+  // Deliberately doesn't name a count: the truncation gate fires on the raw upstream page size,
+  // before the window_end filter and kind-mapping this component's own tally is built from, so a
+  // specific number here (e.g. "50+ events") could overstate what actually happened this week.
+  // Two variants, not one static string: a page full of raw events that all get filtered/unmapped
+  // away (see buildCurrentActivity's own doc comment) still carries truncated: true with an empty
+  // tally, so "This count may be incomplete" would misdescribe an on-screen count of zero as a
+  // count at all — the empty variant exists to qualify that absence honestly, not to avoid a
+  // separate "no activity yet" string (currentActivityEmptyText, below, already guards that).
+  // Hiding the note in the empty case instead (as an earlier version of this fix did) would be
+  // worse — a false-complete "no activity yet" is exactly the outcome GH-1922 says to avoid; the
+  // fix is to say the honest thing, not to say nothing. Starting-point copy, flagged for product
   // review, not locked in. Deliberately does NOT say "for the full list" — the Recent Activity
   // section below renders a fixed ACTIVITY_FEED_DEFAULT_PAGE_SIZE (8) rows with no "view all" or
   // pagination affordance of its own (CommitteeService.getCommitteeActivity sends no page_size),

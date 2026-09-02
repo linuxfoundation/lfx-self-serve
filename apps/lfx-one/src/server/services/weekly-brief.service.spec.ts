@@ -1011,6 +1011,39 @@ describe('WeeklyBriefService', () => {
       );
     });
 
+    it('DOES truncate with an empty source_refs when a full raw page is entirely future-stamped noise — the whole point of a wholly-new copy path (GH-1998) would be untested if every truncation case left mappable events on the page', async () => {
+      delete process.env['WEEKLY_BRIEF_BACKEND'];
+      getCommitteeBaseMock.mockResolvedValue({ uid: 'committee-1', category: 'Board' });
+
+      vi.useFakeTimers();
+      try {
+        vi.setSystemTime(new Date('2026-01-14T12:00:00.000Z'));
+
+        // A full raw page (ACTIVITY_FEED_MAX_PAGE_SIZE) that is ENTIRELY administratively-closed
+        // votes stamped from a still-future end_time — no real in-window activity survives the
+        // window_end filter at all, so source_refs comes out empty even though truncated is true.
+        const futureNoise = Array.from({ length: ACTIVITY_FEED_MAX_PAGE_SIZE }, (_, i) => ({
+          type: 'vote_closed' as const,
+          occurred_at: '2026-01-14T13:00:00.000Z', // after window_end (2026-01-14T12:00:00.000Z)
+          committee_uid: 'committee-1',
+          payload: { vote_uid: `future-v${i}`, name: 'Future Vote', status: 'Ended' as const },
+        }));
+        getCommitteeActivityMock.mockResolvedValue({ data: futureNoise, page_token: undefined });
+
+        const result = await service.getCurrentBrief(req, 'committee-1');
+
+        expect(result.current_activity).toEqual(expect.objectContaining({ truncated: true, source_refs: [] }));
+        expect(logger.warning).toHaveBeenCalledWith(
+          req,
+          'get_weekly_brief_current_activity',
+          expect.stringContaining('fills a full page'),
+          expect.objectContaining({ committee_id: 'committee-1' })
+        );
+      } finally {
+        vi.useRealTimers();
+      }
+    });
+
     it("does NOT omit current_activity merely because page_token is present with a short page — a committee with >fetchSize lifetime notes/surveys saturates those legs regardless of the current week (see buildCurrentActivity's own doc comment)", async () => {
       delete process.env['WEEKLY_BRIEF_BACKEND'];
       getCommitteeBaseMock.mockResolvedValue({ uid: 'committee-1', category: 'Board' });
