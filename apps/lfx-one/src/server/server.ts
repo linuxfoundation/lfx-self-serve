@@ -17,6 +17,7 @@ import { CrowdfundingController } from './controllers/crowdfunding.controller';
 import { ProfileController } from './controllers/profile.controller';
 import { CrowdfundingAuthService } from './services/crowdfunding-auth.service';
 import { customErrorSerializer } from './helpers/error-serializer';
+import { applySsrCacheHeaders } from './helpers/ssr-cache-headers.helper';
 import { validateAndSanitizeUrl } from './helpers/url-validation';
 import { AuthenticationError } from './errors';
 import { authMiddleware } from './middleware/auth.middleware';
@@ -501,10 +502,7 @@ app.use('/**', async (req: Request, res: Response, next: NextFunction) => {
         return next();
       }
 
-      // The rendered HTML can carry per-user data (auth context, host_key/can_view_host_key on
-      // meeting pages), so it must never be served from a shared/intermediary cache to another user.
-      response.headers.set('Cache-Control', 'private, no-store');
-      response.headers.set('Vary', 'Cookie');
+      applySsrCacheHeaders(response);
 
       // Web `Response.status` is read-only, so rebuild with 404 when the render flagged not-found.
       // Buffer the body first (404 pages are small) so we never hand a consumed stream to the new Response.
