@@ -133,16 +133,24 @@ export function failedResults(group: KeywordActionGroup, action: KeywordActionTy
  * reintroduce exactly the misalignment this exists to prevent.
  */
 export function inRequestOrder(keywords: KeywordActionRequest[], results: OrderedKeywordResult[]): KeywordActionResponse[] {
+  // CAMPAIGN id included in the key. A criterion id is unique only within its ad group, but the
+  // controller accepts a body repeating the same (adGroupId, criterionId) pair under DIFFERENT
+  // campaigns -- and grouping by campaign reorders results, so one campaign's failure and
+  // another's success landed in a shared bucket and were handed out by arrival order. A keyword
+  // that was never paused then reported "Paused", which is the one thing this module must never
+  // say.
   const byKeyword = new Map<string, KeywordActionResponse[]>();
   for (const { source, response } of results) {
-    const key = `${source.adGroupId}-${source.criterionId}`;
+    const key = `${source.campaignId}-${source.adGroupId}-${source.criterionId}`;
     const bucket = byKeyword.get(key);
     if (bucket) bucket.push(response);
     else byKeyword.set(key, [response]);
   }
   // shift() so a request naming the same keyword twice consumes one result per occurrence
   // rather than repeating the first.
-  return keywords.map((kw) => byKeyword.get(`${kw.adGroupId}-${kw.criterionId}`)?.shift()).filter((r): r is KeywordActionResponse => r !== undefined);
+  return keywords
+    .map((kw) => byKeyword.get(`${kw.campaignId}-${kw.adGroupId}-${kw.criterionId}`)?.shift())
+    .filter((r): r is KeywordActionResponse => r !== undefined);
 }
 
 /**

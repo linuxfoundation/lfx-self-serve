@@ -142,6 +142,24 @@ describe('toBulkResponse', () => {
 });
 
 describe('inRequestOrder', () => {
+  it('keeps two campaigns sharing an ad-group/criterion pair apart', () => {
+    // A criterion id is unique only WITHIN its ad group, and the controller accepts a body that
+    // repeats the same (adGroupId, criterionId) under different campaigns. Grouping by campaign
+    // reorders results, so campaign A's FAILURE and campaign B's SUCCESS landed in one bucket
+    // and were handed out by arrival order -- reporting a keyword that was never paused as
+    // "Paused". That is the one thing this module must never say.
+    const kws = [kw('camp-A', 'k-1'), kw('camp-B', 'k-1')];
+    const results = [
+      { source: kws[1], response: { adGroupId: 'ag-1', criterionId: 'k-1', success: true, message: 'Paused' } },
+      { source: kws[0], response: { adGroupId: 'ag-1', criterionId: 'k-1', success: false, message: 'Failed' } },
+    ] as never;
+
+    const out = inRequestOrder(kws, results);
+
+    expect(out[0].success, 'campaign A failed but was reported as paused').toBe(false);
+    expect(out[1].success).toBe(true);
+  });
+
   /**
    * THE REGRESSION. `optimization-tab.component.ts` zips `res.results[i]` onto the keyword list
    * it sent, so any reordering lands a result on a DIFFERENT keyword — and a still-spending

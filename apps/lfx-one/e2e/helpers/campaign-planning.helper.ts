@@ -11,7 +11,7 @@
  */
 
 import { PERSONA_COOKIE_KEY } from '@lfx-one/shared/constants';
-import type { PersistedPersonaState, PersonaType } from '@lfx-one/shared/interfaces';
+import type { HubSpotUtmLookupResult, PersistedPersonaState, PersonaType } from '@lfx-one/shared/interfaces';
 import { expect, Frame, Locator, Page, test } from '@playwright/test';
 
 export const DATA_LOAD_TIMEOUT = 30_000;
@@ -65,14 +65,15 @@ export function sseBody(events: { type: string; data: unknown }[]): string {
   return events.map((e) => `event: ${e.type}\ndata: ${JSON.stringify(e.data)}\n\n`).join('');
 }
 
-export interface UtmLookupBody {
-  found: boolean;
-  hs_utm: string | null;
-  campaign_name: string;
-  all_matches: { name: string; hs_utm: string }[];
-  capped: boolean;
-  inconclusive: boolean;
-}
+/**
+ * ALIASED from the shared contract, never redeclared.
+ *
+ * This was a local interface with the same shape, which meant a change to the real response --
+ * including to the two completeness flags this PR reworks -- would leave the E2E fixtures
+ * compiling happily against a contract that no longer existed. Aliasing makes that a build
+ * failure instead of a silent drift.
+ */
+export type UtmLookupBody = HubSpotUtmLookupResult;
 
 /** A lookup answer that found nothing and SETTLED the question — the create is legitimate here. */
 export function notFound(): UtmLookupBody {
@@ -207,6 +208,14 @@ async function waitForHydration(page: Page, quietMs = 1200, timeoutMs = 20000): 
       }
       await page.waitForTimeout(150);
     }
+    // THROW at the deadline rather than returning. Falling out of the loop resolved the helper
+    // as though hydration had settled, so the test proceeded to interact with the very
+    // teardown-prone component this exists to protect -- and failed later, somewhere else, for a
+    // reason that looked unrelated. A helper that cannot establish its postcondition must say so.
+    throw new Error(
+      `waitForHydration: main-frame navigation never went quiet for ${quietMs}ms within ${timeoutMs}ms. ` +
+        'The page is still re-navigating, so component state cannot survive the next interaction.'
+    );
   } finally {
     page.off('framenavigated', onNav);
   }

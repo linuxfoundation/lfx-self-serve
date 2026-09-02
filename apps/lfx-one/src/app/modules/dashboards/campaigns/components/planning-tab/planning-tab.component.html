@@ -171,7 +171,13 @@
                   <p class="text-xs text-gray-500">
                     {{ hsUtm() ? 'Other matches — click to select:' : 'Similar campaigns — pick the right one, or check HubSpot:' }}
                   </p>
-                  @for (m of hsMatches(); track m.hs_utm) {
+                  <!--
+                    Tracked by INDEX, not by hs_utm. The token is not unique -- the mapper
+                    forwards every scored campaign without deduplicating -- so two candidates
+                    sharing one produce duplicate Angular keys and can reuse the wrong DOM row.
+                    The list is static for a given lookup, so the index is a stable identity.
+                  -->
+                  @for (m of hsMatches(); track $index) {
                     <button
                       type="button"
                       (click)="selectHsMatch(m.hs_utm, m.name)"
