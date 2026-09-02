@@ -157,6 +157,26 @@ export class PlanningTabComponent implements OnInit {
   protected readonly hsUtm = signal<string | null>(null);
   protected readonly hsSearching = signal(false);
   protected readonly hsCreating = signal(false);
+  /**
+   * A create POST is in flight SOMEWHERE, regardless of which foundation the panel now shows.
+   *
+   * Distinct from `hsCreating`, which is rendering state and is cleared on a foundation switch so
+   * the new panel does not inherit the old one's spinner. Clearing it there also freed the
+   * button, and the switch's own lookup can answer "not found" while the original POST is still
+   * committing -- so a second click dispatched a SECOND create. When both projects resolve to the
+   * same HubSpot portal that is a duplicate campaign in a shared namespace, which cannot be
+   * removed from this UI.
+   *
+   * A COUNTER rather than a boolean: two creates can legitimately overlap across a switch, and a
+   * boolean cleared by the first to settle would re-open the button while the second is still
+   * running. The offer returns only when the count reaches zero.
+   */
+  private readonly hsCreatesInFlight = signal(0);
+  /**
+   * Whether the Create control must stay disabled. Either this panel is creating, or a create
+   * dispatched BEFORE a foundation switch has not settled yet.
+   */
+  protected readonly hsCreateBlocked = computed(() => this.hsCreating() || this.hsCreatesInFlight() > 0);
   protected readonly hsStatus = signal<string | null>(null);
   protected readonly hsNotFound = signal(false);
   /**
@@ -652,6 +672,11 @@ export class PlanningTabComponent implements OnInit {
 
   protected createInHubSpot(): void {
     if (!this.lastLookedUpEvent) return;
+    // Refused in the METHOD too, not only via [disabled]. A disabled attribute is a rendering
+    // concern -- it can be bypassed, and a foundation switch re-enables the control the moment it
+    // clears hsCreating -- while a duplicate campaign in a shared HubSpot portal cannot be undone
+    // from this UI. The dispatch itself has to hold the line.
+    if (this.hsCreatesInFlight() > 0) return;
     // Refuse when the field no longer names the event this offer was raised for. The button
     // survives a url edit because the HubSpot state is not reset until the 500ms debounced
     // lookup STARTS — so between typing and that debounce, the offer on screen belongs to the
@@ -673,6 +698,8 @@ export class PlanningTabComponent implements OnInit {
       return;
     }
     this.hsCreating.set(true);
+    // Counted separately so a foundation switch cannot free the button under a live POST.
+    this.hsCreatesInFlight.update((n) => n + 1);
     this.hsStatus.set(null);
     // Captured for the same reason the lookup captures it: the create is slow enough for the
     // operator to retype the url and start a lookup for a DIFFERENT event while it is in flight.
@@ -691,6 +718,9 @@ export class PlanningTabComponent implements OnInit {
           // frozen on the new event's panel forever; ownership matters because releasing
           // unconditionally lets an OLDER create re-enable the button while a newer one is
           // still running, which is how a duplicate gets made.
+          // Unconditional, outside the ownership check: the count tracks DISPATCHES, and a
+          // superseded create still settled — leaving it counted blocks the offer forever.
+          this.hsCreatesInFlight.update((n) => Math.max(0, n - 1));
           if (this.createIsCurrent(generation)) {
             this.hsCreating.set(false);
           }
@@ -735,6 +765,9 @@ export class PlanningTabComponent implements OnInit {
           }
         },
         error: (err: unknown) => {
+          // Unconditional, outside the ownership check: the count tracks DISPATCHES, and a
+          // superseded create still settled — leaving it counted blocks the offer forever.
+          this.hsCreatesInFlight.update((n) => Math.max(0, n - 1));
           if (this.createIsCurrent(generation)) {
             this.hsCreating.set(false);
           }

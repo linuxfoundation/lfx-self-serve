@@ -1490,12 +1490,16 @@ describe('PlanningTabComponent — HubSpot UTM states', () => {
   });
 
   /**
-   * `hsCreating` is shared, not per-subscription. A foundation change clears state and can start
-   * a SECOND create while the first is still in flight -- so an older create releasing the flag
-   * unconditionally re-enables the button while the newer request is still running, which is how
-   * a duplicate campaign gets made in a shared namespace.
+   * The hazard this file already named -- "which is how a duplicate campaign gets made in a
+   * shared namespace" -- is now closed one step EARLIER than these tests assumed.
+   *
+   * They were written when a foundation switch could start a SECOND create while the first was
+   * in flight, and pinned the narrower property that a stale response must not re-enable the
+   * button. But the second dispatch is itself the duplicate: two projects on the same HubSpot
+   * portal share the namespace, and the campaign cannot be removed from this UI. So the second
+   * create is now REFUSED outright while any create is unsettled, and these assert that.
    */
-  it('does not let a stale create re-enable the button for a newer one', () => {
+  it('refuses a second create while one dispatched before the switch is unsettled', () => {
     // Through the FIELD, so the panel and the url agree — createInHubSpot refuses to act
     // otherwise, and a real user can only reach the button from that state.
     (fixture.componentInstance as unknown as { lastLookedUpEvent: string }).lastLookedUpEvent = setUrlFor('KubeCon NA 2026');
@@ -1511,14 +1515,20 @@ describe('PlanningTabComponent — HubSpot UTM states', () => {
     (fixture.componentInstance as unknown as { lastLookedUpEvent: string }).lastLookedUpEvent = setUrlFor('KubeCon NA 2026');
     const second = new Subject<unknown>();
     create.mockReturnValue(second);
+    const callsBefore = create.mock.calls.length;
     (fixture.componentInstance as unknown as { createInHubSpot(): void }).createInHubSpot();
-    expect(instance()['hsCreating']()).toBe(true);
 
-    // The OLD foundation's create now settles.
+    // REFUSED: the first create is still unsettled, so no second POST goes out at all. That is
+    // the duplicate, and it cannot be undone from this UI once it lands.
+    expect(create.mock.calls.length, 'dispatched a second create while the first was unsettled').toBe(callsBefore);
+    // The control stays blocked for the same reason.
+    expect(instance()['hsCreateBlocked']()).toBe(true);
+
+    // The OLD foundation's create now settles, and only then does the offer come back.
     first.error(new Error('stale create failed'));
     fixture.detectChanges();
 
-    expect(instance()['hsCreating'](), 'a stale create re-enabled the button while a newer one was still running').toBe(true);
+    expect(instance()['hsCreateBlocked'](), 'stayed blocked after every create settled').toBe(false);
   });
 
   /**
@@ -1789,13 +1799,20 @@ describe('PlanningTabComponent — HubSpot UTM states', () => {
     (fixture.componentInstance as unknown as { lastLookedUpEvent: string }).lastLookedUpEvent = setUrlFor('KubeCon NA 2026');
     const second = new Subject<unknown>();
     create.mockReturnValue(second);
+    const callsBefore = create.mock.calls.length;
     (fixture.componentInstance as unknown as { createInHubSpot(): void }).createInHubSpot();
-    expect(instance()['hsCreating']()).toBe(true);
+
+    // The round trip makes the FIRST create's captured foundation match again, which is what
+    // made generation counting necessary. But the dispatch is refused regardless: an unsettled
+    // create blocks the next one whatever foundation the panel is showing.
+    expect(create.mock.calls.length, 'a round trip let a second create through').toBe(callsBefore);
+    expect(instance()['hsCreateBlocked']()).toBe(true);
 
     first.error(new Error('stale create failed'));
     fixture.detectChanges();
 
-    expect(instance()['hsCreating'](), "a round-tripped stale create released the newer one's flag").toBe(true);
+    // Settled, so the offer returns -- and the stale response still must not have rendered.
+    expect(instance()['hsCreateBlocked'](), 'stayed blocked after the only create settled').toBe(false);
   });
 
   /**

@@ -134,7 +134,7 @@
                     <button
                       type="button"
                       (click)="createInHubSpot()"
-                      [disabled]="hsCreating()"
+                      [disabled]="hsCreateBlocked()"
                       class="whitespace-nowrap rounded-md bg-blue-600 px-3 py-1.5 text-xs font-medium text-white hover:bg-blue-700 disabled:opacity-50"
                       data-testid="planning-hubspot-create-btn">
                       {{ hsCreating() ? 'Creating...' : 'Create in HubSpot' }}
