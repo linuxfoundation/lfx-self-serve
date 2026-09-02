@@ -76,11 +76,10 @@ export class OrgPeopleCommitteeMembersService {
 
     // The Groups page shares one aggregate per org for 15 minutes (GH-1809). That window is only
     // defensible for upstream drift — a change the admin just made themselves must not hide behind
-    // it — and this is the one write path in this app that already operates at org grain, so the
-    // discard is a single key delete rather than a fan-out. Best-effort and deliberately not
-    // awaited-for-success: `del` never throws, and a cache fault just leaves the entry to age out.
-    // Board-seat reassignment deliberately has no equivalent hook: board-category seats are filtered
-    // out of the Groups page, so they cannot change its counts.
+    // it. The seat-reassign paths already operate at org grain, so the discard is a single key
+    // delete rather than a fan-out. Best-effort and deliberately not awaited-for-success: `del`
+    // never throws, and a cache fault just leaves the entry to age out. The Memberships-page
+    // reassign carries the same hook, since it reassigns non-board seats too.
     await invalidateOrgGroupsCache(orgUid);
 
     const foundationNames = await enrichFoundationNames(req, [upstream], this.projectService);

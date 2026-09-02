@@ -23,6 +23,12 @@ export class OrgLensGroupsService {
    * differently-scoped resolutions could never collide. `withCache` is a plain read → fetch → write
    * with no dedup of its own, so without this every concurrent cold request runs its own full
    * ~34-second upstream drain. Same shape as `OrgMembershipResolverService`'s.
+   *
+   * Scope: **one process**. The deployment runs multiple non-sticky replicas, so a simultaneous
+   * cold burst can still cost one drain per replica before any of them writes the shared entry —
+   * the bound is the replica count, not one. Making it exactly one would need a distributed lease,
+   * which is not worth the moving parts for a page loaded this rarely; the per-request
+   * `result_source` signal is likewise per-process.
    */
   private static readonly groupsInFlight = new Map<string, Promise<OrgLensGroupsResponse>>();
 
@@ -121,7 +127,10 @@ export class OrgLensGroupsService {
   }
 
   private async resolveGroups(req: Request, orgUid: string): Promise<OrgLensGroupsResponse> {
-    const seats = await this.boardCommitteeService.fetchAllOrgSeats(req, orgUid);
+    // Uncached drain deliberately: this aggregate is retained far longer than the per-caller seats
+    // window, so reading through that window would let a just-reassigned seat be baked into the
+    // stored aggregate for the full retention period — defeating the discard-on-write above.
+    const seats = await this.boardCommitteeService.fetchAllOrgSeatsUncached(req, orgUid);
 
     // Only non-board committees belong on the Groups page (boards live on the Memberships page).
     const nonBoardSeats = seats.filter((s) => !isBoardCategory(s.committee_category));
