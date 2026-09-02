@@ -33,6 +33,26 @@ import type {
   SSEEvent,
 } from '@lfx-one/shared/interfaces';
 
+/**
+ * Statuses that PROVE the create never reached HubSpot.
+ *
+ * A boundary refusal: 400/404 are answered by the service before it dispatches, and 401/403 by
+ * `requireCampaignManager` before the request reaches the controller at all. Nothing was created,
+ * so Create can safely stay on offer.
+ *
+ * Every other status -- transport failure, 408, any 5xx, and anything unrecognised -- leaves the
+ * outcome UNKNOWN and must fail closed, because a non-idempotent create that may have landed
+ * cannot be retried safely. A malformed 2xx body, for one, surfaces as 500 with the campaign
+ * already created.
+ *
+ * Defined ONCE because it is asked twice -- "should this be recorded as possibly-created?" and
+ * "what do we tell the operator?" -- and the two lists drifted apart when they were written
+ * separately: 401/403 were definite for the record and unconfirmed for the message, so an
+ * authorization refusal correctly wrote no record while still telling the operator the campaign
+ * might exist and withdrawing Create.
+ */
+const isDefiniteRefusal = (status: number): boolean => status === 400 || status === 401 || status === 403 || status === 404;
+
 type PlanningStep = 'input' | 'generating' | 'review';
 
 /**
@@ -867,12 +887,7 @@ export class PlanningTabComponent implements OnInit {
           // existed, which left Create withheld forever after a create that never reached
           // HubSpot.
           const failStatus = typeof err === 'object' && err !== null && 'status' in err ? Number((err as { status: unknown }).status) : 0;
-          // 401/403 join 400/404 as DEFINITE. requireCampaignManager refuses an unauthorised
-          // project before the POST reaches the controller, so nothing was created -- recording
-          // it told the operator a campaign may exist and made them spend two futile re-checks
-          // to clear a record that never should have been written.
-          const definiteRefusal = failStatus === 400 || failStatus === 401 || failStatus === 403 || failStatus === 404;
-          if (!definiteRefusal) {
+          if (!isDefiniteRefusal(failStatus)) {
             this.hsCreatedEvents.update((seen) => new Set(seen).add(`${capturedFoundation}|${capturedEvent}`));
           }
           if (this.createIsCurrent(generation)) {
@@ -918,7 +933,12 @@ export class PlanningTabComponent implements OnInit {
           // Re-offering Create there is the duplicate this whole handler exists to prevent, and
           // the duplicate cannot be removed from this UI. A 500 costs a re-check; a duplicate
           // costs a campaign nobody can delete. Unconfirmed is the honest reading.
-          if (status === 400 || status === 404) {
+          // The SAME predicate the record site asks. Listing the statuses again here is what let
+          // the two drift: 401/403 counted as definite for the record and unconfirmed for the
+          // message, so an authorization refusal wrote no record -- correctly -- and still told
+          // the operator the campaign might exist, withdrew Create, and cost them a re-check to
+          // settle something the boundary had already settled.
+          if (isDefiniteRefusal(status)) {
             // Nothing was created: keep the offer so the operator can act on the message.
             this.hsUnconfirmed.set(false);
             this.hsStatus.set(this.createFailureMessage(status, err));
@@ -1518,6 +1538,13 @@ export class PlanningTabComponent implements OnInit {
       if (typeof upstream === 'string' && upstream.trim() !== '') {
         return upstream;
       }
+    }
+    if (status === 401 || status === 403) {
+      // Named for what it is. Falling through to the generic line below said "HubSpot rejected
+      // the campaign", which points the operator at the campaign name -- an input that cannot
+      // fix a permission problem. The refusal is ours, not HubSpot's: it happens before any
+      // upstream call.
+      return 'You do not have permission to create campaigns on this project. Nothing was created — ask a project admin for campaign manager access.';
     }
     if (status === 404) {
       return 'No HubSpot connection is configured for this project — connect HubSpot before creating a campaign.';

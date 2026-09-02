@@ -1647,6 +1647,27 @@ describe('PlanningTabComponent — HubSpot UTM states', () => {
     expect(instance()['hsCreateBlocked'](), 'inconclusive searches retired the record and re-offered Create').toBe(true);
   });
 
+  it('treats an authorization refusal as definite, not unconfirmed', () => {
+    // Copilot (blocking): 401/403 were DEFINITE at the record site and UNCONFIRMED at the message
+    // site -- two hand-maintained status lists that drifted. The record was correctly not
+    // written, and the operator was still told the campaign might exist, lost the Create button,
+    // and had to re-check to settle what the boundary had already settled.
+    //
+    // Both statuses asserted: 403 is the refusal requireCampaignManager actually returns, 401 the
+    // unauthenticated one, and a list that covers only the common case is how this drifted.
+    for (const status of [401, 403]) {
+      const empty = { found: false, hs_utm: null, campaign_name: '', all_matches: [], capped: false, inconclusive: false };
+      runLookup(empty, `KubeCon NA 20${status}`);
+      create.mockReturnValue(throwError(() => ({ status })));
+      (fixture.componentInstance as unknown as { createInHubSpot(): void }).createInHubSpot();
+      fixture.detectChanges();
+
+      expect(instance()['hsUnconfirmed'](), `${status} reported an unconfirmed outcome for a refused request`).toBe(false);
+      expect(instance()['hsCreateBlocked'](), `${status} withdrew Create after a request that never dispatched`).toBe(false);
+      expect(String(instance()['hsStatus']()), `${status} blamed HubSpot for our own permission refusal`).toContain('permission');
+    }
+  });
+
   it('never re-enables Create from empty re-checks alone, however many', () => {
     // Copilot (blocking): a count of empty searches cannot establish absence. `inconclusive:
     // false` means the search COMPLETED, not that the record is missing -- HubSpot's index is

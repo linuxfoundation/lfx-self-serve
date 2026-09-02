@@ -650,7 +650,7 @@ environment:
   # design, since the credential moved into campaign-service's encrypted connection store. With
   # this off the Planning tab's UTM lookup does not work at all.
   #
-  # TWO BEHAVIOURS CHANGE ON BOTH PATHS, INCLUDING WITH THIS FLAG OFF. Read this before
+  # THREE BEHAVIOURS CHANGE ON BOTH PATHS, INCLUDING WITH THIS FLAG OFF. Read this before
   # assuming a default-off deployment is inert — it is not.
   #
   # 1. The legacy path FABRICATED a utm token ("<id>-<name>") whenever HubSpot had none, so a
@@ -665,6 +665,19 @@ environment:
   #    paths now report whether the search was CAPPED. The two go together: `capped` is what
   #    suppresses the create offer, and at a limit of 10 nearly every search on a busy portal
   #    would report capped, leaving an operator unable to create anything.
+  #
+  #    `capped` MEANS "THIS SEARCH IS NOT PROVEN COMPLETE", which is broader than literal
+  #    truncation. A response whose total is absent, or whose total contradicts the rows
+  #    returned, sets it too — those cannot be shown complete either, and treating them as
+  #    complete is what would license a duplicate create. So the remedy is not always "narrow
+  #    the search until it fits": an operator seeing `capped` on an obviously small result set
+  #    is looking at an unprovable total, not 200 hidden rows.
+  #
+  # 3. Campaign-name matching now NORMALISES before comparing (case, punctuation and spacing),
+  #    so names the legacy path treated as distinct can now TIE. A tie is refused rather than
+  #    guessed: the lookup returns the candidates and declines to auto-apply one, which surfaces
+  #    as a picker instead of a silent match. The legacy path picked the first row it saw, which
+  #    could attribute a brief's links to the wrong campaign of a similarly-named pair.
   #
   # The CREATE path writes into a PORTAL-WIDE namespace: the campaign is visible to everyone
   # working in the HubSpot account the project is connected to, whatever project scoped the
