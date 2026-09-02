@@ -3,8 +3,10 @@
 
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 
-// Mirrors brand-kit.service.spec.ts: shared modules are mocked because the `@lfx-one/shared/*`
-// alias isn't wired into this app's vitest config. pdf.constants is aliased to its real source.
+// Mirrors brand-kit.service.spec.ts: the `@lfx-one/shared/*` alias is wired into vitest.config.ts,
+// but the `utils` barrel transitively imports Angular-dependent modules that can't load in this
+// spec's `node` environment, so it's narrowed to the one pure function this service needs.
+// pdf.constants is aliased to its real source and doesn't need mocking.
 const snowflakeMocks = vi.hoisted(() => ({
   execute: vi.fn(),
 }));
@@ -89,6 +91,8 @@ vi.mock('fs', () => {
 });
 
 import type { Request } from 'express';
+
+import { PROJECT_TEMPLATES } from '@lfx-one/shared/constants/pdf.constants';
 
 import { AuthorizationError, ResourceNotFoundError } from '../errors';
 import { CertificateService } from './certificate.service';
@@ -197,7 +201,7 @@ describe('CertificateService', () => {
       expect(texts.some((t) => t.includes('CNCF'))).toBe(false);
       // The default and CNCF templates share an identical address, so asserting on it can't tell
       // "kept CNCF's template" from "fell back to default" — signature text can, since it names its ED.
-      expect(texts).toContain('Priyanka Sharma\nExecutive Director');
+      expect(texts).toContain(PROJECT_TEMPLATES[CNCF_PROJECT_ID].signatureText);
     });
 
     it.each([

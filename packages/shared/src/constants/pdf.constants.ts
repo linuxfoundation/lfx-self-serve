@@ -28,7 +28,7 @@ export const DEFAULT_LOGO_WIDTH = 145;
  * The 13.6:1 wordmark is illegible at DEFAULT_LOGO_WIDTH (~10pt tall); 240pt matches the
  * Linux Foundation icon's visual weight and clears the address block at x=408.
  */
-export const LF_OPEN_SOURCE_OVERRIDE: Required<Pick<PDFTemplateDetails, 'link' | 'name' | 'desc' | 'onBehalf' | 'logo' | 'logoWidth'>> = {
+export const LF_OPEN_SOURCE_OVERRIDE: Required<Omit<PDFTemplateDetails, 'address' | 'signature' | 'signatureText'>> = {
   link: 'https://lfopensource.cn/',
   name: 'LF Open Source, LLC',
   desc: 'LF Open Source, LLC is a nonprofit consortium dedicated to fostering the growth of the Linux operating system. LF Open Source, LLC promotes, protects and standardizes Linux by providing unified resources and services. It is supported by its members — the leading IT companies such as IBM, Intel, Hewlett Packard, etc.',
