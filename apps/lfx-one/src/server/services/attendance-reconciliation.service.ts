@@ -51,15 +51,12 @@ export class AttendanceReconciliationService {
     pastMeetingUid: string,
     pastMeeting: PastMeeting
   ): Promise<ReconcilePastMeetingParticipantsResponse> {
-    const startTime = logger.startOperation(req, 'reconcile_attendance_pool', {
-      past_meeting_id: pastMeetingUid,
-    });
+    logger.debug(req, 'reconcile_attendance_pool', 'Starting attendance reconciliation', { past_meeting_id: pastMeetingUid });
 
     const participants = await this.meetingService.getPastMeetingParticipants(req, pastMeetingUid);
     const unverified = participants.filter((p) => p.is_attended && !p.is_verified);
 
     if (unverified.length === 0) {
-      logger.success(req, 'reconcile_attendance_pool', startTime, { unverified_count: 0 });
       return { results: [], candidate_pool_size: 0, auto_applied_count: 0, needs_review_count: 0 };
     }
 
@@ -85,7 +82,7 @@ export class AttendanceReconciliationService {
     const autoAppliedCount = results.filter((r) => r.auto_applied).length;
     const needsReviewCount = results.filter((r) => !r.auto_applied).length;
 
-    logger.success(req, 'reconcile_attendance_pool', startTime, {
+    logger.info(req, 'reconcile_attendance_pool', 'Attendance reconciliation completed', {
       unverified_count: unverified.length,
       candidate_pool_size: candidates.length,
       auto_applied_count: autoAppliedCount,
