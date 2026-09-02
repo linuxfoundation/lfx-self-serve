@@ -219,9 +219,12 @@ export interface WeeklyBriefCurrentResponse {
    *     distinction (e.g. `weekly-brief-card.component.ts`'s `pollUntilTerminal`) would spend
    *     calls forever for no reason.
    *   - **Present**: the real tally, possibly with an empty `source_refs` (a genuine quiet week
-   *     — still a real answer, not absence). `truncated: true` when the current week's activity
-   *     exceeds what a single upstream page can return — `source_refs` is then a real but
-   *     partial count, not a silently-truncated one stated as fact.
+   *     — still a real answer, not absence). `truncated: true` when the current week's raw
+   *     activity page reached the upstream page-size cap — `source_refs` is then a lower bound
+   *     that is usually, but not provably, partial (see `buildCurrentActivity`'s own doc comment
+   *     for the accepted false-positive case: a coincidentally exactly-full page can still be
+   *     complete). Either way it's a real, non-fabricated count, not a silently-truncated one
+   *     stated as fact.
    */
   current_activity?: WeeklyBriefCurrentActivity | null;
 }
@@ -231,8 +234,15 @@ export interface WeeklyBriefCurrentActivity {
   window_start: string;
   window_end: string;
   source_refs: WeeklyBriefSourceRef[];
-  /** True when the current week's activity filled a full upstream page — `source_refs` is a floor, not the total. */
-  truncated?: boolean;
+  /**
+   * `true` when the current week's raw activity page reached the upstream page-size cap —
+   * `source_refs` is then a lower bound that's usually, but not provably, partial (a
+   * coincidentally exactly-full page can still be complete; see
+   * `weekly-brief.service.ts#buildCurrentActivity`'s own doc comment for why this is an accepted
+   * heuristic, not a proof). Present-only by contract: a producer must never emit `false` here,
+   * so the type itself forbids it.
+   */
+  truncated?: true;
 }
 
 /** A caller's one-tap quality rating on a specific weekly-brief revision. BFF-only — no upstream equivalent. */
