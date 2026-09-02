@@ -115,6 +115,31 @@ export function claStatusSeverity(status: ClaStatus): TagSeverity {
 }
 
 /**
+ * Date-only Sign Date for My CLAs (#2032).
+ *
+ * Producer `signedOn` is a real RFC3339 instant, not a calendar-day stored as UTC
+ * midnight. Pinning the formatter to UTC (the DatePipe `'UTC'` argument, or
+ * `{ timeZone: 'UTC' }` on `toLocaleDateString`) shifts the calendar day for
+ * viewers in negative offsets — a Pacific afternoon signature displays as the
+ * next UTC date. Omitting `timeZone` uses the viewer's local zone; pass an IANA
+ * name in tests so CI (UTC) can still pin the Pacific case.
+ *
+ * Empty / unparseable → `''` so the cell can show an em dash.
+ */
+export function formatClaSignedOn(iso: string, timeZone?: string): string {
+  const trimmed = iso.trim();
+  if (!trimmed) return '';
+  const date = new Date(trimmed);
+  if (Number.isNaN(date.getTime())) return '';
+  return date.toLocaleDateString('en-US', {
+    month: 'short',
+    day: 'numeric',
+    year: 'numeric',
+    ...(timeZone ? { timeZone } : {}),
+  });
+}
+
+/**
  * Second line under the signed date (#1573). Undefined ⇒ the Signed cell is date-only.
  *
  * Every platform the producer names takes a suffix. `gerrit` reads wider than the Gerrit

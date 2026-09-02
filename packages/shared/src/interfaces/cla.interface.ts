@@ -483,6 +483,8 @@ export interface ClaRow {
   id: string;
   agreement: MyClaAgreement;
   status: ClaRowStatus;
+  /** Date-only Sign Date in the viewer's local timezone; `'—'` when empty or unparseable. */
+  signedOnLabel: string;
   /** Second line under the signed date; absent when the producer sent no identity. */
   signedAsLine?: string;
   menuItems: ClaRowMenuItem[];

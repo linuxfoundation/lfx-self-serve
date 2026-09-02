@@ -1,7 +1,7 @@
 // Copyright The Linux Foundation and each contributor to LFX.
 // SPDX-License-Identifier: MIT
 
-import { DatePipe, DOCUMENT, isPlatformBrowser } from '@angular/common';
+import { DOCUMENT, isPlatformBrowser } from '@angular/common';
 import { ChangeDetectionStrategy, Component, computed, DestroyRef, inject, PLATFORM_ID, Signal, signal, viewChildren } from '@angular/core';
 import { takeUntilDestroyed, toSignal } from '@angular/core/rxjs-interop';
 import { Router, RouterLink } from '@angular/router';
@@ -25,6 +25,7 @@ import {
   claStatusLabel,
   claStatusSeverity,
   downloadFromUrl,
+  formatClaSignedOn,
   gerritSignUrl,
   isMyClasEmpty,
   signedAsLine,
@@ -66,18 +67,7 @@ import { SignIdentitySelectComponent } from './sign-identity-select.component';
  */
 @Component({
   selector: 'lfx-profile-clas',
-  imports: [
-    DatePipe,
-    RouterLink,
-    BadgeComponent,
-    ButtonComponent,
-    EmptyStateComponent,
-    MenuComponent,
-    MessageComponent,
-    TableComponent,
-    TagComponent,
-    ToastModule,
-  ],
+  imports: [RouterLink, BadgeComponent, ButtonComponent, EmptyStateComponent, MenuComponent, MessageComponent, TableComponent, TagComponent, ToastModule],
   providers: [MessageService, DialogService],
   templateUrl: './profile-clas.component.html',
   changeDetection: ChangeDetectionStrategy.OnPush,
@@ -663,6 +653,7 @@ export class ProfileClasComponent {
             icon: this.statusIcon(agreement.status),
             note: this.statusNote(agreement),
           },
+          signedOnLabel: formatClaSignedOn(agreement.signedOn) || '—',
           signedAsLine: m2 ? signedAsLine(agreement.signedVia, agreement.signedAs) : undefined,
           menuItems,
           hasActions: menuItems.length > 0,

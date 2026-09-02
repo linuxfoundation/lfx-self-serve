@@ -20,6 +20,7 @@ import {
   claSignRoute,
   claStatusLabel,
   claStatusSeverity,
+  formatClaSignedOn,
   gerritSignUrl,
   isMyClasEmpty,
   shouldShowGithubCta,
@@ -151,6 +152,30 @@ describe('claStatusSeverity', () => {
     expect(claStatusSeverity('invalidated')).toBe('danger');
     expect(claStatusSeverity('unknown')).toBe('secondary');
     expect(claStatusSeverity('superseded')).toBe('warn');
+  });
+});
+
+describe('formatClaSignedOn', () => {
+  // The three shapes from #2032. UTC pin vs local is a no-op on the first two; the third
+  // is the reported off-by-one (Pacific afternoon → next UTC calendar day).
+  const afternoonPacific = '2026-09-01T17:30:00-07:00';
+
+  it('renders a Pacific-afternoon timestamp as Sep 1 locally and Sep 2 in UTC', () => {
+    expect(formatClaSignedOn(afternoonPacific, 'America/Los_Angeles')).toBe('Sep 1, 2026');
+    expect(formatClaSignedOn(afternoonPacific, 'UTC')).toBe('Sep 2, 2026');
+  });
+
+  it('keeps same-calendar-day timestamps on the same date in Pacific and UTC', () => {
+    expect(formatClaSignedOn('2026-05-01T18:40:42Z', 'America/Los_Angeles')).toBe('May 1, 2026');
+    expect(formatClaSignedOn('2026-05-01T18:40:42Z', 'UTC')).toBe('May 1, 2026');
+    expect(formatClaSignedOn('2026-05-08T23:24:50.232159+00:00', 'America/Los_Angeles')).toBe('May 8, 2026');
+    expect(formatClaSignedOn('2026-05-08T23:24:50.232159+00:00', 'UTC')).toBe('May 8, 2026');
+  });
+
+  it('returns empty for missing, blank, or unparseable values so the cell can show an em dash', () => {
+    expect(formatClaSignedOn('')).toBe('');
+    expect(formatClaSignedOn('   ')).toBe('');
+    expect(formatClaSignedOn('not-a-date')).toBe('');
   });
 });
 
