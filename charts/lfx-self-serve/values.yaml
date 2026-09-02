@@ -689,8 +689,11 @@ environment:
   #    the search until it fits": an operator seeing `capped` on an obviously small result set
   #    is looking at an unprovable total, not 200 hidden rows.
   #
-  # 3. Campaign-name matching now NORMALISES before comparing (case, punctuation and spacing),
-  #    so names the legacy path treated as distinct can now TIE. A tie is refused rather than
+  # 3. Campaign-name matching now NORMALISES before comparing -- CASE and WHITESPACE only
+  #    (`trim().toLowerCase()` plus internal run-length collapsed), so "KubeCon  NA 2026" and
+  #    "kubecon na 2026" are one name. Punctuation and word order are NOT stripped and still
+  #    distinguish campaigns, so do not expect "KubeCon: NA" and "KubeCon NA" to tie. Names the
+  #    legacy path treated as distinct can now TIE. A tie is refused rather than
   #    guessed: the lookup returns the candidates and declines to auto-apply one, which surfaces
   #    as a picker instead of a silent match. The legacy path picked the first row it saw, which
   #    could attribute a brief's links to the wrong campaign of a similarly-named pair.
