@@ -19,6 +19,10 @@ import { EVENT_SOURCE_BACKFILL } from '../constants/events.constants';
  * Consequence: a source value padded with one of those exotic characters matches on neither side,
  * so the row falls to the `ELSE` branch and keeps the stored IS_PAST_EVENT — the pre-fix behaviour,
  * which is the safe direction to fail in.
+ *
+ * This parity requirement only binds callers mirroring isPastEventSql() against Snowflake. A
+ * JS-only caller (no SQL counterpart) may pre-trim with String.prototype.trim() before calling —
+ * see certificate.service.ts's requiresLfOpenSourceOverride() for a documented example.
  */
 export function isBackfillEventSource(source: string | null | undefined): boolean {
   return source?.replace(/^[ \t\n\r]+|[ \t\n\r]+$/g, '').toLowerCase() === EVENT_SOURCE_BACKFILL;

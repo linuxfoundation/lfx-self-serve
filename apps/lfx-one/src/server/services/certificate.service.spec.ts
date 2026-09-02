@@ -16,7 +16,7 @@ const pdfMocks = vi.hoisted(() => ({
 
 vi.mock('@lfx-one/shared/interfaces', () => ({}));
 vi.mock('@lfx-one/shared/utils', async () => {
-  // Spread (not hand-pick) so a future second util import fails loudly instead of resolving undefined.
+  // Spread event.utils so added exports from this module are available; other util modules still need their own importActual.
   const eventUtils = await vi.importActual<typeof import('../../../../../packages/shared/src/utils/event.utils')>(
     '../../../../../packages/shared/src/utils/event.utils'
   );
@@ -203,7 +203,7 @@ describe('CertificateService', () => {
       ['padded lowercase country', { EVENT_COUNTRY: ' china ' }],
       ['capitalised source', { EVENT_SOURCE: 'Backfill' }],
       ['padded source', { EVENT_SOURCE: ' BACKFILL ' }],
-      ['source padded with a non-breaking space', { EVENT_SOURCE: ' backfill ' }],
+      ['source padded with a non-breaking space', { EVENT_SOURCE: '\u00A0backfill\u00A0' }],
     ])('applies the override despite %s', async (_label, overrides) => {
       mockRow(overrides);
 
