@@ -41,6 +41,7 @@ import {
 import {
   buildRecurrenceNeverEndDate,
   getPastMeetingTranscriptUrl,
+  isUnresolvableParticipantName,
   mapITXResponseToMeetingRsvp,
   normalizeIndexedMeetingAiSummary,
   normalizeIndexedMeetingInviteResponses,
@@ -955,9 +956,13 @@ export class MeetingService {
 
   /**
    * Fetches past meeting participants by past meeting UID.
-   * Deduplicates by pairwise identity match — the query service can emit multiple records per
-   * person, and a single derived key (e.g. prefer email, else uid) can't correctly merge two
-   * records whose strongest available signal differs (one has a username, the other only an email).
+   * Deduplicates by pairwise identity match, grouped via connected components — the query service
+   * can emit multiple records per person, and a single derived key (e.g. prefer email, else uid)
+   * can't correctly merge two records whose strongest available signal differs (one has a username,
+   * the other only an email). Connected components (rather than a single left-to-right pass) are
+   * required because merging is not a simple equivalence check: record A may only match record C
+   * through a "bridge" record B (e.g. A and B share an email, B and C share a username), and a
+   * one-pass merge would miss that A and C belong to the same person depending on encounter order.
    */
   public async getPastMeetingParticipants(req: Request, pastMeetingUid: string): Promise<PastMeetingParticipant[]> {
     logger.debug(req, 'get_past_meeting_participants', 'Fetching past meeting participants', {
@@ -976,32 +981,39 @@ export class MeetingService {
       })
     );
 
-    const merged: PastMeetingParticipant[] = [];
-    for (const participant of raw) {
-      const existingIndex = merged.findIndex((candidate) => this.isSamePerson(candidate, participant));
-      if (existingIndex === -1) {
-        merged.push(participant);
-        continue;
+    const parent = raw.map((_, index) => index);
+    const find = (index: number): number => {
+      while (parent[index] !== index) {
+        parent[index] = parent[parent[index]];
+        index = parent[index];
       }
-      const existing = merged[existingIndex];
-      const preferred = participant.is_attended && !existing.is_attended ? participant : existing;
-      const other = preferred === participant ? existing : participant;
-      merged[existingIndex] = {
-        ...preferred,
-        is_attended: existing.is_attended || participant.is_attended,
-        is_invited: existing.is_invited || participant.is_invited,
-        host: existing.host || participant.host,
-        org_is_member: existing.org_is_member || participant.org_is_member,
-        org_is_project_member: existing.org_is_project_member || participant.org_is_project_member,
-        avatar_url: preferred.avatar_url ?? other.avatar_url,
-        job_title: preferred.job_title ?? other.job_title,
-        org_name: preferred.org_name ?? other.org_name,
-        username: preferred.username ?? other.username,
-        email: preferred.email ?? other.email,
-      };
+      return index;
+    };
+
+    for (let i = 0; i < raw.length; i++) {
+      for (let j = i + 1; j < raw.length; j++) {
+        if (this.isSamePerson(raw[i], raw[j])) {
+          const rootI = find(i);
+          const rootJ = find(j);
+          if (rootI !== rootJ) {
+            parent[rootI] = rootJ;
+          }
+        }
+      }
     }
 
-    return merged;
+    const groups = new Map<number, PastMeetingParticipant[]>();
+    raw.forEach((participant, index) => {
+      const root = find(index);
+      const group = groups.get(root);
+      if (group) {
+        group.push(participant);
+      } else {
+        groups.set(root, [participant]);
+      }
+    });
+
+    return Array.from(groups.values()).map((group) => this.mergePastMeetingParticipantGroup(group));
   }
 
   /**
@@ -1939,9 +1951,12 @@ export class MeetingService {
 
   /**
    * Compares two participant records for identity equality: prefer LFID username when both have
-   * one, else overlapping email, else normalized display name. A single derived key can't do this
-   * since which signal is "strongest" differs per record (e.g. a guest who later links an LFX
-   * account on a subsequent occurrence).
+   * one, else overlapping email when both have one, else normalized display name. A single derived
+   * key can't do this since which signal is "strongest" differs per record (e.g. a guest who later
+   * links an LFX account on a subsequent occurrence). Email is only decisive when BOTH records have
+   * one — an asymmetric email (one record has it, the other doesn't) falls through to the
+   * username-asymmetry guard and then the name fallback, so the common case of a partially-enriched
+   * duplicate (same person, one record still missing an email) can still merge on matching names.
    */
   private isSamePerson(a: PastMeetingParticipant, b: PastMeetingParticipant): boolean {
     if (a.username && b.username) {
@@ -1950,8 +1965,8 @@ export class MeetingService {
 
     const aEmail = a.email?.trim().toLowerCase();
     const bEmail = b.email?.trim().toLowerCase();
-    if (aEmail || bEmail) {
-      return !!aEmail && aEmail === bEmail;
+    if (aEmail && bEmail) {
+      return aEmail === bEmail;
     }
 
     if (a.username || b.username) {
@@ -1963,13 +1978,38 @@ export class MeetingService {
     return !!aName && aName === bName;
   }
 
-  /** Normalized display name for identity comparison. Empty when both name parts are missing, so two unnamed participants never match. */
+  /**
+   * Normalized display name for identity comparison. Empty when both name parts are missing, or
+   * when the name is an unresolvable placeholder (e.g. "unknown" / "[unknown]") that upstream emits
+   * for unidentified Zoom/dial-in rows, so two such rows never falsely merge into one person.
+   */
   private normalizeParticipantName(participant: PastMeetingParticipant): string {
-    const first = participant.first_name?.trim();
-    const last = participant.last_name?.trim();
-    if (!first && !last) {
+    if (isUnresolvableParticipantName(participant.first_name, participant.last_name)) {
       return '';
     }
+    const first = participant.first_name?.trim();
+    const last = participant.last_name?.trim();
     return `${first ?? ''} ${last ?? ''}`.trim().toLowerCase();
+  }
+
+  /** Folds a connected group of identity-matched participant records into one merged record. */
+  private mergePastMeetingParticipantGroup(group: PastMeetingParticipant[]): PastMeetingParticipant {
+    return group.reduce((merged, participant) => {
+      const preferred = participant.is_attended && !merged.is_attended ? participant : merged;
+      const other = preferred === participant ? merged : participant;
+      return {
+        ...preferred,
+        is_attended: merged.is_attended || participant.is_attended,
+        is_invited: merged.is_invited || participant.is_invited,
+        host: merged.host || participant.host,
+        org_is_member: merged.org_is_member || participant.org_is_member,
+        org_is_project_member: merged.org_is_project_member || participant.org_is_project_member,
+        avatar_url: preferred.avatar_url ?? other.avatar_url,
+        job_title: preferred.job_title ?? other.job_title,
+        org_name: preferred.org_name ?? other.org_name,
+        username: preferred.username ?? other.username,
+        email: preferred.email ?? other.email,
+      };
+    });
   }
 }
