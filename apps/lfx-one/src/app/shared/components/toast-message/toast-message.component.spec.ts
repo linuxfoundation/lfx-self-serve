@@ -75,13 +75,13 @@ describe('ToastMessageComponent', () => {
   it('hides the detail line when detail is absent', async () => {
     await renderWith({ severity: 'info', summary: 'Invite declined' });
 
-    expect(fixture.nativeElement.querySelector('.break-words')).toBeNull();
+    expect(fixture.nativeElement.querySelector('[data-testid="toast-message-detail"]')).toBeNull();
   });
 
   it('shows the detail line when detail is present', async () => {
     await renderWith({ severity: 'error', summary: 'Something failed', detail: 'Missing Salesforce ID' });
 
-    const detail = fixture.nativeElement.querySelector('.break-words');
+    const detail = fixture.nativeElement.querySelector('[data-testid="toast-message-detail"]');
     expect(detail).not.toBeNull();
     expect(detail.textContent).toContain('Missing Salesforce ID');
   });

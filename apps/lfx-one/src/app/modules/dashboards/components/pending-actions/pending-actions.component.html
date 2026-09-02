@@ -7,7 +7,7 @@
       @if (message.data?.meetingUrl) {
         <a
           [routerLink]="message.data.meetingUrl"
-          class="text-xs font-medium text-blue-600 hover:text-blue-700 hover:underline inline-flex items-center gap-1 mt-1"
+          class="toast-action"
           [attr.aria-label]="message.data.meetingTitle ? 'View details for ' + message.data.meetingTitle : 'View meeting details'"
           [attr.title]="message.data.meetingTitle ? 'View details for ' + message.data.meetingTitle : null"
           data-testid="dashboard-pending-actions-toast-meeting-link">
@@ -27,7 +27,7 @@
       @if (message.data?.undoInviteUid) {
         <button
           type="button"
-          class="text-xs font-medium text-blue-600 hover:text-blue-700 hover:underline inline-flex items-center gap-1 mt-1 self-start"
+          class="toast-action"
           (click)="onUndoDecline()"
           aria-label="Undo declining the invitation"
           data-testid="dashboard-pending-actions-toast-undo">

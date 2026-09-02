@@ -414,3 +414,9 @@ html {
 .person-detail-drawer .p-drawer-header {
   @apply items-start;
 }
+
+// Toast action slot — consumers project their own button/anchor into <lfx-toast-message>, and projected
+// content falls outside the component's view encapsulation, so the shared class must live globally.
+.toast-action {
+  @apply mt-1 inline-flex items-center gap-1 self-start text-xs font-medium text-blue-600 hover:text-blue-700 hover:underline;
+}
