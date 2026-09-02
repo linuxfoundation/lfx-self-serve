@@ -21,8 +21,7 @@ import { EVENT_SOURCE_BACKFILL } from '../constants/events.constants';
  * which is the safe direction to fail in.
  *
  * This parity requirement only binds callers mirroring isPastEventSql() against Snowflake. A
- * JS-only caller (no SQL counterpart) may pre-trim with String.prototype.trim() before calling —
- * see certificate.service.ts's requiresLfOpenSourceOverride() for a documented example.
+ * JS-only caller (no SQL counterpart) may pre-trim with String.prototype.trim() before calling.
  */
 export function isBackfillEventSource(source: string | null | undefined): boolean {
   return source?.replace(/^[ \t\n\r]+|[ \t\n\r]+$/g, '').toLowerCase() === EVENT_SOURCE_BACKFILL;

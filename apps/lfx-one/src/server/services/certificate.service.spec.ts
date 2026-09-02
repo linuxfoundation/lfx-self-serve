@@ -195,8 +195,9 @@ describe('CertificateService', () => {
       expect(texts).toContain('https://lfopensource.cn/');
       expect(texts.some((t) => t.startsWith('LF Open Source, LLC is pleased that you were able to attend'))).toBe(true);
       expect(texts.some((t) => t.includes('CNCF'))).toBe(false);
-      // CNCF's address block is untouched by the override.
-      expect(texts.some((t) => t.includes('2810 N Church St'))).toBe(true);
+      // CNCF's signature text names its own ED; the default template's is identical to CNCF's
+      // address, so asserting on the address alone wouldn't distinguish "kept" from "fell back".
+      expect(texts).toContain('Priyanka Sharma\nExecutive Director');
     });
 
     it.each([
