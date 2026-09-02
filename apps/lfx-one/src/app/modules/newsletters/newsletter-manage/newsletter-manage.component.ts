@@ -1066,8 +1066,13 @@ export class NewsletterManageComponent {
     //
     // The transport codes travel to the browser on `error.code` (BaseApiError.toResponse), so
     // the two are separable: a deliberate upstream 503 carries none of them.
-    const transportCode = err?.error?.code;
-    const isTransport = transportCode === 'TIMEOUT' || transportCode === 'NETWORK_ERROR' || /^(ECONN|ENOTFOUND|EAI_|UND_ERR)/.test(String(transportCode ?? ''));
+    // The SERVER decides this, not a code allowlist here. My first attempt matched syscall codes
+    // and was wrong three ways: an ingress 503 maps to SERVICE_UNAVAILABLE (identical to a
+    // deliberate disabled-feature reply), ETIMEDOUT and EPIPE matched nothing, and TIMEOUT is
+    // emitted as 408 so it never reached this branch at all. BaseApiError.toResponse now sets
+    // `transport: true` whenever the BFF raised the error itself, which is the only thing that
+    // separates the two reliably.
+    const isTransport = err?.error?.transport === true;
     if (err.status === 503 && !isTransport) {
       this.messageService.add({
         severity: 'error',

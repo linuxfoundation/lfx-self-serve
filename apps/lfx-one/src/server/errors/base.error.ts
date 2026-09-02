@@ -77,6 +77,13 @@ export abstract class BaseApiError extends Error {
     return {
       error: this.message,
       code: this.code,
+      // Whether the BFF RAISED this rather than relaying it. `originalError` is set only by the
+      // transport sites and is deliberately not serialised (it can carry internals), but the
+      // FACT of it must reach the browser: a client cannot otherwise tell a BFF transport 503
+      // from a deliberate upstream 503, and the syscall code is not a usable proxy -- an ingress
+      // 503 maps to SERVICE_UNAVAILABLE, exactly like a real one, while ETIMEDOUT and EPIPE look
+      // nothing like NETWORK_ERROR. This boolean is the only reliable discriminator.
+      ...(this.originalError !== undefined && { transport: true }),
       ...(this.service && { service: this.service }),
       ...(this.path && { path: this.path }),
       ...(this.metadata && { metadata: this.metadata }),
