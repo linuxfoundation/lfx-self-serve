@@ -176,7 +176,29 @@ export class PlanningTabComponent implements OnInit {
    * Whether the Create control must stay disabled. Either this panel is creating, or a create
    * dispatched BEFORE a foundation switch has not settled yet.
    */
-  protected readonly hsCreateBlocked = computed(() => this.hsCreating() || this.hsCreatesInFlight() > 0);
+  /**
+   * Events a create has SUCCEEDED for, keyed `foundation|event`.
+   *
+   * A superseded create still makes a real campaign upstream. Discarding its result for
+   * RENDERING is right -- the operator moved on -- but forgetting it happened let the panel
+   * re-offer Create for an event that now has one, and two projects on the same HubSpot portal
+   * share that namespace.
+   *
+   * Keyed by foundation AND event because the same name under another foundation is a different
+   * portal and a legitimate create; blocking that would strand it.
+   */
+  private readonly hsCreatedEvents = signal(new Set<string>());
+  /**
+   * The event the panel is currently showing, as a SIGNAL.
+   *
+   * `lastLookedUpEvent` is a plain field, and a computed reading it never re-evaluates when it
+   * changes -- a guard built that way is silently dead. Mirrored here by the one setter below so
+   * hsCreateBlocked can depend on it honestly.
+   */
+  private readonly currentEvent = signal('');
+  protected readonly hsCreateBlocked = computed(
+    () => this.hsCreating() || this.hsCreatesInFlight() > 0 || this.hsCreatedEvents().has(`${this.activeFoundationSlug()}|${this.currentEvent()}`)
+  );
   protected readonly hsStatus = signal<string | null>(null);
   protected readonly hsNotFound = signal(false);
   /**
@@ -234,7 +256,22 @@ export class PlanningTabComponent implements OnInit {
   protected readonly keywords = signal<CampaignKeyword[]>([]);
   protected readonly errorMessage = signal<string | null>(null);
   protected readonly linkedInStrategy = signal<LinkedInTargetingStrategy | null>(null);
-  protected lastLookedUpEvent = '';
+  private lastLookedUpEventValue = '';
+  /**
+   * The event the last lookup answered for.
+   *
+   * A property with a SETTER, not a bare field: `currentEvent` must stay in step with it or the
+   * create-block computed reads a stale value, and three separate call sites writing both by
+   * hand is exactly the drift that produces a guard which silently never fires. Writing one
+   * writes the other, by construction.
+   */
+  protected get lastLookedUpEvent(): string {
+    return this.lastLookedUpEventValue;
+  }
+  protected set lastLookedUpEvent(value: string) {
+    this.lastLookedUpEventValue = value;
+    this.currentEvent.set(value);
+  }
   /**
    * Monotonic id for the in-flight create, identifying which one owns `hsCreating`.
    *
@@ -727,6 +764,12 @@ export class PlanningTabComponent implements OnInit {
           // still running, which is how a duplicate gets made.
           if (this.createIsCurrent(generation)) {
             this.hsCreating.set(false);
+          }
+          // Recorded BEFORE the ownership guards, deliberately. A superseded create still made a
+          // real campaign upstream; discarding its RESULT is right, but forgetting it happened
+          // let the panel re-offer Create for an event that now has one.
+          if (result?.created) {
+            this.hsCreatedEvents.update((seen) => new Set(seen).add(`${capturedFoundation}|${capturedEvent}`));
           }
           // Generation first, then panelStillShows — the same pair the lookup arms use. An
           // A -> B -> A round trip makes panelStillShows match a SUPERSEDED create again, and

@@ -1489,6 +1489,61 @@ describe('PlanningTabComponent — HubSpot UTM states', () => {
     expect(instance()['hsUtm'](), "foundation A's token survived into foundation B").toBe('foundation-b-token');
   });
 
+  it('still offers Create for the same event under a DIFFERENT foundation', () => {
+    // The block is keyed on foundation AND event on purpose. A different foundation is a
+    // different HubSpot portal, so the same event name there is a genuinely new campaign --
+    // blocking it would strand a legitimate create, which is the opposite failure.
+    const ctx = TestBed.inject(ProjectContextService);
+    const first = new Subject<unknown>();
+    create.mockReturnValue(first);
+    runLookup({ found: false, hs_utm: null, campaign_name: '', all_matches: [], capped: false, inconclusive: false }, 'KubeCon NA 2026');
+    (fixture.componentInstance as unknown as { createInHubSpot(): void }).createInHubSpot();
+    first.next({ created: true, hs_utm: 'tok', campaign_name: 'KubeCon NA 2026' });
+    first.complete();
+    fixture.detectChanges();
+
+    ctx.setFoundation({ uid: 'foundation-b-uid', slug: 'foundation-b', name: 'Foundation B' }, false);
+    fixture.detectChanges();
+    runLookup({ found: false, hs_utm: null, campaign_name: '', all_matches: [], capped: false, inconclusive: false }, 'KubeCon NA 2026');
+    fixture.detectChanges();
+
+    expect(instance()['hsCreateBlocked'](), 'blocked a legitimate create under another portal').toBe(false);
+  });
+
+  it('does not re-offer Create after a superseded create already succeeded', () => {
+    // RED FIRST: this documents the gap Cursor found before any fix exists for it.
+    //
+    // A superseded create still makes a real campaign upstream. Its result is rightly discarded
+    // for rendering -- the operator moved on -- but once nothing is in flight, returning to that
+    // same event under the SAME foundation re-offers Create for a campaign that now exists. Two
+    // projects on one HubSpot portal share the namespace, so the duplicate cannot be removed
+    // from this UI.
+    const ctx = TestBed.inject(ProjectContextService);
+    const first = new Subject<unknown>();
+    create.mockReturnValue(first);
+    runLookup({ found: false, hs_utm: null, campaign_name: '', all_matches: [], capped: false, inconclusive: false }, 'KubeCon NA 2026');
+    (fixture.componentInstance as unknown as { createInHubSpot(): void }).createInHubSpot();
+
+    // Supersede it, then come back to the same foundation.
+    ctx.setFoundation({ uid: 'foundation-b-uid', slug: 'foundation-b', name: 'Foundation B' }, false);
+    fixture.detectChanges();
+
+    // The superseded create SUCCEEDS upstream.
+    first.next({ created: true, hs_utm: null, campaign_name: 'KubeCon NA 2026' });
+    first.complete();
+    fixture.detectChanges();
+
+    // Back to the original foundation, same event, and the lookup still says not-found because
+    // HubSpot has not indexed it yet.
+    ctx.setFoundation({ uid: 'foundation-a-uid', slug: 'foundation-a', name: 'Foundation A' }, false);
+    fixture.detectChanges();
+    runLookup({ found: false, hs_utm: null, campaign_name: '', all_matches: [], capped: false, inconclusive: false }, 'KubeCon NA 2026');
+    fixture.detectChanges();
+
+    expect(instance()['hsCreatesInFlight'](), 'nothing should still be in flight').toBe(0);
+    expect(instance()['hsCreateBlocked'](), 'Create was re-offered for an event that already has a campaign').toBe(true);
+  });
+
   it('keeps re-check available when the campaign is found but still tokenless', () => {
     // After a create returns without hs_utm, the first re-check can legitimately FIND the
     // campaign before HubSpot has assigned its token. The lookup clears hsUnconfirmed when it
