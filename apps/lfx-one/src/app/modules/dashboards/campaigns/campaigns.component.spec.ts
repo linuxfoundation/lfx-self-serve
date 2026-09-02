@@ -8,7 +8,10 @@ import { ComponentFixture, TestBed } from '@angular/core/testing';
 import type { Signal, WritableSignal } from '@angular/core';
 import { computed, signal } from '@angular/core';
 import type {
+  BriefMetrics,
+  BriefMetricsRow,
   CampaignAudience,
+  CampaignServiceEmailMetrics,
   EmailBriefCopy,
   CampaignBriefOutput,
   CampaignBriefPersistResult,
@@ -27,7 +30,7 @@ import { provideRouter } from '@angular/router';
 import { CampaignService } from '@services/campaign.service';
 import { FeatureFlagService } from '@services/feature-flag.service';
 import { PersonaService } from '@services/persona.service';
-import { HUBSPOT_TEMPLATE_RENDER_LIMIT } from '@lfx-one/shared/constants';
+import { EVENT_TERM_GENERIC, HUBSPOT_TEMPLATE_RENDER_LIMIT } from '@lfx-one/shared/constants';
 import type { HubSpotMarketingEmail } from '@lfx-one/shared/interfaces';
 import { ProjectContextService } from '@services/project-context.service';
 import { MessageService } from 'primeng/api';
@@ -3754,6 +3757,12 @@ describe('CampaignsComponent — HubSpot template picker', () => {
     emailTemplatesAnnouncement: Signal<string>;
     searchEmailTemplates(query: string): void;
     onSelectEmailTemplate(id: string): void;
+    emailBriefOutput: WritableSignal<CampaignBriefOutput | null>;
+    emailTemplateSuggestionId: Signal<string>;
+    emailTemplateSuggestionTerms: Signal<readonly string[]>;
+    emailTemplatesRendered: Signal<HubSpotMarketingEmail[]>;
+    selectedEmailTypeId: WritableSignal<string>;
+    canStageEmail: Signal<boolean>;
   }
   const picker = (): PickerInternals => fixture.componentInstance as unknown as PickerInternals;
 
@@ -3779,6 +3788,1125 @@ describe('CampaignsComponent — HubSpot template picker', () => {
     req.flush(body);
     fixture.detectChanges();
   }
+
+  /**
+   * The event-derived template suggestion.
+   *
+   * No issue number here deliberately. The branch is named `issue-1698`, but #1698 is the
+   * brand_kit-driven body/footer work (de-hardcoding the reference app's portal coupling) and has
+   * nothing to do with reading the event off the brief. Citing it made the traceability actively
+   * wrong -- worse than absent, because a reader following the link lands on unrelated work.
+   *
+   * The mapping of event -> branding lives in HubSpot, in the names its operators gave their
+   * templates. These pin that it is read rather than guessed at, and — more importantly — that a
+   * weak signal is NOT turned into a confident pre-selection.
+   */
+  describe('event-derived template suggestion', () => {
+    const briefFor = (name: string, slug: string, city = ''): CampaignBriefOutput => ({ eventDetails: { name, slug, city } }) as unknown as CampaignBriefOutput;
+
+    /**
+     * Put the page on Email/Implement so the picker panel is in the DOM.
+     *
+     * Without this every DOM query returns null -- which makes a NEGATIVE assertion pass for a
+     * reason that has nothing to do with the suggestion: the classic test that cannot fail.
+     */
+    const showPicker = (): void => {
+      const c = fixture.componentInstance as unknown as {
+        selectorForm: { controls: { deliveryType: { setValue(v: string): void } } };
+        selectTab(tab: string, owner: string): void;
+      };
+      c.selectorForm.controls.deliveryType.setValue('email');
+      c.selectTab('implementation', 'email');
+      fixture.detectChanges();
+      // selectTab issues its own entry search; answer it so it cannot collide with the
+      // explicit one each test makes.
+      httpMock
+        .match((r) => r.url === '/api/campaigns/hubspot/emails')
+        .forEach((r) => r.flush({ enabled: true, error: null, possiblyTruncated: false, emails: [] }));
+      fixture.detectChanges();
+    };
+
+    /**
+     * A pending search must release a SUGGESTED selection at dispatch, not only when it answers.
+     *
+     * Every arm that clears the template list also released the suggestion, but all of them run
+     * after the response lands. In between, the loading branch hides the list while
+     * `canStageEmail` still reads only `selectedEmailTemplateId` -- and `onStageEmailSend`
+     * snapshots that id before its first await. So the operator could stage a suggestion the
+     * in-flight search was about to remove, with the row that justified it already off screen:
+     * a silent wrong clone, which is the exact failure this feature exists to prevent.
+     *
+     * Asserts the state DURING the flight -- the request is deliberately left unanswered, because
+     * flushing it is what the old code needed in order to look correct.
+     */
+    it('releases a suggested selection when a new search is dispatched, before it answers', () => {
+      showPicker();
+      picker().emailBriefOutput.set(briefFor('KubeCon Europe 2026', 'kubecon-eu-2026'));
+      picker().searchEmailTemplates('kubecon');
+      respond({
+        enabled: true,
+        error: null,
+        possiblyTruncated: false,
+        emails: [{ id: 'k26', name: 'KubeCon Europe 2026 announcement', subject: 'Register now' }] as HubSpotMarketingEmail[],
+      });
+
+      // The suggestion took, and it is SYSTEM-owned -- the precondition for the release.
+      expect(picker().selectedEmailTemplateId()).toBe('k26');
+      expect(picker().emailTemplateSuggestionId()).toBe('k26');
+
+      // Dispatch a narrower search and leave it IN FLIGHT.
+      picker().searchEmailTemplates('workshop');
+      fixture.detectChanges();
+
+      expect(picker().selectedEmailTemplateId()).toBe('');
+      expect(picker().canStageEmail()).toBe(false);
+
+      // Drain so the harness's afterEach verification does not trip on the open request.
+      httpMock
+        .match((r) => r.url === '/api/campaigns/hubspot/emails')
+        .forEach((r) => r.flush({ enabled: true, error: null, possiblyTruncated: false, emails: [] }));
+    });
+
+    /**
+     * The YEAR outranks the CITY, and a prior edition naming the city is the case that proves it.
+     *
+     * `eventRankBonus` summed the two into one scalar, so extra city tokens on a STALE edition
+     * beat the single year point on the current one: for "KubeCon North America 2026" in "Salt
+     * Lake City", the 2025 template scored salt+lake+city = 3 against the 2026 template's year =
+     * 1, and the PRIOR edition was pre-selected. Staging then clones last year's HubSpot draft --
+     * an edition-level wrong clone, which reads as decided and is unlikely to be re-checked.
+     *
+     * Both templates score identically on the decisive term, so only the tie-break can order them.
+     */
+    /**
+     * A city repeated in the EVENT NAME must not become decisive.
+     *
+     * The city is meant to RANK, never to justify a suggestion on its own -- that is the whole
+     * point of splitting decisive from ranking terms. But the ranking set is built with
+     * `!decisive.has(token)`, so when the name already contains the city ("Regional Summit
+     * Nairobi" in Nairobi) the token stays in `decisive` and, being six characters, clears the
+     * threshold alone. An unrelated "Nairobi newsletter" is then auto-selected.
+     */
+    /**
+     * An UN-LISTED generic long word still pre-selects, and that is the known trade-off.
+     *
+     * `EVENT_TERM_GENERIC` is a vocabulary, so a generic word nobody has added yet -- `developer`
+     * -- still scores the double weight and clears the threshold alone. This test pins the
+     * CURRENT behaviour rather than asserting it is correct: the honest statement of the limit is
+     * that the deny-list closes words someone has noticed, and the next un-noticed one is a fresh
+     * false positive.
+     *
+     * It is here so the limit is visible and measured. If the scoring ever becomes structural --
+     * corroboration, or evidence weighted by rarity -- this test flips to `toBe('')` and the
+     * change is deliberate rather than silent.
+     */
+    it('does not let a generic-heavy row block an eligible suggestion', () => {
+      showPicker();
+      // 'kubecon' is the decisive term. The distractor matches three GENERIC words, so it wins on
+      // eventMatchScore (which counts them) while scoring 0 on eventSuggestionScore (which does
+      // not). Picking the winner first and gating it afterwards therefore suppressed the eligible
+      // KubeCon row entirely -- a template the operator would have been right to see.
+      picker().emailBriefOutput.set(briefFor('KubeCon Community Training Webinar', 'kubecon-community-training-webinar'));
+      picker().searchEmailTemplates('');
+      respond({
+        enabled: true,
+        error: null,
+        possiblyTruncated: false,
+        emails: [
+          { id: 'generic', name: 'Community training webinar newsletter', subject: 'Monthly update' },
+          { id: 'eligible', name: 'KubeCon announcement', subject: 'Register now' },
+        ] as HubSpotMarketingEmail[],
+      });
+
+      expect(picker().emailTemplateSuggestionId()).toBe('eligible');
+    });
+
+    it('still pre-selects on an un-enumerated generic long word (known limit)', () => {
+      showPicker();
+      expect(EVENT_TERM_GENERIC.has('developer')).toBe(false);
+      picker().emailBriefOutput.set(briefFor('Developer Conference', 'developer-conference'));
+      picker().searchEmailTemplates('');
+      respond({
+        enabled: true,
+        error: null,
+        possiblyTruncated: false,
+        emails: [{ id: 'unrelated', name: 'Developer newsletter', subject: 'Monthly update' }] as HubSpotMarketingEmail[],
+      });
+
+      expect(picker().emailTemplateSuggestionId()).toBe('unrelated');
+    });
+
+    /**
+     * An ASCII slug must not smuggle the city back into the decisive set.
+     *
+     * `cityTokens` is built from `details.city`, which arrives accented -- "München" tokenizes to
+     * `münchen`. The decisive pass reads the NAME and the SLUG, and LF slugs are ASCII, so the
+     * same city arrives as `munchen`. Comparing raw strings, the two are different words: the
+     * accented form was excluded while the ASCII one became decisive and, being seven characters,
+     * cleared the threshold on its own -- auto-selecting a template that merely names the city.
+     *
+     * That is the accented spelling of the city-decides-alone false positive, so it is fixed the
+     * same way: membership is tested on a fold, while the terms themselves stay accented because
+     * they still have to match accented template names.
+     */
+    it('does not let an ASCII-folded city in the slug become decisive', () => {
+      showPicker();
+      picker().emailBriefOutput.set(briefFor('Cloud Summit', 'cloud-summit-munchen-2026', 'München'));
+      picker().searchEmailTemplates('');
+      respond({
+        enabled: true,
+        error: null,
+        possiblyTruncated: false,
+        emails: [{ id: 'city-only', name: 'Munchen visitor newsletter', subject: 'Monthly update' }] as HubSpotMarketingEmail[],
+      });
+
+      expect(picker().emailTemplateSuggestionId()).toBe('');
+      expect(picker().selectedEmailTemplateId()).toBe('');
+    });
+
+    /**
+     * TWO generic terms must not add up to a suggestion.
+     *
+     * Excluding generic words from the DOUBLE weight was not enough: each still scored
+     * `EVENT_TERM_WEIGHT`, so two of them summed to exactly the threshold (3 + 3 = 6) and
+     * auto-selected on vocabulary that describes neither the event nor the template. Every
+     * matching term here -- `community`, `training` -- is in `EVENT_TERM_GENERIC`, so the
+     * non-generic evidence is zero and nothing may be offered.
+     *
+     * This is the case that separates ranking from justification: the template is a perfectly
+     * reasonable ORDERING for these terms, and still not evidence that it is the right one.
+     */
+    it('withholds a suggestion when only generic terms match, however many', () => {
+      showPicker();
+      picker().emailBriefOutput.set(briefFor('Community Training Workshop', 'community-training-workshop'));
+      picker().searchEmailTemplates('');
+      respond({
+        enabled: true,
+        error: null,
+        possiblyTruncated: false,
+        emails: [{ id: 'generic', name: 'Community training newsletter', subject: 'Monthly update' }] as HubSpotMarketingEmail[],
+      });
+
+      expect(picker().emailTemplateSuggestionId()).toBe('');
+      expect(picker().selectedEmailTemplateId()).toBe('');
+    });
+
+    /**
+     * An UN-ENUMERATED generic long word must not decide alone.
+     *
+     * The deny-list closes the words someone has already noticed; the proxy behind it is the real
+     * defect. Any decisive term of six-plus characters scores EVENT_TERM_WEIGHT*2 = the threshold,
+     * so `register`, `webinar`, `keynote`, `session` and `speaker` all clear it on a single hit --
+     * none of them on the list, each a fresh false positive until someone appends it.
+     *
+     * Uses `speaker`, which IS in `EVENT_TERM_GENERIC` -- so this pins the deny-list, not the
+     * structure. An earlier version of this docstring claimed `speaker` was un-enumerated and
+     * that the test therefore caught a regression to enumeration; it checked the wrong list
+     * (`EVENT_TERM_STOPWORDS`, which indeed does not contain it) and the claim was false.
+     *
+     * The un-listed case is covered separately below, and it documents a real remaining
+     * trade-off rather than a guarantee.
+     */
+    it('withholds a suggestion when a single generic long word is the only match', () => {
+      showPicker();
+      picker().emailBriefOutput.set(briefFor('Speaker Enablement Program', 'speaker-enablement-program'));
+      picker().searchEmailTemplates('');
+      respond({
+        enabled: true,
+        error: null,
+        possiblyTruncated: false,
+        emails: [{ id: 'generic', name: 'Speaker reminder — monthly' }] as HubSpotMarketingEmail[],
+      });
+
+      expect(picker().emailTemplateSuggestionId(), 'a single generic long word auto-selected a template').toBe('');
+      expect(picker().selectedEmailTemplateId()).toBe('');
+    });
+
+    it('does not let a city repeated in the event name justify a suggestion', () => {
+      showPicker();
+      picker().emailBriefOutput.set(briefFor('Regional Summit Nairobi', 'regional-summit-nairobi', 'Nairobi'));
+      picker().searchEmailTemplates('');
+      respond({
+        enabled: true,
+        error: null,
+        possiblyTruncated: false,
+        emails: [{ id: 'unrelated', name: 'Nairobi newsletter — monthly roundup' }] as HubSpotMarketingEmail[],
+      });
+
+      expect(picker().emailTemplateSuggestionId(), 'a city-only match was auto-selected').toBe('');
+      expect(picker().selectedEmailTemplateId()).toBe('');
+    });
+
+    it('prefers the year-matching edition over a prior one that names the city', () => {
+      showPicker();
+      picker().emailBriefOutput.set(briefFor('KubeCon North America 2026', 'kubecon-north-america-2026', 'Salt Lake City'));
+      picker().searchEmailTemplates('');
+      respond({
+        enabled: true,
+        error: null,
+        possiblyTruncated: false,
+        emails: [
+          // Three city tokens, wrong year -- the row that used to win.
+          { id: 'stale', name: 'KubeCon Salt Lake City 2025 Registration' },
+          // No city tokens, right year.
+          { id: 'current', name: 'KubeCon NA 2026 Registration' },
+        ] as HubSpotMarketingEmail[],
+      });
+
+      expect(picker().emailTemplateSuggestionId(), 'the prior edition outranked the year-matching one').toBe('current');
+      expect(picker().selectedEmailTemplateId()).toBe('current');
+    });
+
+    it('pre-selects the template whose name carries the event, and says what it matched', () => {
+      showPicker();
+      picker().emailBriefOutput.set(briefFor('MCP Dev Summit Nairobi', 'mcp-dev-summit-nairobi'));
+      picker().searchEmailTemplates('');
+      respond({
+        enabled: true,
+        error: null,
+        possiblyTruncated: false,
+        emails: [
+          { id: 'kc', name: 'KubeCon registration reminder' },
+          { id: 'mcp', name: 'MCP Dev Summit Nairobi — registration push' },
+        ] as HubSpotMarketingEmail[],
+      });
+
+      expect(picker().emailTemplateSuggestionId()).toBe('mcp');
+      expect(picker().selectedEmailTemplateId()).toBe('mcp');
+      // The REASON must be visible; a suggestion nobody can check is one nobody should trust.
+      expect(picker().emailTemplateSuggestionTerms()).toContain('nairobi');
+      expect(fixture.nativeElement.querySelector('[data-testid="campaigns-email-template-suggestion"]')).not.toBeNull();
+    });
+
+    /**
+     * A RE-PICK of the suggested row is the operator's choice, not the system's.
+     *
+     * The banner and the screen-reader announcement both asked `suggestionId === selectedId`. That
+     * is true again after an operator overrides the suggestion and then deliberately picks that
+     * same template back, so both claimed the system chose what the operator chose — and for a
+     * screen-reader user the announcement is the only channel, with no highlight to contradict it.
+     *
+     * Driven through `onSelectEmailTemplate`, because that is the setter that knows the
+     * provenance; asserting on the flag directly would pass under an id-equality implementation.
+     */
+    /**
+     * A LONG term is not automatically a distinctive one.
+     *
+     * The distinctiveness rule scores any term of six-plus characters as evidence on its own, on
+     * the reasoning that `kubecon`/`nairobi`/`pytorch` separate from `dev`/`mcp` at that length.
+     * Generic words are long too: `source`, `global`, `online`, `storage`. "Open Source Summit"
+     * reduces to `open` + `source` once `summit` is dropped, and `source` alone then clears the
+     * threshold against an unrelated "Source newsletter" -- a confident wrong pick, which is the
+     * one outcome this feature exists to prevent.
+     */
+    it('does not pre-select on a generic long word like "source"', () => {
+      showPicker();
+      picker().emailBriefOutput.set(briefFor('Open Source Summit', 'open-source-summit'));
+      picker().searchEmailTemplates('');
+      respond({
+        enabled: true,
+        error: null,
+        possiblyTruncated: false,
+        emails: [{ id: 'src', name: 'Source newsletter — monthly roundup' }] as HubSpotMarketingEmail[],
+      });
+
+      expect(picker().emailTemplateSuggestionId(), 'a generic word pre-selected an unrelated template').toBe('');
+      expect(picker().selectedEmailTemplateId()).toBe('');
+    });
+
+    it('stops calling the selection system-chosen once the operator picks it themselves', () => {
+      showPicker();
+      picker().emailBriefOutput.set(briefFor('MCP Dev Summit Nairobi', 'mcp-dev-summit-nairobi'));
+      picker().searchEmailTemplates('');
+      respond({
+        enabled: true,
+        error: null,
+        possiblyTruncated: false,
+        emails: [
+          { id: 'kc', name: 'KubeCon registration reminder' },
+          { id: 'mcp', name: 'MCP Dev Summit Nairobi — registration push' },
+        ] as HubSpotMarketingEmail[],
+      });
+      fixture.detectChanges();
+      expect(
+        fixture.nativeElement.querySelector('[data-testid="campaigns-email-template-suggestion"]'),
+        'precondition: the suggestion banner is up'
+      ).not.toBeNull();
+
+      const c = fixture.componentInstance as unknown as { onSelectEmailTemplate(id: string): void };
+      // Override to another row, then deliberately pick the suggested one BACK.
+      c.onSelectEmailTemplate('kc');
+      c.onSelectEmailTemplate('mcp');
+      fixture.detectChanges();
+
+      // The ids coincide again -- an equality check would still say "system chose this".
+      expect(picker().emailTemplateSuggestionId()).toBe('mcp');
+      expect(picker().selectedEmailTemplateId()).toBe('mcp');
+
+      expect(
+        fixture.nativeElement.querySelector('[data-testid="campaigns-email-template-suggestion"]'),
+        "the banner called the operator's own re-pick a pre-selection"
+      ).toBeNull();
+      expect(
+        (fixture.componentInstance as unknown as { emailTemplateSuggestionAnnouncement(): string }).emailTemplateSuggestionAnnouncement(),
+        "the screen-reader announcement called the operator's own re-pick a pre-selection"
+      ).toBe('');
+    });
+
+    /**
+     * The case that matters most. A portal whose templates do not name their event must produce NO
+     * pre-selection — a confident wrong pick clones another event's branding into a real HubSpot
+     * draft, and because it reads as decided nobody re-examines it.
+     */
+    it('withholds the suggestion when nothing identifies the event', () => {
+      showPicker();
+      picker().emailBriefOutput.set(briefFor('MCP Dev Summit Nairobi', 'mcp-dev-summit-nairobi'));
+      picker().searchEmailTemplates('');
+      respond({
+        enabled: true,
+        error: null,
+        possiblyTruncated: false,
+        emails: [
+          { id: 'a', name: 'Monthly newsletter' },
+          { id: 'b', name: 'Registration reminder' },
+        ] as HubSpotMarketingEmail[],
+      });
+
+      expect(picker().emailTemplateSuggestionId()).toBe('');
+      expect(picker().selectedEmailTemplateId()).toBe('');
+      expect(fixture.nativeElement.querySelector('[data-testid="campaigns-email-template-suggestion"]')).toBeNull();
+    });
+
+    /**
+     * The safety property, and the one the earlier "nothing identifies the event" case does NOT
+     * cover: that test scores 0, so it is stopped by the no-match guard and never reaches the
+     * threshold. This lands in the WEAK band — one distinctive term hit, below
+     * EVENT_TEMPLATE_SUGGESTION_MIN_SCORE — which is exactly where a confident-looking wrong pick
+     * would clone another event's branding into a real HubSpot draft.
+     */
+    it('withholds a suggestion that matches on only one term', () => {
+      showPicker();
+      picker().emailBriefOutput.set(briefFor('MCP Dev Summit Nairobi', 'mcp-dev-summit-nairobi'));
+      picker().searchEmailTemplates('');
+      respond({
+        enabled: true,
+        error: null,
+        possiblyTruncated: false,
+        // Matches 'dev' and nothing else: a real but weak signal, not evidence of the event.
+        emails: [{ id: 'weak', name: 'Dev tools digest' }] as HubSpotMarketingEmail[],
+      });
+
+      expect(picker().emailTemplateSuggestionId()).toBe('');
+      expect(picker().selectedEmailTemplateId()).toBe('');
+      // Positive control: the panel is mounted, so the absence above is a real absence.
+      expect(fixture.nativeElement.querySelector('[data-testid="campaigns-email-template-list"]')).not.toBeNull();
+      expect(fixture.nativeElement.querySelector('[data-testid="campaigns-email-template-suggestion"]')).toBeNull();
+    });
+
+    /**
+     * Found against the LIVE portal, not in a fixture: "KubeCon North America" reduces to
+     * `kubecon | salt | lake | city`, and the real template "KubeCon NA 2026 - Modern Registration
+     * Template" matches only `kubecon`. Scoring every term equally withheld it — one hit — even
+     * though the name states the event unambiguously. A brand token needs no corroboration.
+     */
+    it('suggests on a single distinctive term, so a brand name alone is enough', () => {
+      showPicker();
+      picker().emailBriefOutput.set(briefFor('KubeCon North America', 'kubecon-na-2026', 'Salt Lake City'));
+      picker().searchEmailTemplates('');
+      respond({
+        enabled: true,
+        error: null,
+        possiblyTruncated: false,
+        emails: [{ id: 'kc', name: 'KubeCon NA 2026 - Modern Registration Template' }] as HubSpotMarketingEmail[],
+      });
+
+      expect(picker().emailTemplateSuggestionId()).toBe('kc');
+      expect(picker().emailTemplateSuggestionTerms()).toEqual(['kubecon']);
+    });
+
+    /**
+     * A distinctive term suggests on its own, so a bare substring test would pre-select
+     * "KubeConference recap" for KubeCon outright. Matching on word boundaries removes that
+     * without costing any real name: verified byte-identical against the live portal.
+     */
+    it('does not match a term buried inside a longer word', () => {
+      showPicker();
+      picker().emailBriefOutput.set(briefFor('KubeCon North America', 'kubecon-na-2026'));
+      picker().searchEmailTemplates('');
+      respond({
+        enabled: true,
+        error: null,
+        possiblyTruncated: false,
+        emails: [{ id: 'nope', name: 'KubeConference recap' }] as HubSpotMarketingEmail[],
+      });
+
+      expect(picker().emailTemplateSuggestionId()).toBe('');
+    });
+
+    /** The naming patterns LF actually uses must keep matching — the boundary is any non-alphanumeric. */
+    it('still matches an event name joined by punctuation', () => {
+      showPicker();
+      picker().emailBriefOutput.set(briefFor('KubeCon North America', 'kubecon-na-2026'));
+      picker().searchEmailTemplates('');
+      respond({
+        enabled: true,
+        error: null,
+        possiblyTruncated: false,
+        emails: [{ id: 'joined', name: 'KubeCon+CloudNativeCon NA 2026 registration' }] as HubSpotMarketingEmail[],
+      });
+
+      expect(picker().emailTemplateSuggestionId()).toBe('joined');
+    });
+
+    /**
+     * The other half of the same rule, at the TOP of the sub-distinctive band rather than the
+     * bottom. A five-character term is long enough to look meaningful and still short enough to
+     * collide, so it must not decide on its own — this pins the boundary at 6, not merely that
+     * three-character tokens are weak.
+     */
+    it('still withholds on a single five-character term, one short of distinctive', () => {
+      showPicker();
+      picker().emailBriefOutput.set(briefFor('Seoul Open Infra Days', 'seoul-open-infra-days'));
+      picker().searchEmailTemplates('');
+      respond({
+        enabled: true,
+        error: null,
+        possiblyTruncated: false,
+        // 'seoul' matches, and is five characters — one below EVENT_TERM_DISTINCTIVE_LENGTH.
+        emails: [{ id: 'weak', name: 'Seoul city guide' }] as HubSpotMarketingEmail[],
+      });
+
+      expect(picker().emailTemplateSuggestionId()).toBe('');
+    });
+
+    /** Two distinctive terms IS enough — the threshold must not be so high it never fires. */
+    it('offers a suggestion once two distinctive terms match', () => {
+      showPicker();
+      picker().emailBriefOutput.set(briefFor('MCP Dev Summit Nairobi', 'mcp-dev-summit-nairobi'));
+      picker().searchEmailTemplates('');
+      respond({
+        enabled: true,
+        error: null,
+        possiblyTruncated: false,
+        emails: [{ id: 'ok', name: 'MCP Nairobi invite' }] as HubSpotMarketingEmail[],
+      });
+
+      expect(picker().emailTemplateSuggestionId()).toBe('ok');
+    });
+
+    /** A generic word shared by the event name and an unrelated template must not manufacture a hit. */
+    it('does not match on a stopword the event name happens to contain', () => {
+      showPicker();
+      picker().emailBriefOutput.set(briefFor('Open Source Summit Europe', 'open-source-summit-europe'));
+      picker().searchEmailTemplates('');
+      respond({
+        enabled: true,
+        error: null,
+        possiblyTruncated: false,
+        emails: [{ id: 'x', name: 'Cloud Summit Europe 2026 invite' }] as HubSpotMarketingEmail[],
+      });
+
+      // 'summit' and 'europe' are stopwords; only 'open'/'source' are distinctive, and neither
+      // appears in the template. A match here would be the false positive the list exists to stop.
+      expect(picker().emailTemplateSuggestionId()).toBe('');
+    });
+
+    it('never overwrites a template the operator already picked', () => {
+      showPicker();
+      picker().emailBriefOutput.set(briefFor('MCP Dev Summit Nairobi', 'mcp-dev-summit-nairobi'));
+      picker().onSelectEmailTemplate('chosen-by-hand');
+      picker().searchEmailTemplates('');
+      respond({
+        enabled: true,
+        error: null,
+        possiblyTruncated: false,
+        emails: [
+          { id: 'chosen-by-hand', name: 'Something the operator knows about' },
+          { id: 'mcp', name: 'MCP Dev Summit Nairobi — registration push' },
+        ] as HubSpotMarketingEmail[],
+      });
+
+      expect(picker().selectedEmailTemplateId()).toBe('chosen-by-hand');
+    });
+
+    /**
+     * An override must SURVIVE a re-search: the derivation re-runs on every successful search, and
+     * a suggestion that reinstated itself over a hand-pick would read as the app ignoring the
+     * operator.
+     *
+     * What actually pins it is the empty-selection check — a separate "was it overridden" flag was
+     * written first and removed as unfalsifiable (see the comment in the component). This test is
+     * therefore about the re-search path specifically, which the sibling test above does not
+     * exercise.
+     */
+    it('does not reinstate the suggestion after a re-search once the operator has overridden it', () => {
+      showPicker();
+      picker().emailBriefOutput.set(briefFor('MCP Dev Summit Nairobi', 'mcp-dev-summit-nairobi'));
+      picker().searchEmailTemplates('');
+      const emails = [
+        { id: 'mcp', name: 'MCP Dev Summit Nairobi — registration push' },
+        { id: 'other', name: 'Nairobi welcome note' },
+      ] as HubSpotMarketingEmail[];
+      respond({ enabled: true, error: null, possiblyTruncated: false, emails });
+      expect(picker().selectedEmailTemplateId()).toBe('mcp');
+
+      picker().onSelectEmailTemplate('other');
+      picker().searchEmailTemplates('');
+      respond({ enabled: true, error: null, possiblyTruncated: false, emails });
+
+      expect(picker().selectedEmailTemplateId()).toBe('other');
+    });
+
+    /**
+     * The worst state this feature can reach: a banner announcing a pre-selected template while no
+     * VISIBLE row carries it.
+     *
+     * Ranking and the suggestion agree on the event half but not the type half, and a tie falls to
+     * the server's original order — so a genuinely-suggested template can rank below enough
+     * type-keyword matches to be cut by the 100-row render limit. The operator would then be told
+     * something was chosen for them with no way to see or change it. The selected row is spliced
+     * back in at the top for exactly this reason.
+     *
+     * Built to reproduce it: 150 rows that match six keywords of the seven-keyword
+     * `final-countdown` type, plus one true KubeCon template that matches none of them.
+     */
+    it('always draws the selected row, even when ranking would cut it past the render limit', () => {
+      showPicker();
+      picker().selectedEmailTypeId.set('final-countdown');
+      picker().emailBriefOutput.set(briefFor('KubeCon North America', 'kubecon-na-2026'));
+      picker().searchEmailTemplates('');
+
+      const noise = Array.from({ length: 150 }, (_, i) => ({
+        id: `noise-${i}`,
+        name: `Final countdown: last chance, closing deadline, closes soon #${i}`,
+      })) as HubSpotMarketingEmail[];
+      respond({
+        enabled: true,
+        error: null,
+        possiblyTruncated: false,
+        emails: [...noise, { id: 'kc', name: 'KubeCon NA 2026 Modern Template' } as HubSpotMarketingEmail],
+      });
+
+      expect(picker().emailTemplateSuggestionId()).toBe('kc');
+      expect(picker().selectedEmailTemplateId()).toBe('kc');
+      // The assertion that matters: it is actually DRAWN, not merely selected.
+      expect(
+        picker()
+          .emailTemplatesRendered()
+          .some((t) => t.id === 'kc')
+      ).toBe(true);
+      // And the render cap is still honoured — the splice replaces a row, it does not append.
+      expect(picker().emailTemplatesRendered().length).toBe(HUBSPOT_TEMPLATE_RENDER_LIMIT);
+    });
+
+    /**
+     * The event decides WHETHER to suggest; the selected type decides WHICH of that event's
+     * templates. A portal that runs an event well has several of its emails, and they score
+     * identically on the event — so a strict `>` over the server's newest-first order picked
+     * whichever was edited last. Observed live: the three MCP Dev Summit templates tie, and the
+     * newest is a CFP-deadline email, which is the wrong answer for Registration Push.
+     */
+    it('breaks an event tie using the selected email type', () => {
+      showPicker();
+      picker().selectedEmailTypeId.set('main-registration-push');
+      picker().emailBriefOutput.set(briefFor('MCP Dev Summit Nairobi', 'mcp-dev-summit-nairobi'));
+      picker().searchEmailTemplates('');
+      respond({
+        enabled: true,
+        error: null,
+        possiblyTruncated: false,
+        // Both name the event identically; only the TYPE separates them, and the CFP one is first
+        // (newest), so a tie-blind scan would take it.
+        emails: [
+          { id: 'cfp', name: 'MCP Dev Summit Nairobi — 5 days left to submit to speak' },
+          { id: 'reg', name: 'MCP Dev Summit Nairobi — registration reminder' },
+        ] as HubSpotMarketingEmail[],
+      });
+
+      expect(picker().emailTemplateSuggestionId()).toBe('reg');
+    });
+
+    /**
+     * The chosen template belongs to the brief that chose it. Left set, it survives into the next
+     * event in the same foundation — where it is both wrong AND silently suppresses the new
+     * suggestion, since the derivation only fills an empty selection. The feature would fail
+     * precisely on the second event.
+     */
+    it('clears the chosen template when the brief-derived state resets', () => {
+      showPicker();
+      picker().emailBriefOutput.set(briefFor('MCP Dev Summit Nairobi', 'mcp-dev-summit-nairobi'));
+      picker().searchEmailTemplates('');
+      respond({
+        enabled: true,
+        error: null,
+        possiblyTruncated: false,
+        emails: [{ id: 'mcp', name: 'MCP Dev Summit Nairobi registration' }] as HubSpotMarketingEmail[],
+      });
+      expect(picker().selectedEmailTemplateId()).toBe('mcp');
+
+      (fixture.componentInstance as unknown as { resetEmailBriefDerivedState(): void }).resetEmailBriefDerivedState();
+      expect(picker().selectedEmailTemplateId()).toBe('');
+    });
+
+    /**
+     * The banner asserts what is SELECTED, so it must not survive an override. Keyed on the
+     * suggestion merely existing, it read "pre-selected ... for this event" beside a template the
+     * derivation never chose.
+     */
+    it('hides the suggestion banner once the operator picks a different row', () => {
+      showPicker();
+      picker().emailBriefOutput.set(briefFor('MCP Dev Summit Nairobi', 'mcp-dev-summit-nairobi'));
+      picker().searchEmailTemplates('');
+      respond({
+        enabled: true,
+        error: null,
+        possiblyTruncated: false,
+        emails: [
+          { id: 'mcp', name: 'MCP Dev Summit Nairobi registration' },
+          { id: 'other', name: 'Something else entirely' },
+        ] as HubSpotMarketingEmail[],
+      });
+      expect(fixture.nativeElement.querySelector('[data-testid="campaigns-email-template-suggestion"]')).not.toBeNull();
+
+      picker().onSelectEmailTemplate('other');
+      fixture.detectChanges();
+      expect(fixture.nativeElement.querySelector('[data-testid="campaigns-email-template-suggestion"]')).toBeNull();
+    });
+
+    /**
+     * Accents must survive tokenizing. Deleting non-`[a-z0-9]` turned "München" into "mnchen" on
+     * the BRIEF side only, so a template actually named "München" could never match — an
+     * international event permanently unsuggestable.
+     */
+    it('matches an accented event name against an accented template name', () => {
+      showPicker();
+      picker().emailBriefOutput.set(briefFor('KubeCon München', 'kubecon-munchen', 'München'));
+      picker().searchEmailTemplates('');
+      respond({
+        enabled: true,
+        error: null,
+        possiblyTruncated: false,
+        emails: [{ id: 'de', name: 'KubeCon München — Registrierung' }] as HubSpotMarketingEmail[],
+      });
+
+      expect(picker().emailTemplateSuggestionId()).toBe('de');
+      // The DECISIVE term is what the accent handling has to preserve, and it is what the banner
+      // reports. `münchen` is a CITY token now -- it ranks but never justifies a suggestion, so
+      // it is deliberately absent from the reasons shown. Asserting it here would pin the old
+      // behaviour where a city could be presented as a reason.
+      expect(picker().emailTemplateSuggestionTerms()).toContain('kubecon');
+    });
+
+    /** The banner is one sentence; an @if between text nodes rendered "event . Pick a different". */
+    it('renders the banner without a space before the full stop', () => {
+      showPicker();
+      picker().emailBriefOutput.set(briefFor('MCP Dev Summit Nairobi', 'mcp-dev-summit-nairobi'));
+      picker().searchEmailTemplates('');
+      respond({
+        enabled: true,
+        error: null,
+        possiblyTruncated: false,
+        emails: [{ id: 'mcp', name: 'MCP Dev Summit Nairobi registration' }] as HubSpotMarketingEmail[],
+      });
+
+      const text = fixture.nativeElement.querySelector('[data-testid="campaigns-email-template-suggestion"]')?.textContent?.replace(/\s+/g, ' ') ?? '';
+      expect(text).not.toContain(' .');
+      expect(text).toContain('. Pick a different one to override it.');
+    });
+
+    /**
+     * The type is the tie-break, so it must be re-applied when the type CHANGES. A suggestion made
+     * under Registration Push is the wrong answer once the operator switches to CFP Launch — and
+     * left alone the stale template stayed selected and would have been the one staged.
+     */
+    it('re-derives the suggestion when the email type changes', () => {
+      showPicker();
+      picker().selectedEmailTypeId.set('main-registration-push');
+      picker().emailBriefOutput.set(briefFor('MCP Dev Summit Nairobi', 'mcp-dev-summit-nairobi'));
+      picker().searchEmailTemplates('');
+      respond({
+        enabled: true,
+        error: null,
+        possiblyTruncated: false,
+        emails: [
+          { id: 'cfp', name: 'MCP Dev Summit Nairobi — call for proposals closes soon' },
+          { id: 'reg', name: 'MCP Dev Summit Nairobi — registration reminder' },
+        ] as HubSpotMarketingEmail[],
+      });
+      expect(picker().selectedEmailTemplateId()).toBe('reg');
+
+      (fixture.componentInstance as unknown as { onSelectEmailType(id: string): void }).onSelectEmailType('cfp-launch');
+      expect(picker().selectedEmailTemplateId()).toBe('cfp');
+    });
+
+    /** A hand-picked template is the operator's; a type change is not permission to replace it. */
+    it('leaves a hand-picked template alone when the email type changes', () => {
+      showPicker();
+      picker().selectedEmailTypeId.set('main-registration-push');
+      picker().emailBriefOutput.set(briefFor('MCP Dev Summit Nairobi', 'mcp-dev-summit-nairobi'));
+      picker().searchEmailTemplates('');
+      respond({
+        enabled: true,
+        error: null,
+        possiblyTruncated: false,
+        emails: [
+          { id: 'cfp', name: 'MCP Dev Summit Nairobi — call for proposals closes soon' },
+          { id: 'reg', name: 'MCP Dev Summit Nairobi — registration reminder' },
+        ] as HubSpotMarketingEmail[],
+      });
+      picker().onSelectEmailTemplate('cfp');
+
+      (fixture.componentInstance as unknown as { onSelectEmailType(id: string): void }).onSelectEmailType('cfp-launch');
+      expect(picker().selectedEmailTemplateId()).toBe('cfp');
+    });
+
+    /**
+     * Years were enumerated in the stopword list, so the protection EXPIRED: in 2028 an unrelated
+     * "Open newsletter 2028" would match `open` plus `2028`, reach the threshold and be
+     * pre-selected. A pattern cannot go stale.
+     */
+    it('drops a year token from any year, not only the enumerated ones', () => {
+      showPicker();
+      picker().emailBriefOutput.set(briefFor('Open Source Summit 2028', 'open-source-summit-2028'));
+      picker().searchEmailTemplates('');
+      respond({
+        enabled: true,
+        error: null,
+        possiblyTruncated: false,
+        emails: [{ id: 'unrelated', name: 'Open newsletter 2028' }] as HubSpotMarketingEmail[],
+      });
+
+      expect(picker().emailTemplateSuggestionId()).toBe('');
+    });
+
+    /**
+     * The banner is a plain <p> inserted when the suggestion lands, and a newly inserted element is
+     * not reliably announced — so a screen-reader user could miss that a template was chosen for
+     * them and that it is the one staging will use.
+     */
+    it('announces the auto-selection through the existing live region', () => {
+      showPicker();
+      picker().emailBriefOutput.set(briefFor('MCP Dev Summit Nairobi', 'mcp-dev-summit-nairobi'));
+      picker().searchEmailTemplates('');
+      respond({
+        enabled: true,
+        error: null,
+        possiblyTruncated: false,
+        emails: [{ id: 'mcp', name: 'MCP Dev Summit Nairobi registration' }] as HubSpotMarketingEmail[],
+      });
+
+      const live = fixture.nativeElement.querySelector('[data-testid="campaigns-email-templates-live"]')?.textContent ?? '';
+      expect(live).toContain('MCP Dev Summit Nairobi registration');
+      expect(live).toContain('nairobi');
+
+      // Silent once the operator overrides — it no longer describes what is selected.
+      picker().onSelectEmailTemplate('mcp-other');
+      fixture.detectChanges();
+      const after = fixture.nativeElement.querySelector('[data-testid="campaigns-email-templates-live"]')?.textContent ?? '';
+      expect(after).not.toContain('Template selected for this event');
+    });
+
+    /**
+     * City tokens must never be the reason a template is suggested.
+     *
+     * "Salt Lake City visitor guide" matched `salt`, `lake` and `city` for a KubeCon brief and
+     * scored 9 against a threshold of 6 — a template with no relation to the event, pre-selected
+     * on location words alone. Operators do name templates by city, so the terms still ORDER
+     * results; they just cannot justify a suggestion.
+     */
+    it('withholds a suggestion that matches only on city words', () => {
+      showPicker();
+      picker().emailBriefOutput.set(briefFor('KubeCon North America', 'kubecon-na-2026', 'Salt Lake City'));
+      picker().searchEmailTemplates('');
+      respond({
+        enabled: true,
+        error: null,
+        possiblyTruncated: false,
+        emails: [{ id: 'city', name: 'Salt Lake City visitor guide' }] as HubSpotMarketingEmail[],
+      });
+
+      expect(picker().emailTemplateSuggestionId()).toBe('');
+    });
+
+    /**
+     * A search that drops the auto-selected row must release it.
+     *
+     * Only the suggestion id was cleared, not the selection — so after a narrowed search the id
+     * stayed selected while the banner hid (it renders only while the suggestion IS the
+     * selection), and staging would clone a template no longer in the list. The same
+     * silent-wrong-clone the feature exists to prevent, reached from the other direction.
+     */
+    it('releases an auto-selected template when a search no longer returns it', () => {
+      showPicker();
+      picker().emailBriefOutput.set(briefFor('MCP Dev Summit Nairobi', 'mcp-dev-summit-nairobi'));
+      picker().searchEmailTemplates('');
+      respond({
+        enabled: true,
+        error: null,
+        possiblyTruncated: false,
+        emails: [{ id: 'mcp', name: 'MCP Dev Summit Nairobi registration' }] as HubSpotMarketingEmail[],
+      });
+      expect(picker().selectedEmailTemplateId()).toBe('mcp');
+
+      // A narrowed search that no longer returns the auto-selected row.
+      picker().searchEmailTemplates('newsletter');
+      respond({
+        enabled: true,
+        error: null,
+        possiblyTruncated: false,
+        emails: [{ id: 'other', name: 'Monthly newsletter' }] as HubSpotMarketingEmail[],
+      });
+
+      expect(picker().selectedEmailTemplateId()).toBe('');
+    });
+
+    /**
+     * ID equality cannot establish provenance.
+     *
+     * After suggestion A the operator can pick B, then deliberately pick A again — the ids
+     * coincide, so an equality check treats their explicit choice as system-owned and silently
+     * releases it on the next search. Provenance is a fact about how the value was SET.
+     */
+    it('keeps a hand-picked template that happens to match the suggestion', () => {
+      showPicker();
+      picker().emailBriefOutput.set(briefFor('MCP Dev Summit Nairobi', 'mcp-dev-summit-nairobi'));
+      picker().searchEmailTemplates('');
+      const emails = [
+        { id: 'mcp', name: 'MCP Dev Summit Nairobi registration' },
+        { id: 'other', name: 'Something else' },
+      ] as HubSpotMarketingEmail[];
+      respond({ enabled: true, error: null, possiblyTruncated: false, emails });
+      expect(picker().selectedEmailTemplateId()).toBe('mcp');
+
+      // Away and deliberately back to the SAME id — now the operator's choice, not the system's.
+      picker().onSelectEmailTemplate('other');
+      picker().onSelectEmailTemplate('mcp');
+
+      picker().searchEmailTemplates('newsletter');
+      respond({ enabled: true, error: null, possiblyTruncated: false, emails: [{ id: 'n', name: 'Monthly newsletter' }] as HubSpotMarketingEmail[] });
+
+      expect(picker().selectedEmailTemplateId()).toBe('mcp');
+    });
+
+    /**
+     * A FAILED search must release a system-owned selection too.
+     *
+     * `applyEventTemplateSuggestion` runs only after a successful listing, so the error arms set
+     * `emailTemplates` to null while leaving the auto-selected id in place — invisible, since
+     * there is no list to show it in, and still stageable.
+     */
+    it('releases an auto-selected template when the search fails', () => {
+      showPicker();
+      picker().emailBriefOutput.set(briefFor('MCP Dev Summit Nairobi', 'mcp-dev-summit-nairobi'));
+      picker().searchEmailTemplates('');
+      respond({
+        enabled: true,
+        error: null,
+        possiblyTruncated: false,
+        emails: [{ id: 'mcp', name: 'MCP Dev Summit Nairobi registration' }] as HubSpotMarketingEmail[],
+      });
+      expect(picker().selectedEmailTemplateId()).toBe('mcp');
+
+      picker().searchEmailTemplates('anything');
+      respond({ enabled: true, error: 'HubSpot refused the search', possiblyTruncated: false, emails: [] });
+
+      expect(picker().selectedEmailTemplateId()).toBe('');
+    });
+
+    /** A HAND-PICKED template is the operator's and survives a search that drops it. */
+    it('keeps a hand-picked template selected across a search that no longer returns it', () => {
+      showPicker();
+      picker().emailBriefOutput.set(briefFor('MCP Dev Summit Nairobi', 'mcp-dev-summit-nairobi'));
+      picker().searchEmailTemplates('');
+      respond({
+        enabled: true,
+        error: null,
+        possiblyTruncated: false,
+        emails: [
+          { id: 'mcp', name: 'MCP Dev Summit Nairobi registration' },
+          { id: 'hand', name: 'Something the operator knows about' },
+        ] as HubSpotMarketingEmail[],
+      });
+      picker().onSelectEmailTemplate('hand');
+
+      picker().searchEmailTemplates('newsletter');
+      respond({
+        enabled: true,
+        error: null,
+        possiblyTruncated: false,
+        emails: [{ id: 'other', name: 'Monthly newsletter' }] as HubSpotMarketingEmail[],
+      });
+
+      expect(picker().selectedEmailTemplateId()).toBe('hand');
+      // RENDERED, not merely retained. Asserting the id alone locked in an invisible-but-stageable
+      // selection: `emailTemplatesRendered` spliced the selected row back only when it could find it
+      // in the CURRENT results, so a narrowed search that excluded it left the operator able to stage
+      // a template no longer on screen. `canStageEmail` reads the id, not the list.
+      expect(
+        picker()
+          .emailTemplatesRendered()
+          .map((t) => t.id)
+      ).toContain('hand');
+    });
+
+    /**
+     * The retained row must be released with the selection it belongs to.
+     *
+     * `selectedEmailTemplateRow` keeps the chosen template so a narrowed search cannot hide it.
+     * That retention has to end when the selection does, or the row outlives its own id and gets
+     * appended to a later, unrelated result set -- a template from a previous brief rendered as
+     * though the operator had just picked it. Removing all four clear sites left every other test
+     * green, so nothing covered this until now.
+     */
+    it('stops rendering the retained row once the selection is cleared', () => {
+      showPicker();
+      picker().searchEmailTemplates('');
+      respond({
+        enabled: true,
+        error: null,
+        possiblyTruncated: false,
+        emails: [
+          { id: 'mcp', name: 'MCP Dev Summit Nairobi registration' },
+          { id: 'hand', name: 'Something the operator knows about' },
+        ] as HubSpotMarketingEmail[],
+      });
+      picker().onSelectEmailTemplate('hand');
+
+      picker().searchEmailTemplates('newsletter');
+      respond({ enabled: true, error: null, possiblyTruncated: false, emails: [{ id: 'other', name: 'Monthly newsletter' }] as HubSpotMarketingEmail[] });
+      expect(
+        picker()
+          .emailTemplatesRendered()
+          .map((t) => t.id)
+      ).toContain('hand');
+
+      // The operator picks a row from the CURRENT results; the old retained row must go with the
+      // selection it belonged to.
+      picker().onSelectEmailTemplate('other');
+      fixture.detectChanges();
+
+      expect(picker().selectedEmailTemplateId()).toBe('other');
+      expect(
+        picker()
+          .emailTemplatesRendered()
+          .map((t) => t.id)
+      ).not.toContain('hand');
+    });
+
+    /** But a city match still ranks, once the event itself is identified. */
+    it('ranks a template naming both the event and the city above one naming only the event', () => {
+      showPicker();
+      picker().emailBriefOutput.set(briefFor('KubeCon North America', 'kubecon-na-2026', 'Salt Lake City'));
+      picker().searchEmailTemplates('');
+      respond({
+        enabled: true,
+        error: null,
+        possiblyTruncated: false,
+        emails: [
+          { id: 'plain', name: 'KubeCon registration' },
+          { id: 'both', name: 'KubeCon Salt Lake City registration' },
+        ] as HubSpotMarketingEmail[],
+      });
+
+      expect(picker().emailTemplateSuggestionId()).toBe('both');
+    });
+
+    /**
+     * Annual editions tie on the event name alone, so the server's newest-first order chose
+     * between "KubeCon NA 2025" and "KubeCon NA 2026" — last year's template, pre-selected and
+     * stageable. The year breaks that tie without being able to reach the threshold itself.
+     */
+    it('prefers the edition whose year matches the brief', () => {
+      showPicker();
+      picker().emailBriefOutput.set(briefFor('KubeCon North America 2026', 'kubecon-na-2026'));
+      picker().searchEmailTemplates('');
+      respond({
+        enabled: true,
+        error: null,
+        possiblyTruncated: false,
+        // Last year's first, as a newest-first server order could return it.
+        emails: [
+          { id: 'y2025', name: 'KubeCon NA 2025 - Registration' },
+          { id: 'y2026', name: 'KubeCon NA 2026 - Registration' },
+        ] as HubSpotMarketingEmail[],
+      });
+
+      expect(picker().emailTemplateSuggestionId()).toBe('y2026');
+    });
+
+    /**
+     * A template matched on its SUBJECT may carry no name, and announcing an empty string reads as
+     * "Template selected for this event: . Choose another" — which tells a screen-reader user
+     * nothing about what was chosen for them.
+     */
+    it('announces a subject-matched template by its subject rather than an empty name', () => {
+      showPicker();
+      picker().emailBriefOutput.set(briefFor('MCP Dev Summit Nairobi', 'mcp-dev-summit-nairobi'));
+      picker().searchEmailTemplates('');
+      respond({
+        enabled: true,
+        error: null,
+        possiblyTruncated: false,
+        emails: [{ id: 'subj', name: '', subject: 'MCP Dev Summit Nairobi — register now' }] as HubSpotMarketingEmail[],
+      });
+
+      const live = fixture.nativeElement.querySelector('[data-testid="campaigns-email-templates-live"]')?.textContent ?? '';
+      expect(live).toContain('register now');
+      expect(live).not.toContain('event: .');
+    });
+
+    /** The two announcements must not run together into one word. */
+    it('separates the two live-region announcements with a space', () => {
+      showPicker();
+      picker().emailBriefOutput.set(briefFor('MCP Dev Summit Nairobi', 'mcp-dev-summit-nairobi'));
+      picker().searchEmailTemplates('');
+      respond({
+        enabled: true,
+        error: null,
+        possiblyTruncated: false,
+        emails: [{ id: 'mcp', name: 'MCP Dev Summit Nairobi registration' }] as HubSpotMarketingEmail[],
+      });
+
+      const live = fixture.nativeElement.querySelector('[data-testid="campaigns-email-templates-live"]')?.textContent ?? '';
+      // No word boundary swallowed: a full stop is never immediately followed by a capital letter
+      // with no space between them.
+      expect(live).not.toMatch(/\.[A-Z]/);
+    });
+
+    /** The year still cannot carry a suggestion on its own — the 2028 false positive stays shut. */
+    it('does not let a year match alone justify a suggestion', () => {
+      showPicker();
+      picker().emailBriefOutput.set(briefFor('Open Source Summit 2028', 'open-source-summit-2028'));
+      picker().searchEmailTemplates('');
+      respond({
+        enabled: true,
+        error: null,
+        possiblyTruncated: false,
+        emails: [{ id: 'unrelated', name: 'Open newsletter 2028' }] as HubSpotMarketingEmail[],
+      });
+
+      expect(picker().emailTemplateSuggestionId()).toBe('');
+    });
+
+    /** The suggestion ranks too, so the derived template is reachable past the render cap. */
+    it('ranks the event match to the top of the rendered list', () => {
+      showPicker();
+      picker().emailBriefOutput.set(briefFor('MCP Dev Summit Nairobi', 'mcp-dev-summit-nairobi'));
+      picker().searchEmailTemplates('');
+      respond({
+        enabled: true,
+        error: null,
+        possiblyTruncated: false,
+        emails: [
+          { id: 'a', name: 'Zulu unrelated' },
+          { id: 'b', name: 'Yankee unrelated' },
+          { id: 'mcp', name: 'MCP Dev Summit Nairobi — registration push' },
+        ] as HubSpotMarketingEmail[],
+      });
+
+      expect(picker().emailTemplatesRendered()[0].id).toBe('mcp');
+    });
+  });
 
   it('loads templates when the implementation tab is entered, not only on proceed', () => {
     // The only other searchEmailTemplates call site is onEmailProceedToImplementation, so
@@ -4473,5 +5601,634 @@ describe('CampaignsComponent when the client flag is on and the user holds a cam
 
   it('admits the contributor without requiring ED persona', () => {
     expect((fgaFixture.nativeElement as HTMLElement).querySelector('[data-testid="campaigns-no-access"]')).toBeNull();
+  });
+});
+
+/**
+ * The Email Monitor tab (#1699).
+ *
+ * The defect class these guard against is a single substitution: rendering a row that carries NO
+ * measurement as a measurement of zero. On this channel that is not a hypothetical — dispatch
+ * stages a DRAFT and a human sends it in HubSpot afterwards, so "staged, never sent" is the most
+ * ordinary state the channel has, and it is what every read before that moment returns.
+ */
+describe('CampaignsComponent email monitor', () => {
+  let fixture: ComponentFixture<CampaignsComponent>;
+
+  interface MonitorInternals {
+    emailBriefId: { set(v: string): void };
+    emailMetrics: { (): BriefMetrics | null; set(v: BriefMetrics | null): void };
+    emailMetricsState: { (): string; set(v: string): void };
+    emailMetricsError: { (): string; set(v: string): void };
+    emailMetricsRows(): BriefMetricsRow[];
+    emailMetricsOkRows(): BriefMetricsRow[];
+    emailMetricsPendingRows(): BriefMetricsRow[];
+    emailMetricsProblemRows(): BriefMetricsRow[];
+    emailMetricsTotals(): CampaignServiceEmailMetrics | null;
+    emailMetricsNothingSent(): boolean;
+    emailMetricsRates(): { delivery: number | null; open: number | null; click: number | null; bounce: number | null };
+    loadEmailMetrics(): void;
+    canRefreshEmailMetrics(): boolean;
+    activeFoundationSlug(): string;
+    emailBriefOutput: { set(v: unknown): void };
+    onEmailProceedToImplementation(brief: unknown): void;
+    rememberBriefId(key: string, value: { id: string; etag: string | null }): void;
+    ownershipKey(projectSlug: string, brief: unknown): string | null;
+  }
+
+  const internals = (): MonitorInternals => fixture.componentInstance as unknown as MonitorInternals;
+
+  /** A measured email row. Counters are the design's own examples, so they exercise real magnitudes. */
+  const okRow = (over: Partial<CampaignServiceEmailMetrics> = {}): BriefMetricsRow =>
+    ({
+      campaign_id: 'c-email',
+      platform: 'hubspot',
+      status: 'ok',
+      metrics: {
+        campaign_id: 'c-email',
+        platform_campaign_id: '104670127234',
+        window: 'last_30_days',
+        impressions: 1840,
+        clicks: 212,
+        cost_micros: 0,
+        ctr: 0.115,
+        email: { sent: 9400, delivered: 9268, opens: 1840, clicks: 212, bounces: 95, unsubscribes: 17, ...over },
+      },
+    }) as unknown as BriefMetricsRow;
+
+  const metrics = (rows: BriefMetricsRow[]): BriefMetrics =>
+    ({ brief_id: 'b1', window: 'last_30_days', rows, ok_count: rows.filter((r) => r.status === 'ok').length, action_items: [] }) as BriefMetrics;
+
+  /**
+   * Put the page on Email/Monitor before asserting anything about the DOM.
+   *
+   * Both delivery containers are mounted at once and the panel is inside an `@switch` on the tab,
+   * so without this the queries below find nothing and every DOM assertion fails for a reason
+   * that has nothing to do with what it is testing.
+   */
+  const showMonitor = (): void => {
+    const c = fixture.componentInstance as unknown as {
+      selectorForm: { controls: { deliveryType: { setValue(v: CampaignDeliveryType): void } } };
+      selectTab(tab: CampaignTab, owner: CampaignDeliveryType): void;
+    };
+    c.selectorForm.controls.deliveryType.setValue('email');
+    c.selectTab('insights', 'email');
+    fixture.detectChanges();
+  };
+
+  const load = (rows: BriefMetricsRow[]): void => {
+    showMonitor();
+    internals().emailMetrics.set(metrics(rows));
+    internals().emailMetricsState.set('loaded');
+    fixture.detectChanges();
+  };
+
+  beforeEach(async () => {
+    await TestBed.configureTestingModule({
+      imports: [CampaignsComponent],
+      providers: [provideHttpClient(), provideHttpClientTesting(), provideRouter([]), { provide: MessageService, useValue: { add: vi.fn() } }],
+    }).compileComponents();
+    fixture = TestBed.createComponent(CampaignsComponent);
+    TestBed.inject(PersonaService).currentPersona.set('executive-director');
+    fixture.detectChanges();
+  });
+
+  /**
+   * The load-bearing case, verified against a real staged HubSpot draft (email 220600410544):
+   * campaign-service answers `not_ready` with NO `metrics` object at all.
+   *
+   * The mutation that matters is defaulting the absent object to zeroes. Doing so makes `totals`
+   * a filled record and this assertion fail — which is the point: `null` is what suppresses the
+   * metric cards, and a filled record would render "0 sent / 0.0% open rate" for an email nobody
+   * has sent yet.
+   */
+  it('renders no totals for a staged email that has never been sent', () => {
+    load([{ campaign_id: 'c1', platform: 'hubspot', status: 'not_ready', reason: 'not sent yet' } as BriefMetricsRow]);
+
+    expect(internals().emailMetricsTotals()).toBeNull();
+    expect(internals().emailMetricsPendingRows()).toHaveLength(1);
+    expect(internals().emailMetricsOkRows()).toHaveLength(0);
+
+    const el = fixture.nativeElement as HTMLElement;
+    expect(el.querySelector('[data-testid="campaigns-email-metrics-pending"]')).not.toBeNull();
+    // The absence is the assertion: no card may render for an unmeasured row.
+    expect(el.querySelector('[data-testid="campaigns-email-metrics-totals"]')).toBeNull();
+  });
+
+  /**
+   * A brief is shared across delivery types, so its metrics read returns the paid rows too.
+   * Without the platform filter those become "email performance" — real, plausible numbers about
+   * a different campaign entirely.
+   */
+  it('excludes ad-platform rows from the email totals', () => {
+    load([
+      okRow(),
+      {
+        campaign_id: 'c-google',
+        platform: 'google-ads',
+        status: 'ok',
+        metrics: {
+          campaign_id: 'c-google',
+          platform_campaign_id: 'g1',
+          window: 'last_30_days',
+          impressions: 999_999,
+          clicks: 8888,
+          cost_micros: 5_000_000,
+          ctr: 0.08,
+        },
+      } as unknown as BriefMetricsRow,
+    ]);
+
+    expect(internals().emailMetricsRows()).toHaveLength(1);
+    // Not merely "1 row": the google clicks must not have been folded into the email click total.
+    expect(internals().emailMetricsTotals()?.clicks).toBe(212);
+  });
+
+  /**
+   * `sent === 0` separates the two cases the issue insists must not be conflated: HubSpot
+   * answered (so this is not `not_ready`), but it counted no sends, so a 0% open rate would not
+   * mean what it looks like it means.
+   */
+  it('suppresses rates when the read succeeded but nothing was sent', () => {
+    load([okRow({ sent: 0, delivered: 0, opens: 0, clicks: 0, bounces: 0, unsubscribes: 0 })]);
+
+    expect(internals().emailMetricsNothingSent()).toBe(true);
+    const rates = internals().emailMetricsRates();
+    // `null`, never 0 — a rendered 0.0% asserts a measurement that was never taken.
+    expect(rates.open).toBeNull();
+    expect(rates.click).toBeNull();
+    expect(rates.delivery).toBeNull();
+    expect(fixture.nativeElement.querySelector('[data-testid="campaigns-email-metrics-nothing-sent"]')).not.toBeNull();
+
+    // RENDERING, not just the computed values. The three assertions above passed while all four
+    // rate lines still rendered as "— of sent" / "— of delivered" beside the counters: a null
+    // rate suppresses the NUMBER, not the line. The test's own name claimed the lines were
+    // suppressed, so it read as covering this and did not.
+    const el = fixture.nativeElement as HTMLElement;
+    for (const id of ['delivery-rate', 'open-rate', 'click-rate', 'bounce-rate']) {
+      expect(el.querySelector(`[data-testid="campaigns-email-metric-${id}"]`)).toBeNull();
+    }
+    // The COUNTERS stay. "0 sent" is a true measurement and the answer the operator came for --
+    // suppressing those too would leave the panel saying nothing at all.
+    expect(el.querySelector('[data-testid="campaigns-email-metric-sent"]')?.textContent).toContain('0');
+    expect(el.querySelector('[data-testid="campaigns-email-metric-delivered"]')).not.toBeNull();
+  });
+
+  /**
+   * Open and click rates are taken over DELIVERED, not sent: an email that bounced was never a
+   * chance to open, and HubSpot's own reporting uses the same denominator. Asserted with
+   * delivered !== sent so the two denominators give different answers — equal values would let a
+   * wrong denominator pass.
+   */
+  it('computes open and click rates over delivered, not sent', () => {
+    load([okRow()]);
+
+    const rates = internals().emailMetricsRates();
+    expect(rates.open).toBeCloseTo((1840 / 9268) * 100, 6);
+    expect(rates.click).toBeCloseTo((212 / 9268) * 100, 6);
+    // Delivery and bounce are over SENT, which is the only denominator that makes them mean anything.
+    expect(rates.delivery).toBeCloseTo((9268 / 9400) * 100, 6);
+    expect(rates.bounce).toBeCloseTo((95 / 9400) * 100, 6);
+  });
+
+  /**
+   * An em dash, not `0.0%` — the whole point of carrying `null` this far rather than defaulting.
+   *
+   * Asserted on the RENDERED text rather than on a formatter in isolation, because the formatting
+   * now happens in `MetricPercentPipe`. A unit test of the pipe would pass even if the template
+   * stopped using it.
+   */
+  it('renders a missing rate as an em dash, and a real measured zero as 0.0%', () => {
+    load([okRow({ sent: 100, delivered: 0, opens: 0, clicks: 0, bounces: 0, unsubscribes: 0 })]);
+
+    const el = fixture.nativeElement as HTMLElement;
+    // delivered is 0, so open rate has no denominator -> em dash, NOT 0.0%.
+    expect(el.querySelector('[data-testid="campaigns-email-metric-open-rate"]')?.textContent).toContain('—');
+    // delivery rate DOES have a denominator (sent=100) and is a genuine measured zero.
+    expect(el.querySelector('[data-testid="campaigns-email-metric-delivery-rate"]')?.textContent).toContain('0.0%');
+  });
+
+  /**
+   * The regression that three reviewers converged on, and that the mutation sweep had missed.
+   *
+   * `emailMetricsOkRows` once stopped at `metrics !== undefined`, so a row whose `metrics` existed
+   * WITHOUT an `email` object passed the filter, was skipped by the reducer, and was counted on
+   * both sides of the partial-coverage comparison — so no disclosure fired. With such a row alone,
+   * the reducer's zero seed survived and six zeroes rendered as a measurement.
+   */
+  it('renders no totals when the only ok row carries no email counters', () => {
+    load([
+      {
+        campaign_id: 'c-noemail',
+        platform: 'hubspot',
+        status: 'ok',
+        metrics: { campaign_id: 'c-noemail', platform_campaign_id: '77', window: 'last_30_days', impressions: 0, clicks: 0, cost_micros: 0, ctr: 0 },
+      } as unknown as BriefMetricsRow,
+    ]);
+
+    expect(internals().emailMetricsTotals()).toBeNull();
+    const el = fixture.nativeElement as HTMLElement;
+    expect(el.querySelector('[data-testid="campaigns-email-metrics-totals"]')).toBeNull();
+    // And it must not claim HubSpot counted no sends — nothing was counted at all.
+    expect(el.querySelector('[data-testid="campaigns-email-metrics-nothing-sent"]')).toBeNull();
+    // It must be VISIBLE somewhere rather than vanishing from every bucket.
+    expect(el.querySelector('[data-testid="campaigns-email-metrics-problems"]')).not.toBeNull();
+  });
+
+  /**
+   * A status this UI does not know must surface, not blank the panel.
+   *
+   * With an allow-listed problem bucket the row matched nothing, and because `emailMetricsRows()`
+   * was non-empty the empty state was suppressed too — the operator got a header and a Refresh
+   * button over nothing. `BriefMetricsRowStatus` is a closed union, so TypeScript cannot catch a
+   * status campaign-service adds later; the complement is what makes the failure visible.
+   */
+  it('surfaces a row whose status this UI does not recognise', () => {
+    load([{ campaign_id: 'cx', platform: 'hubspot', status: 'throttled', reason: 'rate limited upstream' } as unknown as BriefMetricsRow]);
+
+    expect(internals().emailMetricsProblemRows()).toHaveLength(1);
+    const problems = fixture.nativeElement.querySelector('[data-testid="campaigns-email-metrics-problems"]');
+    expect(problems).not.toBeNull();
+    expect(problems?.textContent).toContain('rate limited upstream');
+  });
+
+  /** A failure row with no `reason` must not render an empty bullet under a non-zero count. */
+  it('names a problem row that reported no reason', () => {
+    load([{ campaign_id: 'c-noreason', platform: 'hubspot', status: 'failed' } as unknown as BriefMetricsRow]);
+
+    const problems = fixture.nativeElement.querySelector('[data-testid="campaigns-email-metrics-problems"]');
+    expect(problems?.textContent).toContain('No reason was reported');
+  });
+
+  /**
+   * A total over some of the rows must never be presented as the channel's. The count is stated
+   * whenever the measured rows are fewer than the email rows.
+   */
+  it('discloses when totals cover only some of the staged emails', () => {
+    load([okRow(), { campaign_id: 'c2', platform: 'hubspot', status: 'not_ready', reason: 'not sent yet' } as BriefMetricsRow]);
+
+    const partial = fixture.nativeElement.querySelector('[data-testid="campaigns-email-metrics-partial"]');
+    expect(partial).not.toBeNull();
+    expect(partial?.textContent).toContain('1 of 2');
+  });
+
+  /**
+   * The mixed case the original disclosure test could not catch.
+   *
+   * An `ok` row missing its `email` object used to be counted on BOTH sides of the comparison, so
+   * the totals covered one of two emails with no caveat at all — a plausible half-total presented
+   * as the channel's performance, which is worse than an obviously-wrong zero.
+   */
+  it('discloses partial coverage when an ok row carries no email counters', () => {
+    load([
+      okRow(),
+      {
+        campaign_id: 'c-noemail',
+        platform: 'hubspot',
+        status: 'ok',
+        metrics: { campaign_id: 'c-noemail', platform_campaign_id: '77', window: 'last_30_days', impressions: 0, clicks: 0, cost_micros: 0, ctr: 0 },
+      } as unknown as BriefMetricsRow,
+    ]);
+
+    expect(internals().emailMetricsOkRows()).toHaveLength(1);
+    const partial = fixture.nativeElement.querySelector('[data-testid="campaigns-email-metrics-partial"]');
+    expect(partial).not.toBeNull();
+    expect(partial?.textContent).toContain('1 of 2');
+  });
+
+  /**
+   * A failed REQUEST is not a campaign that could not be measured. Leaving an empty result behind
+   * would render "No email staged for this brief" — a claim about HubSpot that a failed request
+   * establishes nothing about.
+   */
+  it('does not claim anything about HubSpot when the request itself failed', () => {
+    const svc = TestBed.inject(CampaignService);
+    vi.spyOn(svc, 'getBriefMetrics').mockReturnValue(throwError(() => new Error('gateway down')));
+
+    showMonitor();
+    internals().emailBriefId.set('b1');
+    internals().loadEmailMetrics();
+    fixture.detectChanges();
+
+    const el = fixture.nativeElement as HTMLElement;
+    expect(el.querySelector('[data-testid="campaigns-email-metrics-empty"]')).toBeNull();
+  });
+
+  /**
+   * A reset must not strand the Monitor tab.
+   *
+   * It clears `emailBriefId`, which parked the read in `idle` — and Refresh was disabled there on
+   * the grounds that it was a no-op, so an operator returning to Monitor had no way to load
+   * anything at all. The ownership cache survives the reset and names the same row, so the read
+   * recovers from it without a re-persist.
+   */
+  it('recovers the brief from ownership after a reset cleared the id', async () => {
+    showMonitor();
+    const svc = TestBed.inject(CampaignService);
+    const read = vi.spyOn(svc, 'getBriefMetrics').mockReturnValue(of(metrics([])));
+
+    // `persistBrief` is not mocked in this describe, so it would hit the testing backend and
+    // never resolve -- ownership would never be recorded and the test would fail for a reason
+    // unrelated to the fallback.
+    vi.spyOn(svc, 'persistBrief').mockReturnValue(of({ status: 'saved', approved: true, briefId: 'b1', etag: null } as unknown as CampaignBriefPersistResult));
+
+    // Ownership is what survives the reset, so it has to be established the way the real flow
+    // does -- a persist that records it -- rather than by setting `emailBriefId` alone.
+    const c = fixture.componentInstance as unknown as {
+      emailBriefOutput: { set(v: CampaignBriefOutput): void };
+      ensureEmailBriefId(b: CampaignBriefOutput, slug: string): Promise<string>;
+      activeFoundationSlug(): string;
+      resetEmailBriefDerivedState(): void;
+    };
+    const brief = { eventDetails: { slug: 'kubecon-eu-2026' } } as unknown as CampaignBriefOutput;
+    c.emailBriefOutput.set(brief);
+    fixture.detectChanges();
+    await c.ensureEmailBriefId(brief, c.activeFoundationSlug());
+    read.mockClear();
+
+    c.resetEmailBriefDerivedState();
+    // The brief output survives the reset (it is the operator's, not derived state); the ID does
+    // not. Without the ownership fallback the load returns early and never issues a read.
+    c.emailBriefOutput.set(brief);
+    internals().loadEmailMetrics();
+
+    expect(read).toHaveBeenCalled();
+  });
+
+  /**
+   * Refresh is otherwise silent to a screen reader: the spinner and the changing numbers are both
+   * visual only, so activating it announced nothing about running, finished or failed.
+   *
+   * The announcement states MEASURED against TOTAL rather than a bare count, because that
+   * difference is the point of the panel — a count alone would imply every staged email reported
+   * numbers.
+   */
+  it('announces the metrics read to a screen reader', () => {
+    showMonitor();
+    const live = (): string => fixture.nativeElement.querySelector('[data-testid="campaigns-email-metrics-live"]')?.textContent?.trim() ?? '';
+
+    // Silent before anything has happened, so it does not speak on unrelated tabs.
+    expect(live()).toBe('');
+
+    load([okRow(), { campaign_id: 'c2', platform: 'hubspot', status: 'not_ready', reason: 'not sent yet' } as BriefMetricsRow]);
+    expect(live()).toContain('1 of 2');
+
+    internals().emailMetricsState.set('error');
+    internals().emailMetricsError.set('Could not read email performance.');
+    fixture.detectChanges();
+    expect(live()).toContain('Could not read email performance.');
+  });
+
+  /**
+   * Clearing the signals does not stop a request already in flight.
+   *
+   * Start a read, reset the brief-derived state (what a foundation switch does), then let the
+   * original response resolve. Without the generation bump it still carries the generation it was
+   * issued under, passes `isCurrent()`, and writes the PREVIOUS context's rows into a panel now
+   * labelled with the new one.
+   */
+  it('discards a read that resolves after the brief-derived state was reset', async () => {
+    showMonitor();
+    const svc = TestBed.inject(CampaignService);
+    const late = new Subject<BriefMetrics>();
+    vi.spyOn(svc, 'getBriefMetrics').mockReturnValue(late.asObservable());
+
+    internals().emailBriefId.set('b1');
+    internals().loadEmailMetrics();
+
+    (fixture.componentInstance as unknown as { resetEmailBriefDerivedState(): void }).resetEmailBriefDerivedState();
+    late.next(metrics([{ campaign_id: 'stale', platform: 'hubspot', status: 'not_ready', reason: 'x' } as BriefMetricsRow]));
+    late.complete();
+    fixture.detectChanges();
+
+    expect(internals().emailMetrics()).toBeNull();
+    expect(internals().emailMetricsRows()).toHaveLength(0);
+  });
+
+  /**
+   * A delivery-type round trip does not fire `selectTab`, so nothing re-read the metrics — an
+   * operator returning to a Monitor tab they never left saw whatever was on screen before. These
+   * numbers change when a human presses send in HubSpot, outside this app entirely.
+   */
+  it('re-reads the metrics when the delivery type returns to email on the monitor tab', () => {
+    showMonitor();
+    const svc = TestBed.inject(CampaignService);
+    const read = vi.spyOn(svc, 'getBriefMetrics').mockReturnValue(of(metrics([])));
+    internals().emailBriefId.set('b1');
+    read.mockClear();
+
+    const form = (fixture.componentInstance as unknown as { selectorForm: { controls: { deliveryType: { setValue(v: string): void } } } }).selectorForm;
+    form.controls.deliveryType.setValue('paid-marketing');
+    form.controls.deliveryType.setValue('email');
+    fixture.detectChanges();
+
+    expect(read).toHaveBeenCalled();
+  });
+
+  /**
+   * TWO measured rows, with distinct counters in every field.
+   *
+   * Every other test in this suite pairs ONE measured row with rows that must be ignored, so a
+   * regression returning the first measured row's metrics instead of summing them would pass all
+   * of them: with a single contributor, "the first" and "the sum" are the same object. This is
+   * the case that separates them, and the counters differ per field so a reducer that summed only
+   * `sent` and carried the rest from the first row is caught too.
+   */
+  it('sums every measured email rather than reporting the first', () => {
+    load([
+      okRow(),
+      {
+        ...okRow(),
+        campaign_id: 'c-email-2',
+        metrics: {
+          campaign_id: 'c-email-2',
+          platform_campaign_id: '104670127235',
+          window: 'last_30_days',
+          impressions: 500,
+          clicks: 60,
+          cost_micros: 0,
+          ctr: 0.12,
+          email: { sent: 100, delivered: 90, opens: 40, clicks: 60, bounces: 5, unsubscribes: 3 },
+        },
+      } as unknown as BriefMetricsRow,
+    ]);
+
+    expect(internals().emailMetricsTotals()).toEqual({
+      sent: 9500,
+      delivered: 9358,
+      opens: 1880,
+      clicks: 272,
+      bounces: 100,
+      unsubscribes: 20,
+    });
+  });
+
+  /**
+   * A row that is `ok` on its ad counters but carries no `email` object must be skipped, not
+   * treated as six zeroes — otherwise it silently widens the denominator the totals are read
+   * against while contributing nothing.
+   */
+  it('skips an ok row that carries no email object rather than counting it as zeroes', () => {
+    load([
+      okRow(),
+      {
+        campaign_id: 'c3',
+        platform: 'hubspot',
+        status: 'ok',
+        metrics: { campaign_id: 'c3', platform_campaign_id: '999', window: 'last_30_days', impressions: 0, clicks: 0, cost_micros: 0, ctr: 0 },
+      } as unknown as BriefMetricsRow,
+    ]);
+
+    // The WHOLE record, not just one counter. Asserting `sent` alone passes against a mutation
+    // that leaves `sent` intact and corrupts another field — which is exactly what "skipped"
+    // has to rule out: the row must contribute nothing to ANY counter.
+    expect(internals().emailMetricsTotals()).toEqual({ sent: 9400, delivered: 9268, opens: 1840, clicks: 212, bounces: 95, unsubscribes: 17 });
+  });
+
+  /**
+   * `idle` is two states, and Refresh must only be live for one of them.
+   *
+   * A Monitor parked by a reset still has a resolvable owned row, so Refresh reloads it. A genuine
+   * no-brief context resolves `briefId === ''` and early-returns to the same idle it started from,
+   * so an enabled button there silently does nothing -- indistinguishable, to an operator or a
+   * screen-reader user, from a load that failed without saying so.
+   *
+   * Asserts the COMPUTED the template binds, not the request: the defect is a control that renders
+   * enabled beside a panel it cannot change.
+   */
+  it('does not offer Refresh when no brief id is resolvable', () => {
+    internals().emailBriefId.set('');
+    internals().emailBriefOutput.set(null);
+    internals().emailMetricsState.set('idle');
+    fixture.detectChanges();
+
+    expect(internals().canRefreshEmailMetrics()).toBe(false);
+  });
+
+  it('offers Refresh in the recoverable idle state a reset leaves behind', () => {
+    // Establish the slug EXPLICITLY rather than inheriting whatever the shared TestBed happens
+    // to hold. `canRefreshEmailMetrics` is now gated on it, and these positive assertions were
+    // passing only because another suite leaks 'foundation-b' through the shared context -- a
+    // dependency that would break them for a reason unrelated to what they test.
+    TestBed.inject(ProjectContextService).setFoundation({ uid: 'f-m', slug: 'tlf', name: 'The Linux Foundation' } as never, false);
+    // Drives the REAL reset rather than hand-setting the signals it clears.
+    //
+    // An earlier version of this test set `emailBriefId` to a nonempty value and asserted true.
+    // That returns through the direct-id branch and never reaches the ownership fallback, so
+    // deleting the fallback entirely left all 201 specs green -- the test agreed with itself.
+    // Here the id is cleared by `resetEmailBriefDerivedState` (via the proceed handler that calls
+    // it), so the ONLY thing that can make Refresh available is the ownership cache. That is the
+    // whole point of the recoverable-idle case.
+    const brief = { eventDetails: { name: 'KubeCon Europe 2026', slug: 'kubecon-eu-2026' } };
+    const key = internals().ownershipKey(internals().activeFoundationSlug(), brief);
+    expect(key).not.toBeNull();
+    internals().rememberBriefId(key as string, { id: 'b-owned', etag: '"1"' });
+
+    internals().onEmailProceedToImplementation(brief);
+    internals().emailMetricsState.set('idle');
+    fixture.detectChanges();
+
+    // The reset cleared the signal; only the cache can answer now.
+    expect(internals().canRefreshEmailMetrics()).toBe(true);
+  });
+
+  /**
+   * A real sub-0.1% rate must not render as `0.0%`.
+   *
+   * `MetricPercentPipe` formats to one decimal, so 1 click in 10,000 delivered (0.01%) printed as
+   * `0.0%` -- a zero sitting beside a click counter reading 1, which reads as "no clicks" rather
+   * than "very few". The em dash keeps meaning "no denominator", so rounding up is not an option
+   * either. Click and bounce now use two decimals, matching the CTR convention already set in the
+   * marketing-impact email tab; delivery and open keep one, being large.
+   *
+   * Asserted on RENDERED text: a pipe unit test would pass even if the template stopped using it.
+   */
+  it('renders a rate below 0.005% as <0.01%, never a false zero', () => {
+    // 1 click in 100,000 delivered is 0.001%. `toFixed(2)` rounds that to "0.00%" -- the same
+    // false zero one decimal gave at 0.01%, just further out. The counter says 1; the rate must
+    // not say nothing happened. A genuine zero still prints as 0.00%.
+    load([okRow({ sent: 100000, delivered: 100000, opens: 50000, clicks: 1, bounces: 0, unsubscribes: 0 })]);
+
+    const el = fixture.nativeElement as HTMLElement;
+    expect(el.querySelector('[data-testid="campaigns-email-metric-click-rate"]')?.textContent).toContain('<0.01%');
+    // A measured zero is not a tiny number and must not borrow the same treatment.
+    expect(el.querySelector('[data-testid="campaigns-email-metric-bounce-rate"]')?.textContent).toContain('0.00%');
+  });
+
+  it('renders a real sub-0.1% click and bounce rate rather than 0.0%', () => {
+    load([okRow({ sent: 10000, delivered: 10000, opens: 5000, clicks: 1, bounces: 2, unsubscribes: 0 })]);
+
+    const el = fixture.nativeElement as HTMLElement;
+    expect(el.querySelector('[data-testid="campaigns-email-metric-click-rate"]')?.textContent).toContain('0.01%');
+    expect(el.querySelector('[data-testid="campaigns-email-metric-bounce-rate"]')?.textContent).toContain('0.02%');
+    // The large rates stay at one decimal -- a second is noise, and this pins that the change was
+    // scoped to the low-rate pair rather than applied to every percentage on the panel.
+    expect(el.querySelector('[data-testid="campaigns-email-metric-delivery-rate"]')?.textContent).toContain('100.0%');
+  });
+
+  it('picks up an ownership entry recorded AFTER the computed was first read', () => {
+    // Establish the slug EXPLICITLY rather than inheriting whatever the shared TestBed happens
+    // to hold. `canRefreshEmailMetrics` is now gated on it, and these positive assertions were
+    // passing only because another suite leaks 'foundation-b' through the shared context -- a
+    // dependency that would break them for a reason unrelated to what they test.
+    TestBed.inject(ProjectContextService).setFoundation({ uid: 'f-m', slug: 'tlf', name: 'The Linux Foundation' } as never, false);
+    // `knownBriefIds` is a plain Map, so a computed reading it is evaluated once and never
+    // invalidated when an entry lands. That is why writes go through `rememberBriefId`, which
+    // bumps a signal the computed depends on.
+    //
+    // The ORDER is the whole test: read first (caching false), then write. A version-less
+    // implementation stays false forever here and the button is stuck disabled through exactly
+    // the recoverable case it was widened for -- while a test that writes before the first read
+    // passes either way.
+    const brief = { eventDetails: { name: 'KubeCon Europe 2026', slug: 'kubecon-eu-2026' } };
+    internals().onEmailProceedToImplementation(brief);
+    internals().emailMetricsState.set('idle');
+    fixture.detectChanges();
+
+    // First read: no entry yet, so this caches `false`.
+    expect(internals().canRefreshEmailMetrics()).toBe(false);
+
+    const key = internals().ownershipKey(internals().activeFoundationSlug(), brief);
+    internals().rememberBriefId(key as string, { id: 'b-late', etag: null });
+    fixture.detectChanges();
+
+    expect(internals().canRefreshEmailMetrics()).toBe(true);
+  });
+
+  it('does not offer Refresh when the ownership cache holds no row for this event', () => {
+    // Same shape, cache deliberately empty: proves the previous test passes BECAUSE of the entry
+    // rather than because the reset happens to leave something else enabled.
+    const brief = { eventDetails: { name: 'KubeCon Europe 2026', slug: 'kubecon-eu-2026' } };
+    internals().onEmailProceedToImplementation(brief);
+    internals().emailMetricsState.set('idle');
+    fixture.detectChanges();
+
+    expect(internals().canRefreshEmailMetrics()).toBe(false);
+  });
+
+  it('does not offer Refresh without a foundation slug', () => {
+    // `loadEmailMetrics` early-returns to idle on an empty slug, so offering a refresh there is a
+    // button whose only possible outcome is the state it started in.
+    //
+    // Drive the slug empty through the real service rather than assuming the harness leaves it
+    // so -- it does not: another suite's `setFoundation` leaks 'foundation-b' through the shared
+    // TestBed, and asserting the precondition is what caught that. A blank slug is a real shape
+    // (a context that has not resolved), not an artificial one.
+    TestBed.inject(ProjectContextService).setFoundation({ uid: 'f-x', slug: '', name: 'Unresolved' } as never, false);
+    fixture.detectChanges();
+    expect(internals().activeFoundationSlug()).toBe('');
+    internals().emailBriefId.set('b-monitor');
+    internals().emailMetricsState.set('idle');
+    fixture.detectChanges();
+
+    expect(internals().canRefreshEmailMetrics()).toBe(false);
+  });
+
+  it('does not offer Refresh while a load is already in flight', () => {
+    internals().emailBriefId.set('b-monitor');
+    internals().emailMetricsState.set('loading');
+    fixture.detectChanges();
+
+    expect(internals().canRefreshEmailMetrics()).toBe(false);
   });
 });
