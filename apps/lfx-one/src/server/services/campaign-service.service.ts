@@ -35,8 +35,6 @@ import type {
   RedditBriefCopy,
   CampaignServiceAudience,
   CampaignServiceCampaignResolution,
-  CampaignServiceHubSpotCampaign,
-  CampaignServiceHubSpotCampaigns,
   CampaignServiceKeywordActionInput,
   CampaignServiceKeywordActions,
   CampaignServiceKeywords,
@@ -1361,7 +1359,6 @@ export class CampaignServiceClient {
       window ? { window } : undefined
     );
   }
-
 
   /**
    * Resolve one Google Ads campaign id to campaign-service's own campaign and brief.

@@ -27,8 +27,6 @@ const {
   svcApplyKeywordActions,
   legacyKeywordActions,
   svcGetAudience,
-  svcSearchHsCampaigns,
-  svcCreateHsCampaign,
   legacyLookupUtm,
   legacyCreateUtm,
   legacyGetKeywords,
