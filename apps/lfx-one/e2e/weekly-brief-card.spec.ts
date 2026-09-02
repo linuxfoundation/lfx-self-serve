@@ -1070,11 +1070,12 @@ test.describe('WG Weekly Brief card — "This week so far" activity tally (GH-19
     const note = page.getByTestId('weekly-brief-card-current-activity-truncation-note');
     await expect(note).toBeVisible();
     // Pins the non-empty-tally variant specifically — the empty-tally variant shares the trailing
-    // "view Recent Activity for the full list" and wouldn't be caught by that substring alone.
+    // "see Recent Activity below for the latest events" and wouldn't be caught by that substring
+    // alone.
     await expect(note).toContainText('This count may be incomplete');
     // The note's only actionable content is the CTA — keep asserting it survives alongside the
     // variant-specific text above.
-    await expect(note).toContainText('view Recent Activity for the full list');
+    await expect(note).toContainText('see Recent Activity below for the latest events');
   });
 
   test('renders "activity couldn\'t be counted" (not "no activity yet") when truncated is true but every ref was filtered/unmapped away (GH-1998)', async ({
@@ -1103,7 +1104,7 @@ test.describe('WG Weekly Brief card — "This week so far" activity tally (GH-19
     const note = page.getByTestId('weekly-brief-card-current-activity-truncation-note');
     await expect(note).toBeVisible();
     await expect(note).toContainText('could not be fully counted');
-    await expect(note).toContainText('view Recent Activity for the full list');
+    await expect(note).toContainText('see Recent Activity below for the latest events');
   });
 });
 

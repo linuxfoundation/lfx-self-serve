@@ -1313,8 +1313,9 @@ export class WeeklyBriefService {
    * their own doc comments in `committee-activity.service.ts` for why), so they fetch each
    * committee's newest `fetchSize` rows by `updated_desc` and filter to the window in memory —
    * their own `saturated` flag reflects whether the committee has more than `fetchSize` *lifetime*
-   * notes/surveys, not whether THIS WEEK's activity was truncated. Gating on that would silently
-   * hide the tally for exactly the long-lived, active committees it exists to help.
+   * notes/surveys, not whether THIS WEEK's activity was truncated. Gating on that would show a
+   * near-permanent, usually-wrong `truncated: true` note on exactly the long-lived, active
+   * committees it exists to help.
    *
    * Gate on the raw, unfiltered `data.length` hitting `limit` (Copilot review), NOT on
    * `sourceRefs.length + unmappedInWindow` as this method originally did. That original gate
@@ -1351,8 +1352,8 @@ export class WeeklyBriefService {
    * comments). Nothing crosses the `getCommitteeActivity` boundary as a signal this caller could
    * gate on for that narrower remainder today. `any_leg_saturated` deliberately still isn't part
    * of this gate, unlike `any_leg_failed` above — see this method's own comment on why two of the
-   * five legs' saturation reflects lifetime volume, not this week's, and would falsely hide the
-   * tally for exactly the long-lived committees it exists to help.
+   * five legs' saturation reflects lifetime volume, not this week's, and would falsely show a
+   * near-permanent incompleteness note for exactly the long-lived committees it exists to help.
    */
   private async buildCurrentActivity(req: Request, committeeId: string): Promise<WeeklyBriefCurrentActivity | null | undefined> {
     try {

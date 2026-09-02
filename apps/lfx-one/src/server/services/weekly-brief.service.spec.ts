@@ -977,9 +977,9 @@ describe('WeeklyBriefService', () => {
       // type-legal, never actually constructed by CommitteeActivityService today (see that
       // interface's own doc comment) — that mapActivityEventToCurrentActivityRef's `default:
       // return null` branch exists to handle. These events are genuinely in-window — this method
-      // just has no rendering for them — so a full raw page dominated by them gates to null, same
-      // as the future-noise case above: the gate runs on the raw `data.length`, not on what
-      // survived mapping, so composition doesn't change the outcome.
+      // just has no rendering for them — so a full raw page dominated by them still gates to
+      // truncated: true, same as the future-noise case above: the gate runs on the raw
+      // `data.length`, not on what survived mapping, so composition doesn't change the outcome.
       const unrecognized = Array.from({ length: ACTIVITY_FEED_MAX_PAGE_SIZE - 2 }, () => ({
         type: 'member_joined' as const,
         occurred_at: '2026-01-12T10:00:00Z',

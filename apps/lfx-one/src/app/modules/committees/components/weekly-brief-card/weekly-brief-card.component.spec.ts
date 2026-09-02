@@ -478,8 +478,17 @@ describe('WeeklyBriefCardComponent — Current activity tally (GH-1922)', () => 
     return { id, kind, title };
   }
 
-  /** `activityRefs: null` omits `current_activity` entirely — simulates a server-side degrade (non-governance committee, or a failed lookup/fetch — see weekly-brief.service.ts#buildCurrentActivity). */
-  function briefResponse(activityRefs: WeeklyBriefSourceRef[] | null, callerRating: WeeklyBriefRating | null = null): WeeklyBriefCurrentResponse {
+  /**
+   * `activityRefs: null` omits `current_activity` entirely — simulates a server-side degrade
+   * (non-governance committee, or a failed lookup/fetch — see
+   * weekly-brief.service.ts#buildCurrentActivity). `options.truncated` layers GH-1998's
+   * truncated: true onto a present `current_activity` — the raw upstream page filled a full page.
+   */
+  function briefResponse(
+    activityRefs: WeeklyBriefSourceRef[] | null,
+    callerRating: WeeklyBriefRating | null = null,
+    options: { truncated?: boolean } = {}
+  ): WeeklyBriefCurrentResponse {
     return {
       brief: {
         uid: 'brief-1',
@@ -500,7 +509,14 @@ describe('WeeklyBriefCardComponent — Current activity tally (GH-1922)', () => 
       throttle: { generates_used: 0, generates_limit: 2, regenerations_used: 0, regenerations_limit: 3, window_resets_at: '2026-08-09T00:00:00Z' },
       caller_rating: callerRating,
       ...(activityRefs !== null
-        ? { current_activity: { window_start: '2026-08-24T00:00:00Z', window_end: '2026-08-27T12:00:00Z', source_refs: activityRefs } }
+        ? {
+            current_activity: {
+              window_start: '2026-08-24T00:00:00Z',
+              window_end: '2026-08-27T12:00:00Z',
+              source_refs: activityRefs,
+              ...(options.truncated ? { truncated: true } : {}),
+            },
+          }
         : {}),
     };
   }
@@ -515,9 +531,10 @@ describe('WeeklyBriefCardComponent — Current activity tally (GH-1922)', () => 
     committee: Committee,
     activityRefs: WeeklyBriefSourceRef[] | null,
     generateWeeklyBrief: ReturnType<typeof vi.fn> = vi.fn(),
-    callerRating: WeeklyBriefRating | null = null
+    callerRating: WeeklyBriefRating | null = null,
+    options: { truncated?: boolean } = {}
   ): Promise<void> {
-    getWeeklyBrief = vi.fn(() => of(briefResponse(activityRefs, callerRating)));
+    getWeeklyBrief = vi.fn(() => of(briefResponse(activityRefs, callerRating, options)));
 
     await TestBed.configureTestingModule({
       imports: [WeeklyBriefCardComponent],
@@ -677,33 +694,7 @@ describe('WeeklyBriefCardComponent — Current activity tally (GH-1922)', () => 
   });
 
   it('renders the tally PLUS a truncation disclosure when current_activity.truncated is true (GH-1998) — the partial count still shows, it is not discarded', async () => {
-    const truncated = {
-      ...briefResponse([activityRef('meeting-1', 'meeting', 'Board Sync')]),
-      current_activity: {
-        window_start: '2026-08-24T00:00:00Z',
-        window_end: '2026-08-27T12:00:00Z',
-        source_refs: [activityRef('meeting-1', 'meeting', 'Board Sync')],
-        truncated: true,
-      },
-    };
-    getWeeklyBrief = vi.fn(() => of(truncated));
-    await TestBed.configureTestingModule({
-      imports: [WeeklyBriefCardComponent],
-      providers: [
-        provideRouter([]),
-        provideNoopAnimations(),
-        { provide: WeeklyBriefService, useValue: { getWeeklyBrief, listWeeklyBriefs: vi.fn(() => of({ data: [] })) } },
-        { provide: FeatureFlagService, useValue: { getBooleanFlag: vi.fn(() => signal(false)) } },
-        { provide: MessageService, useValue: { add: vi.fn() } },
-        ConfirmationService,
-        { provide: UserService, useValue: { impersonating: signal(false) } },
-      ],
-    }).compileComponents();
-    fixture = TestBed.createComponent(WeeklyBriefCardComponent);
-    component = fixture.componentInstance;
-    fixture.componentRef.setInput('committee', BOARD_COMMITTEE);
-    fixture.componentRef.setInput('canEdit', true);
-    await fixture.whenStable();
+    await setup(BOARD_COMMITTEE, [activityRef('meeting-1', 'meeting', 'Board Sync')], undefined, null, { truncated: true });
 
     expect(component.isTruncated()).toBe(true);
     const tally = fixture.nativeElement.querySelector('[data-testid="weekly-brief-card-current-activity"]');
@@ -711,45 +702,20 @@ describe('WeeklyBriefCardComponent — Current activity tally (GH-1922)', () => 
     expect((tally.textContent as string).replace(/\s+/g, ' ')).toContain('1 meeting held');
     const note = fixture.nativeElement.querySelector('[data-testid="weekly-brief-card-current-activity-truncation-note"]');
     expect(note).not.toBeNull();
-    // Pins the non-empty-tally variant specifically — 'view Recent Activity for the full list'
-    // alone is shared by both variants and wouldn't catch the empty-tally wording rendering here.
+    // Pins the non-empty-tally variant specifically — 'see Recent Activity below for the latest
+    // events' alone is shared by both variants and wouldn't catch the empty-tally wording
+    // rendering here.
     expect(note.textContent as string).toContain('This count may be incomplete');
     // The note's only actionable content is the CTA — keep asserting it survives alongside the
     // variant-specific text above.
-    expect(note.textContent as string).toContain('view Recent Activity for the full list');
+    expect(note.textContent as string).toContain('see Recent Activity below for the latest events');
     // The note is its own visible element (not folded into the tally's aria-label) — a screen
     // reader must not hear it announced twice, once for the group and once for the note itself.
-    expect(tally.getAttribute('aria-label')).not.toContain('view Recent Activity for the full list');
+    expect(tally.getAttribute('aria-label')).not.toContain('see Recent Activity below for the latest events');
   });
 
   it('still renders a truncation note, with different wording, when truncated is true but every ref was filtered/unmapped away (GH-1998)', async () => {
-    const truncatedEmpty = {
-      ...briefResponse([]),
-      current_activity: {
-        window_start: '2026-08-24T00:00:00Z',
-        window_end: '2026-08-27T12:00:00Z',
-        source_refs: [],
-        truncated: true,
-      },
-    };
-    getWeeklyBrief = vi.fn(() => of(truncatedEmpty));
-    await TestBed.configureTestingModule({
-      imports: [WeeklyBriefCardComponent],
-      providers: [
-        provideRouter([]),
-        provideNoopAnimations(),
-        { provide: WeeklyBriefService, useValue: { getWeeklyBrief, listWeeklyBriefs: vi.fn(() => of({ data: [] })) } },
-        { provide: FeatureFlagService, useValue: { getBooleanFlag: vi.fn(() => signal(false)) } },
-        { provide: MessageService, useValue: { add: vi.fn() } },
-        ConfirmationService,
-        { provide: UserService, useValue: { impersonating: signal(false) } },
-      ],
-    }).compileComponents();
-    fixture = TestBed.createComponent(WeeklyBriefCardComponent);
-    component = fixture.componentInstance;
-    fixture.componentRef.setInput('committee', BOARD_COMMITTEE);
-    fixture.componentRef.setInput('canEdit', true);
-    await fixture.whenStable();
+    await setup(BOARD_COMMITTEE, [], undefined, null, { truncated: true });
 
     // A bare, unqualified "no activity yet" would be a false-complete signal here — the raw
     // upstream page was full, so this genuinely might not be a quiet week (GH-1922: "do NOT
@@ -764,7 +730,7 @@ describe('WeeklyBriefCardComponent — Current activity tally (GH-1922)', () => 
     const note = fixture.nativeElement.querySelector('[data-testid="weekly-brief-card-current-activity-truncation-note"]');
     expect(note).not.toBeNull();
     expect(note.textContent as string).toContain('could not be fully counted');
-    expect(note.textContent as string).toContain('view Recent Activity for the full list');
+    expect(note.textContent as string).toContain('see Recent Activity below for the latest events');
   });
 
   it('clicking a kind reveals its underlying ref titles, and clicking again collapses it', async () => {

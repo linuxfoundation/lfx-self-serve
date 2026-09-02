@@ -273,11 +273,15 @@ export class WeeklyBriefCardComponent {
   // the note in that case instead (as an earlier version of this fix did) would be worse — a
   // false-complete "no activity yet" is exactly the outcome GH-1922 says to avoid; the fix is
   // to say the honest thing, not to say nothing. Starting-point copy, flagged for product
-  // review, not locked in.
+  // review, not locked in. Deliberately does NOT say "for the full list" — the Recent Activity
+  // section below renders a fixed ACTIVITY_FEED_DEFAULT_PAGE_SIZE (8) rows with no "view all" or
+  // pagination affordance of its own (CommitteeService.getCommitteeActivity sends no page_size),
+  // so promising "the full list" there would just relocate this same fix's false-complete problem
+  // into its own remedy.
   protected readonly currentActivityTruncationNote: Signal<string> = computed(() =>
     this.currentActivity().length
-      ? 'This count may be incomplete — view Recent Activity for the full list.'
-      : 'Activity this week could not be fully counted — view Recent Activity for the full list.'
+      ? 'This count may be incomplete — see Recent Activity below for the latest events.'
+      : 'Activity this week could not be fully counted — see Recent Activity below for the latest events.'
   );
 
   // The server's raw truncated flag — do not additionally gate this on currentActivity().length.
