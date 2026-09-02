@@ -77,6 +77,7 @@ vi.mock('../utils/auth-helper', () => ({
   stripAuthPrefix,
 }));
 
+import { ServiceValidationError } from '../errors';
 import { VoteService } from './vote.service';
 
 describe('VoteService upstream path encoding', () => {
@@ -114,6 +115,21 @@ describe('VoteService upstream path encoding', () => {
       await service.getVoteById(req, PREENCODED_UID);
 
       expect(proxyRequest).toHaveBeenCalledWith(req, 'LFX_V2_SERVICE', '/votes/..%252F', 'GET');
+    });
+
+    it.each(['.', '..'])(
+      'rejects the dot-segment uid "%s" without proxying — fetch URL parsing would normalize it to a different upstream path',
+      async (uid) => {
+        await expect(service.getVoteById(req, uid)).rejects.toThrow(ServiceValidationError);
+
+        expect(proxyRequest).not.toHaveBeenCalled();
+      }
+    );
+
+    it('passes a dotted-but-safe uid through unchanged — only exact dot segments URL-normalize', async () => {
+      await service.getVoteById(req, 'v1.2');
+
+      expect(proxyRequest).toHaveBeenCalledWith(req, 'LFX_V2_SERVICE', '/votes/v1.2', 'GET');
     });
 
     it('skips project enrichment entirely when includeProject is not set', async () => {
@@ -162,6 +178,12 @@ describe('VoteService upstream path encoding', () => {
 
       expect(proxyRequest).toHaveBeenCalledWith(req, 'LFX_V2_SERVICE', '/votes/abc%2Fdef', 'PUT', undefined, voteData);
     });
+
+    it('rejects a dot-segment uid without proxying', async () => {
+      await expect(service.updateVote(req, '..', { name: 'x' } as never)).rejects.toThrow(ServiceValidationError);
+
+      expect(proxyRequest).not.toHaveBeenCalled();
+    });
   });
 
   describe('deleteVote', () => {
@@ -172,6 +194,12 @@ describe('VoteService upstream path encoding', () => {
 
       expect(proxyRequest).toHaveBeenCalledWith(req, 'LFX_V2_SERVICE', '/votes/abc%2Fdef', 'DELETE');
     });
+
+    it('rejects a dot-segment uid without proxying', async () => {
+      await expect(service.deleteVote(req, '..')).rejects.toThrow(ServiceValidationError);
+
+      expect(proxyRequest).not.toHaveBeenCalled();
+    });
   });
 
   describe('enableVote', () => {
@@ -179,6 +207,12 @@ describe('VoteService upstream path encoding', () => {
       await service.enableVote(req, HOSTILE_UID);
 
       expect(proxyRequestWithResponse).toHaveBeenCalledWith(req, 'LFX_V2_SERVICE', '/votes/abc%2Fdef/enable', 'PUT');
+    });
+
+    it('rejects a dot-segment uid without proxying', async () => {
+      await expect(service.enableVote(req, '..')).rejects.toThrow(ServiceValidationError);
+
+      expect(proxyRequestWithResponse).not.toHaveBeenCalled();
     });
   });
 
@@ -189,6 +223,12 @@ describe('VoteService upstream path encoding', () => {
       await service.getVoteResults(req, HOSTILE_UID);
 
       expect(proxyRequest).toHaveBeenCalledWith(req, 'LFX_V2_SERVICE', '/votes/abc%2Fdef/results', 'GET');
+    });
+
+    it('rejects a dot-segment uid without proxying', async () => {
+      await expect(service.getVoteResults(req, '..')).rejects.toThrow(ServiceValidationError);
+
+      expect(proxyRequest).not.toHaveBeenCalled();
     });
   });
 

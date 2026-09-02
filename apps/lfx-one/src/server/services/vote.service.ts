@@ -19,7 +19,7 @@ import {
 import { computeIsFoundation, sortCommentResponsesByRecency } from '@lfx-one/shared/utils';
 import { Request } from 'express';
 
-import { MicroserviceError, ResourceNotFoundError } from '../errors';
+import { MicroserviceError, ResourceNotFoundError, ServiceValidationError } from '../errors';
 import { fetchEntityProject, toEntityProjectFields } from '../helpers/entity-project-enrichment.helper';
 import { pollEndpoint } from '../helpers/poll-endpoint.helper';
 import { fetchAllQueryResources } from '../helpers/query-service.helper';
@@ -104,13 +104,13 @@ export class VoteService {
       vote_uid: voteUid,
     });
 
-    const vote = await this.microserviceProxy.proxyRequest<Vote>(req, 'LFX_V2_SERVICE', `/votes/${encodeURIComponent(voteUid)}`, 'GET');
+    const vote = await this.microserviceProxy.proxyRequest<Vote>(req, 'LFX_V2_SERVICE', `/votes/${this.encodeVoteUid(voteUid)}`, 'GET');
 
     if (!vote || !vote.uid) {
       throw new ResourceNotFoundError('Vote', voteUid, {
         operation: 'get_vote_by_id',
         service: 'vote_service',
-        path: `/votes/${encodeURIComponent(voteUid)}`,
+        path: `/votes/${this.encodeVoteUid(voteUid)}`,
       });
     }
 
@@ -179,7 +179,7 @@ export class VoteService {
     const sanitizedPayload = logger.sanitize({ voteData });
     logger.debug(req, 'update_vote', 'Updating vote payload', sanitizedPayload);
 
-    const vote = await this.microserviceProxy.proxyRequest<Vote>(req, 'LFX_V2_SERVICE', `/votes/${encodeURIComponent(voteUid)}`, 'PUT', undefined, voteData);
+    const vote = await this.microserviceProxy.proxyRequest<Vote>(req, 'LFX_V2_SERVICE', `/votes/${this.encodeVoteUid(voteUid)}`, 'PUT', undefined, voteData);
 
     return vote;
   }
@@ -192,7 +192,7 @@ export class VoteService {
       vote_uid: voteUid,
     });
 
-    await this.microserviceProxy.proxyRequest<void>(req, 'LFX_V2_SERVICE', `/votes/${encodeURIComponent(voteUid)}`, 'DELETE');
+    await this.microserviceProxy.proxyRequest<void>(req, 'LFX_V2_SERVICE', `/votes/${this.encodeVoteUid(voteUid)}`, 'DELETE');
 
     // Poll the query service until the vote is removed from the index
     await pollEndpoint({
@@ -217,7 +217,7 @@ export class VoteService {
       vote_uid: voteUid,
     });
 
-    await this.microserviceProxy.proxyRequestWithResponse<Vote>(req, 'LFX_V2_SERVICE', `/votes/${encodeURIComponent(voteUid)}/enable`, 'PUT');
+    await this.microserviceProxy.proxyRequestWithResponse<Vote>(req, 'LFX_V2_SERVICE', `/votes/${this.encodeVoteUid(voteUid)}/enable`, 'PUT');
 
     // Poll the query service until the indexed vote status is 'active'.
     let fetchedVote: Vote | undefined;
@@ -261,7 +261,7 @@ export class VoteService {
     const results = await this.microserviceProxy.proxyRequest<VoteResultsResponse>(
       req,
       'LFX_V2_SERVICE',
-      `/votes/${encodeURIComponent(voteUid)}/results`,
+      `/votes/${this.encodeVoteUid(voteUid)}/results`,
       'GET'
     );
 
@@ -273,7 +273,7 @@ export class VoteService {
       throw new MicroserviceError('Vote results response body was empty', 502, 'VOTE_RESULTS_EMPTY', {
         operation: 'get_vote_results',
         service: 'vote_service',
-        path: `/votes/${encodeURIComponent(voteUid)}/results`,
+        path: `/votes/${this.encodeVoteUid(voteUid)}/results`,
       });
     }
 
@@ -415,7 +415,7 @@ export class VoteService {
     const votes = await Promise.all(
       voteUids.map(async (uid): Promise<Vote | null> => {
         try {
-          const vote = await this.microserviceProxy.proxyRequest<Vote>(req, 'LFX_V2_SERVICE', `/votes/${encodeURIComponent(uid)}`, 'GET');
+          const vote = await this.microserviceProxy.proxyRequest<Vote>(req, 'LFX_V2_SERVICE', `/votes/${this.encodeVoteUid(uid)}`, 'GET');
           if (!vote) return vote;
           const decorated: Vote = {
             ...vote,
@@ -522,5 +522,14 @@ export class VoteService {
     // eslint-disable-next-line @typescript-eslint/no-unused-vars
     const { vote_uid: _discard, ...rest } = raw;
     return { ...rest, uid: uid ?? '' };
+  }
+
+  // encodeURIComponent leaves `.` untouched, so reject exact dot segments — otherwise
+  // the fetch URL parser normalizes `/votes/..` to `/`, reshaping the upstream path.
+  private encodeVoteUid(uid: string): string {
+    if (uid === '.' || uid === '..') {
+      throw ServiceValidationError.forField('uid', 'Invalid vote UID', { operation: 'encode_vote_uid', service: 'vote_service' });
+    }
+    return encodeURIComponent(uid);
   }
 }
