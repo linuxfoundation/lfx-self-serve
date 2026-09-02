@@ -198,13 +198,13 @@ export interface Vote {
   status: PollStatus;
   /** V2 project UID */
   project_uid: string;
-  /** Project display name (enriched for filtering) */
+  /** Project display name. Carried by indexed list rows (and optionally by the upstream detail payload); the authenticated BFF detail response (GET /api/votes/:uid) re-enriches it canonically from the project record. */
   project_name?: string;
-  /** Project URL slug (enriched for filtering) */
+  /** Project URL slug. BFF-enriched on list rows (GET /api/votes) and the authenticated detail response — the vote index itself does not carry it — so clients can reconcile project context from the vote itself. */
   project_slug?: string;
-  /** Whether the project is a foundation (top-level entity) */
+  /** Whether the project is a foundation (top-level entity). BFF-enriched on list rows (GET /api/votes) and the authenticated detail response — the vote index does not carry it — drives canonical edit-link tiering (`/foundation/...` vs `/project/...`). */
   is_foundation?: boolean;
-  /** Parent project UID (for subprojects under a foundation) */
+  /** Parent project UID (for subprojects under a foundation). List payloads only — deliberately excluded from BFF detail enrichment (see entity-project-enrichment.helper). */
   parent_project_uid?: string;
   /** V2 committee UID */
   committee_uid?: string;
@@ -239,6 +239,10 @@ export interface Vote {
 /** Precomputed display fields for votes-table rows (avoids per-CD template method calls). */
 export interface VoteTableRow extends Vote {
   endedEarlyTooltip: string | null;
+  /** Canonical edit-link commands derived from the row's own project tier (`/foundation/...` vs `/project/...`); flat `/votes/:uid/edit` fallback when the tier is unknown (lensRedirectGuard resolves it). */
+  editCommands: string[];
+  /** Per-row edit-link query params — `project` from the row's own project_slug, `committee_uid` from its committee. A table-level record can't express per-row projects (dashboard rows span projects). */
+  editQueryParams: Record<string, string>;
 }
 
 /** Vote shape as returned by the query service indexer; uses `vote_uid` (v2 PK) not `uid`. Normalize before passing downstream. */

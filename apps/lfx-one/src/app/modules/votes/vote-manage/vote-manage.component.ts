@@ -1,7 +1,7 @@
 // Copyright The Linux Foundation and each contributor to LFX.
 // SPDX-License-Identifier: MIT
 
-import { ChangeDetectionStrategy, Component, computed, inject, Signal, signal } from '@angular/core';
+import { ChangeDetectionStrategy, Component, computed, DestroyRef, inject, Signal, signal } from '@angular/core';
 import { toObservable, toSignal } from '@angular/core/rxjs-interop';
 import { FormArray, FormControl, FormGroup, ReactiveFormsModule, Validators } from '@angular/forms';
 import { ActivatedRoute, Router, RouterLink } from '@angular/router';
@@ -15,7 +15,7 @@ import {
   VOTE_QUESTION_MIN_LENGTH,
   VOTE_TOTAL_STEPS,
 } from '@lfx-one/shared/constants';
-import { Committee, CommitteeReference, Vote, VoteFormValue } from '@lfx-one/shared/interfaces';
+import { Committee, CommitteeReference, EntityWithProject, Vote, VoteFormValue } from '@lfx-one/shared/interfaces';
 import { CommitteeService } from '@services/committee.service';
 import {
   buildCreateVoteRequest,
@@ -27,16 +27,19 @@ import {
 } from '@lfx-one/shared/utils';
 import { maxCodePointsValidator, trimmedMinLength, trimmedRequired, validCommitteeReference } from '@lfx-one/shared/validators';
 import { ProjectContextService } from '@services/project-context.service';
+import { ProjectService } from '@services/project.service';
 import { VoteService } from '@services/vote.service';
 import { ConfirmationService, MessageService } from 'primeng/api';
 import { ConfirmDialogModule } from 'primeng/confirmdialog';
 import { StepperModule } from 'primeng/stepper';
-import { catchError, combineLatest, distinctUntilChanged, filter, map, of, switchMap, take, tap } from 'rxjs';
+import { catchError, combineLatest, distinctUntilChanged, filter, map, Observable, of, switchMap, take, tap } from 'rxjs';
 
 import { VoteBasicsComponent } from '../components/vote-basics/vote-basics.component';
 import { VoteQuestionComponent } from '../components/vote-question/vote-question.component';
 import { VoteReviewComponent } from '../components/vote-review/vote-review.component';
 import { evictOnWriteAccessLoss } from '@shared/utils/evict-on-write-access-loss.util';
+import { syncEntityProjectContext, syncEntityProjectContextFallback } from '@shared/utils/entity-project-context.util';
+import { resolveEntityWriteSlug } from '@shared/utils/write-access.util';
 
 @Component({
   selector: 'lfx-vote-manage',
@@ -64,6 +67,8 @@ export class VoteManageComponent {
   private readonly projectContextService = inject(ProjectContextService);
   private readonly voteService = inject(VoteService);
   private readonly committeeService = inject(CommitteeService);
+  private readonly projectService = inject(ProjectService);
+  private readonly destroyRef = inject(DestroyRef);
 
   // Committee context — when navigated from a committee tab with ?committee_uid=
   public readonly committeeContext = signal<Committee | null>(null);
@@ -83,6 +88,7 @@ export class VoteManageComponent {
   public readonly confirmingOpenVote = signal<boolean>(false);
   public readonly loading = signal<boolean>(false);
   private readonly internalStep = signal<number>(1);
+  private readonly committeeUidFromUrl = this.route.snapshot.queryParamMap.get('committee_uid');
 
   // Complex computed/toSignal signals
   public readonly isEditMode: Signal<boolean> = this.initIsEditMode();
@@ -95,17 +101,32 @@ export class VoteManageComponent {
   public readonly isLastStep: Signal<boolean> = this.initIsLastStep();
   public currentStep: Signal<number> = this.initCurrentStep();
   public readonly isDraftSavable: Signal<boolean> = this.initIsDraftSavable();
+  private readonly voteEntityContext: Signal<EntityWithProject | null> = this.initVoteEntityContext();
+  private readonly writeAccess: Signal<boolean> = this.initWriteAccess();
 
   public constructor() {
     this.initCommitteeContext();
-    evictOnWriteAccessLoss();
+    evictOnWriteAccessLoss(this.writeAccess);
+
+    // Context-less edit links land in the VOTE's project (not the cookie-restored one);
+    // preferEntityKind picks the context slot from the vote's own is_foundation (see the util's doc).
+    // canonicalizeRoute then rewrites a wrong-tier URL (/project/* vs /foundation/*) to match it.
+    syncEntityProjectContext(this.voteEntityContext, this.projectContextService, this.router, this.destroyRef, {
+      preferEntityKind: true,
+      canonicalizeRoute: true,
+    });
+    syncEntityProjectContextFallback(this.voteEntityContext, this.projectService, this.projectContextService, this.router, this.destroyRef, {
+      entityKind: 'vote',
+      freshFetch: (uid) => this.voteService.fetchVote(uid, { skipCache: true }),
+      canonicalizeRoute: true,
+    });
   }
 
   public nextStep(): void {
     const next = this.currentStep() + 1;
     if (next <= this.totalSteps && this.canNavigateToStep(next)) {
       if (this.isEditMode()) {
-        this.router.navigate([], { queryParams: { step: next } });
+        this.router.navigate([], { queryParams: { step: next }, queryParamsHandling: 'merge' });
       } else {
         this.internalStep.set(next);
       }
@@ -116,7 +137,7 @@ export class VoteManageComponent {
     const previous = this.currentStep() - 1;
     if (previous >= 1) {
       if (this.isEditMode()) {
-        this.router.navigate([], { queryParams: { step: previous } });
+        this.router.navigate([], { queryParams: { step: previous }, queryParamsHandling: 'merge' });
       } else {
         this.internalStep.set(previous);
       }
@@ -127,7 +148,7 @@ export class VoteManageComponent {
     if (step !== undefined && step >= 1 && step <= this.totalSteps) {
       if (this.isEditMode()) {
         // In edit mode, allow navigation to any step via query params
-        this.router.navigate([], { queryParams: { step } });
+        this.router.navigate([], { queryParams: { step }, queryParamsHandling: 'merge' });
       } else {
         // In create mode, allow backwards navigation freely
         // For forward navigation, validate that we can navigate to that step
@@ -507,6 +528,23 @@ export class VoteManageComponent {
     );
   }
 
+  /** Maps the loaded vote to the {@link EntityWithProject} shape; absent enrichment fields map to null. */
+  private initVoteEntityContext(): Signal<EntityWithProject | null> {
+    return computed(() => {
+      const vote = this.vote();
+      if (!vote) {
+        return null;
+      }
+      return {
+        uid: vote.uid,
+        project_uid: vote.project_uid,
+        project_slug: vote.project_slug,
+        project_name: vote.project_name,
+        is_foundation: vote.is_foundation ?? null,
+      };
+    });
+  }
+
   private initProject(): Signal<ReturnType<typeof this.projectContextService.selectedProject>> {
     return computed(() => this.projectContextService.activeContext());
   }
@@ -570,6 +608,90 @@ export class VoteManageComponent {
       const title = (this.formValue()['title'] as string | undefined) ?? '';
       const committeeValid = !!this.committeeContext() || !!this.form().get('committee')?.valid;
       return title.trim().length > 0 && committeeValid;
+    });
+  }
+
+  /**
+   * Access predicate mirroring writerGuard's votes standard — project writer on the vote's OWN project
+   * (never the boot context), or committee writer via ?committee_uid=; pending legs stay provisionally true.
+   */
+  private initWriteAccess(): Signal<boolean> {
+    const editVoteId = this.route.snapshot.paramMap.get('id');
+    const projectKey$: Observable<string | null | undefined> = editVoteId
+      ? toObservable(this.vote).pipe(
+          map((vote) => {
+            if (!vote) {
+              // Pending — in edit mode the authorization target comes from the vote itself.
+              return undefined;
+            }
+            // Mirror writerGuard's resolution order; the active-context fallback covers a vote
+            // carrying neither slug nor uid (the manage component owns that error path).
+            return resolveEntityWriteSlug(vote, this.projectContextService.activeContext()?.slug ?? null);
+          })
+        )
+      : toObservable(this.projectContextService.activeContext).pipe(map((ctx) => ctx?.slug ?? null));
+
+    const projectAccess = toSignal(
+      projectKey$.pipe(
+        filter((key): key is string | null => key !== undefined),
+        distinctUntilChanged(),
+        switchMap((key) => {
+          if (!key) {
+            return of(false);
+          }
+          // writerGuard admits no coordinator-style role for votes — project.writer only.
+          return this.projectService.getProject(key, false).pipe(
+            map((project) => project?.writer === true),
+            catchError(() => of(false))
+          );
+        })
+      )
+      // No initialValue: undefined doubles as the leg's pending state (see the doc above).
+    );
+    // Edit mode derives the uid from the loaded vote's own committee (URL only as fallback),
+    // mirroring writerGuard's entity-scoped resolution. Hoisted: toObservable needs the injection
+    // context, so it can't be created lazily inside the switchMap below.
+    const editCommitteeUid$: Observable<string | null | undefined> = toObservable(this.vote).pipe(
+      map((vote) => (vote ? (vote.committee_uid ?? this.committeeUidFromUrl) : undefined))
+    );
+    // Gated on the project leg resolving false: a granted project leg makes the committee fetch
+    // moot, and while it's pending this leg stays pending too. undefined stays pending; null resolves immediately.
+    const committeeUid$: Observable<string | null | undefined> = toObservable(projectAccess).pipe(
+      filter((project): project is boolean => project !== undefined),
+      distinctUntilChanged(),
+      switchMap((project) => {
+        if (project) {
+          // Project leg granted — resolve the committee leg without firing the HTTP probe.
+          return of<string | null>(null);
+        }
+        return editVoteId ? editCommitteeUid$ : of(this.committeeUidFromUrl);
+      })
+    );
+    const committeeAccess = toSignal(
+      committeeUid$.pipe(
+        filter((uid): uid is string | null => uid !== undefined),
+        distinctUntilChanged(),
+        switchMap((uid) =>
+          uid
+            ? this.committeeService.fetchCommittee(uid).pipe(
+                map((committee) => committee?.writer === true),
+                catchError(() => of(false))
+              )
+            : of(false)
+        )
+      )
+      // No initialValue: undefined doubles as the leg's pending state (see the doc above).
+    );
+    return computed(() => {
+      const project = projectAccess();
+      const committee = committeeAccess();
+      if (project === true || committee === true) {
+        return true;
+      }
+      if (project === undefined || committee === undefined) {
+        return true; // provisional — a pending leg can still grant access
+      }
+      return false;
     });
   }
 
