@@ -1489,10 +1489,16 @@ describe('PlanningTabComponent — HubSpot UTM states', () => {
     expect(instance()['hsUtm'](), "foundation A's token survived into foundation B").toBe('foundation-b-token');
   });
 
-  it('still offers Create for the same event under a DIFFERENT foundation', () => {
-    // The block is keyed on foundation AND event on purpose. A different foundation is a
-    // different HubSpot portal, so the same event name there is a genuinely new campaign --
-    // blocking it would strand a legitimate create, which is the opposite failure.
+  it('withholds Create for the same event under a different foundation, and offers re-check', () => {
+    // This ASSERTED THE OPPOSITE until Copilot pointed out the premise was false. The old
+    // comment read "a different foundation is a different HubSpot portal" -- but the namespace
+    // is the PORTAL, and two projects pointing at one portal is common under the LF umbrella
+    // (campaign-service.service.ts:1374). No response carries a portal id, so the client cannot
+    // tell the two cases apart.
+    //
+    // Between the two errors, this fails toward the recoverable one: a create genuinely needed
+    // under a different portal is briefly withheld and the re-check resolves it once the lookup
+    // answers there. The other direction writes a duplicate nobody can delete.
     const ctx = TestBed.inject(ProjectContextService);
     const first = new Subject<unknown>();
     create.mockReturnValue(first);
@@ -1507,7 +1513,9 @@ describe('PlanningTabComponent — HubSpot UTM states', () => {
     runLookup({ found: false, hs_utm: null, campaign_name: '', all_matches: [], capped: false, inconclusive: false }, 'KubeCon NA 2026');
     fixture.detectChanges();
 
-    expect(instance()['hsCreateBlocked'](), 'blocked a legitimate create under another portal').toBe(false);
+    expect(instance()['hsCreateBlocked'](), 'offered Create for an event already created, possibly on the same portal').toBe(true);
+    // And it is recoverable rather than a dead end.
+    expect(instance()['hsUnconfirmed'](), 'withheld Create with no re-check to recover through').toBe(true);
   });
 
   it('does not re-offer Create after a superseded create already succeeded', () => {

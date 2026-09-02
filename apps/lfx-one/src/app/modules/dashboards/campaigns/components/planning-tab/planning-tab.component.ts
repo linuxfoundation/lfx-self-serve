@@ -184,8 +184,20 @@ export class PlanningTabComponent implements OnInit {
    * re-offer Create for an event that now has one, and two projects on the same HubSpot portal
    * share that namespace.
    *
-   * Keyed by foundation AND event because the same name under another foundation is a different
-   * portal and a legitimate create; blocking that would strand it.
+   * Keyed by EVENT NAME ALONE, not by foundation.
+   *
+   * An earlier version keyed on `foundation|event`, justified as "a different foundation is a
+   * different portal". That premise is false, and this repo says so a few files over: HubSpot's
+   * campaign namespace is the whole PORTAL, and two projects pointing at the same portal is
+   * "common under the LF umbrella" (campaign-service.service.ts:1374). So switching to a sibling
+   * foundation on the same portal re-offered Create for a campaign that already existed there --
+   * the exact duplicate this guard exists to stop.
+   *
+   * The client cannot key on the portal instead: no lookup or create response carries a portal
+   * id, so that identity is simply not available here. Between the two errors this fails toward
+   * the recoverable one -- a create genuinely needed under a DIFFERENT portal is momentarily
+   * withheld, and the re-check that the blocked state offers resolves it as soon as the lookup
+   * answers for that portal. The other direction writes a duplicate nobody can delete.
    */
   private readonly hsCreatedEvents = signal(new Set<string>());
   /**
@@ -196,9 +208,7 @@ export class PlanningTabComponent implements OnInit {
    * hsCreateBlocked can depend on it honestly.
    */
   private readonly currentEvent = signal('');
-  protected readonly hsCreateBlocked = computed(
-    () => this.hsCreating() || this.hsCreatesInFlight() > 0 || this.hsCreatedEvents().has(`${this.activeFoundationSlug()}|${this.currentEvent()}`)
-  );
+  protected readonly hsCreateBlocked = computed(() => this.hsCreating() || this.hsCreatesInFlight() > 0 || this.hsCreatedEvents().has(this.currentEvent()));
   protected readonly hsStatus = signal<string | null>(null);
   protected readonly hsNotFound = signal(false);
   /**
@@ -769,7 +779,7 @@ export class PlanningTabComponent implements OnInit {
           // real campaign upstream; discarding its RESULT is right, but forgetting it happened
           // let the panel re-offer Create for an event that now has one.
           if (result?.created) {
-            this.hsCreatedEvents.update((seen) => new Set(seen).add(`${capturedFoundation}|${capturedEvent}`));
+            this.hsCreatedEvents.update((seen) => new Set(seen).add(capturedEvent));
           }
           // Generation first, then panelStillShows — the same pair the lookup arms use. An
           // A -> B -> A round trip makes panelStillShows match a SUPERSEDED create again, and
@@ -1538,7 +1548,7 @@ export class PlanningTabComponent implements OnInit {
             // before HubSpot has assigned its token. Leaving the flag down removed the only
             // control that settles it, stranding the operator until a reload.
             this.hsUnconfirmed.set(true);
-          } else if (this.hsCreatedEvents().has(`${capturedFoundation}|${eventName}`)) {
+          } else if (this.hsCreatedEvents().has(eventName)) {
             // A create ALREADY SUCCEEDED for this event under this foundation, and the lookup
             // still cannot see it -- HubSpot has not indexed it yet.
             //
