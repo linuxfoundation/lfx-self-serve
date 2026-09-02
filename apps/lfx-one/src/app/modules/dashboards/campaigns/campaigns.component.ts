@@ -2723,6 +2723,19 @@ export class CampaignsComponent {
       if (score === 0) {
         continue;
       }
+      // ELIGIBILITY FIRST, not after the winner is chosen.
+      //
+      // `score` counts generic terms, so a row matching only generic vocabulary can outrank one
+      // carrying the real event term: for "KubeCon Community Training Webinar", a "Community
+      // training webinar newsletter" scores 9 against the KubeCon template's 6. Gating only the
+      // WINNER then rejected that row and returned -- suppressing an eligible suggestion the
+      // operator should have seen, because an ineligible row happened to rank above it.
+      //
+      // Filtering here keeps the two questions in the right order: first "could this row justify
+      // a suggestion at all", then "which of the ones that could is best".
+      if (this.eventSuggestionScore(template, eventTerms) < EVENT_TEMPLATE_SUGGESTION_MIN_SCORE) {
+        continue;
+      }
       // Ordered tie-breaks, most specific last-resort first: the event decides, then the year
       // (so this year's edition beats last year's -- otherwise they tie and the server's order
       // picks, which pre-selected a previous edition), then the city, then the email type.
@@ -2738,14 +2751,16 @@ export class CampaignsComponent {
       }
     }
 
-    // The threshold is applied to the NON-GENERIC evidence, not to the full match score.
+    // Every candidate that reached `best` already cleared the non-generic threshold above, so
+    // this only has to answer "was there one at all".
     //
-    // `bestScore` ranks; it counts generic words because among templates the event has already
-    // identified, a generic word usefully separates them. It cannot be what justifies offering a
-    // suggestion at all: two generic terms sum to exactly EVENT_TEMPLATE_SUGGESTION_MIN_SCORE, so
-    // "Community Training Workshop" would auto-select "Community training newsletter" on
-    // vocabulary that describes neither event.
-    if (best === null || this.eventSuggestionScore(best, eventTerms) < EVENT_TEMPLATE_SUGGESTION_MIN_SCORE) {
+    // The threshold reads NON-GENERIC evidence, not the full match score. `bestScore` ranks and
+    // counts generic words, because among templates the event has already identified a generic
+    // word usefully separates them. It cannot be what justifies offering a suggestion: two
+    // generic terms sum to exactly EVENT_TEMPLATE_SUGGESTION_MIN_SCORE, so "Community Training
+    // Workshop" would auto-select "Community training newsletter" on vocabulary that describes
+    // neither event.
+    if (best === null) {
       return;
     }
 

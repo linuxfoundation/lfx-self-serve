@@ -3790,7 +3790,12 @@ describe('CampaignsComponent — HubSpot template picker', () => {
   }
 
   /**
-   * The event-derived template suggestion (#1698).
+   * The event-derived template suggestion.
+   *
+   * No issue number here deliberately. The branch is named `issue-1698`, but #1698 is the
+   * brand_kit-driven body/footer work (de-hardcoding the reference app's portal coupling) and has
+   * nothing to do with reading the event off the brief. Citing it made the traceability actively
+   * wrong -- worse than absent, because a reader following the link lands on unrelated work.
    *
    * The mapping of event -> branding lives in HubSpot, in the names its operators gave their
    * templates. These pin that it is read rather than guessed at, and — more importantly — that a
@@ -3895,6 +3900,27 @@ describe('CampaignsComponent — HubSpot template picker', () => {
      * corroboration, or evidence weighted by rarity -- this test flips to `toBe('')` and the
      * change is deliberate rather than silent.
      */
+    it('does not let a generic-heavy row block an eligible suggestion', () => {
+      showPicker();
+      // 'kubecon' is the decisive term. The distractor matches three GENERIC words, so it wins on
+      // eventMatchScore (which counts them) while scoring 0 on eventSuggestionScore (which does
+      // not). Picking the winner first and gating it afterwards therefore suppressed the eligible
+      // KubeCon row entirely -- a template the operator would have been right to see.
+      picker().emailBriefOutput.set(briefFor('KubeCon Community Training Webinar', 'kubecon-community-training-webinar'));
+      picker().searchEmailTemplates('');
+      respond({
+        enabled: true,
+        error: null,
+        possiblyTruncated: false,
+        emails: [
+          { id: 'generic', name: 'Community training webinar newsletter', subject: 'Monthly update' },
+          { id: 'eligible', name: 'KubeCon announcement', subject: 'Register now' },
+        ] as HubSpotMarketingEmail[],
+      });
+
+      expect(picker().emailTemplateSuggestionId()).toBe('eligible');
+    });
+
     it('still pre-selects on an un-enumerated generic long word (known limit)', () => {
       showPicker();
       expect(EVENT_TERM_GENERIC.has('developer')).toBe(false);
