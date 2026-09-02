@@ -191,16 +191,16 @@ Campaign endpoints are being moved off this application's vendor-direct integrat
 lfx-v2-campaign-service one at a time (LFXV2-3070). Each move is gated so it can be reversed by
 changing a value here rather than by shipping a revert.
 
-| Parameter                                                  | Description                                                                                                                                                                                                                                                              | Required | Default  |
-| ---------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ | -------- | -------- |
-| `environment.LFX_CUTOVER_CAMPAIGN_SERVICE_JOBS`            | Serves campaign job status from campaign-service; see the accepted values below                                                                                                                                                                                          | No       | `"true"` |
-| `environment.LFX_CUTOVER_CAMPAIGN_SERVICE_BRIEFS`          | Persists the generated brief in campaign-service instead of only in the browser tab                                                                                                                                                                                      | No       | `"true"` |
-| `environment.LFX_CUTOVER_CAMPAIGN_SERVICE_CREATE`          | Creates campaigns through campaign-service instead of the per-platform Express services — deploy only after STATUS_TOGGLE converges                                                                                                                                      | No       | `"true"` |
-| `environment.LFX_CUTOVER_CAMPAIGN_SERVICE_DEMAND_GEN`      | Allows Demand Gen Google campaigns. Requires a campaign-service that understands `googleAdsConfig.channel` (LFXV2-3257) — see below                                                                                                                                      | No       | off      |
-| `environment.LFX_CUTOVER_CAMPAIGN_SERVICE_STATUS_TOGGLE`   | Serves campaign pause/resume from campaign-service, which is what makes Google Ads and LinkedIn pausable — see below                                                                                                                                                     | No       | `"true"` |
-| `environment.LFX_CUTOVER_CAMPAIGN_SERVICE_INSIGHTS`        | Serves the Google Ads keyword and audience reads from campaign-service, scoped to the project's own campaigns — REQUIRES campaign-service #190 deployed first; CHANGES THE NUMBERS, see below                                                                            | No       | off      |
-| `environment.LFX_CUTOVER_CAMPAIGN_SERVICE_KEYWORD_ACTIONS` | Serves keyword pause/remove from campaign-service — REQUIRES campaign-service #191 deployed first; the legacy path is already broken without the GADS\_\* vars. NOTE: the 50-row cap on `/keywords/actions` applies even with this OFF, deliberately — see `values.yaml` | No       | off      |
-| `environment.LFX_CUTOVER_CAMPAIGN_SERVICE_HUBSPOT_UTM`     | Serves the HubSpot campaign UTM lookup and create from campaign-service — REQUIRES campaign-service #193 deployed first, see below                                                                                                                                       | No       | off      |
+| Parameter                                                  | Description                                                                                                                                                                                                                                                                                                                                     | Required | Default  |
+| ---------------------------------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | -------- | -------- |
+| `environment.LFX_CUTOVER_CAMPAIGN_SERVICE_JOBS`            | Serves campaign job status from campaign-service; see the accepted values below                                                                                                                                                                                                                                                                 | No       | `"true"` |
+| `environment.LFX_CUTOVER_CAMPAIGN_SERVICE_BRIEFS`          | Persists the generated brief in campaign-service instead of only in the browser tab                                                                                                                                                                                                                                                             | No       | `"true"` |
+| `environment.LFX_CUTOVER_CAMPAIGN_SERVICE_CREATE`          | Creates campaigns through campaign-service instead of the per-platform Express services — deploy only after STATUS_TOGGLE converges                                                                                                                                                                                                             | No       | `"true"` |
+| `environment.LFX_CUTOVER_CAMPAIGN_SERVICE_DEMAND_GEN`      | Allows Demand Gen Google campaigns. Requires a campaign-service that understands `googleAdsConfig.channel` (LFXV2-3257) — see below                                                                                                                                                                                                             | No       | off      |
+| `environment.LFX_CUTOVER_CAMPAIGN_SERVICE_STATUS_TOGGLE`   | Serves campaign pause/resume from campaign-service, which is what makes Google Ads and LinkedIn pausable — see below                                                                                                                                                                                                                            | No       | `"true"` |
+| `environment.LFX_CUTOVER_CAMPAIGN_SERVICE_INSIGHTS`        | Serves the Google Ads keyword and audience reads from campaign-service, scoped to the project's own campaigns — REQUIRES [campaign-service #190](https://github.com/linuxfoundation/lfx-v2-campaign-service/pull/190) deployed first; CHANGES THE NUMBERS, see below                                                                            | No       | off      |
+| `environment.LFX_CUTOVER_CAMPAIGN_SERVICE_KEYWORD_ACTIONS` | Serves keyword pause/remove from campaign-service — REQUIRES [campaign-service #191](https://github.com/linuxfoundation/lfx-v2-campaign-service/pull/191) deployed first; the legacy path is already broken without the GADS\_\* vars. NOTE: the 50-row cap on `/keywords/actions` applies even with this OFF, deliberately — see `values.yaml` | No       | off      |
+| `environment.LFX_CUTOVER_CAMPAIGN_SERVICE_HUBSPOT_UTM`     | Serves the HubSpot campaign UTM lookup and create from campaign-service — REQUIRES [campaign-service #193](https://github.com/linuxfoundation/lfx-v2-campaign-service/pull/193) deployed first, see below                                                                                                                                       | No       | off      |
 
 `..._JOBS` now defaults to `"true"` (LFXV2-3325), the first step of the enable order below.
 **`..._JOBS` must stay on, and comes off LAST.** With `..._CREATE` enabled campaign-service mints
@@ -271,7 +271,14 @@ case-insensitively, so `"True"` and `" on "` also enable it. Every other value i
 unset, empty, `0`, `false`, and any misspelling. Do not read "only `true` works" into that: an
 operator setting `yes` and expecting it to be ignored would route production traffic at
 campaign-service. The default-deny half is the deliberate part — a typo like `flase` is invisible
-in a values.yaml diff, so an unrecognised value has to fail towards the path already known to work.
+in a values.yaml diff, so an unrecognised value has to fail towards the legacy path.
+
+**That fallback is only SAFE for the create-pipeline flags.** For `..._HUBSPOT_UTM` and
+`..._KEYWORD_ACTIONS` the legacy path is already broken — both call credentials that have moved
+into campaign-service's encrypted connection store, so a typo there fails towards a path that
+does not work at all rather than towards the previous behaviour. Default-deny is still the right
+choice (a silent wrong-value ROUTE would be worse), but do not read it as "a misspelling is
+harmless" for those two.
 
 `LFX_CUTOVER_CAMPAIGN_SERVICE_DEMAND_GEN` is a CAPABILITY flag, not a routing one, and that is
 why it is separate from the create-pipeline flags. They ask "should this go through
@@ -342,7 +349,7 @@ endpoints respond in the target environment before flipping it on.
 `hsHeaders()`, which throws whenever `HUBSPOT_ACCESS_TOKEN` is absent — and it is, by design,
 since the credential moved into campaign-service's encrypted connection store.
 
-**Three behaviours change on both paths, including with this flag off** — a default-off deployment
+**Four behaviours change on both paths, including with this flag off** — a default-off deployment
 of this change is not inert.
 
 1. The legacy path **fabricated** a UTM token (`<id>-<name>`) whenever HubSpot had none, so a
