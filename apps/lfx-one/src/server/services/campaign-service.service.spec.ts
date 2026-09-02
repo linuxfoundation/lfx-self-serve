@@ -2927,6 +2927,37 @@ describe('CampaignServiceClient google ads insight reads', () => {
   const keywordsResult = { window: 'last_30_days', rows: [], row_count: 0, truncated: false };
   const audienceResult = { window: 'last_30_days', buckets: [], bucket_count: 0 };
 
+  describe('HubSpot UTM transport', () => {
+    // These two are the ONE place in this service where argument POSITION carries meaning that
+    // typechecking cannot: `q` must be the fifth argument (query) and `{ name }` the sixth
+    // (body). A swap compiles cleanly, and the controller specs mock this layer -- so a POST
+    // carrying its payload in the query position would send no body at all and reach upstream
+    // as a request naming no campaign, with nothing failing until a live call.
+    it('sends the search term as a QUERY parameter, not a body', async () => {
+      proxyRequest.mockResolvedValue({ campaigns: [] });
+
+      await new CampaignServiceClient().searchHubSpotCampaigns(req, 'cncf', 'KubeCon NA 2026');
+
+      expect(proxyRequest).toHaveBeenCalledWith(req, 'LFX_V2_CAMPAIGN_SERVICE', '/projects/cncf/connection-hubspot/campaigns', 'GET', {
+        q: 'KubeCon NA 2026',
+      });
+      // Arity pins the position: a sixth argument here would be a body on a GET.
+      expect(proxyRequest.mock.calls[0]).toHaveLength(5);
+    });
+
+    it('sends the campaign name as a BODY, not a query parameter', async () => {
+      proxyRequest.mockResolvedValue({ id: 'c-1' });
+
+      await new CampaignServiceClient().createHubSpotCampaign(req, 'cncf', 'KubeCon NA 2026');
+
+      const call = proxyRequest.mock.calls[0];
+      expect(call[3]).toBe('POST');
+      // Fifth is the QUERY and must be empty; sixth is the BODY and must carry the name.
+      expect(call[4]).toBeUndefined();
+      expect(call[5]).toEqual({ name: 'KubeCon NA 2026' });
+    });
+  });
+
   describe('getGoogleAdsKeywords', () => {
     it('sends the window as a query parameter, not a body', async () => {
       proxyRequest.mockResolvedValue(keywordsResult);
