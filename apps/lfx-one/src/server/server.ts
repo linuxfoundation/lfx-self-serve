@@ -94,12 +94,14 @@ initializeServerConsoleOverride();
 const serverDistFolder = dirname(fileURLToPath(import.meta.url));
 const browserDistFolder = resolve(serverDistFolder, '../browser');
 
-// Cold-start phase marks (see #1378) — performance.now() is monotonic and
-// zeroed at process start, so each mark is elapsed-ms since the process spawned.
-const engineStartMs = performance.now();
-
 const angularApp = new AngularNodeAppEngine();
 const app = express();
+
+// Cold-start phase marks (see #1378) — performance.now() is monotonic and
+// zeroed at process start, so each mark is elapsed-ms since the process spawned.
+// Captured after engine/app construction so engine_ms reflects that work, not
+// just the module-graph evaluation that precedes it.
+const engineStartMs = performance.now();
 
 // Trust first proxy so req.ip resolves from X-Forwarded-For.
 app.set('trust proxy', 1);
@@ -382,9 +384,6 @@ app.get('/crowdfunding/callback', authRateLimiter, (req, res) => crowdfundingCal
 
 const crowdfundingAuthService = new CrowdfundingAuthService();
 
-// Cold-start phase mark (see #1378) — router mounting + middleware complete.
-const routesReadyMs = performance.now();
-
 app.use('/**', async (req: Request, res: Response, next: NextFunction) => {
   const ssrStartTime = Date.now();
   const auth: AuthContext = {
@@ -578,6 +577,10 @@ app.use((error: Error, req: Request, res: Response, next: NextFunction) => {
 
   apiErrorHandler(error, req, res, next);
 });
+
+// Cold-start phase mark (see #1378) — router mounting + middleware complete,
+// including the SSR catch-all and global error handler above.
+const routesReadyMs = performance.now();
 
 let httpServer: HttpServer | undefined;
 
