@@ -1002,6 +1002,12 @@ export interface ITXCreatePastMeetingParticipantRequest {
   org_is_member?: boolean;
   /** Whether org has project membership */
   org_is_project_member?: boolean;
+  /** Associated committee UUID */
+  committee_id?: string;
+  /** Role within committee */
+  committee_role?: string;
+  /** Voting status in committee */
+  committee_voting_status?: string;
   /** URL to profile picture */
   avatar_url?: string;
   /** Whether the participant was invited/registered — creates an invitee record if true */
@@ -1020,6 +1026,8 @@ export interface ITXCreatePastMeetingParticipantRequest {
   zoom_user_name?: string;
   /** Full name of the invitee the attendee was matched to (attendee only) */
   mapped_invitee_name?: string;
+  /** Array of session objects with join/leave times (attendee only) */
+  sessions?: ITXParticipantSession[];
 }
 
 /**
@@ -1051,6 +1059,10 @@ export interface ITXUpdatePastMeetingParticipantRequest {
   org_name?: string;
   /** Job title */
   job_title?: string;
+  /** Role within committee */
+  committee_role?: string;
+  /** Voting status in committee */
+  committee_voting_status?: string;
   /** Whether the attendee has been verified (attendee only) */
   is_verified?: boolean;
   /** Whether the attendee record was last updated via AI reconciliation (attendee only) */
@@ -1068,12 +1080,14 @@ export interface ITXUpdatePastMeetingParticipantRequest {
  * participant write endpoints
  */
 export interface ITXParticipantSession {
+  /** Zoom participant UUID */
+  participant_uuid?: string;
   /** Session join timestamp (RFC3339) */
   join_time?: string;
   /** Session leave timestamp (RFC3339) */
   leave_time?: string;
-  /** Session duration in seconds */
-  duration?: number;
+  /** Reason for leaving */
+  leave_reason?: string;
 }
 
 /**

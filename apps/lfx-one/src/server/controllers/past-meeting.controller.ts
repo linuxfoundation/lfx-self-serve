@@ -21,7 +21,7 @@ import { NextFunction, Request, Response } from 'express';
 
 import { ServiceValidationError } from '../errors';
 import { enrichMeetingsWithCreatedBy, stripHostKey } from '../helpers/meeting.helper';
-import { validateUidParameter } from '../helpers/validation.helper';
+import { validateRequiredParameter, validateUidParameter } from '../helpers/validation.helper';
 import { AccessCheckService } from '../services/access-check.service';
 import { logger } from '../services/logger.service';
 import { MeetingService } from '../services/meeting.service';
@@ -249,13 +249,13 @@ export class PastMeetingController {
         return;
       }
 
-      if (!participantId) {
-        return next(
-          ServiceValidationError.forField('participantId', 'Participant ID is required', {
-            operation: 'update_past_meeting_participant',
-            service: 'past_meeting_controller',
-          })
-        );
+      if (
+        !validateRequiredParameter(participantId, 'participantId', req, next, {
+          operation: 'update_past_meeting_participant',
+          service: 'past_meeting_controller',
+        })
+      ) {
+        return;
       }
 
       const participant = await this.meetingService.updatePastMeetingParticipant(req, uid, participantId, participantData);
@@ -292,13 +292,13 @@ export class PastMeetingController {
         return;
       }
 
-      if (!participantId) {
-        return next(
-          ServiceValidationError.forField('participantId', 'Participant ID is required', {
-            operation: 'delete_past_meeting_participant',
-            service: 'past_meeting_controller',
-          })
-        );
+      if (
+        !validateRequiredParameter(participantId, 'participantId', req, next, {
+          operation: 'delete_past_meeting_participant',
+          service: 'past_meeting_controller',
+        })
+      ) {
+        return;
       }
 
       await this.meetingService.deletePastMeetingParticipant(req, uid, participantId);
