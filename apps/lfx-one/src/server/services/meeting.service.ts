@@ -981,8 +981,16 @@ export class MeetingService {
       })
     );
 
+    // Union-find over connected identity-match edges. `rootUsername` tracks the resolved LFID
+    // username for each component's current root, since a merge must be refused (not just
+    // skipped) once known: isSamePerson is not transitive — a no-username row can share an email
+    // with two records that carry different, conflicting usernames, and unioning through it would
+    // incorrectly merge two distinct LFX accounts into one participant.
     const parent = raw.map((_, index) => index);
+    const rootUsername = raw.map((participant) => participant.username || undefined);
     const find = (index: number): number => {
+      // Path halving: reparent every other node to its grandparent so later find() calls stay
+      // near O(1) amortized. This mutates `parent` even on a plain lookup.
       while (parent[index] !== index) {
         parent[index] = parent[parent[index]];
         index = parent[index];
@@ -992,13 +1000,24 @@ export class MeetingService {
 
     for (let i = 0; i < raw.length; i++) {
       for (let j = i + 1; j < raw.length; j++) {
-        if (this.isSamePerson(raw[i], raw[j])) {
-          const rootI = find(i);
-          const rootJ = find(j);
-          if (rootI !== rootJ) {
-            parent[rootI] = rootJ;
-          }
+        if (!this.isSamePerson(raw[i], raw[j])) {
+          continue;
         }
+
+        const rootI = find(i);
+        const rootJ = find(j);
+        if (rootI === rootJ) {
+          continue;
+        }
+
+        const usernameI = rootUsername[rootI];
+        const usernameJ = rootUsername[rootJ];
+        if (usernameI && usernameJ && usernameI !== usernameJ) {
+          continue;
+        }
+
+        parent[rootI] = rootJ;
+        rootUsername[rootJ] = usernameI ?? usernameJ;
       }
     }
 
@@ -1957,6 +1976,9 @@ export class MeetingService {
    * one — an asymmetric email (one record has it, the other doesn't) falls through to the
    * username-asymmetry guard and then the name fallback, so the common case of a partially-enriched
    * duplicate (same person, one record still missing an email) can still merge on matching names.
+   * The name-only fallback is an accepted PCC-parity tradeoff: two distinct guests who share a
+   * display name and have no email/username on any record will be merged. Callers needing a
+   * stronger guarantee should require a corroborating signal before relying on this path.
    */
   private isSamePerson(a: PastMeetingParticipant, b: PastMeetingParticipant): boolean {
     if (a.username && b.username) {
@@ -1992,6 +2014,15 @@ export class MeetingService {
     return `${first ?? ''} ${last ?? ''}`.trim().toLowerCase();
   }
 
+  /**
+   * Prefers a non-blank string value, treating whitespace-only strings the same as missing.
+   * Matches `isSamePerson`'s own email normalization — some upstream records carry `''` as an
+   * "empty" sentinel rather than omitting the field, and `??` alone would treat that as present.
+   */
+  private pickNonBlank<T extends string | undefined>(preferred: T, fallback: T): T {
+    return preferred?.trim() ? preferred : fallback;
+  }
+
   /** Folds a connected group of identity-matched participant records into one merged record. */
   private mergePastMeetingParticipantGroup(group: PastMeetingParticipant[]): PastMeetingParticipant {
     return group.reduce((merged, participant) => {
@@ -2004,11 +2035,11 @@ export class MeetingService {
         host: merged.host || participant.host,
         org_is_member: merged.org_is_member || participant.org_is_member,
         org_is_project_member: merged.org_is_project_member || participant.org_is_project_member,
-        avatar_url: preferred.avatar_url ?? other.avatar_url,
-        job_title: preferred.job_title ?? other.job_title,
-        org_name: preferred.org_name ?? other.org_name,
-        username: preferred.username ?? other.username,
-        email: preferred.email ?? other.email,
+        avatar_url: this.pickNonBlank(preferred.avatar_url, other.avatar_url),
+        job_title: this.pickNonBlank(preferred.job_title, other.job_title),
+        org_name: this.pickNonBlank(preferred.org_name, other.org_name),
+        username: this.pickNonBlank(preferred.username, other.username),
+        email: this.pickNonBlank(preferred.email, other.email),
       };
     });
   }

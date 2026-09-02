@@ -18,6 +18,10 @@ vi.mock('@lfx-one/shared/enums', async (importOriginal) => importOriginal());
 vi.mock('@lfx-one/shared/utils', () => ({
   buildRecurrenceNeverEndDate: vi.fn(),
   getPastMeetingTranscriptUrl: vi.fn(),
+  // Intentionally a light behavioral double, not a frozen copy meant to track the real predicate:
+  // it only needs to exercise the placeholder-vs-blank branch in this file's dedup tests. The
+  // predicate's own placeholder-token coverage lives in meeting.utils.spec.ts — a future token
+  // added there won't be reflected here, but that's the authoritative test for this behavior.
   isUnresolvableParticipantName: vi.fn((first?: string | null, last?: string | null) => {
     const tokens = [first, last].map((token) => (token ?? '').trim().toLowerCase());
     const meaningful = tokens.filter((token) => token && token !== 'unknown' && token !== '[unknown]');
@@ -861,5 +865,34 @@ describe('MeetingService.getPastMeetingParticipants', () => {
     const result = await service.getPastMeetingParticipants(req, 'meeting-1-occ-1');
 
     expect(result).toHaveLength(1);
+  });
+
+  it('refuses to bridge two conflicting LFID usernames through a shared-email no-username record', async () => {
+    proxyRequest.mockResolvedValueOnce({
+      resources: [
+        participantRecord('a', { username: 'user-a', email: 'shared@example.com' }),
+        participantRecord('b', { username: undefined, email: 'shared@example.com' }),
+        participantRecord('c', { username: 'user-b', email: 'shared@example.com' }),
+      ],
+    });
+
+    const result = await service.getPastMeetingParticipants(req, 'meeting-1-occ-1');
+
+    expect(result).toHaveLength(2);
+    expect(result.map((p) => p.username).sort()).toEqual(['user-a', 'user-b']);
+  });
+
+  it('does not let a blank-string email sentinel on the preferred record discard a real email on merge', async () => {
+    proxyRequest.mockResolvedValueOnce({
+      resources: [
+        participantRecord('a', { email: '', first_name: 'Jane', last_name: 'Doe', is_attended: true }),
+        participantRecord('b', { email: 'jane@example.com', first_name: 'Jane', last_name: 'Doe', is_attended: false }),
+      ],
+    });
+
+    const result = await service.getPastMeetingParticipants(req, 'meeting-1-occ-1');
+
+    expect(result).toHaveLength(1);
+    expect(result[0].email).toBe('jane@example.com');
   });
 });
