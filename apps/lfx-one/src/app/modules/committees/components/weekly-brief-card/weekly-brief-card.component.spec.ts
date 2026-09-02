@@ -537,7 +537,11 @@ describe('WeeklyBriefCardComponent — Current activity tally (GH-1922)', () => 
     callerRating: WeeklyBriefRating | null = null,
     options: { truncated?: boolean } = {}
   ): Promise<void> {
-    getWeeklyBrief = vi.fn(() => of(briefResponse(activityRefs, callerRating, options)));
+    // Built eagerly (not inside the vi.fn factory) so briefResponse's guard throws synchronously
+    // at the setup() call site — inside the switchMap project fn it would instead surface as an
+    // unhandled RxJS error blamed on whichever test happens to run next.
+    const response = briefResponse(activityRefs, callerRating, options);
+    getWeeklyBrief = vi.fn(() => of(response));
 
     await TestBed.configureTestingModule({
       imports: [WeeklyBriefCardComponent],
