@@ -250,12 +250,24 @@ async function hubspotSearchCampaign(eventName: string): Promise<HubSpotUtmResul
   // nothing to select.
   const tokened = matches.filter((m): m is typeof m & { hsUtm: string } => m.hsUtm !== null);
 
+  // A TIE cannot auto-apply either, for the same reason the capped branch cannot. `sort` is
+  // stable, so `matches[0]` on equal scores is whichever row HubSpot happened to return first —
+  // an ordering that says nothing about relevance — and the planning tab writes a `found` token
+  // straight into the event's links with no operator step.
+  //
+  // Newly reachable: scoreCampaignName now compares NORMALISED names so it agrees with the
+  // mapper's confidence gate, which means two campaigns differing only by case or whitespace now
+  // SCORE THE SAME where the double-space row used to lose outright. This path is the production
+  // default (LFX_CUTOVER_CAMPAIGN_SERVICE_HUBSPOT_UTM ships false), so it needs the gate the
+  // mapper path already has rather than inheriting a tie-break from HubSpot's row order.
+  const ambiguous = matches.length > 1 && matches[1].score === best.score;
+
   // A CAPPED search cannot auto-apply a token, even when it found a match. The result set is
   // incomplete by definition, so an equal-or-better campaign may be sitting outside it, and the
   // planning tab applies a `found` token immediately — it only consults `inconclusive` on the
   // not-found path. Returning found:true here would silently pick a worse match and write its
   // UTM into the event's links. The candidates still travel, so the operator picks.
-  if (capped) {
+  if (capped || ambiguous) {
     return {
       found: false,
       hsUtm: null,

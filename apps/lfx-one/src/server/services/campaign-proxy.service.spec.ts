@@ -654,6 +654,32 @@ describe('CampaignProxyService HubSpot campaign lookup', () => {
     expect(result.all_matches).toEqual([]);
   });
 
+  it('refuses to auto-apply when two candidates tie on score', async () => {
+    // scoreCampaignName now compares NORMALISED names, so two campaigns differing only by
+    // whitespace score the SAME where the double-space row used to lose outright. `sort` is
+    // stable, so matches[0] is then whichever row HubSpot returned first -- an ordering that says
+    // nothing about relevance -- and the planning tab writes a `found` token straight into the
+    // event's links with no operator step.
+    //
+    // This is the PRODUCTION DEFAULT path (LFX_CUTOVER_CAMPAIGN_SERVICE_HUBSPOT_UTM ships false),
+    // so it needs the same gate the mapper path has rather than a tie-break from HubSpot's order.
+    hsResponds({
+      total: 2,
+      results: [
+        { id: '1', properties: { hs_name: 'KubeCon  NA 2026', hs_utm: 'wrong-token' } },
+        { id: '2', properties: { hs_name: 'KubeCon NA 2026', hs_utm: 'right-token' } },
+      ],
+    });
+
+    const result = await service.lookupHubSpotUtm(req, 'KubeCon NA 2026');
+
+    expect(result.found, 'auto-applied a token on a tie decided by HubSpot row order').toBe(false);
+    expect(result.hs_utm).toBeNull();
+    // Both still travel so the operator can pick.
+    expect(result.all_matches).toHaveLength(2);
+    expect(result.inconclusive).toBe(true);
+  });
+
   it('carries a real hs_utm through untouched', async () => {
     // The other direction, so the guard above cannot be satisfied by nulling every token.
     hsResponds({ total: 1, results: [{ id: '42', properties: { hs_name: 'KubeCon EU 2026', hs_utm: 'kubecon-eu-2026' } }] });
