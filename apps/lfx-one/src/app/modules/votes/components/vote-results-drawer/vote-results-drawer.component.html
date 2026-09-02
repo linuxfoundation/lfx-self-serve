@@ -307,7 +307,7 @@
                 </div>
               }
               @if (showAbstain() && !voteResultsError()) {
-                <!-- Vote-level abstention row — muted and never winner-styled; choice percentages above exclude abstentions. -->
+                <!-- Vote-level abstention row — muted and never winner-styled; choice percentages above use all responses cast (including abstentions) as their denominator. -->
                 <div class="rounded-lg border border-slate-200 bg-slate-50 p-4" data-testid="vote-results-voter-option-abstain">
                   <div class="flex items-center justify-between mb-2">
                     <span class="text-sm font-medium italic text-slate-500">Abstain</span>
@@ -589,7 +589,7 @@
 
             @if (showAbstain() && !voteResultsError()) {
               <!-- Vote-level abstention row (not per-question) — muted and never winner-styled.
-                   abstainedRate is the share of all responses cast; choice percentages above exclude abstentions. -->
+                   abstainedRate is the share of all responses cast; choice percentages above use the same denominator. -->
               <div class="flex flex-col gap-1.5" data-testid="vote-results-option-abstain">
                 <div class="flex items-center justify-between text-sm">
                   <span class="font-normal italic text-slate-500">Abstain</span>
@@ -767,7 +767,7 @@
 
             @if (showAbstain() && !voteResultsError()) {
               <!-- Vote-level abstention row (not per-question) — muted and never winner-styled.
-                   abstainedRate is the share of all responses cast; choice percentages above exclude abstentions. -->
+                   abstainedRate is the share of all responses cast; choice percentages above use the same denominator. -->
               <div class="rounded-lg border border-slate-200 bg-slate-50 p-4" data-testid="vote-results-option-abstain">
                 <div class="flex items-center justify-between mb-2">
                   <span class="text-sm font-medium italic text-slate-500">Abstain</span>
