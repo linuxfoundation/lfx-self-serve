@@ -2085,11 +2085,17 @@ function upstreamMessageOr(error: unknown, fallback: string): string {
   // A BFF-raised transport failure is not an upstream message, whatever its status.
   //
   // Matched by ORIGIN, not by a code string. The first attempt keyed on 'NETWORK_ERROR', which
-  // executeRequest only emits as a fallback when `cause.code` is absent — real failures arrive
-  // as ECONNRESET, ENOTFOUND or UND_ERR_SOCKET, so the guard missed the common case and the
-  // leak it existed to stop was still live. Every transport site sets originalError; upstream
-  // errors relayed from campaign-service never do, which is the distinction that matters.
-  if (error.originalError !== undefined || error.code === 'TIMEOUT') {
+  // executeRequest only emits `NETWORK_ERROR` as a fallback when `cause.code` is absent — real
+  // failures arrive as ECONNRESET, ENOTFOUND or UND_ERR_SOCKET, so keying on that string missed
+  // the common case and the leak it existed to stop was still live.
+  //
+  // Keyed on `transportFailure`, which the throwing site DECLARES, not on `originalError`. Those
+  // are different questions: seven non-transport sites attach a caught error to originalError
+  // (committee-access, org-lens x2, guild, snowflake x2, project), so inferring from it calls a
+  // genuine service fault a lost connection. Only ApiClientService reaches this function today,
+  // which made the inference harmless by COINCIDENCE rather than by construction -- not what a
+  // guard against leaking transport text should rest on.
+  if (error.transportFailure === true) {
     return fallback;
   }
   const controlled = error.statusCode === 503 || (error.statusCode >= 400 && error.statusCode < 500);

@@ -1677,9 +1677,13 @@ describe('CampaignServiceClient.createCampaigns', () => {
       // `Error` carrying a top-level `code` — a shape this client never throws — so it passed
       // against a `requestNeverLeft` that returned false for every MicroserviceError and fixed
       // nothing in production.
+      // transportFailure, as ApiClientService now sets it. The guard keys on that DECLARED flag
+      // rather than inferring from originalError, because seven non-transport sites set
+      // originalError too -- so a fixture omitting it no longer simulates a real transport error.
       const transportError = new MicroserviceError('Request failed: fetch failed', 500, code, {
         operation: 'api_client_network_error',
         service: 'api_client_service',
+        transportFailure: true,
       });
       proxyRequestWithResponse.mockRejectedValueOnce(transportError);
 
@@ -2146,7 +2150,7 @@ describe('CampaignServiceClient.buildAudience', () => {
     // real fetch failure carries the OS code and the fallback string almost never appears. A
     // spec built on the fallback passed while production still leaked.
     proxyRequestWithResponse.mockRejectedValueOnce(
-      new MicroserviceError('Request failed: fetch failed', 503, 'ECONNRESET', { originalError: new Error('fetch failed') })
+      new MicroserviceError('Request failed: fetch failed', 503, 'ECONNRESET', { originalError: new Error('fetch failed'), transportFailure: true })
     );
 
     const result = await new CampaignServiceClient().generateEmailCopy(req, 'tlf', 'b-1');
