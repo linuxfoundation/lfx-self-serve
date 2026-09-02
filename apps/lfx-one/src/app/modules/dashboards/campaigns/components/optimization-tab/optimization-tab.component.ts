@@ -932,7 +932,8 @@ export class OptimizationTabComponent implements OnInit {
           // who switched tabs cannot see. Reports the worst state in the batch, because a
           // partially-unconfirmed bulk REMOVE is the case that needs acting on.
           const outcomes = keys.map((_, i) => this.positionalOutcome(res.results[i]).state);
-          const worst = outcomes.includes('failed') ? 'failed' : outcomes.includes('unconfirmed') ? 'unconfirmed' : 'done';
+          // Ordered worst-first, so the first hit wins.
+          const worst = (['failed', 'unconfirmed', 'done'] as const).find((state) => outcomes.includes(state)) ?? 'done';
           this.announceKeywordOutcome(
             action,
             keys.length,
