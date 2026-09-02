@@ -42,8 +42,10 @@ export class VoteService {
 
   /**
    * Fetches a single page of votes using cursor-based pagination — callers paginate via the returned page_token.
+   * `includeProject` (default true) enriches rows with project slug/name/tier; opt out when the caller discards them.
    */
-  public async getVotes(req: Request, query: Record<string, unknown> = {}): Promise<PaginatedResponse<Vote>> {
+  public async getVotes(req: Request, query: Record<string, unknown> = {}, options: { includeProject?: boolean } = {}): Promise<PaginatedResponse<Vote>> {
+    const { includeProject = true } = options;
     logger.debug(req, 'get_votes', 'Starting vote fetch', {
       query_params: Object.keys(query),
     });
@@ -61,12 +63,10 @@ export class VoteService {
       params
     );
 
+    const normalized = resources.map((resource) => this.normalizeIndexedVote(req, resource.data));
     // Enrich list rows with canonical project fields — the vote index (VoteData) carries only
     // project_uid/name, so without this, consumers deriving per-row edit links get no slug/tier.
-    const votes = await this.enrichWithProjectMetadata(
-      req,
-      resources.map((resource) => this.normalizeIndexedVote(req, resource.data))
-    );
+    const votes = includeProject ? await this.enrichWithProjectMetadata(req, normalized) : normalized;
 
     logger.debug(req, 'get_votes', 'Completed vote fetch', {
       final_count: votes.length,

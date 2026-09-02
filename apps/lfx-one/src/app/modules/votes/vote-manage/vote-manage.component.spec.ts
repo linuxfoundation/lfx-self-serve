@@ -12,7 +12,7 @@ import { ProjectContextService } from '@services/project-context.service';
 import { ProjectService } from '@services/project.service';
 import { VoteService } from '@services/vote.service';
 import { ConfirmationService, MessageService } from 'primeng/api';
-import { BehaviorSubject, of, throwError } from 'rxjs';
+import { BehaviorSubject, of, Subject, throwError } from 'rxjs';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 
 import { VoteManageComponent } from './vote-manage.component';
@@ -31,6 +31,7 @@ describe('VoteManageComponent', () => {
 
   let fetchVote: ReturnType<typeof vi.fn>;
   let getProject: ReturnType<typeof vi.fn>;
+  let fetchCommittee: ReturnType<typeof vi.fn>;
   let routerEvents$: BehaviorSubject<NavigationEnd>;
   let setProject: ReturnType<typeof vi.fn>;
 
@@ -71,6 +72,8 @@ describe('VoteManageComponent', () => {
     fetchVote = vi.fn();
     getProject = vi.fn();
     setProject = vi.fn();
+    // Committee leg grants write access by default so the eviction predicate stays quiet.
+    fetchCommittee = vi.fn().mockReturnValue(of({ uid: COMMITTEE_UID, writer: true }));
     routerEvents$ = new BehaviorSubject<NavigationEnd>(new NavigationEnd(0, '/project/votes/x/edit', '/project/votes/x/edit'));
 
     TestBed.configureTestingModule({
@@ -120,8 +123,7 @@ describe('VoteManageComponent', () => {
           provide: CommitteeService,
           useValue: {
             getCommittee: vi.fn().mockReturnValue(of(null)),
-            // Committee leg grants write access so the eviction predicate stays quiet.
-            fetchCommittee: vi.fn().mockReturnValue(of({ uid: COMMITTEE_UID, writer: true })),
+            fetchCommittee,
           },
         },
         // Real ConfirmationService — the template's p-confirmdialog subscribes to its Subjects.
@@ -185,5 +187,32 @@ describe('VoteManageComponent', () => {
     await emitNavigationEnd();
     expect(skipCacheCalls().length).toBeGreaterThan(failedAttempts);
     expect(setProject).toHaveBeenCalledWith({ uid: PROJECT_UID, name: 'Test Project', slug: PROJECT_SLUG }, false);
+  });
+
+  it('short-circuits the committee leg when the project leg grants write access', async () => {
+    // Pins the `if (project)` gate: a granted project leg must not fire the committee HTTP probe.
+    fetchVote.mockReturnValue(of(unenrichedVote()));
+    getProject.mockReturnValue(of({ uid: PROJECT_UID, name: 'Test Project', slug: PROJECT_SLUG, writer: true }));
+    await createComponent();
+
+    expect(fetchCommittee).not.toHaveBeenCalled();
+  });
+
+  it('evicts to the overview when both write-access legs resolve false', async () => {
+    // Pins the fail-closed transition into evictOnWriteAccessLoss: a null project lookup plus a
+    // committee denial flips writeAccess from provisionally true to false. A plain Subject (not
+    // of()) defers the committee denial past the provisional-true boot emission — synchronous
+    // mocks resolve the whole chain in the first effect pass and skip(1) swallows the eviction.
+    const committeeDecision$ = new Subject<{ uid: string; writer: boolean }>();
+    fetchVote.mockReturnValue(of(enrichedVote()));
+    getProject.mockReturnValue(of(null));
+    fetchCommittee.mockReturnValue(committeeDecision$.asObservable());
+    const router = TestBed.inject(Router);
+    await createComponent();
+
+    committeeDecision$.next({ uid: COMMITTEE_UID, writer: false });
+    await TestBed.inject(ApplicationRef).whenStable();
+
+    expect(router.navigateByUrl).toHaveBeenCalled();
   });
 });
