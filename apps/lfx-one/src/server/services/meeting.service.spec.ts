@@ -695,3 +695,113 @@ describe('MeetingService.getAuthorizedRegistrantsForImport', () => {
     expect(query.page_size).toBe(51);
   });
 });
+
+describe('MeetingService.getPastMeetingParticipants', () => {
+  let service: MeetingService;
+
+  const participantRecord = (id: string, overrides: Record<string, unknown> = {}) => ({
+    id: `v1_past_meeting_participant:${id}`,
+    data: {
+      uid: id,
+      meeting_id: 'meeting-1',
+      meeting_and_occurrence_id: 'meeting-1-occ-1',
+      past_meeting_id: 'past-1',
+      first_name: 'Jane',
+      last_name: 'Doe',
+      host: false,
+      is_attended: false,
+      is_invited: true,
+      org_is_member: false,
+      org_is_project_member: false,
+      created_at: '2026-01-01T00:00:00.000Z',
+      updated_at: '2026-01-01T00:00:00.000Z',
+      ...overrides,
+    },
+  });
+
+  beforeEach(() => {
+    proxyRequest.mockReset();
+    service = new MeetingService();
+  });
+
+  it('merges two records sharing the same LFID username, even with different emails', async () => {
+    proxyRequest.mockResolvedValueOnce({
+      resources: [
+        participantRecord('a', { email: 'jane@example.com', username: 'jdoe', is_invited: true, is_attended: false }),
+        participantRecord('b', { email: 'jane.alt@example.com', username: 'jdoe', is_invited: false, is_attended: true }),
+      ],
+    });
+
+    const result = await service.getPastMeetingParticipants(req, 'meeting-1-occ-1');
+
+    expect(result).toHaveLength(1);
+    expect(result[0].is_invited).toBe(true);
+    expect(result[0].is_attended).toBe(true);
+  });
+
+  it('does not merge two records with the same email but different usernames', async () => {
+    proxyRequest.mockResolvedValueOnce({
+      resources: [
+        participantRecord('a', { email: 'shared@example.com', username: 'user-a' }),
+        participantRecord('b', { email: 'shared@example.com', username: 'user-b' }),
+      ],
+    });
+
+    const result = await service.getPastMeetingParticipants(req, 'meeting-1-occ-1');
+
+    expect(result).toHaveLength(2);
+  });
+
+  it('merges by email when neither record has a username', async () => {
+    proxyRequest.mockResolvedValueOnce({
+      resources: [participantRecord('a', { email: 'guest@example.com' }), participantRecord('b', { email: 'GUEST@example.com' })],
+    });
+
+    const result = await service.getPastMeetingParticipants(req, 'meeting-1-occ-1');
+
+    expect(result).toHaveLength(1);
+  });
+
+  it('merges on matching email even when only one side has a username — email is checked before the username-asymmetry fallback', async () => {
+    proxyRequest.mockResolvedValueOnce({
+      resources: [participantRecord('a', { email: 'guest@example.com', username: 'jdoe' }), participantRecord('b', { email: 'guest@example.com' })],
+    });
+
+    const result = await service.getPastMeetingParticipants(req, 'meeting-1-occ-1');
+
+    expect(result).toHaveLength(1);
+  });
+
+  it('does not merge asymmetric-username records when neither has an email to fall back on', async () => {
+    proxyRequest.mockResolvedValueOnce({
+      resources: [
+        participantRecord('a', { username: 'jdoe', first_name: 'Jane', last_name: 'Doe' }),
+        participantRecord('b', { first_name: 'Jane', last_name: 'Doe' }),
+      ],
+    });
+
+    const result = await service.getPastMeetingParticipants(req, 'meeting-1-occ-1');
+
+    expect(result).toHaveLength(2);
+  });
+
+  it('falls back to normalized display name when neither username nor email is present', async () => {
+    proxyRequest.mockResolvedValueOnce({
+      resources: [participantRecord('a', { first_name: 'Jane', last_name: 'Doe' }), participantRecord('b', { first_name: 'jane', last_name: 'doe' })],
+    });
+
+    const result = await service.getPastMeetingParticipants(req, 'meeting-1-occ-1');
+
+    expect(result).toHaveLength(1);
+  });
+
+  it('does not merge different people who share no identity signal at all', async () => {
+    proxyRequest.mockResolvedValueOnce({
+      resources: [participantRecord('a', { first_name: 'Jane', last_name: 'Doe' }), participantRecord('b', { first_name: 'John', last_name: 'Smith' })],
+    });
+
+    const result = await service.getPastMeetingParticipants(req, 'meeting-1-occ-1');
+
+    expect(result).toHaveLength(2);
+  });
+});

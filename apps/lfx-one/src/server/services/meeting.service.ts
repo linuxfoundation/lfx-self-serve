@@ -997,6 +997,7 @@ export class MeetingService {
         job_title: preferred.job_title ?? other.job_title,
         org_name: preferred.org_name ?? other.org_name,
         username: preferred.username ?? other.username,
+        email: preferred.email ?? other.email,
       };
     }
 
@@ -1962,8 +1963,13 @@ export class MeetingService {
     return !!aName && aName === bName;
   }
 
-  /** Normalized display name for identity comparison. */
+  /** Normalized display name for identity comparison. Empty when both name parts are missing, so two unnamed participants never match. */
   private normalizeParticipantName(participant: PastMeetingParticipant): string {
-    return `${participant.first_name} ${participant.last_name}`.trim().toLowerCase();
+    const first = participant.first_name?.trim();
+    const last = participant.last_name?.trim();
+    if (!first && !last) {
+      return '';
+    }
+    return `${first ?? ''} ${last ?? ''}`.trim().toLowerCase();
   }
 }
