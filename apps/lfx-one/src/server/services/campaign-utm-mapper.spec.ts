@@ -234,6 +234,23 @@ describe('toUtmLookupResult capped', () => {
     expect(res.hs_utm).toBe('na-token');
   });
 
+  it.each([
+    ['a body with no capped flag', { campaigns: [] }],
+    ['a body with no campaigns array', { capped: false }],
+    ['a non-boolean capped', { campaigns: [], capped: 'no' }],
+    ['an empty object', {}],
+  ])('fails CLOSED on %s rather than reporting proven absence', (_label, body) => {
+    // proxyRequest types this body but does not check it. `{campaigns: []}` with no `capped`
+    // produced capped:undefined -> inconclusive:false -> proven absence, which is precisely what
+    // licenses the non-idempotent Create. Contract drift could then authorize a duplicate
+    // portal-wide campaign that cannot be removed from this UI.
+    const res = toUtmLookupResult(body as never, 'KubeCon NA 2026');
+
+    expect(res.found).toBe(false);
+    expect(res.inconclusive, 'a malformed envelope read as proven absence').toBe(true);
+    expect(res.capped).toBe(true);
+  });
+
   it('refuses two equally exact rivals, even when their raw scores differ', () => {
     // Two rivals differing only by trailing space are equally exact, and neither may be applied
     // over the other: the winner would be decided by HubSpot's creation order, the tie-break this

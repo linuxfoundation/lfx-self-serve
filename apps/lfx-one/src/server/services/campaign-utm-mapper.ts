@@ -129,6 +129,18 @@ function utmTokenOf(c: CampaignServiceHubSpotCampaign): string | null {
  * silently dropped.
  */
 export function toUtmLookupResult(payload: CampaignServiceHubSpotCampaigns, query: string): HubSpotUtmLookupResult {
+  // FAIL CLOSED on a malformed envelope. proxyRequest types this body but does not check it, so
+  // a 2xx carrying `{campaigns: []}` with no `capped` yielded `capped: undefined` and therefore
+  // `inconclusive: false` -- proven absence, which is exactly what licenses the non-idempotent
+  // Create. Contract drift or a rewritten body could authorize a duplicate portal-wide campaign
+  // nobody can delete.
+  //
+  // The legacy path already rejects a malformed search body (campaign-proxy.service.ts:203) and
+  // the create path validates its response; this is the same guard on the one envelope that
+  // still trusted its type.
+  if (!Array.isArray(payload?.campaigns) || typeof payload?.capped !== 'boolean') {
+    return { found: false, hs_utm: null, campaign_name: '', all_matches: [], capped: true, inconclusive: true };
+  }
   const scored = payload.campaigns
     .map((c) => ({ campaign: c, score: scoreCampaignName(c.name, query) }))
     .filter((s) => s.score > 0)

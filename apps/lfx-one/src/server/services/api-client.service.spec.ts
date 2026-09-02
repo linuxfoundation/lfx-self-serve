@@ -69,3 +69,55 @@ describe('ApiClientService — transport failures are always classified', () => 
     expect(err.toResponse()['transport'], 'an upstream answer was marked as BFF transport').toBeUndefined();
   });
 });
+
+/**
+ * streamRequest carries its OWN copy of the transport classification, and the tests above drive
+ * only request(). A regression in the stream branches would drop the marker or recast an upstream
+ * 4xx without failing anything -- which is how the duplicated logic diverges silently.
+ */
+describe('ApiClientService.streamRequest — same classification, separate code path', () => {
+  afterEach(() => {
+    vi.unstubAllGlobals();
+  });
+
+  it.each([
+    ['a cause WITH a code', Object.assign(new TypeError('fetch failed'), { cause: { code: 'ECONNRESET' } })],
+    ['a cause with NO code', Object.assign(new TypeError('fetch failed'), { cause: {} })],
+    ['no cause at all', new TypeError('fetch failed')],
+  ])('wraps %s as a 503 carrying the transport marker', async (_label, thrown) => {
+    vi.stubGlobal(
+      'fetch',
+      vi.fn(() => Promise.reject(thrown))
+    );
+
+    const err = (await new ApiClientService({ retryAttempts: 1 })
+      .streamRequest('GET', 'https://example.invalid/x')
+      .catch((e: unknown) => e)) as MicroserviceError;
+
+    expect(err).toBeInstanceOf(MicroserviceError);
+    expect(err.statusCode).toBe(503);
+    expect(err.toResponse()['transport']).toBe(true);
+  });
+
+  it('does NOT recast a genuine upstream 4xx', async () => {
+    vi.stubGlobal(
+      'fetch',
+      vi.fn(() =>
+        Promise.resolve({
+          ok: false,
+          status: 403,
+          statusText: 'Forbidden',
+          headers: new Headers(),
+          text: () => Promise.resolve(JSON.stringify({ message: 'not your campaign' })),
+        })
+      )
+    );
+
+    const err = (await new ApiClientService({ retryAttempts: 1 })
+      .streamRequest('GET', 'https://example.invalid/x')
+      .catch((e: unknown) => e)) as MicroserviceError;
+
+    expect(err.statusCode, 'a real 403 was recast on the stream path').toBe(403);
+    expect(err.toResponse()['transport']).toBeUndefined();
+  });
+});
