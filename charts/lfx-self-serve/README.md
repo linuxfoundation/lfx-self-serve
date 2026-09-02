@@ -221,6 +221,13 @@ The other four flags in the table -- `..._DEMAND_GEN`, `..._INSIGHTS`, `..._KEYW
 independent moves, each with its own prerequisite noted in the table; nothing below applies to
 them.
 
+Every cutover flag in the table above is ON for `true`, `1`, `yes`, or `on` — trimmed and matched
+case-insensitively, so `"True"` and `" on "` also enable it. Every other value is OFF, including
+unset, empty, `0`, `false`, and any misspelling. Do not read "only `true` works" into that: an
+operator setting `yes` and expecting it to be ignored would route production traffic at
+campaign-service. The default-deny half is the deliberate part — a typo like `flase` is invisible
+in a values.yaml diff, so an unrecognised value has to fail towards the path already known to work.
+
 **This is a deploy constraint, not a merge one.** All four of the create-pipeline flags now
 default to `"true"` in this chart, and nothing in CI staggers them — a single rollout of this chart turns them all on at once, which
 is the failure mode each ordering note below exists to prevent. Stage it with per-release value
@@ -502,6 +509,23 @@ than producing a pod that silently bypasses the gateway. Declaring the key with 
 still fine: the container treats it as unset and the application resolves it to `LFX_V2_SERVICE`. A
 deployment that genuinely needs a direct address should drop the variable from that list in a
 reviewed chart commit — a values override is invisible to review, a chart change is not.
+
+`LFX_CUTOVER_CAMPAIGN_SERVICE_DEMAND_GEN` is a CAPABILITY flag, not a routing one, and that is
+why it is separate from the create-pipeline flags. They ask "should this go through
+campaign-service?"; it
+asks "does the campaign-service we are actually talking to understand `googleAdsConfig.channel`?"
+Those can be out of step, because the two services deploy independently.
+
+Turning it on against a campaign-service that predates LFXV2-3257 is the failure it exists to
+prevent, and that failure is SILENT. Go's JSON decoder ignores unknown keys, so an older service
+drops `channel` and builds its default SEARCH campaign instead: real budget, no keywords, and by
+its own documentation it "can never serve". Nothing errors — the job reports success, and the
+wrong campaign is discovered later in Google Ads with money already spent.
+
+There is no version probe because campaign-service exposes no version endpoint, and inferring
+support from a successful create is exactly the ambiguity that makes this dangerous. So the order
+is: deploy campaign-service with LFXV2-3257, confirm it, then set this. Left off, a Demand Gen
+create is refused with a message telling the user to select Search instead.
 
 #### Marketing Ops FGA Enforcement
 
