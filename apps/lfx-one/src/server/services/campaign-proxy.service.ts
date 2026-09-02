@@ -145,7 +145,13 @@ interface HubSpotUtmResult {
   /**
    * True when a match may exist that this result does not show, for ANY reason — the union of
    * `capped` and "HubSpot returned rows that the local scorer rejected". It is what a caller
-   * acts on; `capped` alone is the narrower claim that HubSpot truncated.
+   * acts on.
+   *
+   * `capped` is narrower but is NOT "HubSpot truncated", which an earlier version of this line
+   * claimed: it is also set when `total` is absent, non-finite, negative, or disagrees with the
+   * returned count. The meaning is COMPLETENESS UNPROVEN, and the wire contract and UI both rely
+   * on that broader reading -- documenting it as truncation invites a caller to state a fact the
+   * response never established.
    */
   inconclusive: boolean;
 }

@@ -336,7 +336,7 @@ endpoints respond in the target environment before flipping it on.
 `hsHeaders()`, which throws whenever `HUBSPOT_ACCESS_TOKEN` is absent — and it is, by design,
 since the credential moved into campaign-service's encrypted connection store.
 
-**Two behaviours change on both paths, including with this flag off** — a default-off deployment
+**Three behaviours change on both paths, including with this flag off** — a default-off deployment
 of this change is not inert.
 
 1. The legacy path **fabricated** a UTM token (`<id>-<name>`) whenever HubSpot had none, so a
@@ -350,6 +350,11 @@ of this change is not inert.
    now report whether the search was **capped**. The two go together: `capped` is what suppresses
    the create offer, and at a limit of 10 nearly every search on a busy portal would report
    capped, leaving an operator unable to create anything.
+3. Neither path auto-applies a UTM token when the top two candidates **tie on score**. The
+   shared scorer compares normalised names, so campaigns differing only by case or whitespace
+   now score the same — and `sort` is stable, so the winner would otherwise be whichever row
+   HubSpot happened to return first, which says nothing about relevance. Both paths return the
+   candidates for an operator to pick from instead.
 
 The create path writes into a **portal-wide** namespace: the campaign is visible to everyone
 working in the HubSpot account the project is connected to, whatever project scoped the request,
