@@ -858,7 +858,7 @@ export class PlanningTabComponent implements OnInit {
           if (status === 400 || status === 404) {
             // Nothing was created: keep the offer so the operator can act on the message.
             this.hsUnconfirmed.set(false);
-            this.hsStatus.set(this.createFailureMessage(status));
+            this.hsStatus.set(this.createFailureMessage(status, err));
             return;
           }
           // Unconfirmed — including any status this code cannot classify, because a
@@ -1440,7 +1440,22 @@ export class PlanningTabComponent implements OnInit {
    * of a 2xx whose campaign already exists, so it is unconfirmed rather than proof. The arm that
    * used to handle it here was removed with it rather than left as unreachable code.
    */
-  private createFailureMessage(status: number): string {
+  private createFailureMessage(status: number, err?: unknown): string {
+    // UPSTREAM'S OWN WORDS WIN on a 400. campaign-service uses 400 for 39 distinct reasons --
+    // "a campaign creation requires a non-empty name", yes, but also "invalid credentials
+    // payload" and a refused event URL. Flattening all of them to "check the name and try again"
+    // sends an operator to retype an input that cannot fix a credential or connection problem.
+    //
+    // Read from `error.error`, which is where BaseApiError.toResponse puts the operator-facing
+    // text (base.error.ts:78); the hard-coded prompt below remains the fallback for a response
+    // that carries none.
+    if (status === 400) {
+      const body = (err as { error?: { error?: string; message?: string } | string } | undefined)?.error;
+      const upstream = typeof body === 'string' ? body : body?.error || body?.message;
+      if (typeof upstream === 'string' && upstream.trim() !== '') {
+        return upstream;
+      }
+    }
     if (status === 404) {
       return 'No HubSpot connection is configured for this project — connect HubSpot before creating a campaign.';
     }

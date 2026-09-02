@@ -1550,6 +1550,30 @@ describe('PlanningTabComponent — HubSpot UTM states', () => {
     expect(String(instance()['hsStatus']())).toContain('Created in HubSpot');
   });
 
+  it('preserves upstream text on a 400 instead of always saying "check the name"', () => {
+    // campaign-service uses 400 for 39 distinct reasons, including "invalid credentials payload"
+    // and a refused event URL -- not only name validation. Flattening them all to "check the
+    // name and try again" sends an operator to retype an input that cannot fix a credential
+    // problem.
+    runLookup({ found: false, hs_utm: null, campaign_name: '', all_matches: [], capped: false, inconclusive: false }, 'KubeCon NA 2026');
+    create.mockReturnValue(throwError(() => ({ status: 400, error: { error: 'invalid credentials payload' } })));
+    (fixture.componentInstance as unknown as { createInHubSpot(): void }).createInHubSpot();
+    fixture.detectChanges();
+
+    expect(String(instance()['hsStatus']())).toContain('invalid credentials payload');
+    expect(String(instance()['hsStatus']()), 'buried the real reason under a name prompt').not.toContain('check the name');
+  });
+
+  it('falls back to the name prompt when a 400 carries no upstream text', () => {
+    // The hard-coded copy is still right when there is nothing better to say.
+    runLookup({ found: false, hs_utm: null, campaign_name: '', all_matches: [], capped: false, inconclusive: false }, 'KubeCon NA 2026');
+    create.mockReturnValue(throwError(() => ({ status: 400 })));
+    (fixture.componentInstance as unknown as { createInHubSpot(): void }).createInHubSpot();
+    fixture.detectChanges();
+
+    expect(String(instance()['hsStatus']())).toContain('check the name');
+  });
+
   it('keeps re-check available when the campaign is found but still tokenless', () => {
     // After a create returns without hs_utm, the first re-check can legitimately FIND the
     // campaign before HubSpot has assigned its token. The lookup clears hsUnconfirmed when it

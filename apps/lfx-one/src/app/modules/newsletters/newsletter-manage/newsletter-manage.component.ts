@@ -1079,7 +1079,13 @@ export class NewsletterManageComponent {
     // (MicroserviceError.toResponse), so only a response the service itself formed has one. That
     // is the property being tested, and it is why this is not another allowlist: nothing about
     // the shape of a gateway response can satisfy it.
-    if (err.status === 503 && isUpstreamAnswer(err)) {
+    // The SPECIFIC reason, not merely "the service answered". isUpstreamAnswer establishes that
+    // newsletter-service formed the response -- necessary, but not sufficient: the service can
+    // also answer 503 because a dependency of ITS own is briefly down, which is a transient
+    // outage rather than "scheduling is switched off in this environment". Only
+    // `provider_unavailable` carries that meaning, and steering someone to Send now on anything
+    // else sends a newsletter immediately that they had deliberately scheduled.
+    if (err.status === 503 && isUpstreamAnswer(err) && upstreamCode === 'provider_unavailable') {
       this.messageService.add({
         severity: 'error',
         summary: 'Scheduling unavailable',

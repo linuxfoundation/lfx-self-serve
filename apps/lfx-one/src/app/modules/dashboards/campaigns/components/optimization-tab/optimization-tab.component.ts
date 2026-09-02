@@ -978,9 +978,16 @@ export class OptimizationTabComponent implements OnInit {
    * reached the platform. 0 (network), 408 (timeout) and 5xx are all unconfirmed.
    */
   private toTransportOutcome(err: unknown): KeywordActionOutcome {
-    const e = err as { status?: number; error?: { message?: string }; message?: string };
+    const e = err as { status?: number; error?: { error?: string; message?: string } | string; message?: string };
     const status = typeof e?.status === 'number' ? e.status : 0;
-    const message = e?.error?.message || e?.message || 'Action failed';
+    // `error.error` FIRST: BaseApiError.toResponse serialises the operator-facing text as
+    // `{ error: string }`, not `{ message: string }` (base.error.ts:78). Reading only `.message`
+    // dropped every actionable 4xx -- "adGroupId must be numeric", a permission refusal -- and
+    // rendered Angular's generic "Http failure response for <url>" in the row instead, which
+    // tells the operator nothing they can act on. `.message` and a plain-string body are kept as
+    // fallbacks so a non-BaseApiError shape still surfaces something.
+    const body = e?.error;
+    const message = (typeof body === 'string' ? body : body?.error || body?.message) || e?.message || 'Action failed';
     const definitelyRefused = status >= 400 && status < 500 && status !== 408;
     if (definitelyRefused) {
       return { success: false, message, state: 'failed' };
