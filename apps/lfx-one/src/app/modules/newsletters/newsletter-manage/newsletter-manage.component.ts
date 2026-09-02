@@ -3,6 +3,8 @@
 
 import { isPlatformBrowser } from '@angular/common';
 import { HttpErrorResponse } from '@angular/common/http';
+
+import { isUpstreamAnswer } from '../../../shared/utils/upstream-error.utils';
 import { Component, computed, DestroyRef, effect, inject, Injector, PLATFORM_ID, signal, Signal } from '@angular/core';
 import { takeUntilDestroyed, toObservable, toSignal } from '@angular/core/rxjs-interop';
 import { FormControl, FormGroup, ReactiveFormsModule } from '@angular/forms';
@@ -1065,15 +1067,19 @@ export class NewsletterManageComponent {
     // newsletter immediately that they had deliberately scheduled for later.
     //
     // The transport codes travel to the browser on `error.code` (BaseApiError.toResponse), so
-    // the two are separable: a deliberate upstream 503 carries none of them.
-    // The SERVER decides this, not a code allowlist here. My first attempt matched syscall codes
-    // and was wrong three ways: an ingress 503 maps to SERVICE_UNAVAILABLE (identical to a
-    // deliberate disabled-feature reply), ETIMEDOUT and EPIPE matched nothing, and TIMEOUT is
-    // emitted as 408 so it never reached this branch at all. BaseApiError.toResponse now sets
-    // `transport: true` whenever the BFF raised the error itself, which is the only thing that
-    // separates the two reliably.
-    const isTransport = err?.error?.transport === true;
-    if (err.status === 503 && !isTransport) {
+    // POSITIVE proof required, not the absence of a transport marker.
+    //
+    // "Scheduling is switched off here" is a claim about the newsletter SERVICE, so only that
+    // service may make it. Three different things arrive as a bare 503 and only one of them
+    // means that: the deliberate reply, a BFF transport failure (`transport: true`), and an
+    // ingress/gateway 503 that never reached the BFF at all and therefore carries NEITHER
+    // marker. Branching on `!transport` put that third case into the disabled-feature arm.
+    //
+    // `upstreamCode` is populated from the upstream body's own `error` field
+    // (MicroserviceError.toResponse), so only a response the service itself formed has one. That
+    // is the property being tested, and it is why this is not another allowlist: nothing about
+    // the shape of a gateway response can satisfy it.
+    if (err.status === 503 && isUpstreamAnswer(err)) {
       this.messageService.add({
         severity: 'error',
         summary: 'Scheduling unavailable',
@@ -1082,7 +1088,10 @@ export class NewsletterManageComponent {
       });
       return;
     }
-    if (err.status === 503 && isTransport) {
+    // Every OTHER 503 -- BFF transport, ingress, gateway -- says only that the request did not
+    // complete. Same message for all of them, because the operator's next step is identical and
+    // none of them licenses "the feature is off".
+    if (err.status === 503) {
       // Says what is actually known: the request did not complete. Deliberately does NOT steer
       // toward Send now -- the schedule may or may not have been armed, and an immediate send on
       // top of an armed schedule is the one outcome that cannot be undone.

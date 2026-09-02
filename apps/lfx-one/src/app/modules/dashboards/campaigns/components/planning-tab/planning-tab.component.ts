@@ -10,7 +10,7 @@ import { InputTextComponent } from '@components/input-text/input-text.component'
 import { CAMPAIGN_GOALS, CAMPAIGN_PLATFORMS } from '@lfx-one/shared/constants';
 import { CampaignService } from '@services/campaign.service';
 import { ProjectContextService } from '@services/project-context.service';
-import { catchError, combineLatest, debounceTime, distinctUntilChanged, filter, map, of, skip, Subject, Subscription, switchMap } from 'rxjs';
+import { catchError, combineLatest, debounceTime, distinctUntilChanged, filter, finalize, map, of, skip, Subject, Subscription, switchMap } from 'rxjs';
 
 import type {
   CampaignBriefLoadResult,
@@ -710,7 +710,14 @@ export class PlanningTabComponent implements OnInit {
     const generation = ++this.createGeneration;
     this.campaignService
       .createHubSpotUtm(capturedFoundation, capturedEvent)
-      .pipe(takeUntilDestroyed(this.destroyRef))
+      .pipe(
+        takeUntilDestroyed(this.destroyRef),
+        // finalize, not the two arms, so the count cannot leak. next/error cover every outcome
+        // this service produces today, but a completion without emission would leave the create
+        // counted forever and permanently withdraw the offer -- a worse failure than the
+        // duplicate it guards against, because nothing would recover it short of a reload.
+        finalize(() => this.hsCreatesInFlight.update((n) => Math.max(0, n - 1)))
+      )
       .subscribe({
         next: (result) => {
           // Released before the render guard, but only by the create that still owns the flag.
@@ -718,9 +725,6 @@ export class PlanningTabComponent implements OnInit {
           // frozen on the new event's panel forever; ownership matters because releasing
           // unconditionally lets an OLDER create re-enable the button while a newer one is
           // still running, which is how a duplicate gets made.
-          // Unconditional, outside the ownership check: the count tracks DISPATCHES, and a
-          // superseded create still settled — leaving it counted blocks the offer forever.
-          this.hsCreatesInFlight.update((n) => Math.max(0, n - 1));
           if (this.createIsCurrent(generation)) {
             this.hsCreating.set(false);
           }
@@ -765,9 +769,6 @@ export class PlanningTabComponent implements OnInit {
           }
         },
         error: (err: unknown) => {
-          // Unconditional, outside the ownership check: the count tracks DISPATCHES, and a
-          // superseded create still settled — leaving it counted blocks the offer forever.
-          this.hsCreatesInFlight.update((n) => Math.max(0, n - 1));
           if (this.createIsCurrent(generation)) {
             this.hsCreating.set(false);
           }

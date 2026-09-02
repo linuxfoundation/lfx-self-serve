@@ -268,7 +268,7 @@ const UPSTREAM_UNCONFIRMED_MARKER = 'are unconfirmed';
  * and those are the errors that carry `originalError` or the TIMEOUT code.
  */
 function upstreamAnswered(error: unknown): boolean {
-  const e = error as { originalError?: unknown; code?: unknown; errorBody?: unknown } | null | undefined;
+  const e = error as { originalError?: unknown; code?: unknown; errorBody?: unknown; statusCode?: unknown } | null | undefined;
   // A BFF-raised failure is never an answer, however it is spelled.
   if (e?.originalError !== undefined || e?.code === 'TIMEOUT') {
     return false;
@@ -284,8 +284,21 @@ function upstreamAnswered(error: unknown): boolean {
   // (internal/service/brief_keyword_actions.go), which executeRequest parses into errorBody. A
   // gateway sends HTML or nothing, so the parse leaves errorBody undefined. That parsed body is
   // the only evidence here that the application itself formed the response.
+  // A parsed BODY is not enough on its own: a gateway commonly emits JSON such as
+  // `{ message: 'Service Unavailable' }`, which satisfies any is-there-a-message test.
+  //
+  // What a gateway cannot accidentally produce is campaign-service's OWN error envelope, where
+  // `code` is the numeric HTTP status as a STRING -- `{"code":"503","message":...}`. That holds
+  // across all 185 error sites in internal/service (verified: every Code literal is numeric,
+  // none is a word), and it is the narrowest property that distinguishes the two.
   const body = e?.errorBody as { code?: unknown; message?: unknown } | undefined;
-  return typeof body?.message === 'string' && body.message !== '';
+  if (typeof body?.code !== 'string' || !/^[1-5][0-9]{2}$/.test(body.code)) {
+    return false;
+  }
+  // And it must AGREE with the status actually received, so a relayed body cannot vouch for a
+  // response the gateway rewrote.
+  const status = typeof e?.statusCode === 'number' ? e.statusCode : 0;
+  return body.code === String(status);
 }
 
 /**
