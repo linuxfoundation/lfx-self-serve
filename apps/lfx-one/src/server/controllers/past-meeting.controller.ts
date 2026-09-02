@@ -111,20 +111,7 @@ export class PastMeetingController {
       }
 
       const meeting = await this.meetingService.getPastMeetingById(req, uid);
-
-      if (req.oidc?.isAuthenticated()) {
-        try {
-          const meetingWithAccess = await this.accessCheckService.addAccessToResource(
-            req,
-            { ...meeting, id: meeting.meeting_and_occurrence_id ?? uid },
-            'v1_past_meeting',
-            'organizer'
-          );
-          meeting.organizer = meetingWithAccess.organizer ?? false;
-        } catch {
-          meeting.organizer = false;
-        }
-      }
+      meeting.organizer = await this.isPastMeetingOrganizer(req, meeting, uid);
 
       const counts = await this.addParticipantsCount(req, uid);
       meeting.individual_registrants_count = counts.individual_registrants_count;
@@ -340,21 +327,7 @@ export class PastMeetingController {
       }
 
       const pastMeeting = await this.meetingService.getPastMeetingById(req, uid);
-
-      let isOrganizer = false;
-      if (req.oidc?.isAuthenticated()) {
-        try {
-          const meetingWithAccess = await this.accessCheckService.addAccessToResource(
-            req,
-            { ...pastMeeting, id: pastMeeting.meeting_and_occurrence_id ?? uid },
-            'v1_past_meeting',
-            'organizer'
-          );
-          isOrganizer = meetingWithAccess.organizer ?? false;
-        } catch {
-          isOrganizer = false;
-        }
-      }
+      const isOrganizer = await this.isPastMeetingOrganizer(req, pastMeeting, uid);
 
       if (!isOrganizer) {
         return next(
@@ -993,6 +966,28 @@ export class PastMeetingController {
         participant_count: 0,
         attended_count: 0,
       };
+    }
+  }
+
+  /**
+   * Resolves whether the requesting user is the organizer of a past meeting. Unauthenticated
+   * requests and access-check failures both default to false (fail closed).
+   */
+  private async isPastMeetingOrganizer(req: Request, pastMeeting: PastMeeting, uid: string): Promise<boolean> {
+    if (!req.oidc?.isAuthenticated()) {
+      return false;
+    }
+
+    try {
+      const meetingWithAccess = await this.accessCheckService.addAccessToResource(
+        req,
+        { ...pastMeeting, id: pastMeeting.meeting_and_occurrence_id ?? uid },
+        'v1_past_meeting',
+        'organizer'
+      );
+      return meetingWithAccess.organizer ?? false;
+    } catch {
+      return false;
     }
   }
 }
