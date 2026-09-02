@@ -1064,6 +1064,19 @@ export interface ITXUpdatePastMeetingParticipantRequest {
 }
 
 /**
+ * A single Zoom join/leave interval for an attendee, as returned by the ITX past-meeting
+ * participant write endpoints
+ */
+export interface ITXParticipantSession {
+  /** Session join timestamp (RFC3339) */
+  join_time?: string;
+  /** Session leave timestamp (RFC3339) */
+  leave_time?: string;
+  /** Session duration in seconds */
+  duration?: number;
+}
+
+/**
  * Response shape from the ITX past-meeting participant create/update endpoints
  * @description Unified invitee/attendee view returned by the write endpoints — distinct from
  *   {@link PastMeetingParticipant} (the read-model projection indexed by the query service),
@@ -1100,6 +1113,14 @@ export interface ITXPastMeetingParticipantResult {
   org_is_project_member?: boolean;
   /** URL to profile picture */
   avatar_url?: string;
+  /** Committee UID (if the participant is a committee member) */
+  committee_id?: string;
+  /** Committee role (e.g. "Member", "Chair") */
+  committee_role?: string;
+  /** Whether the participant is a committee member */
+  is_committee_member?: boolean;
+  /** Committee voting status */
+  committee_voting_status?: string;
   /** Whether the participant was invited/registered to this past meeting */
   is_invited?: boolean;
   /** Whether the participant attended this past meeting */
@@ -1116,6 +1137,10 @@ export interface ITXPastMeetingParticipantResult {
   zoom_user_name?: string;
   /** Full name of the invitee the attendee was matched to (attendee only) */
   mapped_invitee_name?: string;
+  /** Zoom join/leave sessions for this attendee (attendee only) */
+  sessions?: ITXParticipantSession[];
+  /** Average attendance percentage across the series (attendee only) */
+  average_attendance?: number;
   /** Creation timestamp (RFC3339) */
   created_at?: string;
   /** Creator user info */
