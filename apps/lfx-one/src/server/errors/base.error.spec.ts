@@ -17,7 +17,7 @@ import { MicroserviceError } from './microservice.error';
  */
 describe('BaseApiError.toResponse — the transport marker', () => {
   it('marks an error the BFF raised itself', () => {
-    const err = new MicroserviceError('Request failed: fetch failed', 503, 'ECONNRESET', { originalError: new Error('fetch failed') });
+    const err = new MicroserviceError('Request failed: fetch failed', 503, 'ECONNRESET', { originalError: new Error('fetch failed'), transportFailure: true });
 
     expect(err.toResponse()['transport']).toBe(true);
   });
@@ -32,10 +32,23 @@ describe('BaseApiError.toResponse — the transport marker', () => {
 
   it('does not leak the underlying error object', () => {
     // The FACT of a transport failure travels; its internals must not.
-    const err = new MicroserviceError('Request failed', 503, 'ECONNRESET', { originalError: new Error('connect ECONNREFUSED 10.0.0.1:443') });
+    const err = new MicroserviceError('Request failed', 503, 'ECONNRESET', {
+      originalError: new Error('connect ECONNREFUSED 10.0.0.1:443'),
+      transportFailure: true,
+    });
     const body = JSON.stringify(err.toResponse());
 
     expect(body).not.toContain('10.0.0.1');
     expect(body).not.toContain('originalError');
+  });
+
+  it('does NOT mark a service fault that merely captured a caught error', () => {
+    // Seven non-transport sites attach a caught error to `originalError` (committee-access,
+    // org-lens x2, guild, snowflake x2, project). Deriving the marker from its presence marked
+    // every one of their 5xx responses as a lost connection, so a client would have read a
+    // genuine service fault as "our transport broke". The throwing site declares it now.
+    const err = new MicroserviceError('Snowflake query failed', 500, 'INTERNAL_ERROR', { originalError: new Error('SQL compilation error') });
+
+    expect(err.toResponse()['transport'], 'a service fault was marked as transport').toBeUndefined();
   });
 });

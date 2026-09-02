@@ -1489,7 +1489,7 @@ describe('PlanningTabComponent — HubSpot UTM states', () => {
     expect(instance()['hsUtm'](), "foundation A's token survived into foundation B").toBe('foundation-b-token');
   });
 
-  it('withholds Create for the same event under a different foundation, and offers re-check', () => {
+  it('offers Create again for the same event under a different foundation', () => {
     // This ASSERTED THE OPPOSITE until Copilot pointed out the premise was false. The old
     // comment read "a different foundation is a different HubSpot portal" -- but the namespace
     // is the PORTAL, and two projects pointing at one portal is common under the LF umbrella
@@ -1513,9 +1513,12 @@ describe('PlanningTabComponent — HubSpot UTM states', () => {
     runLookup({ found: false, hs_utm: null, campaign_name: '', all_matches: [], capped: false, inconclusive: false }, 'KubeCon NA 2026');
     fixture.detectChanges();
 
-    expect(instance()['hsCreateBlocked'](), 'offered Create for an event already created, possibly on the same portal').toBe(true);
-    // And it is recoverable rather than a dead end.
-    expect(instance()['hsUnconfirmed'](), 'withheld Create with no re-check to recover through').toBe(true);
+    // dealako, round 4 (blocking): keyed by event alone, this withheld Create PERMANENTLY for
+    // that name under every other portal, above a false "Created in HubSpot" status -- and the
+    // re-check reads the new portal, never finds it, and cannot clear the record. The key now
+    // carries the foundation, so the suppression applies only where the create was made.
+    expect(instance()['hsCreateBlocked'](), 'Create stayed withheld under a portal where the campaign may not exist').toBe(false);
+    expect(instance()['hsNotFound'](), 'should be a normal not-found under the new portal').toBe(true);
   });
 
   it('does not re-offer Create after a superseded create already succeeded', () => {

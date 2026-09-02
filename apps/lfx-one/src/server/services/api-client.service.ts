@@ -123,6 +123,7 @@ export class ApiClientService {
             // originalError so the response carries `transport: true`: a timeout is BFF-raised
             // like any other transport failure, and a consumer must not have to special-case 408.
             originalError: error,
+            transportFailure: true,
             operation: 'api_client_stream_timeout',
             service: 'api_client_service',
             path: url,
@@ -142,6 +143,7 @@ export class ApiClientService {
             service: 'api_client_service',
             path: url,
             originalError: error,
+            transportFailure: true,
           });
         }
 
@@ -151,6 +153,7 @@ export class ApiClientService {
           service: 'api_client_service',
           path: url,
           originalError: error,
+          transportFailure: true,
         });
       }
       throw error;
@@ -333,6 +336,7 @@ export class ApiClientService {
             // originalError so the response carries `transport: true`: a timeout is BFF-raised
             // like any other transport failure, and a consumer must not have to special-case 408.
             originalError: error,
+            transportFailure: true,
             operation: options.binary ? 'api_client_binary_timeout' : 'api_client_timeout',
             service: 'api_client_service',
             path: url,
@@ -348,6 +352,7 @@ export class ApiClientService {
             service: 'api_client_service',
             path: url,
             originalError: error,
+            transportFailure: true,
           });
         }
 
@@ -362,6 +367,7 @@ export class ApiClientService {
           service: 'api_client_service',
           path: url,
           originalError: error,
+          transportFailure: true,
         });
       }
 

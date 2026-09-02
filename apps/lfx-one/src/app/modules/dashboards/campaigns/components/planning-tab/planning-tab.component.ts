@@ -184,7 +184,23 @@ export class PlanningTabComponent implements OnInit {
    * re-offer Create for an event that now has one, and two projects on the same HubSpot portal
    * share that namespace.
    *
-   * Keyed by EVENT NAME ALONE, not by foundation.
+   * Keyed `foundation|event`, and NOT cleared on a foundation switch. Both halves are load-
+   * bearing, and I got each of them wrong once:
+   *
+   *   - keyed by EVENT ALONE, a create under portal A withheld Create for that event name under
+   *     every other portal, above a false "Created in HubSpot" status. The re-check reads the new
+   *     portal, never finds it, and cannot clear the record -- unrecoverable (dealako, round 4).
+   *   - CLEARED on switch, the round-trip case reopens: dispatch under A, switch to B, the
+   *     superseded create succeeds, switch back to A, and the record is gone -- so Create is
+   *     offered for a campaign that exists.
+   *
+   * Keying by foundation and retaining across switches satisfies both: the record only ever
+   * suppresses Create under the foundation the create was made from, and returning there still
+   * finds it. Two foundations sharing one portal is the residual gap, and it is covered by the
+   * in-flight guard for the window the duplicate actually occurs in.
+   *
+   * (Original note, still true: no lookup or create response carries a portal id, so keying on
+   * the portal itself is not available to this component.)
    *
    * An earlier version keyed on `foundation|event`, justified as "a different foundation is a
    * different portal". That premise is false, and this repo says so a few files over: HubSpot's
@@ -208,7 +224,9 @@ export class PlanningTabComponent implements OnInit {
    * hsCreateBlocked can depend on it honestly.
    */
   private readonly currentEvent = signal('');
-  protected readonly hsCreateBlocked = computed(() => this.hsCreating() || this.hsCreatesInFlight() > 0 || this.hsCreatedEvents().has(this.currentEvent()));
+  protected readonly hsCreateBlocked = computed(
+    () => this.hsCreating() || this.hsCreatesInFlight() > 0 || this.hsCreatedEvents().has(`${this.activeFoundationSlug()}|${this.currentEvent()}`)
+  );
   protected readonly hsStatus = signal<string | null>(null);
   protected readonly hsNotFound = signal(false);
   /**
@@ -538,6 +556,9 @@ export class PlanningTabComponent implements OnInit {
       this.hsStatus.set(null);
       this.hsSearching.set(false);
       this.hsCreating.set(false);
+      // hsCreatedEvents is NOT cleared here, and is keyed foundation|event so it does not need
+      // to be. See its own doc: clearing lost the round-trip protection, while an event-only key
+      // withheld Create permanently under every other portal.
       // INVALIDATE anything already in flight. Clearing hsCreating frees the button but leaves
       // an in-flight create still matching createIsCurrent, so after an A -> B -> A switch its
       // answer renders on a panel it was never asked about — and a stale not-found re-offers a
@@ -779,7 +800,7 @@ export class PlanningTabComponent implements OnInit {
           // real campaign upstream; discarding its RESULT is right, but forgetting it happened
           // let the panel re-offer Create for an event that now has one.
           if (result?.created) {
-            this.hsCreatedEvents.update((seen) => new Set(seen).add(capturedEvent));
+            this.hsCreatedEvents.update((seen) => new Set(seen).add(`${capturedFoundation}|${capturedEvent}`));
           }
           // Generation first, then panelStillShows — the same pair the lookup arms use. An
           // A -> B -> A round trip makes panelStillShows match a SUPERSEDED create again, and
@@ -1548,7 +1569,7 @@ export class PlanningTabComponent implements OnInit {
             // before HubSpot has assigned its token. Leaving the flag down removed the only
             // control that settles it, stranding the operator until a reload.
             this.hsUnconfirmed.set(true);
-          } else if (this.hsCreatedEvents().has(eventName)) {
+          } else if (this.hsCreatedEvents().has(`${capturedFoundation}|${eventName}`)) {
             // A create ALREADY SUCCEEDED for this event under this foundation, and the lookup
             // still cannot see it -- HubSpot has not indexed it yet.
             //
