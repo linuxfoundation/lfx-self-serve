@@ -489,6 +489,9 @@ describe('WeeklyBriefCardComponent — Current activity tally (GH-1922)', () => 
     callerRating: WeeklyBriefRating | null = null,
     options: { truncated?: boolean } = {}
   ): WeeklyBriefCurrentResponse {
+    if (activityRefs === null && options.truncated) {
+      throw new Error('truncated has no meaning when current_activity is omitted (activityRefs === null)');
+    }
     return {
       brief: {
         uid: 'brief-1',
