@@ -65,7 +65,7 @@ function icla(overrides: Partial<EasyClaMyCla> = {}): EasyClaMyCla {
     status: 'valid',
     pdfAvailable: true,
     claGroupID: 'cg-1',
-    signedOn: '2022-01-01',
+    signedOn: '2022-01-01T18:40:42Z',
     ...overrides,
   };
 }
@@ -80,7 +80,7 @@ function ecla(overrides: Partial<EasyClaMyCla> = {}): EasyClaMyCla {
     status: 'valid',
     companyName: 'Acme',
     claGroupID: 'cg-2',
-    signedOn: '2022-02-02',
+    signedOn: '2022-02-02T18:40:42Z',
     ...overrides,
   };
 }
