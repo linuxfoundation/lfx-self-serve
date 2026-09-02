@@ -35,7 +35,11 @@ vi.mock('@lfx-one/shared/utils', () => ({
   resolveMeetingOwner: vi.fn(() => null),
 }));
 
-vi.mock('../utils/auth-helper', () => ({ getEffectiveEmail: getEffectiveEmailMock }));
+vi.mock('../utils/auth-helper', () => ({
+  getEffectiveEmail: getEffectiveEmailMock,
+  getEffectiveUsername: vi.fn(),
+  getUsernameFromAuth: vi.fn(),
+}));
 vi.mock('../utils/m2m-token.util', () => ({ generateM2MToken: generateM2MTokenMock }));
 vi.mock('../helpers/committee-v1-mapping.helper', () => ({ resolveCommitteeV2UidsToV1Ids: vi.fn() }));
 // Keep the real host-key gate (isWithinHostKeyWindow + applyOrganizerAndHostKeyResult); stub
@@ -218,6 +222,22 @@ describe('MeetingController.getMeetingById host-key gating', () => {
     expect(payload.host_key).toBeUndefined();
     expect(payload.can_view_host_key).toBe(false);
   });
+
+  // GH-1731: registrant counts removed from this hot path — the roster read here existed only to
+  // derive two integers with no remaining consumer once the join page holds its own roster.
+  it('issues zero registrant-roster queries and carries no registrant count fields on the response', async () => {
+    meetingSvc.getMeetingById.mockResolvedValue(buildMeeting({ organizer: false }));
+    const res = buildRes();
+    const next = vi.fn();
+
+    await controller.getMeetingById(buildReq({}), res, next);
+
+    expect(next).not.toHaveBeenCalled();
+    expect(meetingSvc.getMeetingRegistrants).not.toHaveBeenCalled();
+    const payload = res.json.mock.calls[0][0];
+    expect(payload.individual_registrants_count).toBeUndefined();
+    expect(payload.committee_members_count).toBeUndefined();
+  });
 });
 
 // getMyMeetingRegistrants: the gate check (getMeetingRegistrantsByEmail) and the meeting fetch
@@ -250,7 +270,9 @@ describe('MeetingController.getMyMeetingRegistrants', () => {
 
     await controller.getMyMeetingRegistrants(buildRegistrantsReq(), res, next);
 
-    expect(meetingSvc.getMeetingRegistrants).toHaveBeenCalledWith(expect.anything(), MEETING_UID, false, undefined, false, undefined, {
+    // failOnPartial=true: the join page treats this roster's length as an authoritative
+    // denominator (GH-1731), so a partial page fetch must surface as an error.
+    expect(meetingSvc.getMeetingRegistrants).toHaveBeenCalledWith(expect.anything(), MEETING_UID, false, undefined, true, undefined, {
       bearerToken: M2M_TOKEN,
     });
     expect(res.json).toHaveBeenCalledWith([{ uid: 'r1' }]);
@@ -310,7 +332,7 @@ describe('MeetingController.getMyMeetingRegistrants', () => {
     // The gate check ran under the M2M token, never the caller's own token.
     expect(meetingSvc.getMeetingRegistrantsByEmail).toHaveBeenCalledWith(expect.anything(), MEETING_UID, 'user@example.com', M2M_TOKEN);
     // The roster fetch carried the M2M token via options, not by mutating req.bearerToken.
-    expect(meetingSvc.getMeetingRegistrants).toHaveBeenCalledWith(expect.anything(), MEETING_UID, false, undefined, false, undefined, {
+    expect(meetingSvc.getMeetingRegistrants).toHaveBeenCalledWith(expect.anything(), MEETING_UID, false, undefined, true, undefined, {
       bearerToken: M2M_TOKEN,
     });
     // req.bearerToken was never swapped to the M2M token at any point the caller's own token was needed.

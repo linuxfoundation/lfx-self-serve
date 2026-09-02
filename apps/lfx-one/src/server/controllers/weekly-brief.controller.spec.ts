@@ -24,19 +24,28 @@ const { weeklyBriefSvc, assertCommitteeRead, assertCommitteeWrite } = vi.hoisted
 vi.mock('../helpers/committee-read-access.helper', () => ({ assertCommitteeRead }));
 vi.mock('../helpers/committee-write-access.helper', () => ({ assertCommitteeWrite }));
 
-// The `@lfx-one/shared/*` alias isn't wired into the server-side vitest config —
-// mocked defensively even though this controller's usage is type-only (matches
-// committee.controller.spec.ts's convention).
-vi.mock('@lfx-one/shared/interfaces', () => ({}));
-// `constants` is a real runtime import here (WEEKLY_BRIEF_TEXT_MAX_LENGTH), unlike
-// `interfaces` above — must be mocked or the real module load re-triggers the
-// Angular JIT-compilation failure this file's mocks otherwise avoid.
-vi.mock('@lfx-one/shared/constants', () => ({ WEEKLY_BRIEF_TEXT_MAX_LENGTH: 20_000 }));
+// `@lfx-one/shared` (the whole scope, not just `constants`/`interfaces`) IS wired into the
+// server-side vitest config (see vitest.config.ts's `resolve.alias`), so both barrels below are
+// real, unmocked modules loaded via `importOriginal` — not stubs. Kept as explicit `vi.mock(...,
+// importOriginal)` calls rather than left unmocked outright only so a future addition to this file
+// that genuinely needs a stub has an obvious place to add one — the same `importOriginal` idiom
+// `meeting.controller.spec.ts` already establishes for `constants`/`enums`/`interfaces` (this file
+// only needs two of those three; `utils` below is a genuine stub, not this same idiom).
+vi.mock('@lfx-one/shared/interfaces', async (importOriginal) => importOriginal());
+vi.mock('@lfx-one/shared/constants', async (importOriginal) => importOriginal());
+// validation.helper.ts's other exports (unrelated to getStringQueryParam/validateUidParameter)
+// import `@lfx-one/shared/utils` for `resolvePeriodRange`, which fails to JIT-compile outside an
+// Angular test bed — see validation.helper.spec.ts's own header comment for the full mechanism.
+vi.mock('@lfx-one/shared/utils', () => ({}));
 
-// validation.helper.ts pulls in @lfx-one/shared/constants + /utils for functions this
-// controller never calls (only validateUidParameter is used) — mock the whole module
-// rather than let those unrelated imports execute (matches committee.controller.spec.ts).
-vi.mock('../helpers/validation.helper', () => ({
+// Real getStringQueryParam (importOriginal), not a hand-copy — validation.helper.spec.ts already
+// proves the module loads once @lfx-one/shared/utils is stubbed, so there's no reason for this
+// spec's includeCurrentActivity tests to exercise a re-implementation that could silently drift
+// from what's actually shipped. validateUidParameter stays a custom stub — this controller's own
+// use of it needs no real upstream-shaped validation, just the has-a-uid gate the real one buries
+// under committee-uid-specific messaging.
+vi.mock('../helpers/validation.helper', async (importOriginal) => ({
+  ...(await importOriginal<typeof import('../helpers/validation.helper')>()),
   validateUidParameter: (uid: unknown, req: unknown, next: (err: Error) => void): uid is string => {
     if (typeof uid !== 'string' || uid.trim() === '') {
       next(new Error('uid is required'));
@@ -57,12 +66,12 @@ vi.mock('../services/logger.service', () => ({
 
 import { WeeklyBriefController } from './weekly-brief.controller';
 
-function buildReq(body: unknown = {}): any {
-  return { params: { committeeId: COMMITTEE_ID }, body, path: '/test', log: {} };
+function buildReq(body: unknown = {}, query: Record<string, string | string[]> = {}): any {
+  return { params: { committeeId: COMMITTEE_ID }, query, body, path: '/test', log: {} };
 }
 
 function buildRatingReq(body: unknown = {}): any {
-  return { params: { committeeId: COMMITTEE_ID, briefUid: BRIEF_UID }, body, path: '/test', log: {} };
+  return { params: { committeeId: COMMITTEE_ID, briefUid: BRIEF_UID }, query: {}, body, path: '/test', log: {} };
 }
 
 function buildRes(): any {
@@ -284,7 +293,41 @@ describe('WeeklyBriefController', () => {
       expect(next).toHaveBeenCalledWith(forbidden);
     });
 
-    it('sets Cache-Control: no-store — the response carries per-user caller_rating and staleness (GH-1966), both derived from FGA-filtered data', async () => {
+    it('defaults includeCurrentActivity to true when the query param is absent (GH-1922)', async () => {
+      weeklyBriefSvc.getCurrentBrief.mockResolvedValue({ brief: null, throttle: null });
+
+      await controller.getCurrentBrief(buildReq(), buildRes(), vi.fn());
+
+      expect(weeklyBriefSvc.getCurrentBrief).toHaveBeenCalledWith(expect.anything(), COMMITTEE_ID, { includeCurrentActivity: true });
+    });
+
+    it('only opts out of includeCurrentActivity on an exact "false" query value — any other value keeps the default', async () => {
+      weeklyBriefSvc.getCurrentBrief.mockResolvedValue({ brief: null, throttle: null });
+
+      await controller.getCurrentBrief(buildReq({}, { includeCurrentActivity: 'false' }), buildRes(), vi.fn());
+      await controller.getCurrentBrief(buildReq({}, { includeCurrentActivity: 'nope' }), buildRes(), vi.fn());
+
+      expect(weeklyBriefSvc.getCurrentBrief).toHaveBeenNthCalledWith(1, expect.anything(), COMMITTEE_ID, { includeCurrentActivity: false });
+      expect(weeklyBriefSvc.getCurrentBrief).toHaveBeenNthCalledWith(2, expect.anything(), COMMITTEE_ID, { includeCurrentActivity: true });
+    });
+
+    it('trims whitespace before comparing — "false" surrounded by spaces still opts out, not silently falling back to included', async () => {
+      weeklyBriefSvc.getCurrentBrief.mockResolvedValue({ brief: null, throttle: null });
+
+      await controller.getCurrentBrief(buildReq({}, { includeCurrentActivity: ' false ' }), buildRes(), vi.fn());
+
+      expect(weeklyBriefSvc.getCurrentBrief).toHaveBeenCalledWith(expect.anything(), COMMITTEE_ID, { includeCurrentActivity: false });
+    });
+
+    it('keeps the default-included behavior for a repeated-key array — getStringQueryParam narrows that to undefined, not a string', async () => {
+      weeklyBriefSvc.getCurrentBrief.mockResolvedValue({ brief: null, throttle: null });
+
+      await controller.getCurrentBrief(buildReq({}, { includeCurrentActivity: ['false', 'false'] }), buildRes(), vi.fn());
+
+      expect(weeklyBriefSvc.getCurrentBrief).toHaveBeenCalledWith(expect.anything(), COMMITTEE_ID, { includeCurrentActivity: true });
+    });
+
+    it('sets Cache-Control: no-store — the response carries per-user caller_rating, staleness (GH-1966), and current_activity (GH-1922), all derived from FGA-filtered data', async () => {
       weeklyBriefSvc.getCurrentBrief.mockResolvedValue({ brief: null, throttle: null });
       const res = buildRes();
 

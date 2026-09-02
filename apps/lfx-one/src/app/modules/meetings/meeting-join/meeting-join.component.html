@@ -430,6 +430,8 @@
                       [pastMeeting]="isPastMeeting()"
                       [showAddButton]="!!meeting().organizer && !isPastMeeting()"
                       [additionalRegistrantsCount]="additionalRegistrantsCount()"
+                      [initialRegistrants]="registrants()"
+                      [initialRegistrantsLoading]="registrantsLoading()"
                       backgroundColor="bg-gray-50"
                       borderColor="border-gray-200"
                       (addClicked)="showRegistrants.set(true)">

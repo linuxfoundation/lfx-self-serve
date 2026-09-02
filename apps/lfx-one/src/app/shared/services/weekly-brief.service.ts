@@ -38,9 +38,28 @@ export class WeeklyBriefService {
    * real error, distinct from the server's own 200-with-null-brief "no brief yet" state.
    * A blanket fallback here would render a misconfigured deploy or a 404 identically to
    * "no brief yet, 2 generates available" — see LFXV2-2175 full-branch review.
+   *
+   * `includeCurrentActivity: false` (GH-1922) opts out of the current_activity tally on this
+   * read — see the BFF's `WeeklyBriefService#getCurrentBrief` doc comment for the upstream-cost
+   * rationale. Two independent callers opt out, each on its own signal:
+   * `weekly-brief-card.component.ts`'s `initBriefResponseSubscription` opts out on every
+   * non-poll load (see that method's `combineLatest` sources for what triggers one — not
+   * re-listed here, since it's exactly the kind of detail that drifts stale as those sources
+   * change) whenever its own `isGoverningBoardCommittee()` is false — the template gates the
+   * whole tally section on that same signal regardless of what current_activity holds, so a
+   * non-governance committee never needs the fan-out on any of those loads. Its `pollUntilTerminal`
+   * opts out on top of that (also gated on `isGoverningBoardCommittee()`, so it never mistakes
+   * that deliberate non-poll-load opt-out for a transient degrade) once the current_activity KEY
+   * is present on what it already holds — `null` counts as present (a settled "doesn't apply"
+   * answer for a non-governance committee, or a week whose activity fills a full page) and stops
+   * the asking just as a real value would; only a genuinely absent key on a governance committee
+   * keeps the poll asking, up to its own attempt cap — see
+   * `WeeklyBriefCurrentResponse.current_activity`'s doc comment for the three-state
+   * absent/null/present contract this depends on.
    */
-  public getWeeklyBrief(committeeId: string): Observable<WeeklyBriefCurrentResponse> {
-    return this.http.get<WeeklyBriefCurrentResponse>(`/api/committees/${encodeURIComponent(committeeId)}/weekly-briefs/current`);
+  public getWeeklyBrief(committeeId: string, options: { includeCurrentActivity?: boolean } = {}): Observable<WeeklyBriefCurrentResponse> {
+    const params = options.includeCurrentActivity === false ? { includeCurrentActivity: 'false' } : undefined;
+    return this.http.get<WeeklyBriefCurrentResponse>(`/api/committees/${encodeURIComponent(committeeId)}/weekly-briefs/current`, { params });
   }
 
   /**

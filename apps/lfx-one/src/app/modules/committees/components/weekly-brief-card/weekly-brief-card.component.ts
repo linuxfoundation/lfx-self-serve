@@ -14,6 +14,8 @@ import { TextareaComponent } from '@components/textarea/textarea.component';
 import { WeeklyBriefArchiveDrawerComponent } from '../weekly-brief-archive-drawer/weekly-brief-archive-drawer.component';
 import { SourceChipContextDirective } from './source-chip-context.directive';
 import {
+  WEEKLY_BRIEF_CURRENT_ACTIVITY_MAX_ASK_ATTEMPTS,
+  WEEKLY_BRIEF_CURRENT_ACTIVITY_PHRASES,
   WEEKLY_BRIEF_ERROR_REASON,
   WEEKLY_BRIEF_MAX_POLL_ATTEMPTS,
   WEEKLY_BRIEF_POLL_INTERVAL_MS,
@@ -30,6 +32,7 @@ import {
   ShareWeeklyBriefResult,
   ValidationError,
   WeeklyBrief,
+  WeeklyBriefCurrentActivitySection,
   WeeklyBriefCurrentResponse,
   WeeklyBriefRating,
   WeeklyBriefSourceChip,
@@ -38,7 +41,7 @@ import {
   WeeklyBriefStaleness,
   WeeklyBriefThrottle,
 } from '@lfx-one/shared/interfaces';
-import { formatUtcDateRangeLabel, mapWeeklyBriefSourceRefsToChips } from '@lfx-one/shared/utils';
+import { formatUtcDateRangeLabel, isGoverningBoard, mapWeeklyBriefSourceRefsToChips } from '@lfx-one/shared/utils';
 import { FeatureFlagService } from '@services/feature-flag.service';
 import { UserService } from '@services/user.service';
 import { WeeklyBriefService } from '@services/weekly-brief.service';
@@ -162,6 +165,10 @@ export class WeeklyBriefCardComponent {
   public readonly sourcesExpanded = signal(false);
   public readonly expandedSourceGroups = signal<Set<string>>(new Set());
 
+  // "This week so far" activity-tally disclosure state (GH-1922) — same click-to-reveal
+  // shape as expandedSourceGroups above, keyed by kind instead of chip id.
+  public readonly expandedActivityKinds = signal<Set<string>>(new Set());
+
   // Written by both the initial-load pipeline and the post-generate poll (see
   // initBriefResponseSubscription / pollUntilTerminal) — a plain signal rather than
   // toSignal(), since the poll needs to push updates outside that pipeline's own stream.
@@ -224,6 +231,43 @@ export class WeeklyBriefCardComponent {
   // (LFXV2-3335) — precomputed here rather than re-derived in the template (frontend-checklist
   // §4). See initSourceChipSections for the "Other" catch-all rationale.
   public readonly sourceChipSections: Signal<WeeklyBriefSourceChipSection[]> = this.initSourceChipSections();
+
+  // Gates the "this week so far" activity tally (GH-1922) to Board/Government Advisory Council
+  // committees only for v1 — named for exactly that (not the broader `isGovernanceClass`, which
+  // also matches oversight-committee/TSC/Legal/Finance). `committee().category` is always
+  // populated on this input (unlike `behavioralClass`, which is only decorated on the
+  // dashboard's own data path, not this one), so this derives the classification directly
+  // rather than reading a field that isn't there.
+  public readonly isGoverningBoardCommittee: Signal<boolean> = computed(() => isGoverningBoard(this.committee().category));
+
+  // Current, in-progress-week activity — a BFF enrichment on the response envelope (like
+  // caller_rating), sourced server-side from CommitteeActivityService's existing live
+  // meeting/vote/document aggregation (GH-1922), so it's populated identically in mock and live
+  // mode. Read from briefResponse, not brief(): it's scoped to a different window than the
+  // brief's own completed week, so it isn't part of WeeklyBrief itself.
+  public readonly currentActivity: Signal<WeeklyBriefCurrentActivitySection[]> = this.initCurrentActivitySections();
+
+  // Distinguishes "no value to show" (absent — either a transient server-side degrade, or this
+  // card's own deliberate includeCurrentActivity: false opt-out — or null — a settled
+  // non-governance/full-page answer; see WeeklyBriefCurrentResponse's own current_activity doc
+  // comment, in @lfx-one/shared/interfaces, for that three-state contract, which
+  // pollUntilTerminal's poll loop below depends on but rendering here doesn't) from "the field
+  // is a real object, every kind possibly zero" (a genuine quiet week) — the template must
+  // render neither line nor "no activity yet" for the former, only the latter (GH-1922: "do NOT
+  // fabricate ... degrade gracefully").
+  public readonly hasCurrentActivityData: Signal<boolean> = computed(() => !!this.briefResponse()?.current_activity);
+
+  // Single source of truth for the visible prefix, shared with the template's own span
+  // (weekly-brief-card.component.html) so the accessible name (currentActivityLine, below) and
+  // the visible text can't drift apart on a future copy edit.
+  protected readonly currentActivityPrefix = 'This week so far:';
+
+  // "This week so far: 1 meeting held, 1 vote closed" / "This week so far: no activity yet".
+  public readonly currentActivityLine: Signal<string> = computed(() => {
+    const sections = this.currentActivity();
+    if (!sections.length) return `${this.currentActivityPrefix} no activity yet`;
+    return `${this.currentActivityPrefix} ${sections.map((section) => section.countText).join(', ')}`;
+  });
 
   // "no_sources" is the only error_reason meaningful to the UI today (LFXV2-3000) —
   // a committee with zero activity in the lookback window, not a genuine generation
@@ -342,8 +386,32 @@ export class WeeklyBriefCardComponent {
         next: (res) => {
           // Upstream marks nothing Required on the 202 envelope — a bare 202 with no
           // brief/throttle must not wipe what's already rendered (most visible on
-          // Regenerate, where a real brief is on screen when this fires).
-          this.briefResponse.set({ brief: res.brief ?? this.brief(), throttle: res.throttle ?? this.throttle() });
+          // Regenerate, where a real brief is on screen when this fires). Same reasoning
+          // extends to current_activity (GH-1922): this week's activity doesn't change just
+          // because a brief was requested, so it always carries forward regardless of whether
+          // res.brief itself landed. caller_rating and staleness (GH-1966) are both narrower:
+          // each describes specific brief content, so both only carry forward when res.brief is
+          // absent. Upstream's own contract documents brief as normally populated on this
+          // response (the new, just-created `state: 'generating'` revision, per
+          // GroupWeeklyBriefGenerateResult's description and its 202 example) — reusing the
+          // pre-regenerate rating or staleness verdict against that new revision would
+          // misattribute (staleness in particular is computed against the OLD brief's
+          // `updated_at`, which a new revision replaces), so both drop whenever res.brief lands
+          // and let the poll's first GET restore the correct values for that revision instead.
+          // Spreads `prev` rather than enumerating every field, so a week-scoped field like
+          // current_activity (unaffected by a brief request) carries forward by construction
+          // instead of needing to be named here. This is NOT a universal safety improvement,
+          // though: a brief-scoped field — keyed to the specific brief/revision, like
+          // caller_rating/staleness below — is wrong to carry forward once res.brief lands, and
+          // spreading would silently do exactly that unless explicitly overridden. A future field
+          // must be classified as one or the other, not assumed safe by default either way.
+          this.briefResponse.update((prev) => ({
+            ...prev,
+            brief: res.brief ?? prev?.brief ?? null,
+            throttle: res.throttle ?? prev?.throttle ?? null,
+            caller_rating: res.brief ? null : prev?.caller_rating,
+            staleness: res.brief ? undefined : prev?.staleness,
+          }));
           // On Regenerate, currentBrief.revision is the pre-regenerate revision — pollUntilTerminal
           // uses it to reject a first tick that reads back that same (stale) terminal brief instead
           // of the new one still being written. undefined on a fresh generate (no prior revision to
@@ -600,6 +668,20 @@ export class WeeklyBriefCardComponent {
     });
   }
 
+  // Level-1/only disclosure for the "this week so far" tally, keyed by kind (GH-1922) — same
+  // shape as onToggleSourceGroup.
+  public onToggleActivityKind(kind: string): void {
+    this.expandedActivityKinds.update((expanded) => {
+      const next = new Set(expanded);
+      if (next.has(kind)) {
+        next.delete(kind);
+      } else {
+        next.add(kind);
+      }
+      return next;
+    });
+  }
+
   // Private initializer functions
   // Groups sourceChips() into the fixed-order kind-sections defined by WEEKLY_BRIEF_SOURCE_SECTIONS
   // (LFXV2-3335), appending a trailing "Other" section for any chip whose kind isn't one of the
@@ -614,6 +696,35 @@ export class WeeklyBriefCardComponent {
       const sections = WEEKLY_BRIEF_SOURCE_SECTIONS.map(({ kind, label }) => ({ kind, label, chips: chips.filter((chip) => chip.kind === kind) }));
       sections.push({ kind: 'other', label: 'Other', chips: chips.filter((chip) => !known.has(chip.kind)) });
       return sections.filter((section) => section.chips.length > 0);
+    });
+  }
+
+  // Groups current_activity.source_refs into fixed-order kind-sections. Section MEMBERSHIP (which
+  // kinds exist, and in what order) is driven by WEEKLY_BRIEF_CURRENT_ACTIVITY_PHRASES alone — NOT
+  // by cross-referencing WEEKLY_BRIEF_SOURCE_SECTIONS by kind, since that could silently produce a
+  // countText-less section for a kind present in one list but not the other (PHRASES is the sole
+  // source of truth for which kinds the tally recognizes; see its doc comment). The section's
+  // display LABEL, in contrast, is looked up from WEEKLY_BRIEF_SOURCE_SECTIONS below — reusing the
+  // Sources row's existing label strings rather than duplicating them in PHRASES too — with a
+  // `?? kind` fallback that's what actually prevents a blank label if the two lists ever diverge on
+  // a kind's presence. Any ref whose kind ISN'T recognized by PHRASES rolls into a trailing "N
+  // other updates" bucket, mirroring initSourceChipSections's "Other" catch-all — without it, a
+  // week whose only activity is an unrecognized kind would render the misleading "no activity yet"
+  // line instead of admitting the tally just can't name it.
+  private initCurrentActivitySections(): Signal<WeeklyBriefCurrentActivitySection[]> {
+    return computed(() => {
+      const refs = this.briefResponse()?.current_activity?.source_refs ?? [];
+      const known = new Set(WEEKLY_BRIEF_CURRENT_ACTIVITY_PHRASES.map((phrase) => phrase.kind));
+      const sections = WEEKLY_BRIEF_CURRENT_ACTIVITY_PHRASES.map(({ kind, singular, plural }) => {
+        const kindRefs = refs.filter((ref) => ref.kind === kind);
+        const label = WEEKLY_BRIEF_SOURCE_SECTIONS.find((section) => section.kind === kind)?.label ?? kind;
+        return { kind, label, refs: kindRefs, countText: `${kindRefs.length} ${kindRefs.length === 1 ? singular : plural}` };
+      });
+      const otherRefs = refs.filter((ref) => !known.has(ref.kind));
+      if (otherRefs.length > 0) {
+        sections.push({ kind: 'other', label: 'Other', refs: otherRefs, countText: `${otherRefs.length} other update${otherRefs.length === 1 ? '' : 's'}` });
+      }
+      return sections.filter((section) => section.refs.length > 0);
     });
   }
 
@@ -651,6 +762,8 @@ export class WeeklyBriefCardComponent {
       // reset in this block.
       this.sourcesExpanded.set(false);
       this.expandedSourceGroups.set(new Set());
+      // Reset "this week so far" disclosure state (GH-1922) — same rationale.
+      this.expandedActivityKinds.set(new Set());
     });
 
     // Archive preflight — fires once per committee as soon as the uid is known,
@@ -673,7 +786,13 @@ export class WeeklyBriefCardComponent {
           this.fetchLoading.set(true);
           this.fetchError.set(false);
           this.pollTimedOut.set(false);
-          return this.weeklyBriefService.getWeeklyBrief(uid).pipe(
+          // includeCurrentActivity: this.isGoverningBoardCommittee() (GH-1922) — the template
+          // already gates the whole tally section on isGoverningBoardCommittee() independently
+          // of current_activity's presence (see the template's top-level @if), so for the
+          // majority of committees that aren't governance-classified, skipping the server's
+          // fan-out here costs nothing in the UI — the section wouldn't render either way — and
+          // saves a wasted upstream GET on every non-governance committee's card load.
+          return this.weeklyBriefService.getWeeklyBrief(uid, { includeCurrentActivity: this.isGoverningBoardCommittee() }).pipe(
             catchError((err: unknown) => {
               // A failed read (e.g. upstream 503) must not look like "no brief
               // yet" — flag it so the template can show a distinct, retryable
@@ -731,6 +850,10 @@ export class WeeklyBriefCardComponent {
     this.pollTimedOut.set(false);
     let ticks = 0;
     let observedTerminal = false;
+    // Bounds how many ticks keep re-asking for current_activity while it stays undefined — see
+    // WEEKLY_BRIEF_CURRENT_ACTIVITY_MAX_ASK_ATTEMPTS's own doc comment for why this needs its
+    // own, smaller cap than the poll's overall WEEKLY_BRIEF_MAX_POLL_ATTEMPTS.
+    let currentActivityAskAttempts = 0;
     const isNewTerminal = (response: WeeklyBriefCurrentResponse): boolean => {
       const b = response.brief;
       if (!b || !WEEKLY_BRIEF_TERMINAL_STATES.has(b.state)) return false;
@@ -753,20 +876,72 @@ export class WeeklyBriefCardComponent {
         // exhaustMap wait itself — otherwise a single hung request would block `complete`
         // (and the attempt cap) indefinitely, since exhaustMap only completes once its
         // last active inner subscription settles.
-        exhaustMap(() =>
-          this.weeklyBriefService.getWeeklyBrief(committeeUid).pipe(
+        exhaustMap(() => {
+          // includeCurrentActivity (GH-1922): only opt out once the current_activity KEY is
+          // actually present on the response — `=== undefined` here, not a falsy/truthy check,
+          // because the BFF distinguishes "couldn't determine yet" (key absent — transient,
+          // worth asking again) from "known, settled, doesn't apply" (key present as `null` —
+          // non-governance, or this week's activity fills a full page; see
+          // WeeklyBriefCurrentResponse.current_activity's doc comment). A `!value` check would
+          // treat that settled `null` the same as "unknown" and re-ask forever for exactly the
+          // two cases that can never resolve differently within this poll cycle.
+          //
+          // Also gated on isGoverningBoardCommittee() — a non-governance committee's every
+          // non-poll load (see initBriefResponseSubscription's own combineLatest sources for
+          // what triggers one) deliberately opts out too, which leaves current_activity
+          // absent (not the settled null a fan-out call would have produced). Without this extra
+          // gate, that deliberate client-side opt-out would look exactly like a transient degrade
+          // and cost one wasted ask on the first poll tick, before the server's own settled null
+          // ever had a chance to stop it — undoing part of that opt-out's savings in the one code
+          // path (a generating card) it runs in.
+          //
+          // Also capped at WEEKLY_BRIEF_CURRENT_ACTIVITY_MAX_ASK_ATTEMPTS, separately from the
+          // undefined check above — an upstream that keeps failing this specific fan-out (not
+          // the brief generation itself) would otherwise get asked again on every one of up to
+          // WEEKLY_BRIEF_MAX_POLL_ATTEMPTS ticks for an answer that keeps failing the same way.
+          // Only increment on a tick that actually asks — a tick that already opted out (settled
+          // null/present, not governance, or the cap already hit) must not keep advancing the
+          // counter past the cap.
+          const shouldAskCurrentActivity =
+            this.isGoverningBoardCommittee() &&
+            this.briefResponse()?.current_activity === undefined &&
+            currentActivityAskAttempts < WEEKLY_BRIEF_CURRENT_ACTIVITY_MAX_ASK_ATTEMPTS;
+          if (shouldAskCurrentActivity) currentActivityAskAttempts += 1;
+          return this.weeklyBriefService.getWeeklyBrief(committeeUid, { includeCurrentActivity: shouldAskCurrentActivity }).pipe(
             timeout(WEEKLY_BRIEF_POLL_INTERVAL_MS),
             catchError((err: unknown) => {
               console.error('[weekly-brief-card] poll tick failed, will retry', err);
+              // Undo the optimistic increment above ONLY for a transport-level failure — the
+              // request never reached, or never got a response from, the BFF at all
+              // (HttpErrorResponse.status === 0: connection refused, DNS failure, CORS block,
+              // etc.). Neither of the other two error shapes qualifies: this tick's own
+              // `timeout(WEEKLY_BRIEF_POLL_INTERVAL_MS)` above (TimeoutError) doesn't cancel the
+              // server-side work already in flight, and a real HTTP error response (4xx/5xx,
+              // status !== 0) means the BFF DID receive and process the request — it just failed
+              // to answer well. Refunding for either would let a persistently slow OR persistently
+              // erroring (not just erroring) upstream — the exact case
+              // WEEKLY_BRIEF_CURRENT_ACTIVITY_MAX_ASK_ATTEMPTS exists to bound — re-ask on every
+              // one of up to WEEKLY_BRIEF_MAX_POLL_ATTEMPTS ticks instead of stopping at the cap.
+              const isTransportFailure = err instanceof HttpErrorResponse && err.status === 0;
+              if (shouldAskCurrentActivity && isTransportFailure) currentActivityAskAttempts -= 1;
               return of(null as WeeklyBriefCurrentResponse | null);
             })
-          )
-        ),
+          );
+        }),
         // Drop failed ticks entirely rather than feeding `null` into takeWhile below —
         // a transient poll failure must not look like a terminal state and stop the poll.
         filter((response): response is WeeklyBriefCurrentResponse => response !== null),
         tap((response) => {
-          this.briefResponse.set(response);
+          // A tick that opted out (see above) carries no current_activity key of its own — fall
+          // back to whatever the card already has rather than letting a plain .set() blank a
+          // good value out just because this particular tick didn't ask for a fresh one.
+          // `!== undefined`, not `??`: a tick that DID ask can come back with a settled `null`
+          // (see the exhaustMap above), which must overwrite a stale prior `undefined` — `??`
+          // would treat that fresh `null` as nullish too and wrongly keep falling back to prev.
+          this.briefResponse.update((prev) => ({
+            ...response,
+            current_activity: response.current_activity !== undefined ? response.current_activity : prev?.current_activity,
+          }));
           // Same reasoning as initBriefResponseSubscription's subscribe: a fresh GET
           // supersedes any optimistic overlay.
           this.optimisticRating.set(null);

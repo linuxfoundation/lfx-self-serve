@@ -6,6 +6,7 @@ import { FormControl, FormGroup, ReactiveFormsModule } from '@angular/forms';
 import { ButtonComponent } from '@components/button/button.component';
 import { MessageComponent } from '@components/message/message.component';
 import { Meeting } from '@lfx-one/shared/interfaces';
+import { resolveMeetingBaseCount } from '@lfx-one/shared/utils';
 import { MeetingTimePipe } from '@pipes/meeting-time.pipe';
 import { MeetingService } from '@services/meeting.service';
 import { MessageService } from 'primeng/api';
@@ -30,7 +31,7 @@ export class MeetingDeleteConfirmationComponent {
   private readonly messageService = inject(MessageService);
 
   public readonly meeting: Meeting = this.dialogConfig.data?.meeting;
-  public readonly registrantCount: number = (this.meeting.individual_registrants_count ?? 0) + (this.meeting.committee_members_count ?? 0);
+  public readonly registrantCount: number = resolveMeetingBaseCount(this.meeting) ?? 0;
   public readonly isRecurring: boolean = !!this.meeting.recurrence;
   public readonly isPastMeeting: boolean = this.meeting.start_time ? new Date(this.meeting.start_time) < new Date() : false;
   public readonly deleteForm: FormGroup = this.initializeDeleteForm();
