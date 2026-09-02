@@ -3,9 +3,16 @@
 
 import { describe, expect, it } from 'vitest';
 
+import { ALREADY_SIGNED_CLA_LABEL } from '../constants/cla.constants';
 import { PROFILE_TABS } from '../constants/profile.constants';
 import { ClaGroupOrg, ClaGroupOrgSource, ClaSignedVia, ClaStatus, MyClaAgreement, MyClasIdentitySummary } from '../interfaces/cla.interface';
 import {
+  alreadySignedAgreementForGroup,
+  alreadySignedAgreementForIdentity,
+  alreadySignedAgreementsForGroup,
+  alreadySignedChipLabel,
+  alreadySignedGroupTooltip,
+  alreadySignedIdentityTooltip,
   buildProfileTabs,
   claGroupPrimaryName,
   claGroupSecondaryName,
@@ -181,6 +188,170 @@ describe('claGroupPrimaryName / claGroupSecondaryName', () => {
   it('falls back to the unnamed literal only when the producer resolved neither name', () => {
     expect(claGroupPrimaryName({})).toBe('Unnamed CLA group');
     expect(claGroupSecondaryName({})).toBeNull();
+  });
+});
+
+describe('alreadySignedAgreementForGroup', () => {
+  it('returns the first already-signed agreement for that CLA group', () => {
+    const held = agreement({ claGroupId: 'cg-1', kind: 'ICLA', status: 'valid' });
+    expect(alreadySignedAgreementForGroup([held, agreement({ id: 's2', claGroupId: 'cg-2' })], 'cg-1')).toBe(held);
+  });
+
+  it('does not treat an invalidated agreement as already signed', () => {
+    expect(alreadySignedAgreementForGroup([agreement({ claGroupId: 'cg-1', status: 'invalidated' })], 'cg-1')).toBeUndefined();
+  });
+
+  it('treats needs-attention, revoked, unknown, and superseded as already signed', () => {
+    const statuses: ClaStatus[] = ['needs_attention', 'revoked', 'unknown', 'superseded'];
+    for (const status of statuses) {
+      expect(alreadySignedAgreementForGroup([agreement({ claGroupId: 'cg-1', status })], 'cg-1')?.status).toBe(status);
+    }
+  });
+
+  it('ignores a blank group id and a row with no group id', () => {
+    expect(alreadySignedAgreementForGroup([agreement({ claGroupId: 'cg-1' })], '   ')).toBeUndefined();
+    expect(alreadySignedAgreementForGroup([agreement({})], 'cg-1')).toBeUndefined();
+  });
+});
+
+describe('alreadySignedAgreementsForGroup', () => {
+  it('returns every already-signed agreement for the group, so each identity can be checked', () => {
+    const mine = agreement({ id: 's1', claGroupId: 'cg-1', signedVia: 'github', signedAs: 'jellis' });
+    const other = agreement({ id: 's2', claGroupId: 'cg-1', signedVia: 'gerrit', signedAs: 'jellis-lf' });
+
+    expect(alreadySignedAgreementsForGroup([mine, other, agreement({ id: 's3', claGroupId: 'cg-2' })], 'cg-1')).toEqual([mine, other]);
+  });
+
+  it('drops invalidated rows and returns nothing for a blank group id', () => {
+    expect(alreadySignedAgreementsForGroup([agreement({ claGroupId: 'cg-1', status: 'invalidated' })], 'cg-1')).toEqual([]);
+    expect(alreadySignedAgreementsForGroup([agreement({ claGroupId: 'cg-1' })], '  ')).toEqual([]);
+  });
+});
+
+describe('alreadySignedChipLabel', () => {
+  it('names the identity that signed it', () => {
+    expect(alreadySignedChipLabel(agreement({ signedVia: 'github', signedAs: 'jellis' }))).toBe('Already signed as jellis (GitHub)');
+  });
+
+  it('falls back to the bare label when no identity was recorded', () => {
+    expect(alreadySignedChipLabel(agreement({}))).toBe(ALREADY_SIGNED_CLA_LABEL);
+  });
+});
+
+describe('alreadySignedGroupTooltip', () => {
+  it('names the ICLA, the identity it was signed as, and that another identity may still sign', () => {
+    expect(alreadySignedGroupTooltip(agreement({ kind: 'ICLA', signedVia: 'github', signedAs: 'jellis' }), 'github')).toBe(
+      'You already have an ICLA for this CLA group. Signed as jellis (GitHub). If you have another identity linked, you can still sign with it.'
+    );
+  });
+
+  it('names the employer when an ECLA has no signed-as identity', () => {
+    expect(alreadySignedGroupTooltip(agreement({ kind: 'ECLA', companyName: 'Acme', pdfAvailable: false }), 'github')).toBe(
+      'You already have an ECLA for this CLA group, covered by Acme. If you have another identity linked, you can still sign with it.'
+    );
+  });
+
+  it('falls back to the kind alone when there is nothing else to name', () => {
+    expect(alreadySignedGroupTooltip(agreement({ kind: 'ICLA' }), 'github')).toBe(
+      'You already have an ICLA for this CLA group. If you have another identity linked, you can still sign with it.'
+    );
+  });
+
+  it('promises no other identity on a GitLab-only group, which no identity can sign', () => {
+    // The block there is the route, not the account: Self Serve cannot sign a GitLab-only group
+    // at all, so offering "link another identity" as the way out would be a dead end.
+    expect(alreadySignedGroupTooltip(agreement({ kind: 'ICLA', signedVia: 'gitlab', signedAs: 'jellis' }), 'gitlab-unsupported')).toBe(
+      'You already have an ICLA for this CLA group. Signed as jellis (GitLab).'
+    );
+  });
+
+  it('promises no other identity on a Gerrit-only group, which offers exactly one card', () => {
+    // The next step offers only the contributor's own LF identity there, so no GitHub account
+    // they link can sign this group — naming one as the way out would be a dead end.
+    expect(alreadySignedGroupTooltip(agreement({ kind: 'ICLA', signedVia: 'gerrit', signedAs: 'jellis-lf' }), 'gerrit')).toBe(
+      'You already have an ICLA for this CLA group. Signed as jellis-lf (Gerrit).'
+    );
+  });
+
+  it('keeps the sentence where more than one identity is on offer', () => {
+    expect(alreadySignedGroupTooltip(agreement({ kind: 'ICLA', signedVia: 'github', signedAs: 'jellis' }), 'github-or-gerrit')).toBe(
+      'You already have an ICLA for this CLA group. Signed as jellis (GitHub). If you have another identity linked, you can still sign with it.'
+    );
+  });
+});
+
+describe('alreadySignedAgreementForIdentity', () => {
+  const held = [
+    agreement({ id: 's1', claGroupId: 'cg-1', signedVia: 'github', signedAs: 'Jellis' }),
+    agreement({ id: 's2', claGroupId: 'cg-1', signedVia: 'gerrit', signedAs: 'jellis-lf' }),
+  ];
+
+  /** The handles the step is offering, which is how a recorded number is told from a handle. */
+  const offered = ['jellis', 'jellis-work'];
+
+  it('matches a GitHub handle regardless of case', () => {
+    expect(alreadySignedAgreementForIdentity(held, { platform: 'github', username: 'jellis', githubId: '12345' }, offered)?.id).toBe('s1');
+  });
+
+  it('leaves the contributor a second GitHub account to sign with', () => {
+    expect(alreadySignedAgreementForIdentity(held, { platform: 'github', username: 'jellis-work', githubId: '67890' }, offered)).toBeUndefined();
+  });
+
+  it('matches the Gerrit identity on the platform alone', () => {
+    expect(alreadySignedAgreementForIdentity(held, { platform: 'gerrit' }, offered)?.id).toBe('s2');
+    expect(alreadySignedAgreementForIdentity([held[0]!], { platform: 'gerrit' }, offered)).toBeUndefined();
+  });
+
+  it('never blocks a GitHub card on an agreement with no recorded identity', () => {
+    const blank = [agreement({ claGroupId: 'cg-1', signedVia: 'github', signedAs: '   ' })];
+    expect(alreadySignedAgreementForIdentity(blank, { platform: 'github', username: 'jellis', githubId: '12345' }, offered)).toBeUndefined();
+  });
+
+  it('still blocks the Gerrit card on an agreement with no recorded identity', () => {
+    // The asymmetry is deliberate, not an oversight: a GitHub blank could match any of several
+    // accounts, so it matches none, while only one Gerrit card is ever offered and it is the
+    // contributor's own LF identity — so the platform alone identifies it.
+    const blank = [agreement({ claGroupId: 'cg-1', signedVia: 'gerrit', signedAs: undefined })];
+    expect(alreadySignedAgreementForIdentity(blank, { platform: 'gerrit' }, offered)?.claGroupId).toBe('cg-1');
+  });
+
+  it('matches the account number when that is what the producer recorded', () => {
+    // The producer derives one identity string per agreement — the handle when it had one, the
+    // account number when it did not. Comparing only the handle would leave the very account
+    // that signed selectable, which is the redundant signature this is meant to prevent.
+    const byNumber = [agreement({ id: 's3', claGroupId: 'cg-1', signedVia: 'github', signedAs: '12345' })];
+
+    expect(alreadySignedAgreementForIdentity(byNumber, { platform: 'github', username: '', githubId: '12345' }, ['', 'jellis'])?.id).toBe('s3');
+    expect(alreadySignedAgreementForIdentity(byNumber, { platform: 'github', username: 'jellis', githubId: '67890' }, ['', 'jellis'])).toBeUndefined();
+  });
+
+  it('reads a numeric identity as a handle when a card on the step carries it', () => {
+    // Handles can be all digits: `12345` is a real login, and its account number is something
+    // else entirely. So one string can be one card's handle and another card's number, and the
+    // handle has to win — otherwise signing as the numerically-named account would gray an
+    // unrelated one, which on a single-account step leaves nothing to pick.
+    const collides = [agreement({ id: 's4', claGroupId: 'cg-1', signedVia: 'github', signedAs: '12345' })];
+    const bothOffered = ['12345', 'jellis'];
+
+    expect(alreadySignedAgreementForIdentity(collides, { platform: 'github', username: '12345', githubId: '18281050' }, bothOffered)?.id).toBe('s4');
+    expect(alreadySignedAgreementForIdentity(collides, { platform: 'github', username: 'jellis', githubId: '12345' }, bothOffered)).toBeUndefined();
+  });
+
+  it('does not block on an invalidated agreement', () => {
+    const invalidated = [agreement({ claGroupId: 'cg-1', status: 'invalidated', signedVia: 'github', signedAs: 'jellis' })];
+    expect(alreadySignedAgreementForIdentity(invalidated, { platform: 'github', username: 'jellis', githubId: '12345' }, offered)).toBeUndefined();
+  });
+});
+
+describe('alreadySignedIdentityTooltip', () => {
+  it('says which kind this account already holds and to pick another', () => {
+    expect(alreadySignedIdentityTooltip(agreement({ kind: 'ICLA' }), true)).toBe(
+      'You already have an ICLA for this CLA group signed with this account. Choose another identity to sign again.'
+    );
+  });
+
+  it('states the position without prescribing a way out when nothing else is selectable', () => {
+    expect(alreadySignedIdentityTooltip(agreement({ kind: 'ICLA' }), false)).toBe('You already have an ICLA for this CLA group signed with this account.');
   });
 });
 

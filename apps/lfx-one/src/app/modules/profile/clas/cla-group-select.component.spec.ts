@@ -2,12 +2,15 @@
 // SPDX-License-Identifier: MIT
 
 import { ComponentFixture, TestBed } from '@angular/core/testing';
+import { By } from '@angular/platform-browser';
 import { provideNoopAnimations } from '@angular/platform-browser/animations';
 import { provideRouter } from '@angular/router';
-import type { ClaGroupOption, ClaGroupSearchResponse } from '@lfx-one/shared/interfaces';
+import { ALREADY_SIGNED_CLA_LABEL } from '@lfx-one/shared/constants';
+import type { ClaGroupOption, ClaGroupSearchResponse, MyClaAgreement } from '@lfx-one/shared/interfaces';
 import { toClaGroupOptionView } from '@lfx-one/shared/utils';
 import { MyClasService } from '@services/my-clas.service';
-import { DynamicDialogRef } from 'primeng/dynamicdialog';
+import { DynamicDialogConfig, DynamicDialogRef } from 'primeng/dynamicdialog';
+import { Tooltip } from 'primeng/tooltip';
 import { of, Subject, throwError } from 'rxjs';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 
@@ -62,6 +65,7 @@ describe('ClaGroupSelectComponent', () => {
         provideRouter([]),
         provideNoopAnimations(),
         { provide: DynamicDialogRef, useValue: { close } },
+        { provide: DynamicDialogConfig, useValue: { data: { agreements: [] } } },
         { provide: MyClasService, useValue: { getClaGroupOptions } },
       ],
     });
@@ -394,5 +398,93 @@ describe('ClaGroupSelectComponent', () => {
     fixture.detectChanges();
 
     expect((fixture.componentInstance as any).options()).toEqual([toClaGroupOptionView(MARS)]);
+  });
+
+  describe('already signed (#1914)', () => {
+    const alreadyHeld: MyClaAgreement = {
+      id: 's1',
+      kind: 'ICLA',
+      claGroupName: 'Venus ICLA',
+      claGroupId: 'cg-1',
+      signedOn: '2022-01-01',
+      status: 'valid',
+      pdfAvailable: true,
+      signedVia: 'github',
+      signedAs: 'jellis',
+    };
+
+    beforeEach(async () => {
+      TestBed.resetTestingModule();
+      getClaGroupOptions = vi.fn(() => of(envelope([VENUS])));
+      close = vi.fn();
+
+      TestBed.configureTestingModule({
+        imports: [ClaGroupSelectComponent],
+        providers: [
+          provideRouter([]),
+          provideNoopAnimations(),
+          { provide: DynamicDialogRef, useValue: { close } },
+          { provide: DynamicDialogConfig, useValue: { data: { agreements: [alreadyHeld] } } },
+          { provide: MyClasService, useValue: { getClaGroupOptions } },
+        ],
+      });
+
+      fixture = TestBed.createComponent(ClaGroupSelectComponent);
+      fixture.detectChanges();
+      await fixture.whenStable();
+    });
+
+    it('tags a group the contributor already holds a CLA for with the identity that signed it', async () => {
+      await type('venus');
+
+      const row = fixture.debugElement.query(By.css('[data-testid="cla-group-select-cg-1"]'));
+      expect(state('already-signed-cg-1')?.textContent?.trim()).toBe(`${ALREADY_SIGNED_CLA_LABEL} as jellis (GitHub)`);
+      expect(row.injector.get(Tooltip, null)?.content).toBe(
+        'You already have an ICLA for this CLA group. Signed as jellis (GitHub). If you have another identity linked, you can still sign with it.'
+      );
+    });
+
+    it('announces the note alongside the project name rather than in place of it', async () => {
+      await type('venus');
+
+      // An aria-label here would win over the visible text, leaving a screen reader to read
+      // every tagged row as the same sentence with no way to tell the projects apart.
+      const row = fixture.debugElement.query(By.css('[data-testid="cla-group-select-cg-1"]'));
+      expect(row.nativeElement.getAttribute('aria-label')).toBeNull();
+      expect(row.nativeElement.textContent).toContain(VENUS_VIEW.primaryName);
+
+      const describedBy = row.nativeElement.getAttribute('aria-describedby');
+      expect(describedBy).toBe('cla-group-already-signed-cg-1');
+      expect(fixture.nativeElement.querySelector(`#${describedBy}`)?.textContent?.trim()).toBe(
+        'You already have an ICLA for this CLA group. Signed as jellis (GitHub). If you have another identity linked, you can still sign with it.'
+      );
+
+      // And it has to live outside the option. An option's accessible name is built from its
+      // contents, so a hidden child would put the same sentence in the name as well as the
+      // description, and a screen reader would read the whole thing twice.
+      expect(row.nativeElement.querySelector(`#${describedBy}`)).toBeNull();
+      expect(row.nativeElement.textContent).not.toContain('You already have an ICLA');
+    });
+
+    it('still lets them select it, because another of their identities may be able to sign', async () => {
+      await type('venus');
+
+      const row = fixture.debugElement.query(By.css('[data-testid="cla-group-select-cg-1"]'));
+      expect(row.nativeElement.getAttribute('aria-disabled')).toBeNull();
+
+      (fixture.componentInstance as any).onSelect(VENUS_VIEW);
+      expect((fixture.componentInstance as any).selected()).toEqual(VENUS_VIEW);
+    });
+
+    it('offers no other identity on a GitLab-only group, which no identity can sign', async () => {
+      // The tooltip has to read the group's own sources to know this, so exercise it through the
+      // component rather than the helper: a GitLab-only group is blocked by its route, and
+      // suggesting they link another identity would send them nowhere.
+      getClaGroupOptions.mockReturnValue(of(envelope([{ ...VENUS, organizations: [{ name: 'Venus', source: 'gitlab' }] }])));
+      await type('venus');
+
+      const row = fixture.debugElement.query(By.css('[data-testid="cla-group-select-cg-1"]'));
+      expect(row.injector.get(Tooltip, null)?.content).toBe('You already have an ICLA for this CLA group. Signed as jellis (GitHub).');
+    });
   });
 });

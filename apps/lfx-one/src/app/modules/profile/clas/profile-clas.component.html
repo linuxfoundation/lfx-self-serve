@@ -12,7 +12,7 @@ SPDX-License-Identifier: MIT
 
     <!--
     Page-level, not per-row: signing a new CLA has no row to act on yet. Rendered whenever the M2
-    overlay is on, then disabled while impersonating rather than withheld.
+    overlay is on, then disabled rather than withheld — see `signDisabled` for when and why.
     -->
     @if (myClasM2Enabled()) {
       <lfx-button
@@ -20,8 +20,8 @@ SPDX-License-Identifier: MIT
         icon="fa-light fa-file-signature"
         size="small"
         [loading]="starting()"
-        [disabled]="impersonating()"
-        [ariaLabel]="impersonating() ? 'This action is unavailable while impersonating another user' : undefined"
+        [disabled]="signDisabled()"
+        [ariaLabel]="signDisabledReason()"
         data-testid="sign-cla-action"
         (onClick)="openSignDialog()" />
     }
