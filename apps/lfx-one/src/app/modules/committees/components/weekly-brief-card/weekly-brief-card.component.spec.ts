@@ -661,6 +661,9 @@ describe('WeeklyBriefCardComponent — Current activity tally (GH-1922)', () => 
     const el = fixture.nativeElement.querySelector('[data-testid="weekly-brief-card-current-activity"]');
     expect(el).not.toBeNull();
     expect(el.textContent).toContain('no activity yet');
+    // isTruncated must not additionally gate on currentActivity().length — an empty-but-present,
+    // non-truncated tally is a genuine quiet week and must not carry the truncation note either.
+    expect(fixture.nativeElement.querySelector('[data-testid="weekly-brief-card-current-activity-truncation-note"]')).toBeNull();
   });
 
   it('renders nothing at all when current_activity is absent — a server-side degrade must not be presented as "no activity yet" (GH-1922)', async () => {
