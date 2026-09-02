@@ -43,7 +43,6 @@ type PlanningStep = 'input' | 'generating' | 'review';
  * created". One would surrender the indexing-lag protection the record exists for; none at all
  * left Create permanently withheld after a create that never reached HubSpot.
  */
-const CREATED_RECHECK_MISS_LIMIT = 2;
 
 @Component({
   selector: 'lfx-planning-tab',
@@ -227,7 +226,6 @@ export class PlanningTabComponent implements OnInit {
    * much better explained by "it was never created". Erring on TWO rather than one keeps the
    * duplicate protection for the indexing-lag case it exists for.
    */
-  private readonly hsCreatedRecheckMisses = signal(new Map<string, number>());
   /**
    * The event the panel is currently showing, as a SIGNAL.
    *
@@ -1604,55 +1602,29 @@ export class PlanningTabComponent implements OnInit {
             // control that settles it, stranding the operator until a reload.
             this.hsUnconfirmed.set(true);
           } else if (this.hsCreatedEvents().has(`${capturedFoundation}|${eventName}`)) {
-            // A create ALREADY SUCCEEDED for this event under this foundation, and the lookup
-            // still cannot see it -- HubSpot has not indexed it yet.
+            // A create already succeeded -- or may have -- for this event under this foundation,
+            // and the lookup still cannot see it. HubSpot has not indexed it yet.
             //
-            // Reported as UNCONFIRMED, not not-found. An earlier version of this fix merely
-            // disabled the Create button here, which left the operator at a dead end: a false
-            // "No campaign found", no Create, and no re-check either -- and retyping the same
-            // url starts no new lookup because lastLookedUpEvent already matches. Blocking
-            // without a recovery path is a worse failure than the duplicate it prevents.
+            // Reported as UNCONFIRMED, and it STAYS unconfirmed until a lookup positively finds
+            // the campaign. There is deliberately no miss threshold here any more.
             //
-            // The unconfirmed state is the honest one and already carries the only control that
-            // settles the question: a re-check, which reads back the token HubSpot will assign.
-            const key = `${capturedFoundation}|${eventName}`;
-            // Only a PROVEN-COMPLETE miss counts. An inconclusive search -- capped, or one whose
-            // completeness could not be shown -- has not established that the campaign is absent,
-            // so two of them would retire the record and re-enable Create on evidence that proves
-            // nothing. That is the same "absence is not proof" rule the create offer itself runs
-            // on, applied to the thing that RETIRES the protection.
-            const provenMiss = result?.inconclusive !== true && result?.capped !== true;
-            const misses = provenMiss ? (this.hsCreatedRecheckMisses().get(key) ?? 0) + 1 : (this.hsCreatedRecheckMisses().get(key) ?? 0);
-            if (provenMiss) {
-              this.hsCreatedRecheckMisses.update((m) => new Map(m).set(key, misses));
-            }
-            if (misses >= CREATED_RECHECK_MISS_LIMIT) {
-              // Settled the other way: it is not appearing, so it was almost certainly never
-              // created -- the unconfirmed failure that recorded it never reached HubSpot. Drop
-              // the record and report an ordinary not-found, which restores Create. Leaving it
-              // would be the round-4 lockout reached through the failure path.
-              this.hsCreatedEvents.update((seen) => {
-                const next = new Set(seen);
-                next.delete(key);
-                return next;
-              });
-              // The COUNT goes with it. Left at the limit, the next unconfirmed create for this
-              // same event retires on its FIRST empty re-check -- the two-check protection spent
-              // on the previous attempt -- which is worse than never having it, because the
-              // retry is exactly when a duplicate is most likely.
-              this.hsCreatedRecheckMisses.update((m) => {
-                const next = new Map(m);
-                next.delete(key);
-                return next;
-              });
-              this.hsNotFound.set(true);
-              this.hsMatches.set(result?.all_matches ?? []);
-              this.hsStatus.set('No matching campaign in HubSpot — the earlier attempt does not appear to have created one.');
-            } else {
-              this.hsUnconfirmed.set(true);
-              this.hsStatus.set('Created in HubSpot — waiting for it to appear. Re-check to read its UTM token.');
-              this.hsMatches.set(result?.all_matches ?? []);
-            }
+            // A count of empty searches was the exit for six revisions and it could never be
+            // made correct, because it asks a question the client cannot answer. `inconclusive:
+            // false` means the SEARCH COMPLETED, not that the record is absent: HubSpot's search
+            // index is eventually consistent, so a campaign created seconds ago returns a
+            // complete, empty, entirely truthful "not found". Any threshold therefore expires on
+            // index lag rather than on evidence, re-enabling Create after a POST that may well
+            // have landed -- a duplicate paid campaign, which is the exact outcome this record
+            // exists to prevent. Tuning N trades one wrong answer for another; only positive
+            // evidence settles it, and the `found` branches above already handle that.
+            //
+            // The operator is not stuck: re-check stays available and is the control that
+            // resolves this, and an unconfirmed create that genuinely never landed is recovered
+            // by creating the campaign in HubSpot directly -- a visible manual step, which is
+            // the right cost next to silently duplicating spend.
+            this.hsUnconfirmed.set(true);
+            this.hsMatches.set(result?.all_matches ?? []);
+            this.hsStatus.set('Created, but HubSpot has not indexed it yet — re-check to confirm. Create stays disabled so the campaign is not duplicated.');
           } else {
             this.hsNotFound.set(true);
             // Carried on the NOT-FOUND path too. An ambiguous lookup — a tie, or a match too weak

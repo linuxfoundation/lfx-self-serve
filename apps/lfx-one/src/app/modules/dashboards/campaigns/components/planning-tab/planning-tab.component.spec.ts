@@ -1569,7 +1569,9 @@ describe('PlanningTabComponent — HubSpot UTM states', () => {
     // url starts no new lookup either.
     expect(instance()['hsUnconfirmed'](), 'blocked Create with no re-check to recover through').toBe(true);
     expect(instance()['hsNotFound'](), 'showed a false not-found for a campaign that exists').toBe(false);
-    expect(String(instance()['hsStatus']())).toContain('Created in HubSpot');
+    // Matched on the stable claim -- that the status says it was CREATED and is not yet
+    // visible -- rather than a full sentence, which has now been reworded twice.
+    expect(String(instance()['hsStatus']())).toMatch(/^Created\b/);
   });
 
   it('preserves upstream text on a 400 instead of always saying "check the name"', () => {
@@ -1645,11 +1647,15 @@ describe('PlanningTabComponent — HubSpot UTM states', () => {
     expect(instance()['hsCreateBlocked'](), 'inconclusive searches retired the record and re-offered Create').toBe(true);
   });
 
-  it('gives a RETRIED unconfirmed create its own two re-checks', () => {
-    // Retiring the record left the miss count at the limit, so the next unconfirmed create for
-    // the same event retired on its FIRST empty re-check -- the protection spent on the previous
-    // attempt. Worse than never having it, because a retry is exactly when a duplicate is most
-    // likely: the first create may well have landed.
+  it('never re-enables Create from empty re-checks alone, however many', () => {
+    // Copilot (blocking): a count of empty searches cannot establish absence. `inconclusive:
+    // false` means the search COMPLETED, not that the record is missing -- HubSpot's index is
+    // eventually consistent, so a campaign created seconds ago returns a complete, truthful,
+    // empty result. Any threshold therefore expires on index lag and re-offers Create after a
+    // POST that may have landed, duplicating paid spend.
+    //
+    // Six revisions tuned that threshold. This asserts it is GONE: only positive evidence
+    // retires the record.
     const empty = { found: false, hs_utm: null, campaign_name: '', all_matches: [], capped: false, inconclusive: false };
     const recheck = () => {
       lookup.mockReturnValue(
@@ -1661,65 +1667,43 @@ describe('PlanningTabComponent — HubSpot UTM states', () => {
       (fixture.componentInstance as unknown as { recheckHubSpot(): void }).recheckHubSpot();
       fixture.detectChanges();
     };
-    const unconfirmedCreate = () => {
-      create.mockReturnValue(throwError(() => ({ status: 503 })));
-      (fixture.componentInstance as unknown as { createInHubSpot(): void }).createInHubSpot();
-      fixture.detectChanges();
-    };
 
-    runLookup(empty, 'KubeCon NA 2026');
-    unconfirmedCreate();
-    recheck();
-    recheck();
-    expect(instance()['hsCreateBlocked'](), 'first record should have retired').toBe(false);
-
-    // SECOND unconfirmed create for the same event. It must get a fresh pair of re-checks.
-    unconfirmedCreate();
-    recheck();
-
-    expect(instance()['hsCreateBlocked'](), 'the retried create retired on its FIRST re-check, reusing a spent count').toBe(true);
-  });
-
-  it('retires a possibly-created record after two empty re-checks', () => {
-    // dealako, round 5 (blocking): the record had NO exit. A create that failed with a transport
-    // 503 -- request never left, so nothing was created -- recorded the event, and every later
-    // lookup then hit the possibly-created branch, which never sets hsNotFound. The create block
-    // is gated on hsNotFound, so no button rendered; the re-check re-entered the same branch
-    // forever; a foundation round trip and retyping the url both failed to clear it. Reload only.
-    const empty = { found: false, hs_utm: null, campaign_name: '', all_matches: [], capped: false, inconclusive: false };
-    // The helper round-trips the name through a URL slug, so the component sees 'Kubecon Na
-    // 2026'. Using the same spelling throughout is what a real session does -- create and lookup
-    // both derive it from extractEventName(url) -- and mixing them here silently keyed the
-    // record under a name no later lookup would match.
     runLookup(empty, 'KubeCon NA 2026');
     create.mockReturnValue(throwError(() => ({ status: 503 })));
     (fixture.componentInstance as unknown as { createInHubSpot(): void }).createInHubSpot();
     fixture.detectChanges();
 
-    // Driven through recheckHubSpot(), the REAL control. A repeated runLookup is a no-op --
-    // lookupHubSpot returns early when lastLookedUpEvent already matches -- which is exactly the
-    // mechanism that made the lockout unrecoverable, and testing through it would have proved
-    // nothing. recheckHubSpot clears that field first, which is why it is the recovery path.
-    const recheck = () => {
-      lookup.mockReturnValue(
-        new Observable((s) => {
-          s.next(empty);
-          s.complete();
-        })
-      );
-      (fixture.componentInstance as unknown as { recheckHubSpot(): void }).recheckHubSpot();
-      fixture.detectChanges();
-    };
+    // Well past every threshold this guard has ever carried.
+    for (let i = 0; i < 6; i++) recheck();
 
-    // First re-check: still ambiguous, so the record holds and Create stays withheld.
-    recheck();
-    expect(instance()['hsCreateBlocked'](), 'released on the FIRST miss, losing indexing-lag protection').toBe(true);
-    expect(instance()['hsNotFound']()).toBe(false);
+    expect(instance()['hsCreateBlocked'](), 'empty re-checks retired the record and re-offered Create').toBe(true);
+    expect(instance()['hsNotFound'](), 'reported a confident not-found for a campaign that may exist').toBe(false);
+    expect(instance()['hsUnconfirmed'](), 'operator left with no re-check control').toBe(true);
+  });
 
-    // Second: it is not appearing, so it was almost certainly never created. Create returns.
-    recheck();
-    expect(instance()['hsCreateBlocked'](), 'Create stayed withheld forever after a create that never reached HubSpot').toBe(false);
-    expect(instance()['hsNotFound'](), 'the create block is gated on hsNotFound, so it must be set to render').toBe(true);
+  it('retires the record when a re-check POSITIVELY finds the campaign', () => {
+    // dealako, round 5 (blocking): the record must have an exit, or an operator is stranded
+    // until a reload. The exit is positive evidence -- the lookup actually finding it -- which
+    // is the only thing that answers the question the record poses.
+    const empty = { found: false, hs_utm: null, campaign_name: '', all_matches: [], capped: false, inconclusive: false };
+    runLookup(empty, 'KubeCon NA 2026');
+    create.mockReturnValue(throwError(() => ({ status: 503 })));
+    (fixture.componentInstance as unknown as { createInHubSpot(): void }).createInHubSpot();
+    fixture.detectChanges();
+    expect(instance()['hsCreateBlocked']()).toBe(true);
+
+    // HubSpot has now indexed it.
+    lookup.mockReturnValue(
+      new Observable((s) => {
+        s.next({ found: true, hs_utm: 'kubecon-na-2026', campaign_name: 'KubeCon NA 2026', all_matches: [], capped: false, inconclusive: false });
+        s.complete();
+      })
+    );
+    (fixture.componentInstance as unknown as { recheckHubSpot(): void }).recheckHubSpot();
+    fixture.detectChanges();
+
+    expect(instance()['hsUtm'](), 'the token HubSpot assigned was not applied').toBe('kubecon-na-2026');
+    expect(instance()['hsNotFound'](), 'a found campaign still reported not-found').toBe(false);
   });
 
   it.each([
