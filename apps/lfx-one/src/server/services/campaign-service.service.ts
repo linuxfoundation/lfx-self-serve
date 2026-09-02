@@ -2050,10 +2050,18 @@ function toUpstreamEventDetails(details: CampaignEventDetails): Record<string, u
  * so the 5xx rule caught it; it is now a 503 (a lost connection is an unconfirmed outcome, not a
  * proof nothing happened), which would otherwise make it "controlled" and put raw transport text
  * — "Request failed: fetch failed" — where an operator-facing remedy belongs. Those are
- * distinguished from a 503 the service deliberately returned by their ORIGIN: every BFF
- * transport site sets `originalError`, and a relayed upstream error never does. NOT by the
- * `NETWORK_ERROR` code, which executeRequest emits only as a fallback when `cause.code` is
- * absent — see the guard's own comment below.
+ * distinguished from a 503 the service deliberately returned by their ORIGIN, tested as
+ * `originalError !== undefined || code === 'TIMEOUT'`. Both halves are needed and neither is an
+ * absolute: the connection-failure sites attach `originalError`, while the two timeout sites
+ * carry only the TIMEOUT code — an earlier version of this doc claimed EVERY transport site sets
+ * originalError, which is false and would have made the second half look redundant.
+ *
+ * NOT the `NETWORK_ERROR` code, which executeRequest emits only as a fallback when `cause.code`
+ * is absent — see the guard's own comment below.
+ *
+ * The 502 'Upstream returned no response body' is deliberately NOT suppressed: upstream replied,
+ * so that is a response-shape fault rather than a transport one, and its message is already
+ * operator-facing.
  */
 function upstreamMessageOr(error: unknown, fallback: string): string {
   if (!(error instanceof MicroserviceError)) {

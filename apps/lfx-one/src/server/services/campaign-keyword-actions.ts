@@ -407,11 +407,9 @@ export async function applyKeywordActionsViaCampaignService(
       // to classify and therefore reported "unconfirmed" and stopped the fan-out, abandoning
       // every remaining campaign over a response that never reached the ad platform.
       //
-      // Checked here instead, where it is still a resolution problem: the campaign cannot be
-      // identified, which is exactly CAMPAIGN_UNRESOLVED, and the other campaigns continue.
-      // Count/array agreement is already established above, so this only has to check that the
-      // one entry carries usable ids: a match_count of 1 with an id-less entry is still a
-      // resolution nothing can act on.
+      // Checked here, where it is still a RESOLUTION problem rather than a mutation one, so the
+      // other campaigns in the batch continue. Count/array agreement is already established
+      // above, so all that remains is whether the single entry carries usable ids.
       const match = resolution.matches?.[0];
       if (!match?.brief_id || !match?.campaign_id) {
         // CAMPAIGN_LOOKUP_FAILED, not CAMPAIGN_UNRESOLVED. An inconsistent 2xx -- match_count

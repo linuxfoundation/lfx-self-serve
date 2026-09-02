@@ -325,6 +325,13 @@ describe('applyKeywordActionsViaCampaignService — the fan-out stop', () => {
         ],
       },
     ],
+    [
+      // count 0 with a NON-empty array. The agreement guard was MOVED above the match_count===0
+      // arm precisely so this reaches it: answering "not managed here" on a self-contradictory
+      // response tells the operator to stop retrying a campaign that may well be theirs.
+      'a zero count with matches present',
+      { match_count: 0, matches: [{ brief_id: 'b-1', campaign_id: 'c-1' }] },
+    ],
   ])('refuses %s rather than trusting match_count', async (_label, resolution) => {
     // The COUNT is not the ARRAY. Reading matches[0] on the strength of match_count === 1 made
     // `ref` undefined, so `ref.brief_id` threw a TypeError into the MUTATION catch -- which has

@@ -173,7 +173,7 @@ export class PlanningTabComponent implements OnInit {
    * Deliberately does NOT claim the lookup missed rows. `inconclusive` is
    * `capped || campaigns.length > 0`, so it is equally true when HubSpot returned EVERYTHING and
    * only the local scorer rejected the rows — an earlier version of this doc asserted the
-   * truncation, which is false in exactly that case and is the claim the signal two below now
+   * truncation, which is false in exactly that case and is the claim the signal one below now
    * repudiates.
    *
    * Either way the consequence is the same and is why the offer is withheld: creating on a

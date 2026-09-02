@@ -260,6 +260,10 @@ describe('MonitoringTabComponent — keyword totals completeness', () => {
     render(keywordsResponse({ truncated: false }));
 
     expect(partialCaption()).toBeNull();
+    // The FALSE arm of keywordTotalsUnverified: a known-complete set gets NEITHER caption. An
+    // assertion that the unknown caption appears proves nothing about when it must not, so this
+    // is what stops it rendering on every response.
+    expect(fixture.nativeElement.querySelector('[data-testid="keyword-totals-unverified"]')).toBeNull();
     // Paired with a positive assertion: the strip must still be on screen, so a missing caption
     // cannot pass merely because the whole block failed to render.
     expect(fixture.nativeElement.querySelector('[data-testid="keyword-totals"]')).not.toBeNull();
