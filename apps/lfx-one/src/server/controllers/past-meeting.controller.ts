@@ -5,6 +5,8 @@ import {
   AttachmentCategory,
   AttachmentDownloadUrlResponse,
   CreateMeetingAttachmentRequest,
+  ITXCreatePastMeetingParticipantRequest,
+  ITXUpdatePastMeetingParticipantRequest,
   PastMeeting,
   PastMeetingAttachment,
   PastMeetingRecording,
@@ -177,6 +179,136 @@ export class PastMeetingController {
 
       // Send the participants data to the client
       res.json(participants);
+    } catch (error) {
+      next(error);
+    }
+  }
+
+  /**
+   * POST /past-meetings/:uid/participants
+   * Authorization (organizer-only) is enforced by lfx-v2-meeting-service on the ITX endpoint.
+   */
+  public async createPastMeetingParticipant(req: Request, res: Response, next: NextFunction): Promise<void> {
+    const { uid } = req.params;
+    const participantData: ITXCreatePastMeetingParticipantRequest = req.body;
+    const startTime = logger.startOperation(req, 'create_past_meeting_participant', {
+      past_meeting_id: uid,
+    });
+
+    try {
+      if (
+        !validateUidParameter(uid, req, next, {
+          operation: 'create_past_meeting_participant',
+          service: 'past_meeting_controller',
+        })
+      ) {
+        return;
+      }
+
+      if (!participantData.is_invited && !participantData.is_attended) {
+        return next(
+          ServiceValidationError.forField('is_invited', 'At least one of is_invited or is_attended must be true', {
+            operation: 'create_past_meeting_participant',
+            service: 'past_meeting_controller',
+          })
+        );
+      }
+
+      const participant = await this.meetingService.createPastMeetingParticipant(req, uid, participantData);
+
+      logger.success(req, 'create_past_meeting_participant', startTime, {
+        past_meeting_id: uid,
+        participant_id: participant.id,
+      });
+
+      res.status(201).json(participant);
+    } catch (error) {
+      next(error);
+    }
+  }
+
+  /**
+   * PUT /past-meetings/:uid/participants/:participantId
+   * Authorization (organizer-only) is enforced by lfx-v2-meeting-service on the ITX endpoint.
+   */
+  public async updatePastMeetingParticipant(req: Request, res: Response, next: NextFunction): Promise<void> {
+    const { uid, participantId } = req.params;
+    const participantData: ITXUpdatePastMeetingParticipantRequest = req.body;
+    const startTime = logger.startOperation(req, 'update_past_meeting_participant', {
+      past_meeting_id: uid,
+      participant_id: participantId,
+    });
+
+    try {
+      if (
+        !validateUidParameter(uid, req, next, {
+          operation: 'update_past_meeting_participant',
+          service: 'past_meeting_controller',
+        })
+      ) {
+        return;
+      }
+
+      if (!participantId) {
+        return next(
+          ServiceValidationError.forField('participantId', 'Participant ID is required', {
+            operation: 'update_past_meeting_participant',
+            service: 'past_meeting_controller',
+          })
+        );
+      }
+
+      const participant = await this.meetingService.updatePastMeetingParticipant(req, uid, participantId, participantData);
+
+      logger.success(req, 'update_past_meeting_participant', startTime, {
+        past_meeting_id: uid,
+        participant_id: participantId,
+      });
+
+      res.json(participant);
+    } catch (error) {
+      next(error);
+    }
+  }
+
+  /**
+   * DELETE /past-meetings/:uid/participants/:participantId
+   * Authorization (organizer-only) is enforced by lfx-v2-meeting-service on the ITX endpoint.
+   */
+  public async deletePastMeetingParticipant(req: Request, res: Response, next: NextFunction): Promise<void> {
+    const { uid, participantId } = req.params;
+    const startTime = logger.startOperation(req, 'delete_past_meeting_participant', {
+      past_meeting_id: uid,
+      participant_id: participantId,
+    });
+
+    try {
+      if (
+        !validateUidParameter(uid, req, next, {
+          operation: 'delete_past_meeting_participant',
+          service: 'past_meeting_controller',
+        })
+      ) {
+        return;
+      }
+
+      if (!participantId) {
+        return next(
+          ServiceValidationError.forField('participantId', 'Participant ID is required', {
+            operation: 'delete_past_meeting_participant',
+            service: 'past_meeting_controller',
+          })
+        );
+      }
+
+      await this.meetingService.deletePastMeetingParticipant(req, uid, participantId);
+
+      logger.success(req, 'delete_past_meeting_participant', startTime, {
+        past_meeting_id: uid,
+        participant_id: participantId,
+      });
+
+      res.status(204).send();
     } catch (error) {
       next(error);
     }

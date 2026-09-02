@@ -978,6 +978,154 @@ export interface EnrichedPastMeetingParticipant extends PastMeetingParticipant {
   committee_category?: string | null;
 }
 
+/**
+ * Request payload sent to the ITX past-meeting participant create endpoint
+ * @description POST /itx/past_meetings/{past_meeting_id}/participants — creates an invitee
+ *   record (when `is_invited` is true), an attendee record (when `is_attended` is true), or both
+ */
+export interface ITXCreatePastMeetingParticipantRequest {
+  /** Email address */
+  email?: string;
+  /** First name */
+  first_name?: string;
+  /** Last name */
+  last_name?: string;
+  /** LF SSO username */
+  username?: string;
+  /** LF user ID (Salesforce ID) */
+  lf_user_id?: string;
+  /** Organization name */
+  org_name?: string;
+  /** Job title */
+  job_title?: string;
+  /** Whether org has LF membership */
+  org_is_member?: boolean;
+  /** Whether org has project membership */
+  org_is_project_member?: boolean;
+  /** URL to profile picture */
+  avatar_url?: string;
+  /** Whether the participant was invited/registered — creates an invitee record if true */
+  is_invited?: boolean;
+  /** Whether the participant attended — creates an attendee record if true */
+  is_attended?: boolean;
+  /** Whether the attendee has been verified (attendee only) */
+  is_verified?: boolean;
+  /** Whether the attendee is marked as unknown (attendee only) */
+  is_unknown?: boolean;
+  /** Whether the attendee record was last updated via AI reconciliation (attendee only) */
+  is_ai_reconciled?: boolean;
+  /** Whether the attendee was automatically matched to an invitee by name (attendee only) */
+  is_auto_matched?: boolean;
+  /** Zoom display name of the attendee (attendee only) */
+  zoom_user_name?: string;
+  /** Full name of the invitee the attendee was matched to (attendee only) */
+  mapped_invitee_name?: string;
+}
+
+/**
+ * Request payload sent to the ITX past-meeting participant update endpoint
+ * @description PUT /itx/past_meetings/{past_meeting_id}/participants/{participant_id} — updates
+ *   invitee and/or attendee records as needed; setting `is_invited`/`is_attended` to false
+ *   deletes the corresponding record
+ */
+export interface ITXUpdatePastMeetingParticipantRequest {
+  /** Optional invitee ID to use directly (avoids ID mapping lookup) */
+  invitee_id?: string;
+  /** Optional attendee ID to use directly (avoids ID mapping lookup) */
+  attendee_id?: string;
+  /** Whether the participant is invited (if false, the invitee record is deleted) */
+  is_invited?: boolean;
+  /** Whether the participant attended (if false, the attendee record is deleted) */
+  is_attended?: boolean;
+  /** Email address (used when creating a missing invitee/attendee record) */
+  email?: string;
+  /** LF SSO username (used when creating a missing invitee/attendee record) */
+  username?: string;
+  /** LF user ID (used when creating a missing invitee/attendee record) */
+  lf_user_id?: string;
+  /** First name (required for invitee updates) */
+  first_name?: string;
+  /** Last name (required for invitee updates) */
+  last_name?: string;
+  /** Organization name */
+  org_name?: string;
+  /** Job title */
+  job_title?: string;
+  /** Whether the attendee has been verified (attendee only) */
+  is_verified?: boolean;
+  /** Whether the attendee record was last updated via AI reconciliation (attendee only) */
+  is_ai_reconciled?: boolean;
+  /** Whether the attendee was automatically matched to an invitee by name (attendee only) */
+  is_auto_matched?: boolean;
+  /** Zoom display name of the attendee (attendee only) */
+  zoom_user_name?: string;
+  /** Full name of the invitee the attendee was matched to (attendee only) */
+  mapped_invitee_name?: string;
+}
+
+/**
+ * Response shape from the ITX past-meeting participant create/update endpoints
+ * @description Unified invitee/attendee view returned by the write endpoints — distinct from
+ *   {@link PastMeetingParticipant} (the read-model projection indexed by the query service),
+ *   most notably using `id` rather than `uid` as the primary identifier
+ */
+export interface ITXPastMeetingParticipantResult {
+  /** Participant identifier (invitee_id or attendee_id or both) */
+  id: string;
+  /** Invitee record UUID (if is_invited is true) */
+  invitee_id?: string;
+  /** Attendee record UUID (if is_attended is true) */
+  attendee_id?: string;
+  /** Past meeting ID (meeting_id-occurrence_id) */
+  past_meeting_id: string;
+  /** Meeting ID */
+  meeting_id: string;
+  /** Primary email address */
+  email?: string;
+  /** First name */
+  first_name?: string;
+  /** Last name */
+  last_name?: string;
+  /** LF SSO username */
+  username?: string;
+  /** LF user ID (Salesforce ID) */
+  lf_user_id?: string;
+  /** Organization name */
+  org_name?: string;
+  /** Job title */
+  job_title?: string;
+  /** Whether org has LF membership */
+  org_is_member?: boolean;
+  /** Whether org has project membership */
+  org_is_project_member?: boolean;
+  /** URL to profile picture */
+  avatar_url?: string;
+  /** Whether the participant was invited/registered to this past meeting */
+  is_invited?: boolean;
+  /** Whether the participant attended this past meeting */
+  is_attended?: boolean;
+  /** Whether the attendee has been verified (attendee only) */
+  is_verified?: boolean;
+  /** Whether the attendee is marked as unknown (attendee only) */
+  is_unknown?: boolean;
+  /** Whether the attendee record was updated via AI reconciliation (attendee only) */
+  is_ai_reconciled?: boolean;
+  /** Whether the attendee name was auto-matched to a registrant's email (attendee only) */
+  is_auto_matched?: boolean;
+  /** Zoom display name of the attendee (attendee only) */
+  zoom_user_name?: string;
+  /** Full name of the invitee the attendee was matched to (attendee only) */
+  mapped_invitee_name?: string;
+  /** Creation timestamp (RFC3339) */
+  created_at?: string;
+  /** Creator user info */
+  created_by?: MeetingUserInfo;
+  /** Last modified timestamp (RFC3339) */
+  modified_at?: string;
+  /** Last modifier user info */
+  modified_by?: MeetingUserInfo;
+}
+
 /** Attendance filter for the past-meeting participant list. */
 export type PastParticipantAttendanceFilter = 'all' | 'attended' | 'absent';
 /** Invitation filter for the past-meeting participant list. */

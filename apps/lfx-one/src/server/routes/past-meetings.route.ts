@@ -17,6 +17,15 @@ router.get('/count', (req, res, next) => pastMeetingController.getPastMeetingsCo
 // Get past meeting participants by UID
 router.get('/:uid/participants', (req, res, next) => pastMeetingController.getPastMeetingParticipants(req, res, next));
 
+// Create a past meeting participant
+router.post('/:uid/participants', (req, res, next) => pastMeetingController.createPastMeetingParticipant(req, res, next));
+
+// Update a past meeting participant
+router.put('/:uid/participants/:participantId', (req, res, next) => pastMeetingController.updatePastMeetingParticipant(req, res, next));
+
+// Delete a past meeting participant
+router.delete('/:uid/participants/:participantId', (req, res, next) => pastMeetingController.deletePastMeetingParticipant(req, res, next));
+
 // Get past meeting recording by UID
 router.get('/:uid/recording', (req, res, next) => pastMeetingController.getPastMeetingRecording(req, res, next));
 
