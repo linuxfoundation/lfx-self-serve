@@ -7,9 +7,23 @@
 import type { Request } from 'express';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 
+import { IndexedVoteResponseStatus } from '@lfx-one/shared/enums';
+
 // Only `@lfx-one/shared/utils` is stubbed: its barrel pulls `@angular/common/http` (HttpParams via
 // meeting.utils), which can't JIT-compile in this plain-Node env. Enums/constants resolve for real via the alias.
-const { proxyRequest, proxyRequestWithResponse, pollEndpoint, fetchEntityProject, toEntityProjectFields } = vi.hoisted(() => ({
+const {
+  proxyRequest,
+  proxyRequestWithResponse,
+  pollEndpoint,
+  fetchEntityProject,
+  toEntityProjectFields,
+  getProjectsByIds,
+  fetchAllQueryResources,
+  getEffectiveEmail,
+  getUsernameFromAuth,
+  stripAuthPrefix,
+  computeIsFoundation,
+} = vi.hoisted(() => ({
   proxyRequest: vi.fn(),
   proxyRequestWithResponse: vi.fn(),
   // Resolve immediately without invoking pollFn — the index-polling loop is pollEndpoint's own
@@ -17,10 +31,16 @@ const { proxyRequest, proxyRequestWithResponse, pollEndpoint, fetchEntityProject
   pollEndpoint: vi.fn(() => Promise.resolve(true)),
   fetchEntityProject: vi.fn<(...args: unknown[]) => Promise<Record<string, unknown> | null>>(() => Promise.resolve(null)),
   toEntityProjectFields: vi.fn(),
+  getProjectsByIds: vi.fn(),
+  fetchAllQueryResources: vi.fn(),
+  getEffectiveEmail: vi.fn(),
+  getUsernameFromAuth: vi.fn(),
+  stripAuthPrefix: vi.fn((username: string) => username),
+  computeIsFoundation: vi.fn(() => false),
 }));
 
 vi.mock('@lfx-one/shared/utils', () => ({
-  computeIsFoundation: vi.fn(() => false),
+  computeIsFoundation,
   sortCommentResponsesByRecency: vi.fn((responses: unknown[]) => responses),
 }));
 vi.mock('./logger.service', () => ({
@@ -41,18 +61,20 @@ vi.mock('./microservice-proxy.service', () => ({
   },
 }));
 vi.mock('./project.service', () => ({
-  ProjectService: class {},
+  ProjectService: class {
+    public getProjectsByIds = getProjectsByIds;
+  },
 }));
 vi.mock('../helpers/entity-project-enrichment.helper', () => ({
   fetchEntityProject,
   toEntityProjectFields,
 }));
 vi.mock('../helpers/poll-endpoint.helper', () => ({ pollEndpoint }));
-vi.mock('../helpers/query-service.helper', () => ({ fetchAllQueryResources: vi.fn() }));
+vi.mock('../helpers/query-service.helper', () => ({ fetchAllQueryResources }));
 vi.mock('../utils/auth-helper', () => ({
-  getEffectiveEmail: vi.fn(),
-  getUsernameFromAuth: vi.fn(),
-  stripAuthPrefix: vi.fn(),
+  getEffectiveEmail,
+  getUsernameFromAuth,
+  stripAuthPrefix,
 }));
 
 import { VoteService } from './vote.service';
@@ -167,6 +189,93 @@ describe('VoteService upstream path encoding', () => {
       await service.getVoteResults(req, HOSTILE_UID);
 
       expect(proxyRequest).toHaveBeenCalledWith(req, 'LFX_V2_SERVICE', '/votes/abc%2Fdef/results', 'GET');
+    });
+  });
+
+  // The votes table's canonical edit links depend on this enrichment — pin the getProjectsByIds
+  // wiring so a mapping regression cannot pass while rows silently fall back to flat URLs.
+  describe('getVotes', () => {
+    const INDEX_VOTE_UID = 'v0000000-0000-0000-0000-00000000d101';
+    const PROJECT_UID = voteFixture.project_uid;
+    // Query-service index row (VoteData) carries only project_uid — no slug, name, or tier.
+    const indexRow = {
+      vote_uid: INDEX_VOTE_UID,
+      name: 'Steering Election',
+      status: 'active',
+      project_uid: PROJECT_UID,
+      end_time: '2099-06-01T18:00:00Z',
+    };
+    const project = { uid: PROJECT_UID, slug: 'acme-project', name: 'Acme Project', parent_uid: 'p0000000-0000-0000-0000-00000000d000' };
+
+    it('enriches an index row carrying only project_uid with the canonical project fields', async () => {
+      proxyRequest.mockResolvedValue({ resources: [{ data: indexRow }], page_token: undefined });
+      getProjectsByIds.mockResolvedValue(new Map([[PROJECT_UID, project]]));
+      computeIsFoundation.mockReturnValue(true);
+
+      const result = await service.getVotes(req);
+
+      expect(proxyRequest).toHaveBeenCalledWith(req, 'LFX_V2_SERVICE', '/query/resources', 'GET', { type: 'vote' });
+      expect(getProjectsByIds).toHaveBeenCalledWith(req, [PROJECT_UID]);
+      expect(computeIsFoundation).toHaveBeenCalledWith(project);
+      expect(result.data).toHaveLength(1);
+      expect(result.data[0]).toMatchObject({
+        uid: INDEX_VOTE_UID,
+        project_uid: PROJECT_UID,
+        project_slug: 'acme-project',
+        project_name: 'Acme Project',
+        is_foundation: true,
+        parent_project_uid: project.parent_uid,
+      });
+      // normalizeIndexedVote maps the indexer's vote_uid onto uid and strips the alias.
+      expect(result.data[0]).not.toHaveProperty('vote_uid');
+    });
+
+    it('leaves the row unenriched when the project lookup misses, preserving the flat-URL fallback', async () => {
+      proxyRequest.mockResolvedValue({ resources: [{ data: indexRow }], page_token: undefined });
+      getProjectsByIds.mockResolvedValue(new Map());
+
+      const result = await service.getVotes(req);
+
+      expect(result.data[0]).not.toHaveProperty('project_slug');
+      expect(result.data[0]).not.toHaveProperty('is_foundation');
+    });
+  });
+
+  describe('getMyVotes', () => {
+    const MY_VOTE_UID = 'v0000000-0000-0000-0000-00000000d102';
+    const PROJECT_UID = voteFixture.project_uid;
+    const detailVote = {
+      uid: MY_VOTE_UID,
+      name: 'Board Ratification',
+      status: 'active',
+      project_uid: PROJECT_UID,
+      end_time: '2099-06-01T18:00:00Z',
+    };
+    const project = { uid: PROJECT_UID, slug: 'acme-project', name: 'Acme Project', parent_uid: 'p0000000-0000-0000-0000-00000000d000' };
+
+    beforeEach(() => {
+      getUsernameFromAuth.mockResolvedValue('spec-user');
+      getEffectiveEmail.mockReturnValue('spec-user@example.org');
+    });
+
+    it('enriches the per-uid vote details with the same canonical project fields', async () => {
+      fetchAllQueryResources.mockResolvedValue([{ vote_uid: MY_VOTE_UID, vote_status: IndexedVoteResponseStatus.RESPONDED }]);
+      proxyRequest.mockResolvedValue(detailVote);
+      getProjectsByIds.mockResolvedValue(new Map([[PROJECT_UID, project]]));
+      computeIsFoundation.mockReturnValue(true);
+
+      const votes = await service.getMyVotes(req);
+
+      expect(proxyRequest).toHaveBeenCalledWith(req, 'LFX_V2_SERVICE', `/votes/${MY_VOTE_UID}`, 'GET');
+      expect(getProjectsByIds).toHaveBeenCalledWith(req, [PROJECT_UID]);
+      expect(votes).toHaveLength(1);
+      expect(votes[0]).toMatchObject({
+        uid: MY_VOTE_UID,
+        project_slug: 'acme-project',
+        project_name: 'Acme Project',
+        is_foundation: true,
+        parent_project_uid: project.parent_uid,
+      });
     });
   });
 });
