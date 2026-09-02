@@ -865,9 +865,19 @@ export class PlanningTabComponent implements OnInit {
         // page (Copilot).
         //
         // `take(1)` still bounds the subscription: an HttpClient request is finite and
-        // self-completing, so nothing leaks. It just does not CANCEL. The signal writes in the
-        // arms become inert once the component is gone, which is harmless; what matters is that
-        // the possibly-created record is written, and that happens before the render guards.
+        // self-completing, so nothing leaks. It just does not CANCEL.
+        //
+        // WHAT THIS DOES AND DOES NOT BUY, since an earlier version of this comment claimed more
+        // than it delivers: the outcome arm now runs, so a create that lands is recorded on THIS
+        // instance and cannot be re-offered while the panel lives. It does NOT survive a REMOUNT
+        // -- the record sets are instance signals, and this component sits inside an `@for`
+        // tracked by `selectedProgramType()`, so switching program type destroys it and the new
+        // instance starts empty (Copilot).
+        //
+        // Closing that needs the possibly-created state in a longer-lived service, or upstream
+        // idempotency (#2086), which would make all of this unnecessary. Deliberately NOT done
+        // here: session-scoping this state is a different change with its own lifetime questions,
+        // and this PR is already several rounds deep.
         take(1),
         // finalize, not the two arms, so the count cannot leak. next/error cover every outcome
         // this service produces today, but a completion without emission would leave the create

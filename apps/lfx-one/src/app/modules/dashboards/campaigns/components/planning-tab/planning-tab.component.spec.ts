@@ -1971,8 +1971,15 @@ describe('PlanningTabComponent — HubSpot UTM states', () => {
     pending.next({ created: true, hs_utm: null, campaign_name: 'Kubecon Na 2026' });
     pending.complete();
 
-    // The record is written even though no panel is left to render it -- that is the whole point:
-    // it is what stops Create being re-offered for a campaign that now exists.
+    // SCOPE OF THIS ASSERTION, stated precisely because an earlier version of it overstated the
+    // guarantee: this proves the request was NOT cancelled and its outcome arm ran. It does NOT
+    // prove the duplicate guard survives navigation -- the sets are instance signals, so a
+    // REMOUNT starts empty and Create can be offered again for a campaign that exists.
+    //
+    // That gap is real and is not closed here (Copilot). Closing it needs the possibly-created
+    // state in a longer-lived service, or upstream idempotency (#2086). What this test pins is
+    // the half that IS fixed: an aborted request recorded nothing at all, so even returning to
+    // the SAME instance re-offered Create.
     expect(component.hsCreatedEvents().size, 'the create was cancelled by navigation, or its outcome dropped').toBeGreaterThan(0);
   });
 
