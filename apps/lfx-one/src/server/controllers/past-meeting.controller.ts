@@ -19,7 +19,7 @@ import {
 } from '@lfx-one/shared/interfaces';
 import { NextFunction, Request, Response } from 'express';
 
-import { ServiceValidationError } from '../errors';
+import { AuthorizationError, ServiceValidationError } from '../errors';
 import { enrichMeetingsWithCreatedBy, stripHostKey } from '../helpers/meeting.helper';
 import { validateRequiredParameter, validateUidParameter } from '../helpers/validation.helper';
 import { AccessCheckService } from '../services/access-check.service';
@@ -340,6 +340,31 @@ export class PastMeetingController {
       }
 
       const pastMeeting = await this.meetingService.getPastMeetingById(req, uid);
+
+      let isOrganizer = false;
+      if (req.oidc?.isAuthenticated()) {
+        try {
+          const meetingWithAccess = await this.accessCheckService.addAccessToResource(
+            req,
+            { ...pastMeeting, id: pastMeeting.meeting_and_occurrence_id ?? uid },
+            'v1_past_meeting',
+            'organizer'
+          );
+          isOrganizer = meetingWithAccess.organizer ?? false;
+        } catch {
+          isOrganizer = false;
+        }
+      }
+
+      if (!isOrganizer) {
+        return next(
+          new AuthorizationError('Only the meeting organizer can trigger attendance reconciliation', {
+            operation: 'reconcile_past_meeting_participants',
+            service: 'past_meeting_controller',
+          })
+        );
+      }
+
       const result = await this.attendanceReconciliationService.reconcilePastMeetingParticipants(req, uid, pastMeeting);
 
       logger.success(req, 'reconcile_past_meeting_participants', startTime, {

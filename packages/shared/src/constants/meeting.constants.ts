@@ -697,9 +697,9 @@ export const RECONCILIATION_MAX_PRIOR_OCCURRENCES = 10;
 
 /**
  * Max ambiguous attendees sent to the LLM in a single reconcileAttendees call. Bounds prompt
- * size and keeps the call within AI_REQUEST_CONFIG's reconciliation timeout; a meeting with more
- * ambiguous attendees than this is chunked into multiple sequential calls rather than one
- * unbounded prompt.
+ * size and keeps each call within AI_REQUEST_CONFIG's reconciliation timeout; a meeting with more
+ * ambiguous attendees than this is chunked into multiple calls dispatched concurrently (not one
+ * unbounded prompt), with each chunk independently degrading to `confidence: 'none'` on failure.
  */
 export const RECONCILIATION_MAX_ATTENDEES_PER_AI_CALL = 30;
 
