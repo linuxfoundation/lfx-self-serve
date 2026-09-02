@@ -1523,6 +1523,21 @@ export class PlanningTabComponent implements OnInit {
             // before HubSpot has assigned its token. Leaving the flag down removed the only
             // control that settles it, stranding the operator until a reload.
             this.hsUnconfirmed.set(true);
+          } else if (this.hsCreatedEvents().has(`${capturedFoundation}|${eventName}`)) {
+            // A create ALREADY SUCCEEDED for this event under this foundation, and the lookup
+            // still cannot see it -- HubSpot has not indexed it yet.
+            //
+            // Reported as UNCONFIRMED, not not-found. An earlier version of this fix merely
+            // disabled the Create button here, which left the operator at a dead end: a false
+            // "No campaign found", no Create, and no re-check either -- and retyping the same
+            // url starts no new lookup because lastLookedUpEvent already matches. Blocking
+            // without a recovery path is a worse failure than the duplicate it prevents.
+            //
+            // The unconfirmed state is the honest one and already carries the only control that
+            // settles the question: a re-check, which reads back the token HubSpot will assign.
+            this.hsUnconfirmed.set(true);
+            this.hsStatus.set('Created in HubSpot — waiting for it to appear. Re-check to read its UTM token.');
+            this.hsMatches.set(result?.all_matches ?? []);
           } else {
             this.hsNotFound.set(true);
             // Carried on the NOT-FOUND path too. An ambiguous lookup — a tie, or a match too weak

@@ -1542,6 +1542,12 @@ describe('PlanningTabComponent — HubSpot UTM states', () => {
 
     expect(instance()['hsCreatesInFlight'](), 'nothing should still be in flight').toBe(0);
     expect(instance()['hsCreateBlocked'](), 'Create was re-offered for an event that already has a campaign').toBe(true);
+    // AND the operator has a way out. Blocking without a recovery path is the worse failure: a
+    // disabled button plus a false "No campaign found" is a dead end, because retyping the same
+    // url starts no new lookup either.
+    expect(instance()['hsUnconfirmed'](), 'blocked Create with no re-check to recover through').toBe(true);
+    expect(instance()['hsNotFound'](), 'showed a false not-found for a campaign that exists').toBe(false);
+    expect(String(instance()['hsStatus']())).toContain('Created in HubSpot');
   });
 
   it('keeps re-check available when the campaign is found but still tokenless', () => {
