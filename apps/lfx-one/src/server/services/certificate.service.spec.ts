@@ -19,22 +19,9 @@ vi.mock('@lfx-one/shared/utils', async () => {
   const eventUtils = await vi.importActual<typeof import('../../../../../packages/shared/src/utils/event.utils')>(
     '../../../../../packages/shared/src/utils/event.utils'
   );
-  // A plain `{ isBackfillEventSource }` object would make any *other* barrel export the service
-  // under test starts using resolve to `undefined` — surfacing as an opaque "X is not a function"
-  // wherever it's called, far from this mock. The Proxy throws immediately, at the missing
-  // property, naming this file as the place to add the new export.
-  return new Proxy(
-    { isBackfillEventSource: eventUtils.isBackfillEventSource },
-    {
-      get(target, prop, receiver) {
-        // `'then'` is probed by JS's own Promise-resolution algorithm (this factory is async, and
-        // its return value gets duck-typed) — answering `undefined` here says "not a thenable"
-        // without tripping the guard below.
-        if (prop === 'then' || prop in target) return Reflect.get(target, prop, receiver);
-        throw new Error(`certificate.service.spec.ts's '@lfx-one/shared/utils' mock doesn't stub '${String(prop)}' — add it to the mock in this file.`);
-      },
-    }
-  );
+  // Vitest already wraps this return value in a Proxy that throws on any unstubbed export
+  // ("No 'X' export is defined on the mock"), so a future second import fails loudly on its own.
+  return { isBackfillEventSource: eventUtils.isBackfillEventSource };
 });
 vi.mock('./snowflake.service', () => ({
   SnowflakeService: { getInstance: () => ({ execute: snowflakeMocks.execute }) },
