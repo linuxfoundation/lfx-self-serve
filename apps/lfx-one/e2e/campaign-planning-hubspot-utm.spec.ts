@@ -111,7 +111,12 @@ test.describe('Campaigns Planning tab — HubSpot UTM (LFXV2-2641)', () => {
     await paidPanel(page).getByTestId('planning-hubspot-create-btn').click({ timeout: DATA_LOAD_TIMEOUT });
 
     // A 400 PROVES nothing was created, so the operator can correct and retry — the offer stays.
-    await expect(paidPanel(page).getByTestId('planning-hubspot-status')).toContainText(/nothing was created/i, { timeout: DATA_LOAD_TIMEOUT });
+    //
+    // Asserts UPSTREAM'S text, not the hard-coded prompt. campaign-service uses 400 for 39 distinct
+    // reasons -- "invalid credentials payload" among them -- so createFailureMessage now prefers the
+    // message it actually sent, and this stub sends one. The previous expectation pinned the no-body
+    // fallback, which this stub can never produce.
+    await expect(paidPanel(page).getByTestId('planning-hubspot-status')).toContainText(/refused/i, { timeout: DATA_LOAD_TIMEOUT });
     await expect(paidPanel(page).getByTestId('planning-hubspot-create-btn')).toBeVisible();
     // And it must NOT tell them to go hunting in HubSpot for something never attempted.
     await expect(paidPanel(page).getByTestId('planning-hubspot-status')).not.toContainText(/may or may not/i);
