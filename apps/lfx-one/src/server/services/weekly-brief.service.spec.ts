@@ -818,8 +818,9 @@ describe('WeeklyBriefService', () => {
       // feature's whole point is that absent/null/present are three distinct states, not two.
       expect(result.current_activity).toEqual(expect.objectContaining({ source_refs: expect.any(Array) }));
       // GH-1998: the gate fires on data.length, not source_refs.length — a below-the-cap page
-      // must not carry the flag at all (not even `truncated: false`), so the client's `!!` read
-      // stays honest.
+      // must not carry the flag at all. truncated?: boolean is present-only by contract (never
+      // `false`), so this pins the gate actually omits the key here rather than just resolving
+      // falsy.
       expect(result.current_activity).not.toHaveProperty('truncated');
       const refs = result.current_activity?.source_refs ?? [];
       expect(refs).toHaveLength(4);
