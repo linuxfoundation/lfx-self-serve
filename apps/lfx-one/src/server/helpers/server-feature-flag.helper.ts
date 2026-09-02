@@ -268,46 +268,6 @@ export enum ServerFeatureFlag {
   CampaignServiceKeywordActions = 'LFX_CUTOVER_CAMPAIGN_SERVICE_KEYWORD_ACTIONS',
 
   /**
-   * Routes the HubSpot campaign UTM lookup and create through campaign-service instead of this
-   * BFF's own HubSpot calls.
-   *
-   * Like the keyword-action flag, "off" is NOT a working fallback: the legacy path calls
-   * `hsHeaders()`, which throws whenever `HUBSPOT_ACCESS_TOKEN` is absent — and it is, by design,
-   * since the credential moved into campaign-service's encrypted connection store. With this off
-   * the Planning tab's UTM lookup does not work at all.
-   *
-   * THREE BEHAVIOURS CHANGE ON BOTH PATHS, INCLUDING WITH THIS FLAG OFF. This flag switches the
-   * BACKEND; it does not gate either of them.
-   *
-   * 1. The legacy path fabricated a utm token (`id-name`) whenever HubSpot had none, so a
-   *    campaign with no configured token still appeared tokenised — and links tagged with that
-   *    invented value attribute traffic to a campaign HubSpot cannot report on. BOTH paths now
-   *    report a missing token as missing, which the UI already models (`hs_utm` is
-   *    `string | null`). Expect fewer apparent tokens, and expect that to be the correct answer.
-   *    Deliberately not gated: holding it behind a default-off flag keeps a known-wrong value
-   *    in production.
-   * 2. The legacy search limit rose from 10 to HubSpot's per-request maximum, and both paths
-   *    report whether a match may be hidden. The two go together — that signal is what
-   *    suppresses the create offer, and at a limit of 10 nearly every search on a busy portal
-   *    would report inconclusive, leaving an operator unable to create anything.
-   * 3. Neither path auto-applies a token when the top two candidates SCORE THE SAME. This became
-   *    reachable in this PR: the shared scorer now compares normalised names, so campaigns
-   *    differing only by case or whitespace tie where one previously won outright, and `sort` is
-   *    stable — so the winner would have been whichever row HubSpot returned first. Also not
-   *    gated, and for the same reason as (1): a default-off flag would leave a coin-flip
-   *    deciding which campaign's UTM goes into an event's links.
-   *
-   * The create path writes into a PORTAL-WIDE namespace — visible to everyone working in the
-   * HubSpot account the project is connected to, which is not necessarily the LF's own, since
-   * connections are per project with their own token and portal_id — and performs no duplicate
-   * check, which is why the UI warns before offering it.
-   *
-   * Safe to turn off, but NOT a full rollback: both routes are stateless with respect to this
-   * service, so flipping back restores the previous BACKEND. It does not restore fabricated
-   * tokens or the old search limit — those changed on both paths.
-   */
-
-  /**
    * Gates `committee.service.ts`'s `updateCommittee` (the `chat_webhook_url` write) and
    * `weekly-brief.service.ts`'s `shareToSlack` (the Slack send) server-side. `WG_WEEKLY_BRIEF_SLACK_FLAG`
    * (`wg-weekly-brief-slack`, an OpenFeature/GrowthBook flag) only gates the Angular UI — the
