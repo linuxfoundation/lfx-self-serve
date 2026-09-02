@@ -96,6 +96,7 @@ import {
   merge,
   Observable,
   of,
+  scan,
   skip,
   startWith,
   Subject,
@@ -1329,11 +1330,28 @@ export class MeetingJoinComponent implements OnInit {
     });
   }
 
+  // `meeting` re-emits a new object for the same resource on hydration refetch (the seeded value
+  // is replaced once `meeting$` resolves) — dedupe on the pair that actually determines whether a
+  // past-meeting resource fetch should (re)run, so that refetch doesn't cancel/restart every one
+  // of these fan-out requests for no reason. `extra` carries an explicit refresh trigger through
+  // undeduped, since its whole purpose is to force a refetch even when the resource key is stable.
+  private pastMeetingResourceKey$<T>(refreshTrigger: Observable<T>): Observable<{ hasAccess: boolean; id: string | null }> {
+    // `refreshTrigger` emissions must always force a refetch, even when `hasAccess`/`id` are
+    // unchanged — tagging each emission with a monotonically increasing tick (rather than the
+    // trigger's own value, which for a void `Subject` is always the same) keeps every refresh
+    // distinct from the previous key so `distinctUntilChanged` below never swallows one.
+    const tick$ = refreshTrigger.pipe(scan((count) => count + 1, 0));
+    return combineLatest([toObservable(this.pastMeetingFullAccess), toObservable(this.meeting), tick$]).pipe(
+      map(([hasAccess, meeting, tick]) => ({ hasAccess, id: meeting ? getPastMeetingResourceId(meeting) : null, tick })),
+      distinctUntilChanged((a, b) => a.hasAccess === b.hasAccess && a.id === b.id && a.tick === b.tick),
+      map(({ hasAccess, id }) => ({ hasAccess, id }))
+    );
+  }
+
   private initializePastMeetingSummary(): Signal<PastMeetingSummary | null> {
     return toSignal(
-      combineLatest([toObservable(this.pastMeetingFullAccess), toObservable(this.meeting)]).pipe(
-        switchMap(([hasAccess, meeting]) => {
-          const id = meeting ? getPastMeetingResourceId(meeting) : null;
+      this.pastMeetingResourceKey$(of(null)).pipe(
+        switchMap(({ hasAccess, id }) => {
           if (!hasAccess || !id || !this.authenticated()) return of(null);
           return this.meetingService.getPastMeetingSummary(id).pipe(catchError(() => of(null)));
         })
@@ -1344,9 +1362,8 @@ export class MeetingJoinComponent implements OnInit {
 
   private initializePastMeetingRecording(): Signal<PastMeetingRecording | null> {
     return toSignal(
-      combineLatest([toObservable(this.pastMeetingFullAccess), toObservable(this.meeting)]).pipe(
-        switchMap(([hasAccess, meeting]) => {
-          const id = meeting ? getPastMeetingResourceId(meeting) : null;
+      this.pastMeetingResourceKey$(of(null)).pipe(
+        switchMap(({ hasAccess, id }) => {
           if (!hasAccess || !id || !this.authenticated()) return of(null);
           return this.meetingService.getPastMeetingRecording(id).pipe(catchError(() => of(null)));
         })
@@ -1357,9 +1374,8 @@ export class MeetingJoinComponent implements OnInit {
 
   private initializePastMeetingAttachments(): Signal<PastMeetingAttachment[]> {
     return toSignal(
-      combineLatest([toObservable(this.pastMeetingFullAccess), toObservable(this.meeting), this.pastMeetingAttachmentsRefresh$]).pipe(
-        switchMap(([hasAccess, meeting]) => {
-          const id = meeting ? getPastMeetingResourceId(meeting) : null;
+      this.pastMeetingResourceKey$(this.pastMeetingAttachmentsRefresh$).pipe(
+        switchMap(({ hasAccess, id }) => {
           if (!hasAccess || !id || !this.authenticated()) return of([] as PastMeetingAttachment[]);
           return this.meetingService.getPastMeetingAttachments(id).pipe(
             tap((attachments) => {
@@ -1384,9 +1400,8 @@ export class MeetingJoinComponent implements OnInit {
 
   private initializePastMeetingParticipants(): Signal<PastMeetingParticipant[]> {
     return toSignal(
-      combineLatest([toObservable(this.pastMeetingFullAccess), toObservable(this.meeting)]).pipe(
-        switchMap(([hasAccess, meeting]) => {
-          const id = meeting ? getPastMeetingResourceId(meeting) : null;
+      this.pastMeetingResourceKey$(of(null)).pipe(
+        switchMap(({ hasAccess, id }) => {
           if (!hasAccess || !id || !this.authenticated()) return of([] as PastMeetingParticipant[]);
           return this.meetingService.getPastMeetingParticipants(id).pipe(catchError(() => of([] as PastMeetingParticipant[])));
         })
@@ -1416,9 +1431,8 @@ export class MeetingJoinComponent implements OnInit {
     // Transcripts are a separate query-service resource — NOT part of the
     // recording's recording_files — so they must be fetched independently.
     return toSignal(
-      combineLatest([toObservable(this.pastMeetingFullAccess), toObservable(this.meeting)]).pipe(
-        switchMap(([hasAccess, meeting]) => {
-          const id = meeting ? getPastMeetingResourceId(meeting) : null;
+      this.pastMeetingResourceKey$(of(null)).pipe(
+        switchMap(({ hasAccess, id }) => {
           if (!hasAccess || !id || !this.authenticated()) return of(null);
           return this.meetingService.getPastMeetingTranscript(id).pipe(
             map((transcript) => getPastMeetingTranscriptUrl(transcript)),
