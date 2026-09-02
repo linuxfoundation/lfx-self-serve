@@ -43,8 +43,18 @@ const E2E_BASE_URL = process.env['E2E_BASE_URL'] ?? `http://${E2E_HOST}:${E2E_PO
 // builds the default.
 const E2E_LAUNCH_PORT = (() => {
   try {
-    return new URL(E2E_BASE_URL).port || E2E_PORT;
+    const parsed = new URL(E2E_BASE_URL);
+    // `URL.port` is EMPTY for a scheme-default port, so `|| E2E_PORT` treated a deliberately
+    // portless override (E2E_BASE_URL=http://localhost) exactly like a parse failure -- Playwright
+    // would probe 80 while Angular launched on 4200, the same silent divergence this derivation
+    // exists to prevent, reached by a different route. An absent port is a REAL answer here, so
+    // the scheme default is supplied rather than falling back.
+    if (parsed.port) {
+      return parsed.port;
+    }
+    return parsed.protocol === 'https:' ? '443' : '80';
   } catch {
+    // Only an UNPARSEABLE url falls back, which is the one case where the base url says nothing.
     return E2E_PORT;
   }
 })();
