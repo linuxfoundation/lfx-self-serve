@@ -110,7 +110,17 @@ export class AttendanceReconciliationService {
     const invitees = occurrenceParticipants.filter((p) => p.is_invited);
 
     const committeeMembers = (
-      await Promise.all((pastMeeting.committees || []).map((committee) => this.committeeService.getCommitteeMembers(req, committee.uid).catch(() => [])))
+      await Promise.all(
+        (pastMeeting.committees || []).map((committee) =>
+          this.committeeService.getCommitteeMembers(req, committee.uid).catch((error) => {
+            logger.warning(req, 'reconcile_attendance_pool', 'Failed to fetch committee members, continuing without them', {
+              committee_uid: committee.uid,
+              err: error,
+            });
+            return [];
+          })
+        )
+      )
     ).flat();
 
     const priorAttendees = await this.getPriorVerifiedAttendees(req, pastMeeting.meeting_id, pastMeetingUid);
@@ -174,7 +184,15 @@ export class AttendanceReconciliationService {
     const priorOccurrences = occurrences.filter((o) => o.meeting_and_occurrence_id !== currentOccurrenceId).slice(-RECONCILIATION_MAX_PRIOR_OCCURRENCES);
 
     const perOccurrence = await Promise.all(
-      priorOccurrences.map((o) => this.meetingService.getPastMeetingParticipants(req, o.meeting_and_occurrence_id).catch(() => []))
+      priorOccurrences.map((o) =>
+        this.meetingService.getPastMeetingParticipants(req, o.meeting_and_occurrence_id).catch((error) => {
+          logger.warning(req, 'reconcile_attendance_pool', 'Failed to fetch prior occurrence participants, continuing without them', {
+            past_meeting_id: o.meeting_and_occurrence_id,
+            err: error,
+          });
+          return [];
+        })
+      )
     );
 
     return perOccurrence.flat().filter((p) => p.is_verified);
