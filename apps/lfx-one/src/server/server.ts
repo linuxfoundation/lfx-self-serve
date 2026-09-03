@@ -501,6 +501,12 @@ app.use('/**', async (req: Request, res: Response, next: NextFunction) => {
         return next();
       }
 
+      // SSR HTML can carry per-viewer data serialized into TransferState (e.g. a meeting's
+      // `host_key` for an authorized organizer, or the full `AuthContext` in app.component.ts) —
+      // never let a shared/CDN cache store or replay one visitor's rendered page to another.
+      response.headers.set('Cache-Control', 'private, no-store');
+      response.headers.set('Vary', 'Cookie');
+
       // Web `Response.status` is read-only, so rebuild with 404 when the render flagged not-found.
       // Buffer the body first (404 pages are small) so we never hand a consumed stream to the new Response.
       if (renderContext.notFound && response.status === 200) {
