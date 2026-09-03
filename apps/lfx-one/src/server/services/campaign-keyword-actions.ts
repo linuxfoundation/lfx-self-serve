@@ -456,6 +456,19 @@ export async function applyKeywordActionsViaCampaignService(
       // actually left rather than what was left before this one ran.
       const resolveBudgetMs = KEYWORD_ACTION_DEADLINE_MS - (Date.now() - startedAt);
       const resolution = await client.resolveGoogleAdsCampaign(req, projectSlug, group.platformCampaignId, resolveBudgetMs);
+      // THE ECHO MUST MATCH WHAT WE ASKED FOR. `platform_campaign_id` is part of the resolution
+      // contract and nothing checked it: a stale or misrouted 200 describing a DIFFERENT campaign
+      // is internally consistent -- count agrees, array agrees, ids are well-formed -- so every
+      // other check passes and the mutation applies to the wrong campaign (Copilot).
+      //
+      // Refused rather than treated as unresolved: "not managed here" tells the operator to stop
+      // trying a campaign that may well be theirs, and this response says nothing about their
+      // campaign either way. It is a lookup that cannot be trusted, which is what
+      // CAMPAIGN_LOOKUP_FAILED means.
+      if (resolution?.platform_campaign_id !== group.platformCampaignId) {
+        results.push(...failedResults(group, body.action, CAMPAIGN_LOOKUP_FAILED));
+        continue;
+      }
       // The COUNT and the ARRAY must agree, and that is checked on EVERY arm rather than only
       // where a match is consumed. `match_count: 0` with a NON-empty `matches` is upstream
       // contradicting itself, and answering "not managed here" on it would tell the operator to

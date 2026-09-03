@@ -350,7 +350,7 @@ describe('classifyMutationFailure — what proves upstream answered', () => {
     const resolveGoogleAdsCampaign = vi.fn().mockImplementation(() => {
       // Admitted inside the budget, but the resolve alone exhausts it.
       now += 50_000;
-      return Promise.resolve({ match_count: 1, matches: [{ brief_id: 'b-1', campaign_id: 'c-1' }] });
+      return Promise.resolve({ platform_campaign_id: 'camp-1', match_count: 1, matches: [{ brief_id: 'b-1', campaign_id: 'c-1' }] });
     });
     const applyKeywordActions = vi.fn();
 
@@ -377,7 +377,7 @@ describe('classifyMutationFailure — what proves upstream answered', () => {
     const resolveGoogleAdsCampaign = vi.fn().mockImplementation(() => {
       // Each resolve advances the clock past the budget.
       now += 30_000;
-      return Promise.resolve({ match_count: 1, matches: [{ brief_id: 'b-1', campaign_id: 'c-1' }] });
+      return Promise.resolve({ platform_campaign_id: 'camp-1', match_count: 1, matches: [{ brief_id: 'b-1', campaign_id: 'c-1' }] });
     });
     const applyKeywordActions = vi
       .fn()
@@ -404,12 +404,41 @@ describe('classifyMutationFailure — what proves upstream answered', () => {
     expect(unattempted.every((r) => r.success === false)).toBe(true);
   });
 
+  it('refuses a resolution that describes a DIFFERENT campaign', async () => {
+    // Copilot: `platform_campaign_id` is part of the resolution contract and nothing checked it.
+    // A stale or misrouted 200 for another campaign is internally CONSISTENT -- count agrees,
+    // array agrees, ids are well-formed -- so every other check passes and the mutation applies
+    // to the wrong campaign. That is a write against something the operator never named.
+    const resolveGoogleAdsCampaign = vi.fn().mockResolvedValue({
+      // Asked about camp-1; answered about camp-9.
+      platform_campaign_id: 'camp-9',
+      match_count: 1,
+      matches: [{ brief_id: 'b-9', campaign_id: 'c-9' }],
+    });
+    const applyKeywordActions = vi.fn();
+
+    const client = { resolveGoogleAdsCampaign, applyKeywordActions } as never;
+    const body = { action: 'remove' as const, keywords: [kw('camp-1', 'k-1')] };
+    const req = { log: { warn: vi.fn(), info: vi.fn(), error: vi.fn(), debug: vi.fn() } } as never;
+
+    const res = await applyKeywordActionsViaCampaignService(req, client, 'aswf', body);
+
+    // NOTHING was mutated -- this is the assertion that matters.
+    expect(applyKeywordActions, 'mutated a campaign the resolution did not describe').not.toHaveBeenCalled();
+    expect(res.results[0].success).toBe(false);
+    // LOOKUP_FAILED, not UNRESOLVED: "not managed here" would tell the operator to stop trying a
+    // campaign that may well be theirs, and this response says nothing about their campaign.
+    expect(String(res.results[0].message)).toMatch(/could not be looked up/i);
+  });
+
   it('reports a mismatch when a results ENTRY is not a criterion', async () => {
     // Copilot: `Array.isArray` was added for a missing `results`, but `results: [null]` is a
     // valid array whose element still throws in `key(r)`. That TypeError lands in the mutation
     // catch, which has no errorBody to classify -- so it reports this group unconfirmed AND stops
     // the fan-out, abandoning every later campaign over a response that DID reach the platform.
-    const resolveGoogleAdsCampaign = vi.fn().mockResolvedValue({ match_count: 1, matches: [{ brief_id: 'b-1', campaign_id: 'c-1' }] });
+    const resolveGoogleAdsCampaign = vi
+      .fn()
+      .mockResolvedValue({ platform_campaign_id: 'camp-1', match_count: 1, matches: [{ brief_id: 'b-1', campaign_id: 'c-1' }] });
     // applied_count AGREES and `results` IS an array -- only the element can fail this.
     const applyKeywordActions = vi.fn().mockResolvedValue({ campaign_id: 'c-1', applied_count: 1, results: [null] });
 
@@ -437,7 +466,9 @@ describe('classifyMutationFailure — what proves upstream answered', () => {
     // threw a TypeError inside the verification, and the caller's catch then classified our own
     // local bug as an upstream failure -- a definite-looking outcome for a request whose real
     // result nobody had established. Same shape as the match_count/matches case below.
-    const resolveGoogleAdsCampaign = vi.fn().mockResolvedValue({ match_count: 1, matches: [{ brief_id: 'b-1', campaign_id: 'c-1' }] });
+    const resolveGoogleAdsCampaign = vi
+      .fn()
+      .mockResolvedValue({ platform_campaign_id: 'camp-1', match_count: 1, matches: [{ brief_id: 'b-1', campaign_id: 'c-1' }] });
     // applied_count AGREES, so only the missing array can fail this.
     const applyKeywordActions = vi.fn().mockResolvedValue({ campaign_id: 'c-1', applied_count: 1 });
 
@@ -515,8 +546,10 @@ describe('applyKeywordActionsViaCampaignService — the fan-out stop', () => {
     // remaining campaign over a response that never reached the ad platform.
     const resolveGoogleAdsCampaign = vi
       .fn()
-      .mockResolvedValueOnce(resolution)
-      .mockResolvedValueOnce({ match_count: 1, matches: [{ brief_id: 'b-2', campaign_id: 'c-2' }] });
+      // Each row's malformed shape is what the case is ABOUT; the echo is spread in so the new
+      // echo guard does not short-circuit the check under test.
+      .mockResolvedValueOnce({ platform_campaign_id: 'camp-1', ...(resolution as object) })
+      .mockResolvedValueOnce({ platform_campaign_id: 'camp-2', match_count: 1, matches: [{ brief_id: 'b-2', campaign_id: 'c-2' }] });
     const applyKeywordActions = vi
       .fn()
       .mockResolvedValue({ campaign_id: 'c-2', applied_count: 1, results: [{ ad_group_id: 'ag-1', criterion_id: 'k-2', action: 'PAUSE' }] });
@@ -547,7 +580,13 @@ describe('applyKeywordActionsViaCampaignService — the fan-out stop', () => {
     // credential fault and 503 for a definite platform refusal -- both prove it replied, so
     // abandoning the remaining campaigns on them stopped a fan-out that was fine to continue and
     // left keywords the operator asked about unattempted for no reason.
-    const resolveGoogleAdsCampaign = vi.fn().mockResolvedValue({ match_count: 1, matches: [{ brief_id: 'b-1', campaign_id: 'c-1' }] });
+    const resolveGoogleAdsCampaign = vi
+      .fn()
+      // Echoes whichever campaign is asked for -- this case drives more than one group, and a
+      // fixed echo would fail the new guard on the second rather than exercising the fan-out.
+      .mockImplementation((_r: unknown, _s: string, id: string) =>
+        Promise.resolve({ platform_campaign_id: id, match_count: 1, matches: [{ brief_id: 'b-1', campaign_id: 'c-1' }] })
+      );
     const applyKeywordActions = vi
       .fn()
       .mockRejectedValueOnce(
@@ -574,7 +613,9 @@ describe('applyKeywordActionsViaCampaignService — the fan-out stop', () => {
     // The stop flag was set in the resolver catch only. If the resolver succeeds and
     // applyKeywordActions then times out, the loop kept resolving and mutating every remaining
     // campaign -- recreating the exact fan-out the flag exists to prevent, one call later.
-    const resolveGoogleAdsCampaign = vi.fn().mockResolvedValue({ match_count: 1, matches: [{ brief_id: 'b-1', campaign_id: 'c-1' }] });
+    const resolveGoogleAdsCampaign = vi
+      .fn()
+      .mockResolvedValue({ platform_campaign_id: 'camp-1', match_count: 1, matches: [{ brief_id: 'b-1', campaign_id: 'c-1' }] });
     const applyKeywordActions = vi
       .fn()
       .mockRejectedValue(new MicroserviceError('Request failed: fetch failed', 503, 'ECONNRESET', { originalError: new Error('fetch failed') }));

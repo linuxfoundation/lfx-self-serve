@@ -2209,8 +2209,11 @@ describe('CampaignController.executeKeywordActions via campaign-service', () => 
   // enforces that before any fan-out. A placeholder like 'ag-1' would make every fixture an
   // invalid request and the suite would test the refusal path by accident.
   const keyword = (campaignId: string, criterionId: string) => ({ campaignId, adGroupId: '176216228', criterionId, action: 'pause' });
-  const resolvedTo = (campaignId: string, briefId: string) => ({
-    platform_campaign_id: 'x',
+  // `platform_campaign_id` ECHOES the requested id, as the real contract does. It was hardcoded
+  // 'x', which meant every fixture described a different campaign than the one asked for -- fine
+  // while nothing checked the echo, and exactly what the new guard refuses.
+  const resolvedTo = (campaignId: string, briefId: string, platformCampaignId = '24183781329') => ({
+    platform_campaign_id: platformCampaignId,
     match_count: 1,
     matches: [{ campaign_id: campaignId, brief_id: briefId }],
   });
@@ -2221,7 +2224,11 @@ describe('CampaignController.executeKeywordActions via campaign-service', () => 
     res = buildRes();
     next = vi.fn();
     isServerFeatureEnabled.mockImplementation(onlyActions);
-    svcResolveCampaign.mockResolvedValue(resolvedTo('c-1', 'b-1'));
+    // Echoes the REQUESTED id, as the real contract does, so a test using any campaign id gets a
+    // consistent resolution without restating it. The guard refuses a mismatched echo.
+    svcResolveCampaign.mockImplementation((_req: unknown, _slug: string, platformCampaignId: string) =>
+      Promise.resolve(resolvedTo('c-1', 'b-1', platformCampaignId))
+    );
     // Confirms exactly what a single-keyword request sends. An empty `results` array is NOT a
     // valid confirmation — the controller now checks the returned multiset against the request,
     // because upstream derives applied_count from its own results rather than from the request.
@@ -2340,7 +2347,7 @@ describe('CampaignController.executeKeywordActions via campaign-service', () => 
   });
 
   it('issues one call per campaign rather than one flat batch', async () => {
-    svcResolveCampaign.mockResolvedValueOnce(resolvedTo('c-1', 'b-1')).mockResolvedValueOnce(resolvedTo('c-2', 'b-2'));
+    svcResolveCampaign.mockResolvedValueOnce(resolvedTo('c-1', 'b-1', '555')).mockResolvedValueOnce(resolvedTo('c-2', 'b-2', '666'));
 
     await controller.executeKeywordActions(actionsReq([keyword('555', '1'), keyword('666', '2'), keyword('555', '3')]), res, next);
 
@@ -2442,7 +2449,7 @@ describe('CampaignController.executeKeywordActions via campaign-service', () => 
   });
 
   it('continues to the next campaign when one fails, and reports both outcomes', async () => {
-    svcResolveCampaign.mockResolvedValueOnce(resolvedTo('c-1', 'b-1')).mockResolvedValueOnce(resolvedTo('c-2', 'b-2'));
+    svcResolveCampaign.mockResolvedValueOnce(resolvedTo('c-1', 'b-1', '555')).mockResolvedValueOnce(resolvedTo('c-2', 'b-2', '666'));
     svcApplyKeywordActions
       // A 422, not a bare Error. This case is "campaign-service REFUSED this one, keep going"; a
       // bare Error has no status and is a transport failure by definition, which now stops the
@@ -2494,7 +2501,7 @@ describe('CampaignController.executeKeywordActions via campaign-service', () => 
     // next one -- so the batch must keep going. A bare Error (no status) is a TRANSPORT failure
     // and now deliberately stops the fan-out, so it can no longer stand in for this case.
     const refused = Object.assign(new Error('resolver refused'), { statusCode: 422 });
-    svcResolveCampaign.mockRejectedValueOnce(refused).mockResolvedValueOnce(resolvedTo('c-2', 'b-2'));
+    svcResolveCampaign.mockRejectedValueOnce(refused).mockResolvedValueOnce(resolvedTo('c-2', 'b-2', '666'));
     // Campaign 666 sends criterion 2, so its confirmation must name criterion 2 — the default
     // stub confirms criterion 1 and would now be rejected as a mismatch.
     svcApplyKeywordActions.mockResolvedValue({
