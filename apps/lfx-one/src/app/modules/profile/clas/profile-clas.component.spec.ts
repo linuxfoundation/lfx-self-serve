@@ -224,12 +224,13 @@ describe('ProfileClasComponent', () => {
   });
 
   it('lets a long ECLA company name wrap inside a height-auto type pill', async () => {
-    await render([agreement({ id: 's-long', kind: 'ECLA', companyName: 'The Linux Foundation', pdfAvailable: false })]);
+    const longCompanyName = 'Example Employer With A Very Long Legal Name Corp.';
+    await render([agreement({ id: 's-long', kind: 'ECLA', companyName: longCompanyName, pdfAvailable: false })]);
 
     const badge = fixture.debugElement.query(By.css('[data-testid="agreement-type-s-long"]'));
     expect(badge).toBeTruthy();
     expect(badge.componentInstance).toBeInstanceOf(BadgeComponent);
-    expect(badge.componentInstance.value()).toBe('ECLA · The Linux Foundation');
+    expect(badge.componentInstance.value()).toBe(`ECLA · ${longCompanyName}`);
     expect(badge.componentInstance.styleClass()).toContain('!h-auto');
     expect(badge.componentInstance.styleClass()).toContain('!whitespace-normal');
   });
