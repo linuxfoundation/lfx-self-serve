@@ -7,6 +7,7 @@ import type {
   HubSpotUtmCreateResult,
   HubSpotUtmLookupResult,
 } from '@lfx-one/shared/interfaces';
+import { normaliseForMatch } from '@lfx-one/shared/utils';
 
 // ---------------------------------------------------------------------------
 // campaign-service → UI conversion for the HubSpot UTM lookup
@@ -46,15 +47,6 @@ import type {
  */
 export function isConfidentMatch(name: string, query: string): boolean {
   return normaliseForMatch(name) !== '' && normaliseForMatch(name) === normaliseForMatch(query);
-}
-
-/**
- * Case, surrounding space and internal run-length collapsed, so "KubeCon  NA 2026" and
- * "kubecon na 2026" are the same name. Nothing else is stripped: punctuation and word order
- * distinguish real campaigns from each other.
- */
-function normaliseForMatch(value: string): string {
-  return value.trim().toLowerCase().replace(/\s+/g, ' ');
 }
 
 /**

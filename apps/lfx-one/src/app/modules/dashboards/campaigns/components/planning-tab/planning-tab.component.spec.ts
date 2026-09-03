@@ -1986,10 +1986,11 @@ describe('PlanningTabComponent — HubSpot UTM states', () => {
     (fixture.componentInstance as unknown as { createInHubSpot(): void }).createInHubSpot();
     fixture.detectChanges();
 
-    // Foundation B creates the SAME event name.
+    // Foundation B creates the SAME event name with a different internal whitespace spelling.
     ctx.setFoundation({ uid: 'foundation-b-uid', slug: 'foundation-b', name: 'Foundation B' }, false);
     fixture.detectChanges();
-    runLookup(empty, 'KubeCon NA 2026');
+    runLookup(empty, 'KubeCon  NA 2026');
+    expect(String(instance()['hsStatus']()), 'the normalized cross-foundation fence was not applied').toMatch(/campaign named for this event/);
     (fixture.componentInstance as unknown as { createInHubSpot(): void }).createInHubSpot();
     fixture.detectChanges();
 

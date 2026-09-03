@@ -8,6 +8,7 @@ import { ReactiveFormsModule, FormBuilder, Validators } from '@angular/forms';
 import { ButtonComponent } from '@components/button/button.component';
 import { InputTextComponent } from '@components/input-text/input-text.component';
 import { CAMPAIGN_GOALS, CAMPAIGN_PLATFORMS } from '@lfx-one/shared/constants';
+import { normaliseForMatch } from '@lfx-one/shared/utils';
 import { CampaignService } from '@services/campaign.service';
 import { ProjectContextService } from '@services/project-context.service';
 import { catchError, combineLatest, debounceTime, distinctUntilChanged, filter, finalize, map, of, skip, Subject, Subscription, switchMap, take } from 'rxjs';
@@ -302,7 +303,10 @@ export class PlanningTabComponent implements OnInit {
    */
   private readonly currentEvent = signal('');
   protected readonly hsCreateBlocked = computed(
-    () => this.hsCreating() || this.hsCreatesInFlight() > 0 || this.hsCreatedEvents().has(`${this.activeFoundationSlug()}|${this.currentEvent()}`)
+    () =>
+      this.hsCreating() ||
+      this.hsCreatesInFlight() > 0 ||
+      this.hsCreatedEvents().has(`${this.activeFoundationSlug()}|${normaliseForMatch(this.currentEvent())}`),
   );
   protected readonly hsStatus = signal<string | null>(null);
   protected readonly hsNotFound = signal(false);
@@ -907,11 +911,11 @@ export class PlanningTabComponent implements OnInit {
           //
           // The confirmed marker still requires the flag: recording possibly-created is a
           // suppression decision, saying "Created" is a claim about fact.
-          this.hsCreatedEvents.update((seen) => new Set(seen).add(`${capturedFoundation}|${capturedEvent}`));
-          this.hsCreatedEventNames.update((seen) => new Set(seen).add(capturedEvent));
+          this.hsCreatedEvents.update((seen) => new Set(seen).add(`${capturedFoundation}|${normaliseForMatch(capturedEvent)}`));
+          this.hsCreatedEventNames.update((seen) => new Set(seen).add(normaliseForMatch(capturedEvent)));
           if (result?.created) {
-            this.hsCreatedConfirmed.update((seen) => new Set(seen).add(`${capturedFoundation}|${capturedEvent}`));
-            this.hsCreatedNamesConfirmed.update((seen) => new Set(seen).add(capturedEvent));
+            this.hsCreatedConfirmed.update((seen) => new Set(seen).add(`${capturedFoundation}|${normaliseForMatch(capturedEvent)}`));
+            this.hsCreatedNamesConfirmed.update((seen) => new Set(seen).add(normaliseForMatch(capturedEvent)));
           }
           // RECONCILE THE PANEL the record just contradicted, before the ownership guards drop
           // this result.
@@ -984,8 +988,8 @@ export class PlanningTabComponent implements OnInit {
           // asserting the campaign was created.
           const failStatus = typeof err === 'object' && err !== null && 'status' in err ? Number((err as { status: unknown }).status) : 0;
           if (!isDefiniteRefusal(failStatus)) {
-            this.hsCreatedEvents.update((seen) => new Set(seen).add(`${capturedFoundation}|${capturedEvent}`));
-            this.hsCreatedEventNames.update((seen) => new Set(seen).add(capturedEvent));
+            this.hsCreatedEvents.update((seen) => new Set(seen).add(`${capturedFoundation}|${normaliseForMatch(capturedEvent)}`));
+            this.hsCreatedEventNames.update((seen) => new Set(seen).add(normaliseForMatch(capturedEvent)));
             // The SAME reconciliation the success arm does. This arm writes the same two records
             // and then returns on a non-current generation, so without this a 503 or timeout
             // after a foundation switch stranded the panel exactly as a stale success did
@@ -1638,7 +1642,8 @@ export class PlanningTabComponent implements OnInit {
    * name fence cannot outlive the record they annotate.
    */
   private retireCreatedRecord(foundation: string, eventName: string): void {
-    const key = `${foundation}|${eventName}`;
+    const normalizedEventName = normaliseForMatch(eventName);
+    const key = `${foundation}|${normalizedEventName}`;
     this.hsCreatedEvents.update((seen) => {
       const next = new Set(seen);
       next.delete(key);
@@ -1657,18 +1662,18 @@ export class PlanningTabComponent implements OnInit {
     //
     // Computed from the keyed set AFTER its own delete above, so this reads the post-retirement
     // state rather than assuming it.
-    const stillHeldElsewhere = [...this.hsCreatedEvents()].some((k) => k.slice(k.indexOf('|') + 1) === eventName);
+    const stillHeldElsewhere = [...this.hsCreatedEvents()].some((k) => k.slice(k.indexOf('|') + 1) === normalizedEventName);
     if (stillHeldElsewhere) {
       return;
     }
     this.hsCreatedEventNames.update((seen) => {
       const next = new Set(seen);
-      next.delete(eventName);
+      next.delete(normalizedEventName);
       return next;
     });
     this.hsCreatedNamesConfirmed.update((seen) => {
       const next = new Set(seen);
-      next.delete(eventName);
+      next.delete(normalizedEventName);
       return next;
     });
   }
@@ -1694,7 +1699,8 @@ export class PlanningTabComponent implements OnInit {
    */
   private reconcilePanelAfterStaleCreate(): void {
     if (!this.hsNotFound()) return;
-    const panelKey = `${this.activeFoundationSlug()}|${this.currentEvent()}`;
+    const normalizedEventName = normaliseForMatch(this.currentEvent());
+    const panelKey = `${this.activeFoundationSlug()}|${normalizedEventName}`;
     if (this.hsCreatedEvents().has(panelKey)) {
       this.hsNotFound.set(false);
       this.hsUnconfirmed.set(true);
@@ -1703,10 +1709,10 @@ export class PlanningTabComponent implements OnInit {
           ? 'Created, but HubSpot has not indexed it yet — re-check to confirm. Create stays disabled so the campaign is not duplicated.'
           : 'A create for this event settled after this panel loaded and has not been confirmed — re-check before creating another.'
       );
-    } else if (this.hsCreatedEventNames().has(this.currentEvent())) {
+    } else if (this.hsCreatedEventNames().has(normalizedEventName)) {
       this.hsUnconfirmed.set(true);
       this.hsStatus.set(
-        this.hsCreatedNamesConfirmed().has(this.currentEvent())
+        this.hsCreatedNamesConfirmed().has(normalizedEventName)
           ? `No match under this project — but a campaign named for this event was created earlier in this session. If these projects share a HubSpot portal it already exists; check HubSpot before creating a second one.`
           : `No match under this project — but a create was ATTEMPTED for this event name earlier in this session and never confirmed. If these projects share a HubSpot portal one may already exist; check HubSpot before creating another.`
       );
@@ -1838,7 +1844,7 @@ export class PlanningTabComponent implements OnInit {
             // before HubSpot has assigned its token. Leaving the flag down removed the only
             // control that settles it, stranding the operator until a reload.
             this.hsUnconfirmed.set(true);
-          } else if (this.hsCreatedEvents().has(`${capturedFoundation}|${eventName}`)) {
+          } else if (this.hsCreatedEvents().has(`${capturedFoundation}|${normaliseForMatch(eventName)}`)) {
             // A create already succeeded -- or may have -- for this event under this foundation,
             // and the lookup still cannot see it. HubSpot has not indexed it yet.
             //
@@ -1867,11 +1873,11 @@ export class PlanningTabComponent implements OnInit {
             // something that may never have been attempted -- the harm the error arm warns
             // about at the write site (dealako, round 6). Suppression is the same either way.
             this.hsStatus.set(
-              this.hsCreatedConfirmed().has(`${capturedFoundation}|${eventName}`)
+              this.hsCreatedConfirmed().has(`${capturedFoundation}|${normaliseForMatch(eventName)}`)
                 ? 'Created, but HubSpot has not indexed it yet — re-check to confirm. Create stays disabled so the campaign is not duplicated.'
                 : 'The earlier attempt did not confirm whether it created this campaign, and no match is visible yet — it may be unindexed, or may never have been created. Check HubSpot before creating another; re-check once it appears.'
             );
-          } else if (this.hsCreatedEventNames().has(eventName)) {
+          } else if (this.hsCreatedEventNames().has(normaliseForMatch(eventName))) {
             // Nothing found under THIS foundation, but a create for this event name succeeded
             // under another one this session -- and two foundations can share a HubSpot portal,
             // where campaign names are a single namespace.
@@ -1901,7 +1907,7 @@ export class PlanningTabComponent implements OnInit {
             // describe a request that never left the BFF, and asserting a campaign exists on a
             // shared portal on that basis is a warning about nothing.
             this.hsStatus.set(
-              this.hsCreatedNamesConfirmed().has(eventName)
+              this.hsCreatedNamesConfirmed().has(normaliseForMatch(eventName))
                 ? `No match under this project — but a campaign named for this event was created earlier in this session. If these projects share a HubSpot portal it already exists; check HubSpot before creating a second one.`
                 : `No match under this project — but a create was ATTEMPTED for this event name earlier in this session and never confirmed. If these projects share a HubSpot portal one may already exist; check HubSpot before creating another.`
             );
