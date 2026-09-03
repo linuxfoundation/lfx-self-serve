@@ -105,16 +105,27 @@ export class SurveyManageComponent {
   public constructor() {
     // Sync context from the loaded survey itself — an edit deep link can arrive with no
     // `?project=` under a stale cookie-restored context (GH-1569). Mirrors meeting-manage (gh-1432).
-    syncEntityProjectContext(this.surveyEntityContext, this.projectContextService, this.router, this.destroyRef, { preferEntityKind: true });
+    // canonicalizeRoute rewrites a wrong-tier URL (/project/* vs /foundation/*) to the survey's own
+    // tier so copied wizard links reflect ownership — mirrors vote-manage/mailing-list-manage.
+    syncEntityProjectContext(this.surveyEntityContext, this.projectContextService, this.router, this.destroyRef, {
+      preferEntityKind: true,
+      canonicalizeRoute: true,
+    });
     // Unenriched-payload fallback (project_uid but no project_slug): resolve the project by uid;
     // freshFetch re-reads the detail uncached as a last resort for a committee writer whose
     // relation-gated project lookup resolves null (the enrichment needs no project relation).
     syncEntityProjectContextFallback(this.surveyEntityContext, this.projectService, this.projectContextService, this.router, this.destroyRef, {
       entityKind: 'survey',
+      canonicalizeRoute: true,
       freshFetch: (uid) =>
-        this.surveyService
-          .getSurvey(uid, undefined, { skipCache: true })
-          .pipe(map((survey) => ({ project_uid: survey.project_uid ?? '', project_slug: survey.project_slug, project_name: survey.project_name, is_foundation: survey.is_foundation ?? null }))),
+        this.surveyService.getSurvey(uid, undefined, { skipCache: true }).pipe(
+          map((survey) => ({
+            project_uid: survey.project_uid ?? '',
+            project_slug: survey.project_slug,
+            project_name: survey.project_name,
+            is_foundation: survey.is_foundation ?? null,
+          }))
+        ),
     });
     this.initCommitteeContext();
     evictOnWriteAccessLoss();

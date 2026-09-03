@@ -28,7 +28,7 @@ import { hasMeetingWriteAccess, resolveEntityWriteSlug } from '../utils/write-ac
  *    only for routes with `data.writeFeature === 'meetings'`.
  * 3. `committee.writer` — committee writer; accepted only when `writeFeature` is one of
  *    `'meetings'`, `'surveys'`, or `'votes'` and a committee uid is available — from the probed
- *    entity itself when its probe surfaces one (today only the votes probe carries
+ *    entity itself when its probe surfaces one (the votes and surveys probes carry
  *    `committee_uid`; the meetings probe falls through to the URL param), else from the
  *    `committee_uid` query param (create routes; attacker-controlled, which is why the entity
  *    value wins when present). The backend ruleset allows committee:uid#writer to create
@@ -91,7 +91,15 @@ export const writerGuard: CanActivateFn = (route: ActivatedRouteSnapshot) => {
     'mailing-lists': (id) => mailingListService.getMailingList(id),
     // Survey.project_uid is typed optional — map absent to '' so the probe satisfies the
     // registry's Pick<EntityWithProject> shape; resolveEntityWriteSlug treats '' as absent.
-    surveys: (id) => surveyService.getSurvey(id).pipe(map((survey) => ({ project_slug: survey.project_slug, project_uid: survey.project_uid ?? '' }))),
+    // Surface the primary committee's uid (same source the BFF flattens project_uid from) so the
+    // entity's own committee wins over the attacker-controlled ?committee_uid= URL param — mirrors
+    // the votes probe; a committee-less project survey falls back to the URL param.
+    surveys: (id) =>
+      surveyService
+        .getSurvey(id)
+        .pipe(
+          map((survey) => ({ project_slug: survey.project_slug, project_uid: survey.project_uid ?? '', committee_uid: survey.committees?.[0]?.committee_uid }))
+        ),
   };
   const resolveSlug = (): Observable<{ slug: string | null; entityCommitteeUid: string | null }> => {
     const fromContext = route.queryParamMap.get('project') ?? projectContextService.activeContext()?.slug ?? null;
@@ -131,9 +139,9 @@ export const writerGuard: CanActivateFn = (route: ActivatedRouteSnapshot) => {
 
       // Committee writers can create entities for their committee via ?committee_uid=. On
       // entity-scoped edit routes the probed entity's own committee wins when the probe carries
-      // one (only the votes probe returns committee_uid today) — a URL param naming an unrelated
-      // committee must not admit its writer, and an absent param must not deny the entity's real
-      // committee writer.
+      // one (the votes and surveys probes return committee_uid today) — a URL param naming an
+      // unrelated committee must not admit its writer, and an absent param must not deny the
+      // entity's real committee writer.
       const effectiveCommitteeUid = entityCommitteeUid ?? committeeUid;
       // getCommittee's tap() side effect is safe here: deny blocks navigation; allow overwrites.
       const checkCommittee = (): Observable<true | ReturnType<typeof deny>> =>
