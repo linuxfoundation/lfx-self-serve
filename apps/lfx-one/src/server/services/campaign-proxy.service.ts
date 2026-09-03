@@ -320,8 +320,22 @@ async function hubspotCreateCampaign(eventName: string): Promise<HubSpotUtmResul
     throw new Error(`HubSpot create failed (${createResponse.status}): ${text}`);
   }
 
-  const created = (await createResponse.json()) as { id: string };
-  const campaignUuid = created.id;
+  // VALIDATED, not cast. `as { id: string }` asserted a shape nothing checked, so a malformed
+  // 2xx -- a body with no `id`, a null, a rewritten envelope -- yielded `undefined` and this path
+  // went on to report a definite creation off it. The campaign-service arm this sits behind one
+  // flag with already refuses an id-less 2xx before claiming `created: true`; two paths behind
+  // one flag must not disagree about what proves a campaign exists (dealako, round 8).
+  //
+  // Thrown rather than reported as unconfirmed because the caller's catch already classifies a
+  // create failure, and a 2xx we cannot read is not evidence the campaign is absent.
+  const createdBody: unknown = await createResponse.json();
+  const campaignUuid =
+    typeof createdBody === 'object' && createdBody !== null && typeof (createdBody as { id?: unknown }).id === 'string'
+      ? (createdBody as { id: string }).id.trim()
+      : '';
+  if (campaignUuid === '') {
+    throw new Error('HubSpot create returned a 2xx with no usable campaign id');
+  }
 
   const searchResponse = await fetch(`${HS_BASE}/crm/v3/objects/0-35/search`, {
     method: 'POST',

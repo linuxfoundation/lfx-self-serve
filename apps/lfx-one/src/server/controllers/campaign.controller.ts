@@ -1148,7 +1148,7 @@ export class CampaignController {
       }
 
       const result = await this.proxyService.createHubSpotUtm(req, eventName);
-      logger.success(req, 'hubspot_utm_create', startTime, { created: result.created });
+      logger.success(req, 'hubspot_utm_create', startTime, { viaCampaignService: false, created: result.created });
       res.json(result);
     } catch (error) {
       next(error);

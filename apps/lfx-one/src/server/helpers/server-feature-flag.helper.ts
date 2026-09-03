@@ -271,11 +271,6 @@ export enum ServerFeatureFlag {
    * Routes the HubSpot campaign UTM lookup and create through campaign-service instead of this
    * BFF's own HubSpot calls.
    *
-   * Like the keyword-action flag, "off" is NOT a working fallback: the legacy path calls
-   * `hsHeaders()`, which throws whenever `HUBSPOT_ACCESS_TOKEN` is absent — and it is, by design,
-   * since the credential moved into campaign-service's encrypted connection store. With this off
-   * the Planning tab's UTM lookup does not work at all.
-   *
    * FOUR BEHAVIOURS CHANGE ON BOTH PATHS, INCLUDING WITH THIS FLAG OFF. This flag switches the
    * BACKEND; it does not gate either of them.
    *

@@ -207,10 +207,6 @@ export class PlanningTabComponent implements OnInit {
    */
   private readonly hsCreatesInFlight = signal(0);
   /**
-   * Whether the Create control must stay disabled. Either this panel is creating, or a create
-   * dispatched BEFORE a foundation switch has not settled yet.
-   */
-  /**
    * Events a create MAY have made a campaign for, keyed `foundation|event`.
    *
    * Written by both arms: a confirmed `created: true`, and any create failure that is not a
@@ -302,6 +298,10 @@ export class PlanningTabComponent implements OnInit {
    * hsCreateBlocked can depend on it honestly.
    */
   private readonly currentEvent = signal('');
+  /**
+   * Whether the Create control must stay disabled. Either this panel is creating, or a create
+   * dispatched BEFORE a foundation switch has not settled yet.
+   */
   protected readonly hsCreateBlocked = computed(
     () =>
       this.hsCreating() ||
@@ -520,7 +520,18 @@ export class PlanningTabComponent implements OnInit {
   private briefSubscription: Subscription | null = null;
 
   /**
-   * The foundation whose brief table the read-back should look in.
+   * The active foundation slug, coalesced to `''` when there is no context.
+   *
+   * Shared by the lookup pipeline and the stale-response guard rather than each reading
+   * `activeContext()?.slug` for itself: the guard compares the value a response was REQUESTED
+   * with against the value now current, and the pipeline's `?? ''` means an absent context
+   * reaches it as `''`. A guard re-deriving the raw `undefined` would compare `'' !== undefined`
+   * and discard every legitimate response while no foundation is selected.
+   */
+  private readonly activeFoundationSlug = computed(() => this.projectContextService.activeContext()?.slug ?? '');
+
+  /**
+   * The active foundation as an OBSERVABLE, for the lookup pipeline.
    *
    * A foundation switch does NOT re-create this component: `/foundation/campaigns` is a
    * two-segment route in the foundation lens, and `sidebar.component.ts`
@@ -532,18 +543,6 @@ export class PlanningTabComponent implements OnInit {
    * Built as an observable field rather than inside `ngOnInit` because `toObservable` needs an
    * injection context, and field initialisers have one.
    */
-
-  /**
-   * The active foundation slug, coalesced to `''` when there is no context.
-   *
-   * Shared by the lookup pipeline and the stale-response guard rather than each reading
-   * `activeContext()?.slug` for itself: the guard compares the value a response was REQUESTED
-   * with against the value now current, and the pipeline's `?? ''` means an absent context
-   * reaches it as `''`. A guard re-deriving the raw `undefined` would compare `'' !== undefined`
-   * and discard every legitimate response while no foundation is selected.
-   */
-  private readonly activeFoundationSlug = computed(() => this.projectContextService.activeContext()?.slug ?? '');
-
   private readonly activeFoundationSlug$ = toObservable(this.activeFoundationSlug);
 
   // === Lifecycle ===
@@ -1009,10 +1008,15 @@ export class PlanningTabComponent implements OnInit {
           //
           //   400 — HubSpot rejected it, or the connection is unusable. NOTHING was created,
           //         so the create offer stays up and the operator can correct and retry.
+          //   401 — the session is not authenticated. Refused at the boundary, nothing created.
+          //   403 — not permitted to create on this project. Refused before any write.
           //   404 — no HubSpot connection for this project. Also nothing created, but the
           //         remedy is to connect HubSpot rather than to change the name.
           //   else — UNCONFIRMED. The campaign may already exist, so the offer is WITHDRAWN and
           //         only a fresh lookup can establish what happened.
+          //
+          // All four are `isDefiniteRefusal`: each is refused AT THE BOUNDARY, before any write
+          // is attempted, which is what makes "nothing was created" a fact rather than a guess.
           //
           // 500 is UNCONFIRMED here, and stays that way even though campaign-service now
           // reserves 500 for pre-send faults alone (it moved "the campaign was not returned
@@ -1027,7 +1031,8 @@ export class PlanningTabComponent implements OnInit {
           // a message telling the operator to check HubSpot for a campaign never attempted; the
           // fix must not overshoot into the opposite error.
           const status = typeof err === 'object' && err !== null && 'status' in err ? Number((err as { status: unknown }).status) : 0;
-          // 400 and 404 only. 500 was here on the strength of campaign-service RESERVING it for
+          // The four boundary refusals only (`isDefiniteRefusal`). 500 was here on the strength of
+          // campaign-service RESERVING it for
           // the pre-send position ("a fault discovered AFTER the create returned without error is
           // a 503", design/connection.go) -- but that contract governs what campaign-service
           // SENDS, and this status is not read from campaign-service. It is read from OUR BFF,
@@ -1553,33 +1558,6 @@ export class PlanningTabComponent implements OnInit {
   }
 
   /**
-   * Whether the panel still belongs to the event `capturedEvent` was captured for.
-   *
-   * Compares against the LIVE url field, not `lastLookedUpEvent`. The latter only updates when
-   * the 500ms debounced lookup fires, so between the user typing event B and that debounce
-   * elapsing it still names event A — and a create for A landing in that window would pass a
-   * `lastLookedUpEvent` check and write A's token into B's panel. The field is the earliest
-   * point at which the user's intent is visible, which is what makes it the right thing to
-   * compare. Same reasoning as restoreSavedBrief's guard.
-   */
-
-  /**
-   * Whether this lookup is still the LATEST one, which is the only question the shared
-   * `hsSearching` flag should be gated on.
-   *
-   * Distinct from `panelStillShows`, deliberately. That helper also asks whether the live url
-   * still names the captured event — right for deciding whose ANSWER may be rendered, but wrong
-   * for releasing an in-flight flag: the moment the user retypes, it goes false while the only
-   * request in flight is still this one, so nothing would ever clear the spinner. Here the
-   * question is narrower and is about ownership of the flag, not about what may be displayed.
-   *
-   * Keyed on a GENERATION rather than on the event and foundation, for the same reason
-   * createIsCurrent is: both of those can come BACK. An A -> B -> A round trip while an A
-   * lookup is in flight leaves the old response matching on both, so an equality check would
-   * let it clear or overwrite the newer one. A counter only advances.
-   */
-
-  /**
    * The status line for a lookup that found nothing, which is three different statements.
    *
    * The first arm must NOT claim truncation. `capped` means only that completeness could not be
@@ -1601,34 +1579,25 @@ export class PlanningTabComponent implements OnInit {
     return 'No matching campaign in HubSpot';
   }
 
+  /**
+   * Whether this lookup is still the LATEST one, which is the only question the shared
+   * `hsSearching` flag should be gated on.
+   *
+   * Distinct from `panelStillShows`, deliberately. That helper also asks whether the live url
+   * still names the captured event — right for deciding whose ANSWER may be rendered, but wrong
+   * for releasing an in-flight flag: the moment the user retypes, it goes false while the only
+   * request in flight is still this one, so nothing would ever clear the spinner. Here the
+   * question is narrower and is about ownership of the flag, not about what may be displayed.
+   *
+   * Keyed on a GENERATION rather than on the event and foundation, for the same reason
+   * createIsCurrent is: both of those can come BACK. An A -> B -> A round trip while an A
+   * lookup is in flight leaves the old response matching on both, so an equality check would
+   * let it clear or overwrite the newer one. A counter only advances.
+   */
   private lookupIsCurrent(generation: number): boolean {
     return this.lookupGeneration === generation;
   }
 
-  /**
-   * Whether this create still OWNS the shared `hsCreating` flag.
-   *
-   * The flag is shared, not per-subscription — a foundation change clears state and can start a
-   * second create while the first is still in flight. An older create releasing the flag
-   * unconditionally then re-enables the button while the NEWER request is still running, which
-   * is how a duplicate campaign gets made in a shared namespace.
-   *
-   * Keyed on a GENERATION counter rather than on the foundation or the event. Both of those are
-   * values that can come back: a round trip A -> B -> A leaves an old create matching the active
-   * foundation again, so it would clear the flag a newer create is holding. The counter only
-   * ever advances, so exactly one in-flight create owns the flag at a time, and identity does
-   * not depend on state the user can navigate back to.
-   */
-
-  /**
-   * The operator-facing message for a create that PROVABLY did not happen.
-   *
-   * Only the statuses that PROVE nothing was created reach here: a rejected name is the
-   * operator's to fix, a missing connection needs HubSpot connected. A 500 is deliberately NOT
-   * among them — our own BFF raises 500 for a fault at ANY position, including a parse failure
-   * of a 2xx whose campaign already exists, so it is unconfirmed rather than proof. The arm that
-   * used to handle it here was removed with it rather than left as unreachable code.
-   */
   /**
    * Retire the possibly-created record for an event a lookup has POSITIVELY found.
    *
@@ -1748,10 +1717,34 @@ export class PlanningTabComponent implements OnInit {
     return 'HubSpot rejected the campaign. Nothing was created — check the name and try again.';
   }
 
+  /**
+   * Whether this create still OWNS the shared `hsCreating` flag.
+   *
+   * The flag is shared, not per-subscription — a foundation change clears state and can start a
+   * second create while the first is still in flight. An older create releasing the flag
+   * unconditionally then re-enables the button while the NEWER request is still running, which
+   * is how a duplicate campaign gets made in a shared namespace.
+   *
+   * Keyed on a GENERATION counter rather than on the foundation or the event. Both of those are
+   * values that can come back: a round trip A -> B -> A leaves an old create matching the active
+   * foundation again, so it would clear the flag a newer create is holding. The counter only
+   * ever advances, so exactly one in-flight create owns the flag at a time, and identity does
+   * not depend on state the user can navigate back to.
+   */
   private createIsCurrent(generation: number): boolean {
     return this.createGeneration === generation;
   }
 
+  /**
+   * Whether the panel still belongs to the event `capturedEvent` was captured for.
+   *
+   * Compares against the LIVE url field, not `lastLookedUpEvent`. The latter only updates when
+   * the 500ms debounced lookup fires, so between the user typing event B and that debounce
+   * elapsing it still names event A — and a create for A landing in that window would pass a
+   * `lastLookedUpEvent` check and write A's token into B's panel. The field is the earliest
+   * point at which the user's intent is visible, which is what makes it the right thing to
+   * compare. Same reasoning as restoreSavedBrief's guard.
+   */
   private panelStillShows(capturedEvent: string, capturedFoundation: string): boolean {
     // The FOUNDATION is part of the key, not just the event name. This component stays mounted
     // when an ED switches foundations, campaign-service selects the HubSpot connection by
@@ -1897,13 +1890,19 @@ export class PlanningTabComponent implements OnInit {
             // Explicit `false` from both fields, or suppress: absence is the old-pod shape and
             // proves nothing about completeness.
             this.hsCreateSuppressed.set(!(result?.inconclusive === false && result?.capped === false));
-            // Written with its twin, ALWAYS. These two are set together at every other site
-            // (`:634-635`, `:1781-1782`, `:1940/:1946`); leaving it out here let a `capped`
-            // search render the wrong amber copy -- Create correctly withheld, but the panel
-            // explaining it as an ordinary no-match rather than an unproven-completeness one, so
-            // the operator is given the wrong remedy (dealako, #2079). It is a persistent
-            // signal, so an omission also LEAKS the previous lookup's value into this result.
-            this.hsCompletenessUnproven.set(result?.capped === true);
+            // Written with its twin, ALWAYS -- at the reset sites (`clearHubSpotState`, the
+            // foundation-change effect) and in the same-foundation not-found arm below. Leaving
+            // it out here let a `capped` search render the wrong amber copy: Create correctly
+            // withheld, but the panel explaining it as an ordinary no-match rather than an
+            // unproven-completeness one, so the operator is given the wrong remedy (dealako,
+            // #2079). It is a persistent signal, so an omission also LEAKS the previous lookup's
+            // value into this result.
+            //
+            // ABSENCE IS NOT A PROVEN `false`, the same rule the guard on the line above uses and
+            // the same one the same-foundation arm applies. `=== true` read an old-pod response
+            // -- `capped` absent entirely -- as proven-complete, which is precisely when the
+            // search behind it was least complete (dealako, round 8).
+            this.hsCompletenessUnproven.set(result?.capped !== false);
             this.hsNotFound.set(true);
             this.hsUnconfirmed.set(true);
             this.hsMatches.set(result?.all_matches ?? []);

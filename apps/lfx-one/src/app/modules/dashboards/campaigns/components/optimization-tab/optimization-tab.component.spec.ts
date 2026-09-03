@@ -2137,6 +2137,40 @@ describe('OptimizationTabComponent — keyword action outcome states', () => {
     }
   });
 
+  it('reports the number of rows in the WORST state, not the size of the selection', () => {
+    // dealako (#1923): the toast paired `keys.length` -- the whole selection -- with `worst`, the
+    // state of possibly one row. Three keywords with ONE unconfirmed announced "3 keywords",
+    // overstating an irreversible-REMOVE hazard by the size of the selection and sending the
+    // operator to check two rows that are fine.
+    //
+    // Drives the real bulk path so the assertion binds the shipped wiring, not a helper.
+    const campaignService = TestBed.inject(CampaignService) as unknown as {
+      executeKeywordActions: ReturnType<typeof vi.fn>;
+    };
+    campaignService.executeKeywordActions = vi.fn().mockReturnValue(
+      of({
+        results: [
+          { success: true, message: 'ok' },
+          { success: true, message: 'ok' },
+          { success: false, message: unconfirmedMessage },
+        ],
+      })
+    );
+
+    const keywords = [
+      { campaignId: 'c1', adGroupId: 'ag1', criterionId: 'cr1' },
+      { campaignId: 'c1', adGroupId: 'ag1', criterionId: 'cr2' },
+      { campaignId: 'c1', adGroupId: 'ag1', criterionId: 'cr3' },
+    ];
+    (fixture.componentInstance as unknown as { bulkKeywordAction(k: unknown[], a: string): void }).bulkKeywordAction(keywords, 'REMOVE');
+
+    const toast = keywordMessageAdd.mock.calls.at(-1)?.[0] as { detail?: string; summary?: string };
+    const text = `${toast?.summary ?? ''} ${toast?.detail ?? ''}`;
+    // ONE row is unconfirmed, so the toast must not speak for three.
+    expect(text, 'the toast counted the whole selection instead of the rows in the worst state').not.toContain('3 keywords');
+    expect(text, 'the single unconfirmed row was not reported as one').toMatch(/\b1 keyword\b|\bkeyword\b/);
+  });
+
   it('completes a keyword REMOVE the operator navigated away from, and says so', () => {
     // Copilot: this component renders inside `@case ('optimization')`, so a tab switch DESTROYS
     // it. Bound to `takeUntilDestroyed`, the XHR was aborted mid-flight -- an irreversible REMOVE

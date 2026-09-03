@@ -639,6 +639,7 @@ environment:
   # calls getGadsClient(), which throws whenever the GADS_* variables are absent — and they were
   # deactivated deliberately. So with this off, keyword actions do not work at all; this flag is
   # what makes them work, not what changes which backend serves them.
+  #
   # TWO CHANGES APPLY WITH THIS FLAG OFF, both deliberate. First: the
   # /keywords/actions endpoint now refuses a body of more than 50 keyword rows on
   # BOTH paths, where before only a non-empty array was required.

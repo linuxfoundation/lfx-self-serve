@@ -1814,10 +1814,6 @@ export interface HubSpotEmailSearchResult {
   error: string | null;
 }
 
-// ---------------------------------------------------------------------------
-// Keyword actions
-// ---------------------------------------------------------------------------
-
 /**
  * One campaign as campaign-service returns it.
  *
@@ -1850,6 +1846,10 @@ export interface CampaignServiceHubSpotCampaigns {
    */
   capped: boolean;
 }
+
+// ---------------------------------------------------------------------------
+// Keyword actions
+// ---------------------------------------------------------------------------
 
 /**
  * One keyword action's outcome as the UI stores it.

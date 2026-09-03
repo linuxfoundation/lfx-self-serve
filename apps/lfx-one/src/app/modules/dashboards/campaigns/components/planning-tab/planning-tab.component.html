@@ -76,6 +76,11 @@
                 thing on screen and another to a screen reader. The status spans inside it are
                 deliberately part of the name: "HubSpot UTM token Looking up..." is what a sighted
                 user reads, so it is what should be announced (Copilot).
+
+                The input carried an `aria-label` alongside this, which is the very duplication
+                the paragraph above argues against -- and it WINS over the label element, so the
+                status spans this comment calls deliberate were dropped from the announced name
+                (dealako, round 8). The rationale and the markup now agree.
               -->
               <label [attr.for]="hsUtm() ? utmFieldId() : null" class="text-xs font-medium text-gray-700">
                 HubSpot UTM token
@@ -93,7 +98,6 @@
                   type="text"
                   [value]="hsUtm()"
                   readonly
-                  aria-label="HubSpot UTM token"
                   class="w-full rounded-md border border-gray-200 bg-gray-50 px-3 py-2 font-mono text-sm text-gray-700"
                   data-testid="planning-hubspot-utm-value" />
               }

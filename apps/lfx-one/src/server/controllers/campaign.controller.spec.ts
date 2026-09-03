@@ -2605,6 +2605,40 @@ describe('CampaignController HubSpot UTM', () => {
       expect(next).not.toHaveBeenCalled();
     });
 
+    it('forwards the client capability flag to the mapper, and withholds without it', async () => {
+      // dealako (#1923): nothing asserted that the controller READS the capability and forwards
+      // it, so the seam could invert or disappear with every test green -- and the whole gate
+      // depends on it. A tokenless winner is the shape the flag governs.
+      isServerFeatureEnabled.mockImplementation(onlyUtm);
+      svcSearchHsCampaigns.mockResolvedValue({ campaigns: [{ id: '1', name: 'KubeCon NA 2026' }], capped: false });
+
+      // Declared: the tokenless winner is reported as found.
+      await controller.lookupHubSpotUtm(utmReq({ project: 'tlf', event_name: 'KubeCon NA 2026', tokenless_found: '1' }), res, next);
+      const declared = vi.mocked(res.json).mock.calls[0][0] as { found: boolean; hs_utm: string | null };
+      expect(declared.found, 'a capable client was denied the tokenless shape').toBe(true);
+      expect(declared.hs_utm).toBeNull();
+
+      vi.mocked(res.json).mockClear();
+
+      // Absent: the same upstream answer is withheld, as inconclusive rather than proven absence.
+      await controller.lookupHubSpotUtm(utmReq({ project: 'tlf', event_name: 'KubeCon NA 2026' }), res, next);
+      const bare = vi.mocked(res.json).mock.calls[0][0] as { found: boolean; inconclusive: boolean };
+      expect(bare.found, 'the tokenless shape reached a client that cannot parse it').toBe(false);
+      expect(bare.inconclusive, 'an existing campaign was reported to an old bundle as proven absence').toBe(true);
+    });
+
+    it('treats any value other than "1" as an undeclared capability', async () => {
+      // Fail-closed on the parse too: `tokenless_found=true` is not the contract, and reading it
+      // loosely would hand the new shape to a client that never declared it.
+      isServerFeatureEnabled.mockImplementation(onlyUtm);
+      svcSearchHsCampaigns.mockResolvedValue({ campaigns: [{ id: '1', name: 'KubeCon NA 2026' }], capped: false });
+
+      await controller.lookupHubSpotUtm(utmReq({ project: 'tlf', event_name: 'KubeCon NA 2026', tokenless_found: 'true' }), res, next);
+
+      const body = vi.mocked(res.json).mock.calls[0][0] as { found: boolean };
+      expect(body.found).toBe(false);
+    });
+
     it('answers a malformed upstream envelope with the mapper safe result, not a 500', async () => {
       // dealako (#2079, blocking): `toUtmLookupResult` deliberately fail-closes on a body with no
       // `campaigns` array and returns `inconclusive: true` -- a TESTED safe path. The success log

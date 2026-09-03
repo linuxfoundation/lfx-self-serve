@@ -218,8 +218,8 @@ JOBS  →  BRIEFS  →  STATUS_TOGGLE  →  CREATE
 
 The other four flags in the table -- `..._DEMAND_GEN`, `..._INSIGHTS`, `..._KEYWORD_ACTIONS` and
 `..._HUBSPOT_UTM` -- are NOT part of this enable order and all default OFF. They gate later,
-independent moves, each with its own prerequisite noted in the table; nothing below applies to
-them.
+independent moves, each with its own prerequisite noted in the table. The ordering rules below
+are about the create pipeline only; each of these four carries its own note in `values.yaml`.
 
 **This is a deploy constraint, not a merge one.** All four of the create-pipeline flags now
 default to `"true"` in this chart, and nothing in CI staggers them — a single rollout of this chart turns them all on at once, which

@@ -21,9 +21,10 @@ import { normaliseForMatch } from '@lfx-one/shared/utils/string.utils';
 // Upstream returns every match in UNSPECIFIED HubSpot order. What campaign-service actually
 // documents is that it sends no `sorts` — so the API guarantees nothing about position, and
 // naming a concrete order here (an earlier version said "object-creation order") invites code or
-// a test to rely on a guarantee HubSpot does not give. Position carries no ranking information. It leaves the choosing to the caller. The UI contract
-// predates that: it wants a single best match plus the rest. So the scoring lives here, ported
-// from the legacy path so the ordering a user sees does not change under them mid-cutover.
+// a test to rely on a guarantee HubSpot does not give. Position carries no ranking information,
+// so campaign-service leaves the choosing to the caller. The UI contract predates that: it wants
+// a single best match plus the rest. So the scoring lives here, ported from the legacy path so
+// the ordering a user sees does not change under them mid-cutover.
 //
 // TWO BEHAVIOURS DO CHANGE, deliberately:
 //   - a missing token is reported as missing rather than fabricated — see utmTokenOf.
