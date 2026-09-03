@@ -140,7 +140,14 @@ export class ApiClientService {
         // invites is how a duplicate campaign gets created.
         const errorWithCause = error as Error & { cause?: { code?: string } };
         if (errorWithCause.cause?.code) {
-          throw new MicroserviceError(`Request failed: ${error.message}`, 503, errorWithCause.cause.code || 'NETWORK_ERROR', {
+          // FIXED public message; the real one survives in `originalError` for logs. These
+          // branches also catch `JSON.parse` failures on a SUCCESSFUL upstream response, and Node
+          // embeds a body EXCERPT in that error's message -- the opening bytes of whatever came
+          // back, typically an internal HTML error page. `MicroserviceError.toResponse()` returns
+          // the message verbatim, so interpolating it handed an authenticated client a fragment of
+          // an internal response (Copilot). Applied to all four throw sites in this file, not the
+          // one reported: same shape, same leak, in both request paths.
+          throw new MicroserviceError('The request could not be completed. Please try again.', 503, errorWithCause.cause.code || 'NETWORK_ERROR', {
             operation: 'api_client_stream_network_error',
             service: 'api_client_service',
             path: url,
@@ -150,7 +157,7 @@ export class ApiClientService {
         }
 
         // Fallback for any other Error subclass — keep all transport failures classified.
-        throw new MicroserviceError(`Request failed: ${error.message}`, 503, 'NETWORK_ERROR', {
+        throw new MicroserviceError('The request could not be completed. Please try again.', 503, 'NETWORK_ERROR', {
           operation: 'api_client_stream_network_error',
           service: 'api_client_service',
           path: url,
@@ -351,7 +358,7 @@ export class ApiClientService {
         // outcome, not a proof that nothing happened.
         const errorWithCause = error as Error & { cause?: { code?: string } };
         if (errorWithCause.cause?.code) {
-          throw new MicroserviceError(`Request failed: ${error.message}`, 503, errorWithCause.cause.code || 'NETWORK_ERROR', {
+          throw new MicroserviceError('The request could not be completed. Please try again.', 503, errorWithCause.cause.code || 'NETWORK_ERROR', {
             operation: options.binary ? 'api_client_binary_network_error' : 'api_client_network_error',
             service: 'api_client_service',
             path: url,
@@ -366,7 +373,7 @@ export class ApiClientService {
         // as an unmarked 500 with no originalError, so nothing downstream could tell it from a
         // deliberate upstream response. That defeats the transport marker every consumer of
         // `transport: true` now depends on.
-        throw new MicroserviceError(`Request failed: ${error.message}`, 503, 'NETWORK_ERROR', {
+        throw new MicroserviceError('The request could not be completed. Please try again.', 503, 'NETWORK_ERROR', {
           operation: options.binary ? 'api_client_binary_network_error' : 'api_client_network_error',
           service: 'api_client_service',
           path: url,

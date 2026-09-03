@@ -45,6 +45,29 @@ describe('ApiClientService — transport failures are always classified', () => 
     expect(me.toResponse()['transport']).toBe(true);
   });
 
+  it('never puts the underlying error text in the CLIENT-VISIBLE message', async () => {
+    // Copilot, security: this branch also catches `JSON.parse` failures on a SUCCESSFUL upstream
+    // response, and Node embeds a body EXCERPT in that error's message -- the opening bytes of
+    // whatever came back, typically an internal HTML error page. `toResponse()` returns the
+    // message verbatim, so `Request failed: ${error.message}` handed an authenticated client a
+    // fragment of an internal response.
+    //
+    // The secret-shaped string below is what must NOT survive to the wire.
+    const leaky = new TypeError('Unexpected token < in JSON at position 0: <html><body>INTERNAL-HOST-42 db=prod-primary');
+    vi.stubGlobal(
+      'fetch',
+      vi.fn(() => Promise.reject(leaky))
+    );
+
+    const err = (await new ApiClientService({ retryAttempts: 1 }).request('GET', 'https://example.invalid/x').catch((e: unknown) => e)) as MicroserviceError;
+
+    const wire = JSON.stringify(err.toResponse());
+    expect(wire, 'an upstream response fragment reached the client').not.toMatch(/INTERNAL-HOST-42|prod-primary|<html>/);
+    // Still classified -- the fix must not cost the transport marker consumers depend on.
+    expect(err.statusCode).toBe(503);
+    expect(err.toResponse()['transport']).toBe(true);
+  });
+
   it('does NOT recast a genuine upstream 4xx as a transport failure', async () => {
     // The non-2xx MicroserviceError is thrown INSIDE the same try as the fetch call, so a
     // catch-all fallback re-wraps it: a real 403 would leave as a 503 carrying transport:true,
