@@ -172,13 +172,6 @@ export function toBulkResponse(results: KeywordActionResponse[]): BulkKeywordAct
 }
 
 /**
- * Why a campaign could not be acted on, in words a user can act on.
- *
- * Both cases are refusals rather than errors upstream, so they arrive as ordinary answers and
- * have to be turned into per-keyword failures here.
- */
-
-/**
  * Compare what upstream confirmed against what was requested; returns a short description of the
  * difference, or null when they match.
  *
@@ -370,7 +363,14 @@ export function classifyMutationFailure(error: unknown): string {
   return refusedAtBoundary ? raw : `${CAMPAIGN_OUTCOME_UNCONFIRMED} (${raw})`;
 }
 
+/**
+ * Why a campaign could not be acted on, in words a user can act on.
+ *
+ * Both cases are refusals rather than errors upstream, so they arrive as ordinary answers and
+ * have to be turned into per-keyword failures here.
+ */
 export const CAMPAIGN_UNRESOLVED = 'This campaign is not managed here, so its keywords cannot be changed.';
+
 /**
  * A lookup that FAILED, as distinct from one that answered "no such campaign".
  *
