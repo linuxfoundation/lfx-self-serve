@@ -68,6 +68,34 @@ describe('ApiClientService — transport failures are always classified', () => 
     expect(err.toResponse()['transport']).toBe(true);
   });
 
+  it.each([
+    ['AbortError', 'request'],
+    ['TimeoutError', 'request'],
+    ['AbortError', 'streamRequest'],
+    ['TimeoutError', 'streamRequest'],
+  ])('marks a %s from %s as a 408 carrying transport:true', async (errName, method) => {
+    // Copilot: every existing case rejects with a TypeError, so the TIMEOUT branch was never
+    // exercised -- deleting `transportFailure: true` from it left this suite green. Consumers
+    // read that marker to avoid treating an uncertain mutation as a definite failure, which on
+    // an irreversible REMOVE is the difference between "retry safely" and "may duplicate".
+    //
+    // Both request paths, because each carries its OWN copy of the classification.
+    const thrown = Object.assign(new Error('The operation was aborted'), { name: errName });
+    vi.stubGlobal(
+      'fetch',
+      vi.fn(() => Promise.reject(thrown))
+    );
+
+    const client = new ApiClientService({ retryAttempts: 1 });
+    const err = (await (
+      method === 'request' ? client.request('GET', 'https://example.invalid/x') : client.streamRequest('GET', 'https://example.invalid/x')
+    ).catch((e: unknown) => e)) as MicroserviceError;
+
+    expect(err, 'a timeout escaped unclassified').toBeInstanceOf(MicroserviceError);
+    expect(err.statusCode, '408 is the timeout status a consumer keys on').toBe(408);
+    expect(err.toResponse()['transport'], 'a timeout lost the transport marker').toBe(true);
+  });
+
   it('does NOT recast a genuine upstream 4xx as a transport failure', async () => {
     // The non-2xx MicroserviceError is thrown INSIDE the same try as the fetch call, so a
     // catch-all fallback re-wraps it: a real 403 would leave as a 503 carrying transport:true,
