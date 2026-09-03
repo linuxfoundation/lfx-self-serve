@@ -89,7 +89,7 @@ export class SurveyService {
     // per-row canonical edit links (GH-1569; mirrors the meetings list enrichment).
     const flattened = enriched.map((s) => ({
       ...s,
-      project_uid: s.project_uid ?? s.committees?.[0]?.project_uid ?? '',
+      project_uid: s.project_uid || s.committees?.[0]?.project_uid || '',
     }));
     return this.projectService.enrichWithProjectData(req, flattened) as Promise<Survey[]>;
   }
@@ -127,7 +127,7 @@ export class SurveyService {
     // committees[] — flatten the primary project uid and stamp it top-level so the enrichment
     // below, the writerGuard probe, and the manage page's resolve-by-uid fallback all receive a
     // real uid (GH-1569; mirrors the list path's flatten in getSurveys).
-    survey.project_uid ??= survey.committees?.[0]?.project_uid;
+    survey.project_uid = survey.project_uid || survey.committees?.[0]?.project_uid;
 
     if (includeProject) {
       const project = await fetchEntityProject(req, this.projectService, survey.project_uid, { operation: 'get_survey_by_id', survey_uid: survey.uid });

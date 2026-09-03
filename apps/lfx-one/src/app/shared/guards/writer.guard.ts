@@ -91,15 +91,19 @@ export const writerGuard: CanActivateFn = (route: ActivatedRouteSnapshot) => {
     'mailing-lists': (id) => mailingListService.getMailingList(id),
     // Survey.project_uid is typed optional — map absent to '' so the probe satisfies the
     // registry's Pick<EntityWithProject> shape; resolveEntityWriteSlug treats '' as absent.
-    // Surface the primary committee's uid (same source the BFF flattens project_uid from) so the
-    // entity's own committee wins over the attacker-controlled ?committee_uid= URL param — mirrors
-    // the votes probe; a committee-less project survey falls back to the URL param.
+    // Honor the URL ?committee_uid= only when the survey's own committee list contains it (the
+    // committee tab stamps the viewed committee, and a writer of any associated committee must be
+    // admitted); otherwise fall back to the primary committee so an attacker-controlled param naming
+    // an unrelated committee can't win — a committee-less project survey falls back to the URL param.
     surveys: (id) =>
-      surveyService
-        .getSurvey(id)
-        .pipe(
-          map((survey) => ({ project_slug: survey.project_slug, project_uid: survey.project_uid ?? '', committee_uid: survey.committees?.[0]?.committee_uid }))
-        ),
+      surveyService.getSurvey(id).pipe(
+        map((survey) => ({
+          project_slug: survey.project_slug,
+          project_uid: survey.project_uid || '',
+          committee_uid:
+            committeeUid && survey.committees?.some((c) => c.committee_uid === committeeUid) ? committeeUid : survey.committees?.[0]?.committee_uid,
+        }))
+      ),
   };
   const resolveSlug = (): Observable<{ slug: string | null; entityCommitteeUid: string | null }> => {
     const fromContext = route.queryParamMap.get('project') ?? projectContextService.activeContext()?.slug ?? null;
