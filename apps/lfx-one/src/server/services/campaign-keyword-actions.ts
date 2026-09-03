@@ -433,7 +433,14 @@ export async function applyKeywordActionsViaCampaignService(
     // Checked BETWEEN groups, never mid-group: a campaign is resolved and then mutated, and
     // abandoning between those two calls is the one split that could leave a group half-applied
     // with nothing recorded. Whole groups are the only safe unit to stop on.
-    if (!transportFailed && Date.now() - startedAt >= KEYWORD_ACTION_DEADLINE_MS) {
+    // ONE clock read feeds both the admission decision and the budget below. Reading it twice
+    // let the boundary fall BETWEEN them: the check passed with a millisecond to spare, then
+    // `resolveBudgetMs` recomputed to zero or negative and was passed to the resolver as its
+    // timeout -- an instant timeout, which the catch reads as a transport outage and which
+    // therefore stops every remaining group (Copilot).
+    const elapsedMs = Date.now() - startedAt;
+    const groupBudgetMs = KEYWORD_ACTION_DEADLINE_MS - elapsedMs;
+    if (!transportFailed && groupBudgetMs <= 0) {
       results.push(...failedResults(group, body.action, CAMPAIGN_DEADLINE_EXCEEDED));
       continue;
     }
@@ -452,9 +459,10 @@ export async function applyKeywordActionsViaCampaignService(
       // then lost when ingress closes the request, leaving an applied bulk REMOVE unreported
       // (Copilot).
       //
-      // Recomputed before the mutation below rather than reused, so the second call gets what is
-      // actually left rather than what was left before this one ran.
-      const resolveBudgetMs = KEYWORD_ACTION_DEADLINE_MS - (Date.now() - startedAt);
+      // The SAME value the admission check used -- not a second read, which is what let a
+      // non-positive budget reach the call. The mutation below recomputes, because the resolve
+      // has run by then and genuinely consumed time.
+      const resolveBudgetMs = groupBudgetMs;
       const resolution = await client.resolveGoogleAdsCampaign(req, projectSlug, group.platformCampaignId, resolveBudgetMs);
       // THE ECHO MUST MATCH WHAT WE ASKED FOR. `platform_campaign_id` is part of the resolution
       // contract and nothing checked it: a stale or misrouted 200 describing a DIFFERENT campaign
