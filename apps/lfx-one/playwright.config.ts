@@ -44,16 +44,32 @@ const E2E_BASE_URL = process.env['E2E_BASE_URL'] ?? `http://${E2E_HOST}:${E2E_PO
 const E2E_LAUNCH_PORT = (() => {
   try {
     const parsed = new URL(E2E_BASE_URL);
+    // `ng serve` below speaks plain HTTP, so an https base url cannot be served by the server this
+    // config launches whatever port is derived. Returning 443 made Playwright wait on
+    // `https://localhost:443` for an HTTP server -- the same silent divergence this derivation
+    // exists to prevent, reached by a different route (Copilot). Refused loudly instead: a
+    // config that cannot honour the request should say so, not start something that will never
+    // answer and time out 120s later pointing nowhere near the cause.
+    if (parsed.protocol === 'https:') {
+      throw new Error(
+        `E2E_BASE_URL is https (${E2E_BASE_URL}), but this config launches \`ng serve\`, which serves plain HTTP. ` +
+          `Use an http:// base url, or point E2E_BASE_URL at a server you start yourself and run with reuseExistingServer.`
+      );
+    }
     // `URL.port` is EMPTY for a scheme-default port, so `|| E2E_PORT` treated a deliberately
     // portless override (E2E_BASE_URL=http://localhost) exactly like a parse failure -- Playwright
-    // would probe 80 while Angular launched on 4200, the same silent divergence this derivation
-    // exists to prevent, reached by a different route. An absent port is a REAL answer here, so
-    // the scheme default is supplied rather than falling back.
-    if (parsed.port) {
-      return parsed.port;
+    // would probe 80 while Angular launched on 4200. An absent port is a REAL answer here, so the
+    // scheme default is supplied rather than falling back.
+    //
+    // 80 needs root on most systems; that surfaces as a clear EACCES from `ng serve` rather than
+    // a divergence, so it is left to fail on its own terms.
+    return parsed.port || '80';
+  } catch (err) {
+    // An https base url is a DELIBERATE refusal above -- rethrow it rather than swallowing it into
+    // the fallback, which would silently launch on E2E_PORT and reintroduce the divergence.
+    if (err instanceof Error && err.message.startsWith('E2E_BASE_URL is https')) {
+      throw err;
     }
-    return parsed.protocol === 'https:' ? '443' : '80';
-  } catch {
     // Only an UNPARSEABLE url falls back, which is the one case where the base url says nothing.
     return E2E_PORT;
   }
