@@ -79,26 +79,15 @@
 
               @if (hsNotFound() && !hsUtm()) {
                 <div class="flex items-center gap-3 rounded-lg border border-amber-200 bg-amber-50 p-3">
-                  @if (hsLookupTruncated()) {
-                    <span class="flex-1 text-sm text-amber-700"
-                      >Search results were capped. Narrow the event name or verify HubSpot before creating a campaign.</span
-                    >
-                  } @else {
-                    <div class="flex-1 text-sm text-amber-700">
-                      <p>No campaign found for "{{ lastLookedUpEvent }}"</p>
-                      <p class="mt-1 text-xs">
-                        Campaign names are written to the LF-global HubSpot namespace and visible to campaign managers across every foundation.
-                      </p>
-                    </div>
-                    <button
-                      type="button"
-                      (click)="createInHubSpot()"
-                      [disabled]="hsCreating()"
-                      class="whitespace-nowrap rounded-md bg-blue-600 px-3 py-1.5 text-xs font-medium text-white hover:bg-blue-700 disabled:opacity-50"
-                      data-testid="planning-hubspot-create-btn">
-                      {{ hsCreating() ? 'Creating...' : 'Create in HubSpot' }}
-                    </button>
-                  }
+                  <span class="flex-1 text-sm text-amber-700">No campaign found for "{{ lastLookedUpEvent }}"</span>
+                  <button
+                    type="button"
+                    (click)="createInHubSpot()"
+                    [disabled]="hsCreating()"
+                    class="whitespace-nowrap rounded-md bg-blue-600 px-3 py-1.5 text-xs font-medium text-white hover:bg-blue-700 disabled:opacity-50"
+                    data-testid="planning-hubspot-create-btn">
+                    {{ hsCreating() ? 'Creating...' : 'Create in HubSpot' }}
+                  </button>
                 </div>
               }
 

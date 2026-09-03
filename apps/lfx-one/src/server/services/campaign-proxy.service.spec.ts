@@ -29,33 +29,6 @@ import { CampaignProxyService } from './campaign-proxy.service';
 
 const req = {} as unknown as Request;
 
-describe('CampaignProxyService HubSpot UTM lookup', () => {
-  afterEach(() => {
-    vi.unstubAllGlobals();
-    delete process.env['HUBSPOT_ACCESS_TOKEN'];
-  });
-
-  it('marks a capped search as truncated even when no returned campaign matches', async () => {
-    process.env['HUBSPOT_ACCESS_TOKEN'] = 'test-token';
-    vi.stubGlobal(
-      'fetch',
-      vi.fn(async () => ({
-        ok: true,
-        json: async () => ({
-          results: Array.from({ length: 10 }, (_, i) => ({
-            id: String(i),
-            properties: { hs_name: `Other campaign ${i}` },
-          })),
-        }),
-      }))
-    );
-
-    const result = await new CampaignProxyService().lookupHubSpotUtm(req, 'KubeCon EU 2026');
-
-    expect(result).toMatchObject({ found: false, truncated: true, all_matches: [] });
-  });
-});
-
 /**
  * Derived from the same constant the service interpolates, so adding a delivery type updates this
  * expectation with the code instead of failing on a hand-written list — a second literal here

@@ -159,7 +159,6 @@ export class PlanningTabComponent implements OnInit {
   protected readonly hsCreating = signal(false);
   protected readonly hsStatus = signal<string | null>(null);
   protected readonly hsNotFound = signal(false);
-  protected readonly hsLookupTruncated = signal(false);
   protected readonly hsMatches = signal<{ name: string; hs_utm: string }[]>([]);
   protected readonly keywords = signal<CampaignKeyword[]>([]);
   protected readonly errorMessage = signal<string | null>(null);
@@ -545,15 +544,11 @@ export class PlanningTabComponent implements OnInit {
             this.hsNotFound.set(false);
             this.hsStatus.set(`Created: ${result.campaign_name}`);
           } else {
-            this.hsNotFound.set(false);
-            this.lastLookedUpEvent = '';
             this.hsStatus.set('Failed to create campaign');
           }
           this.hsCreating.set(false);
         },
         error: () => {
-          this.hsNotFound.set(false);
-          this.lastLookedUpEvent = '';
           this.hsStatus.set('Create failed');
           this.hsCreating.set(false);
         },
@@ -1058,7 +1053,6 @@ export class PlanningTabComponent implements OnInit {
     this.hsStatus.set(null);
     this.hsMatches.set([]);
     this.hsNotFound.set(false);
-    this.hsLookupTruncated.set(false);
     this.hsUtm.set(null);
 
     const capturedEvent = eventName;
@@ -1074,7 +1068,6 @@ export class PlanningTabComponent implements OnInit {
             this.hsStatus.set(`Found: ${result.campaign_name}`);
           } else {
             this.hsNotFound.set(true);
-            this.hsLookupTruncated.set(result?.truncated === true);
             this.hsStatus.set('No matching campaign in HubSpot');
           }
           this.hsSearching.set(false);
