@@ -21,16 +21,20 @@ import { ButtonComponent } from '@components/button/button.component';
 import { SelectableCardComponent } from '@components/selectable-card/selectable-card.component';
 
 /**
- * Why one card cannot sign: the agreement that blocked it, and everything that identity holds.
+ * The agreement that blocks a card, carrying the types to name in the reason.
  *
- * Two answers rather than one because the blocking agreement is a single record, while the
- * reason shown has to name every type held — a card blocked for holding both would otherwise be
- * explained by whichever of the two happened to be newest.
+ * The kinds ride along rather than being re-derived at the tooltip, because a card blocked for
+ * holding both types has to name both, and the blocking agreement is one record — reading the
+ * kind off it would leave whichever happened to be newest standing for the pair.
+ *
+ * A local intersection rather than a `@lfx-one/shared` interface: this is the component's own
+ * view model, consumed by nothing else, so it is not part of any contract between the tiers. It
+ * is also the one form both repo rules allow — CLAUDE.md prohibits a local `interface Foo {}`
+ * inside `apps/lfx-one/`, while ESLint's `@typescript-eslint/consistent-type-definitions`
+ * rewrites a plain `type X = { … }` back into an interface on `--fix`. Same standoff as
+ * `PlatformResultRow` in the campaigns implementation tab.
  */
-interface IdentityBlock {
-  agreement: MyClaAgreement;
-  heldKinds: readonly ClaKind[];
-}
+type IdentityBlock = MyClaAgreement & { heldKinds: readonly ClaKind[] };
 
 /**
  * "Which identity are you signing as?" step, shown between the CLA-group picker and the Console
@@ -226,7 +230,7 @@ export class SignIdentitySelectComponent {
       const held = heldClaKindsForIdentity(agreements, identity, offeredHandles);
       const offered = held.filter((kind) => enabledKinds.includes(kind));
 
-      return { agreement, heldKinds: offered.length > 0 ? offered : held };
+      return { ...agreement, heldKinds: offered.length > 0 ? offered : held };
     };
 
     const byGithubId = new Map<string, IdentityBlock>();
@@ -277,7 +281,7 @@ export class SignIdentitySelectComponent {
   }
 
   private identityTooltip(held: IdentityBlock): string {
-    return alreadySignedIdentityTooltip(held.agreement, this.alreadySigned.anotherSelectable, held.heldKinds);
+    return alreadySignedIdentityTooltip(held, this.alreadySigned.anotherSelectable, held.heldKinds);
   }
 
   /** Suffixes the platform on a mixed list only; a single-source list needs no disambiguation. */
