@@ -336,6 +336,36 @@ describe('classifyMutationFailure — what proves upstream answered', () => {
     expect(msg, 'a non-status code that agreed with its status was accepted').toContain(CAMPAIGN_OUTCOME_UNCONFIRMED);
   });
 
+  it('reports a mismatch when the 2xx carries no results ARRAY', async () => {
+    // Copilot: `applied.results` is untrusted wire data. A malformed 2xx with `results` missing
+    // threw a TypeError inside the verification, and the caller's catch then classified our own
+    // local bug as an upstream failure -- a definite-looking outcome for a request whose real
+    // result nobody had established. Same shape as the match_count/matches case below.
+    const resolveGoogleAdsCampaign = vi.fn().mockResolvedValue({ match_count: 1, matches: [{ brief_id: 'b-1', campaign_id: 'c-1' }] });
+    // applied_count AGREES, so only the missing array can fail this.
+    const applyKeywordActions = vi.fn().mockResolvedValue({ campaign_id: 'c-1', applied_count: 1 });
+
+    const client = { resolveGoogleAdsCampaign, applyKeywordActions } as never;
+    const body = { action: 'pause' as const, keywords: [kw('camp-1', 'k-1')] };
+    const warn = vi.fn();
+    const req = { log: { warn, info: vi.fn(), error: vi.fn(), debug: vi.fn() } } as never;
+
+    const res = await applyKeywordActionsViaCampaignService(req, client, 'aswf', body);
+
+    expect(res.results[0].success, 'a response with no results array was read as a confirmed success').toBe(false);
+    // The operator-facing wording is the shared mismatch copy -- "sent but the confirmation did
+    // not match", which tells them to check Google Ads before retrying.
+    expect(String(res.results[0].message), 'a malformed envelope should read as an unverified outcome').toMatch(/did not match the request/i);
+
+    // ASSERTED ON THE PATH, not only the outcome. Without the Array.isArray guard the loop throws
+    // a TypeError that the catch converts into the SAME operator message, so the message alone
+    // cannot tell a diagnosed mismatch from an undiagnosed crash. The mismatch branch logs a
+    // warning naming what differed; the catch does not. That log is the only thing that
+    // distinguishes "we checked and it disagreed" from "we threw while checking".
+    const mismatchWarn = warn.mock.calls.find((c) => JSON.stringify(c).includes('mismatch'));
+    expect(mismatchWarn, 'the outcome was reached by throwing, not by the shape check').toBeDefined();
+  });
+
   it('refuses a body whose code DISAGREES with the status received', () => {
     // A relayed body cannot vouch for a response something else rewrote: code 500 arriving under
     // a 503 means the two came from different places.

@@ -191,6 +191,16 @@ function describeOutcomeMismatch(group: KeywordActionGroup, action: KeywordActio
   if (applied.applied_count !== requested.length) {
     return `applied_count ${applied.applied_count} != ${requested.length} requested`;
   }
+  // `results` is untrusted wire data, so its SHAPE is checked before it is iterated. A malformed
+  // 2xx with `results` missing or null threw a TypeError here, and the caller's catch then
+  // classified our own local bug as an upstream failure -- reporting a definite outcome for a
+  // request whose actual result nobody had established (Copilot).
+  //
+  // Reported as a mismatch, which is the same fail-closed answer `applied_count` above already
+  // gives: a response that cannot describe what it applied has not confirmed anything.
+  if (!Array.isArray(applied.results)) {
+    return 'upstream returned no results array to confirm against';
+  }
   const key = (a: { ad_group_id: string; criterion_id: string; action: string }): string => `${a.ad_group_id}~${a.criterion_id}~${a.action}`;
   const tally = new Map<string, number>();
   for (const a of requested) {
