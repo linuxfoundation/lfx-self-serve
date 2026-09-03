@@ -101,7 +101,6 @@ export class ProfileController {
     PROFILE_PASSWORD_PATH,
     '/profile/linux-email',
     PROFILE_SETTINGS_PATH,
-    '/settings',
   ]);
 
   private auth0Service: Auth0Service = new Auth0Service();

@@ -167,8 +167,8 @@ export class ProfileLayoutComponent {
       const errorCode = params['error'];
       if (typeof errorCode === 'string' && Object.hasOwn(PROFILE_AUTH_ERROR_MESSAGES, errorCode)) {
         const authErrorMessage = PROFILE_AUTH_ERROR_MESSAGES[errorCode];
-        // Clear any stash from the redirect that failed — otherwise it outlives this failed
-        // attempt and gets replayed by the next unrelated Flow C success (see handleProfileAuthReturn).
+        // Clear any stash so it can't be replayed by a later unrelated Flow C success. Unconditional
+        // by design: an identity-link failure shares these codes too, and a stash still here is orphaned.
         if (isPlatformBrowser(this.platformId)) {
           sessionStorage.removeItem(ProfileLayoutComponent.formStateKey);
         }

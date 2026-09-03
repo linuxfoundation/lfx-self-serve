@@ -203,9 +203,10 @@ export const ACCOUNT_SETTINGS_SECTIONS = {
  * Error codes from the Flow C profile-auth (`/passwordless/callback`) round trip,
  * owned by ProfileLayoutComponent — it's alive on every /profile/* route, so it
  * handles these once regardless of which tab triggered the flow. `invalid_state`
- * and `no_code` are emitted by both this callback and the identity-link callback
- * and can't be disambiguated from the code alone, so they live only in
- * IDENTITY_LINK_ERROR_MESSAGES below to avoid a double toast.
+ * and `no_code` are also emitted by the identity-link callback below, but their
+ * wording is flow-agnostic and ProfileIdentitiesComponent's own hasOwn guard on
+ * this map already skips them, so keeping them here (rather than duplicated in
+ * both maps) is safe against a double toast.
  */
 export const PROFILE_AUTH_ERROR_MESSAGES: Readonly<Record<string, string>> = {
   profile_auth_not_configured: 'Authorization is not available right now. Please try again later.',
@@ -213,20 +214,20 @@ export const PROFILE_AUTH_ERROR_MESSAGES: Readonly<Record<string, string>> = {
   token_exchange_failed: 'Authorization failed. Please try again.',
   login_session_invalid: 'Your session has expired. Please sign in again.',
   user_mismatch: 'You authorized a different account. Please sign in as yourself and try again.',
+  invalid_state: 'Security validation failed. Please try again.',
+  no_code: 'Authorization did not complete. Please try again.',
 };
 
 /**
  * Error codes from the identity-link (social auth) callback, owned by
- * ProfileIdentitiesComponent. See the note on PROFILE_AUTH_ERROR_MESSAGES above
- * for why invalid_state / no_code live here rather than in that map.
+ * ProfileIdentitiesComponent. `invalid_state` / `no_code` live in
+ * PROFILE_AUTH_ERROR_MESSAGES above instead — see the note there.
  */
 export const IDENTITY_LINK_ERROR_MESSAGES: Readonly<Record<string, string>> = {
   social_auth_failed: 'Social authentication failed. Please try again.',
-  invalid_state: 'Security validation failed. Please try again.',
   link_failed: 'Failed to link identity. Please try again.',
   social_verification_failed: 'Identity verification failed. Please try again.',
   invalid_provider: 'Invalid identity provider specified.',
   no_management_token: 'Authorization expired. Please try again.',
   no_identity_token: 'No identity token received. Please try again.',
-  no_code: 'Authorization did not complete. Please try again.',
 };
