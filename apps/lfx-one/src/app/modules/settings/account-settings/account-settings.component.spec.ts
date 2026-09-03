@@ -4,6 +4,7 @@
 import { PLATFORM_ID, signal } from '@angular/core';
 import { ComponentFixture, TestBed } from '@angular/core/testing';
 import { ActivatedRoute } from '@angular/router';
+import { EmailManagementData } from '@lfx-one/shared/interfaces';
 import { UserService } from '@services/user.service';
 import { ConfirmationService, MessageService } from 'primeng/api';
 import { DialogService } from 'primeng/dynamicdialog';
@@ -67,5 +68,57 @@ describe('AccountSettingsComponent — fragment deep-link (#2177)', () => {
     fragment$.next('developer-settings');
     fragment$.next(null);
     expect(fixture.componentInstance.activeSection()).toBe('developer-settings');
+  });
+});
+
+/**
+ * Guards the re-scroll race fix itself (PR #2182 review): the suite above runs server-side and
+ * never exercises scrollIntoView. This runs on the browser platform with real section elements
+ * and asserts the scroll is deferred until the email data finishes loading.
+ */
+describe('AccountSettingsComponent — deferred re-scroll waits for email load (#2177)', () => {
+  it('scrolls to the fragment section only after email data finishes loading', async () => {
+    const fragment$ = new Subject<string | null>();
+    const emails$ = new Subject<EmailManagementData | null>();
+
+    const userServiceMock = {
+      impersonating: signal(true),
+      getUserEmails: vi.fn(() => emails$),
+    };
+
+    TestBed.configureTestingModule({
+      imports: [AccountSettingsComponent],
+      providers: [
+        { provide: PLATFORM_ID, useValue: 'browser' },
+        { provide: ActivatedRoute, useValue: { snapshot: { data: {} }, fragment: fragment$ } },
+        { provide: UserService, useValue: userServiceMock },
+        { provide: ConfirmationService, useValue: {} },
+        { provide: MessageService, useValue: { add: vi.fn() } },
+        { provide: DialogService, useValue: { open: vi.fn() } },
+      ],
+    });
+    TestBed.overrideComponent(AccountSettingsComponent, { set: { template: '<div id="password"></div>', imports: [] } });
+
+    const fixture = TestBed.createComponent(AccountSettingsComponent);
+    fixture.detectChanges();
+    await fixture.whenStable();
+
+    const target = fixture.nativeElement.querySelector('#password') as HTMLElement;
+    const scrollIntoView = vi.fn();
+    target.scrollIntoView = scrollIntoView;
+
+    fragment$.next('password');
+    fixture.detectChanges();
+    await fixture.whenStable();
+
+    // Still loading (emails$ hasn't emitted/completed yet) — must not have scrolled.
+    expect(scrollIntoView).not.toHaveBeenCalled();
+
+    emails$.next({ primary_email: 'a@example.com', alternate_emails: [] } as unknown as EmailManagementData);
+    emails$.complete();
+    fixture.detectChanges();
+    await fixture.whenStable();
+
+    expect(scrollIntoView).toHaveBeenCalledTimes(1);
   });
 });
