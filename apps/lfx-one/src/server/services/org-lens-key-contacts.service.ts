@@ -353,6 +353,7 @@ export class OrgLensKeyContactsService {
       jobTitle: d.title?.trim() ? d.title.trim() : null,
       initials: this.deriveInitials(firstName, lastName),
       avatarUrl: d.avatar?.trim() ? d.avatar.trim() : null,
+      username: d.username?.trim() ? d.username.trim() : null,
     };
   }
 

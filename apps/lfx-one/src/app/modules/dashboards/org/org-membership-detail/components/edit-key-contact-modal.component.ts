@@ -178,6 +178,7 @@ export class EditKeyContactModalComponent {
       avatarUrl: person.avatarUrl,
       avatarColorClass: 'bg-purple-500',
       email: person.email,
+      username: person.username,
     });
   }
 
@@ -287,6 +288,7 @@ export class EditKeyContactModalComponent {
       avatarUrl: person.avatarUrl,
       avatarColorClass: 'bg-purple-500',
       email: person.email,
+      username: person.username,
     });
   }
 

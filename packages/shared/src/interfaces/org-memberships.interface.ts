@@ -81,12 +81,7 @@ export type OrgMembershipKeyContactType =
 
 /**
  * A person as rendered on Membership Detail (key-contact rows, board/committee seat rows, and their
- * edit/reassign modals). Carries NO LF identity: both upstream payloads have one
- * (`CommitteeServiceOrgSeat.username`, `KeyContactDoc.username`) but the `toPerson` mappers in
- * org-lens-board-committee.service.ts and org-lens-key-contacts.service.ts do not project it yet, so
- * every person drawer opened from this surface renders the "not available from this view"
- * company-email state instead of looking addresses up. Projecting it is a follow-up; the display-only
- * `email` must never stand in for it as a lookup key.
+ * edit/reassign modals).
  */
 export interface OrgMembershipKeyContactPerson {
   /**
@@ -102,6 +97,13 @@ export interface OrgMembershipKeyContactPerson {
   jobTitle: string | null;
   initials: string;
   avatarUrl?: string | null;
+  /**
+   * The person's LF username when the upstream record carries one (committee-service seat or
+   * member-service key_contact). The only key the person drawer may look company addresses up on;
+   * `email` above is display-only and must never stand in for it. Null renders the drawer's
+   * "not available from this view" state, never a claim that the person has no company address.
+   */
+  username?: string | null;
 }
 
 /**

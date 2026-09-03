@@ -352,6 +352,7 @@ export class OrgLensBoardCommitteeService {
       jobTitle: s.job_title ?? null,
       initials,
       avatarUrl: resolveSeatAvatar(s),
+      username: s.username?.trim() ? s.username.trim() : null,
     };
   }
 
