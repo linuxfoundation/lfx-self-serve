@@ -23,6 +23,7 @@ import type {
   MyClaAgreement,
   MyClasState,
   PrepareSignResponse,
+  SignContractTypeDialogData,
   SignContractTypeSelectResult,
   SignIdentityDialogData,
   SignIdentitySelectResult,
@@ -36,6 +37,7 @@ import {
   downloadFromUrl,
   formatClaSignedOn,
   gerritSignUrl,
+  heldClaKindsForIdentity,
   isMyClasEmpty,
   resolveGerritContractType,
   signedAsLine,
@@ -443,15 +445,24 @@ export class ProfileClasComponent {
 
     this.signDialogOpen.set(true);
 
-    // No data: the step renders both cards unconditionally, and it is only reachable for a group
-    // that enables both. Passing the flags it would have to ignore invites a later caller to open
-    // it for a single-type group, which is the hand-off this branch exists to make without asking.
+    // The group's own flags are not passed: the step is only reachable for a group that enables
+    // both, so it would have to ignore them, and a later caller could read them as licence to
+    // open it for a single-type group — the hand-off this branch makes without asking.
+    //
+    // What it does get is the types this Gerrit identity already holds. The identity step passed
+    // them because one type is still unsigned, and without this the step would offer the type
+    // they hold as freely as the one they need, which is the re-sign that gate prevents.
+    const data: SignContractTypeDialogData = {
+      heldKinds: heldClaKindsForIdentity(alreadySignedAgreementsForGroup(this.agreements(), option.claGroupId), { platform: 'gerrit' }, []),
+    };
+
     const dialogRef = this.dialogService.open(SignContractTypeSelectComponent, {
       header: SIGN_CONTRACT_TYPE_COPY.header,
       width: '32rem',
       modal: true,
       closable: true,
       dismissableMask: true,
+      data,
     }) as DynamicDialogRef;
 
     this.whenDialogSettles<SignContractTypeSelectResult>(dialogRef, (result) => {

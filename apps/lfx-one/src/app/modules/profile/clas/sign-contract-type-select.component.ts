@@ -5,8 +5,8 @@ import { ChangeDetectionStrategy, Component, inject, signal } from '@angular/cor
 import { takeUntilDestroyed } from '@angular/core/rxjs-interop';
 import { FormControl, FormGroup, ReactiveFormsModule } from '@angular/forms';
 import { GERRIT_CONTRACT_TYPE_CORPORATE, GERRIT_CONTRACT_TYPE_INDIVIDUAL, SIGN_CONTRACT_TYPE_COPY } from '@lfx-one/shared/constants';
-import type { GerritContractType, SignContractTypeSelectResult } from '@lfx-one/shared/interfaces';
-import { DynamicDialogRef } from 'primeng/dynamicdialog';
+import type { GerritContractType, SignContractTypeDialogData, SignContractTypeSelectResult } from '@lfx-one/shared/interfaces';
+import { DynamicDialogConfig, DynamicDialogRef } from 'primeng/dynamicdialog';
 
 import { ButtonComponent } from '@components/button/button.component';
 import { SelectableCardComponent } from '@components/selectable-card/selectable-card.component';
@@ -21,6 +21,11 @@ import { SelectableCardComponent } from '@components/selectable-card/selectable-
  * type enabled never reaches here — the caller resolves that type and hands off without asking —
  * so a flag on this dialog could only ever say "both", and a dialog that could render one card is
  * one that could render none.
+ *
+ * A type the confirmed identity already holds is disabled rather than dropped. The identity step
+ * only lets them this far because one type is still unsigned, so removing the other would leave
+ * a step that asks a question with one answer, and never say why the other went. Both disabled
+ * cannot happen: that identity is grayed a step earlier.
  */
 @Component({
   selector: 'lfx-sign-contract-type-select',
@@ -30,10 +35,15 @@ import { SelectableCardComponent } from '@components/selectable-card/selectable-
 })
 export class SignContractTypeSelectComponent {
   private readonly ref = inject(DynamicDialogRef);
+  private readonly config = inject<DynamicDialogConfig<SignContractTypeDialogData>>(DynamicDialogConfig);
 
   protected readonly copy = SIGN_CONTRACT_TYPE_COPY;
   protected readonly individualValue = GERRIT_CONTRACT_TYPE_INDIVIDUAL;
   protected readonly corporateValue = GERRIT_CONTRACT_TYPE_CORPORATE;
+
+  private readonly heldKinds = this.config.data?.heldKinds ?? [];
+  protected readonly individualHeld = this.heldKinds.includes('ICLA');
+  protected readonly corporateHeld = this.heldKinds.includes('ECLA');
 
   protected readonly selectForm = new FormGroup({
     contractType: new FormControl<GerritContractType | null>(null),

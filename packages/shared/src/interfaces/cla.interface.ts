@@ -357,10 +357,22 @@ export type SignIdentitySelectResult = { kind: 'github'; githubId: string } | { 
 export type GerritContractType = 'individual' | 'corporate';
 
 /**
- * What the contract-type step closes with, or `null` for a dismissal (#2066).
+ * What the contract-type step is opened with (#2066).
  *
- * The step takes no input data: it opens only for a group with both types enabled, so there is
- * nothing about the group left for it to branch on.
+ * The step opens only for a group with both types enabled, so nothing about the *group* is left
+ * for it to branch on. What it does need is what the identity confirmed a step earlier already
+ * holds, so the type they cannot usefully sign again is offered as held rather than as a choice.
+ */
+export interface SignContractTypeDialogData {
+  /**
+   * Types this identity already holds for the group. At most one in practice: an identity holding
+   * both is grayed at the identity step, so it never reaches here.
+   */
+  heldKinds: readonly ClaKind[];
+}
+
+/**
+ * What the contract-type step closes with, or `null` for a dismissal (#2066).
  */
 export interface SignContractTypeSelectResult {
   contractType: GerritContractType;

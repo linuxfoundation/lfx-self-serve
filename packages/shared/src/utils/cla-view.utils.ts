@@ -398,20 +398,11 @@ export function alreadySignedGroupTooltip(agreement: MyClaAgreement, route: ClaS
  * identifies it — which does mean a Gerrit agreement with a blank handle still matches that
  * card, and then the enablement rule decides whether the match blocks.
  */
-export function alreadySignedAgreementForIdentity(
-  agreements: readonly MyClaAgreement[],
-  identity: SignIdentityRef,
-  offeredHandles: readonly string[],
-  enabled: { iclaEnabled: boolean; cclaEnabled: boolean }
-): MyClaAgreement | undefined {
-  const enabledKinds = new Set<ClaKind>();
-  if (enabled.iclaEnabled) enabledKinds.add('ICLA');
-  if (enabled.cclaEnabled) enabledKinds.add('ECLA');
-  if (enabledKinds.size === 0) return undefined;
-
+/** The agreements this identity holds for the group, newest first. Shared by the two readers below. */
+function agreementsMatchingIdentity(agreements: readonly MyClaAgreement[], identity: SignIdentityRef, offeredHandles: readonly string[]): MyClaAgreement[] {
   const handles = new Set(offeredHandles.map((handle) => handle.trim().toLowerCase()).filter(Boolean));
 
-  const matched = agreements.filter((agreement) => {
+  return agreements.filter((agreement) => {
     if (!ALREADY_SIGNED_CLA_STATUSES.has(agreement.status)) return false;
     if (identity.platform === 'gerrit') return agreement.signedVia === 'gerrit';
     if (agreement.signedVia !== 'github') return false;
@@ -424,6 +415,31 @@ export function alreadySignedAgreementForIdentity(
 
     return !handles.has(signedAs) && signedAs === identity.githubId.trim().toLowerCase();
   });
+}
+
+/**
+ * Which contract types this identity already holds for the group.
+ *
+ * The contract-type step reads this to offer a held type as held rather than as a choice. It
+ * shares the identity matcher with the gate above so the two cannot disagree about what is held —
+ * a step that offered a type the gate counted would let through the re-sign the gate prevents.
+ */
+export function heldClaKindsForIdentity(agreements: readonly MyClaAgreement[], identity: SignIdentityRef, offeredHandles: readonly string[]): ClaKind[] {
+  return [...new Set(agreementsMatchingIdentity(agreements, identity, offeredHandles).map((agreement) => agreement.kind))];
+}
+
+export function alreadySignedAgreementForIdentity(
+  agreements: readonly MyClaAgreement[],
+  identity: SignIdentityRef,
+  offeredHandles: readonly string[],
+  enabled: { iclaEnabled: boolean; cclaEnabled: boolean }
+): MyClaAgreement | undefined {
+  const enabledKinds = new Set<ClaKind>();
+  if (enabled.iclaEnabled) enabledKinds.add('ICLA');
+  if (enabled.cclaEnabled) enabledKinds.add('ECLA');
+  if (enabledKinds.size === 0) return undefined;
+
+  const matched = agreementsMatchingIdentity(agreements, identity, offeredHandles);
 
   const heldKinds = new Set(matched.map((agreement) => agreement.kind));
   for (const kind of enabledKinds) {

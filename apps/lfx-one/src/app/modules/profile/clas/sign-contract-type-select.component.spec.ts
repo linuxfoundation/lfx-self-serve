@@ -5,7 +5,8 @@ import { ComponentFixture, TestBed } from '@angular/core/testing';
 import { provideNoopAnimations } from '@angular/platform-browser/animations';
 import { provideRouter } from '@angular/router';
 import { SIGN_CONTRACT_TYPE_COPY } from '@lfx-one/shared/constants';
-import { DynamicDialogRef } from 'primeng/dynamicdialog';
+import type { ClaKind } from '@lfx-one/shared/interfaces';
+import { DynamicDialogConfig, DynamicDialogRef } from 'primeng/dynamicdialog';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 
 import { SignContractTypeSelectComponent } from './sign-contract-type-select.component';
@@ -22,13 +23,18 @@ describe('SignContractTypeSelectComponent', () => {
   let close: ReturnType<typeof vi.fn>;
   let fixture: ComponentFixture<SignContractTypeSelectComponent>;
 
-  async function setup(): Promise<void> {
+  async function setup(heldKinds: readonly ClaKind[] = []): Promise<void> {
     TestBed.resetTestingModule();
     close = vi.fn();
 
     TestBed.configureTestingModule({
       imports: [SignContractTypeSelectComponent],
-      providers: [provideRouter([]), provideNoopAnimations(), { provide: DynamicDialogRef, useValue: { close } }],
+      providers: [
+        provideRouter([]),
+        provideNoopAnimations(),
+        { provide: DynamicDialogRef, useValue: { close } },
+        { provide: DynamicDialogConfig, useValue: { data: { heldKinds } } },
+      ],
     });
 
     fixture = TestBed.createComponent(SignContractTypeSelectComponent);
@@ -122,5 +128,49 @@ describe('SignContractTypeSelectComponent', () => {
     (fixture.componentInstance as any).onCancel();
 
     expect(close).toHaveBeenCalledWith(null);
+  });
+
+  describe('a type the identity already holds', () => {
+    // The identity step lets a contributor this far precisely because one type is still unsigned.
+    // Offering the type they already hold as freely as the one they need would hand back the
+    // redundant signing ceremony the identity gate exists to prevent.
+
+    it('offers a held ICLA as held, and leaves the corporate route open', async () => {
+      await setup(['ICLA']);
+
+      expect(query('sign-contract-type-select-individual')?.getAttribute('aria-disabled')).toBe('true');
+      expect(query('sign-contract-type-select-corporate')?.getAttribute('aria-disabled')).not.toBe('true');
+      expect(fixture.nativeElement.textContent).toContain(SIGN_CONTRACT_TYPE_COPY.alreadyHeld);
+    });
+
+    it('offers a held ECLA as held, and leaves the individual route open', async () => {
+      await setup(['ECLA']);
+
+      expect(query('sign-contract-type-select-corporate')?.getAttribute('aria-disabled')).toBe('true');
+      expect(query('sign-contract-type-select-individual')?.getAttribute('aria-disabled')).not.toBe('true');
+    });
+
+    it('refuses to close on the held type even if its card is reached', async () => {
+      await setup(['ICLA']);
+      await choose('sign-contract-type-select-individual');
+      continueToSign();
+
+      expect(close).not.toHaveBeenCalled();
+    });
+
+    it('still closes on the type that is left to sign', async () => {
+      await setup(['ICLA']);
+      await choose('sign-contract-type-select-corporate');
+      continueToSign();
+
+      expect(close).toHaveBeenCalledWith({ contractType: 'corporate' });
+    });
+
+    it('disables neither card when the identity holds nothing', async () => {
+      await setup([]);
+
+      expect(query('sign-contract-type-select-individual')?.getAttribute('aria-disabled')).not.toBe('true');
+      expect(query('sign-contract-type-select-corporate')?.getAttribute('aria-disabled')).not.toBe('true');
+    });
   });
 });
