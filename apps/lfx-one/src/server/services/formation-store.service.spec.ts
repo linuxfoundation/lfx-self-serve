@@ -38,8 +38,6 @@ function buildFormation(overrides: Partial<Formation> = {}): Formation {
     gating_items_open: 0,
     gating_items_total: 0,
     blocking_item_title: null,
-    lead: null,
-    proposer: null,
     subtitle: null,
     created_at: '',
     updated_at: '',

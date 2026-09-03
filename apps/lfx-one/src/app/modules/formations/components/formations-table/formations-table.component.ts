@@ -5,7 +5,7 @@ import { DatePipe } from '@angular/common';
 import { Component, computed, DestroyRef, inject, input, output, signal, Signal } from '@angular/core';
 import { takeUntilDestroyed } from '@angular/core/rxjs-interop';
 import { FormControl, FormGroup, ReactiveFormsModule } from '@angular/forms';
-import { ButtonComponent } from '@components/button/button.component';
+import { RouterLink } from '@angular/router';
 import { CardComponent } from '@components/card/card.component';
 import { CardTabsBarComponent } from '@components/card-tabs-bar/card-tabs-bar.component';
 import { EmptyStateComponent } from '@components/empty-state/empty-state.component';
@@ -20,12 +20,12 @@ import { debounceTime, distinctUntilChanged, map } from 'rxjs';
   selector: 'lfx-formations-table',
   imports: [
     ReactiveFormsModule,
+    RouterLink,
     CardComponent,
     CardTabsBarComponent,
     InputTextComponent,
     TableComponent,
     TagComponent,
-    ButtonComponent,
     EmptyStateComponent,
     DatePipe,
   ],
@@ -37,12 +37,8 @@ export class FormationsTableComponent {
 
   public readonly rows = input.required<Formation[]>();
   public readonly loading = input<boolean>(false);
-  /** Formation uids with an Accept/Decline currently in flight — drives the per-row button `[loading]` state. */
-  public readonly submittingUids = input<ReadonlySet<string>>(new Set());
 
   public readonly filtersChange = output<FormationsQueueFilterState>();
-  public readonly accept = output<Formation>();
-  public readonly decline = output<Formation>();
 
   protected readonly searchForm = new FormGroup({ search: new FormControl<string>('', { nonNullable: true }) });
 
@@ -77,14 +73,6 @@ export class FormationsTableComponent {
   protected onStatusTabChange(tab: string): void {
     this.statusTab.set(tab);
     this.emitFilters();
-  }
-
-  protected onAccept(row: Formation): void {
-    this.accept.emit(row);
-  }
-
-  protected onDecline(row: Formation): void {
-    this.decline.emit(row);
   }
 
   /** PrimeNG types the `#body` row context `any` — precomputing the chip label/severity here lets the template do a plain property read instead of a method call. */

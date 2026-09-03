@@ -82,7 +82,7 @@ test.describe('Formations queue (GH-1958)', () => {
     await FormationApiMockHelper.setupFormationsQueueMock(page);
   });
 
-  test('an auditor sees the tiles and table, with the withdrawn row already reflecting a past decline', async ({ page }) => {
+  test('an auditor sees the tiles and table, with every seeded row rendered', async ({ page }) => {
     await gotoFormationsQueue(page);
 
     await expect(page.getByTestId('formations-queue-container')).toBeVisible({ timeout: SIDEBAR_LOAD_TIMEOUT });
@@ -92,8 +92,6 @@ test.describe('Formations queue (GH-1958)', () => {
     for (const row of mockFormationsQueue) {
       await expect(page.getByTestId(`formations-table-row-${row.uid}`)).toBeVisible();
     }
-    // formerly-brightpath is seeded as withdrawn — its proposed-only Accept/Decline actions must not render.
-    await expect(page.getByTestId('formations-table-accept-formation:formerly-brightpath')).toHaveCount(0);
   });
 
   test('a non-auditor contributor is redirected to /foundation/overview', async ({ page }) => {
@@ -108,59 +106,18 @@ test.describe('Formations queue (GH-1958)', () => {
     await gotoFormationsQueue(page);
     await expect(page.getByTestId('formations-table')).toBeVisible({ timeout: SIDEBAR_LOAD_TIMEOUT });
 
-    await page.getByTestId('filter-pill-proposed').click();
+    await page.getByTestId('filter-pill-on_hold').click();
 
     await expect(page.getByTestId('formations-table-row-formation:harbor-data-exchange')).toBeVisible({ timeout: ELEMENT_TIMEOUT });
     await expect(page.getByTestId('formations-table-row-formation:cascade-data-alliance')).toHaveCount(0);
   });
 
-  test('Accept opens the admin-tool deep link and Decline requires a reason', async ({ page }) => {
-    await FormationApiMockHelper.setupFormationQueueActionMock(page);
-    // The deep link points at the real production admin host — stub it on the browser context (not
-    // just `page`) so the popup navigation never leaves the test sandbox to make a live request.
-    await page
-      .context()
-      .route('https://admin.linuxfoundation.org/**', (route) =>
-        route.fulfill({ status: 200, contentType: 'text/html', body: '<html><body>admin stub</body></html>' })
-      );
-
+  test('a formation name links to its project page', async ({ page }) => {
     await gotoFormationsQueue(page);
     await expect(page.getByTestId('formations-table')).toBeVisible({ timeout: SIDEBAR_LOAD_TIMEOUT });
 
-    // harbor-data-exchange is the seeded 'proposed' row — the only sub_stage that renders Accept/Decline.
-    // onAccept's success handler calls refresh$.next() after deciding whether to show the popup-blocked
-    // toast, on every path that reaches that decision (the invalid-deep_link_url branch returns before
-    // it, but that's a different failure mode from the one this test exercises) — waiting for that
-    // refetch response is the settle point that guarantees the toast decision has already been made
-    // before the next assertion checks for it. If deep_link_url validation ever regresses, that branch
-    // is skipped and this wait times out here instead of hanging the full test timeout.
-    const [popup] = await Promise.all([
-      page.waitForEvent('popup'),
-      page.waitForResponse((res) => res.request().method() === 'GET' && res.url().includes('/api/formations'), { timeout: ELEMENT_TIMEOUT }),
-      page.getByTestId('formations-table-accept-formation:harbor-data-exchange').locator('button').click(),
-    ]);
-    expect(popup.url()).toContain('admin.linuxfoundation.org');
-    // A successful open must not also show the "Pop-up blocked" warning.
-    await expect(page.getByText('Pop-up blocked')).toHaveCount(0);
-    await popup.close();
-
-    await page.getByTestId('formations-table-decline-formation:harbor-data-exchange').locator('button').click();
-    const dialog = page.getByTestId('reason-prompt-dialog');
-    await expect(dialog).toBeVisible({ timeout: ELEMENT_TIMEOUT });
-
-    const confirm = page.getByTestId('reason-prompt-dialog-confirm').locator('button');
-    await expect(confirm).toBeDisabled();
-    await page.locator('textarea[data-test="reason-prompt-dialog-textarea"]').fill('not a fit at this time');
-    await expect(confirm).toBeEnabled();
-
-    // The dialog closes on confirm-click regardless of the HTTP result and the component ignores
-    // the response body, so asserting only `dialog` count would pass even if the POST never fired
-    // or 500'd — anchor on the actual request (reason in the body) and the success toast instead.
-    const [declineRequest] = await Promise.all([page.waitForRequest('**/api/formations/*/decline', { timeout: ELEMENT_TIMEOUT }), confirm.click()]);
-    expect(declineRequest.postDataJSON()).toMatchObject({ reason: 'not a fit at this time' });
-
-    await expect(dialog).toHaveCount(0);
-    await expect(page.getByText('was declined')).toBeVisible({ timeout: ELEMENT_TIMEOUT });
+    const link = page.getByTestId('formations-table-open-formation:cascade-data-alliance');
+    await expect(link).toHaveAttribute('href', /\/project\/overview\?project=cascade-data-alliance/);
   });
 
   test('the empty state renders "No formations yet" with zero rows, and "No results found" once filtered', async ({ page }) => {
@@ -172,7 +129,7 @@ test.describe('Formations queue (GH-1958)', () => {
     await expect(empty).toBeVisible({ timeout: SIDEBAR_LOAD_TIMEOUT });
     await expect(empty).toContainText('No formations yet');
 
-    await page.getByTestId('filter-pill-proposed').click();
+    await page.getByTestId('filter-pill-on_hold').click();
     await expect(empty).toContainText('No results found');
   });
 

@@ -80,28 +80,10 @@ describe('FormationService', () => {
     expect(bare.request.params.keys()).toHaveLength(0);
     bare.flush({});
 
-    service.getFormationsQueue('proposed', 'alliance').subscribe();
+    service.getFormationsQueue('engaged', 'alliance').subscribe();
     const filtered = http.expectOne((r) => r.url === '/api/formations');
-    expect(filtered.request.params.get('sub_stage')).toBe('proposed');
+    expect(filtered.request.params.get('sub_stage')).toBe('engaged');
     expect(filtered.request.params.get('search')).toBe('alliance');
     filtered.flush({});
-  });
-
-  it('acceptFormation POSTs /api/formations/:uid/accept with an empty body', () => {
-    service.acceptFormation('formation:1').subscribe();
-
-    const req = http.expectOne('/api/formations/formation%3A1/accept');
-    expect(req.request.method).toBe('POST');
-    expect(req.request.body).toEqual({});
-    req.flush({});
-  });
-
-  it('declineFormation POSTs /api/formations/:uid/decline with the reason', () => {
-    service.declineFormation('formation:1', 'opted out').subscribe();
-
-    const req = http.expectOne('/api/formations/formation%3A1/decline');
-    expect(req.request.method).toBe('POST');
-    expect(req.request.body).toEqual({ reason: 'opted out' });
-    req.flush({});
   });
 });

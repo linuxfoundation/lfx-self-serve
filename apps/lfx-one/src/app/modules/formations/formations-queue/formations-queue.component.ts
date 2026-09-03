@@ -1,34 +1,24 @@
 // Copyright The Linux Foundation and each contributor to LFX.
 // SPDX-License-Identifier: MIT
 
-import { isPlatformBrowser } from '@angular/common';
-import { Component, computed, inject, PLATFORM_ID, Signal, signal } from '@angular/core';
+import { Component, computed, inject, Signal, signal } from '@angular/core';
 import { toObservable, toSignal } from '@angular/core/rxjs-interop';
 import { StatCardGridComponent } from '@components/stat-card-grid/stat-card-grid.component';
 import { FormationService } from '@services/formation.service';
-import type { Formation, FormationsQueueFilterState, FormationsQueueResponse, ReasonPromptDialogResult, StatCardItem } from '@lfx-one/shared/interfaces';
+import type { FormationsQueueFilterState, FormationsQueueResponse, StatCardItem } from '@lfx-one/shared/interfaces';
 import { createEmptyFormationsQueueResponse } from '@lfx-one/shared/constants';
-import { isValidUrl } from '@lfx-one/shared/utils';
-import { MessageService } from 'primeng/api';
-import { DialogService } from 'primeng/dynamicdialog';
-import { BehaviorSubject, catchError, combineLatest, finalize, of, switchMap, take } from 'rxjs';
-
-import { ReasonPromptDialogComponent } from '@components/reason-prompt-dialog/reason-prompt-dialog.component';
+import { BehaviorSubject, catchError, combineLatest, finalize, of, switchMap } from 'rxjs';
 
 import { FormationsTableComponent } from '../components/formations-table/formations-table.component';
 
 @Component({
   selector: 'lfx-formations-queue',
   imports: [StatCardGridComponent, FormationsTableComponent],
-  providers: [DialogService],
   templateUrl: './formations-queue.component.html',
   styleUrl: './formations-queue.component.scss',
 })
 export class FormationsQueueComponent {
   private readonly formationService = inject(FormationService);
-  private readonly messageService = inject(MessageService);
-  private readonly dialogService = inject(DialogService);
-  private readonly platformId = inject(PLATFORM_ID);
 
   private readonly refresh$ = new BehaviorSubject<void>(undefined);
   private readonly filters = signal<FormationsQueueFilterState>({ subStage: undefined, search: '' });
@@ -36,8 +26,6 @@ export class FormationsQueueComponent {
   // would flash "No formations yet" for one frame.
   protected readonly loading = signal(true);
   protected readonly loadFailed = signal(false);
-  /** Formation uids with an Accept/Decline currently in flight — guards a double-click into issuing two writes. */
-  protected readonly submittingUids = signal<ReadonlySet<string>>(new Set());
 
   private readonly response: Signal<FormationsQueueResponse> = this.initResponse();
   protected readonly rows = computed(() => this.response().rows);
@@ -54,107 +42,6 @@ export class FormationsQueueComponent {
     // filters.set() always allocates a fresh object, so it alone re-triggers initResponse()'s
     // combineLatest via the filters branch — an additional refresh$.next() here would double-fire.
     this.filters.set({ subStage: undefined, search: '' });
-  }
-
-  protected onAccept(row: Formation): void {
-    if (!this.beginSubmitting(row.uid)) return;
-
-    this.formationService
-      .acceptFormation(row.uid)
-      .pipe(
-        take(1),
-        finalize(() => this.endSubmitting(row.uid))
-      )
-      .subscribe({
-        next: (result) => {
-          // deep_link_url is fixture-constructed today (a fixed base + an encoded slug), but it's
-          // API-sourced the same way action_href/link.href are — validate it the same way before
-          // it ever reaches window.open, so the #1957 swap can't turn this into a javascript: sink.
-          if (!isValidUrl(result.deep_link_url)) {
-            console.error('[FormationsQueue] Rejected unsafe deep_link_url', result.deep_link_url);
-            this.messageService.add({ severity: 'error', summary: 'Error', detail: 'Could not open the admin tool.' });
-            return;
-          }
-
-          // `window` is a browser-only global (ssr-safety.md) — this callback only ever fires from a
-          // click handler, so the server never reaches it in practice, but the guard is unconditional
-          // per the rule either way.
-          let opened: Window | null = null;
-          if (isPlatformBrowser(this.platformId)) {
-            // Not `window.open(url, '_blank', 'noopener,noreferrer')` — per spec, `noopener` (which
-            // `noreferrer` also implies) makes window.open return null unconditionally, so that form
-            // can never distinguish "opened" from "blocked" and would show the blocked-popup warning
-            // on every successful Accept. Achieve the same reverse-tabnabbing protection by nulling
-            // `opener` manually on the window reference instead.
-            opened = window.open(result.deep_link_url, '_blank');
-            if (opened) opened.opener = null;
-          }
-          if (!opened) {
-            // Popup blocked — this fires from an async response callback, outside the click's
-            // user-gesture window, so the browser can (and does, in some configurations) block it.
-            this.messageService.add({
-              severity: 'warn',
-              summary: 'Pop-up blocked',
-              detail: `Open the admin tool manually: ${result.deep_link_url}`,
-              sticky: true,
-            });
-          }
-          this.refresh$.next();
-        },
-        error: (error: unknown) => {
-          console.error('[FormationsQueue] Accept failed', error);
-          this.messageService.add({ severity: 'error', summary: 'Error', detail: 'Could not open the admin tool.' });
-        },
-      });
-  }
-
-  protected onDecline(row: Formation): void {
-    const ref = this.dialogService.open(ReasonPromptDialogComponent, {
-      header: 'Decline formation',
-      width: '480px',
-      modal: true,
-      data: {
-        prompt: `Declining "${row.parent_project_name}" requires a reason. The proposer is notified.`,
-        placeholder: 'Why is this formation being declined?',
-        confirmLabel: 'Decline formation',
-      },
-    });
-
-    ref?.onClose.pipe(take(1)).subscribe((result: ReasonPromptDialogResult | undefined) => {
-      if (!result?.reason || !this.beginSubmitting(row.uid)) return;
-
-      this.formationService
-        .declineFormation(row.uid, result.reason)
-        .pipe(
-          take(1),
-          finalize(() => this.endSubmitting(row.uid))
-        )
-        .subscribe({
-          next: () => {
-            this.refresh$.next();
-            this.messageService.add({ severity: 'success', summary: 'Declined', detail: `"${row.parent_project_name}" was declined.` });
-          },
-          error: (error: unknown) => {
-            console.error('[FormationsQueue] Decline failed', error);
-            this.messageService.add({ severity: 'error', summary: 'Error', detail: 'Could not decline this formation.' });
-          },
-        });
-    });
-  }
-
-  /** Returns false (a no-op guard) if `uid` already has a mutation in flight. */
-  private beginSubmitting(uid: string): boolean {
-    if (this.submittingUids().has(uid)) return false;
-    this.submittingUids.update((uids) => new Set(uids).add(uid));
-    return true;
-  }
-
-  private endSubmitting(uid: string): void {
-    this.submittingUids.update((uids) => {
-      const next = new Set(uids);
-      next.delete(uid);
-      return next;
-    });
   }
 
   private initResponse(): Signal<FormationsQueueResponse> {
@@ -196,13 +83,19 @@ export class FormationsQueueComponent {
           iconContainerClass: 'bg-amber-50 text-amber-600',
         },
         {
-          value: t.proposed,
-          label: 'New proposals',
-          subLine: 'Awaiting triage',
-          icon: 'fa-light fa-inbox',
+          value: t.exploratory,
+          label: 'Exploratory',
+          subLine: 'Early conversations',
+          icon: 'fa-light fa-compass',
           iconContainerClass: 'bg-violet-50 text-violet-600',
         },
-        { value: t.mine, label: 'Mine', subLine: 'Led or proposed by you', icon: 'fa-light fa-user', iconContainerClass: 'bg-emerald-50 text-emerald-600' },
+        {
+          value: t.engaged,
+          label: 'Engaged',
+          subLine: `${t.on_hold} on hold`,
+          icon: 'fa-light fa-handshake',
+          iconContainerClass: 'bg-emerald-50 text-emerald-600',
+        },
       ];
     });
   }

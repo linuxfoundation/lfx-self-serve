@@ -72,18 +72,15 @@ export class FormationApiMockHelper {
       if (search) filtered = filtered.filter((row) => row.parent_project_name.toLowerCase().includes(search));
 
       const tiles: FormationsQueueResponse['tiles'] = {
-        proposed: rows.filter((row) => row.sub_stage === 'proposed').length,
         exploratory: rows.filter((row) => row.sub_stage === 'exploratory').length,
         engaged: rows.filter((row) => row.sub_stage === 'engaged').length,
         on_hold: rows.filter((row) => row.sub_stage === 'on_hold').length,
         activating: rows.filter((row) => row.sub_stage === 'activating').length,
-        withdrawn: rows.filter((row) => row.sub_stage === 'withdrawn').length,
         total: rows.length,
         foundations: rows.filter((row) => row.entity_type === 'foundation').length,
         // Mirrors formation.service.ts's buildQueueTiles — a bare 'project' entity rolls into the
         // subprojects count so it isn't dropped from the breakdown while still counting toward total.
         subprojects: rows.filter((row) => row.entity_type === 'subproject' || row.entity_type === 'project').length,
-        mine: 0,
       };
 
       await route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify({ tiles, rows: filtered, data_source: 'fixture' }) });
@@ -145,21 +142,6 @@ export class FormationApiMockHelper {
         return;
       }
       await route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify({ ...item, status: 'waiting_on_partner' }) });
-    });
-  }
-
-  /** Mocks `POST /api/formations/:uid/accept` and `/decline`. */
-  static async setupFormationQueueActionMock(page: Page): Promise<void> {
-    await page.route('**/api/formations/*/accept', async (route) => {
-      await route.fulfill({
-        status: 200,
-        contentType: 'application/json',
-        body: JSON.stringify({ deep_link_url: 'https://admin.linuxfoundation.org/formations/cascade-data-alliance' }),
-      });
-    });
-    await page.route('**/api/formations/*/decline', async (route) => {
-      const formation = mockFormationsQueue[0];
-      await route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify({ ...formation, state: 'withdrawn', sub_stage: 'withdrawn' }) });
     });
   }
 }

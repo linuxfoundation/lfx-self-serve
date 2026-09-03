@@ -130,37 +130,3 @@ export const getFormationsQueue = async (req: Request, res: Response, next: Next
     return next(error);
   }
 };
-
-export const acceptFormation = async (req: Request, res: Response, next: NextFunction) => {
-  const { uid } = req.params;
-  const startTime = logger.startOperation(req, 'accept_formation', { uid });
-
-  if (!validateUidParameter(uid, req, next, { operation: 'accept_formation' })) {
-    return;
-  }
-
-  try {
-    const result = await formationService.acceptFormation(req, uid);
-    logger.success(req, 'accept_formation', startTime, { uid });
-    return res.json(result);
-  } catch (error) {
-    return next(error);
-  }
-};
-
-export const declineFormation = async (req: Request, res: Response, next: NextFunction) => {
-  const { uid } = req.params;
-  const startTime = logger.startOperation(req, 'decline_formation', { uid });
-
-  if (!validateUidParameter(uid, req, next, { operation: 'decline_formation' })) {
-    return;
-  }
-
-  try {
-    const result = await formationService.declineFormation(req, uid, req.body?.reason);
-    logger.success(req, 'decline_formation', startTime, { uid });
-    return res.json(result);
-  } catch (error) {
-    return next(error);
-  }
-};

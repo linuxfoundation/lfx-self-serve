@@ -2,7 +2,7 @@
 // SPDX-License-Identifier: MIT
 
 import { SEEDED_FORMATION_TEMPLATE_UID } from '@lfx-one/shared/constants';
-import { Formation, FormationLead, FormationTemplate } from '@lfx-one/shared/interfaces';
+import { Formation, FormationTemplate } from '@lfx-one/shared/interfaces';
 
 /** Minimal e2e-side mirror of the server's seeded template — self-contained so e2e specs never import from `src/server`. */
 export const mockFormationTemplate: FormationTemplate = {
@@ -20,8 +20,6 @@ export const mockFormationTemplate: FormationTemplate = {
  * `projects.mock.ts`'s `mockProjects` convention — a checklist test navigates to a project whose
  * slug has both a `mockProjects` entry (a Formation-stage `stage`) and a `mockFormations` entry.
  */
-const SYNTHETIC_LEAD: FormationLead = { username: 'alex.rivera', name: 'Alex Rivera' };
-
 export const mockFormations: Record<string, Formation> = {
   'cascade-data-alliance': {
     uid: 'formation:cascade-data-alliance',
@@ -42,8 +40,6 @@ export const mockFormations: Record<string, Formation> = {
     gating_items_open: 1,
     gating_items_total: 2,
     blocking_item_title: 'Contribution agreement executed',
-    lead: SYNTHETIC_LEAD,
-    proposer: null,
     subtitle: 'With Northbridge Systems · Transition of an existing alliance',
     created_at: new Date(0).toISOString(),
     updated_at: new Date(0).toISOString(),
@@ -61,37 +57,33 @@ export const mockFormationsQueue: Formation[] = [
     entity_type: 'subproject',
     template_uid: SEEDED_FORMATION_TEMPLATE_UID,
     template_version: 1,
-    state: 'draft',
-    sub_stage: 'proposed',
+    state: 'active',
+    sub_stage: 'on_hold',
     announcement_date: null,
     is_activating: false,
     gating_items_open: 6,
     gating_items_total: 6,
     blocking_item_title: 'Intake review',
-    lead: null,
-    proposer: { username: 'sam.chen', name: 'Sam Chen' },
-    subtitle: 'Under Cascade Data Alliance · Proposed by Northbridge Systems',
+    subtitle: 'Under Cascade Data Alliance',
     created_at: new Date(0).toISOString(),
     updated_at: new Date(0).toISOString(),
   },
   {
-    uid: 'formation:formerly-brightpath',
+    uid: 'formation:brightpath-working-group',
     parent_project_uid: 'e39f1234-f567-4abc-b890-1234567890e0',
-    parent_project_slug: 'formerly-brightpath',
-    parent_project_name: 'Formerly Brightpath Working Group',
+    parent_project_slug: 'brightpath-working-group',
+    parent_project_name: 'Brightpath Working Group',
     entity_type: 'subproject',
     template_uid: SEEDED_FORMATION_TEMPLATE_UID,
     template_version: 1,
-    state: 'withdrawn',
-    sub_stage: 'withdrawn',
-    announcement_date: null,
-    is_activating: false,
-    gating_items_open: 4,
-    gating_items_total: 6,
+    state: 'active',
+    sub_stage: 'activating',
+    announcement_date: new Date(Date.now() + 10 * 24 * 60 * 60 * 1000).toISOString(),
+    is_activating: true,
+    gating_items_open: 0,
+    gating_items_total: 4,
     blocking_item_title: null,
-    lead: null,
-    proposer: { username: 'jordan.blake', name: 'Jordan Blake' },
-    subtitle: 'Withdrawn — proposer opted out before formation completed',
+    subtitle: 'Under Cascade Data Alliance · Gating items complete',
     created_at: new Date(0).toISOString(),
     updated_at: new Date(0).toISOString(),
   },

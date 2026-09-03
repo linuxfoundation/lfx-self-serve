@@ -3,14 +3,7 @@
 
 import { HttpClient, HttpParams } from '@angular/common/http';
 import { Injectable, inject } from '@angular/core';
-import type {
-  Formation,
-  FormationActivity,
-  FormationChecklistResponse,
-  FormationItem,
-  FormationSubStage,
-  FormationsQueueResponse,
-} from '@lfx-one/shared/interfaces';
+import type { FormationActivity, FormationChecklistResponse, FormationItem, FormationSubStage, FormationsQueueResponse } from '@lfx-one/shared/interfaces';
 import { Observable, take } from 'rxjs';
 
 @Injectable({ providedIn: 'root' })
@@ -46,13 +39,5 @@ export class FormationService {
     if (subStage) params = params.set('sub_stage', subStage);
     if (search) params = params.set('search', search);
     return this.http.get<FormationsQueueResponse>('/api/formations', { params });
-  }
-
-  public acceptFormation(formationUid: string): Observable<{ deep_link_url: string }> {
-    return this.http.post<{ deep_link_url: string }>(`/api/formations/${encodeURIComponent(formationUid)}/accept`, {}).pipe(take(1));
-  }
-
-  public declineFormation(formationUid: string, reason: string): Observable<Formation> {
-    return this.http.post<Formation>(`/api/formations/${encodeURIComponent(formationUid)}/decline`, { reason }).pipe(take(1));
   }
 }

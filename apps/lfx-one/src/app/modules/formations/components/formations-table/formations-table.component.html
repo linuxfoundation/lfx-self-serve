@@ -36,56 +36,34 @@
       <lfx-table [value]="displayRows()" [loading]="loading()" [ariaLabel]="'Formations queue'" data-testid="formations-table">
         <ng-template #header>
           <tr>
-            <th class="w-[24%]">Formation</th>
-            <th class="w-[10%]">Type</th>
-            <th class="w-[16%]">Stage</th>
-            <th class="w-[10%]">Progress</th>
-            <th class="w-[12%]">Announcement</th>
+            <th class="w-[28%]">Formation</th>
+            <th class="w-[12%]">Type</th>
+            <th class="w-[18%]">Stage</th>
+            <th class="w-[12%]">Progress</th>
+            <th class="w-[14%]">Announcement</th>
             <th class="w-[16%]">Blocking</th>
-            <th class="w-[8%]">Lead</th>
-            <th class="w-[4%]"></th>
           </tr>
         </ng-template>
 
         <ng-template #body let-row let-rowIndex="rowIndex">
           <tr [attr.data-row-index]="rowIndex" [attr.data-testid]="'formations-table-row-' + row.uid">
             <td>
-              <div class="flex flex-col gap-0.5">
+              <a
+                [routerLink]="['/project/overview']"
+                [queryParams]="{ project: row.parent_project_slug }"
+                class="flex flex-col gap-0.5 no-underline hover:underline"
+                [attr.data-testid]="'formations-table-open-' + row.uid">
                 <span class="text-sm font-medium text-gray-900">{{ row.parent_project_name }}</span>
                 @if (row.subtitle) {
                   <span class="text-xs text-gray-500">{{ row.subtitle }}</span>
                 }
-              </div>
+              </a>
             </td>
             <td class="text-sm text-gray-700 capitalize">{{ row.entity_type }}</td>
             <td><lfx-tag [value]="row.stageLabel" [severity]="row.stageSeverity" /></td>
             <td class="text-sm text-gray-700 tabular-nums">{{ row.gating_items_total - row.gating_items_open }} of {{ row.gating_items_total }}</td>
             <td class="text-sm text-gray-700">{{ row.announcement_date ? (row.announcement_date | date: 'MMM d') : 'Not set' }}</td>
             <td class="text-sm text-gray-700">{{ row.blocking_item_title || '—' }}</td>
-            <td class="text-sm text-gray-700">{{ row.lead?.name || 'Unassigned' }}</td>
-            <td>
-              @if (row.sub_stage === 'proposed') {
-                <div class="flex items-center gap-2">
-                  <lfx-button
-                    label="Accept"
-                    size="small"
-                    severity="primary"
-                    [loading]="submittingUids().has(row.uid)"
-                    (onClick)="onAccept(row)"
-                    (click)="$event.stopPropagation()"
-                    [attr.data-testid]="'formations-table-accept-' + row.uid" />
-                  <lfx-button
-                    label="Decline"
-                    size="small"
-                    severity="secondary"
-                    [outlined]="true"
-                    [loading]="submittingUids().has(row.uid)"
-                    (onClick)="onDecline(row)"
-                    (click)="$event.stopPropagation()"
-                    [attr.data-testid]="'formations-table-decline-' + row.uid" />
-                </div>
-              }
-            </td>
           </tr>
         </ng-template>
       </lfx-table>

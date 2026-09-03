@@ -91,8 +91,6 @@ export async function mockFormationChecklistApis(page: Page, opts: { project: Pr
             gating_items_open: 0,
             gating_items_total: 0,
             blocking_item_title: null,
-            lead: null,
-            proposer: null,
             subtitle: null,
             created_at: '',
             updated_at: '',
