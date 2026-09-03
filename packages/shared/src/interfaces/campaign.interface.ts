@@ -1837,6 +1837,7 @@ export interface HubSpotUtmLookupResult {
   hs_utm: string | null;
   campaign_name: string;
   all_matches: { name: string; hs_utm: string }[];
+  truncated: boolean;
 }
 
 export interface HubSpotUtmCreateResult {

@@ -109,6 +109,7 @@ export async function gaqlSearch(query: string): Promise<unknown[]> {
 // ---------------------------------------------------------------------------
 
 const HS_BASE = 'https://api.hubapi.com';
+const HUBSPOT_SEARCH_LIMIT = 10;
 
 interface HubSpotUtmResult {
   found: boolean;
@@ -116,6 +117,7 @@ interface HubSpotUtmResult {
   campaignName: string;
   campaignId: string | null;
   allMatches: { name: string; hsUtm: string }[];
+  truncated: boolean;
 }
 
 function hsHeaders(): Record<string, string> {
@@ -149,7 +151,7 @@ async function hubspotSearchCampaign(eventName: string): Promise<HubSpotUtmResul
   const results = data.results ?? [];
 
   if (results.length === 0) {
-    return { found: false, hsUtm: null, campaignName: '', campaignId: null, allMatches: [] };
+    return { found: false, hsUtm: null, campaignName: '', campaignId: null, allMatches: [], truncated: false };
   }
 
   const queryLower = eventName.toLowerCase();
@@ -168,7 +170,7 @@ async function hubspotSearchCampaign(eventName: string): Promise<HubSpotUtmResul
   const matches = scored.filter((s) => s.score > 0);
 
   if (matches.length === 0) {
-    return { found: false, hsUtm: null, campaignName: '', campaignId: null, allMatches: [] };
+    return { found: false, hsUtm: null, campaignName: '', campaignId: null, allMatches: [], truncated: results.length >= HUBSPOT_SEARCH_LIMIT };
   }
 
   const best = matches[0];
@@ -178,6 +180,7 @@ async function hubspotSearchCampaign(eventName: string): Promise<HubSpotUtmResul
     campaignName: best.name,
     campaignId: best.id,
     allMatches: matches.map((m) => ({ name: m.name, hsUtm: m.hsUtm })),
+    truncated: results.length >= HUBSPOT_SEARCH_LIMIT,
   };
 }
 
@@ -224,7 +227,7 @@ async function hubspotCreateCampaign(eventName: string): Promise<HubSpotUtmResul
     hsUtm = buildUtmTokenFallback(campaignUuid, eventName);
   }
 
-  return { found: true, hsUtm, campaignName: eventName, campaignId, allMatches: [{ name: eventName, hsUtm: hsUtm! }] };
+  return { found: true, hsUtm, campaignName: eventName, campaignId, allMatches: [{ name: eventName, hsUtm: hsUtm! }], truncated: false };
 }
 
 async function resolveHubSpotUtm(eventName: string): Promise<string | null> {
@@ -610,13 +613,14 @@ export class CampaignProxyService {
   public async lookupHubSpotUtm(
     _req: Request,
     eventName: string
-  ): Promise<{ found: boolean; hs_utm: string | null; campaign_name: string; all_matches: { name: string; hs_utm: string }[] }> {
+  ): Promise<{ found: boolean; hs_utm: string | null; campaign_name: string; all_matches: { name: string; hs_utm: string }[]; truncated: boolean }> {
     const result = await hubspotSearchCampaign(eventName);
     return {
       found: result.found,
       hs_utm: result.hsUtm,
       campaign_name: result.campaignName,
       all_matches: result.allMatches.map((m) => ({ name: m.name, hs_utm: m.hsUtm })),
+      truncated: result.truncated,
     };
   }
 
