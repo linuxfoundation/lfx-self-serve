@@ -7,14 +7,18 @@
 <div [ngClass]="{ 'pt-12': userService.impersonating() }">
   <lfx-header></lfx-header>
 
-  @if (meetingLoadFailed()) {
+  @if (meetingLoadFailed() && !meeting()) {
     <!-- Checked ahead of `meeting()` — `toSignal` retains the last successful meeting across a
          later terminal failure (each failing `catchError` returns `EMPTY`, no new emission), so
          checking `meeting()` first would keep showing stale content instead of this error state
          (GH-2041 follow-up). 404/403/400 already redirect to /meetings/not-found in
          initializeMeeting(), so this only covers the case that would otherwise leave the skeleton
-         spinning forever, or show stale meeting content, on a settled non-navigating failure
-         (e.g. a 5xx or network error). -->
+         spinning forever on the *initial* load (e.g. a 5xx or network error). `!meeting()` scopes
+         this to loads with no settled meeting yet — `refreshTrigger$` re-entering the pipeline
+         after a successful registration or materials change (meeting-join.component.ts:619, 667)
+         can also call `setMeetingLoadFailed()` on a transient failure, but `meeting()` still holds
+         the working meeting then, and a blipped background refetch must not tear down an
+         otherwise-working page (dealako review on #2046). -->
     <div class="bg-gray-50 min-h-screen flex items-center justify-center" data-testid="meeting-join-error">
       <div class="text-center flex flex-col items-center gap-2">
         <i class="fa-light fa-triangle-exclamation text-4xl text-gray-400"></i>

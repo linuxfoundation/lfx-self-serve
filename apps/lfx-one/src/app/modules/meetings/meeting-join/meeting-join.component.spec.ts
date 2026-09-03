@@ -401,7 +401,16 @@ describe('MeetingJoinComponent', () => {
         meetingLoadFailed: false,
       });
 
-      const component = await createComponent();
+      // Assert before `whenStable()` settles the debounced `meeting$` pipeline (which also sets
+      // `password` at meeting-join.component.ts:770) — otherwise this passes regardless of whether
+      // the constructor's synchronous `password.set()` from the route snapshot exists, since the
+      // debounced pipeline would set it in time anyway. Asserting on the very first CD pass pins
+      // the actual race: the constructor snapshot vs. `initializeSeriesOccurrences()`'s first
+      // subscription (dealako review on #2046).
+      await TestBed.compileComponents();
+      const fixture = TestBed.createComponent(MeetingJoinComponent);
+      const component = fixture.componentInstance;
+      fixture.detectChanges();
 
       // The password must be present on THIS call — `distinctUntilChanged()` on the series uid
       // means a follow-up call for the same series never happens, so a missing password here
@@ -409,6 +418,8 @@ describe('MeetingJoinComponent', () => {
       expect(getPublicMeetingOccurrences).toHaveBeenCalledTimes(1);
       expect(getPublicMeetingOccurrences).toHaveBeenCalledWith(MEETING_ID, 'secret');
       expect(component.meeting()?.id).toBe(MEETING_ID);
+
+      await TestBed.inject(ApplicationRef).whenStable();
     });
 
     it('shows the skeleton on the initial render when there is no seed and the fetch has not resolved yet', async () => {
@@ -510,10 +521,13 @@ describe('MeetingJoinComponent', () => {
     });
 
     it('paints the error branch synchronously from a seeded terminal-error transfer state, with no skeleton flash, and holds it through the hydration refetch', async () => {
-      // The hydration refetch also fails, matching the seeded branch — this is what guards the
-      // full GH-2041 contract: the error state must survive past the first CD pass, not just
-      // appear on it and then flash to the skeleton once the debounced pipeline re-enters.
-      getPublicMeeting.mockReturnValue(throwError(() => ({ status: 500 })));
+      // Held open (not `throwError`, which settles synchronously on subscribe) so there is an
+      // observable in-flight window between the first paint and the refetch settling — otherwise
+      // the eager-clear-then-re-set both happen in one synchronous tick and the post-hydration
+      // assertions below would pass even if the eager-clear fix (GH-2041) were reverted
+      // (dealako review on #2046).
+      const refetch$ = new Subject<{ meeting: Meeting; project: PublicMeetingProject }>();
+      getPublicMeeting.mockReturnValue(refetch$);
 
       const transferState = TestBed.inject(TransferState);
       transferState.set(MEETING_JOIN_STATE_KEY, {
@@ -535,6 +549,15 @@ describe('MeetingJoinComponent', () => {
       expect(fixture.nativeElement.querySelector('[data-testid="meeting-join-error"]')).not.toBeNull();
       expect(fixture.nativeElement.querySelector('[data-testid="meeting-join-skeleton"]')).toBeNull();
 
+      // The refetch is still in flight here — the error view must hold, not flash to the skeleton,
+      // while the debounced pipeline is pending.
+      fixture.detectChanges();
+      expect((component as unknown as { meetingLoadFailed: () => boolean }).meetingLoadFailed()).toBe(true);
+      expect(fixture.nativeElement.querySelector('[data-testid="meeting-join-error"]')).not.toBeNull();
+      expect(fixture.nativeElement.querySelector('[data-testid="meeting-join-skeleton"]')).toBeNull();
+
+      // Now settle the refetch with the same terminal failure the seed recorded.
+      refetch$.error({ status: 500 });
       await TestBed.inject(ApplicationRef).whenStable();
 
       // Re-assert post-hydration: the debounced pipeline re-entering must not have cleared
