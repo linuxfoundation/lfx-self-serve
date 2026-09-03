@@ -1171,7 +1171,7 @@ describe('fromBriefResponse', () => {
     // This is the path this app's OWN round-trip takes. Planning's Proceed emits `structuredCopy`
     // and never sets `metaCopy`/`redditCopy`, and `populateFromBrief` reads
     // `structuredCopy['meta_ads']` FIRST — so the guards on the camelCase side sat on a branch
-    // this app's briefs never reach. `v.primary_text` (implementation-tab.component.ts:578) then
+    // this app's briefs never reach. `v.primary_text` (implementation-tab.component.ts) then
     // threw on a null element.
     const structured = {
       meta_ads: { variants: [null, { primary_text: 'p', headline: 'h' }, { headline: 'no primary text' }] },
@@ -1196,7 +1196,7 @@ describe('fromBriefResponse', () => {
 
   it('coerces a non-array string list rather than letting for...of throw', () => {
     // `google_search.headlines` reaches a `for...of` in populateFromBrief
-    // (implementation-tab.component.ts:527), so a stored `42` throws "is not iterable" — a
+    // (implementation-tab.component.ts), so a stored `42` throws "is not iterable" — a
     // different failure from the variant case, and one the variant filter does not touch.
     const structured = { google_search: { headlines: 42, descriptions: ['keep', 7, null] } };
 
@@ -1263,7 +1263,7 @@ describe('fromBriefResponse', () => {
   it('drops array elements the consumers would crash on', () => {
     // `Any` columns are unvalidated on the way in, so a stored row can hold `[null]`. The
     // Implementation tab dereferences elements directly — `v.primaryText.trim()`
-    // (implementation-tab.component.ts:238) and `g.urn` (:243) — so one bad element crashes
+    // (implementation-tab.component.ts) and `g.urn` (:243) — so one bad element crashes
     // Restore rather than degrading it.
     const meta = fromBriefResponse(storedBrief({ copy: { meta: { variants: [null, { primaryText: 'ok', headline: 'h' }, 'nope'] } } }))
       ?.metaCopy as unknown as Record<string, unknown>;
@@ -1673,7 +1673,7 @@ describe('CampaignServiceClient.createCampaigns', () => {
       bothFlagsOn();
       // The PRODUCTION shape, not a raw Error: `ApiClientService.executeRequest` wraps a Node
       // fetch failure as `MicroserviceError(500, cause.code)` before this service sees it
-      // (`api-client.service.ts:313-320`). An earlier revision of this test rejected with a raw
+      // (`api-client.service.ts`). An earlier revision of this test rejected with a raw
       // `Error` carrying a top-level `code` — a shape this client never throws — so it passed
       // against a `requestNeverLeft` that returned false for every MicroserviceError and fixed
       // nothing in production.

@@ -16,7 +16,7 @@ export type CampaignPlatform = 'google-ads' | 'microsoft-ads' | 'linkedin-ads' |
  * interchangeable (`docs/api-catalog.md` records the platform enum as `"hubspot"`, and `campaigns`
  * is unique on `(brief_id, platform)`), but here they are not: `CampaignPlatform`'s members are
  * enumerated by `CAMPAIGN_PLATFORMS`, which renders the paid Ad Channels picker
- * (`planning-tab.component.ts:96`). Widening that union would offer HubSpot as an ad channel a
+ * (`planning-tab.component.ts`). Widening that union would offer HubSpot as an ad channel a
  * paid brief could select — email is not an ad channel, it is a different delivery type that
  * happens to dispatch through one.
  */

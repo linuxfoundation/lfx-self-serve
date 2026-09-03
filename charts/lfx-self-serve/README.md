@@ -301,7 +301,7 @@ drained.
 
 **It is not a clean reverse, because `..._STATUS_TOGGLE` does not come off with the rest.** Turning
 CREATE off stops NEW UUID campaigns; it does nothing about the ones that already exist, and a UUID
-is permanent. `campaign.controller.ts:1156` refuses a pause for any UUID while the flag is off, so
+is permanent. `campaign.controller.ts` refuses a pause for any UUID while the flag is off, so
 disabling it removes the primary cost-control lever from campaigns that may still be spending.
 JOBS has a drain condition — outstanding polls finish — and this one does not: keep it enabled for
 as long as any campaign-service campaign can still spend, independently of the JOBS decision.

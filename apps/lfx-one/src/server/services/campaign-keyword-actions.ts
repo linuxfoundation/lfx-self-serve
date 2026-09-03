@@ -302,7 +302,7 @@ function upstreamAnswered(error: unknown): boolean {
   }
   // The APPLICATION must have answered, not merely some HTTP layer. A status alone does not
   // establish that: executeRequest raises the same MicroserviceError shape for EVERY !response.ok
-  // (api-client.service.ts:289), so an ingress 502/503/504 that campaign-service never saw
+  // (see `executeRequest`'s `!response.ok` arm), so an ingress 502/503/504 campaign-service never saw
   // carries a real status and no originalError. Reading those as replies reported a gateway
   // timeout as a DEFINITE failure -- its text has no unconfirmed marker -- and invited a retry of
   // a REMOVE that Google cannot undo.
@@ -386,7 +386,7 @@ export const CAMPAIGN_DEADLINE_EXCEEDED = 'Not attempted: the request ran out of
 /**
  * Wall-clock budget for the whole fan-out, in ms.
  *
- * 45s against the ingress's documented 60s read timeout (`campaign-proxy.service.ts:1009-1010`).
+ * 45s against the ingress's documented 60s read timeout (`campaign-proxy.service.ts` documents the same ceiling).
  * The row cap bounds how MANY campaigns a request can name; it cannot bound how LONG they take,
  * and each one costs two sequential proxy calls at the client's 30s default. So a request of
  * slow-but-reachable campaigns could still exceed the ingress window -- and when it does, ingress

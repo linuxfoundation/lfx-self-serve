@@ -227,7 +227,7 @@ export class MonitoringTabComponent implements OnInit {
         },
         error: (err) => {
           // `extractErrorMessage`, not `err?.error?.message`. BaseApiError.toResponse serialises
-          // the operator-facing text as `{ error: string }` (base.error.ts:78), so `.error.message`
+          // the operator-facing text as `{ error: string }` (`BaseApiError.toResponse`), so `.error.message`
           // is undefined for every error this path produces and the operator got Angular's generic
           // "Http failure response for <url>" instead of the actionable upstream reason. The same
           // reading already exists in `toTransportOutcome`; these loaders never got it (Copilot).

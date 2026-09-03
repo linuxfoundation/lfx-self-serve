@@ -450,7 +450,7 @@ environment:
   #   Roll back: CREATE off first -> let outstanding UUID jobs drain -> then JOBS
   #
   #   STATUS_TOGGLE is NOT part of that sequence. Turning it off strands every campaign-service
-  #   campaign that already exists: a UUID is permanent, and campaign.controller.ts:1156 refuses
+  #   campaign that already exists: a UUID is permanent, and campaign.controller.ts refuses
   #   its pause whenever the flag is off. Unlike JOBS there is nothing to drain — keep it on for
   #   as long as any UUID campaign can still spend.
   #
@@ -480,7 +480,7 @@ environment:
   #
   # STATUS_TOGGLE below must be on and CONVERGED before this goes on. Otherwise a new pod mints a
   # UUID campaign while an old pod, still without the toggle flag, refuses that campaign's
-  # pause/resume at campaign.controller.ts:1156. Requests are not sticky and this chart runs
+  # pause/resume at campaign.controller.ts. Requests are not sticky and this chart runs
   # replicaCount: 3 with maxSurge: "100%", so during such an overlap pause — the primary
   # cost-control lever — can intermittently 400 on a campaign created moments earlier.
   #
@@ -583,7 +583,7 @@ environment:
   # That is a narrower claim than it first appears, and an earlier revision of this comment
   # overstated it as "rollout overlap is safe". Disjoint id spaces mean a flag-off pod handed a
   # UUID REFUSES rather than answering a confident falsehood — but a refusal is still a failure.
-  # It returns 400 at campaign.controller.ts:1156, and a caller that cannot pause a spending
+  # It returns 400 at campaign.controller.ts, and a caller that cannot pause a spending
   # campaign is not much comforted that the error was well-formed. That is why CREATE above is
   # sequenced AFTER this flag: no UUID-keyed campaign exists to be refused until CREATE is on.
   #

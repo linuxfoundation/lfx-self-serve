@@ -726,7 +726,7 @@ export class OptimizationTabComponent implements OnInit {
         },
         error: (err) => {
           // `extractErrorMessage`, not `err?.error?.message`. BaseApiError.toResponse serialises
-          // the operator-facing text as `{ error: string }` (base.error.ts:78), so `.error.message`
+          // the operator-facing text as `{ error: string }` (`BaseApiError.toResponse`), so `.error.message`
           // is undefined for every error this path produces and the operator got Angular's generic
           // "Http failure response for <url>" instead of the actionable upstream reason. The same
           // reading already exists in `toTransportOutcome`; these loaders never got it (Copilot).
@@ -748,7 +748,7 @@ export class OptimizationTabComponent implements OnInit {
         },
         error: (err) => {
           // `extractErrorMessage`, not `err?.error?.message`. BaseApiError.toResponse serialises
-          // the operator-facing text as `{ error: string }` (base.error.ts:78), so `.error.message`
+          // the operator-facing text as `{ error: string }` (`BaseApiError.toResponse`), so `.error.message`
           // is undefined for every error this path produces and the operator got Angular's generic
           // "Http failure response for <url>" instead of the actionable upstream reason. The same
           // reading already exists in `toTransportOutcome`; these loaders never got it (Copilot).
@@ -1029,7 +1029,7 @@ export class OptimizationTabComponent implements OnInit {
     const e = err as { status?: number; error?: { error?: string; message?: string } | string; message?: string };
     const status = typeof e?.status === 'number' ? e.status : 0;
     // `error.error` FIRST: BaseApiError.toResponse serialises the operator-facing text as
-    // `{ error: string }`, not `{ message: string }` (base.error.ts:78). Reading only `.message`
+    // `{ error: string }`, not `{ message: string }` (`BaseApiError.toResponse`). Reading only `.message`
     // dropped every actionable 4xx -- "adGroupId must be numeric", a permission refusal -- and
     // rendered Angular's generic "Http failure response for <url>" in the row instead, which
     // tells the operator nothing they can act on. `.message` and a plain-string body are kept as
