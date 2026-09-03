@@ -6874,7 +6874,10 @@ export class ProjectService {
 
   /**
    * Enrich items that have a project_uid with project metadata (name, slug, is_foundation, parent_uid).
-   * Deduplicates project lookups across all items.
+   * Resolves every referenced project in one batched query-service lookup (`getProjectsByIds`,
+   * 100 uids per `filters_or` query, fail-soft per batch) instead of fanning out to per-project
+   * `getProjectById` calls — and ungated, so callers without a direct project viewer relation
+   * still resolve name/slug/tier/parent (near-live from the index rather than the live record).
    */
   public async enrichWithProjectData<T extends { project_uid: string }>(
     req: Request,
@@ -6887,16 +6890,7 @@ export class ProjectService {
       unique_projects: projectUids.length,
     });
 
-    const projects: (Project | null)[] = [];
-    const batchSize = 25;
-
-    for (let i = 0; i < projectUids.length; i += batchSize) {
-      const batch = projectUids.slice(i, i + batchSize);
-      const results = await Promise.all(batch.map(async (uid) => this.getProjectById(req, uid, false).catch(() => null)));
-      projects.push(...results);
-    }
-
-    const projectMap = new Map(projects.filter((p): p is Project => p !== null).map((p) => [p.uid, p]));
+    const projectMap = await this.getProjectsByIds(req, projectUids);
 
     logger.debug(req, 'enrich_with_project_data', 'Project enrichment complete', {
       resolved: projectMap.size,
