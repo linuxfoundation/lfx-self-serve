@@ -329,7 +329,7 @@ describe('toUtmLookupResult — malformed ROWS', () => {
 
     expect(res.found).toBe(false);
     expect(res.hs_utm).toBeNull();
-    expect(res.all_matches).toEqual([]);
+    expect(res.all_matches).toEqual([{ name: 'KubeCon NA 2026', hs_utm: 'kubecon-na-2026' }]);
     expect(res.inconclusive).toBe(true);
   });
 });

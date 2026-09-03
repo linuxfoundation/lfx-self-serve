@@ -141,10 +141,9 @@ export function toUtmLookupResult(payload: CampaignServiceHubSpotCampaigns, quer
   if (!Array.isArray(payload?.campaigns) || typeof payload?.capped !== 'boolean') {
     return { found: false, hs_utm: null, campaign_name: '', all_matches: [], capped: true, inconclusive: true };
   }
-  if (payload.campaigns.some((c) => !c || typeof c.id !== 'string' || typeof c.name !== 'string')) {
-    return { found: false, hs_utm: null, campaign_name: '', all_matches: [], capped: true, inconclusive: true };
-  }
+  const hasMalformedCampaign = payload.campaigns.some((c) => !c || typeof c.id !== 'string' || typeof c.name !== 'string');
   const scored = payload.campaigns
+    .filter((c): c is NonNullable<typeof c> => !!c && typeof c.id === 'string' && typeof c.name === 'string')
     .map((c) => ({ campaign: c, score: scoreCampaignName(c.name, query) }))
     .filter((s) => s.score > 0)
     // Stable descending sort. Within a score band this preserves the order upstream returned,
@@ -192,6 +191,17 @@ export function toUtmLookupResult(payload: CampaignServiceHubSpotCampaigns, quer
   const candidates = scored
     .map((s) => ({ name: s.campaign.name, hs_utm: utmTokenOf(s.campaign) }))
     .filter((m): m is { name: string; hs_utm: string } => m.hs_utm !== null);
+
+  if (hasMalformedCampaign) {
+    return {
+      found: false,
+      hs_utm: null,
+      campaign_name: '',
+      all_matches: candidates,
+      capped: payload.capped,
+      inconclusive: true,
+    };
+  }
 
   if (!unambiguous) {
     return {
