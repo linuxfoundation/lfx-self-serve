@@ -1814,12 +1814,10 @@ export class PlanningTabComponent implements OnInit {
           //     !hsCreateSuppressed()` -- it never reads hsCreateBlocked. So Create is offered for
           //     a campaign that exists. That is the duplicate this whole record prevents.
           //
-          // `panelStillShows` is the right test and the generation counter is not: the record is
-          // keyed `foundation|event`, so what matters is whether the answer describes the key the
-          // panel is showing, not whether this particular request is the newest. A superseded
-          // lookup for the SAME key still proves the campaign exists; one for a different key
-          // proves nothing about this one.
-          if (result?.found && this.panelStillShows(capturedEvent, capturedFoundation)) {
+          // Retire only when this answer is still the current lookup for the key shown by the
+          // panel. A stale answer can match the panel again after an A -> B -> A round trip, but
+          // must not clear the record beneath a newer not-found result.
+          if (result?.found && this.lookupIsCurrent(generation) && this.panelStillShows(capturedEvent, capturedFoundation)) {
             this.retireCreatedRecord(capturedFoundation, capturedEvent);
           }
           if (!this.lookupIsCurrent(generation)) return;
