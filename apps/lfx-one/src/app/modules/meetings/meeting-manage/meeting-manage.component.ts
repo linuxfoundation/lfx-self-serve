@@ -1,6 +1,7 @@
 // Copyright The Linux Foundation and each contributor to LFX.
 // SPDX-License-Identifier: MIT
 
+import { HttpErrorResponse } from '@angular/common/http';
 import { Component, computed, DestroyRef, effect, inject, Signal, signal } from '@angular/core';
 import { takeUntilDestroyed, toObservable, toSignal } from '@angular/core/rxjs-interop';
 import { FormArray, FormControl, FormGroup, ReactiveFormsModule, Validators } from '@angular/forms';
@@ -69,6 +70,7 @@ import { StepperModule } from 'primeng/stepper';
 import {
   BehaviorSubject,
   catchError,
+  combineLatest,
   concat,
   distinctUntilChanged,
   filter,
@@ -82,6 +84,7 @@ import {
   of,
   pairwise,
   startWith,
+  Subject,
   switchMap,
   take,
   toArray,
@@ -150,6 +153,12 @@ export class MeetingManageComponent {
     toUpdate: [],
     toDelete: [],
   });
+  // True only when the edit-mode detail fetch failed with a non-404 error (GH-2037) — the
+  // template swaps the skeleton for an inline error + Retry instead of ejecting the user.
+  public meetingLoadError = signal(false);
+  // Retry trigger folded into the initializeMeeting pipeline — each next() re-invokes the fetch.
+  // Declared before `meeting`: initializeMeeting() reads it during field initialization.
+  private readonly retryMeetingLoad$ = new Subject<void>();
   // Initialize meeting data using toSignal
   public meeting = this.initializeMeeting();
   public meetingLoading = computed(() => this.isEditMode() && this.meeting() === null);
@@ -339,6 +348,22 @@ export class MeetingManageComponent {
 
   public onCancel(): void {
     this.navigateBack();
+  }
+
+  /** Re-runs the edit-mode detail fetch after a non-404 load failure (GH-2037). */
+  public retryMeetingLoad(): void {
+    this.meetingLoadError.set(false);
+    this.retryMeetingLoad$.next();
+  }
+
+  /** Navigates back to the committee meetings tab or the main meetings page. */
+  public navigateBack(): void {
+    const uid = this.committeeContext()?.uid ?? this.committeeUidFromUrl;
+    if (uid) {
+      this.router.navigate(['/groups', uid], { queryParams: { tab: 'meetings' } });
+    } else {
+      this.router.navigate(['/', 'meetings']);
+    }
   }
 
   public onSubmit(): void {
@@ -1042,21 +1067,29 @@ export class MeetingManageComponent {
 
   private initializeMeeting() {
     return toSignal(
-      this.route.paramMap.pipe(
-        switchMap((params) => {
+      combineLatest([this.route.paramMap, this.retryMeetingLoad$.pipe(startWith(undefined))]).pipe(
+        switchMap(([params]) => {
           const meetingId = params.get('id');
           if (meetingId) {
             this.mode.set('edit');
             this.meetingId.set(meetingId);
+            this.meetingLoadError.set(false);
             return this.meetingService.getMeeting(meetingId).pipe(
               catchError((error) => {
                 console.error('Error getting meeting:', error);
-                this.messageService.add({
-                  severity: 'error',
-                  summary: 'Error',
-                  detail: 'Meeting not found or you do not have permission to access it',
-                });
-                this.navigateBack();
+                // Only a real 404 ejects (GH-2037) — this fetch is load-bearing (it pre-populates
+                // the form), so a transient 5xx/network blip stays mounted with an inline error
+                // state + manual Retry rather than mislabeling a server error as "not found".
+                if (error instanceof HttpErrorResponse && error.status === 404) {
+                  this.messageService.add({
+                    severity: 'error',
+                    summary: 'Error',
+                    detail: 'Meeting not found or you do not have permission to access it',
+                  });
+                  this.navigateBack();
+                } else {
+                  this.meetingLoadError.set(true);
+                }
                 return of(null);
               })
             );
@@ -1688,16 +1721,6 @@ export class MeetingManageComponent {
 
     // Update form validity
     currentForm.updateValueAndValidity();
-  }
-
-  /** Navigates back to the committee meetings tab or the main meetings page. */
-  private navigateBack(): void {
-    const uid = this.committeeContext()?.uid ?? this.committeeUidFromUrl;
-    if (uid) {
-      this.router.navigate(['/groups', uid], { queryParams: { tab: 'meetings' } });
-    } else {
-      this.router.navigate(['/', 'meetings']);
-    }
   }
 
   /** Reads committee_uid from queryParams and pre-populates the committees field (locked). */

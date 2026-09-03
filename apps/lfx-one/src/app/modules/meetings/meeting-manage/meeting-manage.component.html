@@ -35,7 +35,20 @@
       data-testid="meeting-manage-committee-context"></lfx-message>
   }
 
-  @if (meetingLoading()) {
+  @if (meetingLoadError()) {
+    <!-- Detail fetch failed with a non-404 error (GH-2037) — stay mounted with retry/back -->
+    <div class="flex flex-col gap-4" data-testid="meeting-manage-load-error">
+      <lfx-message
+        severity="error"
+        icon="fa-light fa-triangle-exclamation"
+        text="We couldn't load this meeting. Please try again, or go back to the meetings list."
+        data-testid="meeting-manage-load-error-message"></lfx-message>
+      <div class="flex gap-3">
+        <lfx-button label="Retry" icon="fa-light fa-rotate-right" (onClick)="retryMeetingLoad()" data-testid="meeting-manage-retry"> </lfx-button>
+        <lfx-button label="Back" [text]="true" (onClick)="navigateBack()" data-testid="meeting-manage-back"> </lfx-button>
+      </div>
+    </div>
+  } @else if (meetingLoading()) {
     <!-- Loading skeleton while meeting data is being fetched -->
     <div class="flex flex-col gap-6" data-testid="meeting-manage-loading">
       <!-- Stepper skeleton -->

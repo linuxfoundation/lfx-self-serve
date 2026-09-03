@@ -277,6 +277,21 @@ async function stubMeetingEditDetail(page: Page, meeting: ReturnType<typeof buil
 }
 
 /**
+ * Same route shapes as stubMeetingEditDetail, but the detail GET fulfills an error status —
+ * exercises meeting-manage's non-404 inline error state and 404 eject (GH-2037).
+ */
+async function stubMeetingEditDetailError(page: Page, status: number): Promise<void> {
+  await page.route('**/api/meetings*', (route) => {
+    if (route.request().method() !== 'GET') return route.fallback();
+    return route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify({ data: [] }) });
+  });
+  await page.route(`**/api/meetings/${MOCK_MEETING_UID}`, (route) => {
+    if (route.request().method() !== 'GET') return route.fallback();
+    return route.fulfill({ status, contentType: 'application/json', body: JSON.stringify({ message: 'stub detail failure' }) });
+  });
+}
+
+/**
  * Edit-page detail payload; `enriched: false` mirrors the v1-sync gap (empty slug/name, no
  * is_foundation) so the component's resolve-by-uid fallback runs (GH-1567).
  */
@@ -537,6 +552,78 @@ test.describe('Meeting edit deep-link resolves the meeting’s project context (
 
     await page.waitForTimeout(500);
     expect(new URL(page.url()).searchParams.has('project')).toBe(false);
+  });
+});
+
+test.describe('Meeting edit load failure (GH-2037)', () => {
+  test.beforeEach(async ({ page }) => {
+    // Same shape as the gh-1432 meeting block: ED persona skips the writerGuard entity probe,
+    // so the component's own detail-fetch error branch is what runs.
+    await setPersonaAndLensCookies(page, ['executive-director'], 'project');
+    await setProjectCookie(page, OTHER_PROJECT_UID, OTHER_PROJECT_SLUG, 'Other Project');
+    await stubPersona(page, ['executive-director']);
+    await stubProjectApi(page);
+    await stubCommittees(page, buildCommittees());
+    await stubLensItems(page);
+  });
+
+  test('transient detail-load failure stays mounted with retry/back instead of ejecting (AC-1)', async ({ page }) => {
+    await stubMeetingEditDetailError(page, 500);
+
+    await gotoSpa(page, `/project/meetings/${MOCK_MEETING_UID}/edit`, {
+      uid: OTHER_PROJECT_UID,
+      slug: OTHER_PROJECT_SLUG,
+      name: 'Other Project',
+      foundation: false,
+    });
+
+    // Inline error state replaces the skeleton; no "not found" toast; URL stays on /edit.
+    await expect(page.getByTestId('meeting-manage-retry')).toBeVisible({ timeout: PAGE_LOAD_TIMEOUT });
+    await expect(page.getByTestId('meeting-manage-back')).toBeVisible();
+    await expect(page.getByTestId('meeting-manage-loading')).not.toBeVisible();
+    // Give a (never-fired) toast a render window — negative assertions pass instantly otherwise.
+    await page.waitForTimeout(500);
+    await expect(page.locator('.p-toast')).not.toBeVisible();
+    expect(page.url()).toContain(`/project/meetings/${MOCK_MEETING_UID}/edit`);
+  });
+
+  test('Retry after a transient failure re-fetches the meeting and renders the form (AC-1, AC-3)', async ({ page }) => {
+    await stubMeetingEditDetailError(page, 500);
+
+    await gotoSpa(page, `/project/meetings/${MOCK_MEETING_UID}/edit`, {
+      uid: OTHER_PROJECT_UID,
+      slug: OTHER_PROJECT_SLUG,
+      name: 'Other Project',
+      foundation: false,
+    });
+    await expect(page.getByTestId('meeting-manage-retry')).toBeVisible({ timeout: PAGE_LOAD_TIMEOUT });
+
+    // "Backend recovered": re-registering the detail route takes precedence over the error
+    // stub (Playwright matches in reverse registration order), so the retry fetch gets a 200.
+    await stubMeetingEditDetail(page, buildMeetingStub(true));
+    await page.getByTestId('meeting-manage-retry').click();
+
+    await expect(page.getByTestId('meeting-manage-stepper')).toBeVisible({ timeout: PAGE_LOAD_TIMEOUT });
+    await expect(page.getByTestId('meeting-manage-load-error')).not.toBeVisible();
+    expect(page.url()).toContain(`/project/meetings/${MOCK_MEETING_UID}/edit`);
+  });
+
+  test('a real 404 still ejects to the meetings list with the not-found toast (AC-2)', async ({ page }) => {
+    await stubMeetingEditDetailError(page, 404);
+
+    await gotoSpa(page, `/project/meetings/${MOCK_MEETING_UID}/edit`, {
+      uid: OTHER_PROJECT_UID,
+      slug: OTHER_PROJECT_SLUG,
+      name: 'Other Project',
+      foundation: false,
+    });
+
+    // Toast first: it fires synchronously with the eject and expires (default p-toast life)
+    // before a URL-first assertion would observe it.
+    await expect(page.locator('.p-toast')).toContainText('Meeting not found or you do not have permission to access it', {
+      timeout: PAGE_LOAD_TIMEOUT,
+    });
+    await expect(page).toHaveURL(/\/meetings(\?|$)/, { timeout: ELEMENT_TIMEOUT });
   });
 });
 
