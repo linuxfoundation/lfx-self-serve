@@ -18,6 +18,8 @@ import { SignContractTypeSelectComponent } from './sign-contract-type-select.com
  * segment the hand-off uses. The two are joined only by a template `[value]`, and getting them
  * the wrong way round would send a contributor who chose "Individual Contributor" to sign a
  * corporate agreement — so the choice is always made by clicking, never by writing to the form.
+ * The single exception is the held-type submit guard, which exists for the case where something
+ * other than a click supplied the value, and so cannot be reached by clicking.
  */
 describe('SignContractTypeSelectComponent', () => {
   let close: ReturnType<typeof vi.fn>;
@@ -55,6 +57,15 @@ describe('SignContractTypeSelectComponent', () => {
 
   function continueToSign(): void {
     (fixture.componentInstance as any).onContinue();
+  }
+
+  /**
+   * Writes the form the way nothing in the UI does — the deliberate exception to the rule above,
+   * used only to reach the submit path with the cards bypassed.
+   */
+  function preselect(contractType: 'individual' | 'corporate'): void {
+    (fixture.componentInstance as any).selectForm.controls.contractType.setValue(contractType);
+    fixture.detectChanges();
   }
 
   beforeEach(async () => {
@@ -150,9 +161,22 @@ describe('SignContractTypeSelectComponent', () => {
       expect(query('sign-contract-type-select-individual')?.getAttribute('aria-disabled')).not.toBe('true');
     });
 
-    it('refuses to close on the held type even if its card is reached', async () => {
+    it('refuses the click on the held card, so the form never takes that type', async () => {
       await setup(['ICLA']);
       await choose('sign-contract-type-select-individual');
+
+      expect((fixture.componentInstance as any).selectedType()).toBeNull();
+      continueToSign();
+      expect(close).not.toHaveBeenCalled();
+    });
+
+    it('refuses to submit the held type even when the form is written another way', async () => {
+      // The one place the form is written directly, and only to prove the click is not the only
+      // thing standing between a held type and the hand-off. A preselection or a form patch
+      // reaches `onContinue` with the disabled card never involved, which is why the guard is on
+      // the submit path too rather than on the card alone.
+      await setup(['ICLA']);
+      preselect('individual');
       continueToSign();
 
       expect(close).not.toHaveBeenCalled();

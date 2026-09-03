@@ -57,12 +57,22 @@ export class SignContractTypeSelectComponent {
 
   protected onContinue(): void {
     const contractType = this.selectedType();
-    if (!contractType) return;
+    if (!contractType || this.isHeld(contractType)) return;
 
     this.ref.close({ contractType } satisfies SignContractTypeSelectResult);
   }
 
   protected onCancel(): void {
     this.ref.close(null);
+  }
+
+  /**
+   * Whether the confirmed identity already holds this type. The disabled card refuses the click,
+   * so reaching here means the control was written some other way — a preselection, a form patch
+   * — and closing on it would hand off the re-sign the step exists to prevent. The identity step
+   * re-checks its own verdict on submit for the same reason.
+   */
+  private isHeld(contractType: GerritContractType): boolean {
+    return contractType === this.individualValue ? this.individualHeld : this.corporateHeld;
   }
 }
