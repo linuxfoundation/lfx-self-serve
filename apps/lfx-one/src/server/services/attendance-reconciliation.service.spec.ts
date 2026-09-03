@@ -8,6 +8,8 @@ import { beforeEach, describe, expect, it, vi } from 'vitest';
 // internally) need mocking.
 vi.mock('@lfx-one/shared/constants', () => ({
   RECONCILIATION_MAX_ATTENDEES_PER_AI_CALL: 30,
+  RECONCILIATION_MAX_CANDIDATES_PER_AI_CALL: 50,
+  RECONCILIATION_MAX_CONCURRENT_AI_CALLS: 3,
   RECONCILIATION_MAX_PRIOR_OCCURRENCES: 10,
 }));
 
@@ -98,7 +100,7 @@ describe('AttendanceReconciliationService', () => {
 
       const result = await service.reconcilePastMeetingParticipants(req, 'occ-1', pastMeeting);
 
-      expect(result).toEqual({ results: [], candidate_pool_size: 0, auto_applied_count: 0, needs_review_count: 0 });
+      expect(result).toEqual({ results: [], candidate_pool_size: 0, auto_applied_count: 0, needs_review_count: 0, pool_degraded: false });
       expect(updatePastMeetingParticipant).not.toHaveBeenCalled();
     });
 
