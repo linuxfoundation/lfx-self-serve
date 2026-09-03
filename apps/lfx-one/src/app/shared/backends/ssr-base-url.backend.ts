@@ -7,10 +7,10 @@ import { inject, Injectable } from '@angular/core';
 import { Observable } from 'rxjs';
 
 /**
- * Server-only `HttpBackend` override. Rewrites relative `/api/*` and `/public/api/*` URLs to
- * `http://127.0.0.1:$PORT` so the Node process talks to the in-process Express server directly
- * instead of routing through the public load balancer, then delegates to `FetchBackend` via
- * `super.handle(...)`.
+ * Server-only `HttpBackend` override. Rewrites same-origin `/api/*` and `/public/api/*` requests
+ * (relative or already absolutized) to `http://127.0.0.1:$PORT` so the Node process talks to the
+ * in-process Express server directly instead of routing through the public load balancer, then
+ * delegates to `FetchBackend` via `super.handle(...)`.
  *
  * Replaces the old `ssrBaseUrlInterceptor`: an `HttpInterceptorFn` runs before Angular's
  * `transferCacheInterceptorFn` (an `HTTP_ROOT_INTERCEPTOR_FNS`), so the transfer-cache stored the
