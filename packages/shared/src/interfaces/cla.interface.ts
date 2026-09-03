@@ -172,10 +172,10 @@ export interface ClaGroupOrg {
  * whether the contributor is asked for it (#2066). Every other field is here so the picker can
  * show which group this is and why it matched. Consumers MUST ignore unknown fields rather than
  * validate exhaustively, so the search can keep enriching this without touching the hand-off —
- * but those three are not that kind of field. Both enablement flags absent reads as both
- * disabled, which resolves to `none`, so a mapper that drops them makes every Gerrit hand-off
- * fail with "Could not start signing" rather than degrading the display. That is the intended
- * failure: #2066 was a wrong agreement signed silently, and stopping is the safer end.
+ * but those three are not that kind of field. When both enablement flags are absent, that reads
+ * as both disabled and resolves to `none`, so a mapper that drops them makes every Gerrit
+ * hand-off fail with "Could not start signing" rather than degrading the display. That is the
+ * intended failure: #2066 was a wrong agreement signed silently, and stopping is the safer end.
  *
  * Both display names are optional because the producer omits each independently: `projectName`
  * when the group maps to several projects with no foundation marker, `claGroupName` when the
