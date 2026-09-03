@@ -336,6 +336,102 @@ describe('classifyMutationFailure — what proves upstream answered', () => {
     expect(msg, 'a non-status code that agreed with its status was accepted').toContain(CAMPAIGN_OUTCOME_UNCONFIRMED);
   });
 
+  it('does not MUTATE a group whose resolve consumed the remaining budget', async () => {
+    // Copilot: checking only between groups does not bound the request. A group admitted just
+    // under the budget can spend 30s resolving and 30s mutating, running well past the ingress
+    // window -- so the mutation lands after the caller has already been answered, which is the
+    // exact late-application case the deadline exists to prevent.
+    //
+    // The resolve is a READ, so stopping after it changes nothing upstream. That makes this the
+    // only other safe point to stop.
+    let now = 0;
+    const nowSpy = vi.spyOn(Date, 'now').mockImplementation(() => now);
+
+    const resolveGoogleAdsCampaign = vi.fn().mockImplementation(() => {
+      // Admitted inside the budget, but the resolve alone exhausts it.
+      now += 50_000;
+      return Promise.resolve({ match_count: 1, matches: [{ brief_id: 'b-1', campaign_id: 'c-1' }] });
+    });
+    const applyKeywordActions = vi.fn();
+
+    const client = { resolveGoogleAdsCampaign, applyKeywordActions } as never;
+    const body = { action: 'remove' as const, keywords: [kw('camp-1', 'k-1')] };
+    const req = { log: { warn: vi.fn(), info: vi.fn(), error: vi.fn(), debug: vi.fn() } } as never;
+
+    const res = await applyKeywordActionsViaCampaignService(req, client, 'aswf', body);
+    nowSpy.mockRestore();
+
+    // The resolve ran -- it was admitted -- but the IRREVERSIBLE mutation did not.
+    expect(resolveGoogleAdsCampaign).toHaveBeenCalledTimes(1);
+    expect(applyKeywordActions, 'an irreversible REMOVE was dispatched past the deadline').not.toHaveBeenCalled();
+    expect(String(res.results[0].message)).toMatch(/ran out of time/);
+    expect(res.results[0].success).toBe(false);
+  });
+
+  it('stops the fan-out at the deadline and names the rest UNATTEMPTED', async () => {
+    // Copilot, raised twice: the 50-row cap bounds how MANY campaigns a request names, not how
+    // LONG they take. Each costs two sequential proxy calls at a 30s client default, so a request
+    // of slow-but-reachable campaigns can exceed the ingress's 60s window -- and when it does,
+    // ingress answers the caller while this loop KEEPS MUTATING. Irreversible REMOVEs would land
+    // against a request that already reported a timeout.
+    const resolveGoogleAdsCampaign = vi.fn().mockImplementation(() => {
+      // Each resolve advances the clock past the budget.
+      now += 30_000;
+      return Promise.resolve({ match_count: 1, matches: [{ brief_id: 'b-1', campaign_id: 'c-1' }] });
+    });
+    const applyKeywordActions = vi
+      .fn()
+      .mockResolvedValue({ campaign_id: 'c-1', applied_count: 1, results: [{ ad_group_id: 'ag-1', criterion_id: 'k-1', action: 'PAUSE' }] });
+
+    let now = 0;
+    const nowSpy = vi.spyOn(Date, 'now').mockImplementation(() => now);
+
+    const client = { resolveGoogleAdsCampaign, applyKeywordActions } as never;
+    // Three distinct campaigns; the budget is exhausted before the third.
+    const body = { action: 'pause' as const, keywords: [kw('camp-1', 'k-1'), kw('camp-2', 'k-2'), kw('camp-3', 'k-3')] };
+    const req = { log: { warn: vi.fn(), info: vi.fn(), error: vi.fn(), debug: vi.fn() } } as never;
+
+    const res = await applyKeywordActionsViaCampaignService(req, client, 'aswf', body);
+    nowSpy.mockRestore();
+
+    // The loop STOPPED -- it did not keep mutating past the budget.
+    expect(resolveGoogleAdsCampaign.mock.calls.length, 'the fan-out ran past its deadline').toBeLessThan(3);
+    // And the caller is TOLD, rather than being handed a short list to zip onto its request.
+    expect(res.results.length, 'skipped groups vanished from the response').toBe(3);
+    const unattempted = res.results.filter((r) => String(r.message).includes('ran out of time'));
+    expect(unattempted.length, 'a skipped campaign was not reported as unattempted').toBeGreaterThan(0);
+    // Never reported as a failure upstream: nothing was sent for these.
+    expect(unattempted.every((r) => r.success === false)).toBe(true);
+  });
+
+  it('reports a mismatch when a results ENTRY is not a criterion', async () => {
+    // Copilot: `Array.isArray` was added for a missing `results`, but `results: [null]` is a
+    // valid array whose element still throws in `key(r)`. That TypeError lands in the mutation
+    // catch, which has no errorBody to classify -- so it reports this group unconfirmed AND stops
+    // the fan-out, abandoning every later campaign over a response that DID reach the platform.
+    const resolveGoogleAdsCampaign = vi.fn().mockResolvedValue({ match_count: 1, matches: [{ brief_id: 'b-1', campaign_id: 'c-1' }] });
+    // applied_count AGREES and `results` IS an array -- only the element can fail this.
+    const applyKeywordActions = vi.fn().mockResolvedValue({ campaign_id: 'c-1', applied_count: 1, results: [null] });
+
+    const client = { resolveGoogleAdsCampaign, applyKeywordActions } as never;
+    const body = { action: 'pause' as const, keywords: [kw('camp-1', 'k-1'), kw('camp-2', 'k-2')] };
+    const warn = vi.fn();
+    const req = { log: { warn, info: vi.fn(), error: vi.fn(), debug: vi.fn() } } as never;
+
+    const res = await applyKeywordActionsViaCampaignService(req, client, 'aswf', body);
+
+    // THE FAN-OUT CONTINUED. This is the assertion that distinguishes the controlled mismatch
+    // from the TypeError path -- both produce the same operator message, but only the crash
+    // abandons the remaining campaigns.
+    expect(resolveGoogleAdsCampaign.mock.calls.length, 'a malformed entry stopped the whole batch').toBe(2);
+    expect(res.results.every((r) => r.success === false)).toBe(true);
+    // And it was DIAGNOSED, not thrown: the mismatch branch logs; the catch does not.
+    expect(
+      warn.mock.calls.some((c) => JSON.stringify(c).includes('mismatch')),
+      'reached by throwing, not by the shape check'
+    ).toBe(true);
+  });
+
   it('reports a mismatch when the 2xx carries no results ARRAY', async () => {
     // Copilot: `applied.results` is untrusted wire data. A malformed 2xx with `results` missing
     // threw a TypeError inside the verification, and the caller's catch then classified our own

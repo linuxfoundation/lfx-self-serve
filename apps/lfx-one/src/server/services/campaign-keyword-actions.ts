@@ -207,6 +207,18 @@ function describeOutcomeMismatch(group: KeywordActionGroup, action: KeywordActio
     tally.set(key(a), (tally.get(key(a)) ?? 0) + 1);
   }
   for (const r of applied.results) {
+    // ELEMENT shape, not just the array's. `Array.isArray` was added earlier for a missing
+    // `results`, but `results: [null]` is a valid JSON array whose element still throws in
+    // `key(r)` -- and that TypeError lands in the mutation catch, which has no errorBody to
+    // classify, so it reports this group unconfirmed AND stops the fan-out, abandoning every
+    // later campaign over a response that did reach the platform (Copilot).
+    //
+    // Reported as the controlled mismatch this function exists to return: a response that cannot
+    // describe what it applied has confirmed nothing, which is the same answer the array and
+    // count checks above already give.
+    if (!r || typeof r.ad_group_id !== 'string' || typeof r.criterion_id !== 'string' || typeof r.action !== 'string') {
+      return 'upstream returned a result entry that does not name a criterion';
+    }
     const remaining = tally.get(key(r));
     if (!remaining) {
       return 'upstream confirmed a criterion that was not requested';
@@ -357,6 +369,28 @@ export const CAMPAIGN_UNRESOLVED = 'This campaign is not managed here, so its ke
  */
 export const CAMPAIGN_LOOKUP_FAILED = 'The campaign could not be looked up just now. Try again.';
 export const CAMPAIGN_AMBIGUOUS = 'This campaign id matches more than one campaign, so it is not clear which to change.';
+export const CAMPAIGN_DEADLINE_EXCEEDED = 'Not attempted: the request ran out of time before reaching this campaign. Nothing was changed for it.';
+
+/**
+ * Wall-clock budget for the whole fan-out, in ms.
+ *
+ * 45s against the ingress's documented 60s read timeout (`campaign-proxy.service.ts:1009-1010`).
+ * The row cap bounds how MANY campaigns a request can name; it cannot bound how LONG they take,
+ * and each one costs two sequential proxy calls at the client's 30s default. So a request of
+ * slow-but-reachable campaigns could still exceed the ingress window -- and when it does, ingress
+ * answers the caller while THIS LOOP KEEPS MUTATING, leaving irreversible REMOVEs applied against
+ * a request that already reported a timeout (Copilot, raised twice).
+ *
+ * Stopping at the budget uses the same "not attempted" report the transport-failure path already
+ * uses, so nothing new has to be true for a caller: a group either has an outcome, or is named as
+ * unattempted.
+ *
+ * CHECKED TWICE per group, and the second check is what makes the budget real. Between groups is
+ * not sufficient on its own -- a group admitted at 44s can spend 30s resolving and 30s mutating,
+ * running to ~104s against a 60s window. The second check sits after the read-only resolve and
+ * before the mutation, which is the only other point where stopping changes nothing upstream.
+ */
+export const KEYWORD_ACTION_DEADLINE_MS = 45_000;
 
 /**
  * Apply keyword actions through campaign-service, one call per campaign.
@@ -391,8 +425,18 @@ export async function applyKeywordActionsViaCampaignService(
   // rejected mutation is upstream working correctly; neither says anything about the next group.
   // A lookup that never got a reply does.
   let transportFailed = false;
+  // Wall-clock, captured before the first call so the budget covers the whole fan-out rather than
+  // resetting per group.
+  const startedAt = Date.now();
 
   for (const group of groupByCampaign(body.keywords)) {
+    // Checked BETWEEN groups, never mid-group: a campaign is resolved and then mutated, and
+    // abandoning between those two calls is the one split that could leave a group half-applied
+    // with nothing recorded. Whole groups are the only safe unit to stop on.
+    if (!transportFailed && Date.now() - startedAt >= KEYWORD_ACTION_DEADLINE_MS) {
+      results.push(...failedResults(group, body.action, CAMPAIGN_DEADLINE_EXCEEDED));
+      continue;
+    }
     if (transportFailed) {
       // Not attempted, and reported as such. Silently dropping these would leave the caller
       // zipping results onto a shorter list; claiming they failed upstream would be a claim
@@ -402,7 +446,16 @@ export async function applyKeywordActionsViaCampaignService(
     }
     let ref;
     try {
-      const resolution = await client.resolveGoogleAdsCampaign(req, projectSlug, group.platformCampaignId);
+      // The resolver is bounded too, not just the mutation. Bounding only the mutation left this
+      // call able to overrun the window one step earlier -- a group entering just under the budget
+      // could spend the client's full 30s here, and any EARLIER campaign's per-keyword response is
+      // then lost when ingress closes the request, leaving an applied bulk REMOVE unreported
+      // (Copilot).
+      //
+      // Recomputed before the mutation below rather than reused, so the second call gets what is
+      // actually left rather than what was left before this one ran.
+      const resolveBudgetMs = KEYWORD_ACTION_DEADLINE_MS - (Date.now() - startedAt);
+      const resolution = await client.resolveGoogleAdsCampaign(req, projectSlug, group.platformCampaignId, resolveBudgetMs);
       // The COUNT and the ARRAY must agree, and that is checked on EVERY arm rather than only
       // where a match is consumed. `match_count: 0` with a NON-empty `matches` is upstream
       // contradicting itself, and answering "not managed here" on it would tell the operator to
@@ -469,7 +522,41 @@ export async function applyKeywordActionsViaCampaignService(
     }
 
     try {
-      const applied = await client.applyKeywordActions(req, projectSlug, ref.brief_id, ref.campaign_id, toUpstreamActions(group.keywords, body.action));
+      // The remaining budget BOUNDS the mutation, rather than only gating whether it starts.
+      //
+      // Checking the clock and then dispatching is not enough, which is what the previous two
+      // revisions of this got wrong: passing the check at 44s still permits a 30s call, running
+      // to ~74s against a 60s window (Copilot, three times). Passing the remainder as the call's
+      // own timeout is what makes the deadline real -- the request cannot outlive it.
+      //
+      // An expiry surfaces as a 408 from the client, which the mutation catch already classifies
+      // as UNCONFIRMED: the call was dispatched, so nobody can say whether it applied. That is
+      // the honest answer and it is the one already wired.
+      const remainingMs = KEYWORD_ACTION_DEADLINE_MS - (Date.now() - startedAt);
+
+      // Deadline check, after the read-only resolve and before the irreversible mutation.
+      //
+      // The between-groups check alone does not bound the request, which is what an earlier
+      // version of this claimed: a group admitted at 44s can spend 30s resolving and 30s
+      // mutating, so the loop runs to ~104s while the ingress answered the caller at 60s
+      // (Copilot). Fifteen seconds of headroom was never enough -- one call can consume twice
+      // that on its own.
+      //
+      // This is the only other point where stopping is SAFE. The resolve is a read, so
+      // abandoning after it changes nothing upstream; abandoning after the mutation call has
+      // started is what would leave a group applied but unrecorded.
+      if (remainingMs <= 0) {
+        results.push(...failedResults(group, body.action, CAMPAIGN_DEADLINE_EXCEEDED));
+        continue;
+      }
+      const applied = await client.applyKeywordActions(
+        req,
+        projectSlug,
+        ref.brief_id,
+        ref.campaign_id,
+        toUpstreamActions(group.keywords, body.action),
+        remainingMs
+      );
       // The 2xx is CHECKED, not assumed. Upstream's batch is all-or-nothing, so applied_count
       // should equal what was sent — but upstream derives it from the results it actually
       // returns (`AppliedCount: len(results)`) rather than asserting it against the request, so a

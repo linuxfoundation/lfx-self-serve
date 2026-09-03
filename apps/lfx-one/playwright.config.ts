@@ -41,21 +41,24 @@ const E2E_BASE_URL = process.env['E2E_BASE_URL'] ?? `http://${E2E_HOST}:${E2E_PO
 // correct and fails with a message pointing nowhere near the cause. Deriving it means the two
 // cannot disagree; an explicit E2E_PORT still wins when no base url is set, since it is what
 // builds the default.
+// An https base url cannot be served by the `ng serve` this config launches -- it speaks plain
+// HTTP -- so instead of deriving a port that can never work, the webServer block is OMITTED for
+// https and Playwright runs against a server the operator started themselves.
+//
+// NOT a throw at import time, which is what an earlier version did: the config body runs before
+// Playwright reads `webServer`, so throwing there made the externally-started server the error
+// message recommended impossible to actually use (Copilot). The advice and the mechanism now
+// agree.
+const E2E_IS_HTTPS = (() => {
+  try {
+    return new URL(E2E_BASE_URL).protocol === 'https:';
+  } catch {
+    return false;
+  }
+})();
+
 const E2E_LAUNCH_PORT = (() => {
   try {
-    const parsed = new URL(E2E_BASE_URL);
-    // `ng serve` below speaks plain HTTP, so an https base url cannot be served by the server this
-    // config launches whatever port is derived. Returning 443 made Playwright wait on
-    // `https://localhost:443` for an HTTP server -- the same silent divergence this derivation
-    // exists to prevent, reached by a different route (Copilot). Refused loudly instead: a
-    // config that cannot honour the request should say so, not start something that will never
-    // answer and time out 120s later pointing nowhere near the cause.
-    if (parsed.protocol === 'https:') {
-      throw new Error(
-        `E2E_BASE_URL is https (${E2E_BASE_URL}), but this config launches \`ng serve\`, which serves plain HTTP. ` +
-          `Use an http:// base url, or point E2E_BASE_URL at a server you start yourself and run with reuseExistingServer.`
-      );
-    }
     // `URL.port` is EMPTY for a scheme-default port, so `|| E2E_PORT` treated a deliberately
     // portless override (E2E_BASE_URL=http://localhost) exactly like a parse failure -- Playwright
     // would probe 80 while Angular launched on 4200. An absent port is a REAL answer here, so the
@@ -63,13 +66,8 @@ const E2E_LAUNCH_PORT = (() => {
     //
     // 80 needs root on most systems; that surfaces as a clear EACCES from `ng serve` rather than
     // a divergence, so it is left to fail on its own terms.
-    return parsed.port || '80';
-  } catch (err) {
-    // An https base url is a DELIBERATE refusal above -- rethrow it rather than swallowing it into
-    // the fallback, which would silently launch on E2E_PORT and reintroduce the divergence.
-    if (err instanceof Error && err.message.startsWith('E2E_BASE_URL is https')) {
-      throw err;
-    }
+    return new URL(E2E_BASE_URL).port || '80';
+  } catch {
     // Only an UNPARSEABLE url falls back, which is the one case where the base url says nothing.
     return E2E_PORT;
   }
@@ -135,23 +133,28 @@ export default defineConfig({
   ],
 
   /* Run your local dev server before starting the tests */
-  webServer: {
-    // `yarn start` is the ROOT script, which goes through turbo and does not accept --port; the
-    // app's own script is `ng serve`. Invoked directly so an E2E_PORT override actually works.
-    //
-    // No --cwd: this config already lives in apps/lfx-one, so Playwright runs the command from
-    // there and `--cwd apps/lfx-one` resolved to apps/lfx-one/apps/lfx-one. Locally
-    // reuseExistingServer hides it by adopting a server someone already started; CI has it off,
-    // so the server never launches and the whole suite fails there.
-    //
-    // docs:build first, for the same class of reason. The app's `start` script is
-    // `yarn docs:build && ng serve`, and DocsManifestService STATICALLY imports
-    // src/app/modules/docs/generated/docs-manifest, which is gitignored. Calling `ng serve`
-    // alone works on a machine that has built before and cannot compile on a clean checkout —
-    // so the suite would fail to launch in CI while passing locally.
-    command: `yarn docs:build && yarn ng serve --port ${E2E_LAUNCH_PORT}`,
-    url: E2E_BASE_URL,
-    reuseExistingServer: !process.env.CI,
-    timeout: 120000,
-  },
+  // OMITTED for an https base url: `ng serve` cannot serve https, so there is nothing to launch.
+  // Playwright then runs against whatever the operator started at that url -- the same outcome
+  // `reuseExistingServer` gives, reached without pretending we can start it.
+  webServer: E2E_IS_HTTPS
+    ? undefined
+    : {
+        // `yarn start` is the ROOT script, which goes through turbo and does not accept --port; the
+        // app's own script is `ng serve`. Invoked directly so an E2E_PORT override actually works.
+        //
+        // No --cwd: this config already lives in apps/lfx-one, so Playwright runs the command from
+        // there and `--cwd apps/lfx-one` resolved to apps/lfx-one/apps/lfx-one. Locally
+        // reuseExistingServer hides it by adopting a server someone already started; CI has it off,
+        // so the server never launches and the whole suite fails there.
+        //
+        // docs:build first, for the same class of reason. The app's `start` script is
+        // `yarn docs:build && ng serve`, and DocsManifestService STATICALLY imports
+        // src/app/modules/docs/generated/docs-manifest, which is gitignored. Calling `ng serve`
+        // alone works on a machine that has built before and cannot compile on a clean checkout —
+        // so the suite would fail to launch in CI while passing locally.
+        command: `yarn docs:build && yarn ng serve --port ${E2E_LAUNCH_PORT}`,
+        url: E2E_BASE_URL,
+        reuseExistingServer: !process.env.CI,
+        timeout: 120000,
+      },
 });

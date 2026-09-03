@@ -1,6 +1,7 @@
 // Copyright The Linux Foundation and each contributor to LFX.
 // SPDX-License-Identifier: MIT
 
+import { KEYWORD_ACTION_DEADLINE_MS } from '../services/campaign-keyword-actions';
 import type { NextFunction, Request, Response } from 'express';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 
@@ -2289,12 +2290,28 @@ describe('CampaignController.executeKeywordActions via campaign-service', () => 
   it('resolves the campaign and applies the batch under its brief', async () => {
     await controller.executeKeywordActions(actionsReq([keyword('24183781329', '1')]), res, next);
 
-    expect(svcResolveCampaign).toHaveBeenCalledWith(expect.anything(), 'tlf', '24183781329');
+    // Fourth arg is the resolver's share of the request budget -- matched loosely because it is
+    // wall-clock. Bounding the mutation alone left THIS call able to overrun the window.
+    expect(svcResolveCampaign).toHaveBeenCalledWith(expect.anything(), 'tlf', '24183781329', expect.any(Number));
+    const resolveBudget = svcResolveCampaign.mock.calls[0][3] as number;
+    expect(resolveBudget, 'the resolver was given no deadline, or one outside the budget').toBeGreaterThan(0);
+    expect(resolveBudget).toBeLessThanOrEqual(KEYWORD_ACTION_DEADLINE_MS);
     // The brief and campaign must come from the RESOLUTION, not from the request — the request
     // carries neither, which is the whole reason the resolver exists.
-    expect(svcApplyKeywordActions).toHaveBeenCalledWith(expect.anything(), 'tlf', 'b-1', 'c-1', [
-      { ad_group_id: '176216228', criterion_id: '1', action: 'PAUSE' },
-    ]);
+    expect(svcApplyKeywordActions).toHaveBeenCalledWith(
+      expect.anything(),
+      'tlf',
+      'b-1',
+      'c-1',
+      [{ ad_group_id: '176216228', criterion_id: '1', action: 'PAUSE' }],
+      // The fan-out's REMAINING budget, so the mutation cannot outlive the request deadline.
+      // Matched as "a positive number within the budget" rather than an exact value: it is
+      // wall-clock, so pinning it would make this test fail on a slow machine for no reason.
+      expect.any(Number)
+    );
+    const passedTimeout = svcApplyKeywordActions.mock.calls[0][5] as number;
+    expect(passedTimeout, 'the mutation was given no deadline, or one outside the budget').toBeGreaterThan(0);
+    expect(passedTimeout).toBeLessThanOrEqual(KEYWORD_ACTION_DEADLINE_MS);
     expect(legacyKeywordActions).not.toHaveBeenCalled();
   });
 

@@ -1447,7 +1447,14 @@ export class CampaignServiceClient {
    * `match_count` rather than relying on this to throw. That is deliberate upstream: "not your
    * campaign" is an answer to act on, while a 404 would mean the request itself was wrong.
    */
-  public async resolveGoogleAdsCampaign(req: Request, projectSlug: string, platformCampaignID: string): Promise<CampaignServiceCampaignResolution> {
+  public async resolveGoogleAdsCampaign(
+    req: Request,
+    projectSlug: string,
+    platformCampaignID: string,
+    // Same caller-supplied budget as `applyKeywordActions`. A fan-out that bounds only the
+    // mutation still lets THIS call overrun the request window one step earlier.
+    timeoutMs?: number
+  ): Promise<CampaignServiceCampaignResolution> {
     if (projectSlug === '' || platformCampaignID === '') {
       throw new Error('A campaign reference lookup requires both the project and the platform campaign id.');
     }
@@ -1456,7 +1463,10 @@ export class CampaignServiceClient {
       'LFX_V2_CAMPAIGN_SERVICE',
       `/projects/${encodeURIComponent(projectSlug)}/google-ads/campaign-ref`,
       'GET',
-      { platform_campaign_id: platformCampaignID }
+      { platform_campaign_id: platformCampaignID },
+      undefined,
+      undefined,
+      timeoutMs === undefined ? undefined : { timeoutMs }
     );
   }
 
@@ -1477,7 +1487,10 @@ export class CampaignServiceClient {
     projectSlug: string,
     briefId: string,
     campaignId: string,
-    actions: CampaignServiceKeywordActionInput[]
+    actions: CampaignServiceKeywordActionInput[],
+    // Caller-supplied budget, so a fan-out can BOUND this call rather than only checking a
+    // clock before starting it. Omitted falls back to the client's 30s default.
+    timeoutMs?: number
   ): Promise<CampaignServiceKeywordActions> {
     if (projectSlug === '' || briefId === '' || campaignId === '') {
       throw new Error('A keyword action requires the project, brief and campaign it applies to.');
@@ -1494,7 +1507,9 @@ export class CampaignServiceClient {
       `/projects/${encodeURIComponent(projectSlug)}/briefs/${encodeURIComponent(briefId)}/campaigns/${encodeURIComponent(campaignId)}/keyword-actions`,
       'POST',
       undefined,
-      { actions }
+      { actions },
+      undefined,
+      timeoutMs === undefined ? undefined : { timeoutMs }
     );
   }
 

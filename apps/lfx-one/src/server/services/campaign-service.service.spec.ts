@@ -3091,11 +3091,23 @@ describe('CampaignServiceClient campaign-ref and keyword actions', () => {
 
       await new CampaignServiceClient().resolveGoogleAdsCampaign(req, 'cncf', '24183781329');
 
-      expect(proxyRequest).toHaveBeenCalledWith(req, 'LFX_V2_CAMPAIGN_SERVICE', '/projects/cncf/google-ads/campaign-ref', 'GET', {
-        platform_campaign_id: '24183781329',
-      });
-      // The body position must stay empty, for the reason the read methods document.
-      expect(proxyRequest.mock.calls[0]).toHaveLength(5);
+      expect(proxyRequest).toHaveBeenCalledWith(
+        req,
+        'LFX_V2_CAMPAIGN_SERVICE',
+        '/projects/cncf/google-ads/campaign-ref',
+        'GET',
+        {
+          platform_campaign_id: '24183781329',
+        },
+        undefined,
+        undefined,
+        // No caller budget in this test -- the fan-out supplies one; everything else takes the
+        // client default.
+        undefined
+      );
+      // The body position must stay empty, for the reason the read methods document. Eight args
+      // now: headers and options trail it so a caller can bound the call.
+      expect(proxyRequest.mock.calls[0]).toHaveLength(8);
     });
 
     it('encodes the project segment', async () => {
@@ -3127,12 +3139,24 @@ describe('CampaignServiceClient campaign-ref and keyword actions', () => {
 
       await new CampaignServiceClient().applyKeywordActions(req, 'cncf', 'b-1', 'c-1', actions);
 
-      expect(proxyRequest).toHaveBeenCalledWith(req, 'LFX_V2_CAMPAIGN_SERVICE', '/projects/cncf/briefs/b-1/campaigns/c-1/keyword-actions', 'POST', undefined, {
-        actions,
-      });
+      expect(proxyRequest).toHaveBeenCalledWith(
+        req,
+        'LFX_V2_CAMPAIGN_SERVICE',
+        '/projects/cncf/briefs/b-1/campaigns/c-1/keyword-actions',
+        'POST',
+        undefined,
+        {
+          actions,
+        },
+        // Seventh and eighth: no custom headers, and no caller-supplied timeout in this test --
+        // the fan-out passes its remaining budget here, everything else takes the client default.
+        undefined,
+        undefined
+      );
       // Sixth argument present and fifth empty: swapping them would send the payload as a query
-      // string with no body, which upstream reads as a request carrying no actions.
-      expect(proxyRequest.mock.calls[0]).toHaveLength(6);
+      // string with no body, which upstream reads as a request carrying no actions. Eight args
+      // now -- headers and options trail the body so the fan-out can pass its remaining budget.
+      expect(proxyRequest.mock.calls[0]).toHaveLength(8);
       expect(proxyRequest.mock.calls[0][4]).toBeUndefined();
     });
 
