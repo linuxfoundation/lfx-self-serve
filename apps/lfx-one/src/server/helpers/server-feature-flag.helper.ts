@@ -307,9 +307,16 @@ export enum ServerFeatureFlag {
    * connections are per project with their own token and portal_id — and performs no duplicate
    * check, which is why the UI warns before offering it.
    *
-   * Safe to turn off, but NOT a full rollback: both routes are stateless with respect to this
-   * service, so flipping back restores the previous BACKEND. It does not restore fabricated
-   * tokens or the old search limit — those changed on both paths.
+   * NOT SAFE TO TURN OFF, which an earlier version of this line got backwards. "Off" selects the
+   * legacy backend, and that path calls `hsHeaders()` — which throws whenever
+   * `HUBSPOT_ACCESS_TOKEN` is absent, and it is absent by design, since the credential moved into
+   * campaign-service's encrypted connection store. Flipping this off therefore does not roll back
+   * to working behaviour: it breaks BOTH UTM routes outright. An operator reaching for it during
+   * an incident would disable the lookup and the create rather than restore them (Copilot).
+   *
+   * It is also not a full rollback even where the legacy path can run: flipping back restores the
+   * previous BACKEND, not the previous BEHAVIOUR. Fabricated tokens, the old search limit, the
+   * tie refusal and the weak-match refusal all changed on both paths and are ungated.
    */
   CampaignServiceHubSpotUtm = 'LFX_CUTOVER_CAMPAIGN_SERVICE_HUBSPOT_UTM',
 

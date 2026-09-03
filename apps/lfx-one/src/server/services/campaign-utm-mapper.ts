@@ -11,9 +11,10 @@ import type {
 // ---------------------------------------------------------------------------
 // campaign-service → UI conversion for the HubSpot UTM lookup
 //
-// Upstream returns every match in the order HubSpot returned them — OBJECT-CREATION order, not
-// relevance: campaign-service documents the search as token-based with no relevance sort, so
-// position carries no ranking information. It leaves the choosing to the caller. The UI contract
+// Upstream returns every match in UNSPECIFIED HubSpot order. What campaign-service actually
+// documents is that it sends no `sorts` — so the API guarantees nothing about position, and
+// naming a concrete order here (an earlier version said "object-creation order") invites code or
+// a test to rely on a guarantee HubSpot does not give. Position carries no ranking information. It leaves the choosing to the caller. The UI contract
 // predates that: it wants a single best match plus the rest. So the scoring lives here, ported
 // from the legacy path so the ordering a user sees does not change under them mid-cutover.
 //
@@ -152,7 +153,7 @@ export function toUtmLookupResult(payload: CampaignServiceHubSpotCampaigns, quer
     .map((c) => ({ campaign: c, score: scoreCampaignName(c.name, query) }))
     .filter((s) => s.score > 0)
     // Stable descending sort. Within a score band this preserves the order upstream returned,
-    // which is HubSpot's OBJECT-CREATION order — not a ranking. campaign-service documents that
+    // which is UNSPECIFIED — not a ranking. campaign-service documents that
     // the search is token-based and not relevance-sorted, so position inside a band carries no
     // information about which candidate is the better match.
     .sort((a, b) => b.score - a.score);

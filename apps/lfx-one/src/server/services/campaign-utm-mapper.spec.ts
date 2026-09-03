@@ -78,7 +78,7 @@ describe('toUtmLookupResult', () => {
   });
 
   /**
-   * Upstream order is HubSpot's OBJECT-CREATION order, not relevance — the search is token-based
+   * Upstream order is UNSPECIFIED (campaign-service sends no `sorts`), not relevance — the search is token-based
    * and carries no ranking. Equal scores must still preserve it: re-ordering would invent a
    * ranking neither layer has, and this layer knows no reason to prefer either row.
    */
@@ -179,7 +179,7 @@ describe('toUtmLookupResult capped', () => {
 
   it('refuses to auto-apply when two candidates tie', () => {
     // "KubeCon Europe 2026" and "KubeCon China 2026" both score 1 against "KubeCon NA 2026" —
-    // one shared word each. scored[0] would be decided by HubSpot's OBJECT-CREATION order, which
+    // one shared word each. scored[0] would be decided by HubSpot's UNSPECIFIED row order, which
     // carries no relevance information, so applying it silently puts another campaign's token
     // into this event's links. The links work, so the misattribution is invisible.
     const res = toUtmLookupResult(
