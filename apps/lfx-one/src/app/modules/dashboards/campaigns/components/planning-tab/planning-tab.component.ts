@@ -306,7 +306,7 @@ export class PlanningTabComponent implements OnInit {
     () =>
       this.hsCreating() ||
       this.hsCreatesInFlight() > 0 ||
-      this.hsCreatedEvents().has(`${this.activeFoundationSlug()}|${normaliseForMatch(this.currentEvent())}`),
+      this.hsCreatedEvents().has(`${this.activeFoundationSlug()}|${normaliseForMatch(this.currentEvent())}`)
   );
   protected readonly hsStatus = signal<string | null>(null);
   protected readonly hsNotFound = signal(false);
@@ -1897,6 +1897,13 @@ export class PlanningTabComponent implements OnInit {
             // Explicit `false` from both fields, or suppress: absence is the old-pod shape and
             // proves nothing about completeness.
             this.hsCreateSuppressed.set(!(result?.inconclusive === false && result?.capped === false));
+            // Written with its twin, ALWAYS. These two are set together at every other site
+            // (`:634-635`, `:1781-1782`, `:1940/:1946`); leaving it out here let a `capped`
+            // search render the wrong amber copy -- Create correctly withheld, but the panel
+            // explaining it as an ordinary no-match rather than an unproven-completeness one, so
+            // the operator is given the wrong remedy (dealako, #2079). It is a persistent
+            // signal, so an omission also LEAKS the previous lookup's value into this result.
+            this.hsCompletenessUnproven.set(result?.capped === true);
             this.hsNotFound.set(true);
             this.hsUnconfirmed.set(true);
             this.hsMatches.set(result?.all_matches ?? []);

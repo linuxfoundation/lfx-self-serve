@@ -2007,7 +2007,10 @@ describe('PlanningTabComponent — HubSpot UTM states', () => {
     fixture.detectChanges();
 
     const component = fixture.componentInstance as unknown as { hsCreatedEventNames(): Set<string> };
-    expect(component.hsCreatedEventNames().has('Kubecon Na 2026'), "A's resolution dropped the fence B still needs").toBe(true);
+    // The fence is keyed on the NORMALISED name (lowercased, whitespace collapsed) -- that is the
+    // whole point of the normalisation, since A and B spell the same event differently. Asserting
+    // the display casing passed only while the set stored raw names.
+    expect(component.hsCreatedEventNames().has('kubecon na 2026'), "A's resolution dropped the fence B still needs").toBe(true);
   });
 
   it('records a create the operator navigated away from', () => {
