@@ -57,7 +57,9 @@ describe('toUtmLookupResult', () => {
    * A missing token is now null, which the UI contract already models.
    */
   it('reports a missing token as null rather than fabricating one', () => {
-    const res = toUtmLookupResult(payload({ id: '112233', name: 'KubeCon NA 2026' }), 'KubeCon NA 2026');
+    // Capability declared: this is the NEW contract, and the tokenless shape is only offered to a
+    // client that can read it (see the capability-gate suite below).
+    const res = toUtmLookupResult(payload({ id: '112233', name: 'KubeCon NA 2026' }), 'KubeCon NA 2026', true);
 
     expect(res.found).toBe(true);
     expect(res.campaign_name).toBe('KubeCon NA 2026');
@@ -73,9 +75,11 @@ describe('toUtmLookupResult', () => {
    * is visible rather than silently dropped.
    */
   it('omits tokenless campaigns from all_matches while keeping the best match visible', () => {
+    // Capability declared: a tokenless WINNER is the new contract's shape.
     const res = toUtmLookupResult(
       payload({ id: '1', name: 'KubeCon NA 2026' }, { id: '2', name: 'KubeCon NA 2026 sponsors', utm: 'sponsors' }),
-      'KubeCon NA 2026'
+      'KubeCon NA 2026',
+      true
     );
 
     expect(res.campaign_name).toBe('KubeCon NA 2026');
@@ -331,5 +335,55 @@ describe('toUtmLookupResult — malformed ROWS', () => {
     expect(res.hs_utm).toBeNull();
     expect(res.all_matches).toEqual([{ name: 'KubeCon NA 2026', hs_utm: 'kubecon-na-2026' }]);
     expect(res.inconclusive).toBe(true);
+  });
+});
+
+describe('toUtmLookupResult — the tokenless-found capability gate', () => {
+  // A campaign that EXISTS but carries no UTM token. The new bundle is told the truth
+  // (`found: true`, null token); the previous bundle branches on `found && hs_utm` and reads
+  // anything else as absence, so telling IT the truth offers Create for a campaign that is
+  // already there -- a duplicate in a portal-wide namespace nobody can delete.
+  //
+  // Reachable on any rolling deploy: the chart brings up a new replica set with no session
+  // affinity, so an old bundle routinely calls a new pod. The feature flag selects the BACKEND,
+  // not the client's parser, so it does not close this.
+  const tokenless = { campaigns: [{ id: '1', name: 'KubeCon NA 2026' }], capped: false } as never;
+
+  it('reports a tokenless winner as found to a client that declares the capability', () => {
+    const res = toUtmLookupResult(tokenless, 'KubeCon NA 2026', true);
+
+    expect(res.found).toBe(true);
+    expect(res.hs_utm).toBeNull();
+    expect(res.campaign_name).toBe('KubeCon NA 2026');
+  });
+
+  it('withholds the tokenless shape from a client that does NOT declare it', () => {
+    const res = toUtmLookupResult(tokenless, 'KubeCon NA 2026', false);
+
+    // Downgraded to a not-found the old bundle CAN read...
+    expect(res.found).toBe(false);
+    expect(res.hs_utm).toBeNull();
+    // ...but never as proven absence, which is what would license the create.
+    expect(res.inconclusive, 'an existing campaign was reported as proven absence to an old bundle').toBe(true);
+  });
+
+  it('defaults to withholding when the capability is not stated at all', () => {
+    // Absence is exactly what an old bundle sends, so the default must be the safe direction.
+    const res = toUtmLookupResult(tokenless, 'KubeCon NA 2026');
+
+    expect(res.found).toBe(false);
+    expect(res.inconclusive).toBe(true);
+  });
+
+  it('does not change a TOKENED winner for either client', () => {
+    // `found: true` with a real token has always meant the same thing to every bundle, so the
+    // gate must not touch it -- otherwise it would suppress ordinary successful lookups.
+    const tokened = { campaigns: [{ id: '1', name: 'KubeCon NA 2026', utm: 'kubecon-na-2026' }], capped: false } as never;
+
+    for (const declares of [true, false]) {
+      const res = toUtmLookupResult(tokened, 'KubeCon NA 2026', declares);
+      expect(res.found, `a tokened winner was withheld with capability=${declares}`).toBe(true);
+      expect(res.hs_utm).toBe('kubecon-na-2026');
+    }
   });
 });

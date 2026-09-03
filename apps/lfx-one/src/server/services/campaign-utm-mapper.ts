@@ -7,7 +7,13 @@ import type {
   HubSpotUtmCreateResult,
   HubSpotUtmLookupResult,
 } from '@lfx-one/shared/interfaces';
-import { normaliseForMatch } from '@lfx-one/shared/utils';
+// DEEP import, not the '@lfx-one/shared/utils' barrel. The barrel re-exports 24 modules, three of
+// which (`form.utils`, `vote.utils`, `meeting.utils`) import Angular -- so pulling one string
+// helper through it drags `@angular/common` into a SERVER module, and every vitest suite that
+// transitively reaches this file then fails to COLLECT with a JIT compiler error. `string.utils`
+// itself has no imports at all, so naming it directly costs nothing and keeps the server free of
+// Angular.
+import { normaliseForMatch } from '@lfx-one/shared/utils/string.utils';
 
 // ---------------------------------------------------------------------------
 // campaign-service → UI conversion for the HubSpot UTM lookup
@@ -128,7 +134,28 @@ function utmTokenOf(c: CampaignServiceHubSpotCampaign): string | null {
  * reports its own null token through `hs_utm`, so a tokenless winner is visible rather than
  * silently dropped.
  */
-export function toUtmLookupResult(payload: CampaignServiceHubSpotCampaigns, query: string): HubSpotUtmLookupResult {
+export function toUtmLookupResult(
+  payload: CampaignServiceHubSpotCampaigns,
+  query: string,
+  /**
+   * Whether the CALLING BUNDLE understands a tokenless `found: true`.
+   *
+   * This response shape is not backward compatible, and the incompatibility is dangerous rather
+   * than cosmetic. The previous bundle branches on `found && hs_utm` and treats everything else
+   * as absence (`planning-tab.component.ts` on `main`, the `else` that sets `hsNotFound`), so a
+   * tokenless `found: true` reaches it as PROVEN ABSENCE and offers Create -- a non-idempotent
+   * write into a portal-wide namespace, for a campaign that demonstrably already exists.
+   *
+   * Reachable during any rolling deploy: the chart brings up a full new replica set with no
+   * session affinity, so a browser holding the old bundle routinely calls a new pod. The feature
+   * flag does not close this -- it selects the BACKEND, not the client's parser.
+   *
+   * So the shape is gated on the client SAYING it can read it, rather than on a deploy ordering
+   * nobody can enforce. Absent or unrecognised means old, because absence is exactly what an old
+   * bundle sends (Copilot, #2079).
+   */
+  clientUnderstandsTokenlessFound = false
+): HubSpotUtmLookupResult {
   // FAIL CLOSED on a malformed envelope. proxyRequest types this body but does not check it, so
   // a 2xx carrying `{campaigns: []}` with no `capped` yielded `capped: undefined` and therefore
   // `inconclusive: false` -- proven absence, which is exactly what licenses the non-idempotent
@@ -233,9 +260,32 @@ export function toUtmLookupResult(payload: CampaignServiceHubSpotCampaigns, quer
   }
 
   const best = scored[0].campaign;
+  const bestToken = utmTokenOf(best);
+
+  // A tokenless winner is only reported as FOUND to a client that can read it. To an old bundle
+  // this same answer would mean "nothing matched, offer Create", so it is downgraded to an
+  // INCONCLUSIVE not-found instead: Create is withheld, the candidates still come back for the
+  // operator to see, and no duplicate can be created off a response the client misreads.
+  //
+  // A tokened winner is unchanged for both -- `found: true` with a real token has always meant
+  // the same thing to every bundle.
+  if (bestToken === null && !clientUnderstandsTokenlessFound) {
+    return {
+      found: false,
+      hs_utm: null,
+      campaign_name: '',
+      all_matches: candidates,
+      capped: payload.capped,
+      // NOT proven absence: the campaign was found, it simply has no token this client can be
+      // told about. Marking it inconclusive is what keeps Create suppressed on the old bundle,
+      // which reads `found:false` alone as licence to create.
+      inconclusive: true,
+    };
+  }
+
   return {
     found: true,
-    hs_utm: utmTokenOf(best),
+    hs_utm: bestToken,
     campaign_name: best.name,
     all_matches: candidates,
     // Carried through because it changes what a not-found answer MEANS downstream.
