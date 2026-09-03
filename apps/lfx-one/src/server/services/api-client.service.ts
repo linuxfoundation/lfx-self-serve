@@ -326,6 +326,14 @@ export class ApiClientService {
         try {
           errorText = await response.text();
         } catch (readError: unknown) {
+          if (response.status >= 400 && response.status < 500 && response.status !== 408) {
+            throw new MicroserviceError(response.statusText || 'The upstream request was rejected.', response.status, getHttpErrorCode(response.status), {
+              operation: options.binary ? 'api_client_binary_request' : 'api_client_request',
+              service: 'api_client_service',
+              path: url,
+              originalError: readError instanceof Error ? readError : undefined,
+            });
+          }
           // The status arrived; the body did not. Nothing here establishes what upstream did with
           // the request, so it is classified like any other transport failure rather than
           // reported as this status.

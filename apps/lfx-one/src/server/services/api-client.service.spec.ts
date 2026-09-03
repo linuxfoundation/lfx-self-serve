@@ -196,6 +196,26 @@ describe('ApiClientService — transport failures are always classified', () => 
     expect(err.statusCode, 'a real 403 was recast').toBe(403);
     expect(err.toResponse()['transport'], 'an upstream answer was marked as BFF transport').toBeUndefined();
   });
+
+  it('preserves an upstream 4xx when its error body cannot be read', async () => {
+    vi.stubGlobal(
+      'fetch',
+      vi.fn(() =>
+        Promise.resolve({
+          ok: false,
+          status: 403,
+          statusText: 'Forbidden',
+          headers: new Headers(),
+          text: () => Promise.reject(new TypeError('terminated')),
+        })
+      )
+    );
+
+    const err = (await new ApiClientService({ retryAttempts: 1 }).request('GET', 'https://example.invalid/x').catch((e: unknown) => e)) as MicroserviceError;
+
+    expect(err.statusCode).toBe(403);
+    expect(err.toResponse()['transport']).toBeUndefined();
+  });
 });
 
 /**
