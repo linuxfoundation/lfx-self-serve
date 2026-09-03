@@ -1080,9 +1080,11 @@ export class CommitteeService {
         organization: invite.organization ?? null,
         organization_required: invite.organization_required ?? null,
         // Surface who invited the user and when the invite expires (committee-service now persists
-        // both on the invite). inviter_name degrades to null when upstream has no inviter name;
+        // both on the invite). Prefer the inviter's display name, falling back to the username
+        // (always present upstream when a principal exists — a username-only inviter still attributes
+        // the row rather than degrading to "You've been invited"); null only when neither is present.
         // expires_at is null on legacy records created before upstream stored it.
-        inviter_name: invite.inviter?.name?.trim() || null,
+        inviter_name: invite.inviter?.name?.trim() || invite.inviter?.username?.trim() || null,
         expires_at: invite.expires_at ?? null,
       } satisfies PendingInvitation;
     });

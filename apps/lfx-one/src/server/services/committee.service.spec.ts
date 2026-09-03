@@ -964,7 +964,7 @@ describe('CommitteeService.getMyPendingInvitations — inviter/expiry mapping', 
     expect(row.expires_at).toBe('2026-02-01T03:04:05Z');
   });
 
-  it('falls back to null inviter_name for a username-only partial inviter, but keeps expires_at', async () => {
+  it('falls back to the username for a username-only partial inviter, and keeps expires_at', async () => {
     mockInvites([
       baseInvite({
         inviter: { username: 'alice' },
@@ -974,7 +974,7 @@ describe('CommitteeService.getMyPendingInvitations — inviter/expiry mapping', 
 
     const [row] = await service.getMyPendingInvitations(req, 'invitee@example.com');
 
-    expect(row.inviter_name).toBeNull();
+    expect(row.inviter_name).toBe('alice');
     expect(row.expires_at).toBe('2026-02-01T03:04:05Z');
   });
 
@@ -987,8 +987,16 @@ describe('CommitteeService.getMyPendingInvitations — inviter/expiry mapping', 
     expect(row.expires_at).toBeNull();
   });
 
-  it('normalizes a whitespace-only inviter name to null', async () => {
+  it('falls back to the username when the inviter name is whitespace-only', async () => {
     mockInvites([baseInvite({ inviter: { name: '   ', username: 'alice' } })]);
+
+    const [row] = await service.getMyPendingInvitations(req, 'invitee@example.com');
+
+    expect(row.inviter_name).toBe('alice');
+  });
+
+  it('maps inviter_name to null when both name and username are absent', async () => {
+    mockInvites([baseInvite({ inviter: { email: 'alice@lf.org' } })]);
 
     const [row] = await service.getMyPendingInvitations(req, 'invitee@example.com');
 

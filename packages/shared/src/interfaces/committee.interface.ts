@@ -162,8 +162,9 @@ export interface PendingInvitation {
   /** Creation timestamp (RFC3339) */
   created_at: string;
   /**
-   * Name of the person who sent the invitation, sourced from the invite's `inviter.name`
-   * (committee-service ≥ the inviter/expiry change). Null when upstream has no inviter name.
+   * Display label for who sent the invitation: the invite's `inviter.name`, falling back to
+   * `inviter.username` (always present upstream when a principal exists), so a username-only
+   * inviter still attributes the row. Null only when neither is present (e.g. legacy records).
    */
   inviter_name?: string | null;
   /**
