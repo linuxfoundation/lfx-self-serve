@@ -1582,6 +1582,10 @@ export class ProfileController {
     const error = req.query['error'] as string;
     const returnTo = this.normalizeProfileReturnTo(req.appSession?.['profileAuthReturnTo']);
 
+    if (this.blockCallbackDuringImpersonation(req, res, returnTo, 'profile_auth_callback')) {
+      return;
+    }
+
     if (error) {
       logger.error(req, 'profile_auth_callback', startTime, new Error(`Auth0 returned error: ${error}`), {
         error_description: req.query['error_description'],
@@ -1776,6 +1780,10 @@ export class ProfileController {
     const state = req.query['state'] as string;
     const error = req.query['error'] as string;
     const returnTo = '/profile/identities';
+
+    if (this.blockCallbackDuringImpersonation(req, res, returnTo, 'social_auth_callback')) {
+      return;
+    }
 
     if (error) {
       logger.error(req, 'social_auth_callback', startTime, new Error(`Auth0 returned error: ${error}`), {
@@ -2488,6 +2496,29 @@ export class ProfileController {
     } catch {
       return DEFAULT;
     }
+  }
+
+  /**
+   * Root callbacks (`/passwordless/callback`, `/social/callback`) sit outside the `/api`
+   * error-handler mount and are redirect-only — their route signatures don't even accept
+   * `next` — so they can't reuse blockDuringImpersonation's next(err) contract
+   * (impersonation-readonly.middleware.ts). This enforces the same read-only guarantee by
+   * redirecting before any code exchange or token mint, matching the handlers' own
+   * `?error=` convention. Returns true if the callback was blocked.
+   */
+  private blockCallbackDuringImpersonation(req: Request, res: Response, returnTo: string, operation: string): boolean {
+    if (!isImpersonating(req)) return false;
+
+    logger.warning(req, 'impersonation_readonly', 'Blocked auth callback during impersonation', {
+      path: req.path,
+      method: req.method,
+      action: operation,
+      outcome: 'blocked',
+      impersonator_sub: req.appSession?.['impersonator']?.sub,
+      target_sub: req.appSession?.['impersonationUser']?.sub,
+    });
+    res.redirect(`${returnTo}?error=impersonation_read_only`);
+    return true;
   }
 
   /**

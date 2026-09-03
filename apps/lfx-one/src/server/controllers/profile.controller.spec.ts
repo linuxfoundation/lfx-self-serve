@@ -442,3 +442,59 @@ describe('ProfileController.startProfileAuth — returnTo allowlist', () => {
     expect(res.redirect).toHaveBeenCalledWith('/profile/settings?error=profile_auth_not_configured');
   });
 });
+
+// The root callbacks (/passwordless/callback, /social/callback in server.ts) are redirect-only and
+// sit outside the /api error-handler mount, so they enforce impersonation read-only in-handler via
+// blockCallbackDuringImpersonation rather than the blockDuringImpersonation route middleware.
+describe('ProfileController impersonation-blocked auth callbacks', () => {
+  let controller: ProfileController;
+
+  beforeEach(() => {
+    vi.clearAllMocks();
+    controller = new ProfileController();
+  });
+
+  it('handleProfileAuthCallback redirects to the default returnTo without exchanging the code', async () => {
+    isImpersonatingMock.mockReturnValue(true);
+    const res = buildRes();
+
+    await controller.handleProfileAuthCallback(buildReq({ path: '/passwordless/callback', query: { code: 'c', state: 's' } }), res);
+
+    expect(res.redirect).toHaveBeenCalledWith('/profile?error=impersonation_read_only');
+    expect(profileAuthSvc.getManagementToken).not.toHaveBeenCalled();
+  });
+
+  it('handleProfileAuthCallback redirects to the session-stashed returnTo when blocked', async () => {
+    isImpersonatingMock.mockReturnValue(true);
+    const res = buildRes();
+    const req = buildReq({
+      path: '/passwordless/callback',
+      query: { code: 'c', state: 's' },
+      appSession: { profileAuthReturnTo: '/profile/settings' },
+    });
+
+    await controller.handleProfileAuthCallback(req, res);
+
+    expect(res.redirect).toHaveBeenCalledWith('/profile/settings?error=impersonation_read_only');
+  });
+
+  it('handleProfileAuthCallback falls through to the normal invalid_state branch when not impersonating', async () => {
+    isImpersonatingMock.mockReturnValue(false);
+    const res = buildRes();
+    const req = buildReq({ path: '/passwordless/callback', query: { code: 'c', state: 'mismatched' }, appSession: { profileAuthState: 'expected' } });
+
+    await controller.handleProfileAuthCallback(req, res);
+
+    expect(res.redirect).toHaveBeenCalledWith('/profile?error=invalid_state');
+  });
+
+  it('handleSocialCallback redirects to /profile/identities without linking the identity', async () => {
+    isImpersonatingMock.mockReturnValue(true);
+    const res = buildRes();
+
+    await controller.handleSocialCallback(buildReq({ path: '/social/callback', query: { code: 'c', state: 's' } }), res);
+
+    expect(res.redirect).toHaveBeenCalledWith('/profile/identities?error=impersonation_read_only');
+    expect(profileAuthSvc.getManagementToken).not.toHaveBeenCalled();
+  });
+});
