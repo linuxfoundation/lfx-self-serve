@@ -2144,7 +2144,7 @@ describe('CampaignServiceClient.buildAudience', () => {
   it('does not surface raw transport text as an upstream message', async () => {
     // Transport failures used to be 500, so the 5xx rule caught them. They are now 503 — a lost
     // connection is an unconfirmed outcome, not proof nothing happened — which would otherwise
-    // make them "controlled" and put "Request failed: fetch failed" where an operator-facing
+    // make them "controlled" and put a BFF-raised transport message where an operator-facing
     // remedy belongs. The BFF marks its own transport errors by setting `originalError`.
     // ECONNRESET, not NETWORK_ERROR: executeRequest emits `cause.code || 'NETWORK_ERROR'`, so a
     // real fetch failure carries the OS code and the fallback string almost never appears. A

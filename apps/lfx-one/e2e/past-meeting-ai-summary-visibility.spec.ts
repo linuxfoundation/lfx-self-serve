@@ -28,9 +28,11 @@
 // barrel) so the suite can load the pure logic without bootstrapping Angular.
 import { isPastMeetingSummaryAwaitingApproval, isPastMeetingSummaryVisible, type SummaryApprovalFlags } from '@lfx-one/shared/utils/past-meeting-summary.utils';
 import { expect, test } from '@playwright/test';
-import { skipWhenAuthMissing } from './helpers/auth.helper';
 
-test.beforeEach(() => skipWhenAuthMissing());
+// No auth guard, deliberately. Every test here calls the pure helpers on a literal
+// `SummaryApprovalFlags` -- no page is opened and no session is held -- so
+// `skipWhenAuthMissing()` only silenced real logic coverage on any run without credentials
+// (dealako + cursor, #1923).
 
 const summary = (approved: boolean, requires_approval: boolean): SummaryApprovalFlags => ({ approved, requires_approval });
 

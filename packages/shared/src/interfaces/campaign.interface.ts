@@ -1815,7 +1815,7 @@ export interface HubSpotEmailSearchResult {
 }
 
 // ---------------------------------------------------------------------------
-// HubSpot UTM
+// Keyword actions
 // ---------------------------------------------------------------------------
 
 /**
@@ -1831,6 +1831,10 @@ export interface KeywordActionOutcome {
   message: string;
   state: 'done' | 'unconfirmed' | 'failed';
 }
+
+// ---------------------------------------------------------------------------
+// HubSpot UTM
+// ---------------------------------------------------------------------------
 
 export interface HubSpotUtmLookupResult {
   found: boolean;

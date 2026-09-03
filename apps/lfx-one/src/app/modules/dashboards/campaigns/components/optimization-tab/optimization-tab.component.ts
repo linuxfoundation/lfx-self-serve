@@ -949,9 +949,14 @@ export class OptimizationTabComponent implements OnInit {
           // duplicate an irreversible REMOVE. A batch carrying both was summarised as "Remove
           // failed", which invites exactly that retry (Copilot).
           const worst = (['unconfirmed', 'failed', 'done'] as const).find((state) => outcomes.includes(state)) ?? 'done';
+          // The COUNT must describe the state it is paired with. `keys.length` is the whole
+          // selection, so one unconfirmed row in a batch of ten announced "10 unconfirmed" --
+          // overstating an irreversible-REMOVE hazard by the size of the selection, and telling
+          // the operator to check nine rows that are fine (dealako, #1923 round 7).
+          const worstCount = outcomes.filter((state) => state === worst).length;
           this.announceKeywordOutcome(
             action,
-            keys.length,
+            worstCount,
             worst,
             worst === 'done'
               ? 'All rows in the selection completed.'
@@ -1367,19 +1372,6 @@ export class OptimizationTabComponent implements OnInit {
   }
 
   /**
-   * Narrates a CONFIRMED toggle: live region for the in-page reader, toast for everyone else.
-   *
-   * The toast exists because the request now outlives this component. `take(1)` replaced
-   * `takeUntilDestroyed` so a pause is not aborted by a tab switch, which means the response can
-   * arrive when this tab is gone — and a result nobody can see is barely better than the abort it
-   * replaced. `MessageService` renders from `app.component`, above the `@switch`, so it lands.
-   *
-   * `reportedStatus` is what the SERVICE said, not what was requested, for the same reason the
-   * row overlay reads it: pausing a `created_degraded` campaign pauses it upstream while leaving
-   * the row's status alone. The announcement states the direction that was confirmed, so it
-   * cannot promise a transition the service declined to record.
-   */
-  /**
    * Narrates a keyword action to the toast, which is the surface that SURVIVES a tab switch.
    *
    * `lfx-optimization-tab` renders inside `@case ('optimization')`, so leaving the tab destroys
@@ -1404,6 +1396,19 @@ export class OptimizationTabComponent implements OnInit {
     });
   }
 
+  /**
+   * Narrates a CONFIRMED toggle: live region for the in-page reader, toast for everyone else.
+   *
+   * The toast exists because the request now outlives this component. `take(1)` replaced
+   * `takeUntilDestroyed` so a pause is not aborted by a tab switch, which means the response can
+   * arrive when this tab is gone — and a result nobody can see is barely better than the abort it
+   * replaced. `MessageService` renders from `app.component`, above the `@switch`, so it lands.
+   *
+   * `reportedStatus` is what the SERVICE said, not what was requested, for the same reason the
+   * row overlay reads it: pausing a `created_degraded` campaign pauses it upstream while leaving
+   * the row's status alone. The announcement states the direction that was confirmed, so it
+   * cannot promise a transition the service declined to record.
+   */
   private announceToggleOutcome(direction: Exclude<CampaignToggleAction, 'unavailable'>, campaignName: string, reportedStatus: string): void {
     // The outcome goes to the toast ALONE. `p-toast` is itself a live region (`role="alert"`), so
     // announcing the completion in the local region too would speak one action twice. The region

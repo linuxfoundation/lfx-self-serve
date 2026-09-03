@@ -639,7 +639,7 @@ environment:
   # calls getGadsClient(), which throws whenever the GADS_* variables are absent — and they were
   # deactivated deliberately. So with this off, keyword actions do not work at all; this flag is
   # what makes them work, not what changes which backend serves them.
-  # ONE CHANGE APPLIES WITH THIS FLAG OFF, and it is deliberate: the
+  # TWO CHANGES APPLY WITH THIS FLAG OFF, both deliberate. First: the
   # /keywords/actions endpoint now refuses a body of more than 50 keyword rows on
   # BOTH paths, where before only a non-empty array was required.
   #
@@ -675,6 +675,10 @@ environment:
   # affects direct API callers only.
   LFX_CUTOVER_CAMPAIGN_SERVICE_KEYWORD_ACTIONS:
     value: "false"
+
+  # Set to 'live' to proxy WG Weekly Brief endpoints to committee-service (LFXV2-2175/2176).
+  # The BFF refuses to serve mock brief data when NODE_ENV=production and this
+  # isn't 'live' — leaving it unset here would 500 on every weekly-brief request.
   WEEKLY_BRIEF_BACKEND:
     value: "live"
 

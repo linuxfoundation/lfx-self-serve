@@ -984,7 +984,7 @@ export class CampaignServiceClient {
     // :1327-1338), and nothing clears it when Google is deselected. The form now defaults
     // `includeDemandGen` to false, so this is no longer the untouched-form case — it is RETAINED
     // state: a user who ticks Demand Gen and then deselects Google, or a saved draft restoring
-    // the old default through `:1611`. Either way a LinkedIn-only create arrives carrying
+    // the old default through `persistBrief`. Either way a LinkedIn-only create arrives carrying
     // `demand-gen`, and refusing on the type alone rejected creates that have no Google campaign
     // in them at all.
     if (platforms.includes('google-ads') && campaignTypes?.includes('demand-gen') && campaignTypes.includes('search')) {
@@ -1773,7 +1773,7 @@ export class CampaignServiceClient {
       // result (see the no-ETag branch above), and the read path re-reads the ETag from the
       // server before every write, so nothing downstream is left without one.
       // 408 is EXCLUDED even though it is a 4xx. `ApiClientService` turns a local `AbortError`
-      // into `MicroserviceError(408, 'TIMEOUT')` (`api-client.service.ts` and `:306`), so a
+      // into `MicroserviceError(408, 'TIMEOUT')` (`api-client.service.ts`, `request`/`executeRequest`), so a
       // 408 here is our own deadline firing, not campaign-service refusing anything — the
       // request may well have committed upstream with its response lost, which is precisely the
       // indeterminate case this branch exists to keep out of `writeEtag`. A 408 that genuinely
@@ -2001,8 +2001,11 @@ function toUpstreamEventDetails(details: CampaignEventDetails): Record<string, u
  *
  * A TRANSPORT failure falls through too, and now needs saying explicitly. It used to be a 500,
  * so the 5xx rule caught it; it is now a 503 (a lost connection is an unconfirmed outcome, not a
- * proof nothing happened), which would otherwise make it "controlled" and put raw transport text
- * — "Request failed: fetch failed" — where an operator-facing remedy belongs. Those are
+ * proof nothing happened), which would otherwise make it "controlled" and surface a BFF-raised
+ * message where an operator-facing remedy belongs. The interpolated transport text this once
+ * quoted is gone — every such site now emits the fixed "The request could not be completed.
+ * Please try again." — but the exclusion still stands: that message is about the BFF's own
+ * failure to reach the service, not an answer the service gave. Those are
  * distinguished from a 503 the service deliberately returned by their ORIGIN, tested as
  * `transportFailure === true` — a flag the throwing site DECLARES. Not `originalError`, which
  * seven non-transport services also populate from a caught error, and not the syscall code,
@@ -2402,7 +2405,7 @@ function objectElements(value: unknown): Record<string, unknown>[] {
  * Object-ness alone is not enough, which the first version of this filter got wrong: a stored
  * `{}` is a plain object, survives `objectElements`, and is then cast to `MetaAdVariant` — where
  * `canSubmit` calls `v.primaryText.trim()` (implementation-tab.component.ts) and throws. The
- * same holds for a geo target with no `urn` (`:243`).
+ * same holds for a geo target with no `urn` (`hasPlatformConfig`).
  *
  * Requiring the fields the consumer READS is the check that matches the hazard. An element
  * missing them cannot be rendered or submitted, so dropping it loses nothing recoverable.

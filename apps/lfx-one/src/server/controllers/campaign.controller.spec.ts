@@ -856,7 +856,7 @@ describe('CampaignController.createCampaign cutover', () => {
   });
 
   /**
-   * The client refuses these BEFORE its first create call (`targeting.go:183`, `:195`,
+   * The client refuses these BEFORE its first create call (`targeting.go:183` and its siblings,
    * `geo.go:243`), so an over-cap list is an async dead job rather than a refusal of the request.
    * Refused whole rather than TRUNCATED: silently dropping the 61st keyword would dispatch a
    * campaign targeting less than the operator asked for, with nothing saying so.
@@ -2311,6 +2311,38 @@ describe('CampaignController.executeKeywordActions via campaign-service', () => 
     expect(passedTimeout, 'the mutation was given no deadline, or one outside the budget').toBeGreaterThan(0);
     expect(passedTimeout).toBeLessThanOrEqual(KEYWORD_ACTION_DEADLINE_MS);
     expect(legacyKeywordActions).not.toHaveBeenCalled();
+  });
+
+  it('hands the MUTATION only the time the resolve left, not a fresh budget', async () => {
+    // dealako (#1923 round 7): the invariant of this round is that the resolve and the
+    // irreversible mutation cannot outlive the 45s deadline, because each is handed the REMAINING
+    // time. The assertions above are `> 0` and `<= DEADLINE`, which both still pass if the
+    // mutation is handed a fresh full budget -- the exact regression they exist to catch.
+    //
+    // A controlled clock makes the remainder observable: the resolve consumes 30s, so the
+    // mutation must receive strictly less than the resolve did.
+    let now = 0;
+    const nowSpy = vi.spyOn(Date, 'now').mockImplementation(() => now);
+    try {
+      svcResolveCampaign.mockImplementation(() => {
+        now += 30_000;
+        return Promise.resolve({ platform_campaign_id: '555', match_count: 1, matches: [{ campaign_id: 'c-1', brief_id: 'b-1' }] });
+      });
+
+      await controller.executeKeywordActions(actionsReq([keyword('555', '1')]), res, next);
+
+      const resolveBudget = svcResolveCampaign.mock.calls[0][3] as number;
+      const mutateBudget = svcApplyKeywordActions.mock.calls[0][5] as number;
+
+      expect(resolveBudget).toBeLessThanOrEqual(KEYWORD_ACTION_DEADLINE_MS);
+      // The binding assertion: the mutation is bounded by what is LEFT.
+      expect(mutateBudget, 'the mutation was handed a fresh budget rather than the remainder').toBeLessThan(resolveBudget);
+      expect(mutateBudget).toBeLessThanOrEqual(KEYWORD_ACTION_DEADLINE_MS - 30_000);
+      // And the two together cannot exceed the deadline, which is the property that matters.
+      expect(30_000 + mutateBudget, 'resolve + mutate can outlive the request deadline').toBeLessThanOrEqual(KEYWORD_ACTION_DEADLINE_MS);
+    } finally {
+      nowSpy.mockRestore();
+    }
   });
 
   it('keeps the legacy path when the flag is off', async () => {
