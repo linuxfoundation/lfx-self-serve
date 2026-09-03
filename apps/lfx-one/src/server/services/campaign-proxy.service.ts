@@ -347,12 +347,12 @@ async function hubspotCreateCampaign(eventName: string): Promise<HubSpotUtmResul
   if (searchResponse?.ok) {
     const searchData = (await searchResponse.json()) as { results?: { id: string; properties: Record<string, string> }[] };
     const results = searchData.results ?? [];
-    // Matched by ID, not by position. This is a fuzzy name search with `limit: 1`, so results[0]
-    // is whatever HubSpot ranked first for the name -- which, on a portal that already has an
-    // older similarly named campaign, is not the campaign we just created. Taking it assigned
-    // ANOTHER campaign's token (and its id) to this one, so the new campaign's links would have
-    // reported into the old campaign's attribution. The only row that can describe this campaign
-    // is the one carrying its uuid.
+    // Matched by ID, not by position. This is a fuzzy name search returning up to 200 matches, so
+    // the results are not guaranteed to be ordered by relevance -- and an older similarly named
+    // campaign could appear before the one we just created. Taking that row would assign ANOTHER
+    // campaign's token (and its id) to this one, so the new campaign's links would have reported
+    // into the old campaign's attribution. The only row that can describe this campaign is the
+    // one carrying its uuid.
     const own = results.find((r) => r.id === campaignUuid);
     if (own) {
       campaignId = own.id;
