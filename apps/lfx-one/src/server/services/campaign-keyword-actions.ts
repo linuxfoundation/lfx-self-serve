@@ -186,7 +186,22 @@ export function toBulkResponse(results: KeywordActionResponse[]): BulkKeywordAct
  * contract, but membership and count are. A criterion named twice in the request must be
  * confirmed twice, which is why counts are compared rather than sets.
  */
-function describeOutcomeMismatch(group: KeywordActionGroup, action: KeywordActionType, applied: CampaignServiceKeywordActions): string | null {
+function describeOutcomeMismatch(
+  group: KeywordActionGroup,
+  action: KeywordActionType,
+  applied: CampaignServiceKeywordActions,
+  expectedCampaignId: string
+): string | null {
+  // WHICH CAMPAIGN, before which criteria. Every check below verifies that the criteria coming
+  // back match the criteria sent, but none of them asks whether the response describes the
+  // campaign we mutated -- so a well-formed result set echoed for a DIFFERENT campaign passes
+  // all of them, and this path reports "paused" against a campaign that is still spending.
+  //
+  // Checked first because it is the cheapest and the most fundamental: if the response is about
+  // another campaign, nothing else it says is evidence about ours.
+  if (applied.campaign_id !== expectedCampaignId) {
+    return `upstream confirmed campaign ${applied.campaign_id} but ${expectedCampaignId} was requested`;
+  }
   const requested = toUpstreamActions(group.keywords, action);
   if (applied.applied_count !== requested.length) {
     return `applied_count ${applied.applied_count} != ${requested.length} requested`;
@@ -501,6 +516,22 @@ export async function applyKeywordActionsViaCampaignService(
         results.push(...failedResults(group, body.action, CAMPAIGN_LOOKUP_FAILED));
         continue;
       }
+      // The resolution must describe the campaign we ASKED about. Every check above establishes
+      // that the response is internally consistent and carries usable ids -- none asks whether
+      // those ids belong to `group.platformCampaignId`. A resolution echoed for a different
+      // campaign satisfies all of them, and the mutation below would then pause keywords on a
+      // campaign nobody named.
+      //
+      // CAMPAIGN_LOOKUP_FAILED for the same reason as the id-less case: upstream contradicting
+      // the request is transient, not proof the campaign is unmanaged.
+      if (resolution.platform_campaign_id !== group.platformCampaignId) {
+        logger.warning(req, 'keyword_actions', 'Resolution describes a different campaign than was requested', {
+          requested: group.platformCampaignId,
+          returned: resolution.platform_campaign_id,
+        });
+        results.push(...failedResults(group, body.action, CAMPAIGN_LOOKUP_FAILED));
+        continue;
+      }
       ref = match;
     } catch (error) {
       // A failed LOOKUP is reported against this campaign's keywords rather than failing the
@@ -563,7 +594,7 @@ export async function applyKeywordActionsViaCampaignService(
       // short or altered response would agree with itself. Reporting every requested keyword as
       // changed on the strength of that would tell someone a still-spending keyword was paused,
       // which is the one thing this path must never do.
-      const mismatch = describeOutcomeMismatch(group, body.action, applied);
+      const mismatch = describeOutcomeMismatch(group, body.action, applied, ref.campaign_id);
       if (mismatch) {
         logger.warning(req, 'keyword_actions', 'Upstream confirmed a different set than was requested', {
           platformCampaignId: group.platformCampaignId,
