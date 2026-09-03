@@ -38,6 +38,7 @@ describe('MeetingJoinComponent', () => {
   let getPastMeetingAttachments: ReturnType<typeof vi.fn>;
   let getPastMeetingParticipants: ReturnType<typeof vi.fn>;
   let getPastMeetingTranscript: ReturnType<typeof vi.fn>;
+  let getPublicMeetingOccurrences: ReturnType<typeof vi.fn>;
   let paramMap$: BehaviorSubject<ParamMap>;
   let queryParamMap$: BehaviorSubject<ParamMap>;
   let authenticated: ReturnType<typeof signal<boolean>>;
@@ -109,6 +110,7 @@ describe('MeetingJoinComponent', () => {
     getPastMeetingAttachments = vi.fn().mockReturnValue(of([]));
     getPastMeetingParticipants = vi.fn().mockReturnValue(of([]));
     getPastMeetingTranscript = vi.fn().mockReturnValue(of(null));
+    getPublicMeetingOccurrences = vi.fn().mockReturnValue(of({ past: [], future: [] }));
 
     TestBed.configureTestingModule({
       imports: [MeetingJoinComponent],
@@ -136,7 +138,7 @@ describe('MeetingJoinComponent', () => {
           useValue: {
             getPublicMeeting,
             getPublicPastMeeting,
-            getPublicMeetingOccurrences: vi.fn().mockReturnValue(of({ past: [], future: [] })),
+            getPublicMeetingOccurrences,
             getPublicMeetingJoinUrl: vi.fn().mockReturnValue(of({ link: undefined })),
             getMyMeetingRegistrants,
             getMeetingAttachments: vi.fn().mockReturnValue(of([])),
@@ -373,6 +375,40 @@ describe('MeetingJoinComponent', () => {
       expect(component.pastMeetingFullAccess()).toBe(true);
 
       await TestBed.inject(ApplicationRef).whenStable();
+    });
+
+    // Bot review follow-up on PR #2046 (copilot-pull-request-reviewer, cursor): seeding `meeting()`
+    // makes `initializeSeriesOccurrences()` subscribe immediately, before the debounced meeting
+    // pipeline (which used to set `password`) ever runs. A password-gated recurring meeting's first
+    // occurrences fetch went out with no password, and `distinctUntilChanged()` on the series uid
+    // then blocked any retry once the password eventually arrived — fixed by setting `password`
+    // synchronously from the route snapshot in the constructor, before `meeting` is exposed.
+    it('sends the correct password on the very first series-occurrences fetch for a seeded recurring meeting', async () => {
+      queryParamMap$.next(convertToParamMap({ password: 'secret' }));
+
+      // The live refetch behind the seed must also resolve to a recurring meeting — `toObservable`
+      // effects are glitch-free, so if the debounced refetch settled on a non-recurring default
+      // before the effect's first flush, it would only ever see that later value and the series-uid
+      // filter would never pass, masking the very race this test exists to catch.
+      const recurringMeeting = buildMeeting({ recurrence: { type: 2, repeat_interval: 1 } });
+      getPublicMeeting.mockReturnValue(of({ meeting: recurringMeeting, project: buildProject() }));
+
+      const transferState = TestBed.inject(TransferState);
+      transferState.set(MEETING_JOIN_STATE_KEY, {
+        meeting: { ...recurringMeeting, project: buildProject() },
+        loadedViaPastMeetingId: false,
+        pastMeetingFullAccess: false,
+        meetingLoadFailed: false,
+      });
+
+      const component = await createComponent();
+
+      // The password must be present on THIS call — `distinctUntilChanged()` on the series uid
+      // means a follow-up call for the same series never happens, so a missing password here
+      // would never be retried.
+      expect(getPublicMeetingOccurrences).toHaveBeenCalledTimes(1);
+      expect(getPublicMeetingOccurrences).toHaveBeenCalledWith(MEETING_ID, 'secret');
+      expect(component.meeting()?.id).toBe(MEETING_ID);
     });
 
     it('shows the skeleton on the initial render when there is no seed and the fetch has not resolved yet', async () => {
