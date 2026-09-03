@@ -328,7 +328,14 @@ async function hubspotCreateCampaign(eventName: string): Promise<HubSpotUtmResul
     headers: hsHeaders(),
     body: JSON.stringify({
       query: eventName,
-      limit: 1,
+      // Not `limit: 1`. The caller filters this result BY ID, so a single row is only useful if
+      // HubSpot happens to return the one just created -- and its search is not relevance-sorted,
+      // so on a busy portal it usually will not. The id filter then matches nothing and `hs_utm`
+      // reads null permanently after a successful create (dealako, #2079).
+      //
+      // 200 is HubSpot's per-request maximum and the same limit the lookup path uses; the filter
+      // below is what narrows it, so a wider read costs one request and finds the row.
+      limit: 200,
       properties: ['hs_name', 'hs_utm'],
     }),
     signal: AbortSignal.timeout(15_000),

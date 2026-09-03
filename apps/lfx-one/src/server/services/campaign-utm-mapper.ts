@@ -150,6 +150,15 @@ export function toUtmLookupResult(payload: CampaignServiceHubSpotCampaigns, quer
     return { found: false, hs_utm: null, campaign_name: '', all_matches: [], capped: true, inconclusive: true };
   }
   const scored = payload.campaigns
+    // ROW SHAPE, not just the envelope's. The guard above proves `campaigns` is an array; it says
+    // nothing about its ELEMENTS, and `[null]` or a row without `name` threw in
+    // `scoreCampaignName` -- a 500 after the envelope had already fail-closed successfully
+    // (dealako, #2079). Same gap the keyword path had one layer down.
+    //
+    // Dropped rather than refused: one malformed row does not invalidate the others, and the
+    // rows that DID survive still set `inconclusive` below, so a partial result cannot read as
+    // proven absence.
+    .filter((c): c is NonNullable<typeof c> => !!c && typeof c.name === 'string')
     .map((c) => ({ campaign: c, score: scoreCampaignName(c.name, query) }))
     .filter((s) => s.score > 0)
     // Stable descending sort. Within a score band this preserves the order upstream returned,

@@ -302,3 +302,31 @@ describe('scoreCampaignName — blank query', () => {
     expect(scoreCampaignName('KubeCon NA 2026', 'KubeCon NA 2026')).toBeGreaterThan(0);
   });
 });
+
+describe('toUtmLookupResult — malformed ROWS', () => {
+  it.each([
+    ['a null row', [null]],
+    ['a row with no name', [{ id: '1', utm: 'x' }]],
+  ])('drops %s instead of throwing', (_label, campaigns) => {
+    // dealako (#2079): the envelope guard proves `campaigns` is an ARRAY; it says nothing about
+    // the elements. `[null]` threw in scoreCampaignName -- a 500 after the envelope had already
+    // fail-closed successfully. Same gap the keyword path had one layer down.
+    const res = toUtmLookupResult({ campaigns, capped: false } as never, 'KubeCon NA 2026');
+
+    expect(res.found).toBe(false);
+    // Dropped, not refused: a partial result still cannot read as proven absence, so the rows
+    // that arrived keep `inconclusive` true.
+    expect(res.inconclusive, 'a response carrying rows was reported as proven absence').toBe(true);
+  });
+
+  it('still scores the GOOD rows alongside a malformed one', () => {
+    // The other direction, so the filter cannot be satisfied by dropping everything.
+    const res = toUtmLookupResult(
+      { campaigns: [null, { id: '2', name: 'KubeCon NA 2026', utm: 'kubecon-na-2026' }], capped: false } as never,
+      'KubeCon NA 2026'
+    );
+
+    expect(res.found).toBe(true);
+    expect(res.hs_utm).toBe('kubecon-na-2026');
+  });
+});
