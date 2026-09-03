@@ -569,6 +569,40 @@ describe('MeetingJoinComponent', () => {
       expect(fixture.nativeElement.querySelector('[data-testid="meeting-join-skeleton"]')).toBeNull();
     });
 
+    // Bot review follow-up on PR #2046 (cursor, copilot-pull-request-reviewer): the `!meeting()`
+    // scoping fix above only distinguishes "no settled meeting yet" from "have one" — it doesn't
+    // tell whether that settled meeting belongs to the CURRENT route. `toSignal` retains `meeting()`
+    // across a failing `catchError`'s `EMPTY`, so a client-side navigation to a different
+    // `/meetings/:id` whose fetch then fails left the PREVIOUS meeting (incl. its `host_key`/join
+    // links) rendered under the new URL instead of the error view.
+    it("shows the error branch instead of leaking the previous meeting's content when a refetch for a newly-navigated meeting fails", async () => {
+      const MEETING_ID_2 = 'meeting-2';
+      const refetch$ = new Subject<{ meeting: Meeting; project: PublicMeetingProject }>();
+      getPublicMeeting.mockImplementation((id: string) =>
+        id === MEETING_ID_2 ? refetch$ : of({ meeting: buildMeeting(), project: buildProject() })
+      );
+
+      await TestBed.compileComponents();
+      const fixture = TestBed.createComponent(MeetingJoinComponent);
+      const component = fixture.componentInstance;
+      await TestBed.inject(ApplicationRef).whenStable();
+      fixture.detectChanges();
+
+      expect((component as unknown as { meeting: () => Meeting | undefined }).meeting()?.id).toBe(MEETING_ID);
+      expect(fixture.nativeElement.querySelector('[data-testid="meeting-join-error"]')).toBeNull();
+
+      // Same debounced-pipeline caveat as the roster-leak tests above: a real macrotask tick is
+      // required to flush `debounceTime(0)` before the new route's fetch is even dispatched.
+      paramMap$.next(convertToParamMap({ id: MEETING_ID_2 }));
+      await new Promise((resolve) => setTimeout(resolve, 0));
+      refetch$.error({ status: 500 });
+      await TestBed.inject(ApplicationRef).whenStable();
+      fixture.detectChanges();
+
+      expect((component as unknown as { meetingLoadFailed: () => boolean }).meetingLoadFailed()).toBe(true);
+      expect(fixture.nativeElement.querySelector('[data-testid="meeting-join-error"]')).not.toBeNull();
+    });
+
     it('sets meetingLoadFailed (not a not-found redirect) when the nested past-meeting fallback fails with a non-terminal status', async () => {
       getPublicMeeting.mockReturnValue(throwError(() => ({ status: 404 })));
       getPublicPastMeeting.mockReturnValue(throwError(() => ({ status: 500 })));

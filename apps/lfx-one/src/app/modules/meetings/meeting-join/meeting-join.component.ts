@@ -229,6 +229,20 @@ export class MeetingJoinComponent implements OnInit {
   // network failure) — 404/403/400 already redirect to /meetings/not-found, so this only covers
   // the terminal, non-navigating case where the skeleton would otherwise spin forever (GH-2041).
   protected meetingLoadFailed = signal(false);
+  // Route `id` param the fetch pipeline is currently attempting (or last attempted) — set
+  // synchronously as soon as a new attempt starts, so it updates immediately on navigation, before
+  // that attempt's response (success or failure) settles.
+  private meetingRouteId = signal<string | null>(null);
+  // Route `id` param the currently-held `meeting()` value actually resolved successfully for. Only
+  // updated on a successful fetch.
+  private meetingResolvedRouteId = signal<string | null>(null);
+  // False right after navigating to a different `/meetings/:id` until that route's fetch settles.
+  // `toSignal` retains `meeting()`'s last emission across a failing `catchError`'s `EMPTY`, so
+  // without this a failed fetch for a new route would keep rendering the PREVIOUS meeting (incl.
+  // its `host_key`/join links) under the new URL. Gates the template's error branch so a same-route
+  // background refresh failure (dealako review on #2046) still doesn't tear down the page, while a
+  // failure after navigating to a different meeting does (cursor / copilot review on #2046).
+  protected meetingMatchesRoute = computed(() => this.meetingRouteId() === this.meetingResolvedRouteId());
   private refreshTrigger$ = new BehaviorSubject<void>(undefined);
   private pastMeetingAttachmentsRefresh$ = new BehaviorSubject<void>(undefined);
   // Set immediately on self-registration success so the UI responds before the meeting refetch
@@ -369,6 +383,9 @@ export class MeetingJoinComponent implements OnInit {
         this.meetingLoadFailed.set(true);
       } else if (transferredMeeting.meeting) {
         this.project.set(transferredMeeting.meeting.project);
+        const seededRouteId = this.activatedRoute.snapshot.paramMap.get('id');
+        this.meetingRouteId.set(seededRouteId);
+        this.meetingResolvedRouteId.set(seededRouteId);
       }
     }
 
@@ -768,6 +785,7 @@ export class MeetingJoinComponent implements OnInit {
       switchMap(([params, queryParams]) => {
         const meetingId = params.get('id');
         this.password.set(queryParams.get('password'));
+        this.meetingRouteId.set(meetingId);
 
         if (!meetingId) {
           this.router.navigate(['/meetings/not-found']);
@@ -848,6 +866,7 @@ export class MeetingJoinComponent implements OnInit {
         // triggers actually settles, flashing the error view back to the skeleton (GH-2041
         // follow-up). Only a settled success should clear it.
         this.meetingLoadFailed.set(false);
+        this.meetingResolvedRouteId.set(this.meetingRouteId());
         // Persist the resolved state during SSR so the client can hydrate to the same branch.
         // Angular defers serialization until this tracked HTTP call settles.
         if (isPlatformServer(this.platformId)) {

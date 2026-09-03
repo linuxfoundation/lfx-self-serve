@@ -7,7 +7,7 @@
 <div [ngClass]="{ 'pt-12': userService.impersonating() }">
   <lfx-header></lfx-header>
 
-  @if (meetingLoadFailed() && !meeting()) {
+  @if (meetingLoadFailed() && (!meeting() || !meetingMatchesRoute())) {
     <!-- Checked ahead of `meeting()` — `toSignal` retains the last successful meeting across a
          later terminal failure (each failing `catchError` returns `EMPTY`, no new emission), so
          checking `meeting()` first would keep showing stale content instead of this error state
@@ -18,7 +18,11 @@
          after a successful registration or materials change (meeting-join.component.ts:619, 667)
          can also call `setMeetingLoadFailed()` on a transient failure, but `meeting()` still holds
          the working meeting then, and a blipped background refetch must not tear down an
-         otherwise-working page (dealako review on #2046). -->
+         otherwise-working page (dealako review on #2046). `!meetingMatchesRoute()` additionally
+         catches a failed fetch after navigating to a *different* `/meetings/:id` — without it,
+         `meeting()`'s retained value would keep rendering the PREVIOUS meeting (incl. its
+         `host_key`/join links) under the new URL instead of this error state (cursor / copilot
+         review on #2046). -->
     <div class="bg-gray-50 min-h-screen flex items-center justify-center" data-testid="meeting-join-error">
       <div class="text-center flex flex-col items-center gap-2">
         <i class="fa-light fa-triangle-exclamation text-4xl text-gray-400"></i>

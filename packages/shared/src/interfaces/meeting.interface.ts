@@ -1380,8 +1380,9 @@ export interface PublicPastMeetingResponse {
 /**
  * SSR-serialized state for the meeting join page (GH-2041), following the same TransferState
  * pattern as {@link PublicProfilePageState}: seeds the client's first paint from the server's
- * resolved branch so hydration doesn't tear down the SSR-rendered meeting and refetch from
- * scratch. `loadedViaPastMeetingId` / `pastMeetingFullAccess` are carried alongside `meeting`
+ * resolved branch so hydration keeps the SSR-rendered meeting on screen while the client
+ * confirms it with its own fetch, instead of tearing it down for a blank/skeleton state until
+ * that refetch resolves. `loadedViaPastMeetingId` / `pastMeetingFullAccess` are carried alongside `meeting`
  * because `MeetingJoinComponent.initializeMeeting()` sets them as side effects of the same
  * fetch — seeding the meeting alone would lose the past-meeting branch on hydration.
  * `meeting` is `null` and `meetingLoadFailed` is `true` for the terminal, non-navigating error
