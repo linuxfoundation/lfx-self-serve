@@ -144,3 +144,95 @@ describe('ApiClientService.streamRequest — same classification, separate code 
     expect(err.toResponse()['transport']).toBeUndefined();
   });
 });
+
+describe('ApiClientService — a body READ failure is a transport failure, not the upstream answer', () => {
+  afterEach(() => {
+    vi.unstubAllGlobals();
+  });
+
+  // Reading the error body and PARSING it are two different failures, and collapsing them into
+  // one try/catch (which an earlier revision did) reports the wrong thing for one of them:
+  //
+  //   - JSON.parse fails  -> upstream ANSWERED, the answer was not JSON. Benign: the status and
+  //                          statusText already describe it.
+  //   - response.text() fails -> the body never finished arriving. The request's outcome is
+  //                          UNKNOWN, and reporting the upstream's status for it tells the caller
+  //                          we received an answer we never got. A non-idempotent caller then
+  //                          retries a request that may already have landed.
+  const failingBody = (status: number, readError: Error) =>
+    vi.fn(() =>
+      Promise.resolve({
+        ok: false,
+        status,
+        statusText: 'Bad Gateway',
+        text: () => Promise.reject(readError),
+      })
+    );
+
+  it('classifies an aborted body read as 408 UNCONFIRMED, not as the upstream status', async () => {
+    const aborted = Object.assign(new Error('aborted'), { name: 'AbortError' });
+    vi.stubGlobal('fetch', failingBody(502, aborted));
+
+    const err = await new ApiClientService({ retryAttempts: 1 }).request('GET', 'https://example.invalid/x').catch((e: unknown) => e);
+
+    const me = err as MicroserviceError;
+    expect(me, 'a body-read failure escaped unclassified').toBeInstanceOf(MicroserviceError);
+    // NOT 502: we never received the upstream's answer, so we must not report one.
+    expect(me.statusCode, 'the upstream status was reported for an answer that never arrived').toBe(408);
+    expect(me.toResponse()['transport'], 'a lost body read was not marked as a transport failure').toBe(true);
+  });
+
+  it('classifies any other body-read failure as 503 UNCONFIRMED', async () => {
+    vi.stubGlobal('fetch', failingBody(502, new Error('socket hang up')));
+
+    const err = await new ApiClientService({ retryAttempts: 1 }).request('GET', 'https://example.invalid/x').catch((e: unknown) => e);
+
+    const me = err as MicroserviceError;
+    expect(me.statusCode).toBe(503);
+    expect(me.toResponse()['transport']).toBe(true);
+  });
+
+  it('still reports the upstream status when the body merely fails to PARSE', async () => {
+    // The other half of the split: upstream ANSWERED, the answer was not JSON. That is the
+    // upstream's own 502 and must keep its status -- downgrading it to a transport failure would
+    // tell a caller to retry a request the boundary already refused.
+    vi.stubGlobal(
+      'fetch',
+      vi.fn(() =>
+        Promise.resolve({
+          ok: false,
+          status: 502,
+          statusText: 'Bad Gateway',
+          text: () => Promise.resolve('<html>not json</html>'),
+        })
+      )
+    );
+
+    const err = await new ApiClientService({ retryAttempts: 1 }).request('GET', 'https://example.invalid/x').catch((e: unknown) => e);
+
+    const me = err as MicroserviceError;
+    expect(me.statusCode, 'an answered 502 was reclassified as a transport failure').toBe(502);
+    expect(me.toResponse()['transport']).toBeUndefined();
+  });
+
+  it('never leaks the upstream body into the client-visible message', async () => {
+    // The bot's revision built the message from `errorBody?.message || errorBody?.error`, handing
+    // an authenticated client whatever the upstream chose to say.
+    vi.stubGlobal(
+      'fetch',
+      vi.fn(() =>
+        Promise.resolve({
+          ok: false,
+          status: 502,
+          statusText: 'Bad Gateway',
+          text: () => Promise.resolve(JSON.stringify({ message: 'INTERNAL-HOST-42 db=prod-primary' })),
+        })
+      )
+    );
+
+    const err = await new ApiClientService({ retryAttempts: 1 }).request('GET', 'https://example.invalid/x').catch((e: unknown) => e);
+
+    const body = (err as MicroserviceError).toResponse();
+    expect(JSON.stringify(body), 'an upstream internal detail reached the client').not.toContain('INTERNAL-HOST-42');
+  });
+});
