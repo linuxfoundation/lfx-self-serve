@@ -70,7 +70,7 @@ A user can carry both board and project roles simultaneously. In the sidebar len
 
 ## Foundation Lens
 
-Available to `board-member`, `executive-director`, and root writers.
+Available to board members, executive directors, root writers, LF Staff, foundation `writer` grant holders, and marketing FGA grant holders (`marketing_auditor` / `campaign_manager` when `marketing-ops-fga-enabled` is on — see `deriveAllowedLenses` in `lens.utils.ts`).
 
 | Sidebar item / section     | Route                          | Visible to                                                                                                                                                                                              |
 | -------------------------- | ------------------------------ | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
@@ -81,6 +81,7 @@ Available to `board-member`, `executive-director`, and root writers.
 | Mailing Lists              | `/foundation/mailing-lists`    | All foundation users                                                                                                                                                                                    |
 | Committees                 | `/foundation/groups`           | All foundation users                                                                                                                                                                                    |
 | Documents                  | `/foundation/documents`        | All foundation users                                                                                                                                                                                    |
+| Marketing OS               | `/foundation/mktg-os-agents`   | `mktg-os-agents-enabled` LaunchDarkly flag (same gate as project lens). Inserted between Documents and Governance for full-access users; still shown to marketing-only FGA users when the flag is on    |
 | **Governance** section     |                                |                                                                                                                                                                                                         |
 | → Votes                    | `/foundation/votes`            | All foundation users                                                                                                                                                                                    |
 | → Surveys                  | `/foundation/surveys`          | All foundation users                                                                                                                                                                                    |
@@ -112,19 +113,20 @@ Available to `board-member`, `executive-director`, and root writers.
 
 Available to `contributor`, `maintainer`, and root writers.
 
-| Sidebar item / section     | Route                    | Visible to                                     |
-| -------------------------- | ------------------------ | ---------------------------------------------- |
-| Dashboard                  | `/project/overview`      | All project users                              |
-| Meetings                   | `/project/meetings`      | All project users                              |
-| Mailing Lists              | `/project/mailing-lists` | All project users                              |
-| Committees                 | `/project/groups`        | All project users                              |
-| Documents                  | `/project/documents`     | All project users                              |
-| **Governance** section     |                          |                                                |
-| → Votes                    | `/project/votes`         | All project users                              |
-| → Surveys                  | `/project/surveys`       | All project users                              |
-| → Permissions              | `/project/settings`      | All project users                              |
-| **Communications** section |                          | `canSeeNewsletters()` — ED **or** `canWrite()` |
-| → Newsletters              | `/project/newsletters`   | `canSeeNewsletters()`                          |
+| Sidebar item / section     | Route                     | Visible to                                                                            |
+| -------------------------- | ------------------------- | ------------------------------------------------------------------------------------- |
+| Dashboard                  | `/project/overview`       | All project users                                                                     |
+| Meetings                   | `/project/meetings`       | All project users                                                                     |
+| Mailing Lists              | `/project/mailing-lists`  | All project users                                                                     |
+| Committees                 | `/project/groups`         | All project users                                                                     |
+| Documents                  | `/project/documents`      | All project users                                                                     |
+| Marketing OS               | `/project/mktg-os-agents` | `mktg-os-agents-enabled` LaunchDarkly flag. Inserted between Documents and Governance |
+| **Governance** section     |                           |                                                                                       |
+| → Votes                    | `/project/votes`          | All project users                                                                     |
+| → Surveys                  | `/project/surveys`        | All project users                                                                     |
+| → Permissions              | `/project/settings`       | All project users                                                                     |
+| **Communications** section |                           | `canSeeNewsletters()` — ED **or** `canWrite()`                                        |
+| → Newsletters              | `/project/newsletters`    | `canSeeNewsletters()`                                                                 |
 
 ### Project lens by persona summary
 
@@ -170,6 +172,7 @@ Guards enforce access at the router level — regardless of whether a sidebar li
 | `newsletterAccessGuard`      | `/newsletters` (lens redirect), `/foundation/newsletters`, `/project/newsletters`       | `canSeeNewsletters()` — ED or `canWrite()`                                                                                                                                                                                                    |
 | `writerGuard`                | Create/edit routes for meetings, committees, mailing lists, surveys, votes (all lenses) | `executive-director` (fast path) or project `writer`; meetings routes also allow `meetingCoordinator` or `committee.writer` when `?committee_uid=` is set — see [Meetings write paths](#meetings-write-paths) below                           |
 | `orgLensEnabledGuard`        | `/org/*` (CanMatch — routes invisible when flag is off)                                 | Browser: `ORG_LENS_ENABLED_FLAG` must be `true`; redirects to `/` otherwise. SSR: always returns `true` — enforcement defers to browser after hydration                                                                                       |
+| `mktgOsAgentsEnabledGuard`   | `/project/mktg-os-agents`, `/foundation/mktg-os-agents` (CanMatch)                      | Browser: waits for LaunchDarkly READY, then `MKTG_OS_AGENTS_ENABLED_FLAG`; fail closed. Denied deep links go to `/{lens}/overview`. SSR: always returns `true` — enforcement defers to browser after hydration                                |
 
 Guards are defined in `apps/lfx-one/src/app/shared/guards/`.
 
@@ -213,5 +216,5 @@ Meeting create/edit is **manage/write permission**, not persona. A user with onl
 
 - [Lens & Persona System](./lens-system.md) — how lenses and personas are resolved and enforced
 - [Angular Patterns](./angular-patterns.md) — zoneless change detection and signals
-- [`main-layout.component.ts`](../../../apps/lfx-one/src/app/layouts/main-layout/main-layout.component.ts) — authoritative source for sidebar item definitions
+- [`sidebar-nav.service.ts`](../../../apps/lfx-one/src/app/shared/services/sidebar-nav.service.ts) — authoritative source for sidebar item definitions
 - [`app.routes.ts`](../../../apps/lfx-one/src/app/app.routes.ts) — route guard wiring
