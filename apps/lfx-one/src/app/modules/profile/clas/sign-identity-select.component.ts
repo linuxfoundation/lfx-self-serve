@@ -204,13 +204,29 @@ export class SignIdentitySelectComponent {
     // that happens to be all digits.
     const offeredHandles = accounts.map((account) => account.githubUsername);
 
-    // The gate says whether the card is blocked; the held set says what to call it. Asking the
-    // same matcher twice keeps the reason describing this identity rather than the group.
+    const enabledKinds: readonly ClaKind[] = [...(enabled.iclaEnabled ? (['ICLA'] as const) : []), ...(enabled.cclaEnabled ? (['ECLA'] as const) : [])];
+
+    /**
+     * The gate says whether the card is blocked; these say what to call it.
+     *
+     * Drawn from the gate's own matcher rather than from the enablement flags, so the reason
+     * describes this identity's agreements instead of standing on the gate's rule holding. Then
+     * narrowed to the types the group still offers, because those are the ones the block is owed
+     * to — an identity holding a type the group has since dropped is not blocked by that type,
+     * and naming it would explain the graying with an agreement that has nothing to do with it.
+     *
+     * The narrowing is dropped when the group offers nothing, which is the gate's kind-blind
+     * fallback: there the match itself is the whole reason, and an empty list would leave the
+     * tooltip naming a type by default rather than the one actually held.
+     */
     const blockFor = (identity: SignIdentityRef): IdentityBlock | undefined => {
       const agreement = alreadySignedAgreementForIdentity(agreements, identity, offeredHandles, enabled);
       if (!agreement) return undefined;
 
-      return { agreement, heldKinds: heldClaKindsForIdentity(agreements, identity, offeredHandles) };
+      const held = heldClaKindsForIdentity(agreements, identity, offeredHandles);
+      const offered = held.filter((kind) => enabledKinds.includes(kind));
+
+      return { agreement, heldKinds: offered.length > 0 ? offered : held };
     };
 
     const byGithubId = new Map<string, IdentityBlock>();

@@ -401,17 +401,17 @@ export function heldClaKindsForIdentity(agreements: readonly MyClaAgreement[], i
  * blocks (#1914).
  *
  * Blocks when every contract type the group enables is already held under this identity
- * (`enabled ⊆ held`, and `enabled` is non-empty). A dual-type group therefore stays selectable
- * on that identity until it holds both an ICLA and an ECLA; a single-type group still blocks
- * once that one type is held.
+ * (`enabled ⊆ held`), and on any match at all when the group enables nothing. A dual-type group
+ * therefore stays selectable on that identity until it holds both an ICLA and an ECLA; a
+ * single-type group still blocks once that one type is held.
  *
- * A group that enables neither type is not a group offering nothing to sign; it is one whose CLA
- * Group record the producer could not resolve, which arrives here as two false flags. Read
- * literally that is an empty enabled set, and an empty set is a subset of nothing — so it would
- * pass every identity through and retire this check for that group without saying so. Any match
- * blocks instead, which is what this gate did before it knew about kinds. The Gerrit hand-off
- * refuses such a group outright, so the fallback costs that route nothing, and it is the whole
- * of the protection on the GitHub route, which never reads these flags at all.
+ * That second rule is why the subset test is not applied to an empty `enabled`. A group enabling
+ * neither type is not one with nothing to sign; it is one whose CLA Group record the producer
+ * could not resolve, which arrives here as two false flags. The empty set is a subset of every
+ * set, so the test would pass for every identity and retire this check for that group without
+ * saying so. The kind-blind block stands in — what this gate did before it knew about kinds. The
+ * Gerrit hand-off refuses such a group outright, so the fallback costs that route nothing, and
+ * it is the whole of the protection on the GitHub route, which never reads these flags at all.
  *
  * The producer records one identity string per agreement, derived as the GitHub handle when it
  * had one and the account number when it did not. So the GitHub branch compares against both

@@ -482,14 +482,26 @@ describe('SignIdentitySelectComponent', () => {
       expect(fixture.debugElement.query(By.css('[data-testid="sign-identity-select-github-12345"]')).injector.get(Tooltip, null)?.content).toBe(BOTH_REASON);
     });
 
-    it('names what the identity holds, not what the group enables', async () => {
-      // An identity can hold a type the group has since stopped offering. The block is owed to
-      // the ICLA alone, but the contributor holds both, and a reason drawn from the enabled flags
-      // would tell them they hold only the one — about their own agreements, which they can check.
+    it('names only the type the block is owed to when the group has dropped the other', async () => {
+      // An identity can hold a type the group has since stopped offering. The graying is owed to
+      // the ICLA alone, so naming the ECLA too would explain it with an agreement that has
+      // nothing to do with it — the group cannot be signed for one either way.
       await setup({ claGroupAgreements: signedBoth('octocat'), ...ICLA_ONLY });
 
       expect(query('sign-identity-select-github-12345')?.getAttribute('aria-disabled')).toBe('true');
-      expect(fixture.debugElement.query(By.css('[data-testid="sign-identity-select-github-12345"]')).injector.get(Tooltip, null)?.content).toBe(BOTH_REASON);
+      expect(fixture.debugElement.query(By.css('[data-testid="sign-identity-select-github-12345"]')).injector.get(Tooltip, null)?.content).toBe(REASON);
+    });
+
+    it('names the kind actually held when the group enables neither type', async () => {
+      // The kind-blind fallback blocks on the match alone, so there is no offered kind to narrow
+      // to. Naming nothing would leave the tooltip reading "an ICLA" by default — which for an
+      // ECLA holder is a statement about their agreements that is simply untrue.
+      await setup({ claGroupAgreements: signedAs('octocat', 'github', 'ECLA'), iclaEnabled: false, cclaEnabled: false });
+
+      expect(query('sign-identity-select-github-12345')?.getAttribute('aria-disabled')).toBe('true');
+      expect(fixture.debugElement.query(By.css('[data-testid="sign-identity-select-github-12345"]')).injector.get(Tooltip, null)?.content).toBe(
+        'You already have an ECLA for this CLA group signed with this account. Choose another identity to sign again.'
+      );
     });
 
     it('still drops the other-identity sentence when both kinds are held and nothing else is selectable', async () => {
