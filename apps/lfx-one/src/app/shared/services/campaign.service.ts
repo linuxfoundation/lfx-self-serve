@@ -17,6 +17,7 @@ import {
   CampaignBriefRequest,
   CampaignCreateRequest,
   CampaignCreateResponse,
+  CampaignDeliveryType,
   CampaignEmailStage,
   CampaignJobOutcome,
   CampaignJobStatus,
@@ -125,9 +126,14 @@ export class CampaignService {
    * restore a brief filed under a foundation they are not looking at. The server refuses the
    * request outright when it is missing rather than defaulting.
    */
-  public loadBrief(eventSlug: string, projectSlug: string): Observable<CampaignBriefLoadResult> {
+  public loadBrief(eventSlug: string, projectSlug: string, deliveryType: CampaignDeliveryType = 'paid-marketing'): Observable<CampaignBriefLoadResult> {
     return this.http.get<CampaignBriefLoadResult>('/api/campaigns/brief', {
-      params: new HttpParams().set('event_slug', eventSlug).set('project', projectSlug),
+      // `delivery_type` scopes the read to the surface asking. Briefs are stored one row per
+      // `(project, event)` regardless of surface, so without it an email caller can be handed a
+      // paid brief for the same event — which is why the email restore path was disabled outright
+      // rather than shipped. Defaulted here as well as on the server so the two agree on what an
+      // omitted parameter means: paid, the only surface that could restore before this existed.
+      params: new HttpParams().set('event_slug', eventSlug).set('project', projectSlug).set('delivery_type', deliveryType),
     });
   }
 

@@ -194,8 +194,17 @@ export class CampaignsComponent {
     // initializes empty and `loadBrief` runs only once a url is entered, so a reloaded page shows
     // nothing until the user pastes the event url again. Advice that stops at "reload" leaves
     // them on a blank Planning tab wondering where the brief went.
+    //
+    // It no longer PROMISES that re-entering the URL surfaces the stored brief, because since
+    // delivery-scoped reads that is only true when the stored brief belongs to the same surface.
+    // Briefs are still keyed `(project, event_slug)` with no delivery dimension, so an event can
+    // hold exactly one brief; if it was authored on the other surface, `loadBrief` correctly
+    // answers `none` and re-entering the URL will keep answering `none`. The old wording sent
+    // that user round a loop it could never exit. This states what happened and what to try,
+    // without asserting an outcome this branch cannot guarantee — the second sentence is the
+    // honest form of "and here is why re-entering it may show nothing".
     'unowned-brief-exists':
-      'This event already has a saved brief that was not opened here, so this one was not saved over it. Reload and re-enter the event URL to work from the stored brief.',
+      'This event already has a saved brief that was not opened here, so this one was not saved over it. Reload and re-enter the event URL to open it — if nothing appears, the stored brief belongs to the other delivery type and cannot be opened here.',
     // Does NOT advise a reload, even though this branch adds the read path that would make one
     // work. Here it would be actively destructive: a stale-brief refusal PROMOTES this session to
     // explicit overwrite permission (see the conflict handler), so the very next Proceed saves
@@ -1741,6 +1750,43 @@ export class CampaignsComponent {
   }
 
   /**
+   * Adopt a stored EMAIL brief, the counterpart to `onRestoreSavedBrief` for this surface.
+   *
+   * Separate from the paid handler rather than shared because the two hand off differently: the
+   * paid one ends in `onProceedToImplementation`, which persists, and re-saving a brief that was
+   * just read back would rewrite a row nothing changed. This one reuses the email handoff, which
+   * does not persist, so a restore stays a read.
+   *
+   * Recording ownership is the part that matters and the part a naive version would omit. Without
+   * it the next save arrives with no `knownBriefId`, and `persistBrief` refuses it as
+   * `unowned-brief-exists` — the guard that stops a caller replacing a brief it never opened.
+   * Having actually opened it is precisely what this call records.
+   */
+  protected onRestoreSavedEmailBrief(brief: CampaignBriefOutput, briefId: string, etag: string | null | undefined): void {
+    const key = this.ownershipKey(this.activeFoundationSlug(), brief);
+    if (key !== null) {
+      // Bumped for the same reason the paid path bumps it: a restore makes this session the writer
+      // of record for the row, so any save still in flight from before the restore must not be
+      // able to report its result against the brief now on screen.
+      this.ownershipEpochs.set(key, (this.ownershipEpochs.get(key) ?? 0) + 1);
+      const validator = etag ?? null;
+      // A restore with no ETag still records ownership, with `absence: 'overwrite'` — the caller
+      // demonstrably read this row, so its next save is an edit rather than a blind replace. The
+      // ETag is preferred when present so a concurrent editor's change is refused as `stale-brief`
+      // instead of being silently overwritten.
+      this.rememberBriefId(key, { id: briefId, etag: validator, ...(validator === null ? { absence: 'overwrite' as const } : {}) });
+    }
+    // Order matters and is the reverse of what it looks like it should be. The handoff calls
+    // `resetEmailBriefDerivedState`, which CLEARS `emailBriefId` (along with the audience, copy
+    // and stage state that belong to a previous brief). Setting the id first would therefore be
+    // wiped by the very call meant to carry it, and the next save would arrive with an empty id
+    // and mint a SECOND row for an event that already has one. Restoring the id after the reset
+    // is what makes the following save a PUT against the row just opened.
+    this.onEmailProceedToImplementation(brief);
+    this.emailBriefId.set(briefId);
+  }
+
+  /**
    * Build the brief's send audience.
    *
    * Separate action rather than folded into staging because it is EXPENSIVE — it calls Snowflake
@@ -2603,7 +2649,20 @@ export class CampaignsComponent {
           // the contract, and an older service that omits it entirely would otherwise report every
           // successful staging as an error. Only an explicit `ok: false` is a failure.
           this.emailStaging.set('done');
-          this.emailStagingMessage.set('Draft created in HubSpot. Review and send it from there.');
+          // The id is INCLUDED, because without it this message sends the user to hunt for one
+          // draft among the hundreds the portal lists — the picker above says "Showing 100 of 500".
+          // `campaignId` is already on the result and was simply discarded here.
+          //
+          // The id is shown rather than linked: a HubSpot deep link needs the PORTAL id, which the
+          // connection row does not reliably carry (it is empty for `tlf` today), and a link built
+          // without it points at whichever portal the reader happens to be signed into. An id the
+          // user can paste into HubSpot's own search is worth more than a link that may 404.
+          const draftId = hubspotResult?.campaignId ?? '';
+          this.emailStagingMessage.set(
+            draftId === ''
+              ? 'Draft created in HubSpot. Review and send it from there.'
+              : `Draft created in HubSpot (id ${draftId}). Review and send it from there.`
+          );
         },
         error: () => {
           this.emailStaging.set('error');

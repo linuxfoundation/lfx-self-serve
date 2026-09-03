@@ -340,7 +340,7 @@ describe('CampaignController.loadBrief', () => {
 
     await controller.loadBrief(buildLoadReq(), res, next);
 
-    expect(loadBrief).toHaveBeenCalledWith(expect.any(Object), 'kubecon-eu-2026', 'tlf');
+    expect(loadBrief).toHaveBeenCalledWith(expect.any(Object), 'kubecon-eu-2026', 'tlf', 'paid-marketing');
     expect(next).not.toHaveBeenCalled();
     expect(res.json).toHaveBeenCalledWith({ status: 'none', briefId: null, brief: null, etag: null, approved: false });
   });
@@ -357,7 +357,7 @@ describe('CampaignController.loadBrief', () => {
 
     await controller.loadBrief(buildLoadReq(), res, next);
 
-    expect(loadBrief).toHaveBeenCalledWith(expect.any(Object), 'kubecon-eu-2026', 'tlf');
+    expect(loadBrief).toHaveBeenCalledWith(expect.any(Object), 'kubecon-eu-2026', 'tlf', 'paid-marketing');
     expect(next).not.toHaveBeenCalled();
     expect(res.json).toHaveBeenCalledWith({ status: 'loaded', briefId: 'brief-abc123', brief: mockBrief, etag: 'W/"7"', approved: true });
   });
@@ -372,9 +372,35 @@ describe('CampaignController.loadBrief', () => {
 
     await controller.loadBrief(buildLoadReq(), res, next);
 
-    expect(loadBrief).toHaveBeenCalledWith(expect.any(Object), 'kubecon-eu-2026', 'tlf');
+    expect(loadBrief).toHaveBeenCalledWith(expect.any(Object), 'kubecon-eu-2026', 'tlf', 'paid-marketing');
     expect(next).not.toHaveBeenCalled();
     expect(res.json).toHaveBeenCalledWith({ status: 'unreadable', briefId: 'brief-def456', brief: null, etag: 'W/"9"', approved: false });
+  });
+
+  it('forwards delivery_type=email so an email caller cannot be handed a paid brief', async () => {
+    // The parameter is what scopes the read to one surface. Briefs are stored one row per
+    // `(project, event_slug)` with no delivery dimension, so without this an email caller and a
+    // paid caller resolve to the SAME row -- which is why the email restore path was disabled
+    // outright before this existed rather than shipped with a known wrong answer.
+    loadBrief.mockResolvedValue({ status: 'none', briefId: null, brief: null, etag: null, approved: false });
+
+    await controller.loadBrief(buildLoadReq({ event_slug: 'kubecon-eu-2026', project: 'tlf', delivery_type: 'email' }), res, next);
+
+    expect(loadBrief).toHaveBeenCalledWith(expect.any(Object), 'kubecon-eu-2026', 'tlf', 'email');
+    expect(next).not.toHaveBeenCalled();
+  });
+
+  it('falls back to paid-marketing for an unrecognised delivery_type rather than rejecting it', async () => {
+    // Fails CLOSED toward the pre-existing behaviour. This parameter NARROWS what a caller may
+    // open, so defaulting an unknown value to paid cannot expose a brief that was hidden before;
+    // honouring it verbatim could match a row belonging to neither surface, and rejecting the
+    // request outright would turn a typo into a 400 for a caller that never sent one before.
+    loadBrief.mockResolvedValue({ status: 'none', briefId: null, brief: null, etag: null, approved: false });
+
+    await controller.loadBrief(buildLoadReq({ event_slug: 'kubecon-eu-2026', project: 'tlf', delivery_type: 'not-a-surface' }), res, next);
+
+    expect(loadBrief).toHaveBeenCalledWith(expect.any(Object), 'kubecon-eu-2026', 'tlf', 'paid-marketing');
+    expect(next).not.toHaveBeenCalled();
   });
 
   it('sends a failed load to the error middleware instead of returning a degraded result', async () => {

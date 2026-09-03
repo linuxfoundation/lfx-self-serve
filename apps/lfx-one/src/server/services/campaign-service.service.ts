@@ -15,6 +15,7 @@ import type {
   CampaignIndexDoc,
   CampaignJobStatus,
   CampaignKeyword,
+  CampaignDeliveryType,
   CampaignListResult,
   CampaignMetricsWindow,
   CampaignPlatform,
@@ -705,7 +706,12 @@ export class CampaignServiceClient {
    * whose next save is an UPDATE that replaces it — or finds TLF's brief and offers to restore
    * another foundation's work into theirs.
    */
-  public async loadBrief(req: Request, eventSlug: string, projectSlug: string): Promise<CampaignBriefLoadResult> {
+  public async loadBrief(
+    req: Request,
+    eventSlug: string,
+    projectSlug: string,
+    deliveryType: CampaignDeliveryType = 'paid-marketing'
+  ): Promise<CampaignBriefLoadResult> {
     const basePath = `/projects/${encodeURIComponent(projectSlug)}/briefs`;
     const found = await this.findBrief(req, basePath, eventSlug);
 
@@ -741,6 +747,29 @@ export class CampaignServiceClient {
     // is treated as NOT approved so the restore path re-approves; claiming approval we cannot see
     // is the one answer that silently strands the brief.
     const approved = found.brief.status === 'approved';
+
+    // A brief authored on the OTHER delivery surface is reported as absent, not returned.
+    //
+    // Storage is keyed on `(project_id, event_slug)` with no delivery dimension
+    // (`uq_campaign_briefs_project_event`), so one event has exactly one row no matter how many
+    // surfaces plan it. Handing that row back to whichever surface asks is what kept the email
+    // restore path disabled: a paid brief restored into an email plan carries RSA headlines, a
+    // keyword list and a platform selection that mean nothing there.
+    //
+    // `none` rather than a distinct status because that is what the caller can act on — the row
+    // is not theirs to open, and the offer it drives should simply not appear. It is NOT reported
+    // as `unreadable`, which promises a row that exists and could not be parsed; here parsing
+    // succeeded and the answer is that this surface has no brief for the event.
+    //
+    // Absence reads as paid, matching the field's contract: every row written before the delivery
+    // type was recorded came from the paid surface, the only one whose restore was ever enabled.
+    // So paid callers keep restoring their existing briefs, and an email caller correctly sees
+    // that no email brief exists yet rather than adopting a paid one.
+    const storedDelivery = brief?.deliveryType ?? 'paid-marketing';
+    if (brief !== null && storedDelivery !== deliveryType) {
+      return { status: 'none', briefId: null, brief: null, etag: null, approved: false };
+    }
+
     return brief === null
       ? { status: 'unreadable', briefId: found.brief.id, brief: null, etag: found.etag, approved }
       : { status: 'loaded', briefId: found.brief.id, brief, etag: found.etag, approved };
@@ -1931,6 +1960,13 @@ function toBriefInput(brief: CampaignBriefOutput, eventSlug: string): CampaignSe
       totalBudget: brief.totalBudget,
       hsUtm: brief.hsUtm,
       driveFolderUrl: brief.driveFolderUrl,
+      // Rides in `targeting` because that column is free-form JSONB, so recording the delivery
+      // surface needs no migration and no change to campaign-service's brief contract — which
+      // matters because the unique key `(project_id, event_slug)` cannot be widened without one.
+      // Written unconditionally, including when undefined, so `storedBriefMatches` compares the
+      // same key shape on both sides: emitting the key only when set would make an unchanged
+      // paid brief compare unequal to its own stored row and read as a conflicting write.
+      deliveryType: brief.deliveryType ?? null,
     },
   };
 }
@@ -2037,6 +2073,11 @@ export function fromBriefResponse(found: CampaignServiceBrief): CampaignBriefOut
     totalBudget: typeof targeting['totalBudget'] === 'number' && Number.isFinite(targeting['totalBudget']) ? targeting['totalBudget'] : null,
     hsUtm: typeof targeting['hsUtm'] === 'string' ? targeting['hsUtm'] : null,
     driveFolderUrl: typeof targeting['driveFolderUrl'] === 'string' ? targeting['driveFolderUrl'] : '',
+    // Validated against the union rather than cast, for the reason `campaignGoal` above is: this
+    // value decides whether a caller is allowed to restore the row, so an unrecognised string must
+    // read as "no delivery type recorded" (paid, per the field's contract) and not as a surface
+    // that happens to match nothing. Rows written before this field carry no key and land here too.
+    deliveryType: targeting['deliveryType'] === 'email' || targeting['deliveryType'] === 'paid-marketing' ? targeting['deliveryType'] : undefined,
   };
 }
 

@@ -10,7 +10,7 @@ import { InputTextComponent } from '@components/input-text/input-text.component'
 import { CAMPAIGN_GOALS, CAMPAIGN_PLATFORMS } from '@lfx-one/shared/constants';
 import { CampaignService } from '@services/campaign.service';
 import { ProjectContextService } from '@services/project-context.service';
-import { catchError, combineLatest, debounceTime, distinctUntilChanged, filter, map, of, skip, Subject, Subscription, switchMap } from 'rxjs';
+import { catchError, combineLatest, debounceTime, distinctUntilChanged, map, of, skip, Subject, Subscription, switchMap } from 'rxjs';
 
 import type {
   CampaignBriefLoadResult,
@@ -314,6 +314,13 @@ export class PlanningTabComponent implements OnInit {
 
   private readonly activeFoundationSlug$ = toObservable(this.activeFoundationSlug);
 
+  // Part of the restore lookup key, not just a parameter passed to it. Switching Paid <-> Email
+  // with a url already entered has to re-ask, because the answer genuinely differs per surface:
+  // the same event can have a stored paid brief and no email one. Without this in `combineLatest`
+  // the switch emits nothing, and the offer from the previous surface stays on screen for a brief
+  // the current one is not allowed to open.
+  private readonly deliveryType$ = toObservable(this.deliveryType);
+
   // === Lifecycle ===
   public ngOnInit(): void {
     this.urlInput$.pipe(debounceTime(500), takeUntilDestroyed(this.destroyRef)).subscribe((eventName) => this.lookupHubSpot(eventName));
@@ -343,31 +350,38 @@ export class PlanningTabComponent implements OnInit {
     // exists. `onUrlInput` and the foundation subscription below both clear the offer
     // eagerly; without this guard the late response simply sets it again, for an event or a
     // foundation the user has already left.
-    combineLatest([this.slugInput$, this.activeFoundationSlug$])
+    combineLatest([this.slugInput$, this.activeFoundationSlug$, this.deliveryType$])
       .pipe(
-        // Paid only, and gated at the SOURCE rather than by hiding the banner.
+        // Runs for BOTH surfaces. This was `filter(() => !this.isEmail())` while brief storage had
+        // no delivery dimension: one row per `(foundation, event)` meant the row an email caller
+        // found was whatever surface wrote last, and restoring a paid brief into an email plan
+        // brings RSA headlines, a keyword list and a platform selection that mean nothing there.
         //
-        // Brief persistence is keyed on `(foundation, event)` with no delivery type, so the row
-        // this finds is a PAID brief — offering it under Email would restore RSA headlines and a
-        // keyword list into an email plan. The email host also binds no `restoreSavedBriefRequested`
-        // handler, so Restore emitted into nothing and the click did nothing at all.
-        //
-        // Not merely a hidden banner: suppressing the request too means no `loadBrief` call per
-        // keystroke-debounce for a result that can never be used. Delivery-aware persistence is
-        // LFXV2-3198's to introduce, together with the email brief shape it would store.
-        filter(() => !this.isEmail()),
-        distinctUntilChanged(([slug, project], [nextSlug, nextProject]) => slug === nextSlug && project === nextProject),
+        // The row now records which surface authored it (`deliveryType`, persisted in `targeting`),
+        // and `loadBrief` reports a brief from the other surface as `none`. So the email caller can
+        // no longer be handed a paid brief, and the gate that stood in for that guarantee is gone.
+        // The key itself is unchanged — still one row per event — so this narrows what a caller may
+        // OPEN, not what may be stored; two surfaces still cannot hold separate briefs for one
+        // event, which is LFXV2-3198's remaining half.
+        distinctUntilChanged(
+          ([slug, project, delivery], [nextSlug, nextProject, nextDelivery]) => slug === nextSlug && project === nextProject && delivery === nextDelivery
+        ),
         debounceTime(500),
-        switchMap(([slug, project]) =>
-          this.campaignService.loadBrief(slug, project).pipe(
-            map((result) => ({ slug, project, result })),
-            catchError(() => of({ slug, project, result: null }))
+        switchMap(([slug, project, delivery]) =>
+          this.campaignService.loadBrief(slug, project, delivery).pipe(
+            map((result) => ({ slug, project, delivery, result })),
+            catchError(() => of({ slug, project, delivery, result: null }))
           )
         ),
         takeUntilDestroyed(this.destroyRef)
       )
-      .subscribe(({ slug, project, result }) => {
-        if (slug !== this.currentSlug || project !== this.activeFoundationSlug()) {
+      .subscribe(({ slug, project, delivery, result }) => {
+        // `delivery` joins the staleness check for the same reason `slug` and `project` are in it:
+        // `switchMap` cancels the previous REQUEST, but a response already in flight when the user
+        // flips Paid <-> Email still arrives, and it answers a question about the other surface.
+        // Applying it would put a paid brief's Restore offer on the email planner — the exact
+        // outcome the delivery scoping exists to prevent, reintroduced as a race.
+        if (slug !== this.currentSlug || project !== this.activeFoundationSlug() || delivery !== this.deliveryType()) {
           return;
         }
         this.applySavedBrief(result);
@@ -381,6 +395,24 @@ export class PlanningTabComponent implements OnInit {
     // `skip(1)` because `toObservable` replays the current foundation on subscribe, and the one
     // the page opened with is not a change.
     this.activeFoundationSlug$.pipe(skip(1), takeUntilDestroyed(this.destroyRef)).subscribe(() => {
+      this.savedBrief.set(null);
+      this.savedBriefId = null;
+      this.savedBriefEtag = null;
+      this.savedBriefApproved = false;
+      this.savedBriefWarning.set(null);
+    });
+
+    // Clear the Restore offer the MOMENT the delivery type changes, for the same reason the
+    // foundation subscription above clears it: between the switch and the re-lookup answering,
+    // the offer on screen belongs to the OTHER surface, and `loadBrief` will now report that row
+    // as absent. Leaving it up would let the user restore a paid brief into an email plan through
+    // a button that is simply stale — the one path the server-side scoping cannot close.
+    //
+    // Deliberately NARROWER than the foundation handler: none of the HubSpot state is cleared.
+    // That state is keyed by project and event, neither of which the surface switch changes, and
+    // the UTM token found for this event is equally valid on both. Re-asking would be a request
+    // nobody made. `skip(1)` for the same reason as above — the initial replay is not a change.
+    this.deliveryType$.pipe(skip(1), takeUntilDestroyed(this.destroyRef)).subscribe(() => {
       this.savedBrief.set(null);
       this.savedBriefId = null;
       this.savedBriefEtag = null;
@@ -655,6 +687,12 @@ export class PlanningTabComponent implements OnInit {
       selectedPlatforms: [...this.selectedPlatforms()],
       linkedInCopy: this.getLinkedInCopy(),
       programType: this.programTypeConfig().id,
+      // Carried onto the SAVED brief, not just the generate request. The request's copy is
+      // consumed and discarded server-side to pick generators; this one is persisted, and it is
+      // what a later `loadBrief` compares against to decide whether this row belongs to the
+      // surface asking. Omitting it here would store every brief as untyped — which reads as
+      // paid — and an email brief saved that way is unopenable from the surface that wrote it.
+      deliveryType: this.deliveryType(),
     });
   }
 
@@ -1086,7 +1124,7 @@ export class PlanningTabComponent implements OnInit {
         this.statusMessages.update((msgs) => [...msgs, event.data as string]);
         break;
       case 'event':
-        this.eventDetails.set(event.data as CampaignEventDetails);
+        this.eventDetails.set(normalizeEventDetails(event.data));
         break;
       case 'copy_token':
         this.copyBuffer.update((buf) => buf + (event.data as string));
@@ -1159,4 +1197,42 @@ export class PlanningTabComponent implements OnInit {
     const n = Number(value);
     return Number.isFinite(n) ? n : 0;
   }
+}
+
+/**
+ * Make the SSE `event` payload satisfy the type it is assigned to.
+ *
+ * `CampaignEventDetails` declares every field non-optional, but the payload is produced by a
+ * scrape: a page that does not state its dates or venue yields an object with those keys MISSING.
+ * The previous `event.data as CampaignEventDetails` asserted the shape instead of establishing it,
+ * so the compiler enforced nothing and `undefined` reached the template — which rendered it, since
+ * `{{ details.dates }}` prints the string "undefined" rather than nothing. It also reached
+ * `setValue()` on the edit form, putting "undefined" in an input the user then has to clear.
+ *
+ * Normalising HERE rather than adding `|| '—'` at each interpolation is deliberate: the fallback
+ * belongs wherever the value is DISPLAYED, and there are several such places (the email card, the
+ * paid card, the read view, the edit form), so a per-site fix is one grep away from missing the
+ * next one. One conversion at the boundary makes the declared type true for every reader.
+ *
+ * Empty string, not a dash: this value is also persisted and fed to copy generation. A dash is a
+ * DISPLAY choice, and storing it would put a literal "—" into an email body. The read view keeps
+ * its own `|| '—'` for presentation; the unguarded card interpolations now render blank instead of
+ * "undefined", which is the honest rendering of a field the scrape could not find.
+ */
+function normalizeEventDetails(data: unknown): CampaignEventDetails {
+  const raw = (typeof data === 'object' && data !== null ? data : {}) as Record<string, unknown>;
+  const text = (key: string): string => (typeof raw[key] === 'string' ? (raw[key] as string) : '');
+  const list = (key: string): string[] => (Array.isArray(raw[key]) ? (raw[key] as unknown[]).filter((v): v is string => typeof v === 'string') : []);
+  return {
+    name: text('name'),
+    dates: text('dates'),
+    city: text('city'),
+    countryCode: text('countryCode'),
+    audience: text('audience'),
+    themes: list('themes'),
+    registrationUrl: text('registrationUrl'),
+    speakers: list('speakers'),
+    slug: text('slug'),
+    formatNotes: text('formatNotes'),
+  };
 }

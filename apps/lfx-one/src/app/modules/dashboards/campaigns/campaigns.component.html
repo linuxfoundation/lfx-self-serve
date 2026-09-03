@@ -167,6 +167,7 @@
             [programTypeConfig]="activeProgramTypeConfig()"
             deliveryType="email"
             (proceedToImplementation)="onEmailProceedToImplementation($event)"
+            (restoreSavedBriefRequested)="onRestoreSavedEmailBrief($event.brief, $event.briefId, $event.etag)"
             data-testid="campaigns-email-planning-tab" />
         }
       </div>
@@ -405,7 +406,16 @@
                       }
                     </p>
                   }
-                  <ul class="flex flex-col gap-2" data-testid="campaigns-email-template-list">
+                  <!--
+                    Height-capped and scrolled INTERNALLY. The list renders up to 100 templates
+                    inline, which pushed "Send audience", the preview and "Stage Email Draft" past
+                    7000px on an 8000px page — far enough that wheel-scrolling the page stalled
+                    inside the list and the rest of the flow could not be reached at all. Bounding
+                    the list keeps every later step on screen no matter how many templates the
+                    portal returns. `overscroll-contain` stops a scroll that reaches the end of the
+                    list from continuing into the page, which is what made the two feel tangled.
+                  -->
+                  <ul class="flex max-h-96 flex-col gap-2 overflow-y-auto overscroll-contain pr-1" data-testid="campaigns-email-template-list">
                     @for (template of emailTemplatesRendered(); track template.id) {
                       <li>
                         <button

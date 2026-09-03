@@ -498,6 +498,37 @@ const EDUCATION_EXTRACTION_PROMPT = `Extract structured course/certification det
 
 If a field cannot be determined, use null.`;
 
+/**
+ * Reduce a fetched page to the part an extraction can actually read.
+ *
+ * The previous `html.slice(0, 30_000)` cut the page at a fixed byte offset, which failed for a
+ * reason that had nothing to do with the event: measured on the Open Source Summit Japan page,
+ * the document is 151,727 bytes, of which 62,784 are `<style>` and 38,281 are `<script>`. The
+ * venue string "Tokyo" sits at byte 30,351 — 351 bytes past the cut. Dates never survived at all.
+ * So the model was asked to find facts from a window containing almost none of the page's prose,
+ * reported them as absent, and the copy generator then invented replacements (prices, session
+ * counts) that no source ever stated.
+ *
+ * Stripping script/style/svg/comments first drops the same page to 44,829 bytes and moves "Tokyo"
+ * to byte 1,396. Nothing worth extracting lives in any of those elements: they carry rendering
+ * and behaviour, not the event's dates, venue or audience.
+ *
+ * The cap is KEPT — a fetched page is untrusted input and must not be able to set the prompt size
+ * — but it now applies to content rather than to boilerplate, and it is raised to fit a stripped
+ * page whole. `fetchSafeUrl` bounds what can be downloaded; this bounds what can be sent onward.
+ */
+function extractableHtml(html: string): string {
+  const stripped = html
+    .replace(/<script[\s\S]*?<\/script>/gi, ' ')
+    .replace(/<style[\s\S]*?<\/style>/gi, ' ')
+    .replace(/<svg[\s\S]*?<\/svg>/gi, ' ')
+    .replace(/<!--[\s\S]*?-->/g, ' ')
+    // Collapse the whitespace those removals leave behind. Templated markup is heavily indented,
+    // so this is not cosmetic: it recovers several KB of the budget on a typical page.
+    .replace(/\s{2,}/g, ' ');
+  return stripped.slice(0, 60_000);
+}
+
 function getExtractionPrompt(programType?: CampaignProgramType): string {
   return programType === 'education' ? EDUCATION_EXTRACTION_PROMPT : EVENT_EXTRACTION_PROMPT;
 }
@@ -709,7 +740,7 @@ export class CampaignProxyService {
 
     if (!isRefinement) {
       try {
-        const extraction = await aiChat(getExtractionPrompt(body.programType), `URL: ${body.url}\n\nHTML:\n${html.slice(0, 30_000)}`);
+        const extraction = await aiChat(getExtractionPrompt(body.programType), `URL: ${body.url}\n\nHTML:\n${extractableHtml(html)}`);
         eventDetails = JSON.parse(stripJsonFences(extraction)) as Record<string, unknown>;
         // Education extraction also yields price, certification_code, prerequisites — deferred until CampaignEventDetails supports them
         yield {

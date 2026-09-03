@@ -10,6 +10,7 @@ import type {
   CampaignBriefRefineRequest,
   CampaignBriefRequest,
   CampaignCreateRequest,
+  CampaignDeliveryType,
   CampaignMetricsWindow,
   CampaignPlatform,
   CampaignSSEEventType,
@@ -763,10 +764,19 @@ export class CampaignController {
       return;
     }
 
-    const startTime = logger.startOperation(req, 'campaign_load_brief', { eventSlug, projectSlug });
+    // Defaulted rather than required, and defaulted to paid on purpose. Callers predating this
+    // parameter are all paid — it is the only surface whose restore path was ever enabled — so an
+    // absent value must keep restoring paid briefs exactly as before. Any unrecognised string is
+    // also read as paid rather than rejected: this parameter narrows what a caller may open, so
+    // failing it closed toward the pre-existing behaviour cannot expose a brief that was hidden
+    // before, whereas honouring an unknown surface could match a row belonging to neither.
+    const deliveryTypeParam = typeof req.query['delivery_type'] === 'string' ? req.query['delivery_type'] : '';
+    const deliveryType: CampaignDeliveryType = deliveryTypeParam === 'email' ? 'email' : 'paid-marketing';
+
+    const startTime = logger.startOperation(req, 'campaign_load_brief', { eventSlug, projectSlug, deliveryType });
 
     try {
-      const result = await this.campaignServiceClient.loadBrief(req, eventSlug, projectSlug);
+      const result = await this.campaignServiceClient.loadBrief(req, eventSlug, projectSlug, deliveryType);
       // `status` is logged on every arm, `unreadable` included: it is the one outcome that says
       // a stored brief exists and this build cannot open it, and nothing else would record it.
       logger.success(req, 'campaign_load_brief', startTime, { eventSlug, projectSlug, status: result.status, briefId: result.briefId });

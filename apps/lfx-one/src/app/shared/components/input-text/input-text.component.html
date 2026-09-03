@@ -1,6 +1,15 @@
 <!-- Copyright The Linux Foundation and each contributor to LFX. -->
 <!-- SPDX-License-Identifier: MIT -->
 
+<!--
+  `placeholder()` is coalesced to '' rather than bound directly. `input<string>()` with no default
+  yields `undefined` for every caller that omits the attribute, and Angular stringifies that into
+  the DOM as the literal text "undefined" — which the browser then renders as the field's greyed
+  hint. 139 usages across 74 files omit it, so this showed a user "undefined" in most inputs the
+  app has. Coalescing here rather than defaulting the input keeps the signal's type honest about
+  the attribute being optional.
+-->
+
 <ng-container [formGroup]="form()">
   @if (icon()) {
     <p-iconfield>
@@ -11,7 +20,7 @@
         [formControlName]="control()"
         [pSize]="size()!"
         [type]="type()"
-        [placeholder]="placeholder()"
+        [placeholder]="placeholder() ?? ''"
         [class]="styleClass()"
         class="w-full"
         [autocomplete]="autocomplete()"
@@ -24,7 +33,7 @@
       [formControlName]="control()"
       [pSize]="size()!"
       [type]="type()"
-      [placeholder]="placeholder()"
+      [placeholder]="placeholder() ?? ''"
       [class]="styleClass()"
       class="w-full"
       [autocomplete]="autocomplete()"

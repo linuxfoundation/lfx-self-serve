@@ -546,6 +546,13 @@ describe('CampaignServiceClient.saveBrief', () => {
       totalBudget: 5000,
       hsUtm: 'kubecon-eu-2026',
       driveFolderUrl: 'https://drive.google.com/drive/folders/abc',
+      // Present as `null` rather than absent, and asserted that way deliberately. This brief
+      // carries no delivery type, and `toBriefInput` still emits the key so that
+      // `storedBriefMatches` compares the same shape on both sides — a key emitted only when set
+      // would make an unchanged brief compare unequal to its own stored row and read as a
+      // conflicting write. `toEqual` would pass with the key absent only if it were `undefined`;
+      // pinning `null` is what keeps that reconciliation honest.
+      deliveryType: null,
     });
   });
 
@@ -1347,6 +1354,56 @@ describe('CampaignServiceClient.loadBrief', () => {
     expect(result.briefId).toBe('b-1');
     expect(result.brief?.eventDetails.name).toBe('KubeCon EU 2026');
     expect(proxyRequestWithResponse).toHaveBeenCalledWith(req, 'LFX_V2_CAMPAIGN_SERVICE', '/projects/tlf/briefs', 'GET', { event_slug: 'kubecon-eu-2026' });
+  });
+
+  // Delivery scoping. Storage is keyed `(project_id, event_slug)` with no delivery dimension
+  // (`uq_campaign_briefs_project_event`), so ONE event has ONE row however many surfaces plan it.
+  // Handing that row to whichever surface asks is exactly what kept the email restore path
+  // disabled: a paid brief restored into an email plan carries RSA headlines, a keyword list and
+  // a platform selection that mean nothing there. These four pin the contract in both directions.
+  it('reports a paid brief as absent when an email caller asks for it', async () => {
+    proxyRequestWithResponse.mockResolvedValueOnce(apiResponse(storedBrief({ targeting: { deliveryType: 'paid-marketing' } }), { etag: '"3"' }));
+
+    const result = await new CampaignServiceClient().loadBrief(req, 'kubecon-eu-2026', 'tlf', 'email');
+
+    // `none`, NOT `unreadable`: parsing succeeded. `unreadable` promises a row that exists and
+    // could not be opened, which would send the UI down a "your brief is corrupted" path for a
+    // brief that is merely someone else's surface.
+    expect(result.status).toBe('none');
+    expect(result.briefId).toBeNull();
+    expect(result.brief).toBeNull();
+  });
+
+  it('reports an email brief as absent when a paid caller asks for it', async () => {
+    proxyRequestWithResponse.mockResolvedValueOnce(apiResponse(storedBrief({ targeting: { deliveryType: 'email' } }), { etag: '"3"' }));
+
+    await expect(new CampaignServiceClient().loadBrief(req, 'kubecon-eu-2026', 'tlf', 'paid-marketing')).resolves.toMatchObject({
+      status: 'none',
+      briefId: null,
+    });
+  });
+
+  it('returns the brief when the stored delivery type matches the caller', async () => {
+    proxyRequestWithResponse.mockResolvedValueOnce(apiResponse(storedBrief({ targeting: { deliveryType: 'email' } }), { etag: '"3"' }));
+
+    await expect(new CampaignServiceClient().loadBrief(req, 'kubecon-eu-2026', 'tlf', 'email')).resolves.toMatchObject({
+      status: 'loaded',
+      briefId: 'b-1',
+    });
+  });
+
+  // Backward compatibility, and the reason absence means paid rather than "matches everything".
+  // Every row written before the delivery type was recorded came from the paid surface — it was
+  // the only one whose restore path was ever enabled — so paid callers keep restoring their
+  // existing briefs untouched, and an email caller correctly sees that no email brief exists yet
+  // rather than adopting a paid one it cannot use.
+  it('treats a brief stored without a delivery type as paid', async () => {
+    proxyRequestWithResponse
+      .mockResolvedValueOnce(apiResponse(storedBrief(), { etag: '"3"' }))
+      .mockResolvedValueOnce(apiResponse(storedBrief(), { etag: '"3"' }));
+
+    await expect(new CampaignServiceClient().loadBrief(req, 'e', 'tlf', 'paid-marketing')).resolves.toMatchObject({ status: 'loaded' });
+    await expect(new CampaignServiceClient().loadBrief(req, 'e', 'tlf', 'email')).resolves.toMatchObject({ status: 'none' });
   });
 
   // LFXV2-3204. The read has to HAND BACK the validator it observed, because `replaceBrief`

@@ -206,6 +206,20 @@ export interface CampaignBriefOutput {
   driveFolderUrl: string;
   campaignGoal: CampaignGoal | null;
   programType?: CampaignProgramType;
+  /**
+   * Which delivery surface this brief was authored for.
+   *
+   * Persisted (into `targeting`, which is free-form) rather than derived, because brief storage is
+   * keyed on `(project, event_slug)` with no delivery dimension: without this, an email brief and a
+   * paid brief for the same event are the SAME ROW, and restoring one under the other surface hands
+   * back RSA headlines and a keyword list to an email plan. `loadBrief` compares it against the
+   * surface asking, so a brief authored elsewhere is reported as absent rather than mis-restored.
+   *
+   * Optional, and absence is meaningful: rows written before this field existed carry no delivery
+   * type and are treated as paid, which is what they are — every brief predating it was authored on
+   * the paid surface, the only one whose restore path was ever enabled.
+   */
+  deliveryType?: CampaignDeliveryType;
   selectedPlatforms?: CampaignPlatform[];
   linkedInCopy?: LinkedInBriefCopy;
   redditCopy?: RedditBriefCopy;
