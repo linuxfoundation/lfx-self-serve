@@ -70,7 +70,14 @@
           <!-- HubSpot UTM Token -->
           @if (hsUtm() || hsSearching() || hsCreating() || hsStatus() || hsNotFound()) {
             <div class="flex flex-col gap-2" data-testid="planning-hubspot-section">
-              <label class="text-xs font-medium text-gray-700">
+              <!--
+                `for`/`id`, not aria-label. The visible text is already the right name, and
+                duplicating it in an attribute lets the two drift -- the label would then say one
+                thing on screen and another to a screen reader. The status spans inside it are
+                deliberately part of the name: "HubSpot UTM token Looking up..." is what a sighted
+                user reads, so it is what should be announced (Copilot).
+              -->
+              <label for="planning-hubspot-utm-value" class="text-xs font-medium text-gray-700">
                 HubSpot UTM token
                 @if (hsSearching()) {
                   <span class="ml-2 font-normal text-gray-400">Looking up...</span>
@@ -82,6 +89,7 @@
 
               @if (hsUtm()) {
                 <input
+                  id="planning-hubspot-utm-value"
                   type="text"
                   [value]="hsUtm()"
                   readonly

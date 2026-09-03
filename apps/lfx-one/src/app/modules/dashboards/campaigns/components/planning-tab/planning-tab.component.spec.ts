@@ -1792,6 +1792,24 @@ describe('PlanningTabComponent — HubSpot UTM states', () => {
     expect(instance()['hsCreateBlocked'](), 'withheld Create under another foundation').toBe(false);
   });
 
+  it('gives the readonly token field an accessible name', () => {
+    // Copilot: the `<label>` closed before this input and carried no `for`, so assistive tech
+    // announced a readonly field with no name -- the operator hears a value with no idea what it
+    // is. Asserted through the ASSOCIATION rather than a string, so the visible label stays the
+    // single source of the name.
+    runLookup(
+      { found: true, hs_utm: 'kubecon-na-2026', campaign_name: 'KubeCon NA 2026', all_matches: [], capped: false, inconclusive: false },
+      'KubeCon NA 2026'
+    );
+
+    const el = fixture.nativeElement as HTMLElement;
+    const input = el.querySelector('[data-testid="planning-hubspot-utm-value"]') as HTMLInputElement | null;
+    expect(input, 'the token field did not render').not.toBeNull();
+    const label = el.querySelector(`label[for="${input!.id}"]`);
+    expect(label, 'the readonly token field has no accessible name').not.toBeNull();
+    expect(label!.textContent, 'the label does not name what the field holds').toContain('HubSpot UTM token');
+  });
+
   it('suppresses Create cross-foundation when the search was INCONCLUSIVE', () => {
     // dealako (#2079, blocking): the cross-foundation branch set hsNotFound and hsUnconfirmed but
     // never hsCreateSuppressed. The template gates Create on `hsNotFound() && !hsUtm() &&
