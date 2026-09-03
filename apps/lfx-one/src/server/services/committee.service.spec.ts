@@ -2,7 +2,7 @@
 // SPDX-License-Identifier: MIT
 
 import { CommitteeMemberVisibility } from '@lfx-one/shared/enums';
-import type { Committee, QueryServiceResponse } from '@lfx-one/shared/interfaces';
+import type { Committee, CommitteeInvite, QueryServiceResponse } from '@lfx-one/shared/interfaces';
 import type { MockInstance } from 'vitest';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
@@ -922,5 +922,76 @@ describe('CommitteeService.getCommitteeBase', () => {
     // getting caught and re-thrown as a freshly constructed lookalike (which a type/status-only
     // assertion couldn't tell apart from this).
     await expect(service.getCommitteeBase(req, COMMITTEE_UID)).rejects.toBe(upstreamError);
+  });
+});
+
+describe('CommitteeService.getMyPendingInvitations — inviter/expiry mapping', () => {
+  let service: CommitteeService;
+
+  const baseInvite = (over: Partial<CommitteeInvite>): CommitteeInvite => ({
+    uid: 'invite-1',
+    committee_uid: 'committee-1',
+    invitee_email: 'invitee@example.com',
+    status: 'pending',
+    created_at: '2026-01-02T03:04:05Z',
+    committee_name: 'Technical Steering Committee',
+    ...over,
+  });
+
+  // fetchAllQueryResources (real impl) unwraps resources[].data, so wrap each invite accordingly.
+  const mockInvites = (invites: CommitteeInvite[]): void => {
+    proxyRequest.mockResolvedValue({ resources: invites.map((data) => ({ data })) });
+  };
+
+  beforeEach(() => {
+    proxyRequest.mockReset();
+    service = new CommitteeService();
+    // Isolate the raw-invite → PendingInvitation mapping from committee/project enrichment.
+    (service as unknown as { getCommitteesByIds: unknown }).getCommitteesByIds = vi.fn().mockResolvedValue(new Map());
+  });
+
+  it('maps inviter_name and expires_at from a fully populated inviter', async () => {
+    mockInvites([
+      baseInvite({
+        inviter: { name: 'Alice Admin', username: 'alice', email: 'alice@lf.org', avatar: 'https://cdn.example.com/a.png' },
+        expires_at: '2026-02-01T03:04:05Z',
+      }),
+    ]);
+
+    const [row] = await service.getMyPendingInvitations(req, 'invitee@example.com');
+
+    expect(row.inviter_name).toBe('Alice Admin');
+    expect(row.expires_at).toBe('2026-02-01T03:04:05Z');
+  });
+
+  it('falls back to null inviter_name for a username-only partial inviter, but keeps expires_at', async () => {
+    mockInvites([
+      baseInvite({
+        inviter: { username: 'alice' },
+        expires_at: '2026-02-01T03:04:05Z',
+      }),
+    ]);
+
+    const [row] = await service.getMyPendingInvitations(req, 'invitee@example.com');
+
+    expect(row.inviter_name).toBeNull();
+    expect(row.expires_at).toBe('2026-02-01T03:04:05Z');
+  });
+
+  it('maps both to null on legacy invites missing inviter and expiry', async () => {
+    mockInvites([baseInvite({})]);
+
+    const [row] = await service.getMyPendingInvitations(req, 'invitee@example.com');
+
+    expect(row.inviter_name).toBeNull();
+    expect(row.expires_at).toBeNull();
+  });
+
+  it('normalizes a whitespace-only inviter name to null', async () => {
+    mockInvites([baseInvite({ inviter: { name: '   ', username: 'alice' } })]);
+
+    const [row] = await service.getMyPendingInvitations(req, 'invitee@example.com');
+
+    expect(row.inviter_name).toBeNull();
   });
 });

@@ -109,11 +109,12 @@ export interface CommitteeInvite {
    */
   organization_required?: boolean | null;
   /**
-   * The user who created the invite (name/username/email/avatar), resolved from the authenticated
-   * principal at creation time (committee-service ≥ the inviter/expiry change). Absent on older
-   * records or when the principal could not be resolved.
+   * The user who created the invite, resolved from the authenticated principal at creation time
+   * (committee-service ≥ the inviter/expiry change). Absent on older records or when the principal
+   * could not be resolved. All fields are optional to mirror the upstream `omitempty` wire shape:
+   * only `username` is reliably present; `name`/`email`/`avatar` are omitted when empty.
    */
-  inviter?: CommitteeUser | null;
+  inviter?: Partial<CommitteeUser> | null;
   /**
    * Invite link expiry (RFC3339). Set upstream to `created_at + 30 days`, mirroring the
    * invite-service default token TTL. Absent on records created before the field existed.
