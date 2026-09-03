@@ -467,27 +467,33 @@ export class AttendanceReconciliationService {
    * `is_attended` is omitted, so leaving it out would silently fail to persist while this
    * service still reported `auto_applied: true`.
    *
-   * Also sets `is_invited: true` whenever an identity field is present: lfx-v2-meeting-service's
-   * update converter routes `email`/`username`/`lf_user_id` only into the invitee sub-record
+   * Also sets `is_invited: true` when the matched candidate is itself an occurrence invitee
+   * (`source === 'invitee'`) and carries an identity field: lfx-v2-meeting-service's update
+   * converter routes `email`/`username`/`lf_user_id` only into the invitee sub-record
    * (`UpdateInviteeRequest`), and its service layer no-ops that entire invitee operation when
    * `is_invited` is omitted — sending identity fields without `is_invited: true` would silently
    * drop them upstream while this method still reported success. `first_name`/`last_name` are
    * included alongside because ITX requires them to create an invitee record that doesn't already
-   * exist for this attendee.
+   * exist for this attendee. Crucially, this is scoped to `source === 'invitee'` only: a walk-in
+   * matched against a committee member or a prior occurrence's attendee was never invited to
+   * *this* occurrence, and setting `is_invited: true` for them would incorrectly create an
+   * invitee record — inflating invited counts and hiding them from the uninvited filter. For
+   * those sources, identity fields are intentionally omitted (they'd be dropped upstream anyway
+   * without `is_invited`); only the attendee-only verification flags are written.
    */
   private async applyMatch(req: Request, pastMeetingUid: string, attendeeId: string, candidate: AttendanceReconciliationCandidate): Promise<boolean> {
-    const hasIdentity = !!(candidate.email || candidate.username || candidate.lf_user_id);
+    const canSetInvited = candidate.source === 'invitee' && !!(candidate.email || candidate.username || candidate.lf_user_id);
     const update: ITXUpdatePastMeetingParticipantRequest = {
       is_verified: true,
       is_attended: true,
       is_ai_reconciled: false,
       is_auto_matched: true,
-      ...(hasIdentity && { is_invited: true }),
-      ...(candidate.email && { email: candidate.email }),
-      ...(candidate.username && { username: candidate.username }),
-      ...(candidate.lf_user_id && { lf_user_id: candidate.lf_user_id }),
-      ...(candidate.first_name && { first_name: candidate.first_name }),
-      ...(candidate.last_name && { last_name: candidate.last_name }),
+      ...(canSetInvited && { is_invited: true }),
+      ...(canSetInvited && candidate.email && { email: candidate.email }),
+      ...(canSetInvited && candidate.username && { username: candidate.username }),
+      ...(canSetInvited && candidate.lf_user_id && { lf_user_id: candidate.lf_user_id }),
+      ...(canSetInvited && candidate.first_name && { first_name: candidate.first_name }),
+      ...(canSetInvited && candidate.last_name && { last_name: candidate.last_name }),
     };
 
     try {
