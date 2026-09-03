@@ -17,10 +17,10 @@ export type FormationState = 'draft' | 'submitted' | 'active' | 'withdrawn';
 
 /**
  * Formations queue display taxonomy (queue filters, sub-stage pill). Distinct from
- * {@link FormationState}: `sub_stage` is what the queue filters/pills key off, including
- * `withdrawn` (GH-1958's "Filters (incl. Withdrawn)" requirement).
+ * {@link FormationState}: `sub_stage` is what the queue filters/pills key off — formations already
+ * in flight. No `proposed`/`withdrawn` here: those were Accept/Decline-era states (Epic 2, #1962).
  */
-export type FormationSubStage = 'proposed' | 'exploratory' | 'engaged' | 'on_hold' | 'activating' | 'withdrawn';
+export type FormationSubStage = 'exploratory' | 'engaged' | 'on_hold' | 'activating';
 
 /** What kind of record is in formation — drives the queue's Type column and indentation. */
 export type FormationEntityType = 'foundation' | 'subproject' | 'project';
@@ -50,8 +50,6 @@ export interface Formation {
   gating_items_total: number;
   /** First not-done gating item's title, precomputed for the queue's "Blocking" column. */
   blocking_item_title: string | null;
-  lead: FormationLead | null;
-  proposer: FormationLead | null;
   subtitle: string | null;
   created_at: string;
   updated_at: string;
@@ -119,15 +117,12 @@ export type FormationActivityType =
   | 'item_requested'
   | 'note_added'
   | 'assignee_changed'
-  | 'due_date_changed'
-  | 'formation_submitted'
-  | 'formation_accepted'
-  | 'formation_declined';
+  | 'due_date_changed';
 
 export interface FormationActivity {
   uid: string;
   formation_uid: string;
-  /** Null for formation-level activity (e.g. submitted/accepted/declined). */
+  /** Always item-scoped today — every {@link FormationActivityType} is an item-level action. */
   formation_item_uid: string | null;
   type: FormationActivityType;
   actor: FormationLead;
@@ -175,7 +170,6 @@ export type FormationQueueTiles = Record<FormationSubStage, number> & {
   total: number;
   foundations: number;
   subprojects: number;
-  mine: number;
 };
 
 /** Response body for `GET /api/formations`. */

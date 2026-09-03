@@ -25,16 +25,8 @@ vi.mock('./logger.service', () => ({
 }));
 
 const { FormationService } = await import('./formation.service');
-const {
-  seedFormation,
-  putStoredFormation,
-  putStoredItem,
-  getStoredItem,
-  getStoredFormation,
-  getActivityForItem,
-  getActivityForFormation,
-  resetFormationStoreForTests,
-} = await import('./formation-store.service');
+const { seedFormation, putStoredFormation, putStoredItem, getStoredItem, getStoredFormation, getActivityForItem, resetFormationStoreForTests } =
+  await import('./formation-store.service');
 const { STATIC_QUEUE_FORMATIONS } = await import('../helpers/formation-fixture.helper');
 const { logger } = await import('./logger.service');
 
@@ -58,8 +50,6 @@ function buildFormation(overrides: Partial<Formation> = {}): Formation {
     gating_items_open: 1,
     gating_items_total: 1,
     blocking_item_title: null,
-    lead: null,
-    proposer: null,
     subtitle: null,
     created_at: '',
     updated_at: '',
@@ -313,17 +303,6 @@ describe('FormationService', () => {
       await service.requestFormationItem(buildReq(), item.uid);
       expect(getStoredFormation(formation.uid)?.sub_stage).toBe('engaged');
     });
-
-    it('never overrides a withdrawn sub_stage while recomputing readiness', async () => {
-      const { formation, item } = seedItem({ is_gating: true, action: 'request' });
-      putStoredFormation({ ...formation, sub_stage: 'withdrawn', state: 'withdrawn' });
-      getProjectById.mockResolvedValue({ writer: true });
-      canComplete.mockResolvedValue(true);
-
-      await service.completeFormationItem(buildReq(), item.uid);
-
-      expect(getStoredFormation(formation.uid)?.sub_stage).toBe('withdrawn');
-    });
   });
 
   describe('skipFormationItem — reason required', () => {
@@ -430,10 +409,10 @@ describe('FormationService', () => {
 
   describe('getFormationsQueue', () => {
     it('filters rows by sub_stage', async () => {
-      const result = await service.getFormationsQueue(buildReq(), 'proposed');
+      const result = await service.getFormationsQueue(buildReq(), 'engaged');
 
       expect(result.rows.length).toBeGreaterThan(0);
-      expect(result.rows.every((row) => row.sub_stage === 'proposed')).toBe(true);
+      expect(result.rows.every((row) => row.sub_stage === 'engaged')).toBe(true);
     });
 
     it('filters rows by a case-insensitive search on the parent project name', async () => {
@@ -456,88 +435,6 @@ describe('FormationService', () => {
       const result = await service.getFormationsQueue(buildReq());
 
       expect(result.tiles.foundations + result.tiles.subprojects).toBe(result.tiles.total);
-    });
-
-    it('reflects a prior decline in the queue read, not just the decline response', async () => {
-      await service.declineFormation(buildReq(), 'formation:queue-2', 'not a fit at this time');
-
-      const result = await service.getFormationsQueue(buildReq(), 'withdrawn');
-
-      expect(result.rows.some((row) => row.uid === 'formation:queue-2')).toBe(true);
-    });
-  });
-
-  describe('acceptFormation', () => {
-    it('returns a deep link built from the formation slug, with no state mutation', async () => {
-      const result = await service.acceptFormation(buildReq(), 'formation:queue-1');
-
-      expect(result.deep_link_url).toContain('cascade-data-alliance');
-      expect(getStoredFormation('formation:queue-1')).toBeUndefined();
-    });
-
-    it('throws ResourceNotFoundError for an unknown formation uid', async () => {
-      await expect(service.acceptFormation(buildReq(), 'formation:does-not-exist')).rejects.toThrow(/not found/i);
-    });
-
-    it('rejects a project-checklist formation uid even though it exists in the store — Accept is queue-only', async () => {
-      const { formation } = seedItem();
-
-      await expect(service.acceptFormation(buildReq(), formation.uid)).rejects.toThrow(/not found/i);
-    });
-  });
-
-  describe('declineFormation', () => {
-    it('rejects a missing reason', async () => {
-      await expect(service.declineFormation(buildReq(), 'formation:queue-1', '')).rejects.toThrow(/reason/i);
-    });
-
-    it('rejects a non-string reason', async () => {
-      await expect(service.declineFormation(buildReq(), 'formation:queue-1', 42)).rejects.toThrow(/reason/i);
-    });
-
-    it('rejects a project-checklist formation uid even though it exists in the store — Decline is queue-only, so it can never permanently withdraw a project checklist', async () => {
-      const { formation } = seedItem();
-
-      await expect(service.declineFormation(buildReq(), formation.uid, 'not a fit at this time')).rejects.toThrow(/not found/i);
-      expect(getStoredFormation(formation.uid)?.state).not.toBe('withdrawn');
-    });
-
-    it('reads its own write back on a second call, rather than re-deriving from the stale static row', async () => {
-      await service.declineFormation(buildReq(), 'formation:queue-1', 'first decline');
-      const second = await service.getFormationsQueue(buildReq());
-
-      const row = second.rows.find((candidate) => candidate.uid === 'formation:queue-1');
-      expect(row?.state).toBe('withdrawn');
-
-      // A second decline attempt on an already-withdrawn row must not silently re-derive from the
-      // stale STATIC_QUEUE_FORMATIONS entry (state: 'active') and append a duplicate activity as if
-      // the first decline never happened.
-      const result = await service.declineFormation(buildReq(), 'formation:queue-1', 'second decline');
-      expect(result.state).toBe('withdrawn');
-      const activity = getActivityForFormation('formation:queue-1');
-      expect(activity.filter((entry) => entry.type === 'formation_declined')).toHaveLength(2);
-    });
-
-    it('transitions the formation to withdrawn and records a formation_declined activity carrying the reason', async () => {
-      const result = await service.declineFormation(buildReq(), 'formation:queue-1', 'not a fit at this time');
-
-      expect(result.state).toBe('withdrawn');
-      expect(result.sub_stage).toBe('withdrawn');
-      const activity = getActivityForFormation(result.uid);
-      expect(activity.some((entry) => entry.type === 'formation_declined' && entry.metadata?.['reason'] === 'not a fit at this time')).toBe(true);
-    });
-
-    it('never logs the proposer username, even for a queue row that has one', async () => {
-      await service.declineFormation(buildReq(), 'formation:queue-2', 'not a fit at this time');
-
-      const infoCalls = vi.mocked(logger.info).mock.calls;
-      const declineCall = infoCalls.find((call) => call[1] === 'decline_formation');
-      expect(declineCall).toBeDefined();
-      expect(declineCall?.[3]).not.toHaveProperty('proposer');
-    });
-
-    it('throws ResourceNotFoundError for an unknown formation uid', async () => {
-      await expect(service.declineFormation(buildReq(), 'formation:does-not-exist', 'a reason')).rejects.toThrow(/not found/i);
     });
   });
 });

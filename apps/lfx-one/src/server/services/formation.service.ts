@@ -1,14 +1,7 @@
 // Copyright The Linux Foundation and each contributor to LFX.
 // SPDX-License-Identifier: MIT
 
-import type {
-  Formation,
-  FormationActivity,
-  FormationChecklistResponse,
-  FormationItem,
-  FormationsQueueResponse,
-  FormationSubStage,
-} from '@lfx-one/shared/interfaces';
+import type { FormationActivity, FormationChecklistResponse, FormationItem, FormationsQueueResponse, FormationSubStage } from '@lfx-one/shared/interfaces';
 import { FORMATION_QUEUE_SUB_STAGES } from '@lfx-one/shared/constants';
 import { Request } from 'express';
 
@@ -34,14 +27,12 @@ import { ProjectService } from './project.service';
 /**
  * BFF service for the Formation Checklist section and Formations queue (GH-1958). Only
  * {@link getProjectFormation} branches on {@link isFormationServiceLive} today; the item mutations
- * (complete/skip/request/update), {@link declineFormation}, and the queue read
- * {@link getFormationsQueue} are fixture-only and each carry their own `// TODO(#1957)` marking the
- * real `lfx-v2-formation-service` swap. {@link acceptFormation} is a read (a deep link, no state
- * change — nothing real to accept into yet) and {@link getFormationItemOrThrow}/
- * {@link getFormationItemDetail} resolve against whatever the store already holds; none of the
- * three need a swap marker of their own. The fixture generator's return shape already matches
- * `Formation`/`FormationItem[]`, so downstream code (controllers, Angular services) needs no change
- * when the swap happens.
+ * (complete/skip/request/update) and the queue read {@link getFormationsQueue} are fixture-only and
+ * each carry their own `// TODO(#1957)` marking the real `lfx-v2-formation-service` swap.
+ * {@link getFormationItemOrThrow}/{@link getFormationItemDetail} resolve against whatever the store
+ * already holds and need no swap marker of their own. The fixture generator's return shape already
+ * matches `Formation`/`FormationItem[]`, so downstream code (controllers, Angular services) needs no
+ * change when the swap happens.
  */
 export class FormationService {
   private readonly projectService = new ProjectService();
@@ -230,10 +221,8 @@ export class FormationService {
 
     // TODO(#1957): swap for a real query-service read once lfx-v2-formation-service ships;
     // STATIC_QUEUE_FORMATIONS's shape already matches Formation[]. Each row is read through the
-    // write store first — a prior Accept/Decline on this row must be reflected here, not just on
-    // its own response (declineFormation writes via putStoredFormation). getQueueFormation's
-    // queue-only scoping check is unnecessary here — every uid already came from
-    // STATIC_QUEUE_FORMATIONS itself, unlike Accept/Decline's caller-supplied uid.
+    // write store first, so a completed/skipped item's readiness rollup (refreshFormationReadiness)
+    // is reflected here too, not just on the project-page checklist response.
     let rows = STATIC_QUEUE_FORMATIONS.map((row) => getStoredFormation(row.uid) ?? row);
     if (subStage) {
       rows = rows.filter((row) => row.sub_stage === subStage);
@@ -243,84 +232,21 @@ export class FormationService {
       rows = rows.filter((row) => row.parent_project_name.toLowerCase().includes(term));
     }
 
-    const tiles = this.buildQueueTiles(req);
+    const tiles = this.buildQueueTiles();
 
     return { tiles, rows, data_source: 'fixture' };
   }
 
-  /** Returns a deep link to the external admin tool. No state mutation — nothing real to accept into yet (#1957). */
-  public async acceptFormation(req: Request, formationUid: string): Promise<{ deep_link_url: string }> {
-    const formation = this.getQueueFormation(formationUid);
-    if (!formation) {
-      throw new ResourceNotFoundError('Formation', formationUid, { operation: 'accept_formation', service: 'formation_service', path: req.path });
-    }
-
-    logger.info(req, 'accept_formation', 'Formations queue Accept — returning admin-tool deep link (fixture, no state change)', {
-      formation_uid: formationUid,
-    });
-    return { deep_link_url: `https://admin.linuxfoundation.org/formations/${encodeURIComponent(formation.parent_project_slug)}` };
-  }
-
-  // TODO(#1957): swap the fixture writes below for a real lfx-v2-formation-service mutation call.
-  public async declineFormation(req: Request, formationUid: string, reason: unknown): Promise<Formation> {
-    this.assertValidReason(reason, 'A reason is required to decline a formation', req, 'decline_formation');
-
-    const existing = this.getQueueFormation(formationUid);
-    if (!existing) {
-      throw new ResourceNotFoundError('Formation', formationUid, { operation: 'decline_formation', service: 'formation_service', path: req.path });
-    }
-
-    const declined: Formation = { ...existing, state: 'withdrawn', sub_stage: 'withdrawn', updated_at: new Date().toISOString() };
-    putStoredFormation(declined);
-
-    const actor = { username: getEffectiveUsername(req) || 'unknown', name: getEffectiveUsername(req) || 'Unknown' };
-    appendActivity({
-      uid: nextActivityUid(),
-      formation_uid: declined.uid,
-      formation_item_uid: null,
-      type: 'formation_declined',
-      actor,
-      message: `declined "${declined.parent_project_name}": ${reason}`,
-      metadata: { reason },
-      created_at: new Date().toISOString(),
-    });
-
-    // TODO(#1957): replace this log-only stub with a real email-service notification once
-    // lfx-v2-formation-service ships — this is explicitly a no-op today, not a degraded real path.
-    // Deliberately no `proposer` field here: today it's fixture-only, but this line is written
-    // against Formation.proposer, and the #1957 swap would turn a real LFID into an unredacted
-    // application-log emission with no second review of this line to catch it.
-    logger.info(req, 'decline_formation', 'Would notify proposer (stub — #1957 owns real email-service integration)', {
-      formation_uid: formationUid,
-    });
-
-    return declined;
-  }
-
-  /**
-   * Resolves a queue formation uid through the write store first, scoped to `STATIC_QUEUE_FORMATIONS`
-   * only — `undefined` for a project-checklist formation uid (`getProjectFormation` seeds those into
-   * the same store under `formation:<projectUid>`). Accept/Decline must never resolve one of those:
-   * a decline would permanently corrupt that project's checklist to `withdrawn`
-   * (`refreshFormationReadiness` deliberately never un-withdraws it), with no un-decline path.
-   */
-  private getQueueFormation(formationUid: string): Formation | undefined {
-    const staticRow = STATIC_QUEUE_FORMATIONS.find((row) => row.uid === formationUid);
-    if (!staticRow) return undefined;
-    return getStoredFormation(formationUid) ?? staticRow;
-  }
-
-  private buildQueueTiles(req: Request): FormationsQueueResponse['tiles'] {
-    // Same rationale as getFormationsQueue — every uid here already came from
-    // STATIC_QUEUE_FORMATIONS, so getQueueFormation's scoping check is unnecessary.
+  private buildQueueTiles(): FormationsQueueResponse['tiles'] {
+    // Every uid here already came from STATIC_QUEUE_FORMATIONS, so no scoping check is needed to
+    // resolve each row through the write store first (a completed/skipped item's readiness rollup
+    // must be reflected in these counts too, not just the raw static fixture).
     const rows = STATIC_QUEUE_FORMATIONS.map((row) => getStoredFormation(row.uid) ?? row);
     const bySubStage = Object.fromEntries(FORMATION_QUEUE_SUB_STAGES.map((stage) => [stage, 0])) as Record<FormationSubStage, number>;
     for (const row of rows) {
       bySubStage[row.sub_stage] = (bySubStage[row.sub_stage] ?? 0) + 1;
     }
 
-    // `lead`/`proposer` carry usernames, not emails — compare against the caller's username, not their email.
-    const username = getEffectiveUsername(req);
     // The tile subLine only has room for a foundations/subprojects split — a bare 'project' entity
     // (no foundation/subproject formation ceremony) rolls into the subprojects count so it isn't
     // silently dropped from the breakdown while still counting toward `total`.
@@ -329,7 +255,6 @@ export class FormationService {
       total: rows.length,
       foundations: rows.filter((row) => row.entity_type === 'foundation').length,
       subprojects: rows.filter((row) => row.entity_type === 'subproject' || row.entity_type === 'project').length,
-      mine: rows.filter((row) => row.lead?.username === username || row.proposer?.username === username).length,
     };
   }
 
@@ -367,16 +292,14 @@ export class FormationService {
 
     // `generateMockFormation` derives the initial sub_stage from is_activating (mapProjectStageToSubStage)
     // — this recompute must track it the same way, or completing the last gating item leaves a stored
-    // formation with is_activating: true but a stale sub_stage. 'withdrawn' is a terminal Decline state
-    // this method must never override. The original pre-activating sub_stage isn't preserved anywhere,
-    // so reverting out of 'activating' falls back to 'engaged' — the generator's own default case.
+    // formation with is_activating: true but a stale sub_stage. The original pre-activating sub_stage
+    // isn't preserved anywhere, so reverting out of 'activating' falls back to 'engaged' — the
+    // generator's own default case.
     let subStage: FormationSubStage = formation.sub_stage;
-    if (formation.sub_stage !== 'withdrawn') {
-      if (isActivating) {
-        subStage = 'activating';
-      } else if (formation.sub_stage === 'activating') {
-        subStage = 'engaged';
-      }
+    if (isActivating) {
+      subStage = 'activating';
+    } else if (formation.sub_stage === 'activating') {
+      subStage = 'engaged';
     }
 
     putStoredFormation({
@@ -480,7 +403,7 @@ export class FormationService {
   }
 
   /**
-   * Shared by `skipFormationItem`/`declineFormation`. Same `unknown`-at-the-boundary rationale as
+   * Used by `skipFormationItem`. Same `unknown`-at-the-boundary rationale as
    * {@link assertValidNotes} — a non-string `reason` must 400 here, not throw a raw `TypeError` from
    * `.trim()` further down. Caps length the same way `notes` is capped, so a skip/decline reason
    * can't push unbounded text into the never-evicted fixture activity store or into this log line.

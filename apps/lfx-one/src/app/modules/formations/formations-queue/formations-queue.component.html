@@ -15,12 +15,6 @@
   } @else {
     <lfx-stat-card-grid [cards]="tiles()" [loading]="loading()" [columns]="4" />
 
-    <lfx-formations-table
-      [rows]="rows()"
-      [loading]="loading()"
-      [submittingUids]="submittingUids()"
-      (filtersChange)="onFiltersChange($event)"
-      (accept)="onAccept($event)"
-      (decline)="onDecline($event)" />
+    <lfx-formations-table [rows]="rows()" [loading]="loading()" (filtersChange)="onFiltersChange($event)" />
   }
 </div>

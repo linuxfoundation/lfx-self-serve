@@ -5,8 +5,8 @@ import type { TagSeverity } from '../interfaces/components.interface';
 import type { FormationDrawerData, FormationLinkRowActionConfig, FormationRowActionConfig } from '../interfaces/formation-checklist.interface';
 import type { FormationItemStatus, FormationQueueTiles, FormationsQueueResponse, FormationSubStage } from '../interfaces/formation.interface';
 
-/** Queue filter-pill order (`All` is derived, not listed) — includes `withdrawn` per GH-1958. */
-export const FORMATION_QUEUE_SUB_STAGES: FormationSubStage[] = ['proposed', 'exploratory', 'engaged', 'on_hold', 'activating', 'withdrawn'];
+/** Queue filter-pill order (`All` is derived, not listed) — formations already in flight only. */
+export const FORMATION_QUEUE_SUB_STAGES: FormationSubStage[] = ['exploratory', 'engaged', 'on_hold', 'activating'];
 
 /**
  * The single Epic-1 seeded template's fixture UID (#1959 owns the real seed content). Shared
@@ -51,16 +51,13 @@ export const FORMATION_LINK_ROW_ACTIONS = {
 
 /** `FormationsQueueComponent`'s zeroed tile counts — the `catchError`/pre-fetch fallback for `FormationQueueTiles`. */
 export const FORMATION_EMPTY_QUEUE_TILES = {
-  proposed: 0,
   exploratory: 0,
   engaged: 0,
   on_hold: 0,
   activating: 0,
-  withdrawn: 0,
   total: 0,
   foundations: 0,
   subprojects: 0,
-  mine: 0,
 } as const satisfies FormationQueueTiles;
 
 /**
@@ -101,20 +98,16 @@ export const FORMATION_ITEM_SEGMENT_COLORS = {
 
 /** `FormationsTableComponent`'s stage chip labels, keyed by queue sub-stage. */
 export const FORMATION_SUB_STAGE_LABELS = {
-  proposed: 'Proposed',
   exploratory: 'Formation · Exploratory',
   engaged: 'Formation · Engaged',
   on_hold: 'Formation · On Hold',
   activating: 'Activating',
-  withdrawn: 'Withdrawn',
 } as const satisfies Record<FormationSubStage, string>;
 
 /** `FormationsTableComponent`'s stage chip severities, keyed by queue sub-stage. */
 export const FORMATION_SUB_STAGE_SEVERITY = {
-  proposed: 'info',
   exploratory: 'accent',
   engaged: 'accent',
   on_hold: 'accent',
   activating: 'warn',
-  withdrawn: 'secondary',
 } as const satisfies Record<FormationSubStage, TagSeverity>;

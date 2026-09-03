@@ -4,9 +4,7 @@
 import { Router } from 'express';
 
 import {
-  acceptFormation,
   completeFormationItem,
-  declineFormation,
   getFormationItem,
   getFormationsQueue,
   getProjectFormation,
@@ -29,7 +27,5 @@ router.patch('/formation-items/:uid', updateFormationItem);
 
 // Formations queue (GH-1958) — LF-root-scoped, auditor-only.
 router.get('/formations', requireAuditor, getFormationsQueue);
-router.post('/formations/:uid/accept', requireAuditor, acceptFormation);
-router.post('/formations/:uid/decline', requireAuditor, declineFormation);
 
 export default router;
