@@ -741,10 +741,10 @@ export class CommitteeOverviewComponent {
       // committee-read-access.helper.ts's doc comment). Without this, every non-writer viewing
       // Overview with the flag on would fire a guaranteed 401/403 on every page load — dead
       // weight, degrading silently to an empty list, but a real authorization mismatch between
-      // what this fetch attempts and what the backend permits. Matches the sibling
-      // The sibling weekly-brief-card gate (weeklyBriefEnabled() && engagementAccessible()) now
-      // shows the card to read-only auditors too (GH-2031), but action items remain writer-only:
-      // they describe tasks for the ED/chair to act on, not read-only overview for board members.
+      // what this fetch attempts and what the backend permits. The sibling
+      // weekly-brief-card gate (weeklyBriefEnabled() && engagementAccessible()) now shows the
+      // card to read-only auditors too (GH-2031), but action items remain writer-only: they
+      // describe tasks for the ED/chair to act on, not read-only overview for board members.
       toObservable(computed(() => ({ uid: this.committee()?.uid, enabled: this.weeklyBriefEnabled() && this.canEdit() }))).pipe(
         filter((state): state is { uid: string; enabled: boolean } => !!state.uid),
         distinctUntilChanged((a, b) => a.uid === b.uid && a.enabled === b.enabled),
