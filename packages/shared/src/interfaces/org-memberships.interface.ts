@@ -79,6 +79,15 @@ export type OrgMembershipKeyContactType =
   | 'event-sponsorship'
   | 'authorized-signatory';
 
+/**
+ * A person as rendered on Membership Detail (key-contact rows, board/committee seat rows, and their
+ * edit/reassign modals). Carries NO LF identity: both upstream payloads have one
+ * (`CommitteeServiceOrgSeat.username`, `KeyContactDoc.username`) but the `toPerson` mappers in
+ * org-lens-board-committee.service.ts and org-lens-key-contacts.service.ts do not project it yet, so
+ * every person drawer opened from this surface renders the "not available from this view"
+ * company-email state instead of looking addresses up. Projecting it is a follow-up; the display-only
+ * `email` must never stand in for it as a lookup key.
+ */
 export interface OrgMembershipKeyContactPerson {
   /**
    * Spec 024: the member-service key_contact UID (Project_Role__c-derived). Used as the
