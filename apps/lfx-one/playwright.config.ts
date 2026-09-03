@@ -26,7 +26,12 @@ try {
 const E2E_PORT = process.env['E2E_PORT'] ?? '4200';
 // Keep localhost to match the domain used by the suite's persona and lens cookie seeders.
 const E2E_HOST = 'localhost';
-const E2E_BASE_URL = `http://${E2E_HOST}:${E2E_PORT}`;
+// E2E_BASE_URL WINS when set. Hardcoding `http://host:port` made the override unreadable and the
+// https branch below permanently dead -- `E2E_IS_HTTPS` could never be true, so the
+// externally-started-server mode it selects was unreachable code (Copilot). The cookie helper
+// already reads this env var first, so ignoring it here also put the persona cookie on a host the
+// browser never visited.
+const E2E_BASE_URL = process.env['E2E_BASE_URL'] ?? `http://${E2E_HOST}:${E2E_PORT}`;
 // The port the dev server is actually LAUNCHED on, derived from the base URL.
 // An https base url cannot be served by the `ng serve` this config launches -- it speaks plain
 // HTTP -- so instead of deriving a port that can never work, the webServer block is OMITTED for
