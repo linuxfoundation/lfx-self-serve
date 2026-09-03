@@ -47,6 +47,7 @@ import { getLinkedInConfig } from '../services/linkedin-ads.service';
 import { CampaignProxyService } from '../services/campaign-proxy.service';
 import { toAudienceDemographics, toKeywordMetricsResponse, windowForDays } from '../services/campaign-insights-mapper';
 import { applyKeywordActionsViaCampaignService } from '../services/campaign-keyword-actions';
+import { toUtmCreateResult, toUtmLookupResult } from '../services/campaign-utm-mapper';
 import { CampaignServiceClient, deriveEventSlug, isCampaignServiceJobId } from '../services/campaign-service.service';
 import { logger } from '../services/logger.service';
 import { addShutdownHook, isShuttingDown } from '../utils/shutdown';
@@ -1060,11 +1061,53 @@ export class CampaignController {
       return;
     }
 
-    const startTime = logger.startOperation(req, 'hubspot_utm_lookup', { eventName });
+    const viaCampaignService = isServerFeatureEnabled(ServerFeatureFlag.CampaignServiceHubSpotUtm);
+    // Read ONCE, above the branch, because BOTH producers emit the tokenless `found: true` shape
+    // and both must gate it identically -- otherwise flipping the feature flag would change
+    // whether an old bundle can be told a campaign is absent when it is not.
+    const clientUnderstandsTokenlessFound = req.query['tokenless_found'] === '1';
+    const startTime = logger.startOperation(req, 'hubspot_utm_lookup', { eventName, viaCampaignService });
 
     try {
-      const result = await this.proxyService.lookupHubSpotUtm(req, eventName);
-      logger.success(req, 'hubspot_utm_lookup', startTime, { found: result.found });
+      if (viaCampaignService) {
+        const projectSlug = typeof req.query['project'] === 'string' ? req.query['project'].trim() : '';
+        if (projectSlug === '') {
+          next(
+            ServiceValidationError.forField('project', 'A project is required for HubSpot campaign lookup', {
+              operation: 'hubspot_utm_lookup',
+              service: 'campaign_controller',
+              path: req.path,
+            })
+          );
+          return;
+        }
+
+        const payload = await this.campaignServiceClient.searchHubSpotCampaigns(req, projectSlug, eventName);
+        const result = toUtmLookupResult(payload, eventName, clientUnderstandsTokenlessFound);
+        // `matches` is upstream's raw fuzzy count; `found` is whether one candidate was
+        // CONFIDENT enough to auto-apply -- an exact normalised match, alone in that, from a
+        // result set proven complete.
+        //
+        // Both are logged because the gap is diagnostic, but NOT as "noise" -- an earlier version
+        // of this comment said that, and it predates the confidence gate. A large gap is the
+        // normal shape for a weak, tied or capped search: candidates scored, none earned an
+        // unattended apply. Reading it as noise would send someone tuning the scorer when the
+        // right answer is that the operator picks (Copilot).
+        logger.success(req, 'hubspot_utm_lookup', startTime, {
+          viaCampaignService: true,
+          // Guarded: `toUtmLookupResult` fail-closes on a malformed envelope (`{}` or a body with
+          // no `campaigns` array) and returns `inconclusive: true` -- a TESTED safe path. Reading
+          // `.length` off it unguarded threw a TypeError before `res.json(result)`, converting
+          // that deliberate safe answer into a 500 (dealako, blocking).
+          matches: Array.isArray(payload?.campaigns) ? payload.campaigns.length : null,
+          found: result.found,
+        });
+        res.json(result);
+        return;
+      }
+
+      const result = await this.proxyService.lookupHubSpotUtm(req, eventName, clientUnderstandsTokenlessFound);
+      logger.success(req, 'hubspot_utm_lookup', startTime, { viaCampaignService: false, found: result.found });
       res.json(result);
     } catch (error) {
       next(error);
@@ -1079,9 +1122,31 @@ export class CampaignController {
       return;
     }
 
-    const startTime = logger.startOperation(req, 'hubspot_utm_create', { eventName });
+    const viaCampaignService = isServerFeatureEnabled(ServerFeatureFlag.CampaignServiceHubSpotUtm);
+    const startTime = logger.startOperation(req, 'hubspot_utm_create', { eventName, viaCampaignService });
 
     try {
+      if (viaCampaignService) {
+        const projectSlug = typeof req.query['project'] === 'string' ? req.query['project'].trim() : '';
+        if (projectSlug === '') {
+          next(
+            ServiceValidationError.forField('project', 'A project is required to create a HubSpot campaign', {
+              operation: 'hubspot_utm_create',
+              service: 'campaign_controller',
+              path: req.path,
+            })
+          );
+          return;
+        }
+
+        // ALWAYS creates: upstream performs no duplicate check, deliberately, because a
+        // search-then-create still races a concurrent caller. The UI searches and warns first.
+        const created = await this.campaignServiceClient.createHubSpotCampaign(req, projectSlug, eventName);
+        logger.success(req, 'hubspot_utm_create', startTime, { viaCampaignService: true, campaignId: created.id });
+        res.json(toUtmCreateResult(created));
+        return;
+      }
+
       const result = await this.proxyService.createHubSpotUtm(req, eventName);
       logger.success(req, 'hubspot_utm_create', startTime, { created: result.created });
       res.json(result);

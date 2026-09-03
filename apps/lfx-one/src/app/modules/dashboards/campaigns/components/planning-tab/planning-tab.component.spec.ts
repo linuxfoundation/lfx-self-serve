@@ -6,11 +6,11 @@ import { provideHttpClientTesting } from '@angular/common/http/testing';
 import { ComponentFixture, TestBed } from '@angular/core/testing';
 import type { FormGroup } from '@angular/forms';
 import { provideRouter } from '@angular/router';
-import type { CampaignBriefLoadResult, CampaignBriefOutput, CampaignProgramTypeOption } from '@lfx-one/shared/interfaces';
+import type { CampaignBriefLoadResult, CampaignBriefOutput, CampaignProgramTypeOption, HubSpotUtmLookupResult } from '@lfx-one/shared/interfaces';
 import { CampaignService } from '@services/campaign.service';
 import { ProjectContextService } from '@services/project-context.service';
 import { MessageService } from 'primeng/api';
-import { Observable, Subject, throwError } from 'rxjs';
+import { EMPTY, Observable, Subject, throwError } from 'rxjs';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 
 import { PlanningTabComponent } from './planning-tab.component';
@@ -1233,5 +1233,1728 @@ describe('PlanningTabComponent email brief editing', () => {
     await buildWithScrape('paid-marketing');
     // The other half of the guard: scoping the strip to paid must not remove it from paid.
     expect((fixture.nativeElement as HTMLElement).querySelector('[data-testid="planning-event-strip"]')).not.toBeNull();
+  });
+});
+
+describe('PlanningTabComponent — HubSpot UTM states', () => {
+  const foundationA = { uid: 'foundation-a-uid', slug: 'foundation-a', name: 'Foundation A' };
+  const programTypeConfig: CampaignProgramTypeOption = {
+    id: 'events',
+    label: 'Events',
+    breadcrumbLabel: 'Events',
+    urlLabel: 'Event URL',
+    urlPlaceholder: 'https://events.example.com/event-name',
+    urlHelp: 'Enter the event registration URL',
+    goalLabel: 'Event conversions',
+    audiencePlaceholder: 'Enter target audience',
+    valuePropPlaceholder: 'Enter value proposition',
+  };
+
+  let fixture: ComponentFixture<PlanningTabComponent>;
+  let lookup: ReturnType<typeof vi.fn>;
+  let create: ReturnType<typeof vi.fn>;
+
+  beforeEach(async () => {
+    await TestBed.configureTestingModule({
+      imports: [PlanningTabComponent],
+      providers: [
+        provideHttpClient(),
+        provideHttpClientTesting(),
+        provideRouter([]),
+        ProjectContextService,
+        { provide: MessageService, useValue: { add: vi.fn() } },
+      ],
+    }).compileComponents();
+
+    // A DEFAULT return, because the component re-runs the lookup on a foundation change and
+    // tests that switch foundations do not always set one first. Without it the spy returns
+    // undefined and `.pipe` throws an UNHANDLED error — which does not fail any individual
+    // test, so the suite reports all-green locally while CI fails the run on the error count.
+    // Tests that care about the answer override this with their own mockReturnValue.
+    lookup = vi.fn(() => EMPTY);
+    create = vi.fn();
+    vi.spyOn(TestBed.inject(CampaignService), 'lookupHubSpotUtm').mockImplementation(lookup);
+    vi.spyOn(TestBed.inject(CampaignService), 'createHubSpotUtm').mockImplementation(create);
+
+    const ctx = TestBed.inject(ProjectContextService);
+    ctx.setRouteLensKind('foundation');
+    ctx.setFoundation(foundationA, false);
+
+    fixture = TestBed.createComponent(PlanningTabComponent);
+    fixture.componentRef.setInput('programTypeConfig', programTypeConfig);
+    fixture.detectChanges();
+  });
+
+  /** Reach the component's private lookup/create the way a click would. */
+  function instance(): Record<string, { set(v: unknown): void } & (() => unknown)> {
+    return fixture.componentInstance as unknown as Record<string, { set(v: unknown): void } & (() => unknown)>;
+  }
+
+  /**
+   * Put a url in the field that the component will read back as `eventName`, and return that
+   * read-back value.
+   *
+   * The round trip is NOT the identity: `extractEventName` title-cases each slug word, so
+   * "KubeCon NA 2026" comes back as "Kubecon Na 2026". Tests must use the value the COMPONENT
+   * derives, or `createInHubSpot`'s guard — which compares the live field against the event the
+   * offer was raised for — refuses a create a real user could make.
+   *
+   * Written without emitting: these tests drive `lookupHubSpot` directly, and letting the
+   * control fire would start a second, debounced lookup racing the one under test.
+   */
+  function setUrlFor(eventName: string): string {
+    const slug = eventName.toLowerCase().replace(/ /g, '-');
+    (
+      fixture.componentInstance as unknown as {
+        briefForm: { controls: { url: { setValue(v: string, o?: { emitEvent: boolean }): void } } };
+      }
+    ).briefForm.controls.url.setValue(`https://events.example.com/${slug}`, { emitEvent: false });
+    return slug
+      .split('-')
+      .map((w) => (w ? w[0].toUpperCase() + w.slice(1) : w))
+      .join(' ');
+  }
+
+  function runLookup(result: unknown, eventName = 'KubeCon NA 2026'): void {
+    // The lookup is driven with the name the FIELD yields, not the caller's spelling, so the
+    // panel and the field agree — which is the state a real user is ever in, and the only one
+    // in which createInHubSpot will act.
+    const derived = setUrlFor(eventName);
+    lookup.mockReturnValue(
+      new Observable((s) => {
+        s.next(result);
+        s.complete();
+      })
+    );
+    (fixture.componentInstance as unknown as { lookupHubSpot(name: string): void }).lookupHubSpot(derived);
+    fixture.detectChanges();
+  }
+
+  /**
+   * The create is the whole hazard: it writes into a namespace shared account-wide, and a
+   * capped search has not proved the campaign is absent. Both directions are asserted so the
+   * guard cannot be satisfied by suppressing the button unconditionally.
+   */
+  it('offers no create when the lookup was inconclusive, and offers one when it was not', () => {
+    for (const [capped, wantButton] of [
+      [true, false],
+      [false, true],
+    ] as const) {
+      // A DIFFERENT event name each pass: lookupHubSpot returns early when the event is
+      // unchanged, so a repeat with the same name would silently skip the second lookup and
+      // assert against the first pass's rendering.
+      runLookup({ found: false, hs_utm: null, campaign_name: '', all_matches: [], capped, inconclusive: capped }, `KubeCon NA 2026 ${capped}`);
+
+      const el = fixture.nativeElement as HTMLElement;
+      expect(!!el.querySelector('[data-testid="planning-hubspot-create-btn"]'), `capped=${capped}: create button`).toBe(wantButton);
+      expect(!!el.querySelector('[data-testid="planning-hubspot-capped"]'), `capped=${capped}: capped notice`).toBe(!wantButton);
+    }
+  });
+
+  /**
+   * An AMBIGUOUS lookup must still reach the picker.
+   *
+   * The mapper deliberately reports found:false for a tie or a too-weak match, rather than
+   * applying a token nobody chose — but it returns the candidates it refused to choose between.
+   * Those arrive on the not-found path, which previously dropped them, leaving the operator with
+   * no picker AND no create (inconclusive suppresses that too): a dead end where the one thing
+   * they need, choosing between two named campaigns, was the thing removed.
+   */
+  it('renders the picker for an ambiguous lookup that returned candidates', () => {
+    runLookup({
+      found: false,
+      hs_utm: null,
+      campaign_name: '',
+      all_matches: [
+        { name: 'KubeCon Europe 2026', hs_utm: 'eu-token' },
+        { name: 'KubeCon China 2026', hs_utm: 'cn-token' },
+      ],
+      capped: false,
+      inconclusive: true,
+    });
+
+    const el = fixture.nativeElement as HTMLElement;
+    const picker = el.querySelector('[data-testid="planning-hubspot-matches"]');
+    expect(picker, 'the picker must render when candidates came back').toBeTruthy();
+    expect(picker?.textContent).toContain('KubeCon Europe 2026');
+    expect(picker?.textContent).toContain('KubeCon China 2026');
+    // Create stays suppressed on purpose: one of these may BE this event under another name,
+    // and creating would duplicate it in a namespace shared portal-wide.
+    expect(!!el.querySelector('[data-testid="planning-hubspot-create-btn"]')).toBe(false);
+    // ...so the caption must not offer it either. Every path that fills the picker without a
+    // selected token also hides Create, so a caption naming it would contradict the notice
+    // directly above on the one screen where both appear.
+    expect(picker?.textContent).not.toContain('create a new campaign');
+  });
+
+  /**
+   * An unconfirmed create withdraws the create offer, deliberately — the campaign may already
+   * exist. That leaves a fresh lookup as the only way to establish what happened, and
+   * `lookupHubSpot` returns early while the event is unchanged, so retyping the same url is a
+   * no-op. Without this control the operator is told to check and try again with nothing on the
+   * page able to try.
+   */
+  it('offers a re-check after an unconfirmed create, and the re-check actually runs a lookup', () => {
+    runLookup({ found: false, hs_utm: null, campaign_name: '', all_matches: [], capped: false, inconclusive: false });
+    create.mockReturnValue(
+      new Observable((s) => {
+        s.next({ created: false });
+        s.complete();
+      })
+    );
+    (fixture.componentInstance as unknown as { createInHubSpot(): void }).createInHubSpot();
+    fixture.detectChanges();
+
+    // The offer is withdrawn and the unknown is surfaced as a control, not just copy.
+    expect(instance()['hsNotFound']()).toBe(false);
+    const el = fixture.nativeElement as HTMLElement;
+    expect(el.querySelector('[data-testid="planning-hubspot-create-btn"]')).toBeNull();
+    const recheck = el.querySelector('[data-testid="planning-hubspot-recheck-btn"]') as HTMLButtonElement | null;
+    expect(recheck).not.toBeNull();
+
+    // And it must actually issue a lookup — clearing lastLookedUpEvent is what defeats the
+    // early return, so a re-check that forgot to would silently do nothing.
+    const before = lookup.mock.calls.length;
+    lookup.mockReturnValue(
+      new Observable((s) => {
+        s.next({ found: true, hs_utm: 'kubecon-na-2026', campaign_name: 'KubeCon NA 2026', all_matches: [] });
+        s.complete();
+      })
+    );
+    recheck!.click();
+    fixture.detectChanges();
+
+    expect(lookup.mock.calls.length).toBe(before + 1);
+    expect(instance()['hsUtm']()).toBe('kubecon-na-2026');
+    // Resolved, so the re-check control goes away.
+    expect(instance()['hsUnconfirmed']()).toBe(false);
+  });
+
+  /**
+   * The component stays mounted when an ED switches foundations, and campaign-service selects
+   * the HubSpot connection BY PROJECT -- so the same event name under a different foundation is
+   * a different question. With the URL unchanged, an answer for foundation A must not populate
+   * foundation B's panel, or B's brief carries A's token.
+   */
+  it('drops a lookup answer once the foundation has changed', () => {
+    const pending = new Subject<unknown>();
+    lookup.mockReturnValue(pending);
+    (fixture.componentInstance as unknown as { lookupHubSpot(n: string): void }).lookupHubSpot('KubeCon NA 2026');
+
+    // The ED switches foundations while the lookup is in flight. The url field is untouched.
+    TestBed.inject(ProjectContextService).setFoundation({ uid: 'foundation-b-uid', slug: 'foundation-b', name: 'Foundation B' }, false);
+    fixture.detectChanges();
+
+    pending.next({ found: true, hs_utm: 'foundation-a-token', campaign_name: 'KubeCon NA 2026', all_matches: [], capped: false });
+    fixture.detectChanges();
+
+    expect(instance()['hsUtm'](), "foundation A's token landed on foundation B's panel").toBeFalsy();
+  });
+
+  /**
+   * The stale-response guard stops a LATE answer landing; it does nothing about one that already
+   * landed. campaign-service picks the HubSpot connection BY PROJECT, so a token found under
+   * foundation A is an answer to a question nobody asked about B -- and the url does not change,
+   * so nothing else re-runs the lookup. Left in place it rolls into B's brief, and A's Create
+   * button stays live against B's portal.
+   */
+  it('re-asks the HubSpot question under the new foundation, rather than clearing and stopping', () => {
+    // Put a url in the field, since the re-lookup reads the event from it.
+    (fixture.componentInstance as unknown as { briefForm: { controls: { url: { setValue(v: string): void } } } }).briefForm.controls.url.setValue(
+      'https://events.example.com/kubecon-na-2026'
+    );
+    runLookup(
+      { found: true, hs_utm: 'foundation-a-token', campaign_name: 'KubeCon NA 2026', all_matches: [], capped: false, inconclusive: false },
+      // extractEventName title-cases the slug, and the guard compares against THAT -- so the
+      // captured event must be what the component would derive from the field, not the raw slug.
+      'Kubecon Na 2026'
+    );
+    expect(instance()['hsUtm']()).toBe('foundation-a-token');
+
+    // The new foundation's portal answers differently.
+    const before = lookup.mock.calls.length;
+    lookup.mockReturnValue(
+      new Observable((s) => {
+        s.next({ found: true, hs_utm: 'foundation-b-token', campaign_name: 'KubeCon NA 2026', all_matches: [], capped: false, inconclusive: false });
+        s.complete();
+      })
+    );
+    TestBed.inject(ProjectContextService).setFoundation({ uid: 'foundation-b-uid', slug: 'foundation-b', name: 'Foundation B' }, false);
+    fixture.detectChanges();
+
+    // Clearing alone left the panel DEAD: the component stays mounted and the url does not
+    // change, so urlInput$ never fires and nothing else starts a lookup. The block stayed
+    // hidden -- no create, no re-check -- until the operator retyped the same url.
+    expect(lookup.mock.calls.length, 'the foundation change cleared the panel without re-asking').toBe(before + 1);
+    expect(instance()['hsUtm'](), "foundation A's token survived into foundation B").toBe('foundation-b-token');
+  });
+
+  it('offers Create again for the same event under a different foundation', () => {
+    // This ASSERTED THE OPPOSITE until Copilot pointed out the premise was false. The old
+    // comment read "a different foundation is a different HubSpot portal" -- but the namespace
+    // is the PORTAL, and two projects pointing at one portal is common under the LF umbrella
+    // (campaign-service.service.ts:1374). No response carries a portal id, so the client cannot
+    // tell the two cases apart.
+    //
+    // Between the two errors, this fails toward the recoverable one: a create genuinely needed
+    // under a different portal is briefly withheld and the re-check resolves it once the lookup
+    // answers there. The other direction writes a duplicate nobody can delete.
+    const ctx = TestBed.inject(ProjectContextService);
+    const first = new Subject<unknown>();
+    create.mockReturnValue(first);
+    runLookup({ found: false, hs_utm: null, campaign_name: '', all_matches: [], capped: false, inconclusive: false }, 'KubeCon NA 2026');
+    (fixture.componentInstance as unknown as { createInHubSpot(): void }).createInHubSpot();
+    first.next({ created: true, hs_utm: 'tok', campaign_name: 'KubeCon NA 2026' });
+    first.complete();
+    fixture.detectChanges();
+
+    ctx.setFoundation({ uid: 'foundation-b-uid', slug: 'foundation-b', name: 'Foundation B' }, false);
+    fixture.detectChanges();
+    runLookup({ found: false, hs_utm: null, campaign_name: '', all_matches: [], capped: false, inconclusive: false }, 'KubeCon NA 2026');
+    fixture.detectChanges();
+
+    // dealako, round 4 (blocking): keyed by event alone, this withheld Create PERMANENTLY for
+    // that name under every other portal, above a false "Created in HubSpot" status -- and the
+    // re-check reads the new portal, never finds it, and cannot clear the record. The key now
+    // carries the foundation, so the suppression applies only where the create was made.
+    //
+    // KNOWN RESIDUAL RISK, recorded rather than hidden (Copilot, and it is right): foundation B
+    // may share A's portal, in which case this not-found is HubSpot's post-create indexing lag
+    // and offering Create can duplicate the campaign created at the start of this test. The
+    // component cannot tell -- no lookup or create response carries a portal id.
+    //
+    // Chosen deliberately over the alternative, which dealako blocked: withholding here made
+    // Create permanently unreachable under every OTHER portal with no way to recover. A
+    // recoverable duplicate risk beats an unrecoverable lockout, and the in-flight guard still
+    // covers the window where the duplicate is actually likely. When the response carries portal
+    // identity, this expectation should flip to asserting the shared-portal case stays blocked.
+    expect(instance()['hsCreateBlocked'](), 'Create stayed withheld under a portal where the campaign may not exist').toBe(false);
+    expect(instance()['hsNotFound'](), 'should be a normal not-found under the new portal').toBe(true);
+  });
+
+  it('does not re-offer Create after a superseded create already succeeded', () => {
+    // RED FIRST: this documents the gap Cursor found before any fix exists for it.
+    //
+    // A superseded create still makes a real campaign upstream. Its result is rightly discarded
+    // for rendering -- the operator moved on -- but once nothing is in flight, returning to that
+    // same event under the SAME foundation re-offers Create for a campaign that now exists. Two
+    // projects on one HubSpot portal share the namespace, so the duplicate cannot be removed
+    // from this UI.
+    const ctx = TestBed.inject(ProjectContextService);
+    const first = new Subject<unknown>();
+    create.mockReturnValue(first);
+    runLookup({ found: false, hs_utm: null, campaign_name: '', all_matches: [], capped: false, inconclusive: false }, 'KubeCon NA 2026');
+    (fixture.componentInstance as unknown as { createInHubSpot(): void }).createInHubSpot();
+
+    // Supersede it, then come back to the same foundation.
+    ctx.setFoundation({ uid: 'foundation-b-uid', slug: 'foundation-b', name: 'Foundation B' }, false);
+    fixture.detectChanges();
+
+    // The superseded create SUCCEEDS upstream.
+    first.next({ created: true, hs_utm: null, campaign_name: 'KubeCon NA 2026' });
+    first.complete();
+    fixture.detectChanges();
+
+    // Back to the original foundation, same event, and the lookup still says not-found because
+    // HubSpot has not indexed it yet.
+    ctx.setFoundation({ uid: 'foundation-a-uid', slug: 'foundation-a', name: 'Foundation A' }, false);
+    fixture.detectChanges();
+    runLookup({ found: false, hs_utm: null, campaign_name: '', all_matches: [], capped: false, inconclusive: false }, 'KubeCon NA 2026');
+    fixture.detectChanges();
+
+    expect(instance()['hsCreatesInFlight'](), 'nothing should still be in flight').toBe(0);
+    expect(instance()['hsCreateBlocked'](), 'Create was re-offered for an event that already has a campaign').toBe(true);
+    // AND the operator has a way out. Blocking without a recovery path is the worse failure: a
+    // disabled button plus a false "No campaign found" is a dead end, because retyping the same
+    // url starts no new lookup either.
+    expect(instance()['hsUnconfirmed'](), 'blocked Create with no re-check to recover through').toBe(true);
+    expect(instance()['hsNotFound'](), 'showed a false not-found for a campaign that exists').toBe(false);
+    // Matched on the stable claim -- that the status says it was CREATED and is not yet
+    // visible -- rather than a full sentence, which has now been reworded twice.
+    expect(String(instance()['hsStatus']())).toMatch(/^Created\b/);
+  });
+
+  it('preserves upstream text on a 400 instead of always saying "check the name"', () => {
+    // campaign-service uses 400 for 39 distinct reasons, including "invalid credentials payload"
+    // and a refused event URL -- not only name validation. Flattening them all to "check the
+    // name and try again" sends an operator to retype an input that cannot fix a credential
+    // problem.
+    runLookup({ found: false, hs_utm: null, campaign_name: '', all_matches: [], capped: false, inconclusive: false }, 'KubeCon NA 2026');
+    create.mockReturnValue(throwError(() => ({ status: 400, error: { error: 'invalid credentials payload' } })));
+    (fixture.componentInstance as unknown as { createInHubSpot(): void }).createInHubSpot();
+    fixture.detectChanges();
+
+    expect(String(instance()['hsStatus']())).toContain('invalid credentials payload');
+    expect(String(instance()['hsStatus']()), 'buried the real reason under a name prompt').not.toContain('check the name');
+  });
+
+  it('falls back to the name prompt when a 400 carries no upstream text', () => {
+    // The hard-coded copy is still right when there is nothing better to say.
+    runLookup({ found: false, hs_utm: null, campaign_name: '', all_matches: [], capped: false, inconclusive: false }, 'KubeCon NA 2026');
+    create.mockReturnValue(throwError(() => ({ status: 400 })));
+    (fixture.componentInstance as unknown as { createInHubSpot(): void }).createInHubSpot();
+    fixture.detectChanges();
+
+    expect(String(instance()['hsStatus']())).toContain('check the name');
+  });
+
+  it.each([
+    ['a 503', 503],
+    ['a status-less transport failure', 0],
+  ])('records a possibly-created campaign after %s, so a re-check cannot re-offer Create', (_label, status) => {
+    // An UNCONFIRMED create may well have committed. Recording only definite successes left a
+    // duplicate path: the offered re-check can return empty while HubSpot is still indexing the
+    // campaign that did land, and Create was re-enabled for a campaign that exists.
+    runLookup({ found: false, hs_utm: null, campaign_name: '', all_matches: [], capped: false, inconclusive: false }, 'KubeCon NA 2026');
+    create.mockReturnValue(throwError(() => (status ? { status } : new Error('socket hang up'))));
+    (fixture.componentInstance as unknown as { createInHubSpot(): void }).createInHubSpot();
+    fixture.detectChanges();
+
+    // The re-check comes back empty -- HubSpot has not indexed it yet.
+    runLookup({ found: false, hs_utm: null, campaign_name: '', all_matches: [], capped: false, inconclusive: false }, 'KubeCon NA 2026');
+    fixture.detectChanges();
+
+    expect(instance()['hsCreateBlocked'](), 'Create was re-offered after a create that may have committed').toBe(true);
+  });
+
+  it('does not retire the record on INCONCLUSIVE re-checks', () => {
+    // A capped or otherwise incomplete search has not established absence, so counting it as a
+    // miss would retire the protection on evidence that proves nothing -- and re-enable Create
+    // after an unconfirmed POST that may well have landed. Same "absence is not proof" rule the
+    // create offer runs on, applied to what RETIRES it.
+    const inconclusive = { found: false, hs_utm: null, campaign_name: '', all_matches: [], capped: true, inconclusive: true };
+    const recheckWith = (r: unknown) => {
+      lookup.mockReturnValue(
+        new Observable((s) => {
+          s.next(r);
+          s.complete();
+        })
+      );
+      (fixture.componentInstance as unknown as { recheckHubSpot(): void }).recheckHubSpot();
+      fixture.detectChanges();
+    };
+
+    runLookup({ found: false, hs_utm: null, campaign_name: '', all_matches: [], capped: false, inconclusive: false }, 'KubeCon NA 2026');
+    create.mockReturnValue(throwError(() => ({ status: 503 })));
+    (fixture.componentInstance as unknown as { createInHubSpot(): void }).createInHubSpot();
+    fixture.detectChanges();
+
+    // Three inconclusive re-checks -- more than the limit -- must not retire anything.
+    recheckWith(inconclusive);
+    recheckWith(inconclusive);
+    recheckWith(inconclusive);
+
+    expect(instance()['hsCreateBlocked'](), 'inconclusive searches retired the record and re-offered Create').toBe(true);
+  });
+
+  it('does not claim "Created" for a create that never confirmed', () => {
+    // dealako, round 6 (blocking): the record is written by two arms that know different things.
+    // The success arm saw `created: true`. The ERROR arm writes on any status that is not a
+    // definite refusal -- a transport 503, where nothing may have happened at all. Telling both
+    // "Created, but HubSpot has not indexed it yet" asserts as fact something only one of them
+    // established, and for the 503 class it sends the operator to hunt for a campaign that was
+    // never attempted -- the exact harm the error arm warns about at its own write site.
+    const empty = { found: false, hs_utm: null, campaign_name: '', all_matches: [], capped: false, inconclusive: false };
+    runLookup(empty, 'KubeCon NA 2026');
+    create.mockReturnValue(throwError(() => ({ status: 503 })));
+    (fixture.componentInstance as unknown as { createInHubSpot(): void }).createInHubSpot();
+    fixture.detectChanges();
+
+    lookup.mockReturnValue(
+      new Observable((o) => {
+        o.next(empty);
+        o.complete();
+      })
+    );
+    (fixture.componentInstance as unknown as { recheckHubSpot(): void }).recheckHubSpot();
+    fixture.detectChanges();
+
+    const status = String(instance()['hsStatus']());
+    expect(status, 'asserted "Created" for an outcome that was never confirmed').not.toMatch(/^Created\b/);
+    expect(status, 'did not tell the operator the create may never have happened').toMatch(/may never have been created/);
+    // Suppression is unchanged: an unconfirmed create may still have landed.
+    expect(instance()['hsCreateBlocked'](), 'honest copy came at the cost of the duplicate guard').toBe(true);
+  });
+
+  it('warns on A->B when the stale create settles after B already looked up', () => {
+    // Copilot's SECOND symptom on the same early return: on a one-way A -> B, B's lookup returns
+    // not-found while the create is in flight. Once it settles, hsCreatesInFlight falls to zero
+    // and Create is enabled again -- correct, B may be a different portal -- but B's panel never
+    // got the shared-portal warning, because the record arrived after its lookup rendered.
+    const ctx = TestBed.inject(ProjectContextService);
+    const empty = { found: false, hs_utm: null, campaign_name: '', all_matches: [], capped: false, inconclusive: false };
+    const pending = new Subject<unknown>();
+
+    runLookup(empty, 'KubeCon NA 2026');
+    create.mockReturnValue(pending);
+    (fixture.componentInstance as unknown as { createInHubSpot(): void }).createInHubSpot();
+    fixture.detectChanges();
+
+    ctx.setFoundation({ uid: 'foundation-b-uid', slug: 'foundation-b', name: 'Foundation B' }, false);
+    fixture.detectChanges();
+    runLookup(empty, 'KubeCon NA 2026');
+
+    pending.next({ created: true, hs_utm: null, campaign_name: 'Kubecon Na 2026' });
+    pending.complete();
+    fixture.detectChanges();
+
+    // Create stays available -- B may be a different portal (round-4 constraint).
+    expect(instance()['hsCreateBlocked'](), 'withheld Create under another foundation').toBe(false);
+    // But the operator must be told the name may already be taken on a shared portal.
+    expect(String(instance()['hsStatus']()), 'no shared-portal warning after the stale create settled').toMatch(/created earlier in this session/);
+  });
+
+  it('reconciles the panel when a stale create FAILS after the new lookup', () => {
+    // cursor: the reconciliation was gated on `result?.created`, so it lived only in the success
+    // arm. The error arm writes the same two records and then returns on a non-current
+    // generation, so a 503 after a foundation switch stranded the panel exactly as a stale
+    // success did. Fixing the symptom in one arm is what let this survive.
+    const ctx = TestBed.inject(ProjectContextService);
+    const empty = { found: false, hs_utm: null, campaign_name: '', all_matches: [], capped: false, inconclusive: false };
+    const pending = new Subject<unknown>();
+
+    runLookup(empty, 'KubeCon NA 2026');
+    create.mockReturnValue(pending);
+    (fixture.componentInstance as unknown as { createInHubSpot(): void }).createInHubSpot();
+    fixture.detectChanges();
+
+    ctx.setFoundation({ uid: 'foundation-b-uid', slug: 'foundation-b', name: 'Foundation B' }, false);
+    fixture.detectChanges();
+    ctx.setFoundation({ uid: 'foundation-a-uid', slug: 'foundation-a', name: 'Foundation A' }, false);
+    fixture.detectChanges();
+    runLookup(empty, 'KubeCon NA 2026');
+
+    // The superseded create FAILS, unconfirmed -- the POST may still have committed.
+    pending.error({ status: 503 });
+    fixture.detectChanges();
+
+    expect(instance()['hsCreateBlocked'](), 'precondition: an unconfirmed record should block Create').toBe(true);
+    expect(instance()['hsNotFound'](), 'stranded: a disabled Create above a false not-found').toBe(false);
+    expect(instance()['hsUnconfirmed'](), 'stranded: no re-check control to recover through').toBe(true);
+    // And it must not claim the campaign was created -- nothing confirmed it.
+    expect(String(instance()['hsStatus']()), 'asserted "Created" for an unconfirmed failure').not.toMatch(/^Created/);
+  });
+
+  it('reconciles the panel when a stale create settles after the new lookup', () => {
+    // Copilot: records are written BEFORE the ownership guards (right -- a superseded create
+    // still made a real campaign), but the early return then leaves the PANEL untouched. So on
+    // A -> B -> A the sets say "blocked" while the rendered state still says not-found:
+    // hsCreateBlocked true, hsNotFound true, hsUnconfirmed false. A disabled Create with no
+    // re-check control and no explanation -- recoverable only by reload.
+    const ctx = TestBed.inject(ProjectContextService);
+    const empty = { found: false, hs_utm: null, campaign_name: '', all_matches: [], capped: false, inconclusive: false };
+    const pending = new Subject<unknown>();
+
+    runLookup(empty, 'KubeCon NA 2026');
+    create.mockReturnValue(pending);
+    (fixture.componentInstance as unknown as { createInHubSpot(): void }).createInHubSpot();
+    fixture.detectChanges();
+
+    // A -> B -> A while the create is still in flight.
+    ctx.setFoundation({ uid: 'foundation-b-uid', slug: 'foundation-b', name: 'Foundation B' }, false);
+    fixture.detectChanges();
+    ctx.setFoundation({ uid: 'foundation-a-uid', slug: 'foundation-a', name: 'Foundation A' }, false);
+    fixture.detectChanges();
+
+    // The new lookup under A returns not-found FIRST...
+    runLookup(empty, 'KubeCon NA 2026');
+    // ...and only then does the superseded create settle, successfully.
+    pending.next({ created: true, hs_utm: null, campaign_name: 'Kubecon Na 2026' });
+    pending.complete();
+    fixture.detectChanges();
+
+    expect(instance()['hsCreateBlocked'](), 'precondition: the record should block Create').toBe(true);
+    expect(instance()['hsNotFound'](), 'stranded: a disabled Create above a false not-found').toBe(false);
+    expect(instance()['hsUnconfirmed'](), 'stranded: no re-check control to recover through').toBe(true);
+  });
+
+  it('does not claim "created" cross-foundation for an unconfirmed attempt', () => {
+    // Copilot: `hsCreatedEventNames` is written by BOTH create arms, so the cross-foundation
+    // warning asserted "was created earlier in this session" for entries whose request may never
+    // have left the BFF. Same defect dealako blocked on for the same-foundation message -- I
+    // fixed that one and left its sibling saying the same untrue thing.
+    const ctx = TestBed.inject(ProjectContextService);
+    const empty = { found: false, hs_utm: null, campaign_name: '', all_matches: [], capped: false, inconclusive: false };
+
+    runLookup(empty, 'KubeCon NA 2026');
+    create.mockReturnValue(throwError(() => ({ status: 503 })));
+    (fixture.componentInstance as unknown as { createInHubSpot(): void }).createInHubSpot();
+    fixture.detectChanges();
+
+    ctx.setFoundation({ uid: 'foundation-b-uid', slug: 'foundation-b', name: 'Foundation B' }, false);
+    fixture.detectChanges();
+    runLookup(empty, 'KubeCon NA 2026');
+
+    const status = String(instance()['hsStatus']());
+    expect(status, 'asserted a campaign was created on the strength of an unconfirmed attempt').not.toMatch(/was created earlier/);
+    expect(status, 'dropped the shared-portal warning entirely').toMatch(/ATTEMPTED/);
+    // Still not withheld: a different foundation may be a different portal (round-4 constraint).
+    expect(instance()['hsCreateBlocked'](), 'withheld Create under another foundation').toBe(false);
+  });
+
+  it('gives the readonly token field an accessible name', () => {
+    // Copilot: the `<label>` closed before this input and carried no `for`, so assistive tech
+    // announced a readonly field with no name -- the operator hears a value with no idea what it
+    // is. Asserted through the ASSOCIATION rather than a string, so the visible label stays the
+    // single source of the name.
+    runLookup(
+      { found: true, hs_utm: 'kubecon-na-2026', campaign_name: 'KubeCon NA 2026', all_matches: [], capped: false, inconclusive: false },
+      'KubeCon NA 2026'
+    );
+
+    const el = fixture.nativeElement as HTMLElement;
+    const input = el.querySelector('[data-testid="planning-hubspot-utm-value"]') as HTMLInputElement | null;
+    expect(input, 'the token field did not render').not.toBeNull();
+    const label = el.querySelector(`label[for="${input!.id}"]`);
+    expect(label, 'the readonly token field has no accessible name').not.toBeNull();
+    expect(label!.textContent, 'the label does not name what the field holds').toContain('HubSpot UTM token');
+    // The id must be INSTANCE-SCOPED. Paid and email planning tabs are visibility-toggled rather
+    // than swapped with `@if`, so both stay mounted -- a hardcoded id appeared twice and `for`
+    // bound to the first match, typically the hidden panel, leaving the visible field unnamed
+    // (cursor). Asserted through deliveryType rather than a literal, so the derivation is what
+    // is pinned.
+    expect(input!.id, 'the token field id is not scoped to this instance').toContain('paid-marketing');
+  });
+
+  it('suppresses Create cross-foundation when the search was INCONCLUSIVE', () => {
+    // dealako (#2079, blocking): the cross-foundation branch set hsNotFound and hsUnconfirmed but
+    // never hsCreateSuppressed. The template gates Create on `hsNotFound() && !hsUtm() &&
+    // !hsCreateSuppressed()`, so an inconclusive search under foundation B rendered an ENABLED
+    // Create -- under the foundation most likely to share a portal with the campaign just
+    // created under A.
+    const ctx = TestBed.inject(ProjectContextService);
+    const empty = { found: false, hs_utm: null, campaign_name: '', all_matches: [], capped: false, inconclusive: false };
+
+    runLookup(empty, 'KubeCon NA 2026');
+    create.mockReturnValue(
+      new Observable((o) => {
+        o.next({ created: true, hs_utm: null, campaign_name: 'Kubecon Na 2026' });
+        o.complete();
+      })
+    );
+    (fixture.componentInstance as unknown as { createInHubSpot(): void }).createInHubSpot();
+    fixture.detectChanges();
+
+    // Foundation B, and its lookup cannot prove completeness.
+    ctx.setFoundation({ uid: 'foundation-b-uid', slug: 'foundation-b', name: 'Foundation B' }, false);
+    fixture.detectChanges();
+    // recheckHubSpot(), not runLookup(): lookupHubSpot returns early when lastLookedUpEvent
+    // already matches, so a second runLookup for the same event is a no-op and the branch under
+    // test never runs.
+    lookup.mockReturnValue(
+      new Observable((o) => {
+        o.next({ found: false, hs_utm: null, campaign_name: '', all_matches: [], capped: true, inconclusive: true });
+        o.complete();
+      })
+    );
+    (fixture.componentInstance as unknown as { recheckHubSpot(): void }).recheckHubSpot();
+    fixture.detectChanges();
+
+    expect(instance()['hsCreateSuppressed'](), 'an inconclusive cross-foundation search offered Create').toBe(true);
+  });
+
+  it('pairs the completeness signal with the suppression on the cross-foundation arm', () => {
+    // dealako (#2079, round 7): the arm set hsCreateSuppressed but never its twin
+    // hsCompletenessUnproven, while every other site writes the two together. Create was withheld
+    // correctly, but the amber panel explained it as an ordinary no-match -- so the operator was
+    // given the wrong remedy (narrow the term, rather than check the name).
+    //
+    // Asserts BOTH: suppression alone was already true before the fix, so a test that checked
+    // only that would pass against the bug.
+    const ctx = TestBed.inject(ProjectContextService);
+    const empty = { found: false, hs_utm: null, campaign_name: '', all_matches: [], capped: false, inconclusive: false };
+
+    runLookup(empty, 'KubeCon NA 2026');
+    create.mockReturnValue(
+      new Observable((o) => {
+        o.next({ created: true, hs_utm: null, campaign_name: 'Kubecon Na 2026' });
+        o.complete();
+      })
+    );
+    (fixture.componentInstance as unknown as { createInHubSpot(): void }).createInHubSpot();
+    fixture.detectChanges();
+
+    ctx.setFoundation({ uid: 'foundation-b-uid', slug: 'foundation-b', name: 'Foundation B' }, false);
+    fixture.detectChanges();
+    // capped: the one shape whose remedy differs from a plain no-match.
+    lookup.mockReturnValue(
+      new Observable((o) => {
+        o.next({ found: false, hs_utm: null, campaign_name: '', all_matches: [], capped: true, inconclusive: true });
+        o.complete();
+      })
+    );
+    (fixture.componentInstance as unknown as { recheckHubSpot(): void }).recheckHubSpot();
+    fixture.detectChanges();
+
+    expect(instance()['hsCreateSuppressed'](), 'an inconclusive cross-foundation search offered Create').toBe(true);
+    expect(instance()['hsCompletenessUnproven'](), 'the capped search rendered the plain no-match remedy').toBe(true);
+  });
+
+  it('clears the completeness signal when the cross-foundation search PROVES completeness', () => {
+    // The other direction: hsCompletenessUnproven is a persistent signal, so an arm that never
+    // writes it also LEAKS the previous lookup's value into this result. A proven-complete search
+    // must clear it, not inherit it.
+    const ctx = TestBed.inject(ProjectContextService);
+    const empty = { found: false, hs_utm: null, campaign_name: '', all_matches: [], capped: false, inconclusive: false };
+
+    runLookup(empty, 'KubeCon NA 2026');
+    create.mockReturnValue(
+      new Observable((o) => {
+        o.next({ created: true, hs_utm: null, campaign_name: 'Kubecon Na 2026' });
+        o.complete();
+      })
+    );
+    (fixture.componentInstance as unknown as { createInHubSpot(): void }).createInHubSpot();
+    fixture.detectChanges();
+
+    ctx.setFoundation({ uid: 'foundation-b-uid', slug: 'foundation-b', name: 'Foundation B' }, false);
+    fixture.detectChanges();
+    // First a capped search, to put the signal UP.
+    lookup.mockReturnValue(
+      new Observable((o) => {
+        o.next({ found: false, hs_utm: null, campaign_name: '', all_matches: [], capped: true, inconclusive: true });
+        o.complete();
+      })
+    );
+    (fixture.componentInstance as unknown as { recheckHubSpot(): void }).recheckHubSpot();
+    fixture.detectChanges();
+    expect(instance()['hsCompletenessUnproven']()).toBe(true);
+
+    // Then a proven-complete one, which must bring it back down.
+    lookup.mockReturnValue(
+      new Observable((o) => {
+        o.next({ found: false, hs_utm: null, campaign_name: '', all_matches: [], capped: false, inconclusive: false });
+        o.complete();
+      })
+    );
+    (fixture.componentInstance as unknown as { recheckHubSpot(): void }).recheckHubSpot();
+    fixture.detectChanges();
+
+    expect(instance()['hsCompletenessUnproven'](), 'a stale capped signal leaked into a complete search').toBe(false);
+  });
+
+  it('warns under a DIFFERENT foundation without withholding Create', () => {
+    // Copilot, raised twice: two foundations can share one HubSpot portal, where campaign names
+    // are one namespace. After a create under A settles, hsCreatesInFlight is zero and B's own
+    // lookup can be legitimately empty while HubSpot indexes -- so B saw a confident
+    // "No campaign found" for a campaign that already exists on its portal.
+    //
+    // The in-flight guard never covered this: it falls to zero when the POST settles, and the
+    // duplicate window is the INDEXING lag that starts there.
+    const ctx = TestBed.inject(ProjectContextService);
+    const empty = { found: false, hs_utm: null, campaign_name: '', all_matches: [], capped: false, inconclusive: false };
+
+    runLookup(empty, 'KubeCon NA 2026');
+    create.mockReturnValue(
+      new Observable((o) => {
+        o.next({ created: true, hs_utm: null, campaign_name: 'Kubecon Na 2026' });
+        o.complete();
+      })
+    );
+    (fixture.componentInstance as unknown as { createInHubSpot(): void }).createInHubSpot();
+    fixture.detectChanges();
+
+    // A DIFFERENT foundation, same event. Its own lookup is empty -- HubSpot has not indexed it.
+    ctx.setFoundation({ uid: 'foundation-b-uid', slug: 'foundation-b', name: 'Foundation B' }, false);
+    fixture.detectChanges();
+    runLookup(empty, 'KubeCon NA 2026');
+
+    expect(String(instance()['hsStatus']()), 'reported a confident absence for a name that may exist on this portal').toMatch(
+      /created earlier in this session/
+    );
+    expect(instance()['hsUnconfirmed'](), 'the cross-foundation warning did not surface').toBe(true);
+    // The round-4 constraint, asserted alongside: an event-only key that WITHHOLDS Create is
+    // unrecoverable, because the re-check reads the new portal and can never clear the record.
+    // A different foundation may be a different portal, where creating is exactly right.
+    expect(instance()['hsCreateBlocked'](), 'withheld Create under another foundation -- the round-4 lockout').toBe(false);
+  });
+
+  it('treats an authorization refusal as definite, not unconfirmed', () => {
+    // Copilot (blocking): 401/403 were DEFINITE at the record site and UNCONFIRMED at the message
+    // site -- two hand-maintained status lists that drifted. The record was correctly not
+    // written, and the operator was still told the campaign might exist, lost the Create button,
+    // and had to re-check to settle what the boundary had already settled.
+    //
+    // Both statuses asserted: 403 is the refusal requireCampaignManager actually returns, 401 the
+    // unauthenticated one, and a list that covers only the common case is how this drifted.
+    for (const status of [401, 403]) {
+      const empty = { found: false, hs_utm: null, campaign_name: '', all_matches: [], capped: false, inconclusive: false };
+      runLookup(empty, `KubeCon NA 20${status}`);
+      create.mockReturnValue(throwError(() => ({ status })));
+      (fixture.componentInstance as unknown as { createInHubSpot(): void }).createInHubSpot();
+      fixture.detectChanges();
+
+      expect(instance()['hsUnconfirmed'](), `${status} reported an unconfirmed outcome for a refused request`).toBe(false);
+      expect(instance()['hsCreateBlocked'](), `${status} withdrew Create after a request that never dispatched`).toBe(false);
+      expect(String(instance()['hsStatus']()), `${status} blamed HubSpot for our own permission refusal`).toContain('permission');
+    }
+  });
+
+  it('never re-enables Create from empty re-checks alone, however many', () => {
+    // Copilot (blocking): a count of empty searches cannot establish absence. `inconclusive:
+    // false` means the search COMPLETED, not that the record is missing -- HubSpot's index is
+    // eventually consistent, so a campaign created seconds ago returns a complete, truthful,
+    // empty result. Any threshold therefore expires on index lag and re-offers Create after a
+    // POST that may have landed, duplicating paid spend.
+    //
+    // Six revisions tuned that threshold. This asserts it is GONE: only positive evidence
+    // retires the record.
+    const empty = { found: false, hs_utm: null, campaign_name: '', all_matches: [], capped: false, inconclusive: false };
+    const recheck = () => {
+      lookup.mockReturnValue(
+        new Observable((s) => {
+          s.next(empty);
+          s.complete();
+        })
+      );
+      (fixture.componentInstance as unknown as { recheckHubSpot(): void }).recheckHubSpot();
+      fixture.detectChanges();
+    };
+
+    runLookup(empty, 'KubeCon NA 2026');
+    create.mockReturnValue(throwError(() => ({ status: 503 })));
+    (fixture.componentInstance as unknown as { createInHubSpot(): void }).createInHubSpot();
+    fixture.detectChanges();
+
+    // Well past every threshold this guard has ever carried.
+    for (let i = 0; i < 6; i++) recheck();
+
+    expect(instance()['hsCreateBlocked'](), 'empty re-checks retired the record and re-offered Create').toBe(true);
+    expect(instance()['hsNotFound'](), 'reported a confident not-found for a campaign that may exist').toBe(false);
+    expect(instance()['hsUnconfirmed'](), 'operator left with no re-check control').toBe(true);
+  });
+
+  it('records a possibly-created campaign when the response omits created', () => {
+    // Copilot: only a truthy `created` was recorded, but the else arm tells the operator the
+    // campaign "may or may not have been created". So a POST that COMMITTED and returned a
+    // malformed body wrote no record -- and the next empty lookup restored Create, letting the
+    // operator duplicate it by acting on the very warning that described the risk.
+    const empty = { found: false, hs_utm: null, campaign_name: '', all_matches: [], capped: false, inconclusive: false };
+    runLookup(empty, 'KubeCon NA 2026');
+    // 2xx, but the body does not say `created`.
+    create.mockReturnValue(
+      new Observable((o) => {
+        o.next({ hs_utm: null, campaign_name: '' });
+        o.complete();
+      })
+    );
+    (fixture.componentInstance as unknown as { createInHubSpot(): void }).createInHubSpot();
+    fixture.detectChanges();
+
+    expect(instance()['hsCreateBlocked'](), 'an unconfirmed 2xx left Create on offer').toBe(true);
+    // And it must NOT claim the campaign was created -- nothing confirmed it.
+    expect(String(instance()['hsStatus']()), 'asserted a create the response never confirmed').not.toMatch(/^Created/);
+  });
+
+  it('keeps the shared-portal fence while ANOTHER foundation still holds a record', () => {
+    // Copilot, raised twice: the name fences are GLOBAL -- "was this name created under any
+    // foundation this session?" -- but retirement deleted them alongside a single
+    // `foundation|event` record. So a positive find under A removed B's shared-portal warning,
+    // and a third foundation on B's portal could then see a confident not-found during lag.
+    const ctx = TestBed.inject(ProjectContextService);
+    const empty = { found: false, hs_utm: null, campaign_name: '', all_matches: [], capped: false, inconclusive: false };
+    const confirmed = { created: true, hs_utm: null, campaign_name: 'Kubecon Na 2026' };
+
+    // Foundation A creates.
+    runLookup(empty, 'KubeCon NA 2026');
+    create.mockReturnValue(
+      new Observable((o) => {
+        o.next(confirmed);
+        o.complete();
+      })
+    );
+    (fixture.componentInstance as unknown as { createInHubSpot(): void }).createInHubSpot();
+    fixture.detectChanges();
+
+    // Foundation B creates the SAME event name with a different internal whitespace spelling.
+    ctx.setFoundation({ uid: 'foundation-b-uid', slug: 'foundation-b', name: 'Foundation B' }, false);
+    fixture.detectChanges();
+    runLookup(empty, 'KubeCon  NA 2026');
+    expect(String(instance()['hsStatus']()), 'the normalized cross-foundation fence was not applied').toMatch(/campaign named for this event/);
+    (fixture.componentInstance as unknown as { createInHubSpot(): void }).createInHubSpot();
+    fixture.detectChanges();
+
+    // Back to A, where the lookup now POSITIVELY finds it -- retiring A's record only.
+    ctx.setFoundation({ uid: 'foundation-a-uid', slug: 'foundation-a', name: 'Foundation A' }, false);
+    fixture.detectChanges();
+    lookup.mockReturnValue(
+      new Observable((o) => {
+        o.next({ found: true, hs_utm: 'kubecon-na-2026', campaign_name: 'KubeCon NA 2026', all_matches: [], capped: false, inconclusive: false });
+        o.complete();
+      })
+    );
+    (fixture.componentInstance as unknown as { recheckHubSpot(): void }).recheckHubSpot();
+    fixture.detectChanges();
+
+    const component = fixture.componentInstance as unknown as { hsCreatedEventNames(): Set<string> };
+    // The fence is keyed on the NORMALISED name (lowercased, whitespace collapsed) -- that is the
+    // whole point of the normalisation, since A and B spell the same event differently. Asserting
+    // the display casing passed only while the set stored raw names.
+    expect(component.hsCreatedEventNames().has('kubecon na 2026'), "A's resolution dropped the fence B still needs").toBe(true);
+  });
+
+  it('records a create the operator navigated away from', () => {
+    // Copilot (planning-tab:860): the create was bound to `takeUntilDestroyed`, so leaving the
+    // page ABORTED a non-idempotent POST mid-flight. Neither arm ran, so nothing recorded that a
+    // campaign may exist -- and campaign-service may already have created it. Returning before
+    // HubSpot indexed it then re-offered Create, which is the duplicate this component exists to
+    // prevent, reached by navigating away.
+    //
+    // Same fix and reasoning as the optimization tab's keyword mutations: `take(1)` bounds the
+    // subscription without cancelling it.
+    const empty = { found: false, hs_utm: null, campaign_name: '', all_matches: [], capped: false, inconclusive: false };
+    const pending = new Subject<unknown>();
+    runLookup(empty, 'KubeCon NA 2026');
+    create.mockReturnValue(pending);
+    (fixture.componentInstance as unknown as { createInHubSpot(): void }).createInHubSpot();
+    fixture.detectChanges();
+
+    const component = fixture.componentInstance as unknown as { hsCreatedEvents(): Set<string> };
+    fixture.destroy();
+
+    // The create SUCCEEDS after the operator has left.
+    pending.next({ created: true, hs_utm: null, campaign_name: 'Kubecon Na 2026' });
+    pending.complete();
+
+    // SCOPE OF THIS ASSERTION, stated precisely because an earlier version of it overstated the
+    // guarantee: this proves the request was NOT cancelled and its outcome arm ran. It does NOT
+    // prove the duplicate guard survives navigation -- the sets are instance signals, so a
+    // REMOUNT starts empty and Create can be offered again for a campaign that exists.
+    //
+    // That gap is real and is not closed here (Copilot). Closing it needs the possibly-created
+    // state in a longer-lived service, or upstream idempotency (#2086). What this test pins is
+    // the half that IS fixed: an aborted request recorded nothing at all, so even returning to
+    // the SAME instance re-offered Create.
+    expect(component.hsCreatedEvents().size, 'the create was cancelled by navigation, or its outcome dropped').toBeGreaterThan(0);
+  });
+
+  it.each([
+    ['both completeness fields absent (an OLD pod)', { found: false, hs_utm: null, campaign_name: '', all_matches: [] }],
+    ['inconclusive absent', { found: false, hs_utm: null, campaign_name: '', all_matches: [], capped: false }],
+    ['capped absent', { found: false, hs_utm: null, campaign_name: '', all_matches: [], inconclusive: false }],
+  ])('suppresses Create when the response cannot state completeness: %s', (_label, result) => {
+    // Copilot: `inconclusive === true` is FALSE for a missing field. The chart default spins up a
+    // full new replica set alongside the old with no session affinity, so a browser served a new
+    // bundle can call an OLD pod whose response predates these fields -- and that same old
+    // response carries the old capped 10-row search. The one moment the signal is absent is the
+    // moment the search behind it was least complete, and `=== true` offered Create precisely
+    // then.
+    runLookup(result as never, 'KubeCon NA 2026');
+
+    expect(instance()['hsCreateSuppressed'](), 'a response that cannot state completeness licensed a create').toBe(true);
+  });
+
+  it('offers Create only when BOTH fields explicitly say the search was complete', () => {
+    // The other direction, so the assertion above cannot be satisfied by always suppressing.
+    runLookup({ found: false, hs_utm: null, campaign_name: '', all_matches: [], capped: false, inconclusive: false }, 'KubeCon NA 2026');
+
+    expect(instance()['hsCreateSuppressed'](), 'a proven-complete empty search failed to license a create').toBe(false);
+  });
+
+  it('retires on a superseded find only once the panel shows that key again', () => {
+    // Two reviewers, two opposite failure modes, and this is the shape that satisfies both.
+    //
+    // Retiring BELOW the render guards discards a superseded positive find, leaving Create
+    // suppressed with the answer in hand. Retiring ABOVE them unconditionally lets a STALE find
+    // clear the record while a newer not-found renders -- and the template gates Create on
+    // `hsNotFound() && !hsUtm() && !hsCreateSuppressed()`, never on hsCreateBlocked, so Create is
+    // offered for a campaign that exists.
+    //
+    // The test is `panelStillShows`, not the generation counter: the record is keyed
+    // foundation|event, so what matters is whether the answer describes the key on screen.
+    const ctx = TestBed.inject(ProjectContextService);
+    const empty = { found: false, hs_utm: null, campaign_name: '', all_matches: [], capped: false, inconclusive: false };
+    runLookup(empty, 'KubeCon NA 2026');
+    create.mockReturnValue(throwError(() => ({ status: 503 })));
+    (fixture.componentInstance as unknown as { createInHubSpot(): void }).createInHubSpot();
+    fixture.detectChanges();
+    expect(instance()['hsCreateBlocked']()).toBe(true);
+
+    // A re-check is in flight when the operator switches away.
+    const pending = new Subject<unknown>();
+    lookup.mockReturnValue(pending);
+    (fixture.componentInstance as unknown as { recheckHubSpot(): void }).recheckHubSpot();
+    fixture.detectChanges();
+    ctx.setFoundation({ uid: 'foundation-b-uid', slug: 'foundation-b', name: 'Foundation B' }, false);
+    fixture.detectChanges();
+
+    // It positively finds the campaign while B is on screen. It must NOT retire here -- B's panel
+    // is rendering its own answer, and clearing A's record now is the duplicate-offering case.
+    pending.next({ found: true, hs_utm: 'kubecon-na-2026', campaign_name: 'KubeCon NA 2026', all_matches: [], capped: false, inconclusive: false });
+    pending.complete();
+    fixture.detectChanges();
+
+    const component = fixture.componentInstance as unknown as { hsCreatedEvents(): Set<string> };
+    expect(component.hsCreatedEvents().size, 'a stale find cleared the record while another panel was showing').toBeGreaterThan(0);
+
+    // The other direction is already covered by `retires the record when a re-check POSITIVELY
+    // finds the campaign` and `retires the record on a TOKENLESS positive find too`, which drive
+    // a CURRENT lookup and assert the record clears. Repeating that here would only re-test them;
+    // what is unique to this case is that a STALE find must NOT clear it, asserted above.
+  });
+
+  it('retires the record on a TOKENLESS positive find too', () => {
+    // dealako (#2079, blocking): neither found arm removed the entry, so `hsCreateBlocked` stayed
+    // true for the component's lifetime and the "cleared only by a positive find" contract had no
+    // implementation behind it. This is the tokenless half -- gating retirement on `hs_utm` would
+    // leave Create suppressed forever for a campaign HubSpot has simply not tokenised yet.
+    const empty = { found: false, hs_utm: null, campaign_name: '', all_matches: [], capped: false, inconclusive: false };
+    runLookup(empty, 'KubeCon NA 2026');
+    create.mockReturnValue(throwError(() => ({ status: 503 })));
+    (fixture.componentInstance as unknown as { createInHubSpot(): void }).createInHubSpot();
+    fixture.detectChanges();
+    expect(instance()['hsCreateBlocked'](), 'precondition: the unconfirmed create should block').toBe(true);
+
+    // FOUND, but HubSpot has assigned no token yet.
+    lookup.mockReturnValue(
+      new Observable((o) => {
+        o.next({ found: true, hs_utm: null, campaign_name: 'KubeCon NA 2026', all_matches: [], capped: false, inconclusive: false });
+        o.complete();
+      })
+    );
+    (fixture.componentInstance as unknown as { recheckHubSpot(): void }).recheckHubSpot();
+    fixture.detectChanges();
+
+    expect(instance()['hsCreateBlocked'](), 'a positive find left Create suppressed for the session').toBe(false);
+  });
+
+  it('retires the record when a re-check POSITIVELY finds the campaign', () => {
+    // dealako, round 5 (blocking): the record must have an exit, or an operator is stranded
+    // until a reload. The exit is positive evidence -- the lookup actually finding it -- which
+    // is the only thing that answers the question the record poses.
+    const empty = { found: false, hs_utm: null, campaign_name: '', all_matches: [], capped: false, inconclusive: false };
+    runLookup(empty, 'KubeCon NA 2026');
+    create.mockReturnValue(throwError(() => ({ status: 503 })));
+    (fixture.componentInstance as unknown as { createInHubSpot(): void }).createInHubSpot();
+    fixture.detectChanges();
+    expect(instance()['hsCreateBlocked']()).toBe(true);
+
+    // HubSpot has now indexed it.
+    lookup.mockReturnValue(
+      new Observable((s) => {
+        s.next({ found: true, hs_utm: 'kubecon-na-2026', campaign_name: 'KubeCon NA 2026', all_matches: [], capped: false, inconclusive: false });
+        s.complete();
+      })
+    );
+    (fixture.componentInstance as unknown as { recheckHubSpot(): void }).recheckHubSpot();
+    fixture.detectChanges();
+
+    expect(instance()['hsUtm'](), 'the token HubSpot assigned was not applied').toBe('kubecon-na-2026');
+    expect(instance()['hsNotFound'](), 'a found campaign still reported not-found').toBe(false);
+  });
+
+  it.each([
+    ['401', 401],
+    ['403', 403],
+  ])('does NOT record a %s, which is refused at the boundary', (_label, status) => {
+    // requireCampaignManager refuses an unauthorised project BEFORE the POST reaches the
+    // controller, so nothing was created. Recording it told the operator a campaign may exist
+    // and made them spend two futile re-checks clearing a record that should never have existed.
+    runLookup({ found: false, hs_utm: null, campaign_name: '', all_matches: [], capped: false, inconclusive: false }, 'KubeCon NA 2026');
+    create.mockReturnValue(throwError(() => ({ status })));
+    (fixture.componentInstance as unknown as { createInHubSpot(): void }).createInHubSpot();
+    fixture.detectChanges();
+
+    expect(instance()['hsCreateBlocked'](), 'a boundary refusal was recorded as possibly-created').toBe(false);
+  });
+
+  it('does NOT record a 400, which proves nothing was created', () => {
+    // The other direction: over-recording would withhold Create after a refusal the operator can
+    // actually fix by correcting the name, which is the case the offer exists for.
+    runLookup({ found: false, hs_utm: null, campaign_name: '', all_matches: [], capped: false, inconclusive: false }, 'KubeCon NA 2026');
+    create.mockReturnValue(throwError(() => ({ status: 400, error: { error: 'name rejected' } })));
+    (fixture.componentInstance as unknown as { createInHubSpot(): void }).createInHubSpot();
+    fixture.detectChanges();
+
+    expect(instance()['hsCreateBlocked'](), 'withheld Create after a definite refusal').toBe(false);
+  });
+
+  it('keeps re-check available when the campaign is found but still tokenless', () => {
+    // After a create returns without hs_utm, the first re-check can legitimately FIND the
+    // campaign before HubSpot has assigned its token. The lookup clears hsUnconfirmed when it
+    // starts, and this branch never restored it -- so the only control that settles the question
+    // disappeared and the operator was stranded until a reload.
+    runLookup({ found: true, hs_utm: null, campaign_name: 'KubeCon NA 2026', all_matches: [], capped: false, inconclusive: false }, 'KubeCon NA 2026');
+    fixture.detectChanges();
+
+    expect(instance()['hsUnconfirmed'](), 're-check vanished on a found-but-tokenless campaign').toBe(true);
+    expect(String(instance()['hsStatus']())).toContain('no UTM token');
+    // Create stays hidden -- the campaign exists, so offering it would duplicate.
+    expect(instance()['hsNotFound']()).toBe(false);
+  });
+
+  /**
+   * The hazard this file already named -- "which is how a duplicate campaign gets made in a
+   * shared namespace" -- is now closed one step EARLIER than these tests assumed.
+   *
+   * They were written when a foundation switch could start a SECOND create while the first was
+   * in flight, and pinned the narrower property that a stale response must not re-enable the
+   * button. But the second dispatch is itself the duplicate: two projects on the same HubSpot
+   * portal share the namespace, and the campaign cannot be removed from this UI. So the second
+   * create is now REFUSED outright while any create is unsettled, and these assert that.
+   */
+  it('refuses a second create while one dispatched before the switch is unsettled', () => {
+    // Through the FIELD, so the panel and the url agree — createInHubSpot refuses to act
+    // otherwise, and a real user can only reach the button from that state.
+    (fixture.componentInstance as unknown as { lastLookedUpEvent: string }).lastLookedUpEvent = setUrlFor('KubeCon NA 2026');
+    const first = new Subject<unknown>();
+    create.mockReturnValue(first);
+    (fixture.componentInstance as unknown as { createInHubSpot(): void }).createInHubSpot();
+
+    // The operator switches foundation; a create starts for the new one and is still running.
+    TestBed.inject(ProjectContextService).setFoundation({ uid: 'foundation-b-uid', slug: 'foundation-b', name: 'Foundation B' }, false);
+    fixture.detectChanges();
+    // Through the FIELD, so the panel and the url agree — createInHubSpot refuses to act
+    // otherwise, and a real user can only reach the button from that state.
+    (fixture.componentInstance as unknown as { lastLookedUpEvent: string }).lastLookedUpEvent = setUrlFor('KubeCon NA 2026');
+    const second = new Subject<unknown>();
+    create.mockReturnValue(second);
+    const callsBefore = create.mock.calls.length;
+    (fixture.componentInstance as unknown as { createInHubSpot(): void }).createInHubSpot();
+
+    // REFUSED: the first create is still unsettled, so no second POST goes out at all. That is
+    // the duplicate, and it cannot be undone from this UI once it lands.
+    expect(create.mock.calls.length, 'dispatched a second create while the first was unsettled').toBe(callsBefore);
+    // The control stays blocked for the same reason.
+    expect(instance()['hsCreateBlocked']()).toBe(true);
+
+    // The OLD foundation's create now settles, and only then does the offer come back.
+    first.error(new Error('stale create failed'));
+    fixture.detectChanges();
+
+    expect(instance()['hsCreateBlocked'](), 'stayed blocked after every create settled').toBe(false);
+  });
+
+  /**
+   * The lookup side has the identical hazard: an A -> B -> A round trip while an A lookup is in
+   * flight leaves the old response matching on event AND foundation, so an equality check lets
+   * it clear the flag a newer A lookup is holding.
+   */
+  it('does not let a round-tripped stale lookup clear a newer search', () => {
+    const first = new Subject<never>();
+    lookup.mockReturnValue(first);
+    (fixture.componentInstance as unknown as { lookupHubSpot(n: string): void }).lookupHubSpot('KubeCon NA 2026');
+
+    const ctx = TestBed.inject(ProjectContextService);
+    ctx.setFoundation({ uid: 'foundation-b-uid', slug: 'foundation-b', name: 'Foundation B' }, false);
+    fixture.detectChanges();
+    ctx.setFoundation({ uid: 'foundation-a-uid', slug: 'foundation-a', name: 'Foundation A' }, false);
+    fixture.detectChanges();
+
+    // A newer lookup for the SAME event under the SAME foundation is now in flight.
+    const second = new Subject<never>();
+    lookup.mockReturnValue(second);
+    (fixture.componentInstance as unknown as { lookupHubSpot(n: string): void }).lookupHubSpot('KubeCon NA 2026');
+    expect(instance()['hsSearching']()).toBe(true);
+
+    first.error(new Error('stale lookup failed'));
+    fixture.detectChanges();
+
+    expect(instance()['hsSearching'](), 'a round-tripped stale lookup declared the newer one finished').toBe(true);
+  });
+
+  /**
+   * The same round trip must not let a stale lookup RENDER either.
+   *
+   * Clearing the flag and applying the answer are separate hazards. panelStillShows compares
+   * VALUES, so after A -> B -> A for the same event the stale response matches again and its
+   * result would overwrite the newer one — and a stale not-found leaves hsNotFound true with no
+   * token, which re-offers Create for a search already superseded. Only the generation counter
+   * can tell two identical-looking lookups apart.
+   */
+  /**
+   * A foundation switch must invalidate an in-flight CREATE, not just free the button.
+   *
+   * The handler clears hsCreating and re-runs the lookup (which bumps lookupGeneration), but
+   * nothing advanced createGeneration — so a create still in flight stayed "current". After an
+   * A -> B -> A round trip panelStillShows matches again and stops refusing, and the superseded
+   * create's answer lands on a panel it was never asked about.
+   *
+   * The lookup has to run FIRST: createInHubSpot returns early unless lastLookedUpEvent is set,
+   * so a test that skips it never starts a create and passes whether or not the fix is present.
+   */
+  it('invalidates an in-flight create across a round-trip foundation switch', () => {
+    runLookup({ found: false, hs_utm: null, campaign_name: '', all_matches: [], capped: false, inconclusive: false });
+
+    const pending = new Subject<unknown>();
+    create.mockReturnValue(pending);
+    (fixture.componentInstance as unknown as { createInHubSpot(): void }).createInHubSpot();
+
+    const ctx = TestBed.inject(ProjectContextService);
+    ctx.setFoundation({ uid: 'foundation-b-uid', slug: 'foundation-b', name: 'Foundation B' }, false);
+    fixture.detectChanges();
+    ctx.setFoundation({ uid: 'foundation-a-uid', slug: 'foundation-a', name: 'Foundation A' }, false);
+    fixture.detectChanges();
+
+    // Back on A, so panelStillShows matches again — only createGeneration can refuse this.
+    pending.next({ created: true, hs_utm: 'stale-token', campaign_name: 'Stale' });
+    pending.complete();
+    fixture.detectChanges();
+
+    expect(instance()['hsUtm'](), 'a superseded create wrote its token after a round trip').not.toBe('stale-token');
+  });
+
+  it('does not let a round-tripped stale lookup render its answer', () => {
+    const first = new Subject<HubSpotUtmLookupResult>();
+    lookup.mockReturnValue(first);
+    (fixture.componentInstance as unknown as { lookupHubSpot(n: string): void }).lookupHubSpot('KubeCon NA 2026');
+
+    const ctx = TestBed.inject(ProjectContextService);
+    ctx.setFoundation({ uid: 'foundation-b-uid', slug: 'foundation-b', name: 'Foundation B' }, false);
+    fixture.detectChanges();
+    ctx.setFoundation({ uid: 'foundation-a-uid', slug: 'foundation-a', name: 'Foundation A' }, false);
+    fixture.detectChanges();
+
+    // A newer lookup for the SAME event under the SAME foundation supersedes the first.
+    const second = new Subject<HubSpotUtmLookupResult>();
+    lookup.mockReturnValue(second);
+    (fixture.componentInstance as unknown as { lookupHubSpot(n: string): void }).lookupHubSpot('KubeCon NA 2026');
+
+    // The superseded lookup answers LAST, with a different campaign.
+    first.next({ found: true, hs_utm: 'stale-token', campaign_name: 'Stale Campaign', all_matches: [], capped: false, inconclusive: false });
+    first.complete();
+    fixture.detectChanges();
+
+    expect(instance()['hsUtm'](), 'a superseded lookup wrote its token over a newer search').not.toBe('stale-token');
+  });
+
+  /**
+   * The ERROR arms need the generation guard too.
+   *
+   * Guarding only the success path left the failure path trusting panelStillShows alone, which
+   * matches again after A -> B -> A. A stale FAILURE then overwrites hsStatus and sets
+   * hsUnconfirmed on a newer search — and nothing on the success path clears hsUnconfirmed, so
+   * the panel stays stuck reporting a failure that never happened to it.
+   */
+  it('does not let a round-tripped stale lookup error overwrite a newer search', () => {
+    const first = new Subject<HubSpotUtmLookupResult>();
+    lookup.mockReturnValue(first);
+    (fixture.componentInstance as unknown as { lookupHubSpot(n: string): void }).lookupHubSpot('KubeCon NA 2026');
+
+    const ctx = TestBed.inject(ProjectContextService);
+    ctx.setFoundation({ uid: 'foundation-b-uid', slug: 'foundation-b', name: 'Foundation B' }, false);
+    fixture.detectChanges();
+    ctx.setFoundation({ uid: 'foundation-a-uid', slug: 'foundation-a', name: 'Foundation A' }, false);
+    fixture.detectChanges();
+
+    const second = new Subject<HubSpotUtmLookupResult>();
+    lookup.mockReturnValue(second);
+    (fixture.componentInstance as unknown as { lookupHubSpot(n: string): void }).lookupHubSpot('KubeCon NA 2026');
+
+    // The superseded lookup FAILS last.
+    first.error(new Error('stale lookup failed'));
+    fixture.detectChanges();
+
+    expect(instance()['hsStatus'](), 'a superseded lookup reported its failure on a newer search').not.toBe('HubSpot lookup failed');
+    expect(instance()['hsUnconfirmed'](), 'a superseded failure left the panel stuck unconfirmed').toBe(false);
+  });
+
+  /**
+   * The create OFFER survives a url edit, deliberately -- the HubSpot state is not reset until
+   * the 500ms debounced lookup starts. But acting on it in that window would create a campaign
+   * for an event the operator has already left, into a namespace nobody can clean up from here.
+   */
+  it('refuses a create once the url no longer names the event the offer was raised for', () => {
+    (fixture.componentInstance as unknown as { briefForm: { controls: { url: { setValue(v: string): void } } } }).briefForm.controls.url.setValue(
+      'https://events.example.com/kubecon-na-2026'
+    );
+    runLookup({ found: false, hs_utm: null, campaign_name: '', all_matches: [], capped: false, inconclusive: false }, 'Kubecon Na 2026');
+
+    // The operator types a different event. The debounce has NOT fired, so the offer is still
+    // on screen and lastLookedUpEvent still names the old one.
+    (fixture.componentInstance as unknown as { briefForm: { controls: { url: { setValue(v: string): void } } } }).briefForm.controls.url.setValue(
+      'https://events.example.com/some-other-conference-2027'
+    );
+    (fixture.componentInstance as unknown as { createInHubSpot(): void }).createInHubSpot();
+
+    expect(create, 'created a campaign for an event the operator had left').not.toHaveBeenCalled();
+  });
+
+  /**
+   * An EMPTY field is not permission either, and panelStillShows alone does not cover it: that
+   * helper deliberately keeps the captured event through a mid-edit url, which is right for
+   * deciding whether an in-flight ANSWER may be rendered and wrong for an irreversible write.
+   * restoreSavedBrief draws the same line.
+   */
+  it('refuses a create while the url field is empty', () => {
+    runLookup({ found: false, hs_utm: null, campaign_name: '', all_matches: [], capped: false, inconclusive: false });
+    // The offer is on screen, raised by that lookup.
+    expect((fixture.nativeElement as HTMLElement).querySelector('[data-testid="planning-hubspot-create-btn"]')).not.toBeNull();
+
+    // The operator clears the field. The offer REMAINS visible, deliberately -- but it now names
+    // an event the field does not.
+    (
+      fixture.componentInstance as unknown as {
+        briefForm: { controls: { url: { setValue(v: string, o?: { emitEvent: boolean }): void } } };
+      }
+    ).briefForm.controls.url.setValue('', { emitEvent: false });
+    (fixture.componentInstance as unknown as { createInHubSpot(): void }).createInHubSpot();
+
+    expect(create, 'created a campaign from an empty url field').not.toHaveBeenCalled();
+  });
+
+  /**
+   * campaign-service separates the create's outcomes by STATUS, and collapsing them here threw
+   * that away at the last step: a 400/404 proves nothing was created, so telling the operator the
+   * campaign "may or may not" exist sends them to hunt for something never attempted -- and
+   * withdraws the offer they could have acted on.
+   *
+   * The set stops at 400/404. Widening it to 500 overshot into the opposite and worse error: the
+   * BFF's own 500 covers faults at any position, including after the campaign exists.
+   */
+  it('does not claim HubSpot truncated when capped only means completeness is unproven', () => {
+    // campaign-service defines `capped` as "true when the search could NOT be shown to be
+    // complete" -- which covers an ABSENT or CONTRADICTORY total, not just HubSpot returning
+    // fewer than it matched (design/connection.go). Saying "there are more it did not return"
+    // therefore stated a fact the response never established.
+    runLookup({ found: false, hs_utm: null, campaign_name: '', all_matches: [], capped: true, inconclusive: true }, 'Event capped');
+    fixture.detectChanges();
+
+    const status = String(instance()['hsStatus']());
+    expect(status, 'capped must not be reported as proven truncation').not.toMatch(/there are more it did not/i);
+    expect(status).toMatch(/could not be shown to be complete/i);
+  });
+
+  it('announces the create outcome through a live region that is always in the DOM', () => {
+    // A create outcome that only a sighted user can read is not delivered. The button that
+    // started the create can disappear from under the focus that triggered it, and the message
+    // can say "may or may not have been created" -- the one outcome a user must not miss.
+    //
+    // The region must exist BEFORE the text does: an aria-live element created by @if with its
+    // content already present is not reliably announced.
+    const host = fixture.nativeElement as HTMLElement;
+    const live = () => host.querySelector('[data-testid="planning-hubspot-status-live"]');
+
+    // Present while there is nothing to say -- that is the whole point.
+    expect(live(), 'the live region must be mounted before any status exists').not.toBeNull();
+    expect(live()?.getAttribute('aria-live')).toBe('polite');
+
+    runLookup({ found: false, hs_utm: null, campaign_name: '', all_matches: [], capped: false, inconclusive: false }, 'Event live');
+    create.mockReturnValue(throwError(() => ({ status: 503 })));
+    (fixture.componentInstance as unknown as { createInHubSpot(): void }).createInHubSpot();
+    fixture.detectChanges();
+
+    expect(live()?.textContent).toMatch(/may or may not/i);
+    // The visible copy is hidden from AT so the message is not announced twice.
+    expect(host.querySelector('[data-testid="planning-hubspot-status"]')?.getAttribute('aria-hidden')).toBe('true');
+  });
+
+  it('distinguishes a definite create failure from an unconfirmed one', () => {
+    for (const [status, offerStaysUp, expected] of [
+      [400, true, /check the name/i],
+      [404, true, /connect HubSpot/i],
+      // 500 is UNCONFIRMED, not proof. campaign-service does reserve 500 for the pre-send
+      // position -- but this status is not read from campaign-service, it is read from our own
+      // BFF, which raises 500 for a fault at ANY position (error-handler.middleware.ts:92 for any
+      // non-BaseApiError; ApiClientService JSON.parses the body AFTER a 2xx). A malformed success
+      // body therefore arrives as 500 with the campaign ALREADY created, and re-offering Create
+      // there makes the duplicate this handler exists to prevent.
+      [500, false, /may or may not/i],
+      [503, false, /may or may not/i],
+      // Unclassifiable: a non-idempotent create must fail CLOSED, so it reads as unconfirmed.
+      [0, false, /may or may not/i],
+    ] as const) {
+      runLookup({ found: false, hs_utm: null, campaign_name: '', all_matches: [], capped: false, inconclusive: false }, `Event ${status}`);
+      create.mockReturnValue(throwError(() => ({ status })));
+      (fixture.componentInstance as unknown as { createInHubSpot(): void }).createInHubSpot();
+      fixture.detectChanges();
+
+      expect(String(instance()['hsStatus']()), `status ${status}`).toMatch(expected);
+      // Nothing created -> the offer stays actionable. Unconfirmed -> it is withdrawn, because
+      // the campaign may already exist and a retry would duplicate it.
+      expect(instance()['hsNotFound'](), `status ${status}: create offer`).toBe(offerStaysUp);
+      expect(instance()['hsUnconfirmed'](), `status ${status}: unconfirmed control`).toBe(!offerStaysUp);
+    }
+  });
+
+  /**
+   * Ownership of `hsCreating` cannot be keyed on a value the user can navigate BACK to. A round
+   * trip A -> B -> A leaves the original create matching the active foundation again, so it
+   * would release the flag a newer create is holding and re-enable the button under a running
+   * request -- the same duplicate hazard, reached by a different route.
+   */
+  it('does not let a create released by a round-trip foundation switch re-enable the button', () => {
+    // Through the FIELD, so the panel and the url agree — createInHubSpot refuses to act
+    // otherwise, and a real user can only reach the button from that state.
+    (fixture.componentInstance as unknown as { lastLookedUpEvent: string }).lastLookedUpEvent = setUrlFor('KubeCon NA 2026');
+    const first = new Subject<unknown>();
+    create.mockReturnValue(first);
+    (fixture.componentInstance as unknown as { createInHubSpot(): void }).createInHubSpot();
+
+    const ctx = TestBed.inject(ProjectContextService);
+    ctx.setFoundation({ uid: 'foundation-b-uid', slug: 'foundation-b', name: 'Foundation B' }, false);
+    fixture.detectChanges();
+    // ...and straight back to A, so the first create's captured foundation matches once more.
+    ctx.setFoundation({ uid: 'foundation-a-uid', slug: 'foundation-a', name: 'Foundation A' }, false);
+    fixture.detectChanges();
+
+    // Through the FIELD, so the panel and the url agree — createInHubSpot refuses to act
+    // otherwise, and a real user can only reach the button from that state.
+    (fixture.componentInstance as unknown as { lastLookedUpEvent: string }).lastLookedUpEvent = setUrlFor('KubeCon NA 2026');
+    const second = new Subject<unknown>();
+    create.mockReturnValue(second);
+    const callsBefore = create.mock.calls.length;
+    (fixture.componentInstance as unknown as { createInHubSpot(): void }).createInHubSpot();
+
+    // The round trip makes the FIRST create's captured foundation match again, which is what
+    // made generation counting necessary. But the dispatch is refused regardless: an unsettled
+    // create blocks the next one whatever foundation the panel is showing.
+    expect(create.mock.calls.length, 'a round trip let a second create through').toBe(callsBefore);
+    expect(instance()['hsCreateBlocked']()).toBe(true);
+
+    // A 400: the ONE class of failure that proves nothing was created, so the offer may return.
+    // A status-less error would now be recorded as possibly-created instead -- deliberately,
+    // since it cannot prove the POST did not commit -- and this test is about generation
+    // ownership, not about that classification.
+    first.error(Object.assign(new Error('stale create failed'), { status: 400 }));
+    fixture.detectChanges();
+
+    // Settled, so the offer returns -- and the stale response still must not have rendered.
+    expect(instance()['hsCreateBlocked'](), 'stayed blocked after the only create settled').toBe(false);
+  });
+
+  /**
+   * The spinner must clear even when the user has retyped the url mid-flight.
+   *
+   * `panelStillShows` also asks whether the LIVE url still names the captured event, which goes
+   * false the moment the user types -- while the only request in flight is still this one. Gating
+   * the shared `hsSearching` flag on it therefore freezes the spinner permanently: nothing else
+   * can clear it, because `lookupHubSpot`'s early return means no new lookup starts for an
+   * unchanged event. Releasing the flag asks the narrower "is this still the latest lookup?".
+   */
+  it('clears the search flag when the url was retyped before the answer arrived', () => {
+    const pending = new Subject<unknown>();
+    lookup.mockReturnValue(pending);
+    (fixture.componentInstance as unknown as { lookupHubSpot(n: string): void }).lookupHubSpot('KubeCon NA 2026');
+    expect(instance()['hsSearching']()).toBe(true);
+
+    // The user starts typing a different event. The debounce has NOT fired, so no second lookup
+    // exists -- this one is still the only request in flight.
+    (fixture.componentInstance as unknown as { briefForm: { controls: { url: { setValue(v: string): void } } } }).briefForm.controls.url.setValue(
+      'https://events.example.com/some-other-conference-2027'
+    );
+    pending.error(new Error('hubspot down'));
+    fixture.detectChanges();
+
+    expect(instance()['hsSearching'](), 'the spinner froze with no request in flight').toBe(false);
+  });
+
+  /**
+   * An inconclusive-but-not-truncated result must suppress the create just the same, while
+   * saying something TRUE about why. Claiming HubSpot returned fewer than it matched, when it
+   * returned everything, points the operator at narrowing a term instead of checking the name.
+   */
+  /**
+   * `capped: true` must not be reported as TRUNCATION either.
+   *
+   * campaign-service sets capped whenever completeness cannot be PROVEN — including HubSpot
+   * omitting `total` altogether — not only when it truncated. The old copy said "it matched more
+   * than it could return", which is fabricated for a response that never claimed a total, and
+   * sends the operator to narrow a search term when the remedy is to check the name. The BFF
+   * cannot separate the two: both arrive in one boolean.
+   */
+  it('does not claim truncation even when capped is set', () => {
+    runLookup({ found: false, hs_utm: null, campaign_name: '', all_matches: [], capped: true, inconclusive: true }, 'KubeCon NA 2026 capped');
+
+    const el = fixture.nativeElement as HTMLElement;
+    const notice = el.querySelector('[data-testid="planning-hubspot-capped"]');
+    expect(notice).not.toBeNull();
+    expect(notice?.textContent, 'stated truncation the response never claimed').not.toMatch(/matched more than it could return/i);
+    // What IS known: the search was not confirmed complete.
+    expect(notice?.textContent).toMatch(/did not confirm|check HubSpot/i);
+    expect(el.querySelector('[data-testid="planning-hubspot-create-btn"]'), 'create offered on a capped search').toBeNull();
+  });
+
+  it('suppresses the create on an inconclusive result without claiming truncation', () => {
+    runLookup({ found: false, hs_utm: null, campaign_name: '', all_matches: [], capped: false, inconclusive: true }, 'KubeCon NA 2026');
+
+    const el = fixture.nativeElement as HTMLElement;
+    expect(el.querySelector('[data-testid="planning-hubspot-create-btn"]'), 'create offered on an inconclusive search').toBeNull();
+    const notice = el.querySelector('[data-testid="planning-hubspot-capped"]');
+    expect(notice).not.toBeNull();
+    expect(notice?.textContent, 'claimed truncation that did not happen').not.toMatch(/matched more than it could return/i);
+    expect(notice?.textContent).toMatch(/check HubSpot directly/i);
+  });
+
+  /**
+   * hsSearching is shared across lookups, unlike hsCreating. An OLDER request's failure must not
+   * declare a NEWER in-flight lookup finished -- that drops the spinner while a request is still
+   * running, so the panel reads as settled when it is not.
+   */
+  it('does not let a stale lookup failure clear a newer search', () => {
+    const first = new Subject<never>();
+    lookup.mockReturnValue(first);
+    (fixture.componentInstance as unknown as { lookupHubSpot(n: string): void }).lookupHubSpot('Event A');
+
+    // A newer lookup starts and is still in flight.
+    const second = new Subject<never>();
+    lookup.mockReturnValue(second);
+    (fixture.componentInstance as unknown as { lookupHubSpot(n: string): void }).lookupHubSpot('Event B');
+    expect(instance()['hsSearching']()).toBe(true);
+
+    // The OLD one now fails.
+    first.error(new Error('stale failure'));
+    fixture.detectChanges();
+
+    expect(instance()['hsSearching'](), 'a stale failure declared the newer lookup finished').toBe(true);
+  });
+
+  /**
+   * hsCreating tracks whether a REQUEST is in flight, which is a fact about the subscription
+   * rather than about which event is on screen. Releasing it after the stale guard left the
+   * button disabled and "Creating..." frozen on the new event's panel with nothing to clear it.
+   */
+  it('releases the creating flag even when the answer arrives stale', () => {
+    runLookup({ found: false, hs_utm: null, campaign_name: '', all_matches: [], capped: false, inconclusive: false });
+
+    const late = new Subject<unknown>();
+    create.mockReturnValue(late);
+    (fixture.componentInstance as unknown as { createInHubSpot(): void }).createInHubSpot();
+    expect(instance()['hsCreating']()).toBe(true);
+
+    (fixture.componentInstance as unknown as { lastLookedUpEvent: string }).lastLookedUpEvent = 'Some Other Event';
+    late.next({ created: true, hs_utm: 'x', campaign_name: 'KubeCon NA 2026' });
+    fixture.detectChanges();
+
+    expect(instance()['hsCreating']()).toBe(false);
+  });
+
+  /**
+   * A create that SUCCEEDED without a token still needs the re-check: HubSpot assigns the token
+   * asynchronously, and lookupHubSpot's early return means retyping the same url cannot fetch
+   * it. Clearing the control there leaves no way to ever retrieve it.
+   */
+  /**
+   * The message must not claim HubSpot has assigned nothing. The marketing create is not
+   * documented to return `hs_utm` at all, so an absent token means only that THIS RESPONSE did
+   * not carry one -- the campaign may already have a token the next lookup can read.
+   */
+  it('does not claim HubSpot assigned no token when the create response simply lacked one', () => {
+    runLookup({ found: false, hs_utm: null, campaign_name: '', all_matches: [], capped: false, inconclusive: false });
+    create.mockReturnValue(
+      new Observable((s) => {
+        s.next({ created: true, hs_utm: null, campaign_name: 'KubeCon NA 2026' });
+        s.complete();
+      })
+    );
+    (fixture.componentInstance as unknown as { createInHubSpot(): void }).createInHubSpot();
+    fixture.detectChanges();
+
+    const status = String(instance()['hsStatus']());
+    // It DID create -- that much is known and must be stated.
+    expect(status).toContain('Created');
+    // But not what HubSpot did or did not assign.
+    expect(status, 'stated as fact something the response cannot establish').not.toMatch(/has not assigned/i);
+    expect(status).toMatch(/not known yet/i);
+  });
+
+  it('keeps the re-check available when a created campaign has no token yet', () => {
+    runLookup({ found: false, hs_utm: null, campaign_name: '', all_matches: [], capped: false, inconclusive: false });
+    create.mockReturnValue(
+      new Observable((s) => {
+        s.next({ created: true, hs_utm: null, campaign_name: 'KubeCon NA 2026' });
+        s.complete();
+      })
+    );
+    (fixture.componentInstance as unknown as { createInHubSpot(): void }).createInHubSpot();
+    fixture.detectChanges();
+
+    const el = fixture.nativeElement as HTMLElement;
+    // Create stays hidden -- the campaign exists.
+    expect(el.querySelector('[data-testid="planning-hubspot-create-btn"]')).toBeNull();
+    // But the one action that can still make progress is offered.
+    expect(el.querySelector('[data-testid="planning-hubspot-recheck-btn"]')).not.toBeNull();
+  });
+
+  /**
+   * A FAILED re-check established nothing, and this arm leaves lastLookedUpEvent set -- so
+   * without restoring the control the same event shows neither Create nor a re-check and the
+   * only exit is a page reload.
+   */
+  it('restores the re-check when the lookup itself fails', () => {
+    runLookup({ found: false, hs_utm: null, campaign_name: '', all_matches: [], capped: false, inconclusive: false });
+    create.mockReturnValue(
+      new Observable((s) => {
+        s.next({ created: false });
+        s.complete();
+      })
+    );
+    (fixture.componentInstance as unknown as { createInHubSpot(): void }).createInHubSpot();
+    fixture.detectChanges();
+
+    lookup.mockReturnValue(throwError(() => new Error('hubspot down')));
+    (fixture.nativeElement as HTMLElement).querySelector<HTMLButtonElement>('[data-testid="planning-hubspot-recheck-btn"]')!.click();
+    fixture.detectChanges();
+
+    expect(instance()['hsSearching']()).toBe(false);
+    expect((fixture.nativeElement as HTMLElement).querySelector('[data-testid="planning-hubspot-recheck-btn"]')).not.toBeNull();
+  });
+
+  /**
+   * lastLookedUpEvent only updates when the 500ms debounced lookup FIRES. Between the user
+   * typing event B and that debounce elapsing it still names event A, so a create for A landing
+   * in that window passed a lastLookedUpEvent check and wrote A's token into B's panel.
+   */
+  it('drops a create answer once the url field names a different event', () => {
+    runLookup({ found: false, hs_utm: null, campaign_name: '', all_matches: [], capped: false, inconclusive: false });
+
+    const late = new Subject<unknown>();
+    create.mockReturnValue(late);
+    (fixture.componentInstance as unknown as { createInHubSpot(): void }).createInHubSpot();
+
+    // The user types event B. The debounce has NOT fired, so lastLookedUpEvent still says A.
+    (fixture.componentInstance as unknown as { briefForm: { controls: { url: { setValue(v: string): void } } } }).briefForm.controls.url.setValue(
+      'https://events.example.com/some-other-conference-2027'
+    );
+    late.next({ created: true, hs_utm: 'event-a-utm', campaign_name: 'KubeCon NA 2026' });
+    fixture.detectChanges();
+
+    expect(instance()['hsUtm']()).toBeFalsy();
+  });
+
+  /**
+   * The create is slow enough for the operator to retype the url and start a lookup for a
+   * different event while it is in flight. Event A's answer must not land on event B's panel.
+   */
+  it('drops a create answer for an event the operator has already left', () => {
+    runLookup({ found: false, hs_utm: null, campaign_name: '', all_matches: [], capped: false, inconclusive: false });
+
+    const late = new Subject<unknown>();
+    create.mockReturnValue(late);
+    (fixture.componentInstance as unknown as { createInHubSpot(): void }).createInHubSpot();
+
+    // The operator moves on before the create answers.
+    (fixture.componentInstance as unknown as { lastLookedUpEvent: string }).lastLookedUpEvent = 'Some Other Event';
+    late.next({ created: true, hs_utm: 'event-a-utm', campaign_name: 'KubeCon NA 2026' });
+    fixture.detectChanges();
+
+    expect(instance()['hsUtm']()).toBeFalsy();
+    expect(String(instance()['hsStatus']() ?? '')).not.toContain('KubeCon NA 2026');
+  });
+
+  /**
+   * A campaign that EXISTS but has no token is a real match. Offering to create it would
+   * duplicate a campaign that is already there, in a namespace shared account-wide.
+   */
+  it('does not offer to create a campaign that exists without a token', () => {
+    runLookup({ found: true, hs_utm: null, campaign_name: 'KubeCon NA 2026', all_matches: [] });
+
+    expect(instance()['hsNotFound']()).toBe(false);
+    // The brief gets no token, which is honest — HubSpot has none to report against.
+    expect(instance()['hsUtm']()).toBeFalsy();
+    expect(String(instance()['hsStatus']())).toContain('no UTM token');
+  });
+
+  /**
+   * A create that SUCCEEDED must not read as a failure just because HubSpot has not assigned the
+   * token yet. Requiring hs_utm too would leave the Create button up and invite a retry that
+   * writes a SECOND campaign into the connected PORTAL's namespace — upstream has no duplicate check, by
+   * design, because that check belongs with the operator.
+   *
+   * `created` is trustworthy on its own: upstream refuses an id-less create rather than
+   * reporting one as success.
+   */
+  it('treats a create with no token yet as success, not failure', () => {
+    // A lookup must have run first: createInHubSpot early-returns without lastLookedUpEvent,
+    // so without this the test would pass against a method that never executed.
+    runLookup({ found: false, hs_utm: null, campaign_name: '', all_matches: [], capped: false, inconclusive: false });
+    create.mockReturnValue(
+      new Observable((s) => {
+        s.next({ created: true, hs_utm: null, campaign_name: 'KubeCon NA 2027' });
+        s.complete();
+      })
+    );
+
+    (fixture.componentInstance as unknown as { createInHubSpot(): void }).createInHubSpot();
+    fixture.detectChanges();
+
+    expect(create).toHaveBeenCalled();
+
+    expect(String(instance()['hsStatus']())).toContain('Created');
+    expect(String(instance()['hsStatus']())).not.toContain('Failed');
+    expect(instance()['hsNotFound']()).toBe(false);
+  });
+
+  it('still offers to create when nothing matched', () => {
+    runLookup({ found: false, hs_utm: null, campaign_name: '', all_matches: [], capped: false, inconclusive: false });
+
+    expect(instance()['hsNotFound']()).toBe(true);
+  });
+
+  /**
+   * When the best match is TOKENLESS, it is excluded from `all_matches` — that list's element
+   * type has a non-nullable hs_utm, so a tokenless campaign cannot be represented there without
+   * inventing the value.
+   *
+   * The picker's old `length > 1` threshold assumed the selected match was always IN the list,
+   * so "more than one" meant "at least one alternative". With a tokenless winner, a single
+   * tokened alternative left the list at length 1 and stayed hidden — and the user had no way to
+   * take the one token actually available.
+   */
+  it('offers a lone alternative when the best match has no token', () => {
+    runLookup({
+      found: true,
+      hs_utm: null,
+      campaign_name: 'KubeCon NA 2026',
+      all_matches: [{ name: 'KubeCon NA 2026 sponsors', hs_utm: 'sponsors' }],
+    });
+
+    expect(instance()['hsHasAlternatives']()).toBe(true);
+    expect(fixture.nativeElement.querySelector('[data-testid="planning-hubspot-matches"]')).not.toBeNull();
+  });
+
+  // The selected match alone is not an alternative — showing a one-item picker of the thing
+  // already chosen is noise.
+  it('does not offer a picker when the only match is the one already selected', () => {
+    runLookup({
+      found: true,
+      hs_utm: 'kubecon-na-2026',
+      campaign_name: 'KubeCon NA 2026',
+      all_matches: [{ name: 'KubeCon NA 2026', hs_utm: 'kubecon-na-2026' }],
+    });
+
+    expect(instance()['hsHasAlternatives']()).toBe(false);
+    expect(fixture.nativeElement.querySelector('[data-testid="planning-hubspot-matches"]')).toBeNull();
+  });
+
+  /**
+   * The exposure warning is REQUIRED by the upstream contract, not decoration. HubSpot's campaign
+   * namespace is the whole LF portal, so a campaign created here is visible to every other
+   * foundation's campaign managers — and the name is whatever event text the operator typed.
+   */
+  it('warns that a created campaign is visible to everyone on the connected account', () => {
+    runLookup({ found: false, hs_utm: null, campaign_name: '', all_matches: [], capped: false, inconclusive: false });
+
+    const warning = fixture.nativeElement.querySelector('[data-testid="planning-hubspot-global-warning"]');
+    expect(warning).not.toBeNull();
+    expect(warning?.textContent).toMatch(/everyone working in that account/i);
+    // Paired positive: the Create button must still be offered, so this cannot pass merely
+    // because the whole block failed to render.
+    expect(fixture.nativeElement.querySelector('[data-testid="planning-hubspot-create-btn"]')).not.toBeNull();
+  });
+
+  /**
+   * A FAILED create withdraws the button. The outcome is unknown, not failed — upstream reports
+   * an id-less 2xx as an error precisely because the campaign may already exist, and classifies
+   * every other failure unconfirmed for the same reason. Leaving the button up invites a retry
+   * that creates a SECOND campaign in a namespace every project on that portal shares.
+   */
+  it('withdraws the create button when the outcome is unknown', () => {
+    runLookup({ found: false, hs_utm: null, campaign_name: '', all_matches: [], capped: false, inconclusive: false });
+    expect(fixture.nativeElement.querySelector('[data-testid="planning-hubspot-create-btn"]')).not.toBeNull();
+
+    create.mockReturnValue(throwError(() => new Error('upstream timeout')));
+    (fixture.componentInstance as unknown as { createInHubSpot(): void }).createInHubSpot();
+    fixture.detectChanges();
+
+    expect(fixture.nativeElement.querySelector('[data-testid="planning-hubspot-create-btn"]')).toBeNull();
+    expect(String(instance()['hsStatus']())).toMatch(/check HubSpot/i);
+  });
+
+  it('uses the token when the match has one', () => {
+    runLookup({ found: true, hs_utm: 'kubecon-na-2026', campaign_name: 'KubeCon NA 2026', all_matches: [] });
+
+    expect(instance()['hsUtm']()).toBe('kubecon-na-2026');
+    expect(instance()['hsNotFound']()).toBe(false);
   });
 });

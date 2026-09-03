@@ -2931,6 +2931,72 @@ describe('CampaignServiceClient google ads insight reads', () => {
   const keywordsResult = { window: 'last_30_days', rows: [], row_count: 0, truncated: false };
   const audienceResult = { window: 'last_30_days', buckets: [], bucket_count: 0 };
 
+  describe('HubSpot UTM transport', () => {
+    // These two are the ONE place in this service where argument POSITION carries meaning that
+    // typechecking cannot: `q` must be the fifth argument (query) and `{ name }` the sixth
+    // (body). A swap compiles cleanly, and the controller specs mock this layer -- so a POST
+    // carrying its payload in the query position would send no body at all and reach upstream
+    // as a request naming no campaign, with nothing failing until a live call.
+    it('sends the search term as a QUERY parameter, not a body', async () => {
+      proxyRequest.mockResolvedValue({ campaigns: [] });
+
+      await new CampaignServiceClient().searchHubSpotCampaigns(req, 'cncf', 'KubeCon NA 2026');
+
+      expect(proxyRequest).toHaveBeenCalledWith(req, 'LFX_V2_CAMPAIGN_SERVICE', '/projects/cncf/connection-hubspot/campaigns', 'GET', {
+        q: 'KubeCon NA 2026',
+      });
+      // Arity pins the position: a sixth argument here would be a body on a GET.
+      expect(proxyRequest.mock.calls[0]).toHaveLength(5);
+    });
+
+    it.each([
+      ['an empty object', {}],
+      ['a missing id', { name: 'KubeCon NA 2026' }],
+      ['a blank id', { id: '', name: 'KubeCon NA 2026' }],
+      ['a missing name', { id: 'c-1' }],
+    ])('refuses %s rather than reporting a fabricated create', async (_label, body) => {
+      // toUtmCreateResult hard-codes `created: true`, so an unvalidated 2xx would report a campaign
+      // that may not exist -- and the UI then blocks Create for it, telling the operator it worked
+      // while leaving them unable to retry. A non-idempotent create must not be inferred from a
+      // status code alone.
+      proxyRequest.mockResolvedValue(body);
+
+      await expect(new CampaignServiceClient().createHubSpotCampaign(req, 'cncf', 'KubeCon NA 2026')).rejects.toThrow(/no usable campaign/i);
+    });
+
+    it.each([
+      ['a whitespace-only id', { id: '   ', name: 'KubeCon NA 2026' }],
+      ['a whitespace-only name', { id: 'c-1', name: '  ' }],
+    ])('refuses %s rather than reporting a create', async (_label, created) => {
+      // Copilot: the guard tested `id === ''` and only type-checked `name`, so a whitespace-only
+      // value passed and a malformed 2xx became `created: true` -- permanently suppressing another
+      // create while displaying a blank campaign name. Upstream's contract is non-whitespace.
+      proxyRequest.mockResolvedValue(created);
+
+      await expect(new CampaignServiceClient().createHubSpotCampaign(req, 'cncf', 'KubeCon NA 2026')).rejects.toThrow(/no usable campaign/i);
+    });
+
+    it('accepts a well-formed create response', async () => {
+      proxyRequest.mockResolvedValue({ id: 'c-1', name: 'KubeCon NA 2026', utm: 'tok' });
+
+      await expect(new CampaignServiceClient().createHubSpotCampaign(req, 'cncf', 'KubeCon NA 2026')).resolves.toMatchObject({ id: 'c-1' });
+    });
+
+    it('sends the campaign name as a BODY, not a query parameter', async () => {
+      // A COMPLETE response: the create path now validates id and name, so a fixture missing
+      // either would fail for a reason unrelated to argument placement.
+      proxyRequest.mockResolvedValue({ id: 'c-1', name: 'KubeCon NA 2026' });
+
+      await new CampaignServiceClient().createHubSpotCampaign(req, 'cncf', 'KubeCon NA 2026');
+
+      const call = proxyRequest.mock.calls[0];
+      expect(call[3]).toBe('POST');
+      // Fifth is the QUERY and must be empty; sixth is the BODY and must carry the name.
+      expect(call[4]).toBeUndefined();
+      expect(call[5]).toEqual({ name: 'KubeCon NA 2026' });
+    });
+  });
+
   describe('getGoogleAdsKeywords', () => {
     it('sends the window as a query parameter, not a body', async () => {
       proxyRequest.mockResolvedValue(keywordsResult);
