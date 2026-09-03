@@ -363,6 +363,7 @@ describe('classifyMutationFailure — what proves upstream answered', () => {
 
     // The resolve ran -- it was admitted -- but the IRREVERSIBLE mutation did not.
     expect(resolveGoogleAdsCampaign).toHaveBeenCalledTimes(1);
+    expect(resolveGoogleAdsCampaign).toHaveBeenCalledWith(req, 'aswf', 'camp-1', 45_000);
     expect(applyKeywordActions, 'an irreversible REMOVE was dispatched past the deadline').not.toHaveBeenCalled();
     expect(String(res.results[0].message)).toMatch(/ran out of time/);
     expect(res.results[0].success).toBe(false);
