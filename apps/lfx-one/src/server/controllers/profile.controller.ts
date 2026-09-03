@@ -587,7 +587,9 @@ export class ProfileController {
         res.status(403).json({
           error: 'management_token_required',
           message: 'Profile authorization required to change the primary email',
-          authorize_url: `/api/profile/auth/start?returnTo=${encodeURIComponent((req.headers['referer'] as string) || '/profile/emails')}`,
+          // Static legacy path (not `referer`, which is the settings page itself and carries no
+          // fragment) — profile.routes.ts's redirectTo re-attaches #email-settings on return.
+          authorize_url: `/api/profile/auth/start?returnTo=${encodeURIComponent('/profile/emails')}`,
         });
         return;
       }
@@ -962,7 +964,9 @@ export class ProfileController {
         res.status(403).json({
           error: 'management_token_required',
           message: 'Profile authorization required to send a password reset link',
-          authorize_url: `/api/profile/auth/start?returnTo=${encodeURIComponent((req.headers['referer'] as string) || '/profile/password')}`,
+          // Static legacy path (not `referer`, which is the settings page itself and carries no
+          // fragment) — profile.routes.ts's redirectTo re-attaches #password on return.
+          authorize_url: `/api/profile/auth/start?returnTo=${encodeURIComponent('/profile/password')}`,
         });
         return;
       }
@@ -1020,7 +1024,9 @@ export class ProfileController {
         res.status(403).json({
           error: 'management_token_required',
           message: 'Profile authorization required to change your password',
-          authorize_url: `/api/profile/auth/start?returnTo=${encodeURIComponent((req.headers['referer'] as string) || '/profile/password')}`,
+          // Static legacy path (not `referer`, which is the settings page itself and carries no
+          // fragment) — profile.routes.ts's redirectTo re-attaches #password on return.
+          authorize_url: `/api/profile/auth/start?returnTo=${encodeURIComponent('/profile/password')}`,
         });
         return;
       }
@@ -2029,7 +2035,9 @@ export class ProfileController {
             success: false,
             error: 'management_token_required',
             message: 'Profile authorization required',
-            authorize_url: `/api/profile/auth/start?returnTo=${encodeURIComponent((req.headers['referer'] as string) || '/profile/emails')}`,
+            // Static legacy path (not `referer`, which is the settings page itself and carries no
+            // fragment) — profile.routes.ts's redirectTo re-attaches #email-settings on return.
+            authorize_url: `/api/profile/auth/start?returnTo=${encodeURIComponent('/profile/emails')}`,
           });
           return;
         }

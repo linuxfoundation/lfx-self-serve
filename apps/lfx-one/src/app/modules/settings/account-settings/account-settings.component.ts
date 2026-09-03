@@ -2,7 +2,7 @@
 // SPDX-License-Identifier: MIT
 
 import { isPlatformBrowser, NgClass } from '@angular/common';
-import { afterNextRender, Component, computed, DestroyRef, inject, PLATFORM_ID, Signal, signal } from '@angular/core';
+import { afterNextRender, Component, computed, DestroyRef, inject, Injector, PLATFORM_ID, Signal, signal } from '@angular/core';
 import { takeUntilDestroyed, toObservable, toSignal } from '@angular/core/rxjs-interop';
 import { AbstractControl, FormBuilder, FormControl, FormGroup, ReactiveFormsModule, ValidationErrors, ValidatorFn, Validators } from '@angular/forms';
 import { BadgeComponent } from '@components/badge/badge.component';
@@ -51,6 +51,7 @@ export class AccountSettingsComponent {
   private readonly platformId = inject(PLATFORM_ID);
   private readonly destroyRef = inject(DestroyRef);
   private readonly route = inject(ActivatedRoute);
+  private readonly injector = inject(Injector);
 
   // Hosted inside the Profile shell (route data `embedded`), which owns the page header.
   public readonly embedded = this.route.snapshot.data['embedded'] === true;
@@ -189,7 +190,9 @@ export class AccountSettingsComponent {
         ),
         takeUntilDestroyed()
       )
-      .subscribe((validFragment) => this.scrollToSection(validFragment));
+      // afterNextRender (not a direct call): waits for the loaded-state DOM swap to actually
+      // paint before measuring scrollIntoView, so the layout shift can't race the scroll.
+      .subscribe((validFragment) => afterNextRender(() => this.scrollToSection(validFragment), { injector: this.injector }));
   }
 
   // ══════════════════════════════════════════
