@@ -2286,7 +2286,12 @@ describe('CampaignController.executeKeywordActions via campaign-service', () => 
   it('resolves the campaign and applies the batch under its brief', async () => {
     await controller.executeKeywordActions(actionsReq([keyword('24183781329', '1')]), res, next);
 
-    expect(svcResolveCampaign).toHaveBeenCalledWith(expect.anything(), 'tlf', '24183781329');
+    // Fourth arg is the resolver's share of the request budget -- matched loosely because it is
+    // wall-clock. Bounding the mutation alone left THIS call able to overrun the window.
+    expect(svcResolveCampaign).toHaveBeenCalledWith(expect.anything(), 'tlf', '24183781329', expect.any(Number));
+    const resolveBudget = svcResolveCampaign.mock.calls[0][3] as number;
+    expect(resolveBudget, 'the resolver was given no deadline, or one outside the budget').toBeGreaterThan(0);
+    expect(resolveBudget).toBeLessThanOrEqual(KEYWORD_ACTION_DEADLINE_MS);
     // The brief and campaign must come from the RESOLUTION, not from the request — the request
     // carries neither, which is the whole reason the resolver exists.
     expect(svcApplyKeywordActions).toHaveBeenCalledWith(

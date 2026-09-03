@@ -434,7 +434,16 @@ export async function applyKeywordActionsViaCampaignService(
     }
     let ref;
     try {
-      const resolution = await client.resolveGoogleAdsCampaign(req, projectSlug, group.platformCampaignId);
+      // The resolver is bounded too, not just the mutation. Bounding only the mutation left this
+      // call able to overrun the window one step earlier -- a group entering just under the budget
+      // could spend the client's full 30s here, and any EARLIER campaign's per-keyword response is
+      // then lost when ingress closes the request, leaving an applied bulk REMOVE unreported
+      // (Copilot).
+      //
+      // Recomputed before the mutation below rather than reused, so the second call gets what is
+      // actually left rather than what was left before this one ran.
+      const resolveBudgetMs = KEYWORD_ACTION_DEADLINE_MS - (Date.now() - startedAt);
+      const resolution = await client.resolveGoogleAdsCampaign(req, projectSlug, group.platformCampaignId, resolveBudgetMs);
       // The COUNT and the ARRAY must agree, and that is checked on EVERY arm rather than only
       // where a match is consumed. `match_count: 0` with a NON-empty `matches` is upstream
       // contradicting itself, and answering "not managed here" on it would tell the operator to
