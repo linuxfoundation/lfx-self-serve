@@ -1950,8 +1950,19 @@ export class PlanningTabComponent implements OnInit {
             // which includes HubSpot omitting `total` entirely, so "it matched more than it
             // could return" would be fabricated for a response that never said so, and would
             // send the operator to narrow a term when the remedy is to check the name.
-            this.hsCompletenessUnproven.set(result?.capped === true);
-            this.hsStatus.set(this.noMatchStatus(result?.capped === true, result?.inconclusive === true));
+            // ABSENCE IS NOT A PROVEN `false` HERE EITHER. The Create guard above already refuses
+            // to read a missing field as "complete"; the COPY read `=== true`, so the same
+            // old-pod response -- fields absent entirely -- fell through both arms to the settled
+            // "No matching campaign in HubSpot". Create was correctly hidden while the live
+            // region announced a confident absence the response never established, which is the
+            // one claim this panel must not make (cursor).
+            //
+            // Derived from the same expressions the guard uses, so the copy and the control can
+            // no longer disagree about what the response proved.
+            const completenessProven = result?.capped === false;
+            const conclusivenessProven = result?.inconclusive === false;
+            this.hsCompletenessUnproven.set(!completenessProven);
+            this.hsStatus.set(this.noMatchStatus(!completenessProven, !conclusivenessProven));
           }
         },
         error: () => {

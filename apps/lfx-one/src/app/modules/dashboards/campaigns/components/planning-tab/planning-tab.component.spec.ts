@@ -1933,6 +1933,32 @@ describe('PlanningTabComponent — HubSpot UTM states', () => {
     expect(instance()['hsCompletenessUnproven'](), 'a stale capped signal leaked into a complete search').toBe(false);
   });
 
+  it('does not claim a settled miss when the response cannot state its completeness', () => {
+    // cursor (#1923): the Create guard requires an explicit `false` from both completeness
+    // fields, but the COPY read `=== true` -- so an OLD-POD response, with the fields absent
+    // entirely, fell through both arms to the settled "No matching campaign in HubSpot". Create
+    // was correctly hidden while the live region announced an absence the response never
+    // established.
+    //
+    // Reachable on any rolling deploy: the chart brings up a new replica set with no session
+    // affinity, so a new bundle can call a pod whose response predates these fields.
+    runLookup({ found: false, hs_utm: null, campaign_name: '', all_matches: [] } as never, 'KubeCon NA 2026');
+
+    expect(instance()['hsCreateSuppressed'](), 'an unprovable response licensed a create').toBe(true);
+    expect(String(instance()['hsStatus']()), 'an unprovable response was announced as a settled miss').not.toBe('No matching campaign in HubSpot');
+    expect(instance()['hsCompletenessUnproven'](), 'completeness was treated as proven for a response that never stated it').toBe(true);
+  });
+
+  it('still reports a settled miss when the response PROVES both', () => {
+    // The other direction: a response that does state completeness must keep the confident copy,
+    // or the fix would make every clean empty search sound uncertain.
+    runLookup({ found: false, hs_utm: null, campaign_name: '', all_matches: [], capped: false, inconclusive: false }, 'KubeCon NA 2026');
+
+    expect(instance()['hsCreateSuppressed']()).toBe(false);
+    expect(String(instance()['hsStatus']())).toBe('No matching campaign in HubSpot');
+    expect(instance()['hsCompletenessUnproven']()).toBe(false);
+  });
+
   it('warns under a DIFFERENT foundation without withholding Create', () => {
     // Copilot, raised twice: two foundations can share one HubSpot portal, where campaign names
     // are one namespace. After a create under A settles, hsCreatesInFlight is zero and B's own
