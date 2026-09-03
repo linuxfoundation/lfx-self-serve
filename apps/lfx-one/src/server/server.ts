@@ -17,6 +17,7 @@ import { CrowdfundingController } from './controllers/crowdfunding.controller';
 import { ProfileController } from './controllers/profile.controller';
 import { CrowdfundingAuthService } from './services/crowdfunding-auth.service';
 import { customErrorSerializer } from './helpers/error-serializer';
+import { applySsrCacheHeaders } from './helpers/ssr-cache-headers.helper';
 import { validateAndSanitizeUrl } from './helpers/url-validation';
 import { AuthenticationError } from './errors';
 import { authMiddleware } from './middleware/auth.middleware';
@@ -506,6 +507,8 @@ app.use('/**', async (req: Request, res: Response, next: NextFunction) => {
       if (!response) {
         return next();
       }
+
+      applySsrCacheHeaders(response);
 
       // Web `Response.status` is read-only, so rebuild with 404 when the render flagged not-found.
       // Buffer the body first (404 pages are small) so we never hand a consumed stream to the new Response.
