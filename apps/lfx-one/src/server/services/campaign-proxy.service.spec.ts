@@ -724,6 +724,35 @@ describe('CampaignProxyService HubSpot campaign lookup', () => {
     expect(result.inconclusive).toBe(true);
   });
 
+  it('withholds a tokenless found from a client that does not declare the capability', async () => {
+    // An EXACT match that carries no UTM token. This path reports it as `found: true` with a null
+    // token -- a tokenless campaign still counts as a match, which is what suppresses the
+    // duplicate create -- but the PREVIOUS bundle branches on `found && hs_utm` and reads
+    // anything else as absence, so it offers Create for a campaign that already exists.
+    //
+    // Reachable on any rolling deploy (new replica set, no session affinity), and this is the
+    // PRODUCTION DEFAULT path, so it is the one shipping today.
+    hsResponds({ total: 1, results: [{ id: '7', properties: { hs_name: 'KubeCon EU 2026' } }] });
+
+    const result = await service.lookupHubSpotUtm(req, 'KubeCon EU 2026');
+
+    // Downgraded to a shape the old bundle CAN read...
+    expect(result.found, 'a tokenless found reached a client that cannot parse it').toBe(false);
+    expect(result.hs_utm).toBeNull();
+    // ...but never as proven absence, which is what would license the create.
+    expect(result.inconclusive, 'an existing campaign was reported as proven absence').toBe(true);
+  });
+
+  it('reports the tokenless found to a client that DOES declare the capability', async () => {
+    hsResponds({ total: 1, results: [{ id: '7', properties: { hs_name: 'KubeCon EU 2026' } }] });
+
+    const result = await service.lookupHubSpotUtm(req, 'KubeCon EU 2026', true);
+
+    expect(result.found).toBe(true);
+    expect(result.hs_utm).toBeNull();
+    expect(result.campaign_name).toBe('KubeCon EU 2026');
+  });
+
   it('refuses a LONE weak match, matching the mapper path', async () => {
     // dealako (#2079): refusing ties alone still auto-applied a single weak match. One campaign
     // sharing one long word with the event name scores on containment and wins by default, and

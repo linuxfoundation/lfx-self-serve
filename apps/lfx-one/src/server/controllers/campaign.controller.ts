@@ -1062,6 +1062,10 @@ export class CampaignController {
     }
 
     const viaCampaignService = isServerFeatureEnabled(ServerFeatureFlag.CampaignServiceHubSpotUtm);
+    // Read ONCE, above the branch, because BOTH producers emit the tokenless `found: true` shape
+    // and both must gate it identically -- otherwise flipping the feature flag would change
+    // whether an old bundle can be told a campaign is absent when it is not.
+    const clientUnderstandsTokenlessFound = req.query['tokenless_found'] === '1';
     const startTime = logger.startOperation(req, 'hubspot_utm_lookup', { eventName, viaCampaignService });
 
     try {
@@ -1079,7 +1083,7 @@ export class CampaignController {
         }
 
         const payload = await this.campaignServiceClient.searchHubSpotCampaigns(req, projectSlug, eventName);
-        const result = toUtmLookupResult(payload, eventName);
+        const result = toUtmLookupResult(payload, eventName, clientUnderstandsTokenlessFound);
         // `matches` is upstream's raw fuzzy count; `found` is whether one candidate was
         // CONFIDENT enough to auto-apply -- an exact normalised match, alone in that, from a
         // result set proven complete.
@@ -1102,7 +1106,7 @@ export class CampaignController {
         return;
       }
 
-      const result = await this.proxyService.lookupHubSpotUtm(req, eventName);
+      const result = await this.proxyService.lookupHubSpotUtm(req, eventName, clientUnderstandsTokenlessFound);
       logger.success(req, 'hubspot_utm_lookup', startTime, { viaCampaignService: false, found: result.found });
       res.json(result);
     } catch (error) {

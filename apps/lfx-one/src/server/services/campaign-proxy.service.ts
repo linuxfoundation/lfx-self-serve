@@ -775,13 +775,34 @@ const GEO_TARGET_MAP: Record<string, string> = {
 export class CampaignProxyService {
   // === HubSpot UTM lookup/create ===
 
-  public async lookupHubSpotUtm(_req: Request, eventName: string): Promise<HubSpotUtmLookupResult> {
+  public async lookupHubSpotUtm(_req: Request, eventName: string, clientUnderstandsTokenlessFound = false): Promise<HubSpotUtmLookupResult> {
     const result = await hubspotSearchCampaign(eventName);
+    const matches = result.allMatches.map((m) => ({ name: m.name, hs_utm: m.hsUtm }));
+
+    // The SAME gate the campaign-service path applies, at the same boundary, for the same reason:
+    // this path also reports `found: true` for a campaign with no token (a tokenless match still
+    // counts as a match, so the duplicate create is suppressed), and the previous bundle reads
+    // that as absence and offers Create. Both producers sit behind one flag, so they must not
+    // disagree about a shape the client has to parse -- a flag flip would otherwise change
+    // whether an old browser can duplicate a campaign (Copilot, #2079).
+    if (result.found && result.hsUtm === null && !clientUnderstandsTokenlessFound) {
+      return {
+        found: false,
+        hs_utm: null,
+        campaign_name: '',
+        all_matches: matches,
+        capped: result.capped,
+        // Inconclusive, never proven absence -- the campaign was found. This is what keeps Create
+        // withheld on a bundle that would otherwise read `found:false` as licence to create.
+        inconclusive: true,
+      };
+    }
+
     return {
       found: result.found,
       hs_utm: result.hsUtm,
       campaign_name: result.campaignName,
-      all_matches: result.allMatches.map((m) => ({ name: m.name, hs_utm: m.hsUtm })),
+      all_matches: matches,
       // Carried to the UI because it changes what `found: false` MEANS. Dropped here, the panel
       // reads "no matches" as "no such campaign" and offers an unqualified create.
       capped: result.capped,
