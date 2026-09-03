@@ -1796,6 +1796,18 @@ export class PlanningTabComponent implements OnInit {
           // answer overwrite a newer one — and a stale not-found leaves hsNotFound true with no
           // token, which re-offers Create for a search that has already been superseded. The
           // generation counter is the only thing that tells two identical-looking lookups apart.
+          // RETIRE BEFORE THE GUARDS. A positive find is a fact about the CAMPAIGN, not about
+          // this panel: if the lookup found it, it exists, whether or not the operator has since
+          // moved on. Sitting below the guards, a superseded re-check discarded the only evidence
+          // that clears the record -- so an A -> B -> A round trip could leave Create suppressed
+          // with the answer already in hand, and no way to ask again that would land.
+          //
+          // My comment inside the branch claimed this was already done before the guards. It was
+          // not; the guards returned first (Copilot). Same shape as the create arms, which record
+          // before the guards for exactly this reason.
+          if (result?.found) {
+            this.retireCreatedRecord(capturedFoundation, capturedEvent);
+          }
           if (!this.lookupIsCurrent(generation)) return;
           if (!this.panelStillShows(capturedEvent, capturedFoundation)) return;
           // THREE states, not two. A campaign that exists but has NO utm token configured is a
@@ -1804,18 +1816,10 @@ export class PlanningTabComponent implements OnInit {
           // upstream. The legacy path never surfaced this because it fabricated a token from the
           // id and name whenever HubSpot had none.
           if (result?.found && result.hs_utm) {
-            // POSITIVE evidence: the campaign exists. This is the record's only exit -- see
-            // retireCreatedRecord. Done before the render guards for the same reason the create
-            // arms record before them: the fact is true whether or not this panel still shows it.
-            this.retireCreatedRecord(capturedFoundation, capturedEvent);
             this.hsUtm.set(result.hs_utm);
             this.hsMatches.set(result.all_matches ?? []);
             this.hsStatus.set(`Found: ${result.campaign_name}`);
           } else if (result?.found) {
-            // Tokenless, but still FOUND -- equally positive evidence that the campaign exists,
-            // so it retires the record too. Gating retirement on `hs_utm` would leave Create
-            // suppressed forever for a campaign HubSpot has simply not tokenised.
-            this.retireCreatedRecord(capturedFoundation, capturedEvent);
             // Found, but untokened. The brief gets no utm — which is honest, since HubSpot has
             // none to report against — and Create stays hidden so nobody duplicates it.
             this.hsMatches.set(result.all_matches ?? []);

@@ -910,7 +910,15 @@ export class CampaignProxyService {
           if (hsUtm) {
             yield { type: 'hubspot_utm', data: { hsUtm, eventName } };
           } else {
-            yield { type: 'status', data: 'HubSpot not configured, skipping UTM lookup...' };
+            // NOT "not configured" -- null now covers two different states, and this said the
+            // wrong one for the second. A configured portal whose campaign carries no UTM token
+            // returns null too, and telling the operator HubSpot is unconfigured sends them to
+            // check a connection that is fine (Copilot).
+            //
+            // Says only what null actually establishes: no token is available for this event.
+            // Which of the two reasons it is does not change what happens next -- the brief
+            // ships untagged on that parameter either way.
+            yield { type: 'status', data: 'No HubSpot UTM token available for this event, continuing without one...' };
           }
         } catch (error) {
           logger.warning(req, 'campaign_brief_hubspot', 'HubSpot UTM lookup failed, continuing without', { err: error });

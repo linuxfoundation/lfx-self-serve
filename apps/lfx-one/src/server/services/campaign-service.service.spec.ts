@@ -2964,6 +2964,18 @@ describe('CampaignServiceClient google ads insight reads', () => {
       await expect(new CampaignServiceClient().createHubSpotCampaign(req, 'cncf', 'KubeCon NA 2026')).rejects.toThrow(/no usable campaign/i);
     });
 
+    it.each([
+      ['a whitespace-only id', { id: '   ', name: 'KubeCon NA 2026' }],
+      ['a whitespace-only name', { id: 'c-1', name: '  ' }],
+    ])('refuses %s rather than reporting a create', async (_label, created) => {
+      // Copilot: the guard tested `id === ''` and only type-checked `name`, so a whitespace-only
+      // value passed and a malformed 2xx became `created: true` -- permanently suppressing another
+      // create while displaying a blank campaign name. Upstream's contract is non-whitespace.
+      proxyRequest.mockResolvedValue(created);
+
+      await expect(new CampaignServiceClient().createHubSpotCampaign(req, 'cncf', 'KubeCon NA 2026')).rejects.toThrow(/no usable campaign/i);
+    });
+
     it('accepts a well-formed create response', async () => {
       proxyRequest.mockResolvedValue({ id: 'c-1', name: 'KubeCon NA 2026', utm: 'tok' });
 

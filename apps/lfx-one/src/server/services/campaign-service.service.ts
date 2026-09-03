@@ -1431,7 +1431,11 @@ export class CampaignServiceClient {
     //
     // `id` and `name` are both required by the contract (campaign.interface.ts:1804). Failing
     // here surfaces as a create error, which is recoverable, rather than a fabricated success.
-    if (typeof created?.id !== 'string' || created.id === '' || typeof created?.name !== 'string') {
+    // TRIMMED, and `name` length-checked too. `created.id === ''` let a whitespace-only id
+    // through, and `name` was only type-checked -- so a malformed 2xx became `created: true`,
+    // permanently suppressing another create while showing a blank campaign name. Upstream's
+    // contract is non-whitespace for both (Copilot).
+    if (typeof created?.id !== 'string' || created.id.trim() === '' || typeof created?.name !== 'string' || created.name.trim() === '') {
       throw new Error('The campaign service reported a create but returned no usable campaign.');
     }
     return created;

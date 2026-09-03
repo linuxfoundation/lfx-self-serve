@@ -1983,6 +1983,44 @@ describe('PlanningTabComponent — HubSpot UTM states', () => {
     expect(component.hsCreatedEvents().size, 'the create was cancelled by navigation, or its outcome dropped').toBeGreaterThan(0);
   });
 
+  it('retires the record even when the finding lookup is SUPERSEDED', () => {
+    // Copilot: the retirement sat BELOW the generation/panel guards, which return first -- so a
+    // re-check that positively found the campaign while the operator was elsewhere discarded the
+    // only evidence that clears the record. After an A -> B -> A round trip the UI stayed
+    // suppressed with the answer already in hand, and no later lookup would land differently.
+    //
+    // My comment inside that branch claimed it ran before the guards. It did not.
+    const ctx = TestBed.inject(ProjectContextService);
+    const empty = { found: false, hs_utm: null, campaign_name: '', all_matches: [], capped: false, inconclusive: false };
+    runLookup(empty, 'KubeCon NA 2026');
+    create.mockReturnValue(throwError(() => ({ status: 503 })));
+    (fixture.componentInstance as unknown as { createInHubSpot(): void }).createInHubSpot();
+    fixture.detectChanges();
+    expect(instance()['hsCreateBlocked'](), 'precondition: the unconfirmed create should block').toBe(true);
+
+    // A re-check is in flight when the operator switches away, so its answer is superseded.
+    const pending = new Subject<unknown>();
+    lookup.mockReturnValue(pending);
+    (fixture.componentInstance as unknown as { recheckHubSpot(): void }).recheckHubSpot();
+    fixture.detectChanges();
+    ctx.setFoundation({ uid: 'foundation-b-uid', slug: 'foundation-b', name: 'Foundation B' }, false);
+    fixture.detectChanges();
+
+    // It POSITIVELY finds the campaign, for the foundation that started it.
+    pending.next({ found: true, hs_utm: 'kubecon-na-2026', campaign_name: 'KubeCon NA 2026', all_matches: [], capped: false, inconclusive: false });
+    pending.complete();
+    fixture.detectChanges();
+
+    // Back to A: the record must be gone. The campaign exists -- that is a fact about HubSpot,
+    // not about which panel happened to be showing when the answer arrived.
+    ctx.setFoundation({ uid: 'foundation-a-uid', slug: 'foundation-a', name: 'Foundation A' }, false);
+    fixture.detectChanges();
+    runLookup(empty, 'KubeCon NA 2026');
+
+    const component = fixture.componentInstance as unknown as { hsCreatedEvents(): Set<string> };
+    expect(component.hsCreatedEvents().size, 'a superseded positive find failed to retire the record').toBe(0);
+  });
+
   it('retires the record on a TOKENLESS positive find too', () => {
     // dealako (#2079, blocking): neither found arm removed the entry, so `hsCreateBlocked` stayed
     // true for the component's lifetime and the "cleared only by a positive find" contract had no
