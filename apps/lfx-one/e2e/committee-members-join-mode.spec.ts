@@ -6,6 +6,8 @@
 import { expect, Page, test } from '@playwright/test';
 
 import {
+
+test.beforeEach(() => skipWhenAuthMissing());
   buildBaseCommittee,
   DATA_LOAD_TIMEOUT,
   gotoCommitteeTab as gotoCommitteeTabHelper,

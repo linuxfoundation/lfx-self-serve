@@ -4,6 +4,8 @@
 import { expect, Page, test } from '@playwright/test';
 import { DEFAULT_LENS, LENS_COOKIE_KEY } from '@lfx-one/shared/constants';
 
+test.beforeEach(() => skipWhenAuthMissing());
+
 const EMPTY_EVENTS_RESPONSE = { data: [], total: 0, pageSize: 10, offset: 0 };
 const EMPTY_COUNTRIES_RESPONSE = { data: [] };
 

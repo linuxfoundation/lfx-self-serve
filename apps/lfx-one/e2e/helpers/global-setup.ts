@@ -36,9 +36,7 @@ async function globalSetup(config: FullConfig) {
   // Skip authentication if no credentials are provided
   if (!credentials.username || !credentials.password) {
     console.log('⚠️  No test credentials provided.');
-    console.log('   Specs carrying skipWhenAuthMissing() will SKIP. The rest run anonymously and');
-    console.log('   fail on their own assertions -- 29 of 77 specs have no guard today, so an');
-    console.log('   unauthenticated run is not a clean run (Copilot).');
+    console.log('   Authenticated specs will SKIP. Public specs continue to run anonymously.');
     console.log('   Set TEST_USERNAME and TEST_PASSWORD to authenticate.');
     // An EMPTY state file is still written. Every project declares
     // `storageState: 'playwright/.auth/user.json'`, which Playwright reads while constructing

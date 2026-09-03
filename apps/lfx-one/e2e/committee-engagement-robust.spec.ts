@@ -15,8 +15,11 @@
  */
 
 import { expect, test } from '@playwright/test';
+import { skipWhenAuthMissing } from './helpers/auth.helper';
 
 import {
+
+test.beforeEach(() => skipWhenAuthMissing());
   appearsWithin,
   blockLaunchDarkly,
   buildEngagementResponse,

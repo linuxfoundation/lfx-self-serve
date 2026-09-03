@@ -16,6 +16,8 @@
 import { expect, Page, test } from '@playwright/test';
 
 import {
+
+test.beforeEach(() => skipWhenAuthMissing());
   DATA_LOAD_TIMEOUT,
   GROUP_UID,
   SEAT_STORAGE_1,

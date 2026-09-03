@@ -2,11 +2,14 @@
 // SPDX-License-Identifier: MIT
 
 import { expect, test } from '@playwright/test';
+import { skipWhenAuthMissing } from './helpers/auth.helper';
 // Imported from the module, not the `utils` barrel: the barrel re-exports form.utils, which pulls
 // in @angular/common and fails to load outside the Angular app with a JIT compiler error.
 import { formatCurrency } from '@lfx-one/shared/utils/number.utils';
 
 import {
+
+test.beforeEach(() => skipWhenAuthMissing());
   BAR_MAX_ROWS,
   BUBBLE_MAX_POINTS,
   DEFAULT_SELECTED_PROJECTS,

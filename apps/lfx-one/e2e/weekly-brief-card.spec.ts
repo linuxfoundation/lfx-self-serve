@@ -48,9 +48,14 @@
  */
 
 import { expect, Page, Route, test } from '@playwright/test';
+import { skipWhenAuthMissing } from './helpers/auth.helper';
+
+test.beforeEach(() => skipWhenAuthMissing());
 import { WEEKLY_BRIEF_ERROR_REASON, WEEKLY_BRIEF_SOURCES_COLLAPSE_THRESHOLD } from '@lfx-one/shared/constants';
 import { CommitteeMemberRole, PollStatus } from '@lfx-one/shared/enums';
 import {
+
+test.beforeEach(() => skipWhenAuthMissing());
   Committee,
   ShareWeeklyBriefResult,
   Vote,

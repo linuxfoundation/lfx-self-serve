@@ -22,6 +22,9 @@
  */
 
 import { expect, test } from '@playwright/test';
+import { skipWhenAuthMissing } from './helpers/auth.helper';
+
+test.beforeEach(() => skipWhenAuthMissing());
 
 const MEMBERSHIPS_URL = '/org/memberships';
 const DETAIL_URL_FOUNDATION = '/org/memberships/sample-foundation';

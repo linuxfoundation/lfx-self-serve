@@ -5,6 +5,8 @@
 
 import { expect, Page, test } from '@playwright/test';
 
+test.beforeEach(() => skipWhenAuthMissing());
+
 const ENROLLMENT_URL = '/profile/individual-enrollment';
 const DATA_LOAD_TIMEOUT = 15_000;
 const MEMBERSHIP_ID = 'test-membership-stripe-001';

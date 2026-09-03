@@ -5,6 +5,8 @@
 
 import { expect, Page, test } from '@playwright/test';
 
+test.beforeEach(() => skipWhenAuthMissing());
+
 function foundationId(): string {
   return 'a0941000002wBz4AAE';
 }

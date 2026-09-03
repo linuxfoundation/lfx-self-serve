@@ -5,6 +5,8 @@ import { test, expect, Page } from '@playwright/test';
 
 import type { TrainingCertificationSummaryResponse } from '@lfx-one/shared/interfaces';
 
+test.beforeEach(() => skipWhenAuthMissing());
+
 /**
  * Marketing Dashboard E2E Tests
  *

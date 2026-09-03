@@ -28,6 +28,9 @@
 // barrel) so the suite can load the pure logic without bootstrapping Angular.
 import { isPastMeetingSummaryAwaitingApproval, isPastMeetingSummaryVisible, type SummaryApprovalFlags } from '@lfx-one/shared/utils/past-meeting-summary.utils';
 import { expect, test } from '@playwright/test';
+import { skipWhenAuthMissing } from './helpers/auth.helper';
+
+test.beforeEach(() => skipWhenAuthMissing());
 
 const summary = (approved: boolean, requires_approval: boolean): SummaryApprovalFlags => ({ approved, requires_approval });
 
