@@ -242,6 +242,16 @@ export const VOTE_ELIGIBLE_PARTICIPANTS = [
 ] as const;
 
 /**
+ * Allow abstain options for vote creation
+ * @description Defines whether participants can abstain from voting instead of selecting an option
+ * Maps to the allow_abstain field in the Vote interface; defaults to 'No' (false)
+ */
+export const VOTE_ALLOW_ABSTAIN_OPTIONS = [
+  { label: 'Yes', value: true, description: 'Voters can abstain from voting instead of selecting an option' },
+  { label: 'No', value: false, description: 'Voters must select an option' },
+] as const;
+
+/**
  * Vote response type options
  * @description Defines how participants can respond to the vote question
  */

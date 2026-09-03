@@ -40,6 +40,7 @@ export class VoteReviewComponent {
   public readonly eligibleParticipants: Signal<string> = this.initEligibleParticipants();
   public readonly eligibleParticipantsLabel: Signal<string> = this.initEligibleParticipantsLabel();
   public readonly closeDate: Signal<Date | null> = this.initCloseDate();
+  public readonly allowAbstain: Signal<boolean> = this.initAllowAbstain();
   public readonly questions: Signal<VoteReviewQuestion[]> = this.initQuestions();
   public readonly commentPrompts: Signal<VoteReviewCommentPrompt[]> = this.initCommentPrompts();
 
@@ -104,6 +105,13 @@ export class VoteReviewComponent {
     return computed(() => {
       this.formValue();
       return this.form().get('close_date')?.value || null;
+    });
+  }
+
+  private initAllowAbstain(): Signal<boolean> {
+    return computed(() => {
+      this.formValue();
+      return !!this.form().get('allow_abstain')?.value;
     });
   }
 

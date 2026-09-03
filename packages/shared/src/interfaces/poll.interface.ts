@@ -403,6 +403,8 @@ export interface VoteFormValue {
   eligible_participants: string;
   /** Vote close/end date */
   close_date: Date | null;
+  /** Whether voters may abstain from voting */
+  allow_abstain: boolean;
   /** Array of question form values */
   questions: QuestionFormValue[];
   /** Array of comment-prompt form values (optional, creator authoring only) */
@@ -482,6 +484,10 @@ export interface VoteParticipationStats {
   totalResponses: number;
   /** Participation rate as percentage (0-100) */
   participationRate: number;
+  /** Number of voters who abstained — a subset of totalResponses (upstream counts abstentions as cast responses but excludes them from choice tallies) */
+  abstainedVoters: number;
+  /** Abstentions as a percentage of all responses cast (0-100) */
+  abstainedRate: number;
 }
 
 /**
