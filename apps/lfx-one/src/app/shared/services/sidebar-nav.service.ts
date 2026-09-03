@@ -226,6 +226,18 @@ export class SidebarNavService {
         },
       ],
     },
+    {
+      label: 'Mentorship',
+      isSection: true,
+      expanded: true,
+      items: [
+        {
+          label: 'Admin',
+          icon: 'fa-solid fa-shield-halved',
+          routerLink: '/mentorship/admin',
+        },
+      ],
+    },
   ];
 
   // Whether the currently selected foundation has project-level data in Snowflake.
