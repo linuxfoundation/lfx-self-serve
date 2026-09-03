@@ -21,7 +21,7 @@ import { DialogService, DynamicDialogModule } from 'primeng/dynamicdialog';
 import { ToastModule } from 'primeng/toast';
 import { TooltipModule } from 'primeng/tooltip';
 import { HttpErrorResponse } from '@angular/common/http';
-import { BehaviorSubject, catchError, filter, finalize, of, switchMap, take } from 'rxjs';
+import { BehaviorSubject, catchError, filter, finalize, map, of, switchMap, take } from 'rxjs';
 
 @Component({
   selector: 'lfx-account-settings',
@@ -177,12 +177,20 @@ export class AccountSettingsComponent {
     // Deep-link support (profile.routes.ts): router anchorScrolling scrolls on navigation, but the
     // email section's spinner-to-list swap can shift #password — re-settle once loaded per fragment.
     const emailLoaded$ = toObservable(this.emailLoading).pipe(filter((loading) => !loading));
-    this.route.fragment.pipe(takeUntilDestroyed()).subscribe((fragment) => {
-      const validFragment = fragment && (AccountSettingsComponent.sectionIds as readonly string[]).includes(fragment) ? fragment : null;
-      if (!validFragment) return;
-      this.activeSection.set(validFragment);
-      emailLoaded$.pipe(take(1)).subscribe(() => this.scrollToSection(validFragment));
-    });
+    this.route.fragment
+      .pipe(
+        map((fragment) => (fragment && (AccountSettingsComponent.sectionIds as readonly string[]).includes(fragment) ? fragment : null)),
+        filter((validFragment): validFragment is string => validFragment !== null),
+        switchMap((validFragment) => {
+          this.activeSection.set(validFragment);
+          return emailLoaded$.pipe(
+            take(1),
+            map(() => validFragment)
+          );
+        }),
+        takeUntilDestroyed()
+      )
+      .subscribe((validFragment) => this.scrollToSection(validFragment));
   }
 
   // ══════════════════════════════════════════
