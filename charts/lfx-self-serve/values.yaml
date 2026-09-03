@@ -648,13 +648,31 @@ environment:
   # is per CAMPAIGN in the body -- a resolver call then a mutation call, made
   # sequentially while the request is held open -- so one authenticated request
   # could amplify into thousands of upstream calls against a live ad account and
-  # trip rate limiting that fails campaigns for unrelated reasons. The legacy
-  # loop has the same shape, so gating the cap on the flag would leave the
-  # default-off deployment as the UNPROTECTED one.
+  # trip rate limiting that fails campaigns for unrelated reasons.
+  #
+  # The two paths amplify DIFFERENTLY, which an earlier version of this note got
+  # wrong by calling them the same shape. Campaign-service costs a resolver call
+  # plus a mutation call per CAMPAIGN in the body; the legacy loop makes one
+  # Google Ads mutate call per KEYWORD. Both are unbounded without the cap, which
+  # is why gating it on the flag would leave the default-off deployment as the
+  # UNPROTECTED one -- but they are not the same fan-out.
   #
   # 50 is above anything this UI can produce, so it bounds abuse rather than the
   # product. An API consumer sending larger batches is the only caller affected,
   # and gets a 400 naming the limit.
+  #
+  # A SECOND ungated change rides with it: malformed Google Ads ids are now
+  # refused at the request boundary on BOTH paths. Campaign-service declares these
+  # ids as `^[0-9]+$` and refuses them upstream anyway -- but by then the rows
+  # AHEAD of the bad one in the same request have already been mutated, and a
+  # keyword REMOVE is irreversible, so a half-applied batch is not recoverable by
+  # retrying. Refusing the whole request keeps it all-or-nothing.
+  #
+  # What changes with the flag OFF: the legacy path used to run the valid rows and
+  # report a per-keyword outcome for each. An API caller mixing valid and
+  # malformed ids in one request now gets a single 400 instead, and none of the
+  # valid rows run. The LFX One client cannot produce a malformed id, so this
+  # affects direct API callers only.
   LFX_CUTOVER_CAMPAIGN_SERVICE_KEYWORD_ACTIONS:
     value: "false"
 
