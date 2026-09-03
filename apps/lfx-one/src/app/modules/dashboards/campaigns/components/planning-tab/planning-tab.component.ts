@@ -97,6 +97,19 @@ export class PlanningTabComponent implements OnInit {
    */
   public readonly deliveryType = input<CampaignDeliveryType>('paid-marketing');
 
+  /**
+   * DOM id for the readonly UTM field, unique per INSTANCE.
+   *
+   * Two `lfx-planning-tab` instances stay mounted at once -- paid and email are
+   * visibility-toggled rather than swapped with `@if`, deliberately, so neither loses its local
+   * brief state. A hardcoded id therefore appeared twice in the document, and `for` binds to the
+   * FIRST match: typically the hidden panel. The visible field was then left with no accessible
+   * name, which is the association the id was added to create (cursor).
+   *
+   * Derived from `deliveryType` because that is what actually distinguishes the two instances.
+   */
+  protected readonly utmFieldId = computed(() => `planning-hubspot-utm-value-${this.deliveryType()}`);
+
   /** Whether this planner is planning an email rather than paid ads. */
   protected readonly isEmail = computed(() => this.deliveryType() === 'email');
 

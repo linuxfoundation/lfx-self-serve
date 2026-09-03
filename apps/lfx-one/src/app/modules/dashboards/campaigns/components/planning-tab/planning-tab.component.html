@@ -77,7 +77,7 @@
                 deliberately part of the name: "HubSpot UTM token Looking up..." is what a sighted
                 user reads, so it is what should be announced (Copilot).
               -->
-              <label for="planning-hubspot-utm-value" class="text-xs font-medium text-gray-700">
+              <label [attr.for]="hsUtm() ? utmFieldId() : null" class="text-xs font-medium text-gray-700">
                 HubSpot UTM token
                 @if (hsSearching()) {
                   <span class="ml-2 font-normal text-gray-400">Looking up...</span>
@@ -89,7 +89,7 @@
 
               @if (hsUtm()) {
                 <input
-                  id="planning-hubspot-utm-value"
+                  [id]="utmFieldId()"
                   type="text"
                   [value]="hsUtm()"
                   readonly

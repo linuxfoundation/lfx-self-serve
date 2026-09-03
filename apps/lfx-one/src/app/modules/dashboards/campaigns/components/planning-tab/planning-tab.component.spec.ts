@@ -1808,6 +1808,12 @@ describe('PlanningTabComponent — HubSpot UTM states', () => {
     const label = el.querySelector(`label[for="${input!.id}"]`);
     expect(label, 'the readonly token field has no accessible name').not.toBeNull();
     expect(label!.textContent, 'the label does not name what the field holds').toContain('HubSpot UTM token');
+    // The id must be INSTANCE-SCOPED. Paid and email planning tabs are visibility-toggled rather
+    // than swapped with `@if`, so both stay mounted -- a hardcoded id appeared twice and `for`
+    // bound to the first match, typically the hidden panel, leaving the visible field unnamed
+    // (cursor). Asserted through deliveryType rather than a literal, so the derivation is what
+    // is pinned.
+    expect(input!.id, 'the token field id is not scoped to this instance').toContain('paid-marketing');
   });
 
   it('suppresses Create cross-foundation when the search was INCONCLUSIVE', () => {
