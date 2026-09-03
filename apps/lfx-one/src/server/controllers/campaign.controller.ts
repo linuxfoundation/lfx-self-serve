@@ -1080,9 +1080,15 @@ export class CampaignController {
 
         const payload = await this.campaignServiceClient.searchHubSpotCampaigns(req, projectSlug, eventName);
         const result = toUtmLookupResult(payload, eventName);
-        // `matches` is upstream's raw fuzzy count; `found` is whether any of them SCORED. Both
-        // are logged because a large gap between them means the search is returning noise, which
-        // is invisible from the response alone.
+        // `matches` is upstream's raw fuzzy count; `found` is whether one candidate was
+        // CONFIDENT enough to auto-apply -- an exact normalised match, alone in that, from a
+        // result set proven complete.
+        //
+        // Both are logged because the gap is diagnostic, but NOT as "noise" -- an earlier version
+        // of this comment said that, and it predates the confidence gate. A large gap is the
+        // normal shape for a weak, tied or capped search: candidates scored, none earned an
+        // unattended apply. Reading it as noise would send someone tuning the scorer when the
+        // right answer is that the operator picks (Copilot).
         logger.success(req, 'hubspot_utm_lookup', startTime, {
           viaCampaignService: true,
           // Guarded: `toUtmLookupResult` fail-closes on a malformed envelope (`{}` or a body with

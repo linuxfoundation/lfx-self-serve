@@ -28,9 +28,15 @@ describe('toUtmLookupResult', () => {
    *
    * The upstream search is fuzzy, so it can return campaigns sharing only a stray token with the
    * query. Reporting those as found would tell a caller a campaign exists for their event when
-   * none does — and the caller acts on `found: false` by offering to create one.
+   * none does.
+   *
+   * `found: false` alone does NOT license a create, which an earlier version of this said and
+   * which predates both the confidence gate and `inconclusive`. Rows that came back and were
+   * rejected locally set `inconclusive: true`, and the caller suppresses Create on that -- so
+   * this case is "nothing scored confidently", not "nothing is there" (Copilot). Only a complete
+   * search returning nothing is proven absence.
    */
-  it('reports not-found when upstream returned rows but none scored', () => {
+  it('reports not-found when no candidate scored CONFIDENTLY', () => {
     const res = toUtmLookupResult(payload({ id: '1', name: 'Totally Unrelated', utm: 'x' }), 'KubeCon NA 2026');
 
     expect(res.found).toBe(false);
