@@ -2,7 +2,7 @@
 // SPDX-License-Identifier: MIT
 
 import { isPlatformBrowser, NgClass } from '@angular/common';
-import { afterNextRender, Component, computed, DestroyRef, inject, PLATFORM_ID, Signal, signal } from '@angular/core';
+import { afterNextRender, Component, computed, DestroyRef, effect, inject, PLATFORM_ID, Signal, signal } from '@angular/core';
 import { takeUntilDestroyed, toSignal } from '@angular/core/rxjs-interop';
 import { AbstractControl, FormBuilder, FormControl, FormGroup, ReactiveFormsModule, ValidationErrors, ValidatorFn, Validators } from '@angular/forms';
 import { BadgeComponent } from '@components/badge/badge.component';
@@ -172,15 +172,22 @@ export class AccountSettingsComponent {
       this.loadDeveloperToken();
     }
 
-    afterNextRender(() => {
-      this.setupScrollSpy();
-      // Deep-link support (profile.routes.ts): router anchorScrolling already scrolls to
-      // the fragment — just sync the TOC for a fragment that names a known section.
-      const fragment = this.route.snapshot.fragment;
-      if (fragment && (AccountSettingsComponent.sectionIds as readonly string[]).includes(fragment)) {
-        this.activeSection.set(fragment);
-      }
-    });
+    afterNextRender(() => this.setupScrollSpy());
+
+    // Deep-link support (profile.routes.ts): router anchorScrolling scrolls on navigation, but
+    // the email section's spinner-to-list swap can shift #password — re-settle once loaded.
+    const fragment = this.route.snapshot.fragment;
+    const validFragment = fragment && (AccountSettingsComponent.sectionIds as readonly string[]).includes(fragment) ? fragment : null;
+    if (validFragment) {
+      this.activeSection.set(validFragment);
+      let settled = false;
+      effect(() => {
+        if (!settled && !this.emailLoading()) {
+          settled = true;
+          this.scrollToSection(validFragment);
+        }
+      });
+    }
   }
 
   // ══════════════════════════════════════════

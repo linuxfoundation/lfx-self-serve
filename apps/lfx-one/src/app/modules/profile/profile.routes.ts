@@ -1,7 +1,8 @@
 // Copyright The Linux Foundation and each contributor to LFX.
 // SPDX-License-Identifier: MIT
 
-import { Routes } from '@angular/router';
+import { inject } from '@angular/core';
+import { Router, Routes } from '@angular/router';
 
 import { myClasEnabledGuard } from '@app/shared/guards/my-clas-enabled.guard';
 
@@ -57,11 +58,11 @@ export const PROFILE_ROUTES: Routes = [
       // linux-email is now embedded in the Identities tab — redirect for backward compat
       { path: 'linux-email', redirectTo: 'identities' },
 
-      // Email and password management now live in the Settings tab — redirect the old
-      // standalone pages there, scrolled to the matching section (see account-settings.component.ts).
-      { path: 'password', redirectTo: '/profile/settings#password' },
-      { path: 'email', redirectTo: '/profile/settings#email-settings' },
-      { path: 'emails', redirectTo: '/profile/settings#email-settings' },
+      // Redirect the old standalone email/password pages into the Settings tab section.
+      // Functional redirectTo (not a string) preserves Flow C's ?error=/?success= query params.
+      { path: 'password', redirectTo: ({ queryParams }) => inject(Router).createUrlTree(['/profile/settings'], { queryParams, fragment: 'password' }) },
+      { path: 'email', redirectTo: ({ queryParams }) => inject(Router).createUrlTree(['/profile/settings'], { queryParams, fragment: 'email-settings' }) },
+      { path: 'emails', redirectTo: ({ queryParams }) => inject(Router).createUrlTree(['/profile/settings'], { queryParams, fragment: 'email-settings' }) },
 
       // Backward-compat redirects for old URLs
       { path: 'attribution', redirectTo: 'attributions' },
