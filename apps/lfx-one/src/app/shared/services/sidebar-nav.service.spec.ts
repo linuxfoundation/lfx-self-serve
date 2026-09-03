@@ -1,0 +1,144 @@
+// Copyright The Linux Foundation and each contributor to LFX.
+// SPDX-License-Identifier: MIT
+
+import { signal } from '@angular/core';
+import { TestBed } from '@angular/core/testing';
+import { MKTG_OS_AGENTS_ENABLED_FLAG, MKTG_OS_AGENTS_LABEL } from '@lfx-one/shared/constants';
+import { SidebarMenuItem } from '@lfx-one/shared/interfaces';
+import { AnalyticsService } from '@services/analytics.service';
+import { FeatureFlagService } from '@services/feature-flag.service';
+import { LensService } from '@services/lens.service';
+import { PersonaService } from '@services/persona.service';
+import { ProjectContextService } from '@services/project-context.service';
+import { UserService } from '@services/user.service';
+import { WriterGrantsService } from '@services/writer-grants.service';
+import { of } from 'rxjs';
+import { beforeEach, describe, expect, it, vi } from 'vitest';
+
+import { SidebarNavService } from './sidebar-nav.service';
+
+describe('SidebarNavService', () => {
+  const activeLens = signal<'me' | 'foundation' | 'project' | 'org'>('foundation');
+  const mktgOsEnabled = signal(false);
+  const hasFullFoundationAccess = signal(true);
+  const currentPersona = signal('executive-director');
+
+  const labels = (items: SidebarMenuItem[]): string[] => items.map((item) => item.label);
+
+  const findByLink = (items: SidebarMenuItem[], routerLink: string): SidebarMenuItem | undefined => items.find((item) => item.routerLink === routerLink);
+
+  beforeEach(() => {
+    activeLens.set('foundation');
+    mktgOsEnabled.set(false);
+    hasFullFoundationAccess.set(true);
+    currentPersona.set('executive-director');
+
+    TestBed.configureTestingModule({
+      providers: [
+        SidebarNavService,
+        {
+          provide: FeatureFlagService,
+          useValue: {
+            getBooleanFlag: vi.fn((key: string) => (key === MKTG_OS_AGENTS_ENABLED_FLAG ? mktgOsEnabled : signal(false))),
+          },
+        },
+        { provide: LensService, useValue: { activeLens } },
+        {
+          provide: PersonaService,
+          useValue: {
+            hasBoardRole: signal(false),
+            isRootWriter: hasFullFoundationAccess,
+            isLFStaff: signal(false),
+            canViewExecutiveDashboards: hasFullFoundationAccess,
+            currentPersona,
+            grantsByScope: signal(new Map()),
+            marketingGrantSlug: signal(null),
+            isMarketingAuditor: signal(false),
+            isCampaignManager: signal(false),
+            refreshEnrichedPersonas: vi.fn(() => of({})),
+          },
+        },
+        {
+          provide: ProjectContextService,
+          useValue: {
+            selectedFoundation: signal(null),
+            selectedProject: signal(null),
+            canWrite: signal(false),
+          },
+        },
+        { provide: UserService, useValue: { authenticated: signal(false) } },
+        { provide: WriterGrantsService, useValue: { hasWriterFoundation: signal(false) } },
+        {
+          provide: AnalyticsService,
+          useValue: { getFoundationProjectsDetailGrouped: vi.fn(() => of({ totalCount: 0 })) },
+        },
+      ],
+    });
+  });
+
+  it('hides Marketing OS on foundation lens when the flag is off', () => {
+    const items = TestBed.inject(SidebarNavService).sidebarItems();
+
+    expect(findByLink(items, '/foundation/mktg-os-agents')).toBeUndefined();
+    expect(findByLink(items, '/project/mktg-os-agents')).toBeUndefined();
+    expect(labels(items)).not.toContain(MKTG_OS_AGENTS_LABEL.nav);
+  });
+
+  it('inserts Marketing OS between Documents and Governance on foundation lens when the flag is on', () => {
+    mktgOsEnabled.set(true);
+
+    const items = TestBed.inject(SidebarNavService).sidebarItems();
+    const itemLabels = labels(items);
+    const documents = itemLabels.indexOf('Documents');
+    const marketingOs = itemLabels.indexOf(MKTG_OS_AGENTS_LABEL.nav);
+    const governance = itemLabels.indexOf('Governance');
+
+    expect(findByLink(items, '/foundation/mktg-os-agents')).toEqual(
+      expect.objectContaining({
+        label: MKTG_OS_AGENTS_LABEL.nav,
+        routerLink: '/foundation/mktg-os-agents',
+        testId: 'sidebar-foundation-mktg-os-agents',
+      })
+    );
+    expect(findByLink(items, '/project/mktg-os-agents')).toBeUndefined();
+    expect(documents).toBeGreaterThanOrEqual(0);
+    expect(marketingOs).toBe(documents + 1);
+    expect(governance).toBe(marketingOs + 1);
+  });
+
+  it('still shows Marketing OS for marketing-only foundation users when the flag is on', () => {
+    mktgOsEnabled.set(true);
+    hasFullFoundationAccess.set(false);
+    currentPersona.set('contributor');
+
+    const items = TestBed.inject(SidebarNavService).sidebarItems();
+
+    expect(findByLink(items, '/foundation/mktg-os-agents')).toEqual(
+      expect.objectContaining({
+        label: MKTG_OS_AGENTS_LABEL.nav,
+        routerLink: '/foundation/mktg-os-agents',
+      })
+    );
+    expect(labels(items)).not.toContain('Documents');
+    expect(labels(items)).not.toContain('Governance');
+  });
+
+  it('keeps the project-lens Marketing OS entry between Documents and Governance', () => {
+    activeLens.set('project');
+    mktgOsEnabled.set(true);
+
+    const items = TestBed.inject(SidebarNavService).sidebarItems();
+    const itemLabels = labels(items);
+
+    expect(findByLink(items, '/project/mktg-os-agents')).toEqual(
+      expect.objectContaining({
+        label: MKTG_OS_AGENTS_LABEL.nav,
+        routerLink: '/project/mktg-os-agents',
+        testId: 'sidebar-project-mktg-os-agents',
+      })
+    );
+    expect(findByLink(items, '/foundation/mktg-os-agents')).toBeUndefined();
+    expect(itemLabels.indexOf(MKTG_OS_AGENTS_LABEL.nav)).toBe(itemLabels.indexOf('Documents') + 1);
+    expect(itemLabels.indexOf('Governance')).toBe(itemLabels.indexOf(MKTG_OS_AGENTS_LABEL.nav) + 1);
+  });
+});
