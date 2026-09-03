@@ -130,7 +130,7 @@ export class AttendanceReconciliationService {
     const committeeMembers = (
       await Promise.all(
         (pastMeeting.committees || []).map((committee) =>
-          this.committeeService.getCommitteeMembers(req, committee.uid).catch((error) => {
+          this.committeeService.getCommitteeMembers(req, committee.uid, {}, { failOnPartial: true }).catch((error) => {
             logger.warning(req, 'reconcile_attendance_pool', 'Failed to fetch committee members, continuing without them', {
               committee_uid: committee.uid,
               err: error,
@@ -264,6 +264,14 @@ export class AttendanceReconciliationService {
       return emailA === emailB;
     }
 
+    // A hard identifier (username/email) on only one side is evidence the two records were
+    // never confirmed to be the same person — falling through to a name-only match here would
+    // merge them on a weaker signal than a stronger one already available. Only compare by name
+    // when neither side has any hard identifier to compare instead.
+    if (usernameA || usernameB || emailA || emailB) {
+      return false;
+    }
+
     const nameA = this.normalizeName(a.first_name, a.last_name);
     const nameB = this.normalizeName(b.first_name, b.last_name);
     return !!nameA && !!nameB && nameA === nameB;
@@ -322,13 +330,25 @@ export class AttendanceReconciliationService {
         candidates.filter((c) => c.username?.trim().toLowerCase() === username).forEach((c) => matchedCandidates.set(c.candidate_id, c));
       }
 
-      if (matchedCandidates.size === 1) {
+      const matched = matchedCandidates.size === 1 ? [...matchedCandidates.values()][0] : undefined;
+
+      // A single matched candidate is only safe to auto-match deterministically if it doesn't
+      // itself contradict the attendee on the identifier that didn't match — e.g. the attendee's
+      // email hit this candidate, but the attendee's username disagrees with the candidate's
+      // username. That's a conflicting-identity signal, not confirmation, so fall through to the
+      // ambiguous remainder instead of treating it as a confident match.
+      const candidateUsername = matched?.username?.trim().toLowerCase();
+      const candidateEmail = matched?.email?.trim().toLowerCase();
+      const hasConflict =
+        !!matched && ((!!username && !!candidateUsername && username !== candidateUsername) || (!!email && !!candidateEmail && email !== candidateEmail));
+
+      if (matched && !hasConflict) {
         deterministic.push({
           attendee_id: attendee.uid,
           zoom_user_name: this.getDisplayName(attendee),
           confidence: 'high',
           method: 'deterministic',
-          matched_candidate: [...matchedCandidates.values()][0],
+          matched_candidate: matched,
           auto_applied: false,
         });
       } else {
