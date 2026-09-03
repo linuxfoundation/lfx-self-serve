@@ -177,6 +177,14 @@ export class ApiClientService {
       try {
         errorText = await response.text();
       } catch (readError: unknown) {
+        if (response.status >= 400 && response.status < 500 && response.status !== 408) {
+          throw new MicroserviceError(response.statusText || 'The upstream request was rejected.', response.status, getHttpErrorCode(response.status), {
+            operation: 'api_client_stream_request',
+            service: 'api_client_service',
+            path: url,
+            originalError: readError instanceof Error ? readError : undefined,
+          });
+        }
         const timedOut = readError instanceof Error && (readError.name === 'AbortError' || readError.name === 'TimeoutError');
         throw new MicroserviceError('The request could not be completed. Please try again.', timedOut ? 408 : 503, timedOut ? 'TIMEOUT' : 'NETWORK_ERROR', {
           operation: 'api_client_stream_error_body_read',
