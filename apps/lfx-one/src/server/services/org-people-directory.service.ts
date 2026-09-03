@@ -259,12 +259,9 @@ export class OrgPeopleDirectoryService {
           this.addSource(existing, 'keyContact');
           this.addEmail(existing, email);
           this.fill(existing, { firstName: emp.firstName || null, lastName: emp.lastName || null, title: emp.jobTitle, avatarUrl: emp.avatarUrl ?? null });
-          // Backfill only: a row that already resolved an identity keeps it. Without this, a person
-          // who is both a key contact and (say) a committee member whose seat carried no username
-          // would still open the drawer with nothing to look addresses up on.
-          if (!existing.lfUsername && emp.lfUsername?.trim()) {
-            existing.lfUsername = emp.lfUsername.trim().toLowerCase();
-          }
+          // Do not backfill lfUsername onto an email-merged row: the key contact's username is
+          // member-service's resolution of this address, not independently verified identity, and
+          // the existing row may belong to a different human who shares the merge key by accident.
         } else {
           byKey.set(key, this.rowFromKeyContact(emp, email, key));
         }

@@ -409,7 +409,15 @@ test.describe('Org People → Board tab', () => {
     };
 
     const stubCompanyEmails = async (fulfil: Parameters<Page['route']>[1]): Promise<void> => {
-      await page.route('**/api/orgs/*/lens/people/by-username/*/company-emails', fulfil);
+      await page.route('**/api/orgs/*/lens/people/by-username/*/company-emails', (route, request) => {
+        const segments = new URL(request.url()).pathname.split('/');
+        const usernameIdx = segments.indexOf('by-username');
+        const username = usernameIdx >= 0 ? segments[usernameIdx + 1] : undefined;
+        if (username !== JORDAN_USERNAME) {
+          return route.fulfill({ status: 404, body: `unexpected username segment: ${username ?? '(missing)'}` });
+        }
+        return fulfil(route, request);
+      });
     };
 
     // 1. Resolved WITH addresses → the addresses render verbatim.

@@ -961,14 +961,14 @@ describe('GroupSeatHoldersDrawerComponent', () => {
       return document.querySelector(`[data-testid="seat-holder-person-${seatId}"]`);
     }
 
-    it("calls PersonDetailDrawerService.open once, with defaultTab 'governance' and the person's real email", async () => {
-      await setup(vi.fn().mockReturnValue(of(response([assignment({ seatId: 's-1', person: person({ fullName: 'Jane Doe', email: 'jane@example.org' }) })]))));
+    it("calls PersonDetailDrawerService.open once, with defaultTab 'governance', the person's real email, and agreed username", async () => {
+      await setup(vi.fn().mockReturnValue(of(response([assignment({ seatId: 's-1', person: person({ fullName: 'Jane Doe', email: 'jane@example.org', username: 'jane-doe' }) })]))));
 
       await open('org-1', 'c-1');
       personButton('s-1')!.click();
 
       expect(drawerOpen).toHaveBeenCalledTimes(1);
-      expect(drawerOpen).toHaveBeenCalledWith(expect.objectContaining({ name: 'Jane Doe', defaultTab: 'governance', email: 'jane@example.org' }));
+      expect(drawerOpen).toHaveBeenCalledWith(expect.objectContaining({ name: 'Jane Doe', defaultTab: 'governance', email: 'jane@example.org', username: 'jane-doe' }));
     });
 
     // The obvious implementation passes only the assignments for the open committee, so the

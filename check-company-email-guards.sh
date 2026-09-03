@@ -63,9 +63,17 @@ scan_multiline() {
           gsub(/[ \t\r\n]+/, " ", body)
           lower = tolower(body)
           # Walk every company-emails occurrence and look for context.email nearby on either side.
+          # Compute both token indexes and advance to the earlier match — `||` would skip an
+          # earlier camelCase hit when a later dashed occurrence exists outside the window.
           start = 1
-          while ((i = index(substr(lower, start), "company-emails")) > 0 ||
-                 (i = index(substr(lower, start), "companyemails")) > 0) {
+          while (start <= length(lower)) {
+            rest = substr(lower, start)
+            i_dash = index(rest, "company-emails")
+            i_camel = index(rest, "companyemails")
+            if (i_dash == 0 && i_camel == 0) break
+            if (i_dash == 0) i = i_camel
+            else if (i_camel == 0) i = i_dash
+            else i = (i_dash < i_camel) ? i_dash : i_camel
             pos = start + i - 1
             from = pos - WINDOW; if (from < 1) from = 1
             near = substr(lower, from, WINDOW * 2)

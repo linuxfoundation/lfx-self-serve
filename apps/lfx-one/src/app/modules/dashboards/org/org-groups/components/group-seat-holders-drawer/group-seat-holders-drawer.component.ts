@@ -23,6 +23,7 @@ import { toDrawerGovernanceSeats } from '@modules/dashboards/org/org-people/help
 import { CommitteeMembersService } from '@modules/dashboards/org/org-people/services/committee-members.service';
 import { votingStatusPillClass, votingStatusRank } from '@lfx-one/shared/constants';
 import type { CommitteeMemberAssignment, CommitteeMemberSeatHolderVm } from '@lfx-one/shared/interfaces';
+import { agreedUsername } from '@lfx-one/shared/utils';
 import { DrawerModule } from 'primeng/drawer';
 import { catchError, EMPTY, map, of, shareReplay, switchMap, tap, throwError, type Observable } from 'rxjs';
 
@@ -136,6 +137,7 @@ export class GroupSeatHoldersDrawerComponent {
     // vm.person.email is the grouping key and can itself be blank — source the real email from
     // whichever seat actually carries one, mirroring committee-members.component.ts's onPersonClick.
     const email = seats.find((a) => a.person.email)?.person.email;
+    const username = agreedUsername(seats.map((a) => a.person.username));
     this.personDetailDrawer.open({
       name: vm.person.fullName,
       title: vm.person.jobTitle,
@@ -144,6 +146,7 @@ export class GroupSeatHoldersDrawerComponent {
       defaultTab: 'governance',
       governanceSeats: toDrawerGovernanceSeats(seats),
       email,
+      username,
     });
   }
 
