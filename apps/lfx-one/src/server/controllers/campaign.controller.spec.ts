@@ -2075,13 +2075,8 @@ describe('CampaignController Google Ads insight reads', () => {
       expect(vi.mocked(res.json).mock.calls[0][0]).toMatchObject({ days: 14 });
     });
 
-    // `row_count` reaches the LOG and nothing else — the UI contract has no field for it, so
-    // this is the only place upstream's own count is visible. `truncated` DOES reach the client
-    // now and both keyword consumers render it, but it is logged alongside because the log is
-    // where someone investigating a number looks, not just someone looking at the table.
-    //
-    // Asserted rather than assumed: without this, deleting the line leaves the whole suite green
-    // while the count that would reveal a conversion silently dropping rows disappears.
+    // Assert the operational log metadata: `row_count` identifies the upstream result size and
+    // `truncated` records whether the returned rows are capped.
     it('logs the truncation flag and upstream row count', async () => {
       isServerFeatureEnabled.mockImplementation(onlyInsights);
 
