@@ -17,6 +17,7 @@ const {
   emailVerificationSvc,
   forwardsSvc,
   enrollmentSvc,
+  socialVerificationSvc,
 } = vi.hoisted(() => ({
   getUsernameFromAuthMock: vi.fn(),
   generateM2MTokenMock: vi.fn(),
@@ -41,12 +42,18 @@ const {
     getUserEmails: vi.fn(),
     setPrimaryEmail: vi.fn(),
     sendPasswordResetLink: vi.fn(),
+    linkIdentity: vi.fn(),
   },
   forwardsSvc: {
     getForward: vi.fn(),
   },
   enrollmentSvc: {
     hasLinuxComAddon: vi.fn(),
+  },
+  socialVerificationSvc: {
+    validateState: vi.fn(() => true),
+    clearState: vi.fn(),
+    exchangeCodeForToken: vi.fn(),
   },
 }));
 
@@ -116,7 +123,7 @@ vi.mock('../services/forwards.service', () => ({
 }));
 vi.mock('../services/social-verification.service', () => ({
   SocialVerificationService: vi.fn(function () {
-    return {};
+    return socialVerificationSvc;
   }),
 }));
 vi.mock('../services/object-store.service', () => ({
@@ -496,6 +503,7 @@ describe('ProfileController impersonation-blocked auth callbacks', () => {
     await controller.handleSocialCallback(buildReq({ path: '/social/callback', query: { code: 'c', state: 's' } }), res);
 
     expect(res.redirect).toHaveBeenCalledWith('/profile/identities?error=impersonation_read_only');
-    expect(profileAuthSvc.getManagementToken).not.toHaveBeenCalled();
+    expect(socialVerificationSvc.exchangeCodeForToken).not.toHaveBeenCalled();
+    expect(emailVerificationSvc.linkIdentity).not.toHaveBeenCalled();
   });
 });

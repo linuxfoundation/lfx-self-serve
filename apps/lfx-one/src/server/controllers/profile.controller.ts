@@ -2500,9 +2500,9 @@ export class ProfileController {
 
   /**
    * Root callbacks (`/passwordless/callback`, `/social/callback`) sit outside the `/api`
-   * error-handler mount and are redirect-only — their route signatures don't even accept
-   * `next` — so they can't reuse blockDuringImpersonation's next(err) contract
-   * (impersonation-readonly.middleware.ts). This enforces the same read-only guarantee by
+   * error-handler mount, so a `next(err)` there would surface a bare JSON 403 in a top-level
+   * navigation instead of a redirect — they can't reuse blockDuringImpersonation's next(err)
+   * contract (impersonation-readonly.middleware.ts). This enforces the same read-only guarantee by
    * redirecting before any code exchange or token mint, matching the handlers' own
    * `?error=` convention. Returns true if the callback was blocked.
    */
