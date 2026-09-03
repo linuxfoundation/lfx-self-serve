@@ -207,6 +207,18 @@ function describeOutcomeMismatch(group: KeywordActionGroup, action: KeywordActio
     tally.set(key(a), (tally.get(key(a)) ?? 0) + 1);
   }
   for (const r of applied.results) {
+    // ELEMENT shape, not just the array's. `Array.isArray` was added earlier for a missing
+    // `results`, but `results: [null]` is a valid JSON array whose element still throws in
+    // `key(r)` -- and that TypeError lands in the mutation catch, which has no errorBody to
+    // classify, so it reports this group unconfirmed AND stops the fan-out, abandoning every
+    // later campaign over a response that did reach the platform (Copilot).
+    //
+    // Reported as the controlled mismatch this function exists to return: a response that cannot
+    // describe what it applied has confirmed nothing, which is the same answer the array and
+    // count checks above already give.
+    if (!r || typeof r.ad_group_id !== 'string' || typeof r.criterion_id !== 'string' || typeof r.action !== 'string') {
+      return 'upstream returned a result entry that does not name a criterion';
+    }
     const remaining = tally.get(key(r));
     if (!remaining) {
       return 'upstream confirmed a criterion that was not requested';

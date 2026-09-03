@@ -404,6 +404,34 @@ describe('classifyMutationFailure — what proves upstream answered', () => {
     expect(unattempted.every((r) => r.success === false)).toBe(true);
   });
 
+  it('reports a mismatch when a results ENTRY is not a criterion', async () => {
+    // Copilot: `Array.isArray` was added for a missing `results`, but `results: [null]` is a
+    // valid array whose element still throws in `key(r)`. That TypeError lands in the mutation
+    // catch, which has no errorBody to classify -- so it reports this group unconfirmed AND stops
+    // the fan-out, abandoning every later campaign over a response that DID reach the platform.
+    const resolveGoogleAdsCampaign = vi.fn().mockResolvedValue({ match_count: 1, matches: [{ brief_id: 'b-1', campaign_id: 'c-1' }] });
+    // applied_count AGREES and `results` IS an array -- only the element can fail this.
+    const applyKeywordActions = vi.fn().mockResolvedValue({ campaign_id: 'c-1', applied_count: 1, results: [null] });
+
+    const client = { resolveGoogleAdsCampaign, applyKeywordActions } as never;
+    const body = { action: 'pause' as const, keywords: [kw('camp-1', 'k-1'), kw('camp-2', 'k-2')] };
+    const warn = vi.fn();
+    const req = { log: { warn, info: vi.fn(), error: vi.fn(), debug: vi.fn() } } as never;
+
+    const res = await applyKeywordActionsViaCampaignService(req, client, 'aswf', body);
+
+    // THE FAN-OUT CONTINUED. This is the assertion that distinguishes the controlled mismatch
+    // from the TypeError path -- both produce the same operator message, but only the crash
+    // abandons the remaining campaigns.
+    expect(resolveGoogleAdsCampaign.mock.calls.length, 'a malformed entry stopped the whole batch').toBe(2);
+    expect(res.results.every((r) => r.success === false)).toBe(true);
+    // And it was DIAGNOSED, not thrown: the mismatch branch logs; the catch does not.
+    expect(
+      warn.mock.calls.some((c) => JSON.stringify(c).includes('mismatch')),
+      'reached by throwing, not by the shape check'
+    ).toBe(true);
+  });
+
   it('reports a mismatch when the 2xx carries no results ARRAY', async () => {
     // Copilot: `applied.results` is untrusted wire data. A malformed 2xx with `results` missing
     // threw a TypeError inside the verification, and the caller's catch then classified our own
