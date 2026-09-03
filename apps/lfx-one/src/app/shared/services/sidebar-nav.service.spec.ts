@@ -4,7 +4,7 @@
 import { signal } from '@angular/core';
 import { TestBed } from '@angular/core/testing';
 import { MKTG_OS_AGENTS_ENABLED_FLAG, MKTG_OS_AGENTS_LABEL } from '@lfx-one/shared/constants';
-import { SidebarMenuItem } from '@lfx-one/shared/interfaces';
+import { Lens, SidebarMenuItem } from '@lfx-one/shared/interfaces';
 import { AnalyticsService } from '@services/analytics.service';
 import { FeatureFlagService } from '@services/feature-flag.service';
 import { LensService } from '@services/lens.service';
@@ -18,7 +18,7 @@ import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { SidebarNavService } from './sidebar-nav.service';
 
 describe('SidebarNavService', () => {
-  const activeLens = signal<'me' | 'foundation' | 'project' | 'org'>('foundation');
+  const activeLens = signal<Lens>('foundation');
   const mktgOsEnabled = signal(false);
   const hasFullFoundationAccess = signal(true);
   const currentPersona = signal('executive-director');
@@ -106,7 +106,7 @@ describe('SidebarNavService', () => {
     expect(governance).toBe(marketingOs + 1);
   });
 
-  it('still shows Marketing OS for marketing-only foundation users when the flag is on', () => {
+  it('still shows Marketing OS for users without full foundation sidebar access when the flag is on', () => {
     mktgOsEnabled.set(true);
     hasFullFoundationAccess.set(false);
     currentPersona.set('contributor');

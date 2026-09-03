@@ -70,7 +70,7 @@ A user can carry both board and project roles simultaneously. In the sidebar len
 
 ## Foundation Lens
 
-Available to `board-member`, `executive-director`, and root writers.
+Available to board members, executive directors, root writers, LF Staff, foundation `writer` grant holders, and marketing FGA grant holders (`marketing_auditor` / `campaign_manager` when `marketing-ops-fga-enabled` is on — see `deriveAllowedLenses` in `lens.utils.ts`).
 
 | Sidebar item / section     | Route                          | Visible to                                                                                                                                                                                              |
 | -------------------------- | ------------------------------ | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
