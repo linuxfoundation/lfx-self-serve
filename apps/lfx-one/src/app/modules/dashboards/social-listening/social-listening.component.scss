@@ -4,3 +4,25 @@
 :host {
   @apply block;
 }
+
+// The pinned header floats on the page canvas: an opaque backdrop in the canvas color plus a fade
+// so cards scrolling under it dissolve instead of colliding with the title row.
+.social-listening-header {
+  @apply relative -mx-4 bg-gray-50 px-4 pb-4 pt-4 sm:-mx-6 sm:px-6 lg:-mx-8 lg:px-8;
+
+  &::after {
+    content: '';
+    @apply pointer-events-none absolute inset-x-0 top-full h-4 bg-gradient-to-b from-gray-50 to-transparent;
+  }
+}
+
+// One sticky container holds both pinned rows (see the template) — a fixed per-row offset broke when the
+// header wrapped. `relative` anchors the filters panel; pt-4 keeps the unpinned rhythm. Fade: bottom of the stack.
+.social-listening-filter-row {
+  @apply relative bg-gray-50 pt-4;
+
+  &::after {
+    content: '';
+    @apply pointer-events-none absolute inset-x-0 top-full h-4 bg-gradient-to-b from-gray-50 to-transparent;
+  }
+}

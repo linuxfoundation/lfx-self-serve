@@ -100,10 +100,35 @@ export async function stubAccountContext(page: Page): Promise<void> {
   );
 }
 
-export async function stubGroups(page: Page): Promise<void> {
-  await page.route(/\/api\/orgs\/[^/]+\/lens\/groups$/, (route) => {
+/** An org whose employees hold no non-board seats — the genuine-empty-state case (GH-1809). */
+export function emptyGroupsResponse() {
+  return { groups: [], total_groups: 0, total_seats: 0 };
+}
+
+/** A roster large enough to stand in for a "small org" (~50 groups) without being the 600+ case. */
+export function smallOrgGroupsResponse(groupCount = 50) {
+  const groups = Array.from({ length: groupCount }, (_, i) => ({
+    uid: `c-small-${i}`,
+    name: `Small Org Working Group ${i}`,
+    category: 'Working Group',
+    project_uid: 'uepf-root',
+    project_slug: PROJECT_SLUG,
+    project_name: 'Ultra Ethernet Consortium Fund',
+    org_seat_count: (i % 5) + 1,
+  }));
+  return { groups, total_groups: groups.length, total_seats: groups.reduce((sum, g) => sum + g.org_seat_count, 0) };
+}
+
+/**
+ * `delayMs` holds the response open so the loading state is observable — the page is expected to
+ * paint chrome and a skeleton without waiting for this, which is the whole point of GH-1809.
+ */
+export async function stubGroups(page: Page, options: { body?: unknown; delayMs?: number } = {}): Promise<void> {
+  const { body = groupsResponse(), delayMs = 0 } = options;
+  await page.route(/\/api\/orgs\/[^/]+\/lens\/groups$/, async (route) => {
     if (route.request().method() !== 'GET') return route.fallback();
-    return route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify(groupsResponse()) });
+    if (delayMs > 0) await new Promise((resolve) => setTimeout(resolve, delayMs));
+    return route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify(body) });
   });
 }
 
@@ -190,7 +215,12 @@ export async function stubCommitteeMembers(page: Page, response: unknown = commi
   });
 }
 
-export async function gotoGroups(page: Page): Promise<void> {
+/**
+ * Navigates to `/org/groups` and stops as soon as the route is confirmed — without waiting for any
+ * roster row. Split out of `gotoGroups` for the cases where a row is never expected to appear: a
+ * still-loading roster, or an org with no groups at all.
+ */
+export async function openGroupsPage(page: Page): Promise<void> {
   skipWhenAuthMissing();
   await page.goto('/', { waitUntil: 'domcontentloaded' });
   await expect(page).not.toHaveURL(/auth0\.com/);
@@ -202,5 +232,9 @@ export async function gotoGroups(page: Page): Promise<void> {
   if (!page.url().includes('/org/groups')) {
     test.skip(true, 'org-lens-enabled flag appears off — /org/groups redirected away');
   }
+}
+
+export async function gotoGroups(page: Page): Promise<void> {
+  await openGroupsPage(page);
   await expect(page.getByTestId(`org-groups-item-${GROUP_UID}`)).toBeVisible({ timeout: DATA_LOAD_TIMEOUT });
 }

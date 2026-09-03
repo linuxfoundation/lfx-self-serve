@@ -34,6 +34,109 @@ export const CLA_GROUP_ORG_SOURCE_ICONS = {
   gerrit: 'fa-light fa-code-branch',
 } as const;
 
+/**
+ * Where the Contributor Console returns a contributor after signing (#1251). Mirrors the
+ * `clas` child route under /profile in profile.routes.ts.
+ *
+ * Shared because both hand-offs compose a return address and must not disagree on the path:
+ * the BFF derives one from the request Host for prepare-sign, and the browser composes one
+ * from its own origin for the Gerrit route, which has no BFF round trip (#2002).
+ */
+export const MY_CLAS_PATH = '/profile/clas';
+
+/**
+ * The Contributor Console's Gerrit signing route, as its own router declares it
+ * (`cla/gerrit/project/:projectId/:contractType`). The contract-type segment is chosen on
+ * the Gerrit path from the group's enablement flags (#2066).
+ */
+export const GERRIT_CONSOLE_ROUTE_PREFIX = '#/cla/gerrit/project';
+
+/** Contract-type segments the Console Gerrit route accepts (#2066). */
+export const GERRIT_CONTRACT_TYPE_INDIVIDUAL = 'individual';
+export const GERRIT_CONTRACT_TYPE_CORPORATE = 'corporate';
+
+/**
+ * Copy for the Gerrit contract-type step (#2066), mirroring the Contributor Console decision
+ * screen rather than inventing new wording.
+ */
+export const SIGN_CONTRACT_TYPE_COPY = {
+  header: 'What type of contributor are you?',
+  body: "Choose how you'll sign for this project — you'll be redirected to EasyCLA to complete it.",
+  individual: {
+    label: 'Individual Contributor',
+    description:
+      'If you are making a contribution of content that you own, and not content owned by your employer, you should proceed as an individual contributor.',
+  },
+  corporate: {
+    label: 'Corporate Contributor',
+    description: 'If you are making a contribution of content owned by your employer, you should proceed as a corporate contributor.',
+  },
+} as const;
+
+/**
+ * The value the Gerrit card writes into the step's form control.
+ *
+ * Cannot collide with a GitHub account: those are the account *number*, which is digits only.
+ */
+export const GERRIT_IDENTITY_VALUE = 'gerrit';
+
+/**
+ * Copy for the sign identity step, per variant. All three sets are taken from the design
+ * rather than composed here — a contributor signing under a Gerrit identity must not be told
+ * the group is linked to GitHub repositories, and that sentence is the whole reason the
+ * variants exist rather than one reusable string.
+ */
+export const SIGN_IDENTITY_COPY = {
+  github: {
+    header: 'Select a GitHub account',
+    body: "This CLA group is linked to GitHub repositories. Choose the GitHub account you'll sign with — you'll be redirected to EasyCLA to complete it.",
+  },
+  gerrit: {
+    header: 'Select a Gerrit account',
+    body: "This CLA group is linked to Gerrit repositories. Choose the Gerrit account you'll sign with — you'll be redirected to EasyCLA to complete it.",
+  },
+  'github-or-gerrit': {
+    header: 'Select a GitHub or Gerrit account',
+    body: "This CLA group is linked to GitHub and Gerrit repositories. Choose the GitHub or Gerrit account you'll sign with — you'll be redirected to EasyCLA to complete it.",
+  },
+} as const;
+
+/**
+ * How a card names its platform when two platforms share one list.
+ *
+ * Only ever appended on the mixed variant. The two rows there carry a GitHub handle and an LF
+ * username, which are routinely different strings for the same person — without the suffix
+ * they read either as duplicates or as one identity listed twice. A single-source list has
+ * nothing to disambiguate, and its design shows bare labels.
+ */
+export const SIGN_IDENTITY_PLATFORM_LABELS = {
+  github: 'GitHub',
+  gerrit: 'Gerrit',
+} as const;
+
+/**
+ * Why a GitLab-linked CLA Group cannot be signed here. An identity gap, not a configuration
+ * flag: GitLab signing authenticates the contributor through GitLab OAuth at signing time and
+ * keys the EasyCLA user record on the GitLab numeric id, and Self Serve can neither obtain nor
+ * verify a GitLab identity today.
+ */
+export const GITLAB_UNSUPPORTED_MESSAGE = 'Signing CLA using GitLab is not supported from Self Serve';
+
+/**
+ * Names the source in the block's header, so the dialog says which platform it is about before
+ * the contributor reads a word of the body. Every other dialog in this flow is titled for what
+ * it is asking about; a source-neutral title here would be the one screen that is entirely
+ * about a source and does not say so.
+ */
+export const GITLAB_UNSUPPORTED_HEADER = 'GitLab CLA signing';
+
+/**
+ * Chip on a Sign a CLA search result the contributor already holds a CLA for (#1914).
+ * The tooltip on that row carries the sentence that says which agreement; this is only
+ * the short label that makes the grayed-out state readable without hovering.
+ */
+export const ALREADY_SIGNED_CLA_LABEL = 'Already signed';
+
 /** Hover tooltips on a right-edge kebab open off-screen; keep the CCLA reason in the item. */
 export const ECLA_COVERED_DOWNLOAD_LABEL = 'Download PDF<br><span class="mt-0.5 block text-xs font-normal">Covered by Corporate CLA (CCLA)</span>';
 

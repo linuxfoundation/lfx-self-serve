@@ -96,6 +96,33 @@ export interface WeeklyBriefSourceChipSection extends WeeklyBriefSourceSection {
   chips: WeeklyBriefSourceChip[];
 }
 
+/**
+ * A `WeeklyBriefSourceSection` populated with one kind's non-zero refs from
+ * `WeeklyBriefCurrentActivity.source_refs`, plus the precomputed verb-phrase count text for
+ * that kind (e.g. "1 meeting held") — the "this week so far" tally's analog to
+ * `WeeklyBriefSourceChipSection` (GH-1922). Omitted entirely (not zero-length) for a kind with
+ * no activity — `weekly-brief-card.component.ts`'s `currentActivity` (built by
+ * `initCurrentActivitySections`) only returns non-zero kinds, same filtering
+ * `initSourceChipSections` already does for the Sources row.
+ */
+export interface WeeklyBriefCurrentActivitySection extends WeeklyBriefSourceSection {
+  refs: WeeklyBriefSourceRef[];
+  countText: string;
+}
+
+/**
+ * Verb-phrase singular/plural for one activity kind in the "this week so far" tally caption
+ * (GH-1922) — see `WEEKLY_BRIEF_CURRENT_ACTIVITY_PHRASES`'s own doc comment for the full
+ * membership/ordering/label contract, including the "recognized kinds only" scope of this list
+ * and the trailing `other` catch-all for the kinds it doesn't cover — not restated here to avoid
+ * the two drifting apart.
+ */
+export interface WeeklyBriefCurrentActivityPhrase {
+  kind: string;
+  singular: string;
+  plural: string;
+}
+
 export interface WeeklyBrief {
   uid: string;
   committee_uid: string;
@@ -149,15 +176,97 @@ export interface WeeklyBriefCurrentResponse {
   throttle: WeeklyBriefThrottle | null;
   /**
    * BFF-side enrichment (not part of upstream's contract): the calling user's own rating on
-   * this specific `brief.uid` + `brief.revision`, or `null` if they haven't rated it (or no
-   * `brief` was returned). Absent entirely when `brief` is null. Read from the BFF's
-   * per-user rating store, not upstream — see `weekly-brief.service.ts#getCurrentBrief`.
+   * this specific `brief.uid` + `brief.revision`, or `null` on a cache miss/fault. Absent
+   * entirely when `brief` is null, no user identity is resolvable, or no rating cache key
+   * could be built. Read from the BFF's per-user rating store, not upstream — see
+   * `weekly-brief.service.ts#withCallerRating`.
    */
   caller_rating?: WeeklyBriefRating | null;
+  /**
+   * BFF-side enrichment (not part of upstream's contract, GH-1966): whether real committee
+   * activity has occurred inside `brief`'s own window, after `brief` was last touched, up to
+   * the earlier of "now" or the window's own close (see `WeeklyBriefService#withStaleness`'s
+   * doc comment for the full reasoning, including why a brief generated after its own window
+   * closed confidently reports `stale: false` rather than `null`). Absent entirely when `brief`
+   * is null or in a non-shareable state — a stricter gate than `caller_rating`'s (which has no
+   * state check of its own). `null` when staleness specifically couldn't be computed for a
+   * shareable brief — mock mode, an unparseable `updated_at`/`window_end`, an inconclusive
+   * fetch, or a fetch fault. Never a hard failure of `getCurrentBrief`.
+   */
+  staleness?: WeeklyBriefStaleness | null;
+  /**
+   * BFF-side enrichment (not part of upstream's contract, same as `caller_rating`): a raw
+   * count of activity in the current, not-yet-closed week — distinct from `brief`'s own
+   * completed-week window (GH-1922). Sourced from `CommitteeActivityService`'s existing live
+   * meeting/vote/document aggregation (not a weekly-brief-specific upstream call), so it's
+   * populated identically in mock and live mode — see
+   * `weekly-brief.service.ts#buildCurrentActivity`. Three states, not two — `null` and absent
+   * are deliberately distinct:
+   *   - **Absent** (key not present at all): two distinct classes of cause, only one worth
+   *     re-asking for. Either `buildCurrentActivity` genuinely couldn't produce an answer (see
+   *     that method's own doc comment for its three actual causes) — transient, worth asking
+   *     again on a governance committee, up to `WEEKLY_BRIEF_CURRENT_ACTIVITY_MAX_ASK_ATTEMPTS`
+   *     poll ticks; OR the caller deliberately asked the BFF to skip the fan-out via
+   *     `includeCurrentActivity: false` (GH-1922 cost optimization —
+   *     `weekly-brief-card.component.ts` does this on every non-poll load for any committee it
+   *     already knows isn't governance-classified, since the tally section can never render for
+   *     one regardless) — never worth re-asking for. A caller re-asking on absent must also check
+   *     whether asking is worthwhile at all — see `weekly-brief-card.component.ts`'s `pollUntilTerminal`,
+   *     which additionally gates on `isGoverningBoardCommittee()` for exactly this reason.
+   *   - **`null`**: known, definitively, not to apply — the committee isn't
+   *     governance-classified. Not transient; re-asking within the same poll cycle can't change
+   *     this answer, so a caller that retries on any falsy value without checking for this
+   *     distinction (e.g. `weekly-brief-card.component.ts`'s `pollUntilTerminal`) would spend
+   *     calls forever for no reason.
+   *   - **Present**: the real tally, possibly with an empty `source_refs` (a genuine quiet week
+   *     — still a real answer, not absence). `truncated: true` when the current week's raw
+   *     activity page reached the upstream page-size cap — `source_refs` is then a lower bound
+   *     that is usually, but not provably, partial (see `buildCurrentActivity`'s own doc comment
+   *     for the accepted false-positive case: a coincidentally exactly-full page can still be
+   *     complete). Either way it's a real, non-fabricated count, not a silently-truncated one
+   *     stated as fact.
+   */
+  current_activity?: WeeklyBriefCurrentActivity | null;
+}
+
+/** See `WeeklyBriefCurrentResponse.current_activity`. */
+export interface WeeklyBriefCurrentActivity {
+  window_start: string;
+  window_end: string;
+  source_refs: WeeklyBriefSourceRef[];
+  /**
+   * `true` when the current week's raw activity page reached the upstream page-size cap —
+   * `source_refs` is then a lower bound that's usually, but not provably, partial (a
+   * coincidentally exactly-full page can still be complete; see
+   * `weekly-brief.service.ts#buildCurrentActivity`'s own doc comment for why this is an accepted
+   * heuristic, not a proof). Present-only by contract: a producer must never emit `false` here,
+   * so the type itself forbids it.
+   */
+  truncated?: true;
 }
 
 /** A caller's one-tap quality rating on a specific weekly-brief revision. BFF-only — no upstream equivalent. */
 export type WeeklyBriefRating = 'up' | 'down';
+
+/**
+ * BFF-side enrichment (GH-1966, not part of upstream's contract): whether real committee
+ * activity has occurred inside this brief's own window (`window_end`), after its text was last
+ * generated/edited (`updated_at`), up to the earlier of "now" or the window's own close, and how
+ * much (see `WeeklyBriefService#withStaleness`'s doc comment for the full reasoning). Computed
+ * from `CommitteeActivityService` — purely informational, never affects the brief's own state,
+ * content, or generate/regenerate quota.
+ */
+export interface WeeklyBriefStaleness {
+  /** True when at least one qualifying event was found. */
+  stale: boolean;
+  /** Count of qualifying events found — from the fetched page when a fetch ran; provably `0` on the closed-window short-circuit, where no fetch is needed. See `event_count_is_floor`. */
+  event_count: number;
+  /**
+   * True when the underlying committee-activity fetch itself paginated (a `page_token` came
+   * back) — `event_count` is then a floor, not an exact count.
+   */
+  event_count_is_floor: boolean;
+}
 
 /**
  * Request body for `POST /committees/:committeeId/weekly-briefs/:briefUid/rating`. `revision` is

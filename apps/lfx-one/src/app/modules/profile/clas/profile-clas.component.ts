@@ -1,17 +1,51 @@
 // Copyright The Linux Foundation and each contributor to LFX.
 // SPDX-License-Identifier: MIT
 
-import { DatePipe, DOCUMENT, isPlatformBrowser } from '@angular/common';
+import { DOCUMENT, isPlatformBrowser } from '@angular/common';
 import { ChangeDetectionStrategy, Component, computed, DestroyRef, inject, PLATFORM_ID, Signal, signal, viewChildren } from '@angular/core';
 import { takeUntilDestroyed, toSignal } from '@angular/core/rxjs-interop';
 import { Router, RouterLink } from '@angular/router';
-import { ECLA_COVERED_DOWNLOAD_LABEL, MY_CLAS_M2_ENABLED_FLAG } from '@lfx-one/shared/constants';
-import type { ClaGroupOption, ClaRow, ClaStatus, GithubAccountOption, MyClaAgreement, MyClasState, PrepareSignResponse } from '@lfx-one/shared/interfaces';
-import { claStatusLabel, claStatusSeverity, downloadFromUrl, isMyClasEmpty, signedAsLine } from '@lfx-one/shared/utils';
+import {
+  ECLA_COVERED_DOWNLOAD_LABEL,
+  GITLAB_UNSUPPORTED_HEADER,
+  MY_CLAS_M2_ENABLED_FLAG,
+  MY_CLAS_PATH,
+  SIGN_CONTRACT_TYPE_COPY,
+  SIGN_IDENTITY_COPY,
+} from '@lfx-one/shared/constants';
+import type {
+  ClaGroupOption,
+  ClaRow,
+  ClaSignRoute,
+  ClaStatus,
+  GerritContractType,
+  GithubAccountOption,
+  MyClaAgreement,
+  MyClasState,
+  PrepareSignResponse,
+  SignContractTypeSelectResult,
+  SignIdentityDialogData,
+  SignIdentitySelectResult,
+  SignIdentityVariant,
+} from '@lfx-one/shared/interfaces';
+import {
+  alreadySignedAgreementsForGroup,
+  claSignRoute,
+  claStatusLabel,
+  claStatusSeverity,
+  downloadFromUrl,
+  formatClaSignedOn,
+  gerritSignUrl,
+  isMyClasEmpty,
+  resolveGerritContractType,
+  signedAsLine,
+} from '@lfx-one/shared/utils';
 import { MenuItem, MessageService } from 'primeng/api';
 import { DialogService, DynamicDialogRef } from 'primeng/dynamicdialog';
 import { ToastModule } from 'primeng/toast';
 import { BehaviorSubject, catchError, of, switchMap, take } from 'rxjs';
+
+import { environment } from '@environments/environment';
 
 import { BadgeComponent } from '@components/badge/badge.component';
 import { ButtonComponent } from '@components/button/button.component';
@@ -26,8 +60,10 @@ import { UserService } from '@services/user.service';
 
 import { ClaGroupSelectComponent } from './cla-group-select.component';
 import { buildContactClaManagerMenuItems } from './contact-cla-manager-menu';
-import { GithubAccountSelectComponent } from './github-account-select.component';
+import { GitlabUnsupportedComponent } from './gitlab-unsupported.component';
 import { buildManageInCclaConsoleMenuItems } from './manage-ccla-console-menu';
+import { SignContractTypeSelectComponent } from './sign-contract-type-select.component';
+import { SignIdentitySelectComponent } from './sign-identity-select.component';
 
 /**
  * "CLAs" Profile tab (Me lens). Lists every signed agreement (ICLA + ECLA)
@@ -42,18 +78,7 @@ import { buildManageInCclaConsoleMenuItems } from './manage-ccla-console-menu';
  */
 @Component({
   selector: 'lfx-profile-clas',
-  imports: [
-    DatePipe,
-    RouterLink,
-    BadgeComponent,
-    ButtonComponent,
-    EmptyStateComponent,
-    MenuComponent,
-    MessageComponent,
-    TableComponent,
-    TagComponent,
-    ToastModule,
-  ],
+  imports: [RouterLink, BadgeComponent, ButtonComponent, EmptyStateComponent, MenuComponent, MessageComponent, TableComponent, TagComponent, ToastModule],
   providers: [MessageService, DialogService],
   templateUrl: './profile-clas.component.html',
   changeDetection: ChangeDetectionStrategy.OnPush,
@@ -71,6 +96,20 @@ export class ProfileClasComponent {
 
   /** Dark-launch for the M2 overlay. Default off — LaunchDarkly targeting is the rollout switch. */
   protected readonly myClasM2Enabled = this.featureFlagService.getBooleanFlag(MY_CLAS_M2_ENABLED_FLAG, false);
+
+  /**
+   * Read-only when impersonating — a signature and a CLA-manager request are binding acts that
+   * would be recorded against the target rather than the administrator, so the server refuses
+   * them (`blockDuringImpersonation` on `POST /api/me/clas/prepare-sign` and
+   * `POST /api/me/clas/:signatureId/cla-manager-requests`).
+   *
+   * Sign CLA and the row's write actions are therefore disabled rather than withheld, so an
+   * administrator can see the action exists and read why it is unavailable — the treatment every
+   * other impersonation-blocked control on the profile gets. Download PDF stays enabled: it is a
+   * read, and retrieving the signed document is the one thing an administrator legitimately
+   * needs on someone else's row.
+   */
+  protected readonly impersonating = this.userService.impersonating;
 
   // signatureID currently resolving a PDF URL (drives the row's spinner + guards double-clicks).
   protected readonly downloadingId = signal<string | null>(null);
@@ -93,22 +132,34 @@ export class ProfileClasComponent {
   protected readonly isEmpty = computed(() => isMyClasEmpty(this.state().loaded, this.state().error, this.agreements().length));
 
   /**
-   * The table's only binding source. Recomputes when the agreement list changes and not
-   * otherwise, which is also what keeps each row's `MenuItem[]` referentially stable —
-   * a fresh model per change-detection pass makes the PrimeNG popup miss the first click.
+   * The table's only binding source. Recomputes when the agreement list or the two session flags
+   * it reads change, and not otherwise, which is what keeps each row's `MenuItem[]` referentially
+   * stable — a fresh model per change-detection pass makes the PrimeNG popup miss the first click.
    */
   protected readonly rows: Signal<ClaRow[]> = this.initRows();
 
   // --- Sign CLA hand-off (#1251) -------------------------------------------
 
   /**
-   * Offered only when M2 is on and the session is not impersonating. Impersonation is
-   * read-only by platform rule, and a signature is a binding act that would be recorded against
-   * the target rather than the administrator who performed it. Hiding it here avoids offering
-   * an action that cannot succeed; the server, not this flag, is the impersonation guard.
-   * `my-clas-m2-enabled` is the product gate — off, this page is the M1 list.
+   * Also disabled until the list has loaded, and while it has failed to load (#1914). Both dialogs
+   * read the loaded agreements — the picker to tag a group they already signed, the identity step
+   * to gray out the identity that signed it — and in both states the list is empty, which is
+   * indistinguishable from having signed nothing. Offering the flow then would walk them into the
+   * duplicate signing this change exists to prevent.
    */
-  protected readonly canSign = computed(() => this.myClasM2Enabled() && !this.userService.impersonating());
+  protected readonly signDisabled = computed(() => this.impersonating() || this.loading() || this.error());
+
+  /**
+   * Reads as the button's accessible name while it is disabled, so it has to name the action
+   * before the reason — an aria-label replaces the label rather than adding to it, and a reason
+   * on its own would leave a screen reader with no idea which action is unavailable.
+   */
+  protected readonly signDisabledReason = computed<string | undefined>(() => {
+    if (this.impersonating()) return 'Sign CLA — unavailable while impersonating another user';
+    if (this.loading()) return 'Sign CLA — available once your CLAs have loaded';
+    if (this.error()) return 'Sign CLA — available once your CLAs load; select Retry to reload them';
+    return undefined;
+  });
 
   protected retry(): void {
     this.refresh$.next();
@@ -134,7 +185,10 @@ export class ProfileClasComponent {
    * dialog rule and the sibling profile tabs.
    */
   protected openSignDialog(): void {
-    if (!this.myClasM2Enabled() || this.starting() || this.signDialogOpen()) return;
+    // `impersonating()` is re-checked here and not only on the button: the button is now rendered
+    // rather than withheld, so a keyboard or programmatic activation can reach this method, and
+    // opening the picker would walk the administrator to a prepare the server refuses.
+    if (!this.myClasM2Enabled() || this.signDisabled() || this.starting() || this.signDialogOpen()) return;
     this.signDialogOpen.set(true);
 
     const dialogRef = this.dialogService.open(ClaGroupSelectComponent, {
@@ -143,6 +197,7 @@ export class ProfileClasComponent {
       modal: true,
       closable: true,
       dismissableMask: true,
+      data: { agreements: this.agreements() },
     }) as DynamicDialogRef;
 
     this.whenDialogSettles<ClaGroupOption>(dialogRef, (option) => {
@@ -183,25 +238,51 @@ export class ProfileClasComponent {
   }
 
   /**
-   * Settles which GitHub account the signature will be recorded against, then leaves for the
-   * Console (#1252).
+   * Settles which identity the signature will be recorded against, then leaves for the
+   * Console (#1252, #2002).
    *
-   * The account step comes before the hand-off rather than after because the association is
+   * The identity step comes before the hand-off rather than after because the association is
    * what the Console's signature is recorded against; deciding it afterwards would mean the
    * contributor had already signed by the time anyone knew as whom.
+   *
+   * Which identities that step offers depends on what the selected group is linked to, and
+   * that is the whole of what the source decides — the step itself is never skipped. A
+   * contributor signing a Gerrit group under their LF identity should know that is what they
+   * are doing, which a silent hand-off would not tell them.
+   *
+   * GitLab is the one source with no identity to offer, so it is answered with a block rather
+   * than a step.
    */
   private handOffToConsole(option: ClaGroupOption): void {
+    const route: ClaSignRoute = claSignRoute(option.organizations);
+
+    if (route === 'gitlab-unsupported') {
+      this.showGitlabUnsupported();
+      return;
+    }
+
+    if (route === 'gerrit') {
+      // No linked-account lookup: nothing on this path consults a GitHub account, and asking
+      // for one would let a failure to read them block a signature that never needed them.
+      this.chooseIdentityThenSign(option, 'gerrit', []);
+      return;
+    }
+
     this.starting.set(true);
     this.myClasService
       .getGithubAccounts()
       .pipe(takeUntilDestroyed(this.destroyRef))
       .subscribe({
-        next: ({ accounts }) => this.chooseAccountThenSign(option, accounts),
+        next: ({ accounts }) => this.chooseIdentityThenSign(option, route, accounts),
         error: () => {
           this.starting.set(false);
           // Explicitly not treated as "no accounts linked". The two are indistinguishable in
-          // the payload but not in consequence: sending someone who already linked an account
-          // into account-linking asks them to fix something that is not broken.
+          // the payload but not in consequence: showing the step's empty state to someone
+          // who already linked an account asks them to fix something that is not broken.
+          //
+          // A mixed group fails here too, rather than quietly falling back to its Gerrit
+          // identity. Dropping an option because a lookup failed would hide that the option
+          // existed, and this failure is transient — the contributor can simply try again.
           this.messageService.add({
             severity: 'error',
             summary: 'Could not start signing',
@@ -230,40 +311,76 @@ export class ProfileClasComponent {
   }
 
   /**
-   * Routes on how many accounts are linked.
+   * Asks which identity the signature will be recorded against. Every list reaches the step,
+   * whatever its length.
    *
-   * One account skips the dialog but still prepares — the screen is what is unnecessary when
-   * there is nothing to choose between, not the identity step. Dropping the prepare too would
-   * leave exactly the contributors this feature was built for on the old unpredictable path.
+   * A single identity is asked for too, because what the screen carries is the identity rather
+   * than the choice, and a list of one says that as plainly as a list of two. An empty one is
+   * shown as well, as the step's own blocking empty state (#1917) — the contributor is stopped
+   * where they are instead of being moved off the page, which would drop the CLA group they had
+   * already chosen. Either way nothing reaches the Console without a confirmed identity.
+   *
+   * A Gerrit identity is offered whenever the group is linked to Gerrit, and it always resolves,
+   * so a variant carrying one cannot reach that empty state. That matters most on a mixed group
+   * whose contributor has no linked GitHub account: they are offered Gerrit rather than blocked
+   * on the GitHub account they do not need.
    */
-  private chooseAccountThenSign(option: ClaGroupOption, accounts: GithubAccountOption[]): void {
-    if (accounts.length === 0) {
+  private chooseIdentityThenSign(option: ClaGroupOption, variant: SignIdentityVariant, accounts: GithubAccountOption[]): void {
+    const gerritUsername = variant === 'github' ? undefined : this.userService.viewerUsername()?.trim() || undefined;
+
+    // Nothing to show and nothing to fall back on. Only reachable if the session lost the
+    // identity it was resolved from, so it is reported rather than rendered as an empty step.
+    if (variant === 'gerrit' && !gerritUsername) {
       this.starting.set(false);
-      this.sendToAccountLinking();
+      this.reportGerritIdentityUnresolved();
       return;
     }
 
-    if (accounts.length === 1) {
-      this.prepareThenHandOff(option, accounts[0]);
-      return;
-    }
+    // A mixed group whose Gerrit identity will not resolve is still signable through GitHub,
+    // so it degrades to the GitHub step — copy included — rather than offering a blank card.
+    const effectiveVariant: SignIdentityVariant = variant === 'github-or-gerrit' && !gerritUsername ? 'github' : variant;
 
     this.starting.set(false);
     this.signDialogOpen.set(true);
 
-    const dialogRef = this.dialogService.open(GithubAccountSelectComponent, {
-      header: 'Choose a GitHub account',
+    // What they already hold for *this* group, so the step can gray out the identity that signed
+    // it. Passed as agreements rather than a precomputed verdict because only the step knows
+    // which identities it ended up offering.
+    const claGroupAgreements = alreadySignedAgreementsForGroup(this.agreements(), option.claGroupId);
+
+    const data: SignIdentityDialogData = {
+      variant: effectiveVariant,
+      accounts,
+      ...(gerritUsername ? { gerritUsername } : {}),
+      ...(claGroupAgreements.length > 0 ? { claGroupAgreements } : {}),
+    };
+
+    const dialogRef = this.dialogService.open(SignIdentitySelectComponent, {
+      header: SIGN_IDENTITY_COPY[effectiveVariant].header,
       width: '32rem',
       modal: true,
       closable: true,
       dismissableMask: true,
-      data: { accounts },
+      data,
     }) as DynamicDialogRef;
 
-    this.whenDialogSettles<string>(dialogRef, (githubId) => {
+    this.whenDialogSettles<SignIdentitySelectResult>(dialogRef, (result) => {
       this.signDialogOpen.set(false);
-      if (!githubId) {
-        this.starting.set(false);
+      this.starting.set(false);
+
+      if (!result) return;
+
+      if ('linkAccounts' in result) {
+        this.sendToAccountLinking();
+        return;
+      }
+
+      if (result.kind === 'gerrit') {
+        // Held closed again across the wait below. Between this dialog's teardown and the next
+        // step opening there is a gap of one leave animation, and a second Sign CLA in that
+        // window would start a parallel hand-off.
+        this.signDialogOpen.set(true);
+        this.afterDialogTornDown(dialogRef, () => this.chooseContractTypeThenHandOffToGerrit(option));
         return;
       }
 
@@ -271,15 +388,128 @@ export class ProfileClasComponent {
       // account submitted is always one of the accounts linked to this session. Ownership
       // verification upstream passes for every account the contributor holds, which is what
       // makes where this value came from matter.
-      const chosen = accounts.find((account) => account.githubId === githubId);
+      const chosen = accounts.find((account) => account.githubId === result.githubId);
       if (!chosen) {
-        this.starting.set(false);
         this.reportRecordedMismatch();
         return;
       }
 
       this.prepareThenHandOff(option, chosen);
     });
+  }
+
+  /** The GitLab block. Closes with nothing; every exit from it is the same exit. */
+  private showGitlabUnsupported(): void {
+    this.signDialogOpen.set(true);
+
+    const dialogRef = this.dialogService.open(GitlabUnsupportedComponent, {
+      header: GITLAB_UNSUPPORTED_HEADER,
+      width: '32rem',
+      modal: true,
+      closable: true,
+      dismissableMask: true,
+    }) as DynamicDialogRef;
+
+    this.whenDialogSettles(dialogRef, () => {
+      this.signDialogOpen.set(false);
+      this.starting.set(false);
+    });
+  }
+
+  /**
+   * Asks which contract type the Gerrit signature will use when both are enabled (#2066).
+   * Single-type groups skip this step; neither-enabled groups fail visibly.
+   *
+   * Reached from the identity step's teardown rather than its close, so every exit here is
+   * responsible for reopening the gate the caller held shut across that wait.
+   */
+  private chooseContractTypeThenHandOffToGerrit(option: ClaGroupOption): void {
+    const resolved = resolveGerritContractType(option.iclaEnabled === true, option.cclaEnabled === true);
+
+    if (resolved === 'none') {
+      this.signDialogOpen.set(false);
+      this.starting.set(false);
+      this.reportGerritContractTypeUnavailable();
+      return;
+    }
+
+    if (resolved !== 'chooser') {
+      this.signDialogOpen.set(false);
+      this.handOffToGerrit(option, resolved);
+      return;
+    }
+
+    this.signDialogOpen.set(true);
+
+    // No data: the step renders both cards unconditionally, and it is only reachable for a group
+    // that enables both. Passing the flags it would have to ignore invites a later caller to open
+    // it for a single-type group, which is the hand-off this branch exists to make without asking.
+    const dialogRef = this.dialogService.open(SignContractTypeSelectComponent, {
+      header: SIGN_CONTRACT_TYPE_COPY.header,
+      width: '32rem',
+      modal: true,
+      closable: true,
+      dismissableMask: true,
+    }) as DynamicDialogRef;
+
+    this.whenDialogSettles<SignContractTypeSelectResult>(dialogRef, (result) => {
+      this.signDialogOpen.set(false);
+      this.starting.set(false);
+
+      if (!result) return;
+
+      this.handOffToGerrit(option, result.contractType);
+    });
+  }
+
+  /**
+   * Leaves for the Console's Gerrit signing route (#2002, #2066).
+   *
+   * No prepare-sign call, and no identity of any kind on the wire. The Console resolves the
+   * EasyCLA user from the LF SSO token on this route, and its Gerrit branch takes its return
+   * address from the query string rather than from a stored session — so a prepare would open
+   * a session nothing ever reads, and would need a GitHub account this path does not have.
+   * The mis-resolution guards therefore stay on the GitHub path, where there is an account to
+   * mis-resolve; they are neither weakened there nor stretched to cover a path without one.
+   *
+   * A full navigation, not a new tab, for the same reason as the GitHub hand-off: the Console
+   * returns the contributor here afterwards, which only reads as one continuous flow if they
+   * never left this tab.
+   */
+  private handOffToGerrit(option: ClaGroupOption, contractType: GerritContractType): void {
+    this.starting.set(true);
+
+    // Read here rather than held as a field: this runs only from the contributor's click, so
+    // the browser-only value is never touched during server-side rendering. The address is our
+    // own origin, which is the same value the server derives from the request host for
+    // prepare-sign — arrived at without needing that host to be checked against a trusted list.
+    const returnUrl = `${this.document.location.origin}${MY_CLAS_PATH}`;
+    const url = gerritSignUrl(environment.urls.contributorConsole, option.claGroupId, returnUrl, contractType);
+
+    if (!url) {
+      this.starting.set(false);
+      this.reportGerritDestinationUnresolved();
+      return;
+    }
+
+    this.starting.set(false);
+    this.document.location.href = url;
+  }
+
+  /**
+   * Runs `next` once the dialog is not merely closed but torn down (#2066).
+   *
+   * `DynamicDialogRef.close()` emits `onClose` synchronously and starts the leave animation from
+   * that same emission; the animation's end is what drops `p-overflow-hidden` from the body. So a
+   * dialog opened from inside `onClose` has its own scroll lock stripped a moment after it
+   * appears, and the page scrolls behind it. `onDestroy` fires immediately after that teardown,
+   * which is the boundary a follow-on step has to wait for.
+   *
+   * The GitHub path needs none of this: its next step opens after the linked-account request,
+   * which lands long after the animation is done.
+   */
+  private afterDialogTornDown(dialogRef: DynamicDialogRef, next: () => void): void {
+    dialogRef.onDestroy.pipe(take(1), takeUntilDestroyed(this.destroyRef)).subscribe(() => next());
   }
 
   private whenDialogSettles<T>(dialogRef: DynamicDialogRef, onSettle: (value: T | null | undefined) => void): void {
@@ -373,12 +603,44 @@ export class ProfileClasComponent {
     });
   }
 
-  private sendToAccountLinking(): void {
+  /**
+   * Stops a Gerrit hand-off whose destination could not be composed — an unset or unusable
+   * Console address. Reported rather than navigated to: a malformed address would take the
+   * contributor somewhere that cannot sign anything and cannot bring them back.
+   */
+  private reportGerritDestinationUnresolved(): void {
     this.messageService.add({
-      severity: 'info',
-      summary: 'Link a GitHub account',
-      detail: 'Connect the GitHub account you contribute with, then start signing again.',
+      severity: 'error',
+      summary: 'Could not start signing',
+      detail: 'We could not open the CLA signing page. Please try again.',
     });
+  }
+
+  /** Stops a Gerrit hand-off when the session carries no username to show the contributor. */
+  private reportGerritIdentityUnresolved(): void {
+    this.messageService.add({
+      severity: 'error',
+      summary: 'Could not start signing',
+      detail: 'We could not confirm which identity you would sign with. Please try again.',
+    });
+  }
+
+  /** Stops a Gerrit hand-off when the group enables neither ICLA nor CCLA (#2066). */
+  private reportGerritContractTypeUnavailable(): void {
+    this.messageService.add({
+      severity: 'error',
+      summary: 'Could not start signing',
+      detail: 'This CLA group is not configured for individual or corporate signing from here. Contact the project CLA manager.',
+    });
+  }
+
+  /**
+   * Takes the contributor to Identities, having asked for it from the picker's empty state.
+   *
+   * No accompanying message: the empty state they just acted on says the same thing, and a toast
+   * repeating it on arrival reads as though something went wrong.
+   */
+  private sendToAccountLinking(): void {
     void this.router.navigate(['/profile/identities']);
   }
 
@@ -408,8 +670,11 @@ export class ProfileClasComponent {
    * An invalidated ICLA also has no ⋮, matching the v17-after-legal HTML (FDC3): empty
    * `actionscell` even when a PDF exists. Invalidated ECLA is not drawn there and still
    * keeps Request Removal.
+   *
+   * `impersonating` greys out the write actions the two factories emit; Download PDF is built
+   * without it, so the one action an administrator needs on someone else's row survives.
    */
-  private buildRowMenuItems(agreement: MyClaAgreement): MenuItem[] {
+  private buildRowMenuItems(agreement: MyClaAgreement, impersonating: boolean): MenuItem[] {
     if (agreement.status === 'revoked' || (agreement.kind === 'ICLA' && agreement.status === 'invalidated')) {
       return [];
     }
@@ -430,8 +695,8 @@ export class ProfileClasComponent {
           icon: 'fa-light fa-download',
           disabled: true,
         },
-        ...buildContactClaManagerMenuItems(agreement, this.dialogService),
-        ...buildManageInCclaConsoleMenuItems(agreement),
+        ...buildContactClaManagerMenuItems(agreement, this.dialogService, impersonating),
+        ...buildManageInCclaConsoleMenuItems(agreement, impersonating),
       ];
     }
     return [];
@@ -461,8 +726,9 @@ export class ProfileClasComponent {
   private initRows(): Signal<ClaRow[]> {
     return computed(() => {
       const m2 = this.myClasM2Enabled();
+      const impersonating = this.impersonating();
       return this.agreements().map((agreement) => {
-        const menuItems = m2 ? this.buildRowMenuItems(agreement) : [];
+        const menuItems = m2 ? this.buildRowMenuItems(agreement, impersonating) : [];
         return {
           id: agreement.id,
           agreement,
@@ -473,6 +739,7 @@ export class ProfileClasComponent {
             icon: this.statusIcon(agreement.status),
             note: this.statusNote(agreement),
           },
+          signedOnLabel: formatClaSignedOn(agreement.signedOn),
           signedAsLine: m2 ? signedAsLine(agreement.signedVia, agreement.signedAs) : undefined,
           menuItems,
           hasActions: menuItems.length > 0,

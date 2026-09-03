@@ -4,7 +4,7 @@ description: Frequently asked questions about account settings, affiliations, id
 audience: [all]
 product_area: Account
 tags: [account, faq, settings, affiliations, cla, easycla, transactions, billing]
-last_updated: 2026-08-17
+last_updated: 2026-09-01
 intercom_collection: Account
 ---
 
@@ -66,15 +66,35 @@ Go to [**Profile & Account**](/profile) and open the **CLAs** tab (`/profile/cla
 
 ## What is the difference between an ICLA and an ECLA?
 
-An **ICLA** (Individual CLA) is an agreement you signed as yourself — you can download its PDF from the CLAs tab when available. An **ECLA** (Employee CLA) means you are covered under your employer's **CCLA** (Corporate CLA) via the company's **Approved List**; the CLAs tab lists it with the company name and no individual PDF. See [CLAs](../my-clas/).
+An **ICLA** (Individual CLA) is an agreement you signed as yourself — you can download its PDF from the CLAs tab when EasyCLA has the file and the agreement has not been invalidated. An **ECLA** (Employee CLA) means your employer holds a **CCLA** (Corporate CLA) and you were approved under it via the company's **Approved List**; the CLAs tab lists it with the company name and no individual PDF, and keeps listing it with a status that says so if that coverage later ends. See [CLAs](../my-clas/).
 
 ## Why don't my signed CLAs show up on the CLAs tab?
 
-The CLAs tab matches agreements to your LF username, verified emails, and linked GitHub accounts. If those values do not match the identity you used when signing (for example a work email or GitHub account that is not linked to this LFX profile), the CLA will not appear. Open [Identities](/profile/identities), link the Email or GitHub accounts you used when signing, then return to **CLAs**. More detail: [Why don't my signed CLAs show up?](../my-clas/#why-dont-my-signed-clas-show-up).
+The CLAs tab matches agreements to your LF username, verified emails, and linked GitHub accounts. If those values do not match the identity you used when signing (for example a work email or GitHub account that is not linked to this LFX profile), the CLA will not appear. Open [Identities](/profile/identities), link the Email or GitHub accounts you used when signing, then return to **CLAs**. More detail: [Why don't my signed CLAs show up?](../my-clas/#why-don-t-my-signed-clas-show-up).
 
 ## Can I sign a CLA from the CLAs tab?
 
-No. The CLAs tab is read-only and only shows agreements already on file. Signing happens outside this tab, and the signing process may evolve. See [CLAs](../my-clas/) and the [EasyCLA documentation](https://docs.linuxfoundation.org/lfx/easycla) for current guidance.
+You can start there. Select **Sign CLA**, search for the project, CLA group, or repository you need to sign for, and choose which linked GitHub account to sign under. Self Serve then hands you off to the EasyCLA Contributor Console, which presents and records the agreement — the signing itself does not happen in Self Serve. See [How do I sign a new CLA?](../my-clas/#how-do-i-sign-a-new-cla).
+
+## Why does a search result say "Already signed as" when I search for a CLA to sign?
+
+In the **Sign a CLA** dialog, a result you already hold a CLA for is tagged **Already signed as** followed by the account it was signed under. The result stays selectable: holding a CLA under one identity does not stop you signing under another, so it is the identity step that greys out the account already covered — and only when that account is one of the GitHub accounts linked to your profile, or the CLA was signed under your LF identity through Gerrit. Results are matched per CLA group, not per project, so a project with more than one CLA group only tags the group you signed. An **Invalidated** CLA greys out nothing — that agreement no longer covers you, so you can sign again with the same identity. See [Why does a search result say "Already signed as"?](../my-clas/#why-does-a-search-result-say-already-signed-as).
+
+## What do the CLA status labels mean?
+
+**Valid** means the agreement covers your contributions. **Needs attention** means an Employee CLA no longer covers you, usually because you have dropped off your employer's **Approved List**. **Invalidated** means the agreement is no longer in force — someone removed you from an Approved List, a maintainer invalidated your ICLA, or the CLA group was deleted. **Revoked** is reserved for a sanctions-screening outcome against your employer and cannot be changed from Self Serve. See [What do the status labels mean?](../my-clas/#what-do-the-status-labels-mean).
+
+## Which account was my CLA signed under?
+
+When EasyCLA recorded the account used to sign, the **Signed** column adds a second line under the date, such as _Signed as \<username\> (GitHub)_. It is informational: it records the account used at signing time, which is what to check when a project still asks you to sign something you believe you have already signed. It is historical — the account it names does not have to be an identity currently linked to your profile. The line is omitted when EasyCLA has no signing identity on record for that agreement. See [Which identity was a CLA signed under?](../my-clas/#which-identity-was-a-cla-signed-under).
+
+## Can I download my signed CLA PDF?
+
+You can download a signed **ICLA** (Individual CLA) when EasyCLA has the file — open the **⋮** menu on that row and choose **Download PDF**. If EasyCLA does not have the file, the row offers no download. An **Invalidated** ICLA carries no **⋮** menu at all, so there is nothing to download from it even when the signed file still exists. There is no PDF for an **ECLA** (Employee CLA), because your coverage sits under your employer's Corporate CLA (CCLA) rather than an agreement of your own; where such a row has a **⋮** menu, **Download PDF** appears greyed out and annotated _Covered by Corporate CLA (CCLA)_, and a **Revoked** ECLA has no menu at all. See [Can I download my signed CLA PDF?](../my-clas/#can-i-download-my-signed-cla-pdf).
+
+## How do I ask my employer's CLA manager to approve or remove my ECLA?
+
+Open the **⋮** menu on the Employee CLA row and choose **Request approval** (when you are no longer on the Approved List) or **Request Removal**. Select which CLA managers to notify, optionally add a message, and select **Send**. The request only notifies them — a manager makes the actual change in the Corporate CLA Console. See [How do I ask my CLA manager to approve or remove my ECLA?](../my-clas/#how-do-i-ask-my-cla-manager-to-approve-or-remove-my-ecla).
 
 ## What purchases appear in my transaction history?
 
@@ -90,7 +110,7 @@ Recent purchases may take up to 48 hours to appear in LFX Self Serve. If a purch
 
 ## Can I request a refund through LFX Self Serve?
 
-To request a refund, contact LFX support with your order confirmation.
+No — there is no refund request in LFX Self Serve. To request a refund, contact LFX support with your order confirmation.
 
 ## Who can see my transactions?
 

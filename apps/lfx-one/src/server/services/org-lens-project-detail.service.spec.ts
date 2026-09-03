@@ -1,9 +1,16 @@
 // Copyright The Linux Foundation and each contributor to LFX.
 // SPDX-License-Identifier: MIT
 
+import {
+  ORG_LEADERBOARD_DETAIL_ECOSYSTEM_CATEGORIES,
+  ORG_LEADERBOARD_DETAIL_TECHNICAL_CATEGORIES,
+  ORG_LEADERBOARD_DETAIL_WITHHELD_CATEGORY_KEYS,
+} from '@lfx-one/shared/constants';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 
 const { execute } = vi.hoisted(() => ({ execute: vi.fn() }));
+// Defaults to null so every suite here bypasses the cache; the cache-contract suite opts in.
+const { buildOrgCacheKey, getJson } = vi.hoisted(() => ({ buildOrgCacheKey: vi.fn(() => null as string | null), getJson: vi.fn() }));
 
 vi.mock('./snowflake.service', () => ({
   SnowflakeService: class {
@@ -16,8 +23,8 @@ vi.mock('./snowflake.service', () => ({
   },
 }));
 vi.mock('./valkey.service', () => ({
-  buildOrgCacheKey: () => null,
-  valkeyService: { getJson: vi.fn(), setJson: vi.fn() },
+  buildOrgCacheKey,
+  valkeyService: { getJson, setJson: vi.fn() },
 }));
 // See org-lens-projects.service.spec.ts for why this delegates to the real classification utils instead of stubbing.
 vi.mock('@lfx-one/shared/utils', async () => {
@@ -246,5 +253,253 @@ describe('OrgLensProjectDetailService.getHeroBlock health mapping', () => {
     const block = await service.getHeroBlock(ORG, SLUG);
 
     expect(block?.hero.health).toBeNull();
+  });
+});
+
+describe('OrgLensProjectDetailService.getLeaderboardBreakdown', () => {
+  const service = new OrgLensProjectDetailService();
+  const SUBJECT = 'crowd-org-1';
+
+  const breakdownRow = {
+    ACCOUNT_ID: ORG,
+    ORGANIZATION_NAME: 'Red Hat',
+    TECHNICAL_INFLUENCE_SCORE: 42,
+    TECHNICAL_INFLUENCE_LEVEL: 'Leading',
+    ECOSYSTEM_INFLUENCE_SCORE: 17,
+    ECOSYSTEM_INFLUENCE_LEVEL: 'Participating',
+  };
+
+  // Every warehouse column the service's category map reads, spelled out here independently of that
+  // map. A column named on only one side resolves to no column on the other and surfaces as a zeroed
+  // figure rather than an error, so the assertions below check the mapped values, not just the keys.
+  // Per-category points are chosen so they sum exactly to each dimension's score at two decimals but
+  // NOT at one, which is what pins the drawer's total to its own column of points.
+  const populatedBreakdownRow = {
+    ACCOUNT_ID: ORG,
+    ORGANIZATION_NAME: 'Red Hat',
+    TECHNICAL_INFLUENCE_SCORE: 42.5,
+    TECHNICAL_INFLUENCE_LEVEL: 'Leading',
+    ECOSYSTEM_INFLUENCE_SCORE: 6.25,
+    ECOSYSTEM_INFLUENCE_LEVEL: 'Participating',
+
+    MAINTAINERS_POINTS: 3.5,
+    MAINTAINERS_COUNT: 2,
+    MAINTAINERS_PROJECT_TOTAL: 20,
+    CONTRIBUTORS_POINTS: 7.25,
+    CONTRIBUTORS_COUNT: 3,
+    CONTRIBUTORS_PROJECT_TOTAL: 30,
+    COMMITS_POINTS: 12.5,
+    COMMITS_COUNT: 4,
+    COMMITS_PROJECT_TOTAL: 40,
+    PRS_OPENED_POINTS: 19.25,
+    PRS_OPENED_COUNT: 5,
+    PRS_OPENED_PROJECT_TOTAL: 50,
+
+    COLLABORATION_ACTIVITY_POINTS: 0.33,
+    COLLABORATION_ACTIVITY_COUNT: 6,
+    COLLABORATION_ACTIVITY_PROJECT_TOTAL: 60,
+    COLLABORATION_ACTIVITY_ALL_TIME_TOTAL: 600,
+    MEETING_ATTENDANCE_POINTS: 1.1,
+    MEETING_ATTENDANCE_COUNT: 7,
+    MEETING_ATTENDANCE_PROJECT_TOTAL: 70,
+    MEETING_ATTENDANCE_ALL_TIME_TOTAL: 700,
+    EVENT_ATTENDANCE_POINTS: 0.66,
+    EVENT_ATTENDANCE_COUNT: 8,
+    EVENT_ATTENDANCE_FOUNDATION_TOTAL: 80,
+    EVENT_ATTENDANCE_FOUNDATION_ALL_TIME_TOTAL: 800,
+    COMMITTEE_MEMBERS_POINTS: 0.5,
+    COMMITTEE_MEMBERS_COUNT: 9,
+    COMMITTEE_MEMBERS_FOUNDATION_TOTAL: 90,
+    COMMITTEE_MEMBERS_FOUNDATION_ALL_TIME_TOTAL: 900,
+    BOARD_MEMBERS_POINTS: 1,
+    BOARD_MEMBERS_COUNT: 10,
+    BOARD_MEMBERS_FOUNDATION_TOTAL: 100,
+    BOARD_MEMBERS_FOUNDATION_ALL_TIME_TOTAL: 1000,
+    EVENT_SPEAKERS_POINTS: 0.25,
+    EVENT_SPEAKERS_COUNT: 11,
+    EVENT_SPEAKERS_FOUNDATION_TOTAL: 110,
+    EVENT_SPEAKERS_FOUNDATION_ALL_TIME_TOTAL: 1100,
+    MEETUP_ATTENDANCE_POINTS: 0.75,
+    MEETUP_ATTENDANCE_COUNT: 12,
+    MEETUP_ATTENDANCE_FOUNDATION_TOTAL: 120,
+    MEETUP_ATTENDANCE_FOUNDATION_ALL_TIME_TOTAL: 1200,
+    SPONSORSHIP_EVENTS_POINTS: 0.4,
+    SPONSORSHIP_EVENTS_COUNT: 13,
+    SPONSORSHIP_EVENTS_FOUNDATION_TOTAL: 130,
+    SPONSORSHIP_EVENTS_FOUNDATION_ALL_TIME_TOTAL: 1300,
+    CERTIFIED_INDIVIDUALS_POINTS: 0.6,
+    CERTIFIED_INDIVIDUALS_COUNT: 14,
+    CERTIFIED_INDIVIDUALS_FOUNDATION_TOTAL: 140,
+    CERTIFIED_INDIVIDUALS_FOUNDATION_ALL_TIME_TOTAL: 1400,
+    MEMBERSHIP_TIER_POINTS: 0.66,
+  };
+
+  function mockWarehouse(overrides: { hero?: unknown; breakdown?: unknown } = {}): void {
+    execute.mockImplementation(async (sql: string) => {
+      if (sql.includes('LEADERBOARD_BREAKDOWN')) {
+        return { rows: 'breakdown' in overrides && overrides.breakdown === null ? [] : [overrides.breakdown ?? breakdownRow] };
+      }
+      if (sql.includes('PROJECT_NAME')) {
+        return { rows: 'hero' in overrides && overrides.hero === null ? [] : [overrides.hero ?? heroRow] };
+      }
+      return { rows: [] };
+    });
+  }
+
+  function keysOf(categories: readonly { key: string }[]): string[] {
+    return categories.map((category) => category.key);
+  }
+
+  beforeEach(() => {
+    execute.mockReset();
+  });
+
+  // The drawer renders the shared category lists while the server projects its own column map, so a
+  // key renamed on one side would otherwise surface as a silently missing row rather than a failure.
+  it.each([
+    ['technical', ORG_LEADERBOARD_DETAIL_TECHNICAL_CATEGORIES],
+    ['ecosystem', ORG_LEADERBOARD_DETAIL_ECOSYSTEM_CATEGORIES],
+  ] as const)('emits exactly the shared %s category keys, in the shared order', async (dimension, categories) => {
+    mockWarehouse();
+
+    const breakdown = await service.getLeaderboardBreakdown(ORG, SLUG, dimension, SUBJECT, '1y');
+
+    expect(keysOf(breakdown!.categories)).toEqual(keysOf(categories));
+    expect(breakdown!.withheldCategories).toEqual([]);
+  });
+
+  it('omits the privately-sourced ecosystem categories for a caller outside the subject organization', async () => {
+    mockWarehouse({ breakdown: { ...breakdownRow, ACCOUNT_ID: 'a-different-account' } });
+
+    const breakdown = await service.getLeaderboardBreakdown(ORG, SLUG, 'ecosystem', SUBJECT, '1y');
+
+    // Reported in the withheld list's own order, which is what the drawer's name-only rows key off.
+    const ecosystemKeys = keysOf(ORG_LEADERBOARD_DETAIL_ECOSYSTEM_CATEGORIES);
+    const withheld = ORG_LEADERBOARD_DETAIL_WITHHELD_CATEGORY_KEYS.filter((key) => ecosystemKeys.includes(key));
+    expect(breakdown!.withheldCategories).toEqual(withheld);
+    expect(keysOf(breakdown!.categories)).toEqual(ecosystemKeys.filter((key) => !withheld.includes(key)));
+  });
+
+  it('withholds nothing on the technical dimension, whose categories are all publicly derivable', async () => {
+    mockWarehouse({ breakdown: { ...breakdownRow, ACCOUNT_ID: 'a-different-account' } });
+
+    const breakdown = await service.getLeaderboardBreakdown(ORG, SLUG, 'technical', SUBJECT, '1y');
+
+    expect(breakdown!.withheldCategories).toEqual([]);
+    expect(keysOf(breakdown!.categories)).toEqual(keysOf(ORG_LEADERBOARD_DETAIL_TECHNICAL_CATEGORIES));
+  });
+
+  // The route middleware authorizes the viewing org only, so without this gate a grant on one
+  // organization would read any project slug.
+  it('returns null when the viewing organization has no catalog row for the project', async () => {
+    mockWarehouse({ hero: null });
+
+    await expect(service.getLeaderboardBreakdown(ORG, SLUG, 'technical', SUBJECT, '1y')).resolves.toBeNull();
+  });
+
+  it('returns null for the ecosystem dimension on a non-LF project, matching its empty board', async () => {
+    mockWarehouse({ hero: { ...heroRow, IS_LF_PROJECT: false } });
+
+    await expect(service.getLeaderboardBreakdown(ORG, SLUG, 'ecosystem', SUBJECT, '1y')).resolves.toBeNull();
+    await expect(service.getLeaderboardBreakdown(ORG, SLUG, 'technical', SUBJECT, '1y')).resolves.not.toBeNull();
+  });
+
+  // Guards the column names themselves: a renamed or mistyped warehouse column reads as absent and
+  // would otherwise ship as a plausible zero row.
+  it.each(['technical', 'ecosystem'] as const)('resolves a warehouse column for every %s category it declares', async (dimension) => {
+    mockWarehouse({ breakdown: populatedBreakdownRow });
+
+    const breakdown = await service.getLeaderboardBreakdown(ORG, SLUG, dimension, SUBJECT, '1y');
+
+    for (const figure of breakdown!.categories) {
+      expect(figure.points, `${figure.key} points`).toBeGreaterThan(0);
+      // Membership Tier is a flat award with no activity to count, so it carries points only.
+      if (figure.key === 'tier') continue;
+      expect(figure.count, `${figure.key} count`).toBeGreaterThan(0);
+      expect(figure.projectTotal, `${figure.key} denominator`).toBeGreaterThan(0);
+    }
+  });
+
+  // The lifetime total is what the drawer reads to say "not tracked for this project", so it may only
+  // be served where the warehouse totals that activity per project. The fixture supplies every
+  // foundation-scoped lifetime column too: serving one would let a total that 265 sibling projects
+  // share decide a claim about this one.
+  it.each([
+    ['technical', []],
+    ['ecosystem', ['collab', 'meeting']],
+  ] as const)('serves a lifetime total for %s only where the warehouse totals it per project', async (dimension, projectScoped) => {
+    mockWarehouse({ breakdown: populatedBreakdownRow });
+
+    const breakdown = await service.getLeaderboardBreakdown(ORG, SLUG, dimension, SUBJECT, '1y');
+
+    const served = breakdown!.categories.filter((figure) => figure.projectAllTimeTotal !== undefined).map((figure) => figure.key);
+    expect(served).toEqual([...projectScoped]);
+  });
+
+  // The drawer prints a "Total score" row directly beneath the column of per-category points, so the
+  // parts have to add up to the whole at the precision both are served at.
+  it.each([
+    ['technical', 42.5],
+    ['ecosystem', 6.25],
+  ] as const)('serves %s category points that sum to the total score it reports', async (dimension, expectedTotal) => {
+    mockWarehouse({ breakdown: populatedBreakdownRow });
+
+    const breakdown = await service.getLeaderboardBreakdown(ORG, SLUG, dimension, SUBJECT, '1y');
+
+    expect(breakdown!.totalScore).toBe(expectedTotal);
+    const summed = breakdown!.categories.reduce((total, figure) => total + figure.points, 0);
+    expect(summed).toBeCloseTo(breakdown!.totalScore, 2);
+  });
+});
+
+/**
+ * The board is cached for an hour, so entries written before it began serving `organizationId`
+ * outlive the deploy that needs it. Those rows are structurally valid but cannot open the drawer:
+ * the row renders focusable and clickable while the click does nothing. The cache read is the only
+ * place that can catch it, so it has to validate the rows and not just the envelope.
+ */
+describe('OrgLensProjectDetailService board cache contract', () => {
+  const service = new OrgLensProjectDetailService();
+
+  function cachedPage(rows: unknown[]): void {
+    buildOrgCacheKey.mockReturnValue('board-key');
+    getJson.mockImplementation(async (_key: string, validate: (value: unknown) => boolean) => {
+      const page = { rows, total: rows.length, isNonLfProject: false };
+      return validate(page) ? page : null;
+    });
+  }
+
+  beforeEach(() => {
+    execute.mockReset();
+    getJson.mockReset();
+    buildOrgCacheKey.mockReset();
+    buildOrgCacheKey.mockReturnValue(null);
+    execute.mockImplementation(async (sql: string) => ({ rows: sql.includes('PROJECT_NAME') ? [heroRow] : [] }));
+  });
+
+  it('serves a cached page whose rows carry an organization id', async () => {
+    cachedPage([{ organizationId: 'crowd-org-1', orgName: 'Acme' }]);
+
+    const page = await service.getTechnicalBoard(ORG, SLUG, '1y', 'influence', 0, 10, '');
+
+    expect(page!.rows).toHaveLength(1);
+    expect(execute).not.toHaveBeenCalled();
+  });
+
+  it('rejects a cached page whose rows predate the organization id, so the board re-fetches', async () => {
+    cachedPage([{ orgName: 'Acme' }]);
+
+    await service.getTechnicalBoard(ORG, SLUG, '1y', 'influence', 0, 10, '');
+
+    expect(execute).toHaveBeenCalled();
+  });
+
+  it('still serves an empty cached page, which carries no rows to validate', async () => {
+    cachedPage([]);
+
+    const page = await service.getTechnicalBoard(ORG, SLUG, '1y', 'influence', 0, 10, '');
+
+    expect(page!.rows).toEqual([]);
+    expect(execute).not.toHaveBeenCalled();
   });
 });

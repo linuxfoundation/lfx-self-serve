@@ -9,6 +9,7 @@ import {
   DOCUMENT_LABEL,
   MAILING_LIST_LABEL,
   MARKETING_OPS_FGA_ENABLED_FLAG,
+  MKTG_OS_AGENTS_ENABLED_FLAG,
   MKTG_OS_AGENTS_LABEL,
   ORG_LENS_ENABLED_FLAG,
   ORG_LENS_ROI_ENABLED_FLAG,
@@ -46,8 +47,8 @@ export class SidebarNavService {
   private readonly isOrgLensEnabled = this.featureFlagService.getBooleanFlag(ORG_LENS_ENABLED_FLAG, false);
   /** Dark-launch gate for the Akrites admin dashboard; hides the Security nav section when off. */
   private readonly isAkritesEnabled = this.featureFlagService.getBooleanFlag(AKRITES_ENABLED_FLAG, false);
-  /** TODO(mktg-os GA): flag gate bypassed for now (Joan, 2026-08-19) — restore getBooleanFlag(MKTG_OS_AGENTS_ENABLED_FLAG, false) before GA. */
-  private readonly isMktgOsAgentsEnabled: Signal<boolean> = computed(() => true);
+  /** Dark-launch gate for the Marketing OS marketplace; hides the Project Lens nav item when off. */
+  private readonly isMktgOsAgentsEnabled = this.featureFlagService.getBooleanFlag(MKTG_OS_AGENTS_ENABLED_FLAG, false);
   /** Dark-launch gate for the Org Lens ROI Metrics page; hides its org-lens nav entry when off. */
   private readonly isOrgLensRoiEnabled = this.featureFlagService.getBooleanFlag(ORG_LENS_ROI_ENABLED_FLAG, false);
   /** Dual-gated with `ServerFeatureFlag.MarketingOpsFga` — unlocks Marketing nav for marketing_auditor/campaign_manager grants (LFXV2-2235/LFXV2-2236). */
@@ -88,7 +89,13 @@ export class SidebarNavService {
         // Documents (last of projectLensItems) and the Governance section in the project sidebar.
         const mktgOsItems = this.isMktgOsAgentsEnabled() ? [this.mktgOsAgentsNavItem] : [];
         const base = [...this.projectLensItems, ...mktgOsItems, this.projectGovernanceSection];
-        return this.canSeeNewsletters() ? [...base, this.projectCommunicationsSection] : base;
+        const withComms = this.canSeeNewsletters() ? [...base, this.projectCommunicationsSection] : base;
+        // Marketing-only FGA users who are also hybrid personas (e.g. a project role plus a
+        // marketing_auditor/campaign_manager grant) land here via getAllowedLensIds()/isHybridPersona
+        // rather than the foundation lens — they must still reach Campaign Impact/Campaigns
+        // (LFXV2-2235 review finding: hybrid marketing users lost the Marketing section in project lens).
+        const marketingSection = this.marketingSectionItem();
+        return marketingSection ? [...withComms, marketingSection] : withComms;
       }
       case 'org':
         return this.isOrgLensEnabled() ? this.visibleOrgLensItems() : this.visibleMeLensItems();
@@ -255,13 +262,21 @@ export class SidebarNavService {
     { initialValue: false }
   );
 
-  // Keeps isMarketingAuditor/isCampaignManager in sync with the active foundation — the root-scoped
-  // fetch alone misses a per-project grant (LFXV2-2235 review finding). Read in canSeeMarketing below
-  // to register the dependency; the refreshed value lives on PersonaService's own signals.
+  // Keeps PersonaService.grantsByScope populated for the active foundation/project — the root-scoped
+  // fetch alone misses a per-project grant (LFXV2-2235 review finding). marketingSectionItem reads
+  // this same slug to look up grantsByScope for the active scope.
   // For project-lens-only marketing users, `selectedFoundation` is never populated because
   // foundation rows that the sidebar shows under the project lens are stored in `selectedProject`
   // (sidebar.component.ts:188-200). Fall back to selectedProject so the scoped probe fires as soon
   // as they pick any context, bootstrapping their first-session foundation grant.
+  // Always re-probes on a selectedProject change — a scope switch from a confirmed project A to an
+  // unprobed project B must not leave the sidebar showing A's (possibly no-longer-relevant) grant for
+  // B (PR #2028 Copilot review finding). This used to stop probing once a grant was confirmed, to
+  // avoid a `false` result for an unrelated project clobbering the confirmed grant — but that
+  // clobber risk lived entirely in the legacy global isMarketingAuditor/isCampaignManager signals,
+  // which marketingSectionItem no longer reads as its primary source. grantsByScope resolves each
+  // relation to its own scope key (writeGrantForScope), so a denial for project B is written under
+  // B's own key and cannot overwrite project A's already-confirmed entry.
   private readonly marketingPersonaSlug: Signal<string> = toSignal(
     toObservable(
       computed(() => {
@@ -271,15 +286,6 @@ export class SidebarNavService {
         const foundationSlug = this.projectContextService.selectedFoundation()?.slug;
         if (foundationSlug) {
           return foundationSlug;
-        }
-        // Only fall back to selectedProject while no marketing grant is confirmed yet. Once
-        // isMarketingAuditor/isCampaignManager is true, a later selectedProject change with no
-        // explicit selectedFoundation must not re-probe that unrelated project slug — a `false`
-        // result there would overwrite (not merge with) the already-confirmed foundation-scoped
-        // grant (LFXV2-2235 review finding: "project slug clears marketing grant"). A genuine
-        // foundation switch still re-verifies via the selectedFoundation branch above.
-        if (this.personaService.isMarketingAuditor() || this.personaService.isCampaignManager()) {
-          return '';
         }
         return this.projectContextService.selectedProject()?.slug ?? '';
       })
@@ -409,18 +415,34 @@ export class SidebarNavService {
       }
     }
 
-    // Marketing section visibility is independent of Metrics: while marketing-ops-fga-enabled is
-    // on, a root/project-scoped marketing_auditor grant also unlocks Campaign Impact, and a
-    // campaign_manager grant unlocks Campaigns — neither implies the other, so each item is built
-    // independently and the section itself only appears once it has at least one item. LF Staff see
-    // Campaign Impact via canViewExecutiveDashboards() the same as Metrics, but are restricted to the
-    // Social Listening tab once inside — full Marketing Impact access is ED/marketing_auditor only
-    // (LFXV2-2236 gap-analysis G4). Never widen the Metrics section itself for marketing_auditor.
-    this.marketingPersonaSlug();
+    const marketingSection = this.marketingSectionItem();
+    if (marketingSection) {
+      items.push(marketingSection);
+    }
+
+    return items;
+  });
+
+  // Marketing section visibility is independent of Metrics: while marketing-ops-fga-enabled is
+  // on, a root/project-scoped marketing_auditor grant also unlocks Campaign Impact, and a
+  // campaign_manager grant unlocks Campaigns — neither implies the other, so each item is built
+  // independently and the section itself only appears once it has at least one item. LF Staff see
+  // Campaign Impact via canViewExecutiveDashboards() the same as Metrics, but are restricted to the
+  // Social Listening tab once inside — full Marketing Impact access is ED/marketing_auditor only
+  // (LFXV2-2236 gap-analysis G4). Never widen the Metrics section itself for marketing_auditor.
+  // Extracted so both foundationLensItems and the project-lens branch of sidebarItems (hybrid
+  // marketing users) can surface the same section (LFXV2-2235 review finding). Both items below
+  // route to /foundation/* paths tagged `lens: 'foundation'` in app.routes.ts, so a hybrid user
+  // clicking one from the project lens gets flipped into the foundation lens by
+  // MainLayoutComponent.syncLensFromRoute — the same lens-switch-on-navigate behavior the merged
+  // 'Projects' switcher entry already relies on (lens.service.ts switchLens/isHybridPersona), not
+  // an oversight introduced here.
+  private readonly marketingSectionItem = computed((): SidebarMenuItem | null => {
+    const slug = this.marketingPersonaSlug();
     const marketingItems: SidebarMenuItem[] = [];
 
     const canSeeMarketingImpact =
-      this.personaService.canViewExecutiveDashboards() || (this.isMarketingOpsFgaEnabled() && this.personaService.isMarketingAuditor());
+      this.personaService.canViewExecutiveDashboards() || (this.isMarketingOpsFgaEnabled() && this.hasMarketingGrant(slug, 'isMarketingAuditor'));
     if (canSeeMarketingImpact) {
       marketingItems.push({
         label: 'Campaign Impact',
@@ -434,7 +456,7 @@ export class SidebarNavService {
     // A campaign_manager-only user (no ED, no marketing_auditor, not LF Staff) must still see this
     // item, so it cannot be nested inside the Campaign Impact check above.
     const canSeeCampaigns =
-      this.personaService.currentPersona() === 'executive-director' || (this.isMarketingOpsFgaEnabled() && this.personaService.isCampaignManager());
+      this.personaService.currentPersona() === 'executive-director' || (this.isMarketingOpsFgaEnabled() && this.hasMarketingGrant(slug, 'isCampaignManager'));
     if (canSeeCampaigns) {
       marketingItems.push({
         label: 'Campaigns',
@@ -444,16 +466,16 @@ export class SidebarNavService {
       });
     }
 
-    if (marketingItems.length > 0) {
-      items.push({
-        label: 'Marketing',
-        isSection: true,
-        expanded: true,
-        items: marketingItems,
-      });
+    if (marketingItems.length === 0) {
+      return null;
     }
 
-    return items;
+    return {
+      label: 'Marketing',
+      isSection: true,
+      expanded: true,
+      items: marketingItems,
+    };
   });
 
   // --- Project Lens Items (base) ---
@@ -597,5 +619,36 @@ export class SidebarNavService {
 
   private initCanSeeNewsletters(): Signal<boolean> {
     return computed(() => this.personaService.currentPersona() === 'executive-director' || this.projectContextService.canWrite());
+  }
+
+  /**
+   * Scope-aware grant check, mirroring `marketing-impact.component.ts`'s `initHasFullMarketingAccess`
+   * and `campaigns.component.ts`'s `hasCampaignAccess`. Reads `PersonaService.grantsByScope` for
+   * `slug` first, then falls back to the ROOT (`null`) entry, before falling back to the legacy
+   * global `isMarketingAuditor`/`isCampaignManager` signal gated by `marketingGrantSlug()` — the same
+   * per-scope-first ordering those two components use, so the sidebar can't disagree with the page a
+   * click lands on (PR #2028 Copilot review finding: sidebar visibility based on stale global signal).
+   */
+  private hasMarketingGrant(slug: string, relation: 'isMarketingAuditor' | 'isCampaignManager'): boolean {
+    const grants = this.personaService.grantsByScope();
+    const scopedGrant = slug ? grants.get(slug) : undefined;
+    if (scopedGrant?.[relation]) {
+      return true;
+    }
+    const rootGrant = grants.get(null);
+    if (rootGrant?.[relation]) {
+      return true;
+    }
+    // An authoritative `false` at either scope key must win over the legacy global signal below,
+    // which can be stale `true` from a different scope's earlier probe.
+    if (scopedGrant !== undefined || rootGrant !== undefined) {
+      return false;
+    }
+    // No per-scope entry yet — fall back to the global signal with the slug gate.
+    const grantSlug = this.personaService.marketingGrantSlug();
+    if (slug && grantSlug !== null && grantSlug !== slug) {
+      return false;
+    }
+    return relation === 'isMarketingAuditor' ? this.personaService.isMarketingAuditor() : this.personaService.isCampaignManager();
   }
 }

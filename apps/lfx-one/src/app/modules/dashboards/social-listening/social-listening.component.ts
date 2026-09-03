@@ -5,7 +5,6 @@ import { isPlatformBrowser } from '@angular/common';
 import { Component, computed, DestroyRef, effect, inject, PLATFORM_ID, Signal, signal, untracked } from '@angular/core';
 import { takeUntilDestroyed, toObservable, toSignal } from '@angular/core/rxjs-interop';
 import { ActivatedRoute, Router } from '@angular/router';
-import { CardComponent } from '@components/card/card.component';
 import { EmptyStateComponent } from '@components/empty-state/empty-state.component';
 import { FilterPillsComponent } from '@components/filter-pills/filter-pills.component';
 import { MessageComponent } from '@components/message/message.component';
@@ -14,14 +13,14 @@ import {
   DEFAULT_MENTION_PREDICATE,
   DEFAULT_MENTION_VIEW_SCOPE,
   MAX_SAVED_FILTERS_PER_PROJECT,
+  MENTION_FEED_RENDER_LIMIT,
   MENTION_FILTER_MAX_VALUES,
-  MENTION_MAX_CACHED_WINDOWS,
   MENTION_MAX_FEED_OFFSET,
-  MENTION_PAGE_SIZE_OPTIONS,
   MENTION_SEARCH_DEBOUNCE_MS,
   MENTION_SEARCH_MIN_CHARS,
   MENTION_SERVER_WINDOW_SIZE,
   MENTION_TIME_TICK_INTERVAL_MS,
+  SOCIAL_LISTENING_TAB_OPTIONS,
 } from '@lfx-one/shared/constants';
 import {
   applyPredicateToSignals,
@@ -112,14 +111,12 @@ import { ViewsDropdownComponent } from './components/views-dropdown/views-dropdo
 const EMPTY_FEED_RESPONSE: SocialListeningFeedResponse = { mentions: [], computedAt: null };
 
 /**
- * Social Listening — Foundation Lens page (ED + LF Staff), LFXV2-3016: PCC's mentions feed on the
- * 3015 endpoints — windowed pagination (100-row windows, ±2 cached), query-param sync, and reset
- * effects on scope/filter/foundation change. Saved views are deferred.
+ * Social Listening — Foundation Lens page (ED + LF Staff), LFXV2-3016: PCC's mentions feed on the 3015 endpoints —
+ * windowed pagination (100-row windows, ±2 cached), query-param sync, and reset effects on scope/filter/foundation change.
  */
 @Component({
   selector: 'lfx-social-listening',
   imports: [
-    CardComponent,
     EmptyStateComponent,
     FilterPillsComponent,
     MessageComponent,
@@ -155,6 +152,8 @@ export class SocialListeningComponent {
   /** Deep-linked search, decoded once — seeds the input and the debounced query so the first fetch is already filtered. */
   private readonly initialSearch = decodePredicateFromQueryParams(this.route.snapshot.queryParams, this.defaultPeriod).predicate.search;
 
+  public readonly tabOptions = SOCIAL_LISTENING_TAB_OPTIONS;
+
   // === Model signals (two-way bound by the feed header) ===
   public readonly activeTab = signal<SocialListeningTab>('feed');
   public readonly selectedPeriod = signal(this.defaultPeriod);
@@ -162,7 +161,7 @@ export class SocialListeningComponent {
   public readonly selectedPlatform = signal('all');
   public readonly searchInput = signal(this.initialSearch);
 
-  // === Filter signals (wired into the predicate now; the filters panel UI lands in LFXV2-3017) ===
+  // === Filter signals (wired into the predicate and the filters panel, LFXV2-3017) ===
   public readonly selectedSentiment = signal('all');
   public readonly selectedRelevance = signal('all');
   public readonly selectedLanguage = signal('all');
@@ -174,11 +173,13 @@ export class SocialListeningComponent {
   public readonly selectedAuthors = signal<string[]>([]);
 
   // === Pagination state ===
-  public readonly currentPage = signal(0);
-  public readonly pageSize = signal(DEFAULT_MENTION_PAGE_SIZE);
-  public readonly rowsPerPageOptions = MENTION_PAGE_SIZE_OPTIONS;
+  public readonly lastLoadedPage = signal(0);
+  private readonly pageSize = DEFAULT_MENTION_PAGE_SIZE;
   private readonly windowCache = signal<Map<number, SocialListeningWindowCacheEntry>>(new Map());
-  // Global-newest MENTION_TS, captured whenever window 0 loads — survives cache pruning so a mark-all from a deep page still stamps the true cutoff.
+  // Memo table for mapCachedWindow — keyed by entry identity, so a Load More click re-slices without
+  // re-mapping every loaded row (at the render cap that was 500 card re-renders for 20 new rows).
+  private readonly mentionViewCache = new WeakMap<SocialListeningWindowCacheEntry, Mention[]>();
+  // Global-newest MENTION_TS, captured whenever window 0 loads — held outside the cache so a mark-all from a deep page still stamps the true cutoff.
   private newestMentionTs: string | null = null;
   /** Guards the mark-all cutoff fetch against double-clicks during a slow round-trip. */
   private markAllPending = false;
@@ -221,10 +222,10 @@ export class SocialListeningComponent {
   /** Read-state snapshot behind the unread feed filter — refreshed only on mode entry, load completion, and the two mark-all actions, so single toggles restyle in place and pagination stays stable. */
   private readonly unreadSnapshot = signal<ReadStateData | null>(null);
 
-  private readonly windowIndex = computed(() => Math.floor((this.currentPage() * this.pageSize()) / this.serverWindowSize));
-  // The paginator is capped at the last servable window, so serverOffset stays within MENTION_MAX_FEED_OFFSET (100,000).
+  private readonly windowIndex = computed(() => Math.floor((this.lastLoadedPage() * this.pageSize) / this.serverWindowSize));
+  // Load More is capped at the last servable window, so serverOffset stays within MENTION_MAX_FEED_OFFSET (100,000).
   private readonly serverOffset = computed(() => this.windowIndex() * this.serverWindowSize);
-  private readonly localOffset = computed(() => this.currentPage() * this.pageSize() - this.serverOffset());
+  private readonly localOffset = computed(() => this.lastLoadedPage() * this.pageSize - this.serverOffset());
 
   // === Request pipelines ===
   private readonly searchQuery: Signal<string> = this.initSearchQuery();
@@ -238,9 +239,10 @@ export class SocialListeningComponent {
   private readonly feedState: Signal<LoadableState<SocialListeningFeedResponse>> = this.initFeedState();
   private readonly countState: Signal<LoadableState<number>> = this.initCountState();
   public readonly totalRecords: Signal<number> = this.initTotalRecords();
-  // The server clamps offset at MENTION_MAX_FEED_OFFSET — never advertise pages past the last servable window.
-  public readonly paginatorTotalRecords = computed(() => Math.min(this.totalRecords(), MENTION_MAX_FEED_OFFSET + this.serverWindowSize));
+  // The server clamps offset at MENTION_MAX_FEED_OFFSET — never advertise more than the last servable window holds.
+  public readonly servableTotal = computed(() => Math.min(this.totalRecords(), MENTION_MAX_FEED_OFFSET + this.serverWindowSize));
   public readonly countError = computed(() => this.countState().error);
+  public readonly countLoading = computed(() => this.countState().loading);
   private readonly subProjectsState: Signal<LoadableState<SocialListeningSubProject[]>> = this.initSubProjectsState();
   private readonly platformsState: Signal<LoadableState<SocialListeningPlatform[]>> = this.initPlatformsState();
 
@@ -305,7 +307,7 @@ export class SocialListeningComponent {
     if (!windowData) return this.feedRequest() !== null && !this.feedState().error;
     if (windowData.complete) return false;
     // Partial window: the visible page extends past what phase 2 has filled so far.
-    const neededEnd = this.localOffset() + this.pageSize();
+    const neededEnd = this.localOffset() + this.pageSize;
     if (neededEnd <= windowData.mentions.length) return false;
     return this.backgroundLoading() || this.feedState().loading;
   });
@@ -316,8 +318,13 @@ export class SocialListeningComponent {
   public readonly bookmarkStateError = computed(() => this.selectedBookmarkFilter() === 'bookmarked' && this.mentionBookmarkService.state().error !== null);
   /** Current window's background fill failed past its automatic retry — the list swaps the empty state for a retry row. */
   public readonly phase2Failed = computed(() => this.windowCache().get(this.windowIndex())?.phase2Failed === true);
-  public readonly first = computed(() => this.currentPage() * this.pageSize());
   public readonly mentions: Signal<Mention[]> = this.initMentions();
+  public readonly loadedCount = computed(() => this.mentions().length);
+  /** Past MENTION_FEED_RENDER_LIMIT the footer stops advancing — the rendered DOM, not the window cache, is what's bounded. */
+  public readonly renderCapped = computed(() => this.loadedCount() >= MENTION_FEED_RENDER_LIMIT && this.loadedCount() < this.servableTotal());
+  public readonly hasMore: Signal<boolean> = this.initHasMore();
+  /** Distinguishes a Load More fetch from the initial load, so the footer spins while the list keeps its rows. */
+  public readonly loadingMore = computed(() => this.loading() && this.loadedCount() > 0);
   public readonly readMentionIds: Signal<Set<string>> = this.initReadMentionIds();
   public readonly dataComputedAt: Signal<Date | null> = this.initDataComputedAt();
 
@@ -399,7 +406,7 @@ export class SocialListeningComponent {
     // for owned keys at default so merge removes them. queryParamsEqual prevents write loops.
     effect(() => {
       const target = encodePredicateToQueryParams(this.currentPredicate(), this.currentScope(), this.activeViewId(), this.defaultPeriod);
-      // Don't strip a deep-linked ?search= while the debounced query is still catching up to the input.
+      // Don't strip a deep-linked ?q= while the debounced query is still catching up to the input.
       const pendingSearch = this.searchInput().trim();
       if (pendingSearch.length >= MENTION_SEARCH_MIN_CHARS && pendingSearch !== this.searchQuery()) return;
       if (queryParamsEqual(target, this.route.snapshot.queryParams)) return;
@@ -453,7 +460,7 @@ export class SocialListeningComponent {
       if (this.selectedBookmarkFilter() !== 'bookmarked') this.selectedPeriod();
       this.currentFilters();
       untracked(() => {
-        this.currentPage.set(0);
+        this.lastLoadedPage.set(0);
         this.windowCache.set(new Map());
         this.retriedWindows.clear();
         this.newestMentionTs = null;
@@ -554,9 +561,23 @@ export class SocialListeningComponent {
       .subscribe(() => this.filtersOpenedOnce.set(true));
   }
 
-  public onPageChange(event: { page: number; rows: number }): void {
-    this.currentPage.set(event.page);
-    this.pageSize.set(event.rows);
+  public onTabSelected(tabId: string): void {
+    if (tabId === 'feed' || tabId === 'analytics') {
+      this.activeTab.set(tabId);
+    }
+  }
+
+  public onLoadMore(): void {
+    // The footer stays hidden until the first row lands — advancing mid-fetch would cancel the in-flight window request.
+    // A queued second click can outrun the footer's unmount, so re-check hasMore() instead of trusting the button's visibility.
+    if (this.loading() || !this.hasMore()) return;
+    this.lastLoadedPage.update((page) => page + 1);
+  }
+
+  /** Analytics platform row → scope the feed to that platform and switch tabs, so the drill-down lands on matching mentions. */
+  public onAnalyticsPlatformSelected(platform: string): void {
+    this.selectedPlatform.set(platform);
+    this.activeTab.set('feed');
   }
 
   /** Card toggle → the bookmark service owns the cap/loading gates, the optimistic write, and the toasts. */
@@ -694,6 +715,14 @@ export class SocialListeningComponent {
     resetters[id as keyof FilterPredicate]?.();
   }
 
+  /** Resets predicate + scope to the defaults and drops the active view — the "No Preset View", active-view-deleted, and empty-state CTA path. */
+  public resetToDefaultViewState(): void {
+    applyPredicateToSignals({ ...DEFAULT_MENTION_PREDICATE, keywords: [], tags: [], authors: [] }, this.signals);
+    applyViewScopeToSignals({ ...DEFAULT_MENTION_VIEW_SCOPE, period: this.defaultPeriod }, this.scopeSignals);
+    this.activeViewId.set(null);
+    this.commitScopeKey();
+  }
+
   /** Any active feed predicate or a non-default period means the loaded windows (and their newest) are a subset of the foundation feed. */
   private feedNarrowed(): boolean {
     return Object.keys(this.currentFilters()).length > 0 || this.selectedPeriod() !== this.defaultPeriod;
@@ -749,14 +778,6 @@ export class SocialListeningComponent {
     const scopeKey = this.computeScopeKey();
     if (!scopeKey) return;
     this.previousScopeKey = scopeKey;
-  }
-
-  /** Resets predicate + scope to the defaults and drops the active view — the "No Preset View" / active-view-deleted path. */
-  private resetToDefaultViewState(): void {
-    applyPredicateToSignals({ ...DEFAULT_MENTION_PREDICATE, keywords: [], tags: [], authors: [] }, this.signals);
-    applyViewScopeToSignals({ ...DEFAULT_MENTION_VIEW_SCOPE, period: this.defaultPeriod }, this.scopeSignals);
-    this.activeViewId.set(null);
-    this.commitScopeKey();
   }
 
   private initSearchQuery(): Signal<string> {
@@ -869,8 +890,8 @@ export class SocialListeningComponent {
           }
 
           // Phase 2 re-requests from offset + initialLimit — past MENTION_MAX_FEED_OFFSET that offset clamps, duplicating rows.
-          const canSplitWindow = (req.offset ?? 0) + this.pageSize() <= MENTION_MAX_FEED_OFFSET;
-          const initialLimit = this.localOffset() === 0 && canSplitWindow ? this.pageSize() : this.serverWindowSize;
+          const canSplitWindow = (req.offset ?? 0) + this.pageSize <= MENTION_MAX_FEED_OFFSET;
+          const initialLimit = this.localOffset() === 0 && canSplitWindow ? this.pageSize : this.serverWindowSize;
           const initialReq = { ...req, limit: initialLimit };
 
           return this.socialListeningService.getMentionsFeed(initialReq).pipe(
@@ -1068,11 +1089,27 @@ export class SocialListeningComponent {
 
   private initMentions(): Signal<Mention[]> {
     return computed(() => {
-      const start = this.localOffset();
-      return this.currentWindowData()
-        .mentions.slice(start, start + this.pageSize())
-        .map(mapRawToMention);
+      // Load More renders cumulatively: every window the user has walked into is concatenated in order,
+      // then trimmed to the batches actually requested so a prefetched window tail never paints early.
+      const cache = this.windowCache();
+      const rows: Mention[] = [];
+      for (let w = 0; w <= this.windowIndex(); w++) {
+        const entry = cache.get(w);
+        if (!entry) break;
+        rows.push(...this.mapCachedWindow(entry));
+      }
+      return rows.slice(0, (this.lastLoadedPage() + 1) * this.pageSize);
     });
+  }
+
+  /** View-model mapping memoized per cache-entry identity, so advancing the feed re-maps only windows that actually changed. */
+  private mapCachedWindow(entry: SocialListeningWindowCacheEntry): Mention[] {
+    let mapped = this.mentionViewCache.get(entry);
+    if (!mapped) {
+      mapped = entry.mentions.map(mapRawToMention);
+      this.mentionViewCache.set(entry, mapped);
+    }
+    return mapped;
   }
 
   private initReadMentionIds(): Signal<Set<string>> {
@@ -1087,12 +1124,28 @@ export class SocialListeningComponent {
     });
   }
 
+  private initHasMore(): Signal<boolean> {
+    return computed(() => {
+      if (this.loadedCount() >= MENTION_FEED_RENDER_LIMIT) return false;
+      // A landed count is authoritative; an in-flight one reads as servableTotal 0 — unknown, not an exhausted feed.
+      const total = this.servableTotal();
+      if (total > 0 && this.loadedCount() >= total) return false;
+      // A complete short window is the feed's real end — stop there even when the count is stale or failed; the terminal
+      // window's prefetched pages stay revealable, since revealing them advances no further fetch.
+      const windowData = this.windowCache().get(this.windowIndex());
+      if (windowData?.complete && windowData.mentions.length < this.serverWindowSize) {
+        return this.loadedCount() < this.serverOffset() + windowData.mentions.length;
+      }
+      return true;
+    });
+  }
+
   private initTotalRecords(): Signal<number> {
     return computed(() => {
       const count = this.countState();
-      // Count failed: a zero total would disable Next and strand the user on page 1 despite loaded rows.
-      // Derive a provisional total from the loaded window; the extra pageSize keeps Next enabled past it.
-      if (count.error) return this.serverOffset() + this.currentWindowData().mentions.length + this.pageSize();
+      // Count failed: a zero total would hide Load More and strand the user on the first window despite loaded rows.
+      // Derive a provisional total from the loaded window; the extra pageSize keeps Load More available past it.
+      if (count.error) return this.serverOffset() + this.currentWindowData().mentions.length + this.pageSize;
       return count.data ?? 0;
     });
   }
@@ -1126,22 +1179,16 @@ export class SocialListeningComponent {
     });
   }
 
-  /** Caches a fetched window and prunes entries farther than ±MENTION_MAX_CACHED_WINDOWS from it. */
+  /** Caches a fetched window; entries are retained for the whole range the session has loaded, so Load More never refetches. */
   private updateWindowCache(windowIdx: number, cacheKey: string, data: SocialListeningWindowCacheEntry): void {
     // An in-flight response from before a scope/filter reset can land after the cache was cleared
     // (pipeline cancellation lags one macrotask) — drop it instead of serving stale rows.
     if (cacheKey !== untracked(this.feedCacheKey)) return;
-    // Window 0 holds the global newest (feed sorts newest-first) — retain its cutoff outside the prunable cache.
+    // Window 0 holds the global newest (feed sorts newest-first) — keep its cutoff on the instance, not in the cache.
     if (windowIdx === 0) {
       this.newestMentionTs = this.newestTsOf(data.mentions);
     }
-    this.windowCache.update((cache) => {
-      const updated = new Map(cache).set(windowIdx, data);
-      for (const key of Array.from(updated.keys())) {
-        if (Math.abs(key - windowIdx) > MENTION_MAX_CACHED_WINDOWS) updated.delete(key);
-      }
-      return updated;
-    });
+    this.windowCache.update((cache) => new Map(cache).set(windowIdx, data));
   }
 
   /** Newest parseable MENTION_TS in a window — epoch-ms compare since Snowflake's space-separated timestamps don't lexicographically sort against ISO "T"; NaN never wins a `>` compare, so unparseable values are skipped. */

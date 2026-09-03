@@ -15,6 +15,7 @@ import {
   FilterOption,
   GroupsIOMailingList,
   GroupsIOService,
+  MailingListTableRowVm,
   MyMailingList,
   ProjectContext,
   StatCardItem,
@@ -135,11 +136,10 @@ export class MailingListDashboardComponent {
     this.refresh.next();
   }
 
-  /**
-   * Handle mailing list row click - navigate to detail page
-   */
-  public onMailingListClick(mailingList: GroupsIOMailingList): void {
-    this.router.navigate(['/mailing-lists', mailingList.uid], {
+  public onMailingListClick(mailingList: MailingListTableRowVm): void {
+    // Canonical tier-prefixed view link comes pre-computed on the row VM, flat fallback included (GH-1567).
+    this.router.navigate(mailingList.viewCommands, {
+      queryParams: mailingList.linkQueryParams,
       state: { backLabel: this.isMeLens() ? `My ${this.mailingListLabelPlural}` : this.mailingListLabelPlural },
     });
   }

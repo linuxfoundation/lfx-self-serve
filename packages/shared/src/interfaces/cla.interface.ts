@@ -84,7 +84,11 @@ export interface MyClaAgreement {
   claManager?: boolean;
   /** Employer company name — present for ECLA only. */
   companyName?: string;
-  /** ISO date the agreement was signed. */
+  /**
+   * RFC3339 instant the agreement was signed. A bare `YYYY-MM-DD` is accepted
+   * and rendered as that UTC calendar day. Empty string when the producer sent
+   * no date (`cla.service` normalizes the absent field).
+   */
   signedOn: string;
   /**
    * Platform this agreement was signed via, when the producer sent one.
@@ -146,8 +150,11 @@ export type ClaGroupOrgSource = 'github' | 'gitlab' | 'gerrit';
  * A repository-hosting organization linked to a CLA Group: a GitHub organization, a GitLab
  * group, or a Gerrit instance.
  *
- * Provenance for display only. An empty `organizations` list does not mean "not on GitHub" —
- * it means nothing is linked or nothing resolved, so no control flow may be derived from it.
+ * A source being **present** here is evidence, and `claSignRoute` reads it to decide which
+ * identity the sign step offers. A source being **absent** is not evidence of anything: an
+ * empty list means nothing is linked or nothing resolved, not "not on GitHub". CLA Groups in
+ * that state are searchable by name and signable today, so a rule shaped "no GitHub
+ * organization ⇒ not GitHub" would misroute them. Read presence only.
  */
 export interface ClaGroupOrg {
   /** Organization, group, or Gerrit instance name. */
@@ -160,10 +167,12 @@ export interface ClaGroupOrg {
 /**
  * A CLA Group the contributor can choose to sign against (Sign CLA hand-off, #1251).
  *
- * The hand-off needs `claGroupId` and nothing else; every other field is here so the picker
- * can show which group this is and why it matched. Consumers MUST ignore unknown fields
- * rather than validate exhaustively, so the search can keep enriching this without touching
- * the hand-off.
+ * The hand-off needs `claGroupId`, plus `iclaEnabled` / `cclaEnabled` on the Gerrit route, where
+ * they decide the contract type and whether the contributor is asked for it (#2066). Every other
+ * field is here so the picker can show which group this is and why it matched. Consumers MUST
+ * ignore unknown fields rather than validate exhaustively, so the search can keep enriching this
+ * without touching the hand-off — but the enablement flags are not that kind of field: dropping
+ * them in a mapper reinstates #2066's silent default rather than degrading the display.
  *
  * Both display names are optional because the producer omits each independently: `projectName`
  * when the group maps to several projects with no foundation marker, `claGroupName` when the
@@ -180,6 +189,10 @@ export interface ClaGroupOption {
   matchTypes: ClaGroupMatchType[];
   /** All linked organizations, sorted by source then name upstream. May be empty. */
   organizations: ClaGroupOrg[];
+  /** Whether the group accepts an individual (ICLA) agreement — used for Gerrit contract-type routing (#2066). */
+  iclaEnabled?: boolean;
+  /** Whether the group accepts a corporate (CCLA) agreement — used for Gerrit contract-type routing (#2066). */
+  cclaEnabled?: boolean;
   /** Full repository name the term resolved to — set only when `matchTypes` includes `repository`. */
   matchedRepositoryName?: string;
   matchedRepositoryURL?: string;
@@ -202,6 +215,35 @@ export interface ClaGroupSearchResponse {
   /** Best match first, deduplicated by CLA Group upstream. */
   results: ClaGroupOption[];
 }
+
+/**
+ * What the Sign a CLA group picker is given so it can tag groups the contributor already
+ * holds (#1914). The list is the one already loaded on the CLAs tab — the picker does not
+ * fetch it again.
+ */
+export interface ClaGroupSelectDialogData {
+  agreements: MyClaAgreement[];
+}
+
+/** What a tagged picker row shows: the inline tag, and the sentence behind it. */
+export interface AlreadySignedNote {
+  /** Inline tag, naming the identity that signed it. */
+  chip: string;
+  /**
+   * Fuller sentence: which kind, and whose employer on an ECLA. It closes by offering another
+   * identity only on a route that has one to offer — never on a GitLab-only or Gerrit-only group.
+   */
+  tooltip: string;
+}
+
+/**
+ * Which identity a card in the sign-identity step offers.
+ *
+ * A GitHub card carries both keys because the producer records whichever it had: it derives the
+ * signed identity as the handle when there is one and the account number when there is not, so a
+ * card that compared only the handle would miss every agreement recorded against the number.
+ */
+export type SignIdentityRef = { platform: 'github'; username?: string; githubId: string } | { platform: 'gerrit' };
 
 /** Picker row: a search result with display fields precomputed so the template calls nothing. */
 export interface ClaGroupOptionView extends ClaGroupOption {
@@ -230,7 +272,13 @@ export interface ClaGroupOrgView {
 export interface GithubAccountOption {
   /** Immutable GitHub account number. Handles get renamed and reclaimed; this does not. */
   githubId: string;
-  /** Display handle. Never matched on. */
+  /**
+   * Display handle, and never an identity key on its own. It has two consumers beyond display:
+   * it rides alongside `githubId` on prepare-sign, where the producer resolves the pair against
+   * each other, and it is compared against the handle an existing agreement recorded so the
+   * identity step can gray the account that already signed. Renames and reclaims make it
+   * unreliable for both, which is why `githubId` is what actually addresses the account.
+   */
   githubUsername: string;
   avatarUrl?: string;
 }
@@ -239,6 +287,74 @@ export interface GithubAccountOption {
 export interface GithubAccountChoice extends GithubAccountOption {
   /** `githubUsername`, or a numbered fallback when the handle is blank. */
   label: string;
+  /**
+   * Why this account cannot sign the chosen CLA group, when it already has (#1914). Present
+   * ⇒ the card is grayed out and carries this as its tooltip.
+   */
+  alreadySignedTooltip?: string;
+}
+
+/**
+ * Which identities the sign step offers, decided by the selected CLA Group's linked
+ * organizations (#2002). Also the copy set the step is framed with, since a contributor
+ * being asked for a Gerrit identity must not be told the group is linked to GitHub.
+ *
+ * `github-or-gerrit` is not derivable from the two lists the step receives: a mixed group
+ * whose contributor has no linked GitHub account arrives with an empty account list, which
+ * is indistinguishable from the Gerrit-only case unless the variant says otherwise.
+ */
+export type SignIdentityVariant = 'github' | 'gerrit' | 'github-or-gerrit';
+
+/**
+ * Which route a selected CLA Group takes. Every route but one opens the sign identity step;
+ * GitLab is the exception, because Self Serve holds no verifiable GitLab identity to offer.
+ */
+export type ClaSignRoute = SignIdentityVariant | 'gitlab-unsupported';
+
+/** What the sign identity step is given to render (#1252, #1917, #2002). */
+export interface SignIdentityDialogData {
+  variant: SignIdentityVariant;
+  /** Linked GitHub accounts, from the server. Empty on the `gerrit` variant, which never fetches them. */
+  accounts: GithubAccountOption[];
+  /**
+   * The contributor's LF username, offered as their Gerrit identity. Absent ⇒ no Gerrit card.
+   *
+   * Unlike `accounts` this does not come from the server, and that is safe only because it is
+   * never submitted — see the step's own class doc before changing it.
+   */
+  gerritUsername?: string;
+  /**
+   * What the contributor already holds for the CLA group they picked, so the step can gray out
+   * the identity that signed it (#1914). This is where the already-signed block lives: one
+   * contributor can hold several identities, so the group itself stays selectable and only the
+   * identity already on an agreement is refused.
+   */
+  claGroupAgreements?: MyClaAgreement[];
+}
+
+/**
+ * What the sign identity step closes with, beyond `null` for a dismissal (#1917, #2002).
+ *
+ * Discriminated on `kind` rather than narrowed by `in`. With two members the narrowing read
+ * better; with three, one of which carries no payload at all, a tag is what keeps a Gerrit
+ * choice from being mistaken for a GitHub one that lost its account number.
+ *
+ * The link request is kept apart from a dismissal because both leave the step with no identity
+ * chosen, and only one of them should move the contributor off the page they started from.
+ */
+export type SignIdentitySelectResult = { kind: 'github'; githubId: string } | { kind: 'gerrit' } | { linkAccounts: true };
+
+/** Console Gerrit route contract-type segment (#2066). */
+export type GerritContractType = 'individual' | 'corporate';
+
+/**
+ * What the contract-type step closes with, or `null` for a dismissal (#2066).
+ *
+ * The step takes no input data: it opens only for a group with both types enabled, so there is
+ * nothing about the group left for it to branch on.
+ */
+export interface SignContractTypeSelectResult {
+  contractType: GerritContractType;
 }
 
 /** Response for `GET /api/me/clas/github-accounts`. */
@@ -390,6 +506,12 @@ export interface ClaRow {
   id: string;
   agreement: MyClaAgreement;
   status: ClaRowStatus;
+  /**
+   * Sign Date: an instant renders in the viewer's local timezone, a bare
+   * `YYYY-MM-DD` as that UTC calendar day; `'—'` when empty, unparseable, or
+   * an impossible calendar date.
+   */
+  signedOnLabel: string;
   /** Second line under the signed date; absent when the producer sent no identity. */
   signedAsLine?: string;
   menuItems: ClaRowMenuItem[];

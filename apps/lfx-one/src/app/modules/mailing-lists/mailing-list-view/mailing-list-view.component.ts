@@ -18,6 +18,7 @@ import {
 } from '@lfx-one/shared/constants';
 import { MailingListAudienceAccess } from '@lfx-one/shared/enums';
 import { CommitteeReference, GroupsIOMailingList } from '@lfx-one/shared/interfaces';
+import { getMailingListCommands, getMailingListLinkQueryParams } from '@lfx-one/shared/utils';
 import { MailingListVisibilitySeverityPipe } from '@pipes/mailing-list-visibility-severity.pipe';
 import { StripHtmlPipe } from '@pipes/strip-html.pipe';
 import { MailingListService } from '@services/mailing-list.service';
@@ -82,9 +83,16 @@ export class MailingListViewComponent {
   public readonly visibilityLabel: Signal<string> = this.initVisibilityLabel();
   public readonly groupsIoUrl: Signal<string | null> = this.initGroupsIoUrl();
   public readonly editRoute: Signal<string[]> = this.initEditRoute();
+  public readonly editQueryParams: Signal<Record<string, string>> = this.initEditQueryParams();
+  public readonly manageGroupsQueryParams: Signal<Record<string, string>> = this.initManageGroupsQueryParams();
 
   public constructor() {
-    syncEntityProjectContext(this.mailingList, this.projectContextService, this.router, this.destroyRef);
+    // Sync context from the loaded list — a view deep link can land under the wrong tier (flat
+    // link redirected by a stale lens); canonicalizeRoute rewrites the URL to the owning tier (GH-1567).
+    syncEntityProjectContext(this.mailingList, this.projectContextService, this.router, this.destroyRef, {
+      preferEntityKind: true,
+      canonicalizeRoute: true,
+    });
   }
 
   public refreshData(): void {
@@ -173,10 +181,24 @@ export class MailingListViewComponent {
     return computed(() => this.mailingList()?.service?.url || null);
   }
 
+  // Canonical edit URL derives from the list's own tier (is_foundation), not the active lens;
+  // flat fallback when the tier is unenriched (GH-1567).
   private initEditRoute(): Signal<string[]> {
     return computed(() => {
-      const uid = this.mailingList()?.uid;
-      return uid ? ['/mailing-lists', uid, 'edit'] : ['/mailing-lists'];
+      const list = this.mailingList();
+      const uid = list?.uid;
+      if (!uid) return ['/mailing-lists'];
+      return getMailingListCommands({ uid, is_foundation: list?.is_foundation }, 'edit');
     });
+  }
+
+  // `?project=` rides along when the payload carries a slug — the manage page's context sync
+  // keys off it, and it keeps writerGuard's authorization project correct on deep links.
+  private initEditQueryParams(): Signal<Record<string, string>> {
+    return computed(() => getMailingListLinkQueryParams(this.mailingList()) ?? {});
+  }
+
+  private initManageGroupsQueryParams(): Signal<Record<string, string>> {
+    return computed(() => ({ ...this.editQueryParams(), step: '3' }));
   }
 }

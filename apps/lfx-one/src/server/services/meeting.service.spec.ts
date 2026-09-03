@@ -1,7 +1,7 @@
 // Copyright The Linux Foundation and each contributor to LFX.
 // SPDX-License-Identifier: MIT
 
-import type { Meeting, MeetingRegistrant, MeetingUserInfo, QueryServiceResponse } from '@lfx-one/shared/interfaces';
+import type { Meeting, MeetingRegistrant, MeetingRsvp, MeetingUserInfo, QueryServiceResponse } from '@lfx-one/shared/interfaces';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 
 // This app's vitest config resolves plain Node modules only — the `@lfx-one/shared/*` tsconfig
@@ -19,8 +19,13 @@ vi.mock('@lfx-one/shared/utils', () => ({
   buildRecurrenceNeverEndDate: vi.fn(),
   getPastMeetingTranscriptUrl: vi.fn(),
   mapITXResponseToMeetingRsvp: vi.fn(),
-  normalizeIndexedMeetingAiSummary: vi.fn(),
+  normalizeIndexedMeetingAiSummary: vi.fn((meeting) => meeting),
+  normalizeIndexedMeetingInviteResponses: vi.fn((meeting) => meeting),
   selectPrimaryPastMeetingSummary: vi.fn(),
+  // getMeetingRsvps / getMeetingRegistrants(includeRsvp) delegate occurrence selection to the real
+  // resolver — stubbed here to the "most recent rsvp" since these tests cover roster/page-walk
+  // dedup, not the LFXV2-2864 occurrence-scoping logic (covered in meeting-rsvp.helper.spec.ts).
+  selectApplicableRsvp: vi.fn((_occurrenceId: string | undefined, rsvps: unknown[]) => rsvps[rsvps.length - 1] ?? null),
 }));
 vi.mock('./microservice-proxy.service', () => ({
   MicroserviceProxyService: class {
@@ -384,6 +389,24 @@ describe('MeetingService.addMeetingRegistrantSelf', () => {
   });
 });
 
+describe('MeetingService.getMeetingRegistrantsByEmail', () => {
+  let service: MeetingService;
+
+  beforeEach(() => {
+    proxyRequest.mockReset();
+    service = new MeetingService();
+  });
+
+  it('sends page_size on the gate-check walk', async () => {
+    proxyRequest.mockResolvedValueOnce({ resources: [] });
+
+    await service.getMeetingRegistrantsByEmail(req, 'meeting-1', 'user@example.com');
+
+    const [, , , , query] = proxyRequest.mock.calls[0];
+    expect(query.page_size).toBe(1000);
+  });
+});
+
 describe('MeetingService.getMeetingRegistrants', () => {
   let service: MeetingService;
 
@@ -429,6 +452,156 @@ describe('MeetingService.getMeetingRegistrants', () => {
 
     expect(result).toHaveLength(1);
     expect(proxyRequest).toHaveBeenCalledTimes(1);
+  });
+
+  it('sends page_size on the roster walk', async () => {
+    proxyRequest.mockResolvedValueOnce({ resources: [registrantRecord('a')] });
+
+    await service.getMeetingRegistrants(req, 'meeting-1');
+
+    const [, , , , query] = proxyRequest.mock.calls[0];
+    expect(query.page_size).toBe(1000);
+  });
+
+  it('clamps page_size to maxResults + 1 instead of always requesting the full 1000', async () => {
+    proxyRequest.mockResolvedValueOnce({ resources: [registrantRecord('a')] });
+
+    await service.getMeetingRegistrants(req, 'meeting-1', false, undefined, true, 50);
+
+    const [, , , , query] = proxyRequest.mock.calls[0];
+    expect(query.page_size).toBe(51);
+  });
+
+  it('threads options.bearerToken through to the roster-walk proxyRequest call', async () => {
+    proxyRequest.mockResolvedValueOnce({ resources: [registrantRecord('a')] });
+
+    await service.getMeetingRegistrants(req, 'meeting-1', false, undefined, false, undefined, { bearerToken: 'm2m-token' });
+
+    const [, , , , , , , options] = proxyRequest.mock.calls[0];
+    expect(options).toEqual({ bearerToken: 'm2m-token' });
+  });
+
+  it('fetches the registrant roster exactly once when includeRsvp is true, not twice via getMeetingRsvps', async () => {
+    const rsvpRecord = (registrantId: string) => ({
+      id: `v1_meeting_rsvp:${registrantId}`,
+      data: { registrant_id: registrantId, response_type: 'accepted' } as unknown as MeetingRsvp,
+    });
+    proxyRequest
+      .mockResolvedValueOnce({ resources: [registrantRecord('a'), registrantRecord('b')] }) // roster walk
+      .mockResolvedValueOnce({ resources: [rsvpRecord('a')] }); // RSVP walk (getRawMeetingRsvps)
+
+    const result = await service.getMeetingRegistrants(req, 'meeting-1', true);
+
+    // Exactly 2 proxyRequest calls total: one roster page, one RSVP page. Prior to the dedup fix,
+    // includeRsvp routed through getMeetingRsvps, which re-walked the roster a second time.
+    expect(proxyRequest).toHaveBeenCalledTimes(2);
+    expect(result).toHaveLength(2);
+    expect((result[0] as any).rsvp).toBeTruthy();
+    expect((result[1] as any).rsvp).toBeNull();
+  });
+
+  it('returns registrants without rsvp data when the RSVP fetch fails, instead of throwing', async () => {
+    proxyRequest.mockResolvedValueOnce({ resources: [registrantRecord('a')] }).mockRejectedValueOnce(new Error('rsvp service down'));
+
+    const result = await service.getMeetingRegistrants(req, 'meeting-1', true);
+
+    expect(result).toHaveLength(1);
+    expect((result[0] as any).rsvp).toBeUndefined();
+  });
+
+  it('rejects instead of silently returning registrants without RSVP data when failOnPartial is true', async () => {
+    proxyRequest
+      .mockResolvedValueOnce({ resources: [registrantRecord('a')] }) // roster page
+      .mockRejectedValueOnce(new Error('rsvp fetch down')); // getRawMeetingRsvps: rsvp page
+
+    await expect(service.getMeetingRegistrants(req, 'meeting-1', true, undefined, true)).rejects.toThrow('rsvp fetch down');
+  });
+});
+
+describe('MeetingService.getRawMeetingRsvps', () => {
+  let service: MeetingService;
+
+  beforeEach(() => {
+    proxyRequest.mockReset();
+    service = new MeetingService();
+  });
+
+  it('sends page_size on the RSVP walk and threads options.bearerToken through', async () => {
+    proxyRequest.mockResolvedValueOnce({ resources: [] });
+
+    await service.getRawMeetingRsvps(req, 'meeting-1', { bearerToken: 'm2m-token' });
+
+    const [, , , , query, , , options] = proxyRequest.mock.calls[0];
+    expect(query.page_size).toBe(1000);
+    expect(options).toEqual({ bearerToken: 'm2m-token' });
+  });
+
+  it('rethrows on a partial page failure when failOnPartial is true', async () => {
+    proxyRequest
+      .mockResolvedValueOnce({ resources: [], page_token: 'next' }) // page 1
+      .mockRejectedValueOnce(new Error('query service down')); // page 2
+
+    await expect(service.getRawMeetingRsvps(req, 'meeting-1', undefined, true)).rejects.toThrow('query service down');
+  });
+});
+
+describe('MeetingService.getMeetingRsvps', () => {
+  let service: MeetingService;
+
+  const registrantRecord = (id: string) => ({ id: `v1_meeting_registrant:${id}`, data: { uid: id, email: `${id}@example.com` } as MeetingRegistrant });
+  const rsvpRecord = (registrantId: string) => ({
+    id: `v1_meeting_rsvp:${registrantId}`,
+    data: { registrant_id: registrantId, response_type: 'accepted' } as unknown as MeetingRsvp,
+  });
+
+  beforeEach(() => {
+    proxyRequest.mockReset();
+    service = new MeetingService();
+  });
+
+  it('filters RSVPs down to currently-active registrants', async () => {
+    proxyRequest
+      .mockResolvedValueOnce({ resources: [rsvpRecord('a'), rsvpRecord('stale-registrant')] }) // RSVP walk
+      .mockResolvedValueOnce({ resources: [registrantRecord('a')] }); // registrant walk (failOnPartial: true)
+
+    const result = await service.getMeetingRsvps(req, 'meeting-1');
+
+    expect(result).toHaveLength(1);
+    expect(result[0].registrant_id).toBe('a');
+  });
+
+  it('sends page_size on both the RSVP walk and its own registrant walk', async () => {
+    proxyRequest.mockResolvedValueOnce({ resources: [rsvpRecord('a')] }).mockResolvedValueOnce({ resources: [registrantRecord('a')] });
+
+    await service.getMeetingRsvps(req, 'meeting-1');
+
+    const rsvpQuery = proxyRequest.mock.calls[0][4];
+    const registrantQuery = proxyRequest.mock.calls[1][4];
+    expect(rsvpQuery.page_size).toBe(1000);
+    expect(registrantQuery.page_size).toBe(1000);
+  });
+
+  it('returns RSVPs unfiltered when the registrant fetch fails, rather than hiding data', async () => {
+    proxyRequest.mockResolvedValueOnce({ resources: [rsvpRecord('a'), rsvpRecord('b')] }).mockRejectedValueOnce(new Error('query service down'));
+
+    const result = await service.getMeetingRsvps(req, 'meeting-1');
+
+    expect(result).toHaveLength(2);
+  });
+
+  it('returns the raw RSVP count unchanged when a later registrant page rejects mid-walk', async () => {
+    proxyRequest
+      .mockResolvedValueOnce({ resources: [rsvpRecord('a'), rsvpRecord('b')] }) // RSVP walk (single page)
+      .mockResolvedValueOnce({ resources: [registrantRecord('a')], page_token: 'next' }) // registrant walk, page 1
+      .mockRejectedValueOnce(new Error('query service down')); // registrant walk, page 2 rejects
+
+    const result = await service.getMeetingRsvps(req, 'meeting-1');
+
+    // The registrant walk uses failOnPartial: true, so a page-2 failure throws instead of
+    // returning a truncated roster; getMeetingRsvps catches that and falls back to the
+    // unfiltered RSVP set rather than filtering against an incomplete registrant list.
+    expect(result).toHaveLength(2);
+    expect(result.map((r) => r.registrant_id)).toEqual(['a', 'b']);
   });
 });
 
@@ -509,5 +682,16 @@ describe('MeetingService.getAuthorizedRegistrantsForImport', () => {
     // maxResults bounds the fetch itself: one page already exceeds the cap, so pagination never
     // continues even though the fixture's single page doesn't set page_token either way.
     expect(proxyRequest).toHaveBeenCalledTimes(2);
+  });
+
+  it('requests page_size 51, not 1000, since the import cap only needs 51 rows to reject', async () => {
+    committeeSvc.getCommitteeById.mockResolvedValue({ uid: COMMITTEE_UID, project_uid: 'project-1' });
+    accessCheckSvc.checkSingleAccess.mockResolvedValue(true);
+    proxyRequest.mockResolvedValueOnce(meetingResponse('project-1')).mockResolvedValueOnce({ resources: [registrantRecord('a')] });
+
+    await service.getAuthorizedRegistrantsForImport(req, MEETING_UID, COMMITTEE_UID);
+
+    const [, , , , query] = proxyRequest.mock.calls[1];
+    expect(query.page_size).toBe(51);
   });
 });

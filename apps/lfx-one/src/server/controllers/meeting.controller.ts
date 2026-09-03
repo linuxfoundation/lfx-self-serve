@@ -119,6 +119,10 @@ export class MeetingController {
 
   /**
    * GET /meetings/:uid
+   *
+   * Does not read the registrant roster: individual_registrants_count/committee_members_count
+   * are no longer populated on this response (GH-1731) since the join page now derives its own
+   * counts from the roster it already fetches via getMyMeetingRegistrants.
    */
   public async getMeetingById(req: Request, res: Response, next: NextFunction): Promise<void> {
     const { uid } = req.params;
@@ -158,16 +162,10 @@ export class MeetingController {
       // meeting far in the future or past — the key would be stripped anyway.
       const withinHostKeyWindow = isWithinHostKeyWindow(meeting);
 
-      // Run registrant counts, invited status, and host-key fetch in parallel.
-      const [registrants, meetingWithInvitedStatus, hostKey] = await Promise.all([
-        // TODO: Remove this once we have a way to get the registrants count
-        this.meetingService.getMeetingRegistrants(req, meeting.id).catch((error) => {
-          logger.warning(req, 'get_meeting_by_id', 'Failed to fetch registrants for meeting', {
-            meeting_id: uid,
-            err: error,
-          });
-          return null;
-        }),
+      // Registrant counts are no longer derived here — the full roster read was purely to derive
+      // two integers with no consumer once the join page holds its own roster (GH-1731). Run
+      // invited status and host-key fetch in parallel.
+      const [meetingWithInvitedStatus, hostKey] = await Promise.all([
         addInvitedStatusToMeeting(req, meeting, userEmail),
         withinHostKeyWindow
           ? this.meetingService.getMeetingHostKey(req, uid).catch((error) => {
@@ -179,15 +177,6 @@ export class MeetingController {
             })
           : Promise.resolve(null),
       ]);
-
-      if (registrants) {
-        const committeeMembers = registrants.filter((r) => r.type === 'committee').length;
-        meetingWithInvitedStatus.individual_registrants_count = registrants.length - committeeMembers;
-        meetingWithInvitedStatus.committee_members_count = committeeMembers;
-      } else {
-        meetingWithInvitedStatus.individual_registrants_count = 0;
-        meetingWithInvitedStatus.committee_members_count = 0;
-      }
 
       // Gate the Zoom host key: the query-service enforces FGA `host` on v1_meeting_host_credentials
       // (covering direct co-hosts AND organizer-derived writers/coordinators), so a null return
@@ -469,46 +458,14 @@ export class MeetingController {
         return;
       }
 
-      // Step 1: Get the meeting with access check to determine organizer status
-      logger.debug(req, 'get_my_meeting_registrants', 'Fetching meeting details with access check', { meeting_id: uid });
-      const meeting = await this.meetingService.getMeetingById(req, uid, 'v1_meeting', { access: true });
-      if (!meeting) {
-        logger.success(req, 'get_my_meeting_registrants', startTime, {
-          meeting_id: uid,
-          meeting_not_found: true,
-          registrant_count: 0,
-        });
-        res.json([]);
-        return;
-      }
-
-      // TODO: Reimplement show_meeting_attendees check
-      // // All ITX meetings are treated as having show_meeting_attendees enabled
-      // const showMeetingAttendees = meeting.show_meeting_attendees ?? false;
-
-      // logger.debug(req, 'get_my_meeting_registrants', 'Meeting found, checking show_meeting_attendees', {
-      //   meeting_id: uid,
-      //   show_meeting_attendees: showMeetingAttendees,
-      // });
-
-      // // Step 2-4: Check if show_meeting_attendees is enabled
-      // if (!showMeetingAttendees) {
-      //   logger.success(req, 'get_my_meeting_registrants', startTime, {
-      //     meeting_id: uid,
-      //     show_meeting_attendees: false,
-      //     registrant_count: 0,
-      //   });
-      //   res.json([]);
-      //   return;
-      // }
-
-      // Step 5: Check if current user is a registrant (access control)
+      // Step 1: Resolve the caller's identity up front. The registrant gate check below is
+      // email-only (getMeetingRegistrantsByEmail), matching the pre-existing authorization surface
+      // — this PR does not widen the gate to also match by username.
       const userEmail = getEffectiveEmail(req) ?? undefined;
 
       logger.debug(req, 'get_my_meeting_registrants', 'Checking user authentication', {
         meeting_id: uid,
         has_email: !!userEmail,
-        user_email: userEmail,
       });
 
       if (!userEmail) {
@@ -521,17 +478,29 @@ export class MeetingController {
         return;
       }
 
-      // Save original token and setup M2M token for privileged access
-      const originalToken = req.bearerToken;
-      const m2mToken = await generateM2MToken(req);
-      req.bearerToken = m2mToken;
+      // Step 2: Fetch the meeting and run the registrant gate check in parallel — the gate check
+      // depends only on uid + caller identity, not on the meeting payload, so it needn't wait for
+      // the meeting fetch. The gate check runs under an M2M token (captured via `m2mToken`, not by
+      // mutating req.bearerToken) so it isn't gated by the caller's own FGA relations.
+      logger.debug(req, 'get_my_meeting_registrants', 'Fetching meeting and registrant gate check in parallel', { meeting_id: uid });
+      let m2mToken = '';
+      const [meeting, userRegistrantCheck] = await Promise.all([
+        this.meetingService.getMeetingById(req, uid, 'v1_meeting', { access: true }),
+        generateM2MToken(req).then((token) => {
+          m2mToken = token;
+          return this.meetingService.getMeetingRegistrantsByEmail(req, uid, userEmail, token);
+        }),
+      ]);
 
-      // Use tags_all to filter by both meeting_id and email
-      logger.debug(req, 'get_my_meeting_registrants', 'Checking if user is a registrant', {
-        meeting_id: uid,
-        user_email: userEmail,
-      });
-      const userRegistrantCheck = await this.meetingService.getMeetingRegistrantsByEmail(req, uid, userEmail);
+      if (!meeting) {
+        logger.success(req, 'get_my_meeting_registrants', startTime, {
+          meeting_id: uid,
+          meeting_not_found: true,
+          registrant_count: 0,
+        });
+        res.json([]);
+        return;
+      }
 
       logger.debug(req, 'get_my_meeting_registrants', 'User registrant check complete', {
         meeting_id: uid,
@@ -539,53 +508,57 @@ export class MeetingController {
         registrant_count: userRegistrantCheck.length,
       });
 
-      // Step 6: If user is not a registrant, check if they are an organizer
-      if (userRegistrantCheck.length === 0) {
-        if (!meeting.organizer) {
-          logger.success(req, 'get_my_meeting_registrants', startTime, {
-            meeting_id: uid,
-            user_email: userEmail,
-            is_registrant: false,
-            is_organizer: false,
-            registrant_count: 0,
-          });
-          res.json([]);
-          return;
-        }
-
-        logger.debug(req, 'get_my_meeting_registrants', 'User is not a registrant but is an organizer, granting access', {
+      // Step 3: If user is not a registrant, check if they are an organizer
+      if (userRegistrantCheck.length === 0 && !meeting.organizer) {
+        logger.success(req, 'get_my_meeting_registrants', startTime, {
           meeting_id: uid,
           user_email: userEmail,
+          is_registrant: false,
+          is_organizer: false,
+          registrant_count: 0,
         });
+        res.json([]);
+        return;
       }
 
-      // Step 7: User is a registrant or organizer, fetch all registrants using M2M token
+      // Step 4: User is a registrant or organizer, fetch all registrants using the M2M token —
+      // passed via ApiRequestOptions.bearerToken (not a req.bearerToken mutation) so it can't race
+      // against the caller's own token on a shared req.
       logger.debug(req, 'get_my_meeting_registrants', 'Fetching registrants with M2M token', {
         meeting_id: uid,
         user_email: userEmail,
         include_rsvp: includeRsvp,
-      });
-
-      logger.debug(req, 'get_my_meeting_registrants', 'M2M token generated, fetching all registrants', {
-        meeting_id: uid,
         has_m2m_token: !!m2mToken,
       });
 
-      const registrants = await this.meetingService.getMeetingRegistrants(req, uid, includeRsvp, occurrenceId);
+      // The join page treats this roster's length as an authoritative denominator (GH-1731) —
+      // a partial query-service page failure must surface as an error, not a silently truncated list.
+      const registrants = await this.meetingService.getMeetingRegistrants(req, uid, includeRsvp, occurrenceId, true, undefined, {
+        bearerToken: m2mToken,
+      });
 
       logger.debug(req, 'get_my_meeting_registrants', 'Fetched all registrants, enriching committee data', {
         meeting_id: uid,
         registrant_count: registrants.length,
       });
 
-      // Enrich committee registrant data with committee details and member info
-      const enrichedRegistrants = await this.enrichCommitteeRegistrants(req, meeting, registrants);
-
-      // Restore original token (delete if it was undefined to avoid leaving M2M token)
-      if (originalToken !== undefined) {
-        req.bearerToken = originalToken;
-      } else {
-        delete req.bearerToken;
+      // Enrich committee registrant data with committee details and member info. Kept on a
+      // narrowly-scoped req.bearerToken swap rather than threaded ApiRequestOptions: this call is
+      // sequential (nothing else is in flight on this req), so it carries none of the identity-race
+      // hazard the parallel fan-out above did. Fully re-plumbing CommitteeService's bearerToken
+      // would also need to exclude addAccessToResource/getCallerMembership, which must stay on the
+      // caller's own token — tracked separately in #1903.
+      const originalToken = req.bearerToken;
+      req.bearerToken = m2mToken;
+      let enrichedRegistrants: MeetingRegistrant[];
+      try {
+        enrichedRegistrants = await this.enrichCommitteeRegistrants(req, meeting, registrants);
+      } finally {
+        if (originalToken !== undefined) {
+          req.bearerToken = originalToken;
+        } else {
+          delete req.bearerToken;
+        }
       }
 
       logger.success(req, 'get_my_meeting_registrants', startTime, {

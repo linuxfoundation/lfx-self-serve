@@ -49,7 +49,9 @@ import {
   codePointLength,
   getCurrentOrNextOccurrence,
   hasMeetingEnded,
+  isMeetingInviteResponsesEnabled,
   normalizeIndexedMeetingAiSummary,
+  normalizeIndexedMeetingInviteResponses,
   parseToInt,
   resolveRsvpOccurrenceId,
   selectApplicableRsvp,
@@ -514,7 +516,7 @@ export class UserService {
 
     logger.debug(req, 'get_user_meetings', 'Fetched meetings from query service', { count: meetings.length });
 
-    const normalizedMeetings = meetings.map(normalizeIndexedMeetingAiSummary);
+    const normalizedMeetings = meetings.map((meeting) => normalizeIndexedMeetingInviteResponses(normalizeIndexedMeetingAiSummary(meeting)));
 
     // Enrich each meeting with the current user's RSVP (null when no response). Reuses the same
     // query-service pattern that powers `getUserPendingActions` → `transformMissingRsvpsToActions`.
@@ -1333,21 +1335,22 @@ export class UserService {
     const voteActions = this.transformVotesToActions(pendingVotes);
     const invitationActions = this.transformInvitationsToActions(pendingInvitations);
 
-    // Phase 2: RSVP + registrant lookups are only meaningful when there are in-window meetings
-    // to evaluate. Skip them otherwise — avoids two full paginated per-user scans per request
-    // for users with no upcoming meetings in the window.
+    // Phase 2: RSVP + registrant lookups only pay off when at least one in-window meeting
+    // collects LFX RSVPs. Pre-feature series still produce Review Agenda actions, but they
+    // cannot emit Set RSVP — skip the two paginated scans in that case (GH-1951).
     //
     // Fail closed on the RSVP prerequisites: if either lookup errors, we can't distinguish
     // "user hasn't RSVPed" from "we don't know", and a transient failure must not turn every
     // in-window meeting into a bogus Set RSVP nag. Suppress the whole source on error.
     let rsvpActions: PendingActionItem[] = [];
-    if (inWindowMeetings.length > 0) {
+    const rsvpEligibleMeetings = inWindowMeetings.filter((meeting) => isMeetingInviteResponsesEnabled(meeting));
+    if (rsvpEligibleMeetings.length > 0) {
       try {
         const [userRsvps, activeRegistrants] = await Promise.all([
           this.fetchAllUserRsvps(req, email, username),
           this.fetchUserActiveRegistrantIdentities(req, email, username),
         ]);
-        rsvpActions = this.transformMissingRsvpsToActions(inWindowMeetings, userRsvps, activeRegistrants);
+        rsvpActions = this.transformMissingRsvpsToActions(rsvpEligibleMeetings, userRsvps, activeRegistrants);
       } catch (error) {
         logger.warning(req, 'get_user_pending_actions', 'RSVP prerequisite lookup failed, suppressing Set RSVP actions', { err: error });
       }
@@ -1577,6 +1580,8 @@ export class UserService {
     for (const meeting of meetings) {
       if (!meeting.id) continue;
       if (respondedMeetingIds.has(meeting.id)) continue;
+      // Meetings that predate LFX RSVP tracking have no collectable response (GH-1951).
+      if (!isMeetingInviteResponsesEnabled(meeting)) continue;
       // Suppress the action when the user is not a registrant for this specific meeting.
       // The pending-actions list comes from `filter_grants: 'direct'` on `v1_meeting`, which
       // includes hosts/organizers and committee-inherited grants — none of which carry a

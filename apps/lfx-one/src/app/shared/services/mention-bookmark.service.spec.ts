@@ -68,7 +68,7 @@ describe('MentionBookmarkService', () => {
 
     await flush();
     expect(socialListeningService.upsertPreference).toHaveBeenCalledWith(preferenceName, '["m1"]');
-    expect(messageService.add).toHaveBeenCalledWith({ severity: 'success', summary: 'Bookmarked', detail: 'Mention added to your bookmarks.' });
+    expect(messageService.add).toHaveBeenCalledWith({ severity: 'success', summary: 'Bookmark added', detail: 'Mention added to your bookmarks.' });
   });
 
   it('deletes the preference row when the last bookmark is removed', async () => {
@@ -110,7 +110,11 @@ describe('MentionBookmarkService', () => {
     await flush();
 
     expect(service.state().data.has('m1')).toBe(false);
-    expect(messageService.add).toHaveBeenCalledWith({ severity: 'error', summary: 'Could not save bookmark', detail: 'Please try again.' });
+    expect(messageService.add).toHaveBeenCalledWith({
+      severity: 'error',
+      summary: 'Failed to save bookmark',
+      detail: 'Could not save the bookmark. Please try again.',
+    });
   });
 
   it('rolls back and toasts the error when the delete fails', async () => {
@@ -123,7 +127,11 @@ describe('MentionBookmarkService', () => {
     await flush();
 
     expect(service.state().data.has('m1')).toBe(true);
-    expect(messageService.add).toHaveBeenCalledWith({ severity: 'error', summary: 'Could not remove bookmark', detail: 'Please try again.' });
+    expect(messageService.add).toHaveBeenCalledWith({
+      severity: 'error',
+      summary: 'Failed to remove bookmark',
+      detail: 'Could not remove the bookmark. Please try again.',
+    });
   });
 
   it('ignores toggles while the initial load is in flight', async () => {
@@ -152,7 +160,7 @@ describe('MentionBookmarkService', () => {
     expect(messageService.add).toHaveBeenCalledWith({
       severity: 'warn',
       summary: 'Bookmark limit reached',
-      detail: `You can bookmark up to ${MENTION_IDS_MAX_VALUES} mentions per project.`,
+      detail: `You can bookmark up to ${MENTION_IDS_MAX_VALUES} mentions per foundation.`,
     });
     expect(socialListeningService.upsertPreference).not.toHaveBeenCalled();
     expect(service.state().data.has('new-mention')).toBe(false);

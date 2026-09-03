@@ -167,6 +167,118 @@ describe('SocialListeningAnalyticsComponent', () => {
     expect(cards[1].value).toBe('0%');
   });
 
+  it('ranks the tag rows, drops blank tags, and sizes each bar against the top row', async () => {
+    getMentionsTags.mockReturnValue(
+      of([
+        { TAG: 'cloud_native', TOTAL_COUNT: 5 },
+        { TAG: '', TOTAL_COUNT: 99 },
+        { TAG: 'ai_agents', TOTAL_COUNT: 10 },
+      ])
+    );
+    create();
+    await settle();
+
+    expect(fixture.componentInstance.tagRows()).toEqual([
+      { label: 'AI Agents', count: 10, percentOfMax: 100 },
+      { label: 'Cloud Native', count: 5, percentOfMax: 50 },
+    ]);
+    const labels = [...fixture.nativeElement.querySelectorAll('[data-testid="social-listening-analytics-tags-list"] li')].map((li: Element) =>
+      (li.textContent || '').trim()
+    );
+    expect(labels).toHaveLength(2);
+    expect(labels[0]).toContain('AI Agents');
+    expect(labels[0]).toContain('10');
+  });
+
+  it('emits the raw platform value when a single-source platform row is clicked', async () => {
+    getAnalyticsPlatformDistribution.mockReturnValue(
+      of([
+        { SOURCE_PLATFORM: 'reddit', SOCIAL_NETWORK: 'Reddit', MENTIONS_COUNT: 40, PERCENT_OF_TOTAL: 80 },
+        { SOURCE_PLATFORM: 'X', SOCIAL_NETWORK: 'X', MENTIONS_COUNT: 10, PERCENT_OF_TOTAL: 20 },
+      ])
+    );
+    create();
+    await settle();
+
+    const emitted: string[] = [];
+    fixture.componentInstance.platformSelected.subscribe((platform) => emitted.push(platform));
+
+    // The feed filter matches raw SOURCE_PLATFORM values, so the row emits raw `X` (not the normalized `twitter` key it tracks by).
+    const row = fixture.nativeElement.querySelector('[data-testid="social-listening-analytics-platform-row-twitter"]') as HTMLButtonElement;
+    expect(row).toBeTruthy();
+    row.click();
+
+    expect(emitted).toEqual(['X']);
+  });
+
+  it('keeps merged platform groups display-only (no drill-down emission)', async () => {
+    getAnalyticsPlatformDistribution.mockReturnValue(
+      of([
+        { SOURCE_PLATFORM: 'X', SOCIAL_NETWORK: 'X', MENTIONS_COUNT: 10, PERCENT_OF_TOTAL: 15 },
+        { SOURCE_PLATFORM: 'twitter', SOCIAL_NETWORK: 'Twitter', MENTIONS_COUNT: 5, PERCENT_OF_TOTAL: 5 },
+        { SOURCE_PLATFORM: 'forums', SOCIAL_NETWORK: 'Forums', MENTIONS_COUNT: 6, PERCENT_OF_TOTAL: 8 },
+        { SOURCE_PLATFORM: 'mastodon', SOCIAL_NETWORK: 'Mastodon', MENTIONS_COUNT: 4, PERCENT_OF_TOTAL: 7 },
+      ])
+    );
+    create();
+    await settle();
+
+    const emitted: string[] = [];
+    fixture.componentInstance.platformSelected.subscribe((platform) => emitted.push(platform));
+
+    // X+twitter fold into one `twitter` row and forums+mastodon into `other` — merged groups can't drill down.
+    const merged = fixture.nativeElement.querySelector('[data-testid="social-listening-analytics-platform-row-twitter"]') as HTMLButtonElement;
+    const other = fixture.nativeElement.querySelector('[data-testid="social-listening-analytics-platform-row-other"]') as HTMLButtonElement;
+    expect(merged.disabled).toBe(true);
+    expect(other.disabled).toBe(true);
+    merged.click();
+    other.click();
+
+    expect(emitted).toEqual([]);
+  });
+
+  it('keeps the sentiment counts and percentages when the overview errors, omitting only the trend chips', async () => {
+    getAnalyticsOverview.mockImplementation(() => throwError(() => new Error('boom')));
+    getAnalyticsSentimentDistribution.mockReturnValue(
+      of([
+        { SENTIMENT: 'positive', MENTION_COUNT: 90, PERCENT_OF_TOTAL: 45 },
+        { SENTIMENT: 'negative', MENTION_COUNT: 40, PERCENT_OF_TOTAL: 20 },
+      ])
+    );
+    create();
+    await settle();
+
+    expect(fixture.componentInstance.overviewError()).toBe('Failed to load this panel');
+    expect(fixture.componentInstance.sentimentTrends()).toEqual({ positive: null, negative: null });
+
+    const panel = fixture.nativeElement.querySelector('[data-testid="social-listening-analytics-sentiment"]');
+    expect(panel.textContent).toContain('45%');
+    expect(panel.textContent).toContain('90');
+    expect(panel.querySelector('[data-testid="social-listening-analytics-sentiment-trend-positive"]')).toBeNull();
+    expect(panel.querySelector('[data-testid="social-listening-analytics-sentiment-trend-negative"]')).toBeNull();
+  });
+
+  it('renders the sentiment trend chips from the overview panel', async () => {
+    getAnalyticsSentimentDistribution.mockReturnValue(
+      of([
+        { SENTIMENT: 'positive', MENTION_COUNT: 90, PERCENT_OF_TOTAL: 45 },
+        { SENTIMENT: 'negative', MENTION_COUNT: 40, PERCENT_OF_TOTAL: 20 },
+      ])
+    );
+    create();
+    await settle();
+
+    // A null POSITIVE_SENTIMENT_CHANGE_PCT (thin previous window) hides that chip; the negative one inverts.
+    expect(fixture.componentInstance.sentimentTrends().positive).toBeNull();
+    expect(fixture.componentInstance.sentimentTrends().negative).toEqual({ label: '4.2% vs last period', direction: 'down', inverted: true });
+
+    const panel = fixture.nativeElement.querySelector('[data-testid="social-listening-analytics-sentiment"]');
+    expect(panel.querySelector('[data-testid="social-listening-analytics-sentiment-trend-positive"]')).toBeNull();
+    expect(panel.querySelector('[data-testid="social-listening-analytics-sentiment-trend-negative"]').className).toContain('text-emerald-700');
+    // The arrow is aria-hidden — the sr-only direction word carries the sign for screen readers.
+    expect(panel.querySelector('[data-testid="social-listening-analytics-sentiment-trend-negative"]').textContent).toContain('Decreased');
+  });
+
   it('reports panelsLoading while any panel is in flight and clears it once all settle', async () => {
     const overview$ = new Subject<SocialListeningAnalyticsOverview>();
     getAnalyticsOverview.mockReturnValue(overview$.asObservable());

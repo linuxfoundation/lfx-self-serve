@@ -6,6 +6,8 @@ import { inject, Injectable } from '@angular/core';
 import { CAMPAIGN_JOB_POLL_INTERVAL_MS, JOB_LOST_MESSAGE } from '@lfx-one/shared/constants';
 import {
   AudienceDemographics,
+  BriefMetrics,
+  BuildAudienceResult,
   BulkKeywordActionRequest,
   BulkKeywordActionResponse,
   CampaignBriefLoadResult,
@@ -15,13 +17,16 @@ import {
   CampaignBriefRequest,
   CampaignCreateRequest,
   CampaignCreateResponse,
+  CampaignEmailStage,
   CampaignJobOutcome,
   CampaignJobStatus,
   CampaignListResult,
+  CampaignMetricsWindow,
   CampaignMonitorResponse,
   CampaignSSEEventType,
   CampaignStatusToggleParams,
   CampaignStatusUpdateResult,
+  GenerateEmailCopyResult,
   HubSpotEmailSearchResult,
   HubSpotUtmCreateResult,
   HubSpotUtmLookupResult,
@@ -123,6 +128,37 @@ export class CampaignService {
   public loadBrief(eventSlug: string, projectSlug: string): Observable<CampaignBriefLoadResult> {
     return this.http.get<CampaignBriefLoadResult>('/api/campaigns/brief', {
       params: new HttpParams().set('event_slug', eventSlug).set('project', projectSlug),
+    });
+  }
+
+  /**
+   * Build the brief's send audience. No body — campaign-service derives it from the brief itself.
+   */
+  public buildAudience(projectSlug: string, briefId: string): Observable<BuildAudienceResult> {
+    return this.http.post<BuildAudienceResult>(
+      '/api/campaigns/audience/build',
+      {},
+      { params: new HttpParams().set('project', projectSlug).set('brief_id', briefId) }
+    );
+  }
+
+  /**
+   * Generate email copy for a brief. Brief-scoped upstream, so both ids are required.
+   */
+  public generateEmailCopy(projectSlug: string, briefId: string, stage?: CampaignEmailStage): Observable<GenerateEmailCopyResult> {
+    // `stage` travels in this request's BODY, and in the BFF's own request to campaign-service it
+    // travels in the QUERY STRING. The two hops differ deliberately: declaring it as a Goa body
+    // attribute upstream made the whole request body mandatory -- Goa emits
+    // `requestBody.required: true` and answers `MissingPayloadError` on EOF -- so every body-less
+    // POST began failing with a 400. The comment above previously described only the upstream hop
+    // and read as a claim about this one.
+    //
+    // Omitted when absent rather than sent empty, because those mean different things to a caller
+    // reading the request: absence is "did not say". Upstream resolves BOTH to Registration Push
+    // (LFXV2-1940 specifies a fallback, and the enum that would have rejected a typo was removed
+    // for it), so an unrecognised value returns 200 with registration copy rather than an error.
+    return this.http.post<GenerateEmailCopyResult>('/api/campaigns/email-copy', stage ? { stage } : {}, {
+      params: new HttpParams().set('project', projectSlug).set('brief_id', briefId),
     });
   }
 
@@ -285,6 +321,26 @@ export class CampaignService {
     return this.http.get<CampaignListResult>('/api/campaigns/list', {
       params: new HttpParams().set('project', projectSlug).set('brief_id', briefId),
     });
+  }
+
+  /**
+   * Reads campaign-service's own metrics for every campaign on one brief.
+   *
+   * `window` is deliberately optional and is NOT defaulted here. campaign-service resolves a
+   * per-platform default inside its fan-out, so sending a constant would override a considered
+   * per-row choice with a guess made in the browser. The BFF refuses a present-but-empty or
+   * repeated value, so only omit it — never send `''`.
+   *
+   * Callers must read `rows[].status` before `rows[].metrics`: a row that could not be measured
+   * omits `metrics` entirely rather than zero-filling it, and defaulting the absence to zeroes
+   * would render an unsent draft or an outage as a measurement of nothing.
+   */
+  public getBriefMetrics(projectSlug: string, briefId: string, window?: CampaignMetricsWindow): Observable<BriefMetrics> {
+    let params = new HttpParams().set('project', projectSlug).set('brief_id', briefId);
+    if (window !== undefined) {
+      params = params.set('window', window);
+    }
+    return this.http.get<BriefMetrics>('/api/campaigns/brief/metrics', { params });
   }
 
   public lookupHubSpotUtm(projectSlug: string, eventName: string): Observable<HubSpotUtmLookupResult> {

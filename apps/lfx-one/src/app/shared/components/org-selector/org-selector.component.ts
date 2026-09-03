@@ -35,6 +35,23 @@ export class OrgSelectorComponent {
   private readonly popoverRef = viewChild<Popover>('popover');
   private readonly triggerRef = viewChild<ElementRef<HTMLElement>>('selectorTrigger');
 
+  /**
+   * Cached reference to the document-level keydown listener installed while the popover is open, so
+   * `detachKeyboardHandler` can remove exactly the function it attached (removing an anonymous
+   * function bound in `attachKeyboardHandler` would be a no-op).
+   */
+  private keyDownListener: ((event: KeyboardEvent) => void) | null = null;
+
+  /**
+   * True from `onPopoverShow` (non-staff branch) until `focusInitialOption` successfully places
+   * focus on a row. When the panel opens before the first item batch arrives (`/api/nav/org-items`
+   * is async), the initial microtask in `focusInitialOption` sees an empty listbox and no-ops;
+   * a `toObservable(items)` subscription set up in the constructor re-runs the focus placement
+   * as soon as rows first render, so ArrowDown lands on the caller's active org rather than the
+   * first row.
+   */
+  private pendingInitialFocus = false;
+
   public readonly isPanelOpen = model<boolean>(false);
   /** When false the trigger is hidden by the sidebar gate — skip list bootstrap so zero-grants users don't hit /api/nav/org-items. */
   public readonly enabled = input<boolean>(true);
@@ -180,10 +197,26 @@ export class OrgSelectorComponent {
           takeUntilDestroyed(this.destroyRef)
         )
         .subscribe(() => this.bootstrapOrgList());
+
+      // Deferred initial-focus: `onPopoverShow` calls `focusInitialOption` synchronously, but a
+      // panel opened during the async bootstrap sees an empty listbox and the microtask no-ops.
+      // Re-run once when the first batch of rows renders while the panel is still open.
+      toObservable(this.items, { injector: this.injector })
+        .pipe(
+          filter((rows) => rows.length > 0 && this.pendingInitialFocus && this.isPanelOpen()),
+          takeUntilDestroyed(this.destroyRef)
+        )
+        .subscribe(() => this.focusInitialOption());
     });
+
+    // Second cleanup path for the document-scoped keyDown listener. PrimeNG's popover teardown
+    // doesn't emit `onHide` when the host layout destroys while the panel is open, so relying on
+    // `onPopoverHide` alone can leak the closure onto `document` and let it intercept keys on the
+    // next screen.
+    this.destroyRef.onDestroy(() => this.detachKeyboardHandler());
   }
 
-  protected selectItem(item: OrgItem, popover: Popover): void {
+  protected selectItem(item: OrgItem): void {
     const account: Account = {
       // Spec 002: selection is keyed by `uid`, which now carries the org account id (SFID) — persisted to
       // the cookie + sent to all /api/orgs/:orgUid/lens/* routes. `accountId` carries the same value for
@@ -206,7 +239,9 @@ export class OrgSelectorComponent {
       // Errors are already logged inside refreshCanonicalRecord — swallow here so the
       // floating promise doesn't reach the browser console.
     });
-    popover.hide();
+    // Resolved from the viewChild rather than a template argument so the keyboard handler can
+    // drive selection directly (it has no access to template reference variables).
+    this.popoverRef()?.hide();
   }
 
   protected togglePanel(event: Event, popover: Popover): void {
@@ -220,15 +255,175 @@ export class OrgSelectorComponent {
     if (this.enabled() && this.items().length === 0 && !this.loading()) {
       this.bootstrapOrgList();
     }
+    this.attachKeyboardHandler();
+    // Non-staff callers land on the currently-selected option so Arrow keys can immediately navigate;
+    // staff callers keep the pAutoFocus search input as their entry point per current UX.
+    if (!this.isStaff()) {
+      this.pendingInitialFocus = true;
+      this.focusInitialOption();
+    }
   }
 
   protected onPopoverHide(): void {
     this.isPanelOpen.set(false);
+    this.pendingInitialFocus = false;
     this.searchControl.setValue('', { emitEvent: true });
+    this.detachKeyboardHandler();
   }
 
   protected loadMore(): void {
     this.orgNavigationService.loadNextPage();
+  }
+
+  /**
+   * Keyboard-navigation contract (WAI-ARIA APG combobox / listbox pattern):
+   *   - ArrowDown / ArrowUp: move roving focus among role="option" rows
+   *   - Home / End: focus first / last row
+   *   - Enter / Space: activate the focused row
+   *   - Escape: close the popover and return focus to the combobox trigger
+   * Runs only while the panel is open; document-scoped so it also catches events fired on the
+   * `appendTo="body"` popover panel (which lives outside the component subtree and would not
+   * bubble to a host listener).
+   */
+  private attachKeyboardHandler(): void {
+    if (!isPlatformBrowser(this.platformId) || this.keyDownListener) return;
+    this.keyDownListener = (event: KeyboardEvent) => this.handleKeyDown(event);
+    document.addEventListener('keydown', this.keyDownListener);
+  }
+
+  private detachKeyboardHandler(): void {
+    if (!isPlatformBrowser(this.platformId)) return;
+    if (this.keyDownListener) {
+      document.removeEventListener('keydown', this.keyDownListener);
+      this.keyDownListener = null;
+    }
+  }
+
+  private handleKeyDown(event: KeyboardEvent): void {
+    if (!this.isPanelOpen()) return;
+    // Ignore events dispatched outside the popover panel and its trigger. The listener is
+    // document-scoped so it can catch events fired on the `appendTo="body"` popover DOM (which
+    // lives outside this component's subtree), but that scope also picks up keys pressed on
+    // unrelated controls while the panel happens to be open — stealing Arrow/Home/End, and
+    // breaking caret/text nav in inputs like the staff search field.
+    if (!this.isEventInsidePanel(event)) return;
+
+    // Escape always closes the panel — including from the staff search input.
+    if (event.key === 'Escape') {
+      event.preventDefault();
+      this.closeAndRestoreFocus();
+      return;
+    }
+
+    const options = this.listboxOptions();
+    if (options.length === 0) return;
+
+    const targetIsOption = event.target instanceof HTMLElement && event.target.getAttribute('role') === 'option';
+
+    // ArrowDown from the search input (or the trigger, if Shift+Tab reopened focus there while
+    // the panel is open) drops focus into the first option — the standard combobox+listbox
+    // affordance that lets a caller "step into the list" without touching the mouse.
+    if (event.key === 'ArrowDown' && !targetIsOption) {
+      event.preventDefault();
+      this.moveFocusTo(options, 0);
+      return;
+    }
+
+    // All other option-nav keys only apply when an option is actually focused. Firing them on
+    // the staff search input would break its caret navigation (Home/End) and its native Enter
+    // handling, and would yank focus off the input mid-typing.
+    if (!targetIsOption) return;
+
+    const activeIndex = options.findIndex((el) => el === document.activeElement);
+    switch (event.key) {
+      case 'ArrowDown':
+        event.preventDefault();
+        this.moveFocusTo(options, activeIndex >= 0 ? Math.min(activeIndex + 1, options.length - 1) : 0);
+        return;
+      case 'ArrowUp':
+        event.preventDefault();
+        this.moveFocusTo(options, activeIndex > 0 ? activeIndex - 1 : 0);
+        return;
+      case 'Home':
+        event.preventDefault();
+        this.moveFocusTo(options, 0);
+        return;
+      case 'End':
+        event.preventDefault();
+        this.moveFocusTo(options, options.length - 1);
+        return;
+      case 'Enter':
+      case ' ':
+      case 'Spacebar': {
+        // Do NOT rely on the browser's native <button> activation here. Keyboard activation is
+        // the keydown *default action*, which the browser runs only after this listener returns
+        // — and the microtask checkpoint fires as soon as the JS stack empties, i.e. BEFORE that
+        // default action. A focus restore queued from this branch therefore moves focus off the
+        // row before the browser activates it, the activation is dropped, and the caller gets
+        // nothing: no selection and the panel stays open.
+        //
+        // Suppressing the default action and running the selection explicitly makes the order
+        // deterministic and identical for Enter and Space (whose native activation timings
+        // differ), and keeps preventDefault from letting Space scroll the panel.
+        event.preventDefault();
+        const row = this.displayedRows()[activeIndex];
+        if (!row) return;
+        this.selectItem(row.display.item);
+        // The row is leaving the DOM; restore focus to the combobox trigger to match Escape's
+        // contract (WAI-ARIA APG) rather than dumping the keyboard caller on `body`.
+        queueMicrotask(() => this.triggerRef()?.nativeElement.focus());
+        return;
+      }
+      default:
+        return;
+    }
+  }
+
+  /**
+   * True when the event target is inside the popover panel or is the combobox trigger. Keeps
+   * modifier variants (e.g. Shift+Home) on unrelated inputs from being hijacked while the panel
+   * happens to be open; the trigger is included so a caller who Shift+Tabs back to it can still
+   * use ArrowDown to open + move focus into the list.
+   */
+  private isEventInsidePanel(event: KeyboardEvent): boolean {
+    if (!isPlatformBrowser(this.platformId)) return false;
+    const target = event.target;
+    if (!(target instanceof Node)) return false;
+    const container = this.popoverRef()?.container as HTMLElement | null | undefined;
+    if (container?.contains(target)) return true;
+    const trigger = this.triggerRef()?.nativeElement;
+    return !!trigger && trigger.contains(target);
+  }
+
+  private listboxOptions(): HTMLElement[] {
+    if (!isPlatformBrowser(this.platformId)) return [];
+    const container = this.popoverRef()?.container as HTMLElement | null | undefined;
+    if (!container) return [];
+    return Array.from(container.querySelectorAll<HTMLElement>('[role="option"]'));
+  }
+
+  private moveFocusTo(options: HTMLElement[], index: number): void {
+    const target = options[index];
+    if (!target) return;
+    options.forEach((el, i) => el.setAttribute('tabindex', i === index ? '0' : '-1'));
+    target.focus();
+  }
+
+  private focusInitialOption(): void {
+    if (!isPlatformBrowser(this.platformId)) return;
+    // Defer to the next microtask so the panel DOM is laid out and rows have been rendered.
+    queueMicrotask(() => {
+      const options = this.listboxOptions();
+      if (options.length === 0) return;
+      const selectedIdx = options.findIndex((el) => el.getAttribute('aria-selected') === 'true');
+      this.moveFocusTo(options, selectedIdx >= 0 ? selectedIdx : 0);
+      this.pendingInitialFocus = false;
+    });
+  }
+
+  private closeAndRestoreFocus(): void {
+    this.popoverRef()?.hide();
+    this.triggerRef()?.nativeElement.focus();
   }
 
   /**

@@ -32,7 +32,10 @@ vi.mock('@lfx-one/shared/constants', () => ({
   NATS_CONFIG: {},
   PENDING_ACTION_SEVERITY: {},
   PENDING_ACTION_SURVEYS_ROW_LIMIT: 0,
-  PROJECT_HEALTH_SCORE_CATEGORIES: [],
+  // Real values, not []: normalizeHealthScoreCategory (getFoundationProjectsDetail) validates the
+  // upstream HEALTH_SCORE_CATEGORY_V2 string against this set, so an empty stub would silently null
+  // out every genuine category.
+  PROJECT_HEALTH_SCORE_CATEGORIES: ['critical', 'concerning', 'fair', 'healthy', 'excellent'],
   ROOT_PROJECT_SLUG: 'root',
   // Real values (3 / 40, matching foundation-projects.constants.ts), not 0/undefined: discoverSubFoundations
   // compares depth/budget against these at runtime, so a test exercising the depth or node cap needs the
@@ -80,10 +83,16 @@ vi.mock('@lfx-one/shared/utils', async () => {
   const urlUtils = await vi.importActual<typeof import('../../../../../packages/shared/src/utils/url.utils')>(
     '../../../../../packages/shared/src/utils/url.utils'
   );
+  // The real normalizeHealthScoreCategoryV2, not a stub: the foundation-project-detail tests
+  // assert actual category normalization behavior against this helper.
+  const insightsUtils = await vi.importActual<typeof import('../../../../../packages/shared/src/utils/insights.utils')>(
+    '../../../../../packages/shared/src/utils/insights.utils'
+  );
   return {
     computeIsFoundation: actual.computeIsFoundation,
     summarizeWriterGrants: actual.summarizeWriterGrants,
     normalizeToUrl: urlUtils.normalizeToUrl,
+    normalizeHealthScoreCategoryV2: insightsUtils.normalizeHealthScoreCategoryV2,
     getDefaultMarketingImpactMonth: vi.fn(),
     nullifyEmptyStrings: vi.fn(),
     resolvePeriodRange: vi.fn(),
@@ -265,6 +274,59 @@ describe('ProjectService — create picker methods', () => {
 
       expect(result).toEqual([]);
       expect(addAccessToResources).toHaveBeenCalledWith(req, [], 'project');
+    });
+  });
+
+  describe('getProjectSlugs', () => {
+    it('returns slug strings for all non-root projects', async () => {
+      proxyRequest.mockResolvedValueOnce(
+        pageOf([
+          { uid: 'a', slug: 'a' },
+          { uid: 'b', slug: 'b' },
+        ])
+      );
+
+      const result = await service.getProjectSlugs(req);
+
+      expect(result.sort()).toEqual(['a', 'b']);
+    });
+
+    it('excludes the ROOT pseudo-project without calling addAccessToResources', async () => {
+      proxyRequest.mockResolvedValueOnce(pageOf([{ uid: 'root', slug: 'root' }]));
+
+      const result = await service.getProjectSlugs(req);
+
+      expect(result).toEqual([]);
+      expect(addAccessToResources).not.toHaveBeenCalled();
+    });
+
+    it('follows page_token across pages and returns accumulated slugs', async () => {
+      proxyRequest.mockResolvedValueOnce(pageOf([{ uid: 'a', slug: 'a' }], 'next-token'));
+      proxyRequest.mockResolvedValueOnce(pageOf([{ uid: 'b', slug: 'b' }]));
+
+      const result = await service.getProjectSlugs(req);
+
+      expect(result.sort()).toEqual(['a', 'b']);
+      expect(proxyRequest).toHaveBeenCalledTimes(2);
+      expect(proxyRequest.mock.calls[0][4]).toMatchObject({ type: 'project', page_size: 500 });
+      expect(proxyRequest.mock.calls[1][4]).toMatchObject({ type: 'project', page_size: 500, page_token: 'next-token' });
+    });
+
+    it('does not call addAccessToResources for a standard non-root project', async () => {
+      proxyRequest.mockResolvedValueOnce(pageOf([{ uid: 'x', slug: 'x' }]));
+
+      await service.getProjectSlugs(req);
+
+      expect(addAccessToResources).not.toHaveBeenCalled();
+    });
+
+    it('throws when a subsequent page fails (failOnPartial: true — partial slug set drops affiliations)', async () => {
+      // First page succeeds; second page fails. With failOnPartial: true the caller receives an
+      // error rather than a truncated slug list that silently misrepresents affiliation state.
+      proxyRequest.mockResolvedValueOnce(pageOf([{ uid: 'a', slug: 'a' }], 'next-token'));
+      proxyRequest.mockRejectedValueOnce(new Error('page-fail'));
+
+      await expect(service.getProjectSlugs(req)).rejects.toThrow('page-fail');
     });
   });
 
@@ -885,6 +947,79 @@ describe('ProjectService — Snowflake-backed marketing reads', () => {
   });
 });
 
+// IN-1252: getHealthMetricsDaily's v1→v2 column flip is covered above (in the daily-health-metrics
+// describe block); these three cover the other call sites the same fix touched — each used to read
+// (or remap through mapV1BandToV2) a v1 Snowflake column/shim and now reads HEALTH_SCORE_CATEGORY_V2
+// directly.
+describe('ProjectService — Health Score v2 categories', () => {
+  let service: ProjectService;
+
+  beforeEach(() => {
+    execute.mockReset();
+    service = new ProjectService();
+  });
+
+  describe('getFoundationHealthScoreDistribution', () => {
+    it('reads HEALTH_SCORE_CATEGORY_V2 directly without remapping to a v1 band', async () => {
+      execute.mockResolvedValueOnce({ rows: [{ HEALTH_SCORE_CATEGORY_V2: 'fair', PROJECT_COUNT: 4 }] });
+
+      const result = await service.getFoundationHealthScoreDistribution('cncf');
+
+      // fails before fix: the v1 query read HEALTH_SCORE_CATEGORY through mapV1BandToV2, so a
+      // genuine v2 'fair' category would have fallen through to `unscored` instead of `fair`.
+      expect(result.fair).toBe(4);
+      expect(result.unscored).toBe(0);
+      expect(execute.mock.calls[0][0]).toContain('HEALTH_SCORE_CATEGORY_V2');
+    });
+  });
+
+  describe('getFoundationProjectsDetail', () => {
+    it('normalizes healthScoreCategory from HEALTH_SCORE_CATEGORY_V2 without a v1 shim', async () => {
+      execute.mockResolvedValueOnce({
+        rows: [
+          {
+            PROJECT_ID: 'proj-1',
+            PROJECT_NAME: 'Project One',
+            PROJECT_SLUG: 'project-one',
+            LIFECYCLE_STAGE: null,
+            CONTRIBUTORS_90D_COUNT: 1,
+            COMMITS_90D_COUNT: 1,
+            MAINTAINERS_CURRENT_COUNT: 1,
+            STARS_YTD_COUNT: 1,
+            LAST_UPDATED_TS: '2026-01-01',
+            HEALTH_SCORE_CATEGORY_V2: 'fair',
+          },
+        ],
+      });
+
+      const result = await service.getFoundationProjectsDetail('cncf');
+
+      // fails before fix: normalizeHealthScoreCategory ran the v1 mapV1BandToV2 shim over this
+      // column, so a genuine v2 'fair' category could be coerced instead of passing through as-is.
+      expect(result.projects[0].healthScoreCategory).toBe('fair');
+      expect(execute.mock.calls[0][0]).toContain('d.HEALTH_SCORE_CATEGORY_V2');
+    });
+  });
+
+  describe('getMultiFoundationSummary', () => {
+    it('reads HEALTH_SCORE_CATEGORY_V2 per foundation without remapping to a v1 band', async () => {
+      execute.mockImplementation((sql: string) => {
+        if (String(sql).includes('FOUNDATION_HEALTH_SCORE_DISTRIBUTION')) {
+          return Promise.resolve({ rows: [{ FOUNDATION_SLUG: 'cncf', HEALTH_SCORE_CATEGORY_V2: 'fair', PROJECT_COUNT: 7 }] });
+        }
+        return Promise.resolve({ rows: [] });
+      });
+
+      const result = await service.getMultiFoundationSummary(req, ['cncf']);
+
+      // fails before fix: the local HealthScoreRow type read HEALTH_SCORE_CATEGORY and remapped it
+      // via mapV1BandToV2, so a v2 'fair' category wouldn't have passed straight through.
+      expect(result.perFoundation['cncf'].healthScores.fair).toBe(7);
+      expect(result.perFoundation['cncf'].healthScores.unscored).toBe(0);
+    });
+  });
+});
+
 describe('ProjectService — paid ads compatibility', () => {
   const period: ResolvedPeriodRange = {
     type: 'trailing',
@@ -1423,5 +1558,155 @@ describe('ProjectService — getProjectsByIds', () => {
       batch_size: 2,
       error: 'query failed',
     });
+  });
+});
+
+describe('ProjectService — getHealthMetricsDaily', () => {
+  let service: ProjectService;
+
+  beforeEach(() => {
+    execute.mockReset();
+    service = new ProjectService();
+  });
+
+  it('reports the v2 health score, not the v1 score, for a project-level query', async () => {
+    // Fixture row carries both v1 and v2 columns with deliberately different values.
+    // The service must surface HEALTH_SCORE_V2 (80), not the legacy HEALTH_SCORE (50).
+    execute.mockResolvedValueOnce({
+      rows: [{ HEALTH_SCORE: 50, HEALTH_SCORE_V2: 80, HEALTH_SCORE_CATEGORY: 'Fair', HEALTH_SCORE_CATEGORY_V2: 'Good' }],
+    });
+
+    const result = await service.getHealthMetricsDaily('some-project', 'project');
+
+    expect(result.currentAvgHealthScore).toBe(80);
+    // Guard the actual regression: the SQL sent to Snowflake must select the v2 column, not
+    // just return one from the mock, or a query that still reads HEALTH_SCORE would pass silently.
+    expect(execute.mock.calls[0][0]).toContain('HEALTH_SCORE_V2');
+  });
+
+  it('reports the v2 health score, not the v1 score, for a foundation-level query', async () => {
+    execute.mockResolvedValueOnce({
+      rows: [{ FOUNDATION_SLUG: 'cncf', METRIC_DATE: '2026-01-01', AVG_HEALTH_SCORE: 80 }],
+    });
+
+    const result = await service.getHealthMetricsDaily('cncf', 'foundation');
+
+    expect(result.currentAvgHealthScore).toBe(80);
+    expect(execute.mock.calls[0][0]).toContain('AVG(HEALTH_SCORE_V2)');
+  });
+});
+
+describe('ProjectService — enrichWithProjectData', () => {
+  let service: ProjectService;
+
+  // Membership-funded + Active + not an Internal Allocation, per the real computeIsFoundation.
+  function foundationProject(uid: string, overrides: Partial<Project> = {}): Project {
+    return {
+      uid,
+      slug: uid,
+      name: `name-${uid}`,
+      stage: 'Active',
+      legal_entity_type: '',
+      funding: 'Funded' as ProjectFunding,
+      funding_model: ['Membership'],
+      ...overrides,
+    } as Project;
+  }
+  // Missing the Membership funding model — the real computeIsFoundation returns false.
+  function childProject(uid: string, parentUid: string, overrides: Partial<Project> = {}): Project {
+    return {
+      uid,
+      slug: uid,
+      name: `name-${uid}`,
+      stage: 'Active',
+      legal_entity_type: '',
+      funding: 'Funded' as ProjectFunding,
+      funding_model: [],
+      parent_uid: parentUid,
+      ...overrides,
+    } as Project;
+  }
+
+  beforeEach(() => {
+    proxyRequest.mockReset();
+    service = new ProjectService();
+  });
+
+  it('deduplicates project_uids into a single batched lookup', async () => {
+    const getProjectsByIds = vi.spyOn(service, 'getProjectsByIds').mockResolvedValue(new Map());
+
+    await service.enrichWithProjectData(req, [{ project_uid: 'a' }, { project_uid: 'a' }, { project_uid: 'b' }]);
+
+    expect(getProjectsByIds).toHaveBeenCalledTimes(1);
+    expect(getProjectsByIds).toHaveBeenCalledWith(req, ['a', 'b']);
+  });
+
+  it('prefers freshly fetched project fields over the item payload and computes is_foundation from the fresh project', async () => {
+    vi.spyOn(service, 'getProjectsByIds').mockResolvedValue(
+      new Map([
+        ['fdn', foundationProject('fdn', { name: 'Fresh Foundation', slug: 'fresh-fdn' })],
+        ['child', childProject('child', 'fdn', { name: 'Fresh Child', slug: 'fresh-child' })],
+      ])
+    );
+
+    const result = await service.enrichWithProjectData(req, [
+      { project_uid: 'fdn', project_name: 'stale', project_slug: 'stale', is_foundation: false, parent_project_uid: '' },
+      { project_uid: 'child', project_name: 'stale', project_slug: 'stale', is_foundation: true, parent_project_uid: 'stale-parent' },
+    ]);
+
+    // Fresh fields win on every mapped column — including is_foundation flipping both ways
+    // (stale false -> computed true for the foundation; stale true -> computed false for the child).
+    expect(result).toEqual([
+      { project_uid: 'fdn', project_name: 'Fresh Foundation', project_slug: 'fresh-fdn', is_foundation: true, parent_project_uid: '' },
+      { project_uid: 'child', project_name: 'Fresh Child', project_slug: 'fresh-child', is_foundation: false, parent_project_uid: 'fdn' },
+    ]);
+  });
+
+  it('keeps payload fallbacks and leaves is_foundation undefined (not false) for unresolved projects', async () => {
+    vi.spyOn(service, 'getProjectsByIds').mockResolvedValue(new Map());
+
+    const result = await service.enrichWithProjectData(req, [
+      { project_uid: 'gone', project_name: 'Payload Name', project_slug: 'payload-slug', parent_project_uid: 'payload-parent' },
+      { project_uid: 'gone2', project_name: 'Tiered', project_slug: 'tiered', is_foundation: true, parent_project_uid: 'p' },
+    ]);
+
+    expect(result[0]).toEqual({
+      project_uid: 'gone',
+      project_name: 'Payload Name',
+      project_slug: 'payload-slug',
+      parent_project_uid: 'payload-parent',
+      is_foundation: undefined,
+    });
+    // The fail-soft contract: consumers treat undefined as "tier unknown" and fall back safely;
+    // a coerced false would mislabel a foundation-owned entity as project-owned.
+    expect(result[0].is_foundation).toBeUndefined();
+    // An item's own tier signal survives the ?? fallback untouched.
+    expect(result[1].is_foundation).toBe(true);
+  });
+
+  it('resolves the projects the batch returns and falls back per-row for the rest', async () => {
+    vi.spyOn(service, 'getProjectsByIds').mockResolvedValue(new Map([['ok', childProject('ok', 'fdn', { name: 'Resolved', slug: 'resolved' })]]));
+
+    const result = await service.enrichWithProjectData(req, [
+      { project_uid: 'ok', project_name: 'stale', project_slug: 'stale', parent_project_uid: 'stale' },
+      { project_uid: 'skipped', project_name: 'Kept', project_slug: 'kept', parent_project_uid: 'kept-parent' },
+    ]);
+
+    expect(result[0]).toMatchObject({ project_name: 'Resolved', project_slug: 'resolved', is_foundation: false, parent_project_uid: 'fdn' });
+    expect(result[1]).toMatchObject({ project_name: 'Kept', project_slug: 'kept', parent_project_uid: 'kept-parent' });
+    expect(result[1].is_foundation).toBeUndefined();
+  });
+
+  it('keeps item-level fields untouched when every batch fails', async () => {
+    // getProjectsByIds warn-and-skips failed batches internally, so a full query-service outage
+    // surfaces here as an empty map — the same net merge outcome as the old all-null per-item
+    // failures, with no exception escaping the enrichment.
+    vi.spyOn(service, 'getProjectsByIds').mockResolvedValue(new Map());
+
+    const result = await service.enrichWithProjectData(req, [
+      { project_uid: 'x', project_name: 'Last Known', project_slug: 'last-known', is_foundation: true, parent_project_uid: 'p' },
+    ]);
+
+    expect(result[0]).toMatchObject({ project_name: 'Last Known', project_slug: 'last-known', is_foundation: true, parent_project_uid: 'p' });
   });
 });

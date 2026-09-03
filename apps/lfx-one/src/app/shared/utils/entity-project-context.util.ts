@@ -5,9 +5,11 @@ import { DestroyRef, Signal } from '@angular/core';
 import { takeUntilDestroyed, toObservable } from '@angular/core/rxjs-interop';
 import { NavigationEnd, Router } from '@angular/router';
 import { EntityWithProject, ProjectContext } from '@lfx-one/shared/interfaces';
-import { distinctUntilChanged, filter, map, merge } from 'rxjs';
+import { computeIsFoundation } from '@lfx-one/shared/utils';
+import { catchError, distinctUntilChanged, filter, map, merge, Observable, of, switchMap } from 'rxjs';
 
 import { ProjectContextService } from '../services/project-context.service';
+import { ProjectService } from '../services/project.service';
 
 /**
  * Writes the entity's context into the matching slot and re-points the route lens kind at the
@@ -50,13 +52,17 @@ export function applyEntityProjectContext(
  * `activeContext` from the persona-resolved selection to the project slot for the life of the
  * page, and an entity kind contradicting the URL prefix would re-point the kind while the URL
  * still reads otherwise — both behavior changes outside this fix's scope.
+ *
+ * `canonicalizeRoute` (opt-in, requires `preferEntityKind`): once the entity's kind is known
+ * and contradicts the URL's leading `/foundation|project` segment, rewrite the URL to the
+ * entity's tier so a copied link reflects ownership (GH-1567).
  */
 export function syncEntityProjectContext<T extends EntityWithProject>(
   entitySignal: Signal<T | null>,
   projectContextService: ProjectContextService,
   router: Router,
   destroyRef: DestroyRef,
-  options?: { preferEntityKind?: boolean }
+  options?: { preferEntityKind?: boolean; canonicalizeRoute?: boolean }
 ): void {
   const entityChanges$ = toObservable(entitySignal).pipe(
     distinctUntilChanged((a, b) => a?.uid === b?.uid && a?.project_uid === b?.project_uid && a?.project_slug === b?.project_slug)
@@ -95,10 +101,137 @@ export function syncEntityProjectContext<T extends EntityWithProject>(
         // a foundation-owned entity can sit under a /project/* route (e.g. meeting edit).
         const useFoundation = entity.is_foundation ?? router.url.startsWith('/foundation/');
         applyEntityProjectContext(projectContextService, context, useFoundation, syncUrl);
+        if (options?.canonicalizeRoute && entity.is_foundation != null) {
+          canonicalizeTierPrefix(router, entity.is_foundation, entity.project_slug);
+        }
       } else if (router.url.startsWith('/foundation/')) {
         projectContextService.setFoundation(context, syncUrl);
       } else {
         projectContextService.setProject(context, syncUrl);
+      }
+    });
+}
+
+// Swaps only the leading tier segment so the URL reflects entity ownership (GH-1567); the
+// already-canonical no-op keeps the NavigationEnd re-apply loop-free, replaceUrl keeps history clean.
+export function canonicalizeTierPrefix(router: Router, isFoundation: boolean, projectSlug: string): void {
+  const url = router.url;
+  const isFoundationUrl = url.startsWith('/foundation/');
+  const isProjectUrl = url.startsWith('/project/');
+  if ((!isFoundationUrl && !isProjectUrl) || isFoundationUrl === isFoundation) {
+    return;
+  }
+  const from = isFoundationUrl ? '/foundation/' : '/project/';
+  const to = isFoundation ? '/foundation/' : '/project/';
+  const urlTree = router.parseUrl(to + url.slice(from.length));
+  // router.url still carries the pre-sync ?project= (the Location.replaceState sync bypasses the
+  // router) — pin the entity's slug so projectQueryParamGuard reseeds the right project.
+  if ('project' in urlTree.queryParams) {
+    urlTree.queryParams['project'] = projectSlug;
+  }
+  router.navigateByUrl(urlTree, { replaceUrl: true });
+}
+
+/**
+ * Fallback companion to {@link syncEntityProjectContext} for entities whose payload lacks
+ * `project_slug` (BFF enrichment failure): resolves the project by uid and applies it, re-applied
+ * on every NavigationEnd (query-param step navigations re-assert the route's declared lens kind
+ * without re-running guards).
+ *
+ * `getProject(uid, false)` is relation-gated: when it resolves null for a caller without a viewer
+ * relation, `options.freshFetch` (when provided) re-fetches the entity detail uncached — the
+ * ungated detail enrichment can carry the slug the lookup withheld. Each uid gets one fresh
+ * attempt; transient failures release it so a later NavigationEnd retries. Fresh-fetch resolutions
+ * are cached per uid because the entity signal's payload never changes — without the cache the
+ * once-only retry guard would swallow the NavigationEnd re-apply and MainLayout's route-lens
+ * re-assert would clobber the resolved context.
+ *
+ * `canonicalizeRoute` mirrors the syncEntityProjectContext option: rewrite a wrong-tier URL to the
+ * resolved context's tier after applying it.
+ */
+export function syncEntityProjectContextFallback<T extends EntityWithProject>(
+  entitySignal: Signal<T | null>,
+  projectService: ProjectService,
+  projectContextService: ProjectContextService,
+  router: Router,
+  destroyRef: DestroyRef,
+  options?: {
+    entityKind?: string;
+    freshFetch?: (uid: string) => Observable<Pick<EntityWithProject, 'project_uid' | 'project_slug' | 'project_name' | 'is_foundation'> | null>;
+    canonicalizeRoute?: boolean;
+  }
+): void {
+  const freshFetchRetried = new Set<string>();
+  const resolvedCache = new Map<string, { context: ProjectContext; isFoundation: boolean }>();
+
+  // Last resort when the relation-gated project lookup returns null: the ungated detail
+  // enrichment can supply the project the lookup withheld. Emits null when it can't.
+  const resolveFromFreshFetch = (entity: EntityWithProject): Observable<{ context: ProjectContext; isFoundation: boolean } | null> => {
+    const freshFetch = options?.freshFetch;
+    if (!freshFetch || freshFetchRetried.has(entity.uid)) {
+      return of(null);
+    }
+    freshFetchRetried.add(entity.uid);
+    return freshFetch(entity.uid).pipe(
+      map((fresh) => {
+        if (!fresh?.project_slug) {
+          console.warn(`Unable to resolve project context for ${options?.entityKind ?? 'entity'} ${entity.uid}: detail payload carries no project_slug`);
+          return null;
+        }
+        const resolved = {
+          context: { uid: fresh.project_uid, name: fresh.project_name || fresh.project_slug, slug: fresh.project_slug },
+          isFoundation: fresh.is_foundation === true,
+        };
+        resolvedCache.set(entity.uid, resolved);
+        return resolved;
+      }),
+      catchError((error) => {
+        // Transient failures (network, 5xx) shouldn't burn the retry — release the uid so a later
+        // NavigationEnd re-apply can attempt the fresh fetch again.
+        freshFetchRetried.delete(entity.uid);
+        console.warn(`Unable to resolve project context for ${options?.entityKind ?? 'entity'} ${entity.uid}:`, error);
+        return of(null);
+      })
+    );
+  };
+
+  const unresolvedEntity$ = toObservable(entitySignal).pipe(distinctUntilChanged((a, b) => a?.uid === b?.uid && a?.project_uid === b?.project_uid));
+  const navigationReapply$ = router.events.pipe(
+    filter((event) => event instanceof NavigationEnd),
+    map(() => entitySignal())
+  );
+
+  merge(unresolvedEntity$, navigationReapply$)
+    .pipe(
+      filter((entity): entity is T => !!entity?.project_uid && !entity.project_slug),
+      switchMap((entity) => {
+        const cached = resolvedCache.get(entity.uid);
+        if (cached) {
+          return of(cached);
+        }
+        // `current: false` so the fetch doesn't clobber ProjectService's shared `project` state;
+        // null on failure leaves the (stale) context untouched rather than erroring the page.
+        return projectService.getProject(entity.project_uid, false).pipe(
+          switchMap((project) => {
+            if (!project) {
+              return resolveFromFreshFetch(entity);
+            }
+            const context: ProjectContext = { uid: project.uid, name: project.name, slug: project.slug };
+            return of({ context, isFoundation: computeIsFoundation(project) });
+          })
+        );
+      }),
+      takeUntilDestroyed(destroyRef)
+    )
+    .subscribe((resolved) => {
+      if (!resolved) {
+        return;
+      }
+      // Mirror syncEntityProjectContext: only write ?project= to the URL when already present.
+      const syncUrl = 'project' in router.parseUrl(router.url).queryParams;
+      applyEntityProjectContext(projectContextService, resolved.context, resolved.isFoundation, syncUrl);
+      if (options?.canonicalizeRoute) {
+        canonicalizeTierPrefix(router, resolved.isFoundation, resolved.context.slug);
       }
     });
 }
