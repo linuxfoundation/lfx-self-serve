@@ -186,7 +186,19 @@ export function toBulkResponse(results: KeywordActionResponse[]): BulkKeywordAct
  * contract, but membership and count are. A criterion named twice in the request must be
  * confirmed twice, which is why counts are compared rather than sets.
  */
-function describeOutcomeMismatch(group: KeywordActionGroup, action: KeywordActionType, applied: CampaignServiceKeywordActions): string | null {
+function describeOutcomeMismatch(
+  group: KeywordActionGroup,
+  action: KeywordActionType,
+  applied: CampaignServiceKeywordActions,
+  expectedCampaignId: string
+): string | null {
+  // THE ECHO, same as the resolver's. `campaign_id` is part of the mutation contract and was
+  // never read: a misrouted or stale 2xx describing another campaign satisfies the count and
+  // multiset checks below, because those only compare against what WE sent -- nothing tied the
+  // response to the campaign it was sent for (Copilot).
+  if (applied?.campaign_id !== expectedCampaignId) {
+    return `campaign_id ${String(applied?.campaign_id)} != ${expectedCampaignId} requested`;
+  }
   const requested = toUpstreamActions(group.keywords, action);
   if (applied.applied_count !== requested.length) {
     return `applied_count ${applied.applied_count} != ${requested.length} requested`;
@@ -584,7 +596,7 @@ export async function applyKeywordActionsViaCampaignService(
       // short or altered response would agree with itself. Reporting every requested keyword as
       // changed on the strength of that would tell someone a still-spending keyword was paused,
       // which is the one thing this path must never do.
-      const mismatch = describeOutcomeMismatch(group, body.action, applied);
+      const mismatch = describeOutcomeMismatch(group, body.action, applied, ref.campaign_id);
       if (mismatch) {
         logger.warning(req, 'keyword_actions', 'Upstream confirmed a different set than was requested', {
           platformCampaignId: group.platformCampaignId,

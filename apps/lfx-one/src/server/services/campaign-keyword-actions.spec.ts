@@ -404,6 +404,34 @@ describe('classifyMutationFailure — what proves upstream answered', () => {
     expect(unattempted.every((r) => r.success === false)).toBe(true);
   });
 
+  it('refuses a MUTATION response that describes a different campaign', async () => {
+    // Copilot: `campaign_id` is part of the mutation contract and was never read. The count and
+    // multiset checks only compare against what WE sent, so nothing tied the response to the
+    // campaign it was sent FOR -- a misrouted or stale 2xx for another campaign satisfies them
+    // all and gets reported as an applied change. Sibling of the resolver echo, one call later.
+    const resolveGoogleAdsCampaign = vi
+      .fn()
+      .mockResolvedValue({ platform_campaign_id: 'camp-1', match_count: 1, matches: [{ brief_id: 'b-1', campaign_id: 'c-1' }] });
+    // Everything agrees EXCEPT the campaign it claims to describe.
+    const applyKeywordActions = vi
+      .fn()
+      .mockResolvedValue({ campaign_id: 'c-9', applied_count: 1, results: [{ ad_group_id: 'ag-1', criterion_id: 'k-1', action: 'PAUSE' }] });
+
+    const client = { resolveGoogleAdsCampaign, applyKeywordActions } as never;
+    // action 'pause' matches the kw() helper's own action, so the multiset key agrees and
+    // ONLY campaign_id can fail this. With 'remove' the action mismatched instead, and the test
+    // passed for the wrong reason -- it went green with the guard removed.
+    const body = { action: 'pause' as const, keywords: [kw('camp-1', 'k-1')] };
+    const req = { log: { warn: vi.fn(), info: vi.fn(), error: vi.fn(), debug: vi.fn() } } as never;
+
+    const res = await applyKeywordActionsViaCampaignService(req, client, 'aswf', body);
+
+    // Reported UNCONFIRMED, not applied: the mutation was dispatched, so nobody can say what
+    // happened to the campaign we asked about -- only that this answer is not about it.
+    expect(res.results[0].success, 'a response for another campaign was reported as applied').toBe(false);
+    expect(String(res.results[0].message)).toMatch(/did not match the request/i);
+  });
+
   it('refuses a resolution that describes a DIFFERENT campaign', async () => {
     // Copilot: `platform_campaign_id` is part of the resolution contract and nothing checked it.
     // A stale or misrouted 200 for another campaign is internally CONSISTENT -- count agrees,
@@ -585,7 +613,7 @@ describe('applyKeywordActionsViaCampaignService — the fan-out stop', () => {
       // Echoes whichever campaign is asked for -- this case drives more than one group, and a
       // fixed echo would fail the new guard on the second rather than exercising the fan-out.
       .mockImplementation((_r: unknown, _s: string, id: string) =>
-        Promise.resolve({ platform_campaign_id: id, match_count: 1, matches: [{ brief_id: 'b-1', campaign_id: 'c-1' }] })
+        Promise.resolve({ platform_campaign_id: id, match_count: 1, matches: [{ brief_id: 'b-1', campaign_id: 'c-2' }] })
       );
     const applyKeywordActions = vi
       .fn()
