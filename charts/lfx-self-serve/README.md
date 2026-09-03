@@ -220,6 +220,24 @@ The other three flags in the table -- `..._DEMAND_GEN`, `..._INSIGHTS` and
 independent moves, each with its own prerequisite noted in the table; nothing below applies to
 them.
 
+### Before enabling `..._CREATE`
+
+It changes where ad credentials come from. campaign-service reads them from its own encrypted
+connection tables, never from this application's `GADS_*` / `LINKEDIN_*` environment variables.
+Two things must be true per project, and neither fails at deploy time — both surface per-campaign
+at dispatch:
+
+- **A usable credential source must resolve.** Either works: a live project connection, in which
+  case the spend lands on the project's own ad account; or the LF system-account fallback, in
+  which case **the spend lands on the LF's**. A project connection is therefore not mandatory for
+  the dispatch to succeed — it decides who is billed.
+- **The project must not have DISCONNECTED.** This is the case that actually fails closed. A
+  soft-deleted row is a statement, not an absence, so the fallback is refused rather than used.
+
+One behaviour does change today: with JOBS on, a poll for a UUID job id requires `?project=` and
+is refused with a 400 without it. The LFX One client always sends it, so in-product polling is
+unaffected; a direct API caller or a saved script may not.
+
 Every cutover flag in the table above is ON for `true`, `1`, `yes`, or `on` — trimmed and matched
 case-insensitively, so `"True"` and `" on "` also enable it. Every other value is OFF, including
 unset, empty, `0`, `false`, and any misspelling. Do not read "only `true` works" into that: an
