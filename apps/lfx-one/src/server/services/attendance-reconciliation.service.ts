@@ -63,7 +63,7 @@ export class AttendanceReconciliationService {
   ): Promise<ReconcilePastMeetingParticipantsResponse> {
     logger.debug(req, 'reconcile_attendance_pool', 'Starting attendance reconciliation', { past_meeting_id: pastMeetingUid });
 
-    const participants = await this.meetingService.getPastMeetingParticipants(req, pastMeetingUid);
+    const participants = await this.meetingService.getPastMeetingParticipants(req, pastMeetingUid, true);
     const unverified = participants.filter((p) => p.is_attended && !p.is_verified);
 
     if (unverified.length === 0) {
@@ -227,7 +227,7 @@ export class AttendanceReconciliationService {
 
     const perOccurrence = await Promise.all(
       priorOccurrences.map((o) =>
-        this.meetingService.getPastMeetingParticipants(req, o.meeting_and_occurrence_id).catch((error) => {
+        this.meetingService.getPastMeetingParticipants(req, o.meeting_and_occurrence_id, true).catch((error) => {
           logger.warning(req, 'reconcile_attendance_pool', 'Failed to fetch prior occurrence participants, continuing without them', {
             past_meeting_id: o.meeting_and_occurrence_id,
             err: error,
@@ -308,17 +308,27 @@ export class AttendanceReconciliationService {
       const email = attendee.email?.trim().toLowerCase();
       const username = attendee.username?.trim().toLowerCase();
 
-      const match =
-        (email && candidates.find((c) => c.email?.trim().toLowerCase() === email)) ||
-        (username && candidates.find((c) => c.username?.trim().toLowerCase() === username));
+      // The pool deliberately keeps candidates with the same email but conflicting usernames as
+      // separate entries (see buildCandidatePool/isSamePersonForReconciliation), so an attendee's
+      // email and username can each resolve to a different candidate. Collect every distinct
+      // candidate matched by either identifier rather than taking the first hit — auto-applying
+      // against whichever candidate happened to be inserted first would risk writing the wrong
+      // identity. Only a single, unambiguous candidate may match deterministically.
+      const matchedCandidates = new Map<string, AttendanceReconciliationCandidate>();
+      if (email) {
+        candidates.filter((c) => c.email?.trim().toLowerCase() === email).forEach((c) => matchedCandidates.set(c.candidate_id, c));
+      }
+      if (username) {
+        candidates.filter((c) => c.username?.trim().toLowerCase() === username).forEach((c) => matchedCandidates.set(c.candidate_id, c));
+      }
 
-      if (match) {
+      if (matchedCandidates.size === 1) {
         deterministic.push({
           attendee_id: attendee.uid,
           zoom_user_name: this.getDisplayName(attendee),
           confidence: 'high',
           method: 'deterministic',
-          matched_candidate: match,
+          matched_candidate: [...matchedCandidates.values()][0],
           auto_applied: false,
         });
       } else {

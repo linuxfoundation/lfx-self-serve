@@ -359,13 +359,16 @@ export class MeetingService {
       meeting_id: meetingUid,
     });
 
-    const records = await fetchAllQueryResources<PastMeeting>(req, (pageToken) =>
-      this.microserviceProxy.proxyRequest<QueryServiceResponse<PastMeeting>>(req, 'LFX_V2_SERVICE', '/query/resources', 'GET', {
-        type: 'v1_past_meeting',
-        filters: [`meeting_id:${meetingUid}`],
-        page_size: 500,
-        ...(pageToken && { page_token: pageToken }),
-      })
+    const records = await fetchAllQueryResources<PastMeeting>(
+      req,
+      (pageToken) =>
+        this.microserviceProxy.proxyRequest<QueryServiceResponse<PastMeeting>>(req, 'LFX_V2_SERVICE', '/query/resources', 'GET', {
+          type: 'v1_past_meeting',
+          filters: [`meeting_id:${meetingUid}`],
+          page_size: 500,
+          ...(pageToken && { page_token: pageToken }),
+        }),
+      { failOnPartial: options.throwOnFailure }
     ).catch((error) => {
       if (options.throwOnFailure) {
         throw error;
@@ -975,7 +978,7 @@ export class MeetingService {
    * through a "bridge" record B (e.g. A and B share an email, B and C share a username), and a
    * one-pass merge would miss that A and C belong to the same person depending on encounter order.
    */
-  public async getPastMeetingParticipants(req: Request, pastMeetingUid: string): Promise<PastMeetingParticipant[]> {
+  public async getPastMeetingParticipants(req: Request, pastMeetingUid: string, failOnPartial: boolean = false): Promise<PastMeetingParticipant[]> {
     logger.debug(req, 'get_past_meeting_participants', 'Fetching past meeting participants', {
       past_meeting_id: pastMeetingUid,
     });
@@ -985,11 +988,14 @@ export class MeetingService {
       tags: `meeting_and_occurrence_id:${pastMeetingUid}`,
     };
 
-    const raw = await fetchAllQueryResources<PastMeetingParticipant>(req, (pageToken) =>
-      this.microserviceProxy.proxyRequest<QueryServiceResponse<PastMeetingParticipant>>(req, 'LFX_V2_SERVICE', '/query/resources', 'GET', {
-        ...params,
-        ...(pageToken && { page_token: pageToken }),
-      })
+    const raw = await fetchAllQueryResources<PastMeetingParticipant>(
+      req,
+      (pageToken) =>
+        this.microserviceProxy.proxyRequest<QueryServiceResponse<PastMeetingParticipant>>(req, 'LFX_V2_SERVICE', '/query/resources', 'GET', {
+          ...params,
+          ...(pageToken && { page_token: pageToken }),
+        }),
+      { failOnPartial }
     );
 
     // Plain union-find over connected identity-match edges (pure transitive closure, no

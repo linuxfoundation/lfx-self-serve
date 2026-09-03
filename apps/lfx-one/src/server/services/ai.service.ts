@@ -362,7 +362,10 @@ export class AiService {
    * new instructions into the prompt.
    */
   private escapeForPrompt(value: string): string {
-    return value.replace(/[\r\n]+/g, ' ').replace(/"/g, '\\"');
+    return value
+      .replace(/[\r\n]+/g, ' ')
+      .replace(/\\/g, '\\\\')
+      .replace(/"/g, '\\"');
   }
 
   private buildReconciliationPrompt(request: ReconcileAttendeesRequest): string {

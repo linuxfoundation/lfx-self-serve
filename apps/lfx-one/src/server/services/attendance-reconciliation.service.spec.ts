@@ -204,7 +204,7 @@ describe('AttendanceReconciliationService', () => {
       // The current occurrence must be fetched once for its own participants, and the prior-occurrence
       // scan must exclude it (only 'occ-0' is scanned) — two calls total, not three.
       expect(getPastMeetingParticipants).toHaveBeenCalledTimes(2);
-      expect(getPastMeetingParticipants).toHaveBeenCalledWith(req, 'occ-0');
+      expect(getPastMeetingParticipants).toHaveBeenCalledWith(req, 'occ-0', true);
     });
 
     it('leaves a high-confidence match for review when the write to persist it fails', async () => {
