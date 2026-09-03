@@ -1796,16 +1796,24 @@ export class PlanningTabComponent implements OnInit {
           // answer overwrite a newer one — and a stale not-found leaves hsNotFound true with no
           // token, which re-offers Create for a search that has already been superseded. The
           // generation counter is the only thing that tells two identical-looking lookups apart.
-          // RETIRE BEFORE THE GUARDS. A positive find is a fact about the CAMPAIGN, not about
-          // this panel: if the lookup found it, it exists, whether or not the operator has since
-          // moved on. Sitting below the guards, a superseded re-check discarded the only evidence
-          // that clears the record -- so an A -> B -> A round trip could leave Create suppressed
-          // with the answer already in hand, and no way to ask again that would land.
+          // RETIRE ONLY WHEN THE ANSWER IS STILL CURRENT FOR THIS KEY. Two reviewers found the
+          // two ways this goes wrong, and they pull in opposite directions:
           //
-          // My comment inside the branch claimed this was already done before the guards. It was
-          // not; the guards returned first (Copilot). Same shape as the create arms, which record
-          // before the guards for exactly this reason.
-          if (result?.found) {
+          //   - BELOW the guards, a superseded positive find is discarded, so the only evidence
+          //     that clears the record is thrown away and Create stays suppressed with the answer
+          //     already in hand.
+          //   - ABOVE the guards unconditionally, a STALE positive find clears the record while a
+          //     newer not-found is what renders. `hsNotFound` stays true, `hsCreateBlocked` goes
+          //     false, and the template gates Create on `hsNotFound() && !hsUtm() &&
+          //     !hsCreateSuppressed()` -- it never reads hsCreateBlocked. So Create is offered for
+          //     a campaign that exists. That is the duplicate this whole record prevents.
+          //
+          // `panelStillShows` is the right test and the generation counter is not: the record is
+          // keyed `foundation|event`, so what matters is whether the answer describes the key the
+          // panel is showing, not whether this particular request is the newest. A superseded
+          // lookup for the SAME key still proves the campaign exists; one for a different key
+          // proves nothing about this one.
+          if (result?.found && this.panelStillShows(capturedEvent, capturedFoundation)) {
             this.retireCreatedRecord(capturedFoundation, capturedEvent);
           }
           if (!this.lookupIsCurrent(generation)) return;
