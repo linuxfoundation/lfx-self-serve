@@ -172,13 +172,6 @@ export function toBulkResponse(results: KeywordActionResponse[]): BulkKeywordAct
 }
 
 /**
- * Why a campaign could not be acted on, in words a user can act on.
- *
- * Both cases are refusals rather than errors upstream, so they arrive as ordinary answers and
- * have to be turned into per-keyword failures here.
- */
-
-/**
  * Compare what upstream confirmed against what was requested; returns a short description of the
  * difference, or null when they match.
  *
@@ -192,15 +185,12 @@ function describeOutcomeMismatch(
   applied: CampaignServiceKeywordActions,
   expectedCampaignId: string
 ): string | null {
-  // WHICH CAMPAIGN, before which criteria. Every check below verifies that the criteria coming
-  // back match the criteria sent, but none of them asks whether the response describes the
-  // campaign we mutated -- so a well-formed result set echoed for a DIFFERENT campaign passes
-  // all of them, and this path reports "paused" against a campaign that is still spending.
-  //
-  // Checked first because it is the cheapest and the most fundamental: if the response is about
-  // another campaign, nothing else it says is evidence about ours.
-  if (applied.campaign_id !== expectedCampaignId) {
-    return `upstream confirmed campaign ${applied.campaign_id} but ${expectedCampaignId} was requested`;
+  // THE ECHO, same as the resolver's. `campaign_id` is part of the mutation contract and was
+  // never read: a misrouted or stale 2xx describing another campaign satisfies the count and
+  // multiset checks below, because those only compare against what WE sent -- nothing tied the
+  // response to the campaign it was sent for (Copilot).
+  if (applied?.campaign_id !== expectedCampaignId) {
+    return `campaign_id ${String(applied?.campaign_id)} != ${expectedCampaignId} requested`;
   }
   const requested = toUpstreamActions(group.keywords, action);
   if (applied.applied_count !== requested.length) {
@@ -312,7 +302,7 @@ function upstreamAnswered(error: unknown): boolean {
   }
   // The APPLICATION must have answered, not merely some HTTP layer. A status alone does not
   // establish that: executeRequest raises the same MicroserviceError shape for EVERY !response.ok
-  // (api-client.service.ts:289), so an ingress 502/503/504 that campaign-service never saw
+  // (see `executeRequest`'s `!response.ok` arm), so an ingress 502/503/504 campaign-service never saw
   // carries a real status and no originalError. Reading those as replies reported a gateway
   // timeout as a DEFINITE failure -- its text has no unconfirmed marker -- and invited a retry of
   // a REMOVE that Google cannot undo.
@@ -373,7 +363,14 @@ export function classifyMutationFailure(error: unknown): string {
   return refusedAtBoundary ? raw : `${CAMPAIGN_OUTCOME_UNCONFIRMED} (${raw})`;
 }
 
+/**
+ * Why a campaign could not be acted on, in words a user can act on.
+ *
+ * Both cases are refusals rather than errors upstream, so they arrive as ordinary answers and
+ * have to be turned into per-keyword failures here.
+ */
 export const CAMPAIGN_UNRESOLVED = 'This campaign is not managed here, so its keywords cannot be changed.';
+
 /**
  * A lookup that FAILED, as distinct from one that answered "no such campaign".
  *
@@ -389,7 +386,7 @@ export const CAMPAIGN_DEADLINE_EXCEEDED = 'Not attempted: the request ran out of
 /**
  * Wall-clock budget for the whole fan-out, in ms.
  *
- * 45s against the ingress's documented 60s read timeout (`campaign-proxy.service.ts:1009-1010`).
+ * 45s against the ingress's documented 60s read timeout (`campaign-proxy.service.ts` documents the same ceiling).
  * The row cap bounds how MANY campaigns a request can name; it cannot bound how LONG they take,
  * and each one costs two sequential proxy calls at the client's 30s default. So a request of
  * slow-but-reachable campaigns could still exceed the ingress window -- and when it does, ingress
@@ -448,7 +445,14 @@ export async function applyKeywordActionsViaCampaignService(
     // Checked BETWEEN groups, never mid-group: a campaign is resolved and then mutated, and
     // abandoning between those two calls is the one split that could leave a group half-applied
     // with nothing recorded. Whole groups are the only safe unit to stop on.
-    if (!transportFailed && Date.now() - startedAt >= KEYWORD_ACTION_DEADLINE_MS) {
+    // ONE clock read feeds both the admission decision and the budget below. Reading it twice
+    // let the boundary fall BETWEEN them: the check passed with a millisecond to spare, then
+    // `resolveBudgetMs` recomputed to zero or negative and was passed to the resolver as its
+    // timeout -- an instant timeout, which the catch reads as a transport outage and which
+    // therefore stops every remaining group (Copilot).
+    const elapsedMs = Date.now() - startedAt;
+    const groupBudgetMs = KEYWORD_ACTION_DEADLINE_MS - elapsedMs;
+    if (!transportFailed && groupBudgetMs <= 0) {
       results.push(...failedResults(group, body.action, CAMPAIGN_DEADLINE_EXCEEDED));
       continue;
     }
@@ -467,10 +471,24 @@ export async function applyKeywordActionsViaCampaignService(
       // then lost when ingress closes the request, leaving an applied bulk REMOVE unreported
       // (Copilot).
       //
-      // Recomputed before the mutation below rather than reused, so the second call gets what is
-      // actually left rather than what was left before this one ran.
-      const resolveBudgetMs = KEYWORD_ACTION_DEADLINE_MS - (Date.now() - startedAt);
+      // The SAME value the admission check used -- not a second read, which is what let a
+      // non-positive budget reach the call. The mutation below recomputes, because the resolve
+      // has run by then and genuinely consumed time.
+      const resolveBudgetMs = groupBudgetMs;
       const resolution = await client.resolveGoogleAdsCampaign(req, projectSlug, group.platformCampaignId, resolveBudgetMs);
+      // THE ECHO MUST MATCH WHAT WE ASKED FOR. `platform_campaign_id` is part of the resolution
+      // contract and nothing checked it: a stale or misrouted 200 describing a DIFFERENT campaign
+      // is internally consistent -- count agrees, array agrees, ids are well-formed -- so every
+      // other check passes and the mutation applies to the wrong campaign (Copilot).
+      //
+      // Refused rather than treated as unresolved: "not managed here" tells the operator to stop
+      // trying a campaign that may well be theirs, and this response says nothing about their
+      // campaign either way. It is a lookup that cannot be trusted, which is what
+      // CAMPAIGN_LOOKUP_FAILED means.
+      if (resolution?.platform_campaign_id !== group.platformCampaignId) {
+        results.push(...failedResults(group, body.action, CAMPAIGN_LOOKUP_FAILED));
+        continue;
+      }
       // The COUNT and the ARRAY must agree, and that is checked on EVERY arm rather than only
       // where a match is consumed. `match_count: 0` with a NON-empty `matches` is upstream
       // contradicting itself, and answering "not managed here" on it would tell the operator to
@@ -513,22 +531,6 @@ export async function applyKeywordActionsViaCampaignService(
         // unmanaged. Saying "not managed here" tells the operator to stop trying, and a
         // still-spending campaign keeps spending. Only match_count === 0 is upstream actually
         // answering "not yours"; this is upstream contradicting itself, which is transient.
-        results.push(...failedResults(group, body.action, CAMPAIGN_LOOKUP_FAILED));
-        continue;
-      }
-      // The resolution must describe the campaign we ASKED about. Every check above establishes
-      // that the response is internally consistent and carries usable ids -- none asks whether
-      // those ids belong to `group.platformCampaignId`. A resolution echoed for a different
-      // campaign satisfies all of them, and the mutation below would then pause keywords on a
-      // campaign nobody named.
-      //
-      // CAMPAIGN_LOOKUP_FAILED for the same reason as the id-less case: upstream contradicting
-      // the request is transient, not proof the campaign is unmanaged.
-      if (resolution.platform_campaign_id !== group.platformCampaignId) {
-        logger.warning(req, 'keyword_actions', 'Resolution describes a different campaign than was requested', {
-          requested: group.platformCampaignId,
-          returned: resolution.platform_campaign_id,
-        });
         results.push(...failedResults(group, body.action, CAMPAIGN_LOOKUP_FAILED));
         continue;
       }

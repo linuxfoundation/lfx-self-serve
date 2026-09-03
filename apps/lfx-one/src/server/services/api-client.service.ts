@@ -6,51 +6,6 @@ import { ApiClientConfig, ApiRequestOptions, ApiResponse } from '@lfx-one/shared
 import { MicroserviceError } from '../errors';
 import { getHttpErrorCode } from '../helpers/http-status.helper';
 
-/**
- * Read and parse an error response body, keeping the two failures distinct.
- *
- * ONE helper for both request paths deliberately. The read and the parse were previously wrapped
- * in a single `try` with an empty `catch` at each call site, which conflated two opposite
- * outcomes: a JSON parse failure means the upstream ANSWERED and the answer was not JSON (benign
- * -- status and statusText already describe it), while a `response.text()` failure means the
- * body never finished arriving. The second is a TRANSPORT failure: the request's outcome is
- * unknown, and reporting the upstream's status for it tells the caller we received an answer we
- * never got. A non-idempotent caller then retries a request that may already have landed.
- *
- * Duplicating this logic per call site is what let one arm drift from the other, so both arms
- * call this and a guard cannot be dropped from one alone.
- *
- * @throws MicroserviceError with `transportFailure: true` when the body could not be READ.
- */
-async function readErrorBody(response: Response, url: string, operation: string): Promise<unknown> {
-  let errorText: string;
-  try {
-    errorText = await response.text();
-  } catch (readError: unknown) {
-    // An aborted/timed-out read is a 408; any other read failure is a 503. Both are UNCONFIRMED
-    // outcomes -- never a definite refusal -- so they carry `transportFailure` and a fixed public
-    // message rather than the upstream's status.
-    const timedOut = readError instanceof Error && (readError.name === 'AbortError' || readError.name === 'TimeoutError');
-    throw new MicroserviceError('The request could not be completed. Please try again.', timedOut ? 408 : 503, timedOut ? 'TIMEOUT' : 'NETWORK_ERROR', {
-      operation,
-      service: 'api_client_service',
-      path: url,
-      originalError: readError instanceof Error ? readError : undefined,
-      transportFailure: true,
-    });
-  }
-
-  if (!errorText) return null;
-  try {
-    return JSON.parse(errorText);
-  } catch {
-    // The upstream answered with a non-JSON body. That is not a transport failure: status and
-    // statusText already carry what the caller needs, and the raw text is deliberately NOT
-    // surfaced (it can carry upstream internals).
-    return null;
-  }
-}
-
 export class ApiClientService {
   private readonly config: Required<ApiClientConfig>;
 
@@ -214,12 +169,44 @@ export class ApiClientService {
     }
 
     if (!response.ok) {
-      // A read failure here THROWS from readErrorBody with transportFailure -- it is not an
-      // upstream answer and must not be reported as one.
-      const errorBody = await readErrorBody(response, url, 'api_client_stream_error_body_read');
-      // Fixed public message. The upstream's own text can carry internals, so the status code
-      // and the structured `errorBody` (server-side context only) carry the detail instead.
-      throw new MicroserviceError('The request could not be completed. Please try again.', response.status, getHttpErrorCode(response.status), {
+      // BODY READ and JSON PARSE separated, same as executeRequest. One try around both swallowed
+      // a mid-body connection drop as if it were unparseable JSON, dropping `transport: true` and
+      // letting an unconfirmed write read as an answered refusal. Found in the sibling first and
+      // swept here rather than waiting for it to be reported again (Copilot).
+      let errorText: string;
+      try {
+        errorText = await response.text();
+      } catch (readError: unknown) {
+        if (response.status >= 400 && response.status < 500 && response.status !== 408) {
+          throw new MicroserviceError(response.statusText || 'The upstream request was rejected.', response.status, getHttpErrorCode(response.status), {
+            operation: 'api_client_stream_request',
+            service: 'api_client_service',
+            path: url,
+            originalError: readError instanceof Error ? readError : undefined,
+          });
+        }
+        const timedOut = readError instanceof Error && (readError.name === 'AbortError' || readError.name === 'TimeoutError');
+        throw new MicroserviceError('The request could not be completed. Please try again.', timedOut ? 408 : 503, timedOut ? 'TIMEOUT' : 'NETWORK_ERROR', {
+          operation: 'api_client_stream_error_body_read',
+          service: 'api_client_service',
+          path: url,
+          originalError: readError instanceof Error ? readError : undefined,
+          transportFailure: true,
+        });
+      }
+
+      // Only the PARSE is swallowed: a non-JSON body is still an answer, and we already have
+      // status + statusText.
+      let errorBody: any = null;
+      try {
+        if (errorText) {
+          errorBody = JSON.parse(errorText);
+        }
+      } catch {
+        // Non-JSON error body is fine — we already have status + statusText.
+      }
+      const errorMessage = errorBody?.message || errorBody?.error || response.statusText;
+      throw new MicroserviceError(errorMessage, response.status, getHttpErrorCode(response.status), {
         operation: 'api_client_stream_request',
         service: 'api_client_service',
         path: url,
@@ -327,11 +314,53 @@ export class ApiClientService {
       const response = await fetch(url, requestInit);
 
       if (!response.ok) {
-        // Same contract as the stream path: a body READ failure throws as a transport failure
-        // rather than borrowing the upstream's status.
-        const errorBody = await readErrorBody(response, url, 'api_client_error_body_read');
+        // BODY READ and JSON PARSE are separated, because they fail for different reasons and
+        // only one of them is safe to swallow.
+        //
+        // A single try around both swallowed a mid-body connection drop or read timeout as if it
+        // were unparseable JSON: the resulting MicroserviceError carried no `transport: true`,
+        // and the guard in the catch below rethrows an already-classified error untouched -- so
+        // an UNCONFIRMED write left looking like an answered upstream refusal, which is the one
+        // reading that tells a caller retrying is safe (Copilot).
+        let errorText: string;
+        try {
+          errorText = await response.text();
+        } catch (readError: unknown) {
+          if (response.status >= 400 && response.status < 500 && response.status !== 408) {
+            throw new MicroserviceError(response.statusText || 'The upstream request was rejected.', response.status, getHttpErrorCode(response.status), {
+              operation: options.binary ? 'api_client_binary_request' : 'api_client_request',
+              service: 'api_client_service',
+              path: url,
+              originalError: readError instanceof Error ? readError : undefined,
+            });
+          }
+          // The status arrived; the body did not. Nothing here establishes what upstream did with
+          // the request, so it is classified like any other transport failure rather than
+          // reported as this status.
+          const timedOut = readError instanceof Error && (readError.name === 'AbortError' || readError.name === 'TimeoutError');
+          throw new MicroserviceError('The request could not be completed. Please try again.', timedOut ? 408 : 503, timedOut ? 'TIMEOUT' : 'NETWORK_ERROR', {
+            operation: 'api_client_error_body_read',
+            service: 'api_client_service',
+            path: url,
+            originalError: readError instanceof Error ? readError : undefined,
+            transportFailure: true,
+          });
+        }
 
-        throw new MicroserviceError('The request could not be completed. Please try again.', response.status, getHttpErrorCode(response.status), {
+        // Only the PARSE is swallowed. An unparseable body is still an answer -- upstream replied
+        // with this status, and the basic HTTP error describes it honestly.
+        let errorBody: any = null;
+        try {
+          if (errorText) {
+            errorBody = JSON.parse(errorText);
+          }
+        } catch {
+          // If we can't parse the error body, we'll use the basic HTTP error
+        }
+
+        const errorMessage = errorBody?.message || errorBody?.error || response.statusText;
+
+        throw new MicroserviceError(errorMessage, response.status, getHttpErrorCode(response.status), {
           operation: options.binary ? 'api_client_binary_request' : 'api_client_request',
           service: 'api_client_service',
           path: url,
