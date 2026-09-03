@@ -169,10 +169,28 @@ export class ApiClientService {
     }
 
     if (!response.ok) {
-      // Read body once for error context.
+      // BODY READ and JSON PARSE separated, same as executeRequest. One try around both swallowed
+      // a mid-body connection drop as if it were unparseable JSON, dropping `transport: true` and
+      // letting an unconfirmed write read as an answered refusal. Found in the sibling first and
+      // swept here rather than waiting for it to be reported again (Copilot).
+      let errorText: string;
+      try {
+        errorText = await response.text();
+      } catch (readError: unknown) {
+        const timedOut = readError instanceof Error && (readError.name === 'AbortError' || readError.name === 'TimeoutError');
+        throw new MicroserviceError('The request could not be completed. Please try again.', timedOut ? 408 : 503, timedOut ? 'TIMEOUT' : 'NETWORK_ERROR', {
+          operation: 'api_client_stream_error_body_read',
+          service: 'api_client_service',
+          path: url,
+          originalError: readError instanceof Error ? readError : undefined,
+          transportFailure: true,
+        });
+      }
+
+      // Only the PARSE is swallowed: a non-JSON body is still an answer, and we already have
+      // status + statusText.
       let errorBody: any = null;
       try {
-        const errorText = await response.text();
         if (errorText) {
           errorBody = JSON.parse(errorText);
         }
@@ -288,10 +306,35 @@ export class ApiClientService {
       const response = await fetch(url, requestInit);
 
       if (!response.ok) {
-        // Try to parse error response body for additional details
+        // BODY READ and JSON PARSE are separated, because they fail for different reasons and
+        // only one of them is safe to swallow.
+        //
+        // A single try around both swallowed a mid-body connection drop or read timeout as if it
+        // were unparseable JSON: the resulting MicroserviceError carried no `transport: true`,
+        // and the guard in the catch below rethrows an already-classified error untouched -- so
+        // an UNCONFIRMED write left looking like an answered upstream refusal, which is the one
+        // reading that tells a caller retrying is safe (Copilot).
+        let errorText: string;
+        try {
+          errorText = await response.text();
+        } catch (readError: unknown) {
+          // The status arrived; the body did not. Nothing here establishes what upstream did with
+          // the request, so it is classified like any other transport failure rather than
+          // reported as this status.
+          const timedOut = readError instanceof Error && (readError.name === 'AbortError' || readError.name === 'TimeoutError');
+          throw new MicroserviceError('The request could not be completed. Please try again.', timedOut ? 408 : 503, timedOut ? 'TIMEOUT' : 'NETWORK_ERROR', {
+            operation: 'api_client_error_body_read',
+            service: 'api_client_service',
+            path: url,
+            originalError: readError instanceof Error ? readError : undefined,
+            transportFailure: true,
+          });
+        }
+
+        // Only the PARSE is swallowed. An unparseable body is still an answer -- upstream replied
+        // with this status, and the basic HTTP error describes it honestly.
         let errorBody: any = null;
         try {
-          const errorText = await response.text();
           if (errorText) {
             errorBody = JSON.parse(errorText);
           }

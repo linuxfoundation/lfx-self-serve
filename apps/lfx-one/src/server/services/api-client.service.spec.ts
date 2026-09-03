@@ -96,6 +96,83 @@ describe('ApiClientService — transport failures are always classified', () => 
     expect(err.toResponse()['transport'], 'a timeout lost the transport marker').toBe(true);
   });
 
+  it.each([
+    ['a read timeout', Object.assign(new Error('body read timed out'), { name: 'TimeoutError' }), 408],
+    ['a dropped connection', new TypeError('terminated'), 503],
+  ])('marks %s while reading a non-2xx body as transport, not as that status', async (_label, readError, expectedStatus) => {
+    // Copilot: one try wrapped BOTH the body read and the JSON parse, so a mid-body connection
+    // drop was swallowed as if it were unparseable JSON. The resulting error carried no
+    // `transport: true`, and the guard in the catch rethrows an already-classified error
+    // untouched -- so an UNCONFIRMED write read as an answered upstream refusal, which is the one
+    // reading that tells a caller retrying is safe.
+    vi.stubGlobal(
+      'fetch',
+      vi.fn(() =>
+        Promise.resolve({
+          ok: false,
+          status: 502,
+          statusText: 'Bad Gateway',
+          headers: new Headers(),
+          text: () => Promise.reject(readError),
+        })
+      )
+    );
+
+    const err = (await new ApiClientService({ retryAttempts: 1 }).request('POST', 'https://example.invalid/x').catch((e: unknown) => e)) as MicroserviceError;
+
+    expect(err).toBeInstanceOf(MicroserviceError);
+    // NOT 502: the status arrived, the body did not, and nothing establishes what upstream did.
+    expect(err.statusCode, 'a failed body read was reported as the upstream status').toBe(expectedStatus);
+    expect(err.toResponse()['transport'], 'a failed body read lost the transport marker').toBe(true);
+  });
+
+  it('marks a failed non-2xx body read in streamRequest as transport too', async () => {
+    // Swept, not reported: the same one-try-around-both gap existed in streamRequest, which
+    // carries its own copy of this handling. Each path needs its own case because neither
+    // exercises the other.
+    vi.stubGlobal(
+      'fetch',
+      vi.fn(() =>
+        Promise.resolve({
+          ok: false,
+          status: 502,
+          statusText: 'Bad Gateway',
+          headers: new Headers(),
+          text: () => Promise.reject(new TypeError('terminated')),
+        })
+      )
+    );
+
+    const err = (await new ApiClientService({ retryAttempts: 1 })
+      .streamRequest('POST', 'https://example.invalid/x')
+      .catch((e: unknown) => e)) as MicroserviceError;
+
+    expect(err.statusCode, 'a failed body read was reported as the upstream status').toBe(503);
+    expect(err.toResponse()['transport'], 'a failed body read lost the transport marker').toBe(true);
+  });
+
+  it('still reports an unparseable non-2xx body as that upstream status', async () => {
+    // The other direction: an unparseable body is still an ANSWER -- upstream replied with this
+    // status -- so it must NOT be recast as a transport failure.
+    vi.stubGlobal(
+      'fetch',
+      vi.fn(() =>
+        Promise.resolve({
+          ok: false,
+          status: 403,
+          statusText: 'Forbidden',
+          headers: new Headers(),
+          text: () => Promise.resolve('<html>not json</html>'),
+        })
+      )
+    );
+
+    const err = (await new ApiClientService({ retryAttempts: 1 }).request('GET', 'https://example.invalid/x').catch((e: unknown) => e)) as MicroserviceError;
+
+    expect(err.statusCode, 'an answered 403 was recast').toBe(403);
+    expect(err.toResponse()['transport']).toBeUndefined();
+  });
+
   it('does NOT recast a genuine upstream 4xx as a transport failure', async () => {
     // The non-2xx MicroserviceError is thrown INSIDE the same try as the fetch call, so a
     // catch-all fallback re-wraps it: a real 403 would leave as a 503 carrying transport:true,
