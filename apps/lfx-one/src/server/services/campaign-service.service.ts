@@ -1400,7 +1400,10 @@ export class CampaignServiceClient {
     projectSlug: string,
     briefId: string,
     campaignId: string,
-    actions: CampaignServiceKeywordActionInput[]
+    actions: CampaignServiceKeywordActionInput[],
+    // Caller-supplied budget, so a fan-out can BOUND this call rather than only checking a
+    // clock before starting it. Omitted falls back to the client's 30s default.
+    timeoutMs?: number
   ): Promise<CampaignServiceKeywordActions> {
     if (projectSlug === '' || briefId === '' || campaignId === '') {
       throw new Error('A keyword action requires the project, brief and campaign it applies to.');
@@ -1417,7 +1420,9 @@ export class CampaignServiceClient {
       `/projects/${encodeURIComponent(projectSlug)}/briefs/${encodeURIComponent(briefId)}/campaigns/${encodeURIComponent(campaignId)}/keyword-actions`,
       'POST',
       undefined,
-      { actions }
+      { actions },
+      undefined,
+      timeoutMs === undefined ? undefined : { timeoutMs }
     );
   }
 

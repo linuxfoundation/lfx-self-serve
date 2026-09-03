@@ -501,7 +501,19 @@ export async function applyKeywordActionsViaCampaignService(
     }
 
     try {
-      // SECOND deadline check, after the read-only resolve and before the irreversible mutation.
+      // The remaining budget BOUNDS the mutation, rather than only gating whether it starts.
+      //
+      // Checking the clock and then dispatching is not enough, which is what the previous two
+      // revisions of this got wrong: passing the check at 44s still permits a 30s call, running
+      // to ~74s against a 60s window (Copilot, three times). Passing the remainder as the call's
+      // own timeout is what makes the deadline real -- the request cannot outlive it.
+      //
+      // An expiry surfaces as a 408 from the client, which the mutation catch already classifies
+      // as UNCONFIRMED: the call was dispatched, so nobody can say whether it applied. That is
+      // the honest answer and it is the one already wired.
+      const remainingMs = KEYWORD_ACTION_DEADLINE_MS - (Date.now() - startedAt);
+
+      // Deadline check, after the read-only resolve and before the irreversible mutation.
       //
       // The between-groups check alone does not bound the request, which is what an earlier
       // version of this claimed: a group admitted at 44s can spend 30s resolving and 30s
@@ -512,11 +524,18 @@ export async function applyKeywordActionsViaCampaignService(
       // This is the only other point where stopping is SAFE. The resolve is a read, so
       // abandoning after it changes nothing upstream; abandoning after the mutation call has
       // started is what would leave a group applied but unrecorded.
-      if (Date.now() - startedAt >= KEYWORD_ACTION_DEADLINE_MS) {
+      if (remainingMs <= 0) {
         results.push(...failedResults(group, body.action, CAMPAIGN_DEADLINE_EXCEEDED));
         continue;
       }
-      const applied = await client.applyKeywordActions(req, projectSlug, ref.brief_id, ref.campaign_id, toUpstreamActions(group.keywords, body.action));
+      const applied = await client.applyKeywordActions(
+        req,
+        projectSlug,
+        ref.brief_id,
+        ref.campaign_id,
+        toUpstreamActions(group.keywords, body.action),
+        remainingMs
+      );
       // The 2xx is CHECKED, not assumed. Upstream's batch is all-or-nothing, so applied_count
       // should equal what was sent — but upstream derives it from the results it actually
       // returns (`AppliedCount: len(results)`) rather than asserting it against the request, so a
