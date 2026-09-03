@@ -202,6 +202,18 @@ export interface ClaGroupOption {
 }
 
 /**
+ * The contract types a CLA group offers, resolved to a definite answer per type.
+ *
+ * `ClaGroupOption` leaves both flags optional because the producer omits them for a group whose
+ * record it could not resolve. Anything reading them to decide something has to settle that
+ * first, so this is the settled form: absent has already been read as disabled.
+ */
+export interface ClaGroupEnablement {
+  iclaEnabled: boolean;
+  cclaEnabled: boolean;
+}
+
+/**
  * Response for `GET /api/me/clas/sign-options?q=` — mirrors the producer's `cla-search-list`
  * (#1250) rather than inventing a third shape.
  *

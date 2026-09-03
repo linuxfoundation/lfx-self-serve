@@ -439,9 +439,20 @@ describe('alreadySignedAgreementForIdentity', () => {
     expect(alreadySignedAgreementForIdentity(ecla, { platform: 'github', username: 'jellis', githubId: '12345' }, offered, iclaOnly)).toBeUndefined();
   });
 
-  it('does not treat a neither-enabled group as already signed', () => {
-    expect(alreadySignedAgreementForIdentity(held, { platform: 'github', username: 'jellis', githubId: '12345' }, offered, neither)).toBeUndefined();
-    expect(alreadySignedAgreementForIdentity(held, { platform: 'gerrit' }, offered, neither)).toBeUndefined();
+  it('blocks on any match when the group enables neither type', () => {
+    // Two false flags are what a group whose CLA Group record could not be resolved arrives as,
+    // not a group with nothing to sign. Taken at face value the enabled set is empty, every
+    // identity passes the subset test, and the #1914 block is silently off for that group — so
+    // the kind-blind block stands in, which is what this gate did before it knew about kinds.
+    expect(alreadySignedAgreementForIdentity(held, { platform: 'github', username: 'jellis', githubId: '12345' }, offered, neither)?.id).toBe('s1');
+    expect(alreadySignedAgreementForIdentity(held, { platform: 'gerrit' }, offered, neither)?.id).toBe('s2');
+  });
+
+  it('still leaves an unsigned identity selectable when the group enables neither type', () => {
+    // The fallback widens which matches block, never what counts as a match. An identity with no
+    // agreement of its own must stay selectable, or an unresolvable group would strand everyone.
+    expect(alreadySignedAgreementForIdentity(held, { platform: 'github', username: 'jellis-work', githubId: '67890' }, offered, neither)).toBeUndefined();
+    expect(alreadySignedAgreementForIdentity([held[0]!], { platform: 'gerrit' }, offered, neither)).toBeUndefined();
   });
 
   it('reports a kind the group still offers, not a newer one it has since dropped', () => {
