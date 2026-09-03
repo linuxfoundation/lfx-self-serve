@@ -224,12 +224,13 @@ describe('ProfileClasComponent', () => {
   });
 
   it('lets a long ECLA company name wrap inside a height-auto type pill', async () => {
-    await render([agreement({ id: 's-long', kind: 'ECLA', companyName: 'The Linux Foundation', pdfAvailable: false })]);
+    const longCompanyName = 'Example Employer With A Very Long Legal Name Corp.';
+    await render([agreement({ id: 's-long', kind: 'ECLA', companyName: longCompanyName, pdfAvailable: false })]);
 
     const badge = fixture.debugElement.query(By.css('[data-testid="agreement-type-s-long"]'));
     expect(badge).toBeTruthy();
     expect(badge.componentInstance).toBeInstanceOf(BadgeComponent);
-    expect(badge.componentInstance.value()).toBe('ECLA · The Linux Foundation');
+    expect(badge.componentInstance.value()).toBe(`ECLA · ${longCompanyName}`);
     expect(badge.componentInstance.styleClass()).toContain('!h-auto');
     expect(badge.componentInstance.styleClass()).toContain('!whitespace-normal');
   });
@@ -575,6 +576,15 @@ describe('ProfileClasComponent — Sign CLA hand-off and identity selection (#12
   let opened: unknown[];
   /** Records what each dialog was opened with, so the identity step's inputs are assertable. */
   let openedWith: { component: unknown; config: { header?: string; data?: SignIdentityDialogData | ClaGroupSelectDialogData } }[];
+  /**
+   * Manual control of the identity step's teardown, under `stepIdentityTeardown`.
+   *
+   * `onClose` and `onDestroy` are one event apart in PrimeNG but a whole leave animation apart in
+   * time, and the scroll lock is dropped at the end of it. Emitting both from `of()` collapses
+   * that distance, so a step reopened from `onClose` — the bug — passes as readily as one that
+   * waits. Separate subjects keep them tellable apart.
+   */
+  let identitySteps: { close: Subject<unknown>; destroy: Subject<unknown> };
 
   async function setup(
     options: {
@@ -586,6 +596,11 @@ describe('ProfileClasComponent — Sign CLA hand-off and identity selection (#12
       accountClosesWith?: SignIdentitySelectResult | null;
       dismissGroup?: 'close' | 'destroy' | 'hold';
       dismissAccount?: 'close' | 'destroy' | 'hold';
+      /**
+       * Drives the identity step's `onClose` and `onDestroy` from `identitySteps` instead of
+       * emitting both at once, so which of the two a follow-on step waits for is assertable.
+       */
+      stepIdentityTeardown?: boolean;
       /** Linked organizations on the selected group — the sole input to the routing decision. */
       organizations?: ClaGroupOrg[];
       iclaEnabled?: boolean;
@@ -605,6 +620,7 @@ describe('ProfileClasComponent — Sign CLA hand-off and identity selection (#12
     messageAdd = vi.fn();
     opened = [];
     openedWith = [];
+    identitySteps = { close: new Subject<unknown>(), destroy: new Subject<unknown>() };
     getGithubAccounts = vi.fn(options.accounts ?? (() => of(TWO_ACCOUNTS)));
     prepareSign = vi.fn(options.prepare ?? (() => of(PREPARED)));
     // Kept on the stub purely so a regression to client-side URL construction is assertable
@@ -622,6 +638,9 @@ describe('ProfileClasComponent — Sign CLA hand-off and identity selection (#12
       opened.push(component);
       openedWith.push({ component, config: config ?? {} });
       if (component === SignIdentitySelectComponent) {
+        if (options.stepIdentityTeardown) {
+          return { onClose: identitySteps.close.asObservable(), onDestroy: identitySteps.destroy.asObservable() };
+        }
         return dialogEvents(
           'accountClosesWith' in options ? options.accountClosesWith : { kind: 'github', githubId: '12345' },
           options.dismissAccount ?? 'close'
@@ -1373,6 +1392,37 @@ describe('ProfileClasComponent — Sign CLA hand-off and identity selection (#12
     expect(isStarting(fixture)).toBe(false);
   });
 
+  it('waits for the identity step to be torn down before opening the contract-type step', async () => {
+    const fixture = await setup({
+      organizations: [org('gerrit')],
+      iclaEnabled: true,
+      cclaEnabled: true,
+      stepIdentityTeardown: true,
+    });
+
+    await sign(fixture);
+    identitySteps.close.next({ kind: 'gerrit' });
+    await fixture.whenStable();
+
+    // Closed is not gone. PrimeNG starts the leave animation from this same emission, and its end
+    // is what drops `p-overflow-hidden` — so a step opened here has its own scroll lock stripped a
+    // moment after it appears, and the page scrolls behind it.
+    expect(opened).not.toContain(SignContractTypeSelectComponent);
+
+    // Re-entry stays refused across that gap, asserted through the action rather than the signal
+    // behind it: a second Sign CLA here is what would start a parallel hand-off.
+    const openedBefore = opened.length;
+    (fixture.componentInstance as any).openSignDialog();
+    await fixture.whenStable();
+
+    expect(opened).toHaveLength(openedBefore);
+
+    identitySteps.destroy.next(undefined);
+    await fixture.whenStable();
+
+    expect(opened).toContain(SignContractTypeSelectComponent);
+  });
+
   it('stops rather than navigating when neither contract type is enabled', async () => {
     const fixture = await setup({
       organizations: [org('gerrit')],
@@ -1385,7 +1435,14 @@ describe('ProfileClasComponent — Sign CLA hand-off and identity selection (#12
 
     expect(opened).not.toContain(SignContractTypeSelectComponent);
     expect(location.href).toBe(HOME);
-    expect(messageAdd).toHaveBeenCalledWith(expect.objectContaining({ severity: 'error' }));
+    // Asserted word for word. The contributor is being turned away at the last step before a
+    // signature, so the message has to say the group is misconfigured and who can fix it —
+    // a generic failure would read as a transient glitch worth retrying forever.
+    expect(messageAdd).toHaveBeenCalledWith({
+      severity: 'error',
+      summary: 'Could not start signing',
+      detail: 'This CLA group is not configured for individual or corporate signing from here. Contact the project CLA manager.',
+    });
   });
 
   // Blank and absent are one case, not two: the dialog trims before it builds the card, so a

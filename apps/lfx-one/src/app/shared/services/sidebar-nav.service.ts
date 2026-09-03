@@ -47,7 +47,7 @@ export class SidebarNavService {
   private readonly isOrgLensEnabled = this.featureFlagService.getBooleanFlag(ORG_LENS_ENABLED_FLAG, false);
   /** Dark-launch gate for the Akrites admin dashboard; hides the Security nav section when off. */
   private readonly isAkritesEnabled = this.featureFlagService.getBooleanFlag(AKRITES_ENABLED_FLAG, false);
-  /** Dark-launch gate for the Marketing OS marketplace; hides the Project Lens nav item when off. */
+  /** Dark-launch gate for the Marketing OS marketplace; hides the nav item on project and foundation lenses when off. */
   private readonly isMktgOsAgentsEnabled = this.featureFlagService.getBooleanFlag(MKTG_OS_AGENTS_ENABLED_FLAG, false);
   /** Dark-launch gate for the Org Lens ROI Metrics page; hides its org-lens nav entry when off. */
   private readonly isOrgLensRoiEnabled = this.featureFlagService.getBooleanFlag(ORG_LENS_ROI_ENABLED_FLAG, false);
@@ -361,30 +361,35 @@ export class SidebarNavService {
           label: DOCUMENT_LABEL.plural,
           icon: 'fa-light fa-folder-open',
           routerLink: '/foundation/documents',
-        },
-        {
-          label: 'Governance',
-          isSection: true,
-          expanded: true,
-          items: [
-            {
-              label: VOTE_LABEL.plural,
-              icon: 'fa-light fa-check-to-slot',
-              routerLink: '/foundation/votes',
-            },
-            {
-              label: SURVEY_LABEL.plural,
-              icon: 'fa-light fa-clipboard-list',
-              routerLink: '/foundation/surveys',
-            },
-            {
-              label: 'Permissions',
-              icon: 'fa-light fa-shield',
-              routerLink: '/foundation/settings',
-            },
-          ],
         }
       );
+
+      if (this.isMktgOsAgentsEnabled()) {
+        items.push(this.foundationMktgOsAgentsNavItem);
+      }
+
+      items.push({
+        label: 'Governance',
+        isSection: true,
+        expanded: true,
+        items: [
+          {
+            label: VOTE_LABEL.plural,
+            icon: 'fa-light fa-check-to-slot',
+            routerLink: '/foundation/votes',
+          },
+          {
+            label: SURVEY_LABEL.plural,
+            icon: 'fa-light fa-clipboard-list',
+            routerLink: '/foundation/surveys',
+          },
+          {
+            label: 'Permissions',
+            icon: 'fa-light fa-shield',
+            routerLink: '/foundation/settings',
+          },
+        ],
+      });
 
       if (this.canSeeNewsletters()) {
         items.push({
@@ -425,6 +430,13 @@ export class SidebarNavService {
           items: metricsItems,
         });
       }
+    }
+
+    // Marketing-only FGA users never enter the full-access block above, so the Documents /
+    // Governance insertion point never runs. Still surface Marketing OS when the flag is on —
+    // `/foundation/mktg-os-agents` is already routed and guarded for this lens.
+    if (this.isMktgOsAgentsEnabled() && !this.hasFullFoundationAccess()) {
+      items.push(this.foundationMktgOsAgentsNavItem);
     }
 
     const marketingSection = this.marketingSectionItem();
@@ -519,12 +531,19 @@ export class SidebarNavService {
     },
   ];
 
-  // --- Project Lens — Mktg OS agents (dark-launched; inserted directly under Documents in sidebarItems()) ---
+  // --- Project / Foundation — Mktg OS agents (dark-launched; inserted directly under Documents) ---
   private readonly mktgOsAgentsNavItem: SidebarMenuItem = {
     label: MKTG_OS_AGENTS_LABEL.nav,
     icon: 'fa-light fa-robot',
     routerLink: '/project/mktg-os-agents',
     testId: 'sidebar-project-mktg-os-agents',
+  };
+
+  private readonly foundationMktgOsAgentsNavItem: SidebarMenuItem = {
+    label: MKTG_OS_AGENTS_LABEL.nav,
+    icon: 'fa-light fa-robot',
+    routerLink: '/foundation/mktg-os-agents',
+    testId: 'sidebar-foundation-mktg-os-agents',
   };
 
   // --- Project Lens — Governance section (always surfaced under the Project lens) ---

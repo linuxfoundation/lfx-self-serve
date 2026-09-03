@@ -167,12 +167,15 @@ export interface ClaGroupOrg {
 /**
  * A CLA Group the contributor can choose to sign against (Sign CLA hand-off, #1251).
  *
- * The hand-off needs `claGroupId`, plus `iclaEnabled` / `cclaEnabled` on the Gerrit route, where
- * they decide the contract type and whether the contributor is asked for it (#2066). Every other
- * field is here so the picker can show which group this is and why it matched. Consumers MUST
- * ignore unknown fields rather than validate exhaustively, so the search can keep enriching this
- * without touching the hand-off — but the enablement flags are not that kind of field: dropping
- * them in a mapper reinstates #2066's silent default rather than degrading the display.
+ * The hand-off needs `claGroupId`, `organizations` to pick the GitHub / Gerrit / GitLab route,
+ * plus `iclaEnabled` / `cclaEnabled` on the Gerrit route, where they decide the contract type and
+ * whether the contributor is asked for it (#2066). Every other field is here so the picker can
+ * show which group this is and why it matched. Consumers MUST ignore unknown fields rather than
+ * validate exhaustively, so the search can keep enriching this without touching the hand-off —
+ * but those three are not that kind of field. When both enablement flags are absent, that reads
+ * as both disabled and resolves to `none`, so a mapper that drops them makes every Gerrit
+ * hand-off fail with "Could not start signing" rather than degrading the display. That is the
+ * intended failure: #2066 was a wrong agreement signed silently, and stopping is the safer end.
  *
  * Both display names are optional because the producer omits each independently: `projectName`
  * when the group maps to several projects with no foundation marker, `claGroupName` when the
@@ -203,7 +206,9 @@ export interface ClaGroupOption {
  * (#1250) rather than inventing a third shape.
  *
  * Not a bare array: `truncated` describes the result *set*, so it cannot ride inside one of
- * the results. The hand-off still consumes only the selected option's `claGroupId`.
+ * the results. What the hand-off consumes from the selected option is described on
+ * `ClaGroupOption` — it is no longer `claGroupId` alone, since the Gerrit route also reads the
+ * enablement flags.
  */
 export interface ClaGroupSearchResponse {
   /** Echo of the term actually searched (trimmed). */

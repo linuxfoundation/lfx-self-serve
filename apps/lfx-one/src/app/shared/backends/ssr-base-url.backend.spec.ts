@@ -1,0 +1,113 @@
+// Copyright The Linux Foundation and each contributor to LFX.
+// SPDX-License-Identifier: MIT
+
+import { PlatformLocation } from '@angular/common';
+import { FetchBackend, HttpEvent, HttpRequest } from '@angular/common/http';
+import { TestBed } from '@angular/core/testing';
+import { Observable, of } from 'rxjs';
+import { afterEach, beforeEach, describe, expect, it, MockInstance, vi } from 'vitest';
+
+import { SsrBaseUrlBackend } from './ssr-base-url.backend';
+
+describe('SsrBaseUrlBackend', () => {
+  let handle: MockInstance<(request: HttpRequest<unknown>) => Observable<HttpEvent<unknown>>>;
+  let backend: SsrBaseUrlBackend;
+  let originalPort: string | undefined;
+
+  beforeEach(() => {
+    originalPort = process.env['PORT'];
+    // SsrBaseUrlBackend now extends FetchBackend so it passes Angular's `instanceof FetchBackend`
+    // check; spy on the prototype method rather than swapping the DI-provided instance, since
+    // `super.handle(...)` resolves through the prototype chain, not through DI.
+    handle = vi.spyOn(FetchBackend.prototype, 'handle').mockReturnValue(of({} as HttpEvent<unknown>));
+
+    TestBed.configureTestingModule({
+      providers: [SsrBaseUrlBackend, { provide: PlatformLocation, useValue: { protocol: 'https:', hostname: 'lfx.example.org', port: '' } }],
+    });
+    backend = TestBed.inject(SsrBaseUrlBackend);
+  });
+
+  afterEach(() => {
+    vi.restoreAllMocks();
+    if (originalPort === undefined) {
+      delete process.env['PORT'];
+    } else {
+      process.env['PORT'] = originalPort;
+    }
+  });
+
+  it('rewrites /api/ requests to the internal loopback address using the configured PORT', () => {
+    process.env['PORT'] = '4321';
+    const req = new HttpRequest('GET', '/api/meetings/1');
+
+    backend.handle(req);
+
+    expect(handle).toHaveBeenCalledWith(expect.objectContaining({ url: 'http://127.0.0.1:4321/api/meetings/1' }));
+  });
+
+  it('rewrites /public/api/ requests to the internal loopback address', () => {
+    process.env['PORT'] = '4321';
+    const req = new HttpRequest('GET', '/public/api/meetings/1');
+
+    backend.handle(req);
+
+    expect(handle).toHaveBeenCalledWith(expect.objectContaining({ url: 'http://127.0.0.1:4321/public/api/meetings/1' }));
+  });
+
+  it('falls back to port 4000 when PORT is not set', () => {
+    delete process.env['PORT'];
+    const req = new HttpRequest('GET', '/api/meetings/1');
+
+    backend.handle(req);
+
+    expect(handle).toHaveBeenCalledWith(expect.objectContaining({ url: 'http://127.0.0.1:4000/api/meetings/1' }));
+  });
+
+  it('leaves requests outside /api/ and /public/api/ untouched', () => {
+    const req = new HttpRequest('GET', '/assets/logo.svg');
+
+    backend.handle(req);
+
+    expect(handle).toHaveBeenCalledWith(expect.objectContaining({ url: '/assets/logo.svg' }));
+  });
+
+  it('rewrites /api/ requests already absolutized to the public origin, as done by relativeUrlsTransformerInterceptorFn', () => {
+    process.env['PORT'] = '4321';
+    const req = new HttpRequest('GET', 'https://lfx.example.org/api/meetings/1?occurrence=2');
+
+    backend.handle(req);
+
+    expect(handle).toHaveBeenCalledWith(expect.objectContaining({ url: 'http://127.0.0.1:4321/api/meetings/1?occurrence=2' }));
+  });
+
+  it('leaves absolutized requests outside /api/ and /public/api/ untouched', () => {
+    const req = new HttpRequest('GET', 'https://lfx.example.org/assets/logo.svg');
+
+    backend.handle(req);
+
+    expect(handle).toHaveBeenCalledWith(expect.objectContaining({ url: 'https://lfx.example.org/assets/logo.svg' }));
+  });
+
+  it('leaves third-party absolute URLs untouched even when the path starts with /api/', () => {
+    process.env['PORT'] = '4321';
+    const req = new HttpRequest('GET', 'https://vendor.example/api/resource');
+
+    backend.handle(req);
+
+    expect(handle).toHaveBeenCalledWith(expect.objectContaining({ url: 'https://vendor.example/api/resource' }));
+  });
+
+  it('rewrites absolutized requests when PlatformLocation reports a non-default port', () => {
+    TestBed.resetTestingModule();
+    TestBed.configureTestingModule({
+      providers: [SsrBaseUrlBackend, { provide: PlatformLocation, useValue: { protocol: 'http:', hostname: 'localhost', port: '4000' } }],
+    });
+    const portBackend = TestBed.inject(SsrBaseUrlBackend);
+    process.env['PORT'] = '4321';
+    const req = new HttpRequest('GET', 'http://localhost:4000/api/meetings/1');
+
+    portBackend.handle(req);
+
+    expect(handle).toHaveBeenCalledWith(expect.objectContaining({ url: 'http://127.0.0.1:4321/api/meetings/1' }));
+  });
+});
