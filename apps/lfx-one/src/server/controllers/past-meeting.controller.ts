@@ -261,6 +261,15 @@ export class PastMeetingController {
         return;
       }
 
+      if (participantData.is_invited === undefined && participantData.is_attended === undefined) {
+        return next(
+          ServiceValidationError.forField('is_invited', 'At least one of is_invited or is_attended must be present to update a participant', {
+            operation: 'update_past_meeting_participant',
+            service: 'past_meeting_controller',
+          })
+        );
+      }
+
       const pastMeeting = await this.meetingService.getPastMeetingById(req, uid);
       const isOrganizer = await this.isPastMeetingOrganizer(req, pastMeeting, uid);
 

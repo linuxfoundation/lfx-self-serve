@@ -455,19 +455,29 @@ export class AttendanceReconciliationService {
    * AI-derived match is never auto-applied and therefore never reaches this method. Sets
    * `is_attended: true` explicitly — the upstream ITX handler no-ops an attendee update when
    * `is_attended` is omitted, so leaving it out would silently fail to persist while this
-   * service still reported `auto_applied: true`. Identity fields (`first_name`/`last_name`/
-   * `org_name`) are intentionally left off this write — those are invitee-record fields, not
-   * appropriate to overwrite on an attendee's own record from a matched candidate.
+   * service still reported `auto_applied: true`.
+   *
+   * Also sets `is_invited: true` whenever an identity field is present: lfx-v2-meeting-service's
+   * update converter routes `email`/`username`/`lf_user_id` only into the invitee sub-record
+   * (`UpdateInviteeRequest`), and its service layer no-ops that entire invitee operation when
+   * `is_invited` is omitted — sending identity fields without `is_invited: true` would silently
+   * drop them upstream while this method still reported success. `first_name`/`last_name` are
+   * included alongside because ITX requires them to create an invitee record that doesn't already
+   * exist for this attendee.
    */
   private async applyMatch(req: Request, pastMeetingUid: string, attendeeId: string, candidate: AttendanceReconciliationCandidate): Promise<boolean> {
+    const hasIdentity = !!(candidate.email || candidate.username || candidate.lf_user_id);
     const update: ITXUpdatePastMeetingParticipantRequest = {
       is_verified: true,
       is_attended: true,
       is_ai_reconciled: false,
       is_auto_matched: true,
+      ...(hasIdentity && { is_invited: true }),
       ...(candidate.email && { email: candidate.email }),
       ...(candidate.username && { username: candidate.username }),
       ...(candidate.lf_user_id && { lf_user_id: candidate.lf_user_id }),
+      ...(candidate.first_name && { first_name: candidate.first_name }),
+      ...(candidate.last_name && { last_name: candidate.last_name }),
     };
 
     try {
