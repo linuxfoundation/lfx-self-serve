@@ -478,8 +478,20 @@ describe('WeeklyBriefCardComponent — Current activity tally (GH-1922)', () => 
     return { id, kind, title };
   }
 
-  /** `activityRefs: null` omits `current_activity` entirely — simulates a server-side degrade (non-governance committee, or a failed lookup/fetch — see weekly-brief.service.ts#buildCurrentActivity). */
-  function briefResponse(activityRefs: WeeklyBriefSourceRef[] | null, callerRating: WeeklyBriefRating | null = null): WeeklyBriefCurrentResponse {
+  /**
+   * `activityRefs: null` omits `current_activity` entirely — simulates a server-side degrade
+   * (non-governance committee, or a failed lookup/fetch — see
+   * weekly-brief.service.ts#buildCurrentActivity). `options.truncated` layers GH-1998's
+   * truncated: true onto a present `current_activity` — the raw upstream page filled a full page.
+   */
+  function briefResponse(
+    activityRefs: WeeklyBriefSourceRef[] | null,
+    callerRating: WeeklyBriefRating | null = null,
+    options: { truncated?: boolean } = {}
+  ): WeeklyBriefCurrentResponse {
+    if (activityRefs === null && options.truncated) {
+      throw new Error('truncated has no meaning when current_activity is omitted (activityRefs === null)');
+    }
     return {
       brief: {
         uid: 'brief-1',
@@ -500,7 +512,14 @@ describe('WeeklyBriefCardComponent — Current activity tally (GH-1922)', () => 
       throttle: { generates_used: 0, generates_limit: 2, regenerations_used: 0, regenerations_limit: 3, window_resets_at: '2026-08-09T00:00:00Z' },
       caller_rating: callerRating,
       ...(activityRefs !== null
-        ? { current_activity: { window_start: '2026-08-24T00:00:00Z', window_end: '2026-08-27T12:00:00Z', source_refs: activityRefs } }
+        ? {
+            current_activity: {
+              window_start: '2026-08-24T00:00:00Z',
+              window_end: '2026-08-27T12:00:00Z',
+              source_refs: activityRefs,
+              ...(options.truncated ? { truncated: true } : {}),
+            },
+          }
         : {}),
     };
   }
@@ -515,9 +534,14 @@ describe('WeeklyBriefCardComponent — Current activity tally (GH-1922)', () => 
     committee: Committee,
     activityRefs: WeeklyBriefSourceRef[] | null,
     generateWeeklyBrief: ReturnType<typeof vi.fn> = vi.fn(),
-    callerRating: WeeklyBriefRating | null = null
+    callerRating: WeeklyBriefRating | null = null,
+    options: { truncated?: boolean } = {}
   ): Promise<void> {
-    getWeeklyBrief = vi.fn(() => of(briefResponse(activityRefs, callerRating)));
+    // Built eagerly (not inside the vi.fn factory) so briefResponse's guard throws synchronously
+    // at the setup() call site — inside the switchMap project fn it would instead surface as an
+    // unhandled RxJS error blamed on whichever test happens to run next.
+    const response = briefResponse(activityRefs, callerRating, options);
+    getWeeklyBrief = vi.fn(() => of(response));
 
     await TestBed.configureTestingModule({
       imports: [WeeklyBriefCardComponent],
@@ -568,6 +592,9 @@ describe('WeeklyBriefCardComponent — Current activity tally (GH-1922)', () => 
 
     const el = fixture.nativeElement.querySelector('[data-testid="weekly-brief-card-current-activity"]');
     expect(el).not.toBeNull();
+    // Negative side of the GH-1998 truncation-note tests below: a populated, non-truncated
+    // tally must not carry the note — only isTruncated() gates it in.
+    expect(fixture.nativeElement.querySelector('[data-testid="weekly-brief-card-current-activity-truncation-note"]')).toBeNull();
     const text = (el.textContent as string).replace(/\s+/g, ' ').trim();
     expect(text).toContain('This week so far:');
     expect(text).toContain('1 meeting held');
@@ -634,6 +661,13 @@ describe('WeeklyBriefCardComponent — Current activity tally (GH-1922)', () => 
     const el = fixture.nativeElement.querySelector('[data-testid="weekly-brief-card-current-activity"]');
     expect(el).not.toBeNull();
     expect(el.textContent).toContain('no activity yet');
+    // Pins that this fixture really is the non-truncated path, so the note-absence assertion
+    // below is testing that path and not a truncated one. (The isTruncated/length-gate
+    // regression itself is covered by the truncated-and-empty case below, where truncated is
+    // actually true — here truncated is already false, so a length-gate mutation wouldn't flip
+    // this assertion.)
+    expect(component.isTruncated()).toBe(false);
+    expect(fixture.nativeElement.querySelector('[data-testid="weekly-brief-card-current-activity-truncation-note"]')).toBeNull();
   });
 
   it('renders nothing at all when current_activity is absent — a server-side degrade must not be presented as "no activity yet" (GH-1922)', async () => {
@@ -674,6 +708,46 @@ describe('WeeklyBriefCardComponent — Current activity tally (GH-1922)', () => 
 
     expect(component.hasCurrentActivityData()).toBe(false);
     expect(fixture.nativeElement.querySelector('[data-testid="weekly-brief-card-current-activity"]')).toBeNull();
+  });
+
+  it('renders the tally PLUS a truncation disclosure when current_activity.truncated is true (GH-1998) — the partial count still shows, it is not discarded', async () => {
+    await setup(BOARD_COMMITTEE, [activityRef('meeting-1', 'meeting', 'Board Sync')], undefined, null, { truncated: true });
+
+    expect(component.isTruncated()).toBe(true);
+    const tally = fixture.nativeElement.querySelector('[data-testid="weekly-brief-card-current-activity"]');
+    expect(tally).not.toBeNull();
+    expect((tally.textContent as string).replace(/\s+/g, ' ')).toContain('1 meeting held');
+    const note = fixture.nativeElement.querySelector('[data-testid="weekly-brief-card-current-activity-truncation-note"]');
+    expect(note).not.toBeNull();
+    // Pins the non-empty-tally variant specifically — 'see Recent Activity below for the latest
+    // events' alone is shared by both variants and wouldn't catch the empty-tally wording
+    // rendering here.
+    expect(note.textContent as string).toContain('This count may be incomplete');
+    // The note's only actionable content is the CTA — keep asserting it survives alongside the
+    // variant-specific text above.
+    expect(note.textContent as string).toContain('see Recent Activity below for the latest events');
+    // The note is its own visible element (not folded into the tally's aria-label) — a screen
+    // reader must not hear it announced twice, once for the group and once for the note itself.
+    expect(tally.getAttribute('aria-label')).not.toContain('see Recent Activity below for the latest events');
+  });
+
+  it('still renders a truncation note, with different wording, when truncated is true but every ref was filtered/unmapped away (GH-1998)', async () => {
+    await setup(BOARD_COMMITTEE, [], undefined, null, { truncated: true });
+
+    // A bare, unqualified "no activity yet" would be a false-complete signal here — the raw
+    // upstream page was full, so this genuinely might not be a quiet week (GH-1922: "do NOT
+    // fabricate ... degrade gracefully"). isTruncated stays true and both the tally line's own
+    // placeholder and the separate note reflect that, so a screen-reader user reading only the
+    // group's aria-label (not the note, a sibling element) still gets the honest signal.
+    expect(component.isTruncated()).toBe(true);
+    const tally = fixture.nativeElement.querySelector('[data-testid="weekly-brief-card-current-activity"]');
+    expect((tally.textContent as string).replace(/\s+/g, ' ')).not.toContain('no activity yet');
+    expect((tally.textContent as string).replace(/\s+/g, ' ')).toContain('activity may be incomplete');
+    expect(tally.getAttribute('aria-label')).toContain('activity may be incomplete');
+    const note = fixture.nativeElement.querySelector('[data-testid="weekly-brief-card-current-activity-truncation-note"]');
+    expect(note).not.toBeNull();
+    expect(note.textContent as string).toContain('The activity feed hit its page limit, so this week may have had more');
+    expect(note.textContent as string).toContain('see Recent Activity below for the latest events');
   });
 
   it('clicking a kind reveals its underlying ref titles, and clicking again collapses it', async () => {

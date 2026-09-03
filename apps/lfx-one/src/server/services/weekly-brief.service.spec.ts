@@ -817,6 +817,11 @@ describe('WeeklyBriefService', () => {
       // also pass on the OTHER two states (undefined, or toBeDefined() on null), and this
       // feature's whole point is that absent/null/present are three distinct states, not two.
       expect(result.current_activity).toEqual(expect.objectContaining({ source_refs: expect.any(Array) }));
+      // GH-1998: the gate fires on data.length, not source_refs.length — a below-the-cap page
+      // must not carry the flag at all. truncated?: true is present-only by contract (the type
+      // itself forbids `false`), so this pins the gate actually omits the key here rather than
+      // just resolving falsy.
+      expect(result.current_activity).not.toHaveProperty('truncated');
       const refs = result.current_activity?.source_refs ?? [];
       expect(refs).toHaveLength(4);
       expect(refs.map((ref) => ref.kind).sort()).toEqual(['doc', 'meeting', 'other', 'vote']);
@@ -889,7 +894,7 @@ describe('WeeklyBriefService', () => {
       expect(refs[0].id).not.toBe(refs[1].id);
     });
 
-    it('sets current_activity to null (a settled, not a transient, absence) when the returned page itself is full', async () => {
+    it('sets current_activity.truncated to true (a settled, not a transient, floor) when the returned page itself is full', async () => {
       delete process.env['WEEKLY_BRIEF_BACKEND'];
       getCommitteeBaseMock.mockResolvedValue({ uid: 'committee-1', category: 'Board' });
       getCommitteeActivityMock.mockResolvedValue({
@@ -910,10 +915,12 @@ describe('WeeklyBriefService', () => {
 
       const result = await service.getCurrentBrief(req, 'committee-1');
 
-      // null, not undefined: more in-window activity only ever accumulates within a poll cycle,
-      // so a caller (the client's pollUntilTerminal) is right to treat this as settled and stop
-      // asking, unlike a genuine transient failure — see buildCurrentActivity's doc comment.
-      expect(result.current_activity).toBeNull();
+      // truncated: true, not null: more in-window activity only ever accumulates within a poll
+      // cycle, so a caller (the client's pollUntilTerminal) is right to treat this as settled and
+      // stop asking, unlike a genuine transient failure — see buildCurrentActivity's doc comment.
+      // source_refs is still a real, if partial, count — a floor, not discarded.
+      expect(result.current_activity).toEqual(expect.objectContaining({ truncated: true, source_refs: expect.any(Array) }));
+      expect(result.current_activity?.source_refs).toHaveLength(ACTIVITY_FEED_MAX_PAGE_SIZE);
       expect(logger.warning).toHaveBeenCalledWith(
         req,
         'get_weekly_brief_current_activity',
@@ -922,7 +929,7 @@ describe('WeeklyBriefService', () => {
       );
     });
 
-    it('DOES settle to null when a full raw page is mostly future-stamped noise the window_end filter drops — the descending sort in CommitteeActivityService means those rows can crowd out real in-window events before this method ever sees them, so the gate must run on the raw page size, not the filtered count', async () => {
+    it('DOES truncate when a full raw page is mostly future-stamped noise the window_end filter drops — the descending sort in CommitteeActivityService means those rows can crowd out real in-window events before this method ever sees them, so the gate must run on the raw page size, not the filtered count', async () => {
       delete process.env['WEEKLY_BRIEF_BACKEND'];
       getCommitteeBaseMock.mockResolvedValue({ uid: 'committee-1', category: 'Board' });
 
@@ -954,7 +961,8 @@ describe('WeeklyBriefService', () => {
 
         const result = await service.getCurrentBrief(req, 'committee-1');
 
-        expect(result.current_activity).toBeNull();
+        expect(result.current_activity).toEqual(expect.objectContaining({ truncated: true, source_refs: expect.any(Array) }));
+        expect(result.current_activity?.source_refs).toHaveLength(3);
         expect(logger.warning).toHaveBeenCalledWith(
           req,
           'get_weekly_brief_current_activity',
@@ -966,7 +974,7 @@ describe('WeeklyBriefService', () => {
       }
     });
 
-    it('DOES settle to null when a full raw page is mostly unrecognized-but-in-window event types — an unmapped event is not proven irrelevant to the tally, so it must still count toward the truncation gate', async () => {
+    it('DOES truncate when a full raw page is mostly unrecognized-but-in-window event types — an unmapped event is not proven irrelevant to the tally, so it must still count toward the truncation gate', async () => {
       delete process.env['WEEKLY_BRIEF_BACKEND'];
       getCommitteeBaseMock.mockResolvedValue({ uid: 'committee-1', category: 'Board' });
 
@@ -974,9 +982,9 @@ describe('WeeklyBriefService', () => {
       // type-legal, never actually constructed by CommitteeActivityService today (see that
       // interface's own doc comment) — that mapActivityEventToCurrentActivityRef's `default:
       // return null` branch exists to handle. These events are genuinely in-window — this method
-      // just has no rendering for them — so a full raw page dominated by them gates to null, same
-      // as the future-noise case above: the gate runs on the raw `data.length`, not on what
-      // survived mapping, so composition doesn't change the outcome.
+      // just has no rendering for them — so a full raw page dominated by them still gates to
+      // truncated: true, same as the future-noise case above: the gate runs on the raw
+      // `data.length`, not on what survived mapping, so composition doesn't change the outcome.
       const unrecognized = Array.from({ length: ACTIVITY_FEED_MAX_PAGE_SIZE - 2 }, () => ({
         type: 'member_joined' as const,
         occurred_at: '2026-01-12T10:00:00Z',
@@ -993,13 +1001,47 @@ describe('WeeklyBriefService', () => {
 
       const result = await service.getCurrentBrief(req, 'committee-1');
 
-      expect(result.current_activity).toBeNull();
+      expect(result.current_activity).toEqual(expect.objectContaining({ truncated: true, source_refs: expect.any(Array) }));
+      expect(result.current_activity?.source_refs).toHaveLength(2);
       expect(logger.warning).toHaveBeenCalledWith(
         req,
         'get_weekly_brief_current_activity',
         expect.stringContaining('fills a full page'),
         expect.objectContaining({ committee_id: 'committee-1' })
       );
+    });
+
+    it('produces truncated: true with an empty source_refs when a full raw page is entirely future-stamped noise — this service-level state (not the copy that renders it, already covered by the component/e2e specs) is what is uniquely tested here (GH-1998)', async () => {
+      delete process.env['WEEKLY_BRIEF_BACKEND'];
+      getCommitteeBaseMock.mockResolvedValue({ uid: 'committee-1', category: 'Board' });
+
+      vi.useFakeTimers();
+      try {
+        vi.setSystemTime(new Date('2026-01-14T12:00:00.000Z'));
+
+        // A full raw page (ACTIVITY_FEED_MAX_PAGE_SIZE) that is ENTIRELY administratively-closed
+        // votes stamped from a still-future end_time — no real in-window activity survives the
+        // window_end filter at all, so source_refs comes out empty even though truncated is true.
+        const futureNoise = Array.from({ length: ACTIVITY_FEED_MAX_PAGE_SIZE }, (_, i) => ({
+          type: 'vote_closed' as const,
+          occurred_at: '2026-01-14T13:00:00.000Z', // after window_end (2026-01-14T12:00:00.000Z)
+          committee_uid: 'committee-1',
+          payload: { vote_uid: `future-v${i}`, name: 'Future Vote', status: 'Ended' as const },
+        }));
+        getCommitteeActivityMock.mockResolvedValue({ data: futureNoise, page_token: undefined });
+
+        const result = await service.getCurrentBrief(req, 'committee-1');
+
+        expect(result.current_activity).toEqual(expect.objectContaining({ truncated: true, source_refs: [] }));
+        expect(logger.warning).toHaveBeenCalledWith(
+          req,
+          'get_weekly_brief_current_activity',
+          expect.stringContaining('fills a full page'),
+          expect.objectContaining({ committee_id: 'committee-1' })
+        );
+      } finally {
+        vi.useRealTimers();
+      }
     });
 
     it("does NOT omit current_activity merely because page_token is present with a short page — a committee with >fetchSize lifetime notes/surveys saturates those legs regardless of the current week (see buildCurrentActivity's own doc comment)", async () => {
@@ -1026,6 +1068,9 @@ describe('WeeklyBriefService', () => {
       // not.toBeNull()/toBeDefined() alone.
       expect(result.current_activity).toEqual(expect.objectContaining({ source_refs: expect.any(Array) }));
       expect(result.current_activity?.source_refs).toHaveLength(1);
+      // A saturating page_token is a near-miss for the truncation gate — pin that it doesn't
+      // also trip it (the gate is data.length-only, see buildCurrentActivity's own comment).
+      expect(result.current_activity).not.toHaveProperty('truncated');
     });
 
     it('renders a genuine quiet week as current_activity present with an empty source_refs array, not absent', async () => {
@@ -1290,6 +1335,9 @@ describe('WeeklyBriefService', () => {
 
       expect(result.current_activity).toEqual(expect.objectContaining({ source_refs: expect.any(Array) }));
       expect(result.current_activity?.source_refs).toHaveLength(1);
+      // A saturated leg is also a near-miss for the truncation gate — pin that it doesn't also
+      // trip it (the gate is data.length-only, see buildCurrentActivity's own comment).
+      expect(result.current_activity).not.toHaveProperty('truncated');
     });
 
     it('degrades to current_activity: undefined once WEEKLY_BRIEF_CURRENT_ACTIVITY_BUDGET_MS elapses, rather than letting a slow (not erroring) upstream hold the whole response hostage', async () => {

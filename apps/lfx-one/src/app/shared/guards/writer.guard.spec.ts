@@ -11,19 +11,22 @@ import { MeetingService } from '@shared/services/meeting.service';
 import { PersonaService } from '@shared/services/persona.service';
 import { ProjectContextService } from '@shared/services/project-context.service';
 import { ProjectService } from '@shared/services/project.service';
-import { Committee, GroupsIOMailingList, Meeting } from '@lfx-one/shared/interfaces';
+import { VoteService } from '@shared/services/vote.service';
+import { Committee, GroupsIOMailingList, Meeting, Vote } from '@lfx-one/shared/interfaces';
 import { firstValueFrom, of, throwError } from 'rxjs';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 
 import { writerGuard } from './writer.guard';
 
-// Pins the fail-closed entity-scoped slug contract (GH-1579/GH-1566/GH-1567): only a 404 probe read
+// Pins the fail-closed entity-scoped slug contract (GH-1579/GH-1566/GH-1567/GH-1568): only a 404 probe read
 // falls back to the stale context — anything else resolves no slug. Also covers the ED fast path and non-entity-scoped features.
 describe('writerGuard', () => {
   const MEETING_UID = 'meeting-uid-1';
   const MEETING_SLUG = 'meeting-project';
   const COMMITTEE_UID = 'committee-uid-1';
   const COMMITTEE_SLUG = 'committee-project';
+  const VOTE_UID = 'vote-uid-1';
+  const VOTE_SLUG = 'vote-project';
   const MAILING_LIST_UID = 'mailing-list-uid-1';
   const MAILING_LIST_SLUG = 'mailing-list-project';
   const STALE_SLUG = 'stale-project';
@@ -32,6 +35,7 @@ describe('writerGuard', () => {
   let getProject: ReturnType<typeof vi.fn>;
   let getCommittee: ReturnType<typeof vi.fn>;
   let fetchCommittee: ReturnType<typeof vi.fn>;
+  let fetchVote: ReturnType<typeof vi.fn>;
   let getMailingList: ReturnType<typeof vi.fn>;
   let router: { parseUrl: ReturnType<typeof vi.fn>; createUrlTree: ReturnType<typeof vi.fn> };
   let currentPersona: ReturnType<typeof signal<string>>;
@@ -51,6 +55,14 @@ describe('writerGuard', () => {
       queryParamMap: convertToParamMap({}),
       paramMap: convertToParamMap({ id: COMMITTEE_UID }),
       data: { writeFeature: 'committees', entityScopedSlug: true },
+      parent: null,
+    }) as unknown as ActivatedRouteSnapshot;
+
+  const voteRoute = (): ActivatedRouteSnapshot =>
+    ({
+      queryParamMap: convertToParamMap({}),
+      paramMap: convertToParamMap({ id: VOTE_UID }),
+      data: { writeFeature: 'votes', entityScopedSlug: true },
       parent: null,
     }) as unknown as ActivatedRouteSnapshot;
 
@@ -74,6 +86,7 @@ describe('writerGuard', () => {
     getProject = vi.fn().mockReturnValue(of(null));
     getCommittee = vi.fn();
     fetchCommittee = vi.fn();
+    fetchVote = vi.fn();
     getMailingList = vi.fn();
     currentPersona = signal('maintainer');
     router = {
@@ -89,6 +102,7 @@ describe('writerGuard', () => {
         { provide: CommitteeService, useValue: { getCommittee, fetchCommittee } },
         { provide: MailingListService, useValue: { getMailingList } },
         { provide: MeetingService, useValue: { getMeetingDetail } },
+        { provide: VoteService, useValue: { fetchVote } },
         { provide: Router, useValue: router },
       ],
     });
@@ -173,6 +187,68 @@ describe('writerGuard', () => {
     fetchCommittee.mockReturnValue(throwError(() => httpError(500)));
 
     const result = await runGuard(committeeRoute());
+
+    expect(router.parseUrl).toHaveBeenCalledWith('/project/overview');
+    expect(result).toEqual({ redirect: '/project/overview' });
+    expect(getProject).not.toHaveBeenCalled();
+    expect(getCommittee).not.toHaveBeenCalled();
+  });
+
+  it('authorizes vote edit against the vote’s own project when the read succeeds', async () => {
+    fetchVote.mockReturnValue(of({ uid: VOTE_UID, project_uid: 'v-uid', project_slug: VOTE_SLUG } as unknown as Vote));
+    getProject.mockReturnValue(of({ uid: 'v-uid', slug: VOTE_SLUG, writer: true }));
+
+    const result = await runGuard(voteRoute());
+
+    expect(result).toBe(true);
+    expect(fetchVote).toHaveBeenCalledWith(VOTE_UID);
+    expect(getMeetingDetail).not.toHaveBeenCalled();
+    expect(getProject).toHaveBeenCalledWith(VOTE_SLUG, false, { meetingCoordinator: false });
+  });
+
+  it('falls back to the active context only on a 404 vote read', async () => {
+    fetchVote.mockReturnValue(throwError(() => httpError(404)));
+    getProject.mockReturnValue(of({ uid: 'stale-uid', slug: STALE_SLUG, writer: true }));
+
+    const result = await runGuard(voteRoute());
+
+    expect(result).toBe(true);
+    expect(getProject).toHaveBeenCalledWith(STALE_SLUG, false, { meetingCoordinator: false });
+  });
+
+  it('admits a committee writer via the vote’s own committee_uid when the URL omits it', async () => {
+    fetchVote.mockReturnValue(of({ uid: VOTE_UID, project_uid: 'v-uid', project_slug: VOTE_SLUG, committee_uid: COMMITTEE_UID } as unknown as Vote));
+    getProject.mockReturnValue(of({ uid: 'v-uid', slug: VOTE_SLUG, writer: false }));
+    getCommittee.mockReturnValue(of({ uid: COMMITTEE_UID, writer: true } as unknown as Committee));
+
+    const result = await runGuard(voteRoute());
+
+    expect(result).toBe(true);
+    expect(getCommittee).toHaveBeenCalledWith(COMMITTEE_UID);
+  });
+
+  it('authorizes against the vote’s own committee, not a URL committee_uid naming an unrelated one', async () => {
+    fetchVote.mockReturnValue(of({ uid: VOTE_UID, project_uid: 'v-uid', project_slug: VOTE_SLUG, committee_uid: 'vote-committee' } as unknown as Vote));
+    getProject.mockReturnValue(of({ uid: 'v-uid', slug: VOTE_SLUG, writer: false }));
+    getCommittee.mockReturnValue(of({ uid: 'vote-committee', writer: false } as unknown as Committee));
+    const route = {
+      queryParamMap: convertToParamMap({ committee_uid: 'attacker-committee' }),
+      paramMap: convertToParamMap({ id: VOTE_UID }),
+      data: { writeFeature: 'votes', entityScopedSlug: true },
+      parent: null,
+    } as unknown as ActivatedRouteSnapshot;
+
+    const result = await runGuard(route);
+
+    expect(getCommittee).toHaveBeenCalledWith('vote-committee');
+    expect(getCommittee).not.toHaveBeenCalledWith('attacker-committee');
+    expect(result).not.toBe(true);
+  });
+
+  it('fails closed on a 500 vote read without probing the stale project', async () => {
+    fetchVote.mockReturnValue(throwError(() => httpError(500)));
+
+    const result = await runGuard(voteRoute());
 
     expect(router.parseUrl).toHaveBeenCalledWith('/project/overview');
     expect(result).toEqual({ redirect: '/project/overview' });

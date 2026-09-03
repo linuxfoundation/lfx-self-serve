@@ -24,7 +24,7 @@ import { MicroserviceProxyService } from './microservice-proxy.service';
 import { OrgLensKeyContactsService } from './org-lens-key-contacts.service';
 import { OrgLensMembershipsService } from './org-lens-memberships.service';
 import { ProjectService } from './project.service';
-import { withPerUserCache } from './valkey.service';
+import { invalidateOrgGroupsCache, withPerUserCache } from './valkey.service';
 
 /**
  * Picker roster bound (FR-006 typeahead): cap the org-wide seat drain so opening the Reassign modal
@@ -149,6 +149,14 @@ export class OrgLensBoardCommitteeService {
       }
     );
     const seat = isBoardCategory(upstream.committee_category) ? this.toBoardSeat(upstream) : this.toCommitteeSeat(upstream);
+
+    // This path reassigns non-board seats too (the `toCommitteeSeat` branch above), and those do
+    // change the Groups page's counts, so the org's shared aggregate has to be discarded here as
+    // well as on the People-tab reassign. Unconditional rather than gated on category: a board
+    // reassign discarding the entry costs one rebuild, whereas missing a non-board one serves
+    // wrong counts for the whole retention window.
+    await invalidateOrgGroupsCache(accountId);
+
     logger.debug(req, 'reassign_committee_seat_proxy', 'committee-service returned reassigned seat', {
       org_uid: accountId,
       seat_id: seat.seatId,
@@ -168,6 +176,19 @@ export class OrgLensBoardCommitteeService {
       () => this.fetchOrgSeats(req, orgUid),
       isOrgSeatArray
     );
+  }
+
+  /**
+   * The same full, non-truncated org-wide drain as `fetchAllOrgSeats`, without the per-caller seats
+   * cache in front of it.
+   *
+   * For callers that cache their own derived result for longer than the seats window: reading
+   * through a 30-second cache and then storing the derivation for 15 minutes would bake up to 30
+   * seconds of staleness into a far longer window, which is exactly what discarding that derived
+   * entry on a seat write is meant to prevent.
+   */
+  public async fetchAllOrgSeatsUncached(req: Request, orgUid: string): Promise<CommitteeServiceOrgSeat[]> {
+    return this.fetchOrgSeats(req, orgUid);
   }
 
   /** Resolve the membership's project family (foundation root + descendants) for seat scoping (spec 026 T007a): SFID → slug (getFoundationSlug) → uid (getProjectIdBySlug) → family (getFoundationProjectUids); `undefined` when unresolvable so callers return an EMPTY list, never the org-wide roster. */

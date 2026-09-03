@@ -98,7 +98,7 @@ export class VoteController {
         return;
       }
 
-      const vote = await this.voteService.getVoteById(req, uid);
+      const vote = await this.voteService.getVoteById(req, uid, { includeProject: true });
 
       logger.success(req, 'get_vote_by_id', startTime, {
         vote_uid: uid,

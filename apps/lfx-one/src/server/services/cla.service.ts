@@ -105,6 +105,8 @@ function toClaGroupOption(result: EasyClaSearchResult): ClaGroupOption {
       .filter((org) => !!org.name),
     ...(result.matchedRepositoryName ? { matchedRepositoryName: result.matchedRepositoryName } : {}),
     ...(result.matchedRepositoryURL ? { matchedRepositoryURL: result.matchedRepositoryURL } : {}),
+    iclaEnabled: result.iclaEnabled === true,
+    cclaEnabled: result.cclaEnabled === true,
   };
 }
 
@@ -114,9 +116,8 @@ function toClaGroupOption(result: EasyClaSearchResult): ClaGroupOption {
  * The envelope is mirrored rather than flattened to an array because `truncated` describes the
  * result *set* — a cap cannot ride inside one of the results. The one field renamed is the
  * identifier (`claGroupID` → `claGroupId`), so Angular is not made to carry two spellings of the
- * same UUID. Salesforce ids and the ICLA/CCLA enablement flags are deliberately not carried
- * across: the modal does not use them, and forwarding them invites a consumer to branch on
- * signing configuration this route never promised to keep current.
+ * same UUID. Salesforce ids are deliberately not carried across. ICLA/CCLA enablement flags are
+ * forwarded for Gerrit contract-type routing (#2066); the GitHub prepare-sign path does not branch on them.
  *
  * `searchTerm` falls back to the term the BFF actually sent, so the client can always tell which
  * query a set belongs to even if the producer echoes nothing.

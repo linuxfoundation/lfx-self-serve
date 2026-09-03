@@ -249,12 +249,12 @@ export class WeeklyBriefCardComponent {
 
   // Distinguishes "no value to show" (absent — either a transient server-side degrade, or this
   // card's own deliberate includeCurrentActivity: false opt-out — or null — a settled
-  // non-governance/full-page answer; see WeeklyBriefCurrentResponse's own current_activity doc
-  // comment, in @lfx-one/shared/interfaces, for that three-state contract, which
-  // pollUntilTerminal's poll loop below depends on but rendering here doesn't) from "the field
-  // is a real object, every kind possibly zero" (a genuine quiet week) — the template must
-  // render neither line nor "no activity yet" for the former, only the latter (GH-1922: "do NOT
-  // fabricate ... degrade gracefully").
+  // non-governance answer; see WeeklyBriefCurrentResponse's own current_activity doc comment, in
+  // @lfx-one/shared/interfaces, for that three-state contract, which pollUntilTerminal's poll
+  // loop below depends on but rendering here doesn't) from "the field is a real object, every
+  // kind possibly zero, possibly truncated: true" (a genuine quiet week, or a real-but-partial
+  // tally) — the template must render neither line nor "no activity yet" for the former, only
+  // the latter (GH-1922: "do NOT fabricate ... degrade gracefully").
   public readonly hasCurrentActivityData: Signal<boolean> = computed(() => !!this.briefResponse()?.current_activity);
 
   // Single source of truth for the visible prefix, shared with the template's own span
@@ -262,11 +262,54 @@ export class WeeklyBriefCardComponent {
   // the visible text can't drift apart on a future copy edit.
   protected readonly currentActivityPrefix = 'This week so far:';
 
-  // "This week so far: 1 meeting held, 1 vote closed" / "This week so far: no activity yet".
+  // GH-1998: current-week activity filled a full upstream page — source_refs is a lower bound,
+  // not proof of partiality (see WeeklyBriefCurrentActivity.truncated's own doc comment).
+  // Deliberately doesn't name a count: the truncation gate fires on the raw upstream page size,
+  // before the window_end filter and kind-mapping this component's own tally is built from, so a
+  // specific number here (e.g. "50+ events") could overstate what actually happened this week.
+  // Two variants, not one static string: a page full of raw events that all get filtered/unmapped
+  // away (see buildCurrentActivity's own doc comment) still carries truncated: true with an empty
+  // tally, so "This count may be incomplete" would misdescribe an on-screen count of zero as a
+  // count at all — the empty variant exists to qualify that absence honestly, not to avoid a
+  // separate "no activity yet" string (currentActivityEmptyText, below, already guards that).
+  // Hiding the note in the empty case instead (as an earlier version of this fix did) would be
+  // worse — a false-complete "no activity yet" is exactly the outcome GH-1922 says to avoid; the
+  // fix is to say the honest thing, not to say nothing. Starting-point copy, flagged for product
+  // review, not locked in. Deliberately does NOT say "for the full list" — the Recent Activity
+  // section below renders a fixed ACTIVITY_FEED_DEFAULT_PAGE_SIZE (8) rows with no "view all" or
+  // pagination affordance of its own (CommitteeService.getCommitteeActivity sends no page_size),
+  // so promising "the full list" there would just relocate this same fix's false-complete problem
+  // into its own remedy.
+  protected readonly currentActivityTruncationNote: Signal<string> = computed(() =>
+    this.currentActivity().length
+      ? 'This count may be incomplete — see Recent Activity below for the latest events.'
+      : 'The activity feed hit its page limit, so this week may have had more — see Recent Activity below for the latest events.'
+  );
+
+  // The server's raw truncated flag — do not additionally gate this on currentActivity().length.
+  // The template always shows *some* truncation note once this is true (see
+  // currentActivityTruncationNote's two variants above); a reader reaching for isTruncated to ask
+  // "is this data complete?" must get a truthful answer regardless of whether the surviving tally
+  // happens to be empty.
+  public readonly isTruncated: Signal<boolean> = computed(() => !!this.briefResponse()?.current_activity?.truncated);
+
+  // GH-1998: the empty-tally placeholder itself, not just the separate truncation note below it,
+  // must not assert "no activity yet" when isTruncated() is true — that's the same false-complete
+  // claim this whole fix exists to avoid, just relocated to the tally line instead of the note.
+  // Read by both the visible @else span and currentActivityLine (its aria-label) below, so the
+  // two can't drift out of sync the way "no activity yet" vs. the note text did before this fix.
+  protected readonly currentActivityEmptyText: Signal<string> = computed(() => (this.isTruncated() ? 'activity may be incomplete' : 'no activity yet'));
+
+  // "This week so far: 1 meeting held, 1 vote closed" / "This week so far: no activity yet" /
+  // "This week so far: activity may be incomplete". The truncation note (GH-1998) is a separate
+  // visible element (see the template), not folded in here — this stays the accessible name for
+  // the tally group alone, so a screen reader doesn't hear the note announced twice (once for
+  // this group, once for its own sibling paragraph).
   public readonly currentActivityLine: Signal<string> = computed(() => {
     const sections = this.currentActivity();
-    if (!sections.length) return `${this.currentActivityPrefix} no activity yet`;
-    return `${this.currentActivityPrefix} ${sections.map((section) => section.countText).join(', ')}`;
+    return !sections.length
+      ? `${this.currentActivityPrefix} ${this.currentActivityEmptyText()}`
+      : `${this.currentActivityPrefix} ${sections.map((section) => section.countText).join(', ')}`;
   });
 
   // "no_sources" is the only error_reason meaningful to the UI today (LFXV2-3000) —
@@ -881,10 +924,9 @@ export class WeeklyBriefCardComponent {
           // actually present on the response — `=== undefined` here, not a falsy/truthy check,
           // because the BFF distinguishes "couldn't determine yet" (key absent — transient,
           // worth asking again) from "known, settled, doesn't apply" (key present as `null` —
-          // non-governance, or this week's activity fills a full page; see
-          // WeeklyBriefCurrentResponse.current_activity's doc comment). A `!value` check would
-          // treat that settled `null` the same as "unknown" and re-ask forever for exactly the
-          // two cases that can never resolve differently within this poll cycle.
+          // non-governance only; see WeeklyBriefCurrentResponse.current_activity's doc comment).
+          // A `!value` check would treat that settled `null` the same as "unknown" and re-ask
+          // forever for a case that can't resolve differently within this poll cycle.
           //
           // Also gated on isGoverningBoardCommittee() — a non-governance committee's every
           // non-poll load (see initBriefResponseSubscription's own combineLatest sources for
