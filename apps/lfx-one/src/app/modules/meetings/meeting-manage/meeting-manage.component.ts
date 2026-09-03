@@ -148,8 +148,9 @@ export class MeetingManageComponent {
     toUpdate: [],
     toDelete: [],
   });
-  // True only when the edit-mode detail fetch failed with a non-404 error (GH-2037) — the
-  // template swaps the skeleton for an inline error + Retry instead of ejecting the user.
+  // True only when the edit-mode detail fetch failed with a retryable error — anything other
+  // than a 404/403 eject (GH-2037). The template swaps the skeleton for an inline error + Retry
+  // instead of ejecting the user.
   public meetingLoadError = signal(false);
   // Retry trigger folded into the initializeMeeting pipeline — each next() re-invokes the fetch.
   // Declared before `meeting`: initializeMeeting() reads it during field initialization.
@@ -348,7 +349,7 @@ export class MeetingManageComponent {
     this.navigateBack();
   }
 
-  /** Re-runs the edit-mode detail fetch after a non-404 load failure (GH-2037). */
+  /** Re-runs the edit-mode detail fetch after a retryable load failure — anything other than a 404/403 eject (GH-2037). */
   public retryMeetingLoad(): void {
     this.meetingLoadError.set(false);
     this.retryMeetingLoad$.next();

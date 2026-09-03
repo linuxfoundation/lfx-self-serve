@@ -36,7 +36,7 @@
   }
 
   @if (meetingLoadError()) {
-    <!-- Detail fetch failed with a non-404 error (GH-2037) — stay mounted with retry/back -->
+    <!-- Detail fetch failed with a retryable error (anything other than a 404/403 eject, GH-2037) — stay mounted with retry/back -->
     <div class="flex flex-col gap-4" data-testid="meeting-manage-load-error">
       <lfx-message
         severity="error"
