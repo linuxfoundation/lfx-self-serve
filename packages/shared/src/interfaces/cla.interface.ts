@@ -330,11 +330,15 @@ export interface SignIdentityDialogData {
   gerritUsername?: string;
   /**
    * What the contributor already holds for the CLA group they picked, so the step can gray out
-   * the identity that signed it (#1914). This is where the already-signed block lives: one
-   * contributor can hold several identities, so the group itself stays selectable and only the
-   * identity already on an agreement is refused.
+   * an identity that has no enabled contract type left to sign (#1914). This is where the
+   * already-signed block lives: one contributor can hold several identities, so the group itself
+   * stays selectable and only an identity that has already signed every enabled type is refused.
    */
   claGroupAgreements?: MyClaAgreement[];
+  /** Whether the chosen group accepts an ICLA — used with `cclaEnabled` by the already-signed gate. */
+  iclaEnabled?: boolean;
+  /** Whether the chosen group accepts a CCLA — used with `iclaEnabled` by the already-signed gate. */
+  cclaEnabled?: boolean;
 }
 
 /**

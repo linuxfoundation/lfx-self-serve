@@ -4,7 +4,7 @@ description: Frequently asked questions about account settings, affiliations, id
 audience: [all]
 product_area: Account
 tags: [account, faq, settings, affiliations, cla, easycla, transactions, billing]
-last_updated: 2026-09-01
+last_updated: 2026-09-03
 intercom_collection: Account
 ---
 
@@ -78,7 +78,7 @@ You can start there. Select **Sign CLA**, search for the project, CLA group, or 
 
 ## Why does a search result say "Already signed as" when I search for a CLA to sign?
 
-In the **Sign a CLA** dialog, a result you already hold a CLA for is tagged **Already signed as** followed by the account it was signed under. The result stays selectable: holding a CLA under one identity does not stop you signing under another, so it is the identity step that greys out the account already covered — and only when that account is one of the GitHub accounts linked to your profile, or the CLA was signed under your LF identity through Gerrit. Results are matched per CLA group, not per project, so a project with more than one CLA group only tags the group you signed. An **Invalidated** CLA greys out nothing — that agreement no longer covers you, so you can sign again with the same identity. See [Why does a search result say "Already signed as"?](../my-clas/#why-does-a-search-result-say-already-signed-as).
+In the **Sign a CLA** dialog, a result you already hold a CLA for is tagged **Already signed as** followed by the account it was signed under. The result stays selectable: holding a CLA under one identity does not stop you signing under another, and holding one contract type — an ICLA (Individual CLA) or an ECLA (Employee CLA) — does not stop you signing the other type with the same identity when the group offers both. The identity step greys out an account only when that identity already holds every contract type the group offers — and only when that account is one of the GitHub accounts linked to your profile, or the CLA was signed under your LF identity through Gerrit. Results are matched per CLA group, not per project, so a project with more than one CLA group only tags the group you signed. An **Invalidated** CLA greys out nothing — that agreement no longer covers you, so you can sign again with the same identity. See [Why does a search result say "Already signed as"?](../my-clas/#why-does-a-search-result-say-already-signed-as).
 
 ## What do the CLA status labels mean?
 

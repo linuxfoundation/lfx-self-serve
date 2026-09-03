@@ -283,16 +283,33 @@ describe('SignIdentitySelectComponent', () => {
   // --- Identities that already signed this CLA group (#1914) -----------------
 
   describe('already signed', () => {
-    function signedAs(signedAs: string, signedVia: 'github' | 'gerrit' = 'github'): MyClaAgreement[] {
+    function signedAs(signedAs: string, signedVia: 'github' | 'gerrit' = 'github', kind: MyClaAgreement['kind'] = 'ICLA'): MyClaAgreement[] {
       return [
-        { id: 's1', kind: 'ICLA', claGroupName: 'Venus', claGroupId: 'cg-1', signedOn: '2022-01-01', status: 'valid', pdfAvailable: true, signedVia, signedAs },
+        {
+          id: 's1',
+          kind,
+          claGroupName: 'Venus',
+          claGroupId: 'cg-1',
+          signedOn: '2022-01-01',
+          status: 'valid',
+          pdfAvailable: kind === 'ICLA',
+          signedVia,
+          signedAs,
+        },
       ];
     }
 
+    function signedBoth(handle: string, signedVia: 'github' | 'gerrit' = 'github'): MyClaAgreement[] {
+      return [...signedAs(handle, signedVia, 'ICLA'), { ...signedAs(handle, signedVia, 'ECLA')[0]!, id: 's2' }];
+    }
+
+    const ICLA_ONLY = { iclaEnabled: true, cclaEnabled: false };
+    const BOTH_TYPES = { iclaEnabled: true, cclaEnabled: true };
     const REASON = 'You already have an ICLA for this CLA group signed with this account. Choose another identity to sign again.';
+    const BOTH_REASON = 'You already have an ICLA and an ECLA for this CLA group signed with this account. Choose another identity to sign again.';
 
     it('grays out the account that already signed, and only that account', async () => {
-      await setup({ claGroupAgreements: signedAs('octocat') });
+      await setup({ claGroupAgreements: signedAs('octocat'), ...ICLA_ONLY });
 
       expect(query('sign-identity-select-github-12345')?.getAttribute('aria-disabled')).toBe('true');
       expect(query('sign-identity-select-github-67890')?.getAttribute('aria-disabled')).toBe('false');
@@ -301,7 +318,7 @@ describe('SignIdentitySelectComponent', () => {
     it('grays the account the producer recorded by number rather than handle', async () => {
       // Agreements carry one identity string, which is the account number when no handle was
       // recorded. Matching only the handle would leave the account that signed selectable.
-      await setup({ claGroupAgreements: signedAs('12345') });
+      await setup({ claGroupAgreements: signedAs('12345'), ...ICLA_ONLY });
 
       expect(query('sign-identity-select-github-12345')?.getAttribute('aria-disabled')).toBe('true');
       expect(query('sign-identity-select-github-67890')?.getAttribute('aria-disabled')).toBe('false');
@@ -317,6 +334,7 @@ describe('SignIdentitySelectComponent', () => {
           { githubId: '12345', githubUsername: 'jellis' },
         ],
         claGroupAgreements: signedAs('12345'),
+        ...ICLA_ONLY,
       });
 
       expect(query('sign-identity-select-github-18281050')?.getAttribute('aria-disabled')).toBe('true');
@@ -324,7 +342,7 @@ describe('SignIdentitySelectComponent', () => {
     });
 
     it('says why, in the tooltip and to assistive tech', async () => {
-      await setup({ claGroupAgreements: signedAs('octocat') });
+      await setup({ claGroupAgreements: signedAs('octocat'), ...ICLA_ONLY });
 
       const card = fixture.debugElement.query(By.css('[data-testid="sign-identity-select-github-12345"]'));
       expect(card.injector.get(Tooltip, null)?.content).toBe(REASON);
@@ -335,7 +353,7 @@ describe('SignIdentitySelectComponent', () => {
     });
 
     it('keeps the grayed card reachable, so the reason is not hover-only', async () => {
-      await setup({ claGroupAgreements: signedAs('octocat') });
+      await setup({ claGroupAgreements: signedAs('octocat'), ...ICLA_ONLY });
 
       // Removing it from the tab order would leave a keyboard-only contributor with no way to
       // ask why the account is unavailable — the tooltip also answers to focus, not just hover.
@@ -348,7 +366,7 @@ describe('SignIdentitySelectComponent', () => {
       ['Enter', 'Enter'],
       ['Space', ' '],
     ])('refuses the %s key on the grayed card', async (_label, key) => {
-      await setup({ claGroupAgreements: signedAs('octocat') });
+      await setup({ claGroupAgreements: signedAs('octocat'), ...ICLA_ONLY });
 
       // Keeping the card focusable put Enter/Space on a live path: the only thing that stops it
       // selecting the account is the card's own disabled guard, so assert the key leaves the
@@ -371,7 +389,7 @@ describe('SignIdentitySelectComponent', () => {
     });
 
     it('still selects a card that has not signed, from the keyboard', async () => {
-      await setup({ claGroupAgreements: signedAs('octocat') });
+      await setup({ claGroupAgreements: signedAs('octocat'), ...ICLA_ONLY });
 
       // The mirror of the refusal above. Without it, deleting the card's (keydown) binding would
       // leave that test green — nothing else here proves a dispatched key reaches the handler.
@@ -385,7 +403,7 @@ describe('SignIdentitySelectComponent', () => {
     });
 
     it('refuses to submit it even if the card is reached another way', async () => {
-      await setup({ claGroupAgreements: signedAs('octocat') });
+      await setup({ claGroupAgreements: signedAs('octocat'), ...ICLA_ONLY });
 
       // Clicking a grayed card is refused by the card itself, which leaves the control unwritten
       // and never reaches the guard this test is named for. Writing the control directly is the
@@ -399,7 +417,7 @@ describe('SignIdentitySelectComponent', () => {
     });
 
     it('still lets them sign with their other account', async () => {
-      await setup({ claGroupAgreements: signedAs('octocat') });
+      await setup({ claGroupAgreements: signedAs('octocat'), ...ICLA_ONLY });
 
       await choose('sign-identity-select-github-67890');
       (fixture.componentInstance as any).onContinue();
@@ -408,7 +426,7 @@ describe('SignIdentitySelectComponent', () => {
     });
 
     it('grays out the Gerrit card when the group was signed under the LF identity', async () => {
-      await setup({ variant: 'github-or-gerrit', gerritUsername: GERRIT_USER, claGroupAgreements: signedAs('jdoe', 'gerrit') });
+      await setup({ variant: 'github-or-gerrit', gerritUsername: GERRIT_USER, claGroupAgreements: signedAs('jdoe', 'gerrit'), ...ICLA_ONLY });
 
       expect(query('sign-identity-select-gerrit')?.getAttribute('aria-disabled')).toBe('true');
       // A Gerrit signature says nothing about their GitHub accounts.
@@ -425,7 +443,7 @@ describe('SignIdentitySelectComponent', () => {
     it('tells them to choose another identity only when one is left to choose', async () => {
       // A Gerrit-only step offers exactly one card. Once it is grayed there is nothing else to
       // pick, so prescribing a way out would name the one thing they cannot do.
-      await setup({ variant: 'gerrit', accounts: [], gerritUsername: GERRIT_USER, claGroupAgreements: signedAs('jdoe', 'gerrit') });
+      await setup({ variant: 'gerrit', accounts: [], gerritUsername: GERRIT_USER, claGroupAgreements: signedAs('jdoe', 'gerrit'), ...ICLA_ONLY });
 
       expect(fixture.debugElement.query(By.css('[data-testid="sign-identity-select-gerrit"]')).injector.get(Tooltip, null)?.content).toBe(
         'You already have an ICLA for this CLA group signed with this account.'
@@ -436,10 +454,39 @@ describe('SignIdentitySelectComponent', () => {
       // The most common dead-end this change set out to remove: one account, already signed,
       // nothing else on the step. The false branch of `anotherSelectable` has to be wired through
       // initAccounts, not only through the Gerrit call site.
-      await setup({ accounts: [OCTOCAT], claGroupAgreements: signedAs('octocat') });
+      await setup({ accounts: [OCTOCAT], claGroupAgreements: signedAs('octocat'), ...ICLA_ONLY });
 
       expect(fixture.debugElement.query(By.css('[data-testid="sign-identity-select-github-12345"]')).injector.get(Tooltip, null)?.content).toBe(
         'You already have an ICLA for this CLA group signed with this account.'
+      );
+    });
+
+    it('leaves a dual-type GitHub identity selectable when only an ICLA is held', async () => {
+      await setup({ claGroupAgreements: signedAs('octocat'), ...BOTH_TYPES });
+
+      expect(query('sign-identity-select-github-12345')?.getAttribute('aria-disabled')).toBe('false');
+      expect(query('sign-identity-select-github-67890')?.getAttribute('aria-disabled')).toBe('false');
+    });
+
+    it('leaves a dual-type Gerrit identity selectable when only an ICLA is held', async () => {
+      await setup({ variant: 'github-or-gerrit', gerritUsername: GERRIT_USER, claGroupAgreements: signedAs('jdoe', 'gerrit'), ...BOTH_TYPES });
+
+      expect(query('sign-identity-select-gerrit')?.getAttribute('aria-disabled')).toBe('false');
+    });
+
+    it('grays a dual-type GitHub identity once both kinds are held, and names both in the reason', async () => {
+      await setup({ claGroupAgreements: signedBoth('octocat'), ...BOTH_TYPES });
+
+      expect(query('sign-identity-select-github-12345')?.getAttribute('aria-disabled')).toBe('true');
+      expect(query('sign-identity-select-github-67890')?.getAttribute('aria-disabled')).toBe('false');
+      expect(fixture.debugElement.query(By.css('[data-testid="sign-identity-select-github-12345"]')).injector.get(Tooltip, null)?.content).toBe(BOTH_REASON);
+    });
+
+    it('still drops the other-identity sentence when both kinds are held and nothing else is selectable', async () => {
+      await setup({ variant: 'gerrit', accounts: [], gerritUsername: GERRIT_USER, claGroupAgreements: signedBoth('jdoe', 'gerrit'), ...BOTH_TYPES });
+
+      expect(fixture.debugElement.query(By.css('[data-testid="sign-identity-select-gerrit"]')).injector.get(Tooltip, null)?.content).toBe(
+        'You already have an ICLA and an ECLA for this CLA group signed with this account.'
       );
     });
   });

@@ -852,6 +852,17 @@ describe('ProfileClasComponent — Sign CLA hand-off and identity selection (#12
     // The group they picked, not their whole list: the step grays out identities, and an
     // agreement on a different CLA group says nothing about this one.
     expect(identityStepData()?.claGroupAgreements).toEqual([alreadyHeld]);
+    expect(identityStepData()?.iclaEnabled).toBe(true);
+    expect(identityStepData()?.cclaEnabled).toBe(false);
+  });
+
+  it('forwards the chosen group enablement flags into the identity step', async () => {
+    const fixture = await setup({ iclaEnabled: true, cclaEnabled: true });
+
+    await sign(fixture);
+
+    expect(identityStepData()?.iclaEnabled).toBe(true);
+    expect(identityStepData()?.cclaEnabled).toBe(true);
   });
 
   it('leaves the identity step nothing to gray out when the group is new to them', async () => {

@@ -343,14 +343,16 @@ export class ProfileClasComponent {
     this.starting.set(false);
     this.signDialogOpen.set(true);
 
-    // What they already hold for *this* group, so the step can gray out the identity that signed
-    // it. Passed as agreements rather than a precomputed verdict because only the step knows
-    // which identities it ended up offering.
+    // What they already hold for *this* group, plus which types the group enables, so the step
+    // can gray out an identity with nothing left to sign. Passed as agreements rather than a
+    // precomputed verdict because only the step knows which identities it ended up offering.
     const claGroupAgreements = alreadySignedAgreementsForGroup(this.agreements(), option.claGroupId);
 
     const data: SignIdentityDialogData = {
       variant: effectiveVariant,
       accounts,
+      iclaEnabled: option.iclaEnabled === true,
+      cclaEnabled: option.cclaEnabled === true,
       ...(gerritUsername ? { gerritUsername } : {}),
       ...(claGroupAgreements.length > 0 ? { claGroupAgreements } : {}),
     };
