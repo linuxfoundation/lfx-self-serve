@@ -336,6 +336,38 @@ describe('classifyMutationFailure — what proves upstream answered', () => {
     expect(msg, 'a non-status code that agreed with its status was accepted').toContain(CAMPAIGN_OUTCOME_UNCONFIRMED);
   });
 
+  it('does not MUTATE a group whose resolve consumed the remaining budget', async () => {
+    // Copilot: checking only between groups does not bound the request. A group admitted just
+    // under the budget can spend 30s resolving and 30s mutating, running well past the ingress
+    // window -- so the mutation lands after the caller has already been answered, which is the
+    // exact late-application case the deadline exists to prevent.
+    //
+    // The resolve is a READ, so stopping after it changes nothing upstream. That makes this the
+    // only other safe point to stop.
+    let now = 0;
+    const nowSpy = vi.spyOn(Date, 'now').mockImplementation(() => now);
+
+    const resolveGoogleAdsCampaign = vi.fn().mockImplementation(() => {
+      // Admitted inside the budget, but the resolve alone exhausts it.
+      now += 50_000;
+      return Promise.resolve({ match_count: 1, matches: [{ brief_id: 'b-1', campaign_id: 'c-1' }] });
+    });
+    const applyKeywordActions = vi.fn();
+
+    const client = { resolveGoogleAdsCampaign, applyKeywordActions } as never;
+    const body = { action: 'remove' as const, keywords: [kw('camp-1', 'k-1')] };
+    const req = { log: { warn: vi.fn(), info: vi.fn(), error: vi.fn(), debug: vi.fn() } } as never;
+
+    const res = await applyKeywordActionsViaCampaignService(req, client, 'aswf', body);
+    nowSpy.mockRestore();
+
+    // The resolve ran -- it was admitted -- but the IRREVERSIBLE mutation did not.
+    expect(resolveGoogleAdsCampaign).toHaveBeenCalledTimes(1);
+    expect(applyKeywordActions, 'an irreversible REMOVE was dispatched past the deadline').not.toHaveBeenCalled();
+    expect(String(res.results[0].message)).toMatch(/ran out of time/);
+    expect(res.results[0].success).toBe(false);
+  });
+
   it('stops the fan-out at the deadline and names the rest UNATTEMPTED', async () => {
     // Copilot, raised twice: the 50-row cap bounds how MANY campaigns a request names, not how
     // LONG they take. Each costs two sequential proxy calls at a 30s client default, so a request

@@ -371,8 +371,12 @@ export const CAMPAIGN_DEADLINE_EXCEEDED = 'Not attempted: the request ran out of
  *
  * Stopping at the budget uses the same "not attempted" report the transport-failure path already
  * uses, so nothing new has to be true for a caller: a group either has an outcome, or is named as
- * unattempted. 15s of headroom is deliberate -- the check happens BETWEEN groups, so the last
- * group admitted can still run its two calls before the window closes.
+ * unattempted.
+ *
+ * CHECKED TWICE per group, and the second check is what makes the budget real. Between groups is
+ * not sufficient on its own -- a group admitted at 44s can spend 30s resolving and 30s mutating,
+ * running to ~104s against a 60s window. The second check sits after the read-only resolve and
+ * before the mutation, which is the only other point where stopping changes nothing upstream.
  */
 export const KEYWORD_ACTION_DEADLINE_MS = 45_000;
 
@@ -497,6 +501,21 @@ export async function applyKeywordActionsViaCampaignService(
     }
 
     try {
+      // SECOND deadline check, after the read-only resolve and before the irreversible mutation.
+      //
+      // The between-groups check alone does not bound the request, which is what an earlier
+      // version of this claimed: a group admitted at 44s can spend 30s resolving and 30s
+      // mutating, so the loop runs to ~104s while the ingress answered the caller at 60s
+      // (Copilot). Fifteen seconds of headroom was never enough -- one call can consume twice
+      // that on its own.
+      //
+      // This is the only other point where stopping is SAFE. The resolve is a read, so
+      // abandoning after it changes nothing upstream; abandoning after the mutation call has
+      // started is what would leave a group applied but unrecorded.
+      if (Date.now() - startedAt >= KEYWORD_ACTION_DEADLINE_MS) {
+        results.push(...failedResults(group, body.action, CAMPAIGN_DEADLINE_EXCEEDED));
+        continue;
+      }
       const applied = await client.applyKeywordActions(req, projectSlug, ref.brief_id, ref.campaign_id, toUpstreamActions(group.keywords, body.action));
       // The 2xx is CHECKED, not assumed. Upstream's batch is all-or-nothing, so applied_count
       // should equal what was sent — but upstream derives it from the results it actually
