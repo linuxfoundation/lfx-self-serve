@@ -176,7 +176,7 @@
         </div>
       }
 
-      @if (editMode()) {
+      @if (editMode() && canEdit()) {
         <!-- lfx-textarea forwards dataTest as [attr.data-test] onto the inner <textarea>
                itself (unlike a data-testid on the <lfx-textarea> host, which wouldn't reach
                it) — matches every other lfx-textarea call site in the repo. No visible field
