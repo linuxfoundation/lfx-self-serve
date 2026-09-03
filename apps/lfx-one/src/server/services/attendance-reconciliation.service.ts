@@ -80,7 +80,12 @@ export class AttendanceReconciliationService {
 
     const results = await Promise.all(
       combined.map(async (result) => {
-        if (result.confidence !== 'high' || !result.matched_candidate || degraded) {
+        // Only a deterministic exact-identity match may auto-apply. An AI-derived match is
+        // never auto-applied regardless of its stated confidence — the model's input includes
+        // attendee-controlled Zoom display names, so a 'high' confidence from the AI path
+        // cannot be trusted as a basis for an unattended write. AI matches always queue for
+        // admin review.
+        if (result.method !== 'deterministic' || result.confidence !== 'high' || !result.matched_candidate || degraded) {
           return result;
         }
 
@@ -154,12 +159,12 @@ export class AttendanceReconciliationService {
       const existing = pool[existingIndex];
       pool[existingIndex] = {
         ...existing,
-        email: existing.email ?? candidate.email,
-        username: existing.username ?? candidate.username,
-        lf_user_id: existing.lf_user_id ?? candidate.lf_user_id,
-        first_name: existing.first_name ?? candidate.first_name,
-        last_name: existing.last_name ?? candidate.last_name,
-        org_name: existing.org_name ?? candidate.org_name,
+        email: existing.email || candidate.email,
+        username: existing.username || candidate.username,
+        lf_user_id: existing.lf_user_id || candidate.lf_user_id,
+        first_name: existing.first_name || candidate.first_name,
+        last_name: existing.last_name || candidate.last_name,
+        org_name: existing.org_name || candidate.org_name,
       };
     };
 
@@ -209,10 +214,17 @@ export class AttendanceReconciliationService {
     meetingUid: string,
     currentOccurrenceId: string
   ): Promise<{ attendees: PastMeetingParticipant[]; degraded: boolean }> {
-    const occurrences = await this.meetingService.getPastOccurrencesForMeeting(req, meetingUid);
+    let degraded = false;
+    const occurrences = await this.meetingService.getPastOccurrencesForMeeting(req, meetingUid, { throwOnFailure: true }).catch((error) => {
+      logger.warning(req, 'reconcile_attendance_pool', 'Failed to fetch prior occurrences, continuing without them', {
+        meeting_id: meetingUid,
+        err: error,
+      });
+      degraded = true;
+      return [];
+    });
     const priorOccurrences = occurrences.filter((o) => o.meeting_and_occurrence_id !== currentOccurrenceId).slice(-RECONCILIATION_MAX_PRIOR_OCCURRENCES);
 
-    let degraded = false;
     const perOccurrence = await Promise.all(
       priorOccurrences.map((o) =>
         this.meetingService.getPastMeetingParticipants(req, o.meeting_and_occurrence_id).catch((error) => {
@@ -437,20 +449,21 @@ export class AttendanceReconciliationService {
   }
 
   /**
-   * Writes a high-confidence match back onto the attendee's participant record. Sets
+   * Writes a high-confidence deterministic match back onto the attendee's participant record —
+   * only called for `method === 'deterministic'` results (see the auto-apply gate in
+   * `reconcilePastMeetingParticipants`), so `is_ai_reconciled` is always `false` here; an
+   * AI-derived match is never auto-applied and therefore never reaches this method. Sets
    * `is_attended: true` explicitly — the upstream ITX handler no-ops an attendee update when
    * `is_attended` is omitted, so leaving it out would silently fail to persist while this
-   * service still reported `auto_applied: true`. Also sets `is_ai_reconciled`/`is_auto_matched`
-   * so the persisted record itself carries the AI-match provenance, not just this service's own
-   * response shape. Identity fields (`first_name`/`last_name`/`org_name`) are intentionally left
-   * off this write — those are invitee-record fields, not appropriate to overwrite on an
-   * attendee's own record from a matched candidate.
+   * service still reported `auto_applied: true`. Identity fields (`first_name`/`last_name`/
+   * `org_name`) are intentionally left off this write — those are invitee-record fields, not
+   * appropriate to overwrite on an attendee's own record from a matched candidate.
    */
   private async applyMatch(req: Request, pastMeetingUid: string, attendeeId: string, candidate: AttendanceReconciliationCandidate): Promise<boolean> {
     const update: ITXUpdatePastMeetingParticipantRequest = {
       is_verified: true,
       is_attended: true,
-      is_ai_reconciled: true,
+      is_ai_reconciled: false,
       is_auto_matched: true,
       ...(candidate.email && { email: candidate.email }),
       ...(candidate.username && { username: candidate.username }),

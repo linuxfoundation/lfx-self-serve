@@ -348,8 +348,13 @@ export class MeetingService {
    * (`meeting_id`). No `filter_grants` — callers run this in a public/M2M context and
    * the projection carries timestamps only. Completeness is not guaranteed: a later-page
    * fetch failure returns the pages already accumulated (acceptable for navigation).
+   *
+   * By default a fetch failure is swallowed and treated as "no occurrences" — fine for
+   * navigation callers. Callers that need to distinguish "genuinely no history" from
+   * "history is unknown because the fetch failed" (e.g. reconciliation, which must not
+   * treat a failed fetch as a complete candidate pool) should pass `throwOnFailure: true`.
    */
-  public async getPastOccurrencesForMeeting(req: Request, meetingUid: string): Promise<PastOccurrenceSummary[]> {
+  public async getPastOccurrencesForMeeting(req: Request, meetingUid: string, options: { throwOnFailure?: boolean } = {}): Promise<PastOccurrenceSummary[]> {
     logger.debug(req, 'get_past_occurrences_for_meeting', 'Fetching past occurrences', {
       meeting_id: meetingUid,
     });
@@ -362,6 +367,9 @@ export class MeetingService {
         ...(pageToken && { page_token: pageToken }),
       })
     ).catch((error) => {
+      if (options.throwOnFailure) {
+        throw error;
+      }
       logger.warning(req, 'get_past_occurrences_for_meeting', 'Failed to fetch past occurrences, returning empty list', {
         meeting_id: meetingUid,
         error: error instanceof Error ? error.message : 'Unknown error',
