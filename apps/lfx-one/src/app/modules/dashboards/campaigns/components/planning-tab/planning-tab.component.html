@@ -79,7 +79,12 @@
 
               @if (hsNotFound() && !hsUtm()) {
                 <div class="flex items-center gap-3 rounded-lg border border-amber-200 bg-amber-50 p-3">
-                  <span class="flex-1 text-sm text-amber-700">No campaign found for "{{ lastLookedUpEvent }}"</span>
+                  <div class="flex-1 text-sm text-amber-700">
+                    <p>No campaign found for "{{ lastLookedUpEvent }}"</p>
+                    <p class="mt-1 text-xs">
+                      Campaign names are written to the LF-global HubSpot namespace and visible to campaign managers across every foundation.
+                    </p>
+                  </div>
                   <button
                     type="button"
                     (click)="createInHubSpot()"

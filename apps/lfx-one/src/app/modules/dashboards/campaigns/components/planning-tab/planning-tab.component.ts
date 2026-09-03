@@ -544,11 +544,15 @@ export class PlanningTabComponent implements OnInit {
             this.hsNotFound.set(false);
             this.hsStatus.set(`Created: ${result.campaign_name}`);
           } else {
+            this.hsNotFound.set(false);
+            this.lastLookedUpEvent = '';
             this.hsStatus.set('Failed to create campaign');
           }
           this.hsCreating.set(false);
         },
         error: () => {
+          this.hsNotFound.set(false);
+          this.lastLookedUpEvent = '';
           this.hsStatus.set('Create failed');
           this.hsCreating.set(false);
         },
