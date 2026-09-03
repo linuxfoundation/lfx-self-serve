@@ -57,15 +57,11 @@ export const PROFILE_ROUTES: Routes = [
       // linux-email is now embedded in the Identities tab — redirect for backward compat
       { path: 'linux-email', redirectTo: 'identities' },
 
-      // Direct-URL-only routes (no tab, but still accessible)
-      {
-        path: 'password',
-        loadComponent: () => import('./password/profile-password.component').then((m) => m.ProfilePasswordComponent),
-      },
-      {
-        path: 'email',
-        loadComponent: () => import('./email/profile-email.component').then((m) => m.ProfileEmailComponent),
-      },
+      // Email and password management now live in the Settings tab — redirect the old
+      // standalone pages there, scrolled to the matching section (see account-settings.component.ts).
+      { path: 'password', redirectTo: '/profile/settings#password' },
+      { path: 'email', redirectTo: '/profile/settings#email-settings' },
+      { path: 'emails', redirectTo: '/profile/settings#email-settings' },
 
       // Backward-compat redirects for old URLs
       { path: 'attribution', redirectTo: 'attributions' },

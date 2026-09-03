@@ -91,6 +91,7 @@ const PASSWORD_ERROR_RULES: readonly {
 export class ProfileController {
   private static readonly allowedProfileReturnPaths: ReadonlySet<string> = new Set([
     '/profile',
+    '/profile/email',
     '/profile/emails',
     '/profile/identities',
     '/profile/password',
@@ -586,7 +587,7 @@ export class ProfileController {
         res.status(403).json({
           error: 'management_token_required',
           message: 'Profile authorization required to change the primary email',
-          authorize_url: `/api/profile/auth/start?returnTo=${encodeURIComponent((req.headers['referer'] as string) || '/profile/emails')}`,
+          authorize_url: `/api/profile/auth/start?returnTo=${encodeURIComponent((req.headers['referer'] as string) || '/profile/settings')}`,
         });
         return;
       }
@@ -961,7 +962,7 @@ export class ProfileController {
         res.status(403).json({
           error: 'management_token_required',
           message: 'Profile authorization required to send a password reset link',
-          authorize_url: `/api/profile/auth/start?returnTo=${encodeURIComponent((req.headers['referer'] as string) || '/profile/password')}`,
+          authorize_url: `/api/profile/auth/start?returnTo=${encodeURIComponent((req.headers['referer'] as string) || '/profile/settings')}`,
         });
         return;
       }
@@ -1019,7 +1020,7 @@ export class ProfileController {
         res.status(403).json({
           error: 'management_token_required',
           message: 'Profile authorization required to change your password',
-          authorize_url: `/api/profile/auth/start?returnTo=${encodeURIComponent((req.headers['referer'] as string) || '/profile/password')}`,
+          authorize_url: `/api/profile/auth/start?returnTo=${encodeURIComponent((req.headers['referer'] as string) || '/profile/settings')}`,
         });
         return;
       }
@@ -2028,7 +2029,7 @@ export class ProfileController {
             success: false,
             error: 'management_token_required',
             message: 'Profile authorization required',
-            authorize_url: `/api/profile/auth/start?returnTo=${encodeURIComponent((req.headers['referer'] as string) || '/profile/emails')}`,
+            authorize_url: `/api/profile/auth/start?returnTo=${encodeURIComponent((req.headers['referer'] as string) || '/profile/settings')}`,
           });
           return;
         }

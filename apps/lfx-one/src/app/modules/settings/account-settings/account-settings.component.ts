@@ -173,6 +173,12 @@ export class AccountSettingsComponent {
 
     afterNextRender(() => {
       this.setupScrollSpy();
+      // Deep-link support: /profile/settings#password lands here after the standalone
+      // email/password pages were consolidated into this component (profile.routes.ts).
+      const fragment = this.route.snapshot.fragment;
+      if (fragment) {
+        this.scrollToSection(fragment);
+      }
     });
   }
 
