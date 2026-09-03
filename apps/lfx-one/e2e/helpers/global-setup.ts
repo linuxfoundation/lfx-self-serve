@@ -33,6 +33,24 @@ async function globalSetup(config: FullConfig) {
     password: process.env.TEST_PASSWORD || '',
   };
 
+  // HALF a credential pair is a FAULT, not a choice to skip.
+  //
+  // The skip path below is reached on `||`, so setting only TEST_USERNAME (a typo'd secret name,
+  // an unset half in CI) took it: every authenticated spec skipped and the run reported green
+  // having authenticated nothing. That is the same outcome the catch arm below refuses for
+  // invalid credentials, and for the same reason -- absent credentials are a deliberate choice,
+  // anything else is a fault, and a fault must not be reportable as a pass (Copilot).
+  //
+  // Checked BEFORE the skip so the partial case cannot fall into it.
+  if (Boolean(credentials.username) !== Boolean(credentials.password)) {
+    const supplied = credentials.username ? 'TEST_USERNAME' : 'TEST_PASSWORD';
+    const missing = credentials.username ? 'TEST_PASSWORD' : 'TEST_USERNAME';
+    throw new Error(
+      `${supplied} is set but ${missing} is not. Set both to authenticate, or neither to skip the ` +
+        'authenticated specs deliberately -- a half-configured pair would otherwise skip them and report a green run.'
+    );
+  }
+
   // Skip authentication if no credentials are provided
   if (!credentials.username || !credentials.password) {
     console.log('⚠️  No test credentials provided.');
