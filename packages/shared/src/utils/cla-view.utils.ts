@@ -19,9 +19,11 @@ import { PROFILE_TABS } from '../constants/profile.constants';
 import { BadgeSeverity, TagSeverity } from '../interfaces/components.interface';
 import { ProfileTab } from '../interfaces';
 import type {
+  ClaGroupEnablement,
   ClaGroupOption,
   ClaGroupOptionView,
   ClaGroupOrg,
+  ClaKind,
   ClaSignedVia,
   ClaSignRoute,
   ClaStatus,
@@ -332,8 +334,7 @@ export function alreadySignedAgreementsForGroup(agreements: readonly MyClaAgreem
 
 /**
  * Tag on a Sign a CLA search result the contributor already holds a CLA for (#1914). Names the
- * identity, because that is what tells them which of their accounts is already covered and
- * therefore which one the next step will gray out.
+ * identity, because that is what tells them which of their accounts is already covered.
  */
 export function alreadySignedChipLabel(agreement: MyClaAgreement): string {
   const identity = agreement.signedAs?.trim();
@@ -365,9 +366,52 @@ export function alreadySignedGroupTooltip(agreement: MyClaAgreement, route: ClaS
   return `${signed ? `${held} ${signed}.` : held}${another}`;
 }
 
+/** The agreements this identity holds for the group, newest first. Shared by the two readers below. */
+function agreementsMatchingIdentity(agreements: readonly MyClaAgreement[], identity: SignIdentityRef, offeredHandles: readonly string[]): MyClaAgreement[] {
+  const handles = new Set(offeredHandles.map((handle) => handle.trim().toLowerCase()).filter(Boolean));
+
+  return agreements.filter((agreement) => {
+    if (!ALREADY_SIGNED_CLA_STATUSES.has(agreement.status)) return false;
+    if (identity.platform === 'gerrit') return agreement.signedVia === 'gerrit';
+    if (agreement.signedVia !== 'github') return false;
+
+    const signedAs = agreement.signedAs?.trim().toLowerCase();
+    if (!signedAs) return false;
+
+    const username = identity.username?.trim().toLowerCase();
+    if (username && signedAs === username) return true;
+
+    return !handles.has(signedAs) && signedAs === identity.githubId.trim().toLowerCase();
+  });
+}
+
 /**
- * The agreement this one identity already signed for the group, if any — the check that
- * actually blocks (#1914).
+ * Which contract types this identity already holds for the group.
+ *
+ * The contract-type step reads this to offer a held type as held rather than as a choice. It
+ * shares the identity matcher with the gate below so the two cannot disagree about what is held —
+ * a step that offered a type the gate counted would let through the re-sign the gate prevents.
+ */
+export function heldClaKindsForIdentity(agreements: readonly MyClaAgreement[], identity: SignIdentityRef, offeredHandles: readonly string[]): ClaKind[] {
+  return [...new Set(agreementsMatchingIdentity(agreements, identity, offeredHandles).map((agreement) => agreement.kind))];
+}
+
+/**
+ * The agreement that blocks this identity from signing again, if any — the check that actually
+ * blocks (#1914).
+ *
+ * Blocks when every contract type the group enables is already held under this identity
+ * (`enabled ⊆ held`), and on any match at all when the group enables nothing. A dual-type group
+ * therefore stays selectable on that identity until it holds both an ICLA and an ECLA; a
+ * single-type group still blocks once that one type is held.
+ *
+ * That second rule is why the subset test is not applied to an empty `enabled`. A group enabling
+ * neither type is not one with nothing to sign; it is one whose CLA Group record the producer
+ * could not resolve, which arrives here as two false flags. The empty set is a subset of every
+ * set, so the test would pass for every identity and retire this check for that group without
+ * saying so. The kind-blind block stands in — what this gate did before it knew about kinds. The
+ * Gerrit hand-off refuses such a group outright, so the fallback costs that route nothing, and
+ * it is the whole of the protection on the GitHub route, which never reads these flags at all.
  *
  * The producer records one identity string per agreement, derived as the GitHub handle when it
  * had one and the account number when it did not. So the GitHub branch compares against both
@@ -389,28 +433,33 @@ export function alreadySignedGroupTooltip(agreement: MyClaAgreement, route: ClaS
  *
  * The Gerrit branch cannot make that trade, because it has nothing to compare. Only one Gerrit
  * card is ever offered and it is the contributor's own LF identity, so the platform alone
- * identifies it — which does mean a Gerrit agreement with a blank handle still blocks that card.
+ * identifies it — which does mean a Gerrit agreement with a blank handle still matches that
+ * card, and then the enablement rule decides whether the match blocks.
  */
 export function alreadySignedAgreementForIdentity(
   agreements: readonly MyClaAgreement[],
   identity: SignIdentityRef,
-  offeredHandles: readonly string[]
+  offeredHandles: readonly string[],
+  enabled: ClaGroupEnablement
 ): MyClaAgreement | undefined {
-  const handles = new Set(offeredHandles.map((handle) => handle.trim().toLowerCase()).filter(Boolean));
+  const matched = agreementsMatchingIdentity(agreements, identity, offeredHandles);
+  if (matched.length === 0) return undefined;
 
-  return agreements.find((agreement) => {
-    if (!ALREADY_SIGNED_CLA_STATUSES.has(agreement.status)) return false;
-    if (identity.platform === 'gerrit') return agreement.signedVia === 'gerrit';
-    if (agreement.signedVia !== 'github') return false;
+  const enabledKinds = new Set<ClaKind>();
+  if (enabled.iclaEnabled) enabledKinds.add('ICLA');
+  if (enabled.cclaEnabled) enabledKinds.add('ECLA');
+  if (enabledKinds.size === 0) return matched[0];
 
-    const signedAs = agreement.signedAs?.trim().toLowerCase();
-    if (!signedAs) return false;
+  const heldKinds = new Set(matched.map((agreement) => agreement.kind));
+  for (const kind of enabledKinds) {
+    if (!heldKinds.has(kind)) return undefined;
+  }
 
-    const username = identity.username?.trim().toLowerCase();
-    if (username && signedAs === username) return true;
-
-    return !handles.has(signedAs) && signedAs === identity.githubId.trim().toLowerCase();
-  });
+  // An identity can hold a kind the group no longer offers, and that agreement can be the newest
+  // one matched. Returning it would block on an enabled kind while naming a type this group
+  // cannot be signed for, so the reason is drawn from an enabled kind. Every enabled kind is
+  // held by this point, so this always finds one.
+  return matched.find((agreement) => enabledKinds.has(agreement.kind));
 }
 
 /**
@@ -420,9 +469,16 @@ export function alreadySignedAgreementForIdentity(
  * Gerrit-only step offers a single card, so once that card is grayed there is nothing left to
  * choose, and "choose another identity" would be the one instruction the contributor cannot
  * follow. Stating the position without prescribing a way out is the honest form there.
+ *
+ * When the card is grayed because both an ICLA and an ECLA are held, the reason names both.
+ * The `anotherSelectable` sentence is independent of that and stays conditional.
  */
-export function alreadySignedIdentityTooltip(agreement: MyClaAgreement, anotherSelectable: boolean): string {
-  const kind = agreement.kind === 'ECLA' ? 'an ECLA' : 'an ICLA';
+export function alreadySignedIdentityTooltip(agreement: MyClaAgreement, anotherSelectable: boolean, heldKinds: readonly ClaKind[] = [agreement.kind]): string {
+  const hasIcla = heldKinds.includes('ICLA');
+  const hasEcla = heldKinds.includes('ECLA');
+  let kind = 'an ICLA';
+  if (hasIcla && hasEcla) kind = 'an ICLA and an ECLA';
+  else if (hasEcla) kind = 'an ECLA';
   const held = `You already have ${kind} for this CLA group signed with this account.`;
 
   return anotherSelectable ? `${held} Choose another identity to sign again.` : held;

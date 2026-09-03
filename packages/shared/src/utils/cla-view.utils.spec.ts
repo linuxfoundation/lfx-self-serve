@@ -344,23 +344,27 @@ describe('alreadySignedAgreementForIdentity', () => {
 
   /** The handles the step is offering, which is how a recorded number is told from a handle. */
   const offered = ['jellis', 'jellis-work'];
+  const iclaOnly = { iclaEnabled: true, cclaEnabled: false } as const;
+  const cclaOnly = { iclaEnabled: false, cclaEnabled: true } as const;
+  const bothTypes = { iclaEnabled: true, cclaEnabled: true } as const;
+  const neither = { iclaEnabled: false, cclaEnabled: false } as const;
 
   it('matches a GitHub handle regardless of case', () => {
-    expect(alreadySignedAgreementForIdentity(held, { platform: 'github', username: 'jellis', githubId: '12345' }, offered)?.id).toBe('s1');
+    expect(alreadySignedAgreementForIdentity(held, { platform: 'github', username: 'jellis', githubId: '12345' }, offered, iclaOnly)?.id).toBe('s1');
   });
 
   it('leaves the contributor a second GitHub account to sign with', () => {
-    expect(alreadySignedAgreementForIdentity(held, { platform: 'github', username: 'jellis-work', githubId: '67890' }, offered)).toBeUndefined();
+    expect(alreadySignedAgreementForIdentity(held, { platform: 'github', username: 'jellis-work', githubId: '67890' }, offered, iclaOnly)).toBeUndefined();
   });
 
   it('matches the Gerrit identity on the platform alone', () => {
-    expect(alreadySignedAgreementForIdentity(held, { platform: 'gerrit' }, offered)?.id).toBe('s2');
-    expect(alreadySignedAgreementForIdentity([held[0]!], { platform: 'gerrit' }, offered)).toBeUndefined();
+    expect(alreadySignedAgreementForIdentity(held, { platform: 'gerrit' }, offered, iclaOnly)?.id).toBe('s2');
+    expect(alreadySignedAgreementForIdentity([held[0]!], { platform: 'gerrit' }, offered, iclaOnly)).toBeUndefined();
   });
 
   it('never blocks a GitHub card on an agreement with no recorded identity', () => {
     const blank = [agreement({ claGroupId: 'cg-1', signedVia: 'github', signedAs: '   ' })];
-    expect(alreadySignedAgreementForIdentity(blank, { platform: 'github', username: 'jellis', githubId: '12345' }, offered)).toBeUndefined();
+    expect(alreadySignedAgreementForIdentity(blank, { platform: 'github', username: 'jellis', githubId: '12345' }, offered, iclaOnly)).toBeUndefined();
   });
 
   it('still blocks the Gerrit card on an agreement with no recorded identity', () => {
@@ -368,7 +372,7 @@ describe('alreadySignedAgreementForIdentity', () => {
     // accounts, so it matches none, while only one Gerrit card is ever offered and it is the
     // contributor's own LF identity — so the platform alone identifies it.
     const blank = [agreement({ claGroupId: 'cg-1', signedVia: 'gerrit', signedAs: undefined })];
-    expect(alreadySignedAgreementForIdentity(blank, { platform: 'gerrit' }, offered)?.claGroupId).toBe('cg-1');
+    expect(alreadySignedAgreementForIdentity(blank, { platform: 'gerrit' }, offered, iclaOnly)?.claGroupId).toBe('cg-1');
   });
 
   it('matches the account number when that is what the producer recorded', () => {
@@ -377,8 +381,10 @@ describe('alreadySignedAgreementForIdentity', () => {
     // that signed selectable, which is the redundant signature this is meant to prevent.
     const byNumber = [agreement({ id: 's3', claGroupId: 'cg-1', signedVia: 'github', signedAs: '12345' })];
 
-    expect(alreadySignedAgreementForIdentity(byNumber, { platform: 'github', username: '', githubId: '12345' }, ['', 'jellis'])?.id).toBe('s3');
-    expect(alreadySignedAgreementForIdentity(byNumber, { platform: 'github', username: 'jellis', githubId: '67890' }, ['', 'jellis'])).toBeUndefined();
+    expect(alreadySignedAgreementForIdentity(byNumber, { platform: 'github', username: '', githubId: '12345' }, ['', 'jellis'], iclaOnly)?.id).toBe('s3');
+    expect(
+      alreadySignedAgreementForIdentity(byNumber, { platform: 'github', username: 'jellis', githubId: '67890' }, ['', 'jellis'], iclaOnly)
+    ).toBeUndefined();
   });
 
   it('reads a numeric identity as a handle when a card on the step carries it', () => {
@@ -389,13 +395,85 @@ describe('alreadySignedAgreementForIdentity', () => {
     const collides = [agreement({ id: 's4', claGroupId: 'cg-1', signedVia: 'github', signedAs: '12345' })];
     const bothOffered = ['12345', 'jellis'];
 
-    expect(alreadySignedAgreementForIdentity(collides, { platform: 'github', username: '12345', githubId: '18281050' }, bothOffered)?.id).toBe('s4');
-    expect(alreadySignedAgreementForIdentity(collides, { platform: 'github', username: 'jellis', githubId: '12345' }, bothOffered)).toBeUndefined();
+    expect(alreadySignedAgreementForIdentity(collides, { platform: 'github', username: '12345', githubId: '18281050' }, bothOffered, iclaOnly)?.id).toBe('s4');
+    expect(alreadySignedAgreementForIdentity(collides, { platform: 'github', username: 'jellis', githubId: '12345' }, bothOffered, iclaOnly)).toBeUndefined();
   });
 
   it('does not block on an invalidated agreement', () => {
     const invalidated = [agreement({ claGroupId: 'cg-1', status: 'invalidated', signedVia: 'github', signedAs: 'jellis' })];
-    expect(alreadySignedAgreementForIdentity(invalidated, { platform: 'github', username: 'jellis', githubId: '12345' }, offered)).toBeUndefined();
+    expect(alreadySignedAgreementForIdentity(invalidated, { platform: 'github', username: 'jellis', githubId: '12345' }, offered, iclaOnly)).toBeUndefined();
+  });
+
+  it('leaves a dual-type GitHub identity selectable when only an ICLA is held', () => {
+    expect(alreadySignedAgreementForIdentity(held, { platform: 'github', username: 'jellis', githubId: '12345' }, offered, bothTypes)).toBeUndefined();
+  });
+
+  it('leaves a dual-type Gerrit identity selectable when only an ICLA is held', () => {
+    expect(alreadySignedAgreementForIdentity(held, { platform: 'gerrit' }, offered, bothTypes)).toBeUndefined();
+  });
+
+  it('blocks a dual-type GitHub identity once both kinds are held', () => {
+    const both = [
+      agreement({ id: 's1', claGroupId: 'cg-1', kind: 'ICLA', signedVia: 'github', signedAs: 'jellis' }),
+      agreement({ id: 's2', claGroupId: 'cg-1', kind: 'ECLA', signedVia: 'github', signedAs: 'jellis', pdfAvailable: false }),
+    ];
+
+    expect(alreadySignedAgreementForIdentity(both, { platform: 'github', username: 'jellis', githubId: '12345' }, offered, bothTypes)?.id).toBe('s1');
+  });
+
+  it('blocks a dual-type Gerrit identity once both kinds are held', () => {
+    const both = [
+      agreement({ id: 's1', claGroupId: 'cg-1', kind: 'ICLA', signedVia: 'gerrit', signedAs: 'jellis-lf' }),
+      agreement({ id: 's2', claGroupId: 'cg-1', kind: 'ECLA', signedVia: 'gerrit', signedAs: 'jellis-lf', pdfAvailable: false }),
+    ];
+
+    expect(alreadySignedAgreementForIdentity(both, { platform: 'gerrit' }, offered, bothTypes)?.id).toBe('s1');
+  });
+
+  it('does not block a CCLA-only group on an ICLA held under that identity', () => {
+    expect(alreadySignedAgreementForIdentity(held, { platform: 'github', username: 'jellis', githubId: '12345' }, offered, cclaOnly)).toBeUndefined();
+  });
+
+  it('does not block an ICLA-only group on an ECLA held under that identity', () => {
+    const ecla = [agreement({ claGroupId: 'cg-1', kind: 'ECLA', signedVia: 'github', signedAs: 'jellis', pdfAvailable: false })];
+    expect(alreadySignedAgreementForIdentity(ecla, { platform: 'github', username: 'jellis', githubId: '12345' }, offered, iclaOnly)).toBeUndefined();
+  });
+
+  it('blocks on any match when the group enables neither type', () => {
+    // Two false flags are what a group whose CLA Group record could not be resolved arrives as,
+    // not a group with nothing to sign. Taken at face value the enabled set is empty, every
+    // identity passes the subset test, and the #1914 block is silently off for that group — so
+    // the kind-blind block stands in, which is what this gate did before it knew about kinds.
+    expect(alreadySignedAgreementForIdentity(held, { platform: 'github', username: 'jellis', githubId: '12345' }, offered, neither)?.id).toBe('s1');
+    expect(alreadySignedAgreementForIdentity(held, { platform: 'gerrit' }, offered, neither)?.id).toBe('s2');
+  });
+
+  it('still leaves an unsigned identity selectable when the group enables neither type', () => {
+    // The fallback widens which matches block, never what counts as a match. An identity with no
+    // agreement of its own must stay selectable, or an unresolvable group would strand everyone.
+    expect(alreadySignedAgreementForIdentity(held, { platform: 'github', username: 'jellis-work', githubId: '67890' }, offered, neither)).toBeUndefined();
+    expect(alreadySignedAgreementForIdentity([held[0]!], { platform: 'gerrit' }, offered, neither)).toBeUndefined();
+  });
+
+  it('reports a kind the group still offers, not a newer one it has since dropped', () => {
+    // A group can stop offering a type the identity already signed. That agreement can be the
+    // newest match, and naming it would tell the contributor they hold an ECLA on a group that
+    // cannot be signed for one — while the block itself is owed to the ICLA.
+    const bothKinds = [
+      agreement({ id: 's2', claGroupId: 'cg-1', kind: 'ECLA', signedVia: 'github', signedAs: 'jellis', pdfAvailable: false }),
+      agreement({ id: 's1', claGroupId: 'cg-1', kind: 'ICLA', signedVia: 'github', signedAs: 'jellis' }),
+    ];
+
+    expect(alreadySignedAgreementForIdentity(bothKinds, { platform: 'github', username: 'jellis', githubId: '12345' }, offered, iclaOnly)?.id).toBe('s1');
+  });
+
+  it('still blocks a dual-type identity when the other kind is revoked', () => {
+    const both = [
+      agreement({ id: 's1', claGroupId: 'cg-1', kind: 'ICLA', signedVia: 'github', signedAs: 'jellis' }),
+      agreement({ id: 's2', claGroupId: 'cg-1', kind: 'ECLA', status: 'revoked', signedVia: 'github', signedAs: 'jellis', pdfAvailable: false }),
+    ];
+
+    expect(alreadySignedAgreementForIdentity(both, { platform: 'github', username: 'jellis', githubId: '12345' }, offered, bothTypes)?.id).toBe('s1');
   });
 });
 
@@ -408,6 +486,18 @@ describe('alreadySignedIdentityTooltip', () => {
 
   it('states the position without prescribing a way out when nothing else is selectable', () => {
     expect(alreadySignedIdentityTooltip(agreement({ kind: 'ICLA' }), false)).toBe('You already have an ICLA for this CLA group signed with this account.');
+  });
+
+  it('names both kinds when the identity holds an ICLA and an ECLA', () => {
+    expect(alreadySignedIdentityTooltip(agreement({ kind: 'ICLA' }), true, ['ICLA', 'ECLA'])).toBe(
+      'You already have an ICLA and an ECLA for this CLA group signed with this account. Choose another identity to sign again.'
+    );
+  });
+
+  it('still drops the other-identity sentence when both kinds are held and nothing else is selectable', () => {
+    expect(alreadySignedIdentityTooltip(agreement({ kind: 'ICLA' }), false, ['ICLA', 'ECLA'])).toBe(
+      'You already have an ICLA and an ECLA for this CLA group signed with this account.'
+    );
   });
 });
 

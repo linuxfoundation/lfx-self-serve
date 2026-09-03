@@ -71,6 +71,8 @@ export const SIGN_CONTRACT_TYPE_COPY = {
     label: 'Corporate Contributor',
     description: 'If you are making a contribution of content owned by your employer, you should proceed as a corporate contributor.',
   },
+  /** Why a card is disabled: the identity confirmed a step earlier already holds that type. */
+  alreadyHeld: 'You already have this agreement for this CLA group signed with this identity.',
 } as const;
 
 /**

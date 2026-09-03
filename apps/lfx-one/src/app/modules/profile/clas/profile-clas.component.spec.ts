@@ -24,6 +24,7 @@ import type {
   PrepareSignResponse,
   SignIdentityDialogData,
   SignIdentitySelectResult,
+  SignContractTypeDialogData,
   SignContractTypeSelectResult,
 } from '@lfx-one/shared/interfaces';
 import { BadgeComponent } from '@components/badge/badge.component';
@@ -575,7 +576,10 @@ describe('ProfileClasComponent — Sign CLA hand-off and identity selection (#12
   /** Records dialog opens in order, so "which dialog, and was it opened at all" is assertable. */
   let opened: unknown[];
   /** Records what each dialog was opened with, so the identity step's inputs are assertable. */
-  let openedWith: { component: unknown; config: { header?: string; data?: SignIdentityDialogData | ClaGroupSelectDialogData } }[];
+  let openedWith: {
+    component: unknown;
+    config: { header?: string; data?: SignIdentityDialogData | ClaGroupSelectDialogData | SignContractTypeDialogData };
+  }[];
   /**
    * Manual control of the identity step's teardown, under `stepIdentityTeardown`.
    *
@@ -634,7 +638,7 @@ describe('ProfileClasComponent — Sign CLA hand-off and identity selection (#12
       cclaEnabled: options.cclaEnabled ?? false,
     };
 
-    open = vi.fn((component: unknown, config?: { header?: string; data?: SignIdentityDialogData | ClaGroupSelectDialogData }) => {
+    open = vi.fn((component: unknown, config?: { header?: string; data?: SignIdentityDialogData | ClaGroupSelectDialogData | SignContractTypeDialogData }) => {
       opened.push(component);
       openedWith.push({ component, config: config ?? {} });
       if (component === SignIdentitySelectComponent) {
@@ -852,6 +856,17 @@ describe('ProfileClasComponent — Sign CLA hand-off and identity selection (#12
     // The group they picked, not their whole list: the step grays out identities, and an
     // agreement on a different CLA group says nothing about this one.
     expect(identityStepData()?.claGroupAgreements).toEqual([alreadyHeld]);
+    expect(identityStepData()?.iclaEnabled).toBe(true);
+    expect(identityStepData()?.cclaEnabled).toBe(false);
+  });
+
+  it('forwards the chosen group enablement flags into the identity step', async () => {
+    const fixture = await setup({ iclaEnabled: true, cclaEnabled: true });
+
+    await sign(fixture);
+
+    expect(identityStepData()?.iclaEnabled).toBe(true);
+    expect(identityStepData()?.cclaEnabled).toBe(true);
   });
 
   it('leaves the identity step nothing to gray out when the group is new to them', async () => {
@@ -1240,6 +1255,12 @@ describe('ProfileClasComponent — Sign CLA hand-off and identity selection (#12
     return data && 'variant' in data ? data : undefined;
   }
 
+  /** What the contract-type step was actually served on the last open. */
+  function contractTypeStepData(): SignContractTypeDialogData | undefined {
+    const data = openedWith.filter((entry) => entry.component === SignContractTypeSelectComponent).at(-1)?.config.data;
+    return data && 'heldKinds' in data ? data : undefined;
+  }
+
   it('keeps a group with no linked organization on the GitHub path', async () => {
     // The regression this whole change is at risk of. An empty organization list means nothing
     // is linked or nothing resolved, not "not GitHub" — and these groups are signable today, so
@@ -1329,6 +1350,55 @@ describe('ProfileClasComponent — Sign CLA hand-off and identity selection (#12
 
     expect(opened).toContain(SignContractTypeSelectComponent);
     expect(location.href).toContain('/#/cla/gerrit/project/cg-1/individual');
+  });
+
+  it('tells the contract-type step which type the Gerrit identity already holds', async () => {
+    // The step is only reached because one type is still unsigned. Without this it offers the
+    // type they hold as freely as the one they need, which is the re-sign the gate prevents —
+    // and dropping the wiring would otherwise leave every test on both sides of it green.
+    const gerritIcla: MyClaAgreement = {
+      id: 's1',
+      kind: 'ICLA',
+      claGroupName: 'Venus',
+      claGroupId: CLA_GROUP.claGroupId,
+      signedOn: '2022-01-01',
+      status: 'valid',
+      pdfAvailable: true,
+      signedVia: 'gerrit',
+      signedAs: 'jellis-lf',
+    };
+    // A different group, and a GitHub agreement on this one: neither says anything about what
+    // this Gerrit identity holds here, so a matcher pointed at the wrong thing fails here.
+    const otherGroup: MyClaAgreement = { ...gerritIcla, id: 's2', kind: 'ECLA', claGroupId: 'cg-other', pdfAvailable: false };
+    const viaGithub: MyClaAgreement = { ...gerritIcla, id: 's3', kind: 'ECLA', signedVia: 'github', signedAs: 'jellis', pdfAvailable: false };
+
+    const fixture = await setup({
+      organizations: [org('gerrit')],
+      iclaEnabled: true,
+      cclaEnabled: true,
+      accountClosesWith: { kind: 'gerrit' },
+      contractTypeClosesWith: { contractType: 'corporate' },
+      agreements: [gerritIcla, otherGroup, viaGithub],
+    });
+
+    await sign(fixture);
+
+    expect(contractTypeStepData()?.heldKinds).toEqual(['ICLA']);
+    expect(location.href).toContain('/#/cla/gerrit/project/cg-1/corporate');
+  });
+
+  it('leaves the contract-type step nothing to disable when the identity holds nothing', async () => {
+    const fixture = await setup({
+      organizations: [org('gerrit')],
+      iclaEnabled: true,
+      cclaEnabled: true,
+      accountClosesWith: { kind: 'gerrit' },
+      agreements: [],
+    });
+
+    await sign(fixture);
+
+    expect(contractTypeStepData()?.heldKinds).toEqual([]);
   });
 
   it('hands off at corporate when only CCLA is enabled', async () => {

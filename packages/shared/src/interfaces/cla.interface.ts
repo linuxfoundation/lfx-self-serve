@@ -202,6 +202,18 @@ export interface ClaGroupOption {
 }
 
 /**
+ * The contract types a CLA group offers, resolved to a definite answer per type.
+ *
+ * `ClaGroupOption` leaves both flags optional because the producer omits them for a group whose
+ * record it could not resolve. Anything reading them to decide something has to settle that
+ * first, so this is the settled form: absent has already been read as disabled.
+ */
+export interface ClaGroupEnablement {
+  iclaEnabled: boolean;
+  cclaEnabled: boolean;
+}
+
+/**
  * Response for `GET /api/me/clas/sign-options?q=` — mirrors the producer's `cla-search-list`
  * (#1250) rather than inventing a third shape.
  *
@@ -330,11 +342,15 @@ export interface SignIdentityDialogData {
   gerritUsername?: string;
   /**
    * What the contributor already holds for the CLA group they picked, so the step can gray out
-   * the identity that signed it (#1914). This is where the already-signed block lives: one
-   * contributor can hold several identities, so the group itself stays selectable and only the
-   * identity already on an agreement is refused.
+   * an identity that has no enabled contract type left to sign (#1914). This is where the
+   * already-signed block lives: one contributor can hold several identities, so the group itself
+   * stays selectable and only an identity that has already signed every enabled type is refused.
    */
   claGroupAgreements?: MyClaAgreement[];
+  /** Whether the chosen group accepts an ICLA — used with `cclaEnabled` by the already-signed gate. */
+  iclaEnabled?: boolean;
+  /** Whether the chosen group accepts a CCLA — used with `iclaEnabled` by the already-signed gate. */
+  cclaEnabled?: boolean;
 }
 
 /**
@@ -353,10 +369,22 @@ export type SignIdentitySelectResult = { kind: 'github'; githubId: string } | { 
 export type GerritContractType = 'individual' | 'corporate';
 
 /**
- * What the contract-type step closes with, or `null` for a dismissal (#2066).
+ * What the contract-type step is opened with (#2066).
  *
- * The step takes no input data: it opens only for a group with both types enabled, so there is
- * nothing about the group left for it to branch on.
+ * The step opens only for a group with both types enabled, so nothing about the *group* is left
+ * for it to branch on. What it does need is what the identity confirmed a step earlier already
+ * holds, so the type they cannot usefully sign again is offered as held rather than as a choice.
+ */
+export interface SignContractTypeDialogData {
+  /**
+   * Types this identity already holds for the group. At most one in practice: an identity holding
+   * both is grayed at the identity step, so it never reaches here.
+   */
+  heldKinds: readonly ClaKind[];
+}
+
+/**
+ * What the contract-type step closes with, or `null` for a dismissal (#2066).
  */
 export interface SignContractTypeSelectResult {
   contractType: GerritContractType;
