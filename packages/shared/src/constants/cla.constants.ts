@@ -46,12 +46,32 @@ export const MY_CLAS_PATH = '/profile/clas';
 
 /**
  * The Contributor Console's Gerrit signing route, as its own router declares it
- * (`cla/gerrit/project/:projectId/:contractType`). Always the individual agreement: every
- * Gerrit-linked CLA Group in production has ICLA enabled, and the search response deliberately
- * omits the enablement flags, so there is nothing to read and nothing to choose.
+ * (`cla/gerrit/project/:projectId/:contractType`). The contract-type segment is chosen on
+ * the Gerrit path from the group's enablement flags (#2066).
  */
 export const GERRIT_CONSOLE_ROUTE_PREFIX = '#/cla/gerrit/project';
-export const GERRIT_CONSOLE_CONTRACT_TYPE = 'individual';
+
+/** Contract-type segments the Console Gerrit route accepts (#2066). */
+export const GERRIT_CONTRACT_TYPE_INDIVIDUAL = 'individual';
+export const GERRIT_CONTRACT_TYPE_CORPORATE = 'corporate';
+
+/**
+ * Copy for the Gerrit contract-type step (#2066), mirroring the Contributor Console decision
+ * screen rather than inventing new wording.
+ */
+export const SIGN_CONTRACT_TYPE_COPY = {
+  header: 'What type of contributor are you?',
+  body: "Choose how you'll sign for this project — you'll be redirected to EasyCLA to complete it.",
+  individual: {
+    label: 'Individual Contributor',
+    description:
+      'If you are making a contribution of content that you own, and not content owned by your employer, you should proceed as an individual contributor.',
+  },
+  corporate: {
+    label: 'Corporate Contributor',
+    description: 'If you are making a contribution of content owned by your employer, you should proceed as a corporate contributor.',
+  },
+} as const;
 
 /**
  * The value the Gerrit card writes into the step's form control.

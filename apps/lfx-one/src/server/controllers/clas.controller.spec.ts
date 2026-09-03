@@ -43,7 +43,7 @@ function buildRes() {
   return { json: vi.fn(), status: vi.fn().mockReturnThis(), send: vi.fn() } as any;
 }
 
-const iclaAgreement = { id: 'sig-icla', kind: 'ICLA', projectName: 'p', signedOn: '2022-01-01', status: 'valid', pdfAvailable: true };
+const iclaAgreement = { id: 'sig-icla', kind: 'ICLA', projectName: 'p', signedOn: '2022-01-01T18:40:42Z', status: 'valid', pdfAvailable: true };
 const resolvedIdentity = { lfUsername: 'alice', emails: [], githubIds: [], githubUsernames: [], githubLinked: false };
 
 beforeEach(() => {

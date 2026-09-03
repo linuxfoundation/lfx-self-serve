@@ -65,7 +65,7 @@ function icla(overrides: Partial<EasyClaMyCla> = {}): EasyClaMyCla {
     status: 'valid',
     pdfAvailable: true,
     claGroupID: 'cg-1',
-    signedOn: '2022-01-01',
+    signedOn: '2022-01-01T18:40:42Z',
     ...overrides,
   };
 }
@@ -80,7 +80,7 @@ function ecla(overrides: Partial<EasyClaMyCla> = {}): EasyClaMyCla {
     status: 'valid',
     companyName: 'Acme',
     claGroupID: 'cg-2',
-    signedOn: '2022-02-02',
+    signedOn: '2022-02-02T18:40:42Z',
     ...overrides,
   };
 }
@@ -476,7 +476,7 @@ describe('toClaGroupSearchResponse', () => {
     expect(mapped.results[0]).toMatchObject({ matchedRepositoryName: 'cncf/foo', matchedRepositoryURL: 'https://github.com/cncf/foo' });
   });
 
-  it('drops the producer fields the modal has no use for', () => {
+  it('forwards ICLA/CCLA enablement flags for Gerrit contract-type routing (#2066)', () => {
     const mapped = toClaGroupSearchResponse({
       searchTerm: 'cncf',
       resultCount: 1,
@@ -484,11 +484,8 @@ describe('toClaGroupSearchResponse', () => {
       results: [result({ projectSFID: 'a09', foundationSFID: 'a09f', projectExternalID: 'ext', iclaEnabled: true, cclaEnabled: false })],
     });
 
-    // Passing these on would invite a later consumer to branch on signing configuration the
-    // picker never asked for and cannot honour.
     expect(mapped.results[0]).not.toHaveProperty('projectSFID');
-    expect(mapped.results[0]).not.toHaveProperty('iclaEnabled');
-    expect(mapped.results[0]).not.toHaveProperty('cclaEnabled');
+    expect(mapped.results[0]).toMatchObject({ iclaEnabled: true, cclaEnabled: false });
   });
 
   it('answers an absent upstream body with an empty, non-truncated set for the term', () => {

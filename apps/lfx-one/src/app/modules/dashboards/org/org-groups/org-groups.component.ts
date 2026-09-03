@@ -1,8 +1,8 @@
 // Copyright The Linux Foundation and each contributor to LFX.
 // SPDX-License-Identifier: MIT
 
-import { NgTemplateOutlet } from '@angular/common';
-import { Component, computed, inject, signal, Signal } from '@angular/core';
+import { isPlatformBrowser, NgTemplateOutlet } from '@angular/common';
+import { Component, computed, inject, PLATFORM_ID, signal, Signal } from '@angular/core';
 import { ActivatedRoute, Router, RouterLink } from '@angular/router';
 import { takeUntilDestroyed, toObservable, toSignal } from '@angular/core/rxjs-interop';
 import { FormControl, FormGroup } from '@angular/forms';
@@ -62,6 +62,7 @@ export class OrgGroupsComponent {
   private readonly groupsService = inject(OrgLensGroupsService);
   private readonly route = inject(ActivatedRoute);
   private readonly router = inject(Router);
+  private readonly platformId = inject(PLATFORM_ID);
 
   protected readonly committeeLabel = COMMITTEE_LABEL;
   protected readonly behavioralClassConfig = BEHAVIORAL_CLASS_CONFIG;
@@ -219,7 +220,18 @@ export class OrgGroupsComponent {
     downloadCsv(`org-lens-groups-${slug}-${localDateStamp()}.csv`, [header, ...body]);
   }
 
+  // Browser-only (GH-1809). Angular's server render waits for application stability — including any
+  // in-flight HttpClient request — before emitting HTML, so this client-shaped pipeline still ran on
+  // the server and held the document open for the whole upstream seat drain: TTFB 31.6s on the
+  // largest org, a blank tab rather than a slow one. Leaving groupsData() undefined server-side makes
+  // groupsLoading() true, so SSR emits the existing skeleton immediately and the fetch starts at
+  // hydration. The route stays RenderMode.Server deliberately: RenderMode.Client would trade the data
+  // wait for a bundle-boot wait and paint no chrome at all. Same guard shape as nps-card.component.ts.
   private initGroupsData(): Signal<OrgLensGroupsResponse | null | undefined> {
+    if (!isPlatformBrowser(this.platformId)) {
+      return signal<OrgLensGroupsResponse | null | undefined>(undefined);
+    }
+
     return toSignal(
       this.orgUid$.pipe(
         tap(() => {

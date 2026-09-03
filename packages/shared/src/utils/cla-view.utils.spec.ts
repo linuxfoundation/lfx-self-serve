@@ -20,8 +20,10 @@ import {
   claSignRoute,
   claStatusLabel,
   claStatusSeverity,
+  formatClaSignedOn,
   gerritSignUrl,
   isMyClasEmpty,
+  resolveGerritContractType,
   shouldShowGithubCta,
   signedAsLine,
   splitAgreementsByKind,
@@ -29,7 +31,7 @@ import {
 } from './cla-view.utils';
 
 function agreement(overrides: Partial<MyClaAgreement> = {}): MyClaAgreement {
-  return { id: 's1', kind: 'ICLA', claGroupName: 'P', signedOn: '2022-01-01', status: 'valid', pdfAvailable: true, ...overrides };
+  return { id: 's1', kind: 'ICLA', claGroupName: 'P', signedOn: '2022-01-01T18:40:42Z', status: 'valid', pdfAvailable: true, ...overrides };
 }
 
 function identity(overrides: Partial<MyClasIdentitySummary> = {}): MyClasIdentitySummary {
@@ -151,6 +153,60 @@ describe('claStatusSeverity', () => {
     expect(claStatusSeverity('invalidated')).toBe('danger');
     expect(claStatusSeverity('unknown')).toBe('secondary');
     expect(claStatusSeverity('superseded')).toBe('warn');
+  });
+});
+
+describe('formatClaSignedOn', () => {
+  // The three shapes from #2032. UTC pin vs local is a no-op on the first two; the third
+  // is the reported off-by-one (Pacific afternoon → next UTC calendar day).
+  const afternoonPacific = '2026-09-01T17:30:00-07:00';
+
+  it('renders a Pacific-afternoon timestamp as Sep 1 locally and Sep 2 in UTC', () => {
+    expect(formatClaSignedOn(afternoonPacific, 'America/Los_Angeles')).toBe('Sep 1, 2026');
+    expect(formatClaSignedOn(afternoonPacific, 'UTC')).toBe('Sep 2, 2026');
+  });
+
+  it('keeps same-calendar-day timestamps on the same date in Pacific and UTC', () => {
+    expect(formatClaSignedOn('2026-05-01T18:40:42Z', 'America/Los_Angeles')).toBe('May 1, 2026');
+    expect(formatClaSignedOn('2026-05-01T18:40:42Z', 'UTC')).toBe('May 1, 2026');
+    expect(formatClaSignedOn('2026-05-08T23:24:50.232159+00:00', 'America/Los_Angeles')).toBe('May 8, 2026');
+    expect(formatClaSignedOn('2026-05-08T23:24:50.232159+00:00', 'UTC')).toBe('May 8, 2026');
+  });
+
+  it('pins a bare YYYY-MM-DD to UTC so a negative-offset host does not shift the calendar day', () => {
+    expect(formatClaSignedOn('2022-01-01')).toBe('Jan 1, 2022');
+    expect(formatClaSignedOn('2022-01-01', 'America/Los_Angeles')).toBe('Jan 1, 2022');
+  });
+
+  it('omits timeZone on the production no-argument path so a UTC re-pin fails this test', () => {
+    const seen: (Intl.DateTimeFormatOptions | undefined)[] = [];
+    const original = Date.prototype.toLocaleDateString;
+    // eslint-disable-next-line no-extend-native
+    Date.prototype.toLocaleDateString = function (locales?: unknown, options?: Intl.DateTimeFormatOptions): string {
+      seen.push(options);
+      return original.call(this, locales as string, options);
+    };
+    try {
+      formatClaSignedOn(afternoonPacific);
+    } finally {
+      // eslint-disable-next-line no-extend-native
+      Date.prototype.toLocaleDateString = original;
+    }
+
+    expect(seen.length).toBeGreaterThan(0);
+    expect(seen.at(-1)?.timeZone).toBeUndefined();
+  });
+
+  it('returns an em dash for missing, blank, or unparseable values', () => {
+    expect(formatClaSignedOn('')).toBe('—');
+    expect(formatClaSignedOn('   ')).toBe('—');
+    expect(formatClaSignedOn('not-a-date')).toBe('—');
+  });
+
+  it('refuses impossible calendar dates rather than rolling them over', () => {
+    expect(formatClaSignedOn('2026-02-31')).toBe('—');
+    expect(formatClaSignedOn('2026-02-31T10:00:00Z')).toBe('—');
+    expect(formatClaSignedOn('0001-01-01')).toBe('—');
   });
 });
 
@@ -440,19 +496,25 @@ describe('gerritSignUrl', () => {
   const RETURN_URL = 'https://app.dev.lfx.dev/profile/clas';
 
   it('composes the Console Gerrit route for the individual agreement', () => {
-    expect(gerritSignUrl('https://easycla.example.org', 'cg-1', RETURN_URL)).toBe(
+    expect(gerritSignUrl('https://easycla.example.org', 'cg-1', RETURN_URL, 'individual')).toBe(
       'https://easycla.example.org/#/cla/gerrit/project/cg-1/individual?redirect=https%3A%2F%2Fapp.dev.lfx.dev%2Fprofile%2Fclas'
     );
   });
 
+  it('composes the Console Gerrit route for the corporate agreement', () => {
+    expect(gerritSignUrl('https://easycla.example.org', 'cg-1', RETURN_URL, 'corporate')).toBe(
+      'https://easycla.example.org/#/cla/gerrit/project/cg-1/corporate?redirect=https%3A%2F%2Fapp.dev.lfx.dev%2Fprofile%2Fclas'
+    );
+  });
+
   it('tolerates a base with trailing slashes, as every configured one has', () => {
-    expect(gerritSignUrl('https://easycla.example.org//', 'cg-1', RETURN_URL)).toBe(
+    expect(gerritSignUrl('https://easycla.example.org//', 'cg-1', RETURN_URL, 'individual')).toBe(
       'https://easycla.example.org/#/cla/gerrit/project/cg-1/individual?redirect=https%3A%2F%2Fapp.dev.lfx.dev%2Fprofile%2Fclas'
     );
   });
 
   it('encodes the return address so its own query string cannot escape into ours', () => {
-    const url = gerritSignUrl('https://easycla.example.org', 'cg-1', 'https://app.example.org/profile/clas?a=1&b=2');
+    const url = gerritSignUrl('https://easycla.example.org', 'cg-1', 'https://app.example.org/profile/clas?a=1&b=2', 'individual');
 
     expect(url).toContain('redirect=https%3A%2F%2Fapp.example.org%2Fprofile%2Fclas%3Fa%3D1%26b%3D2');
     // One query parameter, not three: an unencoded return address would have added two more.
@@ -462,16 +524,34 @@ describe('gerritSignUrl', () => {
   it('returns nothing when the Console base is unset', () => {
     // The caller reports a failure instead. Navigating to a relative address would resolve it
     // against our own origin and land the contributor on a page that cannot sign anything.
-    expect(gerritSignUrl('', 'cg-1', RETURN_URL)).toBeNull();
-    expect(gerritSignUrl('   ', 'cg-1', RETURN_URL)).toBeNull();
+    expect(gerritSignUrl('', 'cg-1', RETURN_URL, 'individual')).toBeNull();
+    expect(gerritSignUrl('   ', 'cg-1', RETURN_URL, 'individual')).toBeNull();
   });
 
   it('returns nothing when the Console base is not an absolute address', () => {
-    expect(gerritSignUrl('easycla.example.org', 'cg-1', RETURN_URL)).toBeNull();
+    expect(gerritSignUrl('easycla.example.org', 'cg-1', RETURN_URL, 'individual')).toBeNull();
   });
 
   it('returns nothing when the CLA group id is missing', () => {
-    expect(gerritSignUrl('https://easycla.example.org', '', RETURN_URL)).toBeNull();
-    expect(gerritSignUrl('https://easycla.example.org', '  ', RETURN_URL)).toBeNull();
+    expect(gerritSignUrl('https://easycla.example.org', '', RETURN_URL, 'individual')).toBeNull();
+    expect(gerritSignUrl('https://easycla.example.org', '  ', RETURN_URL, 'individual')).toBeNull();
+  });
+});
+
+describe('resolveGerritContractType', () => {
+  it('returns chooser when both types are enabled', () => {
+    expect(resolveGerritContractType(true, true)).toBe('chooser');
+  });
+
+  it('returns individual when only ICLA is enabled', () => {
+    expect(resolveGerritContractType(true, false)).toBe('individual');
+  });
+
+  it('returns corporate when only CCLA is enabled', () => {
+    expect(resolveGerritContractType(false, true)).toBe('corporate');
+  });
+
+  it('returns none when neither type is enabled', () => {
+    expect(resolveGerritContractType(false, false)).toBe('none');
   });
 });

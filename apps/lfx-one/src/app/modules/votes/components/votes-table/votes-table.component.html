@@ -176,8 +176,8 @@
                         severity="primary"
                         size="small"
                         [text]="true"
-                        [routerLink]="['/votes', vote.uid, 'edit']"
-                        [queryParams]="editQueryParams()"
+                        [routerLink]="vote.editCommands"
+                        [queryParams]="vote.editQueryParams"
                         (onClick)="$event.stopPropagation()"
                         [attr.data-testid]="'votes-edit-' + vote.uid">
                       </lfx-button>

@@ -1,20 +1,29 @@
 // Copyright The Linux Foundation and each contributor to LFX.
 // SPDX-License-Identifier: MIT
 
-import { DatePipe, DOCUMENT, isPlatformBrowser } from '@angular/common';
+import { DOCUMENT, isPlatformBrowser } from '@angular/common';
 import { ChangeDetectionStrategy, Component, computed, DestroyRef, inject, PLATFORM_ID, Signal, signal, viewChildren } from '@angular/core';
 import { takeUntilDestroyed, toSignal } from '@angular/core/rxjs-interop';
 import { Router, RouterLink } from '@angular/router';
-import { ECLA_COVERED_DOWNLOAD_LABEL, GITLAB_UNSUPPORTED_HEADER, MY_CLAS_M2_ENABLED_FLAG, MY_CLAS_PATH, SIGN_IDENTITY_COPY } from '@lfx-one/shared/constants';
+import {
+  ECLA_COVERED_DOWNLOAD_LABEL,
+  GITLAB_UNSUPPORTED_HEADER,
+  MY_CLAS_M2_ENABLED_FLAG,
+  MY_CLAS_PATH,
+  SIGN_CONTRACT_TYPE_COPY,
+  SIGN_IDENTITY_COPY,
+} from '@lfx-one/shared/constants';
 import type {
   ClaGroupOption,
   ClaRow,
   ClaSignRoute,
   ClaStatus,
+  GerritContractType,
   GithubAccountOption,
   MyClaAgreement,
   MyClasState,
   PrepareSignResponse,
+  SignContractTypeSelectResult,
   SignIdentityDialogData,
   SignIdentitySelectResult,
   SignIdentityVariant,
@@ -25,8 +34,10 @@ import {
   claStatusLabel,
   claStatusSeverity,
   downloadFromUrl,
+  formatClaSignedOn,
   gerritSignUrl,
   isMyClasEmpty,
+  resolveGerritContractType,
   signedAsLine,
 } from '@lfx-one/shared/utils';
 import { MenuItem, MessageService } from 'primeng/api';
@@ -51,6 +62,7 @@ import { ClaGroupSelectComponent } from './cla-group-select.component';
 import { buildContactClaManagerMenuItems } from './contact-cla-manager-menu';
 import { GitlabUnsupportedComponent } from './gitlab-unsupported.component';
 import { buildManageInCclaConsoleMenuItems } from './manage-ccla-console-menu';
+import { SignContractTypeSelectComponent } from './sign-contract-type-select.component';
 import { SignIdentitySelectComponent } from './sign-identity-select.component';
 
 /**
@@ -66,18 +78,7 @@ import { SignIdentitySelectComponent } from './sign-identity-select.component';
  */
 @Component({
   selector: 'lfx-profile-clas',
-  imports: [
-    DatePipe,
-    RouterLink,
-    BadgeComponent,
-    ButtonComponent,
-    EmptyStateComponent,
-    MenuComponent,
-    MessageComponent,
-    TableComponent,
-    TagComponent,
-    ToastModule,
-  ],
+  imports: [RouterLink, BadgeComponent, ButtonComponent, EmptyStateComponent, MenuComponent, MessageComponent, TableComponent, TagComponent, ToastModule],
   providers: [MessageService, DialogService],
   templateUrl: './profile-clas.component.html',
   changeDetection: ChangeDetectionStrategy.OnPush,
@@ -375,7 +376,11 @@ export class ProfileClasComponent {
       }
 
       if (result.kind === 'gerrit') {
-        this.handOffToGerrit(option);
+        // Held closed again across the wait below. Between this dialog's teardown and the next
+        // step opening there is a gap of one leave animation, and a second Sign CLA in that
+        // window would start a parallel hand-off.
+        this.signDialogOpen.set(true);
+        this.afterDialogTornDown(dialogRef, () => this.chooseContractTypeThenHandOffToGerrit(option));
         return;
       }
 
@@ -412,7 +417,53 @@ export class ProfileClasComponent {
   }
 
   /**
-   * Leaves for the Console's Gerrit signing route (#2002).
+   * Asks which contract type the Gerrit signature will use when both are enabled (#2066).
+   * Single-type groups skip this step; neither-enabled groups fail visibly.
+   *
+   * Reached from the identity step's teardown rather than its close, so every exit here is
+   * responsible for reopening the gate the caller held shut across that wait.
+   */
+  private chooseContractTypeThenHandOffToGerrit(option: ClaGroupOption): void {
+    const resolved = resolveGerritContractType(option.iclaEnabled === true, option.cclaEnabled === true);
+
+    if (resolved === 'none') {
+      this.signDialogOpen.set(false);
+      this.starting.set(false);
+      this.reportGerritContractTypeUnavailable();
+      return;
+    }
+
+    if (resolved !== 'chooser') {
+      this.signDialogOpen.set(false);
+      this.handOffToGerrit(option, resolved);
+      return;
+    }
+
+    this.signDialogOpen.set(true);
+
+    // No data: the step renders both cards unconditionally, and it is only reachable for a group
+    // that enables both. Passing the flags it would have to ignore invites a later caller to open
+    // it for a single-type group, which is the hand-off this branch exists to make without asking.
+    const dialogRef = this.dialogService.open(SignContractTypeSelectComponent, {
+      header: SIGN_CONTRACT_TYPE_COPY.header,
+      width: '32rem',
+      modal: true,
+      closable: true,
+      dismissableMask: true,
+    }) as DynamicDialogRef;
+
+    this.whenDialogSettles<SignContractTypeSelectResult>(dialogRef, (result) => {
+      this.signDialogOpen.set(false);
+      this.starting.set(false);
+
+      if (!result) return;
+
+      this.handOffToGerrit(option, result.contractType);
+    });
+  }
+
+  /**
+   * Leaves for the Console's Gerrit signing route (#2002, #2066).
    *
    * No prepare-sign call, and no identity of any kind on the wire. The Console resolves the
    * EasyCLA user from the LF SSO token on this route, and its Gerrit branch takes its return
@@ -425,7 +476,7 @@ export class ProfileClasComponent {
    * returns the contributor here afterwards, which only reads as one continuous flow if they
    * never left this tab.
    */
-  private handOffToGerrit(option: ClaGroupOption): void {
+  private handOffToGerrit(option: ClaGroupOption, contractType: GerritContractType): void {
     this.starting.set(true);
 
     // Read here rather than held as a field: this runs only from the contributor's click, so
@@ -433,7 +484,7 @@ export class ProfileClasComponent {
     // own origin, which is the same value the server derives from the request host for
     // prepare-sign — arrived at without needing that host to be checked against a trusted list.
     const returnUrl = `${this.document.location.origin}${MY_CLAS_PATH}`;
-    const url = gerritSignUrl(environment.urls.contributorConsole, option.claGroupId, returnUrl);
+    const url = gerritSignUrl(environment.urls.contributorConsole, option.claGroupId, returnUrl, contractType);
 
     if (!url) {
       this.starting.set(false);
@@ -443,6 +494,22 @@ export class ProfileClasComponent {
 
     this.starting.set(false);
     this.document.location.href = url;
+  }
+
+  /**
+   * Runs `next` once the dialog is not merely closed but torn down (#2066).
+   *
+   * `DynamicDialogRef.close()` emits `onClose` synchronously and starts the leave animation from
+   * that same emission; the animation's end is what drops `p-overflow-hidden` from the body. So a
+   * dialog opened from inside `onClose` has its own scroll lock stripped a moment after it
+   * appears, and the page scrolls behind it. `onDestroy` fires immediately after that teardown,
+   * which is the boundary a follow-on step has to wait for.
+   *
+   * The GitHub path needs none of this: its next step opens after the linked-account request,
+   * which lands long after the animation is done.
+   */
+  private afterDialogTornDown(dialogRef: DynamicDialogRef, next: () => void): void {
+    dialogRef.onDestroy.pipe(take(1), takeUntilDestroyed(this.destroyRef)).subscribe(() => next());
   }
 
   private whenDialogSettles<T>(dialogRef: DynamicDialogRef, onSettle: (value: T | null | undefined) => void): void {
@@ -558,6 +625,15 @@ export class ProfileClasComponent {
     });
   }
 
+  /** Stops a Gerrit hand-off when the group enables neither ICLA nor CCLA (#2066). */
+  private reportGerritContractTypeUnavailable(): void {
+    this.messageService.add({
+      severity: 'error',
+      summary: 'Could not start signing',
+      detail: 'This CLA group is not configured for individual or corporate signing from here. Contact the project CLA manager.',
+    });
+  }
+
   /**
    * Takes the contributor to Identities, having asked for it from the picker's empty state.
    *
@@ -663,6 +739,7 @@ export class ProfileClasComponent {
             icon: this.statusIcon(agreement.status),
             note: this.statusNote(agreement),
           },
+          signedOnLabel: formatClaSignedOn(agreement.signedOn),
           signedAsLine: m2 ? signedAsLine(agreement.signedVia, agreement.signedAs) : undefined,
           menuItems,
           hasActions: menuItems.length > 0,

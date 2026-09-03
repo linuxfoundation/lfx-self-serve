@@ -10,8 +10,9 @@ import {
   CLA_GROUP_MATCH_TYPE_LABELS,
   CLA_GROUP_ORG_SOURCE_ICONS,
   CLA_GROUP_ORG_SOURCE_LABELS,
-  GERRIT_CONSOLE_CONTRACT_TYPE,
   GERRIT_CONSOLE_ROUTE_PREFIX,
+  GERRIT_CONTRACT_TYPE_CORPORATE,
+  GERRIT_CONTRACT_TYPE_INDIVIDUAL,
   UNNAMED_CLA_GROUP,
 } from '../constants/cla.constants';
 import { PROFILE_TABS } from '../constants/profile.constants';
@@ -24,10 +25,12 @@ import type {
   ClaSignedVia,
   ClaSignRoute,
   ClaStatus,
+  GerritContractType,
   MyClaAgreement,
   MyClasIdentitySummary,
   SignIdentityRef,
 } from '../interfaces/cla.interface';
+import { formatIsoDateLabel } from './date-time.utils';
 
 /**
  * Profile subtab list, with the read-only "CLAs" tab appended (before Transactions)
@@ -112,6 +115,52 @@ export function claStatusSeverity(status: ClaStatus): TagSeverity {
     case 'superseded':
       return 'warn';
   }
+}
+
+const CLA_SIGNED_ON_DATE_ONLY = /^\d{4}-\d{2}-\d{2}$/;
+
+/**
+ * Date-only Sign Date for My CLAs (#2032).
+ *
+ * Producer `signedOn` is a real RFC3339 instant, not a calendar-day stored as UTC
+ * midnight. Pinning the formatter to UTC (the DatePipe `'UTC'` argument, or
+ * `{ timeZone: 'UTC' }` on `toLocaleDateString`) shifts the calendar day for
+ * viewers in negative offsets — a Pacific afternoon signature displays as the
+ * next UTC date. Omitting `timeZone` uses the viewer's local zone; pass an IANA
+ * name in tests so CI (UTC) can still pin the Pacific case.
+ *
+ * A bare `YYYY-MM-DD` parses as UTC midnight (ECMA-262), so it is pinned to UTC
+ * to keep that calendar day — the reverse of the instant case.
+ *
+ * Safe here only because the CLAs rows never render under SSR (`initState`
+ * returns unloaded off-browser). Do not call from a server-rendered path
+ * without passing an explicit `timeZone` (see `formatHubSpotUpdatedAt`).
+ *
+ * Empty, unparseable, or an impossible calendar date (Feb 31) → `'—'`
+ * (same placeholder as `claStatusLabel('unknown')`).
+ */
+export function formatClaSignedOn(iso: string, timeZone?: string): string {
+  const trimmed = iso.trim();
+  if (!trimmed) return '—';
+
+  if (CLA_SIGNED_ON_DATE_ONLY.test(trimmed)) {
+    const label = formatIsoDateLabel(trimmed);
+    return label === trimmed ? '—' : label;
+  }
+
+  const datePart = trimmed.slice(0, 10);
+  if (CLA_SIGNED_ON_DATE_ONLY.test(datePart) && formatIsoDateLabel(datePart) === datePart) {
+    return '—';
+  }
+
+  const date = new Date(trimmed);
+  if (Number.isNaN(date.getTime())) return '—';
+  return date.toLocaleDateString('en-US', {
+    month: 'short',
+    day: 'numeric',
+    year: 'numeric',
+    ...(timeZone ? { timeZone } : {}),
+  });
 }
 
 /**
@@ -209,7 +258,7 @@ export function claSignRoute(organizations: ClaGroupOrg[]): ClaSignRoute {
  * Returns `null` rather than a malformed address when the base or the group id is unusable,
  * so the caller reports a failure instead of navigating somewhere that cannot work.
  */
-export function gerritSignUrl(consoleBaseUrl: string, claGroupId: string, returnUrl: string): string | null {
+export function gerritSignUrl(consoleBaseUrl: string, claGroupId: string, returnUrl: string, contractType: GerritContractType): string | null {
   // Trailing slashes are stripped by scanning, not by an anchored `/\/+$/`: that pattern
   // backtracks polynomially on a long run of slashes, which CodeQL flags as a ReDoS even
   // though this particular input is build-time configuration.
@@ -227,8 +276,24 @@ export function gerritSignUrl(consoleBaseUrl: string, claGroupId: string, return
     return null;
   }
 
+  // The segment is the contract type verbatim. Coercing an unrecognized value to `individual`
+  // would reinstate #2066's silent default in the one function that decides the route, so the
+  // type is the only guard — a bad caller must fail to compile, not sign the wrong agreement.
   const redirect = encodeURIComponent(returnUrl);
-  return `${base}/${GERRIT_CONSOLE_ROUTE_PREFIX}/${encodeURIComponent(groupId)}/${GERRIT_CONSOLE_CONTRACT_TYPE}?redirect=${redirect}`;
+  return `${base}/${GERRIT_CONSOLE_ROUTE_PREFIX}/${encodeURIComponent(groupId)}/${contractType}?redirect=${redirect}`;
+}
+
+/**
+ * Whether the Gerrit hand-off needs a contract-type step, and which segment to use when it does not (#2066).
+ *
+ * Returns `chooser` when both ICLA and CCLA are enabled; a concrete type when exactly one is;
+ * `none` when neither is — the caller must fail visibly rather than navigate.
+ */
+export function resolveGerritContractType(iclaEnabled: boolean, cclaEnabled: boolean): GerritContractType | 'chooser' | 'none' {
+  if (iclaEnabled && cclaEnabled) return 'chooser';
+  if (iclaEnabled) return GERRIT_CONTRACT_TYPE_INDIVIDUAL;
+  if (cclaEnabled) return GERRIT_CONTRACT_TYPE_CORPORATE;
+  return 'none';
 }
 
 /**
