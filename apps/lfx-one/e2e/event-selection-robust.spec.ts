@@ -2,6 +2,7 @@
 // SPDX-License-Identifier: MIT
 
 import { expect, Page, test } from '@playwright/test';
+import { skipWhenAuthMissing } from './helpers/auth.helper';
 import { DEFAULT_LENS, LENS_COOKIE_KEY } from '@lfx-one/shared/constants';
 
 test.beforeEach(() => skipWhenAuthMissing());

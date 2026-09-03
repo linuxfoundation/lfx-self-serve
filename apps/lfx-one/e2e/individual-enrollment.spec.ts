@@ -4,6 +4,7 @@
 // Generated with [Claude Code](https://claude.ai/code)
 
 import { expect, Page, test } from '@playwright/test';
+import { skipWhenAuthMissing } from './helpers/auth.helper';
 
 test.beforeEach(() => skipWhenAuthMissing());
 

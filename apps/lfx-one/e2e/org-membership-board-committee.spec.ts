@@ -21,6 +21,7 @@
  */
 
 import { expect, test, type Page } from '@playwright/test';
+import { skipWhenAuthMissing } from './helpers/auth.helper';
 
 test.beforeEach(() => skipWhenAuthMissing());
 

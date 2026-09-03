@@ -2,6 +2,7 @@
 // SPDX-License-Identifier: MIT
 
 import { test, expect, Page } from '@playwright/test';
+import { skipWhenAuthMissing } from './helpers/auth.helper';
 
 import type { TrainingCertificationSummaryResponse } from '@lfx-one/shared/interfaces';
 

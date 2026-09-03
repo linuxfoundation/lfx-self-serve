@@ -50,12 +50,9 @@
 import { expect, Page, Route, test } from '@playwright/test';
 import { skipWhenAuthMissing } from './helpers/auth.helper';
 
-test.beforeEach(() => skipWhenAuthMissing());
 import { WEEKLY_BRIEF_ERROR_REASON, WEEKLY_BRIEF_SOURCES_COLLAPSE_THRESHOLD } from '@lfx-one/shared/constants';
 import { CommitteeMemberRole, PollStatus } from '@lfx-one/shared/enums';
 import {
-
-test.beforeEach(() => skipWhenAuthMissing());
   Committee,
   ShareWeeklyBriefResult,
   Vote,
@@ -64,6 +61,8 @@ test.beforeEach(() => skipWhenAuthMissing());
   WeeklyBriefCurrentResponse,
   WeeklyBriefThrottle,
 } from '@lfx-one/shared/interfaces';
+
+test.beforeEach(() => skipWhenAuthMissing());
 
 const TEST_COMMITTEE_UID = 'wb-card-e2e-committee-uid';
 // Committees are mounted under /groups, not /committees (see committee-about.helper.ts's

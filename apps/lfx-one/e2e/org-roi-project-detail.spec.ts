@@ -9,8 +9,6 @@ import { ORG_LENS_ROI_METHOD_STORAGE_KEY } from '@lfx-one/shared/constants/org-l
 import { formatCurrency, formatPercent } from '@lfx-one/shared/utils/number.utils';
 
 import {
-
-test.beforeEach(() => skipWhenAuthMissing());
   CURRENT_YEAR,
   DETAIL_LOSS_PROJECT,
   DETAIL_PROJECT,
@@ -23,6 +21,8 @@ test.beforeEach(() => skipWhenAuthMissing());
   orgRoiProjectDetailUrl,
   stubOrgLensContext,
 } from './helpers/org-roi.helper';
+
+test.beforeEach(() => skipWhenAuthMissing());
 
 test.setTimeout(120_000);
 

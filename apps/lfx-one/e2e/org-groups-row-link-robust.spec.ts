@@ -20,6 +20,7 @@
 
 import { expect, Page, test } from '@playwright/test';
 
+import { skipWhenAuthMissing } from './helpers/auth.helper';
 import { GROUP_UID, SECOND_GROUP_UID, stubAccountContext, stubGroups, gotoGroups } from './helpers/org-groups.helper';
 
 test.beforeEach(() => skipWhenAuthMissing());

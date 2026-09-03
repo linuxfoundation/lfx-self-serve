@@ -8,8 +8,6 @@ import { skipWhenAuthMissing } from './helpers/auth.helper';
 import { formatCurrency } from '@lfx-one/shared/utils/number.utils';
 
 import {
-
-test.beforeEach(() => skipWhenAuthMissing());
   BAR_MAX_ROWS,
   BUBBLE_MAX_POINTS,
   DEFAULT_SELECTED_PROJECTS,
@@ -29,6 +27,8 @@ test.beforeEach(() => skipWhenAuthMissing());
   stubOrgLensContext,
   UNSELECTED_PROJECT,
 } from './helpers/org-roi.helper';
+
+test.beforeEach(() => skipWhenAuthMissing());
 
 test.setTimeout(120_000);
 

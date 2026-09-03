@@ -18,8 +18,6 @@ import { expect, test } from '@playwright/test';
 import { skipWhenAuthMissing } from './helpers/auth.helper';
 
 import {
-
-test.beforeEach(() => skipWhenAuthMissing());
   appearsWithin,
   blockLaunchDarkly,
   buildEngagementResponse,
@@ -29,6 +27,8 @@ test.beforeEach(() => skipWhenAuthMissing());
   mockEngagementApi,
   PAGE_LOAD_TIMEOUT,
 } from './helpers/committee-engagement.helper';
+
+test.beforeEach(() => skipWhenAuthMissing());
 
 test.setTimeout(120_000);
 
