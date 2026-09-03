@@ -35,6 +35,7 @@ const {
   profileAuthSvc: {
     isProfileAuthConfigured: vi.fn(() => false),
     getManagementToken: vi.fn(),
+    exchangeCodeForToken: vi.fn(),
   },
   emailVerificationSvc: {
     getUserEmails: vi.fn(),
@@ -461,7 +462,7 @@ describe('ProfileController impersonation-blocked auth callbacks', () => {
     await controller.handleProfileAuthCallback(buildReq({ path: '/passwordless/callback', query: { code: 'c', state: 's' } }), res);
 
     expect(res.redirect).toHaveBeenCalledWith('/profile?error=impersonation_read_only');
-    expect(profileAuthSvc.getManagementToken).not.toHaveBeenCalled();
+    expect(profileAuthSvc.exchangeCodeForToken).not.toHaveBeenCalled();
   });
 
   it('handleProfileAuthCallback redirects to the session-stashed returnTo when blocked', async () => {
