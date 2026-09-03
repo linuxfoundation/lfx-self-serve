@@ -137,6 +137,9 @@ export * from './public-group.interface';
 // Lens interfaces
 export * from './lens.interface';
 
+// Formation interfaces
+export * from './formation.interface';
+
 // Navigation interfaces
 export * from './navigation.interface';
 
