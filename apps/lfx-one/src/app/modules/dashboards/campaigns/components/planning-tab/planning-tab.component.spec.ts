@@ -1792,6 +1792,43 @@ describe('PlanningTabComponent — HubSpot UTM states', () => {
     expect(instance()['hsCreateBlocked'](), 'withheld Create under another foundation').toBe(false);
   });
 
+  it('suppresses Create cross-foundation when the search was INCONCLUSIVE', () => {
+    // dealako (#2079, blocking): the cross-foundation branch set hsNotFound and hsUnconfirmed but
+    // never hsCreateSuppressed. The template gates Create on `hsNotFound() && !hsUtm() &&
+    // !hsCreateSuppressed()`, so an inconclusive search under foundation B rendered an ENABLED
+    // Create -- under the foundation most likely to share a portal with the campaign just
+    // created under A.
+    const ctx = TestBed.inject(ProjectContextService);
+    const empty = { found: false, hs_utm: null, campaign_name: '', all_matches: [], capped: false, inconclusive: false };
+
+    runLookup(empty, 'KubeCon NA 2026');
+    create.mockReturnValue(
+      new Observable((o) => {
+        o.next({ created: true, hs_utm: null, campaign_name: 'Kubecon Na 2026' });
+        o.complete();
+      })
+    );
+    (fixture.componentInstance as unknown as { createInHubSpot(): void }).createInHubSpot();
+    fixture.detectChanges();
+
+    // Foundation B, and its lookup cannot prove completeness.
+    ctx.setFoundation({ uid: 'foundation-b-uid', slug: 'foundation-b', name: 'Foundation B' }, false);
+    fixture.detectChanges();
+    // recheckHubSpot(), not runLookup(): lookupHubSpot returns early when lastLookedUpEvent
+    // already matches, so a second runLookup for the same event is a no-op and the branch under
+    // test never runs.
+    lookup.mockReturnValue(
+      new Observable((o) => {
+        o.next({ found: false, hs_utm: null, campaign_name: '', all_matches: [], capped: true, inconclusive: true });
+        o.complete();
+      })
+    );
+    (fixture.componentInstance as unknown as { recheckHubSpot(): void }).recheckHubSpot();
+    fixture.detectChanges();
+
+    expect(instance()['hsCreateSuppressed'](), 'an inconclusive cross-foundation search offered Create').toBe(true);
+  });
+
   it('warns under a DIFFERENT foundation without withholding Create', () => {
     // Copilot, raised twice: two foundations can share one HubSpot portal, where campaign names
     // are one namespace. After a create under A settles, hsCreatesInFlight is zero and B's own

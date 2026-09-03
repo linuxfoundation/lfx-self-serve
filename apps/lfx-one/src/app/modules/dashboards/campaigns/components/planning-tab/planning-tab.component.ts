@@ -1884,6 +1884,15 @@ export class PlanningTabComponent implements OnInit {
             //
             // The in-flight guard does not cover this. It falls to zero when the POST settles,
             // and the duplicate window is HubSpot's INDEXING lag, which starts there.
+            // COMPLETENESS FIRST, same rule as the same-foundation branch below. This arm sets
+            // hsNotFound, and the template gates Create on `hsNotFound() && !hsUtm() &&
+            // !hsCreateSuppressed()` -- so leaving hsCreateSuppressed untouched here rendered an
+            // enabled Create off an INCONCLUSIVE search, under the one foundation most likely to
+            // share a portal with the campaign that was just created (dealako, #2079 round 2).
+            //
+            // Explicit `false` from both fields, or suppress: absence is the old-pod shape and
+            // proves nothing about completeness.
+            this.hsCreateSuppressed.set(!(result?.inconclusive === false && result?.capped === false));
             this.hsNotFound.set(true);
             this.hsUnconfirmed.set(true);
             this.hsMatches.set(result?.all_matches ?? []);
