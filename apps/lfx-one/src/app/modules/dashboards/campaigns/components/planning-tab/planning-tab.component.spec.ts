@@ -2764,7 +2764,7 @@ describe('PlanningTabComponent — HubSpot UTM states', () => {
   /**
    * A create that SUCCEEDED must not read as a failure just because HubSpot has not assigned the
    * token yet. Requiring hs_utm too would leave the Create button up and invite a retry that
-   * writes a SECOND campaign into the LF-global namespace — upstream has no duplicate check, by
+   * writes a SECOND campaign into the connected PORTAL's namespace — upstream has no duplicate check, by
    * design, because that check belongs with the operator.
    *
    * `created` is trustworthy on its own: upstream refuses an id-less create rather than
@@ -2853,7 +2853,7 @@ describe('PlanningTabComponent — HubSpot UTM states', () => {
    * A FAILED create withdraws the button. The outcome is unknown, not failed — upstream reports
    * an id-less 2xx as an error precisely because the campaign may already exist, and classifies
    * every other failure unconfirmed for the same reason. Leaving the button up invites a retry
-   * that creates a SECOND campaign in a namespace every foundation shares.
+   * that creates a SECOND campaign in a namespace every project on that portal shares.
    */
   it('withdraws the create button when the outcome is unknown', () => {
     runLookup({ found: false, hs_utm: null, campaign_name: '', all_matches: [], capped: false, inconclusive: false });

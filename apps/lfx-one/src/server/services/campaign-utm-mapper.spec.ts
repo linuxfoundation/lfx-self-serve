@@ -106,7 +106,7 @@ describe('toUtmCreateResult', () => {
 
   // HubSpot assigns the token, but not necessarily synchronously. A created campaign with no
   // token yet is still created — reporting created:false would tell the caller to retry a write
-  // that already happened, into an LF-global namespace.
+  // that already happened, into the connected portal's namespace.
   it('reports created even when no token came back', () => {
     const res = toUtmCreateResult({ id: '99', name: 'Tokenless' });
 

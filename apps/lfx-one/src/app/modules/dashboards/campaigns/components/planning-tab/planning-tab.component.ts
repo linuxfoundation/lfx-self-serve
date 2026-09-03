@@ -337,7 +337,7 @@ export class PlanningTabComponent implements OnInit {
    * repudiates.
    *
    * Either way the consequence is the same and is why the offer is withheld: creating on a
-   * search that did not establish absence duplicates a campaign in the LF-global namespace every
+   * search that did not establish absence duplicates a campaign in the PORTAL-WIDE namespace every
    * foundation shares, and the duplicate cannot be removed from this UI.
    */
   protected readonly hsCreateSuppressed = signal(false);
@@ -948,7 +948,7 @@ export class PlanningTabComponent implements OnInit {
           // `created` alone decides success. HubSpot assigns the token, and not necessarily by
           // the time the create returns — so requiring hs_utm too would report a campaign that
           // WAS created as a failure, leave the Create button up, and invite a retry that writes
-          // a SECOND campaign into the LF-global namespace. Upstream refuses an id-less create
+          // a SECOND campaign into the connected portal's namespace. Upstream refuses an id-less create
           // rather than reporting one as success, so `created` is trustworthy on its own.
           if (result?.created) {
             if (result.hs_utm) {
@@ -1833,7 +1833,7 @@ export class PlanningTabComponent implements OnInit {
           if (!this.panelStillShows(capturedEvent, capturedFoundation)) return;
           // THREE states, not two. A campaign that exists but has NO utm token configured is a
           // real match — treating it as not-found would offer to CREATE a campaign that already
-          // exists, into a namespace shared by every foundation and with no duplicate check
+          // exists, into a namespace shared by every project on that PORTAL and with no duplicate check
           // upstream. The legacy path never surfaced this because it fabricated a token from the
           // id and name whenever HubSpot had none.
           if (result?.found && result.hs_utm) {
