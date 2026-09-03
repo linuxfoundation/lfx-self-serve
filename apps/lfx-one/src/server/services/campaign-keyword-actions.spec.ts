@@ -336,6 +336,42 @@ describe('classifyMutationFailure — what proves upstream answered', () => {
     expect(msg, 'a non-status code that agreed with its status was accepted').toContain(CAMPAIGN_OUTCOME_UNCONFIRMED);
   });
 
+  it('stops the fan-out at the deadline and names the rest UNATTEMPTED', async () => {
+    // Copilot, raised twice: the 50-row cap bounds how MANY campaigns a request names, not how
+    // LONG they take. Each costs two sequential proxy calls at a 30s client default, so a request
+    // of slow-but-reachable campaigns can exceed the ingress's 60s window -- and when it does,
+    // ingress answers the caller while this loop KEEPS MUTATING. Irreversible REMOVEs would land
+    // against a request that already reported a timeout.
+    const resolveGoogleAdsCampaign = vi.fn().mockImplementation(() => {
+      // Each resolve advances the clock past the budget.
+      now += 30_000;
+      return Promise.resolve({ match_count: 1, matches: [{ brief_id: 'b-1', campaign_id: 'c-1' }] });
+    });
+    const applyKeywordActions = vi
+      .fn()
+      .mockResolvedValue({ campaign_id: 'c-1', applied_count: 1, results: [{ ad_group_id: 'ag-1', criterion_id: 'k-1', action: 'PAUSE' }] });
+
+    let now = 0;
+    const nowSpy = vi.spyOn(Date, 'now').mockImplementation(() => now);
+
+    const client = { resolveGoogleAdsCampaign, applyKeywordActions } as never;
+    // Three distinct campaigns; the budget is exhausted before the third.
+    const body = { action: 'pause' as const, keywords: [kw('camp-1', 'k-1'), kw('camp-2', 'k-2'), kw('camp-3', 'k-3')] };
+    const req = { log: { warn: vi.fn(), info: vi.fn(), error: vi.fn(), debug: vi.fn() } } as never;
+
+    const res = await applyKeywordActionsViaCampaignService(req, client, 'aswf', body);
+    nowSpy.mockRestore();
+
+    // The loop STOPPED -- it did not keep mutating past the budget.
+    expect(resolveGoogleAdsCampaign.mock.calls.length, 'the fan-out ran past its deadline').toBeLessThan(3);
+    // And the caller is TOLD, rather than being handed a short list to zip onto its request.
+    expect(res.results.length, 'skipped groups vanished from the response').toBe(3);
+    const unattempted = res.results.filter((r) => String(r.message).includes('ran out of time'));
+    expect(unattempted.length, 'a skipped campaign was not reported as unattempted').toBeGreaterThan(0);
+    // Never reported as a failure upstream: nothing was sent for these.
+    expect(unattempted.every((r) => r.success === false)).toBe(true);
+  });
+
   it('reports a mismatch when the 2xx carries no results ARRAY', async () => {
     // Copilot: `applied.results` is untrusted wire data. A malformed 2xx with `results` missing
     // threw a TypeError inside the verification, and the caller's catch then classified our own

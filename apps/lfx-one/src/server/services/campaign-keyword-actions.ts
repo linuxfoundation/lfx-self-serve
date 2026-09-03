@@ -357,6 +357,24 @@ export const CAMPAIGN_UNRESOLVED = 'This campaign is not managed here, so its ke
  */
 export const CAMPAIGN_LOOKUP_FAILED = 'The campaign could not be looked up just now. Try again.';
 export const CAMPAIGN_AMBIGUOUS = 'This campaign id matches more than one campaign, so it is not clear which to change.';
+export const CAMPAIGN_DEADLINE_EXCEEDED = 'Not attempted: the request ran out of time before reaching this campaign. Nothing was changed for it.';
+
+/**
+ * Wall-clock budget for the whole fan-out, in ms.
+ *
+ * 45s against the ingress's documented 60s read timeout (`campaign-proxy.service.ts:1009-1010`).
+ * The row cap bounds how MANY campaigns a request can name; it cannot bound how LONG they take,
+ * and each one costs two sequential proxy calls at the client's 30s default. So a request of
+ * slow-but-reachable campaigns could still exceed the ingress window -- and when it does, ingress
+ * answers the caller while THIS LOOP KEEPS MUTATING, leaving irreversible REMOVEs applied against
+ * a request that already reported a timeout (Copilot, raised twice).
+ *
+ * Stopping at the budget uses the same "not attempted" report the transport-failure path already
+ * uses, so nothing new has to be true for a caller: a group either has an outcome, or is named as
+ * unattempted. 15s of headroom is deliberate -- the check happens BETWEEN groups, so the last
+ * group admitted can still run its two calls before the window closes.
+ */
+export const KEYWORD_ACTION_DEADLINE_MS = 45_000;
 
 /**
  * Apply keyword actions through campaign-service, one call per campaign.
@@ -391,8 +409,18 @@ export async function applyKeywordActionsViaCampaignService(
   // rejected mutation is upstream working correctly; neither says anything about the next group.
   // A lookup that never got a reply does.
   let transportFailed = false;
+  // Wall-clock, captured before the first call so the budget covers the whole fan-out rather than
+  // resetting per group.
+  const startedAt = Date.now();
 
   for (const group of groupByCampaign(body.keywords)) {
+    // Checked BETWEEN groups, never mid-group: a campaign is resolved and then mutated, and
+    // abandoning between those two calls is the one split that could leave a group half-applied
+    // with nothing recorded. Whole groups are the only safe unit to stop on.
+    if (!transportFailed && Date.now() - startedAt >= KEYWORD_ACTION_DEADLINE_MS) {
+      results.push(...failedResults(group, body.action, CAMPAIGN_DEADLINE_EXCEEDED));
+      continue;
+    }
     if (transportFailed) {
       // Not attempted, and reported as such. Silently dropping these would leave the caller
       // zipping results onto a shorter list; claiming they failed upstream would be a claim
