@@ -746,6 +746,7 @@ describe('MeetingService.getPastMeetingParticipants', () => {
     expect(result).toHaveLength(1);
     expect(result[0].is_invited).toBe(true);
     expect(result[0].is_attended).toBe(true);
+    expect(result[0].email).toBe('jane@example.com');
   });
 
   it('does not merge two records with the same email but different usernames', async () => {
@@ -867,19 +868,48 @@ describe('MeetingService.getPastMeetingParticipants', () => {
     expect(result).toHaveLength(1);
   });
 
-  it('refuses to bridge two conflicting LFID usernames through a shared-email no-username record', async () => {
+  it('isolates an ambiguous shared-email bridge record rather than guessing which of two conflicting LFID usernames it belongs to', async () => {
+    const resources = [
+      participantRecord('a', { username: 'user-a', email: 'shared@example.com', is_attended: true }),
+      participantRecord('b', { username: undefined, email: 'shared@example.com', is_attended: true, host: true }),
+      participantRecord('c', { username: 'user-b', email: 'shared@example.com' }),
+    ];
+
+    proxyRequest.mockResolvedValueOnce({ resources });
+    const forward = await service.getPastMeetingParticipants(req, 'meeting-1-occ-1');
+
+    proxyRequest.mockResolvedValueOnce({ resources: [...resources].reverse() });
+    const reversed = await service.getPastMeetingParticipants(req, 'meeting-1-occ-1');
+
+    for (const result of [forward, reversed]) {
+      expect(result).toHaveLength(3);
+      expect(result.map((p) => p.username).sort()).toEqual([undefined, 'user-a', 'user-b'].sort());
+
+      // The ambiguous bridge record's own attendance/host flags must not bleed into either
+      // conflicting username's group, regardless of encounter order.
+      const bridgeRecord = result.find((p) => !p.username);
+      const userA = result.find((p) => p.username === 'user-a');
+      const userB = result.find((p) => p.username === 'user-b');
+      expect(bridgeRecord?.is_attended).toBe(true);
+      expect(bridgeRecord?.host).toBe(true);
+      expect(userA?.host).toBe(false);
+      expect(userB?.is_attended).toBe(false);
+    }
+  });
+
+  it('refuses to bridge two conflicting guest emails through a shared-name no-email record', async () => {
     proxyRequest.mockResolvedValueOnce({
       resources: [
-        participantRecord('a', { username: 'user-a', email: 'shared@example.com' }),
-        participantRecord('b', { username: undefined, email: 'shared@example.com' }),
-        participantRecord('c', { username: 'user-b', email: 'shared@example.com' }),
+        participantRecord('a', { email: 'guest-one@example.com', first_name: 'Sam', last_name: 'Guest' }),
+        participantRecord('b', { email: undefined, first_name: 'Sam', last_name: 'Guest' }),
+        participantRecord('c', { email: 'guest-two@example.com', first_name: 'Sam', last_name: 'Guest' }),
       ],
     });
 
     const result = await service.getPastMeetingParticipants(req, 'meeting-1-occ-1');
 
-    expect(result).toHaveLength(2);
-    expect(result.map((p) => p.username).sort()).toEqual(['user-a', 'user-b']);
+    expect(result).toHaveLength(3);
+    expect(result.map((p) => p.email).sort()).toEqual(['guest-one@example.com', 'guest-two@example.com', undefined].sort());
   });
 
   it('does not let a blank-string email sentinel on the preferred record discard a real email on merge', async () => {

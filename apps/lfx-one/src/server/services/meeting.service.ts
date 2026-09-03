@@ -981,13 +981,12 @@ export class MeetingService {
       })
     );
 
-    // Union-find over connected identity-match edges. `rootUsername` tracks the resolved LFID
-    // username for each component's current root, since a merge must be refused (not just
-    // skipped) once known: isSamePerson is not transitive — a no-username row can share an email
-    // with two records that carry different, conflicting usernames, and unioning through it would
-    // incorrectly merge two distinct LFX accounts into one participant.
+    // Plain union-find over connected identity-match edges (pure transitive closure, no
+    // conflict veto during union). isSamePerson is not transitive — a no-username row can
+    // share an email with two records that carry different, conflicting usernames — so a
+    // component can chain together records that never agree pairwise. Conflicts are detected
+    // and split out afterward, per component, in splitConflictingComponent.
     const parent = raw.map((_, index) => index);
-    const rootUsername = raw.map((participant) => participant.username || undefined);
     const find = (index: number): number => {
       // Path halving: reparent every other node to its grandparent so later find() calls stay
       // near O(1) amortized. This mutates `parent` even on a plain lookup.
@@ -1003,36 +1002,27 @@ export class MeetingService {
         if (!this.isSamePerson(raw[i], raw[j])) {
           continue;
         }
-
         const rootI = find(i);
         const rootJ = find(j);
-        if (rootI === rootJ) {
-          continue;
+        if (rootI !== rootJ) {
+          parent[rootI] = rootJ;
         }
-
-        const usernameI = rootUsername[rootI];
-        const usernameJ = rootUsername[rootJ];
-        if (usernameI && usernameJ && usernameI !== usernameJ) {
-          continue;
-        }
-
-        parent[rootI] = rootJ;
-        rootUsername[rootJ] = usernameI ?? usernameJ;
       }
     }
 
-    const groups = new Map<number, PastMeetingParticipant[]>();
+    const components = new Map<number, PastMeetingParticipant[]>();
     raw.forEach((participant, index) => {
       const root = find(index);
-      const group = groups.get(root);
-      if (group) {
-        group.push(participant);
+      const component = components.get(root);
+      if (component) {
+        component.push(participant);
       } else {
-        groups.set(root, [participant]);
+        components.set(root, [participant]);
       }
     });
 
-    return Array.from(groups.values()).map((group) => this.mergePastMeetingParticipantGroup(group));
+    const groups = Array.from(components.values()).flatMap((component) => this.splitConflictingComponent(component));
+    return groups.map((group) => this.mergePastMeetingParticipantGroup(group));
   }
 
   /**
@@ -1980,6 +1970,50 @@ export class MeetingService {
    * display name and have no email/username on any record will be merged. Callers needing a
    * stronger guarantee should require a corroborating signal before relying on this path.
    */
+  /**
+   * Splits a connected component of identity-matched records into safe merge groups. Pure
+   * transitive closure can chain records that never agree pairwise — e.g. a no-username row
+   * shares an email with two records that carry different, conflicting usernames — and blindly
+   * attaching that bridge row to whichever side it happens to reach first would misattribute its
+   * own attendance/host data depending on scan order. Instead, once a component has 2+ distinct
+   * hard identifiers (usernames, or emails among the username-less members), it's split by that
+   * identifier and any row lacking it is isolated as its own group rather than guessed into one
+   * side — matching the reviewer-suggested resolution of leaving an ambiguous row separate.
+   */
+  private splitConflictingComponent(members: PastMeetingParticipant[]): PastMeetingParticipant[][] {
+    const usernames = new Set(members.map((m) => m.username).filter((u): u is string => !!u));
+    const usernameConflict = usernames.size > 1;
+
+    const usernameless = members.filter((m) => !m.username);
+    const usernamelessEmails = new Set(usernameless.map((m) => m.email?.trim().toLowerCase()).filter((e): e is string => !!e));
+    const emailConflict = !usernameConflict && usernamelessEmails.size > 1;
+
+    if (!usernameConflict && !emailConflict) {
+      return [members];
+    }
+
+    const groupKey = (member: PastMeetingParticipant): string | undefined =>
+      usernameConflict ? member.username || undefined : member.email?.trim().toLowerCase() || undefined;
+
+    const byKey = new Map<string, PastMeetingParticipant[]>();
+    const floaters: PastMeetingParticipant[] = [];
+    for (const member of members) {
+      const key = groupKey(member);
+      if (!key) {
+        floaters.push(member);
+        continue;
+      }
+      const existing = byKey.get(key);
+      if (existing) {
+        existing.push(member);
+      } else {
+        byKey.set(key, [member]);
+      }
+    }
+
+    return [...Array.from(byKey.values()), ...floaters.map((floater) => [floater])];
+  }
+
   private isSamePerson(a: PastMeetingParticipant, b: PastMeetingParticipant): boolean {
     if (a.username && b.username) {
       return a.username === b.username;
@@ -2025,7 +2059,7 @@ export class MeetingService {
 
   /** Folds a connected group of identity-matched participant records into one merged record. */
   private mergePastMeetingParticipantGroup(group: PastMeetingParticipant[]): PastMeetingParticipant {
-    return group.reduce((merged, participant) => {
+    const merged = group.reduce((merged, participant) => {
       const preferred = participant.is_attended && !merged.is_attended ? participant : merged;
       const other = preferred === participant ? merged : participant;
       return {
@@ -2042,5 +2076,23 @@ export class MeetingService {
         email: this.pickNonBlank(preferred.email, other.email),
       };
     });
+
+    return { ...merged, email: this.pickMergedEmail(group) ?? merged.email };
+  }
+
+  /**
+   * Prefers the invited/account email over an ad-hoc attended-session email when a merged group
+   * carries two different, both non-blank, emails (e.g. records that match on a shared LFID
+   * username but disagree on email). `mergePastMeetingParticipantGroup`'s attended-first
+   * preference would otherwise silently discard the invited email even though downstream
+   * committee-enrichment lookups join on `participant.email` against the invited/account address,
+   * not whatever ad-hoc address Zoom captured for that session.
+   */
+  private pickMergedEmail(group: PastMeetingParticipant[]): string | undefined {
+    const invitedEmail = group.find((participant) => participant.is_invited && participant.email?.trim())?.email;
+    if (invitedEmail) {
+      return invitedEmail;
+    }
+    return group.find((participant) => participant.email?.trim())?.email;
   }
 }
