@@ -444,6 +444,18 @@ describe('alreadySignedAgreementForIdentity', () => {
     expect(alreadySignedAgreementForIdentity(held, { platform: 'gerrit' }, offered, neither)).toBeUndefined();
   });
 
+  it('reports a kind the group still offers, not a newer one it has since dropped', () => {
+    // A group can stop offering a type the identity already signed. That agreement can be the
+    // newest match, and naming it would tell the contributor they hold an ECLA on a group that
+    // cannot be signed for one — while the block itself is owed to the ICLA.
+    const bothKinds = [
+      agreement({ id: 's2', claGroupId: 'cg-1', kind: 'ECLA', signedVia: 'github', signedAs: 'jellis', pdfAvailable: false }),
+      agreement({ id: 's1', claGroupId: 'cg-1', kind: 'ICLA', signedVia: 'github', signedAs: 'jellis' }),
+    ];
+
+    expect(alreadySignedAgreementForIdentity(bothKinds, { platform: 'github', username: 'jellis', githubId: '12345' }, offered, iclaOnly)?.id).toBe('s1');
+  });
+
   it('still blocks a dual-type identity when the other kind is revoked', () => {
     const both = [
       agreement({ id: 's1', claGroupId: 'cg-1', kind: 'ICLA', signedVia: 'github', signedAs: 'jellis' }),

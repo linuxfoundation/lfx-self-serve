@@ -430,7 +430,11 @@ export function alreadySignedAgreementForIdentity(
     if (!heldKinds.has(kind)) return undefined;
   }
 
-  return matched[0];
+  // An identity can hold a kind the group no longer offers, and that agreement can be the newest
+  // one matched. Returning it would block on an enabled kind while naming a type this group
+  // cannot be signed for, so the reason is drawn from an enabled kind. Every enabled kind is
+  // held by this point, so this always finds one.
+  return matched.find((agreement) => enabledKinds.has(agreement.kind));
 }
 
 /**
