@@ -1001,8 +1001,10 @@ export class CommitteeService {
    * committee/project lookup fails, the row is still returned with `committee_name`
    * falling back to the committee UID — the list is never dropped wholesale.
    *
-   * `inviter_name` / `expires_at` are left undefined — the committee-service contract
-   * does not provide them today.
+   * `inviter_name` and `expires_at` are sourced from the invite itself — committee-service now
+   * persists the inviter (name/username/email/avatar) and a `created_at + 30 days` expiry on the
+   * `committee_invite` resource. They degrade to null on older invite records that predate those
+   * fields.
    */
   public async getMyPendingInvitations(req: Request, email: string): Promise<PendingInvitation[]> {
     const pendingInvites = await this.fetchPendingCommitteeInvitesByEmail(req, email);
@@ -1077,9 +1079,11 @@ export class CommitteeService {
         created_at: invite.created_at,
         organization: invite.organization ?? null,
         organization_required: invite.organization_required ?? null,
-        // inviter_name / expires_at are intentionally omitted (left undefined) — they're reserved
-        // optional fields not in the committee-service contract yet, so JSON drops them rather than
-        // sending an explicit null that consumers would have to disambiguate from "set".
+        // Surface who invited the user and when the invite expires (committee-service now persists
+        // both on the invite). inviter_name degrades to null when upstream has no inviter name;
+        // expires_at is null on legacy records created before upstream stored it.
+        inviter_name: invite.inviter?.name?.trim() || null,
+        expires_at: invite.expires_at ?? null,
       } satisfies PendingInvitation;
     });
   }
