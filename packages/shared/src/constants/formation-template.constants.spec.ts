@@ -18,11 +18,12 @@ import { FORMATION_TEMPLATE } from './formation-template.constants';
  * one exception: dropping the last item owned by a given team also fails owner-team coverage.
  */
 describe('FORMATION_TEMPLATE', () => {
-  // Bumping `version` alongside a content edit is a documented convention, not something a test
-  // can enforce on its own — so pin a fingerprint of every field the version contract covers.
-  // Editing a title, reordering items, or changing an owner/action/gate touches this fingerprint,
-  // forcing a conscious visit to this test (and the version bump) rather than passing silently.
-  it('pins the v1 content fingerprint — bump `version` above when this needs to change', () => {
+  // Bumping `version` alongside a content edit made after this template has shipped is a
+  // documented convention, not something a test can enforce on its own — so pin a fingerprint of
+  // every field the version contract covers. Editing a title, reordering items, or changing an
+  // owner/action/gate touches this fingerprint, forcing a conscious visit to this test (and, once
+  // shipped, the version bump) rather than passing silently. Pre-release edits stay at v1.
+  it('pins the v1 content fingerprint — bump `version` above once this needs to change post-ship', () => {
     const subItemFingerprint = (subItem: FormationTemplateSubItem): string => [subItem.id, subItem.title, subItem.ownerTeam].join('|');
     const itemFingerprint = (item: FormationTemplateItem): string =>
       [item.id, item.title, item.section, item.ownerTeam, item.actionType, item.gate, (item.subItems ?? []).map(subItemFingerprint).join(',')].join('|');
@@ -64,8 +65,9 @@ describe('FORMATION_TEMPLATE', () => {
     expect(untitled).toEqual([]);
   });
 
-  // Explicit counts (GH-1959 scope trim) so a future item added/removed without updating this test
-  // fails loudly, independent of the fingerprint's array length.
+  // Explicit counts (GH-1959 scope trim) called out by the ticket's acceptance criteria. Already
+  // implied by the fingerprint and gating-id assertions above, but named here so a count drift
+  // fails with its own diagnostic instead of only showing up as an opaque array diff.
   it('has exactly 17 items, 4 of them gating', () => {
     expect(FORMATION_TEMPLATE.items.length).toBe(17);
     expect(FORMATION_TEMPLATE.items.filter((item) => item.gate).length).toBe(4);

@@ -24,7 +24,8 @@ function deepFreeze<T>(value: T, seen = new WeakSet<object>()): T {
  * No template editor exists yet (Epic 2, #1994) — this is the only template, and its content is
  * pending stakeholder review (GH-1959). Only legal/entity items may gate the formation's
  * transition to Active (not all of them do); community and launch items never gate. Bump
- * `version` alongside any content edit here — see `FormationTemplate.version`.
+ * `version` alongside any content edit here once this template has shipped — see
+ * `FormationTemplate.version`. Pre-release content edits (like this one) stay at v1.
  *
  * Deep-frozen so the shared module-level singleton can't be mutated in place by one consumer
  * and corrupt it for every other reader.
