@@ -1912,7 +1912,19 @@ export class PlanningTabComponent implements OnInit {
             // non-idempotent write into a shared namespace — so it reads `inconclusive`, which is
             // the broader signal. Calling it hsCapped while it held `inconclusive` (and its twin
             // holding `capped`) made each signal look like the field named after the other.
-            this.hsCreateSuppressed.set(result?.inconclusive === true);
+            // FAILS CLOSED ON ABSENCE. `=== true` is false for a MISSING field, and a missing
+            // field is exactly what a rolling update produces: the chart default spins up a full
+            // new replica set alongside the old, without session affinity, so a browser served a
+            // new bundle can call an OLD pod whose lookup response predates these fields
+            // entirely. The old response also carries the old capped 10-row search -- so the one
+            // moment the signal is absent is the moment the search behind it was least complete,
+            // and `=== true` would offer Create precisely then (Copilot).
+            //
+            // Requires an explicit `false` from BOTH completeness fields. Anything else --
+            // absent, null, a shape this bundle does not recognise -- suppresses, because a
+            // response that cannot state its own completeness has not licensed a non-idempotent
+            // write into a portal-wide namespace.
+            this.hsCreateSuppressed.set(!(result?.inconclusive === false && result?.capped === false));
             // The COPY distinguishes them, because the two remedies differ — but neither may
             // claim TRUNCATION as fact. `capped` is set whenever completeness cannot be proven,
             // which includes HubSpot omitting `total` entirely, so "it matched more than it

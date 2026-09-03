@@ -1395,7 +1395,7 @@ describe('PlanningTabComponent — HubSpot UTM states', () => {
    * page able to try.
    */
   it('offers a re-check after an unconfirmed create, and the re-check actually runs a lookup', () => {
-    runLookup({ found: false, hs_utm: null, campaign_name: '', all_matches: [] });
+    runLookup({ found: false, hs_utm: null, campaign_name: '', all_matches: [], capped: false, inconclusive: false });
     create.mockReturnValue(
       new Observable((s) => {
         s.next({ created: false });
@@ -1983,6 +1983,29 @@ describe('PlanningTabComponent — HubSpot UTM states', () => {
     expect(component.hsCreatedEvents().size, 'the create was cancelled by navigation, or its outcome dropped').toBeGreaterThan(0);
   });
 
+  it.each([
+    ['both completeness fields absent (an OLD pod)', { found: false, hs_utm: null, campaign_name: '', all_matches: [] }],
+    ['inconclusive absent', { found: false, hs_utm: null, campaign_name: '', all_matches: [], capped: false }],
+    ['capped absent', { found: false, hs_utm: null, campaign_name: '', all_matches: [], inconclusive: false }],
+  ])('suppresses Create when the response cannot state completeness: %s', (_label, result) => {
+    // Copilot: `inconclusive === true` is FALSE for a missing field. The chart default spins up a
+    // full new replica set alongside the old with no session affinity, so a browser served a new
+    // bundle can call an OLD pod whose response predates these fields -- and that same old
+    // response carries the old capped 10-row search. The one moment the signal is absent is the
+    // moment the search behind it was least complete, and `=== true` offered Create precisely
+    // then.
+    runLookup(result as never, 'KubeCon NA 2026');
+
+    expect(instance()['hsCreateSuppressed'](), 'a response that cannot state completeness licensed a create').toBe(true);
+  });
+
+  it('offers Create only when BOTH fields explicitly say the search was complete', () => {
+    // The other direction, so the assertion above cannot be satisfied by always suppressing.
+    runLookup({ found: false, hs_utm: null, campaign_name: '', all_matches: [], capped: false, inconclusive: false }, 'KubeCon NA 2026');
+
+    expect(instance()['hsCreateSuppressed'](), 'a proven-complete empty search failed to license a create').toBe(false);
+  });
+
   it('retires on a superseded find only once the panel shows that key again', () => {
     // Two reviewers, two opposite failure modes, and this is the shape that satisfies both.
     //
@@ -2537,7 +2560,7 @@ describe('PlanningTabComponent — HubSpot UTM states', () => {
    * button disabled and "Creating..." frozen on the new event's panel with nothing to clear it.
    */
   it('releases the creating flag even when the answer arrives stale', () => {
-    runLookup({ found: false, hs_utm: null, campaign_name: '', all_matches: [] });
+    runLookup({ found: false, hs_utm: null, campaign_name: '', all_matches: [], capped: false, inconclusive: false });
 
     const late = new Subject<unknown>();
     create.mockReturnValue(late);
@@ -2581,7 +2604,7 @@ describe('PlanningTabComponent — HubSpot UTM states', () => {
   });
 
   it('keeps the re-check available when a created campaign has no token yet', () => {
-    runLookup({ found: false, hs_utm: null, campaign_name: '', all_matches: [] });
+    runLookup({ found: false, hs_utm: null, campaign_name: '', all_matches: [], capped: false, inconclusive: false });
     create.mockReturnValue(
       new Observable((s) => {
         s.next({ created: true, hs_utm: null, campaign_name: 'KubeCon NA 2026' });
@@ -2604,7 +2627,7 @@ describe('PlanningTabComponent — HubSpot UTM states', () => {
    * only exit is a page reload.
    */
   it('restores the re-check when the lookup itself fails', () => {
-    runLookup({ found: false, hs_utm: null, campaign_name: '', all_matches: [] });
+    runLookup({ found: false, hs_utm: null, campaign_name: '', all_matches: [], capped: false, inconclusive: false });
     create.mockReturnValue(
       new Observable((s) => {
         s.next({ created: false });
@@ -2628,7 +2651,7 @@ describe('PlanningTabComponent — HubSpot UTM states', () => {
    * in that window passed a lastLookedUpEvent check and wrote A's token into B's panel.
    */
   it('drops a create answer once the url field names a different event', () => {
-    runLookup({ found: false, hs_utm: null, campaign_name: '', all_matches: [] });
+    runLookup({ found: false, hs_utm: null, campaign_name: '', all_matches: [], capped: false, inconclusive: false });
 
     const late = new Subject<unknown>();
     create.mockReturnValue(late);
@@ -2649,7 +2672,7 @@ describe('PlanningTabComponent — HubSpot UTM states', () => {
    * different event while it is in flight. Event A's answer must not land on event B's panel.
    */
   it('drops a create answer for an event the operator has already left', () => {
-    runLookup({ found: false, hs_utm: null, campaign_name: '', all_matches: [] });
+    runLookup({ found: false, hs_utm: null, campaign_name: '', all_matches: [], capped: false, inconclusive: false });
 
     const late = new Subject<unknown>();
     create.mockReturnValue(late);
@@ -2689,7 +2712,7 @@ describe('PlanningTabComponent — HubSpot UTM states', () => {
   it('treats a create with no token yet as success, not failure', () => {
     // A lookup must have run first: createInHubSpot early-returns without lastLookedUpEvent,
     // so without this the test would pass against a method that never executed.
-    runLookup({ found: false, hs_utm: null, campaign_name: '', all_matches: [] });
+    runLookup({ found: false, hs_utm: null, campaign_name: '', all_matches: [], capped: false, inconclusive: false });
     create.mockReturnValue(
       new Observable((s) => {
         s.next({ created: true, hs_utm: null, campaign_name: 'KubeCon NA 2027' });
@@ -2708,7 +2731,7 @@ describe('PlanningTabComponent — HubSpot UTM states', () => {
   });
 
   it('still offers to create when nothing matched', () => {
-    runLookup({ found: false, hs_utm: null, campaign_name: '', all_matches: [] });
+    runLookup({ found: false, hs_utm: null, campaign_name: '', all_matches: [], capped: false, inconclusive: false });
 
     expect(instance()['hsNotFound']()).toBe(true);
   });
@@ -2755,7 +2778,7 @@ describe('PlanningTabComponent — HubSpot UTM states', () => {
    * foundation's campaign managers — and the name is whatever event text the operator typed.
    */
   it('warns that a created campaign is visible to everyone on the connected account', () => {
-    runLookup({ found: false, hs_utm: null, campaign_name: '', all_matches: [] });
+    runLookup({ found: false, hs_utm: null, campaign_name: '', all_matches: [], capped: false, inconclusive: false });
 
     const warning = fixture.nativeElement.querySelector('[data-testid="planning-hubspot-global-warning"]');
     expect(warning).not.toBeNull();
@@ -2772,7 +2795,7 @@ describe('PlanningTabComponent — HubSpot UTM states', () => {
    * that creates a SECOND campaign in a namespace every foundation shares.
    */
   it('withdraws the create button when the outcome is unknown', () => {
-    runLookup({ found: false, hs_utm: null, campaign_name: '', all_matches: [] });
+    runLookup({ found: false, hs_utm: null, campaign_name: '', all_matches: [], capped: false, inconclusive: false });
     expect(fixture.nativeElement.querySelector('[data-testid="planning-hubspot-create-btn"]')).not.toBeNull();
 
     create.mockReturnValue(throwError(() => new Error('upstream timeout')));
