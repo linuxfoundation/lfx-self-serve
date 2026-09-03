@@ -482,6 +482,16 @@ describe('SignIdentitySelectComponent', () => {
       expect(fixture.debugElement.query(By.css('[data-testid="sign-identity-select-github-12345"]')).injector.get(Tooltip, null)?.content).toBe(BOTH_REASON);
     });
 
+    it('names what the identity holds, not what the group enables', async () => {
+      // An identity can hold a type the group has since stopped offering. The block is owed to
+      // the ICLA alone, but the contributor holds both, and a reason drawn from the enabled flags
+      // would tell them they hold only the one — about their own agreements, which they can check.
+      await setup({ claGroupAgreements: signedBoth('octocat'), ...ICLA_ONLY });
+
+      expect(query('sign-identity-select-github-12345')?.getAttribute('aria-disabled')).toBe('true');
+      expect(fixture.debugElement.query(By.css('[data-testid="sign-identity-select-github-12345"]')).injector.get(Tooltip, null)?.content).toBe(BOTH_REASON);
+    });
+
     it('still drops the other-identity sentence when both kinds are held and nothing else is selectable', async () => {
       await setup({ variant: 'gerrit', accounts: [], gerritUsername: GERRIT_USER, claGroupAgreements: signedBoth('jdoe', 'gerrit'), ...BOTH_TYPES });
 
