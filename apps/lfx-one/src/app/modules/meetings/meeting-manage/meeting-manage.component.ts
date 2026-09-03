@@ -156,7 +156,7 @@ export class MeetingManageComponent {
   private readonly retryMeetingLoad$ = new Subject<void>();
   // Initialize meeting data using toSignal
   public meeting = this.initializeMeeting();
-  public meetingLoading = computed(() => this.isEditMode() && this.meeting() === null);
+  public meetingLoading = computed(() => this.isEditMode() && this.meeting() === null && !this.meetingLoadError());
   // Meeting → EntityWithProject adapter so the active project context syncs from the loaded
   // meeting rather than the cookie-restored last-visited project.
   private readonly meetingEntityContext: Signal<EntityWithProject | null> = this.initializeMeetingEntityContext();
@@ -990,10 +990,12 @@ export class MeetingManageComponent {
             return this.meetingService.getMeeting(meetingId).pipe(
               catchError((error) => {
                 console.error('Error getting meeting:', error);
-                // Only a real 404 ejects (GH-2037) — this fetch is load-bearing (it pre-populates
+                // Only a 404/403 ejects (GH-2037) — this fetch is load-bearing (it pre-populates
                 // the form), so a transient 5xx/network blip stays mounted with an inline error
                 // state + manual Retry rather than mislabeling a server error as "not found".
-                if (error instanceof HttpErrorResponse && error.status === 404) {
+                // 403 joins the eject path because write access is guard-owned — a forbidden
+                // response here means access was lost mid-session, and Retry cannot restore it.
+                if (error instanceof HttpErrorResponse && (error.status === 404 || error.status === 403)) {
                   this.messageService.add({
                     severity: 'error',
                     summary: 'Error',
