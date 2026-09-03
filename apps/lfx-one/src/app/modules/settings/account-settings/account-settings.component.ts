@@ -2,8 +2,8 @@
 // SPDX-License-Identifier: MIT
 
 import { isPlatformBrowser, NgClass } from '@angular/common';
-import { afterNextRender, Component, computed, DestroyRef, effect, inject, PLATFORM_ID, Signal, signal } from '@angular/core';
-import { takeUntilDestroyed, toSignal } from '@angular/core/rxjs-interop';
+import { afterNextRender, Component, computed, DestroyRef, inject, PLATFORM_ID, Signal, signal } from '@angular/core';
+import { takeUntilDestroyed, toObservable, toSignal } from '@angular/core/rxjs-interop';
 import { AbstractControl, FormBuilder, FormControl, FormGroup, ReactiveFormsModule, ValidationErrors, ValidatorFn, Validators } from '@angular/forms';
 import { BadgeComponent } from '@components/badge/badge.component';
 import { ButtonComponent } from '@components/button/button.component';
@@ -21,7 +21,7 @@ import { DialogService, DynamicDialogModule } from 'primeng/dynamicdialog';
 import { ToastModule } from 'primeng/toast';
 import { TooltipModule } from 'primeng/tooltip';
 import { HttpErrorResponse } from '@angular/common/http';
-import { BehaviorSubject, catchError, finalize, of, switchMap, take } from 'rxjs';
+import { BehaviorSubject, catchError, filter, finalize, of, switchMap, take } from 'rxjs';
 
 @Component({
   selector: 'lfx-account-settings',
@@ -174,20 +174,15 @@ export class AccountSettingsComponent {
 
     afterNextRender(() => this.setupScrollSpy());
 
-    // Deep-link support (profile.routes.ts): router anchorScrolling scrolls on navigation, but
-    // the email section's spinner-to-list swap can shift #password — re-settle once loaded.
-    const fragment = this.route.snapshot.fragment;
-    const validFragment = fragment && (AccountSettingsComponent.sectionIds as readonly string[]).includes(fragment) ? fragment : null;
-    if (validFragment) {
+    // Deep-link support (profile.routes.ts): router anchorScrolling scrolls on navigation, but the
+    // email section's spinner-to-list swap can shift #password — re-settle once loaded per fragment.
+    const emailLoaded$ = toObservable(this.emailLoading).pipe(filter((loading) => !loading));
+    this.route.fragment.pipe(takeUntilDestroyed()).subscribe((fragment) => {
+      const validFragment = fragment && (AccountSettingsComponent.sectionIds as readonly string[]).includes(fragment) ? fragment : null;
+      if (!validFragment) return;
       this.activeSection.set(validFragment);
-      let settled = false;
-      effect(() => {
-        if (!settled && !this.emailLoading()) {
-          settled = true;
-          this.scrollToSection(validFragment);
-        }
-      });
-    }
+      emailLoaded$.pipe(take(1)).subscribe(() => this.scrollToSection(validFragment));
+    });
   }
 
   // ══════════════════════════════════════════
