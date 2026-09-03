@@ -50,7 +50,7 @@ export class ImpersonationService {
         throw new MicroserviceError(classified.message, classified.statusCode, classified.code, {
           operation: 'cte_token_exchange',
           service: 'auth-service',
-          errorBody: { target_user: targetUser, error: errorMessage },
+          errorBody: { target_user: targetUser, upstreamError: errorMessage },
         });
       }
 

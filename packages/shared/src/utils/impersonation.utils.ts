@@ -21,7 +21,7 @@ export function isImpersonationTargetLookupFailure(upstreamError: string): boole
 
 /**
  * Maps a failed CTE NATS `result.error` string to the public API error shape.
- * Raw upstream text stays on the server (`errorBody`); it is never the user message.
+ * Raw upstream text stays on the server under a log-only `errorBody` key; it is never the user message.
  */
 export function classifyImpersonationExchangeFailure(upstreamError: string): { statusCode: number; code: string; message: string } {
   if (isImpersonationTargetLookupFailure(upstreamError)) {

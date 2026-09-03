@@ -50,9 +50,18 @@ describe('ImpersonationService.exchangeToken', () => {
       await service.exchangeToken(req, 'HWilson');
     } catch (error) {
       expect(error).toBeInstanceOf(MicroserviceError);
-      expect((error as MicroserviceError).errorBody).toEqual({
+      const microserviceError = error as MicroserviceError;
+      expect(microserviceError.errorBody).toEqual({
         target_user: 'HWilson',
-        error: 'token exchange request failed: upstream returned status 400',
+        upstreamError: 'token exchange request failed: upstream returned status 400',
+      });
+      const response = microserviceError.toResponse();
+      expect(response['upstreamCode']).toBeUndefined();
+      expect(JSON.stringify(response)).not.toContain('token exchange request failed');
+      expect(JSON.stringify(response)).not.toContain('upstream returned status 400');
+      expect(microserviceError.getLogContext()['error_body']).toEqual({
+        target_user: 'HWilson',
+        upstreamError: 'token exchange request failed: upstream returned status 400',
       });
     }
   });
