@@ -14,14 +14,22 @@
   }"
   [class]="styleClass()"
   [attr.data-testid]="testId()"
-  [attr.tabindex]="isDisabled() ? -1 : 0"
+  [pTooltip]="disabledReason()"
+  tooltipPosition="top"
+  tooltipEvent="both"
+  tabindex="0"
   [attr.role]="'option'"
   [attr.aria-selected]="isSelected()"
   [attr.aria-disabled]="isDisabled()"
+  [attr.aria-describedby]="describedBy() || null"
   (click)="onCardClick()"
   (keydown)="onKeydown($event)">
   <!-- Label -->
   <span class="text-base text-slate-700 font-semibold">{{ label() }}</span>
+
+  @if (disabledReason()) {
+    <span class="sr-only">{{ disabledReason() }}</span>
+  }
 
   <!-- Selection indicator (checkmark) -->
   @if (isSelected()) {

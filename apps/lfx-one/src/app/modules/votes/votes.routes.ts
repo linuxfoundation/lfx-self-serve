@@ -22,6 +22,8 @@ export const VOTE_ROUTES: Routes = [
     path: ':id/edit',
     loadComponent: () => import('./vote-manage/vote-manage.component').then((m) => m.VoteManageComponent),
     canActivate: [authGuard, writerGuard],
-    data: { preload: false, writeFeature: 'votes' },
+    // entityScopedSlug: writerGuard resolves the authorization slug from the vote itself; a route-data
+    // flag (not a path check) so a route rename can't silently revert to stale-context authorization.
+    data: { preload: false, writeFeature: 'votes', entityScopedSlug: true },
   },
 ];

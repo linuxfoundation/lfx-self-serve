@@ -14,27 +14,35 @@ export const DEFAULT_TEMPLATE: PDFTemplateDetails = {
   signatureText: `Jim Zemlin\nExecutive Director`,
 };
 
-/**
- * Logo mandated by legal for events held in China that were imported through the CSV
- * backfill flow. Overrides the project/default letterhead logo — see GH-1695.
- */
-export const LF_OPEN_SOURCE_LOGO = 'lfopensource-logo.png';
-
 /** Logo width used by the letterhead when a template doesn't specify its own. */
 export const DEFAULT_LOGO_WIDTH = 145;
 
 /**
+ * Full LF Open Source, LLC identity mandated by legal for attendance certificates on events
+ * held in China that were imported through the CSV backfill flow. Overrides the
+ * project/default template's link, name, description, on-behalf line, and logo. Address and
+ * signature deliberately stay with the base template — legal scoped the mandate to the entity
+ * named and linked in the letter, not to the signing officer or mailing address. See GH-1695
+ * (logo only) and GH-2039 (full identity).
+ *
  * The 13.6:1 wordmark is illegible at DEFAULT_LOGO_WIDTH (~10pt tall); 240pt matches the
  * Linux Foundation icon's visual weight and clears the address block at x=408.
  */
-export const LF_OPEN_SOURCE_LOGO_WIDTH = 240;
+export const LF_OPEN_SOURCE_OVERRIDE: Required<Omit<PDFTemplateDetails, 'address' | 'signature' | 'signatureText'>> = {
+  link: 'https://lfopensource.cn/',
+  name: 'LF Open Source, LLC',
+  desc: 'LF Open Source, LLC is a nonprofit consortium dedicated to fostering the growth of the Linux operating system. LF Open Source, LLC promotes, protects and standardizes Linux by providing unified resources and services. It is supported by its members — the leading IT companies such as IBM, Intel, Hewlett Packard, etc.',
+  onBehalf: 'On behalf of LF Open Source, LLC, we are glad you were able to join us.',
+  logo: 'lfopensource-logo.png',
+  logoWidth: 240,
+};
 
 /**
- * Event source + country pair that triggers the LF Open Source logo override. EVENT_SOURCE
- * stands in for REGISTRATION_SOURCE, which the Platinum view does not expose — see GH-1695.
+ * Country that, paired with a backfill EVENT_SOURCE (see isBackfillEventSource), triggers the
+ * LF Open Source override. EVENT_SOURCE stands in for REGISTRATION_SOURCE, which the Platinum
+ * view does not expose — see GH-1695.
  */
-export const LF_OPEN_SOURCE_LOGO_MATCH = {
-  EVENT_SOURCE: 'backfill',
+export const LF_OPEN_SOURCE_OVERRIDE_MATCH = {
   EVENT_COUNTRY: 'China',
 } as const;
 
