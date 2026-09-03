@@ -1094,10 +1094,11 @@ export class NewsletterManageComponent {
       });
       return;
     }
-    // Every OTHER 503 -- BFF transport, ingress, gateway -- says only that the request did not
-    // complete. Same message for all of them, because the operator's next step is identical and
-    // none of them licenses "the feature is off".
-    if (err.status === 503) {
+    // Every OTHER 503 -- BFF transport, ingress, gateway -- plus the 408 this BFF mints for its
+    // own timed-out reads and body-reads, says only that the request did not complete. Same
+    // message for all of them, because the operator's next step is identical and none of them
+    // licenses "the feature is off".
+    if (err.status === 503 || err.status === 408) {
       // Says what is actually known: the request did not complete. Deliberately does NOT steer
       // toward Send now -- the schedule may or may not have been armed, and an immediate send on
       // top of an armed schedule is the one outcome that cannot be undone.

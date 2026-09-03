@@ -24,23 +24,15 @@ try {
  * and for the case where 4200 is already serving another session.
  */
 const E2E_PORT = process.env['E2E_PORT'] ?? '4200';
-// localhost, to match PCC_BASE_URL. express-openid-connect uses that value as its baseURL, so a
-// login started at 127.0.0.1 returns to localhost and saves a host-only session cookie that
-// later 127.0.0.1 navigations never send — the run then fails as "unauthenticated" for a reason
-// that has nothing to do with the specs. An IPv4-only dev-server bind is a real problem but it
-// belongs at the binding layer, not here: changing the browser origin to work around it breaks
-// the auth cookie instead. Overridable for a setup that genuinely needs another host.
-const E2E_HOST = process.env['E2E_HOST'] ?? 'localhost';
-// E2E_BASE_URL wins when set. The cookie helper already read it as its first choice, so a config
-// that built its own url from E2E_HOST/E2E_PORT and ignored it put the persona cookie on a host
-// the browser never visited -- the persona silently did not apply.
+// Keep localhost to match the domain used by the suite's persona and lens cookie seeders.
+const E2E_HOST = 'localhost';
+// E2E_BASE_URL WINS when set. Hardcoding `http://host:port` made the override unreadable and the
+// https branch below permanently dead -- `E2E_IS_HTTPS` could never be true, so the
+// externally-started-server mode it selects was unreachable code (Copilot). The cookie helper
+// already reads this env var first, so ignoring it here also put the persona cookie on a host the
+// browser never visited.
 const E2E_BASE_URL = process.env['E2E_BASE_URL'] ?? `http://${E2E_HOST}:${E2E_PORT}`;
-// The port the dev server is actually LAUNCHED on, derived from the base url rather than read
-// independently. Setting only E2E_BASE_URL=http://localhost:4300 previously started Angular on
-// E2E_PORT (4200) while Playwright waited on 4300 until the 120s timeout -- a config that looks
-// correct and fails with a message pointing nowhere near the cause. Deriving it means the two
-// cannot disagree; an explicit E2E_PORT still wins when no base url is set, since it is what
-// builds the default.
+// The port the dev server is actually LAUNCHED on, derived from the base URL.
 // An https base url cannot be served by the `ng serve` this config launches -- it speaks plain
 // HTTP -- so instead of deriving a port that can never work, the webServer block is OMITTED for
 // https and Playwright runs against a server the operator started themselves.

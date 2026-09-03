@@ -2,6 +2,9 @@
 // SPDX-License-Identifier: MIT
 
 import { expect, test } from '@playwright/test';
+import { skipWhenAuthMissing } from './helpers/auth.helper';
+
+test.beforeEach(() => skipWhenAuthMissing());
 
 test.describe('Identities Verify Flow', () => {
   test.beforeEach(async ({ page }) => {

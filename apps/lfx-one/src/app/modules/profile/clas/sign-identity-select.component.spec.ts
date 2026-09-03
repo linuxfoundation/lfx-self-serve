@@ -2,10 +2,12 @@
 // SPDX-License-Identifier: MIT
 
 import { ComponentFixture, TestBed } from '@angular/core/testing';
+import { By } from '@angular/platform-browser';
 import { provideNoopAnimations } from '@angular/platform-browser/animations';
 import { provideRouter } from '@angular/router';
-import type { GithubAccountOption, SignIdentityDialogData } from '@lfx-one/shared/interfaces';
+import type { GithubAccountOption, MyClaAgreement, SignIdentityDialogData } from '@lfx-one/shared/interfaces';
 import { DynamicDialogConfig, DynamicDialogRef } from 'primeng/dynamicdialog';
+import { Tooltip } from 'primeng/tooltip';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 
 import { SignIdentitySelectComponent } from './sign-identity-select.component';
@@ -276,5 +278,169 @@ describe('SignIdentitySelectComponent', () => {
     (fixture.componentInstance as any).onContinue();
 
     expect(close).not.toHaveBeenCalled();
+  });
+
+  // --- Identities that already signed this CLA group (#1914) -----------------
+
+  describe('already signed', () => {
+    function signedAs(signedAs: string, signedVia: 'github' | 'gerrit' = 'github'): MyClaAgreement[] {
+      return [
+        { id: 's1', kind: 'ICLA', claGroupName: 'Venus', claGroupId: 'cg-1', signedOn: '2022-01-01', status: 'valid', pdfAvailable: true, signedVia, signedAs },
+      ];
+    }
+
+    const REASON = 'You already have an ICLA for this CLA group signed with this account. Choose another identity to sign again.';
+
+    it('grays out the account that already signed, and only that account', async () => {
+      await setup({ claGroupAgreements: signedAs('octocat') });
+
+      expect(query('sign-identity-select-github-12345')?.getAttribute('aria-disabled')).toBe('true');
+      expect(query('sign-identity-select-github-67890')?.getAttribute('aria-disabled')).toBe('false');
+    });
+
+    it('grays the account the producer recorded by number rather than handle', async () => {
+      // Agreements carry one identity string, which is the account number when no handle was
+      // recorded. Matching only the handle would leave the account that signed selectable.
+      await setup({ claGroupAgreements: signedAs('12345') });
+
+      expect(query('sign-identity-select-github-12345')?.getAttribute('aria-disabled')).toBe('true');
+      expect(query('sign-identity-select-github-67890')?.getAttribute('aria-disabled')).toBe('false');
+    });
+
+    it('reads a numeric recorded identity as a handle when a card on the step carries it', async () => {
+      // Login `12345` is a real account whose number is something else entirely. The component
+      // has to feed every handle on offer into the matcher so a recorded `12345` greys the
+      // numerically-named card alone, not an unrelated account whose id happens to be `12345`.
+      await setup({
+        accounts: [
+          { githubId: '18281050', githubUsername: '12345' },
+          { githubId: '12345', githubUsername: 'jellis' },
+        ],
+        claGroupAgreements: signedAs('12345'),
+      });
+
+      expect(query('sign-identity-select-github-18281050')?.getAttribute('aria-disabled')).toBe('true');
+      expect(query('sign-identity-select-github-12345')?.getAttribute('aria-disabled')).toBe('false');
+    });
+
+    it('says why, in the tooltip and to assistive tech', async () => {
+      await setup({ claGroupAgreements: signedAs('octocat') });
+
+      const card = fixture.debugElement.query(By.css('[data-testid="sign-identity-select-github-12345"]'));
+      expect(card.injector.get(Tooltip, null)?.content).toBe(REASON);
+      // The reason is also repeated where a screen reader will reach it — after the handle, so
+      // which account is refused stays clear.
+      expect(card.nativeElement.textContent).toContain('octocat');
+      expect(card.nativeElement.textContent).toContain(REASON);
+    });
+
+    it('keeps the grayed card reachable, so the reason is not hover-only', async () => {
+      await setup({ claGroupAgreements: signedAs('octocat') });
+
+      // Removing it from the tab order would leave a keyboard-only contributor with no way to
+      // ask why the account is unavailable — the tooltip also answers to focus, not just hover.
+      const card = fixture.debugElement.query(By.css('[data-testid="sign-identity-select-github-12345"]'));
+      expect(card.nativeElement.getAttribute('tabindex')).toBe('0');
+      expect(card.injector.get(Tooltip, null)?.tooltipEvent).toBe('both');
+    });
+
+    it.each([
+      ['Enter', 'Enter'],
+      ['Space', ' '],
+    ])('refuses the %s key on the grayed card', async (_label, key) => {
+      await setup({ claGroupAgreements: signedAs('octocat') });
+
+      // Keeping the card focusable put Enter/Space on a live path: the only thing that stops it
+      // selecting the account is the card's own disabled guard, so assert the key leaves the
+      // control exactly as it was rather than trusting that guard to stay.
+      const identity = (fixture.componentInstance as any).selectForm.controls.identity;
+      const before = identity.value;
+
+      const event = new KeyboardEvent('keydown', { key, bubbles: true, cancelable: true });
+      fixture.debugElement.query(By.css('[data-testid="sign-identity-select-github-12345"]')).nativeElement.dispatchEvent(event);
+      fixture.detectChanges();
+      await fixture.whenStable();
+      (fixture.componentInstance as any).onContinue();
+
+      expect(identity.value).toBe(before);
+      expect(close).not.toHaveBeenCalled();
+
+      // Refusing the key is not the same as ignoring it. The card is deliberately still
+      // focusable, so an unconsumed Space would scroll the dialog away instead of doing nothing.
+      expect(event.defaultPrevented).toBe(true);
+    });
+
+    it('still selects a card that has not signed, from the keyboard', async () => {
+      await setup({ claGroupAgreements: signedAs('octocat') });
+
+      // The mirror of the refusal above. Without it, deleting the card's (keydown) binding would
+      // leave that test green — nothing else here proves a dispatched key reaches the handler.
+      fixture.debugElement
+        .query(By.css('[data-testid="sign-identity-select-github-67890"]'))
+        .nativeElement.dispatchEvent(new KeyboardEvent('keydown', { key: 'Enter', bubbles: true }));
+      fixture.detectChanges();
+      await fixture.whenStable();
+
+      expect((fixture.componentInstance as any).selectForm.controls.identity.value).toBe('67890');
+    });
+
+    it('refuses to submit it even if the card is reached another way', async () => {
+      await setup({ claGroupAgreements: signedAs('octocat') });
+
+      // Clicking a grayed card is refused by the card itself, which leaves the control unwritten
+      // and never reaches the guard this test is named for. Writing the control directly is the
+      // "another way" — it is what a refactor that drops the guard would silently allow.
+      (fixture.componentInstance as any).selectForm.controls.identity.setValue('12345');
+      fixture.detectChanges();
+      await fixture.whenStable();
+      (fixture.componentInstance as any).onContinue();
+
+      expect(close).not.toHaveBeenCalled();
+    });
+
+    it('still lets them sign with their other account', async () => {
+      await setup({ claGroupAgreements: signedAs('octocat') });
+
+      await choose('sign-identity-select-github-67890');
+      (fixture.componentInstance as any).onContinue();
+
+      expect(close).toHaveBeenCalledWith({ kind: 'github', githubId: '67890' });
+    });
+
+    it('grays out the Gerrit card when the group was signed under the LF identity', async () => {
+      await setup({ variant: 'github-or-gerrit', gerritUsername: GERRIT_USER, claGroupAgreements: signedAs('jdoe', 'gerrit') });
+
+      expect(query('sign-identity-select-gerrit')?.getAttribute('aria-disabled')).toBe('true');
+      // A Gerrit signature says nothing about their GitHub accounts.
+      expect(query('sign-identity-select-github-12345')?.getAttribute('aria-disabled')).toBe('false');
+    });
+
+    it('leaves every card selectable when the agreement is on another CLA group', async () => {
+      await setup({ claGroupAgreements: [] });
+
+      expect(query('sign-identity-select-github-12345')?.getAttribute('aria-disabled')).toBe('false');
+      expect(query('sign-identity-select-github-67890')?.getAttribute('aria-disabled')).toBe('false');
+    });
+
+    it('tells them to choose another identity only when one is left to choose', async () => {
+      // A Gerrit-only step offers exactly one card. Once it is grayed there is nothing else to
+      // pick, so prescribing a way out would name the one thing they cannot do.
+      await setup({ variant: 'gerrit', accounts: [], gerritUsername: GERRIT_USER, claGroupAgreements: signedAs('jdoe', 'gerrit') });
+
+      expect(fixture.debugElement.query(By.css('[data-testid="sign-identity-select-gerrit"]')).injector.get(Tooltip, null)?.content).toBe(
+        'You already have an ICLA for this CLA group signed with this account.'
+      );
+    });
+
+    it('does not tell a single linked GitHub account to choose another identity', async () => {
+      // The most common dead-end this change set out to remove: one account, already signed,
+      // nothing else on the step. The false branch of `anotherSelectable` has to be wired through
+      // initAccounts, not only through the Gerrit call site.
+      await setup({ accounts: [OCTOCAT], claGroupAgreements: signedAs('octocat') });
+
+      expect(fixture.debugElement.query(By.css('[data-testid="sign-identity-select-github-12345"]')).injector.get(Tooltip, null)?.content).toBe(
+        'You already have an ICLA for this CLA group signed with this account.'
+      );
+    });
   });
 });

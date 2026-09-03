@@ -21,6 +21,42 @@
     [tabindex]="tabindex()"
     [fluid]="fluid()"
     [icon]="icon()!"
+    [iconPos]="iconPos()"
+    [pTooltip]="tooltip()"
+    [tooltipPosition]="tooltipPosition()"
+    [style]="style()"
+    [ngClass]="styleClass()"
+    (click)="handleClick($event)">
+    <ng-content></ng-content>
+  </a>
+} @else if (routerLink()) {
+  <!-- Real anchor so the link carries a href (a11y, middle-click) and RouterLink's click listener fires -->
+  <!-- before any consumer stopPropagation on (onClick) can starve it on the p-button host. -->
+  <!-- Null link while disabled/loading: RouterLink no-ops on a null urlTree and renders no href, -->
+  <!-- mirroring the p-button branch's disabled behavior; aria-disabled keeps AT informed. -->
+  <a
+    pButton
+    [type]="type()"
+    [routerLink]="disabled() || loading() ? null : routerLink()"
+    [class.p-disabled]="disabled() || loading()"
+    [attr.aria-disabled]="disabled() || loading() ? true : null"
+    [queryParams]="queryParams()"
+    [target]="target()"
+    [rel]="rel()"
+    [label]="label()!"
+    [severity]="severity()"
+    [raised]="raised()"
+    [rounded]="rounded()"
+    [text]="text()"
+    [plain]="plain()"
+    [outlined]="outlined()"
+    [size]="size()"
+    [loading]="loading()"
+    [ariaLabel]="ariaLabel()!"
+    [attr.tabindex]="disabled() || loading() ? -1 : tabindex()"
+    [fluid]="fluid()"
+    [icon]="icon()!"
+    [iconPos]="iconPos()"
     [pTooltip]="tooltip()"
     [tooltipPosition]="tooltipPosition()"
     [style]="style()"
@@ -56,10 +92,7 @@
     [style]="style()"
     [pTooltip]="tooltip()"
     [tooltipPosition]="tooltipPosition()"
-    (onClick)="handleClick($event)"
-    [routerLink]="routerLink()"
-    [queryParams]="queryParams()"
-    [target]="target()">
+    (onClick)="handleClick($event)">
     <ng-content></ng-content>
   </p-button>
 }

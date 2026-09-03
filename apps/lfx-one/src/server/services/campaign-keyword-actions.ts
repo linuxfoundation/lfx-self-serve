@@ -364,10 +364,11 @@ export function classifyMutationFailure(error: unknown): string {
 }
 
 /**
- * Why a campaign could not be acted on, in words a user can act on.
+ * The campaign is not one this project manages, in words a user can act on.
  *
- * Both cases are refusals rather than errors upstream, so they arrive as ordinary answers and
- * have to be turned into per-keyword failures here.
+ * A REFUSAL rather than an upstream error: it arrives as an ordinary answer (a 200 with no
+ * matches) and has to be turned into per-keyword failures here. The constant below is the
+ * opposite case -- a lookup that genuinely failed -- and says so itself.
  */
 export const CAMPAIGN_UNRESOLVED = 'This campaign is not managed here, so its keywords cannot be changed.';
 

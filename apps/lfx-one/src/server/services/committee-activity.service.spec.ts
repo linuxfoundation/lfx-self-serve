@@ -317,8 +317,10 @@ describe('CommitteeActivityService', () => {
         limit: 8,
       });
 
-      expect(getVotes).toHaveBeenCalledWith(req, expect.objectContaining({ date_field: 'last_modified_time', date_to: '2026-02-01T00:00:00.000Z' }));
-      expect(getVotes).toHaveBeenCalledWith(req, expect.not.objectContaining({ date_from: expect.anything() }));
+      expect(getVotes).toHaveBeenCalledWith(req, expect.objectContaining({ date_field: 'last_modified_time', date_to: '2026-02-01T00:00:00.000Z' }), {
+        includeProject: false,
+      });
+      expect(getVotes).toHaveBeenCalledWith(req, expect.not.objectContaining({ date_from: expect.anything() }), { includeProject: false });
     });
 
     it('sends no date_field/date_from/date_to to votes when only since is set, no cursor', async () => {
@@ -327,9 +329,9 @@ describe('CommitteeActivityService', () => {
       // send date_from as best-effort narrowing.
       await service.getCommitteeActivity(req, COMMITTEE_UID, { since: '2026-01-01T00:00:00Z', limit: 8 });
 
-      expect(getVotes).toHaveBeenCalledWith(req, expect.not.objectContaining({ date_field: expect.anything() }));
-      expect(getVotes).toHaveBeenCalledWith(req, expect.not.objectContaining({ date_from: expect.anything() }));
-      expect(getVotes).toHaveBeenCalledWith(req, expect.not.objectContaining({ date_to: expect.anything() }));
+      expect(getVotes).toHaveBeenCalledWith(req, expect.not.objectContaining({ date_field: expect.anything() }), { includeProject: false });
+      expect(getVotes).toHaveBeenCalledWith(req, expect.not.objectContaining({ date_from: expect.anything() }), { includeProject: false });
+      expect(getVotes).toHaveBeenCalledWith(req, expect.not.objectContaining({ date_to: expect.anything() }), { includeProject: false });
     });
 
     it('sends no date_field/date_from/date_to to the survey leg, even with since and cursor set', async () => {
@@ -362,7 +364,7 @@ describe('CommitteeActivityService', () => {
         limit: 8,
       });
 
-      expect(getVotes).toHaveBeenCalledWith(req, expect.objectContaining({ date_to: '2026-02-01T00:00:01.000Z' }));
+      expect(getVotes).toHaveBeenCalledWith(req, expect.objectContaining({ date_to: '2026-02-01T00:00:01.000Z' }), { includeProject: false });
     });
 
     it('rejects an unparseable cursor.before instead of silently degrading to an empty feed', async () => {
@@ -488,7 +490,7 @@ describe('CommitteeActivityService', () => {
     it('requests page_size = max(limit + 1, 25) from every source', async () => {
       await service.getCommitteeActivity(req, COMMITTEE_UID, { limit: 2 });
       expect(getMeetings).toHaveBeenCalledWith(req, expect.objectContaining({ page_size: 25 }), 'v1_past_meeting', false);
-      expect(getVotes).toHaveBeenCalledWith(req, expect.objectContaining({ page_size: 25 }));
+      expect(getVotes).toHaveBeenCalledWith(req, expect.objectContaining({ page_size: 25 }), { includeProject: false });
 
       await service.getCommitteeActivity(req, COMMITTEE_UID, { limit: 30 });
       expect(getMeetings).toHaveBeenCalledWith(req, expect.objectContaining({ page_size: 31 }), 'v1_past_meeting', false);

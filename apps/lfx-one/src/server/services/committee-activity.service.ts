@@ -734,9 +734,11 @@ export class CommitteeActivityService {
       ...(before && { date_field: 'last_modified_time', date_to: before }),
     };
 
+    // includeProject: false — mapVoteToEvent discards the project enrichment, so the extra
+    // /query/resources round trip would be thrown away.
     // page_token — see the saturation comment in getCommitteeActivity for why this is preferred
     // over comparing `votes.length` to `fetchSize`.
-    const { data: votes, page_token: pageToken } = await this.voteService.getVotes(req, query);
+    const { data: votes, page_token: pageToken } = await this.voteService.getVotes(req, query, { includeProject: false });
     return { events: votes.map((vote) => this.mapVoteToEvent(vote, committeeUid)), saturated: !!pageToken };
   }
 

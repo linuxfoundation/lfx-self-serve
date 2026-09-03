@@ -97,6 +97,12 @@ const browserDistFolder = resolve(serverDistFolder, '../browser');
 const angularApp = new AngularNodeAppEngine();
 const app = express();
 
+// Cold-start phase marks (see #1378) — performance.now() is monotonic and
+// zeroed at process start, so each mark is elapsed-ms since the process spawned.
+// Captured after engine/app construction so engine_ms reflects that work, not
+// just the module-graph evaluation that precedes it.
+const engineStartMs = performance.now();
+
 // Trust first proxy so req.ip resolves from X-Forwarded-For.
 app.set('trust proxy', 1);
 
@@ -572,6 +578,10 @@ app.use((error: Error, req: Request, res: Response, next: NextFunction) => {
   apiErrorHandler(error, req, res, next);
 });
 
+// Cold-start phase mark (see #1378) — router mounting + middleware complete,
+// including the SSR catch-all and global error handler above.
+const routesReadyMs = performance.now();
+
 let httpServer: HttpServer | undefined;
 
 async function gracefulShutdown(signal: string): Promise<void> {
@@ -695,11 +705,15 @@ async function gracefulShutdown(signal: string): Promise<void> {
 export function startServer() {
   const port = process.env['PORT'] || 4000;
   httpServer = app.listen(port, () => {
-    logger.debug(undefined, 'server_startup', 'Node Express server started', {
+    logger.info(undefined, 'server_startup', 'Node Express server started', {
       port,
       url: `http://localhost:${port}`,
       node_env: process.env['NODE_ENV'] || 'development',
       pm2: process.env['PM2'] === 'true',
+      // Cold-start phase breakdown (see #1378) — ms elapsed since process start.
+      engine_ms: Math.round(engineStartMs),
+      routes_ms: Math.round(routesReadyMs),
+      boot_ms: Math.round(performance.now()),
     });
   });
 }
