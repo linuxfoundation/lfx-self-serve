@@ -3,9 +3,9 @@
 
 import { HttpErrorResponse } from '@angular/common/http';
 import { Component, computed, DestroyRef, inject, Signal, signal } from '@angular/core';
-import { takeUntilDestroyed, toObservable, toSignal } from '@angular/core/rxjs-interop';
+import { toObservable, toSignal } from '@angular/core/rxjs-interop';
 import { FormControl, FormGroup, ReactiveFormsModule, Validators } from '@angular/forms';
-import { ActivatedRoute, NavigationEnd, Router, RouterLink } from '@angular/router';
+import { ActivatedRoute, Router, RouterLink } from '@angular/router';
 import { ButtonComponent } from '@components/button/button.component';
 import {
   SCHEDULE_SURVEY_CONFIRMATION,
@@ -20,7 +20,6 @@ import {
   CommitteeReference,
   CreateSurveyRequest,
   EntityWithProject,
-  ProjectContext,
   Survey,
   SurveyDistributionMethod,
   SurveyReminderType,
@@ -29,15 +28,15 @@ import { CommitteeService } from '@services/committee.service';
 import { ProjectContextService } from '@services/project-context.service';
 import { ProjectService } from '@services/project.service';
 import { SurveyService } from '@services/survey.service';
-import { applyEntityProjectContext, syncEntityProjectContext } from '@shared/utils/entity-project-context.util';
+import { syncEntityProjectContext, syncEntityProjectContextFallback } from '@shared/utils/entity-project-context.util';
 import { evictOnWriteAccessLoss } from '@shared/utils/evict-on-write-access-loss.util';
 import { MessageComponent } from '@components/message/message.component';
-import { computeIsFoundation, markFormControlsAsTouched } from '@lfx-one/shared/utils';
+import { markFormControlsAsTouched } from '@lfx-one/shared/utils';
 import { trimmedRequired } from '@lfx-one/shared/validators';
 import { ConfirmationService, MessageService } from 'primeng/api';
 import { ConfirmDialogModule } from 'primeng/confirmdialog';
 import { StepperModule } from 'primeng/stepper';
-import { catchError, combineLatest, distinctUntilChanged, filter, map, merge, of, switchMap, take } from 'rxjs';
+import { catchError, combineLatest, distinctUntilChanged, filter, map, of, switchMap, take } from 'rxjs';
 
 import { SurveyAudienceTypeComponent } from '../components/survey-audience-type/survey-audience-type.component';
 import { SurveyEmailDraftComponent } from '../components/survey-email-draft/survey-email-draft.component';
@@ -107,7 +106,16 @@ export class SurveyManageComponent {
     // Sync context from the loaded survey itself — an edit deep link can arrive with no
     // `?project=` under a stale cookie-restored context (GH-1569). Mirrors meeting-manage (gh-1432).
     syncEntityProjectContext(this.surveyEntityContext, this.projectContextService, this.router, this.destroyRef, { preferEntityKind: true });
-    this.initSurveyContextFallback();
+    // Unenriched-payload fallback (project_uid but no project_slug): resolve the project by uid;
+    // freshFetch re-reads the detail uncached as a last resort for a committee writer whose
+    // relation-gated project lookup resolves null (the enrichment needs no project relation).
+    syncEntityProjectContextFallback(this.surveyEntityContext, this.projectService, this.projectContextService, this.router, this.destroyRef, {
+      entityKind: 'survey',
+      freshFetch: (uid) =>
+        this.surveyService
+          .getSurvey(uid, undefined, { skipCache: true })
+          .pipe(map((survey) => ({ project_uid: survey.project_uid ?? '', project_slug: survey.project_slug, project_name: survey.project_name, is_foundation: survey.is_foundation ?? null }))),
+    });
     this.initCommitteeContext();
     evictOnWriteAccessLoss();
   }
@@ -455,7 +463,7 @@ Thank you,
 
   /**
    * Adapts the loaded survey to {@link EntityWithProject}; a falsy `project_slug` (absent or
-   * empty) reads as "unenriched" to both the sync and the uid fallback below.
+   * empty) reads as "unenriched" to both the sync and the fallback helper.
    */
   private initSurveyEntityContext(): Signal<EntityWithProject | null> {
     return computed(() => {
@@ -471,47 +479,6 @@ Thank you,
         is_foundation: survey.is_foundation ?? null,
       };
     });
-  }
-
-  /**
-   * Unenriched-payload fallback (project_uid but no usable project_slug): resolve the project by
-   * uid and set context from it; NavigationEnd re-applies it, mirroring syncEntityProjectContext
-   * (GH-1569). `getProject(uid, false)` — `current: false` so the fetch doesn't clobber
-   * ProjectService's shared state; a null result leaves the (stale) context untouched rather
-   * than erroring the page.
-   */
-  private initSurveyContextFallback(): void {
-    const unresolvedEntity$ = toObservable(this.surveyEntityContext).pipe(
-      distinctUntilChanged((a, b) => a?.uid === b?.uid && a?.project_uid === b?.project_uid)
-    );
-    const navigationReapply$ = this.router.events.pipe(
-      filter((event) => event instanceof NavigationEnd),
-      map(() => this.surveyEntityContext())
-    );
-    merge(unresolvedEntity$, navigationReapply$)
-      .pipe(
-        filter((entity): entity is EntityWithProject => !!entity?.project_uid && !entity.project_slug),
-        switchMap((entity) =>
-          this.projectService.getProject(entity.project_uid, false).pipe(
-            map((project) => {
-              if (!project) {
-                return null;
-              }
-              const context: ProjectContext = { uid: project.uid, name: project.name, slug: project.slug };
-              return { context, isFoundation: computeIsFoundation(project) };
-            })
-          )
-        ),
-        takeUntilDestroyed(this.destroyRef)
-      )
-      .subscribe((resolved) => {
-        if (!resolved) {
-          return;
-        }
-        // Mirror syncEntityProjectContext: only write ?project= to the URL when already present.
-        const syncUrl = 'project' in this.router.parseUrl(this.router.url).queryParams;
-        applyEntityProjectContext(this.projectContextService, resolved.context, resolved.isFoundation, syncUrl);
-      });
   }
 
   private isStepValid(step: number): boolean {

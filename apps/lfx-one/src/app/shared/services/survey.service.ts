@@ -64,12 +64,13 @@ export class SurveyService {
    * SurveyManageComponent's edit-mode fetch need the same payload within one navigation —
    * sharing the request avoids a duplicate fetch on every edit-page load (GH-1569).
    * Probe-friendly: no signal side-effects. Entries evict on error and on delete.
-   * Mirrors MailingListService.getMailingList.
+   * Mirrors MailingListService.getMailingList, including the skipCache escape hatch the
+   * entity-project-context fallback uses for its fresh-fetch retry.
    */
-  public getSurvey(surveyUid: string, projectId?: string): Observable<Survey> {
+  public getSurvey(surveyUid: string, projectId?: string, options?: { skipCache?: boolean }): Observable<Survey> {
     const cacheKey = `${surveyUid}:${projectId ?? ''}`;
     const cached = this.surveyDetailCache.get(cacheKey);
-    if (cached && Date.now() - cached.cachedAt < SURVEY_DETAIL_CACHE_TTL_MS) {
+    if (!options?.skipCache && cached && Date.now() - cached.cachedAt < SURVEY_DETAIL_CACHE_TTL_MS) {
       return cached.observable;
     }
     if (cached) {

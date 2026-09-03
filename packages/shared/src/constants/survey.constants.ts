@@ -310,6 +310,6 @@ export const SURVEY_TEMPLATE_OPTIONS = [
 
 /**
  * Short TTL so the writerGuard probe and the manage-page edit fetch share one request; entries
- * evict on error and on delete. Mirrors MAILING_LIST_DETAIL_CACHE_TTL_MS.
+ * evict on error and on delete. Mirrors MEETING_DETAIL_CACHE_TTL_MS.
  */
 export const SURVEY_DETAIL_CACHE_TTL_MS = 10 * 1000;
