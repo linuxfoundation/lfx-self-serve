@@ -29,8 +29,6 @@ describe('FORMATION_TEMPLATE', () => {
 
     expect(FORMATION_TEMPLATE.version).toBe(1);
     expect(FORMATION_TEMPLATE.items.map(itemFingerprint)).toEqual([
-      'legal-draft-record|Draft record|legal_and_entity|formation|manual|true|',
-      'legal-intake|Intake|legal_and_entity|formation|manual|true|',
       'legal-formation-review-packet|Formation review and packet|legal_and_entity|brand_counsel|manual|true|',
       'legal-preliminary-trademark-search|Preliminary trademark search|legal_and_entity|brand_counsel|manual|false|',
       'legal-charter-agreed|Charter agreed|legal_and_entity|formation|manual|true|',
@@ -66,6 +64,13 @@ describe('FORMATION_TEMPLATE', () => {
     expect(untitled).toEqual([]);
   });
 
+  // Explicit counts (GH-1959 scope trim) so a future item added/removed without updating this test
+  // fails loudly, independent of the fingerprint's array length.
+  it('has exactly 17 items, 4 of them gating', () => {
+    expect(FORMATION_TEMPLATE.items.length).toBe(17);
+    expect(FORMATION_TEMPLATE.items.filter((item) => item.gate).length).toBe(4);
+  });
+
   // The core acceptance criterion: gate flags only ever appear on legal/entity items. A rule
   // for any future content, not a fact about today's rows — so it stays even as the fingerprint
   // above changes.
@@ -82,14 +87,7 @@ describe('FORMATION_TEMPLATE', () => {
     const gatingIds = FORMATION_TEMPLATE.items.filter((item) => item.gate).map((item) => item.id);
 
     expect(gatingIds.sort()).toEqual(
-      [
-        'legal-draft-record',
-        'legal-intake',
-        'legal-formation-review-packet',
-        'legal-charter-agreed',
-        'legal-contribution-agreement',
-        'legal-indepth-trademark-search-series-llc',
-      ].sort()
+      ['legal-formation-review-packet', 'legal-charter-agreed', 'legal-contribution-agreement', 'legal-indepth-trademark-search-series-llc'].sort()
     );
   });
 

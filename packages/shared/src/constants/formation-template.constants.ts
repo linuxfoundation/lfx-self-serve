@@ -35,22 +35,6 @@ export const FORMATION_TEMPLATE: FormationTemplate = deepFreeze({
   items: [
     // Legal and entity — the items below with gate: true gate the transition to Active
     {
-      id: 'legal-draft-record',
-      title: 'Draft record',
-      section: FormationTemplateSection.LEGAL_AND_ENTITY,
-      ownerTeam: FormationItemOwnerTeam.FORMATION,
-      actionType: FormationItemActionType.MANUAL,
-      gate: true,
-    },
-    {
-      id: 'legal-intake',
-      title: 'Intake',
-      section: FormationTemplateSection.LEGAL_AND_ENTITY,
-      ownerTeam: FormationItemOwnerTeam.FORMATION,
-      actionType: FormationItemActionType.MANUAL,
-      gate: true,
-    },
-    {
       id: 'legal-formation-review-packet',
       title: 'Formation review and packet',
       section: FormationTemplateSection.LEGAL_AND_ENTITY,
