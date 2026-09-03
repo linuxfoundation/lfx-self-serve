@@ -614,32 +614,10 @@ environment:
   # state and no UUID-keyed id space, so nothing is stranded by disabling it: flipping back
   # restores the previous behaviour exactly, leak included. It has no ordering dependency on
   # any other flag on this list.
-  #
-  # Does NOT gate keyword ACTIONS (pause/remove). Those have their own flag,
-  # LFX_CUTOVER_CAMPAIGN_SERVICE_KEYWORD_ACTIONS, immediately below — a write needs a rollback
-  # story a read does not, so the two are enabled independently and neither implies the other.
-  # Same accepted values as the flags above.
   LFX_CUTOVER_CAMPAIGN_SERVICE_INSIGHTS:
     value: "false"
 
-  # Routes keyword pause/remove (campaign.controller.ts executeKeywordActions) through
-  # campaign-service instead of the BFF's own Google Ads mutate calls.
-  #
-  # SEPARATE from the INSIGHTS flag above, which covers the two READS. This one MUTATES live
-  # paid campaigns and needs a rollback story a read does not: a REMOVE is irreversible, since
-  # Google cannot re-enable a removed criterion, only create a new one with a new id.
-  #
-  # THE GRANULARITY OF FAILURE CHANGES when this is on. The legacy path issues one Google call
-  # per keyword, so each succeeds or fails alone. campaign-service takes one ATOMIC batch per
-  # campaign, so a request spanning several campaigns is atomic per campaign and not overall:
-  # one campaign's keywords can pause while another's do not. Every keyword is still reported
-  # individually, and a campaign-level failure marks all of that campaign's keywords failed.
-  #
-  # "OFF" IS NOT A WORKING FALLBACK HERE, unlike every other flag on this list. The legacy path
-  # calls getGadsClient(), which throws whenever the GADS_* variables are absent — and they were
-  # deactivated deliberately. So with this off, keyword actions do not work at all; this flag is
-  # what makes them work, not what changes which backend serves them.
-  # ONE CHANGE APPLIES WITH THIS FLAG OFF, and it is deliberate: the
+  # One request-boundary change applies here, and it is deliberate: the
   # /keywords/actions endpoint now refuses a body of more than 50 keyword rows on
   # BOTH paths, where before only a non-empty array was required.
   #
@@ -673,8 +651,6 @@ environment:
   # malformed ids in one request now gets a single 400 instead, and none of the
   # valid rows run. The LFX One client cannot produce a malformed id, so this
   # affects direct API callers only.
-  LFX_CUTOVER_CAMPAIGN_SERVICE_KEYWORD_ACTIONS:
-    value: "false"
   WEEKLY_BRIEF_BACKEND:
     value: "live"
 

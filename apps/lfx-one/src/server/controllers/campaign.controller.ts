@@ -46,7 +46,6 @@ import { isServerFeatureEnabled, ServerFeatureFlag } from '../helpers/server-fea
 import { getLinkedInConfig } from '../services/linkedin-ads.service';
 import { CampaignProxyService } from '../services/campaign-proxy.service';
 import { toAudienceDemographics, toKeywordMetricsResponse, windowForDays } from '../services/campaign-insights-mapper';
-import { applyKeywordActionsViaCampaignService } from '../services/campaign-keyword-actions';
 import { CampaignServiceClient, deriveEventSlug, isCampaignServiceJobId } from '../services/campaign-service.service';
 import { logger } from '../services/logger.service';
 import { addShutdownHook, isShuttingDown } from '../utils/shutdown';
@@ -1236,35 +1235,11 @@ export class CampaignController {
       }
     }
 
-    const viaCampaignService = isServerFeatureEnabled(ServerFeatureFlag.CampaignServiceKeywordActions);
-    const startTime = logger.startOperation(req, 'keyword_actions', { action: body.action, count: body.keywords.length, viaCampaignService });
+    const startTime = logger.startOperation(req, 'keyword_actions', { action: body.action, count: body.keywords.length });
 
     try {
-      if (viaCampaignService) {
-        const projectSlug = typeof req.query['project'] === 'string' ? req.query['project'].trim() : '';
-        if (projectSlug === '') {
-          next(
-            ServiceValidationError.forField('project', 'A project is required to change keywords', {
-              operation: 'keyword_actions',
-              service: 'campaign_controller',
-              path: req.path,
-            })
-          );
-          return;
-        }
-
-        const result = await applyKeywordActionsViaCampaignService(req, this.campaignServiceClient, projectSlug, body);
-        logger.success(req, 'keyword_actions', startTime, {
-          viaCampaignService: true,
-          succeeded: result.succeeded,
-          failed: result.failed,
-        });
-        res.json(result);
-        return;
-      }
-
       const result = await this.proxyService.executeKeywordActions(req, body);
-      logger.success(req, 'keyword_actions', startTime, { viaCampaignService: false, succeeded: result.succeeded, failed: result.failed });
+      logger.success(req, 'keyword_actions', startTime, { succeeded: result.succeeded, failed: result.failed });
       res.json(result);
     } catch (error) {
       next(error);
