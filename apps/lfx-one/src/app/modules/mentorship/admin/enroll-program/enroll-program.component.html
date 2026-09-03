@@ -1,0 +1,56 @@
+<!-- Copyright The Linux Foundation and each contributor to LFX. -->
+<!-- SPDX-License-Identifier: MIT -->
+
+<div class="container mx-auto px-4 sm:px-6 lg:px-8" data-testid="mentorship-enroll">
+  <div class="flex flex-col gap-6">
+    <div class="flex flex-col gap-3 mt-3">
+      <lfx-button
+        label="My Programs"
+        icon="fa-light fa-chevron-left"
+        iconPos="left"
+        [text]="true"
+        size="small"
+        styleClass="!text-blue-600 !px-0 self-start"
+        routerLink="/mentorship/admin"
+        data-testid="mentorship-enroll-back-to-programs" />
+      <div class="flex flex-col gap-1">
+        <h1 class="font-display font-light text-2xl" data-testid="mentorship-enroll-title">Enroll a Program</h1>
+        <p class="text-sm text-gray-500">The LFX team reviews every enrollment before it opens for applications.</p>
+      </div>
+    </div>
+
+    <lfx-mentorship-enroll-stepper [current]="step()" />
+
+    @switch (step()) {
+      @case ('details') {
+        <lfx-mentorship-enroll-details-step [form]="form" [errors]="stepErrors()" />
+      }
+      @case ('setup') {
+        <lfx-mentorship-enroll-setup-step [form]="form" [errors]="stepErrors()" />
+      }
+      @case ('prerequisites') {
+        <lfx-mentorship-enroll-prerequisites-step [form]="form" [errors]="stepErrors()" />
+      }
+    }
+
+    <div class="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between pt-2 pb-8">
+      <lfx-button
+        [label]="backLabel()"
+        [icon]="step() === 'details' ? undefined : 'fa-light fa-arrow-left'"
+        iconPos="left"
+        severity="secondary"
+        [text]="true"
+        size="small"
+        (onClick)="onBack()"
+        data-testid="mentorship-enroll-back" />
+      <lfx-button
+        [label]="nextLabel()"
+        severity="primary"
+        size="small"
+        [loading]="submitting()"
+        [disabled]="submitting()"
+        (onClick)="onNext()"
+        data-testid="mentorship-enroll-next" />
+    </div>
+  </div>
+</div>

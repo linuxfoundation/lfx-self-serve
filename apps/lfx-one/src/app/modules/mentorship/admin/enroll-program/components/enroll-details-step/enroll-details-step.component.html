@@ -1,0 +1,191 @@
+<!-- Copyright The Linux Foundation and each contributor to LFX. -->
+<!-- SPDX-License-Identifier: MIT -->
+
+<div class="flex flex-col gap-6" data-testid="mentorship-enroll-details">
+  <section class="rounded-2xl border border-gray-200 bg-white p-6 md:p-8 flex flex-col gap-6">
+    <div class="flex flex-col gap-2">
+      <h2 class="text-lg font-semibold text-gray-900">Program Details</h2>
+      <p class="text-sm text-gray-600">{{ intro }}</p>
+    </div>
+
+    <div class="flex flex-col gap-1">
+      <label class="text-sm font-medium text-gray-700" for="importProgramId">Import from existing program</label>
+      <lfx-select
+        [form]="form()"
+        control="importProgramId"
+        [options]="importOptions"
+        optionLabel="label"
+        optionValue="value"
+        placeholder="Select Program..."
+        styleClass="w-full"
+        (onChange)="onImportProgram()"
+        dataTest="mentorship-enroll-import" />
+      <p class="text-xs text-gray-500">Optionally start from a program you already administer.</p>
+    </div>
+
+    <div class="flex flex-col gap-1">
+      <div class="flex items-center justify-between">
+        <label class="text-sm font-medium text-gray-700" for="name">Program Name <span class="text-red-500">*</span></label>
+        <span class="text-xs text-gray-400">{{ nameLength() }} / {{ nameMax }}</span>
+      </div>
+      <lfx-input-text [form]="form()" control="name" placeholder="Enter program name" dataTest="mentorship-enroll-name" />
+      @if (errors().name) {
+        <p class="text-xs text-red-600">{{ errors().name }}</p>
+      }
+    </div>
+
+    <div class="flex flex-col gap-1">
+      <label class="text-sm font-medium text-gray-700" for="projectId">Linux Foundation Open Source Project <span class="text-red-500">*</span></label>
+      <lfx-select
+        [form]="form()"
+        control="projectId"
+        [options]="projectOptions"
+        optionLabel="label"
+        optionValue="value"
+        placeholder="Select a project"
+        [filter]="true"
+        styleClass="w-full"
+        dataTest="mentorship-enroll-project" />
+      @if (errors().projectId) {
+        <p class="text-xs text-red-600">{{ errors().projectId }}</p>
+      }
+    </div>
+
+    <div class="flex flex-col gap-1">
+      <label class="text-sm font-medium text-gray-700">Technologies <span class="text-red-500">*</span></label>
+      <div class="flex flex-col gap-3 sm:flex-row sm:items-center">
+        <div class="flex-1">
+          <lfx-select
+            [form]="draftTechForm"
+            control="technology"
+            [options]="availableTechnologies()"
+            optionLabel="label"
+            optionValue="value"
+            placeholder="Select a technology"
+            [filter]="true"
+            styleClass="w-full"
+            dataTest="mentorship-enroll-technology" />
+        </div>
+        <lfx-button
+          label="Add Technology"
+          icon="fa-light fa-plus"
+          severity="primary"
+          size="small"
+          [disabled]="!draftTechnology()"
+          (onClick)="addTechnology()"
+          data-testid="mentorship-enroll-add-technology" />
+      </div>
+      @if (technologies().length) {
+        <div class="mt-1 flex flex-wrap gap-2 rounded-xl border border-gray-200 p-3">
+          @for (tech of technologies(); track tech) {
+            <span class="inline-flex items-center gap-1.5 rounded-lg border border-gray-200 bg-neutral-100 text-neutral-600 px-3 py-1 text-xs">
+              {{ tech }}
+              <button type="button" class="text-gray-400 hover:text-gray-700" [attr.aria-label]="'Remove ' + tech" (click)="removeTechnology(tech)">
+                <i class="fa-light fa-xmark" aria-hidden="true"></i>
+              </button>
+            </span>
+          }
+        </div>
+      }
+      @if (errors().technologies) {
+        <p class="text-xs text-red-600">{{ errors().technologies }}</p>
+      }
+    </div>
+
+    <div class="flex flex-col gap-1">
+      <label class="text-sm font-medium text-gray-700">Program Description <span class="text-red-500">*</span></label>
+      <lfx-rich-editor
+        [form]="form()"
+        control="description"
+        placeholder="Describe the mentorship program"
+        [editorStyle]="{ minHeight: '220px' }"
+        dataTest="mentorship-enroll-description" />
+      <p class="text-xs text-gray-400 text-right">{{ descriptionLength() }} / {{ descriptionMax }}</p>
+      @if (errors().description) {
+        <p class="text-xs text-red-600">{{ errors().description }}</p>
+      }
+    </div>
+
+    <div class="flex flex-col gap-1">
+      <label class="text-sm font-medium text-gray-700" for="repositoryUrl">Repository URL <span class="text-red-500">*</span></label>
+      <lfx-input-text [form]="form()" control="repositoryUrl" placeholder="https://github.com/org/repo" dataTest="mentorship-enroll-repo" />
+      <p class="text-xs text-gray-500">Public repository mentees will contribute to during the program.</p>
+      @if (errors().repositoryUrl) {
+        <p class="text-xs text-red-600">{{ errors().repositoryUrl }}</p>
+      }
+    </div>
+
+    <div class="flex flex-col gap-1">
+      <label class="text-sm font-medium text-gray-700" for="websiteUrl">Website URL</label>
+      <lfx-input-text [form]="form()" control="websiteUrl" placeholder="https://example.org" dataTest="mentorship-enroll-website" />
+      <p class="text-xs text-gray-500">Optional project or program homepage.</p>
+    </div>
+  </section>
+
+  <section class="rounded-2xl border border-gray-200 bg-white p-6 md:p-8 flex flex-col gap-4">
+    <div class="flex flex-col gap-2">
+      <h2 class="text-lg font-semibold text-gray-900">Core Infrastructure Initiative Best Practices</h2>
+      <p class="text-sm text-gray-600 leading-5">
+        The CII Best Practices badge program helps open source projects demonstrate security and quality practices. Enter your project ID if you already
+        participate.
+      </p>
+    </div>
+    <div class="flex flex-col gap-1">
+      <label class="text-sm font-medium text-gray-700" for="ciiProjectId">CII Project ID</label>
+      <lfx-input-text [form]="form()" control="ciiProjectId" placeholder="1234" dataTest="mentorship-enroll-cii" />
+    </div>
+    <a [href]="ciiApplyUrl" target="_blank" rel="noopener noreferrer" class="inline-flex text-sm font-medium text-blue-600 hover:text-blue-700"
+      >Apply for CII</a
+    >
+  </section>
+
+  <section class="rounded-2xl border border-gray-200 bg-white p-6 md:p-8 flex flex-col gap-4">
+    <div class="flex flex-col gap-2">
+      <h2 class="text-lg font-semibold text-gray-900">Code of Conduct</h2>
+      <p class="text-sm text-gray-600 leading-5">
+        A Code of Conduct sets expectations for respectful participation. Link to your project's Code of Conduct, or start from a community template.
+      </p>
+    </div>
+    <div class="flex flex-col gap-1">
+      <label class="text-sm font-medium text-gray-700" for="codeOfConductUrl">Code of Conduct URL</label>
+      <lfx-input-text [form]="form()" control="codeOfConductUrl" placeholder="https://example.org/code-of-conduct" dataTest="mentorship-enroll-coc" />
+    </div>
+    <a [href]="codeOfConductTemplateUrl" target="_blank" rel="noopener noreferrer" class="inline-flex text-sm font-medium text-blue-600 hover:text-blue-700">
+      Start from a template
+    </a>
+  </section>
+
+  <section class="rounded-2xl border border-gray-200 bg-white p-6 md:p-8 flex flex-col gap-4">
+    <div class="flex flex-col gap-2">
+      <h2 class="text-lg font-semibold text-gray-900">Program Design</h2>
+      <p class="text-sm text-gray-600">The logo appears on your program page and in search results.</p>
+    </div>
+    <div class="flex flex-col gap-4 md:flex-row md:items-start">
+      <div class="flex flex-col gap-1 flex-1">
+        <label class="text-sm font-medium text-gray-700">Program Logo <span class="text-red-500">*</span></label>
+        <div class="flex items-stretch overflow-hidden rounded-lg border border-gray-200 bg-white">
+          <div class="flex flex-1 items-center px-3 text-sm text-gray-500 truncate min-w-0">{{ logoFileName() || 'Choose file' }}</div>
+          <lfx-button label="Browse" severity="primary" size="small" styleClass="!rounded-none shrink-0" (onClick)="onBrowseLogo()" />
+        </div>
+        <input #fileInput type="file" class="hidden" [accept]="logoAccept" (change)="onLogoChange($event)" />
+        <p class="text-xs text-gray-500">{{ logoHelper }}</p>
+        @if (logoError()) {
+          <p class="text-xs text-red-600">{{ logoError() }}</p>
+        } @else if (errors().logoFileName) {
+          <p class="text-xs text-red-600">{{ errors().logoFileName }}</p>
+        }
+      </div>
+      <div
+        class="flex size-28 shrink-0 items-center justify-center overflow-hidden rounded-xl border bg-gray-50"
+        [class.border-gray-200]="!!logoPreviewUrl()"
+        [class.border-dashed]="!logoPreviewUrl()"
+        [class.border-gray-300]="!logoPreviewUrl()">
+        @if (logoPreviewUrl()) {
+          <img [src]="logoPreviewUrl()" [alt]="logoFileName() || 'Program logo'" class="size-full object-contain" />
+        } @else {
+          <i class="fa-light fa-image text-2xl text-gray-300" aria-hidden="true"></i>
+        }
+      </div>
+    </div>
+  </section>
+</div>

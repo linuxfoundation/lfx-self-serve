@@ -3,6 +3,7 @@
 
 import { ChangeDetectionStrategy, Component, computed, inject, signal, Signal } from '@angular/core';
 import { toObservable, toSignal } from '@angular/core/rxjs-interop';
+import { Router } from '@angular/router';
 import { ButtonComponent } from '@components/button/button.component';
 import { RouteLoadingComponent } from '@components/loading/route-loading.component';
 import { EMPTY_MENTORSHIP_PROGRAMS_RESPONSE } from '@lfx-one/shared/constants';
@@ -29,6 +30,7 @@ import { ProgramsListComponent } from './components/programs-list/programs-list.
 })
 export class AdminComponent {
   // ─── Private Injections ────────────────────────────────────────────────────
+  private readonly router = inject(Router);
   private readonly mentorshipService = inject(MentorshipService);
 
   // ─── Simple WritableSignals ────────────────────────────────────────────────
@@ -57,9 +59,7 @@ export class AdminComponent {
   }
 
   protected onEnrollProgram(): void {
-    // TODO: wire up program-enrollment flow (LFXV2-<TBD>) — currently a no-op
-    // so the CTA visibly renders without silently promising navigation the
-    // rest of the module doesn't yet support.
+    void this.router.navigate(['/mentorship/admin/enroll']);
   }
 
   // ─── Private Initializers ──────────────────────────────────────────────────

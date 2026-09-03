@@ -1,0 +1,110 @@
+<!-- Copyright The Linux Foundation and each contributor to LFX. -->
+<!-- SPDX-License-Identifier: MIT -->
+
+<div class="flex flex-col gap-5" data-testid="mentorship-enroll-term-dialog">
+  <div class="flex flex-col gap-1">
+    <div class="flex items-center justify-between">
+      <label class="text-sm font-medium text-gray-700" for="name">Name <span class="text-red-500">*</span></label>
+      <span class="text-xs text-gray-400">{{ nameLength() }} / {{ nameMax }}</span>
+    </div>
+    <lfx-input-text [form]="form" control="name" placeholder="Term name" dataTest="mentorship-enroll-term-name" />
+    @if (showErrors() && form.controls.name.invalid) {
+      <p class="text-xs text-red-600">Term name is required.</p>
+    }
+  </div>
+
+  <div class="grid grid-cols-1 gap-4 sm:grid-cols-2">
+    <div class="flex flex-col gap-1">
+      <label class="text-sm font-medium text-gray-700">Start Month <span class="text-red-500">*</span></label>
+      <lfx-select
+        [form]="form"
+        control="startMonth"
+        [options]="monthOptions"
+        optionLabel="label"
+        optionValue="value"
+        placeholder="Select"
+        appendTo="body"
+        styleClass="w-full"
+        dataTest="mentorship-enroll-term-start-month" />
+      @if (showErrors() && form.controls.startMonth.invalid) {
+        <p class="text-xs text-red-600">Start month is required.</p>
+      }
+    </div>
+    <div class="flex flex-col gap-1">
+      <label class="text-sm font-medium text-gray-700">Start Year <span class="text-red-500">*</span></label>
+      <lfx-select
+        [form]="form"
+        control="startYear"
+        [options]="yearOptions"
+        optionLabel="label"
+        optionValue="value"
+        placeholder="Year"
+        appendTo="body"
+        styleClass="w-full"
+        dataTest="mentorship-enroll-term-start-year" />
+      @if (showErrors() && form.controls.startYear.invalid) {
+        <p class="text-xs text-red-600">Start year is required.</p>
+      }
+    </div>
+  </div>
+
+  <div class="grid grid-cols-1 gap-4 sm:grid-cols-2">
+    <div class="flex flex-col gap-1">
+      <label class="text-sm font-medium text-gray-700">End Month <span class="text-red-500">*</span></label>
+      <lfx-select
+        [form]="form"
+        control="endMonth"
+        [options]="monthOptions"
+        optionLabel="label"
+        optionValue="value"
+        placeholder="Select"
+        appendTo="body"
+        styleClass="w-full"
+        dataTest="mentorship-enroll-term-end-month" />
+      @if (showErrors() && form.controls.endMonth.invalid) {
+        <p class="text-xs text-red-600">End month is required.</p>
+      }
+    </div>
+    <div class="flex flex-col gap-1">
+      <label class="text-sm font-medium text-gray-700">End Year <span class="text-red-500">*</span></label>
+      <lfx-select
+        [form]="form"
+        control="endYear"
+        [options]="yearOptions"
+        optionLabel="label"
+        optionValue="value"
+        placeholder="Year"
+        appendTo="body"
+        styleClass="w-full"
+        dataTest="mentorship-enroll-term-end-year" />
+      @if (showErrors() && (form.controls.endYear.invalid || form.controls.endYear.errors?.['order'])) {
+        <p class="text-xs text-red-600">
+          {{ form.controls.endYear.errors?.['order'] ? 'End date must be on or after the start date.' : 'End year is required.' }}
+        </p>
+      }
+    </div>
+  </div>
+
+  <div class="grid grid-cols-1 gap-4 sm:grid-cols-2">
+    <div class="flex flex-col gap-1">
+      <label class="text-sm font-medium text-gray-700">Application Start Date <span class="text-red-500">*</span></label>
+      <lfx-calendar [form]="form" control="applicationStartDate" placeholder="YYYY-MM-DD" dateFormat="yy-mm-dd" appendTo="body" styleClass="w-full" />
+      @if (showErrors() && form.controls.applicationStartDate.invalid) {
+        <p class="text-xs text-red-600">Application start date is required.</p>
+      }
+    </div>
+    <div class="flex flex-col gap-1">
+      <label class="text-sm font-medium text-gray-700">Application End Date <span class="text-red-500">*</span></label>
+      <lfx-calendar [form]="form" control="applicationEndDate" placeholder="YYYY-MM-DD" dateFormat="yy-mm-dd" appendTo="body" styleClass="w-full" />
+      @if (showErrors() && (form.controls.applicationEndDate.invalid || form.controls.applicationEndDate.errors?.['order'])) {
+        <p class="text-xs text-red-600">
+          {{ form.controls.applicationEndDate.errors?.['order'] ? 'Application end must be on or after the start date.' : 'Application end date is required.' }}
+        </p>
+      }
+    </div>
+  </div>
+
+  <div class="flex justify-end pt-1">
+    <lfx-button [label]="submitLabel()" severity="primary" size="small" (onClick)="onSubmit()" data-testid="mentorship-enroll-term-submit" />
+  </div>
+</div>

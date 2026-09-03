@@ -42,3 +42,76 @@ export type MentorshipProgramsResponse = {
   data: MentorshipProgram[];
   total: number;
 };
+
+/** Wizard step keys for `/mentorship/admin/enroll`. */
+export type MentorshipEnrollStep = 'details' | 'setup' | 'prerequisites';
+
+/** A mentorship term row on the enroll setup step. */
+export interface MentorshipProgramTerm {
+  id: string;
+  name: string;
+  /** ISO `YYYY-MM-01` built from the term dialog start month + start year. */
+  startDate: string;
+  /** ISO `YYYY-MM-01` built from the term dialog end month + end year. */
+  endDate: string;
+  /** ISO `YYYY-MM-DD` application window start. */
+  applicationStartDate: string;
+  /** ISO `YYYY-MM-DD` application window end. */
+  applicationEndDate: string;
+}
+
+/** Payload for the enroll add/edit term dialog. */
+export interface MentorshipTermFormDialogData {
+  mode: 'add' | 'edit';
+  term?: MentorshipProgramTerm;
+}
+
+/** Application material row on the enroll prerequisites step. */
+export interface MentorshipPrerequisite {
+  id: string;
+  name: string;
+  description: string;
+  required: boolean;
+  requireFile?: boolean;
+  challengeUrl?: string;
+  /** Admin-authored extra material, rendered as an editable card. */
+  custom?: boolean;
+  /** ISO `YYYY-MM-DD` due date — used by custom prerequisites. */
+  dueDate?: string;
+}
+
+/**
+ * Payload collected by the enroll wizard and POSTed to `/api/mentorship/programs`.
+ * Logo file bytes stay client-side; only `logoFileName` is sent to the BFF.
+ */
+export interface MentorshipEnrollForm {
+  importProgramId: string;
+  name: string;
+  projectId: string;
+  technologies: string[];
+  description: string;
+  repositoryUrl: string;
+  websiteUrl: string;
+  ciiProjectId: string;
+  codeOfConductUrl: string;
+  logoFileName: string;
+  logoPreviewUrl: string;
+  skills: string[];
+  terms: MentorshipProgramTerm[];
+  prerequisites: MentorshipPrerequisite[];
+  termsAccepted: boolean;
+}
+
+/** Field-keyed validation errors for a single enroll wizard step. */
+export interface MentorshipEnrollFieldErrors {
+  name?: string;
+  projectId?: string;
+  technologies?: string;
+  description?: string;
+  repositoryUrl?: string;
+  logoFileName?: string;
+  skills?: string;
+  terms?: string;
+  prerequisites?: string;
+  termsAccepted?: string;
+}

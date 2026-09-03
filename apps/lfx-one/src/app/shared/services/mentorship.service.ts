@@ -4,16 +4,15 @@
 import { HttpClient, HttpErrorResponse, HttpParams } from '@angular/common/http';
 import { inject, Injectable } from '@angular/core';
 import { EMPTY_MENTORSHIP_PROGRAMS_RESPONSE } from '@lfx-one/shared/constants';
-import { MentorshipProgramsResponse, MentorshipProgramStatus } from '@lfx-one/shared/interfaces';
-import { catchError, Observable, of } from 'rxjs';
+import { MentorshipEnrollForm, MentorshipProgram, MentorshipProgramsResponse, MentorshipProgramStatus } from '@lfx-one/shared/interfaces';
+import { catchError, Observable, of, take } from 'rxjs';
 
 /**
  * Talks to the LFX One BFF's `/api/mentorship/*` endpoints.
  *
- * Shape mirrors `CrowdfundingService` deliberately: list + detail lookup, list
- * degrades to an empty response on error so the admin surface never blocks on
- * upstream faults, detail degrades to `null` so the caller can render a
- * "not found" state without a rethrown observable.
+ * Shape mirrors `CrowdfundingService` deliberately: list degrades to an empty
+ * response on error so the admin surface never blocks on upstream faults.
+ * `enrollProgram` rethrows so the wizard can toast a failure.
  */
 @Injectable({ providedIn: 'root' })
 export class MentorshipService {
@@ -27,6 +26,10 @@ export class MentorshipService {
     return this.http
       .get<MentorshipProgramsResponse>('/api/mentorship/programs', { params: httpParams })
       .pipe(catchError(this.handleError(EMPTY_MENTORSHIP_PROGRAMS_RESPONSE, 'getPrograms')));
+  }
+
+  public enrollProgram(form: MentorshipEnrollForm): Observable<MentorshipProgram> {
+    return this.http.post<MentorshipProgram>('/api/mentorship/programs', form).pipe(take(1));
   }
 
   /**
