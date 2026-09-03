@@ -28,6 +28,8 @@ const {
   svcApplyKeywordActions,
   legacyKeywordActions,
   svcGetAudience,
+  svcSearchHsCampaigns,
+  svcCreateHsCampaign,
   legacyLookupUtm,
   legacyCreateUtm,
   legacyGetKeywords,
@@ -84,6 +86,8 @@ vi.mock('../services/campaign-service.service', async (importOriginal) => {
       public resolveGoogleAdsCampaign = svcResolveCampaign;
       public applyKeywordActions = svcApplyKeywordActions;
       public getGoogleAdsAudience = svcGetAudience;
+      public searchHubSpotCampaigns = svcSearchHsCampaigns;
+      public createHubSpotCampaign = svcCreateHsCampaign;
     },
   };
 });
@@ -2521,12 +2525,161 @@ describe('CampaignController.executeKeywordActions via campaign-service', () => 
 
   // Every keyword sent must appear in the response exactly once, whatever happened to it.
   it('accounts for every requested keyword in the response', async () => {
-    svcResolveCampaign.mockResolvedValueOnce(resolvedTo('c-1', 'b-1')).mockResolvedValueOnce({ platform_campaign_id: '666', match_count: 0, matches: [] });
+    svcResolveCampaign
+      .mockResolvedValueOnce(resolvedTo('c-1', 'b-1', '555'))
+      .mockResolvedValueOnce({ platform_campaign_id: '666', match_count: 0, matches: [] });
 
     await controller.executeKeywordActions(actionsReq([keyword('555', '1'), keyword('555', '2'), keyword('666', '3')]), res, next);
 
     const body = vi.mocked(res.json).mock.calls[0][0] as { total: number; results: { keyword: string }[] };
     expect(body.total).toBe(3);
     expect(body.results.map((r) => r.keyword).sort()).toEqual(['Criterion 1', 'Criterion 2', 'Criterion 3']);
+  });
+});
+
+describe('CampaignController HubSpot UTM', () => {
+  let controller: CampaignController;
+  let res: Response;
+  let next: NextFunction;
+
+  /** Only the UTM flag on. Everything else stays off so a blanket toggle cannot pass. */
+  const onlyUtm = (flag: string): boolean => String(flag) === 'LFX_CUTOVER_CAMPAIGN_SERVICE_HUBSPOT_UTM';
+
+  function utmReq(query: Record<string, unknown>, body: Record<string, unknown> = {}): Request {
+    return { body, query, path: '/api/campaigns/hubspot/utm' } as unknown as Request;
+  }
+
+  beforeEach(() => {
+    vi.clearAllMocks();
+    controller = new CampaignController();
+    res = buildRes();
+    next = vi.fn();
+    svcSearchHsCampaigns.mockResolvedValue({ campaigns: [{ id: '1', name: 'KubeCon NA 2026', utm: 'kubecon-na-2026' }], capped: false });
+    svcCreateHsCampaign.mockResolvedValue({ id: '1', name: 'KubeCon NA 2026', utm: 'kubecon-na-2026' });
+    legacyLookupUtm.mockResolvedValue({ found: false, hs_utm: null, campaign_name: '', all_matches: [], capped: false });
+    legacyCreateUtm.mockResolvedValue({ created: true, hs_utm: 'x', campaign_name: 'KubeCon NA 2026' });
+  });
+
+  describe('lookupHubSpotUtm', () => {
+    it('reads from campaign-service when the flag is on, and not from the legacy path', async () => {
+      isServerFeatureEnabled.mockImplementation(onlyUtm);
+
+      await controller.lookupHubSpotUtm(utmReq({ project: 'tlf', event_name: 'KubeCon NA 2026' }), res, next);
+
+      expect(svcSearchHsCampaigns).toHaveBeenCalledWith(expect.anything(), 'tlf', 'KubeCon NA 2026');
+      // Asserted explicitly: a branch calling BOTH would still return the right body while
+      // doubling the upstream cost and keeping the legacy path live.
+      expect(legacyLookupUtm).not.toHaveBeenCalled();
+      expect(next).not.toHaveBeenCalled();
+    });
+
+    it('answers a malformed upstream envelope with the mapper safe result, not a 500', async () => {
+      // dealako (#2079, blocking): `toUtmLookupResult` deliberately fail-closes on a body with no
+      // `campaigns` array and returns `inconclusive: true` -- a TESTED safe path. The success log
+      // then read `payload.campaigns.length` unguarded and threw a TypeError before
+      // `res.json(result)`, converting that deliberate safe answer into a generic 500.
+      isServerFeatureEnabled.mockImplementation(onlyUtm);
+      svcSearchHsCampaigns.mockResolvedValueOnce({ capped: false } as never);
+
+      await controller.lookupHubSpotUtm(utmReq({ project: 'tlf', event_name: 'KubeCon NA 2026' }), res, next);
+
+      expect(next, 'the fail-closed lookup was turned into an error by its own success log').not.toHaveBeenCalled();
+      const body = vi.mocked(res.json).mock.calls[0][0] as { found: boolean; inconclusive: boolean };
+      expect(body.found).toBe(false);
+      expect(body.inconclusive, 'a malformed envelope must not read as proven absence').toBe(true);
+    });
+
+    it('keeps the legacy path when the flag is off', async () => {
+      isServerFeatureEnabled.mockReturnValue(false);
+
+      await controller.lookupHubSpotUtm(utmReq({ event_name: 'KubeCon NA 2026' }), res, next);
+
+      expect(legacyLookupUtm).toHaveBeenCalled();
+      expect(svcSearchHsCampaigns).not.toHaveBeenCalled();
+    });
+
+    // With a blanket `mockReturnValue(true)` this passes no matter which flag is read, so every
+    // OTHER flag is held on and this one off: a handler checking the wrong flag fails here.
+    it('routes on the UTM flag specifically, not on any cutover flag', async () => {
+      isServerFeatureEnabled.mockImplementation((flag: string) => !onlyUtm(flag));
+
+      await controller.lookupHubSpotUtm(utmReq({ project: 'tlf', event_name: 'KubeCon NA 2026' }), res, next);
+
+      expect(legacyLookupUtm).toHaveBeenCalled();
+      expect(svcSearchHsCampaigns).not.toHaveBeenCalled();
+    });
+
+    it('requires the project on the campaign-service arm rather than defaulting one', async () => {
+      // campaign-service scopes the HubSpot connection BY PROJECT. Defaulting would read another
+      // project's portal, so the absence must be an error rather than a guess.
+      isServerFeatureEnabled.mockImplementation(onlyUtm);
+
+      await controller.lookupHubSpotUtm(utmReq({ event_name: 'KubeCon NA 2026' }), res, next);
+
+      expect(svcSearchHsCampaigns).not.toHaveBeenCalled();
+      expect(next).toHaveBeenCalledWith(expect.any(Error));
+    });
+
+    it('sends an upstream failure to the error middleware, not a 200', async () => {
+      // A failure answered as 200 renders as "no campaign found" -- the one answer the panel
+      // acts on by creating a campaign, which is how a duplicate gets made from an outage.
+      isServerFeatureEnabled.mockImplementation(onlyUtm);
+      svcSearchHsCampaigns.mockRejectedValue(new Error('campaign-service unavailable'));
+
+      await controller.lookupHubSpotUtm(utmReq({ project: 'tlf', event_name: 'KubeCon NA 2026' }), res, next);
+
+      expect(res.json).not.toHaveBeenCalled();
+      expect(next).toHaveBeenCalledWith(expect.any(Error));
+    });
+  });
+
+  describe('createHubSpotUtm', () => {
+    it('writes through campaign-service when the flag is on, and not the legacy path', async () => {
+      isServerFeatureEnabled.mockImplementation(onlyUtm);
+
+      await controller.createHubSpotUtm(utmReq({ project: 'tlf', event_name: 'KubeCon NA 2026' }), res, next);
+
+      expect(svcCreateHsCampaign).toHaveBeenCalledWith(expect.anything(), 'tlf', 'KubeCon NA 2026');
+      // Calling BOTH would create TWO campaigns in a shared namespace, not merely duplicate work.
+      expect(legacyCreateUtm).not.toHaveBeenCalled();
+      expect(next).not.toHaveBeenCalled();
+    });
+
+    it('keeps the legacy path when the flag is off', async () => {
+      isServerFeatureEnabled.mockReturnValue(false);
+
+      await controller.createHubSpotUtm(utmReq({ event_name: 'KubeCon NA 2026' }), res, next);
+
+      expect(legacyCreateUtm).toHaveBeenCalled();
+      expect(svcCreateHsCampaign).not.toHaveBeenCalled();
+    });
+
+    it('routes on the UTM flag specifically, not on any cutover flag', async () => {
+      isServerFeatureEnabled.mockImplementation((flag: string) => !onlyUtm(flag));
+
+      await controller.createHubSpotUtm(utmReq({ project: 'tlf', event_name: 'KubeCon NA 2026' }), res, next);
+
+      expect(legacyCreateUtm).toHaveBeenCalled();
+      expect(svcCreateHsCampaign).not.toHaveBeenCalled();
+    });
+
+    it('requires the project on the campaign-service arm rather than defaulting one', async () => {
+      isServerFeatureEnabled.mockImplementation(onlyUtm);
+
+      await controller.createHubSpotUtm(utmReq({ event_name: 'KubeCon NA 2026' }), res, next);
+
+      expect(svcCreateHsCampaign).not.toHaveBeenCalled();
+      expect(next).toHaveBeenCalledWith(expect.any(Error));
+    });
+
+    it('sends an upstream failure to the error middleware, not a 200', async () => {
+      isServerFeatureEnabled.mockImplementation(onlyUtm);
+      svcCreateHsCampaign.mockRejectedValue(new Error('campaign-service unavailable'));
+
+      await controller.createHubSpotUtm(utmReq({ project: 'tlf', event_name: 'KubeCon NA 2026' }), res, next);
+
+      expect(res.json).not.toHaveBeenCalled();
+      expect(next).toHaveBeenCalledWith(expect.any(Error));
+    });
   });
 });

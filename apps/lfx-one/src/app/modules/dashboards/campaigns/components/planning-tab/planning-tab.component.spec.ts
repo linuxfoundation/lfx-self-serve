@@ -1853,6 +1853,86 @@ describe('PlanningTabComponent — HubSpot UTM states', () => {
     expect(instance()['hsCreateSuppressed'](), 'an inconclusive cross-foundation search offered Create').toBe(true);
   });
 
+  it('pairs the completeness signal with the suppression on the cross-foundation arm', () => {
+    // dealako (#2079, round 7): the arm set hsCreateSuppressed but never its twin
+    // hsCompletenessUnproven, while every other site writes the two together. Create was withheld
+    // correctly, but the amber panel explained it as an ordinary no-match -- so the operator was
+    // given the wrong remedy (narrow the term, rather than check the name).
+    //
+    // Asserts BOTH: suppression alone was already true before the fix, so a test that checked
+    // only that would pass against the bug.
+    const ctx = TestBed.inject(ProjectContextService);
+    const empty = { found: false, hs_utm: null, campaign_name: '', all_matches: [], capped: false, inconclusive: false };
+
+    runLookup(empty, 'KubeCon NA 2026');
+    create.mockReturnValue(
+      new Observable((o) => {
+        o.next({ created: true, hs_utm: null, campaign_name: 'Kubecon Na 2026' });
+        o.complete();
+      })
+    );
+    (fixture.componentInstance as unknown as { createInHubSpot(): void }).createInHubSpot();
+    fixture.detectChanges();
+
+    ctx.setFoundation({ uid: 'foundation-b-uid', slug: 'foundation-b', name: 'Foundation B' }, false);
+    fixture.detectChanges();
+    // capped: the one shape whose remedy differs from a plain no-match.
+    lookup.mockReturnValue(
+      new Observable((o) => {
+        o.next({ found: false, hs_utm: null, campaign_name: '', all_matches: [], capped: true, inconclusive: true });
+        o.complete();
+      })
+    );
+    (fixture.componentInstance as unknown as { recheckHubSpot(): void }).recheckHubSpot();
+    fixture.detectChanges();
+
+    expect(instance()['hsCreateSuppressed'](), 'an inconclusive cross-foundation search offered Create').toBe(true);
+    expect(instance()['hsCompletenessUnproven'](), 'the capped search rendered the plain no-match remedy').toBe(true);
+  });
+
+  it('clears the completeness signal when the cross-foundation search PROVES completeness', () => {
+    // The other direction: hsCompletenessUnproven is a persistent signal, so an arm that never
+    // writes it also LEAKS the previous lookup's value into this result. A proven-complete search
+    // must clear it, not inherit it.
+    const ctx = TestBed.inject(ProjectContextService);
+    const empty = { found: false, hs_utm: null, campaign_name: '', all_matches: [], capped: false, inconclusive: false };
+
+    runLookup(empty, 'KubeCon NA 2026');
+    create.mockReturnValue(
+      new Observable((o) => {
+        o.next({ created: true, hs_utm: null, campaign_name: 'Kubecon Na 2026' });
+        o.complete();
+      })
+    );
+    (fixture.componentInstance as unknown as { createInHubSpot(): void }).createInHubSpot();
+    fixture.detectChanges();
+
+    ctx.setFoundation({ uid: 'foundation-b-uid', slug: 'foundation-b', name: 'Foundation B' }, false);
+    fixture.detectChanges();
+    // First a capped search, to put the signal UP.
+    lookup.mockReturnValue(
+      new Observable((o) => {
+        o.next({ found: false, hs_utm: null, campaign_name: '', all_matches: [], capped: true, inconclusive: true });
+        o.complete();
+      })
+    );
+    (fixture.componentInstance as unknown as { recheckHubSpot(): void }).recheckHubSpot();
+    fixture.detectChanges();
+    expect(instance()['hsCompletenessUnproven']()).toBe(true);
+
+    // Then a proven-complete one, which must bring it back down.
+    lookup.mockReturnValue(
+      new Observable((o) => {
+        o.next({ found: false, hs_utm: null, campaign_name: '', all_matches: [], capped: false, inconclusive: false });
+        o.complete();
+      })
+    );
+    (fixture.componentInstance as unknown as { recheckHubSpot(): void }).recheckHubSpot();
+    fixture.detectChanges();
+
+    expect(instance()['hsCompletenessUnproven'](), 'a stale capped signal leaked into a complete search').toBe(false);
+  });
+
   it('warns under a DIFFERENT foundation without withholding Create', () => {
     // Copilot, raised twice: two foundations can share one HubSpot portal, where campaign names
     // are one namespace. After a create under A settles, hsCreatesInFlight is zero and B's own
