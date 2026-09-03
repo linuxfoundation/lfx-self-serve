@@ -473,7 +473,12 @@ describe('MeetingJoinComponent', () => {
       expect(TestBed.inject(Router).navigate).not.toHaveBeenCalledWith(['/meetings/not-found']);
     });
 
-    it('paints the error branch synchronously from a seeded terminal-error transfer state, with no skeleton flash', async () => {
+    it('paints the error branch synchronously from a seeded terminal-error transfer state, with no skeleton flash, and holds it through the hydration refetch', async () => {
+      // The hydration refetch also fails, matching the seeded branch — this is what guards the
+      // full GH-2041 contract: the error state must survive past the first CD pass, not just
+      // appear on it and then flash to the skeleton once the debounced pipeline re-enters.
+      getPublicMeeting.mockReturnValue(throwError(() => ({ status: 500 })));
+
       const transferState = TestBed.inject(TransferState);
       transferState.set(MEETING_JOIN_STATE_KEY, {
         meeting: null,
@@ -495,6 +500,14 @@ describe('MeetingJoinComponent', () => {
       expect(fixture.nativeElement.querySelector('[data-testid="meeting-join-skeleton"]')).toBeNull();
 
       await TestBed.inject(ApplicationRef).whenStable();
+
+      // Re-assert post-hydration: the debounced pipeline re-entering must not have cleared
+      // `meetingLoadFailed` before the refetch settled, nor fallen through to a stale/absent
+      // `meeting()` and rendered the skeleton.
+      fixture.detectChanges();
+      expect((component as unknown as { meetingLoadFailed: () => boolean }).meetingLoadFailed()).toBe(true);
+      expect(fixture.nativeElement.querySelector('[data-testid="meeting-join-error"]')).not.toBeNull();
+      expect(fixture.nativeElement.querySelector('[data-testid="meeting-join-skeleton"]')).toBeNull();
     });
 
     it('sets meetingLoadFailed (not a not-found redirect) when the nested past-meeting fallback fails with a non-terminal status', async () => {

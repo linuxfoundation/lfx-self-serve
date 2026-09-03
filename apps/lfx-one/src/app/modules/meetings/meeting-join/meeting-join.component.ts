@@ -768,8 +768,6 @@ export class MeetingJoinComponent implements OnInit {
       switchMap(([params, queryParams]) => {
         const meetingId = params.get('id');
         this.password.set(queryParams.get('password'));
-        // Clear any prior terminal-error state so a route change or retry gets a fresh attempt.
-        this.meetingLoadFailed.set(false);
 
         if (!meetingId) {
           this.router.navigate(['/meetings/not-found']);
@@ -845,6 +843,11 @@ export class MeetingJoinComponent implements OnInit {
       map((res) => ({ ...res.meeting, project: res.project })),
       tap((res) => {
         this.project.set(res.project);
+        // Clear any prior terminal-error state here, not eagerly at the top of the pipeline —
+        // clearing eagerly would reset a seeded terminal-error hydration before the refetch it
+        // triggers actually settles, flashing the error view back to the skeleton (GH-2041
+        // follow-up). Only a settled success should clear it.
+        this.meetingLoadFailed.set(false);
         // Persist the resolved state during SSR so the client can hydrate to the same branch.
         // Angular defers serialization until this tracked HTTP call settles.
         if (isPlatformServer(this.platformId)) {

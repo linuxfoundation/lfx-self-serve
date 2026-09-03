@@ -7,7 +7,22 @@
 <div [ngClass]="{ 'pt-12': userService.impersonating() }">
   <lfx-header></lfx-header>
 
-  @if (meeting()) {
+  @if (meetingLoadFailed()) {
+    <!-- Checked ahead of `meeting()` — `toSignal` retains the last successful meeting across a
+         later terminal failure (each failing `catchError` returns `EMPTY`, no new emission), so
+         checking `meeting()` first would keep showing stale content instead of this error state
+         (GH-2041 follow-up). 404/403/400 already redirect to /meetings/not-found in
+         initializeMeeting(), so this only covers the case that would otherwise leave the skeleton
+         spinning forever, or show stale meeting content, on a settled non-navigating failure
+         (e.g. a 5xx or network error). -->
+    <div class="bg-gray-50 min-h-screen flex items-center justify-center" data-testid="meeting-join-error">
+      <div class="text-center flex flex-col items-center gap-2">
+        <i class="fa-light fa-triangle-exclamation text-4xl text-gray-400"></i>
+        <p class="text-lg text-gray-600">Something went wrong loading this meeting.</p>
+        <p class="text-sm text-gray-500">Please refresh the page to try again.</p>
+      </div>
+    </div>
+  } @else if (meeting()) {
     <div class="bg-gray-50 min-h-screen">
       <!-- Main Content Container -->
       <div class="container mx-auto py-6 px-8">
@@ -853,17 +868,6 @@
           (materialsChanged)="onMaterialsChanged($event)">
         </lfx-meeting-materials-drawer>
       }
-    </div>
-  } @else if (meetingLoadFailed()) {
-    <!-- Terminal state for a settled, non-navigating fetch failure (e.g. a 5xx or network error) —
-         404/403/400 already redirect to /meetings/not-found in initializeMeeting(), so this only
-         covers the case that would otherwise leave the skeleton spinning forever (GH-2041). -->
-    <div class="bg-gray-50 min-h-screen flex items-center justify-center" data-testid="meeting-join-error">
-      <div class="text-center flex flex-col items-center gap-2">
-        <i class="fa-light fa-triangle-exclamation text-4xl text-gray-400"></i>
-        <p class="text-lg text-gray-600">Something went wrong loading this meeting.</p>
-        <p class="text-sm text-gray-500">Please refresh the page to try again.</p>
-      </div>
     </div>
   } @else {
     <!-- Skeleton shown only for client-side navigations with no SSR-transferred state (GH-2041) —
