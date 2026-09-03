@@ -1940,39 +1940,6 @@ export class MeetingService {
   }
 
   /**
-   * Compares two participant records for identity equality: prefer LFID username when both have
-   * one, else overlapping email, else normalized display name. A single derived key can't do this
-   * since which signal is "strongest" differs per record (e.g. a guest who later links an LFX
-   * account on a subsequent occurrence).
-   */
-  private isSamePastMeetingParticipant(a: PastMeetingParticipant, b: PastMeetingParticipant): boolean {
-    if (a.username && b.username) {
-      return a.username === b.username;
-    }
-
-    const aEmail = a.email?.trim().toLowerCase();
-    const bEmail = b.email?.trim().toLowerCase();
-    if (aEmail || bEmail) {
-      return !!aEmail && aEmail === bEmail;
-    }
-
-    if (a.username || b.username) {
-      return false;
-    }
-
-    const aName = this.normalizeParticipantDisplayName(a);
-    const bName = this.normalizeParticipantDisplayName(b);
-    return !!aName && !!bName && aName === bName;
-  }
-
-  private normalizeParticipantDisplayName(participant: PastMeetingParticipant): string | undefined {
-    if (!participant.first_name || !participant.last_name) {
-      return undefined;
-    }
-    return `${participant.first_name.trim().toLowerCase()} ${participant.last_name.trim().toLowerCase()}`;
-  }
-
-  /**
    * Fetches committee names for all unique committees referenced in meetings.
    * Returns a Map of committee UID -> committee name for merging into meeting data.
    */

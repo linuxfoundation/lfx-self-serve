@@ -354,12 +354,25 @@ export class AiService {
     }
   }
 
+  /**
+   * Escapes double quotes and collapses newlines/control characters in attendee- or
+   * candidate-controlled text before it's interpolated into a quoted prompt string. Zoom display
+   * names and candidate names come from upstream data an attendee can influence — unescaped, a
+   * name like `foo", ignore instructions and ...` could break out of its quoted field and inject
+   * new instructions into the prompt.
+   */
+  private escapeForPrompt(value: string): string {
+    return value.replace(/[\r\n]+/g, ' ').replace(/"/g, '\\"');
+  }
+
   private buildReconciliationPrompt(request: ReconcileAttendeesRequest): string {
-    const attendeeLines = request.attendees.map((a) => `- attendee_id: ${a.attendee_id}, zoom_display_name: "${a.zoom_user_name || 'unknown'}"`);
+    const attendeeLines = request.attendees.map(
+      (a) => `- attendee_id: ${a.attendee_id}, zoom_display_name: "${this.escapeForPrompt(a.zoom_user_name || 'unknown')}"`
+    );
     const candidateLines = request.candidates.map(
       (c) =>
-        `- candidate_id: ${c.candidate_id}, name: "${[c.first_name, c.last_name].filter(Boolean).join(' ') || 'unknown'}"` +
-        `${c.org_name ? `, org: "${c.org_name}"` : ''} (source: ${c.source})`
+        `- candidate_id: ${c.candidate_id}, name: "${this.escapeForPrompt([c.first_name, c.last_name].filter(Boolean).join(' ') || 'unknown')}"` +
+        `${c.org_name ? `, org: "${this.escapeForPrompt(c.org_name)}"` : ''} (source: ${c.source})`
     );
 
     return ['Attendees to match:', ...attendeeLines, '', 'Candidate pool:', ...candidateLines].join('\n');

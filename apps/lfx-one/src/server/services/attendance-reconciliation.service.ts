@@ -28,10 +28,10 @@ import { MeetingService } from './meeting.service';
  * Kept out of MeetingService — this is matching/orchestration logic layered on top of
  * MeetingService's existing participant CRUD (item 3), not a new CRUD surface of its own.
  *
- * `MeetingService.getPastMeetingParticipants` now dedupes by pairwise identity match (see that
- * method's doc comment) rather than a single derived key, so the `unverified`/`invitees` lists
- * this service builds on are already correctly merged before `isSamePersonForReconciliation`
- * below ever runs on the wider candidate pool.
+ * `MeetingService.getPastMeetingParticipants` dedupes via connected components over pairwise
+ * identity matches (see that method's doc comment), so the `unverified`/`invitees` lists this
+ * service builds on are already correctly merged before `isSamePersonForReconciliation` below
+ * ever runs on the wider candidate pool.
  */
 export class AttendanceReconciliationService {
   private meetingService: MeetingService;
@@ -242,26 +242,26 @@ export class AttendanceReconciliationService {
   }
 
   /**
-   * Identity comparator for candidate-pool dedup. Local to this service — does not depend on
-   * PR #2060's `isSamePerson` (unmerged, non-stacked branch). Mirrors that comparator's branch
-   * order: prefer overlapping email, then username (this repo's LFID-equivalent), then
-   * normalized name — an email match takes priority over username asymmetry, so two records
-   * sharing an email still merge even if only one carries a username.
+   * Identity comparator for candidate-pool dedup. Local to this service rather than reused from
+   * `MeetingService.isSamePerson` — the two operate on different shapes (this pool's candidates
+   * are a lightweight identity projection, not full `PastMeetingParticipant` records) — but
+   * mirrors that comparator's branch order for consistency: prefer username (this repo's
+   * LFID-equivalent) when both have one, else overlapping email, else normalized name.
    */
   private isSamePersonForReconciliation(
     a: { email?: string; username?: string; first_name?: string; last_name?: string },
     b: { email?: string; username?: string; first_name?: string; last_name?: string }
   ): boolean {
-    const emailA = a.email?.trim().toLowerCase();
-    const emailB = b.email?.trim().toLowerCase();
-    if (emailA && emailB) {
-      return emailA === emailB;
-    }
-
     const usernameA = a.username?.trim().toLowerCase();
     const usernameB = b.username?.trim().toLowerCase();
     if (usernameA && usernameB) {
       return usernameA === usernameB;
+    }
+
+    const emailA = a.email?.trim().toLowerCase();
+    const emailB = b.email?.trim().toLowerCase();
+    if (emailA && emailB) {
+      return emailA === emailB;
     }
 
     const nameA = this.normalizeName(a.first_name, a.last_name);

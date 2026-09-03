@@ -175,7 +175,8 @@ export class PastMeetingController {
 
   /**
    * POST /past-meetings/:uid/participants
-   * Authorization (organizer-only) is enforced by lfx-v2-meeting-service on the ITX endpoint.
+   * Organizer-only, enforced both here and by lfx-v2-meeting-service on the ITX endpoint —
+   * belt-and-suspenders defense in depth, matching the reconcile endpoint's BFF-level check.
    */
   public async createPastMeetingParticipant(req: Request, res: Response, next: NextFunction): Promise<void> {
     const { uid } = req.params;
@@ -203,6 +204,18 @@ export class PastMeetingController {
         );
       }
 
+      const pastMeeting = await this.meetingService.getPastMeetingById(req, uid);
+      const isOrganizer = await this.isPastMeetingOrganizer(req, pastMeeting, uid);
+
+      if (!isOrganizer) {
+        return next(
+          new AuthorizationError('Only the meeting organizer can manage past meeting participants', {
+            operation: 'create_past_meeting_participant',
+            service: 'past_meeting_controller',
+          })
+        );
+      }
+
       const participant = await this.meetingService.createPastMeetingParticipant(req, uid, participantData);
 
       logger.success(req, 'create_past_meeting_participant', startTime, {
@@ -218,7 +231,8 @@ export class PastMeetingController {
 
   /**
    * PUT /past-meetings/:uid/participants/:participantId
-   * Authorization (organizer-only) is enforced by lfx-v2-meeting-service on the ITX endpoint.
+   * Organizer-only, enforced both here and by lfx-v2-meeting-service on the ITX endpoint —
+   * belt-and-suspenders defense in depth, matching the reconcile endpoint's BFF-level check.
    */
   public async updatePastMeetingParticipant(req: Request, res: Response, next: NextFunction): Promise<void> {
     const { uid, participantId } = req.params;
@@ -247,6 +261,18 @@ export class PastMeetingController {
         return;
       }
 
+      const pastMeeting = await this.meetingService.getPastMeetingById(req, uid);
+      const isOrganizer = await this.isPastMeetingOrganizer(req, pastMeeting, uid);
+
+      if (!isOrganizer) {
+        return next(
+          new AuthorizationError('Only the meeting organizer can manage past meeting participants', {
+            operation: 'update_past_meeting_participant',
+            service: 'past_meeting_controller',
+          })
+        );
+      }
+
       const participant = await this.meetingService.updatePastMeetingParticipant(req, uid, participantId, participantData);
 
       logger.success(req, 'update_past_meeting_participant', startTime, {
@@ -262,7 +288,8 @@ export class PastMeetingController {
 
   /**
    * DELETE /past-meetings/:uid/participants/:participantId
-   * Authorization (organizer-only) is enforced by lfx-v2-meeting-service on the ITX endpoint.
+   * Organizer-only, enforced both here and by lfx-v2-meeting-service on the ITX endpoint —
+   * belt-and-suspenders defense in depth, matching the reconcile endpoint's BFF-level check.
    */
   public async deletePastMeetingParticipant(req: Request, res: Response, next: NextFunction): Promise<void> {
     const { uid, participantId } = req.params;
@@ -288,6 +315,18 @@ export class PastMeetingController {
         })
       ) {
         return;
+      }
+
+      const pastMeeting = await this.meetingService.getPastMeetingById(req, uid);
+      const isOrganizer = await this.isPastMeetingOrganizer(req, pastMeeting, uid);
+
+      if (!isOrganizer) {
+        return next(
+          new AuthorizationError('Only the meeting organizer can manage past meeting participants', {
+            operation: 'delete_past_meeting_participant',
+            service: 'past_meeting_controller',
+          })
+        );
       }
 
       await this.meetingService.deletePastMeetingParticipant(req, uid, participantId);
