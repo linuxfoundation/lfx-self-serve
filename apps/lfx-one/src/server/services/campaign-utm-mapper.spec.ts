@@ -307,26 +307,29 @@ describe('toUtmLookupResult — malformed ROWS', () => {
   it.each([
     ['a null row', [null]],
     ['a row with no name', [{ id: '1', utm: 'x' }]],
-  ])('drops %s instead of throwing', (_label, campaigns) => {
+    ['a row with no id', [{ name: 'KubeCon NA 2026', utm: 'x' }]],
+  ])('refuses %s instead of throwing', (_label, campaigns) => {
     // dealako (#2079): the envelope guard proves `campaigns` is an ARRAY; it says nothing about
     // the elements. `[null]` threw in scoreCampaignName -- a 500 after the envelope had already
     // fail-closed successfully. Same gap the keyword path had one layer down.
     const res = toUtmLookupResult({ campaigns, capped: false } as never, 'KubeCon NA 2026');
 
     expect(res.found).toBe(false);
-    // Dropped, not refused: a partial result still cannot read as proven absence, so the rows
-    // that arrived keep `inconclusive` true.
+    // The whole response is refused: a malformed row could be an equally exact rival.
     expect(res.inconclusive, 'a response carrying rows was reported as proven absence').toBe(true);
   });
 
-  it('still scores the GOOD rows alongside a malformed one', () => {
-    // The other direction, so the filter cannot be satisfied by dropping everything.
+  it('refuses valid rows alongside a malformed one', () => {
+    // A valid exact row cannot be auto-applied while another unreadable row could be an equally
+    // exact rival.
     const res = toUtmLookupResult(
       { campaigns: [null, { id: '2', name: 'KubeCon NA 2026', utm: 'kubecon-na-2026' }], capped: false } as never,
       'KubeCon NA 2026'
     );
 
-    expect(res.found).toBe(true);
-    expect(res.hs_utm).toBe('kubecon-na-2026');
+    expect(res.found).toBe(false);
+    expect(res.hs_utm).toBeNull();
+    expect(res.all_matches).toEqual([]);
+    expect(res.inconclusive).toBe(true);
   });
 });
