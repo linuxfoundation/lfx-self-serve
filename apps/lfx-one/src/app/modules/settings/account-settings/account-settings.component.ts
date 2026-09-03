@@ -21,7 +21,7 @@ import { DialogService, DynamicDialogModule } from 'primeng/dynamicdialog';
 import { ToastModule } from 'primeng/toast';
 import { TooltipModule } from 'primeng/tooltip';
 import { HttpErrorResponse } from '@angular/common/http';
-import { BehaviorSubject, catchError, filter, finalize, map, of, switchMap, take } from 'rxjs';
+import { BehaviorSubject, catchError, filter, finalize, map, of, switchMap, take, tap } from 'rxjs';
 
 @Component({
   selector: 'lfx-account-settings',
@@ -179,15 +179,14 @@ export class AccountSettingsComponent {
     const emailLoaded$ = toObservable(this.emailLoading).pipe(filter((loading) => !loading));
     this.route.fragment
       .pipe(
-        map((fragment) => (fragment && (AccountSettingsComponent.sectionIds as readonly string[]).includes(fragment) ? fragment : null)),
-        filter((validFragment): validFragment is string => validFragment !== null),
-        switchMap((validFragment) => {
-          this.activeSection.set(validFragment);
-          return emailLoaded$.pipe(
+        filter((fragment): fragment is string => !!fragment && (AccountSettingsComponent.sectionIds as readonly string[]).includes(fragment)),
+        tap((validFragment) => this.activeSection.set(validFragment)),
+        switchMap((validFragment) =>
+          emailLoaded$.pipe(
             take(1),
             map(() => validFragment)
-          );
-        }),
+          )
+        ),
         takeUntilDestroyed()
       )
       .subscribe((validFragment) => this.scrollToSection(validFragment));
