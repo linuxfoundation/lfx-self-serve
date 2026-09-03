@@ -78,13 +78,21 @@ async function globalSetup(config: FullConfig) {
     // are present here -- authentication is what failed. Those specs will therefore run
     // unauthenticated and fail on their own assertions, so the message must not imply the run
     // is clean.
-    console.log('   Credentials were supplied but authentication failed, so authenticated specs will RUN and fail.');
-    console.log('   Fix the credentials, or unset TEST_USERNAME/TEST_PASSWORD to skip those specs instead.');
-    // Same guarantee as the missing-credentials path above. This branch also PROMISES a skip,
-    // and without a state file the projects' `storageState` fails while constructing the `page`
-    // fixture -- so the suite errors on a missing file instead of skipping, naming the wrong
-    // cause. A partially-written file from a failed run is overwritten rather than trusted.
-    await writeEmptyStorageState();
+    console.log('   Credentials were supplied but authentication FAILED. Fix them, or unset');
+    console.log('   TEST_USERNAME / TEST_PASSWORD to skip the authenticated specs deliberately.');
+    // FAIL THE RUN. An earlier version wrote an empty state here and returned, on the reasoning
+    // that the missing-credentials path does the same -- but the two are not the same situation,
+    // and my own comment on this branch said the specs would "RUN and fail". They do not.
+    //
+    // `skipWhenAuthMissing` skips on LANDING AT AUTH0, which is exactly where an empty storage
+    // state puts them. So a broken credential produced a green, fully-skipped suite, under a skip
+    // message blaming credentials that were in fact supplied (Copilot). CI would report success
+    // for a run that authenticated nothing.
+    //
+    // Absent credentials are a deliberate choice to skip; failed credentials are a fault, and a
+    // fault must not be reportable as a pass. Rethrowing fails global setup, which fails the run
+    // with the real cause attached.
+    throw error;
   } finally {
     await browser.close();
   }
