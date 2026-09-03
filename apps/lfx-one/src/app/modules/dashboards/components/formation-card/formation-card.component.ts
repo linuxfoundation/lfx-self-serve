@@ -3,12 +3,10 @@
 
 import { Component, computed, inject, signal, Signal } from '@angular/core';
 import { toObservable, toSignal } from '@angular/core/rxjs-interop';
-import { AvatarComponent } from '@components/avatar/avatar.component';
 import { TagComponent } from '@components/tag/tag.component';
 import { environment } from '@environments/environment';
-import { PROJECT_STAFF_ROWS } from '@lfx-one/shared/constants';
-import { ProjectSettings, ProjectStaffRow } from '@lfx-one/shared/interfaces';
-import { formatAnnouncementDateLabel, isValidUrl } from '@lfx-one/shared/utils';
+import { ProjectSettings } from '@lfx-one/shared/interfaces';
+import { formatAnnouncementDateLabel } from '@lfx-one/shared/utils';
 import { PermissionsService } from '@services/permissions.service';
 import { PersonaService } from '@services/persona.service';
 import { ProjectContextService } from '@services/project-context.service';
@@ -17,23 +15,21 @@ import { SkeletonModule } from 'primeng/skeleton';
 import { catchError, filter, of, switchMap, tap } from 'rxjs';
 
 /**
- * The Formation sidebar card (GH-1955) — sub-stage pill, announcement date, the same
- * `executive_director`/`program_manager`/`opportunity_owner` contacts `ProjectStaffCardComponent`
- * shows above it (deliberately — no formation-specific contact fields exist yet; see below), intake
- * fields (repository/logo), and — for `PersonaService.isLFStaff` only — a deep link into the admin
- * tool. Rendered only while the project is Draft/Formation; see
- * `ProjectContextService.isActiveProjectInFormation`.
+ * The Formation sidebar card (GH-1955) — sub-stage pill, announcement date, slug, and — for
+ * `PersonaService.isLFStaff` only — a deep link into the admin tool. Rendered only while the
+ * project is Draft/Formation; see `ProjectContextService.isActiveProjectInFormation`.
  *
- * Two intentional substitutions for fields/permissions the ticket asked for that don't exist yet:
- * - **Staff-only gating**: the ticket specifies a `formation_admin` permission, which exists
- *   nowhere in this repo or elsewhere in the `linuxfoundation` org (verified via `gh api`
- *   `search/code`). `isLFStaff` is the closest available gate — narrow this to a real
- *   `formation_admin` grant once one is modeled.
- * - **Contact rows**: the ticket asked for formation lead/coordinator/partner/product-contact
- *   fields, none of which exist upstream (confirmed against `lfx-v2-project-service`'s live
- *   contract). Showing `executive_director`/`program_manager`/`opportunity_owner` here duplicates
- *   `ProjectStaffCardComponent` directly above it in the sidebar — an explicit, approved trade-off
- *   (matches ticket intent over de-duplication) pending those fields landing upstream.
+ * Epic 1 scope (revised #1955, 2 Sep 2026): the card renders only fields the synced record already
+ * carries. Formation lead/coordinator/partner contacts and the intake block (repository, assigning
+ * org, trademark status, logo) came from the Epic 2 application form — with no intake in Epic 1
+ * there's no source for those fields, so they're not on this card. `ProjectStaffCardComponent`
+ * directly above this card in the sidebar already covers `executive_director`/`program_manager`/
+ * `opportunity_owner`.
+ *
+ * **Staff-only gating**: the ticket specifies a `formation_admin` permission, which exists nowhere
+ * in this repo or elsewhere in the `linuxfoundation` org (verified via `gh api` `search/code`).
+ * `isLFStaff` is the closest available gate. See the `// TODO(#2148)` at its declaration below for
+ * the open FGA-relation question this substitution raises.
  *
  * The ticket also asked for two distinct admin-tool links ("Edit stage" and "Set up"). Neither a
  * `?tab=` param nor a `/setup` sub-route exists on `environment.urls.pcc` (verified — see
@@ -47,7 +43,7 @@ import { catchError, filter, of, switchMap, tap } from 'rxjs';
  */
 @Component({
   selector: 'lfx-formation-card',
-  imports: [AvatarComponent, TagComponent, SkeletonModule],
+  imports: [TagComponent, SkeletonModule],
   templateUrl: './formation-card.component.html',
 })
 export class FormationCardComponent {
@@ -56,15 +52,18 @@ export class FormationCardComponent {
   private readonly projectContextService = inject(ProjectContextService);
   private readonly projectService = inject(ProjectService);
 
-  // `loading`/`hasError` track the settings fetch only. The sub-stage pill, slug, and intake fields
-  // come from `project()`, which is already resolved by the time this card can render at all (the
-  // sidebar only mounts it once `isActiveProjectInFormation()` is true, which requires a non-null
-  // `activeProject`) — the admin links additionally wait on `sfid()`, its own independent fetch
-  // that starts `null`. The template renders all of that independently of this two-state gate,
-  // which only covers the staff-rows and announcement-date section.
+  // `loading`/`hasError` track the settings fetch only (it backs the announcement date). The
+  // sub-stage pill and slug come from `project()`, which is already resolved by the time this card
+  // can render at all (the sidebar only mounts it once `isActiveProjectInFormation()` is true, which
+  // requires a non-null `activeProject`) — the admin links additionally wait on `sfid()`, its own
+  // independent fetch that starts `null`. The template renders all of that independently of this
+  // two-state gate.
   protected readonly loading = signal(true);
   protected readonly hasError = signal(false);
 
+  // TODO(#2148): FGA defines writer/auditor/participant/item_owner on `formation`; #1954 grants LF
+  // Staff `auditor`, not `writer`, so a `writer`-based guard would hide this deep link from most of
+  // staff. The correct relation for this gate is an open architecture decision.
   protected readonly isLFStaff = computed(() => this.personaService.isLFStaff());
 
   protected readonly project = this.projectContextService.activeProject;
@@ -72,10 +71,8 @@ export class FormationCardComponent {
   private readonly projectUid = computed(() => this.project()?.uid ?? null);
 
   protected readonly settings: Signal<ProjectSettings | null> = this.initSettings();
-  protected readonly staff: Signal<ProjectStaffRow[]> = this.initStaff();
   protected readonly announcementDateLabel: Signal<string> = this.initAnnouncementDateLabel();
 
-  protected readonly repositoryUrl: Signal<string | null> = this.initRepositoryUrl();
   protected readonly sfid: Signal<string | null> = this.initSfid();
   protected readonly adminToolUrl: Signal<string> = this.initAdminToolUrl();
 
@@ -105,26 +102,8 @@ export class FormationCardComponent {
     );
   }
 
-  private initStaff(): Signal<ProjectStaffRow[]> {
-    return computed(() => {
-      const s = this.settings();
-      return PROJECT_STAFF_ROWS.map((row) => ({
-        ...row,
-        user: s?.[row.key],
-      }));
-    });
-  }
-
   private initAnnouncementDateLabel(): Signal<string> {
     return computed(() => formatAnnouncementDateLabel(this.settings()?.announcement_date));
-  }
-
-  /** `null` when missing, or when the scheme isn't a validated http(s) URL — never bind an unvalidated URL to `[href]`. */
-  private initRepositoryUrl(): Signal<string | null> {
-    return computed(() => {
-      const url = this.project()?.repository_url;
-      return url && isValidUrl(url) ? url : null;
-    });
   }
 
   // Only fetched for LF staff — everyone else can never see the admin-tool link this resolves for,

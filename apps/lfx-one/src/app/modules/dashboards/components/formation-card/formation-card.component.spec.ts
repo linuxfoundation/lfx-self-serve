@@ -32,7 +32,7 @@ function project(stage: string, overrides: Partial<Project> = {}): Project {
     autojoin_enabled: false,
     formation_date: '',
     logo_url: '',
-    repository_url: 'https://github.com/example/repo',
+    repository_url: '',
     website_url: '',
     created_at: '',
     updated_at: '',
@@ -142,19 +142,6 @@ describe('FormationCardComponent', () => {
 
     await render('Formation - Engaged', false, { settingsResult: of({ ...settings(), announcement_date: '' }) });
     expect(text()).toContain('Not set');
-  });
-
-  it('renders the intake repository link', async () => {
-    await render('Formation - Engaged', false);
-
-    expect(fixture.nativeElement.querySelector('[data-testid="formation-card-intake"]')).not.toBeNull();
-    expect(text()).toContain('https://github.com/example/repo');
-  });
-
-  it('never binds a repository_url with an unsafe scheme to the intake link', async () => {
-    await render('Formation - Engaged', false, { projectOverrides: { repository_url: 'javascript:alert(1)' } });
-
-    expect(fixture.nativeElement.querySelector('[data-testid="formation-card-repository-link"]')).toBeNull();
   });
 
   it('shows the error state when the settings fetch fails, without hiding data that already loaded (the sub-stage pill, slug, and admin links)', async () => {
