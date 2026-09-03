@@ -63,6 +63,7 @@ export class AccountSettingsComponent {
   public resendCooldown = this.resendCooldownUtil.cooldown;
 
   // ── TOC active section ──
+  private static readonly sectionIds = ['email-settings', 'password', 'developer-settings'] as const;
   public activeSection = signal('email-settings');
   private scrollSpyObserver?: IntersectionObserver;
 
@@ -173,11 +174,11 @@ export class AccountSettingsComponent {
 
     afterNextRender(() => {
       this.setupScrollSpy();
-      // Deep-link support: /profile/settings#password lands here after the standalone
-      // email/password pages were consolidated into this component (profile.routes.ts).
+      // Deep-link support (profile.routes.ts): router anchorScrolling already scrolls to
+      // the fragment — just sync the TOC for a fragment that names a known section.
       const fragment = this.route.snapshot.fragment;
-      if (fragment) {
-        this.scrollToSection(fragment);
+      if (fragment && (AccountSettingsComponent.sectionIds as readonly string[]).includes(fragment)) {
+        this.activeSection.set(fragment);
       }
     });
   }
@@ -452,10 +453,8 @@ export class AccountSettingsComponent {
   // ══════════════════════════════════════════
 
   /**
-   * Redirect into a profile-auth (Flow C) flow for an email/password operation.
-   * Clears any stored profile-edit pending-save first so an abandoned edit
-   * authorization can't be silently replayed when this flow returns to the
-   * profile shell (these settings now live at /profile/settings).
+   * Redirect into a profile-auth (Flow C) flow, after clearing any stored pending-save
+   * so an abandoned edit can't replay when this flow returns to /profile/settings.
    */
   private redirectToProfileAuth(url: string): void {
     if (!isPlatformBrowser(this.platformId)) return;
@@ -553,7 +552,7 @@ export class AccountSettingsComponent {
     // Observe the section heading rows (sentinels) rather than the full section divs.
     // A heading is short enough that at most one fits in the activation band, which
     // avoids two sections being considered active during the transition.
-    const sectionIds = ['email-settings', 'password', 'developer-settings'];
+    const sectionIds = AccountSettingsComponent.sectionIds;
     const headingByElement = new Map<Element, string>();
     for (const id of sectionIds) {
       const heading = document.getElementById(`${id}-heading`);
