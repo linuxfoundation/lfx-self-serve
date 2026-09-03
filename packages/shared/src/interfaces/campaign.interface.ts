@@ -1418,6 +1418,81 @@ export interface CampaignServiceAudienceBucket {
   conversions: number;
 }
 
+export interface CampaignServiceCampaignRef {
+  campaign_id: string;
+  brief_id: string;
+}
+
+/**
+ * The answer to "which of my campaigns is this platform id?".
+ *
+ * An EMPTY array is a 200, not an error: the project genuinely owns no campaign with that id,
+ * which is an answer a caller acts on by refusing rather than retrying.
+ *
+ * `matches` is an array, but on the ONE platform that has a resolver today it should never hold
+ * more than one. campaign-service migration 000020 puts a unique index on
+ * `(platform, platform_campaign_id)` scoped `WHERE platform = 'google-ads'`, because Google Ads
+ * is a single shared customer id across every foundation — two bindings would fight over the
+ * same paid campaign. So a second google-ads match is an INVARIANT VIOLATION, not a normal
+ * state, and callers refuse it rather than designing around it.
+ *
+ * The array shape is still right, for two reasons. It makes that violation representable and
+ * therefore refusable instead of silently taking the first row. And the constraint is
+ * deliberately NOT global: Microsoft campaign ids are account-scoped and legitimately collide
+ * across per-project connections, so when a second platform gets a resolver, multiplicity there
+ * is real rather than a defect.
+ */
+export interface CampaignServiceCampaignResolution {
+  platform_campaign_id: string;
+  matches: CampaignServiceCampaignRef[];
+  match_count: number;
+}
+
+/**
+ * One outcome together with the request entry it belongs to.
+ *
+ * The pairing is what makes a keyword-action response re-orderable: the BFF groups the request
+ * by campaign before dispatching, so the grouped sequence is not the request sequence — and the
+ * client reads `results` POSITIONALLY against the list it sent.
+ */
+export interface OrderedKeywordResult {
+  source: KeywordActionRequest;
+  response: KeywordActionResponse;
+}
+
+/** One campaign's worth of a keyword-action request, keyed by the platform campaign id. */
+export interface KeywordActionGroup {
+  platformCampaignId: string;
+  keywords: KeywordActionRequest[];
+}
+
+export interface CampaignServiceKeywordActionInput {
+  ad_group_id: string;
+  criterion_id: string;
+  /** UPPERCASE upstream, unlike the UI's lowercase `KeywordActionType`. */
+  action: 'PAUSE' | 'REMOVE';
+}
+
+export interface CampaignServiceKeywordActionResult {
+  ad_group_id: string;
+  criterion_id: string;
+  action: 'PAUSE' | 'REMOVE';
+  resource_name: string;
+}
+
+/**
+ * The outcome of one campaign's keyword batch.
+ *
+ * There is NO partial success within a batch: upstream sends it as a single atomic mutate with
+ * partial failure disabled, so `applied_count` always equals the number requested or the whole
+ * request failed. A caller must not read it as "how many of my actions worked".
+ */
+export interface CampaignServiceKeywordActions {
+  campaign_id: string;
+  results: CampaignServiceKeywordActionResult[];
+  applied_count: number;
+}
+
 export interface CampaignServiceAudience {
   window: CampaignMetricsWindow;
   /** Every bucket across all three breakdowns, discriminated by `dimension`. */

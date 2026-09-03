@@ -1,6 +1,7 @@
 // Copyright The Linux Foundation and each contributor to LFX.
 // SPDX-License-Identifier: MIT
 
+import { KEYWORD_ACTION_DEADLINE_MS } from '../services/campaign-keyword-actions';
 import type { NextFunction, Request, Response } from 'express';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 
@@ -23,6 +24,8 @@ const {
   listBriefCampaigns,
   getBriefMetrics,
   svcGetKeywords,
+  svcResolveCampaign,
+  svcApplyKeywordActions,
   legacyKeywordActions,
   svcGetAudience,
   legacyLookupUtm,
@@ -45,6 +48,8 @@ const {
   listBriefCampaigns: vi.fn(),
   getBriefMetrics: vi.fn(),
   svcGetKeywords: vi.fn(),
+  svcResolveCampaign: vi.fn(),
+  svcApplyKeywordActions: vi.fn(),
   legacyKeywordActions: vi.fn(),
   svcGetAudience: vi.fn(),
   svcSearchHsCampaigns: vi.fn(),
@@ -76,6 +81,8 @@ vi.mock('../services/campaign-service.service', async (importOriginal) => {
       public listBriefCampaigns = listBriefCampaigns;
       public getBriefMetrics = getBriefMetrics;
       public getGoogleAdsKeywords = svcGetKeywords;
+      public resolveGoogleAdsCampaign = svcResolveCampaign;
+      public applyKeywordActions = svcApplyKeywordActions;
       public getGoogleAdsAudience = svcGetAudience;
     },
   };
@@ -2168,5 +2175,358 @@ describe('CampaignController Google Ads insight reads', () => {
       expect(next).toHaveBeenCalled();
       expect(res.json).not.toHaveBeenCalled();
     });
+  });
+});
+
+/**
+ * Keyword actions through campaign-service.
+ *
+ * The grouping and per-outcome mapping have direct tests in
+ * `campaign-keyword-actions.spec.ts`. What is only decidable HERE is what the controller does
+ * with the answers: whether an unowned or ambiguous campaign is refused rather than acted on,
+ * whether one campaign's failure takes down the others, and whether every keyword is accounted
+ * for in the response. A keyword that silently vanishes from `results` is the worst outcome —
+ * the caller believes it was handled.
+ */
+describe('CampaignController.executeKeywordActions via campaign-service', () => {
+  let controller: CampaignController;
+  let res: Response;
+  let next: NextFunction;
+
+  const onlyActions = (flag: string): boolean => String(flag) === 'LFX_CUTOVER_CAMPAIGN_SERVICE_KEYWORD_ACTIONS';
+
+  function actionsReq(keywords: unknown[], query: Record<string, unknown> = { project: 'tlf' }): Request {
+    return { body: { keywords, action: 'pause' }, query, path: '/api/campaigns/keywords/actions' } as unknown as Request;
+  }
+
+  // `adGroupId` is a real Google ad-group id shape (digits), not a label: campaign-service
+  // declares ad_group_id/criterion_id as `^[0-9]+$` with MaxLength(19), and the controller now
+  // enforces that before any fan-out. A placeholder like 'ag-1' would make every fixture an
+  // invalid request and the suite would test the refusal path by accident.
+  const keyword = (campaignId: string, criterionId: string) => ({ campaignId, adGroupId: '176216228', criterionId, action: 'pause' });
+  // `platform_campaign_id` ECHOES the requested id, as the real contract does. It was hardcoded
+  // 'x', which meant every fixture described a different campaign than the one asked for -- fine
+  // while nothing checked the echo, and exactly what the new guard refuses.
+  const resolvedTo = (campaignId: string, briefId: string, platformCampaignId = '24183781329') => ({
+    platform_campaign_id: platformCampaignId,
+    match_count: 1,
+    matches: [{ campaign_id: campaignId, brief_id: briefId }],
+  });
+
+  beforeEach(() => {
+    vi.clearAllMocks();
+    controller = new CampaignController();
+    res = buildRes();
+    next = vi.fn();
+    isServerFeatureEnabled.mockImplementation(onlyActions);
+    // Echoes the REQUESTED id, as the real contract does, so a test using any campaign id gets a
+    // consistent resolution without restating it. The guard refuses a mismatched echo.
+    svcResolveCampaign.mockImplementation((_req: unknown, _slug: string, platformCampaignId: string) =>
+      Promise.resolve(resolvedTo('c-1', 'b-1', platformCampaignId))
+    );
+    // Confirms exactly what a single-keyword request sends. An empty `results` array is NOT a
+    // valid confirmation — the controller now checks the returned multiset against the request,
+    // because upstream derives applied_count from its own results rather than from the request.
+    svcApplyKeywordActions.mockResolvedValue({
+      campaign_id: 'c-1',
+      applied_count: 1,
+      results: [{ ad_group_id: '176216228', criterion_id: '1', action: 'PAUSE' }],
+    });
+  });
+
+  it('refuses a bulk request above the fan-out cap before calling upstream', async () => {
+    // The cost is per CAMPAIGN in the body: a resolver call and then a mutation call each,
+    // sequentially, while the request is held open. Unbounded, one authenticated request
+    // amplifies into thousands of upstream calls against a live ad account. Refused BEFORE any
+    // upstream call, so an oversized request costs nothing rather than being half-applied.
+    const tooMany = Array.from({ length: MAX_BULK_KEYWORD_ACTIONS + 1 }, (_, i) => keyword(String(24183781329 + i), String(i)));
+
+    await controller.executeKeywordActions(actionsReq(tooMany), res, next);
+
+    // The operator-facing text lives in validationErrors, not on the error's own message.
+    expect(next).toHaveBeenCalledWith(
+      expect.objectContaining({
+        validationErrors: expect.arrayContaining([expect.objectContaining({ field: 'keywords', message: expect.stringContaining('at most') })]),
+      })
+    );
+    expect(svcResolveCampaign).not.toHaveBeenCalled();
+    expect(svcApplyKeywordActions).not.toHaveBeenCalled();
+  });
+
+  it('refuses a malformed id in the LAST row before mutating the rows ahead of it', async () => {
+    // The position is the point. Campaign-service declares these ids as `^[0-9]+$`, so a malformed
+    // one was previously refused UPSTREAM — by which time the earlier rows in the same request had
+    // already been mutated, because the fan-out is sequential. A keyword REMOVE is irreversible,
+    // so a half-applied batch is not something a retry can undo.
+    //
+    // A valid row FIRST, so passing this cannot be explained by the request being rejected on its
+    // very first entry.
+    const rows = [keyword('24183781329', '1'), keyword('24183781329', '2'), keyword('not-an-id', '3')];
+
+    await controller.executeKeywordActions(actionsReq(rows), res, next);
+
+    expect(next).toHaveBeenCalledWith(
+      expect.objectContaining({
+        validationErrors: expect.arrayContaining([expect.objectContaining({ field: 'keywords', message: expect.stringContaining('positive integer') })]),
+      })
+    );
+    // Nothing upstream, not even for the two well-formed rows that preceded the bad one.
+    expect(svcResolveCampaign).not.toHaveBeenCalled();
+    expect(svcApplyKeywordActions).not.toHaveBeenCalled();
+  });
+
+  it('allows a bulk request exactly at the fan-out cap', async () => {
+    // The boundary is inclusive: a request the UI can actually produce must not be refused.
+    // 1-based: "0" is not a canonical Google Ads resource id, and validation now enforces that.
+    const atCap = Array.from({ length: MAX_BULK_KEYWORD_ACTIONS }, (_, i) => keyword(String(24183781329 + i), String(i + 1)));
+
+    await controller.executeKeywordActions(actionsReq(atCap), res, next);
+
+    expect(svcResolveCampaign).toHaveBeenCalled();
+  });
+
+  it('resolves the campaign and applies the batch under its brief', async () => {
+    await controller.executeKeywordActions(actionsReq([keyword('24183781329', '1')]), res, next);
+
+    // Fourth arg is the resolver's share of the request budget -- matched loosely because it is
+    // wall-clock. Bounding the mutation alone left THIS call able to overrun the window.
+    expect(svcResolveCampaign).toHaveBeenCalledWith(expect.anything(), 'tlf', '24183781329', expect.any(Number));
+    const resolveBudget = svcResolveCampaign.mock.calls[0][3] as number;
+    expect(resolveBudget, 'the resolver was given no deadline, or one outside the budget').toBeGreaterThan(0);
+    expect(resolveBudget).toBeLessThanOrEqual(KEYWORD_ACTION_DEADLINE_MS);
+    // The brief and campaign must come from the RESOLUTION, not from the request — the request
+    // carries neither, which is the whole reason the resolver exists.
+    expect(svcApplyKeywordActions).toHaveBeenCalledWith(
+      expect.anything(),
+      'tlf',
+      'b-1',
+      'c-1',
+      [{ ad_group_id: '176216228', criterion_id: '1', action: 'PAUSE' }],
+      // The fan-out's REMAINING budget, so the mutation cannot outlive the request deadline.
+      // Matched as "a positive number within the budget" rather than an exact value: it is
+      // wall-clock, so pinning it would make this test fail on a slow machine for no reason.
+      expect.any(Number)
+    );
+    const passedTimeout = svcApplyKeywordActions.mock.calls[0][5] as number;
+    expect(passedTimeout, 'the mutation was given no deadline, or one outside the budget').toBeGreaterThan(0);
+    expect(passedTimeout).toBeLessThanOrEqual(KEYWORD_ACTION_DEADLINE_MS);
+    expect(legacyKeywordActions).not.toHaveBeenCalled();
+  });
+
+  it('keeps the legacy path when the flag is off', async () => {
+    isServerFeatureEnabled.mockReturnValue(false);
+    legacyKeywordActions.mockResolvedValue({ success: true, total: 1, succeeded: 1, failed: 0, results: [] });
+
+    await controller.executeKeywordActions(actionsReq([keyword('555', '1')]), res, next);
+
+    expect(legacyKeywordActions).toHaveBeenCalled();
+    expect(svcResolveCampaign).not.toHaveBeenCalled();
+  });
+
+  it('routes on its own flag, not on any cutover flag', async () => {
+    isServerFeatureEnabled.mockImplementation((flag: string) => !onlyActions(flag));
+    legacyKeywordActions.mockResolvedValue({ success: true, total: 1, succeeded: 1, failed: 0, results: [] });
+
+    await controller.executeKeywordActions(actionsReq([keyword('555', '1')]), res, next);
+
+    expect(legacyKeywordActions).toHaveBeenCalled();
+    expect(svcResolveCampaign).not.toHaveBeenCalled();
+  });
+
+  it('refuses a campaign-service request with no project', async () => {
+    await controller.executeKeywordActions(actionsReq([keyword('555', '1')], {}), res, next);
+
+    expect(svcResolveCampaign).not.toHaveBeenCalled();
+    expect(next).toHaveBeenCalled();
+    expect(res.json).not.toHaveBeenCalled();
+  });
+
+  it('issues one call per campaign rather than one flat batch', async () => {
+    svcResolveCampaign.mockResolvedValueOnce(resolvedTo('c-1', 'b-1', '555')).mockResolvedValueOnce(resolvedTo('c-2', 'b-2', '666'));
+
+    await controller.executeKeywordActions(actionsReq([keyword('555', '1'), keyword('666', '2'), keyword('555', '3')]), res, next);
+
+    expect(svcApplyKeywordActions).toHaveBeenCalledTimes(2);
+    // Campaign 555's two keywords travel together; 666's alone. A flat batch would be one call.
+    expect(svcApplyKeywordActions.mock.calls[0][4]).toHaveLength(2);
+    expect(svcApplyKeywordActions.mock.calls[1][4]).toHaveLength(1);
+  });
+
+  // An unowned id is a 200 with no matches, so it must be CHECKED. Acting on it is impossible,
+  // and skipping it silently would drop the keyword from the response entirely.
+  it('refuses a campaign the project does not own, and says so per keyword', async () => {
+    svcResolveCampaign.mockResolvedValue({ platform_campaign_id: '555', match_count: 0, matches: [] });
+
+    await controller.executeKeywordActions(actionsReq([keyword('555', '1'), keyword('555', '2')]), res, next);
+
+    expect(svcApplyKeywordActions).not.toHaveBeenCalled();
+    const body = vi.mocked(res.json).mock.calls[0][0] as { success: boolean; failed: number; results: { success: boolean }[] };
+    expect(body.success).toBe(false);
+    // BOTH keywords are accounted for. A response listing one would leave the other looking
+    // handled.
+    expect(body.results).toHaveLength(2);
+    expect(body.failed).toBe(2);
+  });
+
+  // Ambiguity is refused rather than resolved by taking the first match: acting would mutate a
+  // campaign nobody named.
+  it('refuses an ambiguous campaign id rather than picking a match', async () => {
+    svcResolveCampaign.mockResolvedValue({
+      platform_campaign_id: '555',
+      match_count: 2,
+      matches: [
+        { campaign_id: 'c-1', brief_id: 'b-1' },
+        { campaign_id: 'c-2', brief_id: 'b-2' },
+      ],
+    });
+
+    await controller.executeKeywordActions(actionsReq([keyword('555', '1')]), res, next);
+
+    expect(svcApplyKeywordActions).not.toHaveBeenCalled();
+    const body = vi.mocked(res.json).mock.calls[0][0] as { failed: number };
+    expect(body.failed).toBe(1);
+  });
+
+  // One campaign's failure must not take down the others: the batch is atomic per campaign, and
+  // the remaining campaigns' actions should still be attempted.
+  /**
+   * A 2xx is not proof the batch applied as asked.
+   *
+   * Upstream derives `applied_count` from the results it actually returns rather than asserting
+   * it against the request, so a short or altered confirmation agrees with itself. Marking every
+   * requested keyword as changed on that basis would tell someone a still-spending keyword was
+   * paused — the one thing this path must never do.
+   *
+   * Reported as UNCONFIRMED rather than failed: upstream returned a 2xx, so the mutation
+   * probably ran, and a retried REMOVE is irreversible.
+   */
+  it.each([
+    ['a short confirmation', { campaign_id: 'c-1', applied_count: 1, results: [{ ad_group_id: '176216228', criterion_id: '1', action: 'PAUSE' }] }],
+    [
+      'a criterion that was not requested',
+      {
+        campaign_id: 'c-1',
+        applied_count: 2,
+        results: [
+          { ad_group_id: '176216228', criterion_id: '1', action: 'PAUSE' },
+          { ad_group_id: '176216228', criterion_id: '999', action: 'PAUSE' },
+        ],
+      },
+    ],
+  ])('reports %s as unconfirmed rather than applied', async (_label, applied) => {
+    svcApplyKeywordActions.mockResolvedValue(applied);
+
+    await controller.executeKeywordActions(actionsReq([keyword('555', '1'), keyword('555', '2')]), res, next);
+
+    const body = vi.mocked(res.json).mock.calls[0][0] as { succeeded: number; failed: number; results: { message: string }[] };
+    expect(body.succeeded).toBe(0);
+    expect(body.failed).toBe(2);
+    // The wording must send the caller to verify, not to retry: a retried REMOVE cannot be undone.
+    expect(body.results[0].message).toMatch(/check the campaign/i);
+  });
+
+  it('accepts a confirmation that matches the request regardless of order', async () => {
+    svcApplyKeywordActions.mockResolvedValue({
+      campaign_id: 'c-1',
+      applied_count: 2,
+      // Reversed: order is not part of the contract, membership and count are.
+      results: [
+        { ad_group_id: '176216228', criterion_id: '2', action: 'PAUSE' },
+        { ad_group_id: '176216228', criterion_id: '1', action: 'PAUSE' },
+      ],
+    });
+
+    await controller.executeKeywordActions(actionsReq([keyword('555', '1'), keyword('555', '2')]), res, next);
+
+    const body = vi.mocked(res.json).mock.calls[0][0] as { succeeded: number; failed: number };
+    expect(body.succeeded).toBe(2);
+    expect(body.failed).toBe(0);
+  });
+
+  it('continues to the next campaign when one fails, and reports both outcomes', async () => {
+    svcResolveCampaign.mockResolvedValueOnce(resolvedTo('c-1', 'b-1', '555')).mockResolvedValueOnce(resolvedTo('c-2', 'b-2', '666'));
+    svcApplyKeywordActions
+      // A 422, not a bare Error. This case is "campaign-service REFUSED this one, keep going"; a
+      // bare Error has no status and is a transport failure by definition, which now stops the
+      // fan-out -- so a bare Error here would assert the opposite of what the name describes.
+      .mockRejectedValueOnce(Object.assign(new Error('upstream refused'), { statusCode: 422 }))
+      .mockResolvedValueOnce({ campaign_id: 'c-2', applied_count: 1, results: [{ ad_group_id: '176216228', criterion_id: '2', action: 'PAUSE' }] });
+
+    await controller.executeKeywordActions(actionsReq([keyword('555', '1'), keyword('666', '2')]), res, next);
+
+    expect(svcApplyKeywordActions).toHaveBeenCalledTimes(2);
+    const body = vi.mocked(res.json).mock.calls[0][0] as { success: boolean; succeeded: number; failed: number; results: { message: string }[] };
+    expect(body.succeeded).toBe(1);
+    expect(body.failed).toBe(1);
+    // A partially applied request is NOT a success, even though each campaign was atomic.
+    expect(body.success).toBe(false);
+    // The upstream message survives, because campaign-service distinguishes a definite failure
+    // from an unconfirmed one where the mutate may already have applied — flattening that would
+    // leave someone retrying an irreversible REMOVE.
+    expect(body.results.some((r) => r.message.includes('upstream refused'))).toBe(true);
+  });
+
+  // A failed LOOKUP is this campaign's problem, not the request's.
+  it('stops the fan-out after a transport failure instead of probing every campaign', async () => {
+    // The loop is sequential and the controller admits up to MAX_BULK_KEYWORD_ACTIONS distinct
+    // campaigns, each costing a lookup at the client's 30s default -- so an outage held ONE
+    // request open for ~25 minutes while sending 50 doomed probes for a single user action.
+    // 1-based: "0" is not a canonical Google Ads resource id and is refused before the fan-out.
+    const rows = Array.from({ length: 5 }, (_, i) => keyword(String(24183781329 + i), String(i + 1)));
+    // Every lookup fails the same way a dead service does: no status at all.
+    svcResolveCampaign.mockRejectedValue(new Error('socket hang up'));
+
+    await controller.executeKeywordActions(actionsReq(rows), res, next);
+
+    // ONE probe, not five. The remaining groups are reported without being attempted.
+    expect(svcResolveCampaign).toHaveBeenCalledTimes(1);
+    expect(svcApplyKeywordActions).not.toHaveBeenCalled();
+
+    const body = vi.mocked(res.json).mock.calls[0][0] as { failed: number; results: { success: boolean; message: string }[] };
+    // Every keyword still gets a result -- the client zips results onto the list it sent, so a
+    // short array would misalign a still-spending keyword onto another row's outcome.
+    expect(body.results).toHaveLength(5);
+    expect(body.failed).toBe(5);
+    // And they read as retryable, not as "not managed here": nothing was established about them.
+    expect(body.results.every((r) => /try again/i.test(r.message))).toBe(true);
+  });
+
+  it('reports a failed resolution against that campaign and keeps going', async () => {
+    // A 4xx: campaign-service ANSWERED and refused this campaign, which says nothing about the
+    // next one -- so the batch must keep going. A bare Error (no status) is a TRANSPORT failure
+    // and now deliberately stops the fan-out, so it can no longer stand in for this case.
+    const refused = Object.assign(new Error('resolver refused'), { statusCode: 422 });
+    svcResolveCampaign.mockRejectedValueOnce(refused).mockResolvedValueOnce(resolvedTo('c-2', 'b-2', '666'));
+    // Campaign 666 sends criterion 2, so its confirmation must name criterion 2 — the default
+    // stub confirms criterion 1 and would now be rejected as a mismatch.
+    svcApplyKeywordActions.mockResolvedValue({
+      campaign_id: 'c-2',
+      applied_count: 1,
+      results: [{ ad_group_id: '176216228', criterion_id: '2', action: 'PAUSE' }],
+    });
+
+    await controller.executeKeywordActions(actionsReq([keyword('555', '1'), keyword('666', '2')]), res, next);
+
+    expect(svcApplyKeywordActions).toHaveBeenCalledTimes(1);
+    const body = vi.mocked(res.json).mock.calls[0][0] as { succeeded: number; failed: number; results: { success: boolean; message: string }[] };
+    expect(body.succeeded).toBe(1);
+    expect(body.failed).toBe(1);
+    // A FAILED lookup must not read as "not managed here". That message tells the caller the
+    // campaign will never be actionable, so they stop retrying — and a campaign they meant to
+    // pause keeps spending. It must invite a retry instead.
+    const failedEntry = body.results.find((r) => !r.success);
+    expect(failedEntry?.message).toMatch(/try again/i);
+    expect(failedEntry?.message).not.toMatch(/not managed here/i);
+  });
+
+  // Every keyword sent must appear in the response exactly once, whatever happened to it.
+  it('accounts for every requested keyword in the response', async () => {
+    svcResolveCampaign.mockResolvedValueOnce(resolvedTo('c-1', 'b-1')).mockResolvedValueOnce({ platform_campaign_id: '666', match_count: 0, matches: [] });
+
+    await controller.executeKeywordActions(actionsReq([keyword('555', '1'), keyword('555', '2'), keyword('666', '3')]), res, next);
+
+    const body = vi.mocked(res.json).mock.calls[0][0] as { total: number; results: { keyword: string }[] };
+    expect(body.total).toBe(3);
+    expect(body.results.map((r) => r.keyword).sort()).toEqual(['Criterion 1', 'Criterion 2', 'Criterion 3']);
   });
 });

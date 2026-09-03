@@ -199,6 +199,7 @@ changing a value here rather than by shipping a revert.
 | `environment.LFX_CUTOVER_CAMPAIGN_SERVICE_DEMAND_GEN`      | Allows Demand Gen Google campaigns. Requires a campaign-service that understands `googleAdsConfig.channel` (LFXV2-3257) — see below                                                                                                                                                                                                                                                                  | No       | off      |
 | `environment.LFX_CUTOVER_CAMPAIGN_SERVICE_STATUS_TOGGLE`   | Serves campaign pause/resume from campaign-service, which is what makes Google Ads and LinkedIn pausable — see below                                                                                                                                                                                                                                                                                 | No       | `"true"` |
 | `environment.LFX_CUTOVER_CAMPAIGN_SERVICE_INSIGHTS`        | Serves the Google Ads keyword and audience reads from campaign-service, scoped to the project's own campaigns — REQUIRES [campaign-service #190](https://github.com/linuxfoundation/lfx-v2-campaign-service/pull/190) deployed first; CHANGES THE NUMBERS, see below                                                                                                                                 | No       | off      |
+| `environment.LFX_CUTOVER_CAMPAIGN_SERVICE_KEYWORD_ACTIONS` | Serves keyword pause/remove from campaign-service — REQUIRES [campaign-service #191](https://github.com/linuxfoundation/lfx-v2-campaign-service/pull/191) deployed first; the legacy path is already broken without the GADS\_\* vars. NOTE: two request-boundary changes apply even with this OFF, deliberately — a 50-row cap and a malformed-id refusal on `/keywords/actions`; see `values.yaml` | No       | off      |
 
 `..._JOBS` now defaults to `"true"` (LFXV2-3325), the first step of the enable order below.
 **`..._JOBS` must stay on, and comes off LAST.** With `..._CREATE` enabled campaign-service mints
@@ -214,9 +215,10 @@ TIME, each converging before the next:
 JOBS  →  BRIEFS  →  STATUS_TOGGLE  →  CREATE
 ```
 
-The other two flags in the table -- `..._DEMAND_GEN` and `..._INSIGHTS` -- are NOT part of this
-enable order and both default OFF. They gate later, independent moves, each with its own
-prerequisite noted in the table; nothing below applies to them.
+The other three flags in the table -- `..._DEMAND_GEN`, `..._INSIGHTS` and
+`..._KEYWORD_ACTIONS` -- are NOT part of this enable order and all default OFF. They gate later,
+independent moves, each with its own prerequisite noted in the table; nothing below applies to
+them.
 
 ### Before enabling `..._CREATE`
 

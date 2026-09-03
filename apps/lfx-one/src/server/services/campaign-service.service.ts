@@ -34,6 +34,9 @@ import type {
   RedditAdVariant,
   RedditBriefCopy,
   CampaignServiceAudience,
+  CampaignServiceCampaignResolution,
+  CampaignServiceKeywordActionInput,
+  CampaignServiceKeywordActions,
   CampaignServiceKeywords,
 } from '@lfx-one/shared/interfaces';
 import type { Request } from 'express';
@@ -1354,6 +1357,82 @@ export class CampaignServiceClient {
       `/projects/${encodeURIComponent(projectSlug)}/google-ads/keywords`,
       'GET',
       window ? { window } : undefined
+    );
+  }
+
+  /**
+   * Resolve one Google Ads campaign id to campaign-service's own campaign and brief.
+   *
+   * A keyword row carries GOOGLE's numeric campaign id; the keyword-actions route is keyed by
+   * campaign-service's campaign UUID under its brief. This is the only bridge between them.
+   *
+   * An unowned id comes back as a 200 with an empty `matches`, NOT a 404 — so callers must check
+   * `match_count` rather than relying on this to throw. That is deliberate upstream: "not your
+   * campaign" is an answer to act on, while a 404 would mean the request itself was wrong.
+   */
+  public async resolveGoogleAdsCampaign(
+    req: Request,
+    projectSlug: string,
+    platformCampaignID: string,
+    // Same caller-supplied budget as `applyKeywordActions`. A fan-out that bounds only the
+    // mutation still lets THIS call overrun the request window one step earlier.
+    timeoutMs?: number
+  ): Promise<CampaignServiceCampaignResolution> {
+    if (projectSlug === '' || platformCampaignID === '') {
+      throw new Error('A campaign reference lookup requires both the project and the platform campaign id.');
+    }
+    return this.microserviceProxy.proxyRequest<CampaignServiceCampaignResolution>(
+      req,
+      'LFX_V2_CAMPAIGN_SERVICE',
+      `/projects/${encodeURIComponent(projectSlug)}/google-ads/campaign-ref`,
+      'GET',
+      { platform_campaign_id: platformCampaignID },
+      undefined,
+      undefined,
+      timeoutMs === undefined ? undefined : { timeoutMs }
+    );
+  }
+
+  /**
+   * Apply keyword actions to ONE campaign, atomically.
+   *
+   * The batch either applies in full or not at all — upstream sends it as a single mutate with
+   * partial failure disabled — so a rejected action rolls back the rest. That is why the caller
+   * groups by campaign rather than sending one flat list: each campaign is its own atomic unit
+   * and its own permission-evaluated target.
+   *
+   * The actions are the SIXTH argument, which is the body. The fifth is the query, and a POST
+   * payload passed there would go out as a query string with no body at all — the mirror of the
+   * trap the read methods above document.
+   */
+  public async applyKeywordActions(
+    req: Request,
+    projectSlug: string,
+    briefId: string,
+    campaignId: string,
+    actions: CampaignServiceKeywordActionInput[],
+    // Caller-supplied budget, so a fan-out can BOUND this call rather than only checking a
+    // clock before starting it. Omitted falls back to the client's 30s default.
+    timeoutMs?: number
+  ): Promise<CampaignServiceKeywordActions> {
+    if (projectSlug === '' || briefId === '' || campaignId === '') {
+      throw new Error('A keyword action requires the project, brief and campaign it applies to.');
+    }
+    if (actions.length === 0) {
+      // Refused rather than sent: upstream declares MinLength(1), so an empty batch is a 400
+      // round-trip, and answering it as a success would tell a caller their keywords were paused
+      // when no request was ever made.
+      throw new Error('A keyword action request must carry at least one action.');
+    }
+    return this.microserviceProxy.proxyRequest<CampaignServiceKeywordActions>(
+      req,
+      'LFX_V2_CAMPAIGN_SERVICE',
+      `/projects/${encodeURIComponent(projectSlug)}/briefs/${encodeURIComponent(briefId)}/campaigns/${encodeURIComponent(campaignId)}/keyword-actions`,
+      'POST',
+      undefined,
+      { actions },
+      undefined,
+      timeoutMs === undefined ? undefined : { timeoutMs }
     );
   }
 
