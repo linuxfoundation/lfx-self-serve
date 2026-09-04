@@ -203,6 +203,13 @@ export class CampaignsComponent {
     // that user round a loop it could never exit. This states what happened and what to try,
     // without asserting an outcome this branch cannot guarantee — the second sentence is the
     // honest form of "and here is why re-entering it may show nothing".
+    // Names the actual obstacle and does NOT advise a reload. Reloading cannot help: the stored
+    // brief belongs to the other surface, so this surface's `loadBrief` will keep reporting it as
+    // absent no matter how many times the URL is re-entered. Telling the user which surface holds
+    // it is the only advice that leads anywhere, since the remedy is to switch surfaces or plan
+    // the event on one of them.
+    'other-delivery-type-brief-exists':
+      'This event already has a saved brief from the other delivery type, and each event can hold only one. It was not overwritten. Switch to that delivery type to work on it, or use a different event.',
     'unowned-brief-exists':
       'This event already has a saved brief that was not opened here, so this one was not saved over it. Reload and re-enter the event URL to open it — if nothing appears, the stored brief belongs to the other delivery type and cannot be opened here.',
     // Does NOT advise a reload, even though this branch adds the read path that would make one
@@ -1735,9 +1742,16 @@ export class CampaignsComponent {
    * The Email side's handoff, deliberately NOT routed through `onProceedToImplementation`.
    *
    * It sets the email tab and the email brief, which are separate signals — see the
-   * delivery-type effect. It also does not persist: brief persistence is keyed on
-   * `(foundation, event)` and the email channel's brief shape is still LFXV2-3201's to settle,
-   * so saving one now would file a paid-shaped row under an email brief's key.
+   * delivery-type effect. It also does not persist, but no longer for the reason this comment
+   * used to give. It said a save here "would file a paid-shaped row under an email brief's key",
+   * which stopped being true once the row began recording `deliveryType`: an email brief is now
+   * stored as an email brief and `loadBrief` hands it back only to the email surface.
+   *
+   * What remains is a sequencing choice. The handoff must not block on a write, and every email
+   * action that genuinely needs a brief id already routes through `ensureEmailBriefId` — building
+   * an audience, generating copy, and staging a draft all await it, and it caches the id after
+   * the first persist resolves. So the save happens on demand, once, rather than on every trip
+   * through this handoff; persisting here as well would write the same row twice for one action.
    */
   protected onEmailProceedToImplementation(brief: CampaignBriefOutput): void {
     this.emailBriefOutput.set(brief);

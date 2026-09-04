@@ -1356,6 +1356,34 @@ describe('CampaignServiceClient.loadBrief', () => {
     expect(proxyRequestWithResponse).toHaveBeenCalledWith(req, 'LFX_V2_CAMPAIGN_SERVICE', '/projects/tlf/briefs', 'GET', { event_slug: 'kubecon-eu-2026' });
   });
 
+  // The WRITE-side half of delivery scoping, and the one that matters most: scoping only the read
+  // made the hazard worse rather than better. Ownership is keyed `(project, event)` with no
+  // delivery component, so a session that restored the PAID brief still holds a valid id for it
+  // after switching to Email -- the ownership guard passes and email content replaces the paid
+  // row. Once replaced, the row records `deliveryType: 'email'`, so the paid surface's own read
+  // answers `none` and the loss is silent. Refusing is the only answer that destroys neither.
+  it('refuses to replace a brief authored on the other delivery surface, even for its owner', async () => {
+    proxyRequestWithResponse.mockResolvedValueOnce(apiResponse(storedBrief({ targeting: { deliveryType: 'paid-marketing' } }), { etag: '"3"' }));
+
+    // `b-1` is the STORED id, so the ownership guard would pass -- this is the owner writing.
+    const result = await new CampaignServiceClient().saveBrief(
+      req,
+      { ...briefWithSlug('kubecon-eu-2026'), deliveryType: 'email' },
+      'kubecon-eu-2026',
+      'tlf',
+      'b-1',
+      '"3"',
+      false
+    );
+
+    expect(result.conflict).toBe('other-delivery-type-brief-exists');
+    // The id is withheld for the same reason `unowned-brief-exists` withholds it: a caller told
+    // it may not write this row must not be handed the id that would let it replay ownership.
+    expect(result.briefId).toBe('');
+    // And nothing was written -- only the find ran.
+    expect(proxyRequestWithResponse).toHaveBeenCalledTimes(1);
+  });
+
   // Delivery scoping. Storage is keyed `(project_id, event_slug)` with no delivery dimension
   // (`uq_campaign_briefs_project_event`), so ONE event has ONE row however many surfaces plan it.
   // Handing that row to whichever surface asks is exactly what kept the email restore path

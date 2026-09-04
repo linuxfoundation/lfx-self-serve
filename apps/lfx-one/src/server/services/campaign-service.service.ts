@@ -637,6 +637,36 @@ export class CampaignServiceClient {
     // "the user is editing the brief they are looking at" from "a fresh session happens to
     // collide on the same event", and `knownBriefId` is how the caller asserts it — it comes
     // from `loadBrief`, so it exists only when the brief on screen came out of storage.
+    // Refuse a write that would REPLACE a brief authored on the other delivery surface.
+    //
+    // The ownership guard below is not enough on its own, because ownership is keyed
+    // `(project, event)` with no delivery component (`ownershipKey` in campaigns.component.ts):
+    // a session that restored the PAID brief for an event still holds a valid id for it after
+    // switching to Email, so the id matches, the guard passes, and email content is PUT over the
+    // paid row. Scoping only the READ made that worse rather than better — the replaced row now
+    // records `deliveryType: 'email'`, so the paid surface's own `loadBrief` answers `none` and
+    // the brief the user still believes exists is unreachable.
+    //
+    // Its own conflict token, deliberately: `unowned-brief-exists` is the wrong one here because
+    // the caller DOES own the row, and its message tells the user to reload and re-enter the URL
+    // — advice that loops forever when the stored brief belongs to a surface they are not on.
+    //
+    // Fails CLOSED. Storage still holds one row per event (LFXV2-3198's remaining half is the
+    // delivery-aware key), so refusing is the only answer that does not destroy one of the two
+    // briefs; creating for an untouched event is unaffected, because `existing` is null there.
+    const sentDelivery = brief.deliveryType ?? 'paid-marketing';
+    const storedDelivery = existing === null ? null : (fromBriefResponse(existing.brief)?.deliveryType ?? 'paid-marketing');
+    if (existing !== null && storedDelivery !== null && storedDelivery !== sentDelivery) {
+      return {
+        enabled: true,
+        briefId: '',
+        etag: null,
+        created: false,
+        approved: false,
+        conflict: 'other-delivery-type-brief-exists',
+      };
+    }
+
     if (existing !== null && knownBriefId !== existing.brief.id) {
       // The id is deliberately WITHHELD on this refusal. Returning it told a caller the id of a
       // brief it was just told it does not own — and `etag_fallback` then let it replay that id

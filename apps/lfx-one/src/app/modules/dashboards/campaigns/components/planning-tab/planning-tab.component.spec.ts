@@ -6,7 +6,14 @@ import { provideHttpClientTesting } from '@angular/common/http/testing';
 import { ComponentFixture, TestBed } from '@angular/core/testing';
 import type { FormGroup } from '@angular/forms';
 import { provideRouter } from '@angular/router';
-import type { CampaignBriefLoadResult, CampaignBriefOutput, CampaignProgramTypeOption } from '@lfx-one/shared/interfaces';
+import type {
+  CampaignBriefLoadResult,
+  CampaignBriefOutput,
+  CampaignEventDetails,
+  CampaignProgramTypeOption,
+  CampaignSSEEventType,
+  SSEEvent,
+} from '@lfx-one/shared/interfaces';
 import { CampaignService } from '@services/campaign.service';
 import { ProjectContextService } from '@services/project-context.service';
 import { MessageService } from 'primeng/api';
@@ -130,7 +137,7 @@ describe('PlanningTabComponent brief read-back', () => {
 
     await typeEventUrl('https://events.example.com/kubecon-eu-2026');
 
-    expect(campaignService.loadBrief).toHaveBeenCalledWith('kubecon-eu-2026', 'foundation-a');
+    expect(campaignService.loadBrief).toHaveBeenCalledWith('kubecon-eu-2026', 'foundation-a', 'paid-marketing');
     expect(savedBrief()).toEqual(exampleBrief);
     expect(savedBriefWarning()).toBeNull();
   });
@@ -164,7 +171,7 @@ describe('PlanningTabComponent brief read-back', () => {
 
     // The url segment is `kubecon-eu-2026`; the STORED brief is named `kubecon-europe-2026`.
     await typeEventUrl('https://events.example.com/kubecon-eu-2026');
-    expect(campaignService.loadBrief).toHaveBeenCalledWith('kubecon-eu-2026', 'foundation-a');
+    expect(campaignService.loadBrief).toHaveBeenCalledWith('kubecon-eu-2026', 'foundation-a', 'paid-marketing');
 
     const emitted: { brief: CampaignBriefOutput }[] = [];
     const component = fixture.componentInstance as unknown as {
@@ -439,7 +446,7 @@ describe('PlanningTabComponent brief read-back', () => {
     await fixture.whenStable();
 
     // The new lookup should still fire under the new foundation.
-    expect(campaignService.loadBrief).toHaveBeenCalledWith('kubecon-eu-2026', 'foundation-b');
+    expect(campaignService.loadBrief).toHaveBeenCalledWith('kubecon-eu-2026', 'foundation-b', 'paid-marketing');
 
     // When it completes, the brief is offered again (under the new foundation).
     slowNewFoundationLookup.next({
@@ -491,7 +498,7 @@ describe('PlanningTabComponent brief read-back', () => {
 
     // Lookup under foundation A.
     await typeEventUrl('https://events.example.com/kubecon-eu-2026');
-    expect(campaignService.loadBrief).toHaveBeenCalledWith('kubecon-eu-2026', 'foundation-a');
+    expect(campaignService.loadBrief).toHaveBeenCalledWith('kubecon-eu-2026', 'foundation-a', 'paid-marketing');
     const firstCallCount = campaignService.loadBrief.mock.calls.length;
 
     // Switch foundation without changing the slug. This should trigger another lookup.
@@ -504,7 +511,7 @@ describe('PlanningTabComponent brief read-back', () => {
     await new Promise((resolve) => setTimeout(resolve, BRIEF_LOOKUP_DEBOUNCE_WAIT_MS));
     await fixture.whenStable();
 
-    expect(campaignService.loadBrief).toHaveBeenCalledWith('kubecon-eu-2026', 'foundation-b');
+    expect(campaignService.loadBrief).toHaveBeenCalledWith('kubecon-eu-2026', 'foundation-b', 'paid-marketing');
     expect(campaignService.loadBrief.mock.calls.length).toBeGreaterThan(firstCallCount);
   });
 
@@ -558,7 +565,7 @@ describe('PlanningTabComponent brief read-back', () => {
     campaignService.loadBrief.mockReturnValue(slowFirstLookup);
 
     await typeEventUrl('https://events.example.com/kubecon-eu-2026');
-    expect(campaignService.loadBrief).toHaveBeenCalledWith('kubecon-eu-2026', 'foundation-a');
+    expect(campaignService.loadBrief).toHaveBeenCalledWith('kubecon-eu-2026', 'foundation-a', 'paid-marketing');
 
     // Move to a different event before the first lookup answers. Its result is now stale.
     //
@@ -760,15 +767,19 @@ describe('PlanningTabComponent delivery-type mode', () => {
   });
 
   /**
-   * Brief persistence is keyed on `(foundation, event)` with no delivery type, so the row this
-   * would find is a PAID brief — restoring it under Email would put RSA headlines and a keyword
-   * list into an email plan. The email host also binds no `restoreSavedBriefRequested` handler,
-   * so the Restore button emitted into nothing and the click did nothing at all.
+   * Email looks a saved brief up, and asks for it AS EMAIL.
    *
-   * Asserted on the REQUEST rather than the banner: suppressing the lookup means no call per
-   * debounce for a result that can never be used, and a banner-only guard would leave that.
+   * This test previously asserted the opposite — that email suppressed the lookup entirely —
+   * because storage is keyed `(foundation, event)` with no delivery dimension, so the row an
+   * email caller found was whatever surface wrote last, and a paid brief restored into an email
+   * plan brings RSA headlines and a keyword list that mean nothing there.
+   *
+   * The row now records which surface authored it and `loadBrief` reports a brief from the other
+   * surface as absent, so the suppression is no longer what keeps the two apart — the delivery
+   * argument is. Asserting on the ARGUMENT rather than merely on the call is the point: a lookup
+   * that fired without it would silently be answered as paid, which is the defect this replaces.
    */
-  it('does not look up a saved brief in email mode', async () => {
+  it('looks a saved brief up in email mode, scoped to the email surface', async () => {
     const loadBrief = vi.fn().mockReturnValue(new Subject());
     vi.spyOn(TestBed.inject(CampaignService), 'loadBrief').mockImplementation(loadBrief);
 
@@ -780,7 +791,7 @@ describe('PlanningTabComponent delivery-type mode', () => {
     await new Promise((resolve) => setTimeout(resolve, 600));
     await fixture.whenStable();
 
-    expect(loadBrief).not.toHaveBeenCalled();
+    expect(loadBrief).toHaveBeenCalledWith('kubecon-eu-2026', 'foundation-a', 'email');
   });
 
   it('still looks up a saved brief in paid mode', async () => {
@@ -1233,5 +1244,56 @@ describe('PlanningTabComponent email brief editing', () => {
     await buildWithScrape('paid-marketing');
     // The other half of the guard: scoping the strip to paid must not remove it from paid.
     expect((fixture.nativeElement as HTMLElement).querySelector('[data-testid="planning-event-strip"]')).not.toBeNull();
+  });
+  // The scrape is best-effort: a page that does not state its dates or venue yields an `event`
+  // payload with those keys MISSING, while `CampaignEventDetails` declares every field as a
+  // non-optional `string`. The stream handler previously asserted that shape with a cast instead
+  // of building it, so `undefined` reached the template -- and `{{ details.dates }}` renders the
+  // literal text "undefined" rather than nothing, which also landed in the edit form's inputs.
+  //
+  // Driven through the real SSE path rather than by exporting the helper: the defect was never in
+  // the conversion alone, it was that nothing converted at all between the socket and the signal.
+  it('turns a scrape that omitted fields into empty strings, never the string "undefined"', async () => {
+    fixture = TestBed.createComponent(PlanningTabComponent);
+    fixture.componentRef.setInput('programTypeConfig', programTypeConfig);
+    fixture.detectChanges();
+    await fixture.whenStable();
+    const handler = fixture.componentInstance as unknown as { handleSSEEvent(e: SSEEvent<CampaignSSEEventType>): void };
+
+    // Exactly what a page with no listed dates or venue produces: name and audience only.
+    handler.handleSSEEvent({ type: 'event', data: { name: 'KubeCon EU', audience: 'developers' } } as SSEEvent<CampaignSSEEventType>);
+    fixture.detectChanges();
+
+    const details = internals().eventDetails() as CampaignEventDetails | null;
+    expect(details).not.toBeNull();
+    expect(details?.dates).toBe('');
+    expect(details?.city).toBe('');
+    // The specific regression: the rendered page must not contain the word rendered by an
+    // undefined interpolation.
+    expect(JSON.stringify(details)).not.toContain('undefined');
+    // Arrays default to empty rather than undefined, so `@for` over them cannot throw.
+    expect(details?.themes).toEqual([]);
+    expect(details?.speakers).toEqual([]);
+    // And what the scrape DID return survives untouched.
+    expect(details?.name).toBe('KubeCon EU');
+    expect(details?.audience).toBe('developers');
+  });
+
+  // A payload of the wrong shape entirely -- an upstream contract change, or an error object --
+  // must not put a non-string into a field the template interpolates.
+  it('ignores values of the wrong type rather than passing them through', async () => {
+    fixture = TestBed.createComponent(PlanningTabComponent);
+    fixture.componentRef.setInput('programTypeConfig', programTypeConfig);
+    fixture.detectChanges();
+    await fixture.whenStable();
+    const handler = fixture.componentInstance as unknown as { handleSSEEvent(e: SSEEvent<CampaignSSEEventType>): void };
+
+    handler.handleSSEEvent({ type: 'event', data: { name: 42, dates: null, themes: 'not-an-array' } } as unknown as SSEEvent<CampaignSSEEventType>);
+    fixture.detectChanges();
+
+    const details = internals().eventDetails() as CampaignEventDetails | null;
+    expect(details?.name).toBe('');
+    expect(details?.dates).toBe('');
+    expect(details?.themes).toEqual([]);
   });
 });

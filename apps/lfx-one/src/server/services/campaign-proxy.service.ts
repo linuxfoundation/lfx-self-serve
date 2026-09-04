@@ -515,9 +515,25 @@ If a field cannot be determined, use null.`;
  *
  * The cap is KEPT — a fetched page is untrusted input and must not be able to set the prompt size
  * — but it now applies to content rather than to boilerplate, and it is raised to fit a stripped
- * page whole. `fetchSafeUrl` bounds what can be downloaded; this bounds what can be sent onward.
+ * page whole.
+ *
+ * This cap is the ONLY size bound in the path. `fetchSafeUrl` validates the URL and every redirect
+ * hop against private address ranges, but it accumulates the response body with no byte ceiling —
+ * only a 15s timeout — so nothing limits what arrives here. An earlier revision of this comment
+ * claimed otherwise and would have sent a reader looking for a download limit that is not there.
+ *
+ * `slice` counts UTF-16 code units, while the byte figures above are bytes: a CJK-heavy page can
+ * carry up to ~3x those bytes within the same cap. That is deliberate — the cap exists to bound
+ * the PROMPT, which is measured in tokens rather than bytes, and code units track tokens more
+ * closely than bytes do for non-Latin scripts.
  */
-function extractableHtml(html: string): string {
+export function extractableHtml(html: string): string {
+  // JSON-LD is PRESERVED before the rest of the scripts go. Event pages publish `startDate`,
+  // `endDate` and `location` as schema.org `Event` data in `<script type="application/ld+json">`,
+  // which is the most reliable source for exactly the fields the extraction prompt asks for — and
+  // stripping every `<script>` discarded it, keeping the "no date survived" failure alive on any
+  // page whose dates live only there rather than in prose.
+  const jsonLd = (html.match(/<script[^>]*type=["']application\/ld\+json["'][^>]*>[\s\S]*?<\/script>/gi) ?? []).join(' ');
   const stripped = html
     .replace(/<script[\s\S]*?<\/script>/gi, ' ')
     .replace(/<style[\s\S]*?<\/style>/gi, ' ')
@@ -526,7 +542,9 @@ function extractableHtml(html: string): string {
     // Collapse the whitespace those removals leave behind. Templated markup is heavily indented,
     // so this is not cosmetic: it recovers several KB of the budget on a typical page.
     .replace(/\s{2,}/g, ' ');
-  return stripped.slice(0, 60_000);
+  // Prepended rather than appended: the cap truncates the TAIL, so the structured facts must sit
+  // where a long page cannot push them out.
+  return (jsonLd ? jsonLd + ' ' : '') + stripped.slice(0, 60_000);
 }
 
 function getExtractionPrompt(programType?: CampaignProgramType): string {

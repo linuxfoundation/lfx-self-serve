@@ -25,7 +25,7 @@ vi.mock('../helpers/url-validation', () => ({
 import { CAMPAIGN_DELIVERY_TYPES } from '@lfx-one/shared/constants';
 import type { Request } from 'express';
 
-import { CampaignProxyService } from './campaign-proxy.service';
+import { CampaignProxyService, extractableHtml } from './campaign-proxy.service';
 
 const req = {} as unknown as Request;
 
@@ -608,5 +608,63 @@ describe('CampaignProxyService legacy platform gate', () => {
     expect(text).toMatch(/Unsupported platform/i);
     // And the four that ARE wired are still offered, so the message says what to do instead.
     expect(text).toContain('google-ads');
+  });
+});
+
+describe('extractableHtml', () => {
+  // The regression this function exists to prevent. Measured on the Open Source Summit Japan page:
+  // 151,727 bytes total, of which 62,784 are `<style>` and 38,281 are `<script>`; the venue string
+  // sits at byte 30,351, just past the old blind `slice(0, 30_000)`. The extractor was handed a
+  // window that was almost entirely CSS, reported the facts absent, and downstream copy invented
+  // replacements. These pin the properties that make that impossible rather than the byte counts,
+  // which belong to one page and would rot.
+  it('keeps prose that a fixed 30k slice would have cut, by removing style and script first', () => {
+    const html = `<style>${'a{color:red}'.repeat(3000)}</style><p>Tokyo, December 7-9 2026</p>`;
+
+    expect(html.slice(0, 30_000)).not.toContain('Tokyo');
+    expect(extractableHtml(html)).toContain('Tokyo, December 7-9 2026');
+  });
+
+  // JSON-LD is where event pages most reliably publish `startDate`/`endDate`/`location` as
+  // machine-readable schema.org data -- exactly the fields the extraction prompt asks for. An
+  // earlier revision stripped every `<script>`, which discarded it and kept the "no date survived"
+  // failure alive for any page whose dates live only there.
+  it('preserves application/ld+json while stripping every other script', () => {
+    const html =
+      `<script type="application/ld+json">{"startDate":"2027-03-15","location":"Barcelona"}</script>` + `<script>var tracking = 1;</script><p>prose</p>`;
+
+    const out = extractableHtml(html);
+
+    expect(out).toContain('"startDate":"2027-03-15"');
+    expect(out).toContain('Barcelona');
+    expect(out).not.toContain('var tracking');
+    expect(out).toContain('prose');
+  });
+
+  // Prepended, not appended: the cap truncates the TAIL, so a page long enough to hit it must not
+  // be able to push the structured facts out of the window.
+  it('keeps json-ld even when the stripped body fills the entire cap', () => {
+    const html = `<script type="application/ld+json">{"startDate":"2027-03-15"}</script><p>${'x'.repeat(200_000)}</p>`;
+
+    expect(extractableHtml(html)).toContain('"startDate":"2027-03-15"');
+  });
+
+  it('removes style, svg and comments', () => {
+    const out = extractableHtml('<style>.a{color:red}</style><svg><path d="M0"/></svg><!-- note --><p>kept</p>');
+
+    expect(out).not.toContain('color:red');
+    expect(out).not.toContain('<path');
+    expect(out).not.toContain('note');
+    expect(out).toContain('kept');
+  });
+
+  // The cap is the only bound on what reaches the prompt, so it has to hold for input that
+  // survives stripping entirely.
+  it('caps the stripped body', () => {
+    expect(extractableHtml('<p>' + 'y'.repeat(200_000) + '</p>').length).toBeLessThanOrEqual(60_000);
+  });
+
+  it('returns an empty string for input that is entirely strippable', () => {
+    expect(extractableHtml('<style>.a{color:red}</style>').trim()).toBe('');
   });
 });
