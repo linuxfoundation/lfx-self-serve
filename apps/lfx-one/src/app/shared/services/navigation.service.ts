@@ -297,7 +297,11 @@ export class NavigationService {
       })
     );
 
-    const nextPage$ = loadMore$.pipe(switchMap((token) => this.fetchSinglePage(lens, searchTerm(), token, loading, false, generation(), generation, null)));
+    // Continue with the term the cursor belongs to, not the term being typed. `nextPageToken` is
+    // set by the page that also set `resultsTerm`, so the two always describe the same query;
+    // pairing the cursor with a newer `searchTerm` would append results from one query onto
+    // another. The newer term gets its own reset fetch once the debounce fires.
+    const nextPage$ = loadMore$.pipe(switchMap((token) => this.fetchSinglePage(lens, resultsTerm(), token, loading, false, generation(), generation, null)));
 
     return toSignal(
       merge(firstPage$, nextPage$).pipe(

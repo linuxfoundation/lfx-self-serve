@@ -223,7 +223,7 @@ When calling the query service, use the correct parameter names:
 | ------------ | -------------------------- | --------------------------------------------------------------------------------------------- |
 | `page_size`  | Number of results per page | NOT `limit`                                                                                   |
 | `page_token` | Cursor for pagination      | Opaque string from previous response                                                          |
-| `name`       | Typeahead search           | Uses `multi_match` with `bool_prefix`; every term must match                                  |
+| `name`       | Typeahead search           | Uses `multi_match` with `bool_prefix`                                                         |
 | `filters`    | Field filtering            | Format: `field:value`, auto-prefixed with `data.`                                             |
 | `sort`       | Sort order                 | Enum: `name_asc` (upstream default), `name_desc`, `updated_asc`, `updated_desc`, `best_match` |
 
