@@ -706,8 +706,8 @@ describe('CampaignProxyService HubSpot campaign lookup', () => {
   ])('refuses a create 2xx carrying %s rather than reporting a creation', async (_label, body) => {
     // dealako (#1923): the create response was read through `as { id: string }`, an unchecked
     // cast, so a malformed 2xx yielded `undefined` and this path went on to report a definite
-    // creation off it. The campaign-service arm it sits behind one flag with already refuses an
-    // id-less 2xx before claiming `created: true`.
+    // creation off it. The campaign-service arm sits behind the same flag, and it already refuses
+    // an id-less 2xx before claiming `created: true`.
     //
     // Deleting the guard and restoring the cast left the suite green, which is what this covers.
     // BOTH fetches are queued, even though the guard should stop at the first. Queueing only the

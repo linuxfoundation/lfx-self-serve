@@ -229,10 +229,15 @@ export enum ServerFeatureFlag {
    * this flag exists to close — so an empty table is the honest answer for a project whose
    * campaigns were never created through campaign-service.
    *
-   * SAFE TO TURN OFF. Both routes are reads with no persisted state, so flipping back restores
-   * the previous behaviour exactly, leak included. That is the opposite of
-   * `CampaignServiceStatusToggle`, which does not come back off — no UUID-shaped id is involved
-   * here, so there is no id space that only one backend can address.
+   * NOTHING IS STRANDED BY TURNING THIS OFF. Both routes are reads with no persisted state and
+   * no UUID-shaped id space, so flipping back strands no work — the opposite of
+   * `CampaignServiceStatusToggle`, where only one backend can address the id space.
+   *
+   * That is not the same as "off works". Where the `GADS_*` variables were deactivated, the
+   * legacy arm calls `getGadsClient()`, which throws before any read — the same mechanism
+   * documented on `CampaignServiceKeywordActions` below. In those environments flipping back
+   * does not restore the previous behaviour; it breaks the keywords and audience reads
+   * outright.
    *
    * Does NOT gate `executeKeywordActions`. That route MUTATES live keywords, so it has its own
    * flag — `CampaignServiceKeywordActions`, defined just below — because a write needs a

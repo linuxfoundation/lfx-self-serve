@@ -416,9 +416,11 @@ smaller number is the correct one.
 A project with no campaign-service campaigns reads empty rather than falling back to the
 account-wide query — the fallback would be the cross-tenant leak this flag closes.
 
-It has no ordering dependency on the other flags, and unlike `STATUS_TOGGLE` it comes back off
-cleanly: both routes are reads with no persisted state and no UUID-keyed id space, so disabling
-it restores the previous behaviour exactly, leak included. It does not cover keyword actions
+It has no ordering dependency on the other flags, and unlike `STATUS_TOGGLE` nothing is stranded
+by disabling it: both routes are reads with no persisted state and no UUID-keyed id space. But
+"off" only WORKS where the `GADS_*` variables are still live — where they were deactivated the
+legacy arm calls `getGadsClient()`, which throws, so flipping back breaks the keywords and
+audience reads rather than restoring them. It does not cover keyword actions
 (pause/remove): those have their own flag, `LFX_CUTOVER_CAMPAIGN_SERVICE_KEYWORD_ACTIONS`,
 documented above — enabling this one leaves them wherever that flag puts them.
 
