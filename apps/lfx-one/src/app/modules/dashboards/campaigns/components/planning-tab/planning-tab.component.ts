@@ -1040,7 +1040,10 @@ export class PlanningTabComponent implements OnInit {
           // validates the upstream response and throws a plain Error when a 2xx carries no
           // usable campaign ("The campaign service reported a create but returned no usable
           // campaign"), and the error handler answers any non-BaseApiError with 500. The
-          // campaign exists at that point -- so a 500 here can mean ALREADY CREATED IN HUBSPOT.
+          // campaign MAY exist at that point -- the validation refuses precisely because the
+          // response cannot be trusted to say -- so a 500 here can mean ALREADY CREATED IN
+          // HUBSPOT. That uncertainty is the reason this branch is unconfirmed, not a claim
+          // either way (Copilot).
           //
           // Not the post-2xx JSON.parse route an earlier version of this comment cited: a parse
           // failure is a SyntaxError, which `executeRequest`'s catch-all now classifies as a
