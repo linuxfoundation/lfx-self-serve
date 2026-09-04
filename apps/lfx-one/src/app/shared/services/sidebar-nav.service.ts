@@ -11,6 +11,7 @@ import {
   MARKETING_OPS_FGA_ENABLED_FLAG,
   MKTG_OS_AGENTS_ENABLED_FLAG,
   MKTG_OS_AGENTS_LABEL,
+  ORG_LENS_CLA_M3_ENABLED_FLAG,
   ORG_LENS_ENABLED_FLAG,
   ORG_LENS_ROI_ENABLED_FLAG,
   SURVEY_LABEL,
@@ -51,6 +52,8 @@ export class SidebarNavService {
   private readonly isMktgOsAgentsEnabled = this.featureFlagService.getBooleanFlag(MKTG_OS_AGENTS_ENABLED_FLAG, false);
   /** Dark-launch gate for the Org Lens ROI Metrics page; hides its org-lens nav entry when off. */
   private readonly isOrgLensRoiEnabled = this.featureFlagService.getBooleanFlag(ORG_LENS_ROI_ENABLED_FLAG, false);
+  /** Dark-launch gate for the M3 org-lens CLA module; hides the CLA Groups nav entry when off. */
+  private readonly isOrgLensClaM3Enabled = this.featureFlagService.getBooleanFlag(ORG_LENS_CLA_M3_ENABLED_FLAG, false);
   /** Dual-gated with `ServerFeatureFlag.MarketingOpsFga` — unlocks Marketing nav for marketing_auditor/campaign_manager grants (LFXV2-2235/LFXV2-2236). */
   private readonly isMarketingOpsFgaEnabled = this.featureFlagService.getBooleanFlag(MARKETING_OPS_FGA_ENABLED_FLAG, false);
 
@@ -105,12 +108,15 @@ export class SidebarNavService {
   });
 
   private readonly visibleOrgLensItems = computed((): SidebarMenuItem[] => {
-    if (!this.isOrgLensRoiEnabled()) return this.orgLensItems;
+    const extras: SidebarMenuItem[] = [];
+    if (this.isOrgLensClaM3Enabled()) extras.push(this.orgClaGroupsNavItem);
+    if (this.isOrgLensRoiEnabled()) extras.push(this.orgRoiNavItem);
+    if (extras.length === 0) return this.orgLensItems;
     const projectsIndex = this.orgLensItems.findIndex((item) => item.routerLink === '/org/projects');
-    // Append rather than prepend if Projects ever goes away, so ROI can't silently jump to the top.
-    if (projectsIndex === -1) return [...this.orgLensItems, this.orgRoiNavItem];
+    // Append rather than prepend if Projects ever goes away, so flagged items can't silently jump to the top.
+    if (projectsIndex === -1) return [...this.orgLensItems, ...extras];
     const afterProjects = projectsIndex + 1;
-    return [...this.orgLensItems.slice(0, afterProjects), this.orgRoiNavItem, ...this.orgLensItems.slice(afterProjects)];
+    return [...this.orgLensItems.slice(0, afterProjects), ...extras, ...this.orgLensItems.slice(afterProjects)];
   });
 
   // Me Lens nav with feature-flagged sections stripped (Security/Akrites is dark-launched).
@@ -578,6 +584,13 @@ export class SidebarNavService {
     icon: 'fa-light fa-chart-mixed-up-circle-dollar',
     routerLink: '/org/roi',
     testId: 'sidebar-org-roi',
+  };
+
+  private readonly orgClaGroupsNavItem: SidebarMenuItem = {
+    label: 'CLA Groups',
+    icon: 'fa-light fa-file-signature',
+    routerLink: '/org/cla-groups',
+    testId: 'sidebar-org-cla-groups',
   };
 
   private readonly orgLensItems: SidebarMenuItem[] = [

@@ -12,6 +12,7 @@ import { lensRedirectGuard } from './shared/guards/lens-redirect.guard';
 import { marketingImpactAccessGuard } from './shared/guards/marketing-impact-access.guard';
 import { newsletterAccessGuard } from './shared/guards/newsletter-access.guard';
 import { orgLensEnabledGuard } from './shared/guards/org-lens-enabled.guard';
+import { orgLensClaM3EnabledGuard } from './shared/guards/org-lens-cla-m3-enabled.guard';
 import { orgLensRoiEnabledGuard } from './shared/guards/org-lens-roi-enabled.guard';
 import { akritesEnabledGuard } from './shared/guards/akrites-enabled.guard';
 import { mktgOsAgentsEnabledGuard } from './shared/guards/mktg-os-agents-enabled.guard';
@@ -134,6 +135,25 @@ export const routes: Routes = [
               icon: 'fa-light fa-folder',
             },
             loadComponent: () => import('./modules/dashboards/org/org-project-detail/org-project-detail.component').then((m) => m.OrgProjectDetailComponent),
+          },
+          {
+            // Componentless parent, so the dark-launch guard is declared once and later M3
+            // children (list, sign, managers, …) inherit it. A looser copy would be a way
+            // into the unfinished feature while `org-lens-cla-m3-enabled` is off.
+            path: 'cla-groups',
+            canMatch: [orgLensClaM3EnabledGuard],
+            data: {
+              lens: 'org',
+              title: 'CLA Groups',
+              description: 'Corporate CLA Groups your organization is party to.',
+              icon: 'fa-light fa-file-signature',
+            },
+            children: [
+              {
+                path: '',
+                loadComponent: () => import('./modules/dashboards/org/org-cla-groups/org-cla-groups.component').then((m) => m.OrgClaGroupsComponent),
+              },
+            ],
           },
           {
             // Componentless parent, so the dark-launch guard is declared once and the project
