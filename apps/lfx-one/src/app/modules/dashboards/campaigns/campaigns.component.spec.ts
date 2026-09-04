@@ -3486,6 +3486,25 @@ describe('CampaignsComponent — email delivery channel', () => {
       expect(internals().emailStaging()).toBe('idle');
     });
 
+    // `conflictMessages` is SHARED with the paid persist banner, so the email-only "re-select this
+    // email type" step must not live in it -- paid has no type selector, and an earlier revision
+    // told paid users to use one. The step belongs to `emailSaveFailureMessage`, the one caller
+    // that knows a stage is involved.
+    it('keeps the email re-select step out of the shared conflict copy', () => {
+      selectEmail();
+      const shared = (internals() as unknown as { conflictMessages: Record<string, string> }).conflictMessages;
+
+      expect(shared['unowned-brief-exists'], 'the shared copy names a control the paid surface does not have').not.toContain('email type');
+
+      const priv = internals() as unknown as {
+        emailBriefConflict: string | null;
+        emailSaveFailureMessage(c: string): string;
+      };
+      priv.emailBriefConflict = 'unowned-brief-exists';
+      const emailCopy = priv.emailSaveFailureMessage('so no audience was built.');
+      expect(emailCopy, 'the email path dropped the re-select step').toContain('Re-select this email type');
+    });
+
     it('keeps the loaded brief when two types share one stage', () => {
       selectEmail();
       internals().emailBriefOutput.set(emailBrief);

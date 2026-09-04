@@ -208,8 +208,13 @@ export class CampaignsComponent {
     // legitimately finds nothing until the operator picks the type back. And it no longer says
     // another session "is holding" the row -- nothing holds it. Loading the same full key is what
     // grants ownership, so the remedy is to load it, not to wait for someone to let go.
+    //
+    // SURFACE-NEUTRAL, because `conflictMessages` feeds the paid persist banner as well as the
+    // email actions. An earlier revision put "re-select this email type" here and so told paid
+    // users to use a control their surface does not have. The email-only step is appended by
+    // `emailSaveFailureMessage`, which is the one caller that knows the stage matters.
     'unowned-brief-exists':
-      'This event already has a saved brief for this send that was not opened here, so this one was not saved over it. Reload, re-select this email type, and re-enter the event URL to open it.',
+      'This event already has a saved brief for this send that was not opened here, so this one was not saved over it. Reload and re-enter the event URL to open it.',
     // Does NOT advise a reload, even though this branch adds the read path that would make one
     // work. Here it would be actively destructive: a stale-brief refusal PROMOTES this session to
     // explicit overwrite permission (see the conflict handler), so the very next Proceed saves
@@ -3273,7 +3278,12 @@ export class CampaignsComponent {
     // each consequence is a lowercase clause written to follow a comma. Joining them raw produced
     // "...re-enter the event URL to open it. so no audience was built."
     const [first, ...rest] = consequence;
-    return `${this.conflictMessages[conflict]} ${first.toUpperCase()}${rest.join('')}`;
+    // The re-select step is appended HERE rather than in `conflictMessages`, which the paid
+    // surface shares: a reload resets `selectedEmailTypeId` to the default, so under a non-default
+    // stage re-entering the URL finds nothing until the operator picks the type back. That advice
+    // is meaningless on paid, which has no type selector.
+    const reselect = conflict === 'unowned-brief-exists' ? ' Re-select this email type first.' : '';
+    return `${this.conflictMessages[conflict]}${reselect} ${first.toUpperCase()}${rest.join('')}`;
   }
 
   /** The persist itself, wrapped by `ensureEmailBriefId`'s in-flight dedup. */
