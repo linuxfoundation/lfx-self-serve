@@ -717,6 +717,23 @@ export class PlanningTabComponent implements OnInit {
     merge(this.deliveryType$.pipe(skip(1)), this.emailStage$.pipe(skip(1)))
       .pipe(takeUntilDestroyed(this.destroyRef))
       .subscribe(() => {
+        // The GENERATED draft goes too, not just the restore offer.
+        //
+        // Clearing only the offer left `briefSubscription`, `eventDetails` and the review step
+        // intact, so the previous stage's draft stayed on screen and Proceed-able under the new
+        // stage's label -- and `onProceedToImplementation` stamps the CURRENT stage onto whatever
+        // content is there, persisting one stage's copy as another stage's send. An in-flight
+        // generate could also land under the new selection for the same reason.
+        //
+        // `reset()` is the right tool: it drops the subscription, the event details and the review
+        // step, and deliberately KEEPS the url and the restore offer -- the url because the
+        // operator typed it and the event has not changed, the offer because it is keyed on
+        // `(slug, foundation)` which a stage change does not touch.
+        this.reset();
+
+        // The offer, however, IS stage-specific: it names one stored row, and under the widened
+        // key that row belongs to the stage that was selected when it was looked up. So it is
+        // cleared here, after the reset that preserves it.
         this.savedBrief.set(null);
         this.savedBriefId = null;
         this.savedBriefEtag = null;

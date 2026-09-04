@@ -824,6 +824,31 @@ describe('PlanningTabComponent delivery-type mode', () => {
     expect(loadBrief).toHaveBeenCalledWith('kubecon-eu-2026', 'foundation-a', 'email', 'Final Countdown');
   });
 
+  // A stage change invalidated the restore OFFER but left the GENERATED draft standing: the
+  // review step, its event details and any in-flight generate all survived. The previous stage's
+  // draft was then Proceed-able under the new stage's label, and `onProceedToImplementation`
+  // stamps the CURRENT stage onto whatever content is there -- persisting one stage's copy as a
+  // different send.
+  it('discards a generated draft when the stage changes', async () => {
+    await build('email');
+    fixture.componentRef.setInput('emailStage', 'CFP Launch');
+    fixture.detectChanges();
+
+    const priv = fixture.componentInstance as unknown as {
+      step: { set(v: string): void; (): string };
+      eventDetails: { set(v: unknown): void; (): unknown };
+    };
+    // A draft sitting on the review step, as after a completed generate.
+    priv.step.set('review');
+    priv.eventDetails.set({ slug: 'kubecon-eu-2026', name: 'KubeCon EU 2026' });
+
+    fixture.componentRef.setInput('emailStage', 'Final Countdown');
+    fixture.detectChanges();
+
+    expect(priv.step(), 'the previous stage draft stayed on the review step').toBe('input');
+    expect(priv.eventDetails(), 'the previous stage event details survived the stage change').toBeNull();
+  });
+
   it('looks a saved brief up in email mode, scoped to the email surface', async () => {
     const loadBrief = vi.fn().mockReturnValue(new Subject());
     vi.spyOn(TestBed.inject(CampaignService), 'loadBrief').mockImplementation(loadBrief);

@@ -1072,6 +1072,39 @@ describe('extractableHtml', () => {
     expect(out).toContain('Tokyo');
   });
 
+  // The nested-svg cases above are all SHORT, so they exercise the stripper and never reach
+  // `boundedSource`. Above the source cap the walk decides where a block ends, and bounding svg
+  // like a raw-text element made a nested one look unclosed: the walk skipped only the opening
+  // tags and copied the outer tail through, where the stripper saw an unmatched close and left the
+  // body in the prompt. These force the capped path.
+  describe.each([
+    ['one level', '<svg><svg>x</svg><text>SECRET</text></svg>'],
+    ['two levels', '<svg><svg><svg>x</svg></svg><text>SECRET</text></svg>'],
+    ['uppercase', '<SVG><SVG>x</SVG><text>SECRET</text></SVG>'],
+  ])('strips a nested svg above the source cap (%s)', (_label, block) => {
+    it('does not leak the outer body through the walk', () => {
+      const out = extractableHtml(`${block}<p>Tokyo</p>${'word '.repeat(40_000)}`);
+
+      expect(out, 'the nested svg was treated as unclosed by the walk').not.toContain('SECRET');
+      expect(out).toContain('Tokyo');
+    });
+  });
+
+  // An svg that never closes: everything after it is still inside the element, so the walk must
+  // drop the remainder rather than copy markup through for the stripper to find unmatched.
+  it('drops the remainder of an unclosed svg above the source cap', () => {
+    const out = extractableHtml(`<svg><text>SECRET</text><p>Tokyo</p>${'word '.repeat(40_000)}`);
+
+    expect(out).not.toContain('SECRET');
+  });
+
+  // Depth tracking must not swallow a well-formed block's siblings or its trailing prose.
+  it('keeps prose after a nested svg above the source cap', () => {
+    const out = extractableHtml(`Held in Tokyo<svg><svg>a</svg>b</svg>Japan.${'word '.repeat(40_000)}`);
+
+    expect(out).toMatch(/Tokyo\s+Japan/);
+  });
+
   it('returns an empty string for input that is entirely strippable', () => {
     expect(extractableHtml('<style>.a{color:red}</style>').trim()).toBe('');
   });

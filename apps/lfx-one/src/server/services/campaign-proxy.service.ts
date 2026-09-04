@@ -840,6 +840,44 @@ function stripSvgBlocks(html: string): string {
 }
 
 /**
+ * Where an `<svg>` block ends, counting nesting.
+ *
+ * `svg` is the only strippable element here that can contain another of its own kind, so its end
+ * is the MATCHING close rather than the first one. Scans forward once with `SVG_TAG_RE`, which is
+ * linear and never backtracks; an element that never closes returns the position just past its
+ * opening tag, so the walk skips the tag and keeps going rather than discarding the rest of the
+ * page.
+ */
+function svgBlockEnd(scan: string, openIndex: number, openEnd: number): number {
+  if (scan[openEnd - 1] === '/') {
+    return openEnd + 1;
+  }
+
+  SVG_TAG_RE.lastIndex = openEnd + 1;
+  let depth = 1;
+  let tag = SVG_TAG_RE.exec(scan);
+
+  while (tag !== null && depth > 0) {
+    if (tag[1] === '/') {
+      depth--;
+      if (depth === 0) {
+        return tag.index + tag[0].length;
+      }
+    } else if (!tag[0].endsWith('/>')) {
+      depth++;
+    }
+    tag = SVG_TAG_RE.exec(scan);
+  }
+
+  // Never closed. Unlike a raw-text block, the remainder cannot simply be walked past: whatever
+  // follows is still INSIDE the element, and `stripSvgBlocks` downstream would see only an
+  // unmatched close and leave it in the prompt. `-1` tells the walk to drop the rest, which is
+  // what the stripper does with an unclosed element below the cap -- so both paths agree.
+  void openIndex;
+  return -1;
+}
+
+/**
  * Cap the source at `MAX_SOURCE_CHARS` of PROSE, skipping strippable blocks whole.
  *
  * A flat slice can land inside a `<script>`/`<style>`/`<svg>` block and cut its closing tag off,
@@ -923,6 +961,25 @@ function boundedSource(html: string): string {
       // opening treated such an svg as unclosed and kept its markup as prose. An earlier revision
       // of this comment asserted "HTML does not nest these elements"; that is true only per tag
       // name, which is exactly the bound this needs.
+      // `svg` is the one strippable element that NESTS, so its block ends at its MATCHING close,
+      // not at the next opening of its own kind. Bounding it like the raw-text elements made a
+      // nested `<svg>` look unclosed above the source cap: the walk skipped only the opening tags
+      // and copied the outer tail through, where `stripSvgBlocks` then saw an unmatched close and
+      // left the body in the prompt. Below the cap the stripper handled it, which is exactly why
+      // the first round of nested-svg tests -- all short inputs -- passed over this.
+      if (opening[1].toLowerCase() === 'svg') {
+        const end = svgBlockEnd(scan, opening.index, openEnd);
+        if (end === -1) {
+          // Unclosed: everything after it is still inside the element. Stop, rather than copy
+          // markup through for the stripper to find unmatched.
+          return out;
+        }
+        pos = end;
+        STRIPPABLE_OPENING_RE.lastIndex = pos;
+        opening = STRIPPABLE_OPENING_RE.exec(scan);
+        continue;
+      }
+
       const nextSameRe = new RegExp(`<${opening[1]}(?=[\\s/>])`, 'gi');
       nextSameRe.lastIndex = openEnd;
       const nextOpening = nextSameRe.exec(scan);
