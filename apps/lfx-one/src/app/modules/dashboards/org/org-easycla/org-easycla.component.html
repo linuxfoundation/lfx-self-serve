@@ -3,11 +3,21 @@ Copyright The Linux Foundation and each contributor to LFX.
 SPDX-License-Identifier: MIT
 -->
 
-<section class="flex flex-col gap-4" data-testid="org-easycla">
-  <h2 class="text-lg font-semibold text-slate-800">EasyCLA</h2>
+<main class="container mx-auto flex flex-col gap-6 px-4 sm:px-6 lg:px-8" data-testid="org-easycla-page">
+  <header class="flex flex-col gap-2" data-testid="org-easycla-header">
+    <h1 class="font-display font-light text-2xl" data-testid="org-easycla-title">
+      @if (companyName()) {
+        EasyCLA &mdash; {{ companyName() }}
+      } @else {
+        EasyCLA
+      }
+    </h1>
+    <p class="text-sm text-gray-500" data-testid="org-easycla-subtitle">The corporate CLAs your organization has signed across Linux Foundation projects.</p>
+  </header>
+
   <lfx-empty-state
     data-testid="org-easycla-empty-state"
     icon="fa-light fa-file-signature"
     title="No CLAs signed yet"
     subtitle="Corporate CLAs your organization signs will appear here." />
-</section>
+</main>
