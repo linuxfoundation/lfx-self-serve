@@ -3556,6 +3556,23 @@ describe('CampaignsComponent — email delivery channel', () => {
       );
     });
 
+    // The paid restore adopts the brief's own program; the email restore did not, so an Events
+    // brief could be opened while the selector still said Education. Correcting it by hand then
+    // triggers the program-switch reset and discards the brief the operator just restored.
+    it('adopts the restored email brief program', () => {
+      selectEmail();
+      internals().selectorForm.controls.programType.setValue('education');
+
+      (
+        internals() as unknown as {
+          onRestoreSavedEmailBrief(b: unknown, id: string, etag: string | null, approved: boolean): void;
+        }
+      ).onRestoreSavedEmailBrief({ ...emailBrief, programType: 'events' }, 'brief-1', 'W/"1"', true);
+
+      const programControl = internals().selectorForm.controls.programType as unknown as { value: string };
+      expect(programControl.value, 'the restored brief opened under the wrong program').toBe('events');
+    });
+
     it('keeps the loaded brief when two types share one stage', () => {
       selectEmail();
       internals().emailBriefOutput.set(emailBrief);

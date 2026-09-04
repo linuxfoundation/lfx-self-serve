@@ -807,7 +807,11 @@ describe('extractableHtml', () => {
     const out = extractableHtml(`${evil}<p>Tokyo</p>`);
     const elapsed = Date.now() - started;
 
-    expect(elapsed, `extractableHtml took ${elapsed}ms on 80k unclosed <style tokens; the input cap is not applied`).toBeLessThan(2000);
+    // 4s, not 2s. Locally this is ~0.4s and the unbounded version was ~6.1s, so the budget only has
+    // to separate those two -- and a shared CI runner sits between them: 2s failed there at 2212ms
+    // while the cap was working correctly. A perf assertion that fails on a slow runner teaches
+    // people to re-run CI, which is worse than no assertion.
+    expect(elapsed, `extractableHtml took ${elapsed}ms on 80k unclosed <style tokens; the input cap is not applied`).toBeLessThan(4000);
     expect(out.length).toBeLessThanOrEqual(60_000);
   });
 
@@ -831,6 +835,23 @@ describe('extractableHtml', () => {
     const boiler = '<div class="wrapper"><span class="x">   </span></div>\n'.repeat(1500);
 
     expect(extractableHtml(`<p>KubeCon Europe, Amsterdam</p>${boiler}`)).toContain('Amsterdam');
+  });
+
+  // The JSON-LD matcher runs BEFORE the source cap, so it needs its own bound. Its lazy span makes
+  // every UNMATCHED opening rescan the rest of the document — quadratic in the opening count, and
+  // measured at ~7.7s for 40k openings. An earlier version of this file claimed this matcher was
+  // "anchored and costs ~1ms": true against `<style` input, wrong for its own worst case.
+  it('does not stall on a page full of unmatched json-ld openings', () => {
+    const evil = '<script type="application/ld+json">'.repeat(40_000);
+
+    const started = Date.now();
+    const out = extractableHtml(`${evil}<p>Tokyo</p>`);
+    const elapsed = Date.now() - started;
+
+    // 4s for the same reason as the sibling test above: separate ~0ms from the ~7.7s this guards
+    // against, with room for a loaded CI runner in between.
+    expect(elapsed, `extractableHtml took ${elapsed}ms on 40k unmatched json-ld openings`).toBeLessThan(4000);
+    expect(out.length).toBeLessThanOrEqual(60_000);
   });
 
   it('returns an empty string for input that is entirely strippable', () => {

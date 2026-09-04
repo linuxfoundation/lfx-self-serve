@@ -1805,6 +1805,26 @@ export class CampaignsComponent {
    * Having actually opened it is precisely what this call records.
    */
   protected onRestoreSavedEmailBrief(brief: CampaignBriefOutput, briefId: string, etag: string | null | undefined, approved: boolean): void {
+    // Adopt the brief's own PROGRAM first, exactly as the paid restore does. `program_type` is not
+    // part of the upstream brief key, so an Events brief can be offered while the selector says
+    // Education -- and correcting that by hand afterwards fires the program-switch reset, which
+    // discards the brief the operator just restored. `adoptingRestoredProgram` is what stops the
+    // subscription treating this as an operator-initiated switch.
+    //
+    // Driven through the CONTROL rather than the signal, for the same reason as the paid path: the
+    // subscription mirrors the control into `selectedProgramType`, so writing the signal alone
+    // would leave the visible selector showing the old program.
+    if (brief.programType !== undefined && brief.programType !== this.selectedProgramType()) {
+      this.adoptingRestoredProgram = true;
+      try {
+        this.selectorForm.controls.programType.setValue(brief.programType);
+      } finally {
+        // `finally`, so a throw inside the subscription cannot leave the flag set and turn every
+        // later program switch into a silent no-reset.
+        this.adoptingRestoredProgram = false;
+      }
+    }
+
     const key = this.ownershipKey(this.activeFoundationSlug(), brief);
     if (key !== null) {
       // Bumped for the same reason the paid path bumps it: a restore makes this session the writer

@@ -715,6 +715,32 @@ const MAX_SOURCE_CHARS = 150_000;
  * `lastIndex` is not shared across the two calls because `.match` and `.replace` each reset it
  * for a global regex.
  */
+/**
+ * The JSON-LD OPENING tag alone, used to count blocks before the full matcher runs.
+ *
+ * Linear where the full matcher is quadratic: it has no lazy span, so there is nothing to
+ * backtrack. That is the whole point -- see MAX_JSON_LD_BLOCKS.
+ */
+const JSON_LD_OPENING_RE = /<script(?=[\s/>])[^>]*\stype\s*=\s*["']application\/ld\+json["'][^>]*>/gi;
+
+/**
+ * How many JSON-LD openings a page may contain before extraction gives up on them.
+ *
+ * The full matcher carries a lazy `[\s\S]*?`, so every UNMATCHED opening rescans the rest of the
+ * document for a `</script>` that never comes -- quadratic in the opening count. Measured: 40k
+ * unmatched openings cost ~7.7s, which is the same event-loop stall `MAX_SOURCE_CHARS` fixes for
+ * the strippers, reached through the one pass that runs BEFORE it.
+ *
+ * An earlier revision of this file asserted this matcher was "anchored and costs ~1ms" and so not
+ * part of the hazard. That was measured only against `<style` input, where it is indeed 1ms; it
+ * was wrong for its own worst case, and review caught it.
+ *
+ * Counting first is cheap because `JSON_LD_OPENING_RE` has no lazy span: ~0ms on the adversarial
+ * page. 64 is far above any real page -- schema.org markup runs to a handful of blocks -- so a
+ * page carrying more is not one whose structured data is worth trusting.
+ */
+const MAX_JSON_LD_BLOCKS = 64;
+
 const JSON_LD_RE = /<script(?=[\s/>])[^>]*\stype\s*=\s*["']application\/ld\+json["'][^>]*>[\s\S]*?<\/script(\s[^>]*)?>/gi;
 
 /**
@@ -781,7 +807,16 @@ export function extractableHtml(html: string): string {
   // the page's prose past any sane source cap, and cutting there loses the very facts the
   // extraction is for. Removing the block first shrinks the remaining source by exactly the part
   // that was never going to be scanned anyway.
-  const jsonLd = (html.match(JSON_LD_RE) ?? []).join(' ');
+  // COUNT before matching. The count is linear; the match is not, and on a page with thousands of
+  // unmatched openings it stalls the event loop before `MAX_SOURCE_CHARS` below ever applies.
+  JSON_LD_OPENING_RE.lastIndex = 0;
+  let openings = 0;
+  while (openings <= MAX_JSON_LD_BLOCKS && JSON_LD_OPENING_RE.exec(html) !== null) {
+    openings++;
+  }
+  // Skipped, not truncated: a page with this many openings is adversarial, and its structured data
+  // is not worth the scan. Prose still reaches the prompt through the stripped body below.
+  const jsonLd = openings > MAX_JSON_LD_BLOCKS ? '' : (html.match(JSON_LD_RE) ?? []).join(' ');
   // Now truncate. Every pass below is quadratic on pathological input -- an unclosed `<style `
   // makes each start position scan to end-of-document -- so capping the OUTPUT afterwards would
   // be too late: the cost is already paid.
