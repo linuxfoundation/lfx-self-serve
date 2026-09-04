@@ -8,15 +8,14 @@ import { environment } from '@environments/environment';
 import { ProjectSettings } from '@lfx-one/shared/interfaces';
 import { formatAnnouncementDateLabel } from '@lfx-one/shared/utils';
 import { PermissionsService } from '@services/permissions.service';
-import { PersonaService } from '@services/persona.service';
 import { ProjectContextService } from '@services/project-context.service';
 import { ProjectService } from '@services/project.service';
 import { SkeletonModule } from 'primeng/skeleton';
-import { catchError, filter, of, switchMap, tap } from 'rxjs';
+import { catchError, filter, map, of, switchMap, tap } from 'rxjs';
 
 /**
  * The Formation sidebar card (GH-1955) — sub-stage pill, announcement date, slug, and — for
- * `PersonaService.isLFStaff` only — a deep link into the admin tool. Rendered only while the
+ * project `auditor`s (and writers) only — a deep link into the admin tool. Rendered only while the
  * project is Draft/Formation; see `ProjectContextService.isActiveProjectInFormation`.
  *
  * Epic 1 scope (revised #1955, 2 Sep 2026): the card renders only fields the synced record already
@@ -26,10 +25,10 @@ import { catchError, filter, of, switchMap, tap } from 'rxjs';
  * directly above this card in the sidebar already covers `executive_director`/`program_manager`/
  * `opportunity_owner`.
  *
- * **Staff-only gating**: the ticket specifies a `formation_admin` permission, which exists nowhere
- * in this repo or elsewhere in the `linuxfoundation` org (verified via `gh api` `search/code`).
- * `isLFStaff` is the closest available gate. See the `// TODO(#2148)` at its declaration below for
- * the open FGA-relation question this substitution raises.
+ * **Staff-only gating**: FGA defines `writer`/`auditor`/`participant`/`item_owner` on `formation`;
+ * GH-1954 grants LF Staff `auditor` (not `writer`) on non-public projects, so the guard checks
+ * `auditor` OR `writer` on the project (see `initIsAuditor` below) — a `writer`-only guard would
+ * hide this deep link from most of staff.
  *
  * The ticket also asked for two distinct admin-tool links ("Edit stage" and "Set up"). Neither a
  * `?tab=` param nor a `/setup` sub-route exists on `environment.urls.pcc` (verified — see
@@ -48,7 +47,6 @@ import { catchError, filter, of, switchMap, tap } from 'rxjs';
 })
 export class FormationCardComponent {
   private readonly permissionsService = inject(PermissionsService);
-  private readonly personaService = inject(PersonaService);
   private readonly projectContextService = inject(ProjectContextService);
   private readonly projectService = inject(ProjectService);
 
@@ -61,11 +59,6 @@ export class FormationCardComponent {
   protected readonly loading = signal(true);
   protected readonly hasError = signal(false);
 
-  // TODO(#2148): FGA defines writer/auditor/participant/item_owner on `formation`; #1954 grants LF
-  // Staff `auditor`, not `writer`, so a `writer`-based guard would hide this deep link from most of
-  // staff. The correct relation for this gate is an open architecture decision.
-  protected readonly isLFStaff = computed(() => this.personaService.isLFStaff());
-
   protected readonly project = this.projectContextService.activeProject;
   protected readonly formationSubStage = this.projectContextService.activeProjectFormationSubStage;
   private readonly projectUid = computed(() => this.project()?.uid ?? null);
@@ -73,6 +66,7 @@ export class FormationCardComponent {
   protected readonly settings: Signal<ProjectSettings | null> = this.initSettings();
   protected readonly announcementDateLabel: Signal<string> = this.initAnnouncementDateLabel();
 
+  protected readonly isAuditor: Signal<boolean> = this.initIsAuditor();
   protected readonly sfid: Signal<string | null> = this.initSfid();
   protected readonly adminToolUrl: Signal<string> = this.initAdminToolUrl();
 
@@ -106,12 +100,30 @@ export class FormationCardComponent {
     return computed(() => formatAnnouncementDateLabel(this.settings()?.announcement_date));
   }
 
-  // Only fetched for LF staff — everyone else can never see the admin-tool link this resolves for,
-  // so a non-staff viewer shouldn't pay for the round trip. `ProjectService.getProjectSfid` already
-  // logs and resolves to `null` on failure — no additional catchError needed here.
+  // Dedicated `auditor` FGA check (GH-1955) — independent of `ProjectContextService.activeProject`,
+  // which doesn't request this flag. `writer === true` is load-bearing, not redundant: the server
+  // skips the auditor check entirely once a caller is already a writer (a strict superset of
+  // access), so a writer's `auditor` field comes back `undefined` — without the OR, a project
+  // writer would be wrongly denied this deep link.
+  private initIsAuditor(): Signal<boolean> {
+    return toSignal(
+      toObservable(this.projectUid).pipe(
+        filter((uid): uid is string => !!uid),
+        switchMap((uid) => this.projectService.getProject(uid, false, { auditor: true })),
+        map((project) => project?.writer === true || project?.auditor === true),
+        catchError(() => of(false))
+      ),
+      { initialValue: false }
+    );
+  }
+
+  // Only fetched once `isAuditor()` resolves true — everyone else can never see the admin-tool link
+  // this resolves for, so a non-auditor viewer shouldn't pay for the round trip.
+  // `ProjectService.getProjectSfid` already logs and resolves to `null` on failure — no additional
+  // catchError needed here.
   private initSfid(): Signal<string | null> {
     return toSignal(
-      toObservable(computed(() => (this.isLFStaff() ? this.projectUid() : null))).pipe(
+      toObservable(computed(() => (this.isAuditor() ? this.projectUid() : null))).pipe(
         filter((uid): uid is string => !!uid),
         switchMap((uid) => this.projectService.getProjectSfid(uid))
       ),

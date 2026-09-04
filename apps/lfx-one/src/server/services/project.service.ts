@@ -332,7 +332,13 @@ export class ProjectService {
   /**
    * Fetches a single project by ID
    */
-  public async getProjectById(req: Request, uid: string, access: boolean = true, includeMeetingCoordinator: boolean = false): Promise<Project> {
+  public async getProjectById(
+    req: Request,
+    uid: string,
+    access: boolean = true,
+    includeMeetingCoordinator: boolean = false,
+    includeAuditor: boolean = false
+  ): Promise<Project> {
     const project = await this.microserviceProxy.proxyRequest<Project>(req, 'LFX_V2_SERVICE', `/projects/${uid}`, 'GET');
 
     if (!project) {
@@ -345,32 +351,46 @@ export class ProjectService {
 
     if (access) {
       const writerProject = await this.accessCheckService.addAccessToResource(req, project, 'project');
-      // Skip meeting_coordinator check when already a writer — the guard allows writer OR
-      // meeting_coordinator, so the extra round trip can't change the outcome.
+      // Skip meeting_coordinator/auditor checks when already a writer — writer is a superset of
+      // both, so the extra round trips can't change the outcome.
       // Return the field as undefined (omitted) rather than false — false would be a
       // false-negative assertion since the role was never actually checked for writers.
       if (writerProject.writer) {
         return writerProject;
       }
+      let result = writerProject;
       // Only run the meeting_coordinator FGA check when the caller explicitly requests it.
       // This field is consumed by exactly one branch of writer.guard.ts; running it on every
       // GET /api/projects/:slug call would add a second sequential access-check round-trip
       // for all non-writer callers (guards, components, etc.) that never read the field.
-      if (!includeMeetingCoordinator) {
-        return writerProject;
+      if (includeMeetingCoordinator) {
+        const isMeetingCoordinator = await this.accessCheckService
+          .checkSingleAccess(req, { resource: 'project', id: project.uid, access: 'meeting_coordinator' })
+          .catch((error) => {
+            logger.warning(req, 'get_project_by_id', 'meeting coordinator check failed, skipping field', {
+              project_uid: project.uid,
+              error: error instanceof Error ? error.message : String(error),
+            });
+            // Return undefined rather than false — false implies the check ran clean and found no
+            // role; undefined preserves the "unknown" semantics documented on Project.meetingCoordinator.
+            return undefined;
+          });
+        result = { ...result, meetingCoordinator: isMeetingCoordinator };
       }
-      const isMeetingCoordinator = await this.accessCheckService
-        .checkSingleAccess(req, { resource: 'project', id: project.uid, access: 'meeting_coordinator' })
-        .catch((error) => {
-          logger.warning(req, 'get_project_by_id', 'meeting coordinator check failed, skipping field', {
+      // Only run the auditor FGA check when the caller explicitly requests it (FormationCardComponent's
+      // staff deep-link guard) — same rationale as meeting_coordinator above.
+      if (includeAuditor) {
+        const isAuditor = await this.accessCheckService.checkSingleAccess(req, { resource: 'project', id: project.uid, access: 'auditor' }).catch((error) => {
+          logger.warning(req, 'get_project_by_id', 'auditor check failed, skipping field', {
             project_uid: project.uid,
             error: error instanceof Error ? error.message : String(error),
           });
-          // Return undefined rather than false — false implies the check ran clean and found no
-          // role; undefined preserves the "unknown" semantics documented on Project.meetingCoordinator.
+          // Return undefined rather than false — see meeting_coordinator comment above.
           return undefined;
         });
-      return { ...writerProject, meetingCoordinator: isMeetingCoordinator };
+        result = { ...result, auditor: isAuditor };
+      }
+      return result;
     }
 
     return project;
