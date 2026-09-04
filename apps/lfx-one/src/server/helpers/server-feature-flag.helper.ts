@@ -269,7 +269,9 @@ export enum ServerFeatureFlag {
    * deactivated: `getGadsClient()` throws before any mutate is attempted. So "off" is not a
    * working fallback here — it is the state in which keyword actions do not work at all. Nor is
    * it one for the INSIGHTS reads, whose legacy arm calls the same `getGadsClient()`; the
-   * difference is only that a failed read is visible immediately while a failed write is not. Same accepted values as the flags above.
+   * difference is when the breakage SURFACES: a read fails as soon as the tab is opened, while a
+   * write fails only once an operator attempts an action -- at which point it is announced, not
+   * silent (`announceKeywordOutcome` on both error arms). Same accepted values as the flags above.
    */
   CampaignServiceKeywordActions = 'LFX_CUTOVER_CAMPAIGN_SERVICE_KEYWORD_ACTIONS',
 
