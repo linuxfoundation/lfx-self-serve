@@ -189,13 +189,19 @@ export class OrgLensKeyContactsService {
 
   private async getEmployeesByOrgUid(req: Request, b2bOrgUid: string): Promise<KeyContactEmployee[]> {
     if (!isFilterSafeIdentifier(b2bOrgUid)) return [];
-    const docs = await fetchAllQueryResources<KeyContactDoc>(req, (pageToken) =>
-      this.microserviceProxy.proxyRequest<QueryServiceResponse<KeyContactDoc>>(req, 'LFX_V2_SERVICE', '/query/resources', 'GET', {
-        type: 'key_contact',
-        tags: `b2b_org_uid:${b2bOrgUid}`,
-        per_page: 200,
-        ...(pageToken && { page_token: pageToken }),
-      })
+    // The username-agreement check below is only sound over the COMPLETE document set: a page that
+    // silently dropped could hide the one document that disagrees, and a partial group would then
+    // "agree" on an identity the full set rejects. Fail the fetch rather than compute on a subset.
+    const docs = await fetchAllQueryResources<KeyContactDoc>(
+      req,
+      (pageToken) =>
+        this.microserviceProxy.proxyRequest<QueryServiceResponse<KeyContactDoc>>(req, 'LFX_V2_SERVICE', '/query/resources', 'GET', {
+          type: 'key_contact',
+          tags: `b2b_org_uid:${b2bOrgUid}`,
+          per_page: 200,
+          ...(pageToken && { page_token: pageToken }),
+        }),
+      { failOnPartial: true }
     );
 
     // Group every active document by address first, then resolve one username per group. Taking the
