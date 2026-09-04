@@ -41,6 +41,7 @@ export * from './insights.utils';
 export * from './pagination.utils';
 export * from './project-counts.utils';
 export * from './identity.utils';
+export * from './impersonation.utils';
 export * from './org-leaderboard-detail.utils';
 export * from './enrollment.utils';
 export * from './org-selector.utils';
