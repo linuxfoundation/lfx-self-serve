@@ -116,7 +116,12 @@ export interface FormationItem {
   owner: FormationUser | null;
   due_date: string | null;
   action: FormationItemAction;
-  /** For `link`/`status_only` rows that open something external. */
+  /**
+   * Resolved destination for the row's action — the expansion output of the template's
+   * {@link FormationTemplateItem.action_link}, substituted once and stored static. Any action
+   * kind may have one: a `manual` row still says where the work is done. May be an in-app
+   * relative path or an absolute external URL; `null` when the row has no destination.
+   */
   action_href: string | null;
   detail: string | null;
   notes: string | null;
@@ -202,6 +207,16 @@ export interface FormationTemplateItem {
   owner_team: FormationOwnerTeam;
   /** `'status_only'` IS the status-only signal — there is no separate boolean to keep in sync with it. */
   action: FormationActionType;
+  /**
+   * Optional template-defined destination for the row's action. Resolved ONCE at expansion with
+   * `{{project.uid}}` / `{{project.slug}}` substitution and stored static on the resulting
+   * {@link FormationItem.action_href} — the runtime field is the resolved value, this one is the
+   * unresolved template. In-app relative paths (`/project/{{project.uid}}/committees/new`) or
+   * absolute external URLs. Absent means the row's action has no destination.
+   * TODO(#1957): the formation service owns the substitution; nothing in this repo resolves
+   * `{{…}}` today.
+   */
+  action_link?: string;
   sub_items?: FormationTemplateSubItem[];
 }
 
