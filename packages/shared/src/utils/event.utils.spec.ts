@@ -74,8 +74,15 @@ describe('buildCertificateFileName', () => {
   it('slugifies a non-ASCII event name into a safe, readable name rather than rejecting it', () => {
     vi.stubEnv('TZ', 'UTC');
     const name = buildCertificateFileName('Kubernetes 会議 2025', '2025-06-01T00:00:00.000Z', 'evt-5');
-    expect(name.startsWith('certificate-of-attendance-')).toBe(true);
-    expect(name.endsWith('-2025-06-01.pdf')).toBe(true);
+    expect(name).toBe('certificate-of-attendance-kubernetes-会議-2025-2025-06-01.pdf');
+  });
+
+  it('keeps an all-non-ASCII event name as its own segment rather than collapsing to an empty slug', () => {
+    vi.stubEnv('TZ', 'UTC');
+    // A purely non-Latin name has nothing an ASCII-only slugger would keep; two such events on
+    // the same date must not collide on the same filename.
+    const name = buildCertificateFileName('会議', '2025-06-01T00:00:00.000Z', 'evt-13');
+    expect(name).toBe('certificate-of-attendance-会議-2025-06-01.pdf');
   });
 
   it('omits the date segment when the start date is missing', () => {

@@ -102,7 +102,10 @@ export class EventsTableComponent {
           const fileName = headerFileName ?? `certificate-${eventId}.pdf`;
           const url = URL.createObjectURL(blob);
           downloadFromUrl(url, fileName);
-          URL.revokeObjectURL(url);
+          // Deferred: some browsers begin the download asynchronously, and revoking
+          // synchronously can invalidate the blob URL before it is consumed (see
+          // brand-kit-form.component.ts and mktg-agent-run.component.ts).
+          setTimeout(() => URL.revokeObjectURL(url), 0);
         },
         error: () => {
           this.messageService.add({

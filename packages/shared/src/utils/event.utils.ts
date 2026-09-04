@@ -3,7 +3,6 @@
 
 import { EVENT_SOURCE_BACKFILL } from '../constants/events.constants';
 import { sanitizeFilename } from './file.utils';
-import { slugify } from './string.utils';
 
 /**
  * True when an event registration row came from the CSV backfill import.
@@ -33,6 +32,22 @@ export function isBackfillEventSource(source: string | null | undefined): boolea
 const MAX_NAME_SLUG_LENGTH = 100;
 
 /**
+ * Unicode-aware slug for the certificate filename: keeps letters/digits from any script
+ * (unlike the ASCII-only `slugify()` in string.utils.ts), so an all-non-Latin event name still
+ * yields a distinct, readable segment instead of collapsing to '' and colliding with other
+ * events on the same date. `sanitizeFilename()` still runs over the final result.
+ */
+function slugifyEventName(text: string): string {
+  const slug = text
+    .normalize('NFKC')
+    .toLocaleLowerCase()
+    .replace(/[^\p{L}\p{N}]+/gu, '-');
+  const start = slug.startsWith('-') ? 1 : 0;
+  const end = slug.endsWith('-') ? slug.length - 1 : slug.length;
+  return slug.slice(start, end);
+}
+
+/**
  * Local calendar-date `YYYY-MM-DD` for a timestamp, matching the date `CertificateService` prints
  * in the PDF body (also derived from local `Date` getters) so the filename and the certificate
  * text never disagree. Returns '' when missing/unparseable.
@@ -53,7 +68,7 @@ function toDateStamp(value: Date | string | null | undefined): string {
  * discriminator.
  */
 export function buildCertificateFileName(eventName: string | null | undefined, startDate: Date | string | null | undefined, eventId: string): string {
-  const nameSlug = eventName ? slugify(eventName).slice(0, MAX_NAME_SLUG_LENGTH) : '';
+  const nameSlug = eventName ? slugifyEventName(eventName).slice(0, MAX_NAME_SLUG_LENGTH) : '';
   const dateStamp = toDateStamp(startDate);
 
   const parts = ['certificate-of-attendance'];
