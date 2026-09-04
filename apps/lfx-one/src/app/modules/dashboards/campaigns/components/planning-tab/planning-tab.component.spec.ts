@@ -798,10 +798,26 @@ describe('PlanningTabComponent delivery-type mode', () => {
 
     expect(loadBrief).toHaveBeenCalledWith('kubecon-eu-2026', 'foundation-a', 'email', 'CFP Launch');
 
+    // Seed a restore offer, or the clearing assertion below is vacuous: `savedBrief` is null for
+    // the whole test otherwise, so it would pass with the clearing removed. Verified -- without
+    // this line, dropping `emailStage$` from the clearing subscription still passed.
+    (fixture.componentInstance as unknown as { savedBrief: { set(v: unknown): void } }).savedBrief.set({
+      eventDetails: { slug: 'kubecon-eu-2026' },
+    });
+
     // A different send of the same series is a DIFFERENT brief, so this must issue its own lookup.
     loadBrief.mockClear();
     fixture.componentRef.setInput('emailStage', 'Final Countdown');
     fixture.detectChanges();
+    // BEFORE the debounce. The offer must clear the moment the stage changes, not when the
+    // replacement lookup answers -- otherwise the previous stage's Restore button stays clickable
+    // for the whole 500ms window and restores the wrong send. The foundation-switch tests above
+    // assert the same thing for their half of the key.
+    expect(
+      (fixture.componentInstance as unknown as { savedBrief(): unknown }).savedBrief(),
+      'the previous stage Restore offer survived into the debounce window'
+    ).toBeNull();
+
     await new Promise((resolve) => setTimeout(resolve, 600));
     await fixture.whenStable();
 

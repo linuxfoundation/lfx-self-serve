@@ -3314,9 +3314,17 @@ export class CampaignsComponent {
       this.campaignService.persistBrief(brief, projectSlug, owned?.id ?? null, owned?.etag ?? null, owned?.absence === 'overwrite')
     );
     const briefId = persisted.briefId ?? '';
-    // Recorded BEFORE the branches below, so a refusal that yields no id can still explain
-    // itself. Cleared on success so a later save never renders a previous attempt's reason.
-    this.emailBriefConflict = briefId === '' ? (persisted.conflict ?? null) : null;
+    // Keyed on the RETURN PATH, not on whether the server sent an id back.
+    //
+    // `stale-brief` and `unverified-validator` both return a NON-EMPTY briefId with
+    // `approved: false`, so testing `briefId === ''` dropped exactly those two: this method still
+    // returns `''` for them (the approval gate below refuses the id), and the operator was then
+    // shown the generic "Try again" copy for a refusal that retrying alone cannot clear. That is
+    // the gap this field exists to close.
+    //
+    // Recorded provisionally here so a refusal explains itself, and cleared only on the ONE path
+    // that actually succeeds -- see the `return briefId` branches below.
+    this.emailBriefConflict = persisted.conflict ?? null;
     // An id is not enough: campaign-service gates `build-audience` AND campaign creation on the
     // brief having reached `approved`, and `saveBrief` deliberately returns an id with
     // `approved: false` when the approve step failed. Caching that id would make every downstream
@@ -3327,8 +3335,13 @@ export class CampaignsComponent {
       // holds. Returning it is fine -- the caller that started this persist asked for it -- but
       // writing it into the SHARED cache is what strands the next action on the abandoned brief.
       if (generation !== this.emailBriefPersistGeneration) {
+        // Cleared on this path too: the persist SUCCEEDED, and the caller that started it is
+        // about to receive the id. Leaving a conflict set would render a stale reason against a
+        // save that worked.
+        this.emailBriefConflict = null;
         return briefId;
       }
+      this.emailBriefConflict = null;
       this.emailBriefId.set(briefId);
       // Record OWNERSHIP too, not just the id. `emailBriefId` is cleared by
       // `resetEmailBriefDerivedState`, so caching only there meant the next save after a Proceed

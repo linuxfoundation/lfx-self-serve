@@ -3505,6 +3505,57 @@ describe('CampaignsComponent — email delivery channel', () => {
       expect(emailCopy, 'the email path dropped the re-select step').toContain('Re-select this email type');
     });
 
+    // `stale-brief` and `unverified-validator` return a NON-EMPTY briefId with approved:false, so
+    // recording the conflict only when the id is empty dropped it — and the operator got the
+    // generic "Try again" copy for a refusal that retrying alone cannot clear. That is the exact
+    // gap `emailBriefConflict` was added to close.
+    it.each([['stale-brief'], ['unverified-validator']])('records the %s conflict even though the server returned a brief id', async (conflict) => {
+      selectEmail();
+      internals().emailBriefOutput.set(emailBrief);
+      vi.spyOn(TestBed.inject(CampaignService), 'persistBrief').mockReturnValue(
+        of({ enabled: true, briefId: 'brief-77', etag: null, created: false, approved: false, conflict }) as never
+      );
+
+      await (internals() as unknown as { ensureEmailBriefId(b: unknown, p: string): Promise<string> }).ensureEmailBriefId(emailBrief, 'tlf');
+
+      const priv = internals() as unknown as { emailBriefConflict: string | null; emailSaveFailureMessage(c: string): string };
+      expect(priv.emailBriefConflict, 'the conflict was dropped because the server returned an id').toBe(conflict);
+      expect(priv.emailSaveFailureMessage('so no audience was built.')).not.toContain('The brief could not be saved,');
+    });
+
+    // Ownership is what `onRestoreSavedEmailBrief`'s own JSDoc calls "the part that matters", and
+    // no test asserted it: removing the `rememberBriefId` block left the restore tests green.
+    // Without the record, the next save arrives with no `knownBriefId` and is refused as
+    // `unowned-brief-exists` — against a row this session demonstrably just opened.
+    //
+    // The UNAPPROVED case is the one that needs it most: `emailBriefId` deliberately stays empty
+    // there, so ownership is the ONLY thing carrying the restore forward.
+    it.each([
+      ['an approved brief', true, 'brief-approved'],
+      ['an unapproved brief', false, 'brief-unapproved'],
+    ])('records ownership when restoring %s', (_label, approved, id) => {
+      selectEmail();
+
+      (
+        internals() as unknown as {
+          onRestoreSavedEmailBrief(b: unknown, id: string, etag: string | null, approved: boolean): void;
+        }
+      ).onRestoreSavedEmailBrief(emailBrief, id, 'W/"4"', approved);
+
+      const priv = internals() as unknown as {
+        ownershipKey(p: string, b: unknown): string | null;
+        knownBriefIds: Map<string, { id: string; etag: string | null }>;
+        activeFoundationSlug(): string;
+      };
+      // The handler keys on `activeFoundationSlug()`, so the test must read the same source rather
+      // than hardcode a slug -- a mismatch here would look like "no ownership recorded".
+      const key = priv.ownershipKey(priv.activeFoundationSlug(), emailBrief);
+      expect(key).not.toBeNull();
+      expect(priv.knownBriefIds.get(key as string), 'the restore recorded no ownership; the next save will be refused as unowned').toEqual(
+        expect.objectContaining({ id, etag: 'W/"4"' })
+      );
+    });
+
     it('keeps the loaded brief when two types share one stage', () => {
       selectEmail();
       internals().emailBriefOutput.set(emailBrief);

@@ -680,6 +680,43 @@ const EDUCATION_EXTRACTION_PROMPT = `Extract structured course/certification det
 
 If a field cannot be determined, use null.`;
 
+/** Total characters of page content that may reach the extraction prompt. */
+const EXTRACTION_CHAR_CAP = 60_000;
+
+/** The slice of that budget JSON-LD may claim before prose gets the rest. */
+const JSON_LD_BUDGET = 20_000;
+
+/**
+ * Characters of RAW page source the strippers may scan, before any of them runs.
+ *
+ * The output cap below bounds what reaches the prompt; this bounds the WORK. The strippers are
+ * lazy-quantified, so an unclosed `<style ` makes each start position scan to end-of-document
+ * looking for a close that never comes -- quadratic in the number of such tokens, and the SSR
+ * process is single-threaded, so the whole BFF stalls for every concurrent user. Measured on an
+ * adversarial page of repeated `<style ` tokens: 4x the tokens costs 64x the time.
+ *
+ * 150k is chosen from that measurement, not by feel. Worst case at 150k is ~0.4s; at 500k it is
+ * ~4.9s and at 1M ~19.5s. It costs no extraction quality either: a heavily-templated page
+ * truncated to 150k still strips to ~144k, well above the 60k the output cap would keep.
+ *
+ * Tightening the REGEXES was tried first and is worse. An unrolled `[^<]*(?:<(?!\/style)[^<]*)*`
+ * takes ~55s on the same input, and bounding the lazy span with `{0,200000}?` takes ~16s -- both
+ * far worse than the 6s they were meant to fix. Bounding the input is what actually works.
+ */
+const MAX_SOURCE_CHARS = 150_000;
+
+/**
+ * The JSON-LD `<script>` element, matched once and used twice: to PRESERVE the block, and to
+ * remove it before the remaining source is truncated.
+ *
+ * One constant rather than two literals because the two uses must stay identical -- if the
+ * removal pattern drifted from the match pattern, a block would be preserved AND left in the
+ * source, double-counting against the budget. `g` makes `.replace` remove every occurrence;
+ * `lastIndex` is not shared across the two calls because `.match` and `.replace` each reset it
+ * for a global regex.
+ */
+const JSON_LD_RE = /<script(?=[\s/>])[^>]*\stype\s*=\s*["']application\/ld\+json["'][^>]*>[\s\S]*?<\/script(\s[^>]*)?>/gi;
+
 /**
  * Reduce a fetched page to the part an extraction can actually read.
  *
@@ -709,12 +746,6 @@ If a field cannot be determined, use null.`;
  * the PROMPT, which is measured in tokens rather than bytes, and code units track tokens more
  * closely than bytes do for non-Latin scripts.
  */
-/** Total characters of page content that may reach the extraction prompt. */
-const EXTRACTION_CHAR_CAP = 60_000;
-
-/** The slice of that budget JSON-LD may claim before prose gets the rest. */
-const JSON_LD_BUDGET = 20_000;
-
 export function extractableHtml(html: string): string {
   // Each OPENING tag requires a boundary after the name -- `(?=[\s/>])` -- so `<svg` matches `<svg>`,
   // `<svg width=…>` and `<svg/>` but NOT `<svg-icon>`. Without it a custom element sharing the
@@ -741,8 +772,22 @@ export function extractableHtml(html: string): string {
   // which is the most reliable source for exactly the fields the extraction prompt asks for — and
   // stripping every `<script>` discarded it, keeping the "no date survived" failure alive on any
   // page whose dates live only there rather than in prose.
-  const jsonLd = (html.match(/<script(?=[\s/>])[^>]*\stype\s*=\s*["']application\/ld\+json["'][^>]*>[\s\S]*?<\/script(\s[^>]*)?>/gi) ?? []).join(' ');
-  const stripped = html
+  // JSON-LD is matched on the FULL body, then removed, and only what remains is truncated.
+  //
+  // The order matters and is not the obvious one. This matcher is anchored on a literal attribute
+  // and is cheap -- ~1ms on the same adversarial input that costs the strippers ~6s -- so it is
+  // not part of the hazard. Truncating first would have broken the oversized-JSON-LD case that
+  // `leaves budget for prose when json-ld is oversized` protects: a 500KB `ld+json` block pushes
+  // the page's prose past any sane source cap, and cutting there loses the very facts the
+  // extraction is for. Removing the block first shrinks the remaining source by exactly the part
+  // that was never going to be scanned anyway.
+  const jsonLd = (html.match(JSON_LD_RE) ?? []).join(' ');
+  // Now truncate. Every pass below is quadratic on pathological input -- an unclosed `<style `
+  // makes each start position scan to end-of-document -- so capping the OUTPUT afterwards would
+  // be too late: the cost is already paid.
+  const withoutJSONLD = jsonLd === '' ? html : html.replace(JSON_LD_RE, ' ');
+  const source = withoutJSONLD.length > MAX_SOURCE_CHARS ? withoutJSONLD.slice(0, MAX_SOURCE_CHARS) : withoutJSONLD;
+  const stripped = source
     .replace(/<script(?=[\s/>])[\s\S]*?<\/script(\s[^>]*)?>/gi, ' ')
     .replace(/<style(?=[\s/>])[\s\S]*?<\/style(\s[^>]*)?>/gi, ' ')
     .replace(/<svg(?=[\s/>])[\s\S]*?<\/svg(\s[^>]*)?>/gi, ' ')

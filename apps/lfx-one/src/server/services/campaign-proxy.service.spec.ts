@@ -791,6 +791,48 @@ describe('extractableHtml', () => {
     expect(out).not.toContain('alert(1)');
   });
 
+  // A pathological page must not stall the SSR event loop. Every stripper is lazy-quantified, so
+  // an unclosed `<style ` makes each start position scan to end-of-document for a close that never
+  // arrives -- quadratic in the count, and Node is single-threaded, so the whole BFF freezes for
+  // every concurrent user while it runs. Any authenticated user can supply the scrape URL.
+  //
+  // The assertion is a TIME budget rather than a length one, because length is not what hurts:
+  // capping the OUTPUT leaves the work already done. 2s is deliberately loose against the ~0.4s
+  // this should take -- CI machines are slower and a flaky perf test is worse than none -- but it
+  // is far below the ~6s the unbounded version took on this exact input.
+  it('does not stall on an adversarial page of unclosed tags', () => {
+    const evil = '<style '.repeat(80_000);
+
+    const started = Date.now();
+    const out = extractableHtml(`${evil}<p>Tokyo</p>`);
+    const elapsed = Date.now() - started;
+
+    expect(elapsed, `extractableHtml took ${elapsed}ms on 80k unclosed <style tokens; the input cap is not applied`).toBeLessThan(2000);
+    expect(out.length).toBeLessThanOrEqual(60_000);
+  });
+
+  // The source cap must not become the binding constraint on ordinary pages: what a large
+  // templated page strips down to has to stay above the OUTPUT cap, or truncation would start
+  // deciding what the prompt sees instead of the 60k budget doing it.
+  //
+  // Asserted as "still fills the output cap", not "this specific prose survives" -- a first
+  // version of this test put prose after 81k of boilerplate and failed, but on the pre-existing
+  // 60k output slice rather than on the new truncation. That would have pinned the wrong thing.
+  it('leaves a large templated page still filling the output cap', () => {
+    const boiler = '<div class="wrapper"><span class="x">   </span></div>\n'.repeat(1500);
+
+    const out = extractableHtml(`${boiler}<p>KubeCon Europe, Amsterdam</p>${boiler}`);
+
+    expect(out.length, 'the source cap now binds before the output cap does').toBe(60_000);
+  });
+
+  // Prose EARLY in such a page -- where an event's own description sits -- must survive both caps.
+  it('keeps prose that precedes the boilerplate', () => {
+    const boiler = '<div class="wrapper"><span class="x">   </span></div>\n'.repeat(1500);
+
+    expect(extractableHtml(`<p>KubeCon Europe, Amsterdam</p>${boiler}`)).toContain('Amsterdam');
+  });
+
   it('returns an empty string for input that is entirely strippable', () => {
     expect(extractableHtml('<style>.a{color:red}</style>').trim()).toBe('');
   });
