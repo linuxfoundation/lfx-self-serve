@@ -40,7 +40,7 @@ export class CancelOccurrenceConfirmationComponent {
         this.isCanceling.set(false);
         let errorMessage = 'Failed to cancel occurrence. Please try again.';
 
-        if (error.status === 400) {
+        if (error.status === 400 && (error.error?.error ?? '').includes('already cancelled')) {
           errorMessage = 'This occurrence has already been cancelled — please refresh the page.';
         } else if (error.status === 404) {
           errorMessage = 'Meeting occurrence not found.';
