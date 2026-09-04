@@ -92,9 +92,12 @@ export const writerGuard: CanActivateFn = (route: ActivatedRouteSnapshot) => {
     // Survey.project_uid is typed optional — map absent to '' so the probe satisfies the
     // registry's Pick<EntityWithProject> shape; resolveEntityWriteSlug treats '' as absent.
     // Honor the URL ?committee_uid= only when the survey's own committee list contains it (the
-    // committee tab stamps the viewed committee, and a writer of any associated committee must be
-    // admitted); otherwise fall back to the primary committee so an attacker-controlled param naming
+    // committee tab stamps the viewed committee, so from that path a writer of any associated
+    // committee is admitted); otherwise fall back to the primary committee so an attacker-controlled param naming
     // an unrelated committee can't win — a committee-less project survey falls back to the URL param.
+    // Known gap: the global surveys list stamps only committees[0] on edit links, so a writer of a
+    // non-primary committee is fail-closed denied from the list and must edit via their committee
+    // tab (iterating committees[] per row is follow-up work — GH-2190).
     surveys: (id) =>
       surveyService.getSurvey(id).pipe(
         map((survey) => ({

@@ -391,6 +391,82 @@ describe('writerGuard', () => {
     expect(getCommittee).not.toHaveBeenCalled();
   });
 
+  it('admits a committee writer via a URL committee_uid the survey’s own committees contain', async () => {
+    getSurvey.mockReturnValue(
+      of({
+        uid: SURVEY_UID,
+        project_uid: 's-uid',
+        project_slug: SURVEY_SLUG,
+        committees: [{ committee_uid: COMMITTEE_UID }, { committee_uid: 'other-committee' }],
+      } as unknown as Survey)
+    );
+    getProject.mockReturnValue(of({ uid: 's-uid', slug: SURVEY_SLUG, writer: false }));
+    getCommittee.mockReturnValue(of({ uid: COMMITTEE_UID, writer: true } as unknown as Committee));
+    const route = {
+      queryParamMap: convertToParamMap({ committee_uid: COMMITTEE_UID }),
+      paramMap: convertToParamMap({ id: SURVEY_UID }),
+      data: { writeFeature: 'surveys', entityScopedSlug: true },
+      parent: null,
+    } as unknown as ActivatedRouteSnapshot;
+
+    const result = await runGuard(route);
+
+    expect(result).toBe(true);
+    expect(getCommittee).toHaveBeenCalledWith(COMMITTEE_UID);
+  });
+
+  it('authorizes against the survey’s primary committee, not a URL committee_uid naming an unrelated one', async () => {
+    getSurvey.mockReturnValue(
+      of({ uid: SURVEY_UID, project_uid: 's-uid', project_slug: SURVEY_SLUG, committees: [{ committee_uid: 'survey-committee' }] } as unknown as Survey)
+    );
+    getProject.mockReturnValue(of({ uid: 's-uid', slug: SURVEY_SLUG, writer: false }));
+    getCommittee.mockReturnValue(of({ uid: 'survey-committee', writer: false } as unknown as Committee));
+    const route = {
+      queryParamMap: convertToParamMap({ committee_uid: 'attacker-committee' }),
+      paramMap: convertToParamMap({ id: SURVEY_UID }),
+      data: { writeFeature: 'surveys', entityScopedSlug: true },
+      parent: null,
+    } as unknown as ActivatedRouteSnapshot;
+
+    const result = await runGuard(route);
+
+    expect(getCommittee).toHaveBeenCalledWith('survey-committee');
+    expect(getCommittee).not.toHaveBeenCalledWith('attacker-committee');
+    expect(result).not.toBe(true);
+  });
+
+  it('authorizes against the survey’s primary committee when the URL omits committee_uid', async () => {
+    getSurvey.mockReturnValue(
+      of({ uid: SURVEY_UID, project_uid: 's-uid', project_slug: SURVEY_SLUG, committees: [{ committee_uid: 'survey-committee' }] } as unknown as Survey)
+    );
+    getProject.mockReturnValue(of({ uid: 's-uid', slug: SURVEY_SLUG, writer: false }));
+    getCommittee.mockReturnValue(of({ uid: 'survey-committee', writer: true } as unknown as Committee));
+
+    const result = await runGuard(surveyRoute());
+
+    expect(result).toBe(true);
+    expect(getCommittee).toHaveBeenCalledWith('survey-committee');
+  });
+
+  it('falls back to the URL committee_uid for a committee-less survey', async () => {
+    // Pins the documented deliberate path: a committee-less project survey has no entity committee
+    // to win, so the (attacker-controllable but backend-enforced) URL param is the only committee leg.
+    getSurvey.mockReturnValue(of({ uid: SURVEY_UID, project_uid: 's-uid', project_slug: SURVEY_SLUG, committees: [] } as unknown as Survey));
+    getProject.mockReturnValue(of({ uid: 's-uid', slug: SURVEY_SLUG, writer: false }));
+    getCommittee.mockReturnValue(of({ uid: COMMITTEE_UID, writer: true } as unknown as Committee));
+    const route = {
+      queryParamMap: convertToParamMap({ committee_uid: COMMITTEE_UID }),
+      paramMap: convertToParamMap({ id: SURVEY_UID }),
+      data: { writeFeature: 'surveys', entityScopedSlug: true },
+      parent: null,
+    } as unknown as ActivatedRouteSnapshot;
+
+    const result = await runGuard(route);
+
+    expect(result).toBe(true);
+    expect(getCommittee).toHaveBeenCalledWith(COMMITTEE_UID);
+  });
+
   it('fails closed when an entity-scoped route has no :id param', async () => {
     const route = {
       queryParamMap: convertToParamMap({}),

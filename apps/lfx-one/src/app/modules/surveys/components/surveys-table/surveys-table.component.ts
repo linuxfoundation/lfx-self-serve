@@ -290,6 +290,9 @@ export class SurveysTableComponent {
   // === Private Helpers ===
   // Mirrors meeting-card's per-row params: the row's own project slug + committee scope, so the
   // edit page opens in the survey's project context even from a context-less list (GH-1569).
+  // Without a viewed-committee override (global list) the scope resolves to the primary committee,
+  // so a writer of a non-primary committee is fail-closed denied from the list and edits via their
+  // committee tab instead — iterating committees[] per row is follow-up work (GH-2190).
   private buildEditQueryParams(survey: Survey): Record<string, string> {
     const params: Record<string, string> = {};
     if (survey.project_slug) params['project'] = survey.project_slug;
