@@ -134,12 +134,7 @@
           <!-- Close Time -->
           <div class="flex flex-col gap-1">
             <label for="close-time" class="text-sm font-medium text-gray-700"> Close Time <span class="text-red-500">*</span> </label>
-            <lfx-time-picker
-              [form]="form()"
-              control="close_time"
-              placeholder="Select close time"
-              styleClass="w-full"
-              data-testid="vote-close-time-picker">
+            <lfx-time-picker [form]="form()" control="close_time" placeholder="Select close time" styleClass="w-full" data-testid="vote-close-time-picker">
             </lfx-time-picker>
             @if (form().get('close_time')?.touched && !form().get('close_time')?.value) {
               <p class="text-red-500 text-xs">Close time is required.</p>
@@ -167,8 +162,8 @@
             }
           </div>
 
-          <!-- Future deadline validation error -->
-          @if (form().errors?.['futureDateTime'] && (form().get('close_date')?.touched || form().get('close_time')?.touched)) {
+          <!-- Future deadline validation error — in edit mode a hydrated lapsed draft is invalid before any touch, so show unconditionally -->
+          @if (form().errors?.['futureDateTime'] && (isEditMode() || form().get('close_date')?.touched || form().get('close_time')?.touched)) {
             <p class="text-red-500 text-xs">The close date and time must be in the future.</p>
           }
 
