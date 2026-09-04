@@ -783,8 +783,12 @@ export class CampaignServiceClient {
     // `none` rather than a distinct status: the row is not this surface's to open, so the offer it
     // drives should simply not appear. NOT `unreadable`, which promises a row that exists and
     // could not be parsed — here parsing succeeded.
+    // The STAGE too, not only the surface. Both are identity upstream, and a mixed rollout is
+    // precisely when a service that ignores `stage` answers with a sibling send -- which would put
+    // another stage's copy behind this stage's Restore offer.
     const storedDelivery = brief?.deliveryType ?? 'paid-marketing';
-    if (brief !== null && storedDelivery !== deliveryType) {
+    const storedStage = brief?.emailStage ?? '';
+    if (brief !== null && (storedDelivery !== deliveryType || storedStage !== stage)) {
       return { status: 'none', briefId: null, brief: null, etag: null, approved: false };
     }
 
@@ -2023,7 +2027,23 @@ function storedBriefMatches(stored: CampaignServiceBrief, sent: CampaignServiceB
   const storedPlatforms = stored.platforms ?? [];
   const sentPlatforms = sent.platforms ?? [];
   const samePlatforms = storedPlatforms.length === sentPlatforms.length && storedPlatforms.every((p, i) => p === sentPlatforms[i]);
+  // IDENTITY first, then content. Two sends in one event's series can carry identical base
+  // payloads -- same program, slug, url, platforms and even the same generated copy before either
+  // is edited -- so comparing content alone lets reconciliation accept a SIBLING STAGE as this
+  // request's committed write and hand back that row's id and ETag. Every later save then targets
+  // the wrong send. The recovery GET already asks for the full key; a stale or rolling upstream
+  // that ignores the new parameters is exactly when it answers with a sibling anyway, which is the
+  // case this comparison exists to catch.
+  //
+  // Both sides are normalized the same way: absent means paid with an empty stage, the identity
+  // every brief written before the widening carries.
+  const storedDelivery = stored.delivery_type ?? 'paid-marketing';
+  const sentDelivery = sent.delivery_type ?? 'paid-marketing';
+  const storedStage = stored.stage ?? '';
+  const sentStage = sent.stage ?? '';
   return (
+    storedDelivery === sentDelivery &&
+    storedStage === sentStage &&
     stored.program_type === sent.program_type &&
     stored.event_slug === sent.event_slug &&
     (stored.url ?? '') === (sent.url ?? '') &&

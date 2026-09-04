@@ -848,6 +848,27 @@ describe('CampaignServiceClient.saveBrief', () => {
     expect(gets.at(-1)?.[4]).toMatchObject({ event_slug: 'e', delivery_type: 'email', stage: 'Final Countdown' });
   }, 20000);
 
+  // A SIBLING STAGE must not be accepted as this request's committed write. Two sends in one
+  // event's series carry identical base payloads before either is edited, so a content-only
+  // comparison cannot tell them apart — and a stale or rolling upstream that ignores the `stage`
+  // parameter answers the recovery GET with whichever row it finds. Adopting it would hand back
+  // the wrong send's id and ETag, and every later save would target that row.
+  it('does not adopt a sibling stage as the lost write', async () => {
+    const emailBrief = { ...briefWithSlug('e'), deliveryType: 'email' as const, emailStage: 'Final Countdown' as const };
+
+    proxyRequestWithResponse
+      .mockRejectedValueOnce(NOT_FOUND) // pre-save lookup: nothing yet
+      .mockRejectedValueOnce(new MicroserviceError('timeout', 408, 'TIMEOUT', {})) // the POST times out
+      // The recovery read answers with a DIFFERENT stage of the same event, echoing the sent
+      // payload otherwise — exactly what a stage-blind upstream returns.
+      .mockImplementation(() => {
+        const envelope = proxyRequestWithResponse.mock.calls[1][5] as { brief: Record<string, unknown> };
+        return Promise.resolve(apiResponse({ id: 'brief-sibling', version: 1, ...envelope.brief, stage: 'CFP Launch' }, { etag: '"1"' }));
+      });
+
+    await expect(new CampaignServiceClient().saveBrief(req, emailBrief, 'e', 'tlf')).rejects.toThrow('timeout');
+  }, 20000);
+
   it('gives up rather than guessing when the create never resolves', async () => {
     // Bounded: the request has already spent part of its own budget on the failed POST, so the
     // retry cannot chase a late commit indefinitely. When the attempts run out the ORIGINAL
@@ -1446,6 +1467,29 @@ describe('CampaignServiceClient.loadBrief', () => {
       status: 'none',
       briefId: null,
     });
+  });
+
+  // The STAGE half of the same scoping. A mixed rollout is exactly when an upstream that ignores
+  // the `stage` parameter answers with a sibling send — and its copy behind THIS stage's Restore
+  // offer is the same wrong-content hazard the delivery-type check above prevents, one dimension
+  // over. Reported as `none` for the same reason: the row is not this send's to open.
+  it('reports a sibling stage as absent when an email caller asks for a different one', async () => {
+    proxyRequestWithResponse.mockResolvedValueOnce(apiResponse(storedBrief({ delivery_type: 'email', stage: 'CFP Launch' }), { etag: '"3"' }));
+
+    const result = await new CampaignServiceClient().loadBrief(req, 'kubecon-eu-2026', 'tlf', 'email', 'Final Countdown');
+
+    expect(result.status).toBe('none');
+    expect(result.briefId).toBeNull();
+    expect(result.brief).toBeNull();
+  });
+
+  it('returns the brief when BOTH the delivery type and the stage match', async () => {
+    proxyRequestWithResponse.mockResolvedValueOnce(apiResponse(storedBrief({ delivery_type: 'email', stage: 'Final Countdown' }), { etag: '"3"' }));
+
+    const result = await new CampaignServiceClient().loadBrief(req, 'kubecon-eu-2026', 'tlf', 'email', 'Final Countdown');
+
+    expect(result.status).toBe('loaded');
+    expect(result.brief).not.toBeNull();
   });
 
   it('returns the brief when the stored delivery type matches the caller', async () => {
