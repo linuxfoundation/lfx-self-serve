@@ -783,6 +783,63 @@ const MAX_JSON_LD_SCAN_CHARS = 1024 * 1024;
 const JSON_LD_RE = /<script(?=[\s/>])[^>]{0,512}\stype\s*=\s*["']application\/ld\+json["'][^>]{0,512}>[\s\S]*?<\/script(\s[^>]*)?>/gi;
 
 /**
+ * `<svg>` is the one strippable element here that NESTS.
+ *
+ * A non-greedy `[\s\S]*?<\/svg...>` stops at the FIRST `</svg>`, so on `<svg><svg>x</svg>
+ * <text>SECRET</text></svg>` it strips the inner element and leaves the rest of the outer body as
+ * prose -- which reaches the extraction prompt. `script` and `style` cannot nest (their content is
+ * raw text, and the first close ends them), so only this one needs depth tracking.
+ *
+ * Matched with a single global scan over openings and closes rather than a recursive pattern:
+ * linear, no backtracking, and it degrades safely -- an unbalanced document simply strips to the
+ * end of what it can prove is inside the element.
+ */
+const SVG_TAG_RE = /<(\/?)svg(?=[\s/>])[^>]{0,512}>/gi;
+
+/** Replace every top-level `<svg>...</svg>`, nesting included, with a single space. */
+function stripSvgBlocks(html: string): string {
+  SVG_TAG_RE.lastIndex = 0;
+  let out = '';
+  let copied = 0;
+  let depth = 0;
+  let blockStart = 0;
+  let tag = SVG_TAG_RE.exec(html);
+
+  while (tag !== null) {
+    const isClose = tag[1] === '/';
+    // A self-closing `<svg .../>` opens and closes in one tag: it is a whole block at depth 0 and
+    // must not increment, or every icon on the page would leave the scan permanently nested.
+    const selfClosing = !isClose && tag[0].endsWith('/>');
+
+    if (selfClosing) {
+      if (depth === 0) {
+        out += html.slice(copied, tag.index) + ' ';
+        copied = tag.index + tag[0].length;
+      }
+    } else if (isClose) {
+      if (depth > 0) {
+        depth--;
+        if (depth === 0) {
+          out += html.slice(copied, blockStart) + ' ';
+          copied = tag.index + tag[0].length;
+        }
+      }
+    } else {
+      if (depth === 0) {
+        blockStart = tag.index;
+      }
+      depth++;
+    }
+
+    tag = SVG_TAG_RE.exec(html);
+  }
+
+  // An element that never closes: drop what remains, matching how the walk treats an unclosed
+  // block rather than letting raw markup through.
+  return depth > 0 ? out + html.slice(copied, blockStart) : out + html.slice(copied);
+}
+
+/**
  * Cap the source at `MAX_SOURCE_CHARS` of PROSE, skipping strippable blocks whole.
  *
  * A flat slice can land inside a `<script>`/`<style>`/`<svg>` block and cut its closing tag off,
@@ -861,8 +918,14 @@ function boundedSource(html: string): string {
       // means this one never closed: HTML does not nest these elements, and the strippers below
       // are non-greedy and stop at the first close too. So both paths agree on where the block
       // ends, which is the property that matters.
-      STRIPPABLE_OPENING_RE.lastIndex = openEnd;
-      const nextOpening = STRIPPABLE_OPENING_RE.exec(scan);
+      // The next opening of the SAME tag, not of any strippable tag. `<svg>` legitimately
+      // contains `<style>` -- exported icons and maps do it routinely -- so bounding at any
+      // opening treated such an svg as unclosed and kept its markup as prose. An earlier revision
+      // of this comment asserted "HTML does not nest these elements"; that is true only per tag
+      // name, which is exactly the bound this needs.
+      const nextSameRe = new RegExp(`<${opening[1]}(?=[\\s/>])`, 'gi');
+      nextSameRe.lastIndex = openEnd;
+      const nextOpening = nextSameRe.exec(scan);
       const limit = nextOpening === null ? scan.length : nextOpening.index;
 
       // Search a SLICE, not the whole document with a `lastIndex`.
@@ -1008,10 +1071,10 @@ export function extractableHtml(html: string): string {
   // versus ~1ms here. So the cap stays first and instead walks the body, skipping each strippable
   // block whole via `indexOf` -- linear, no backtracking -- and spending the 150k on text.
   const source = boundedSource(withoutJSONLD);
-  const stripped = source
+  const stripped = stripSvgBlocks(source)
     .replace(/<script(?=[\s/>])[\s\S]*?<\/script(\s[^>]*)?>/gi, ' ')
     .replace(/<style(?=[\s/>])[\s\S]*?<\/style(\s[^>]*)?>/gi, ' ')
-    .replace(/<svg(?=[\s/>])[\s\S]*?<\/svg(\s[^>]*)?>/gi, ' ')
+
     .replace(/<!--[\s\S]*?-->/g, ' ')
     // Collapse the whitespace those removals leave behind. Templated markup is heavily indented,
     // so this is not cosmetic: it recovers several KB of the budget on a typical page.

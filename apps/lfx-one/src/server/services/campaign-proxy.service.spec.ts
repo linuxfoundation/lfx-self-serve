@@ -1022,6 +1022,56 @@ describe('extractableHtml', () => {
     expect(out).toContain('Tokyo');
   });
 
+  // `<svg>` is the one strippable element that NESTS, and a non-greedy regex stops at the FIRST
+  // close -- leaving the rest of the outer element as prose, which reaches the extraction prompt.
+  // This is true below the source cap too, so it is not something the walk can compensate for.
+  describe.each([
+    ['one level', '<svg><svg>x</svg><text>SECRET</text></svg>'],
+    ['two levels', '<svg><svg><svg>x</svg></svg><text>SECRET</text></svg>'],
+    ['nested with a self-closing sibling', '<svg><svg/><text>SECRET</text></svg>'],
+  ])('strips a nested svg (%s)', (_label, block) => {
+    it('does not leave the outer body behind', () => {
+      expect(extractableHtml(`${block}<p>Tokyo</p>`)).not.toContain('SECRET');
+    });
+  });
+
+  // Depth tracking must not swallow what follows a well-formed element, nor treat a self-closing
+  // icon as an unbalanced open -- that would leave the scan permanently nested and drop the page.
+  it('keeps prose between and after svg blocks', () => {
+    const out = extractableHtml('<svg>a</svg>Held in<svg/>Tokyo, March 2027.');
+
+    expect(out).toContain('Held in');
+    expect(out).toContain('Tokyo');
+  });
+
+  // An svg that never closes: drop what it opened rather than letting raw markup through, which
+  // is how the walk treats an unclosed block too.
+  it('drops the remainder of an svg that never closes', () => {
+    expect(extractableHtml('<svg><text>SECRET</text>')).not.toContain('SECRET');
+  });
+
+  // `<svg>` legitimately contains `<style>` -- exported icons and maps do it routinely -- so the
+  // walk's close search must bound at the next opening of the SAME tag, not of any strippable tag.
+  // Bounding at any opening treated such an svg as unclosed and kept its markup as prose.
+  it('does not treat an svg containing a style block as unclosed', () => {
+    const icon = '<svg viewBox="0 0 10 10"><style>.c{fill:red}</style><path d="M0 0"/></svg>';
+
+    const out = extractableHtml(`${icon}<p>Tokyo</p>${'word '.repeat(40_000)}`);
+
+    expect(out, 'the nested style ended the svg early').not.toContain('M0 0');
+    expect(out).toContain('Tokyo');
+  });
+
+  // Same defect reached through a raw-text body: a script whose CONTENT mentions another tag.
+  it('does not end a script at a tag name inside its own body', () => {
+    const body = `<script>const tpl = '<style>'; SECRET_SCRIPT_TEXT;</script><p>Tokyo</p>${'word '.repeat(40_000)}`;
+
+    const out = extractableHtml(body);
+
+    expect(out).not.toContain('SECRET_SCRIPT_TEXT');
+    expect(out).toContain('Tokyo');
+  });
+
   it('returns an empty string for input that is entirely strippable', () => {
     expect(extractableHtml('<style>.a{color:red}</style>').trim()).toBe('');
   });
