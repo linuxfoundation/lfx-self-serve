@@ -1,7 +1,7 @@
 // Copyright The Linux Foundation and each contributor to LFX.
 // SPDX-License-Identifier: MIT
 
-import { FormationItemActionType, FormationItemOwnerTeam, FormationTemplateSection } from '../enums';
+import { FormationActionType, FormationOwnerTeam, FormationTemplateSectionKey } from '../enums';
 import type { FormationTemplate } from '../interfaces';
 
 /**
@@ -27,161 +27,163 @@ function deepFreeze<T>(value: T, seen = new WeakSet<object>()): T {
  * `version` alongside any content edit here once this template has shipped — see
  * `FormationTemplate.version`. Pre-release content edits (like this one) stay at v1.
  *
+ * Shape adopted from the canonical `FormationTemplate` (GH-2163) — nested `sections[].items[]`,
+ * snake_case keys with no `legal-`/`launch-` prefix (the prefix was a local-only convention;
+ * section membership is now structural, not encoded in the key).
+ *
  * Deep-frozen so the shared module-level singleton can't be mutated in place by one consumer
  * and corrupt it for every other reader.
  */
 export const FORMATION_TEMPLATE: FormationTemplate = deepFreeze({
-  id: 'formation-template-default',
+  uid: 'formation-template-default',
   version: 1,
-  items: [
-    // Legal and entity — the items below with gate: true gate the transition to Active
+  name: 'Project formation',
+  sections: [
     {
-      id: 'legal-formation-review-packet',
-      title: 'Formation review and packet',
-      section: FormationTemplateSection.LEGAL_AND_ENTITY,
-      ownerTeam: FormationItemOwnerTeam.BRAND_COUNSEL,
-      actionType: FormationItemActionType.MANUAL,
-      gate: true,
-    },
-    {
-      id: 'legal-preliminary-trademark-search',
-      title: 'Preliminary trademark search',
-      section: FormationTemplateSection.LEGAL_AND_ENTITY,
-      ownerTeam: FormationItemOwnerTeam.BRAND_COUNSEL,
-      actionType: FormationItemActionType.MANUAL,
-      gate: false,
-    },
-    {
-      id: 'legal-charter-agreed',
-      title: 'Charter agreed',
-      section: FormationTemplateSection.LEGAL_AND_ENTITY,
-      ownerTeam: FormationItemOwnerTeam.FORMATION,
-      actionType: FormationItemActionType.MANUAL,
-      gate: true,
-    },
-    {
-      id: 'legal-contribution-agreement',
-      title: 'Contribution agreement (DocuSign)',
-      section: FormationTemplateSection.LEGAL_AND_ENTITY,
-      ownerTeam: FormationItemOwnerTeam.FORMATION,
-      actionType: FormationItemActionType.LINK,
-      gate: true,
-    },
-    {
-      id: 'legal-indepth-trademark-search-series-llc',
-      title: 'In-depth trademark search and Series LLC',
-      section: FormationTemplateSection.LEGAL_AND_ENTITY,
-      ownerTeam: FormationItemOwnerTeam.BRAND_COUNSEL,
-      actionType: FormationItemActionType.MANUAL,
-      gate: true,
-    },
-    {
-      id: 'legal-membership-tiers',
-      title: 'Membership tiers',
-      section: FormationTemplateSection.LEGAL_AND_ENTITY,
-      ownerTeam: FormationItemOwnerTeam.PRODUCT,
-      actionType: FormationItemActionType.MANUAL,
-      gate: false,
-    },
-
-    // Community and launch — never gates
-    {
-      id: 'launch-repositories-github-owner',
-      title: 'Repositories and GitHub owner',
-      section: FormationTemplateSection.COMMUNITY_AND_LAUNCH,
-      ownerTeam: FormationItemOwnerTeam.COMMUNITY,
-      actionType: FormationItemActionType.PROVISIONABLE,
-      gate: false,
-    },
-    {
-      id: 'launch-domain-dns',
-      title: 'Domain/DNS',
-      section: FormationTemplateSection.COMMUNITY_AND_LAUNCH,
-      ownerTeam: FormationItemOwnerTeam.IT,
-      actionType: FormationItemActionType.REQUEST,
-      gate: false,
-    },
-    {
-      id: 'launch-website-logo-footer',
-      title: 'Website/logo/footer',
-      section: FormationTemplateSection.COMMUNITY_AND_LAUNCH,
-      ownerTeam: FormationItemOwnerTeam.MARKETING,
-      actionType: FormationItemActionType.MANUAL,
-      gate: false,
-    },
-    {
-      id: 'launch-mailing-lists',
-      title: 'Mailing lists',
-      section: FormationTemplateSection.COMMUNITY_AND_LAUNCH,
-      ownerTeam: FormationItemOwnerTeam.COMMUNITY,
-      actionType: FormationItemActionType.PROVISIONABLE,
-      gate: false,
-    },
-    {
-      id: 'launch-chat-workspace',
-      title: 'Chat workspace',
-      section: FormationTemplateSection.COMMUNITY_AND_LAUNCH,
-      ownerTeam: FormationItemOwnerTeam.IT,
-      actionType: FormationItemActionType.REQUEST,
-      gate: false,
-      subItems: [
-        { id: 'launch-chat-workspace-create', title: 'Create workspace', ownerTeam: FormationItemOwnerTeam.IT },
-        { id: 'launch-chat-workspace-channels', title: 'Configure channels', ownerTeam: FormationItemOwnerTeam.IT },
-        { id: 'launch-chat-workspace-roles', title: 'Set up roles and permissions', ownerTeam: FormationItemOwnerTeam.IT },
-        { id: 'launch-chat-workspace-onboard-admins', title: 'Onboard admins', ownerTeam: FormationItemOwnerTeam.IT },
+      key: FormationTemplateSectionKey.LEGAL_AND_ENTITY,
+      title: 'Legal and entity',
+      // Items below with is_gating: true gate the transition to Active.
+      items: [
+        {
+          key: 'formation_review_packet',
+          title: 'Formation review and packet',
+          owner_team: FormationOwnerTeam.BRAND_COUNSEL,
+          action: FormationActionType.MANUAL,
+          is_gating: true,
+        },
+        {
+          key: 'preliminary_trademark_search',
+          title: 'Preliminary trademark search',
+          owner_team: FormationOwnerTeam.BRAND_COUNSEL,
+          action: FormationActionType.MANUAL,
+          is_gating: false,
+        },
+        {
+          key: 'charter_agreed',
+          title: 'Charter agreed',
+          owner_team: FormationOwnerTeam.FORMATION,
+          action: FormationActionType.MANUAL,
+          is_gating: true,
+        },
+        {
+          key: 'contribution_agreement',
+          title: 'Contribution agreement (DocuSign)',
+          owner_team: FormationOwnerTeam.FORMATION,
+          action: FormationActionType.LINK,
+          is_gating: true,
+        },
+        {
+          key: 'indepth_trademark_search_series_llc',
+          title: 'In-depth trademark search and Series LLC',
+          owner_team: FormationOwnerTeam.BRAND_COUNSEL,
+          action: FormationActionType.MANUAL,
+          is_gating: true,
+        },
+        {
+          key: 'membership_tiers',
+          title: 'Membership tiers',
+          owner_team: FormationOwnerTeam.PRODUCT,
+          action: FormationActionType.MANUAL,
+          is_gating: false,
+        },
       ],
     },
     {
-      id: 'launch-insights-access',
-      title: 'Insights access',
-      section: FormationTemplateSection.COMMUNITY_AND_LAUNCH,
-      ownerTeam: FormationItemOwnerTeam.PRODUCT_OPS,
-      actionType: FormationItemActionType.REQUEST,
-      gate: false,
-    },
-    {
-      id: 'launch-asset-transfers',
-      title: 'Asset transfers',
-      section: FormationTemplateSection.COMMUNITY_AND_LAUNCH,
-      ownerTeam: FormationItemOwnerTeam.FORMATION,
-      actionType: FormationItemActionType.MANUAL,
-      gate: false,
-    },
-    {
-      id: 'launch-tsc-kickoff',
-      title: 'TSC and kickoff',
-      section: FormationTemplateSection.COMMUNITY_AND_LAUNCH,
-      ownerTeam: FormationItemOwnerTeam.COMMUNITY,
-      actionType: FormationItemActionType.PROVISIONABLE,
-      gate: false,
-    },
-    {
-      id: 'launch-member-join-page',
-      title: 'Member join page',
-      section: FormationTemplateSection.COMMUNITY_AND_LAUNCH,
-      ownerTeam: FormationItemOwnerTeam.PRODUCT,
-      actionType: FormationItemActionType.MANUAL,
-      gate: false,
-    },
-    {
-      id: 'launch-comms',
-      title: 'Launch comms',
-      section: FormationTemplateSection.COMMUNITY_AND_LAUNCH,
-      ownerTeam: FormationItemOwnerTeam.MARKETING,
-      actionType: FormationItemActionType.MANUAL,
-      gate: false,
-    },
-    // Kept as its own row rather than folded into "Launch comms" — the ticket calls out the
-    // launch blog post by name as an item the 31 Aug review added and said not to drop.
-    {
-      id: 'launch-blog-post',
-      title: 'Launch blog post',
-      section: FormationTemplateSection.COMMUNITY_AND_LAUNCH,
-      ownerTeam: FormationItemOwnerTeam.MARKETING,
-      actionType: FormationItemActionType.MANUAL,
-      gate: false,
+      key: FormationTemplateSectionKey.COMMUNITY_AND_LAUNCH,
+      title: 'Community and launch',
+      // Never gates.
+      items: [
+        {
+          key: 'repositories_github_owner',
+          title: 'Repositories and GitHub owner',
+          owner_team: FormationOwnerTeam.COMMUNITY,
+          action: FormationActionType.PROVISIONABLE,
+          is_gating: false,
+        },
+        {
+          // Provisioning, not approval — a project cannot go Active on a "pending request for
+          // domain" waiting on someone else's ticket, so this is manual rather than request-shaped.
+          key: 'domain_dns',
+          title: 'Domain/DNS',
+          owner_team: FormationOwnerTeam.IT,
+          action: FormationActionType.MANUAL,
+          is_gating: false,
+        },
+        {
+          key: 'website_logo_footer',
+          title: 'Website/logo/footer',
+          owner_team: FormationOwnerTeam.MARKETING,
+          action: FormationActionType.MANUAL,
+          is_gating: false,
+        },
+        {
+          // Same provisioning rationale as domain_dns above.
+          key: 'mailing_lists',
+          title: 'Mailing lists',
+          owner_team: FormationOwnerTeam.COMMUNITY,
+          action: FormationActionType.MANUAL,
+          is_gating: false,
+        },
+        {
+          key: 'chat_workspace',
+          title: 'Chat workspace',
+          owner_team: FormationOwnerTeam.IT,
+          action: FormationActionType.REQUEST,
+          is_gating: false,
+          sub_items: [
+            { key: 'chat_workspace_create', title: 'Create workspace', owner_team: FormationOwnerTeam.IT },
+            { key: 'chat_workspace_channels', title: 'Configure channels', owner_team: FormationOwnerTeam.IT },
+            { key: 'chat_workspace_roles', title: 'Set up roles and permissions', owner_team: FormationOwnerTeam.IT },
+            { key: 'chat_workspace_onboard_admins', title: 'Onboard admins', owner_team: FormationOwnerTeam.IT },
+          ],
+        },
+        {
+          key: 'insights_access',
+          title: 'Insights access',
+          owner_team: FormationOwnerTeam.PRODUCT_OPS,
+          action: FormationActionType.REQUEST,
+          is_gating: false,
+        },
+        {
+          key: 'asset_transfers',
+          title: 'Asset transfers',
+          owner_team: FormationOwnerTeam.FORMATION,
+          action: FormationActionType.MANUAL,
+          is_gating: false,
+        },
+        {
+          key: 'tsc_kickoff',
+          title: 'TSC and kickoff',
+          owner_team: FormationOwnerTeam.COMMUNITY,
+          action: FormationActionType.PROVISIONABLE,
+          is_gating: false,
+        },
+        {
+          key: 'member_join_page',
+          title: 'Member join page',
+          owner_team: FormationOwnerTeam.PRODUCT,
+          action: FormationActionType.MANUAL,
+          is_gating: false,
+        },
+        {
+          key: 'comms',
+          title: 'Launch comms',
+          owner_team: FormationOwnerTeam.MARKETING,
+          action: FormationActionType.MANUAL,
+          is_gating: false,
+        },
+        // Kept as its own row rather than folded into "Launch comms" — the ticket calls out the
+        // launch blog post by name as an item the 31 Aug review added and said not to drop.
+        {
+          key: 'blog_post',
+          title: 'Launch blog post',
+          owner_team: FormationOwnerTeam.MARKETING,
+          action: FormationActionType.MANUAL,
+          is_gating: false,
+        },
+      ],
     },
   ],
   // No row for "formation sets Active" — that's the derived Activating state (#1957) once every
-  // gate: true item above is Done, not a checklist row a team completes.
+  // is_gating: true item above is Done, not a checklist row a team completes.
 } satisfies FormationTemplate);
