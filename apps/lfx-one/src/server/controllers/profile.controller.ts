@@ -1575,16 +1575,17 @@ export class ProfileController {
    * Exchanges the code for a management token, validates sub, stores in session
    */
   public async handleProfileAuthCallback(req: Request, res: Response): Promise<void> {
-    const startTime = logger.startOperation(req, 'profile_auth_callback');
-
-    const code = req.query['code'] as string;
-    const state = req.query['state'] as string;
-    const error = req.query['error'] as string;
     const returnTo = this.normalizeProfileReturnTo(req.appSession?.['profileAuthReturnTo']);
 
     if (this.blockCallbackDuringImpersonation(req, res, returnTo, 'profile_auth_callback')) {
       return;
     }
+
+    const startTime = logger.startOperation(req, 'profile_auth_callback');
+
+    const code = req.query['code'] as string;
+    const state = req.query['state'] as string;
+    const error = req.query['error'] as string;
 
     if (error) {
       logger.error(req, 'profile_auth_callback', startTime, new Error(`Auth0 returned error: ${error}`), {
@@ -1774,16 +1775,17 @@ export class ProfileController {
    * Exchanges code for id_token, links identity via NATS, verifies in CDP.
    */
   public async handleSocialCallback(req: Request, res: Response): Promise<void> {
-    const startTime = logger.startOperation(req, 'social_auth_callback');
-
-    const code = req.query['code'] as string;
-    const state = req.query['state'] as string;
-    const error = req.query['error'] as string;
     const returnTo = '/profile/identities';
 
     if (this.blockCallbackDuringImpersonation(req, res, returnTo, 'social_auth_callback')) {
       return;
     }
+
+    const startTime = logger.startOperation(req, 'social_auth_callback');
+
+    const code = req.query['code'] as string;
+    const state = req.query['state'] as string;
+    const error = req.query['error'] as string;
 
     if (error) {
       logger.error(req, 'social_auth_callback', startTime, new Error(`Auth0 returned error: ${error}`), {
