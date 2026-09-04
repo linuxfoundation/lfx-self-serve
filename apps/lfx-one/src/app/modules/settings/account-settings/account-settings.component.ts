@@ -75,6 +75,8 @@ export class AccountSettingsComponent {
   // Set once the user explicitly picks a section, so the deferred deep-link re-scroll below
   // can't smooth-scroll them back to the original fragment after they've already navigated away.
   private userPickedSection = false;
+  // Non-null while a deep-link re-scroll is pending — see armOutsideScrollCancellation().
+  private outsideScrollCancelHandler?: () => void;
 
   // ══════════════════════════════════════════
   // EMAIL SETTINGS
@@ -189,7 +191,10 @@ export class AccountSettingsComponent {
     this.route.fragment
       .pipe(
         filter((fragment): fragment is string => !!fragment && (AccountSettingsComponent.sectionIds as readonly string[]).includes(fragment)),
-        tap((validFragment) => this.activeSection.set(validFragment)),
+        tap((validFragment) => {
+          this.activeSection.set(validFragment);
+          this.armOutsideScrollCancellation();
+        }),
         switchMap((validFragment) =>
           emailLoaded$.pipe(
             take(1),
@@ -204,8 +209,9 @@ export class AccountSettingsComponent {
         afterNextRender(
           () => {
             // The TOC stays clickable during the email-loading window; if the user already picked
-            // a different section by the time this fires, respect that instead of smooth-scrolling
-            // them back to the original deep-link fragment.
+            // (or scrolled to) a different section by the time this fires, respect that instead of
+            // smooth-scrolling them back to the original deep-link fragment.
+            this.disarmOutsideScrollCancellation();
             if (this.userPickedSection) return;
             this.scrollToSection(validFragment);
           },
@@ -530,6 +536,30 @@ export class AccountSettingsComponent {
           this.developerV1Token.set('');
         },
       });
+  }
+
+  // Cancels the deferred deep-link re-scroll on ANY user-initiated scroll input (wheel, touch,
+  // keyboard) during the email-loading window — selectSection() alone only catches TOC clicks.
+  private armOutsideScrollCancellation(): void {
+    if (!isPlatformBrowser(this.platformId) || this.outsideScrollCancelHandler) return;
+    const cancel = (): void => {
+      this.userPickedSection = true;
+      this.disarmOutsideScrollCancellation();
+    };
+    this.outsideScrollCancelHandler = cancel;
+    document.addEventListener('wheel', cancel, { passive: true });
+    document.addEventListener('touchstart', cancel, { passive: true });
+    document.addEventListener('keydown', cancel);
+    this.destroyRef.onDestroy(() => this.disarmOutsideScrollCancellation());
+  }
+
+  private disarmOutsideScrollCancellation(): void {
+    const cancel = this.outsideScrollCancelHandler;
+    if (!cancel) return;
+    document.removeEventListener('wheel', cancel);
+    document.removeEventListener('touchstart', cancel);
+    document.removeEventListener('keydown', cancel);
+    this.outsideScrollCancelHandler = undefined;
   }
 
   private maskTokenValue(token: string): string {
