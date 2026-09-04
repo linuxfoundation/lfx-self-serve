@@ -698,6 +698,40 @@ describe('CampaignProxyService HubSpot campaign lookup', () => {
     expect(result.created).toBe(true);
   });
 
+  it.each([
+    ['no id at all', {}],
+    ['a null id', { id: null }],
+    ['a non-string id', { id: 12345 }],
+    ['a blank id', { id: '   ' }],
+  ])('refuses a create 2xx carrying %s rather than reporting a creation', async (_label, body) => {
+    // dealako (#1923): the create response was read through `as { id: string }`, an unchecked
+    // cast, so a malformed 2xx yielded `undefined` and this path went on to report a definite
+    // creation off it. The campaign-service arm it sits behind one flag with already refuses an
+    // id-less 2xx before claiming `created: true`.
+    //
+    // Deleting the guard and restoring the cast left the suite green, which is what this covers.
+    fetchMock.mockReset();
+    fetchMock.mockResolvedValueOnce({ ok: true, status: 201, json: async () => body, text: async () => '{}' });
+
+    await expect(service.createHubSpotUtm(req, 'KubeCon NA 2026')).rejects.toThrow(/no usable campaign id/i);
+  });
+
+  it('still creates when the 2xx carries a usable id', async () => {
+    // The guard must not become a blanket refusal: a well-formed create still goes through.
+    fetchMock.mockReset();
+    fetchMock.mockResolvedValueOnce({ ok: true, status: 201, json: async () => ({ id: 'new-uuid' }), text: async () => '{}' }).mockResolvedValueOnce({
+      ok: true,
+      status: 200,
+      json: async () => ({ results: [{ id: 'new-uuid', properties: { hs_utm: 'kubecon-na-2026' } }] }),
+      text: async () => '{}',
+    });
+
+    const result = await service.createHubSpotUtm(req, 'KubeCon NA 2026');
+
+    expect(result.created).toBe(true);
+    expect(result.hs_utm).toBe('kubecon-na-2026');
+  });
+
   it('refuses to auto-apply when two candidates tie on score', async () => {
     // scoreCampaignName now compares NORMALISED names, so two campaigns differing only by
     // whitespace score the SAME where the double-space row used to lose outright. `sort` is

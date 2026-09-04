@@ -1032,14 +1032,14 @@ export class PlanningTabComponent implements OnInit {
           // fix must not overshoot into the opposite error.
           const status = typeof err === 'object' && err !== null && 'status' in err ? Number((err as { status: unknown }).status) : 0;
           // The four boundary refusals only (`isDefiniteRefusal`). 500 was here on the strength of
-          // campaign-service RESERVING it for
-          // the pre-send position ("a fault discovered AFTER the create returned without error is
-          // a 503", design/connection.go) -- but that contract governs what campaign-service
-          // SENDS, and this status is not read from campaign-service. It is read from OUR BFF,
-          // which raises its own 500 for a fault at any position: error-handler.middleware.ts:92
-          // returns 500 for any non-BaseApiError, and ApiClientService parses the upstream body
-          // with JSON.parse AFTER a 2xx (api-client.service.ts:305). A malformed success body
-          // therefore reaches the browser as 500 with the campaign ALREADY CREATED in HubSpot.
+          // campaign-service RESERVING it for the pre-send position ("a fault discovered AFTER the
+          // create returned without error is a 503", design/connection.go) -- but that contract
+          // governs what campaign-service SENDS, and this status is not read from
+          // campaign-service. It is read from OUR BFF, which raises its own 500 for a fault at any
+          // position: error-handler.middleware.ts:92 returns 500 for any non-BaseApiError, and
+          // ApiClientService parses the upstream body with JSON.parse AFTER a 2xx
+          // (api-client.service.ts:305). A malformed success body therefore reaches the browser as
+          // 500 with the campaign ALREADY CREATED in HubSpot.
           //
           // Re-offering Create there is the duplicate this whole handler exists to prevent, and
           // the duplicate cannot be removed from this UI. A 500 costs a re-check; a duplicate

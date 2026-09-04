@@ -1890,6 +1890,40 @@ describe('PlanningTabComponent — HubSpot UTM states', () => {
     expect(instance()['hsCompletenessUnproven'](), 'the capped search rendered the plain no-match remedy').toBe(true);
   });
 
+  it('treats an ABSENT completeness field on the cross-foundation arm as unproven', () => {
+    // dealako (#1923): the `capped !== false` fix here shipped with no test that distinguishes it
+    // from the bug it replaced -- the two tests reaching this arm pass `capped: true` and
+    // `capped: false`, and `=== true` handles both identically. Only an ABSENT field separates
+    // them, which is exactly the old-pod shape the fix exists for.
+    const ctx = TestBed.inject(ProjectContextService);
+    const empty = { found: false, hs_utm: null, campaign_name: '', all_matches: [], capped: false, inconclusive: false };
+
+    runLookup(empty, 'KubeCon NA 2026');
+    create.mockReturnValue(
+      new Observable((o) => {
+        o.next({ created: true, hs_utm: null, campaign_name: 'Kubecon Na 2026' });
+        o.complete();
+      })
+    );
+    (fixture.componentInstance as unknown as { createInHubSpot(): void }).createInHubSpot();
+    fixture.detectChanges();
+
+    ctx.setFoundation({ uid: 'foundation-b-uid', slug: 'foundation-b', name: 'Foundation B' }, false);
+    fixture.detectChanges();
+    // No `capped`, no `inconclusive` -- a response from a pod that predates both fields.
+    lookup.mockReturnValue(
+      new Observable((o) => {
+        o.next({ found: false, hs_utm: null, campaign_name: '', all_matches: [] } as never);
+        o.complete();
+      })
+    );
+    (fixture.componentInstance as unknown as { recheckHubSpot(): void }).recheckHubSpot();
+    fixture.detectChanges();
+
+    expect(instance()['hsCompletenessUnproven'](), 'an absent completeness field read as proven-complete').toBe(true);
+    expect(instance()['hsCreateSuppressed'](), 'an unprovable cross-foundation response licensed a create').toBe(true);
+  });
+
   it('clears the completeness signal when the cross-foundation search PROVES completeness', () => {
     // The other direction: hsCompletenessUnproven is a persistent signal, so an arm that never
     // writes it also LEAKS the previous lookup's value into this result. A proven-complete search
