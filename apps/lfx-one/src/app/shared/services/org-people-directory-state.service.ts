@@ -78,6 +78,7 @@ function toEmployee(row: OrgAllEmployeeRow & { email: string }): KeyContactEmplo
     jobTitle: row.title,
     initials: deriveInitials(firstName, lastName, fullName),
     avatarUrl: row.avatarUrl,
+    lfUsername: row.lfUsername,
   };
 }
 

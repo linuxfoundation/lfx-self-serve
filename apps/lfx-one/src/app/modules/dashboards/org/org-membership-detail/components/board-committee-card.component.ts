@@ -138,6 +138,7 @@ export class BoardCommitteeCardComponent {
       initials: person.initials,
       avatarUrl: person.avatarUrl,
       email: person.email,
+      username: person.username,
     });
   }
 

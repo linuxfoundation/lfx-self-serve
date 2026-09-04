@@ -3,7 +3,7 @@
 
 import { EMAIL_REGEX, ORG_CONTRIBUTOR_DEFAULT_TIME_RANGE, PERSON_KEY_PATTERN } from '@lfx-one/shared/constants';
 import type { OrgContributorTimeRange, ReassignCommitteeMemberBody } from '@lfx-one/shared/interfaces';
-import { isFilterSafeIdentifier } from '@lfx-one/shared/utils';
+import { isFilterSafeIdentifier, isFilterSafeUsername } from '@lfx-one/shared/utils';
 import { NextFunction, Request, Response } from 'express';
 
 import { ServiceValidationError } from '../errors';
@@ -104,22 +104,35 @@ export class OrgLensPeopleController {
     }
   }
 
-  /** POST /api/orgs/:orgUid/lens/people/company-emails — company-affiliated emails for tabs (Board/Committee) whose rows have no personKey (GH-1655). Email travels in the body, not the query string, so it never lands in `originalUrl` request logs. */
-  public async getCompanyEmails(req: Request, res: Response, next: NextFunction): Promise<void> {
+  /**
+   * GET /api/orgs/:orgUid/lens/people/by-username/:username/company-emails — company-affiliated
+   * addresses for the governance surfaces (Board/Committee/Key Contacts/Access), whose rows carry an
+   * LF username rather than a personKey.
+   *
+   * Keyed on the username, which the caller already holds and which the page already displays. The
+   * address-keyed variant this replaces was withdrawn: returning real data would have made it an
+   * interface that, given any address, returns the other addresses the same human holds.
+   */
+  public async getCompanyEmailsByUsername(req: Request, res: Response, next: NextFunction): Promise<void> {
     const orgUid = req.params['orgUid'];
-    const operation = 'get_org_lens_people_company_emails';
+    const username = req.params['username'];
+    const operation = 'get_org_lens_people_company_emails_by_username';
 
     try {
       assertOrgUid(orgUid, operation);
-      const email = this.assertEmailBody(req.body, operation);
+      this.assertUsername(username, operation);
       const startTime = logger.startOperation(req, operation, { org_uid: orgUid });
 
-      const response = this.service.getCompanyEmailsByEmail(email);
+      const result = await this.service.getCompanyEmailsByUsername(orgUid, username);
 
-      logger.success(req, operation, startTime, { org_uid: orgUid, company_email_count: response.companyEmails.length });
+      logger.success(req, operation, startTime, {
+        org_uid: orgUid,
+        company_email_count: result.companyEmails.length,
+        company_emails_status: result.companyEmailsStatus,
+      });
 
       res.setHeader('Cache-Control', 'no-store');
-      res.json(response);
+      res.json(result);
     } catch (error) {
       next(error);
     }
@@ -359,14 +372,17 @@ export class OrgLensPeopleController {
     }
   }
 
-  /** Validate the `email` request-body field (required, valid email format) before it reaches the demo-derivation helper. */
-  private assertEmailBody(body: unknown, operation: string): string {
-    const email = (body as { email?: unknown } | undefined)?.email;
-    const trimmed = typeof email === 'string' ? email.trim() : '';
-    if (!trimmed || !EMAIL_REGEX.test(trimmed)) {
-      throw ServiceValidationError.forField('email', 'email body field is required and must be a valid email address', { operation });
+  /**
+   * Validate the LF username before it is bound into the warehouse lookup (400, not an upstream 5xx).
+   *
+   * Uses the username-shaped check rather than the identifier one: real LF usernames contain dots and
+   * other characters the stricter identifier pattern rejects, so validating with it would 400 people
+   * whose addresses resolve perfectly well.
+   */
+  private assertUsername(username: string | undefined, operation: string): asserts username is string {
+    if (!username || !isFilterSafeUsername(username)) {
+      throw ServiceValidationError.forField('username', 'username path parameter is required and must be a valid username', { operation });
     }
-    return trimmed.toLowerCase();
   }
 
   /** Validate the seat id before it is interpolated into the upstream committee-service path (400, not an upstream 5xx). Mirrors OrgLensBoardCommitteeController.assertSeatId. */

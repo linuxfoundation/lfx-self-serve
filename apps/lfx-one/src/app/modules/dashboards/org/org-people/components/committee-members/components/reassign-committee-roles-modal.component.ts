@@ -244,6 +244,8 @@ export class ReassignCommitteeRolesModalComponent {
       avatarUrl: this.person.avatarUrl ?? null,
       avatarColorClass: 'bg-purple-500',
       email: this.person.email,
+      // identity for the company-address lookup; the drawer must not resolve a person from an address.
+      username: this.person.username ?? null,
     });
   }
 

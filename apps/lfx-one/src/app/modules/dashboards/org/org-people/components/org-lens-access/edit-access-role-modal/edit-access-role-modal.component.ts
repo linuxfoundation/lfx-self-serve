@@ -86,6 +86,8 @@ export class EditAccessRoleModalComponent {
       initials: person.initials,
       avatarColorClass: 'bg-blue-600',
       email: person.email,
+      // identity for the company-address lookup; the drawer must not resolve a person from an address.
+      username: person.username ?? null,
     });
   }
 }

@@ -82,6 +82,10 @@ export function toPerson(s: CommitteeServiceOrgSeat): CommitteeMemberPerson {
     fullName,
     jobTitle: s.job_title?.trim() ? s.job_title.trim() : null,
     initials,
+    // Carried, not derived. The drawer needs an identity to look addresses up on, and the seat is the
+    // only place one arrives; dropping it here is what forced the governance tabs to fall back to an
+    // address-keyed lookup.
+    username: s.username?.trim() ? s.username.trim() : null,
     avatarUrl: resolveSeatAvatar(s),
   };
 }

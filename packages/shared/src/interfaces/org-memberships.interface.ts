@@ -79,6 +79,10 @@ export type OrgMembershipKeyContactType =
   | 'event-sponsorship'
   | 'authorized-signatory';
 
+/**
+ * A person as rendered on Membership Detail (key-contact rows, board/committee seat rows, and their
+ * edit/reassign modals).
+ */
 export interface OrgMembershipKeyContactPerson {
   /**
    * Spec 024: the member-service key_contact UID (Project_Role__c-derived). Used as the
@@ -93,6 +97,13 @@ export interface OrgMembershipKeyContactPerson {
   jobTitle: string | null;
   initials: string;
   avatarUrl?: string | null;
+  /**
+   * The person's LF username when the upstream record carries one (committee-service seat or
+   * member-service key_contact). The only key the person drawer may look company addresses up on;
+   * `email` above is display-only and must never stand in for it. Null renders the drawer's
+   * "not available from this view" state, never a claim that the person has no company address.
+   */
+  username?: string | null;
 }
 
 /**
@@ -125,6 +136,14 @@ export interface KeyContactEmployee {
   initials: string;
   /** Optional avatar/photo URL; the picker falls back to initials when absent. */
   avatarUrl?: string | null;
+  /**
+   * Resolved LF username for this person, when the key_contact document carries one. Carried so the
+   * All Employees roster can build a key-contact-only row that the person drawer is able to look
+   * company addresses up on — the drawer resolves identity → address and has no other identifier for
+   * these rows. Absent/null degrades to the drawer's "not available from this view" state, never to
+   * a claim that the person has no company address.
+   */
+  lfUsername?: string | null;
 }
 
 /** Response envelope for `GET /api/orgs/:orgUid/lens/key-contacts/employees`. */

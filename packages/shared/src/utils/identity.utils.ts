@@ -47,3 +47,46 @@ export function isIdentityAlreadyLinkedError(...texts: (string | undefined | nul
     return IDENTITY_ALREADY_LINKED_MARKERS.some((marker) => lower.includes(marker));
   });
 }
+
+/**
+ * The single LF username shared by a group of rows, or `null` when the group does not agree on one.
+ *
+ * The Org Lens governance tables group people by email and take the first row's values for the
+ * header, so a group is not guaranteed to be one human. Picking the first username found would let a
+ * group whose rows disagree resolve one person's identity while displaying another's name — and the
+ * drawer would then show that person's real email addresses under someone else's heading. That is the
+ * misattribution the whole company-address feature exists to help administrators detect, so it must
+ * not be introduced by the lookup itself.
+ *
+ * Agreement means EVERY row carries the same username. A row with no username is a disagreement, not
+ * an abstention: `[null, 'bob']` is a group whose header may well be Alice's row, and resolving it to
+ * Bob would show Bob's addresses under Alice's name. Skipping such rows would reintroduce exactly the
+ * misattribution this helper exists to prevent, so an incomplete group fails closed — the caller
+ * passes no identity and the panel says it cannot resolve addresses from this view.
+ */
+export function agreedUsername(usernames: readonly (string | null | undefined)[]): string | null {
+  // An empty group agrees on nothing.
+  if (usernames.length === 0) {
+    return null;
+  }
+
+  const distinct = new Set<string>();
+
+  for (const raw of usernames) {
+    const normalized = raw?.trim().toLowerCase();
+    // A missing username makes the group unresolvable: we cannot tell whether this row is the same
+    // human as the rows that do carry one.
+    if (!normalized) {
+      return null;
+    }
+    distinct.add(normalized);
+  }
+
+  if (distinct.size !== 1) {
+    return null;
+  }
+
+  // Return the original casing of the agreed value, since the lookup key is matched as stored.
+  const agreed = [...distinct][0];
+  return usernames.find((u) => u?.trim().toLowerCase() === agreed)?.trim() ?? null;
+}

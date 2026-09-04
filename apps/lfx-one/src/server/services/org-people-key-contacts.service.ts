@@ -145,6 +145,10 @@ export class OrgPeopleKeyContactsService {
         foundationSlug,
         foundationName: this.resolveFoundationName(membership),
         avatarUrl: c.avatar?.trim() ? c.avatar.trim() : null,
+        // Carried so the person drawer has an identity to look addresses up on. Absent when the search
+        // index omits it for this row, which degrades to the drawer's "not available from this view"
+        // state — never to a claim that the contact has no company address.
+        username: c.username?.trim() ? c.username.trim() : null,
       });
     }
 

@@ -50,8 +50,14 @@
                 }}</span>
               }
             </span>
-          } @else if (companyEmailFeatureEnabled() && companyEmailsUnavailable()) {
-            <span class="mt-1 truncate text-xs text-gray-400" data-testid="person-detail-drawer-email-unavailable"> Company email unavailable </span>
+          } @else if (companyEmailFeatureEnabled() && companyEmailsFailed()) {
+            <span class="mt-1 truncate text-xs text-gray-400" data-testid="person-detail-drawer-email-failed"> Company emails couldn't be loaded </span>
+          } @else if (companyEmailFeatureEnabled() && companyEmailsNotAvailable()) {
+            <span class="mt-1 truncate text-xs text-gray-400" data-testid="person-detail-drawer-email-not-available">
+              Company emails aren't available from this view
+            </span>
+          } @else if (companyEmailFeatureEnabled() && companyEmailsNoneOnRecord()) {
+            <span class="mt-1 truncate text-xs text-gray-400" data-testid="person-detail-drawer-email-none"> No company email on record </span>
           }
         </span>
       </div>

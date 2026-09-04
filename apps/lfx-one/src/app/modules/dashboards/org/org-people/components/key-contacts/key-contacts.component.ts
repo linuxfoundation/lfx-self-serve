@@ -16,7 +16,7 @@ import { OrgLensMembershipsService } from '@services/org-lens-memberships.servic
 import { OrgRoleGrantsService } from '@services/org-role-grants.service';
 import { PersonDetailDrawerService } from '@services/person-detail-drawer.service';
 import { EMPTY_ORG_KEY_CONTACTS_RESPONSE, roleToContactType } from '@lfx-one/shared/constants';
-import { avatarInitials } from '@lfx-one/shared/utils';
+import { agreedUsername, avatarInitials } from '@lfx-one/shared/utils';
 import type {
   AddKeyContactRequest,
   EditKeyContactDialogData,
@@ -175,6 +175,10 @@ export class KeyContactsComponent {
       initials: group.initials,
       avatarUrl: group.avatarUrl,
       email: group.email,
+      // Groups are email-keyed, so they are not guaranteed to be one human. Require every assignment
+      // that carries a username to agree before using it as the lookup key — otherwise a disagreeing
+      // group would show one person's addresses under another's name.
+      username: agreedUsername(group.assignments.map((a) => a.username)),
     });
   }
 
@@ -240,6 +244,7 @@ export class KeyContactsComponent {
           fullName: group.displayName,
           email: group.email,
           initials: this.deriveInitials(first.firstName, first.lastName),
+          username: agreedUsername(group.assignments.map((a) => a.username)),
         },
         roles,
         orgUid,

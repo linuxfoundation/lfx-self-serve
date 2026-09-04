@@ -205,6 +205,8 @@ export class EditBoardRoleModalComponent {
       avatarUrl: person.avatarUrl ?? null,
       avatarColorClass: 'bg-purple-500',
       email: person.email,
+      // identity for the company-address lookup; the drawer must not resolve a person from an address.
+      username: person.username ?? null,
     });
   }
 

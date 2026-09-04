@@ -24,6 +24,13 @@ export interface KeyContactDoc {
   board_member?: boolean;
   /** Optional avatar URL once member-service enriches key_contact person photos; null/absent → initials. */
   avatar?: string | null;
+  /**
+   * Resolved LFID username for this contact's email, set upstream by member-service
+   * (`internal/domain/model/key_contact.go`) — the same field `KeyContactIndexedDoc` declares, since
+   * both read the one `key_contact` document. Optional: the search index can omit unindexed columns
+   * per row, so absence means "no identity available", never "this person has no addresses".
+   */
+  username?: string | null;
 }
 
 /** Minimal query-service project_membership document used during key-contact resolution. */

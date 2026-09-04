@@ -29,6 +29,15 @@ export interface OrgKeyContactAssignment {
   foundationSlug: string;
   foundationName: string | null;
   avatarUrl?: string | null;
+  /**
+   * Resolved LFID username, carried so the person drawer can look up this contact's
+   * company-affiliated addresses. Resolving them from `email` instead is prohibited — that direction
+   * is known to produce false links between unrelated people.
+   *
+   * Null where upstream records none; the drawer then renders "not available from this view" rather
+   * than claiming the person holds no company address.
+   */
+  username?: string | null;
 }
 
 /** Account-level stat strip (FR-004 — filter-independent). */
@@ -113,6 +122,9 @@ export interface ReassignKeyContactRolesPersonRef {
   fullName: string;
   email: string;
   initials: string;
+  /** LF username of the person being replaced, so the drawer opened from this dialog can look up
+   *  their company addresses. Null when upstream records none. */
+  username?: string | null;
 }
 
 /** Dialog input — the parent supplies the person being replaced, the role catalog (one row per
