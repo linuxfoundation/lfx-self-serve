@@ -788,10 +788,13 @@ export class MeetingJoinComponent implements OnInit {
 
   private initializeMeeting(seed: MeetingJoinPageState | null) {
     const meeting$ = combineLatest([this.activatedRoute.paramMap, this.activatedRoute.queryParamMap, this.refreshTrigger$]).pipe(
-      debounceTime(0), // Coalesce rapid SSR hydration emissions so the fallback chain isn't canceled
-      switchMap(([params, queryParams]) => {
+      // Update `meetingRouteId` here, ahead of `debounceTime`, so `meetingMatchesRoute` flips to
+      // false the instant a route change is observed. Setting it inside `switchMap` instead left a
+      // one-macrotask window (the debounce itself) where the old route's id was still current and
+      // the template kept rendering the previous meeting's content under the new URL
+      // (copilot review on #2046).
+      tap(([params]) => {
         const meetingId = params.get('id');
-        this.password.set(queryParams.get('password'));
         const previousRouteId = this.meetingRouteId();
         this.meetingRouteId.set(meetingId);
         // Only clear a stale `meetingLoadFailed` when the route id actually changed (a real
@@ -803,6 +806,11 @@ export class MeetingJoinComponent implements OnInit {
         if (meetingId !== previousRouteId) {
           this.meetingLoadFailed.set(false);
         }
+      }),
+      debounceTime(0), // Coalesce rapid SSR hydration emissions so the fallback chain isn't canceled
+      switchMap(([params, queryParams]) => {
+        const meetingId = params.get('id');
+        this.password.set(queryParams.get('password'));
 
         if (!meetingId) {
           this.router.navigate(['/meetings/not-found']);
