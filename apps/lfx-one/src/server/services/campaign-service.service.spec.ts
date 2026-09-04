@@ -299,8 +299,13 @@ describe('CampaignServiceClient.saveBrief', () => {
       approved: true,
     });
 
+    // The find sends the FULL key. Upstream keys a brief on (project, event_slug, delivery_type,
+    // stage), so a lookup naming only the slug would match an arbitrary member of the event's
+    // brief set — the paid plan or any send in its email series.
     expect(proxyRequestWithResponse).toHaveBeenNthCalledWith(1, req, 'LFX_V2_CAMPAIGN_SERVICE', '/projects/tlf/briefs', 'GET', {
       event_slug: 'kubecon-eu-2026',
+      delivery_type: 'paid-marketing',
+      stage: '',
     });
     expect(proxyRequestWithResponse.mock.calls[1]?.[3]).toBe('POST');
   });
@@ -546,13 +551,6 @@ describe('CampaignServiceClient.saveBrief', () => {
       totalBudget: 5000,
       hsUtm: 'kubecon-eu-2026',
       driveFolderUrl: 'https://drive.google.com/drive/folders/abc',
-      // Present as `null` rather than absent, and asserted that way deliberately. This brief
-      // carries no delivery type, and `toBriefInput` still emits the key so that
-      // `storedBriefMatches` compares the same shape on both sides — a key emitted only when set
-      // would make an unchanged brief compare unequal to its own stored row and read as a
-      // conflicting write. `toEqual` would pass with the key absent only if it were `undefined`;
-      // pinning `null` is what keeps that reconciliation honest.
-      deliveryType: null,
     });
   });
 
@@ -1064,8 +1062,15 @@ describe('fromBriefResponse', () => {
     await new CampaignServiceClient().saveBrief(req, original, 'kubecon-eu-2026', 'tlf', 'b-1');
     const written = proxyRequestWithResponse.mock.calls[1]?.[5].brief;
 
-    // The stored row IS what was written — the service treats all four fields as opaque JSON.
-    expect(fromBriefResponse(storedBrief(written))).toEqual(original);
+    // The stored row IS what was written. `delivery_type` and `stage` are carried across explicitly
+    // because they are COLUMNS rather than part of the opaque JSON: the save sends them as
+    // top-level wire fields and the read takes them from there, so a round-trip that dropped them
+    // would pass while the identity the storage key depends on was silently lost.
+    expect(fromBriefResponse(storedBrief({ ...written, delivery_type: written.delivery_type, stage: written.stage }))).toEqual({
+      ...original,
+      deliveryType: 'paid-marketing',
+      emailStage: undefined,
+    });
   });
 
   // `eventDetails` is non-optional on `CampaignBriefOutput` and every tab reads off it, so a row
@@ -1353,68 +1358,34 @@ describe('CampaignServiceClient.loadBrief', () => {
     expect(result.status).toBe('loaded');
     expect(result.briefId).toBe('b-1');
     expect(result.brief?.eventDetails.name).toBe('KubeCon EU 2026');
-    expect(proxyRequestWithResponse).toHaveBeenCalledWith(req, 'LFX_V2_CAMPAIGN_SERVICE', '/projects/tlf/briefs', 'GET', { event_slug: 'kubecon-eu-2026' });
-  });
-
-  // The WRITE-side half of delivery scoping, and the one that matters most: scoping only the read
-  // made the hazard worse rather than better. Ownership is keyed `(project, event)` with no
-  // delivery component, so a session that restored the PAID brief still holds a valid id for it
-  // after switching to Email -- the ownership guard passes and email content replaces the paid
-  // row. Once replaced, the row records `deliveryType: 'email'`, so the paid surface's own read
-  // answers `none` and the loss is silent. Refusing is the only answer that destroys neither.
-  it('refuses to replace a brief authored on the other delivery surface, even for its owner', async () => {
-    proxyRequestWithResponse.mockResolvedValueOnce(apiResponse(storedBrief({ targeting: { deliveryType: 'paid-marketing' } }), { etag: '"3"' }));
-
-    // `b-1` is the STORED id, so the ownership guard would pass -- this is the owner writing.
-    const result = await new CampaignServiceClient().saveBrief(
-      req,
-      { ...briefWithSlug('kubecon-eu-2026'), deliveryType: 'email' },
-      'kubecon-eu-2026',
-      'tlf',
-      'b-1',
-      '"3"',
-      false
-    );
-
-    expect(result.conflict).toBe('other-delivery-type-brief-exists');
-    // The id is withheld for the same reason `unowned-brief-exists` withholds it: a caller told
-    // it may not write this row must not be handed the id that would let it replay ownership.
-    expect(result.briefId).toBe('');
-    // And nothing was written -- only the find ran.
-    expect(proxyRequestWithResponse).toHaveBeenCalledTimes(1);
-  });
-
-  // The guard reads `targeting.deliveryType` DIRECTLY rather than through `fromBriefResponse`.
-  // That distinction matters for a row this build cannot fully reconstruct: `fromBriefResponse`
-  // returns null for those, and going through it was wrong twice over -- `?.deliveryType ?? 'paid'`
-  // collapsed null into a real type, making an unreadable row indistinguishable from a paid one,
-  // while refusing on null broke sixteen ordinary saves, because the minimal
-  // `{id, version, program_type, event_slug}` shape a create returns has no `event_details` to
-  // reconstruct either. Reading the one validated string where it lives keeps the guard answering
-  // only its own question.
-  it('compares the stored delivery type even when the row cannot be fully reconstructed', async () => {
-    const unreconstructable = {
-      id: 'b-1',
-      version: 4,
-      program_type: 'events',
+    expect(proxyRequestWithResponse).toHaveBeenCalledWith(req, 'LFX_V2_CAMPAIGN_SERVICE', '/projects/tlf/briefs', 'GET', {
       event_slug: 'kubecon-eu-2026',
-      targeting: { deliveryType: 'email' },
-    };
-    proxyRequestWithResponse.mockResolvedValueOnce(apiResponse(unreconstructable, { etag: '"3"' }));
+      delivery_type: 'paid-marketing',
+      stage: '',
+    });
+  });
 
-    const paid = await new CampaignServiceClient().saveBrief(
-      req,
-      { ...briefWithSlug('kubecon-eu-2026'), deliveryType: 'paid-marketing' },
-      'kubecon-eu-2026',
-      'tlf',
-      'b-1',
-      '"3"',
-      false
-    );
+  // The capability the schema half exists for: one event carries a paid brief AND an email series
+  // at once, and each stage is its own brief. Asserts on the KEY SENT rather than the row returned,
+  // because the defect this prevents is addressing the wrong member of that set — which a
+  // returned-a-brief check cannot see.
+  it('addresses each brief in an event by its full identity, so a series is reachable', async () => {
+    const asked: Record<string, unknown>[] = [];
+    proxyRequestWithResponse.mockImplementation((_r: unknown, _s: unknown, _p: unknown, _m: unknown, query: Record<string, unknown>) => {
+      asked.push(query);
+      return Promise.resolve(apiResponse(storedBrief({ delivery_type: query['delivery_type'], stage: query['stage'] }), { etag: '"3"' }));
+    });
+    const client = new CampaignServiceClient();
 
-    expect(paid.conflict).toBe('other-delivery-type-brief-exists');
-    // The find ran; no write followed it.
-    expect(proxyRequestWithResponse).toHaveBeenCalledTimes(1);
+    await client.loadBrief(req, 'kubecon-eu-2026', 'tlf', 'paid-marketing', '');
+    await client.loadBrief(req, 'kubecon-eu-2026', 'tlf', 'email', 'CFP Launch');
+    await client.loadBrief(req, 'kubecon-eu-2026', 'tlf', 'email', 'Final Countdown');
+
+    expect(asked).toEqual([
+      { event_slug: 'kubecon-eu-2026', delivery_type: 'paid-marketing', stage: '' },
+      { event_slug: 'kubecon-eu-2026', delivery_type: 'email', stage: 'CFP Launch' },
+      { event_slug: 'kubecon-eu-2026', delivery_type: 'email', stage: 'Final Countdown' },
+    ]);
   });
 
   // Delivery scoping. Storage is keyed `(project_id, event_slug)` with no delivery dimension
@@ -1423,7 +1394,7 @@ describe('CampaignServiceClient.loadBrief', () => {
   // disabled: a paid brief restored into an email plan carries RSA headlines, a keyword list and
   // a platform selection that mean nothing there. These four pin the contract in both directions.
   it('reports a paid brief as absent when an email caller asks for it', async () => {
-    proxyRequestWithResponse.mockResolvedValueOnce(apiResponse(storedBrief({ targeting: { deliveryType: 'paid-marketing' } }), { etag: '"3"' }));
+    proxyRequestWithResponse.mockResolvedValueOnce(apiResponse(storedBrief({ delivery_type: 'paid-marketing' }), { etag: '"3"' }));
 
     const result = await new CampaignServiceClient().loadBrief(req, 'kubecon-eu-2026', 'tlf', 'email');
 
@@ -1436,7 +1407,7 @@ describe('CampaignServiceClient.loadBrief', () => {
   });
 
   it('reports an email brief as absent when a paid caller asks for it', async () => {
-    proxyRequestWithResponse.mockResolvedValueOnce(apiResponse(storedBrief({ targeting: { deliveryType: 'email' } }), { etag: '"3"' }));
+    proxyRequestWithResponse.mockResolvedValueOnce(apiResponse(storedBrief({ delivery_type: 'email' }), { etag: '"3"' }));
 
     await expect(new CampaignServiceClient().loadBrief(req, 'kubecon-eu-2026', 'tlf', 'paid-marketing')).resolves.toMatchObject({
       status: 'none',
@@ -1445,7 +1416,7 @@ describe('CampaignServiceClient.loadBrief', () => {
   });
 
   it('returns the brief when the stored delivery type matches the caller', async () => {
-    proxyRequestWithResponse.mockResolvedValueOnce(apiResponse(storedBrief({ targeting: { deliveryType: 'email' } }), { etag: '"3"' }));
+    proxyRequestWithResponse.mockResolvedValueOnce(apiResponse(storedBrief({ delivery_type: 'email' }), { etag: '"3"' }));
 
     await expect(new CampaignServiceClient().loadBrief(req, 'kubecon-eu-2026', 'tlf', 'email')).resolves.toMatchObject({
       status: 'loaded',

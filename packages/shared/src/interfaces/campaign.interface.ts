@@ -1,7 +1,7 @@
 // Copyright The Linux Foundation and each contributor to LFX.
 // SPDX-License-Identifier: MIT
 
-import type { CAMPAIGN_METRICS_WINDOWS } from '../constants/campaign.constants';
+import type { CAMPAIGN_EMAIL_STAGES, CAMPAIGN_METRICS_WINDOWS } from '../constants/campaign.constants';
 
 // ---------------------------------------------------------------------------
 // Platform & Phase
@@ -220,6 +220,16 @@ export interface CampaignBriefOutput {
    * the paid surface, the only one whose restore path was ever enabled.
    */
   deliveryType?: CampaignDeliveryType;
+  /**
+   * Which send in an email series this brief is. Absent for paid, which has no series.
+   *
+   * Part of the brief's IDENTITY upstream rather than a label on it: campaign-service keys a
+   * brief on `(project, event_slug, delivery_type, stage)`, so two email briefs for one event
+   * differing only in stage are different briefs, not two versions of one. That is what lets a
+   * campaign be the series it actually is -- a CFP Launch and a Final Countdown for the same
+   * event, both live at once.
+   */
+  emailStage?: CampaignEmailStage;
   selectedPlatforms?: CampaignPlatform[];
   linkedInCopy?: LinkedInBriefCopy;
   redditCopy?: RedditBriefCopy;
@@ -274,15 +284,6 @@ export interface CampaignBriefPersistResult {
    * Distinct from `unowned-brief-exists` because the remedy differs: this caller may replace the
    * brief, it just needs to see the newer version first.
    *
-   * `other-delivery-type-brief-exists`: a brief exists for this event slug and was authored on
-   * the OTHER delivery surface. Separate from `unowned-brief-exists` because the caller may well
-   * own this row — a session that restored the paid brief keeps a valid id for it across a switch
-   * to Email — so the ownership guard passes and would replace it. Storage holds one row per
-   * `(project, event_slug)`, so the write is refused rather than resolved: replacing destroys the
-   * other surface's brief, and after the write records the new delivery type that surface's own
-   * read reports it as absent, making the loss silent. The remedy is not a reload; it is to plan
-   * this event on one surface until the storage key gains a delivery dimension.
-   *
    * `unowned-brief-exists`: a brief already exists for this event slug and the caller could not
    * prove it owns it — it never loaded that brief, so it holds no `briefId` matching the stored
    * row. Replacing would overwrite content the user was never shown, and a reload or a second tab
@@ -305,7 +306,7 @@ export interface CampaignBriefPersistResult {
    * and the caller's next step is a CHOICE (open the existing one, or file under a different
    * event) rather than a retry.
    */
-  conflict?: 'unowned-brief-exists' | 'other-delivery-type-brief-exists' | 'stale-brief' | 'superseded-after-write' | 'unverified-validator';
+  conflict?: 'unowned-brief-exists' | 'stale-brief' | 'superseded-after-write' | 'unverified-validator';
 }
 
 /**
@@ -2173,7 +2174,11 @@ export interface BriefMetrics {
  * Closed because upstream's `generate-email-copy` declares it closed: an unrecognised value is
  * refused with a 400 naming the valid ones, so a typo cannot quietly become registration copy.
  */
-export type CampaignEmailStage = 'CFP Launch' | 'Schedule Announcement' | 'Registration Push' | 'Discount Offer' | 'Final Countdown' | 'Post-Event';
+/**
+ * Derived from `CAMPAIGN_EMAIL_STAGES` rather than restated, so the runtime list that validates a
+ * wire value and the type that describes it cannot drift apart.
+ */
+export type CampaignEmailStage = (typeof CAMPAIGN_EMAIL_STAGES)[number];
 
 /**
  * One selectable email type.

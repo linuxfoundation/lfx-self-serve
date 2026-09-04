@@ -203,13 +203,6 @@ export class CampaignsComponent {
     // that user round a loop it could never exit. This states what happened and what to try,
     // without asserting an outcome this branch cannot guarantee — the second sentence is the
     // honest form of "and here is why re-entering it may show nothing".
-    // Names the actual obstacle and does NOT advise a reload. Reloading cannot help: the stored
-    // brief belongs to the other surface, so this surface's `loadBrief` will keep reporting it as
-    // absent no matter how many times the URL is re-entered. Telling the user which surface holds
-    // it is the only advice that leads anywhere, since the remedy is to switch surfaces or plan
-    // the event on one of them.
-    'other-delivery-type-brief-exists':
-      'This event already has a saved brief from the other delivery type, and each event can hold only one. It was not overwritten. Switch to that delivery type to work on it, or use a different event.',
     'unowned-brief-exists':
       'This event already has a saved brief that was not opened here, so this one was not saved over it. Reload and re-enter the event URL to open it — if nothing appears, the stored brief belongs to the other delivery type and cannot be opened here.',
     // Does NOT advise a reload, even though this branch adds the read path that would make one
@@ -445,10 +438,9 @@ export class CampaignsComponent {
    *
    * `persistEmailBrief` resolves to a brief id and reports failure as an empty string, which
    * cannot carry WHY the save failed — so every email action rendered "The brief could not be
-   * saved… Try again." even for `other-delivery-type-brief-exists`, which retrying can never
-   * clear. That is the same dead end the `unowned-brief-exists` copy was reworded to stop
-   * promising, reintroduced one surface over — and it is the surface most likely to hit it, since
-   * an event already planned on paid trips the guard on the FIRST email action.
+   * saved… Try again." for conflicts that retrying can never clear. `unowned-brief-exists` is the
+   * live example: the row belongs to a session that opened it, and no number of retries changes
+   * that. The paid surface has always named its conflicts; this gives email the same.
    *
    * Held here rather than widened into the return type because all three callers already branch
    * on the empty id; this lets them name the cause without changing that shape.
