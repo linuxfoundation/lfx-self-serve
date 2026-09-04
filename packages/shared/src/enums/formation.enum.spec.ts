@@ -68,4 +68,51 @@ describe('FormationTemplate shape', () => {
 
     expect(template.sections[0].items[0].sub_items).toHaveLength(1);
   });
+
+  it('round-trips action_link through serialize/parse, including an unmangled {{project.uid}} placeholder', () => {
+    const template = {
+      uid: 'formation-template-test',
+      version: 1,
+      name: 'Test template',
+      sections: [
+        {
+          key: FormationTemplateSectionKey.LEGAL_AND_ENTITY,
+          title: 'Legal and entity',
+          items: [
+            {
+              key: 'register-domain',
+              title: 'Register domain',
+              is_gating: false,
+              owner_team: FormationOwnerTeam.IT,
+              action: FormationActionType.MANUAL,
+              action_link: '/project/{{project.uid}}/committees/new',
+            },
+            {
+              key: 'contribution-agreement',
+              title: 'Contribution agreement',
+              is_gating: true,
+              owner_team: FormationOwnerTeam.FORMATION,
+              action: FormationActionType.LINK,
+              action_link: 'https://example.com/docusign/envelope',
+            },
+            {
+              key: 'charter-agreed',
+              title: 'Charter agreed',
+              is_gating: true,
+              owner_team: FormationOwnerTeam.FORMATION,
+              action: FormationActionType.MANUAL,
+            },
+          ],
+        },
+      ],
+    } satisfies FormationTemplate;
+
+    const roundTripped = JSON.parse(JSON.stringify(template)) as FormationTemplate;
+    const [manualItem, linkItem, noLinkItem] = roundTripped.sections[0].items;
+
+    expect(manualItem.action_link).toBe('/project/{{project.uid}}/committees/new');
+    expect(manualItem.action_link).toContain('{{project.uid}}');
+    expect(linkItem.action_link).toBe('https://example.com/docusign/envelope');
+    expect(noLinkItem).not.toHaveProperty('action_link');
+  });
 });
