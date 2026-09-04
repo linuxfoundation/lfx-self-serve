@@ -2,7 +2,6 @@
 // SPDX-License-Identifier: MIT
 
 import { CdkDragDrop, DragDropModule, moveItemInArray } from '@angular/cdk/drag-drop';
-import { DatePipe } from '@angular/common';
 import { HttpErrorResponse } from '@angular/common/http';
 import { Component, computed, DestroyRef, inject, input, model, output, signal, Signal } from '@angular/core';
 import { takeUntilDestroyed, toObservable, toSignal } from '@angular/core/rxjs-interop';
@@ -18,6 +17,7 @@ import { buildCommentResponses, getCommentPromptsData, reconcileCommentFormContr
 import { CodePointLengthPipe } from '@pipes/code-point-length.pipe';
 import { PollStatusLabelPipe } from '@pipes/poll-status-label.pipe';
 import { PollStatusSeverityPipe } from '@pipes/poll-status-severity.pipe';
+import { VoteDeadlinePipe } from '@pipes/vote-deadline.pipe';
 import { VoteService } from '@services/vote.service';
 import { MessageService } from 'primeng/api';
 import { CheckboxModule } from 'primeng/checkbox';
@@ -40,7 +40,7 @@ import { catchError, filter, finalize, of, shareReplay, startWith, Subject, swit
     PollStatusLabelPipe,
     PollStatusSeverityPipe,
     CodePointLengthPipe,
-    DatePipe,
+    VoteDeadlinePipe,
   ],
   templateUrl: './vote-cast-drawer.component.html',
   styleUrl: './vote-cast-drawer.component.scss',

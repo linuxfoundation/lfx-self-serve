@@ -37,7 +37,7 @@
             [severity]="voteData.status | pollStatusSeverity"
             data-testid="vote-cast-drawer-status"></lfx-tag>
           <span class="text-slate-400">•</span>
-          <span>Due {{ voteData.end_time | date: 'MMM d, y' }}</span>
+          <span>Due {{ voteData.end_time | voteDeadline: voteData.end_time_timezone }}</span>
         </div>
       </div>
     </ng-template>

@@ -194,6 +194,8 @@ export interface Vote {
   end_time: string;
   /** Actual close time when the poll auto-ended early because all eligible voters responded before end_time. Absent when the poll closed on schedule or is still active. RFC3339. Read-only (set upstream by ITX, proxied by lfx-v2-voting-service). */
   early_end_time?: string;
+  /** IANA timezone the organizer picked the close deadline in (e.g. "America/New_York"). Absent on legacy votes — render those in LEGACY_VOTE_TIMEZONE. */
+  end_time_timezone?: string;
   /** Current poll status */
   status: PollStatus;
   /** V2 project UID */
@@ -403,6 +405,10 @@ export interface VoteFormValue {
   eligible_participants: string;
   /** Vote close/end date */
   close_date: Date | null;
+  /** Vote close time in 12-hour format (e.g. "11:59 PM") */
+  close_time: string;
+  /** IANA timezone the close date/time is interpreted in */
+  timezone: string;
   /** Whether voters may abstain from voting */
   allow_abstain: boolean;
   /** Array of question form values */
@@ -660,6 +666,8 @@ export interface VoteResultsResponse {
   num_abstained: number;
   /** Poll end/deadline timestamp */
   poll_end_time: string;
+  /** IANA timezone of the poll deadline. Absent on legacy votes — render in LEGACY_VOTE_TIMEZONE. */
+  poll_end_time_timezone?: string;
 }
 
 /**
@@ -707,6 +715,8 @@ export interface CreateVoteRequest {
   description: string;
   /** Poll end/deadline timestamp in RFC3339/ISO format (required) */
   end_time: string;
+  /** IANA timezone the end_time wall-clock was picked in (e.g. "America/New_York") */
+  end_time_timezone?: string;
   /** V2 project UID the poll belongs to (required) */
   project_uid: string;
   /** V2 committee UID - required for single committee votes */
@@ -800,6 +810,8 @@ export interface UpdateVoteRequest {
   description?: string;
   /** Poll end/deadline timestamp in RFC3339/ISO format */
   end_time?: string;
+  /** IANA timezone the end_time wall-clock was picked in (e.g. "America/New_York") */
+  end_time_timezone?: string;
   /** V2 project UID the poll belongs to */
   project_uid?: string;
   /** V2 committee UID */

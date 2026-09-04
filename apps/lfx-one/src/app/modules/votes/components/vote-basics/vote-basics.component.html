@@ -128,10 +128,49 @@
             @if (form().get('close_date')?.touched && !form().get('close_date')?.value) {
               <p class="text-red-500 text-xs">Close date is required.</p>
             }
-            <p class="text-xs text-gray-400">
-              Select a date after today when this {{ voteLabel.singular | lowercase }} will close and no longer accept responses.
-            </p>
+            <p class="text-xs text-gray-400">The day this {{ voteLabel.singular | lowercase }} closes, in the timezone selected below.</p>
           </div>
+
+          <!-- Close Time -->
+          <div class="flex flex-col gap-1">
+            <label for="close-time" class="text-sm font-medium text-gray-700"> Close Time <span class="text-red-500">*</span> </label>
+            <lfx-time-picker
+              [form]="form()"
+              control="close_time"
+              placeholder="Select close time"
+              styleClass="w-full"
+              data-testid="vote-close-time-picker">
+            </lfx-time-picker>
+            @if (form().get('close_time')?.touched && !form().get('close_time')?.value) {
+              <p class="text-red-500 text-xs">Close time is required.</p>
+            }
+          </div>
+
+          <!-- Timezone -->
+          <div class="flex flex-col gap-1">
+            <label for="vote-timezone" class="text-sm font-medium text-gray-700"> Timezone <span class="text-red-500">*</span> </label>
+            <lfx-select
+              [filter]="true"
+              styleClass="w-full"
+              appendTo="body"
+              [form]="form()"
+              control="timezone"
+              inputId="vote-timezone"
+              [options]="timezoneOptions()"
+              optionLabel="label"
+              optionValue="value"
+              placeholder="Select timezone"
+              data-testid="vote-timezone-select">
+            </lfx-select>
+            @if (form().get('timezone')?.touched && !form().get('timezone')?.value) {
+              <p class="text-red-500 text-xs">Timezone is required.</p>
+            }
+          </div>
+
+          <!-- Future deadline validation error -->
+          @if (form().errors?.['futureDateTime'] && (form().get('close_date')?.touched || form().get('close_time')?.touched)) {
+            <p class="text-red-500 text-xs">The close date and time must be in the future.</p>
+          }
 
           <!-- Allow Abstain -->
           <div class="flex flex-col gap-1">

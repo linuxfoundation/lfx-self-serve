@@ -42,10 +42,10 @@
             <span class="text-gray-900 text-right">{{ eligibleParticipantsLabel() }}</span>
           </div>
           <div class="flex justify-between gap-4">
-            <span class="text-gray-500">Close Date:</span>
+            <span class="text-gray-500">Close Date & Time:</span>
             <span class="text-gray-900 text-right">
               @if (closeDate()) {
-                {{ closeDate() | date: 'MMMM d, yyyy' }}
+                {{ closeDate() }}
               } @else {
                 Not set
               }

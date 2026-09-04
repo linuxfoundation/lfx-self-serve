@@ -100,3 +100,6 @@ export const TIMEZONES: TimezoneOption[] = [
   { label: 'Samoa', value: 'Pacific/Apia', offset: '+13:00' },
   { label: 'Tahiti', value: 'Pacific/Tahiti', offset: '-10:00' },
 ];
+
+/** Canonical display zone for legacy votes that predate stored timezones — their stored end_time was authored Pacific-side. */
+export const LEGACY_VOTE_TIMEZONE = 'America/Los_Angeles';
