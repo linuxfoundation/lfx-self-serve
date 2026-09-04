@@ -1,7 +1,9 @@
 // Copyright The Linux Foundation and each contributor to LFX.
 // SPDX-License-Identifier: MIT
 
-import { Routes } from '@angular/router';
+import { inject } from '@angular/core';
+import { Router, Routes } from '@angular/router';
+import { ACCOUNT_SETTINGS_SECTIONS, PROFILE_SETTINGS_PATH } from '@lfx-one/shared/constants';
 
 import { myClasEnabledGuard } from '@app/shared/guards/my-clas-enabled.guard';
 
@@ -57,14 +59,25 @@ export const PROFILE_ROUTES: Routes = [
       // linux-email is now embedded in the Identities tab — redirect for backward compat
       { path: 'linux-email', redirectTo: 'identities' },
 
-      // Direct-URL-only routes (no tab, but still accessible)
+      // Redirect the old standalone email/password pages into the Settings tab section.
+      // Functional redirectTo (not a string) is required to attach the #fragment — a string
+      // redirectTo has no way to carry one.
       {
         path: 'password',
-        loadComponent: () => import('./password/profile-password.component').then((m) => m.ProfilePasswordComponent),
+        redirectTo: ({ queryParams }) => inject(Router).createUrlTree([PROFILE_SETTINGS_PATH], { queryParams, fragment: ACCOUNT_SETTINGS_SECTIONS.PASSWORD }),
       },
       {
         path: 'email',
-        loadComponent: () => import('./email/profile-email.component').then((m) => m.ProfileEmailComponent),
+        redirectTo: ({ queryParams }) =>
+          inject(Router).createUrlTree([PROFILE_SETTINGS_PATH], { queryParams, fragment: ACCOUNT_SETTINGS_SECTIONS.EMAIL_SETTINGS }),
+      },
+      // Unlike password/email above, this isn't a legacy redirect — profile.controller.ts's
+      // Flow C flows emit returnTo=/profile/emails as their live landing path, so this route
+      // must keep resolving even if the other two are ever retired.
+      {
+        path: 'emails',
+        redirectTo: ({ queryParams }) =>
+          inject(Router).createUrlTree([PROFILE_SETTINGS_PATH], { queryParams, fragment: ACCOUNT_SETTINGS_SECTIONS.EMAIL_SETTINGS }),
       },
 
       // Backward-compat redirects for old URLs

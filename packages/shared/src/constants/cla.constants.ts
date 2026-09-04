@@ -46,12 +46,34 @@ export const MY_CLAS_PATH = '/profile/clas';
 
 /**
  * The Contributor Console's Gerrit signing route, as its own router declares it
- * (`cla/gerrit/project/:projectId/:contractType`). Always the individual agreement: every
- * Gerrit-linked CLA Group in production has ICLA enabled, and the search response deliberately
- * omits the enablement flags, so there is nothing to read and nothing to choose.
+ * (`cla/gerrit/project/:projectId/:contractType`). The contract-type segment is chosen on
+ * the Gerrit path from the group's enablement flags (#2066).
  */
 export const GERRIT_CONSOLE_ROUTE_PREFIX = '#/cla/gerrit/project';
-export const GERRIT_CONSOLE_CONTRACT_TYPE = 'individual';
+
+/** Contract-type segments the Console Gerrit route accepts (#2066). */
+export const GERRIT_CONTRACT_TYPE_INDIVIDUAL = 'individual';
+export const GERRIT_CONTRACT_TYPE_CORPORATE = 'corporate';
+
+/**
+ * Copy for the Gerrit contract-type step (#2066), mirroring the Contributor Console decision
+ * screen rather than inventing new wording.
+ */
+export const SIGN_CONTRACT_TYPE_COPY = {
+  header: 'What type of contributor are you?',
+  body: "Choose how you'll sign for this project — you'll be redirected to EasyCLA to complete it.",
+  individual: {
+    label: 'Individual Contributor',
+    description:
+      'If you are making a contribution of content that you own, and not content owned by your employer, you should proceed as an individual contributor.',
+  },
+  corporate: {
+    label: 'Corporate Contributor',
+    description: 'If you are making a contribution of content owned by your employer, you should proceed as a corporate contributor.',
+  },
+  /** Why a card is disabled: the identity confirmed a step earlier already holds that type. */
+  alreadyHeld: 'You already have this agreement for this CLA group signed with this identity.',
+} as const;
 
 /**
  * The value the Gerrit card writes into the step's form control.
@@ -109,6 +131,13 @@ export const GITLAB_UNSUPPORTED_MESSAGE = 'Signing CLA using GitLab is not suppo
  * about a source and does not say so.
  */
 export const GITLAB_UNSUPPORTED_HEADER = 'GitLab CLA signing';
+
+/**
+ * Chip on a Sign a CLA search result the contributor already holds a CLA for (#1914).
+ * The tooltip on that row carries the sentence that says which agreement; this is only
+ * the short label that makes the grayed-out state readable without hovering.
+ */
+export const ALREADY_SIGNED_CLA_LABEL = 'Already signed';
 
 /** Hover tooltips on a right-edge kebab open off-screen; keep the CCLA reason in the item. */
 export const ECLA_COVERED_DOWNLOAD_LABEL = 'Download PDF<br><span class="mt-0.5 block text-xs font-normal">Covered by Corporate CLA (CCLA)</span>';

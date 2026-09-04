@@ -4,13 +4,13 @@
 import { signal, type WritableSignal } from '@angular/core';
 import { ComponentFixture, TestBed } from '@angular/core/testing';
 import { provideNoopAnimations } from '@angular/platform-browser/animations';
-import { ActivatedRoute, convertToParamMap, type ParamMap, Router } from '@angular/router';
+import { ActivatedRoute, convertToParamMap, type ParamMap, Router, UrlTree } from '@angular/router';
 import { Account, BoardDisplayRow } from '@lfx-one/shared/interfaces';
 import { AccountContextService } from '@services/account-context.service';
 import { FeatureFlagService } from '@services/feature-flag.service';
 import { OrgLensProjectDetailService } from '@services/org-lens-project-detail.service';
 import { PersonDetailDrawerService } from '@services/person-detail-drawer.service';
-import { BehaviorSubject, of } from 'rxjs';
+import { BehaviorSubject, EMPTY, of } from 'rxjs';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 
 import { OrgProjectDetailComponent } from './org-project-detail.component';
@@ -84,7 +84,9 @@ describe('OrgProjectDetailComponent — leaderboard detail drawer opening', () =
             companyEmails: signal([]),
           },
         },
-        { provide: Router, useValue: { navigate: vi.fn() } },
+        // lfx-button renders routerLink CTAs as real anchors — RouterLink on an anchor eagerly
+        // computes href via createUrlTree/serializeUrl and subscribes to router.events.
+        { provide: Router, useValue: { navigate: vi.fn(), events: EMPTY, createUrlTree: vi.fn(() => ({}) as UrlTree), serializeUrl: vi.fn(() => '') } },
         {
           provide: ActivatedRoute,
           useValue: {

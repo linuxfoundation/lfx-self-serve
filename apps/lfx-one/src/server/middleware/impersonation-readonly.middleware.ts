@@ -23,6 +23,12 @@ import { isImpersonating } from '../utils/auth-helper';
 //    same "produces a result nobody can trace back to the impersonator" failure mode (e.g.
 //    Share to Slack, an incoming-webhook POST with no reply-to equivalent — weekly-brief.route.ts).
 // Block every such write while impersonating; impersonated viewing/reads stay unaffected.
+//
+// The Flow C and social-link root-level auth callbacks (/passwordless/callback,
+// /social/callback in server.ts) are the same class-1 risk but can't use this middleware: they're
+// redirect-only handlers outside the /api error-handler mount, so a next(err) here would render as
+// a bare JSON 403 instead of a redirect. They enforce the same guarantee via an in-handler
+// equivalent — ProfileController.blockCallbackDuringImpersonation.
 export function blockDuringImpersonation(req: Request, _res: Response, next: NextFunction): void {
   if (!isImpersonating(req)) {
     next();

@@ -1313,8 +1313,9 @@ export class WeeklyBriefService {
    * their own doc comments in `committee-activity.service.ts` for why), so they fetch each
    * committee's newest `fetchSize` rows by `updated_desc` and filter to the window in memory —
    * their own `saturated` flag reflects whether the committee has more than `fetchSize` *lifetime*
-   * notes/surveys, not whether THIS WEEK's activity was truncated. Gating on that would silently
-   * hide the tally for exactly the long-lived, active committees it exists to help.
+   * notes/surveys, not whether THIS WEEK's activity was truncated. Gating on that would show a
+   * near-permanent, usually-wrong `truncated: true` note on exactly the long-lived, active
+   * committees it exists to help.
    *
    * Gate on the raw, unfiltered `data.length` hitting `limit` (Copilot review), NOT on
    * `sourceRefs.length + unmappedInWindow` as this method originally did. That original gate
@@ -1329,10 +1330,11 @@ export class WeeklyBriefService {
    * window_end filter. Gating on `data.length >= limit` instead catches that: a full raw page is
    * treated as "possibly truncated" regardless of composition. The cost is the mirror-image false
    * positive — a committee whose only this-week activity actually is `limit`-many future-stamped
-   * votes gets `null` instead of an honest small `sourceRefs`, since this method can't tell the two
-   * cases apart with the signal `getCommitteeActivity` exposes today. Consistent with this
-   * method's own bias (see `WeeklyBriefCurrentResponse.current_activity`'s doc comment): an
-   * unnecessary `null` is a safe, if slightly annoying, degradation; a false-complete count is not.
+   * votes gets `truncated: true` alongside its (already-honest) small `sourceRefs`, since this
+   * method can't tell the two cases apart with the signal `getCommitteeActivity` exposes today.
+   * Consistent with this method's own bias (see `WeeklyBriefCurrentResponse.current_activity`'s
+   * doc comment): an unnecessary `truncated: true` is a safe, if slightly annoying, degradation
+   * that still surfaces the real `sourceRefs` it has; a false-complete count is not.
    *
    * Known v1 residual (accepted, not solved): `data.length < limit` is a heuristic, not a
    * proof of completeness. `committee-activity.service.ts` documents — in its own "Filter
@@ -1350,8 +1352,8 @@ export class WeeklyBriefService {
    * comments). Nothing crosses the `getCommitteeActivity` boundary as a signal this caller could
    * gate on for that narrower remainder today. `any_leg_saturated` deliberately still isn't part
    * of this gate, unlike `any_leg_failed` above — see this method's own comment on why two of the
-   * five legs' saturation reflects lifetime volume, not this week's, and would falsely hide the
-   * tally for exactly the long-lived committees it exists to help.
+   * five legs' saturation reflects lifetime volume, not this week's, and would falsely show a
+   * near-permanent incompleteness note for exactly the long-lived committees it exists to help.
    */
   private async buildCurrentActivity(req: Request, committeeId: string): Promise<WeeklyBriefCurrentActivity | null | undefined> {
     try {
@@ -1407,8 +1409,8 @@ export class WeeklyBriefService {
       // degrades to `{ events: [], saturated: false }` in committee-activity.service.ts,
       // indistinguishable from a leg that genuinely had nothing this week. `undefined`, not
       // `null` — a leg failure is transient (the same upstream call can succeed on the next poll
-      // tick), unlike the page-fill gate's `null`, which this method's own doc comment already
-      // establishes is provably permanent within a poll cycle.
+      // tick), unlike the page-fill gate's `truncated: true`, which this method's own doc comment
+      // already establishes is provably permanent within a poll cycle.
       if (any_leg_failed) {
         logger.warning(req, 'get_weekly_brief_current_activity', 'One or more activity legs failed, omitting the tally rather than publishing an undercount', {
           committee_id: committeeId,
@@ -1477,18 +1479,27 @@ export class WeeklyBriefService {
       }
 
       if (data.length >= ACTIVITY_FEED_MAX_PAGE_SIZE) {
+        // WARN, not DEBUG — unlike the vote-leg drop above (a modeled, expected shape for one
+        // committee on one vote), a full page is graceful degradation of the tally itself: every
+        // consumer of this response is now getting a lower bound, not proof of partiality (see
+        // WeeklyBriefCurrentActivity.truncated's own doc comment), repeating on every GET /current
+        // until the committee's volume drops. That's exactly the
+        // "error conditions with graceful degradation (returning null/empty arrays)" WARN
+        // criterion in .claude/rules/logging-patterns.md, and worth an operator noticing if
+        // ACTIVITY_FEED_MAX_PAGE_SIZE needs raising for this committee.
         logger.warning(
           req,
           'get_weekly_brief_current_activity',
-          'Current-week activity fills a full page — publishing null (settled, not a count) rather than a truncated count stated as fact',
+          'Current-week activity fills a full page — publishing source_refs as a lower bound via truncated: true, not proof of partiality',
           {
             committee_id: committeeId,
           }
         );
-        // null, not undefined — more in-window activity only ever accumulates within a poll
-        // cycle, never un-fills a full page, so this can't resolve differently on a later tick
-        // within the same cycle either.
-        return null;
+        // truncated: true, not null — more in-window activity only ever accumulates within a
+        // poll cycle, never un-fills a full page, so this can't resolve differently on a later
+        // tick within the same cycle either, but the already-mapped source_refs are still a real
+        // (if partial) count worth showing rather than discarding.
+        return { window_start, window_end, source_refs: sourceRefs, truncated: true };
       }
 
       return { window_start, window_end, source_refs: sourceRefs };
@@ -1497,8 +1508,8 @@ export class WeeklyBriefService {
         committee_id: committeeId,
         err,
       });
-      // undefined, not null — this failure is transient (a lookup/fetch error), unlike the two
-      // null cases above, so a caller is right to ask again.
+      // undefined, not null — this failure is transient (a lookup/fetch error), unlike the settled
+      // null case above (non-governance), so a caller is right to ask again.
       return undefined;
     }
   }

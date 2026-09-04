@@ -24,6 +24,13 @@ export function slugify(text: string): string {
 }
 
 /**
+ * Normalise campaign names for case- and whitespace-insensitive matching.
+ */
+export function normaliseForMatch(value: string): string {
+  return value.trim().toLowerCase().replace(/\s+/g, ' ');
+}
+
+/**
  * Wraps a text string into multiple lines, breaking on word boundaries.
  * Used to produce multi-line Chart.js axis labels (which accept `string[]`).
  * @param text - The label text to wrap

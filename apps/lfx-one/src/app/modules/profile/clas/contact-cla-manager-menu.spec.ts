@@ -15,7 +15,7 @@ function agreement(overrides: Partial<MyClaAgreement> = {}): MyClaAgreement {
     kind: 'ECLA',
     claGroupName: 'CNCF',
     projectName: 'Cloud Native Computing Foundation (CNCF)',
-    signedOn: '2022-01-01',
+    signedOn: '2022-01-01T18:40:42Z',
     status: 'valid',
     pdfAvailable: false,
     ...overrides,

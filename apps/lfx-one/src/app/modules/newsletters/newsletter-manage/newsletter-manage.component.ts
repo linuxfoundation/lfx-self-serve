@@ -3,6 +3,7 @@
 
 import { isPlatformBrowser } from '@angular/common';
 import { HttpErrorResponse } from '@angular/common/http';
+
 import { Component, computed, DestroyRef, effect, inject, Injector, PLATFORM_ID, signal, Signal } from '@angular/core';
 import { takeUntilDestroyed, toObservable, toSignal } from '@angular/core/rxjs-interop';
 import { FormControl, FormGroup, ReactiveFormsModule } from '@angular/forms';
@@ -45,6 +46,7 @@ import { NewsletterService } from '@services/newsletter.service';
 import { ProjectContextService } from '@services/project-context.service';
 import { ProjectService } from '@services/project.service';
 import { UserService } from '@services/user.service';
+import { isSchedulingDisabledReply } from '@shared/utils/upstream-error.utils';
 import { extractErrorMessage } from '@shared/utils/http-error.utils';
 import { toZonedTime } from 'date-fns-tz';
 import { ConfirmationService, MessageService } from 'primeng/api';
@@ -1058,11 +1060,52 @@ export class NewsletterManageComponent {
    */
   private handleScheduleError(err: HttpErrorResponse, id: string): void {
     const upstreamCode = err?.error?.upstreamCode;
-    if (err.status === 503) {
+    // A 503 alone no longer identifies "scheduling is switched off here". The BFF now raises 503
+    // for its own TRANSPORT failures too (a lost connection is an unconfirmed outcome, not proof
+    // nothing happened), so a transient network blip would otherwise be reported as a disabled
+    // feature -- and this branch tells the operator to Send now instead, which would send a
+    // newsletter immediately that they had deliberately scheduled for later.
+    //
+    // The transport codes travel to the browser on `error.code` (BaseApiError.toResponse), so
+    // POSITIVE proof required, not the absence of a transport marker.
+    //
+    // "Scheduling is switched off here" is a claim about the newsletter SERVICE, so only that
+    // service may make it. Three different things arrive as a bare 503 and only one of them
+    // means that: the deliberate reply, a BFF transport failure (`transport: true`), and an
+    // ingress/gateway 503 that never reached the BFF at all and therefore carries NEITHER
+    // marker. Branching on `!transport` put that third case into the disabled-feature arm.
+    //
+    // `upstreamCode` is populated from the upstream body's own `error` field
+    // (MicroserviceError.toResponse), so only a response the service itself formed has one. That
+    // is the property being tested, and it is why this is not another allowlist: nothing about
+    // the shape of a gateway response can satisfy it.
+    // The SPECIFIC reason, not merely "the service answered". isUpstreamAnswer establishes that
+    // newsletter-service formed the response -- necessary, but not sufficient: the service can
+    // also answer 503 because a dependency of ITS own is briefly down, which is a transient
+    // outage rather than "scheduling is switched off in this environment". Only
+    // `provider_unavailable` carries that meaning, and steering someone to Send now on anything
+    // else sends a newsletter immediately that they had deliberately scheduled.
+    if (isSchedulingDisabledReply(err)) {
       this.messageService.add({
         severity: 'error',
         summary: 'Scheduling unavailable',
         detail: "Scheduling isn't available in this environment. Use Send now instead.",
+        life: 8000,
+      });
+      return;
+    }
+    // Every OTHER 503 -- BFF transport, ingress, gateway -- plus the 408 this BFF mints for its
+    // own timed-out reads and body-reads, says only that the request did not complete. Same
+    // message for all of them, because the operator's next step is identical and none of them
+    // licenses "the feature is off".
+    if (err.status === 503 || err.status === 408) {
+      // Says what is actually known: the request did not complete. Deliberately does NOT steer
+      // toward Send now -- the schedule may or may not have been armed, and an immediate send on
+      // top of an armed schedule is the one outcome that cannot be undone.
+      this.messageService.add({
+        severity: 'error',
+        summary: 'Could not reach the newsletter service',
+        detail: 'The schedule may not have been saved. Reload to check its status before trying again.',
         life: 8000,
       });
       return;

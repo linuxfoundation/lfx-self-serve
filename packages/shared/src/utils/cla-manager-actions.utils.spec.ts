@@ -11,7 +11,7 @@ function agreement(overrides: Partial<MyClaAgreement> = {}): MyClaAgreement {
     id: 's1',
     kind: 'ECLA',
     claGroupName: 'CNCF',
-    signedOn: '2022-01-01',
+    signedOn: '2022-01-01T18:40:42Z',
     status: 'valid',
     pdfAvailable: false,
     ...overrides,

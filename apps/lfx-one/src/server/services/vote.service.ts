@@ -16,10 +16,11 @@ import {
   Vote,
   VoteResultsResponse,
 } from '@lfx-one/shared/interfaces';
-import { sortCommentResponsesByRecency } from '@lfx-one/shared/utils';
+import { computeIsFoundation, sortCommentResponsesByRecency } from '@lfx-one/shared/utils';
 import { Request } from 'express';
 
-import { MicroserviceError, ResourceNotFoundError } from '../errors';
+import { MicroserviceError, ResourceNotFoundError, ServiceValidationError } from '../errors';
+import { fetchEntityProject, toEntityProjectFields } from '../helpers/entity-project-enrichment.helper';
 import { pollEndpoint } from '../helpers/poll-endpoint.helper';
 import { fetchAllQueryResources } from '../helpers/query-service.helper';
 import { getEffectiveEmail, getUsernameFromAuth, stripAuthPrefix } from '../utils/auth-helper';
@@ -41,8 +42,10 @@ export class VoteService {
 
   /**
    * Fetches a single page of votes using cursor-based pagination — callers paginate via the returned page_token.
+   * `includeProject` (default true) enriches rows with `project_name`, `project_slug`, `is_foundation` and `parent_project_uid`; opt out when the caller discards them.
    */
-  public async getVotes(req: Request, query: Record<string, any> = {}): Promise<PaginatedResponse<Vote>> {
+  public async getVotes(req: Request, query: Record<string, unknown> = {}, options: { includeProject?: boolean } = {}): Promise<PaginatedResponse<Vote>> {
+    const { includeProject = true } = options;
     logger.debug(req, 'get_votes', 'Starting vote fetch', {
       query_params: Object.keys(query),
     });
@@ -60,7 +63,10 @@ export class VoteService {
       params
     );
 
-    const votes = resources.map((resource) => this.normalizeIndexedVote(req, resource.data));
+    const normalized = resources.map((resource) => this.normalizeIndexedVote(req, resource.data));
+    // Enrich list rows with canonical project fields — the vote index (VoteData) carries only
+    // project_uid/name, so without this, consumers deriving per-row edit links get no slug/tier.
+    const votes = includeProject ? await this.enrichWithProjectMetadata(req, normalized) : normalized;
 
     logger.debug(req, 'get_votes', 'Completed vote fetch', {
       final_count: votes.length,
@@ -73,7 +79,7 @@ export class VoteService {
   /**
    * Fetches the count of votes based on query parameters
    */
-  public async getVotesCount(req: Request, query: Record<string, any> = {}): Promise<number> {
+  public async getVotesCount(req: Request, query: Record<string, unknown> = {}): Promise<number> {
     logger.debug(req, 'get_votes_count', 'Fetching vote count', {
       query_params: Object.keys(query),
     });
@@ -89,21 +95,33 @@ export class VoteService {
   }
 
   /**
-   * Fetches a single vote by UID
+   * Fetches a single vote by UID. `includeProject` enriches the payload with the vote's project fields
+   * (slug/name/is_foundation) so clients can reconcile project context from the vote itself.
    */
-  public async getVoteById(req: Request, voteUid: string): Promise<Vote> {
+  public async getVoteById(req: Request, voteUid: string, options: { includeProject?: boolean } = {}): Promise<Vote> {
+    const { includeProject = false } = options;
     logger.debug(req, 'get_vote_by_id', 'Fetching vote by ID', {
       vote_uid: voteUid,
     });
 
-    const vote = await this.microserviceProxy.proxyRequest<Vote>(req, 'LFX_V2_SERVICE', `/votes/${voteUid}`, 'GET');
+    const vote = await this.microserviceProxy.proxyRequest<Vote>(req, 'LFX_V2_SERVICE', `/votes/${this.encodeVoteUid(voteUid)}`, 'GET');
 
     if (!vote || !vote.uid) {
       throw new ResourceNotFoundError('Vote', voteUid, {
         operation: 'get_vote_by_id',
         service: 'vote_service',
-        path: `/votes/${voteUid}`,
+        path: `/votes/${this.encodeVoteUid(voteUid)}`,
       });
+    }
+
+    if (includeProject) {
+      const project = await fetchEntityProject(req, this.projectService, vote.project_uid, {
+        operation: 'get_vote_by_id',
+        vote_uid: vote.uid,
+      });
+      if (project) {
+        Object.assign(vote, toEntityProjectFields(project));
+      }
     }
 
     logger.debug(req, 'get_vote_by_id', 'Completed vote fetch', {
@@ -161,7 +179,7 @@ export class VoteService {
     const sanitizedPayload = logger.sanitize({ voteData });
     logger.debug(req, 'update_vote', 'Updating vote payload', sanitizedPayload);
 
-    const vote = await this.microserviceProxy.proxyRequest<Vote>(req, 'LFX_V2_SERVICE', `/votes/${voteUid}`, 'PUT', undefined, voteData);
+    const vote = await this.microserviceProxy.proxyRequest<Vote>(req, 'LFX_V2_SERVICE', `/votes/${this.encodeVoteUid(voteUid)}`, 'PUT', undefined, voteData);
 
     return vote;
   }
@@ -174,7 +192,7 @@ export class VoteService {
       vote_uid: voteUid,
     });
 
-    await this.microserviceProxy.proxyRequest<void>(req, 'LFX_V2_SERVICE', `/votes/${voteUid}`, 'DELETE');
+    await this.microserviceProxy.proxyRequest<void>(req, 'LFX_V2_SERVICE', `/votes/${this.encodeVoteUid(voteUid)}`, 'DELETE');
 
     // Poll the query service until the vote is removed from the index
     await pollEndpoint({
@@ -199,7 +217,7 @@ export class VoteService {
       vote_uid: voteUid,
     });
 
-    await this.microserviceProxy.proxyRequestWithResponse<Vote>(req, 'LFX_V2_SERVICE', `/votes/${voteUid}/enable`, 'PUT');
+    await this.microserviceProxy.proxyRequestWithResponse<Vote>(req, 'LFX_V2_SERVICE', `/votes/${this.encodeVoteUid(voteUid)}/enable`, 'PUT');
 
     // Poll the query service until the indexed vote status is 'active'.
     let fetchedVote: Vote | undefined;
@@ -240,7 +258,12 @@ export class VoteService {
   public async getVoteResults(req: Request, voteUid: string): Promise<VoteResultsResponse> {
     logger.debug(req, 'get_vote_results', 'Fetching vote results', { vote_uid: voteUid });
 
-    const results = await this.microserviceProxy.proxyRequest<VoteResultsResponse>(req, 'LFX_V2_SERVICE', `/votes/${voteUid}/results`, 'GET');
+    const results = await this.microserviceProxy.proxyRequest<VoteResultsResponse>(
+      req,
+      'LFX_V2_SERVICE',
+      `/votes/${this.encodeVoteUid(voteUid)}/results`,
+      'GET'
+    );
 
     // The API client maps an empty response body to null; a 200 with no payload is anomalous
     // (the upstream results contract always returns a body), so fail loudly — passing null
@@ -250,7 +273,7 @@ export class VoteService {
       throw new MicroserviceError('Vote results response body was empty', 502, 'VOTE_RESULTS_EMPTY', {
         operation: 'get_vote_results',
         service: 'vote_service',
-        path: `/votes/${voteUid}/results`,
+        path: `/votes/${this.encodeVoteUid(voteUid)}/results`,
       });
     }
 
@@ -392,7 +415,7 @@ export class VoteService {
     const votes = await Promise.all(
       voteUids.map(async (uid): Promise<Vote | null> => {
         try {
-          const vote = await this.microserviceProxy.proxyRequest<Vote>(req, 'LFX_V2_SERVICE', `/votes/${uid}`, 'GET');
+          const vote = await this.microserviceProxy.proxyRequest<Vote>(req, 'LFX_V2_SERVICE', `/votes/${this.encodeVoteUid(uid)}`, 'GET');
           if (!vote) return vote;
           const decorated: Vote = {
             ...vote,
@@ -421,7 +444,7 @@ export class VoteService {
         return new Date(b.end_time).getTime() - new Date(a.end_time).getTime();
       });
 
-    return this.projectService.enrichWithProjectData(req, sorted);
+    return this.enrichWithProjectMetadata(req, sorted);
   }
 
   /** POST /vote_responses requires the pre-allocated invitation row's UID — a fresh UUID returns 404 upstream. */
@@ -462,6 +485,29 @@ export class VoteService {
   // ============================================
 
   /**
+   * Batch-enriches rows via the ungated query-service lookup — the gated `/projects/:uid` path 403s for
+   * committee writers without a project viewer relation, leaving foundation rows without slug/tier.
+   */
+  private async enrichWithProjectMetadata(req: Request, votes: Vote[]): Promise<Vote[]> {
+    const projectsByUid = await this.projectService.getProjectsByIds(
+      req,
+      votes.map((vote) => vote.project_uid)
+    );
+
+    return votes.map((vote) => {
+      const project = projectsByUid.get(vote.project_uid);
+      if (!project) return vote;
+      return {
+        ...vote,
+        project_name: project.name || vote.project_name,
+        project_slug: project.slug || vote.project_slug,
+        is_foundation: computeIsFoundation(project),
+        parent_project_uid: project.parent_uid || vote.parent_project_uid,
+      };
+    });
+  }
+
+  /**
    * Normalizes a vote from the query service indexer shape (vote_uid) to the
    * canonical REST shape (uid). The voting service indexes votes with `vote_uid`
    * while the REST API returns `uid` — these are the same value, different field names.
@@ -476,5 +522,14 @@ export class VoteService {
     // eslint-disable-next-line @typescript-eslint/no-unused-vars
     const { vote_uid: _discard, ...rest } = raw;
     return { ...rest, uid: uid ?? '' };
+  }
+
+  // encodeURIComponent leaves `.` untouched, so reject exact dot segments — otherwise
+  // the fetch URL parser normalizes `/votes/..` to `/`, reshaping the upstream path.
+  private encodeVoteUid(uid: string): string {
+    if (uid === '.' || uid === '..') {
+      throw ServiceValidationError.forField('uid', 'Invalid vote UID', { operation: 'encode_vote_uid', service: 'vote_service' });
+    }
+    return encodeURIComponent(uid);
   }
 }

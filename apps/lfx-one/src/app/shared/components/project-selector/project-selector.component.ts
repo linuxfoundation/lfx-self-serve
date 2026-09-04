@@ -58,11 +58,15 @@ export class ProjectSelectorComponent {
   protected readonly activeTab = signal<SelectorTab>('all');
   protected readonly selectorTabs: readonly SelectorTab[] = ['all', 'foundations', 'projects'];
   protected readonly searchControl = new FormControl<string>('', { nonNullable: true });
+  /**
+   * The term currently typed into the selector, mirrored for every mode. Curated mode filters on it
+   * directly; nav mode routes it through `NavigationService` to drive the upstream query and reads
+   * the settled term back from there (see `isSearchResult`).
+   */
+  private readonly searchTerm = signal<string>('');
 
   /** True when a curated `items` list is supplied — switches sourcing/search/pagination to local mode. */
   protected readonly isCurated: Signal<boolean> = computed(() => this.items() !== null);
-  /** Curated-mode search term (nav mode routes search through NavigationService instead). */
-  private readonly localSearchTerm = signal<string>('');
 
   // Sidebar panel pins fixed to the right of the rail; the curated (dialog) variant drops that
   // sidebar-only positioning so PrimeNG anchors the popover to its own trigger inside the dialog.
@@ -90,8 +94,8 @@ export class ProjectSelectorComponent {
 
   public constructor() {
     this.searchControl.valueChanges.pipe(takeUntilDestroyed()).subscribe((term) => {
+      this.searchTerm.set(term);
       if (this.isCurated()) {
-        this.localSearchTerm.set(term);
         return;
       }
       if (this.hybridMode()) {
@@ -121,8 +125,8 @@ export class ProjectSelectorComponent {
     this.isPanelOpen.set(false);
     this.activeTab.set('all');
     this.searchControl.setValue('', { emitEvent: false });
+    this.searchTerm.set('');
     if (this.isCurated()) {
-      this.localSearchTerm.set('');
       return;
     }
     if (this.hybridMode()) {
@@ -258,7 +262,7 @@ export class ProjectSelectorComponent {
 
   /** Curated-mode source: the `items` input filtered by kind (null = any) and the local search term. */
   private curatedItems(foundation: boolean | null): LensItem[] {
-    const term = this.localSearchTerm().trim().toLowerCase();
+    const term = this.searchTerm().trim().toLowerCase();
     return (this.items() ?? [])
       .filter((item) => foundation === null || item.isFoundation === foundation)
       .filter((item) => !term || (item.name ?? '').toLowerCase().includes(term) || (item.slug ?? '').toLowerCase().includes(term));
@@ -295,14 +299,14 @@ export class ProjectSelectorComponent {
     return computed(() => {
       const selectedUid = this.selectedProject()?.uid ?? null;
       if (!this.hybridMode()) {
-        return this.sortByRole(this.rawProjectItems()).map((item) => this.toDisplayItem(item, false, selectedUid));
+        return this.orderItems(this.rawProjectItems(), this.lens()).map((item) => this.toDisplayItem(item, false, selectedUid));
       }
       const tab = this.activeTab();
       if (tab === 'foundations') {
-        return this.sortByRole(this.foundationItems()).map((item) => this.toDisplayItem(item, false, selectedUid));
+        return this.orderItems(this.foundationItems(), 'foundation').map((item) => this.toDisplayItem(item, false, selectedUid));
       }
       if (tab === 'projects') {
-        return this.sortByRole(this.rawProjectItems()).map((item) => this.toDisplayItem(item, false, selectedUid));
+        return this.orderItems(this.rawProjectItems(), 'project').map((item) => this.toDisplayItem(item, false, selectedUid));
       }
       return this.buildAllTabItems(selectedUid);
     });
@@ -377,6 +381,28 @@ export class ProjectSelectorComponent {
     return priority.length;
   }
 
+  /**
+   * Whether the items currently held for `lens` are search results rather than the browse list.
+   *
+   * Curated mode filters locally, so the typed term is immediately true of what is on screen. Nav
+   * mode debounces and round-trips, so the typed term is true of what was *requested*; reading it
+   * here would restyle the still-visible browse list for ~300ms before the results replace it.
+   * `NavigationService.resultsTerm` is the term the held items were actually fetched for.
+   */
+  private isSearchResult(lens: NavLens): boolean {
+    const term = this.isCurated() ? this.searchTerm() : this.navigationService.resultsTerm(lens)();
+    return term.trim().length > 0;
+  }
+
+  /**
+   * Browse order: role tier first, then alphabetical. Search order: whatever the source already
+   * produced, which is relevance for nav-backed search (`sort: 'best_match'`) and the curated
+   * list's own order otherwise. Re-sorting search results would bury the closest match.
+   */
+  private orderItems(items: LensItem[], lens: NavLens): LensItem[] {
+    return this.isSearchResult(lens) ? items : this.sortByRole(items);
+  }
+
   private sortByRole(items: LensItem[]): LensItem[] {
     return [...items].sort((a, b) => {
       const diff = this.roleIndex(a) - this.roleIndex(b);
@@ -385,8 +411,22 @@ export class ProjectSelectorComponent {
   }
 
   private buildAllTabItems(selectedUid: string | null): DisplayLensItem[] {
-    const sortedFoundations = this.sortByRole(this.foundationItems());
-    const sortedProjects = this.sortByRole(this.rawProjectItems());
+    const sortedFoundations = this.orderItems(this.foundationItems(), 'foundation');
+    const sortedProjects = this.orderItems(this.rawProjectItems(), 'project');
+
+    // Nesting is a browse affordance: it helps someone scanning a hierarchy they already know.
+    // Applied to search results it hides matches, because a strong project match is filed under
+    // whatever position its parent foundation happened to take — or, when the parent didn't match
+    // at all, it isn't filed anywhere and only the flat tail below saves it. During search the two
+    // groups are emitted flat, each in its own relevance order (GH-2030).
+    //
+    // Foundations still lead. The two lenses are separate upstream queries whose scores aren't
+    // comparable, so there is no meaningful way to interleave them; grouping is the honest
+    // presentation. Both groups are relevance-ordered internally, and the Foundations and Projects
+    // tabs give a single-group view when that matters.
+    if (this.isSearchResult('foundation') || this.isSearchResult('project')) {
+      return [...sortedFoundations, ...sortedProjects].map((item) => this.toDisplayItem(item, false, selectedUid));
+    }
 
     // Pre-group projects by parent foundation in a single pass so nesting is O(F + P), not O(F × P).
     const detectedProjects = this.personaService.detectedProjects();

@@ -14,7 +14,7 @@ LFX One is a Turborepo monorepo containing an Angular 20 SSR application with st
 
 You have full file-edit authority in this session — different from a Cowork session where you generate prompts for someone else to execute. For pre-edit hygiene checks (re-read files, type-check after multi-file changes, etc.) invoke the `/self-serve-dev` skill.
 
-**Lean on subagents.** Use the `Agent` tool for broad searches (`Explore`), independent parallel investigations (multiple Agent calls in one message), and context-heavy reads that would bloat the main thread. For the LFX post-commit audit, launch the central `lfx-skills` reviewer trio in parallel (`subagent_type: lfx-skills:lfx-general-code-reviewer`, `subagent_type: lfx-skills:lfx-self-serve-code-reviewer`, and `subagent_type: lfx-skills:lfx-self-serve-learnings-reviewer`, all with `run_in_background: true`). If Claude displays plugin agents without a namespace, use the equivalent displayed names. This repo's local `CLAUDE.md`, `.claude/rules/`, `.claude/skills/`, architecture docs, review checklists, and KB remain the review source of truth. Default to delegating when the task is wide, parallel, or read-heavy.
+**Lean on subagents.** Use the `Agent` tool for broad searches (`Explore`), independent parallel investigations (multiple Agent calls in one message), and context-heavy reads that would bloat the main thread. For the LFX post-commit audit, launch the reviewer trio — three generic background subagents in one parallel batch (all `subagent_type: general-purpose`, `model: opus` (Opus 5), `run_in_background: true`), each loading exactly one review skill: `/lfx-skills:lfx-general-code-review`, `/lfx-self-serve-code-review`, and `/lfx-self-serve-learnings-review` (see **Pre-PR review** below for the canonical launch). This repo's local `CLAUDE.md`, `.claude/rules/`, `.claude/skills/`, architecture docs, review checklists, and KB remain the review source of truth. Default to delegating when the task is wide, parallel, or read-heavy.
 
 ## Domain language
 
@@ -224,53 +224,83 @@ The full index of architecture docs (frontend, backend, shared, testing, deploym
 
 Placement decision trees ("where does my component go?", "do I need a new module?", "new service or extend existing?", "user token vs M2M?") live in [`docs/architecture/placement.md`](docs/architecture/placement.md).
 
-## Work cycle — post-commit and pre-PR reviews
+## Pre-PR review
 
-> **CRITICAL — while the branch is pre-PR, post-commit reviews are mandatory.** After every commit on the local branch, launch the `lfx-skills:lfx-general-code-reviewer`, `lfx-skills:lfx-self-serve-code-reviewer`, AND `lfx-skills:lfx-self-serve-learnings-reviewer` subagents in parallel via the Agent tool (`subagent_type: lfx-skills:lfx-general-code-reviewer` / `subagent_type: lfx-skills:lfx-self-serve-code-reviewer` / `subagent_type: lfx-skills:lfx-self-serve-learnings-reviewer`, all `run_in_background: true`) — then keep working while they run. If Claude displays plugin agents without the `lfx-skills:` namespace, use the equivalent displayed names. Before opening a PR, every running review must return clean (or remaining findings explicitly documented as trade-offs), the **full-branch sweep** must run clean if the branch has more than one commit (`branch` arg), AND `/lfx-self-serve-pr-readiness` must clear every CRITICAL finding, with any SHOULD_FIX findings addressed or documented. The reviewers' time is the most expensive resource in this workflow — never skip, save for later, or assume changes are "small enough" to bypass.
->
-> **Once the PR is open, do NOT invoke the reviewer trio on iteration commits.** CodeRabbit + Copilot auto-trigger on every push and own the audit surface from that point — stacking subagent audits on top adds latency without proportional signal. The trio is pre-PR insurance only. (For substantive new work pushed to an open PR, judgment applies; default is still to skip.)
+Before a PR exists, local review uses the same three reviewers in two modes: **post-commit review** while development continues, and one **full-branch review** immediately before opening the PR.
 
-### Post-commit (pre-PR phase, after every commit, parallel, asynchronous)
+Every review batch launches exactly THREE generic background subagents together, all with `subagent_type: general-purpose`, `model: opus` (Opus 5), and `run_in_background: true`. At most one batch may be active. The reviewers load exactly one skill each:
 
-1. **Commit your work.** `git commit --signoff -S`. Do not wait for any prior review to finish.
-2. **Immediately launch all three reviewer subagents in parallel.** Issue three **Agent tool calls in a single message**:
-   - **`lfx-skills:lfx-general-code-reviewer`** (`subagent_type: lfx-skills:lfx-general-code-reviewer`, `run_in_background: true`) — general senior code review for correctness, security, error handling, maintainability, tests, performance, and code truthfulness. Carries no repo-specific Self Serve rulebook.
-   - **`lfx-skills:lfx-self-serve-code-reviewer`** (`subagent_type: lfx-skills:lfx-self-serve-code-reviewer`, `run_in_background: true`) — Self Serve convention audit against the documented rule surface (`.claude/rules/`, the four `docs/reviews/` checklists, architecture docs) and upstream API contracts. Renders a markdown review with Upstream API / data-layer validation and Repo conventions sections.
-   - **`lfx-skills:lfx-self-serve-learnings-reviewer`** (`subagent_type: lfx-skills:lfx-self-serve-learnings-reviewer`, `run_in_background: true`) — empirical-pattern matching against `docs/reviews/knowledge-base/` (patterns sampled from past PR review comments on this repo). Renders a markdown review.
+1. `/lfx-skills:lfx-general-code-review`
+2. `/lfx-self-serve-code-review`
+3. `/lfx-self-serve-learnings-review`
 
-   **Why a required prompt:** the Agent tool needs a non-empty prompt to launch reliably, so we standardize on one canonical string per mode rather than leave it ambiguous. The string itself doesn't drive subagent behavior — each subagent's playbook only parses for `target repo:`, `branch`, and `extra:` and otherwise defaults to `git show HEAD`. The canonical strings are operator plumbing, not instructions to the model. If this work cycle is launched from the LFX workspace parent, the prompt must specify the target review repo so the reviewer operates in `lfx-self-serve`; the canonical prompts below include that line and are also safe when already inside this repo.
+The reviewers only report findings. They never edit tracked files, stage, commit, push, or write GitHub state; the parent performs all changes.
 
-   **Post-commit mode prompt (exact, all three subagents):** `target repo: lfx-self-serve\n\nReview the latest commit.` Append `extra: <focus>` on a new line only when there's a priority hint to add. Do NOT pass `branch` here.
+### Shared reviewer prompt
 
-3. **Keep working.** Start the next commit while the reviewers run. Do not block on them.
-4. **When the reviewers return:** read all three reports. Roll every Critical finding and every reasonable Important finding into the next commit (a separate `fix(review): address findings` commit is fine; squashing is not required — the history shows review-driven iteration).
-5. **It's fine to keep committing while reviews are still running.** Each trio audits its own commit (not cumulative). If you've committed N+1 before the review for N returns, you'll get separate reports — one trio per commit. Read them as they arrive and address findings in subsequent commits.
+Give each reviewer one complete prompt. Start with its loading policy, then append the common instructions.
 
-### Pre-PR (drain the queue, sweep cumulative state, then open)
+- General: `Load /lfx-skills:lfx-general-code-review with the Skill tool. If that skill is unavailable, do not review unguided and do not read a replacement SKILL.md from any checkout or cache; return INCOMPLETE.`
+- Repo code: `Load /lfx-self-serve-code-review with the Skill tool. If and only if that skill is unavailable in this child's current session, locate the lfx-self-serve repo root and read <repo-root>/.claude/skills/lfx-self-serve-code-review/SKILL.md. Follow that file as the sole review guidance. Do not search another path or use another skill or agent. If the file is missing, return INCOMPLETE.`
+- Repo learnings: `Load /lfx-self-serve-learnings-review with the Skill tool. If and only if that skill is unavailable in this child's current session, locate the lfx-self-serve repo root and read <repo-root>/.claude/skills/lfx-self-serve-learnings-review/SKILL.md. Follow that file as the sole review guidance. Do not search another path or use another skill or agent. If the file is missing, return INCOMPLETE.`
 
-When the work is "done" — no more code commits planned:
+```text
+target repo: lfx-self-serve
+repo root: <absolute repo root>
+target_sha: <full target SHA>
+base_sha: <full base SHA>
+review exactly: git diff <full base SHA> <full target SHA>
+range label: <mode-specific range label>
 
-1. **Wait for every running review to complete.** Each trio audits one commit, so the trio invoked by every recent commit needs to have returned before you continue.
-2. **If any returned review flags Critical or reasonable Important:** add a fix commit, launch the reviewer trio again on the new state, wait. Loop until the trio returns clean (or remaining findings are explicitly documented in the PR description with a stated trade-off).
-3. **Full-branch sweep — only if the branch has more than one commit.** Launch all three reviewer subagents again in parallel via the Agent tool. The Agent `prompt` parameter for each subagent must include the `branch` keyword so the subagent audits the branch's diff against `origin/main` instead of just the latest commit:
-   - **`lfx-skills:lfx-general-code-reviewer`**, prompt: **`target repo: lfx-self-serve\nbranch\n\nReview the branch's diff against origin/main.`**
-   - **`lfx-skills:lfx-self-serve-code-reviewer`**, prompt: **`target repo: lfx-self-serve\nbranch\n\nReview the branch's diff against origin/main.`**
-   - **`lfx-skills:lfx-self-serve-learnings-reviewer`**, prompt: **`target repo: lfx-self-serve\nbranch\n\nReview the branch's diff against origin/main.`**
+The repo root and SHA range above are authoritative. Do not re-derive the range from HEAD or origin/main. If the assigned skill tells you to derive the review range or changed-file list from HEAD, git show, or origin/main, replace that instruction with the exact pinned git diff above. Read added or modified code from <target_sha>:<path>, deleted code from <base_sha>:<path>, and both revisions for a rename. Never use a moving working-tree copy as code evidence. Load current rule, contract, checklist, architecture, and knowledge-base policy as the assigned skill directs.
 
-   Per-commit reviews can miss cross-commit drift (an issue introduced in commit N and only made dangerous by commit N+2's changes wouldn't surface in either's individual review); the sweep catches it. Single-commit branches skip — already covered by the post-commit trio. Address any new findings, then re-run the sweep until clean.
+Report findings only. Follow the assigned skill's report conventions and return its complete findings. Prepend `Reviewed range: <full base SHA>..<full target SHA>`, then `Skill: /lfx-skills:lfx-general-code-review`, `Skill: /lfx-self-serve-code-review`, or `Skill: /lfx-self-serve-learnings-review`, matching that reviewer. If a repo reviewer used its allowed file fallback, append `; read from: <exact path>` to its Skill line. If incomplete, put `INCOMPLETE — <reason>` first, then the same two verification lines.
+```
 
-4. **Run `/lfx-self-serve-pr-readiness`** against the target base branch. PR-shape sanity: branch name, ticket reference (JIRA or GitHub Issue), conventional commits, rebase, DCO + GPG per commit, diff size. Does NOT audit code (covered by the post-commit trio and the full-branch sweep). Address every Critical; address or document every SHOULD_FIX. Rerun until the verdict is `READY` or `READY WITH CHANGES` with explicit trade-offs.
-5. **Run `/preflight`** for license / format / lint / build / protected-file mechanical checks.
-6. **Only then push and open the PR.** (Reviewers run `/lfx-review-pr` against the open PR — that should not be your first standards check.)
+Accept a batch only when all three reviewers return non-empty, complete reports for the pinned full-SHA range, name their exact assigned `/...` skill, and report no unauthorized fallback path. If any reviewer fails these checks, reject the entire batch; never accept or rerun only one reviewer.
 
-### Post-PR iteration (responding to bot feedback on an open PR)
+### Mode 1 — Post-commit review
 
-1. Wait for CodeRabbit + Copilot to comment after each push.
-2. Triage every Critical and reasonable Important finding — verify each against current code (bots can quote stale paths or APIs).
-3. Roll fixes into a single `fix(review): ...` commit. Reply + resolve each thread (`gh api repos/<owner>/<repo>/pulls/<N>/comments/<id>/replies` + the `resolveReviewThread` GraphQL mutation).
-4. Push. Repeat until clean.
+Use this mode after normal development commits while work continues.
 
-After `/compact`, re-invoke `/self-serve-dev` or the relevant convention skill if continuing work that depends on it.
+1. Commit with `git commit -s -S`.
+2. Maintain `reviewed_through_sha`: the latest commit fully covered by an accepted post-commit batch. Before the first batch, initialize it to the parent of the first pending commit. Never advance it for a failed or incomplete batch.
+3. When no batch is active, set `base_sha=$reviewed_through_sha` and `target_sha=$(git rev-parse HEAD)`. Label a one-commit range `the latest commit`; if commits accumulated, label it `the commits since the last review`.
+4. Launch the three reviewers together with that exact range. If another batch is already active, let it finish; the next batch will cover everything from the unchanged `reviewed_through_sha` through the then-current `HEAD`.
+5. While remaining in Mode 1, if the batch is invalid and `HEAD` is unchanged, rerun all three with the same pins. If `HEAD` changed, rerun all three over the coalesced range from the unchanged `reviewed_through_sha` through current `HEAD`. Once work moves to Mode 2, do not rerun an invalid post-commit batch; Mode 2's whole-branch review replaces its coverage.
+6. After a valid batch, advance `reviewed_through_sha` to its `target_sha`. Verify its findings against current code and address every Critical and reasonable Important finding in a later commit; that commit is reviewed by the next post-commit batch.
+7. The final planned commit skips post-commit review and moves directly to Mode 2. Leave `reviewed_through_sha` unchanged. If development resumes before Mode 2 starts, the next post-commit batch covers the entire pending range from that unchanged SHA.
+
+### Mode 2 — Full-branch review before opening the PR
+
+Entering this mode ends post-commit review for this PR attempt. Finish any active post-commit batch and retain every finding that Mode 1 requires the parent to address. Do not retry an invalid post-commit batch; the whole-branch review below replaces its coverage. Do not return to Mode 1.
+
+1. Run `git fetch origin`, set `target_sha=$(git rev-parse HEAD)` and `base_sha=$(git merge-base origin/main HEAD)`, and launch the three reviewers together once against the whole branch range. Use the shared prompt with the range label `the branch's diff against origin/main` and review `git diff <full base SHA> <full target SHA>`. Never use `reviewed_through_sha` for this review.
+2. If the batch is operationally incomplete, it does not count as the review. Without editing files or creating commits, repeat step 1 so the unchanged branch is fetched, re-pinned, and reviewed by a complete three-reviewer batch until one valid result returns.
+3. Fix the retained post-commit findings and the issues raised by the whole-branch review, then complete the repository's documentation-currency updates. Commit all resulting changes with `git commit -s -S`, then run `/lfx-self-serve-pr-readiness` and `/preflight` against the clean, committed `HEAD`. If either check requires fixes, apply the remedy appropriate to the finding—rewrite local commits for existing-history defects or create a new signed/DCO commit for file changes—then rerun the affected deterministic checks. Ensure every resulting commit is signed and carries DCO sign-off. Do not run the local reviewers again.
+4. Push and open the PR. From that point onward, use Post-PR review only.
+
+## Post-PR review
+
+Once the PR exists, never run the local post-commit reviewers or another local full-branch review. PR iteration uses Copilot and every other configured GitHub code-review agent/bot.
+
+1. After every push, wait for the configured GitHub reviewers to finish reviewing the current head, then enumerate every unresolved review thread. Collect compatible feedback into a batch rather than making one-comment-at-a-time commits.
+2. Work in an isolated background task when safe so the developer can continue. Never allow two writers to edit the same worktree or race commits or pushes; otherwise handle the feedback synchronously.
+3. Verify every finding against the current head, actual runtime/API contracts, repository guidance, and approved PR scope. Never assume a bot is correct and never silently ignore a finding.
+4. For a genuine in-scope issue, make the smallest focused fix and validate it. Otherwise, tell the developer why and post an evidence-backed rebuttal. Escalate architecture, security, ownership, and excluded-surface questions instead of guessing.
+5. Comment before resolving every thread. For a fix, cite the fix commit and validation evidence; for a rebuttal, give the reason and evidence. Every thread must end fixed-and-explained or rebutted-and-explained.
+6. Group compatible fixes into one signed/DCO commit, push, wait for reviews on the new head, and repeat until no unresolved actionable threads remain and required checks are green.
+7. Do not merge as part of this automated iteration. Merge only after a separate explicit human instruction.
+
+## Documentation currency
+
+The canonical Pre-PR step above invokes this check before readiness and preflight. Confirm the change leaves this repo's documentation accurate:
+
+- `docs/reviews/docs-checklist.md` — the documentation review checklist.
+- `.claude/rules/development-rules.md` § Documentation Maintenance — what to keep, trim, and never let go stale when editing `docs/`.
+- When a convention, contract, or workflow changes, update `CLAUDE.md`, `.claude/rules/`, and the affected architecture docs in the same PR.
+
+After `/compact`, re-invoke `/self-serve-dev` if continuing work that depends on its conventions.
 
 ## What NOT to do
 
@@ -279,9 +309,7 @@ After `/compact`, re-invoke `/self-serve-dev` or the relevant convention skill i
 - ❌ Hard-code brand hex values (reference `lfxColors` scales)
 - ❌ Reference browser-only APIs without `isPlatformBrowser`
 - ❌ Mix module concerns in one change
-- ❌ Open a PR without launching the post-commit reviewer trio (`lfx-skills:lfx-general-code-reviewer` + `lfx-skills:lfx-self-serve-code-reviewer` + `lfx-skills:lfx-self-serve-learnings-reviewer`, in parallel via the Agent tool) after every pre-PR commit and draining the queue clean — all three reviews are non-negotiable pre-PR
-- ❌ Push the pre-PR queue before every running review has returned and every Critical finding is addressed (the queue must be drained at the PR boundary; once the PR is open, the bots become the audit surface and the trio is no longer invoked)
-- ❌ Open a multi-commit PR without running the pre-PR full-branch sweep (`branch` arg) — per-commit reviews can miss cross-commit drift
+- ❌ Deviate from or bypass the authoritative **Pre-PR review** protocol above — including overlapping batches, accepting an invalid reviewer range, leaving commits outside a post-commit batch, or skipping the required full-branch review
 - ❌ Open a PR without running `/lfx-self-serve-pr-readiness`, clearing every CRITICAL finding, and addressing or documenting every SHOULD_FIX — also non-negotiable
 - ❌ Open a PR without DCO sign-off + GPG (`--signoff -S`)
 - ❌ Commit and claim "done" before `yarn build` passes

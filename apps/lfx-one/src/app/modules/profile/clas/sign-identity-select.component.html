@@ -8,17 +8,30 @@ SPDX-License-Identifier: MIT
 
   @if (hasIdentities()) {
     <div role="listbox" aria-label="Identities you can sign with" class="flex flex-col gap-2">
+      <!--
+        An identity that already signed this CLA group is grayed out with the reason. The card owns
+        the reason so it reaches everyone: hover, keyboard focus, and screen readers alike.
+      -->
       @for (account of accounts(); track account.githubId) {
         <lfx-selectable-card
           [form]="selectForm"
           control="identity"
           [value]="account.githubId"
           [label]="account.label"
+          [disabled]="!!account.alreadySignedTooltip"
+          [disabledReason]="account.alreadySignedTooltip ?? ''"
           [testId]="'sign-identity-select-github-' + account.githubId" />
       }
 
       @if (gerritLabel(); as label) {
-        <lfx-selectable-card [form]="selectForm" control="identity" [value]="gerritValue" [label]="label" testId="sign-identity-select-gerrit" />
+        <lfx-selectable-card
+          [form]="selectForm"
+          control="identity"
+          [value]="gerritValue"
+          [label]="label"
+          [disabled]="!!gerritAlreadySignedTooltip()"
+          [disabledReason]="gerritAlreadySignedTooltip() ?? ''"
+          testId="sign-identity-select-gerrit" />
       }
     </div>
 

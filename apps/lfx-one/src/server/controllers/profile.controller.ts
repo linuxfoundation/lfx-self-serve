@@ -10,6 +10,10 @@ import {
   CDP_TO_AUTH0_PROVIDER_MAP,
   EMAIL_ALREADY_LINKED_MESSAGE,
   EMAIL_REGEX,
+  PROFILE_EMAIL_PATH,
+  PROFILE_EMAILS_PATH,
+  PROFILE_PASSWORD_PATH,
+  PROFILE_SETTINGS_PATH,
   PROFILE_VISIBILITY_KEYS,
   PURCHASE_LINUX_URL,
 } from '@lfx-one/shared/constants';
@@ -92,12 +96,12 @@ const PASSWORD_ERROR_RULES: readonly {
 export class ProfileController {
   private static readonly allowedProfileReturnPaths: ReadonlySet<string> = new Set([
     '/profile',
-    '/profile/emails',
+    PROFILE_EMAIL_PATH,
+    PROFILE_EMAILS_PATH,
     '/profile/identities',
-    '/profile/password',
+    PROFILE_PASSWORD_PATH,
     '/profile/linux-email',
-    '/profile/settings',
-    '/settings',
+    PROFILE_SETTINGS_PATH,
   ]);
 
   private auth0Service: Auth0Service = new Auth0Service();
@@ -588,7 +592,9 @@ export class ProfileController {
         res.status(403).json({
           error: 'management_token_required',
           message: 'Profile authorization required to change the primary email',
-          authorize_url: `/api/profile/auth/start?returnTo=${encodeURIComponent((req.headers['referer'] as string) || '/profile/emails')}`,
+          // Static legacy path (not `referer`, which is the settings page itself and carries no
+          // fragment) — profile.routes.ts's redirectTo re-attaches #email-settings on return.
+          authorize_url: `/api/profile/auth/start?returnTo=${encodeURIComponent(PROFILE_EMAILS_PATH)}`,
         });
         return;
       }
@@ -1125,7 +1131,9 @@ export class ProfileController {
         res.status(403).json({
           error: 'management_token_required',
           message: 'Profile authorization required to send a password reset link',
-          authorize_url: `/api/profile/auth/start?returnTo=${encodeURIComponent((req.headers['referer'] as string) || '/profile/password')}`,
+          // Static legacy path (not `referer`, which is the settings page itself and carries no
+          // fragment) — profile.routes.ts's redirectTo re-attaches #password on return.
+          authorize_url: `/api/profile/auth/start?returnTo=${encodeURIComponent(PROFILE_PASSWORD_PATH)}`,
         });
         return;
       }
@@ -1183,7 +1191,9 @@ export class ProfileController {
         res.status(403).json({
           error: 'management_token_required',
           message: 'Profile authorization required to change your password',
-          authorize_url: `/api/profile/auth/start?returnTo=${encodeURIComponent((req.headers['referer'] as string) || '/profile/password')}`,
+          // Static legacy path (not `referer`, which is the settings page itself and carries no
+          // fragment) — profile.routes.ts's redirectTo re-attaches #password on return.
+          authorize_url: `/api/profile/auth/start?returnTo=${encodeURIComponent(PROFILE_PASSWORD_PATH)}`,
         });
         return;
       }
@@ -1729,12 +1739,17 @@ export class ProfileController {
    * Exchanges the code for a management token, validates sub, stores in session
    */
   public async handleProfileAuthCallback(req: Request, res: Response): Promise<void> {
+    const returnTo = this.normalizeProfileReturnTo(req.appSession?.['profileAuthReturnTo']);
+
+    if (this.blockCallbackDuringImpersonation(req, res, returnTo, 'profile_auth_callback')) {
+      return;
+    }
+
     const startTime = logger.startOperation(req, 'profile_auth_callback');
 
     const code = req.query['code'] as string;
     const state = req.query['state'] as string;
     const error = req.query['error'] as string;
-    const returnTo = this.normalizeProfileReturnTo(req.appSession?.['profileAuthReturnTo']);
 
     if (error) {
       logger.error(req, 'profile_auth_callback', startTime, new Error(`Auth0 returned error: ${error}`), {
@@ -1924,12 +1939,17 @@ export class ProfileController {
    * Exchanges code for id_token, links identity via NATS, verifies in CDP.
    */
   public async handleSocialCallback(req: Request, res: Response): Promise<void> {
+    const returnTo = '/profile/identities';
+
+    if (this.blockCallbackDuringImpersonation(req, res, returnTo, 'social_auth_callback')) {
+      return;
+    }
+
     const startTime = logger.startOperation(req, 'social_auth_callback');
 
     const code = req.query['code'] as string;
     const state = req.query['state'] as string;
     const error = req.query['error'] as string;
-    const returnTo = '/profile/identities';
 
     if (error) {
       logger.error(req, 'social_auth_callback', startTime, new Error(`Auth0 returned error: ${error}`), {
@@ -2192,7 +2212,9 @@ export class ProfileController {
             success: false,
             error: 'management_token_required',
             message: 'Profile authorization required',
-            authorize_url: `/api/profile/auth/start?returnTo=${encodeURIComponent((req.headers['referer'] as string) || '/profile/emails')}`,
+            // Static legacy path (not `referer`, which is the settings page itself and carries no
+            // fragment) — profile.routes.ts's redirectTo re-attaches #email-settings on return.
+            authorize_url: `/api/profile/auth/start?returnTo=${encodeURIComponent(PROFILE_EMAILS_PATH)}`,
           });
           return;
         }
@@ -2640,6 +2662,29 @@ export class ProfileController {
     } catch {
       return DEFAULT;
     }
+  }
+
+  /**
+   * Root callbacks (`/passwordless/callback`, `/social/callback`) sit outside the `/api`
+   * error-handler mount, so a `next(err)` there would surface a bare JSON 403 in a top-level
+   * navigation instead of a redirect — they can't reuse blockDuringImpersonation's next(err)
+   * contract (impersonation-readonly.middleware.ts). This enforces the same read-only guarantee by
+   * redirecting before any code exchange or token mint, matching the handlers' own
+   * `?error=` convention. Returns true if the callback was blocked.
+   */
+  private blockCallbackDuringImpersonation(req: Request, res: Response, returnTo: string, operation: string): boolean {
+    if (!isImpersonating(req)) return false;
+
+    logger.warning(req, 'impersonation_readonly', 'Blocked auth callback during impersonation', {
+      path: req.path,
+      method: req.method,
+      action: operation,
+      outcome: 'blocked',
+      impersonator_sub: req.appSession?.['impersonator']?.sub,
+      target_sub: req.appSession?.['impersonationUser']?.sub,
+    });
+    res.redirect(`${returnTo}?error=impersonation_read_only`);
+    return true;
   }
 
   /**

@@ -342,6 +342,33 @@ describe('ProjectService — create picker methods', () => {
     });
   });
 
+  describe('searchProjects', () => {
+    it('requests relevance ordering so the closest name match is not buried alphabetically', async () => {
+      // Without an explicit sort the query service defaults to name_asc, and OpenSearch drops
+      // scoring whenever a non-_score sort is present — the caller then gets the alphabetically
+      // first page of matches rather than the best ones (GH-2030).
+      proxyRequest.mockResolvedValueOnce(pageOf([{ uid: 'cncf', slug: 'cncf' }]));
+
+      const result = await service.searchProjects(req, 'Cloud Native');
+
+      expect(result.map((p) => p.uid)).toEqual(['cncf']);
+      expect(proxyRequest.mock.calls[0][4]).toMatchObject({ type: 'project', name: 'Cloud Native', sort: 'best_match' });
+    });
+
+    it('excludes the ROOT pseudo-project from results', async () => {
+      proxyRequest.mockResolvedValueOnce(
+        pageOf([
+          { uid: 'root-uid', slug: 'root' },
+          { uid: 'real', slug: 'real' },
+        ])
+      );
+
+      const result = await service.searchProjects(req, 'anything');
+
+      expect(result.map((p) => p.slug)).toEqual(['real']);
+    });
+  });
+
   describe('searchCreatableProjects', () => {
     it('queries name=<term> with a small page size and filters to writer-permitted matches', async () => {
       proxyRequest.mockResolvedValueOnce(pageOf([{ uid: 'match-1', slug: 'match-1' }]));
@@ -350,7 +377,21 @@ describe('ProjectService — create picker methods', () => {
       const result = await service.searchCreatableProjects(req, 'kubernetes');
 
       expect(result.map((p) => p.uid)).toEqual(['match-1']);
-      expect(proxyRequest.mock.calls[0][4]).toMatchObject({ type: 'project', name: 'kubernetes', page_size: 20 });
+      expect(proxyRequest.mock.calls[0][4]).toMatchObject({ type: 'project', name: 'kubernetes', sort: 'best_match', page_size: 20 });
+    });
+
+    it('sorts by relevance on every page, not just the first', async () => {
+      // This method truncates to pageSize and gives up after the page cap, so a later page that
+      // silently fell back to the default name_asc would reorder results mid-scan (GH-2030).
+      proxyRequest.mockResolvedValueOnce(pageOf([{ uid: 'visible-only', slug: 'visible-only' }], 'token-2'));
+      proxyRequest.mockResolvedValueOnce(pageOf([{ uid: 'match-2', slug: 'match-2' }]));
+      addAccessToResources.mockImplementation((_req: Request, projects: Project[]) =>
+        Promise.resolve(projects.map((p) => ({ ...p, writer: p.uid === 'match-2' })))
+      );
+
+      await service.searchCreatableProjects(req, 'kubernetes');
+
+      expect(proxyRequest.mock.calls[1][4]).toMatchObject({ sort: 'best_match', page_token: 'token-2' });
     });
 
     it('continues to the next page when the first page has no writer-permitted matches', async () => {
@@ -1593,5 +1634,120 @@ describe('ProjectService — getHealthMetricsDaily', () => {
 
     expect(result.currentAvgHealthScore).toBe(80);
     expect(execute.mock.calls[0][0]).toContain('AVG(HEALTH_SCORE_V2)');
+  });
+});
+
+describe('ProjectService — enrichWithProjectData', () => {
+  let service: ProjectService;
+
+  // Membership-funded + Active + not an Internal Allocation, per the real computeIsFoundation.
+  function foundationProject(uid: string, overrides: Partial<Project> = {}): Project {
+    return {
+      uid,
+      slug: uid,
+      name: `name-${uid}`,
+      stage: 'Active',
+      legal_entity_type: '',
+      funding: 'Funded' as ProjectFunding,
+      funding_model: ['Membership'],
+      ...overrides,
+    } as Project;
+  }
+  // Missing the Membership funding model — the real computeIsFoundation returns false.
+  function childProject(uid: string, parentUid: string, overrides: Partial<Project> = {}): Project {
+    return {
+      uid,
+      slug: uid,
+      name: `name-${uid}`,
+      stage: 'Active',
+      legal_entity_type: '',
+      funding: 'Funded' as ProjectFunding,
+      funding_model: [],
+      parent_uid: parentUid,
+      ...overrides,
+    } as Project;
+  }
+
+  beforeEach(() => {
+    proxyRequest.mockReset();
+    service = new ProjectService();
+  });
+
+  it('deduplicates project_uids into a single batched lookup', async () => {
+    const getProjectsByIds = vi.spyOn(service, 'getProjectsByIds').mockResolvedValue(new Map());
+
+    await service.enrichWithProjectData(req, [{ project_uid: 'a' }, { project_uid: 'a' }, { project_uid: 'b' }]);
+
+    expect(getProjectsByIds).toHaveBeenCalledTimes(1);
+    expect(getProjectsByIds).toHaveBeenCalledWith(req, ['a', 'b']);
+  });
+
+  it('prefers freshly fetched project fields over the item payload and computes is_foundation from the fresh project', async () => {
+    vi.spyOn(service, 'getProjectsByIds').mockResolvedValue(
+      new Map([
+        ['fdn', foundationProject('fdn', { name: 'Fresh Foundation', slug: 'fresh-fdn' })],
+        ['child', childProject('child', 'fdn', { name: 'Fresh Child', slug: 'fresh-child' })],
+      ])
+    );
+
+    const result = await service.enrichWithProjectData(req, [
+      { project_uid: 'fdn', project_name: 'stale', project_slug: 'stale', is_foundation: false, parent_project_uid: '' },
+      { project_uid: 'child', project_name: 'stale', project_slug: 'stale', is_foundation: true, parent_project_uid: 'stale-parent' },
+    ]);
+
+    // Fresh fields win on every mapped column — including is_foundation flipping both ways
+    // (stale false -> computed true for the foundation; stale true -> computed false for the child).
+    expect(result).toEqual([
+      { project_uid: 'fdn', project_name: 'Fresh Foundation', project_slug: 'fresh-fdn', is_foundation: true, parent_project_uid: '' },
+      { project_uid: 'child', project_name: 'Fresh Child', project_slug: 'fresh-child', is_foundation: false, parent_project_uid: 'fdn' },
+    ]);
+  });
+
+  it('keeps payload fallbacks and leaves is_foundation undefined (not false) for unresolved projects', async () => {
+    vi.spyOn(service, 'getProjectsByIds').mockResolvedValue(new Map());
+
+    const result = await service.enrichWithProjectData(req, [
+      { project_uid: 'gone', project_name: 'Payload Name', project_slug: 'payload-slug', parent_project_uid: 'payload-parent' },
+      { project_uid: 'gone2', project_name: 'Tiered', project_slug: 'tiered', is_foundation: true, parent_project_uid: 'p' },
+    ]);
+
+    expect(result[0]).toEqual({
+      project_uid: 'gone',
+      project_name: 'Payload Name',
+      project_slug: 'payload-slug',
+      parent_project_uid: 'payload-parent',
+      is_foundation: undefined,
+    });
+    // The fail-soft contract: consumers treat undefined as "tier unknown" and fall back safely;
+    // a coerced false would mislabel a foundation-owned entity as project-owned.
+    expect(result[0].is_foundation).toBeUndefined();
+    // An item's own tier signal survives the ?? fallback untouched.
+    expect(result[1].is_foundation).toBe(true);
+  });
+
+  it('resolves the projects the batch returns and falls back per-row for the rest', async () => {
+    vi.spyOn(service, 'getProjectsByIds').mockResolvedValue(new Map([['ok', childProject('ok', 'fdn', { name: 'Resolved', slug: 'resolved' })]]));
+
+    const result = await service.enrichWithProjectData(req, [
+      { project_uid: 'ok', project_name: 'stale', project_slug: 'stale', parent_project_uid: 'stale' },
+      { project_uid: 'skipped', project_name: 'Kept', project_slug: 'kept', parent_project_uid: 'kept-parent' },
+    ]);
+
+    expect(result[0]).toMatchObject({ project_name: 'Resolved', project_slug: 'resolved', is_foundation: false, parent_project_uid: 'fdn' });
+    expect(result[1]).toMatchObject({ project_name: 'Kept', project_slug: 'kept', parent_project_uid: 'kept-parent' });
+    expect(result[1].is_foundation).toBeUndefined();
+  });
+
+  it('keeps item-level fields untouched when every batch fails', async () => {
+    // getProjectsByIds warn-and-skips failed batches internally, so a full query-service outage
+    // surfaces here as an empty map — the same net merge outcome as the old all-null per-item
+    // failures, with no exception escaping the enrichment.
+    vi.spyOn(service, 'getProjectsByIds').mockResolvedValue(new Map());
+
+    const result = await service.enrichWithProjectData(req, [
+      { project_uid: 'x', project_name: 'Last Known', project_slug: 'last-known', is_foundation: true, parent_project_uid: 'p' },
+    ]);
+
+    expect(result[0]).toMatchObject({ project_name: 'Last Known', project_slug: 'last-known', is_foundation: true, parent_project_uid: 'p' });
   });
 });

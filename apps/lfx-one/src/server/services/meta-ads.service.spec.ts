@@ -18,7 +18,7 @@ vi.mock('./logger.service', () => ({
 
 import type { MetaCampaignCreateRequest } from '@lfx-one/shared/interfaces';
 
-import { executeMetaCampaignCreation } from './meta-ads.service';
+import { buildMetaUtmUrl, executeMetaCampaignCreation } from './meta-ads.service';
 
 /** Every POST path the mock fetch was asked for, in call order. */
 function postPaths(fetchMock: ReturnType<typeof vi.fn>): string[] {
@@ -252,5 +252,32 @@ describe('executeMetaCampaignCreation', () => {
       expect(adSetBody.optimization_goal).toBe('LINK_CLICKS');
       expect(adSetBody.promoted_object).toBeUndefined();
     });
+  });
+});
+
+describe('buildMetaUtmUrl — utm_campaign omission', () => {
+  const config = {
+    registrationUrl: 'https://events.linuxfoundation.org/kubecon-na-2026/',
+    eventSlug: 'kubecon-na-2026',
+    eventName: 'KubeCon NA 2026',
+  } as Parameters<typeof buildMetaUtmUrl>[0];
+
+  it('OMITS utm_campaign when HubSpot issued no token', () => {
+    // Copilot: the omission landed on the Google Ads builder only, so the same tokenless campaign
+    // was honestly untagged on Google and FALSELY tagged on Meta -- `hsToken || slug` minted a
+    // plausible-looking token HubSpot never issued. Downstream it is indistinguishable from a
+    // real one, and it attributes traffic to a campaign HubSpot cannot report on.
+    const url = new URL(buildMetaUtmUrl({ ...config, hsToken: undefined }, 0));
+
+    expect(url.searchParams.has('utm_campaign'), 'fabricated a utm_campaign from the event slug').toBe(false);
+    // The rest of the tagging is unaffected -- this is one parameter, not a refusal to tag.
+    expect(url.searchParams.get('utm_source')).toBe('meta');
+    expect(url.searchParams.get('utm_medium')).toBe('paid-social');
+  });
+
+  it('carries a real token through', () => {
+    // The other direction, so the assertion above cannot be satisfied by dropping it always.
+    const url = new URL(buildMetaUtmUrl({ ...config, hsToken: 'hs-real-token' }, 0));
+    expect(url.searchParams.get('utm_campaign')).toBe('hs-real-token');
   });
 });

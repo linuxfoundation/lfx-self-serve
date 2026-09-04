@@ -105,6 +105,15 @@ export class NavigationService {
     this.getState(lens).searchTerm.set(term);
   }
 
+  /**
+   * The term the lens's current `items` were fetched for — not what the user has typed. Consumers
+   * deciding how to present the visible list (ordering, empty state) should read this, otherwise
+   * they act on a search whose results have not arrived yet.
+   */
+  public resultsTerm(lens: NavLens): Signal<string> {
+    return this.getState(lens).resultsTerm;
+  }
+
   public loadNextPage(lens: NavLens): void {
     const state = this.getState(lens);
     const token = state.nextPageToken();
@@ -225,6 +234,7 @@ export class NavigationService {
 
   private createLensState(lens: NavLens): LensState {
     const searchTerm = signal<string>('');
+    const resultsTerm = signal<string>('');
     const loading = signal<boolean>(false);
     const loaded = signal<boolean>(false);
     const nextPageToken = signal<string | null>(null);
@@ -233,11 +243,12 @@ export class NavigationService {
     const loadMore$ = new Subject<string>();
     const reload$ = new Subject<void>();
 
-    const items = this.initItems(lens, searchTerm, loading, loaded, nextPageToken, pendingDefaultSelection, generation, loadMore$, reload$);
+    const items = this.initItems(lens, searchTerm, resultsTerm, loading, loaded, nextPageToken, pendingDefaultSelection, generation, loadMore$, reload$);
     const hasMore = computed(() => nextPageToken() !== null);
 
     return {
       searchTerm,
+      resultsTerm,
       items,
       loading,
       loaded,
@@ -253,6 +264,7 @@ export class NavigationService {
   private initItems(
     lens: NavLens,
     searchTerm: WritableSignal<string>,
+    resultsTerm: WritableSignal<string>,
     loading: WritableSignal<boolean>,
     loaded: WritableSignal<boolean>,
     nextPageToken: WritableSignal<string | null>,
@@ -285,12 +297,17 @@ export class NavigationService {
       })
     );
 
-    const nextPage$ = loadMore$.pipe(switchMap((token) => this.fetchSinglePage(lens, searchTerm(), token, loading, false, generation(), generation, null)));
+    // Continue with the term the cursor belongs to, not the term being typed. `nextPageToken` is
+    // set by the page that also set `resultsTerm`, so the two always describe the same query;
+    // pairing the cursor with a newer `searchTerm` would append results from one query onto
+    // another. The newer term gets its own reset fetch once the debounce fires.
+    const nextPage$ = loadMore$.pipe(switchMap((token) => this.fetchSinglePage(lens, resultsTerm(), token, loading, false, generation(), generation, null)));
 
     return toSignal(
       merge(firstPage$, nextPage$).pipe(
         // Drop responses from a superseded generation (e.g., a scroll fetch that lands after a new search reset).
         filter(({ generation: pageGen }) => pageGen === generation()),
+        tap(({ term }) => resultsTerm.set(term)),
         map(({ page }) => page),
         tap((page) => {
           nextPageToken.set(page.nextPageToken);
@@ -330,7 +347,7 @@ export class NavigationService {
       if (activeGeneration() === generation) loading.set(false);
     };
     return this.fetchPage(lens, term, pageToken, selectedUid).pipe(
-      map((response) => ({ page: this.toLensPage(response, reset), generation })),
+      map((response) => ({ page: this.toLensPage(response, reset), generation, term })),
       tap(clearLoadingIfActive),
       catchError(() => {
         // Reset failures emit an empty page so handleEmptyLensResponse can redirect; scroll-triggered failures stay silent.
@@ -339,6 +356,7 @@ export class NavigationService {
           return of({
             page: { items: [], nextPageToken: null, upstreamFailed: true, reset: true },
             generation,
+            term,
           });
         }
         return EMPTY;

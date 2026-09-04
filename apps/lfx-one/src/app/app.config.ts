@@ -3,7 +3,7 @@
 
 import { provideHttpClient, withFetch, withInterceptors } from '@angular/common/http';
 import { ApplicationConfig, ErrorHandler, provideZonelessChangeDetection } from '@angular/core';
-import { provideClientHydration, withEventReplay, withHttpTransferCacheOptions, withIncrementalHydration } from '@angular/platform-browser';
+import { provideClientHydration, withEventReplay, withIncrementalHydration } from '@angular/platform-browser';
 import { provideAnimationsAsync } from '@angular/platform-browser/animations/async';
 import { provideRouter, withInMemoryScrolling, withPreloading } from '@angular/router';
 import { lfxCardTheme, lfxDataTableTheme } from '@lfx-one/shared';
@@ -11,7 +11,6 @@ import { lfxPreset } from '@linuxfoundation/lfx-ui-core';
 import { definePreset } from '@primeuix/themes';
 import Aura from '@primeuix/themes/aura';
 import { authenticationInterceptor } from '@shared/interceptors/authentication.interceptor';
-import { ssrBaseUrlInterceptor } from '@shared/interceptors/ssr-base-url.interceptor';
 import { ConfirmationService, MessageService } from 'primeng/api';
 import { providePrimeNG } from 'primeng/config';
 import { DialogService } from 'primeng/dynamicdialog';
@@ -38,8 +37,13 @@ export const appConfig: ApplicationConfig = {
     provideZonelessChangeDetection(),
     { provide: ErrorHandler, useClass: ChunkLoadErrorHandler },
     provideRouter(routes, withPreloading(CustomPreloadingStrategy), withInMemoryScrolling({ scrollPositionRestoration: 'top', anchorScrolling: 'enabled' })),
-    provideClientHydration(withEventReplay(), withIncrementalHydration(), withHttpTransferCacheOptions({ includeHeaders: ['Authorization'] })),
-    provideHttpClient(withFetch(), withInterceptors([authenticationInterceptor, ssrBaseUrlInterceptor])),
+    // `includeHeaders` selects which *response* headers get serialized into the transfer cache
+    // state — it has no effect on which requests are eligible for caching. The prior
+    // `includeHeaders: ['Authorization']` was the wrong option for its intended purpose (a no-op)
+    // and mildly harmful, since it would have opted an `Authorization` response header into the
+    // serialized SSR HTML.
+    provideClientHydration(withEventReplay(), withIncrementalHydration()),
+    provideHttpClient(withFetch(), withInterceptors([authenticationInterceptor])),
     provideAnimationsAsync(),
     providePrimeNG({
       theme: {
