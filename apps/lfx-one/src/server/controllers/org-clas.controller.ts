@@ -27,6 +27,7 @@ export class OrgClasController {
       const result = await this.orgClaService.listClaGroups(req, orgUid);
 
       logger.success(req, 'list_org_cla_groups', startTime, { org_uid: orgUid, cla_group_count: result.claGroups.length });
+      res.setHeader('Cache-Control', 'no-store');
       res.json(result);
     } catch (error) {
       next(error);

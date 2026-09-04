@@ -27,8 +27,6 @@ import { UserService } from '@services/user.service';
 import { WriterGrantsService } from '@services/writer-grants.service';
 import { map, of, startWith, switchMap } from 'rxjs';
 
-const ORG_ENGAGEMENT_SECTION_LABEL = 'Organization Engagement';
-
 /**
  * Builds the lens-aware sidebar menu items. Extracted from MainLayoutComponent so both the main
  * layout and the docs shell can render the same lens navigation. In the docs shell the previously
@@ -45,6 +43,9 @@ export class SidebarNavService {
   private readonly featureFlagService = inject(FeatureFlagService);
   private readonly userService = inject(UserService);
   private readonly writerGrantsService = inject(WriterGrantsService);
+
+  /** The section EasyCLA is inserted into; matched by label because the tree is built inline. */
+  private readonly orgEngagementSectionLabel = 'Organization Engagement';
 
   /** Dark-launch gate; falls back to Me Lens nav when off. */
   private readonly isOrgLensEnabled = this.featureFlagService.getBooleanFlag(ORG_LENS_ENABLED_FLAG, false);
@@ -612,7 +613,7 @@ export class SidebarNavService {
     // INFO: Future Epic implementation — the Governance page is hidden until built. Restore as a
     // top-level item or a section when re-enabled.
     {
-      label: ORG_ENGAGEMENT_SECTION_LABEL,
+      label: this.orgEngagementSectionLabel,
       isSection: true,
       expanded: true,
       items: [
@@ -656,7 +657,7 @@ export class SidebarNavService {
    */
   private withEasyclaNavItem(items: SidebarMenuItem[]): SidebarMenuItem[] {
     return items.map((item) => {
-      if (!item.isSection || item.label !== ORG_ENGAGEMENT_SECTION_LABEL || !item.items) return item;
+      if (!item.isSection || item.label !== this.orgEngagementSectionLabel || !item.items) return item;
       const afterContributions = item.items.findIndex((child) => child.routerLink === '/org/contributions') + 1;
       const at = afterContributions === 0 ? item.items.length : afterContributions;
       return { ...item, items: [...item.items.slice(0, at), this.orgEasyclaNavItem, ...item.items.slice(at)] };

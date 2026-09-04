@@ -22,7 +22,7 @@ import { AuthenticationError } from '../errors';
 import { OrgClasController } from './org-clas.controller';
 
 function buildRes() {
-  return { json: vi.fn(), status: vi.fn().mockReturnThis(), send: vi.fn() } as any;
+  return { json: vi.fn(), status: vi.fn().mockReturnThis(), send: vi.fn(), setHeader: vi.fn() } as any;
 }
 
 beforeEach(() => {
@@ -59,5 +59,14 @@ describe('OrgClasController.listClaGroups', () => {
     expect(listClaGroups).toHaveBeenCalledWith(req, '0014100000Te2ovAAB');
     expect(listClaGroups).toHaveBeenCalledTimes(1);
     expect(res.json).toHaveBeenCalledWith(response);
+  });
+
+  it('marks the response no-store, so the CLA list never lands in a shared cache', async () => {
+    listClaGroups.mockResolvedValue({ orgUid: '0014100000Te2ovAAB', claGroups: [] });
+    const res = buildRes();
+
+    await new OrgClasController().listClaGroups({ params: { orgUid: '0014100000Te2ovAAB' }, query: {}, body: {} } as any, res, vi.fn());
+
+    expect(res.setHeader).toHaveBeenCalledWith('Cache-Control', 'no-store');
   });
 });
