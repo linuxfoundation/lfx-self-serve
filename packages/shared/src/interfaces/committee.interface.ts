@@ -108,6 +108,18 @@ export interface CommitteeInvite {
    * endpoints — those fail for invitees who are not yet committee viewers.
    */
   organization_required?: boolean | null;
+  /**
+   * The user who created the invite, resolved from the authenticated principal at creation time
+   * (committee-service ≥ the inviter/expiry change). Absent on older records or when the principal
+   * could not be resolved. All fields are optional to mirror the upstream `omitempty` wire shape:
+   * only `username` is reliably present; `name`/`email`/`avatar` are omitted when empty.
+   */
+  inviter?: Partial<CommitteeUser> | null;
+  /**
+   * Invite link expiry (RFC3339). Set upstream to `created_at + 30 days`, mirroring the
+   * invite-service default token TTL. Absent on records created before the field existed.
+   */
+  expires_at?: string | null;
 }
 
 /**
@@ -122,8 +134,9 @@ export interface CommitteeInvite {
  * field when available; legacy `enable_voting` / `business_email_required` are kept for
  * backwards compat but are no longer fetched in the accept path.
  *
- * `inviter_name` / `expires_at` are reserved, optional fields that stay `undefined`
- * until/unless the committee-service starts emitting them. Do NOT fabricate either on the BFF.
+ * `inviter_name` / `expires_at` are sourced from the `committee_invite` resource, which the
+ * committee-service now populates (inviter resolved from the acting principal at creation; expiry
+ * set to `created_at + 30 days`). They stay null on older records that predate those fields.
  */
 export interface PendingInvitation {
   /** committee_invite UID — used for accept/decline */
@@ -149,13 +162,14 @@ export interface PendingInvitation {
   /** Creation timestamp (RFC3339) */
   created_at: string;
   /**
-   * Name of the person who sent the invitation. NOT in the current committee-service
-   * contract — populated only if upstream adds it. Stays `undefined` otherwise.
+   * Display label for who sent the invitation: the invite's `inviter.name`, falling back to
+   * `inviter.username` (always present upstream when a principal exists), so a username-only
+   * inviter still attributes the row. Null only when neither is present (e.g. legacy records).
    */
   inviter_name?: string | null;
   /**
-   * Expiration timestamp (RFC3339). NOT in the current committee-service contract —
-   * populated only if upstream adds it. Stays `undefined` otherwise.
+   * Invite link expiry (RFC3339), sourced from the invite's `expires_at` (`created_at + 30 days`
+   * upstream). Null on records created before upstream stored it.
    */
   expires_at?: string | null;
   /** Suggested organization from the invite (pre-fills the accept modal) */

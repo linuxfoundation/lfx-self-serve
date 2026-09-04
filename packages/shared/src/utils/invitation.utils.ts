@@ -123,11 +123,12 @@ export function formatInviteExpiry(expiresAt: string | null | undefined): string
  *
  * Extracted from the server aggregator so the row shape — the copy fallback, the accept/decline
  * identifiers, and the per-type tag tone — is unit-testable without standing up the Express stack.
- * Both the inviter name and the expiry are usually absent in the current committee-service contract;
- * the title degrades to "You've been invited to {Group}" and no `date` is set when `expires_at` is
- * missing, so the row never depends on email dispatch (the LFXV2-2117 fallback requirement). When an
- * expiry IS present it's formatted for display (`PendingActionItem.date` is a human-readable string,
- * not a raw ISO timestamp).
+ * The inviter name and expiry are populated by committee-service (which persists the inviter and a
+ * `created_at + 30 days` expiry on the invite); they're absent only on legacy records or before that
+ * upstream change is deployed. When either is missing the title degrades to "You've been invited to
+ * {Group}" and no `date` is set, so the row never depends on email dispatch (the LFXV2-2117 fallback
+ * requirement). When an expiry IS present it's formatted for display (`PendingActionItem.date` is a
+ * human-readable string, not a raw ISO timestamp).
  */
 export function buildInvitationActions(invitations: PendingInvitation[]): PendingActionItem[] {
   return invitations.map((invitation) => {
@@ -178,8 +179,9 @@ export function findPendingInvitationForCommittee(
 /**
  * Pure builder for the secondary line on a pending-invitation row.
  *
- * Base copy is "{inviter_name} invited you" when an inviter is known (usually it isn't), otherwise
- * "You've been invited". When the invite carries an expiry, " · expires {formattedExpiry}" is
+ * Base copy is "{inviter_name} invited you" when an inviter name is present (committee-service now
+ * populates it; absent only on legacy records), otherwise "You've been invited". When the invite
+ * carries an expiry, " · expires {formattedExpiry}" is
  * appended — the caller passes the already-formatted date string (e.g. via {@link formatInviteExpiry})
  * so this stays framework-free and testable.
  */
