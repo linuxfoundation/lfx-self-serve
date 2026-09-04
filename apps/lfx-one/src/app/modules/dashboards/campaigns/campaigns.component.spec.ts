@@ -3437,6 +3437,36 @@ describe('CampaignsComponent — email delivery channel', () => {
       expect(internals().emailBriefOutput(), "the previous stage's brief content survived; a persist would file it under the new stage").toBeNull();
     });
 
+    // An UNAPPROVED restore must not cache the id. `ensureEmailBriefId` short-circuits on a
+    // non-empty `emailBriefId`, so caching an unapproved brief's id means the persist -- which is
+    // what approves -- never runs again, and audience, copy and staging keep failing against a
+    // brief campaign-service will not create from. `persistEmailBrief` already applies this exact
+    // rule at its own call site ("caching that id would make every downstream call fail"); the
+    // restore path is the other way in.
+    it('does not cache the restored brief id when the stored brief is unapproved', () => {
+      selectEmail();
+
+      (
+        internals() as unknown as {
+          onRestoreSavedEmailBrief(b: unknown, id: string, etag: string | null, approved: boolean): void;
+        }
+      ).onRestoreSavedEmailBrief(emailBrief, 'brief-unapproved', 'W/"2"', false);
+
+      expect(internals().emailBriefId(), 'an unapproved brief id was cached; ensureEmailBriefId will short-circuit and never retry approval').toBe('');
+    });
+
+    it('caches the restored brief id when the stored brief IS approved', () => {
+      selectEmail();
+
+      (
+        internals() as unknown as {
+          onRestoreSavedEmailBrief(b: unknown, id: string, etag: string | null, approved: boolean): void;
+        }
+      ).onRestoreSavedEmailBrief(emailBrief, 'brief-approved', 'W/"2"', true);
+
+      expect(internals().emailBriefId()).toBe('brief-approved');
+    });
+
     it('keeps the loaded brief when two types share one stage', () => {
       selectEmail();
       internals().emailBriefOutput.set(emailBrief);

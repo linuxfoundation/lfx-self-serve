@@ -196,7 +196,7 @@
             deliveryType="email"
             [emailStage]="selectedEmailStage() ?? ''"
             (proceedToImplementation)="onEmailProceedToImplementation($event)"
-            (restoreSavedBriefRequested)="onRestoreSavedEmailBrief($event.brief, $event.briefId, $event.etag)"
+            (restoreSavedBriefRequested)="onRestoreSavedEmailBrief($event.brief, $event.briefId, $event.etag, $event.approved)"
             data-testid="campaigns-email-planning-tab" />
         }
       </div>

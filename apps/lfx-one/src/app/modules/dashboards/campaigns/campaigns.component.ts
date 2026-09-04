@@ -1793,7 +1793,7 @@ export class CampaignsComponent {
    * `unowned-brief-exists` — the guard that stops a caller replacing a brief it never opened.
    * Having actually opened it is precisely what this call records.
    */
-  protected onRestoreSavedEmailBrief(brief: CampaignBriefOutput, briefId: string, etag: string | null | undefined): void {
+  protected onRestoreSavedEmailBrief(brief: CampaignBriefOutput, briefId: string, etag: string | null | undefined, approved: boolean): void {
     const key = this.ownershipKey(this.activeFoundationSlug(), brief);
     if (key !== null) {
       // Bumped for the same reason the paid path bumps it: a restore makes this session the writer
@@ -1814,7 +1814,16 @@ export class CampaignsComponent {
     // and mint a SECOND row for an event that already has one. Restoring the id after the reset
     // is what makes the following save a PUT against the row just opened.
     this.onEmailProceedToImplementation(brief);
-    this.emailBriefId.set(briefId);
+    // The id is cached ONLY for an approved brief, which is the same rule `persistEmailBrief`
+    // applies at its own call site. `ensureEmailBriefId` short-circuits on a non-empty
+    // `emailBriefId`, so caching an unapproved one means the persist -- which is what approves --
+    // never runs again, and audience, copy and staging keep failing against a brief
+    // campaign-service refuses to create from. Leaving it empty lets the next action re-persist
+    // and re-approve; ownership is still recorded above, so that save is an edit of the row just
+    // opened rather than an attempt to mint a second one.
+    if (approved) {
+      this.emailBriefId.set(briefId);
+    }
   }
 
   /**
