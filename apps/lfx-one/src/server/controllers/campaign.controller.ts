@@ -765,13 +765,27 @@ export class CampaignController {
       return;
     }
 
-    // Defaulted rather than required, and defaulted to paid on purpose. Callers predating this
+    // ABSENT means paid; an explicit unrecognised value is REJECTED. Callers predating this
     // parameter are all paid — it is the only surface whose restore path was ever enabled — so an
-    // absent value must keep restoring paid briefs exactly as before. Any unrecognised string is
-    // also read as paid rather than rejected: this parameter narrows what a caller may open, so
-    // failing it closed toward the pre-existing behaviour cannot expose a brief that was hidden
-    // before, whereas honouring an unknown surface could match a row belonging to neither.
+    // omitted value must keep restoring paid briefs exactly as before.
+    //
+    // An earlier revision also narrowed an explicit typo to paid, reasoning that failing closed
+    // toward the pre-existing behaviour could not expose a brief that was hidden before. True, and
+    // beside the point: `?delivery_type=emial` then returns the PAID brief under a 200, which is a
+    // confident answer to a question the caller did not ask. Upstream's `find-brief` restricts this
+    // param to `paid-marketing | email`, so honouring a third value was never the contract — and
+    // `stage` two lines below already rejects rather than narrows. The two now agree.
     const deliveryTypeParam = typeof req.query['delivery_type'] === 'string' ? req.query['delivery_type'] : '';
+    if (deliveryTypeParam !== '' && deliveryTypeParam !== 'email' && deliveryTypeParam !== 'paid-marketing') {
+      next(
+        ServiceValidationError.forField('delivery_type', 'delivery_type must be one of: paid-marketing, email', {
+          operation: 'campaign_load_brief',
+          service: 'campaign_controller',
+          path: req.path,
+        })
+      );
+      return;
+    }
     // `stage` completes the key. Without it every lookup asked upstream for the empty stage, which
     // is the PAID brief's stage — so an email caller naming a real stage was answered `none` for a
     // brief sitting right there.

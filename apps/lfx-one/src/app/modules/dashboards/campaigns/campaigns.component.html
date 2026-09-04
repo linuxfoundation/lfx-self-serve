@@ -183,7 +183,8 @@
               ariaLabel="Email type"
               dataTest="campaigns-email-stage-select" />
             <p class="text-xs text-gray-500">
-              Each type is its own brief for this event, so a campaign can run as a series. Switching type opens that send's brief.
+              Each <em>stage</em> is its own brief for this event, so a campaign can run as a series. Some types share a stage and therefore the same brief;
+              switching to a type in a different stage opens that send&apos;s brief.
             </p>
           </div>
 
@@ -302,7 +303,7 @@
                 <div class="flex flex-col gap-1">
                   <span class="font-mono text-xs uppercase tracking-wide text-gray-400">Email type</span>
                   <p class="text-sm text-gray-900" data-testid="campaigns-email-type-display">{{ selectedEmailTypeLabel() }}</p>
-                  <p class="text-xs text-gray-500">Change the type above the planner — each type is its own brief.</p>
+                  <p class="text-xs text-gray-500">Change the type above the planner — each stage is its own brief.</p>
                 </div>
 
                 <div class="flex items-center gap-3">

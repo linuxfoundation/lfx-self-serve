@@ -442,14 +442,29 @@ describe('CampaignController.loadBrief', () => {
   // and different key `(email, '')`, so the caller was answered about a brief nobody asked for.
   // The two assertions cannot both stand, so that test is gone rather than left contradicting.
 
-  it('falls back to paid-marketing for an unrecognised delivery_type rather than rejecting it', async () => {
-    // Fails CLOSED toward the pre-existing behaviour. This parameter NARROWS what a caller may
-    // open, so defaulting an unknown value to paid cannot expose a brief that was hidden before;
-    // honouring it verbatim could match a row belonging to neither surface, and rejecting the
-    // request outright would turn a typo into a 400 for a caller that never sent one before.
+  it('refuses an explicitly unrecognised delivery_type instead of returning the paid brief', async () => {
+    // An earlier revision narrowed a typo to paid, reasoning that failing closed toward the
+    // pre-existing behaviour could not expose a brief that was hidden before. True, and beside the
+    // point: `?delivery_type=emial` then answered 200 with the PAID brief — a confident answer to a
+    // question the caller never asked. Upstream restricts this param to two values, so a third was
+    // never the contract, and `stage` already rejects rather than narrows.
+    await controller.loadBrief(buildLoadReq({ event_slug: 'kubecon-eu-2026', project: 'tlf', delivery_type: 'not-a-surface' }), res, next);
+
+    expect(loadBrief, 'a malformed delivery_type still reached campaign-service').not.toHaveBeenCalled();
+    expect(res.json).not.toHaveBeenCalled();
+    const error = vi.mocked(next).mock.calls[0][0] as unknown as ServiceValidationError;
+    expect(error).toBeInstanceOf(ServiceValidationError);
+    expect(error.statusCode).toBe(400);
+    expect((error.toResponse()['errors'] as { field: string }[])[0].field).toBe('delivery_type');
+  });
+
+  // The OMITTED case keeps its old meaning, and that half is what the rejection above must not
+  // break: every caller predating the parameter is paid, so an absent value has to keep restoring
+  // paid briefs exactly as before.
+  it('still defaults an omitted delivery_type to paid-marketing', async () => {
     loadBrief.mockResolvedValue({ status: 'none', briefId: null, brief: null, etag: null, approved: false });
 
-    await controller.loadBrief(buildLoadReq({ event_slug: 'kubecon-eu-2026', project: 'tlf', delivery_type: 'not-a-surface' }), res, next);
+    await controller.loadBrief(buildLoadReq({ event_slug: 'kubecon-eu-2026', project: 'tlf' }), res, next);
 
     expect(loadBrief).toHaveBeenCalledWith(expect.any(Object), 'kubecon-eu-2026', 'tlf', 'paid-marketing', '');
     expect(next).not.toHaveBeenCalled();

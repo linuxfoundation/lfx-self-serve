@@ -134,11 +134,16 @@ export class CampaignService {
     stage: CampaignEmailStage | '' = ''
   ): Observable<CampaignBriefLoadResult> {
     return this.http.get<CampaignBriefLoadResult>('/api/campaigns/brief', {
-      // `delivery_type` scopes the read to the surface asking. Briefs are stored one row per
-      // `(project, event)` regardless of surface, so without it an email caller can be handed a
-      // paid brief for the same event — which is why the email restore path was disabled outright
-      // rather than shipped. Defaulted here as well as on the server so the two agree on what an
-      // omitted parameter means: paid, the only surface that could restore before this existed.
+      // `delivery_type` and `stage` are two of the four parts of a brief's identity upstream, which
+      // keys a row on `(project, event_slug, delivery_type, stage)`. They are not filters over a
+      // result set: an event holds a paid brief AND one per stage of its email series, so a lookup
+      // naming only the slug does not name one brief. Sending them is what makes a send
+      // addressable; omitting them is what once handed an email caller a paid brief and kept the
+      // email restore path disabled.
+      //
+      // Both are defaulted here as well as on the server so the two agree on what an omitted
+      // parameter means: `paid-marketing` and the empty stage — the identity every brief written
+      // before the widening carries, since paid was the only surface that could save one.
       params: new HttpParams().set('event_slug', eventSlug).set('project', projectSlug).set('delivery_type', deliveryType).set('stage', stage),
     });
   }
