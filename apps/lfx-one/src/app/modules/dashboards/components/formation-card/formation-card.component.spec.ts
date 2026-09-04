@@ -2,11 +2,10 @@
 // SPDX-License-Identifier: MIT
 
 import { ComponentFixture, TestBed } from '@angular/core/testing';
-import { signal, WritableSignal } from '@angular/core';
+import { signal } from '@angular/core';
 import { Project, ProjectSettings } from '@lfx-one/shared/interfaces';
 import { getFormationSubStageLabel } from '@lfx-one/shared/utils';
 import { PermissionsService } from '@services/permissions.service';
-import { PersonaService } from '@services/persona.service';
 import { ProjectContextService } from '@services/project-context.service';
 import { ProjectService } from '@services/project.service';
 import { Observable, of, throwError } from 'rxjs';
@@ -57,7 +56,6 @@ function settings(): ProjectSettings {
 
 describe('FormationCardComponent', () => {
   let fixture: ComponentFixture<FormationCardComponent>;
-  let isLFStaff: WritableSignal<boolean>;
 
   async function render(
     stage: string,
@@ -65,14 +63,18 @@ describe('FormationCardComponent', () => {
     options: { sfid?: string | null; settingsResult?: Observable<ProjectSettings>; projectOverrides?: Partial<Project> } = {}
   ): Promise<void> {
     const { sfid = 'sfid-1', settingsResult = of(settings()), projectOverrides = {} } = options;
-    isLFStaff = signal(staff);
     TestBed.resetTestingModule();
     await TestBed.configureTestingModule({
       imports: [FormationCardComponent],
       providers: [
-        { provide: ProjectService, useValue: { getProjectSfid: () => of(sfid) } },
+        {
+          provide: ProjectService,
+          useValue: {
+            getProjectSfid: () => of(sfid),
+            getProject: () => of(project(stage, { ...projectOverrides, auditor: staff })),
+          },
+        },
         { provide: PermissionsService, useValue: { getProjectSettings: () => settingsResult } },
-        { provide: PersonaService, useValue: { isLFStaff } },
         {
           provide: ProjectContextService,
           useValue: {

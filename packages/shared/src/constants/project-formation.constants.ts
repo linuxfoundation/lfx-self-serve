@@ -7,8 +7,13 @@ import { ProjectStage } from '../enums/project-stage.enum';
  * Short display labels for the Formation sub-stages, used to build strings like
  * `FORMATION · Engaged` and the sidebar Formation card's sub-stage pill. Each label is the
  * `ProjectStage` enum value with its `Formation - ` prefix dropped.
+ *
+ * Keyed by `ProjectStage` (5 values, including `Disengaged` and `Confidential`) — a different map
+ * from the canonical `FORMATION_SUB_STAGE_LABELS` in `formation.constants.ts` (GH-2163), which is
+ * keyed by the `FormationSubStage` union. Named distinctly so the two don't collide as re-exports
+ * of the same barrel.
  */
-export const FORMATION_SUB_STAGE_LABELS: Partial<Record<ProjectStage, string>> = {
+export const PROJECT_FORMATION_STAGE_LABELS: Partial<Record<ProjectStage, string>> = {
   [ProjectStage.FormationExploratory]: 'Exploratory',
   [ProjectStage.FormationEngaged]: 'Engaged',
   [ProjectStage.FormationOnHold]: 'On Hold',

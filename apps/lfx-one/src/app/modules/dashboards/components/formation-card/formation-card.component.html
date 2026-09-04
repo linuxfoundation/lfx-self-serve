@@ -40,7 +40,7 @@
 
     <p class="text-xs text-gray-500">Stage and legal entity are set by the formation team in the admin tool and appear here within minutes.</p>
 
-    @if (isLFStaff() && sfid()) {
+    @if (isAuditor() && sfid()) {
       <div class="flex flex-col gap-2 pt-2 border-t border-gray-200" data-testid="formation-card-admin-links">
         <div class="flex items-center gap-2">
           <a
