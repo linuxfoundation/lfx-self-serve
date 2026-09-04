@@ -3,6 +3,7 @@
 
 import { inject } from '@angular/core';
 import { Router, Routes } from '@angular/router';
+import { ACCOUNT_SETTINGS_SECTIONS, PROFILE_SETTINGS_PATH } from '@lfx-one/shared/constants';
 
 import { myClasEnabledGuard } from '@app/shared/guards/my-clas-enabled.guard';
 
@@ -59,10 +60,25 @@ export const PROFILE_ROUTES: Routes = [
       { path: 'linux-email', redirectTo: 'identities' },
 
       // Redirect the old standalone email/password pages into the Settings tab section.
-      // Functional redirectTo (not a string) preserves Flow C's ?error=/?success= query params.
-      { path: 'password', redirectTo: ({ queryParams }) => inject(Router).createUrlTree(['/profile/settings'], { queryParams, fragment: 'password' }) },
-      { path: 'email', redirectTo: ({ queryParams }) => inject(Router).createUrlTree(['/profile/settings'], { queryParams, fragment: 'email-settings' }) },
-      { path: 'emails', redirectTo: ({ queryParams }) => inject(Router).createUrlTree(['/profile/settings'], { queryParams, fragment: 'email-settings' }) },
+      // Functional redirectTo (not a string) is required to attach the #fragment — a string
+      // redirectTo has no way to carry one.
+      {
+        path: 'password',
+        redirectTo: ({ queryParams }) => inject(Router).createUrlTree([PROFILE_SETTINGS_PATH], { queryParams, fragment: ACCOUNT_SETTINGS_SECTIONS.PASSWORD }),
+      },
+      {
+        path: 'email',
+        redirectTo: ({ queryParams }) =>
+          inject(Router).createUrlTree([PROFILE_SETTINGS_PATH], { queryParams, fragment: ACCOUNT_SETTINGS_SECTIONS.EMAIL_SETTINGS }),
+      },
+      // Unlike password/email above, this isn't a legacy redirect — profile.controller.ts's
+      // Flow C flows emit returnTo=/profile/emails as their live landing path, so this route
+      // must keep resolving even if the other two are ever retired.
+      {
+        path: 'emails',
+        redirectTo: ({ queryParams }) =>
+          inject(Router).createUrlTree([PROFILE_SETTINGS_PATH], { queryParams, fragment: ACCOUNT_SETTINGS_SECTIONS.EMAIL_SETTINGS }),
+      },
 
       // Backward-compat redirects for old URLs
       { path: 'attribution', redirectTo: 'attributions' },

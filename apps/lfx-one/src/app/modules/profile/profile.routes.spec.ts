@@ -9,8 +9,9 @@ import { PROFILE_ROUTES } from './profile.routes';
 
 /**
  * Guards issue #2177's consolidation: the legacy /profile/email(s)/password pages redirect into
- * /profile/settings with a fragment. A functional redirectTo (not a string) is required to carry
- * Flow C's ?error=/?success= query params — a string redirectTo drops them.
+ * /profile/settings with a fragment. A functional redirectTo (not a string) is required to attach
+ * that #fragment — a string redirectTo has no way to carry one. Query params survive either form,
+ * so each assertion below leads with the fragment and checks query-param passthrough alongside it.
  */
 describe('PROFILE_ROUTES — legacy page redirects (#2177)', () => {
   function findRoute(path: string): Route {
@@ -26,22 +27,22 @@ describe('PROFILE_ROUTES — legacy page redirects (#2177)', () => {
     return TestBed.runInInjectionContext(() => (route.redirectTo as (data: { queryParams: Record<string, string> }) => unknown)({ queryParams }));
   }
 
-  it('redirects /profile/password to /profile/settings#password, preserving query params', () => {
+  it('redirects /profile/password to /profile/settings#password, and still carries query params', () => {
     const tree = redirect('password', { error: 'invalid_state' }) as { queryParams: Record<string, string>; fragment: string | null; toString(): string };
-    expect(tree.queryParams).toEqual({ error: 'invalid_state' });
     expect(tree.fragment).toBe('password');
     expect(tree.toString()).toContain('/profile/settings');
+    expect(tree.queryParams).toEqual({ error: 'invalid_state' });
   });
 
-  it('redirects /profile/email to /profile/settings#email-settings, preserving query params', () => {
+  it('redirects /profile/email to /profile/settings#email-settings, and still carries query params', () => {
     const tree = redirect('email', { success: 'email_added' }) as { queryParams: Record<string, string>; fragment: string | null };
-    expect(tree.queryParams).toEqual({ success: 'email_added' });
     expect(tree.fragment).toBe('email-settings');
+    expect(tree.queryParams).toEqual({ success: 'email_added' });
   });
 
-  it('redirects /profile/emails to /profile/settings#email-settings, preserving query params', () => {
+  it('redirects /profile/emails to /profile/settings#email-settings, and still carries query params', () => {
     const tree = redirect('emails', { error: 'no_code' }) as { queryParams: Record<string, string>; fragment: string | null };
-    expect(tree.queryParams).toEqual({ error: 'no_code' });
     expect(tree.fragment).toBe('email-settings');
+    expect(tree.queryParams).toEqual({ error: 'no_code' });
   });
 });

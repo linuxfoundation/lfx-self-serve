@@ -396,7 +396,7 @@ alias without leaving the same application.
   by other server-side service calls in LFX One applies.
 - **Profile settings page as a model** — the email section of
   `apps/lfx-one/src/app/modules/settings/account-settings/` already handles profile
-  email management (though backed by Supabase, not ITX). The form pattern and layout
+  email management (though backed by auth-service over NATS, not ITX). The form pattern and layout
   can be adapted.
 
 ### What needs to be built

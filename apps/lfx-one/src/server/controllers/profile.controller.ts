@@ -10,6 +10,9 @@ import {
   CDP_TO_AUTH0_PROVIDER_MAP,
   EMAIL_ALREADY_LINKED_MESSAGE,
   EMAIL_REGEX,
+  PROFILE_EMAILS_PATH,
+  PROFILE_PASSWORD_PATH,
+  PROFILE_SETTINGS_PATH,
   PROFILE_VISIBILITY_KEYS,
   PURCHASE_LINUX_URL,
 } from '@lfx-one/shared/constants';
@@ -92,11 +95,11 @@ export class ProfileController {
   private static readonly allowedProfileReturnPaths: ReadonlySet<string> = new Set([
     '/profile',
     '/profile/email',
-    '/profile/emails',
+    PROFILE_EMAILS_PATH,
     '/profile/identities',
-    '/profile/password',
+    PROFILE_PASSWORD_PATH,
     '/profile/linux-email',
-    '/profile/settings',
+    PROFILE_SETTINGS_PATH,
     '/settings',
   ]);
 
@@ -589,7 +592,7 @@ export class ProfileController {
           message: 'Profile authorization required to change the primary email',
           // Static legacy path (not `referer`, which is the settings page itself and carries no
           // fragment) — profile.routes.ts's redirectTo re-attaches #email-settings on return.
-          authorize_url: `/api/profile/auth/start?returnTo=${encodeURIComponent('/profile/emails')}`,
+          authorize_url: `/api/profile/auth/start?returnTo=${encodeURIComponent(PROFILE_EMAILS_PATH)}`,
         });
         return;
       }
@@ -966,7 +969,7 @@ export class ProfileController {
           message: 'Profile authorization required to send a password reset link',
           // Static legacy path (not `referer`, which is the settings page itself and carries no
           // fragment) — profile.routes.ts's redirectTo re-attaches #password on return.
-          authorize_url: `/api/profile/auth/start?returnTo=${encodeURIComponent('/profile/password')}`,
+          authorize_url: `/api/profile/auth/start?returnTo=${encodeURIComponent(PROFILE_PASSWORD_PATH)}`,
         });
         return;
       }
@@ -1026,7 +1029,7 @@ export class ProfileController {
           message: 'Profile authorization required to change your password',
           // Static legacy path (not `referer`, which is the settings page itself and carries no
           // fragment) — profile.routes.ts's redirectTo re-attaches #password on return.
-          authorize_url: `/api/profile/auth/start?returnTo=${encodeURIComponent('/profile/password')}`,
+          authorize_url: `/api/profile/auth/start?returnTo=${encodeURIComponent(PROFILE_PASSWORD_PATH)}`,
         });
         return;
       }
@@ -2037,7 +2040,7 @@ export class ProfileController {
             message: 'Profile authorization required',
             // Static legacy path (not `referer`, which is the settings page itself and carries no
             // fragment) — profile.routes.ts's redirectTo re-attaches #email-settings on return.
-            authorize_url: `/api/profile/auth/start?returnTo=${encodeURIComponent('/profile/emails')}`,
+            authorize_url: `/api/profile/auth/start?returnTo=${encodeURIComponent(PROFILE_EMAILS_PATH)}`,
           });
           return;
         }

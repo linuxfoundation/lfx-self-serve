@@ -10,6 +10,7 @@ import { ButtonComponent } from '@components/button/button.component';
 import { InputTextComponent } from '@components/input-text/input-text.component';
 import { TokenRevealDialogComponent } from '@components/token-reveal-dialog/token-reveal-dialog.component';
 import { markFormControlsAsTouched } from '@lfx-one/shared';
+import { ACCOUNT_SETTINGS_SECTIONS, PROFILE_SETTINGS_PATH } from '@lfx-one/shared/constants';
 import { ActivatedRoute } from '@angular/router';
 import { useResendCooldown } from '@shared/utils/resend-cooldown';
 import { clearPendingProfileSave } from '@shared/utils/pending-profile-save.util';
@@ -64,9 +65,16 @@ export class AccountSettingsComponent {
   public resendCooldown = this.resendCooldownUtil.cooldown;
 
   // ── TOC active section ──
-  private static readonly sectionIds = ['email-settings', 'password', 'developer-settings'] as const;
-  public activeSection = signal('email-settings');
+  private static readonly sectionIds = [
+    ACCOUNT_SETTINGS_SECTIONS.EMAIL_SETTINGS,
+    ACCOUNT_SETTINGS_SECTIONS.PASSWORD,
+    ACCOUNT_SETTINGS_SECTIONS.DEVELOPER_SETTINGS,
+  ] as const;
+  public activeSection = signal<string>(ACCOUNT_SETTINGS_SECTIONS.EMAIL_SETTINGS);
   private scrollSpyObserver?: IntersectionObserver;
+  // Set once the user explicitly picks a section, so the deferred deep-link re-scroll below
+  // can't smooth-scroll them back to the original fragment after they've already navigated away.
+  private userPickedSection = false;
 
   // ══════════════════════════════════════════
   // EMAIL SETTINGS
@@ -192,12 +200,28 @@ export class AccountSettingsComponent {
       )
       // afterNextRender (not a direct call): waits for the loaded-state DOM swap to actually
       // paint before measuring scrollIntoView, so the layout shift can't race the scroll.
-      .subscribe((validFragment) => afterNextRender(() => this.scrollToSection(validFragment), { injector: this.injector }));
+      .subscribe((validFragment) =>
+        afterNextRender(
+          () => {
+            // The TOC stays clickable during the email-loading window; if the user already picked
+            // a different section by the time this fires, respect that instead of smooth-scrolling
+            // them back to the original deep-link fragment.
+            if (this.userPickedSection) return;
+            this.scrollToSection(validFragment);
+          },
+          { injector: this.injector }
+        )
+      );
   }
 
   // ══════════════════════════════════════════
   // TOC NAVIGATION
   // ══════════════════════════════════════════
+
+  public selectSection(sectionId: string): void {
+    this.userPickedSection = true;
+    this.scrollToSection(sectionId);
+  }
 
   public scrollToSection(sectionId: string): void {
     this.activeSection.set(sectionId);
@@ -312,7 +336,7 @@ export class AccountSettingsComponent {
       .pipe(take(1))
       .subscribe((status) => {
         if (!status.authorized) {
-          this.redirectToProfileAuth('/api/profile/auth/start?returnTo=/profile/settings');
+          this.redirectToProfileAuth(`/api/profile/auth/start?returnTo=${PROFILE_SETTINGS_PATH}`);
           return;
         }
 

@@ -42,7 +42,9 @@ describe('AccountSettingsComponent — fragment deep-link (#2177)', () => {
       ],
     });
     // Empty template: exercise the constructor's fragment pipeline without the full section markup.
-    TestBed.overrideComponent(AccountSettingsComponent, { set: { template: '', imports: [] } });
+    // providers: [] clears the component's own @Component providers (ConfirmationService,
+    // MessageService, DialogService) so DI falls through to the mocks above instead of shadowing them.
+    TestBed.overrideComponent(AccountSettingsComponent, { set: { template: '', imports: [], providers: [] } });
 
     fixture = TestBed.createComponent(AccountSettingsComponent);
     fixture.detectChanges();
@@ -97,7 +99,8 @@ describe('AccountSettingsComponent — deferred re-scroll waits for email load (
         { provide: DialogService, useValue: { open: vi.fn() } },
       ],
     });
-    TestBed.overrideComponent(AccountSettingsComponent, { set: { template: '<div id="password"></div>', imports: [] } });
+    // providers: [] — see the note in the suite above.
+    TestBed.overrideComponent(AccountSettingsComponent, { set: { template: '<div id="password"></div>', imports: [], providers: [] } });
 
     const fixture = TestBed.createComponent(AccountSettingsComponent);
     fixture.detectChanges();
@@ -120,5 +123,58 @@ describe('AccountSettingsComponent — deferred re-scroll waits for email load (
     await fixture.whenStable();
 
     expect(scrollIntoView).toHaveBeenCalledTimes(1);
+  });
+
+  it('does not override an explicit TOC click made while email data is still loading (dealako review, PR #2182)', async () => {
+    const fragment$ = new Subject<string | null>();
+    const emails$ = new Subject<EmailManagementData | null>();
+
+    const userServiceMock = {
+      impersonating: signal(true),
+      getUserEmails: vi.fn(() => emails$),
+    };
+
+    TestBed.configureTestingModule({
+      imports: [AccountSettingsComponent],
+      providers: [
+        { provide: PLATFORM_ID, useValue: 'browser' },
+        { provide: ActivatedRoute, useValue: { snapshot: { data: {} }, fragment: fragment$ } },
+        { provide: UserService, useValue: userServiceMock },
+        { provide: ConfirmationService, useValue: {} },
+        { provide: MessageService, useValue: { add: vi.fn() } },
+        { provide: DialogService, useValue: { open: vi.fn() } },
+      ],
+    });
+    TestBed.overrideComponent(AccountSettingsComponent, {
+      set: { template: '<div id="password"></div><div id="developer-settings"></div>', imports: [], providers: [] },
+    });
+
+    const fixture = TestBed.createComponent(AccountSettingsComponent);
+    fixture.detectChanges();
+    await fixture.whenStable();
+
+    const passwordScroll = vi.fn();
+    (fixture.nativeElement.querySelector('#password') as HTMLElement).scrollIntoView = passwordScroll;
+    const devScroll = vi.fn();
+    (fixture.nativeElement.querySelector('#developer-settings') as HTMLElement).scrollIntoView = devScroll;
+
+    // Deep link lands on #password while email data is still loading.
+    fragment$.next('password');
+    fixture.detectChanges();
+    await fixture.whenStable();
+
+    // User explicitly navigates elsewhere before the load finishes.
+    fixture.componentInstance.selectSection('developer-settings');
+    expect(devScroll).toHaveBeenCalledTimes(1);
+    expect(fixture.componentInstance.activeSection()).toBe('developer-settings');
+
+    // Email data now loads — the deferred re-scroll to #password must not fire and override the click.
+    emails$.next({ primary_email: 'a@example.com', alternate_emails: [] } as unknown as EmailManagementData);
+    emails$.complete();
+    fixture.detectChanges();
+    await fixture.whenStable();
+
+    expect(passwordScroll).not.toHaveBeenCalled();
+    expect(fixture.componentInstance.activeSection()).toBe('developer-settings');
   });
 });
