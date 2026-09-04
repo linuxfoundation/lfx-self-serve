@@ -342,6 +342,33 @@ describe('ProjectService — create picker methods', () => {
     });
   });
 
+  describe('searchProjects', () => {
+    it('requests relevance ordering so the closest name match is not buried alphabetically', async () => {
+      // Without an explicit sort the query service defaults to name_asc, and OpenSearch drops
+      // scoring whenever a non-_score sort is present — the caller then gets the alphabetically
+      // first page of matches rather than the best ones (GH-2030).
+      proxyRequest.mockResolvedValueOnce(pageOf([{ uid: 'cncf', slug: 'cncf' }]));
+
+      const result = await service.searchProjects(req, 'Cloud Native');
+
+      expect(result.map((p) => p.uid)).toEqual(['cncf']);
+      expect(proxyRequest.mock.calls[0][4]).toMatchObject({ type: 'project', name: 'Cloud Native', sort: 'best_match' });
+    });
+
+    it('excludes the ROOT pseudo-project from results', async () => {
+      proxyRequest.mockResolvedValueOnce(
+        pageOf([
+          { uid: 'root-uid', slug: 'root' },
+          { uid: 'real', slug: 'real' },
+        ])
+      );
+
+      const result = await service.searchProjects(req, 'anything');
+
+      expect(result.map((p) => p.slug)).toEqual(['real']);
+    });
+  });
+
   describe('searchCreatableProjects', () => {
     it('queries name=<term> with a small page size and filters to writer-permitted matches', async () => {
       proxyRequest.mockResolvedValueOnce(pageOf([{ uid: 'match-1', slug: 'match-1' }]));
@@ -350,7 +377,21 @@ describe('ProjectService — create picker methods', () => {
       const result = await service.searchCreatableProjects(req, 'kubernetes');
 
       expect(result.map((p) => p.uid)).toEqual(['match-1']);
-      expect(proxyRequest.mock.calls[0][4]).toMatchObject({ type: 'project', name: 'kubernetes', page_size: 20 });
+      expect(proxyRequest.mock.calls[0][4]).toMatchObject({ type: 'project', name: 'kubernetes', sort: 'best_match', page_size: 20 });
+    });
+
+    it('sorts by relevance on every page, not just the first', async () => {
+      // This method truncates to pageSize and gives up after the page cap, so a later page that
+      // silently fell back to the default name_asc would reorder results mid-scan (GH-2030).
+      proxyRequest.mockResolvedValueOnce(pageOf([{ uid: 'visible-only', slug: 'visible-only' }], 'token-2'));
+      proxyRequest.mockResolvedValueOnce(pageOf([{ uid: 'match-2', slug: 'match-2' }]));
+      addAccessToResources.mockImplementation((_req: Request, projects: Project[]) =>
+        Promise.resolve(projects.map((p) => ({ ...p, writer: p.uid === 'match-2' })))
+      );
+
+      await service.searchCreatableProjects(req, 'kubernetes');
+
+      expect(proxyRequest.mock.calls[1][4]).toMatchObject({ sort: 'best_match', page_token: 'token-2' });
     });
 
     it('continues to the next page when the first page has no writer-permitted matches', async () => {
