@@ -92,6 +92,27 @@ describe('MeetingPreferenceService', () => {
       await expect(service.getMeetingInviteEmail(req, V1_TOKEN)).resolves.toBeNull();
     });
 
+    // The upstream contract emits both fields null (no override) or both as strings (an override)
+    // — never one of each. A mixed reply must fail closed too, or it reads as a confirmed override
+    // and reopens the Remove guard on the wrong identity.
+    it.each([
+      ['a string id with a null email', { email_id: 'email-1', email: null }],
+      ['a null id with a string email', { email_id: null, email: ALTERNATE_EMAIL }],
+    ])('fails closed to null when the reply mixes %s', async (_label, body) => {
+      natsRequest.mockResolvedValue(reply(body));
+
+      await expect(service.getMeetingInviteEmail(req, V1_TOKEN)).resolves.toBeNull();
+    });
+
+    // JSON.parse's error message can embed a snippet of the malformed input (e.g. a bare email
+    // address body), so a parse failure must never log the raw error.
+    it('never logs the raw parse error on an unparseable reply', async () => {
+      natsRequest.mockResolvedValue({ data: new TextEncoder().encode(ALTERNATE_EMAIL) });
+
+      await expect(service.getMeetingInviteEmail(req, V1_TOKEN)).resolves.toBeNull();
+      expect(loggedPayloads()).not.toContain(ALTERNATE_EMAIL);
+    });
+
     it('fails open to null when the reply carries an error', async () => {
       natsRequest.mockResolvedValue(reply({ error: 'v1 lookup failed' }));
 
@@ -233,6 +254,21 @@ describe('MeetingPreferenceService', () => {
         error: 'Internal server error',
       });
     });
+
+    // Same mixed-field guard as the GET path — a reply with one field null and the other a string
+    // must not be read as a confirmed override.
+    it.each([
+      ['a string id with a null email', { email_id: 'email-1', email: null }],
+      ['a null id with a string email', { email_id: null, email: ALTERNATE_EMAIL }],
+    ])('classifies a reply mixing %s as upstream, not a confirmed write', async (_label, body) => {
+      natsRequest.mockResolvedValue(reply(body));
+
+      await expect(service.setMeetingInviteEmail(req, V1_TOKEN, ALTERNATE_EMAIL)).resolves.toEqual({
+        success: false,
+        reason: 'upstream',
+        error: 'Internal server error',
+      });
+    });
   });
 
   // `data.email` is not covered by the Pino redact paths, so the address must never reach the
@@ -242,6 +278,8 @@ describe('MeetingPreferenceService', () => {
       ['success', () => natsRequest.mockResolvedValue(reply({ email_id: 'email-1', email: ALTERNATE_EMAIL }))],
       ['upstream error', () => natsRequest.mockResolvedValue(reply({ error: `${ALTERNATE_EMAIL} is not an active, verified address` }))],
       ['transport failure', () => natsRequest.mockRejectedValue(new Error('timeout'))],
+      // A bare address body isn't valid JSON — JSON.parse's error message can embed a snippet of it.
+      ['unparseable reply', () => natsRequest.mockResolvedValue({ data: new TextEncoder().encode(ALTERNATE_EMAIL) })],
     ])('keeps the raw address out of the logs on %s', async (_label, arrange) => {
       arrange();
 

@@ -44,7 +44,15 @@ export class MeetingPreferenceService {
         timeout: NATS_CONFIG.REQUEST_TIMEOUT,
       });
 
-      const parsed = JSON.parse(codec.decode(response.data));
+      let parsed;
+      try {
+        parsed = JSON.parse(codec.decode(response.data));
+      } catch {
+        // JSON.parse's error message can embed a snippet of the malformed input (e.g. a bare
+        // email address) — log only that parsing failed, never the raw error.
+        logger.warning(req, 'get_meeting_invite_email', 'NATS preferred_email.get reply failed to parse as JSON');
+        return null;
+      }
 
       if (parsed.error) {
         // Upstream error copy can embed the mailbox (e.g. validation messages) — redact before
@@ -110,46 +118,51 @@ export class MeetingPreferenceService {
       return { success: false, reason: 'unavailable', error: 'Service temporarily unavailable' };
     }
 
+    let parsed;
     try {
-      const parsed = JSON.parse(codec.decode(response.data));
+      parsed = JSON.parse(codec.decode(response.data));
+    } catch {
+      // Same PII guard as the GET path — JSON.parse's error message can embed a snippet of the
+      // malformed input, so log only that parsing failed, never the raw error.
+      logger.warning(req, 'set_meeting_invite_email', 'NATS preferred_email.set reply failed to parse as JSON');
+      return { success: false, reason: 'upstream', error: 'Internal server error' };
+    }
 
-      if (parsed.error) {
-        // Warning-level logs are emitted in production; redact the address the validation copy
-        // can embed rather than persisting it as PII. The returned `error` stays raw — the
-        // controller substitutes fixed user-facing copy per `reason`, so nothing leaks to the client.
-        logger.warning(req, 'set_meeting_invite_email', 'NATS preferred_email.set returned an error', {
-          error: redactEmailAddresses(parsed.error),
-        });
-        return { success: false, reason: this.classifyPreferredEmailError(parsed.error), error: parsed.error };
-      }
+    if (parsed.error) {
+      // Warning-level logs are emitted in production; redact the address the validation copy
+      // can embed rather than persisting it as PII. The returned `error` stays raw — the
+      // controller substitutes fixed user-facing copy per `reason`, so nothing leaks to the client.
+      logger.warning(req, 'set_meeting_invite_email', 'NATS preferred_email.set returned an error', {
+        error: redactEmailAddresses(parsed.error),
+      });
+      return { success: false, reason: this.classifyPreferredEmailError(parsed.error), error: parsed.error };
+    }
 
-      if (!this.isValidMeetingInviteReply(parsed)) {
-        // Same contract-break guard as the GET path — a malformed success reply must fail rather
-        // than silently confirm the write with a fabricated "no override" result.
-        logger.warning(req, 'set_meeting_invite_email', 'NATS preferred_email.set returned an unexpected shape', {
-          keys: Object.keys(parsed ?? {}),
-        });
-        return { success: false, reason: 'upstream', error: 'Internal server error' };
-      }
-
-      return { success: true, data: { email_id: parsed.email_id, email: parsed.email } };
-    } catch (error) {
-      logger.warning(req, 'set_meeting_invite_email', 'Failed to parse NATS preferred_email.set reply', {
-        err: error,
+    if (!this.isValidMeetingInviteReply(parsed)) {
+      // Same contract-break guard as the GET path — a malformed success reply must fail rather
+      // than silently confirm the write with a fabricated "no override" result.
+      logger.warning(req, 'set_meeting_invite_email', 'NATS preferred_email.set returned an unexpected shape', {
+        keys: Object.keys(parsed ?? {}),
       });
       return { success: false, reason: 'upstream', error: 'Internal server error' };
     }
+
+    return { success: true, data: { email_id: parsed.email_id, email: parsed.email } };
   }
 
-  // The upstream contract always emits both keys on a non-error reply. Anything else (missing
-  // key, wrong type) is a contract break, not a valid "no override" — callers must fail rather
+  // The upstream contract always emits both keys as strings (an override) or both as null (no
+  // override) on a non-error reply. Anything else — a missing key, a wrong type, or a mixed
+  // null/string pair — is a contract break, not a valid "no override": callers must fail rather
   // than default the field to null themselves.
   private isValidMeetingInviteReply(value: unknown): value is MeetingInviteEmail {
     if (typeof value !== 'object' || value === null) {
       return false;
     }
     const { email_id, email } = value as Record<string, unknown>;
-    return (email_id === null || typeof email_id === 'string') && (email === null || typeof email === 'string');
+    if (email_id === null && email === null) {
+      return true;
+    }
+    return typeof email_id === 'string' && typeof email === 'string';
   }
 
   // Classify the upstream error string (the NATS reply carries only `{ error }`, no code) so the
