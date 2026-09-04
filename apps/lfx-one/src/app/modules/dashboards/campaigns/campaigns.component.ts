@@ -3345,6 +3345,35 @@ export class CampaignsComponent {
     // Recorded provisionally here so a refusal explains itself, and cleared only on the ONE path
     // that actually succeeds -- see the `return briefId` branches below.
     this.emailBriefConflict = persisted.conflict ?? null;
+    // Grant the escape the message promises, exactly as the paid path does (see the
+    // `stale-brief` / `unverified-validator` / `superseded-after-write` promotion below).
+    //
+    // Recording the conflict makes the refusal EXPLAIN itself; it does not make the next attempt
+    // able to succeed. The ownership entry still holds the validator that was just refused, so
+    // every retry re-sends it and is refused identically -- while the banner tells the operator
+    // that trying again will work. That dead end was fixed once on the paid surface and was
+    // reintroduced here by adding the refusal without its escape.
+    //
+    // Generation-scoped: a reset while this was on the wire means the entry belongs to a brief
+    // the page no longer holds, and promoting it would license an overwrite of a row this session
+    // has abandoned.
+    if (
+      ownershipKey !== null &&
+      generation === this.emailBriefPersistGeneration &&
+      (persisted.conflict === 'stale-brief' || persisted.conflict === 'unverified-validator' || persisted.conflict === 'superseded-after-write')
+    ) {
+      // `superseded-after-write` records the row it just wrote when the server named one: it is
+      // the id the next save must address, and without it that save creates a second brief for an
+      // event that already has one. The other two keep the id they already own.
+      const owned = this.knownBriefIds.get(ownershipKey);
+      const supersededId = persisted.conflict === 'superseded-after-write' ? briefId : '';
+      const id = supersededId !== '' ? supersededId : (owned?.id ?? '');
+      if (id !== '') {
+        // The operator has now BEEN WARNED, which is the entire content of the promotion: an
+        // unknown validator is only dangerous while nobody has been told.
+        this.rememberBriefId(ownershipKey, { id, etag: null, absence: 'overwrite' });
+      }
+    }
     // An id is not enough: campaign-service gates `build-audience` AND campaign creation on the
     // brief having reached `approved`, and `saveBrief` deliberately returns an id with
     // `approved: false` when the approve step failed. Caching that id would make every downstream

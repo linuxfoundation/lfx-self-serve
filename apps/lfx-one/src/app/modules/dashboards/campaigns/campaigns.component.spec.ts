@@ -2496,6 +2496,50 @@ describe('CampaignsComponent — email delivery channel', () => {
       expect(internals().emailCopyState()).toBe('error');
     });
 
+    // Each conflict must leave the NEXT email action able to succeed. Recording the conflict makes
+    // the refusal explain itself; it does not make a retry possible. Without promoting the
+    // ownership entry the same validator is re-sent and refused identically, while the banner says
+    // trying again will work -- the dead end the paid path already had to fix.
+    describe.each([
+      ['stale-brief', 'brief-77'],
+      ['unverified-validator', 'brief-77'],
+      // `superseded-after-write` COMMITTED its write, so the row it names is the one the next save
+      // must address. Not recording it creates a second brief for an event that already has one.
+      ['superseded-after-write', 'brief-99'],
+    ])('after a %s refusal', (conflict, expectedId) => {
+      it('lets the next email action through instead of re-sending the refused validator', async () => {
+        selectEmail();
+        internals().emailBriefOutput.set(emailBrief);
+        fixture.detectChanges();
+
+        // A first save records id + validator, so the retry has something to promote.
+        persist.mockReturnValue(of({ status: 'saved', briefId: 'brief-77', etag: '"1"', approved: true }));
+        vi.spyOn(TestBed.inject(CampaignService), 'generateEmailCopy').mockReturnValue(of({ enabled: true, copy }));
+        await internals().onGenerateEmailCopy();
+
+        // Refused: the validator this session holds is no longer the one the row carries.
+        persist.mockReturnValue(
+          of({ status: 'saved', briefId: conflict === 'superseded-after-write' ? 'brief-99' : 'brief-77', etag: null, approved: false, conflict })
+        );
+        internals().emailBriefId.set('');
+        await internals().onGenerateEmailCopy();
+
+        // The operator has now been warned, so the retry carries explicit overwrite permission
+        // rather than the validator that was just refused.
+        //
+        // NOT awaited: `NEVER` keeps the persist open on purpose, and the claim under test is what
+        // this call SENDS, which is already decided by the time the request is issued. Awaiting it
+        // would only wait for a response the test never intends to deliver.
+        persist.mockClear();
+        persist.mockReturnValue(NEVER);
+        internals().emailBriefId.set('');
+        void internals().onGenerateEmailCopy();
+        await fixture.whenStable();
+
+        expect(persist).toHaveBeenLastCalledWith(emailBrief, expect.anything(), expectedId, null, true);
+      });
+    });
+
     it('surfaces the upstream refusal rather than a generic message', async () => {
       selectEmail();
       internals().emailBriefOutput.set(emailBrief);
