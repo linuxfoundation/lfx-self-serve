@@ -643,11 +643,10 @@ environment:
   # "OFF" IS NOT A WORKING FALLBACK HERE. This is a property of the GADS_* credentials, not of
   # this flag: every legacy path reaching getGadsClient() shares it, INSIGHTS above included.
   # Do not read it as a promise that the other flags roll back cleanly -- JOBS must stay on and
-  # comes off LAST, and legacy CREATE reaches the same client through getCustomer(). The legacy
-  # path
-  # calls getGadsClient(), which throws whenever the GADS_* variables are absent — and they were
-  # deactivated deliberately. So with this off, keyword actions do not work at all; this flag is
-  # what makes them work, not what changes which backend serves them.
+  # come off LAST, and legacy CREATE reaches the same client through getCustomer(). The legacy
+  # path calls getGadsClient(), which throws whenever the GADS_* variables are absent — and they
+  # were deactivated deliberately. So with this off, keyword actions do not work at all; this flag
+  # is what makes them work, not what changes which backend serves them.
   #
   # TWO CHANGES APPLY WITH THIS FLAG OFF, both deliberate. First: the
   # /keywords/actions endpoint now refuses a body of more than 50 keyword rows on
