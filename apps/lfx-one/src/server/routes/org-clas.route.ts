@@ -11,10 +11,13 @@ import { requireOrgLensAccess } from '../middleware/require-org-lens-access.midd
 const router = Router();
 const orgClasController = new OrgClasController();
 
-// Mounted on the router rather than the one route, so every M3 child added later inherits the
-// kill switch. The client `org-lens-cla-m3-enabled` flag only hides the page; without this a
-// direct call reaches the module with the dark launch still off.
-router.use((_req, _res, next) => {
+// Scoped to the CLA prefix, not the whole router, and mounted ahead of `orgsRouter` in server.ts.
+// Both halves are load-bearing: this router shares the `/api/orgs` mount with `orgsRouter`, whose
+// `router.use('/:orgUid/lens', requireOrgLensAccess)` matches the CLA path too. Mounted second, the
+// grant lookup would run first and a disabled module would answer 403/503 instead of 409. Scoped
+// broadly, mounting first would 409 every `/api/orgs` request. Children added under
+// `cla-groups` inherit the gate; a future M3 path outside that prefix needs its own line here.
+router.use('/:orgUid/lens/cla-groups', (_req, _res, next) => {
   if (!isServerFeatureEnabled(ServerFeatureFlag.OrgLensClaM3)) {
     return next(
       new ConflictError('Organization Lens EasyCLA is not enabled in this environment', 'FEATURE_DISABLED', {

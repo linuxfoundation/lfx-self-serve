@@ -46,9 +46,18 @@ function ok(_req: express.Request, res: express.Response): void {
   res.json({ orgUid: GRANTED, claGroups: [] });
 }
 
+// Mirrors orgsRouter's `router.use('/:orgUid/lens', requireOrgLensAccess)`, which shares the
+// /api/orgs mount and matches the CLA path. Mounting it here in the same order as server.ts is
+// what makes the flag-off case a real assertion: with the CLA router mounted second, this guard
+// would run first and the module would answer 403 rather than 409.
+const genericLensGuard = vi.fn((_req: express.Request, _res: express.Response, next: express.NextFunction) => next());
+
 beforeAll(async () => {
   const app = express();
   app.use('/api/orgs', orgClasRouter);
+  const orgsLike = express.Router();
+  orgsLike.use('/:orgUid/lens', genericLensGuard);
+  app.use('/api/orgs', orgsLike);
   await new Promise<void>((resolve) => {
     server = app.listen(0, '127.0.0.1', resolve);
   });
@@ -89,7 +98,8 @@ describe('org-clas router', () => {
   });
 
   // The client flag only hides the page; this is what makes the dark launch a real kill switch.
-  it('refuses the list for a granted org when the server flag is off', async () => {
+  // The generic-guard assertion is the ordering regression test — see genericLensGuard above.
+  it('refuses the list for a granted org when the server flag is off, before any grant lookup', async () => {
     delete process.env['LFX_ORG_LENS_CLA_M3_ENABLED'];
 
     const res = await fetch(`${baseUrl}/api/orgs/${GRANTED}/lens/cla-groups`);
@@ -97,5 +107,17 @@ describe('org-clas router', () => {
     expect(res.status).toBe(409);
     expect(listClaGroups).not.toHaveBeenCalled();
     expect(getAccessAwareOrgs).not.toHaveBeenCalled();
+    expect(genericLensGuard).not.toHaveBeenCalled();
+  });
+
+  // The gate is scoped to the CLA prefix precisely so mounting this router first cannot
+  // 409 the rest of the /api/orgs family.
+  it('leaves sibling org-lens paths untouched when the server flag is off', async () => {
+    delete process.env['LFX_ORG_LENS_CLA_M3_ENABLED'];
+
+    const res = await fetch(`${baseUrl}/api/orgs/${GRANTED}/lens/memberships`);
+
+    expect(res.status).not.toBe(409);
+    expect(genericLensGuard).toHaveBeenCalled();
   });
 });

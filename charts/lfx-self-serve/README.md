@@ -519,10 +519,9 @@ reviewed chart commit — a values override is invisible to review, a chart chan
 
 #### Marketing Ops FGA Enforcement
 
-| Parameter                                   | Description                                                                                                                         | Required | Default |
-| ------------------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------- | -------- | ------- |
-| `environment.LFX_MARKETING_OPS_FGA_ENABLED` | Gates FGA-based `marketing_auditor` / `campaign_manager` authorization on the marketing routes                                      | No       | off     |
-| `environment.LFX_ORG_LENS_CLA_M3_ENABLED`   | Serves the M3 Organization Lens EasyCLA routes; off answers the module 409. Enable before the client `org-lens-cla-m3-enabled` flag | No       | off     |
+| Parameter                                   | Description                                                                                    | Required | Default |
+| ------------------------------------------- | ---------------------------------------------------------------------------------------------- | -------- | ------- |
+| `environment.LFX_MARKETING_OPS_FGA_ENABLED` | Gates FGA-based `marketing_auditor` / `campaign_manager` authorization on the marketing routes | No       | off     |
 
 Same accepted-values and default-deny rules as the campaign-service cutover flags above. OFF (the
 default) establishes an `executive_director`-only baseline: analytics routes already gated by
@@ -568,6 +567,29 @@ regardless of this flag.
 server flag. Rolling the server flag back while the client flag is still on leaves the UI
 advertising Campaigns/Analytics access to marketing-ops users that the BFF will now reject —
 broken UX, not a security hazard, but avoidable by sequencing the rollback.
+
+#### Organization Lens EasyCLA Dark Launch
+
+| Parameter                                 | Description                                                                | Required | Default |
+| ----------------------------------------- | -------------------------------------------------------------------------- | -------- | ------- |
+| `environment.LFX_ORG_LENS_CLA_M3_ENABLED` | Serves the M3 Organization Lens EasyCLA routes; off answers the module 409 | No       | off     |
+
+Unrelated to the marketing flags above — this one gates a feature's existence rather than an
+authorization model, and OFF is the pre-launch state rather than a stricter baseline. With it off,
+every route under `/api/orgs/:orgUid/lens/cla-groups` answers 409 `FEATURE_DISABLED` before the org
+lens grant lookup runs; nothing else under `/api/orgs` is affected. No caller can be locked out of
+anything they have today, because the module is new.
+
+It is the server half of a two-flag dark launch. The client-side `org-lens-cla-m3-enabled`
+OpenFeature flag hides the `/org/easycla` route and its nav item, but the Web SDK never runs
+server-side, so on its own it leaves the BFF reachable by direct call. Both must be on for the
+module to work.
+
+**Rollout ordering:** enable this flag and confirm the rolling update has fully converged before
+turning the client flag on, or the UI advertises a page that a not-yet-converged pod still 409s.
+Roll back in the opposite order — client flag off first. Overlap during the rollout is harmless
+while the module is read-only: a caller gets either the list or a 409, never a partial write.
+Revisit that once the M3 write paths (sign, managers, approval list) land behind this flag.
 
 #### AI Service Configuration
 
