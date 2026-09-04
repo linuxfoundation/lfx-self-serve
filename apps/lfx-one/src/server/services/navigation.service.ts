@@ -3,14 +3,34 @@
 
 import { ProjectFunding, ProjectStage } from '@lfx-one/shared/enums';
 import { GetLensItemsParams, LensItem, LensItemsQuery, LensItemsResponse, NavLens, Project, QueryServiceResponse } from '@lfx-one/shared/interfaces';
-import { computeIsFoundation } from '@lfx-one/shared/utils';
+import { computeIsFoundation, getFormationSubStageLabel } from '@lfx-one/shared/utils';
 import { Request } from 'express';
 
 import { logger } from './logger.service';
 import { MicroserviceProxyService } from './microservice-proxy.service';
 
-/** Stages eligible for the project lens — Active plus supported pre-launch formation stages. */
-const PROJECT_LENS_ALLOWED_STAGES = new Set<string>([ProjectStage.Active, ProjectStage.FormationEngaged, ProjectStage.FormationExploratory]);
+/**
+ * Stages eligible for the project lens — Active plus supported pre-launch formation stages.
+ * `FormationConfidential` is intentionally excluded (GH-1955): the name implies pre-announcement
+ * secrecy, so a Confidential project should not be listed by name in the shared project picker.
+ * Its own dashboard page still renders normally for anyone already authorized to view it.
+ *
+ * `FormationOnHold`/`FormationDisengaged` are an accepted rollout trade-off: this set is server-side
+ * and un-flagged (unlike `FORMATION_ENABLED_FLAG`, which only gates client-rendered UI), so these two
+ * stages become picker-visible for every user immediately, before any Formation-specific labeling
+ * ships to a given user. This doesn't widen data access — the picker is a UX convenience list over
+ * projects the caller can already reach by direct link, not an authorization boundary — but it does
+ * mean an On Hold/Disengaged project can appear in the picker unlabeled ahead of the flagged UI. A
+ * server-side kill switch (mirroring `ServerFeatureFlag.WeeklyBriefSlack`) would close that gap but
+ * is out of this ticket's scope.
+ */
+const PROJECT_LENS_ALLOWED_STAGES = new Set<string>([
+  ProjectStage.Active,
+  ProjectStage.FormationEngaged,
+  ProjectStage.FormationExploratory,
+  ProjectStage.FormationOnHold,
+  ProjectStage.FormationDisengaged,
+]);
 
 /** Powers the foundation/project lens dropdown. Access is gated entirely by the user's bearer token via the query service. */
 export class NavigationService {
@@ -142,6 +162,7 @@ export class NavigationService {
       name: project.name,
       logoUrl: project.logo_url || null,
       isFoundation: computeIsFoundation(project),
+      formationSubStage: getFormationSubStageLabel(project.stage),
     };
   }
 }

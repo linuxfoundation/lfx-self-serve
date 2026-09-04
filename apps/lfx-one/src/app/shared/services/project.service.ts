@@ -97,10 +97,16 @@ export class ProjectService {
    * resolves them via getProjectById, so callers holding either identifier can use this method.
    * Note the two identifiers cache under separate keys for the same project.
    */
-  public getProject(slugOrUid: string, current: boolean = true, options?: { meetingCoordinator?: boolean }): Observable<Project | null> {
-    const cacheKey = `${slugOrUid}:${current}${options?.meetingCoordinator ? ':mc' : ''}`;
+  public getProject(slugOrUid: string, current: boolean = true, options?: { meetingCoordinator?: boolean; auditor?: boolean }): Observable<Project | null> {
+    const cacheKey = `${slugOrUid}:${current}${options?.meetingCoordinator ? ':mc' : ''}${options?.auditor ? ':aud' : ''}`;
     if (!this.projectCache.has(cacheKey)) {
-      const params = options?.meetingCoordinator ? new HttpParams().set('meeting_coordinator', 'true') : undefined;
+      let params: HttpParams | undefined;
+      if (options?.meetingCoordinator) {
+        params = new HttpParams().set('meeting_coordinator', 'true');
+      }
+      if (options?.auditor) {
+        params = (params ?? new HttpParams()).set('auditor', 'true');
+      }
       const project$ = this.http.get<Project>(`/api/projects/${slugOrUid}`, { params }).pipe(
         catchError((error) => {
           console.error('Failed to fetch project:', error);

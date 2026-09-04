@@ -6,10 +6,10 @@ import { computed, inject, Injectable, Signal, signal, WritableSignal } from '@a
 import { toObservable, toSignal } from '@angular/core/rxjs-interop';
 import { Router } from '@angular/router';
 import { MARKETING_OPS_FGA_ENABLED_FLAG, SELECTED_FOUNDATION_COOKIE_KEY, SELECTED_PROJECT_COOKIE_KEY } from '@lfx-one/shared/constants';
-import { ProjectContext } from '@lfx-one/shared/interfaces';
-import { isBoardScopedPersona, isSameProjectContext } from '@lfx-one/shared/utils';
+import { Project, ProjectContext } from '@lfx-one/shared/interfaces';
+import { getFormationSubStageLabel, isBoardScopedPersona, isFormationStage, isSameProjectContext } from '@lfx-one/shared/utils';
 import { SsrCookieService } from 'ngx-cookie-service-ssr';
-import { catchError, combineLatest, filter, map, of, startWith, switchMap } from 'rxjs';
+import { combineLatest, filter, of, startWith, switchMap } from 'rxjs';
 
 import { CookieRegistryService } from './cookie-registry.service';
 import { FeatureFlagService } from './feature-flag.service';
@@ -81,8 +81,26 @@ export class ProjectContextService {
   /** The context kind the current route declares (see {@link routeLensKind}), exposed read-only. */
   public readonly activeRouteLensKind: Signal<'foundation' | 'project' | null> = computed(() => this.routeLensKind());
 
+  /**
+   * Full `Project` for the current active context — shared by `canWrite` and the Formation
+   * signals below so all three ride one fetch. Read this (not a fresh `getProject` call) for any
+   * other field the currently active project needs — see `FormationCardComponent` (GH-1955).
+   */
+  public readonly activeProject: Signal<Project | null> = this.initActiveProjectDetails();
+
   /** Writer permission for the current active context — drives CTA visibility across dashboards. */
-  public readonly canWrite: Signal<boolean> = this.initCanWrite();
+  public readonly canWrite: Signal<boolean> = computed(() => this.activeProject()?.writer === true);
+
+  /**
+   * Formation sub-stage label for the current active context (e.g. `'Engaged'`), or `null`
+   * outside Formation. Single source of truth for the project dashboard's Formation badge and
+   * sidebar card (GH-1955) — do not add a fourth independent `getProject` fetch for this; read
+   * these two signals instead.
+   */
+  public readonly activeProjectFormationSubStage: Signal<string | null> = computed(() => getFormationSubStageLabel(this.activeProject()?.stage));
+
+  /** True when the current active context is in Draft or any Formation sub-stage. */
+  public readonly isActiveProjectInFormation: Signal<boolean> = computed(() => isFormationStage(this.activeProject()?.stage));
 
   /** Salesforce 18-char ID for the active foundation — resolves PCC deep-link targets. `null` while resolving or unavailable. */
   public readonly selectedFoundationSfid: Signal<string | null> = this.initSelectedFoundationSfid();
@@ -254,21 +272,27 @@ export class ProjectContextService {
     });
   }
 
-  private initCanWrite(): Signal<boolean> {
+  private initActiveProjectDetails(): Signal<Project | null> {
     return toSignal(
       combineLatest([toObservable(this.activeContext), toObservable(this.userService.authenticated)]).pipe(
         switchMap(([ctx, authenticated]) => {
           // Anonymous/public routes have no session — /api/projects/:slug would just 401 (LFXV2-3266).
           if (!ctx?.slug || !authenticated) {
-            return of(false);
+            return of(null);
           }
-          return this.projectService.getProject(ctx.slug, false).pipe(
-            map((project) => project?.writer === true),
-            catchError(() => of(false))
-          );
+          // getProject already catches its own errors and logs, resolving to null — no outer catchError needed.
+          //
+          // Deliberately no startWith(null) here, unlike initSelectedFoundationSfid below: canWrite
+          // reads this signal, and evictOnWriteAccessLoss() (vote/survey/mailing-list manage pages)
+          // takes the *first* true→false transition as a genuine access loss and navigates away. A
+          // transient null on every project switch — not just a real loss of access — would evict an
+          // organizer mid-edit. Formation's badge/card briefly showing the previous project's stage
+          // during a switch is an accepted, pre-existing trade-off (this is the same staleness
+          // canWrite itself already had before this ticket).
+          return this.projectService.getProject(ctx.slug, false);
         })
       ),
-      { initialValue: false }
+      { initialValue: null }
     );
   }
 

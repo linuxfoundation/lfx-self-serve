@@ -21,6 +21,16 @@ export interface Project {
    *   transiently. Do NOT treat as a definitive role denial.
    */
   meetingCoordinator?: boolean;
+  /**
+   * Response-only — present only when the caller requested the auditor check (`?auditor=true`)
+   * and the user is not already a writer.
+   *
+   * - `true`      — user holds the `auditor` role on this project.
+   * - `false`     — check ran clean; user does not hold the role.
+   * - `undefined` — check was not requested, was skipped (user is a writer), or failed
+   *   transiently. Do NOT treat as a definitive role denial.
+   */
+  auditor?: boolean;
   public: boolean;
   parent_uid: string;
   stage: ProjectStage | string;
@@ -76,6 +86,9 @@ export interface ProjectStaffRowConfig {
   label: string;
   icon: string;
 }
+
+/** A `ProjectStaffRowConfig` resolved against a project's actual settings — shared by `ProjectStaffCardComponent` and `FormationCardComponent`. */
+export type ProjectStaffRow = ProjectStaffRowConfig & { user: UserInfo | null | undefined };
 
 export interface ProjectSlugToIdResponse {
   uid: string;
