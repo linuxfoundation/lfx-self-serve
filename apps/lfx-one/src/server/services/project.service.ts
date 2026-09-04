@@ -351,10 +351,14 @@ export class ProjectService {
 
     if (access) {
       const writerProject = await this.accessCheckService.addAccessToResource(req, project, 'project');
-      // Skip meeting_coordinator/auditor checks when already a writer: per model.fga, `auditor:
-      // … or writer or …` — writer already implies auditor, and writer is the sole grant path
-      // meeting_coordinator's guard also accepts — so neither extra round trip can change the
-      // outcome.
+      // Skip the meeting_coordinator/auditor checks when already a writer. Per model.fga,
+      // `auditor: … or writer or …` — writer already implies auditor, so that round trip can't
+      // change the outcome. `meeting_coordinator: [user]` is a direct-only grant — writer does NOT
+      // imply it at the FGA level — but every consumer of this field (e.g. writer.guard.ts) already
+      // treats `writer === true` as sufficient on its own before ever reading meetingCoordinator,
+      // and upstream `meetings_creator: writer or meeting_coordinator` makes the same true one level
+      // up. So the round trip could return a different raw value for a writer, but never a
+      // different access outcome — skipping it is safe for that reason alone.
       // Return the field as undefined (omitted) rather than false — false would be a
       // false-negative assertion since the role was never actually checked for writers.
       if (writerProject.writer) {
@@ -375,7 +379,7 @@ export class ProjectService {
           .catch((error) => {
             logger.warning(req, 'get_project_by_id', 'meeting coordinator check failed, skipping field', {
               project_uid: project.uid,
-              error: error instanceof Error ? error.message : String(error),
+              err: error,
             });
             // Return undefined rather than false — false implies the check ran clean and found no
             // role; undefined preserves the "unknown" semantics documented on Project.meetingCoordinator.
@@ -384,14 +388,14 @@ export class ProjectService {
         result = { ...result, meetingCoordinator: isMeetingCoordinator };
       }
       // Only run the auditor FGA check when the caller explicitly requests it (FormationCardComponent's
-      // staff deep-link guard) — same rationale, and the same Strict variant, as meeting_coordinator above.
+      // admin-link guard) — same rationale, and the same Strict variant, as meeting_coordinator above.
       if (includeAuditor) {
         const isAuditor = await this.accessCheckService
           .checkSingleAccessStrict(req, { resource: 'project', id: project.uid, access: 'auditor' })
           .catch((error) => {
             logger.warning(req, 'get_project_by_id', 'auditor check failed, skipping field', {
               project_uid: project.uid,
-              error: error instanceof Error ? error.message : String(error),
+              err: error,
             });
             // Return undefined rather than false — see meeting_coordinator comment above.
             return undefined;

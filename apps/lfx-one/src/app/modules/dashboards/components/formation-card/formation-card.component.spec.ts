@@ -70,7 +70,7 @@ describe('FormationCardComponent', () => {
   ): Promise<void> {
     const { sfid = 'sfid-1', settingsResult = of(settings()), projectOverrides = {}, getProjectResult } = options;
     TestBed.resetTestingModule();
-    getProjectSpy = vi.fn(() => of(getProjectResult ? project(stage, getProjectResult) : project(stage, { ...projectOverrides, auditor })));
+    getProjectSpy = vi.fn(() => of(project(stage, { ...projectOverrides, auditor, ...getProjectResult })));
     await TestBed.configureTestingModule({
       imports: [FormationCardComponent],
       providers: [
@@ -143,7 +143,7 @@ describe('FormationCardComponent', () => {
   it('shows the admin-tool link for a project writer even though the server omits `auditor` for writers', async () => {
     // Mirrors the server: getProjectById returns early for writers, so `auditor` comes back
     // undefined rather than true. `isAuditor`'s `writer === true` OR-branch must still admit them.
-    await render('Formation - Engaged', true, { sfid: 'sfid-1', getProjectResult: { writer: true, auditor: undefined } });
+    await render('Formation - Engaged', false, { sfid: 'sfid-1', getProjectResult: { writer: true, auditor: undefined } });
 
     expect(fixture.nativeElement.querySelector('[data-testid="formation-card-admin-links"]')).not.toBeNull();
   });
