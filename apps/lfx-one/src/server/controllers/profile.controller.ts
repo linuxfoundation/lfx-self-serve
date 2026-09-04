@@ -41,7 +41,7 @@ import {
   UserProfile,
   WorkExperienceCreateUpdateBody,
 } from '@lfx-one/shared/interfaces';
-import { isIdentityAlreadyLinkedError } from '@lfx-one/shared/utils';
+import { isIdentityAlreadyLinkedError, isMeetingInvitePrimarySentinel } from '@lfx-one/shared/utils';
 import { NextFunction, Request, Response } from 'express';
 
 import { AuthenticationError, AuthorizationError, MicroserviceError, ResourceNotFoundError, ServiceValidationError } from '../errors';
@@ -52,6 +52,7 @@ import { EmailVerificationService } from '../services/email-verification.service
 import { EnrollmentService } from '../services/enrollment.service';
 import { ForwardsService } from '../services/forwards.service';
 import { logger } from '../services/logger.service';
+import { MeetingPreferenceService } from '../services/meeting-preference.service';
 import { ObjectStoreService } from '../services/object-store.service';
 import { ProfileAuthService } from '../services/profile-auth.service';
 import { SocialVerificationService } from '../services/social-verification.service';
@@ -108,6 +109,7 @@ export class ProfileController {
   private emailVerificationService: EmailVerificationService = new EmailVerificationService();
   private enrollmentService: EnrollmentService = new EnrollmentService();
   private forwardsService: ForwardsService = new ForwardsService();
+  private meetingPreferenceService: MeetingPreferenceService = new MeetingPreferenceService();
   private objectStoreService: ObjectStoreService = new ObjectStoreService();
   private profileAuthService: ProfileAuthService = new ProfileAuthService();
   private socialVerificationService: SocialVerificationService = new SocialVerificationService();
@@ -611,6 +613,168 @@ export class ProfileController {
       logger.success(req, 'set_primary_email', startTime, { email: emailAddress });
 
       res.status(200).json({ message: 'Primary email updated successfully' });
+    } catch (error) {
+      next(error);
+    }
+  }
+
+  /**
+   * GET /api/profile/emails/meeting-invite - Resolve the user's preferred meeting-invitation
+   * email from the meeting-service. Null fields mean the user has no override (invitations fall
+   * back to the primary email). Requires the user's v1 API-gateway token, which the
+   * meeting-service forwards to v1 /v1/me.
+   */
+  public async getMeetingInviteEmail(req: Request, res: Response, next: NextFunction): Promise<void> {
+    const startTime = logger.startOperation(req, 'get_meeting_invite_email');
+
+    try {
+      const v1Token = req.apiGatewayToken;
+
+      if (!v1Token) {
+        // Also absent after a transient audience-token exchange failure (auth middleware continues
+        // without it), so the copy stays neutral; next() lets apiErrorHandler close the operation.
+        return next(
+          new MicroserviceError(
+            'Meeting invitation email settings are temporarily unavailable. Please refresh the page and try again.',
+            503,
+            'SERVICE_UNAVAILABLE',
+            {
+              operation: 'get_meeting_invite_email',
+              service: 'profile_controller',
+            }
+          )
+        );
+      }
+
+      const preference = await this.meetingPreferenceService.getMeetingInviteEmail(req, v1Token);
+
+      if (!preference) {
+        // The service returns null only on failure (NATS error reply, transport, or decode
+        // failure) — a confirmed no-override comes back as `{ email_id: null, email: null }`.
+        // Normalizing a failure to that same shape would look identical to the client, so its
+        // delete/remove fail-closed guard would never trip during a real outage.
+        return next(
+          new MicroserviceError(
+            'Meeting invitation email settings are temporarily unavailable. Please refresh the page and try again.',
+            503,
+            'SERVICE_UNAVAILABLE',
+            {
+              operation: 'get_meeting_invite_email',
+              service: 'profile_controller',
+            }
+          )
+        );
+      }
+
+      logger.success(req, 'get_meeting_invite_email', startTime, { has_override: Boolean(preference.email) });
+
+      res.json(preference);
+    } catch (error) {
+      next(error);
+    }
+  }
+
+  /**
+   * PUT /api/profile/emails/meeting-invite - Set the user's preferred meeting-invitation email.
+   * Body: { email }. Requires the user's v1 API-gateway token.
+   */
+  public async setMeetingInviteEmail(req: Request, res: Response, next: NextFunction): Promise<void> {
+    // `req.body.email` is unvalidated client JSON — a non-string (e.g. `{}`) would reach the
+    // string helpers below and throw outside the try block, turning bad input into a 500.
+    // Coercing to '' instead routes it through the field-validation error further down.
+    const rawEmail: unknown = req.body?.email;
+    const emailAddress = typeof rawEmail === 'string' ? rawEmail : '';
+    // Selecting the primary row sends the sentinel instead of an address, to clear the override.
+    const isReset = isMeetingInvitePrimarySentinel(emailAddress);
+    // `email` is PII and `data.email` is not covered by the Pino redact paths — record the shape
+    // of the request rather than the address itself.
+    const startTime = logger.startOperation(req, 'set_meeting_invite_email', { is_reset: isReset });
+
+    try {
+      if (!emailAddress) {
+        return next(
+          ServiceValidationError.forField('email', 'Email address is required', {
+            operation: 'set_meeting_invite_email',
+            service: 'profile_controller',
+            path: req.path,
+          })
+        );
+      }
+
+      if (!isReset && !EMAIL_REGEX.test(emailAddress)) {
+        return next(
+          ServiceValidationError.forField('email', 'Invalid email format', {
+            operation: 'set_meeting_invite_email',
+            service: 'profile_controller',
+            path: req.path,
+          })
+        );
+      }
+
+      const v1Token = req.apiGatewayToken;
+
+      if (!v1Token) {
+        // Also absent after a transient audience-token exchange failure (auth middleware continues
+        // without it), so the copy stays neutral; next() lets apiErrorHandler close the operation.
+        return next(
+          new MicroserviceError(
+            'Meeting invitation email settings are temporarily unavailable. Please refresh the page and try again.',
+            503,
+            'SERVICE_UNAVAILABLE',
+            {
+              operation: 'set_meeting_invite_email',
+              service: 'profile_controller',
+            }
+          )
+        );
+      }
+
+      const result = await this.meetingPreferenceService.setMeetingInviteEmail(req, v1Token, emailAddress);
+
+      if (!result.success) {
+        const errorOptions = { operation: 'set_meeting_invite_email', service: 'profile_controller', path: req.path };
+
+        // Not an active, verified record — retrying won't help. Build ServiceValidationError directly
+        // so its top-level `message` (what the frontend reads) keeps the text; `forField` would replace it.
+        if (result.reason === 'validation') {
+          const validationMessage = 'This email is not an active, verified address on your account yet. Choose a different email, or verify it and try again.';
+          return next(
+            new ServiceValidationError([{ field: 'email', message: validationMessage, code: 'FIELD_VALIDATION_ERROR' }], validationMessage, errorOptions)
+          );
+        }
+
+        // SFDC sync from auth0 hasn't landed yet — the address is valid but not usable right now.
+        if (result.reason === 'sync_pending') {
+          return next(
+            new MicroserviceError('This email was added recently and is not ready to use yet. Please try again in a few minutes.', 503, 'SERVICE_UNAVAILABLE', {
+              operation: 'set_meeting_invite_email',
+              service: 'profile_controller',
+            })
+          );
+        }
+
+        // The meeting service itself was unreachable (timeout/503) — transport failure, retryable.
+        if (result.reason === 'unavailable') {
+          return next(
+            new MicroserviceError('The meeting service is temporarily unavailable. Please try again in a few minutes.', 503, 'SERVICE_UNAVAILABLE', {
+              operation: 'set_meeting_invite_email',
+              service: 'profile_controller',
+            })
+          );
+        }
+
+        return next(
+          new MicroserviceError('Failed to update meeting invitation email. Please try again.', 502, 'BAD_GATEWAY', {
+            operation: 'set_meeting_invite_email',
+            service: 'profile_controller',
+          })
+        );
+      }
+
+      // success() emits at INFO in production for writes; omit the raw email to avoid persisting PII.
+      logger.success(req, 'set_meeting_invite_email', startTime);
+
+      res.status(200).json(result.data);
     } catch (error) {
       next(error);
     }

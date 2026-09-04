@@ -19,6 +19,7 @@ import {
   Impersonator,
   LinuxAliasData,
   Meeting,
+  MeetingInviteEmail,
   PastMeeting,
   ProfileAuthStatus,
   ProfilePictureUploadResponse,
@@ -209,6 +210,25 @@ export class UserService {
    */
   public setPrimaryEmail(email: string): Observable<{ message: string }> {
     return this.http.put<{ message: string }>(`/api/profile/emails/${encodeURIComponent(email)}/primary`, {}).pipe(take(1));
+  }
+
+  /**
+   * Get the user's preferred meeting-invitation email from meeting-service via NATS.
+   * Null fields mean no override (invitations fall back to the primary email). Lets a request
+   * failure propagate as an error rather than swallowing it into the same shape as "no override" —
+   * callers that gate delete/remove actions on this value must be able to tell "confirmed none"
+   * from "unknown" and fail closed on the latter.
+   */
+  public getMeetingInviteEmail(): Observable<MeetingInviteEmail> {
+    return this.http.get<MeetingInviteEmail>('/api/profile/emails/meeting-invite');
+  }
+
+  /**
+   * Set the user's preferred meeting-invitation email.
+   * @param email - The verified email address to receive meeting invitations
+   */
+  public setMeetingInviteEmail(email: string): Observable<MeetingInviteEmail> {
+    return this.http.put<MeetingInviteEmail>('/api/profile/emails/meeting-invite', { email }).pipe(take(1));
   }
 
   // Linux.com email alias methods

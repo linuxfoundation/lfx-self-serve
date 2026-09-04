@@ -19,11 +19,12 @@ import {
   RemoveIdentityDialogData,
   VerifyIdentityDialogData,
 } from '@lfx-one/shared/interfaces';
+import { emailsEqual } from '@lfx-one/shared/utils';
 import { UserService } from '@services/user.service';
 import { OpenIntercomDirective } from '@shared/directives/open-intercom.directive';
 import { MenuItem, MessageService } from 'primeng/api';
 import { DialogService, DynamicDialogRef } from 'primeng/dynamicdialog';
-import { catchError, map, of, startWith, switchMap, take } from 'rxjs';
+import { catchError, forkJoin, map, of, startWith, switchMap, take } from 'rxjs';
 
 import { AddAccountDialogComponent } from '../components/add-account-dialog/add-account-dialog.component';
 import { ProfileLinuxEmailComponent } from '../linux-email/profile-linux-email.component';
@@ -32,6 +33,11 @@ import { VerifyIdentityDialogComponent } from '../components/verify-identity-dia
 
 interface IdentitiesState {
   identities: EnrichedIdentity[];
+  // Loaded alongside the identities so the Remove guard is never evaluated against a stale value.
+  inviteEmail: string | null;
+  // True when the invite fetch itself failed — distinct from `inviteEmail === null` (confirmed no
+  // override). Which identity is protected is unknown in that case, so the Remove guard fails closed.
+  inviteLoadFailed: boolean;
   loaded: boolean;
 }
 
@@ -78,6 +84,9 @@ export class ProfileIdentitiesComponent implements OnInit {
   public readonly unverifiedIdentities: Signal<ConnectedIdentityFull[]> = computed(() => this.identities().filter((i) => i.state === 'unverified'));
   public readonly verifiedIdentities: Signal<ConnectedIdentityFull[]> = computed(() => this.identities().filter((i) => i.state === 'verified'));
   public readonly hasUnverified: Signal<boolean> = computed(() => this.unverifiedIdentities().length > 0);
+  // Preferred meeting-invitation email (meeting-service). Its identity cannot be removed here — doing so
+  // would orphan the meeting-service preference. Null address = no override (uses primary).
+  public readonly meetingInviteEmail: Signal<string | null> = computed(() => this.identitiesState().inviteEmail);
   public readonly menuItemsMap: Signal<Map<string, MenuItem[]>> = this.initMenuItemsMap();
 
   private readonly identitiesState: Signal<IdentitiesState> = this.initIdentitiesState();
@@ -131,6 +140,21 @@ export class ProfileIdentitiesComponent implements OnInit {
   }
 
   public onRemove(identity: ConnectedIdentityFull): void {
+    // Guard: never remove the email selected as the meeting-invitation preference. The verified
+    // list disables its "Remove" menu item with an explanation instead of reaching here; the
+    // unverified list's "This is not me" button has no disabled state, so surface the same
+    // explanation via toast rather than letting the click silently do nothing.
+    if (this.isMeetingInviteIdentity(identity)) {
+      this.messageService.add({
+        severity: 'info',
+        summary: 'Meeting invitation email',
+        detail: this.identitiesState().inviteLoadFailed
+          ? 'Could not confirm your meeting-invitation email. Reload the page before removing an email address.'
+          : 'This email is set for meeting invitations. Choose a different meeting-invitation email in Account Settings before removing it.',
+      });
+      return;
+    }
+
     // For identities linked in Auth0, ensure management token is valid before proceeding
     if (identity.auth0UserId) {
       this.userService
@@ -206,6 +230,7 @@ export class ProfileIdentitiesComponent implements OnInit {
     return {
       id: enriched.id,
       provider: enriched.platform as IdentityProvider,
+      type: enriched.type,
       identifier: enriched.value,
       state: enriched.displayState === 'verified' ? 'verified' : 'unverified',
       icon: enriched.icon,
@@ -218,37 +243,81 @@ export class ProfileIdentitiesComponent implements OnInit {
     return computed(() => {
       const map = new Map<string, MenuItem[]>();
       for (const identity of this.identities()) {
-        map.set(identity.id, [{ label: 'Remove', icon: 'fa-light fa-trash', styleClass: 'text-red-500', command: () => this.onRemove(identity) }]);
+        if (this.isMeetingInviteIdentity(identity)) {
+          // Blocked: removing the meeting-invitation email would orphan the meeting-service preference
+          // (or, when the invite fetch failed, we can't tell which identity that is).
+          map.set(identity.id, [
+            {
+              label: 'Remove',
+              icon: 'fa-light fa-trash',
+              styleClass: 'text-red-500',
+              disabled: true,
+              title: this.identitiesState().inviteLoadFailed
+                ? 'Could not confirm your meeting-invitation email. Reload the page before removing an email address.'
+                : 'This email is set for meeting invitations. Choose a different meeting-invitation email in Account Settings before removing it.',
+            },
+          ]);
+        } else {
+          map.set(identity.id, [{ label: 'Remove', icon: 'fa-light fa-trash', styleClass: 'text-red-500', command: () => this.onRemove(identity) }]);
+        }
       }
       return map;
     });
   }
 
+  private isMeetingInviteIdentity(identity: ConnectedIdentityFull): boolean {
+    // Use `type`, not `provider` — the server rewrites a Google-cross-matched CDP email row's
+    // `provider` to 'google' while keeping `type: 'email'`, and that row must still be guarded.
+    if (identity.type !== 'email') {
+      return false;
+    }
+    // Which identity is protected can't be determined when the invite fetch failed — fail closed
+    // and treat every email identity as protected rather than letting the guard silently open up.
+    if (this.identitiesState().inviteLoadFailed) {
+      return true;
+    }
+    return emailsEqual(identity.identifier, this.meetingInviteEmail());
+  }
+
+  /**
+   * Loads the identity list and the meeting-invitation preference as one unit behind the single
+   * `loaded` flag. Fetching them independently let the kebab menus turn interactive while the
+   * preference was still in flight, so the Remove guard briefly protected the previous selection —
+   * long enough to remove the invite-email identity and orphan the meeting-service preference.
+   */
   private initIdentitiesState(): Signal<IdentitiesState> {
     // Skip the fetch during SSR. The server's HTTP call doesn't carry the user's
     // session cookie reliably, so it tends to fail and renders the load-error
     // banner into the SSR HTML — producing a red-banner flash on hydration
     // before the browser's authenticated fetch resolves.
     if (!isPlatformBrowser(this.platformId)) {
-      return signal({ identities: [] as EnrichedIdentity[], loaded: false });
+      return signal({ identities: [] as EnrichedIdentity[], inviteEmail: null, inviteLoadFailed: false, loaded: false });
     }
     return toSignal(
       this.userService.identitiesRefresh$.pipe(
         startWith(undefined),
         switchMap(() => {
           this.identitiesLoadError.set(false);
-          return this.userService.getIdentities().pipe(
-            catchError(() => {
-              // Any load failure hides the list entirely — a missing Auth0 overlay
-              // would mis-label every CDP identity as "unverified".
-              this.identitiesLoadError.set(true);
-              return of([] as EnrichedIdentity[]);
-            })
-          );
+          return forkJoin({
+            identities: this.userService.getIdentities().pipe(
+              catchError(() => {
+                // Any load failure hides the list entirely — a missing Auth0 overlay
+                // would mis-label every CDP identity as "unverified".
+                this.identitiesLoadError.set(true);
+                return of([] as EnrichedIdentity[]);
+              })
+            ),
+            // A failed invite fetch must not collapse into "no override" — that would silently
+            // remove the Remove guard for the user's actual meeting-invite identity.
+            invite: this.userService.getMeetingInviteEmail().pipe(
+              map((invite) => ({ email: invite.email, inviteLoadFailed: false })),
+              catchError(() => of({ email: null, inviteLoadFailed: true }))
+            ),
+          });
         }),
-        map((identities): IdentitiesState => ({ identities, loaded: true }))
+        map(({ identities, invite }): IdentitiesState => ({ identities, inviteEmail: invite.email, inviteLoadFailed: invite.inviteLoadFailed, loaded: true }))
       ),
-      { initialValue: { identities: [] as EnrichedIdentity[], loaded: false } }
+      { initialValue: { identities: [] as EnrichedIdentity[], inviteEmail: null, inviteLoadFailed: false, loaded: false } }
     );
   }
 }

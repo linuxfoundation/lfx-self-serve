@@ -17,6 +17,7 @@ const {
   emailVerificationSvc,
   forwardsSvc,
   enrollmentSvc,
+  meetingPrefSvc,
   socialVerificationSvc,
 } = vi.hoisted(() => ({
   getUsernameFromAuthMock: vi.fn(),
@@ -25,6 +26,10 @@ const {
   getEffectiveSubMock: vi.fn(),
   isImpersonatingMock: vi.fn(() => false),
   getLinuxForwardDomainMock: vi.fn(() => 'linux.com'),
+  meetingPrefSvc: {
+    getMeetingInviteEmail: vi.fn(),
+    setMeetingInviteEmail: vi.fn(),
+  },
   objectStoreSvc: {
     uploadProfilePicture: vi.fn(),
     ensureBucket: vi.fn(),
@@ -66,7 +71,7 @@ vi.mock('@lfx-one/shared/constants', () => ({
   CDP_PLATFORM_TO_TYPE_MAP: {},
   CDP_TO_AUTH0_PROVIDER_MAP: {},
   EMAIL_ALREADY_LINKED_MESSAGE: 'already linked',
-  EMAIL_REGEX: /.+/,
+  EMAIL_REGEX: /^[^\s@]+@[^\s@.]+(?:\.[^\s@.]+)+$/,
   PURCHASE_LINUX_URL: 'https://example.com',
   PROFILE_EMAIL_PATH: '/profile/email',
   PROFILE_EMAILS_PATH: '/profile/emails',
@@ -74,7 +79,10 @@ vi.mock('@lfx-one/shared/constants', () => ({
   PROFILE_SETTINGS_PATH: '/profile/settings',
 }));
 vi.mock('@lfx-one/shared/interfaces', () => ({}));
-vi.mock('@lfx-one/shared/utils', () => ({ isIdentityAlreadyLinkedError: vi.fn(() => false) }));
+vi.mock('@lfx-one/shared/utils', () => ({
+  isIdentityAlreadyLinkedError: vi.fn(() => false),
+  isMeetingInvitePrimarySentinel: (value: string | null | undefined) => (value ?? '').trim().toLowerCase() === 'primary',
+}));
 
 vi.mock('../utils/auth-helper', () => ({
   getUsernameFromAuth: getUsernameFromAuthMock,
@@ -119,6 +127,11 @@ vi.mock('../services/enrollment.service', () => ({
 vi.mock('../services/forwards.service', () => ({
   ForwardsService: vi.fn(function () {
     return forwardsSvc;
+  }),
+}));
+vi.mock('../services/meeting-preference.service', () => ({
+  MeetingPreferenceService: vi.fn(function () {
+    return meetingPrefSvc;
   }),
 }));
 vi.mock('../services/social-verification.service', () => ({
@@ -275,6 +288,200 @@ describe('ProfileController.uploadProfilePicture', () => {
     expect(next).toHaveBeenCalledWith(uploadError);
     expect(res.status).not.toHaveBeenCalled();
     expect(userSvc.updateUserMetadata).not.toHaveBeenCalled();
+  });
+});
+
+describe('ProfileController.getMeetingInviteEmail', () => {
+  let controller: ProfileController;
+
+  beforeEach(() => {
+    vi.clearAllMocks();
+    controller = new ProfileController();
+  });
+
+  it('responds 503 without calling the meeting service when the v1 api-gateway token is missing', async () => {
+    const next = vi.fn();
+
+    await controller.getMeetingInviteEmail(buildReq({ apiGatewayToken: undefined }), buildRes(), next);
+
+    expect(next).toHaveBeenCalledWith(expect.objectContaining({ code: 'SERVICE_UNAVAILABLE', statusCode: 503 }));
+    expect(meetingPrefSvc.getMeetingInviteEmail).not.toHaveBeenCalled();
+  });
+
+  it('returns the override when the meeting service resolves one', async () => {
+    meetingPrefSvc.getMeetingInviteEmail.mockResolvedValue({ email_id: 'id-1', email: 'invite@example.com' });
+    const res = buildRes();
+    const next = vi.fn();
+
+    await controller.getMeetingInviteEmail(buildReq({ apiGatewayToken: 'v1-token' }), res, next);
+
+    expect(meetingPrefSvc.getMeetingInviteEmail).toHaveBeenCalledWith(expect.anything(), 'v1-token');
+    expect(res.json).toHaveBeenCalledWith({ email_id: 'id-1', email: 'invite@example.com' });
+    expect(next).not.toHaveBeenCalled();
+  });
+
+  it('propagates a 503 rather than normalizing a failed fetch to the no-override shape', async () => {
+    // The service returns null only on failure — a confirmed no-override comes back as a non-null
+    // `{ email_id: null, email: null }`. Normalizing null to that same shape would make a real
+    // outage indistinguishable from "no override" to the client, silently disabling its
+    // delete/remove fail-closed guard.
+    meetingPrefSvc.getMeetingInviteEmail.mockResolvedValue(null);
+    const res = buildRes();
+    const next = vi.fn();
+
+    await controller.getMeetingInviteEmail(buildReq({ apiGatewayToken: 'v1-token' }), res, next);
+
+    expect(next).toHaveBeenCalledWith(expect.objectContaining({ code: 'SERVICE_UNAVAILABLE', statusCode: 503 }));
+    expect(res.json).not.toHaveBeenCalled();
+  });
+
+  it('propagates an unexpected service rejection via next(error)', async () => {
+    const boom = new Error('meeting service exploded');
+    meetingPrefSvc.getMeetingInviteEmail.mockRejectedValue(boom);
+    const res = buildRes();
+    const next = vi.fn();
+
+    await controller.getMeetingInviteEmail(buildReq({ apiGatewayToken: 'v1-token' }), res, next);
+
+    expect(next).toHaveBeenCalledWith(boom);
+    expect(res.json).not.toHaveBeenCalled();
+  });
+});
+
+describe('ProfileController.setMeetingInviteEmail', () => {
+  let controller: ProfileController;
+
+  function buildSetReq(body: unknown, overrides: Record<string, unknown> = {}): any {
+    return buildReq({ body, path: '/api/profile/emails/meeting-invite', apiGatewayToken: 'v1-token', ...overrides });
+  }
+
+  beforeEach(() => {
+    vi.clearAllMocks();
+    controller = new ProfileController();
+  });
+
+  it('rejects a missing email with a 400 instead of reaching the service', async () => {
+    const next = vi.fn();
+
+    await controller.setMeetingInviteEmail(buildSetReq({}), buildRes(), next);
+
+    expect(next).toHaveBeenCalledWith(expect.objectContaining({ code: 'VALIDATION_ERROR', statusCode: 400 }));
+    expect(meetingPrefSvc.setMeetingInviteEmail).not.toHaveBeenCalled();
+  });
+
+  it('coerces a non-string email to a 400 rather than throwing a 500', async () => {
+    const next = vi.fn();
+
+    await controller.setMeetingInviteEmail(buildSetReq({ email: { address: 'nope' } }), buildRes(), next);
+
+    expect(next).toHaveBeenCalledWith(expect.objectContaining({ code: 'VALIDATION_ERROR', statusCode: 400 }));
+    expect(meetingPrefSvc.setMeetingInviteEmail).not.toHaveBeenCalled();
+  });
+
+  it('rejects a malformed email address with a 400', async () => {
+    const next = vi.fn();
+
+    await controller.setMeetingInviteEmail(buildSetReq({ email: 'not-an-email' }), buildRes(), next);
+
+    expect(next).toHaveBeenCalledWith(expect.objectContaining({ code: 'VALIDATION_ERROR', statusCode: 400 }));
+    expect(meetingPrefSvc.setMeetingInviteEmail).not.toHaveBeenCalled();
+  });
+
+  it('lets the reset sentinel through the email-format gate', async () => {
+    meetingPrefSvc.setMeetingInviteEmail.mockResolvedValue({ success: true, data: { email_id: null, email: null } });
+    const res = buildRes();
+    const next = vi.fn();
+
+    await controller.setMeetingInviteEmail(buildSetReq({ email: 'primary' }), res, next);
+
+    expect(meetingPrefSvc.setMeetingInviteEmail).toHaveBeenCalledWith(expect.anything(), 'v1-token', 'primary');
+    expect(res.status).toHaveBeenCalledWith(200);
+    expect(res.json).toHaveBeenCalledWith({ email_id: null, email: null });
+    expect(next).not.toHaveBeenCalled();
+  });
+
+  it('responds 503 without calling the meeting service when the v1 api-gateway token is missing', async () => {
+    const next = vi.fn();
+
+    await controller.setMeetingInviteEmail(buildSetReq({ email: 'invite@example.com' }, { apiGatewayToken: undefined }), buildRes(), next);
+
+    expect(next).toHaveBeenCalledWith(expect.objectContaining({ code: 'SERVICE_UNAVAILABLE', statusCode: 503 }));
+    expect(meetingPrefSvc.setMeetingInviteEmail).not.toHaveBeenCalled();
+  });
+
+  it('responds 200 with the updated preference on success', async () => {
+    meetingPrefSvc.setMeetingInviteEmail.mockResolvedValue({ success: true, data: { email_id: 'id-2', email: 'invite@example.com' } });
+    const res = buildRes();
+    const next = vi.fn();
+
+    await controller.setMeetingInviteEmail(buildSetReq({ email: 'invite@example.com' }), res, next);
+
+    expect(res.status).toHaveBeenCalledWith(200);
+    expect(res.json).toHaveBeenCalledWith({ email_id: 'id-2', email: 'invite@example.com' });
+    expect(next).not.toHaveBeenCalled();
+  });
+
+  it('maps a validation failure to a 400 carrying the actionable message, not the raw upstream error', async () => {
+    meetingPrefSvc.setMeetingInviteEmail.mockResolvedValue({ success: false, reason: 'validation', error: 'email_id not found' });
+    const next = vi.fn();
+
+    await controller.setMeetingInviteEmail(buildSetReq({ email: 'invite@example.com' }), buildRes(), next);
+
+    expect(next).toHaveBeenCalledWith(
+      expect.objectContaining({
+        code: 'VALIDATION_ERROR',
+        statusCode: 400,
+        message: 'This email is not an active, verified address on your account yet. Choose a different email, or verify it and try again.',
+      })
+    );
+  });
+
+  it('maps a sync_pending failure to a 503 with retry copy', async () => {
+    meetingPrefSvc.setMeetingInviteEmail.mockResolvedValue({ success: false, reason: 'sync_pending' });
+    const next = vi.fn();
+
+    await controller.setMeetingInviteEmail(buildSetReq({ email: 'invite@example.com' }), buildRes(), next);
+
+    expect(next).toHaveBeenCalledWith(
+      expect.objectContaining({
+        code: 'SERVICE_UNAVAILABLE',
+        statusCode: 503,
+        message: 'This email was added recently and is not ready to use yet. Please try again in a few minutes.',
+      })
+    );
+  });
+
+  it('maps an unavailable failure to a 503 naming the meeting service', async () => {
+    meetingPrefSvc.setMeetingInviteEmail.mockResolvedValue({ success: false, reason: 'unavailable' });
+    const next = vi.fn();
+
+    await controller.setMeetingInviteEmail(buildSetReq({ email: 'invite@example.com' }), buildRes(), next);
+
+    expect(next).toHaveBeenCalledWith(
+      expect.objectContaining({
+        code: 'SERVICE_UNAVAILABLE',
+        statusCode: 503,
+        message: 'The meeting service is temporarily unavailable. Please try again in a few minutes.',
+      })
+    );
+  });
+
+  it('maps an upstream failure to a 502', async () => {
+    meetingPrefSvc.setMeetingInviteEmail.mockResolvedValue({ success: false, reason: 'upstream' });
+    const next = vi.fn();
+
+    await controller.setMeetingInviteEmail(buildSetReq({ email: 'invite@example.com' }), buildRes(), next);
+
+    expect(next).toHaveBeenCalledWith(expect.objectContaining({ code: 'BAD_GATEWAY', statusCode: 502 }));
+  });
+
+  it('falls back to a 502 when the service reports failure without a reason', async () => {
+    meetingPrefSvc.setMeetingInviteEmail.mockResolvedValue({ success: false });
+    const next = vi.fn();
+
+    await controller.setMeetingInviteEmail(buildSetReq({ email: 'invite@example.com' }), buildRes(), next);
+
+    expect(next).toHaveBeenCalledWith(expect.objectContaining({ code: 'BAD_GATEWAY', statusCode: 502 }));
   });
 });
 

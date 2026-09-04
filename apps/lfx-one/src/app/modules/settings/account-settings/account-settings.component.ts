@@ -8,21 +8,26 @@ import { AbstractControl, FormBuilder, FormControl, FormGroup, ReactiveFormsModu
 import { BadgeComponent } from '@components/badge/badge.component';
 import { ButtonComponent } from '@components/button/button.component';
 import { InputTextComponent } from '@components/input-text/input-text.component';
+import { MenuComponent } from '@components/menu/menu.component';
+import { MessageComponent } from '@components/message/message.component';
 import { TokenRevealDialogComponent } from '@components/token-reveal-dialog/token-reveal-dialog.component';
 import { markFormControlsAsTouched } from '@lfx-one/shared';
-import { ACCOUNT_SETTINGS_SECTIONS, PROFILE_EMAILS_PATH } from '@lfx-one/shared/constants';
+import { ACCOUNT_SETTINGS_SECTIONS, MEETING_INVITE_PRIMARY_SENTINEL, PROFILE_EMAILS_PATH } from '@lfx-one/shared/constants';
+import { emailsEqual } from '@lfx-one/shared/utils';
+import { OpenIntercomDirective } from '@shared/directives/open-intercom.directive';
 import { ActivatedRoute } from '@angular/router';
 import { useResendCooldown } from '@shared/utils/resend-cooldown';
 import { clearPendingProfileSave } from '@shared/utils/pending-profile-save.util';
-import { ChangePasswordRequest, EmailManagementData, PasswordStrength, UserEmail } from '@lfx-one/shared/interfaces';
+import { extractErrorMessage } from '@shared/utils/http-error.utils';
+import { ChangePasswordRequest, EmailManagementData, EmailSettingsState, MeetingInviteEmail, PasswordStrength, UserEmail } from '@lfx-one/shared/interfaces';
 import { UserService } from '@services/user.service';
-import { ConfirmationService, MessageService } from 'primeng/api';
+import { ConfirmationService, MenuItem, MessageService } from 'primeng/api';
 import { ConfirmDialogModule } from 'primeng/confirmdialog';
 import { DialogService, DynamicDialogModule } from 'primeng/dynamicdialog';
 import { ToastModule } from 'primeng/toast';
 import { TooltipModule } from 'primeng/tooltip';
 import { HttpErrorResponse } from '@angular/common/http';
-import { BehaviorSubject, catchError, filter, finalize, map, of, switchMap, take, tap } from 'rxjs';
+import { BehaviorSubject, catchError, filter, finalize, forkJoin, map, Observable, of, switchMap, take, tap } from 'rxjs';
 
 @Component({
   selector: 'lfx-account-settings',
@@ -33,6 +38,9 @@ import { BehaviorSubject, catchError, filter, finalize, map, of, switchMap, take
     BadgeComponent,
     ButtonComponent,
     InputTextComponent,
+    MenuComponent,
+    MessageComponent,
+    OpenIntercomDirective,
     ConfirmDialogModule,
     ToastModule,
     TooltipModule,
@@ -102,25 +110,63 @@ export class AccountSettingsComponent {
   // State signals
   public emailLoading = signal(false);
 
-  // Data signals
-  public emailData: Signal<EmailManagementData | null> = this.initEmailData();
+  // Data signals — the address list and the invite preference load as one unit so the row
+  // guards never read a half-refreshed pair (see initEmailState).
+  private readonly emailState: Signal<EmailSettingsState> = this.initEmailState();
+
+  public emailData: Signal<EmailManagementData | null> = computed(() => this.emailState().emails);
+
+  // Preferred meeting-invitation email (meeting-service). Null address = no override (uses primary).
+  public meetingInviteData: Signal<MeetingInviteEmail | null> = computed(() => this.emailState().invite);
+  public meetingInviteEmail = computed((): string | null => this.meetingInviteData()?.email ?? null);
+
+  // Inline banner for a meeting-invite validation failure (the address isn't an active, verified
+  // record upstream). Held in a signal rather than a toast so it can host a "contact support" link.
+  public meetingInviteError = signal<string | null>(null);
+
+  // Serializes meeting-invite writes. The upstream SET can take up to 20s
+  // (NATS_CONFIG.MEETING_PREFERENCE_SET_TIMEOUT) — long enough to pick a second row mid-flight and
+  // have two independent PUTs land out of order, leaving the losing address selected.
+  public savingMeetingInvite = signal(false);
+
+  // Address currently mid-delete (auth-status check through confirm/reject), null otherwise. Also
+  // blocks starting a second delete workflow — otherwise a second row's tracker overwrite would
+  // reopen the window where the first row is picked as the meeting-invite override before its
+  // own delete lands.
+  private deletingEmailAddress = signal<string | null>(null);
 
   public allEmails = computed((): UserEmail[] => {
     const data = this.emailData();
     if (!data) return [];
     const primary: UserEmail = { email: data.primary_email, verified: true };
-    const alternates = (data.alternate_emails ?? []).filter((e) => e.email !== data.primary_email);
+    const alternates = (data.alternate_emails ?? []).filter((e) => !emailsEqual(e.email, data.primary_email));
     return [primary, ...alternates];
   });
 
-  public emailsWithMetadata = computed(() =>
-    this.allEmails().map((email) => ({
-      ...email,
-      isPrimary: email.email === this.emailData()?.primary_email,
-      canDelete: this.allEmails().length > 1 && email.email !== this.emailData()?.primary_email && !!email.user_id,
-      canSetPrimary: email.email !== this.emailData()?.primary_email && email.verified,
-    }))
-  );
+  public emailsWithMetadata = computed(() => {
+    const inviteEmail = this.meetingInviteEmail();
+    const primaryEmail = this.emailData()?.primary_email;
+    return this.allEmails().map((email) => {
+      const isPrimary = emailsEqual(email.email, primaryEmail);
+      // Explicit selection — drives the badge, which only appears once the user has chosen.
+      const isMeetingInvite = emailsEqual(email.email, inviteEmail);
+      // The primary row's action is "reset to default", which is meaningful whenever an override
+      // exists — including one pinned to the primary address, since clearing it lets invitations
+      // follow a later primary change. Other rows offer "use this address" until they are the override.
+      const canReset = inviteEmail !== null;
+      return {
+        ...email,
+        isPrimary,
+        isMeetingInvite,
+        canDelete: this.allEmails().length > 1 && !isPrimary && !!email.user_id,
+        canSetPrimary: !isPrimary && email.verified,
+        canSetMeetingInvite: email.verified && (isPrimary ? canReset : !isMeetingInvite),
+      };
+    });
+  });
+
+  // Per-row action menu (kebab). Keyed by email address so each row resolves its own items.
+  public menuItemsMap: Signal<Map<string, MenuItem[]>> = this.initMenuItemsMap();
 
   // ══════════════════════════════════════════
   // DEVELOPER SETTINGS
@@ -312,7 +358,7 @@ export class AccountSettingsComponent {
   }
 
   public setPrimary(email: UserEmail): void {
-    if (email.email === this.emailData()?.primary_email || !email.verified) {
+    if (emailsEqual(email.email, this.emailData()?.primary_email) || !email.verified) {
       return;
     }
 
@@ -331,18 +377,86 @@ export class AccountSettingsComponent {
     });
   }
 
+  public setMeetingInvite(email: UserEmail): void {
+    // Picking the primary row means "go back to the default". Sending its literal address would
+    // instead pin an explicit override that stops following a later primary-email change — the
+    // meeting service only clears the override for the sentinel.
+    const inviteEmail = this.meetingInviteEmail();
+    const isReset = emailsEqual(email.email, this.emailData()?.primary_email);
+    // A reset still does work while any override exists, even one pointing at the primary address,
+    // so only a non-reset re-pick of the current override is a no-op.
+    const isNoop = isReset ? inviteEmail === null : emailsEqual(email.email, inviteEmail);
+
+    if (!email.verified || isNoop || this.savingMeetingInvite() || emailsEqual(email.email, this.deletingEmailAddress())) {
+      return;
+    }
+
+    this.meetingInviteError.set(null);
+    this.savingMeetingInvite.set(true);
+
+    const selection = isReset ? MEETING_INVITE_PRIMARY_SENTINEL : email.email;
+
+    this.userService
+      .setMeetingInviteEmail(selection)
+      .pipe(finalize(() => this.savingMeetingInvite.set(false)))
+      .subscribe({
+        next: () => {
+          this.emailRefresh.next();
+          this.messageService.add({
+            severity: 'success',
+            summary: 'Success',
+            detail: isReset ? 'Meeting invitations will now follow your primary email' : 'Meeting invitation email updated successfully',
+          });
+        },
+        error: (err: HttpErrorResponse) => {
+          // A 400 means the address exists but isn't an active, verified record upstream — retrying
+          // won't help, so surface a persistent banner with a support link instead of a transient toast.
+          if (err.status === 400) {
+            // The server puts the copy under `error` (and `errors[].message`), not `message` —
+            // extractErrorMessage reads both, so the crafted validation text reaches the banner.
+            this.meetingInviteError.set(extractErrorMessage(err, 'This email is not an active, verified address on your account yet.'));
+            return;
+          }
+          // Retryable errors (503 sync_pending/unavailable, etc.) also carry copy under `error`, not
+          // `message` — use extractErrorMessage so the crafted retry guidance reaches the toast.
+          this.messageService.add({ severity: 'error', summary: 'Error', detail: extractErrorMessage(err, 'Failed to update meeting invitation email') });
+        },
+      });
+  }
+
+  public dismissMeetingInviteError(): void {
+    this.meetingInviteError.set(null);
+  }
+
   public deleteEmail(email: UserEmail): void {
     if (!email.user_id) {
       return;
     }
 
+    // Never delete the meeting-invitation address — and never delete anything mid-write, since
+    // meetingInviteEmail() still holds the old selection until the refresh lands. When the invite
+    // fetch itself failed, which address is protected is unknown — fail closed and block every row.
+    // Also refuse a second delete workflow while one is already in flight (deletingEmailAddress
+    // non-null) — otherwise a second row's click overwrites the tracker before the first row's
+    // write lands, reopening the same orphaned-preference race.
+    if (
+      this.deletingEmailAddress() !== null ||
+      this.savingMeetingInvite() ||
+      this.emailState().inviteLoadFailed ||
+      emailsEqual(email.email, this.meetingInviteEmail())
+    ) {
+      return;
+    }
+
     const userId = email.user_id;
+    this.deletingEmailAddress.set(email.email);
 
     this.userService
       .getProfileAuthStatus()
       .pipe(take(1))
       .subscribe((status) => {
         if (!status.authorized) {
+          this.deletingEmailAddress.set(null);
           this.redirectToProfileAuth(`/api/profile/auth/start?returnTo=${PROFILE_EMAILS_PATH}`);
           return;
         }
@@ -355,10 +469,28 @@ export class AccountSettingsComponent {
           acceptButtonStyleClass: 'p-button-danger p-button-sm',
           rejectButtonStyleClass: 'p-button-outlined p-button-sm',
           accept: () => {
+            // Re-check: the user may have picked this same address as the meeting-invite
+            // override — or the invite fetch may have started failing — while the auth-status
+            // lookup/confirm dialog was pending.
+            if (this.emailState().inviteLoadFailed || emailsEqual(email.email, this.meetingInviteEmail())) {
+              this.deletingEmailAddress.set(null);
+              this.messageService.add({
+                severity: 'error',
+                summary: 'Error',
+                detail: this.emailState().inviteLoadFailed
+                  ? 'Could not confirm your meeting-invitation email. Please try again.'
+                  : 'This email is now set for meeting invitations — choose a different one before deleting it.',
+              });
+              return;
+            }
+
             const identityId = `auth0:${userId}`;
             this.userService
               .rejectIdentity(identityId, 'email', userId)
-              .pipe(take(1))
+              .pipe(
+                take(1),
+                finalize(() => this.deletingEmailAddress.set(null))
+              )
               .subscribe({
                 next: () => {
                   this.emailRefresh.next();
@@ -372,6 +504,9 @@ export class AccountSettingsComponent {
                   this.messageService.add({ severity: 'error', summary: 'Error', detail: err.error?.message || 'Failed to delete email address' });
                 },
               });
+          },
+          reject: () => {
+            this.deletingEmailAddress.set(null);
           },
         });
       });
@@ -505,19 +640,97 @@ export class AccountSettingsComponent {
     window.location.href = url;
   }
 
-  private initEmailData(): Signal<EmailManagementData | null> {
+  /**
+   * Loads the address list and the meeting-invitation preference as one unit, behind a single
+   * loading flag. Fetching them independently let the list turn interactive while the preference
+   * was still in flight, so the badge and the delete guard briefly protected the previous
+   * selection — long enough to delete the newly chosen invite address and orphan the preference.
+   */
+  private initEmailState(): Signal<EmailSettingsState> {
     return toSignal(
       this.emailRefresh.pipe(
-        switchMap(() => {
+        switchMap((): Observable<EmailSettingsState> => {
           this.emailLoading.set(true);
-          return this.userService.getUserEmails().pipe(
-            catchError(() => of(null)),
+          return forkJoin({
+            emails: this.userService.getUserEmails().pipe(catchError(() => of(null))),
+            // A failed invite fetch must not collapse into "no override" — that would silently
+            // remove the delete guard for the user's actual meeting-invite address. Track the
+            // failure explicitly so callers can fail closed instead.
+            invite: this.userService.getMeetingInviteEmail().pipe(
+              map((invite) => ({ invite, inviteLoadFailed: false })),
+              catchError(() => of({ invite: null, inviteLoadFailed: true }))
+            ),
+          }).pipe(
+            map(({ emails, invite }) => ({ emails, invite: invite.invite, inviteLoadFailed: invite.inviteLoadFailed })),
             finalize(() => this.emailLoading.set(false))
           );
         })
       ),
-      { initialValue: null }
+      { initialValue: { emails: null, invite: null, inviteLoadFailed: false } }
     );
+  }
+
+  private initMenuItemsMap(): Signal<Map<string, MenuItem[]>> {
+    return computed(() => {
+      const map = new Map<string, MenuItem[]>();
+      // Disables the action on every row, not just the one clicked — the guard has to cover the
+      // whole set or a second row can still queue a competing write.
+      const savingInvite = this.savingMeetingInvite();
+      // Same reasoning for delete: a second row's Delete click must not be able to overwrite
+      // deletingEmailAddress while a delete is already in flight — disable every row's Delete item.
+      const deletingInProgress = this.deletingEmailAddress() !== null;
+      for (const email of this.emailsWithMetadata()) {
+        const items: MenuItem[] = [];
+        if (email.canSetPrimary) {
+          items.push({ label: 'Make Primary', icon: 'fa-light fa-star', command: () => this.setPrimary(email) });
+        }
+        if (email.canSetMeetingInvite) {
+          // On the primary row the action clears the override rather than pinning an address — name it
+          // as a reset, since it also shows on a primary row already badged as the current override.
+          const label = email.isPrimary ? 'Reset to Default (Primary Email)' : 'Use for Meeting Invitations';
+          items.push({
+            label,
+            icon: 'fa-light fa-envelope',
+            disabled: savingInvite,
+            command: () => this.setMeetingInvite(email),
+          });
+        }
+        if (email.canDelete) {
+          const blockedReason = this.getDeleteBlockedReason(email.isMeetingInvite, savingInvite, this.emailState().inviteLoadFailed, deletingInProgress);
+          if (blockedReason) {
+            items.push({ label: 'Delete', icon: 'fa-light fa-trash', styleClass: 'text-red-500', disabled: true, title: blockedReason });
+          } else {
+            items.push({ label: 'Delete', icon: 'fa-light fa-trash', styleClass: 'text-red-500', command: () => this.deleteEmail(email) });
+          }
+        }
+        map.set(email.email, items);
+      }
+      return map;
+    });
+  }
+
+  /**
+   * Why deleting is blocked, or null when it's allowed. `isMeetingInvite` still reflects the
+   * previous selection until the refresh lands, so an in-flight write has to block every row —
+   * otherwise the address just picked stays deletable for the whole SET and orphans the preference.
+   * `inviteLoadFailed` means which address is protected is unknown, so every row blocks.
+   * `deletingInProgress` means another row's delete is already in flight — every row blocks so a
+   * second click can't overwrite the tracked address before the first delete lands.
+   */
+  private getDeleteBlockedReason(isMeetingInvite: boolean, savingInvite: boolean, inviteLoadFailed: boolean, deletingInProgress: boolean): string | null {
+    if (inviteLoadFailed) {
+      return 'Could not confirm your meeting-invitation email. Reload the page before deleting an address.';
+    }
+    if (savingInvite) {
+      return 'Updating the meeting-invitation email. Wait for it to finish before deleting an address.';
+    }
+    if (deletingInProgress) {
+      return 'Deleting an email address. Wait for it to finish before deleting another.';
+    }
+    if (isMeetingInvite) {
+      return 'This email is set for meeting invitations. Choose a different meeting-invitation email before deleting it.';
+    }
+    return null;
   }
 
   private loadDeveloperToken(): void {
