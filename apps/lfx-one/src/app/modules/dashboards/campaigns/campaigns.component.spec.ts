@@ -2909,12 +2909,18 @@ describe('CampaignsComponent — email delivery channel', () => {
     it("sends the selected type's STAGE, not its id", async () => {
       selectEmail();
       internals().emailBriefOutput.set(emailBrief);
-      internals().emailBriefId.set('brief-77');
       const gen = vi
         .spyOn(TestBed.inject(CampaignService), 'generateEmailCopy')
         .mockReturnValue(of({ enabled: true, copy: { subject: 's', preheader: 'p', body: '<p>b</p>', cta: 'c' } }) as never);
 
+      // The type is chosen BEFORE the brief id is cached, deliberately. An earlier revision set
+      // `emailBriefId` first and then switched to a different stage, which pinned the id across a
+      // stage change -- the exact desync `onSelectEmailType` now clears, so that ordering asserted
+      // the bug rather than the contract. Selecting first, then caching, keeps this test about the
+      // stage-vs-type-id distinction it is named for.
       (internals() as unknown as { onSelectEmailType(id: string): void }).onSelectEmailType('thank-you-survey');
+      internals().emailBriefId.set('brief-77');
+
       await internals().onGenerateEmailCopy();
 
       // campaign-service enumerates STAGES, not type ids -- sending 'thank-you-survey' would be
@@ -3131,7 +3137,11 @@ describe('CampaignsComponent — email delivery channel', () => {
       // The picker lives above the PLANNER now, not on Implement. It moved because the stage it
       // resolves to is part of a brief's identity upstream, so it has to be answered before the
       // lookup rather than after a brief already exists.
-      const sel = (fixture.nativeElement as HTMLElement).querySelector('[data-testid="campaigns-email-stage-select"]');
+      // `data-test`, not `data-testid`: that is the attribute `lfx-select` renders from its
+      // `dataTest` input. Querying `data-testid` matched the <lfx-select> HOST element instead of
+      // the control, so this passed for the wrong reason — the same trap the sibling test below
+      // documents.
+      const sel = (fixture.nativeElement as HTMLElement).querySelector('[data-test="campaigns-email-stage-select"]');
       expect(sel, 'the email-type selector is not rendered above the planner').not.toBeNull();
 
       // The RENDERED label, not the signal, and not the form value either. The raw <select> this
@@ -3387,6 +3397,40 @@ describe('CampaignsComponent — email delivery channel', () => {
     // series shared one entry, so recording one overwrote the others -- and the next save of a
     // sibling sent that other brief's id and was refused as `unowned-brief-exists`. That is the
     // exact failure the reuse test above depends on NOT happening.
+    // The stage IS the brief's identity upstream, so changing the type changes WHICH brief the
+    // Implement tab is working on. Moving the picker above the planner re-pointed the planner's
+    // LOOKUP, but the parent's cached `emailBriefId` is separate state and survived the change --
+    // so generate and stage ran the new stage against the previous stage's row. Staging is the
+    // one that writes: it clones a HubSpot draft against that brief's audience.
+    it('drops the cached brief id when the type change moves the stage', () => {
+      selectEmail();
+      internals().emailBriefOutput.set(emailBrief);
+      internals().emailBriefId.set('brief-cfp');
+
+      // 'main-registration-push' -> 'thank-you-survey' is a real STAGE change
+      // (Registration Push -> Post-Event), not merely a label change.
+      (internals() as unknown as { onSelectEmailType(id: string): void }).onSelectEmailType('thank-you-survey');
+
+      expect(internals().emailBriefId(), 'the previous stage brief id survived a type change; generate and stage would address the wrong row').toBe('');
+    });
+
+    // The other half of the gate, and the one a wholesale reset would break. Twelve types collapse
+    // onto six stages -- `cfp-launch` and `colocated-cfp-reminder` are both CFP Launch -- so
+    // switching between two types that share a stage addresses the SAME brief upstream. Discarding
+    // the loaded brief there would make the operator re-fetch and re-generate for no reason, and
+    // would silently drop a built audience. Resetting only when the STAGE moves is what separates
+    // the two cases; without this test, a reset on every type change passes just as happily.
+    it('keeps the loaded brief when two types share one stage', () => {
+      selectEmail();
+      internals().emailBriefOutput.set(emailBrief);
+      (internals() as unknown as { onSelectEmailType(id: string): void }).onSelectEmailType('cfp-launch');
+      internals().emailBriefId.set('brief-cfp');
+
+      (internals() as unknown as { onSelectEmailType(id: string): void }).onSelectEmailType('colocated-cfp-reminder');
+
+      expect(internals().emailBriefId(), 'a same-stage type change discarded the loaded brief; it addresses the same row upstream').toBe('brief-cfp');
+    });
+
     it('keys ownership per delivery type and stage, not per event', () => {
       const key = (b: unknown): string => (internals() as unknown as { ownershipKey(p: string, b: unknown): string }).ownershipKey('tlf', b);
 

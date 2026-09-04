@@ -195,16 +195,15 @@ export class CampaignsComponent {
     // nothing until the user pastes the event url again. Advice that stops at "reload" leaves
     // them on a blank Planning tab wondering where the brief went.
     //
-    // It no longer PROMISES that re-entering the URL surfaces the stored brief, because since
-    // delivery-scoped reads that is only true when the stored brief belongs to the same surface.
-    // Briefs are still keyed `(project, event_slug)` with no delivery dimension, so an event can
-    // hold exactly one brief; if it was authored on the other surface, `loadBrief` correctly
-    // answers `none` and re-entering the URL will keep answering `none`. The old wording sent
-    // that user round a loop it could never exit. This states what happened and what to try,
-    // without asserting an outcome this branch cannot guarantee — the second sentence is the
-    // honest form of "and here is why re-entering it may show nothing".
+    // It no longer PROMISES that re-entering the URL surfaces the stored brief, because the brief
+    // this refusal names may not be one this session can open. Under the widened key
+    // `(project, event_slug, delivery_type, stage)` a refusal means another writer holds THIS
+    // send's row — a different browser session, or the same event's brief opened elsewhere. It no
+    // longer means "the other delivery type has it": paid and email are separate rows now, so a
+    // paid brief cannot refuse an email save. The old wording named the wrong cause and sent the
+    // user to check a surface that is no longer involved.
     'unowned-brief-exists':
-      'This event already has a saved brief that was not opened here, so this one was not saved over it. Reload and re-enter the event URL to open it — if nothing appears, the stored brief belongs to the other delivery type and cannot be opened here.',
+      'This event already has a saved brief for this send that was not opened here, so this one was not saved over it. Reload and re-enter the event URL to open it — if nothing appears, another session is holding it.',
     // Does NOT advise a reload, even though this branch adds the read path that would make one
     // work. Here it would be actively destructive: a stale-brief refusal PROMOTES this session to
     // explicit overwrite permission (see the conflict handler), so the very next Proceed saves
@@ -1894,7 +1893,9 @@ export class CampaignsComponent {
     if (typeId === this.selectedEmailTypeId()) {
       return;
     }
+    const previousStage = this.selectedEmailStage();
     this.selectedEmailTypeId.set(typeId);
+
     // Invalidate any generate still in flight. Clearing the signals is not enough: the older
     // response resolves afterwards and would repopulate the panel with the previous stage's copy.
     this.emailCopyGeneration++;
@@ -1915,6 +1916,38 @@ export class CampaignsComponent {
     this.emailCopy.set(null);
     this.emailCopyState.set('idle');
     this.emailCopyError.set('');
+
+    // LAST, and only when the STAGE actually moved. A stage change changes which brief this tab is
+    // working on, because the stage is part of a brief's identity upstream. Moving the picker above
+    // the planner re-pointed the PLANNER's lookup; `emailBriefId` is the parent's own cached state
+    // and survived it, so generate and stage kept addressing the previous stage's row under the new
+    // stage's label -- and staging WRITES, cloning a HubSpot draft against that brief's audience.
+    //
+    // Gated on the stage, not the type: twelve types collapse onto six stages, so switching between
+    // two types that share a stage (CFP Launch has three) addresses the SAME brief and must not
+    // discard a loaded one.
+    //
+    // The BRIEF identity only -- deliberately NOT `resetEmailBriefDerivedState()`. That helper also
+    // clears `selectedEmailTemplateId`/`selectedEmailTemplateRow`, and the template is the
+    // operator's own choice: the block above has just re-derived a suggestion for the new type, and
+    // wiping it here would undo that and discard a hand-picked template too. Four existing specs
+    // pin exactly that behaviour.
+    //
+    // The generation counters are bumped for the same reason the helper bumps them: clearing a
+    // signal cannot reach a request already on the wire, and an audience response landing after
+    // this would report a BUILT audience for the previous brief -- which `canStageEmail` reads, so
+    // the stale success would re-enable staging against the wrong row. The persist promise is
+    // dropped because a caller joining it after this point would receive the previous brief's id.
+    if (this.selectedEmailStage() !== previousStage) {
+      this.emailBriefPersistGeneration++;
+      this.emailBriefId.set('');
+      this.emailAudience.set(null);
+      this.emailAudienceState.set('idle');
+      this.emailAudienceMessage.set('');
+      this.emailAudienceGeneration++;
+      this.emailStagingGeneration++;
+      this.emailBriefPersistInFlight = null;
+    }
   }
 
   /**
@@ -3186,30 +3219,40 @@ export class CampaignsComponent {
     }
   }
 
-  /** The persist itself, wrapped by `ensureEmailBriefId`'s in-flight dedup. */
   /**
    * The message an email action shows when the save produced no brief id.
    *
    * Prefers the conflict's own copy, which names the actual obstacle and the way out. Falls back
    * to the generic sentence for an ordinary failure, where retrying IS the right advice.
+   *
+   * The CONSEQUENCE is appended either way. Three callers pass a distinct one -- no audience was
+   * built, no copy was generated, the send was not staged -- and an earlier revision dropped it on
+   * the conflict branch, so all three rendered the same sentence. That told the operator why the
+   * save failed but not which action died with it, which matters most for staging: "not staged" is
+   * the part they need in order to know nothing reached HubSpot.
    */
   private emailSaveFailureMessage(consequence: string): string {
     const conflict = this.emailBriefConflict;
-    return conflict === null ? `The brief could not be saved, ${consequence}` : this.conflictMessages[conflict];
+    return conflict === null ? `The brief could not be saved, ${consequence}` : `${this.conflictMessages[conflict]} ${consequence}`;
   }
 
+  /** The persist itself, wrapped by `ensureEmailBriefId`'s in-flight dedup. */
   private async persistEmailBrief(brief: CampaignBriefOutput, projectSlug: string): Promise<string> {
     const known = this.emailBriefId();
     if (known !== '') {
       return known;
     }
 
-    // Name the row if this session already owns it. Briefs are keyed on (project, event) and
-    // SHARED across delivery types, so an event whose paid brief was generated or restored in
-    // this session already has a row -- and a first-save call, which sends no `brief_id`, is
-    // refused against it as `unowned-brief-exists`. That made the email channel unusable for
-    // every event the paid side had touched. `knownBriefIds` is the same ownership record the
-    // paid save consults; reading it here is what lets email REPLACE rather than only create.
+    // Name the row if this session already owns it. A first-save call sends no `brief_id` and is
+    // refused as `unowned-brief-exists` against a row that already exists, so reading the
+    // ownership record is what lets a second save REPLACE rather than look like a duplicate
+    // create. `knownBriefIds` is the same record the paid save consults.
+    //
+    // The key is all four identity parts, matching upstream (see `ownershipKey`). It used to be
+    // (project, event) alone, which was right while a brief was SHARED across delivery types --
+    // and became wrong the moment it was not: one event now holds a paid brief and one per stage
+    // of its email series, so a two-part key filed them all under one entry and the last one
+    // recorded overwrote its siblings' ids.
     // `null` when the brief has no event slug -- there is no row to own, so this falls through to
     // a plain first save exactly as before.
     const ownershipKey = this.ownershipKey(projectSlug, brief);

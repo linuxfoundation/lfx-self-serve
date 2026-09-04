@@ -375,12 +375,17 @@ export class PlanningTabComponent implements OnInit {
         // found was whatever surface wrote last, and restoring a paid brief into an email plan
         // brings RSA headlines, a keyword list and a platform selection that mean nothing there.
         //
-        // The row now records which surface authored it (`deliveryType`, persisted in `targeting`),
-        // and `loadBrief` reports a brief from the other surface as `none`. So the email caller can
-        // no longer be handed a paid brief, and the gate that stood in for that guarantee is gone.
-        // The key itself is unchanged — still one row per event — so this narrows what a caller may
-        // OPEN, not what may be stored; two surfaces still cannot hold separate briefs for one
-        // event, which is LFXV2-3198's remaining half.
+        // The KEY itself now carries the surface. Campaign-service keys a brief on
+        // `(project, event_slug, delivery_type, stage)`, so an event holds a paid brief AND one per
+        // stage of its email series, all live at once — none able to displace another. That is what
+        // retired the gate: an email caller can no longer be handed a paid brief because it is not
+        // the same row, rather than because a read-side check hid it.
+        //
+        // `delivery_type` is a top-level column, not a field smuggled into the free-form `targeting`
+        // blob — an earlier revision of this branch did that to avoid a migration, and it is gone.
+        // `loadBrief`'s surface comparison stays as defence in depth: the storage key is what keeps
+        // the surfaces apart now, but a stale upstream mid-rollout is exactly when a mismatched row
+        // would arrive.
         distinctUntilChanged(
           ([slug, project, delivery, stage], [nextSlug, nextProject, nextDelivery, nextStage]) =>
             slug === nextSlug && project === nextProject && delivery === nextDelivery && stage === nextStage

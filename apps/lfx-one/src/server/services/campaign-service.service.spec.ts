@@ -1416,11 +1416,16 @@ describe('CampaignServiceClient.loadBrief', () => {
     ]);
   });
 
-  // Delivery scoping. Storage is keyed `(project_id, event_slug)` with no delivery dimension
-  // (`uq_campaign_briefs_project_event`), so ONE event has ONE row however many surfaces plan it.
-  // Handing that row to whichever surface asks is exactly what kept the email restore path
-  // disabled: a paid brief restored into an email plan carries RSA headlines, a keyword list and
-  // a platform selection that mean nothing there. These four pin the contract in both directions.
+  // Delivery scoping. Storage WAS keyed `(project_id, event_slug)` with no delivery dimension
+  // (`uq_campaign_briefs_project_event`), so ONE event had ONE row however many surfaces planned
+  // it. Handing that row to whichever surface asked is what kept the email restore path disabled:
+  // a paid brief restored into an email plan carries RSA headlines, a keyword list and a platform
+  // selection that mean nothing there.
+  //
+  // LFXV2-3198 replaced that index with `uq_campaign_briefs_project_event_delivery_stage`, so the
+  // surfaces are separate ROWS now and cannot collide. These four still pin the contract in both
+  // directions: the scoping is defence in depth against a stale upstream mid-rollout, which is
+  // exactly when a mismatched row would arrive.
   it('reports a paid brief as absent when an email caller asks for it', async () => {
     proxyRequestWithResponse.mockResolvedValueOnce(apiResponse(storedBrief({ delivery_type: 'paid-marketing' }), { etag: '"3"' }));
 

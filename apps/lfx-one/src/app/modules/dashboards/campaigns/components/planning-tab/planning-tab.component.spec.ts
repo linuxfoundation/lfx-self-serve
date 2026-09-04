@@ -770,7 +770,7 @@ describe('PlanningTabComponent delivery-type mode', () => {
    * Email looks a saved brief up, and asks for it AS EMAIL.
    *
    * This test previously asserted the opposite — that email suppressed the lookup entirely —
-   * because storage is keyed `(foundation, event)` with no delivery dimension, so the row an
+   * because storage was keyed `(foundation, event)` with no delivery dimension BEFORE LFXV2-3198, so the row an
    * email caller found was whatever surface wrote last, and a paid brief restored into an email
    * plan brings RSA headlines and a keyword list that mean nothing there.
    *

@@ -411,7 +411,7 @@ describe('CampaignController.loadBrief', () => {
 
   it('forwards delivery_type=email so an email caller cannot be handed a paid brief', async () => {
     // The parameter is what scopes the read to one surface. Briefs are stored one row per
-    // `(project, event_slug)` with no delivery dimension, so without this an email caller and a
+    // `(project, event_slug)` with no delivery dimension BEFORE LFXV2-3198 widened it, so without this an email caller and a
     // paid caller resolve to the SAME row -- which is why the email restore path was disabled
     // outright before this existed rather than shipped with a known wrong answer.
     loadBrief.mockResolvedValue({ status: 'none', briefId: null, brief: null, etag: null, approved: false });

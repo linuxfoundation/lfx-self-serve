@@ -2106,18 +2106,20 @@ export function fromBriefResponse(found: CampaignServiceBrief): CampaignBriefOut
     totalBudget: typeof targeting['totalBudget'] === 'number' && Number.isFinite(targeting['totalBudget']) ? targeting['totalBudget'] : null,
     hsUtm: typeof targeting['hsUtm'] === 'string' ? targeting['hsUtm'] : null,
     driveFolderUrl: typeof targeting['driveFolderUrl'] === 'string' ? targeting['driveFolderUrl'] : '',
-    // Validated against the union rather than cast, for the reason `campaignGoal` above is: this
-    // value decides whether a caller is allowed to restore the row, so an unrecognised string must
-    // read as "no delivery type recorded" (paid, per the field's contract) and not as a surface
-    // that happens to match nothing. Rows written before this field carry no key and land here too.
     // Read from the COLUMN, not from `targeting`. An earlier revision stored it in that free-form
     // blob to avoid a migration, which kept it invisible to the storage key — so one event could
-    // still hold only one brief. Validated against the union rather than cast, for the reason
-    // `campaignGoal` above is: this value decides which surface may open the row.
+    // hold only one brief. Validated against the union rather than cast, for the reason
+    // `campaignGoal` above is: this value decides which surface may open the row, so an
+    // unrecognised string must read as "no delivery type recorded" (paid, per the field's
+    // contract) rather than as a surface matching nothing. Rows predating the field land here too.
     deliveryType: found.delivery_type === 'email' || found.delivery_type === 'paid-marketing' ? found.delivery_type : undefined,
-    // Validated against the stage list for the same reason. An unrecognised stage is dropped
-    // rather than carried, so it cannot address a brief the caller did not mean.
-    emailStage: CAMPAIGN_EMAIL_STAGES.includes(found.stage as CampaignEmailStage) ? (found.stage as CampaignEmailStage) : undefined,
+    // Same shape as the line above, deliberately: `typeof` first, then membership. Relying on
+    // `includes` alone to reject `undefined` works, but only by accident of `Array.includes`
+    // returning false for it — and this is the presence-vs-value boundary this feature already got
+    // wrong once. An absent stage and the empty string are different things upstream (`''` is the
+    // PAID brief's real stage), so the check that distinguishes them should be explicit.
+    emailStage:
+      typeof found.stage === 'string' && CAMPAIGN_EMAIL_STAGES.includes(found.stage as CampaignEmailStage) ? (found.stage as CampaignEmailStage) : undefined,
   };
 }
 
