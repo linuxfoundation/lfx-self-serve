@@ -120,7 +120,10 @@ export interface FormationItem {
    * Resolved destination for the row's action — the expansion output of the template's
    * {@link FormationTemplateItem.action_link}, substituted once and stored static. Any action
    * kind may have one: a `manual` row still says where the work is done. May be an in-app
-   * relative path or an absolute external URL; `null` when the row has no destination.
+   * relative path or an absolute external URL; `null` when the row has no destination. Service-
+   * supplied and untrusted: a consumer binding this into `[href]` must scheme-validate an
+   * absolute value first (see `isValidUrl` in `packages/shared/src/utils/url.utils.ts`) and route
+   * a relative value through the router rather than a raw anchor.
    */
   action_href: string | null;
   detail: string | null;
