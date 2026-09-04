@@ -671,8 +671,10 @@ describe('extractableHtml', () => {
   // a test that feeds only prose exercises the one path that was already bounded.
   //
   // JSON-LD is the more attacker-controllable of the two: it is machine-written and invisible on
-  // the rendered page, and nothing upstream bounds the download (`fetchSafeUrl` has a 15s timeout
-  // and no byte ceiling), so this is the last line of defence on prompt size.
+  // the rendered page. `fetchSafeUrl` now bounds the DOWNLOAD at 5 MiB, but that is two orders of
+  // magnitude above the prompt budget and says nothing about how much of a permitted body is
+  // structured data -- a 1 MiB page well inside the ceiling can be almost entirely `ld+json`.
+  // This cap is what bounds the PROMPT, and it is the only one that does.
   it('caps the composed result, not merely the stripped body', () => {
     const hugeLd = `<script type="application/ld+json">${'x'.repeat(500_000)}</script><p>short</p>`;
     const hugeBoth = `<script type="application/ld+json">${'x'.repeat(500_000)}</script><p>${'y'.repeat(500_000)}</p>`;
@@ -993,6 +995,31 @@ describe('extractableHtml', () => {
     const out = extractableHtml(`Held in Tokyo<style>.a{}</style>Japan, March 15 2027.${'word '.repeat(40_000)}`);
 
     expect(out).toMatch(/Tokyo\s+Japan/);
+  });
+
+  // The close search must require the same boundary the strippers do. Without `(?=[\s>])`,
+  // `</scriptx>` was accepted as the end of `<script>`, so everything from the decoy to the real
+  // close -- still script body -- was kept as prose and spent the budget.
+  describe.each([
+    ['script', '<script>var leaked=1;</scriptx>DECOYED BODY</script>', 'DECOYED BODY'],
+    ['style', '<style>.a{}</stylesheet>DECOYED CSS</style>', 'DECOYED CSS'],
+    ['svg', '<svg><x/></svgx>DECOYED SVG</svg>', 'DECOYED SVG'],
+  ])('rejects a decoy close for %s', (tag, block, decoyed) => {
+    it('does not treat a longer tag name as the end of the block', () => {
+      const out = extractableHtml(`${block}<p>Tokyo</p>${'word '.repeat(40_000)}`);
+
+      expect(out, `a decoy close ended the ${tag} block early`).not.toContain(decoyed);
+      expect(out).toContain('Tokyo');
+    });
+  });
+
+  // The boundary must not reject LEGITIMATE closes: `</script >` carries trailing whitespace and
+  // is what the stripper below already accepts.
+  it('still finds a close that carries trailing whitespace', () => {
+    const out = extractableHtml(`<script>x</script ><p>Tokyo</p>${'word '.repeat(40_000)}`);
+
+    expect(out).not.toContain('<script');
+    expect(out).toContain('Tokyo');
   });
 
   it('returns an empty string for input that is entirely strippable', () => {

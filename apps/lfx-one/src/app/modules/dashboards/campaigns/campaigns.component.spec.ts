@@ -2540,6 +2540,45 @@ describe('CampaignsComponent — email delivery channel', () => {
       });
     });
 
+    // The promotion must not outrun the warning that justifies it. A same-stage email-type change
+    // bumps `emailCopyGeneration` without bumping `emailBriefPersistGeneration`, so an in-flight
+    // persist is still current by its own generation while its caller has already returned early
+    // and rendered NO banner. Promoting there would hand out overwrite permission for a refusal
+    // the operator was never shown.
+    it('withholds the overwrite until the conflict warning is actually rendered', async () => {
+      selectEmail();
+      internals().emailBriefOutput.set(emailBrief);
+      fixture.detectChanges();
+
+      persist.mockReturnValue(of({ status: 'saved', briefId: 'brief-77', etag: '"1"', approved: true }));
+      vi.spyOn(TestBed.inject(CampaignService), 'generateEmailCopy').mockReturnValue(of({ enabled: true, copy }));
+      await internals().onGenerateEmailCopy();
+
+      // Refused — and the caller is invalidated mid-flight, so it returns before any banner.
+      persist.mockReturnValue(of({ status: 'saved', briefId: 'brief-77', etag: null, approved: false, conflict: 'stale-brief' }));
+      internals().emailBriefId.set('');
+      // The REAL trigger, not a poked counter. `cfp-launch` and `colocated-cfp-reminder` share the
+      // stage `CFP Launch`, so this bumps the copy generation and leaves the persist generation
+      // (and the brief) alone -- which is exactly the desync under test. A DIFFERENT-stage change
+      // would clear `emailBriefOutput` and there would be no persist to reason about at all.
+      (internals() as unknown as { onSelectEmailType(id: string): void }).onSelectEmailType('cfp-launch');
+      internals().emailBriefOutput.set(emailBrief);
+      fixture.detectChanges();
+
+      const inFlight = internals().onGenerateEmailCopy();
+      (internals() as unknown as { onSelectEmailType(id: string): void }).onSelectEmailType('colocated-cfp-reminder');
+      await inFlight;
+
+      // No banner was shown, so no permission may have been granted.
+      persist.mockClear();
+      persist.mockReturnValue(NEVER);
+      internals().emailBriefId.set('');
+      void internals().onGenerateEmailCopy();
+      await fixture.whenStable();
+
+      expect(persist).toHaveBeenLastCalledWith(emailBrief, expect.anything(), 'brief-77', '"1"', false);
+    });
+
     it('surfaces the upstream refusal rather than a generic message', async () => {
       selectEmail();
       internals().emailBriefOutput.set(emailBrief);

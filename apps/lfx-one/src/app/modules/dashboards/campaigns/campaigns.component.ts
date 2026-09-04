@@ -456,6 +456,12 @@ export class CampaignsComponent {
    * on the empty id; this lets them name the cause without changing that shape.
    */
   private emailBriefConflict: NonNullable<CampaignBriefPersistResult['conflict']> | null = null;
+  /**
+   * An overwrite promotion earned by a conflict but not yet granted, because the operator has not
+   * yet been shown the warning that justifies it. Applied by `emailSaveFailureMessage`, which is
+   * the single point every email conflict message renders through.
+   */
+  private pendingEmailOverwrite: { key: string; id: string; generation: number } | null = null;
 
   private briefPersistenceGeneration = 0;
 
@@ -3294,6 +3300,18 @@ export class CampaignsComponent {
     if (conflict === null) {
       return `The brief could not be saved, ${consequence}`;
     }
+    // Grant the escape the message below is about to promise. Doing it HERE rather than at the
+    // persist is what keeps the promotion and the warning inseparable: a caller that returns
+    // before rendering never reaches this line, so it never hands out permission silently.
+    //
+    // Re-checked against the CURRENT generation, not the one captured when it was staged: a reset
+    // between the refusal and this render means the entry belongs to a brief the page no longer
+    // holds.
+    const pending = this.pendingEmailOverwrite;
+    this.pendingEmailOverwrite = null;
+    if (pending !== null && pending.generation === this.emailBriefPersistGeneration) {
+      this.rememberBriefId(pending.key, { id: pending.id, etag: null, absence: 'overwrite' });
+    }
     // Capitalised, because the conflict message is a COMPLETE sentence ending in a period while
     // each consequence is a lowercase clause written to follow a comma. Joining them raw produced
     // "...re-enter the event URL to open it. so no audience was built."
@@ -3357,6 +3375,15 @@ export class CampaignsComponent {
     // Generation-scoped: a reset while this was on the wire means the entry belongs to a brief
     // the page no longer holds, and promoting it would license an overwrite of a row this session
     // has abandoned.
+    //
+    // STAGED here, APPLIED by `emailSaveFailureMessage`. The promotion's whole justification is
+    // that the operator has been warned, so it must not outrun the warning. A same-stage type
+    // change bumps `emailCopyGeneration` without bumping `emailBriefPersistGeneration`, so an
+    // in-flight persist stays current by its own generation while its caller has already returned
+    // early and rendered no banner -- promoting there would hand out overwrite permission for a
+    // refusal nobody was told about. The paid path avoids this by promoting after the check that
+    // gates its banner; staging the intent is the same ordering expressed through the one function
+    // that every email conflict message goes through.
     if (
       ownershipKey !== null &&
       generation === this.emailBriefPersistGeneration &&
@@ -3369,9 +3396,7 @@ export class CampaignsComponent {
       const supersededId = persisted.conflict === 'superseded-after-write' ? briefId : '';
       const id = supersededId !== '' ? supersededId : (owned?.id ?? '');
       if (id !== '') {
-        // The operator has now BEEN WARNED, which is the entire content of the promotion: an
-        // unknown validator is only dangerous while nobody has been told.
-        this.rememberBriefId(ownershipKey, { id, etag: null, absence: 'overwrite' });
+        this.pendingEmailOverwrite = { key: ownershipKey, id, generation };
       }
     }
     // An id is not enough: campaign-service gates `build-audience` AND campaign creation on the

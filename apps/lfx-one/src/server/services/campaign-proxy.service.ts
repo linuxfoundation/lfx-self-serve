@@ -850,10 +850,35 @@ function boundedSource(html: string): string {
       // Case-INSENSITIVE, like the opening pattern and the strippers below. A case-sensitive
       // `indexOf` missed `</SCRIPT>` on pages using uppercase tags — common in CMS and legacy
       // markup — and every such miss discarded the rest of the document.
-      const closeRe = new RegExp(`</${opening[1]}`, 'gi');
-      closeRe.lastIndex = openEnd;
-      const close = closeRe.exec(scan);
-      const closeEnd = close === null ? -1 : scan.indexOf('>', close.index);
+      // Search only as far as the NEXT opening of the same kind, not to the scan bound.
+      //
+      // An unclosed block otherwise scans to `MAX_STRIP_SCAN_CHARS` from every opening, which is
+      // quadratic in the opening count -- the same hazard the self-closing fast path above exists
+      // to avoid, left on the neighbouring branch. Measured on dense unclosed `<script>`:
+      // 67ms / 152ms / 382ms / 1076ms at 5k / 10k / 20k / 40k.
+      //
+      // Bounding at the next opening is safe because a second `<script` before any `</script`
+      // means this one never closed: HTML does not nest these elements, and the strippers below
+      // are non-greedy and stop at the first close too. So both paths agree on where the block
+      // ends, which is the property that matters.
+      STRIPPABLE_OPENING_RE.lastIndex = openEnd;
+      const nextOpening = STRIPPABLE_OPENING_RE.exec(scan);
+      const limit = nextOpening === null ? scan.length : nextOpening.index;
+
+      // Search a SLICE, not the whole document with a `lastIndex`.
+      //
+      // Setting `lastIndex` moves where a match may start; it does not stop the engine scanning
+      // to end-of-string when there is none. Bounding by comparing `close.index` afterwards is
+      // therefore too late -- the full scan has already happened, once per opening. Measured on
+      // 40k dense unclosed `<script>`: 1061ms with a post-hoc bound, unchanged from no bound at
+      // all, against ~6ms slicing. The slice is what makes this linear.
+      //
+      // `(?=[\s>])` matches the boundary the strippers require. Without it `</scriptx>` was
+      // accepted as the end of `<script>`, and everything from the decoy to the real close --
+      // still script body -- was kept as prose and spent the budget.
+      const window = scan.slice(openEnd, limit);
+      const close = new RegExp(`</${opening[1]}(?=[\\s>])`, 'i').exec(window);
+      const closeEnd = close === null ? -1 : scan.indexOf('>', openEnd + close.index);
 
       // A block that opens and never closes: skip only its opening tag and keep walking, rather
       // than discarding the rest of the page.
@@ -933,7 +958,7 @@ export function extractableHtml(html: string): string {
   // which is the most reliable source for exactly the fields the extraction prompt asks for — and
   // stripping every `<script>` discarded it, keeping the "no date survived" failure alive on any
   // page whose dates live only there rather than in prose.
-  // JSON-LD is matched on the FULL body, then removed, and only what remains is truncated.
+  // JSON-LD is matched within `MAX_JSON_LD_SCAN_CHARS`, removed, and only what remains is capped.
   //
   // The order matters and is not the obvious one. Truncating first would have broken the
   // oversized-JSON-LD case that
