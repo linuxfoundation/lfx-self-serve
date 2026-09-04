@@ -8,6 +8,7 @@ import { TableComponent } from '@components/table/table.component';
 import { TagComponent } from '@components/tag/tag.component';
 import { MY_EVENT_STATUS } from '@lfx-one/shared/constants';
 import { MyEventsResponse, PageChangeEvent, SortChangeEvent, TagSeverity } from '@lfx-one/shared/interfaces';
+import { parseContentDispositionFilename, sanitizeFilename } from '@lfx-one/shared/utils';
 import { MessageService } from 'primeng/api';
 import { take } from 'rxjs/operators';
 
@@ -92,12 +93,15 @@ export class EventsTableComponent {
       .getCertificate({ eventId })
       .pipe(take(1))
       .subscribe({
-        next: (blob) => {
+        next: (response) => {
+          const blob = response.body;
           if (!blob) return;
+          const headerFileName = parseContentDispositionFilename(response.headers.get('Content-Disposition'));
+          const fileName = headerFileName ? sanitizeFilename(headerFileName) : `certificate-${eventId}.pdf`;
           const url = URL.createObjectURL(blob);
           const anchor = document.createElement('a');
           anchor.href = url;
-          anchor.download = `certificate-${eventId}.pdf`;
+          anchor.download = fileName;
           anchor.click();
           URL.revokeObjectURL(url);
         },

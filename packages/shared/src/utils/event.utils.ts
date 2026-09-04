@@ -2,6 +2,9 @@
 // SPDX-License-Identifier: MIT
 
 import { EVENT_SOURCE_BACKFILL } from '../constants/events.constants';
+import { sanitizeFilename } from './file.utils';
+import { slugify } from './string.utils';
+import { normalizeSnowflakeTimestamp } from './date-time.utils';
 
 /**
  * True when an event registration row came from the CSV backfill import.
@@ -25,4 +28,30 @@ import { EVENT_SOURCE_BACKFILL } from '../constants/events.constants';
  */
 export function isBackfillEventSource(source: string | null | undefined): boolean {
   return source?.replace(/^[ \t\n\r]+|[ \t\n\r]+$/g, '').toLowerCase() === EVENT_SOURCE_BACKFILL;
+}
+
+/** UTC `YYYY-MM-DD` for a Snowflake-or-ISO timestamp, or '' when missing/unparseable. */
+function toUtcDateStamp(value: Date | string | null | undefined): string {
+  if (!value) return '';
+  const normalized = typeof value === 'string' ? normalizeSnowflakeTimestamp(value) : value;
+  const date = new Date(normalized);
+  return isNaN(date.getTime()) ? '' : date.toISOString().slice(0, 10);
+}
+
+/**
+ * Build the download filename for a Certificate of Attendance PDF, e.g.
+ * "certificate-of-attendance-kubecon-cloudnativecon-na-2025-2025-11-10.pdf". Falls back to
+ * `eventId` when the event name and start date are both unavailable, so the file always has a
+ * discriminator.
+ */
+export function buildCertificateFileName(eventName: string | null | undefined, startDate: Date | string | null | undefined, eventId: string): string {
+  const nameSlug = eventName ? slugify(eventName) : '';
+  const dateStamp = toUtcDateStamp(startDate);
+
+  const parts = ['certificate-of-attendance'];
+  if (nameSlug) parts.push(nameSlug);
+  if (dateStamp) parts.push(dateStamp);
+  if (!nameSlug && !dateStamp) parts.push(eventId);
+
+  return sanitizeFilename(`${parts.join('-')}.pdf`, 150);
 }

@@ -324,6 +324,12 @@ export interface CertificateData {
   userName: string;
 }
 
+/** Result of generating a Certificate of Attendance PDF: the buffer plus its download filename. */
+export interface CertificateResult {
+  pdf: Buffer;
+  fileName: string;
+}
+
 /**
  * Raw row returned from ANALYTICS.PLATINUM_LFX_ONE.EVENT_REGISTRATIONS for visa letter requests
  */

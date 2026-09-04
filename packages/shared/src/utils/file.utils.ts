@@ -306,6 +306,27 @@ export function rowsToCsv(rows: ReadonlyArray<ReadonlyArray<string | number>>): 
   return rows.map((row) => row.map(escapeCsvCell).join(',')).join('\r\n');
 }
 
+/**
+ * Extract the filename from a `Content-Disposition` header, preferring the RFC 5987
+ * `filename*=UTF-8''…` form over the quoted ASCII fallback (the pair emitted by
+ * `contentDispositionAttachment` on the server). Returns `null` when neither form is present.
+ */
+export function parseContentDispositionFilename(header: string | null | undefined): string | null {
+  if (!header) return null;
+
+  const starMatch = header.match(/filename\*\s*=\s*UTF-8''([^;]+)/i);
+  if (starMatch) {
+    try {
+      return decodeURIComponent(starMatch[1].trim());
+    } catch {
+      // Malformed percent-encoding — fall through to the ASCII fallback below.
+    }
+  }
+
+  const quotedMatch = header.match(/filename\s*=\s*"([^"]*)"/i) ?? header.match(/filename\s*=\s*([^;]+)/i);
+  return quotedMatch ? quotedMatch[1].trim() : null;
+}
+
 /** Trigger a browser file download from a URL via `<a download>` (no new tab). No-op during SSR. */
 export function downloadFromUrl(url: string, filename?: string): void {
   if (typeof document === 'undefined') {
