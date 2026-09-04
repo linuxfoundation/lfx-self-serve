@@ -22,6 +22,10 @@ export class NewsletterPreviewDrawerComponent {
   public readonly bodyHtml = input.required<string>();
   public readonly logoUrl = input<string | undefined>(undefined);
   public readonly displayName = input.required<string>();
+  // True when bodyHtml is a complete email document (blocks newsletter) — passed
+  // through to the preview so it renders in a sandboxed iframe rather than the
+  // frontend chrome. See NewsletterPreviewComponent.fullDocument.
+  public readonly fullDocument = input<boolean>(false);
 
   // === Inputs (drawer header) ===
   // Defaults keep the sender-side "Preview" framing used by the manage and

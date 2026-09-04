@@ -18,6 +18,9 @@ export const NEWSLETTER_RAW_CONTENT_MAX_LENGTH = 50_000;
 // share action) can validate up front instead of relying on an opaque upstream 400.
 export const NEWSLETTER_SUBJECT_MAX_LENGTH = 200;
 export const NEWSLETTER_BODY_MAX_LENGTH = 100_000;
+// Structured layout is JSON, so it runs larger than the rendered HTML; bound the
+// serialized size defensively (body_html has its own cap) to reject runaway payloads.
+export const NEWSLETTER_BODY_LAYOUT_MAX_LENGTH = 500_000;
 
 // Cap must exceed the default AI_NEWSLETTER_SYSTEM_PROMPT (~6.2k chars) plus reasonable
 // customization headroom — otherwise the default prompt fails the frontend validator on init
@@ -53,6 +56,23 @@ export const NEWSLETTER_TOP_LINKS_LIMIT = 20;
 // 30s abort, so the UI reported failure for sends that actually delivered.
 export const NEWSLETTER_SEND_TIMEOUT_MS = 120_000;
 
+// Reserved block-content keys holding the per-block outer spacing applied as a
+// wrapping style when the block renders. Mirrors the source editor's
+// auto-injected `_spacing_padding` / `_spacing_margin` props (see the Puck
+// editor's spacing-wrapper.tsx) so the composer canvas and the eventual sent
+// email wrap each block identically. Values are raw CSS shorthand strings
+// (e.g. "12px", "8px 16px"); the default `0px` means "no wrapper".
+export const NEWSLETTER_SPACING_PADDING_KEY = '_spacing_padding';
+export const NEWSLETTER_SPACING_MARGIN_KEY = '_spacing_margin';
+export const NEWSLETTER_SPACING_KEYS = [NEWSLETTER_SPACING_PADDING_KEY, NEWSLETTER_SPACING_MARGIN_KEY] as const;
+export const NEWSLETTER_SPACING_DEFAULT = '0px';
+
+// Fallback embedded template set the block composer loads when a newsletter
+// carries no explicit `template_key` (e.g. a brand-new draft). The full AAIF
+// set is the render superset in the newsletter service, so it's the safe
+// default; a draft with a stored `template_key` uses that instead.
+export const NEWSLETTER_DEFAULT_TEMPLATE_KEY = 'aaif-user-community';
+
 // UI-enforced minimum lead time for arming a schedule (LFXV2-2685). Must be
 // >= the upstream's *effective* floor, which the send orchestrator computes
 // as max(configured NEWSLETTER_SCHEDULE_MIN_LEAD, SendJobTimeout + 5m) —
@@ -68,3 +88,16 @@ export const NEWSLETTER_SCHEDULE_MIN_LEAD_MINUTES = 35;
 // NEWSLETTER_SCHEDULE_MAX_HORIZON defaults to and is hard-capped at 72h, so a
 // larger value can never succeed at arm time regardless of what the UI allows.
 export const NEWSLETTER_SCHEDULE_MAX_HORIZON_HOURS = 72;
+
+// The block composer (structured body_layout editor) and its template library
+// are gated to these project slugs; every other project uses the simple
+// rich-text editor only, and the Blocks/Simple toggle is hidden. AAIF is the
+// pilot for the blocks editor.
+export const NEWSLETTER_BLOCKS_PROJECT_SLUGS: readonly string[] = ['agentic-ai-foundation'];
+
+// Gmail clips a message once its rendered HTML exceeds ~102 KB (hiding
+// everything past the cut behind a "[Message clipped] View entire message"
+// link). The block composer warns as the email approaches that ceiling and
+// flags a clip once it is crossed.
+export const NEWSLETTER_GMAIL_WARN_BYTES = 90 * 1024;
+export const NEWSLETTER_GMAIL_CLIP_BYTES = 102 * 1024;

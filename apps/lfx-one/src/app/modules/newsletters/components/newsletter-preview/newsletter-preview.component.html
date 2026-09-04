@@ -4,17 +4,28 @@
 <div class="newsletter-preview" data-testid="newsletter-preview">
   <div class="newsletter-preview__frame">
     @if (hasContent()) {
-      <div class="newsletter-preview__header">
-        @if (logoUrl()) {
-          <img class="newsletter-preview__logo" [src]="logoUrl()" [alt]="displayName()" />
-        }
-        <div class="newsletter-preview__brand">
-          <div class="newsletter-preview__eyebrow">{{ displayName() || 'Foundation' }} · Newsletter</div>
-          <div class="newsletter-preview__subject">{{ subject() || 'Untitled' }}</div>
+      @if (isFullDocument()) {
+        <!-- A complete email document: render it verbatim in a sandboxed iframe so
+             its <head> styles survive and no frontend chrome is layered on top. -->
+        <iframe
+          class="newsletter-preview__iframe"
+          title="Newsletter preview"
+          sandbox=""
+          [srcdoc]="trustedDocument()"
+          data-testid="newsletter-preview-iframe"></iframe>
+      } @else {
+        <div class="newsletter-preview__header">
+          @if (logoUrl()) {
+            <img class="newsletter-preview__logo" [src]="logoUrl()" [alt]="displayName()" />
+          }
+          <div class="newsletter-preview__brand">
+            <div class="newsletter-preview__eyebrow">{{ displayName() || 'Foundation' }} · Newsletter</div>
+            <div class="newsletter-preview__subject">{{ subject() || 'Untitled' }}</div>
+          </div>
         </div>
-      </div>
 
-      <div class="newsletter-preview__body" [innerHTML]="bodyHtml()"></div>
+        <div class="newsletter-preview__body" [innerHTML]="bodyHtml()"></div>
+      }
     } @else {
       <div class="newsletter-preview__empty">
         <i class="fa-regular fa-envelope newsletter-preview__empty-icon"></i>
