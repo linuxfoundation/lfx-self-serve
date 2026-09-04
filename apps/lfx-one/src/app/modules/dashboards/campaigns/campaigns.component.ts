@@ -461,7 +461,7 @@ export class CampaignsComponent {
    * yet been shown the warning that justifies it. Applied by `emailSaveFailureMessage`, which is
    * the single point every email conflict message renders through.
    */
-  private pendingEmailOverwrite: { key: string; id: string; generation: number } | null = null;
+  private pendingEmailOverwrite: { key: string; id: string; generation: number; conflict: NonNullable<CampaignBriefPersistResult['conflict']> } | null = null;
 
   private briefPersistenceGeneration = 0;
 
@@ -3297,19 +3297,28 @@ export class CampaignsComponent {
    */
   private emailSaveFailureMessage(consequence: string): string {
     const conflict = this.emailBriefConflict;
+
+    // Taken BEFORE the early return, so a staged promotion can never outlive the render that was
+    // supposed to grant it. Reading it after meant a plain non-conflict failure returned without
+    // dropping the entry, and a LATER unrelated conflict then applied it -- handing out overwrite
+    // permission earned by a refusal the operator saw, against a row a different refusal named.
+    const pending = this.pendingEmailOverwrite;
+    this.pendingEmailOverwrite = null;
+
     if (conflict === null) {
       return `The brief could not be saved, ${consequence}`;
     }
+
     // Grant the escape the message below is about to promise. Doing it HERE rather than at the
     // persist is what keeps the promotion and the warning inseparable: a caller that returns
     // before rendering never reaches this line, so it never hands out permission silently.
     //
-    // Re-checked against the CURRENT generation, not the one captured when it was staged: a reset
-    // between the refusal and this render means the entry belongs to a brief the page no longer
-    // holds.
-    const pending = this.pendingEmailOverwrite;
-    this.pendingEmailOverwrite = null;
-    if (pending !== null && pending.generation === this.emailBriefPersistGeneration) {
+    // Two things are re-checked, and each closes a different hole:
+    //   - the GENERATION, against the current one rather than the one captured when it was
+    //     staged: a reset in between means the entry belongs to a brief the page no longer holds.
+    //   - the CONFLICT, against the one being rendered: permission belongs to the refusal that
+    //     actually warned the operator, not to whichever refusal happens to render next.
+    if (pending !== null && pending.generation === this.emailBriefPersistGeneration && pending.conflict === conflict) {
       this.rememberBriefId(pending.key, { id: pending.id, etag: null, absence: 'overwrite' });
     }
     // Capitalised, because the conflict message is a COMPLETE sentence ending in a period while
@@ -3396,7 +3405,7 @@ export class CampaignsComponent {
       const supersededId = persisted.conflict === 'superseded-after-write' ? briefId : '';
       const id = supersededId !== '' ? supersededId : (owned?.id ?? '');
       if (id !== '') {
-        this.pendingEmailOverwrite = { key: ownershipKey, id, generation };
+        this.pendingEmailOverwrite = { key: ownershipKey, id, generation, conflict: persisted.conflict };
       }
     }
     // An id is not enough: campaign-service gates `build-audience` AND campaign creation on the

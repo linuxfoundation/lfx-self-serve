@@ -2579,6 +2579,73 @@ describe('CampaignsComponent — email delivery channel', () => {
       expect(persist).toHaveBeenLastCalledWith(emailBrief, expect.anything(), 'brief-77', '"1"', false);
     });
 
+    // A staged promotion must not outlive the render that was supposed to grant it. Reading it
+    // only after the `conflict === null` guard meant a plain non-conflict failure returned without
+    // dropping it, and a LATER unrelated conflict then applied it -- overwrite permission earned
+    // by one refusal, spent against the row a different refusal named.
+    //
+    // Asserted on `knownBriefIds` directly rather than by driving three UI actions: the promotion
+    // IS an ownership write, and the persist dedup plus the type-change resets make a three-action
+    // script assert far less than it appears to.
+    it('drops a staged overwrite when a non-conflict failure renders instead', () => {
+      selectEmail();
+      internals().emailBriefOutput.set(emailBrief);
+      fixture.detectChanges();
+
+      const priv = internals() as unknown as {
+        ownershipKey(p: string, b: unknown): string | null;
+        knownBriefIds: Map<string, { id: string; etag: string | null; absence?: string }>;
+        activeFoundationSlug(): string;
+        pendingEmailOverwrite: { key: string; id: string; generation: number; conflict: string } | null;
+        emailBriefConflict: string | null;
+        emailBriefPersistGeneration: number;
+        emailSaveFailureMessage(consequence: string): string;
+      };
+      const key = priv.ownershipKey(priv.activeFoundationSlug(), emailBrief) as string;
+      expect(key).not.toBeNull();
+      priv.knownBriefIds.set(key, { id: 'brief-77', etag: '"1"' });
+
+      // A stale-brief refusal staged a promotion, and its caller returned before rendering.
+      priv.pendingEmailOverwrite = { key, id: 'brief-77', generation: priv.emailBriefPersistGeneration, conflict: 'stale-brief' };
+
+      // A plain failure with NO conflict renders next. It must DROP the staged entry.
+      priv.emailBriefConflict = null;
+      priv.emailSaveFailureMessage('so no copy was generated.');
+      expect(priv.pendingEmailOverwrite, 'a non-conflict render left the staged promotion behind').toBeNull();
+
+      // A later, unrelated refusal must not be able to spend it.
+      priv.emailBriefConflict = 'unowned-brief-exists';
+      priv.emailSaveFailureMessage('so no copy was generated.');
+      expect(priv.knownBriefIds.get(key)?.absence, 'a stale staged overwrite was applied by an unrelated conflict').toBeUndefined();
+      expect(priv.knownBriefIds.get(key)?.etag).toBe('"1"');
+    });
+
+    // The other half of the same rule: a promotion IS granted when the refusal that staged it is
+    // the one being rendered. Without this the test above could pass by never promoting at all.
+    it('applies the staged overwrite when its own conflict is the one rendered', () => {
+      selectEmail();
+      internals().emailBriefOutput.set(emailBrief);
+      fixture.detectChanges();
+
+      const priv = internals() as unknown as {
+        ownershipKey(p: string, b: unknown): string | null;
+        knownBriefIds: Map<string, { id: string; etag: string | null; absence?: string }>;
+        activeFoundationSlug(): string;
+        pendingEmailOverwrite: { key: string; id: string; generation: number; conflict: string } | null;
+        emailBriefConflict: string | null;
+        emailBriefPersistGeneration: number;
+        emailSaveFailureMessage(consequence: string): string;
+      };
+      const key = priv.ownershipKey(priv.activeFoundationSlug(), emailBrief) as string;
+      priv.knownBriefIds.set(key, { id: 'brief-77', etag: '"1"' });
+      priv.pendingEmailOverwrite = { key, id: 'brief-77', generation: priv.emailBriefPersistGeneration, conflict: 'stale-brief' };
+
+      priv.emailBriefConflict = 'stale-brief';
+      priv.emailSaveFailureMessage('so no copy was generated.');
+
+      expect(priv.knownBriefIds.get(key)).toEqual(expect.objectContaining({ id: 'brief-77', etag: null, absence: 'overwrite' }));
+    });
+
     it('surfaces the upstream refusal rather than a generic message', async () => {
       selectEmail();
       internals().emailBriefOutput.set(emailBrief);
