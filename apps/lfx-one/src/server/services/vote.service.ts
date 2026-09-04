@@ -42,7 +42,7 @@ export class VoteService {
 
   /**
    * Fetches a single page of votes using cursor-based pagination — callers paginate via the returned page_token.
-   * `includeProject` (default true) enriches rows with project slug/name/tier; opt out when the caller discards them.
+   * `includeProject` (default true) enriches rows with `project_name`, `project_slug`, `is_foundation` and `parent_project_uid`; opt out when the caller discards them.
    */
   public async getVotes(req: Request, query: Record<string, unknown> = {}, options: { includeProject?: boolean } = {}): Promise<PaginatedResponse<Vote>> {
     const { includeProject = true } = options;
