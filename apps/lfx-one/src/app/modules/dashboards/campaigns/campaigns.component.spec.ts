@@ -5032,7 +5032,7 @@ describe('CampaignsComponent — HubSpot template picker', () => {
 
   /**
    * campaign-service answers the SAME typed 404 for an absent connection row and for a project id
-   * that does not exist (`campaign.interface.ts:1223-1226`), so this copy is the only place a
+   * that does not exist (the typed 404 both cases share), so this copy is the only place a
    * mistyped slug can be distinguished from an unconfigured one. Naming nothing reported every
    * typo as a missing integration.
    */

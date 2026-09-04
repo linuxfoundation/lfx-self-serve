@@ -1032,14 +1032,22 @@ export class PlanningTabComponent implements OnInit {
           // fix must not overshoot into the opposite error.
           const status = typeof err === 'object' && err !== null && 'status' in err ? Number((err as { status: unknown }).status) : 0;
           // The four boundary refusals only (`isDefiniteRefusal`). 500 was here on the strength of
-          // campaign-service RESERVING it for
-          // the pre-send position ("a fault discovered AFTER the create returned without error is
-          // a 503", design/connection.go) -- but that contract governs what campaign-service
-          // SENDS, and this status is not read from campaign-service. It is read from OUR BFF,
-          // which raises its own 500 for a fault at any position: error-handler.middleware.ts:92
-          // returns 500 for any non-BaseApiError, and ApiClientService parses the upstream body
-          // with JSON.parse AFTER a 2xx (api-client.service.ts:305). A malformed success body
-          // therefore reaches the browser as 500 with the campaign ALREADY CREATED in HubSpot.
+          // campaign-service RESERVING it for the pre-send position ("a fault discovered AFTER the
+          // create returned without error is a 503", design/connection.go) -- but that contract
+          // governs what campaign-service SENDS, and this status is not read from
+          // campaign-service. It is read from OUR BFF, which raises its own 500 for a fault at any
+          // position, INCLUDING after the create has already landed: `createHubSpotCampaign`
+          // validates the upstream response and throws a plain Error when a 2xx carries no
+          // usable campaign ("The campaign service reported a create but returned no usable
+          // campaign"), and the error handler answers any non-BaseApiError with 500. The
+          // campaign MAY exist at that point -- the validation refuses precisely because the
+          // response cannot be trusted to say -- so a 500 here can mean ALREADY CREATED IN
+          // HUBSPOT. That uncertainty is the reason this branch is unconfirmed, not a claim
+          // either way (Copilot).
+          //
+          // Not the post-2xx JSON.parse route an earlier version of this comment cited: a parse
+          // failure is a SyntaxError, which `executeRequest`'s catch-all now classifies as a
+          // transport 503, not a 500 (Copilot).
           //
           // Re-offering Create there is the duplicate this whole handler exists to prevent, and
           // the duplicate cannot be removed from this UI. A 500 costs a re-check; a duplicate
@@ -1695,7 +1703,7 @@ export class PlanningTabComponent implements OnInit {
     // sends an operator to retype an input that cannot fix a credential or connection problem.
     //
     // Read from `error.error`, which is where BaseApiError.toResponse puts the operator-facing
-    // text (base.error.ts:78); the hard-coded prompt below remains the fallback for a response
+    // text (`toResponse` in base.error.ts); the hard-coded prompt below remains the fallback for a response
     // that carries none.
     if (status === 400) {
       const body = (err as { error?: { error?: string; message?: string } | string } | undefined)?.error;

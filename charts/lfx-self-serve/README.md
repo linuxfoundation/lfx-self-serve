@@ -385,11 +385,10 @@ campaign-service. It is separate from the reads flag above because it MUTATES li
 campaigns, and a REMOVE is irreversible — Google cannot re-enable a removed criterion, only
 create a new one with a new id.
 
-**Off is not a working fallback here either** — the same as the HubSpot UTM flag above, and
-unlike the rest of this list. The legacy path
-calls `getGadsClient()`, which throws whenever the `GADS_*` variables are absent — and they were
-deactivated deliberately. With this off, keyword actions do not work at all. This flag is what
-makes them work, not what changes which backend serves them.
+**Off is not a working fallback here.** The legacy path calls `getGadsClient()`, which throws
+whenever the `GADS_*` variables are absent — and they were deactivated deliberately. With this
+off, keyword actions do not work at all. This flag is what makes them work, not what changes which
+backend serves them.
 
 The granularity of failure changes when it is on. The legacy path issued one Google call per
 keyword, so each succeeded or failed alone. campaign-service takes one atomic batch per
@@ -416,9 +415,11 @@ smaller number is the correct one.
 A project with no campaign-service campaigns reads empty rather than falling back to the
 account-wide query — the fallback would be the cross-tenant leak this flag closes.
 
-It has no ordering dependency on the other flags, and unlike `STATUS_TOGGLE` it comes back off
-cleanly: both routes are reads with no persisted state and no UUID-keyed id space, so disabling
-it restores the previous behaviour exactly, leak included. It does not cover keyword actions
+It has no ordering dependency on the other flags, and unlike `STATUS_TOGGLE` nothing is stranded
+by disabling it: both routes are reads with no persisted state and no UUID-keyed id space. But
+"off" only WORKS where the `GADS_*` variables are still live — where they were deactivated the
+legacy arm calls `getGadsClient()`, which throws, so flipping back breaks the keywords and
+audience reads rather than restoring them. It does not cover keyword actions
 (pause/remove): those have their own flag, `LFX_CUTOVER_CAMPAIGN_SERVICE_KEYWORD_ACTIONS`,
 documented above — enabling this one leaves them wherever that flag puts them.
 
