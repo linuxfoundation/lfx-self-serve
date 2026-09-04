@@ -214,6 +214,21 @@ describe('ProfileLayoutComponent — Flow C error message ownership (#1935)', ()
     expect(navigateByUrl).toHaveBeenCalledWith('/profile', { replaceUrl: true });
     expect(sessionStorage.getItem(PENDING_PROFILE_SAVE_KEY)).toBeNull();
   });
+
+  it('toasts impersonation_read_only, the code the auth callbacks emit when blocked (#1936)', async () => {
+    sessionStorage.setItem(PENDING_PROFILE_SAVE_KEY, JSON.stringify({ stale: true }));
+
+    const { add } = await setup('impersonation_read_only');
+
+    expect(add).toHaveBeenCalledWith(
+      expect.objectContaining({
+        severity: 'error',
+        summary: 'Authorization Error',
+        detail: 'This action is not available while impersonating a user.',
+      })
+    );
+    expect(sessionStorage.getItem(PENDING_PROFILE_SAVE_KEY)).toBeNull();
+  });
 });
 
 /**

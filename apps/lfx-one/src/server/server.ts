@@ -373,11 +373,13 @@ app.use('/api/mktg-agents', mktgAgentsRouter);
 app.use('/public/api/*', apiErrorHandler);
 app.use('/api/*', apiErrorHandler);
 
-// Profile auth callback registered in Auth0 Profile Client.
+// Profile auth callback registered in Auth0 Profile Client. Sits outside the /api error-handler
+// mount, so its impersonation guard lives in-handler rather than via blockDuringImpersonation
+// — see ProfileController.blockCallbackDuringImpersonation.
 const profileCallbackController = new ProfileController();
 app.get('/passwordless/callback', authRateLimiter, (req, res) => profileCallbackController.handleProfileAuthCallback(req, res));
 
-// GitHub/LinkedIn OAuth redirect target.
+// GitHub/LinkedIn OAuth redirect target. Same in-handler impersonation guard as above.
 app.get('/social/callback', authRateLimiter, (req, res) => profileCallbackController.handleSocialCallback(req, res));
 
 const crowdfundingCallbackController = new CrowdfundingController();
