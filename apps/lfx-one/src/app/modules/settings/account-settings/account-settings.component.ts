@@ -77,6 +77,7 @@ export class AccountSettingsComponent {
   private userPickedSection = false;
   // Non-null while a deep-link re-scroll is pending — see armOutsideScrollCancellation().
   private outsideScrollCancelHandler?: () => void;
+  private outsideScrollKeydownHandler?: (event: KeyboardEvent) => void;
 
   // ══════════════════════════════════════════
   // EMAIL SETTINGS
@@ -538,18 +539,25 @@ export class AccountSettingsComponent {
       });
   }
 
-  // Cancels the deferred deep-link re-scroll on ANY user-initiated scroll input (wheel, touch,
-  // keyboard) during the email-loading window — selectSection() alone only catches TOC clicks.
+  // Cancels the deferred deep-link re-scroll on ANY user-initiated scroll gesture (wheel, touch
+  // drag, scroll-key) during the email-loading window — selectSection() alone only catches TOC
+  // clicks. Deliberately narrower than "any keydown/touchstart": typing in a still-visible form
+  // field or tapping to focus it isn't a scroll signal and shouldn't cancel the re-scroll.
   private armOutsideScrollCancellation(): void {
     if (!isPlatformBrowser(this.platformId) || this.outsideScrollCancelHandler) return;
+    const scrollKeys = new Set(['ArrowUp', 'ArrowDown', 'PageUp', 'PageDown', 'Home', 'End', ' ']);
     const cancel = (): void => {
       this.userPickedSection = true;
       this.disarmOutsideScrollCancellation();
     };
+    const onKeydown = (event: KeyboardEvent): void => {
+      if (scrollKeys.has(event.key)) cancel();
+    };
     this.outsideScrollCancelHandler = cancel;
+    this.outsideScrollKeydownHandler = onKeydown;
     document.addEventListener('wheel', cancel, { passive: true });
-    document.addEventListener('touchstart', cancel, { passive: true });
-    document.addEventListener('keydown', cancel);
+    document.addEventListener('touchmove', cancel, { passive: true });
+    document.addEventListener('keydown', onKeydown);
     this.destroyRef.onDestroy(() => this.disarmOutsideScrollCancellation());
   }
 
@@ -557,9 +565,10 @@ export class AccountSettingsComponent {
     const cancel = this.outsideScrollCancelHandler;
     if (!cancel) return;
     document.removeEventListener('wheel', cancel);
-    document.removeEventListener('touchstart', cancel);
-    document.removeEventListener('keydown', cancel);
+    document.removeEventListener('touchmove', cancel);
+    if (this.outsideScrollKeydownHandler) document.removeEventListener('keydown', this.outsideScrollKeydownHandler);
     this.outsideScrollCancelHandler = undefined;
+    this.outsideScrollKeydownHandler = undefined;
   }
 
   private maskTokenValue(token: string): string {
