@@ -138,8 +138,13 @@ describe('ProfileLayoutComponent — Flow C cold-return read-your-writes (LFXV2-
  * specific message (not the old generic "Authorization failed. Please try again." for every code).
  */
 describe('ProfileLayoutComponent — Flow C error message ownership (#1935)', () => {
-  async function setup(error: string): Promise<{ add: ReturnType<typeof vi.fn> }> {
+  async function setup(error: string, pendingSave?: unknown): Promise<{ add: ReturnType<typeof vi.fn>; navigateByUrl: ReturnType<typeof vi.fn> }> {
+    if (pendingSave !== undefined) {
+      sessionStorage.setItem(PENDING_PROFILE_SAVE_KEY, JSON.stringify(pendingSave));
+    }
+
     const add = vi.fn();
+    const navigateByUrl = vi.fn();
     const userServiceMock = {
       user: signal({ user_id: 'u1' } as unknown as User),
       impersonating: signal(false),
@@ -157,7 +162,7 @@ describe('ProfileLayoutComponent — Flow C error message ownership (#1935)', ()
       providers: [
         { provide: PLATFORM_ID, useValue: 'browser' },
         { provide: ActivatedRoute, useValue: { queryParams: of({ error }) } },
-        { provide: Router, useValue: { url: '/profile', navigateByUrl: vi.fn() } },
+        { provide: Router, useValue: { url: '/profile', navigateByUrl } },
         { provide: UserService, useValue: userServiceMock },
         { provide: FeatureFlagService, useValue: { getBooleanFlag: vi.fn(() => signal(false)) } },
         { provide: MessageService, useValue: { add } },
@@ -169,8 +174,12 @@ describe('ProfileLayoutComponent — Flow C error message ownership (#1935)', ()
     fixture.detectChanges();
     await fixture.whenStable();
 
-    return { add };
+    return { add, navigateByUrl };
   }
+
+  beforeEach(() => {
+    sessionStorage.clear();
+  });
 
   it('toasts the specific message for a mapped Flow C error code', async () => {
     const { add } = await setup('user_mismatch');
@@ -190,5 +199,78 @@ describe('ProfileLayoutComponent — Flow C error message ownership (#1935)', ()
     const { add } = await setup('toString');
 
     expect(add).not.toHaveBeenCalled();
+  });
+
+  // Regression guard: invalid_state/no_code used to be excluded from PROFILE_AUTH_ERROR_MESSAGES
+  // so only ProfileIdentitiesComponent toasted them — producing no toast, a stuck ?error= param,
+  // and a leftover stash on every other /profile/* route. The layout now owns them too.
+  it.each([
+    ['invalid_state', 'Security validation failed. Please try again.'],
+    ['no_code', 'Authorization did not complete. Please try again.'],
+  ])('toasts, clears the URL, and clears the stash for %s', async (error, detail) => {
+    const { add, navigateByUrl } = await setup(error, { savedAt: Date.now(), userMetadata: { bio: 'x' } });
+
+    expect(add).toHaveBeenCalledWith(expect.objectContaining({ severity: 'error', summary: 'Authorization Error', detail }));
+    expect(navigateByUrl).toHaveBeenCalledWith('/profile', { replaceUrl: true });
+    expect(sessionStorage.getItem(PENDING_PROFILE_SAVE_KEY)).toBeNull();
+  });
+});
+
+/**
+ * Guards issue #2177's clearAuthQueryParams fragment loss (PR #2182 review): a Flow C return to
+ * /profile/settings?success=...#password must keep the #password fragment after the query string
+ * is stripped, so account-settings.component.ts's deep-link scroll still fires.
+ */
+describe('ProfileLayoutComponent — clearAuthQueryParams preserves the fragment (#2177)', () => {
+  async function setup(url: string, queryParams: Record<string, string>): Promise<{ navigateByUrl: ReturnType<typeof vi.fn> }> {
+    const navigateByUrl = vi.fn();
+    const userServiceMock = {
+      user: signal({ user_id: 'u1' } as unknown as User),
+      impersonating: signal(false),
+      uploadedAvatarUrl: signal<string | null>(null),
+      effectiveAvatarUrl: computed(() => ''),
+      identitiesRefresh$: EMPTY,
+      getCurrentUserProfile: vi.fn(() => of({ user: {}, profile: null } as unknown as CombinedProfile)),
+      updateUserProfile: vi.fn(() => of({})),
+      getIdentities: vi.fn(() => of([])),
+    };
+
+    TestBed.resetTestingModule();
+    TestBed.configureTestingModule({
+      imports: [ProfileLayoutComponent],
+      providers: [
+        { provide: PLATFORM_ID, useValue: 'browser' },
+        { provide: ActivatedRoute, useValue: { queryParams: of(queryParams) } },
+        { provide: Router, useValue: { url, navigateByUrl } },
+        { provide: UserService, useValue: userServiceMock },
+        { provide: FeatureFlagService, useValue: { getBooleanFlag: vi.fn(() => signal(false)) } },
+        { provide: MessageService, useValue: { add: vi.fn() } },
+      ],
+    });
+    TestBed.overrideComponent(ProfileLayoutComponent, { set: { template: '', imports: [] } });
+
+    const fixture = TestBed.createComponent(ProfileLayoutComponent);
+    fixture.detectChanges();
+    await fixture.whenStable();
+
+    return { navigateByUrl };
+  }
+
+  it('keeps the fragment on a Flow C success return', async () => {
+    const { navigateByUrl } = await setup('/profile/settings?success=profile_token_obtained#password', { success: 'profile_token_obtained' });
+
+    expect(navigateByUrl).toHaveBeenCalledWith('/profile/settings#password', { replaceUrl: true });
+  });
+
+  it('keeps the fragment on a Flow C error return', async () => {
+    const { navigateByUrl } = await setup('/profile/settings?error=user_mismatch#email-settings', { error: 'user_mismatch' });
+
+    expect(navigateByUrl).toHaveBeenCalledWith('/profile/settings#email-settings', { replaceUrl: true });
+  });
+
+  it('drops nothing extra when there is no fragment to preserve', async () => {
+    const { navigateByUrl } = await setup('/profile/settings?error=user_mismatch', { error: 'user_mismatch' });
+
+    expect(navigateByUrl).toHaveBeenCalledWith('/profile/settings', { replaceUrl: true });
   });
 });

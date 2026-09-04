@@ -39,7 +39,7 @@ import FormData from 'form-data';
 import { AuthorizationError, ConflictError, MicroserviceError, ResourceNotFoundError, ServiceValidationError } from '../errors';
 import { isServerFeatureEnabled, ServerFeatureFlag } from '../helpers/server-feature-flag.helper';
 import { pollEndpoint } from '../helpers/poll-endpoint.helper';
-import { fetchAllQueryResources } from '../helpers/query-service.helper';
+import { fetchAllQueryResources, FetchAllQueryResourcesOptions } from '../helpers/query-service.helper';
 import { logger } from '../services/logger.service';
 import { resolveAuditUserDisplayName, getUsernameFromAuth, isImpersonating } from '../utils/auth-helper';
 import { AccessCheckService } from './access-check.service';
@@ -785,7 +785,12 @@ export class CommitteeService {
   /**
    * Fetches all members for a specific committee
    */
-  public async getCommitteeMembers(req: Request, committeeId: string, query: Record<string, any> = {}): Promise<CommitteeMember[]> {
+  public async getCommitteeMembers(
+    req: Request,
+    committeeId: string,
+    query: Record<string, any> = {},
+    fetchOptions: FetchAllQueryResourcesOptions = {}
+  ): Promise<CommitteeMember[]> {
     const queryFilters = { ...query };
     delete queryFilters['page_token'];
     delete queryFilters['page_size'];
@@ -796,11 +801,14 @@ export class CommitteeService {
       tags: `committee_uid:${committeeId}`,
     };
 
-    return fetchAllQueryResources<CommitteeMember>(req, (pageToken) =>
-      this.microserviceProxy.proxyRequest<QueryServiceResponse<CommitteeMember>>(req, 'LFX_V2_SERVICE', '/query/resources', 'GET', {
-        ...params,
-        ...(pageToken && { page_token: pageToken }),
-      })
+    return fetchAllQueryResources<CommitteeMember>(
+      req,
+      (pageToken) =>
+        this.microserviceProxy.proxyRequest<QueryServiceResponse<CommitteeMember>>(req, 'LFX_V2_SERVICE', '/query/resources', 'GET', {
+          ...params,
+          ...(pageToken && { page_token: pageToken }),
+        }),
+      fetchOptions
     );
   }
 

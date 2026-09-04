@@ -21,6 +21,9 @@
  *   - The same for a context-less vote EDIT link (`/project/votes/:uid/edit`, GH-1568):
  *     context syncs from the loaded vote (enriched payload or uid fallback), and writerGuard
  *     authorizes against the vote's own project via its entity probe.
+ *   - The same for a context-less survey EDIT link (`/project/surveys/:uid/edit`, GH-1569):
+ *     context syncs from the loaded survey (enriched payload or uid fallback), and writerGuard
+ *     authorizes against the survey's own project via its entity probe.
  *
  * Prerequisites:
  *   - Dev server reachable at the Playwright baseURL (default http://localhost:4200)
@@ -46,6 +49,7 @@ const OTHER_PROJECT_UID = 'p0000000-0000-0000-0000-00000000d003';
 const MOCK_MEETING_UID = 'm0000000-0000-0000-0000-00000000d001';
 const MOCK_VOTE_UID = 'v0000000-0000-0000-0000-00000000d001';
 const MOCK_MAILING_LIST_UID = 'l1000000-0000-0000-0000-00000000d001';
+const MOCK_SURVEY_UID = 's0000000-0000-0000-0000-00000000d001';
 
 function buildProjectStub(uid: string, slug: string, name: string) {
   return {
@@ -364,6 +368,54 @@ async function stubMailingListEditDetail(page: Page, list: ReturnType<typeof bui
   await page.route(`**/api/mailing-lists/${MOCK_MAILING_LIST_UID}`, (route) => {
     if (route.request().method() !== 'GET') return route.fallback();
     return route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify(list) });
+  });
+}
+
+/**
+ * Survey detail payload for the edit page, shaped as the BFF emits it post-GH-1569: project
+ * identity lives in committees[0] (as upstream sends it — the upstream detail schema has no
+ * top-level project_uid), `project_uid` top-level is the BFF's flattened stamp, and the slug/name/
+ * tier fields appear only when BFF enrichment succeeded. `enriched: false` simulates the
+ * enrichment having failed so the component's resolve-by-uid fallback is exercised instead (GH-1569).
+ */
+function buildSurveyStub(enriched: boolean) {
+  return {
+    uid: MOCK_SURVEY_UID,
+    survey_title: 'Test Foundation Satisfaction Survey',
+    survey_status: 'draft',
+    project_uid: MOCK_FOUNDATION_UID,
+    ...(enriched ? { project_slug: MOCK_FOUNDATION_SLUG, project_name: 'Test Foundation', is_foundation: true } : {}),
+    committees: [
+      {
+        committee_uid: MOCK_COMMITTEE_UID,
+        committee_name: 'Governing Board',
+        project_uid: MOCK_FOUNDATION_UID,
+        project_name: 'Test Foundation',
+        total_recipients: 0,
+        total_responses: 0,
+      },
+    ],
+    committee_category: '',
+    is_nps_survey: false,
+    is_project_survey: false,
+    total_responses: 0,
+    total_recipients: 0,
+    created_at: '2025-01-15T00:00:00Z',
+    last_modified_at: '2025-06-01T00:00:00Z',
+  };
+}
+
+async function stubSurveyEditDetail(page: Page, survey: ReturnType<typeof buildSurveyStub>): Promise<void> {
+  // Catch-all registered FIRST (Playwright matches routes in reverse registration order) so
+  // incidental list calls from the edit page don't escape to the real BFF. `*` doesn't cross
+  // `/`, so the detail route needs its own pattern.
+  await page.route('**/api/surveys*', (route) => {
+    if (route.request().method() !== 'GET') return route.fallback();
+    return route.fulfill({ status: 200, contentType: 'application/json', body: '[]' });
+  });
+  await page.route(`**/api/surveys/${MOCK_SURVEY_UID}`, (route) => {
+    if (route.request().method() !== 'GET') return route.fallback();
+    return route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify(survey) });
   });
 }
 
@@ -916,5 +968,106 @@ test.describe('Mailing list edit deep-link resolves the list’s project context
     // Context syncs from the loaded list and the route rewrites to its owning tier (GH-1567).
     await expect(page).toHaveURL(new RegExp(`/foundation/mailing-lists/${MOCK_MAILING_LIST_UID}$`), { timeout: ELEMENT_TIMEOUT });
     await expect(page.getByTestId('project-selector')).toContainText('Test Foundation', { timeout: ELEMENT_TIMEOUT });
+  });
+});
+
+test.describe('Survey edit deep-link resolves the survey’s project context (GH-1569)', () => {
+  test.beforeEach(async ({ page }) => {
+    // Mirror the issue: the user was last working in an unrelated PROJECT (cookie-restored),
+    // then opens a context-less edit link for a survey owned by Test Foundation.
+    await setPersonaAndLensCookies(page, ['executive-director'], 'project');
+    await setProjectCookie(page, OTHER_PROJECT_UID, OTHER_PROJECT_SLUG, 'Other Project');
+    await stubPersona(page, ['executive-director']);
+    await stubProjectApi(page);
+    await stubCommittees(page, buildCommittees());
+    await stubLensItems(page);
+    await page.route(`**/api/projects/${OTHER_PROJECT_SLUG}*`, (route) =>
+      route.fulfill({
+        status: 200,
+        contentType: 'application/json',
+        body: JSON.stringify(buildProjectStub(OTHER_PROJECT_UID, OTHER_PROJECT_SLUG, 'Other Project')),
+      })
+    );
+  });
+
+  test('edit link without ?project= switches context to the survey’s foundation (BFF-enriched payload)', async ({ page }) => {
+    await stubSurveyEditDetail(page, buildSurveyStub(true));
+
+    await gotoSpa(page, `/project/surveys/${MOCK_SURVEY_UID}/edit`, {
+      uid: OTHER_PROJECT_UID,
+      slug: OTHER_PROJECT_SLUG,
+      name: 'Other Project',
+      foundation: false,
+    });
+    await expect(page.getByTestId('survey-manage-title')).toBeVisible({ timeout: PAGE_LOAD_TIMEOUT });
+
+    // The sync derives context from the loaded survey (Test Foundation), replacing the
+    // cookie-restored Other Project — the selector follows the correction.
+    await expect(page.getByTestId('project-selector')).toContainText('Test Foundation', { timeout: ELEMENT_TIMEOUT });
+
+    // The context correction must NOT inject ?project= into the entity URL (syncUrl guard) —
+    // give any NavigationEnd-driven backfill a tick to (not) fire before asserting absence.
+    await page.waitForTimeout(500);
+    expect(new URL(page.url()).searchParams.has('project')).toBe(false);
+  });
+
+  test('writerGuard authorizes the edit page against the survey’s project, not the stale context (GH-1569)', async ({ page }) => {
+    // Non-ED persona: no synchronous fast path — the guard must probe the survey for its
+    // project slug. The stale cookie context (Other Project) is intentionally NOT writable:
+    // if the guard authorizes against it, the page redirects to /project/overview?_notice=...
+    await setPersonaAndLensCookies(page, ['maintainer'], 'project');
+    await stubPersona(page, ['maintainer']);
+    await page.route(`**/api/projects/${OTHER_PROJECT_SLUG}*`, (route) =>
+      route.fulfill({
+        status: 200,
+        contentType: 'application/json',
+        body: JSON.stringify({ ...buildProjectStub(OTHER_PROJECT_UID, OTHER_PROJECT_SLUG, 'Other Project'), writer: false }),
+      })
+    );
+    await stubSurveyEditDetail(page, buildSurveyStub(true));
+
+    await gotoSpa(page, `/project/surveys/${MOCK_SURVEY_UID}/edit`, {
+      uid: OTHER_PROJECT_UID,
+      slug: OTHER_PROJECT_SLUG,
+      name: 'Other Project',
+      foundation: false,
+    });
+    await expect(page.getByTestId('survey-manage-title')).toBeVisible({ timeout: PAGE_LOAD_TIMEOUT });
+
+    // Still on the edit page (no access-denied redirect), and the context follows the survey.
+    expect(page.url()).toContain(`/surveys/${MOCK_SURVEY_UID}/edit`);
+    await expect(page.getByTestId('project-selector')).toContainText('Test Foundation', { timeout: ELEMENT_TIMEOUT });
+  });
+
+  test('edit link without ?project= falls back to resolving the project by uid when enrichment is absent', async ({ page }) => {
+    // Enrichment-failed payload: project_uid only. The component fallback fetches the project
+    // by uid — this route satisfies computeIsFoundation (Funded + Membership + Active), so the
+    // resolved context lands in the foundation slot just like the enriched path.
+    await stubSurveyEditDetail(page, buildSurveyStub(false));
+    await page.route(`**/api/projects/${MOCK_FOUNDATION_UID}*`, (route) =>
+      route.fulfill({
+        status: 200,
+        contentType: 'application/json',
+        body: JSON.stringify({
+          ...buildProjectStub(MOCK_FOUNDATION_UID, MOCK_FOUNDATION_SLUG, 'Test Foundation'),
+          funding: 'Funded',
+          funding_model: ['Membership'],
+          legal_entity_type: 'Series LLC',
+        }),
+      })
+    );
+
+    await gotoSpa(page, `/project/surveys/${MOCK_SURVEY_UID}/edit`, {
+      uid: OTHER_PROJECT_UID,
+      slug: OTHER_PROJECT_SLUG,
+      name: 'Other Project',
+      foundation: false,
+    });
+    await expect(page.getByTestId('survey-manage-title')).toBeVisible({ timeout: PAGE_LOAD_TIMEOUT });
+
+    await expect(page.getByTestId('project-selector')).toContainText('Test Foundation', { timeout: ELEMENT_TIMEOUT });
+
+    await page.waitForTimeout(500);
+    expect(new URL(page.url()).searchParams.has('project')).toBe(false);
   });
 });

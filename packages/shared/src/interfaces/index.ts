@@ -333,3 +333,6 @@ export * from './social-listening.interface';
 
 // Per-user preference store + BFF wire contracts (LFXV2-3002 Block 0)
 export * from './user-preference.interface';
+
+// Individual Dashboard → LFX migration banner (LFXV2-3336)
+export * from './id-migration.interface';

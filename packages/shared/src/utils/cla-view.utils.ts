@@ -166,6 +166,20 @@ export function formatClaSignedOn(iso: string, timeZone?: string): string {
 }
 
 /**
+ * Note under an Invalidated / Revoked pill (#1913). `{Label} · {date}` when the
+ * producer recorded a parseable date; undefined when the date is absent or
+ * unparseable — a wrong date is worse than none. Other statuses never take this
+ * path (Needs attention owns the note slot with different copy).
+ */
+export function claStatusDateNote(status: ClaStatus, iso: string | undefined, timeZone?: string): string | undefined {
+  if (status !== 'invalidated' && status !== 'revoked') return undefined;
+  if (!iso?.trim()) return undefined;
+  const formatted = formatClaSignedOn(iso, timeZone);
+  if (formatted === '—') return undefined;
+  return `${claStatusLabel(status)} · ${formatted}`;
+}
+
+/**
  * Second line under the signed date (#1573). Undefined ⇒ the Signed cell is date-only.
  *
  * Every platform the producer names takes a suffix. `gerrit` reads wider than the Gerrit

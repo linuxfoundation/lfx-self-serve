@@ -18,6 +18,7 @@ import {
   claGroupSecondaryName,
   claKindSeverity,
   claSignRoute,
+  claStatusDateNote,
   claStatusLabel,
   claStatusSeverity,
   formatClaSignedOn,
@@ -141,6 +142,27 @@ describe('claStatusLabel', () => {
     const statuses: ClaStatus[] = ['valid', 'needs_attention', 'revoked', 'invalidated', 'unknown', 'superseded'];
 
     expect(statuses.map(claStatusLabel).some((label) => /cancel/i.test(label))).toBe(false);
+  });
+});
+
+describe('claStatusDateNote', () => {
+  it('formats Invalidated and Revoked as "{Label} · {date}" when the date parses', () => {
+    expect(claStatusDateNote('invalidated', '2026-06-03T12:00:00Z', 'UTC')).toBe('Invalidated · Jun 3, 2026');
+    expect(claStatusDateNote('revoked', '2026-08-01T12:00:00Z', 'UTC')).toBe('Revoked · Aug 1, 2026');
+    expect(claStatusDateNote('invalidated', '2026-06-03', 'UTC')).toBe('Invalidated · Jun 3, 2026');
+  });
+
+  it('omits the note when the date is absent, blank, or unparseable', () => {
+    expect(claStatusDateNote('invalidated', undefined, 'UTC')).toBeUndefined();
+    expect(claStatusDateNote('revoked', '   ', 'UTC')).toBeUndefined();
+    expect(claStatusDateNote('invalidated', 'not-a-date', 'UTC')).toBeUndefined();
+    expect(claStatusDateNote('revoked', '2026-02-31', 'UTC')).toBeUndefined();
+  });
+
+  it('never dates a status that is not Invalidated or Revoked', () => {
+    expect(claStatusDateNote('valid', '2026-06-03T12:00:00Z', 'UTC')).toBeUndefined();
+    expect(claStatusDateNote('needs_attention', '2026-06-03T12:00:00Z', 'UTC')).toBeUndefined();
+    expect(claStatusDateNote('unknown', '2026-06-03T12:00:00Z', 'UTC')).toBeUndefined();
   });
 });
 

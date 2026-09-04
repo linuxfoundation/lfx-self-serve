@@ -13,6 +13,7 @@ import { MeetingService } from '../services/meeting.service';
 import { PersonaService } from '../services/persona.service';
 import { ProjectContextService } from '../services/project-context.service';
 import { ProjectService } from '../services/project.service';
+import { SurveyService } from '../services/survey.service';
 import { VoteService } from '../services/vote.service';
 import { hasMeetingWriteAccess, resolveEntityWriteSlug } from '../utils/write-access.util';
 
@@ -27,13 +28,13 @@ import { hasMeetingWriteAccess, resolveEntityWriteSlug } from '../utils/write-ac
  *    only for routes with `data.writeFeature === 'meetings'`.
  * 3. `committee.writer` — committee writer; accepted only when `writeFeature` is one of
  *    `'meetings'`, `'surveys'`, or `'votes'` and a committee uid is available — from the probed
- *    entity itself when its probe surfaces one (today only the votes probe carries
+ *    entity itself when its probe surfaces one (the votes and surveys probes carry
  *    `committee_uid`; the meetings probe falls through to the URL param), else from the
  *    `committee_uid` query param (create routes; attacker-controlled, which is why the entity
  *    value wins when present). The backend ruleset allows committee:uid#writer to create
  *    resources associated with their committee.
  *
- * Slug resolution: on routes flagged `data.entityScopedSlug` (meeting/group/mailing-list/vote edit), resolves
+ * Slug resolution: on routes flagged `data.entityScopedSlug` (meeting/group/mailing-list/vote/survey edit), resolves
  * the slug from the entity itself first — the active context can belong to a different project
  * when the edit link carried no `?project=`. A non-404 failure on that read resolves no slug at all,
  * so the guard redirects instead of authorizing against a stale context; a flagged route with no
@@ -62,6 +63,7 @@ export const writerGuard: CanActivateFn = (route: ActivatedRouteSnapshot) => {
   const committeeService = inject(CommitteeService);
   const mailingListService = inject(MailingListService);
   const meetingService = inject(MeetingService);
+  const surveyService = inject(SurveyService);
   const voteService = inject(VoteService);
   const router = inject(Router);
 
@@ -87,6 +89,24 @@ export const writerGuard: CanActivateFn = (route: ActivatedRouteSnapshot) => {
     committees: (id) => committeeService.fetchCommittee(id),
     votes: (id) => voteService.fetchVote(id),
     'mailing-lists': (id) => mailingListService.getMailingList(id),
+    // Survey.project_uid is typed optional — map absent to '' so the probe satisfies the
+    // registry's Pick<EntityWithProject> shape; resolveEntityWriteSlug treats '' as absent.
+    // Honor the URL ?committee_uid= only when the survey's own committee list contains it (the
+    // committee tab stamps the viewed committee, so from that path a writer of any associated
+    // committee is admitted); otherwise fall back to the primary committee so an attacker-controlled param naming
+    // an unrelated committee can't win — a committee-less project survey falls back to the URL param.
+    // Known gap: the global surveys list stamps only committees[0] on edit links, so a writer of a
+    // non-primary committee is fail-closed denied from the list and must edit via their committee
+    // tab (iterating committees[] per row is follow-up work — GH-2190).
+    surveys: (id) =>
+      surveyService.getSurvey(id).pipe(
+        map((survey) => ({
+          project_slug: survey.project_slug,
+          project_uid: survey.project_uid || '',
+          committee_uid:
+            committeeUid && survey.committees?.some((c) => c.committee_uid === committeeUid) ? committeeUid : survey.committees?.[0]?.committee_uid,
+        }))
+      ),
   };
   const resolveSlug = (): Observable<{ slug: string | null; entityCommitteeUid: string | null }> => {
     const fromContext = route.queryParamMap.get('project') ?? projectContextService.activeContext()?.slug ?? null;
@@ -126,9 +146,9 @@ export const writerGuard: CanActivateFn = (route: ActivatedRouteSnapshot) => {
 
       // Committee writers can create entities for their committee via ?committee_uid=. On
       // entity-scoped edit routes the probed entity's own committee wins when the probe carries
-      // one (only the votes probe returns committee_uid today) — a URL param naming an unrelated
-      // committee must not admit its writer, and an absent param must not deny the entity's real
-      // committee writer.
+      // one (the votes and surveys probes return committee_uid today) — a URL param naming an
+      // unrelated committee must not admit its writer, and an absent param must not deny the
+      // entity's real committee writer.
       const effectiveCommitteeUid = entityCommitteeUid ?? committeeUid;
       // getCommittee's tap() side effect is safe here: deny blocks navigation; allow overwrites.
       const checkCommittee = (): Observable<true | ReturnType<typeof deny>> =>

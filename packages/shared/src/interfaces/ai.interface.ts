@@ -2,6 +2,7 @@
 // SPDX-License-Identifier: MIT
 
 import { MeetingType } from '../enums';
+import { AttendanceReconciliationCandidate, AttendanceReconciliationConfidence } from './meeting.interface';
 
 /**
  * Request interface for AI agenda generation
@@ -71,6 +72,32 @@ export interface ExtractActionItemsResponse {
     text: string;
     /** Suggested owner role/persona for the item, when the model can infer one */
     suggested_owner_role?: string;
+  }[];
+}
+
+/**
+ * Request interface for AI-assisted attendance reconciliation — sent only for attendees the
+ * deterministic pass (exact email/username/lf_user_id match) couldn't resolve.
+ */
+export interface ReconcileAttendeesRequest {
+  attendees: {
+    attendee_id: string;
+    zoom_user_name?: string;
+  }[];
+  candidates: AttendanceReconciliationCandidate[];
+}
+
+/**
+ * Response interface for AI-assisted attendance reconciliation. `matched_candidate_id` must be
+ * validated by the caller against the `candidate_id`s it sent — the model can hallucinate one
+ * (see AiService.reconcileAttendees). Every input `attendee_id` should appear exactly once; any
+ * omitted by the model is treated as `confidence: 'none'` by the caller rather than lost.
+ */
+export interface ReconcileAttendeesResponse {
+  matches: {
+    attendee_id: string;
+    matched_candidate_id: string | null;
+    confidence: AttendanceReconciliationConfidence;
   }[];
 }
 
