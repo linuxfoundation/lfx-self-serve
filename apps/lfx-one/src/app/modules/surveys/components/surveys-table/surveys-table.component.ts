@@ -15,7 +15,7 @@ import { TableComponent } from '@components/table/table.component';
 import { TagComponent } from '@components/tag/tag.component';
 import { SURVEY_LABEL, SURVEY_TYPE_LABELS, SurveyStatus } from '@lfx-one/shared';
 import { FilterPillOption, Survey } from '@lfx-one/shared/interfaces';
-import { getSurveyDisplayStatus } from '@lfx-one/shared/utils';
+import { getSurveyDisplayStatus, getUserTimezone } from '@lfx-one/shared/utils';
 import { DueDateLabelColorPipe } from '@pipes/due-date-label-color.pipe';
 import { DueDateLabelPipe } from '@pipes/due-date-label.pipe';
 import { ScheduledSendAriaLabelPipe, ScheduledSendTooltipPipe } from '@pipes/scheduled-send-tooltip.pipe';
@@ -58,6 +58,8 @@ export class SurveysTableComponent {
   // === Constants ===
   protected readonly surveyLabel = SURVEY_LABEL;
   protected readonly SurveyStatus = SurveyStatus;
+  // Viewer-local zone so countdown chips count the viewer's day, matching the adjacent local date (pipe fallback is the legacy-vote Pacific zone)
+  protected readonly viewerTimezone = getUserTimezone();
   protected readonly statusTabOptions: FilterPillOption[] = [
     { id: 'all', label: 'All' },
     { id: 'open', label: 'Open' },

@@ -155,7 +155,7 @@
                 } @else if (survey.displayStatus === SurveyStatus.DRAFT) {
                   <span class="text-sm text-gray-700">&mdash;</span>
                 } @else if (survey.survey_cutoff_date) {
-                  @let dueDateLabelValue = survey.survey_cutoff_date | dueDateLabel;
+                  @let dueDateLabelValue = survey.survey_cutoff_date | dueDateLabel: viewerTimezone;
                   <div class="flex flex-col gap-0.5">
                     <span class="text-sm text-gray-700">{{ survey.survey_cutoff_date | date: 'MMM d, y' }}</span>
                     @if (dueDateLabelValue) {

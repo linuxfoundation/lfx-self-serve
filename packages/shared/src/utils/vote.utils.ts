@@ -258,6 +258,12 @@ function prepareDraftQuestions(questions: QuestionFormValue[]): CreatePollQuesti
   return questions.filter(hasDraftQuestionInput).map(normalizeDraftQuestion);
 }
 
+/** Draft end_time: the combined deadline when date+time combine cleanly, else the default-duration fallback — never an empty required field. */
+function resolveDraftEndTime(formValue: VoteFormValue): string {
+  const combined = formValue.close_date ? combineDateTime(formValue.close_date, formValue.close_time, formValue.timezone) : '';
+  return combined || addDays(new Date(), DRAFT_VOTE_DEFAULT_DURATION_DAYS).toISOString();
+}
+
 /**
  * Builds a CreateVoteRequest from form values
  * @param formValue - The vote form values
@@ -287,9 +293,7 @@ export function buildDraftVoteRequest(formValue: VoteFormValue, projectUid: stri
   return {
     name: formValue.title.trim(),
     description: formValue.description?.trim() || '',
-    end_time: formValue.close_date
-      ? combineDateTime(formValue.close_date, formValue.close_time, formValue.timezone)
-      : addDays(new Date(), DRAFT_VOTE_DEFAULT_DURATION_DAYS).toISOString(),
+    end_time: resolveDraftEndTime(formValue),
     end_time_timezone: formValue.timezone || undefined,
     project_uid: projectUid,
     committee_uid: formValue.committee?.uid || '',
@@ -329,9 +333,7 @@ export function buildDraftUpdateVoteRequest(formValue: VoteFormValue, projectUid
   return {
     name: formValue.title.trim(),
     description: formValue.description?.trim() || '',
-    end_time: formValue.close_date
-      ? combineDateTime(formValue.close_date, formValue.close_time, formValue.timezone)
-      : addDays(new Date(), DRAFT_VOTE_DEFAULT_DURATION_DAYS).toISOString(),
+    end_time: resolveDraftEndTime(formValue),
     end_time_timezone: formValue.timezone || undefined,
     project_uid: projectUid,
     committee_uid: formValue.committee?.uid || '',

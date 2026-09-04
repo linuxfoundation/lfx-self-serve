@@ -119,8 +119,9 @@
             <lfx-calendar
               [form]="form()"
               control="close_date"
+              inputId="close-date"
               placeholder="Select close date"
-              [minDate]="minDate"
+              [minDate]="minDate()"
               [showButtonBar]="true"
               appendTo="body"
               data-testid="vote-close-date-calendar">
@@ -134,10 +135,19 @@
           <!-- Close Time -->
           <div class="flex flex-col gap-1">
             <label for="close-time" class="text-sm font-medium text-gray-700"> Close Time <span class="text-red-500">*</span> </label>
-            <lfx-time-picker [form]="form()" control="close_time" placeholder="Select close time" styleClass="w-full" data-testid="vote-close-time-picker">
+            <lfx-time-picker
+              [form]="form()"
+              control="close_time"
+              [id]="'close-time'"
+              placeholder="Select close time"
+              styleClass="w-full"
+              data-testid="vote-close-time-picker">
             </lfx-time-picker>
             @if (form().get('close_time')?.touched && !form().get('close_time')?.value) {
               <p class="text-red-500 text-xs">Close time is required.</p>
+            }
+            @if (form().get('close_time')?.touched && form().get('close_time')?.errors?.['invalidTimeFormat']) {
+              <p class="text-red-500 text-xs">Enter a valid time (e.g., 11:59 PM).</p>
             }
           </div>
 

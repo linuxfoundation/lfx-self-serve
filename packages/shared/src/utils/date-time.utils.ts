@@ -272,6 +272,23 @@ export function daysUntilInTimezone(value: string | Date, timezone?: string | nu
 }
 
 /**
+ * Start of "today" in the given timezone as a browser-local Date — for date-only floors like a
+ * calendar minDate, which compare in browser-local terms. A zone behind the browser (e.g. Honolulu
+ * vs Sydney) keeps its valid "today" selectable. Falls back to local today on an invalid zone.
+ */
+export function startOfTodayInTimezone(timezone: string): Date {
+  try {
+    const zonedNow = toZonedTime(new Date(), timezone);
+    zonedNow.setHours(0, 0, 0, 0);
+    return zonedNow;
+  } catch {
+    const today = new Date();
+    today.setHours(0, 0, 0, 0);
+    return today;
+  }
+}
+
+/**
  * Parses a 12-hour time string and returns hours and minutes
  */
 export function parseTime12Hour(time: string): { hours: number; minutes: number } | null {

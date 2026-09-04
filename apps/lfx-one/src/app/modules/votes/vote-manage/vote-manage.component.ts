@@ -26,7 +26,14 @@ import {
   mapVoteToFormValue,
   markFormControlsAsTouched,
 } from '@lfx-one/shared/utils';
-import { maxCodePointsValidator, trimmedMinLength, trimmedRequired, validCommitteeReference, voteDeadlineValidator } from '@lfx-one/shared/validators';
+import {
+  maxCodePointsValidator,
+  trimmedMinLength,
+  trimmedRequired,
+  validCommitteeReference,
+  validTimeFormat,
+  voteDeadlineValidator,
+} from '@lfx-one/shared/validators';
 import { ProjectContextService } from '@services/project-context.service';
 import { ProjectService } from '@services/project.service';
 import { VoteService } from '@services/vote.service';
@@ -486,7 +493,7 @@ export class VoteManageComponent {
         committee: new FormControl<CommitteeReference | null>(null, [Validators.required, validCommitteeReference()]),
         eligible_participants: new FormControl('', [Validators.required]),
         close_date: new FormControl<Date | null>(null, [Validators.required]),
-        close_time: new FormControl<string>('11:59 PM', { nonNullable: true, validators: [Validators.required] }),
+        close_time: new FormControl<string>('11:59 PM', { nonNullable: true, validators: [Validators.required, validTimeFormat()] }),
         // Deliberately stricter than the API contract — end_time_timezone is optional only so legacy votes
         // stay valid; combineDateTime needs a zone to build a meaningful end_time, so the form requires one.
         timezone: new FormControl<string>(getUserTimezone(), { nonNullable: true, validators: [Validators.required] }),
