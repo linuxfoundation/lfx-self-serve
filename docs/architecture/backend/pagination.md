@@ -9,19 +9,26 @@ The application uses cursor-based pagination (via `page_token`) rather than offs
 
 ## Query Service API Parameters
 
-| Parameter    | Type       | Description                                                        |
-| ------------ | ---------- | ------------------------------------------------------------------ |
-| `page_token` | `string`   | Opaque cursor from a previous response. Omit for the first page.   |
-| `page_size`  | `number`   | Items per page (default: 50, range: 1–1000)                        |
-| `name`       | `string`   | Typeahead search (multi_match with bool_prefix)                    |
-| `filters`    | `string[]` | Field filtering (`field:value`, auto-prefixed with `data.`)        |
-| `tags`       | `string`   | Exact tag matching                                                 |
-| `tags_all`   | `string`   | Multiple tag matching (AND logic)                                  |
-| `type`       | `string`   | Resource type filter                                               |
-| `parent`     | `string`   | Parent resource filter                                             |
-| `sort`       | `string`   | Sort order: `name_asc`, `name_desc`, `updated_asc`, `updated_desc` |
+| Parameter    | Type       | Description                                                                                           |
+| ------------ | ---------- | ----------------------------------------------------------------------------------------------------- |
+| `page_token` | `string`   | Opaque cursor from a previous response. Omit for the first page.                                      |
+| `page_size`  | `number`   | Items per page (default: 50, range: 1–1000)                                                           |
+| `name`       | `string`   | Typeahead search (multi_match with bool_prefix); every term must match, last term matches as a prefix |
+| `filters`    | `string[]` | Field filtering (`field:value`, auto-prefixed with `data.`)                                           |
+| `tags`       | `string`   | Exact tag matching                                                                                    |
+| `tags_all`   | `string`   | Multiple tag matching (AND logic)                                                                     |
+| `type`       | `string`   | Resource type filter                                                                                  |
+| `parent`     | `string`   | Parent resource filter                                                                                |
+| `sort`       | `string`   | Sort order: `name_asc` (default), `name_desc`, `updated_asc`, `updated_desc`, `best_match`            |
 
 > **Note**: Use `page_size` (not `limit`) for consistency with the query service API.
+
+> **Always pass `sort: 'best_match'` alongside `name`.** `sort` defaults to `name_asc`, and
+> OpenSearch discards relevance scoring whenever an explicit non-`_score` sort is present. A search
+> that omits `sort` therefore returns the alphabetically-first page of matches rather than the
+> closest ones, and the match the user is typing can land on any page. This matters most for
+> endpoints that truncate or cap their page scan, where upstream order decides what the user ever
+> sees.
 
 ## Backend Interfaces
 
