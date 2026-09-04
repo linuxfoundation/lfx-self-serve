@@ -875,6 +875,21 @@ describe('extractableHtml', () => {
     expect(Date.now() - started, 'the json-ld passes are not linear at the download ceiling').toBeLessThan(6000);
   });
 
+  // The REMOVAL pass is capped like the two above it. A body with one valid block early and
+  // unmatched openings past the cap used to send this pass over the whole 5 MiB -- 491ms versus
+  // 99ms bounded. Not a stall on its own now that the attribute spans are bounded, but a cap that
+  // one of three passes ignores stops being true the moment something else is relaxed.
+  it('bounds the json-ld removal pass, not just the match', () => {
+    const body = `<script type="application/ld+json">{"startDate":"2027-03-15"}</script>${'<script '.repeat((5 * 1024 * 1024) / 8)}`;
+
+    const started = Date.now();
+    const out = extractableHtml(body);
+
+    expect(Date.now() - started, 'the removal pass scanned past MAX_JSON_LD_SCAN_CHARS').toBeLessThan(4000);
+    // The block found inside the cap is still preserved -- bounding must not cost the extraction.
+    expect(out).toContain('"startDate":"2027-03-15"');
+  });
+
   it('returns an empty string for input that is entirely strippable', () => {
     expect(extractableHtml('<style>.a{color:red}</style>').trim()).toBe('');
   });

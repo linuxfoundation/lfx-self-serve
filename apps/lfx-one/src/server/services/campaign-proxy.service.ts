@@ -850,7 +850,17 @@ export function extractableHtml(html: string): string {
   // Now truncate. Every pass below is quadratic on pathological input -- an unclosed `<style `
   // makes each start position scan to end-of-document -- so capping the OUTPUT afterwards would
   // be too late: the cost is already paid.
-  const withoutJSONLD = jsonLd === '' ? html : html.replace(JSON_LD_RE, ' ');
+  // The removal is bounded to `ldSource` too, then the unscanned suffix is re-attached. Running it
+  // on the full body would let the one pass that is NOT capped scan past the limit the two above
+  // respect -- measured at 491ms at the 5 MiB ceiling versus 99ms bounded. That is an
+  // inconsistency rather than a stall, since the attribute spans are bounded now, but a cap that
+  // one of three passes ignores is the kind of thing that stops being true when a later change
+  // relaxes something else.
+  //
+  // The suffix cannot contain a block worth preserving: `ldSource` is where the matcher looked, so
+  // anything past it was never going to be extracted. It is kept only so the strippers below see
+  // the same page a reader would, up to their own `MAX_SOURCE_CHARS` cut.
+  const withoutJSONLD = jsonLd === '' ? html : ldSource.replace(JSON_LD_RE, ' ') + html.slice(ldSource.length);
   const source = withoutJSONLD.length > MAX_SOURCE_CHARS ? withoutJSONLD.slice(0, MAX_SOURCE_CHARS) : withoutJSONLD;
   const stripped = source
     .replace(/<script(?=[\s/>])[\s\S]*?<\/script(\s[^>]*)?>/gi, ' ')
