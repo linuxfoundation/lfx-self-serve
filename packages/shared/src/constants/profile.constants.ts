@@ -185,6 +185,7 @@ export const EMAIL_ALREADY_LINKED_MESSAGE = 'This email is already linked to ano
  * silently desync the redirect target from the deep link it's supposed to land on.
  */
 export const PROFILE_SETTINGS_PATH = '/profile/settings';
+export const PROFILE_EMAIL_PATH = '/profile/email';
 export const PROFILE_EMAILS_PATH = '/profile/emails';
 export const PROFILE_PASSWORD_PATH = '/profile/password';
 

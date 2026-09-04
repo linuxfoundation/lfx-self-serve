@@ -10,7 +10,7 @@ import { ButtonComponent } from '@components/button/button.component';
 import { InputTextComponent } from '@components/input-text/input-text.component';
 import { TokenRevealDialogComponent } from '@components/token-reveal-dialog/token-reveal-dialog.component';
 import { markFormControlsAsTouched } from '@lfx-one/shared';
-import { ACCOUNT_SETTINGS_SECTIONS, PROFILE_SETTINGS_PATH } from '@lfx-one/shared/constants';
+import { ACCOUNT_SETTINGS_SECTIONS, PROFILE_EMAILS_PATH } from '@lfx-one/shared/constants';
 import { ActivatedRoute } from '@angular/router';
 import { useResendCooldown } from '@shared/utils/resend-cooldown';
 import { clearPendingProfileSave } from '@shared/utils/pending-profile-save.util';
@@ -336,7 +336,7 @@ export class AccountSettingsComponent {
       .pipe(take(1))
       .subscribe((status) => {
         if (!status.authorized) {
-          this.redirectToProfileAuth(`/api/profile/auth/start?returnTo=${PROFILE_SETTINGS_PATH}`);
+          this.redirectToProfileAuth(`/api/profile/auth/start?returnTo=${PROFILE_EMAILS_PATH}`);
           return;
         }
 

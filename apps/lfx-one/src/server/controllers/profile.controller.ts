@@ -10,6 +10,7 @@ import {
   CDP_TO_AUTH0_PROVIDER_MAP,
   EMAIL_ALREADY_LINKED_MESSAGE,
   EMAIL_REGEX,
+  PROFILE_EMAIL_PATH,
   PROFILE_EMAILS_PATH,
   PROFILE_PASSWORD_PATH,
   PROFILE_SETTINGS_PATH,
@@ -94,7 +95,7 @@ const PASSWORD_ERROR_RULES: readonly {
 export class ProfileController {
   private static readonly allowedProfileReturnPaths: ReadonlySet<string> = new Set([
     '/profile',
-    '/profile/email',
+    PROFILE_EMAIL_PATH,
     PROFILE_EMAILS_PATH,
     '/profile/identities',
     PROFILE_PASSWORD_PATH,
