@@ -15,5 +15,4 @@ export const FORMATION_SUB_STAGE_LABELS = {
   exploratory: 'Formation · Exploratory',
   engaged: 'Formation · Engaged',
   on_hold: 'Formation · On Hold',
-  activating: 'Activating',
 } as const satisfies Record<FormationSubStage, string>;

@@ -14,6 +14,7 @@
 
 import { describe, expect, it } from 'vitest';
 
+import { FORMATION_SUB_STAGE_LABELS } from '../constants/formation.constants';
 import { FormationActionType, FormationOwnerTeam, FormationTemplateSectionKey } from './formation.enum';
 import type { FormationTemplate } from '../interfaces/formation.interface';
 
@@ -32,6 +33,12 @@ describe('FormationOwnerTeam', () => {
 describe('FormationActionType', () => {
   it('is exhaustive against the five action kinds, including status_only', () => {
     expect(Object.values(FormationActionType).sort()).toEqual(['link', 'manual', 'provisionable', 'request', 'status_only']);
+  });
+});
+
+describe('FORMATION_SUB_STAGE_LABELS', () => {
+  it('covers exactly the three canonical sub-stages, with no activating member (GH-2163 amendment)', () => {
+    expect(Object.keys(FORMATION_SUB_STAGE_LABELS).sort()).toEqual(['engaged', 'exploratory', 'on_hold']);
   });
 });
 

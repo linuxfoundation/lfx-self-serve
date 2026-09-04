@@ -22,14 +22,23 @@ import { FormationActionType, FormationOwnerTeam, FormationTemplateSectionKey } 
 /**
  * Formations queue display taxonomy (queue filters, sub-stage pill) — formations already in
  * flight only. No `proposed`/`withdrawn` here: those were Accept/Decline-era states (Epic 2,
- * #1962).
+ * #1962). No `activating` member: activating is derived readiness (see {@link Formation.is_activating}),
+ * rendered as a separate "Gates cleared" badge (#1958) — never in the Stage column, which would
+ * wrongly imply the project is about to flip (Active is set by the formation team in the admin
+ * tool, normally on the announcement date).
  */
-export type FormationSubStage = 'exploratory' | 'engaged' | 'on_hold' | 'activating';
+export type FormationSubStage = 'exploratory' | 'engaged' | 'on_hold';
 
-/** What kind of record is in formation — drives the queue's Type column and indentation. */
-export type FormationEntityType = 'foundation' | 'subproject' | 'project';
+/**
+ * What kind of record is in formation — drives the queue's Type column and indentation.
+ * TODO(#1958): this is a display taxonomy that should be derived (`is_foundation` on the project,
+ * plus "parent is not the root" for a child project) rather than stored; `child_project` is kept
+ * as a stored value for now because the canonical `Formation` has neither signal yet.
+ */
+export type FormationEntityType = 'foundation' | 'child_project' | 'project';
 
-export interface FormationLead {
+/** A plain user reference — not an Epic 2 "formation lead" record (#1992), which doesn't exist in Epic 1. */
+export interface FormationUser {
   username: string;
   name: string;
 }
@@ -39,7 +48,7 @@ export interface Formation {
   parent_project_uid: string;
   parent_project_slug: string;
   parent_project_name: string;
-  /** Present only for a `subproject` — the foundation/project this formation nests under, for the queue's indented display. */
+  /** Present only for a `child_project` — the foundation/project this formation nests under, for the queue's indented display. */
   parent_formation_name?: string;
   entity_type: FormationEntityType;
   template_uid: string;
@@ -47,7 +56,10 @@ export interface Formation {
   sub_stage: FormationSubStage;
   /** ISO date. Null until a gating item sets it. */
   announcement_date: string | null;
-  /** Derived: every gating item `done` (and at least one gating item exists). TODO(#1957): backend-derived once real; see `deriveFormationReadinessSummary`, which computes this identically. */
+  /**
+   * Derived: every gating item `done` (and at least one gating item exists). An `awaiting_acceptance`
+   * gating item does not count as `done`, so it keeps this false. TODO(#1957): backend-derived once real.
+   */
   is_activating: boolean;
   gating_items_open: number;
   gating_items_total: number;
@@ -58,14 +70,24 @@ export interface Formation {
   updated_at: string;
 }
 
-/** 5-state taxonomy confirmed against the design mockup — includes `waiting_on_partner`, distinct from `in_progress`. */
-export type FormationItemStatus = 'not_started' | 'in_progress' | 'waiting_on_partner' | 'done' | 'skipped';
+/**
+ * `blocked` is the stored value for an item stuck on something external — the UI may word it
+ * "waiting on partner", but that's copy, not a stored state. `awaiting_acceptance` is a 4 Sep
+ * product decision: an assignee marking their item complete doesn't close it — it stays on their
+ * Pending Actions until the formation team accepts it (`in_progress` understates that, `done`
+ * overstates it and would let it count toward readiness). TODO(#1957): `awaiting_acceptance` is
+ * provisional — the architecture lead hasn't reviewed the name.
+ *
+ * Only `done` counts toward readiness — wherever `is_activating` or a gating count is derived,
+ * `awaiting_acceptance` must not count as complete.
+ */
+export type FormationItemStatus = 'not_started' | 'in_progress' | 'blocked' | 'awaiting_acceptance' | 'done' | 'skipped';
 
 /**
  * One row's action affordance. `request` is a real, working Epic-1 action (fixture-only: files a
- * lightweight request and flips the item to `waiting_on_partner`, no SLA/target-team object — that
- * richer `request` type is #1957/Epic 2). `status_only` items never expose how the underlying
- * tooling was set up (manual vs automated) — only Done/pending + an optional link.
+ * lightweight request and flips the item to `blocked`, no SLA/target-team object — that richer
+ * `request` type is #1957/Epic 2). `status_only` items never expose how the underlying tooling was
+ * set up (manual vs automated) — only Done/pending + an optional link.
  */
 export type FormationItemAction = 'manual' | 'link' | 'provisionable' | 'request' | 'status_only';
 
@@ -83,11 +105,15 @@ export interface FormationItem {
   section_title: string;
   title: string;
   status: FormationItemStatus;
-  /** Only gating items count toward `is_activating` and show the "Gates Active" chip. */
+  /**
+   * Only gating items count toward `is_activating` and show the "Required for Active" chip — the
+   * agreed 4 Sep vocabulary (#1958) for the chip, the readiness strip, the Me-lens marker and the
+   * item-assigned email. "Gates cleared" survives only as the formation-level queue badge.
+   */
   is_gating: boolean;
   /** TODO(#1957): narrow once the real service confirms its owner-team vocabulary — fixture values today include labels (e.g. `'PMO'`) outside {@link FormationOwnerTeam}'s curated set. */
   owner_team: string | null;
-  owner: FormationLead | null;
+  owner: FormationUser | null;
   due_date: string | null;
   action: FormationItemAction;
   /** For `link`/`status_only` rows that open something external. */
@@ -99,10 +125,11 @@ export interface FormationItem {
   /** Required and logged when a gating item is skipped. */
   skip_reason: string | null;
   /**
-   * Per-item `gate_writer` permission — response-only, enrichment output. TODO(#1957): fabricated
-   * today by `FormationItemAccessService.canComplete` from a real LF-staff check; swap for a real
-   * `checkSingleAccess(req, { resource: 'formation_item', id, access: 'gate_writer' })` call once
-   * the relation ships.
+   * Whether the caller may complete this row — response-only, enrichment output. There is no
+   * `gate_writer` relation: gating is a property of the item, not the person. The guard is the
+   * project write permission plus this item's `is_gating` flag, checked service-side.
+   * TODO(#1957): fabricated today by `FormationItemAccessService.canComplete`; swap for the real
+   * service-side check once it ships.
    */
   can_complete: boolean;
   created_at: string;
@@ -129,7 +156,7 @@ export interface FormationActivity {
   /** Always item-scoped today — every {@link FormationActivityType} is an item-level action. */
   formation_item_uid: string | null;
   type: FormationActivityType;
-  actor: FormationLead;
+  actor: FormationUser;
   message: string;
   metadata: Record<string, unknown> | null;
   created_at: string;
@@ -190,7 +217,7 @@ export interface FormationChecklistResponse {
 export type FormationQueueTiles = Record<FormationSubStage, number> & {
   total: number;
   foundations: number;
-  subprojects: number;
+  child_projects: number;
 };
 
 /** Response body for `GET /api/formations`. */
