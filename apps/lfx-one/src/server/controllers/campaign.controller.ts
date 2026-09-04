@@ -841,7 +841,26 @@ export class CampaignController {
       return;
     }
     const stage = stageParam;
+
     const deliveryType: CampaignDeliveryType = deliveryTypeParam === 'email' ? 'email' : 'paid-marketing';
+    // The PAIR, matching campaign-service exactly. Each value is valid alone and the COMBINATION
+    // is not: paid has no series, so its stage must be empty, and an email send is always some
+    // stage. Upstream refuses both with a 400 (`campaign_briefs_delivery_stage_pair_valid` and the
+    // service guard above it), so without this check the BFF forwards a request that cannot
+    // succeed and relays an upstream error for something it could have named here.
+    const pairIsValid = deliveryType === 'paid-marketing' ? stage === '' : (CAMPAIGN_EMAIL_STAGES as readonly string[]).includes(stage);
+    if (!pairIsValid) {
+      next(
+        ServiceValidationError.forField(
+          'stage',
+          deliveryType === 'paid-marketing'
+            ? 'a paid-marketing brief has no series, so stage must be empty'
+            : `an email brief names one send in the series, so stage must be one of: ${CAMPAIGN_EMAIL_STAGES.join(', ')}`,
+          { operation: 'campaign_load_brief', service: 'campaign_controller', path: req.path }
+        )
+      );
+      return;
+    }
 
     const startTime = logger.startOperation(req, 'campaign_load_brief', { eventSlug, projectSlug, deliveryType });
 

@@ -3467,6 +3467,25 @@ describe('CampaignsComponent — email delivery channel', () => {
       expect(internals().emailBriefId()).toBe('brief-approved');
     });
 
+    // A live staging POLL must be cancelled by a stage change, not merely counted past.
+    // `pollStagingJob` never reads `emailStagingGeneration`, so bumping it only guards the awaits
+    // BEFORE the poll starts. A subscription already running keeps writing `done`/`error` — and
+    // announces "Draft created" for the PREVIOUS send under the newly selected stage.
+    // `resetEmailBriefDerivedState` cancels it for exactly this reason; the stage-change path has
+    // the same hazard and had none of the protection.
+    it('cancels a live staging poll when the type change moves the stage', () => {
+      selectEmail();
+      internals().emailStaging.set('staging');
+      const sub = { unsubscribe: vi.fn(), closed: false };
+      (internals() as unknown as { stagingJobSubscription: unknown }).stagingJobSubscription = sub;
+
+      (internals() as unknown as { onSelectEmailType(id: string): void }).onSelectEmailType('thank-you-survey');
+
+      expect(sub.unsubscribe, 'the previous stage poll kept running and can still report against the new stage').toHaveBeenCalled();
+      expect((internals() as unknown as { stagingJobSubscription: unknown }).stagingJobSubscription).toBeNull();
+      expect(internals().emailStaging()).toBe('idle');
+    });
+
     it('keeps the loaded brief when two types share one stage', () => {
       selectEmail();
       internals().emailBriefOutput.set(emailBrief);

@@ -446,16 +446,34 @@ describe('CampaignController.loadBrief', () => {
   });
 
   it('forwards delivery_type=email so an email caller cannot be handed a paid brief', async () => {
-    // The parameter is what scopes the read to one surface. Briefs are stored one row per
-    // `(project, event_slug)` with no delivery dimension BEFORE LFXV2-3198 widened it, so without this an email caller and a
-    // paid caller resolve to the SAME row -- which is why the email restore path was disabled
-    // outright before this existed rather than shipped with a known wrong answer.
+    // The parameter is what scopes the read to one surface. Briefs were stored one row per
+    // `(project, event_slug)` with no delivery dimension BEFORE LFXV2-3198 widened the key, so an
+    // email caller and a paid caller resolved to the SAME row -- which is why the email restore
+    // path was disabled outright rather than shipped with a known wrong answer.
+    //
+    // A STAGE is sent with it, because `(email, '')` is not an identity any brief can have: paid
+    // has no series and an email send is always some stage. An earlier version of this test
+    // asserted that impossible pair, mocking an upstream state that cannot exist.
     loadBrief.mockResolvedValue({ status: 'none', briefId: null, brief: null, etag: null, approved: false });
 
-    await controller.loadBrief(buildLoadReq({ event_slug: 'kubecon-eu-2026', project: 'tlf', delivery_type: 'email' }), res, next);
+    await controller.loadBrief(buildLoadReq({ event_slug: 'kubecon-eu-2026', project: 'tlf', delivery_type: 'email', stage: 'Registration Push' }), res, next);
 
-    expect(loadBrief).toHaveBeenCalledWith(expect.any(Object), 'kubecon-eu-2026', 'tlf', 'email', '');
+    expect(loadBrief).toHaveBeenCalledWith(expect.any(Object), 'kubecon-eu-2026', 'tlf', 'email', 'Registration Push');
     expect(next).not.toHaveBeenCalled();
+  });
+
+  // The pair the BFF now refuses locally rather than forwarding. Upstream rejects it with a 400,
+  // so relaying it would spend a round trip to learn something this layer already knows.
+  it.each([
+    ['email with no stage', { event_slug: 'kubecon-eu-2026', project: 'tlf', delivery_type: 'email' }],
+    ['paid with an email stage', { event_slug: 'kubecon-eu-2026', project: 'tlf', stage: 'CFP Launch' }],
+  ])('refuses %s without calling campaign-service', async (_label, query) => {
+    await controller.loadBrief(buildLoadReq(query), res, next);
+
+    expect(loadBrief, 'an impossible identity pair was forwarded upstream').not.toHaveBeenCalled();
+    const error = vi.mocked(next).mock.calls[0][0] as unknown as ServiceValidationError;
+    expect(error).toBeInstanceOf(ServiceValidationError);
+    expect(error.statusCode).toBe(400);
   });
 
   // Regression: the controller read `delivery_type` and NOT `stage`, so every lookup asked

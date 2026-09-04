@@ -1962,6 +1962,16 @@ export class CampaignsComponent {
       this.emailAudienceGeneration++;
       this.emailStagingGeneration++;
       this.emailBriefPersistInFlight = null;
+      // CANCEL the poll, do not merely bump past it. `pollStagingJob` never reads
+      // `emailStagingGeneration`, so the counter only guards the awaits BEFORE the poll starts; a
+      // subscription already running keeps writing `done`/`error` and would announce "Draft
+      // created" for the PREVIOUS send under the newly selected stage.
+      // `resetEmailBriefDerivedState` cancels it for exactly this reason, and a stage change is
+      // the same hazard by a different route.
+      this.stagingJobSubscription?.unsubscribe();
+      this.stagingJobSubscription = null;
+      this.emailStaging.set('idle');
+      this.emailStagingMessage.set('');
     }
   }
 

@@ -813,6 +813,12 @@ describe('PlanningTabComponent delivery-type mode', () => {
     vi.spyOn(TestBed.inject(CampaignService), 'loadBrief').mockImplementation(loadBrief);
 
     await build('email');
+    // The stage is BOUND, as the parent always binds it. `(email, '')` is not an identity any
+    // brief can have -- paid has no series, an email send is always some stage -- and campaign
+    // service refuses the pair with a 400. The input's `''` default is reachable only by mounting
+    // this component standalone, which is a test artifact: every one of the twelve email types
+    // maps to a stage, so `selectedEmailStage()` is never empty in the running app.
+    fixture.componentRef.setInput('emailStage', 'Registration Push');
     const component = fixture.componentInstance as unknown as { briefForm: FormGroup; onUrlInput(): void };
     component.briefForm.controls['url'].setValue('https://events.example.com/kubecon-eu-2026');
     fixture.detectChanges();
@@ -820,7 +826,7 @@ describe('PlanningTabComponent delivery-type mode', () => {
     await new Promise((resolve) => setTimeout(resolve, 600));
     await fixture.whenStable();
 
-    expect(loadBrief).toHaveBeenCalledWith('kubecon-eu-2026', 'foundation-a', 'email', '');
+    expect(loadBrief).toHaveBeenCalledWith('kubecon-eu-2026', 'foundation-a', 'email', 'Registration Push');
   });
 
   it('still looks up a saved brief in paid mode', async () => {
