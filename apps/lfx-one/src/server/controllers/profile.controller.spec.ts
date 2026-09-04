@@ -465,8 +465,15 @@ describe('ProfileController impersonation-blocked auth callbacks', () => {
   it('handleProfileAuthCallback redirects to the default returnTo without exchanging the code', async () => {
     isImpersonatingMock.mockReturnValue(true);
     const res = buildRes();
+    // Matching state so the unguarded path would clear the CSRF check and reach exchangeCodeForToken —
+    // otherwise the "not called" assertion below stays green for the wrong reason (invalid_state, not the guard).
+    const req = buildReq({
+      path: '/passwordless/callback',
+      query: { code: 'c', state: 's' },
+      appSession: { profileAuthState: 's' },
+    });
 
-    await controller.handleProfileAuthCallback(buildReq({ path: '/passwordless/callback', query: { code: 'c', state: 's' } }), res);
+    await controller.handleProfileAuthCallback(req, res);
 
     expect(res.redirect).toHaveBeenCalledWith('/profile?error=impersonation_read_only');
     expect(profileAuthSvc.exchangeCodeForToken).not.toHaveBeenCalled();
