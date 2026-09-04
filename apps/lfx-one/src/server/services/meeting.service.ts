@@ -13,7 +13,10 @@ import {
   CreateMeetingRequest,
   CreateMeetingRsvpRequest,
   ITXCreateMeetingResponseRequest,
+  ITXCreatePastMeetingParticipantRequest,
   ITXMeetingResponseResult,
+  ITXPastMeetingParticipantResult,
+  ITXUpdatePastMeetingParticipantRequest,
   Meeting,
   MeetingAttachment,
   MeetingJoinURL,
@@ -345,20 +348,31 @@ export class MeetingService {
    * (`meeting_id`). No `filter_grants` — callers run this in a public/M2M context and
    * the projection carries timestamps only. Completeness is not guaranteed: a later-page
    * fetch failure returns the pages already accumulated (acceptable for navigation).
+   *
+   * By default a fetch failure is swallowed and treated as "no occurrences" — fine for
+   * navigation callers. Callers that need to distinguish "genuinely no history" from
+   * "history is unknown because the fetch failed" (e.g. reconciliation, which must not
+   * treat a failed fetch as a complete candidate pool) should pass `throwOnFailure: true`.
    */
-  public async getPastOccurrencesForMeeting(req: Request, meetingUid: string): Promise<PastOccurrenceSummary[]> {
+  public async getPastOccurrencesForMeeting(req: Request, meetingUid: string, options: { throwOnFailure?: boolean } = {}): Promise<PastOccurrenceSummary[]> {
     logger.debug(req, 'get_past_occurrences_for_meeting', 'Fetching past occurrences', {
       meeting_id: meetingUid,
     });
 
-    const records = await fetchAllQueryResources<PastMeeting>(req, (pageToken) =>
-      this.microserviceProxy.proxyRequest<QueryServiceResponse<PastMeeting>>(req, 'LFX_V2_SERVICE', '/query/resources', 'GET', {
-        type: 'v1_past_meeting',
-        filters: [`meeting_id:${meetingUid}`],
-        page_size: 500,
-        ...(pageToken && { page_token: pageToken }),
-      })
+    const records = await fetchAllQueryResources<PastMeeting>(
+      req,
+      (pageToken) =>
+        this.microserviceProxy.proxyRequest<QueryServiceResponse<PastMeeting>>(req, 'LFX_V2_SERVICE', '/query/resources', 'GET', {
+          type: 'v1_past_meeting',
+          filters: [`meeting_id:${meetingUid}`],
+          page_size: 500,
+          ...(pageToken && { page_token: pageToken }),
+        }),
+      { failOnPartial: options.throwOnFailure }
     ).catch((error) => {
+      if (options.throwOnFailure) {
+        throw error;
+      }
       logger.warning(req, 'get_past_occurrences_for_meeting', 'Failed to fetch past occurrences, returning empty list', {
         meeting_id: meetingUid,
         error: error instanceof Error ? error.message : 'Unknown error',
@@ -964,7 +978,7 @@ export class MeetingService {
    * through a "bridge" record B (e.g. A and B share an email, B and C share a username), and a
    * one-pass merge would miss that A and C belong to the same person depending on encounter order.
    */
-  public async getPastMeetingParticipants(req: Request, pastMeetingUid: string): Promise<PastMeetingParticipant[]> {
+  public async getPastMeetingParticipants(req: Request, pastMeetingUid: string, failOnPartial: boolean = false): Promise<PastMeetingParticipant[]> {
     logger.debug(req, 'get_past_meeting_participants', 'Fetching past meeting participants', {
       past_meeting_id: pastMeetingUid,
     });
@@ -974,11 +988,14 @@ export class MeetingService {
       tags: `meeting_and_occurrence_id:${pastMeetingUid}`,
     };
 
-    const raw = await fetchAllQueryResources<PastMeetingParticipant>(req, (pageToken) =>
-      this.microserviceProxy.proxyRequest<QueryServiceResponse<PastMeetingParticipant>>(req, 'LFX_V2_SERVICE', '/query/resources', 'GET', {
-        ...params,
-        ...(pageToken && { page_token: pageToken }),
-      })
+    const raw = await fetchAllQueryResources<PastMeetingParticipant>(
+      req,
+      (pageToken) =>
+        this.microserviceProxy.proxyRequest<QueryServiceResponse<PastMeetingParticipant>>(req, 'LFX_V2_SERVICE', '/query/resources', 'GET', {
+          ...params,
+          ...(pageToken && { page_token: pageToken }),
+        }),
+      { failOnPartial }
     );
 
     // Plain union-find over connected identity-match edges (pure transitive closure, no
@@ -1822,6 +1839,67 @@ export class MeetingService {
       req,
       'LFX_V2_SERVICE',
       `/itx/past_meetings/${encodeURIComponent(pastMeetingUid)}/attachments/${encodeURIComponent(attachmentUid)}`,
+      'DELETE'
+    );
+  }
+
+  /**
+   * Creates a new past meeting participant (invitee and/or attendee record) via ITX proxy
+   */
+  public async createPastMeetingParticipant(
+    req: Request,
+    pastMeetingUid: string,
+    participantData: ITXCreatePastMeetingParticipantRequest
+  ): Promise<ITXPastMeetingParticipantResult> {
+    logger.debug(req, 'create_past_meeting_participant', 'Creating past meeting participant', { past_meeting_id: pastMeetingUid });
+
+    return this.microserviceProxy.proxyRequest<ITXPastMeetingParticipantResult>(
+      req,
+      'LFX_V2_SERVICE',
+      `/itx/past_meetings/${encodeURIComponent(pastMeetingUid)}/participants`,
+      'POST',
+      undefined,
+      participantData
+    );
+  }
+
+  /**
+   * Updates a past meeting participant's invitee and/or attendee record via ITX proxy
+   */
+  public async updatePastMeetingParticipant(
+    req: Request,
+    pastMeetingUid: string,
+    participantId: string,
+    participantData: ITXUpdatePastMeetingParticipantRequest
+  ): Promise<ITXPastMeetingParticipantResult> {
+    logger.debug(req, 'update_past_meeting_participant', 'Updating past meeting participant', {
+      past_meeting_id: pastMeetingUid,
+      participant_id: participantId,
+    });
+
+    return this.microserviceProxy.proxyRequest<ITXPastMeetingParticipantResult>(
+      req,
+      'LFX_V2_SERVICE',
+      `/itx/past_meetings/${encodeURIComponent(pastMeetingUid)}/participants/${encodeURIComponent(participantId)}`,
+      'PUT',
+      undefined,
+      participantData
+    );
+  }
+
+  /**
+   * Deletes a past meeting participant via ITX proxy
+   */
+  public async deletePastMeetingParticipant(req: Request, pastMeetingUid: string, participantId: string): Promise<void> {
+    logger.debug(req, 'delete_past_meeting_participant', 'Deleting past meeting participant', {
+      past_meeting_id: pastMeetingUid,
+      participant_id: participantId,
+    });
+
+    await this.microserviceProxy.proxyRequest<void>(
+      req,
+      'LFX_V2_SERVICE',
+      `/itx/past_meetings/${encodeURIComponent(pastMeetingUid)}/participants/${encodeURIComponent(participantId)}`,
       'DELETE'
     );
   }

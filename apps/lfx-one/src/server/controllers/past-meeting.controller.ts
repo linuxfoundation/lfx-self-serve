@@ -5,6 +5,8 @@ import {
   AttachmentCategory,
   AttachmentDownloadUrlResponse,
   CreateMeetingAttachmentRequest,
+  ITXCreatePastMeetingParticipantRequest,
+  ITXUpdatePastMeetingParticipantRequest,
   PastMeeting,
   PastMeetingAttachment,
   PastMeetingRecording,
@@ -17,10 +19,11 @@ import {
 } from '@lfx-one/shared/interfaces';
 import { NextFunction, Request, Response } from 'express';
 
-import { ServiceValidationError } from '../errors';
+import { AuthorizationError, ServiceValidationError } from '../errors';
 import { enrichMeetingsWithCreatedBy, stripHostKey } from '../helpers/meeting.helper';
-import { validateUidParameter } from '../helpers/validation.helper';
+import { validateRequiredParameter, validateUidParameter } from '../helpers/validation.helper';
 import { AccessCheckService } from '../services/access-check.service';
+import { AttendanceReconciliationService } from '../services/attendance-reconciliation.service';
 import { logger } from '../services/logger.service';
 import { MeetingService } from '../services/meeting.service';
 
@@ -30,6 +33,7 @@ import { MeetingService } from '../services/meeting.service';
 export class PastMeetingController {
   private meetingService: MeetingService = new MeetingService();
   private accessCheckService: AccessCheckService = new AccessCheckService();
+  private attendanceReconciliationService: AttendanceReconciliationService = new AttendanceReconciliationService();
 
   /**
    * GET /past-meetings
@@ -107,20 +111,7 @@ export class PastMeetingController {
       }
 
       const meeting = await this.meetingService.getPastMeetingById(req, uid);
-
-      if (req.oidc?.isAuthenticated()) {
-        try {
-          const meetingWithAccess = await this.accessCheckService.addAccessToResource(
-            req,
-            { ...meeting, id: meeting.meeting_and_occurrence_id ?? uid },
-            'v1_past_meeting',
-            'organizer'
-          );
-          meeting.organizer = meetingWithAccess.organizer ?? false;
-        } catch {
-          meeting.organizer = false;
-        }
-      }
+      meeting.organizer = await this.isPastMeetingOrganizer(req, meeting, uid);
 
       const counts = await this.addParticipantsCount(req, uid);
       meeting.individual_registrants_count = counts.individual_registrants_count;
@@ -177,6 +168,234 @@ export class PastMeetingController {
 
       // Send the participants data to the client
       res.json(participants);
+    } catch (error) {
+      next(error);
+    }
+  }
+
+  /**
+   * POST /past-meetings/:uid/participants
+   * Organizer-only, enforced both here and by lfx-v2-meeting-service on the ITX endpoint —
+   * belt-and-suspenders defense in depth, matching the reconcile endpoint's BFF-level check.
+   */
+  public async createPastMeetingParticipant(req: Request, res: Response, next: NextFunction): Promise<void> {
+    const { uid } = req.params;
+    const participantData: ITXCreatePastMeetingParticipantRequest = req.body;
+    const startTime = logger.startOperation(req, 'create_past_meeting_participant', {
+      past_meeting_id: uid,
+    });
+
+    try {
+      if (
+        !validateUidParameter(uid, req, next, {
+          operation: 'create_past_meeting_participant',
+          service: 'past_meeting_controller',
+        })
+      ) {
+        return;
+      }
+
+      if (!participantData.is_invited && !participantData.is_attended) {
+        return next(
+          ServiceValidationError.forField('is_invited', 'At least one of is_invited or is_attended must be true', {
+            operation: 'create_past_meeting_participant',
+            service: 'past_meeting_controller',
+          })
+        );
+      }
+
+      const pastMeeting = await this.meetingService.getPastMeetingById(req, uid);
+      const isOrganizer = await this.isPastMeetingOrganizer(req, pastMeeting, uid);
+
+      if (!isOrganizer) {
+        return next(
+          new AuthorizationError('Only the meeting organizer can manage past meeting participants', {
+            operation: 'create_past_meeting_participant',
+            service: 'past_meeting_controller',
+          })
+        );
+      }
+
+      const participant = await this.meetingService.createPastMeetingParticipant(req, uid, participantData);
+
+      logger.success(req, 'create_past_meeting_participant', startTime, {
+        past_meeting_id: uid,
+        participant_id: participant.id,
+      });
+
+      res.status(201).json(participant);
+    } catch (error) {
+      next(error);
+    }
+  }
+
+  /**
+   * PUT /past-meetings/:uid/participants/:participantId
+   * Organizer-only, enforced both here and by lfx-v2-meeting-service on the ITX endpoint —
+   * belt-and-suspenders defense in depth, matching the reconcile endpoint's BFF-level check.
+   */
+  public async updatePastMeetingParticipant(req: Request, res: Response, next: NextFunction): Promise<void> {
+    const { uid, participantId } = req.params;
+    const participantData: ITXUpdatePastMeetingParticipantRequest = req.body;
+    const startTime = logger.startOperation(req, 'update_past_meeting_participant', {
+      past_meeting_id: uid,
+      participant_id: participantId,
+    });
+
+    try {
+      if (
+        !validateUidParameter(uid, req, next, {
+          operation: 'update_past_meeting_participant',
+          service: 'past_meeting_controller',
+        })
+      ) {
+        return;
+      }
+
+      if (
+        !validateRequiredParameter(participantId, 'participantId', req, next, {
+          operation: 'update_past_meeting_participant',
+          service: 'past_meeting_controller',
+        })
+      ) {
+        return;
+      }
+
+      if (participantData.is_invited === undefined && participantData.is_attended === undefined) {
+        return next(
+          ServiceValidationError.forField('is_invited', 'At least one of is_invited or is_attended must be present to update a participant', {
+            operation: 'update_past_meeting_participant',
+            service: 'past_meeting_controller',
+          })
+        );
+      }
+
+      const pastMeeting = await this.meetingService.getPastMeetingById(req, uid);
+      const isOrganizer = await this.isPastMeetingOrganizer(req, pastMeeting, uid);
+
+      if (!isOrganizer) {
+        return next(
+          new AuthorizationError('Only the meeting organizer can manage past meeting participants', {
+            operation: 'update_past_meeting_participant',
+            service: 'past_meeting_controller',
+          })
+        );
+      }
+
+      const participant = await this.meetingService.updatePastMeetingParticipant(req, uid, participantId, participantData);
+
+      logger.success(req, 'update_past_meeting_participant', startTime, {
+        past_meeting_id: uid,
+        participant_id: participantId,
+      });
+
+      res.json(participant);
+    } catch (error) {
+      next(error);
+    }
+  }
+
+  /**
+   * DELETE /past-meetings/:uid/participants/:participantId
+   * Organizer-only, enforced both here and by lfx-v2-meeting-service on the ITX endpoint —
+   * belt-and-suspenders defense in depth, matching the reconcile endpoint's BFF-level check.
+   */
+  public async deletePastMeetingParticipant(req: Request, res: Response, next: NextFunction): Promise<void> {
+    const { uid, participantId } = req.params;
+    const startTime = logger.startOperation(req, 'delete_past_meeting_participant', {
+      past_meeting_id: uid,
+      participant_id: participantId,
+    });
+
+    try {
+      if (
+        !validateUidParameter(uid, req, next, {
+          operation: 'delete_past_meeting_participant',
+          service: 'past_meeting_controller',
+        })
+      ) {
+        return;
+      }
+
+      if (
+        !validateRequiredParameter(participantId, 'participantId', req, next, {
+          operation: 'delete_past_meeting_participant',
+          service: 'past_meeting_controller',
+        })
+      ) {
+        return;
+      }
+
+      const pastMeeting = await this.meetingService.getPastMeetingById(req, uid);
+      const isOrganizer = await this.isPastMeetingOrganizer(req, pastMeeting, uid);
+
+      if (!isOrganizer) {
+        return next(
+          new AuthorizationError('Only the meeting organizer can manage past meeting participants', {
+            operation: 'delete_past_meeting_participant',
+            service: 'past_meeting_controller',
+          })
+        );
+      }
+
+      await this.meetingService.deletePastMeetingParticipant(req, uid, participantId);
+
+      logger.success(req, 'delete_past_meeting_participant', startTime, {
+        past_meeting_id: uid,
+        participant_id: participantId,
+      });
+
+      res.status(204).send();
+    } catch (error) {
+      next(error);
+    }
+  }
+
+  /**
+   * POST /past-meetings/:uid/reconcile
+   * Manual admin trigger (GH-1672 item 4) — matches unverified attendees against a candidate
+   * pool (invitees + committee members + previously-verified attendees of prior occurrences),
+   * auto-applying only high-confidence matches. No-match attendees are always returned for
+   * admin review, never silently auto-tagged unknown.
+   */
+  public async reconcilePastMeetingParticipants(req: Request, res: Response, next: NextFunction): Promise<void> {
+    const { uid } = req.params;
+    const startTime = logger.startOperation(req, 'reconcile_past_meeting_participants', {
+      past_meeting_id: uid,
+    });
+
+    try {
+      if (
+        !validateUidParameter(uid, req, next, {
+          operation: 'reconcile_past_meeting_participants',
+          service: 'past_meeting_controller',
+        })
+      ) {
+        return;
+      }
+
+      const pastMeeting = await this.meetingService.getPastMeetingById(req, uid);
+      const isOrganizer = await this.isPastMeetingOrganizer(req, pastMeeting, uid);
+
+      if (!isOrganizer) {
+        return next(
+          new AuthorizationError('Only the meeting organizer can trigger attendance reconciliation', {
+            operation: 'reconcile_past_meeting_participants',
+            service: 'past_meeting_controller',
+          })
+        );
+      }
+
+      const result = await this.attendanceReconciliationService.reconcilePastMeetingParticipants(req, uid, pastMeeting);
+
+      logger.success(req, 'reconcile_past_meeting_participants', startTime, {
+        past_meeting_id: uid,
+        candidate_pool_size: result.candidate_pool_size,
+        auto_applied_count: result.auto_applied_count,
+        needs_review_count: result.needs_review_count,
+      });
+
+      res.json(result);
     } catch (error) {
       next(error);
     }
@@ -795,6 +1014,28 @@ export class PastMeetingController {
         participant_count: 0,
         attended_count: 0,
       };
+    }
+  }
+
+  /**
+   * Resolves whether the requesting user is the organizer of a past meeting. Unauthenticated
+   * requests and access-check failures both default to false (fail closed).
+   */
+  private async isPastMeetingOrganizer(req: Request, pastMeeting: PastMeeting, uid: string): Promise<boolean> {
+    if (!req.oidc?.isAuthenticated()) {
+      return false;
+    }
+
+    try {
+      const meetingWithAccess = await this.accessCheckService.addAccessToResource(
+        req,
+        { ...pastMeeting, id: pastMeeting.meeting_and_occurrence_id ?? uid },
+        'v1_past_meeting',
+        'organizer'
+      );
+      return meetingWithAccess.organizer ?? false;
+    } catch {
+      return false;
     }
   }
 }
