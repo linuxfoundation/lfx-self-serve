@@ -890,6 +890,45 @@ describe('extractableHtml', () => {
     expect(out).toContain('"startDate":"2027-03-15"');
   });
 
+  // A flat `slice(0, MAX_SOURCE_CHARS)` cut whichever block 150k landed inside, taking its closing
+  // tag with it -- the stripper then could not match, and 150k of CSS filled the budget as prose
+  // while the text after it was lost. This is the fixed-slice failure the helper exists to fix,
+  // recreated at a different offset, so it is pinned per strippable tag rather than once.
+  describe.each([
+    ['style', `<style>${'a'.repeat(160_000)}</style>`],
+    ['script', `<script>${'x'.repeat(160_000)}</script>`],
+    ['svg', `<svg>${'x'.repeat(160_000)}</svg>`],
+  ])('keeps prose after a %s block that straddles the source cap', (tag, block) => {
+    it('drops the block and keeps the text behind it', () => {
+      const out = extractableHtml(`${block}<p>Tokyo</p>`);
+
+      expect(out, `the ${tag} block survived the cap and filled the budget`).not.toContain(`<${tag}`);
+      expect(out).toContain('Tokyo');
+    });
+  });
+
+  // The budget is spent on PROSE, so text on both sides of a straddling block survives.
+  it('keeps prose from before and after a straddling block', () => {
+    const out = extractableHtml(`<p>Osaka</p><style>${'a'.repeat(160_000)}</style><p>Tokyo</p>`);
+
+    expect(out).toContain('Osaka');
+    expect(out).toContain('Tokyo');
+  });
+
+  // Skipping blocks whole must not become the new hazard: the walk searches forward for each
+  // close, and a body whose blocks never close would run that search to EOF from every opening.
+  // `indexOf` does not backtrack, so this is linear where the strippers are quadratic -- the same
+  // input costs ~460s if the strippers ever see it unbounded.
+  it('stays bounded when no strippable block ever closes', () => {
+    const openings = '<script '.repeat((5 * 1024 * 1024) / 8);
+
+    const started = Date.now();
+    const out = extractableHtml(openings);
+
+    expect(Date.now() - started, 'the prose-budget walk scanned quadratically').toBeLessThan(4000);
+    expect(out.trim()).toBe('');
+  });
+
   it('returns an empty string for input that is entirely strippable', () => {
     expect(extractableHtml('<style>.a{color:red}</style>').trim()).toBe('');
   });

@@ -706,6 +706,29 @@ const JSON_LD_BUDGET = 20_000;
 const MAX_SOURCE_CHARS = 150_000;
 
 /**
+ * Characters the prose-budget walk may scan while looking for the end of a straddling block.
+ *
+ * The walk below skips `<script>`/`<style>`/`<svg>` blocks whole so the 150k budget is spent on
+ * text rather than on markup the strippers would have discarded anyway. Finding the end of a block
+ * means searching forward, and on a body whose block never closes that search would run to EOF --
+ * so it is bounded, and a block whose close lies past this point is treated as unclosed.
+ *
+ * 1 MiB matches `MAX_JSON_LD_SCAN_CHARS` and is well under the 5 MiB download ceiling. The cost is
+ * that a single block larger than this drops the prose behind it; that is the deliberate trade,
+ * and `keeps prose after a block that straddles the source cap` pins the case it does handle.
+ */
+const MAX_STRIP_SCAN_CHARS = 1024 * 1024;
+
+/**
+ * The strippable block OPENINGS, used to walk the body rather than to match whole blocks.
+ *
+ * Deliberately has no lazy span. The strippers below carry `[\s\S]*?` and are quadratic on
+ * unmatched openings -- 5 MiB of `'<script '` with no `>` costs ~460s through them -- which is why
+ * the source cap runs BEFORE they do and must keep running before them.
+ */
+const STRIPPABLE_OPENING_RE = /<(script|style|svg)(?=[\s/>])/gi;
+
+/**
  * The JSON-LD OPENING tag alone, used to count blocks before the full matcher runs.
  *
  * Cheaper than the full matcher because it has no lazy span: it stops at the first `>` rather
@@ -760,6 +783,61 @@ const MAX_JSON_LD_SCAN_CHARS = 1024 * 1024;
 const JSON_LD_RE = /<script(?=[\s/>])[^>]{0,512}\stype\s*=\s*["']application\/ld\+json["'][^>]{0,512}>[\s\S]*?<\/script(\s[^>]*)?>/gi;
 
 /**
+ * Cap the source at `MAX_SOURCE_CHARS` of PROSE, skipping strippable blocks whole.
+ *
+ * A flat slice can land inside a `<script>`/`<style>`/`<svg>` block and cut its closing tag off,
+ * which leaves the stripper regexes below unable to match it. The markup then survives the strip
+ * and consumes the whole budget as if it were prose. This walks the openings instead and jumps
+ * each block end-to-end, so the budget is spent on text and no block is ever half-included.
+ *
+ * The walk uses `indexOf` throughout and never backtracks, so it stays linear on the adversarial
+ * bodies that make the regex strippers quadratic: 5 MiB of unmatched `<script ` openings costs
+ * ~1ms here against ~460s through the strippers, which is why this must keep running before them.
+ *
+ * A block whose close is missing, or lies beyond `MAX_STRIP_SCAN_CHARS`, ends the walk: there is
+ * no trustworthy end to skip to, and continuing past an unclosed block would hand the strippers
+ * the very shape they are slow on.
+ */
+function boundedSource(html: string): string {
+  if (html.length <= MAX_SOURCE_CHARS) {
+    return html;
+  }
+
+  const scan = html.length > MAX_STRIP_SCAN_CHARS ? html.slice(0, MAX_STRIP_SCAN_CHARS) : html;
+  let out = '';
+  let pos = 0;
+  let kept = 0;
+
+  STRIPPABLE_OPENING_RE.lastIndex = 0;
+  let opening = STRIPPABLE_OPENING_RE.exec(scan);
+
+  while (kept < MAX_SOURCE_CHARS && opening !== null) {
+    const text = scan.slice(pos, opening.index);
+    const room = MAX_SOURCE_CHARS - kept;
+
+    out += text.slice(0, room);
+    kept += Math.min(text.length, room);
+
+    if (kept >= MAX_SOURCE_CHARS) {
+      return out;
+    }
+
+    const close = scan.indexOf(`</${opening[1].toLowerCase()}`, opening.index);
+    const closeEnd = close === -1 ? -1 : scan.indexOf('>', close);
+
+    if (closeEnd === -1) {
+      return out;
+    }
+
+    pos = closeEnd + 1;
+    STRIPPABLE_OPENING_RE.lastIndex = pos;
+    opening = STRIPPABLE_OPENING_RE.exec(scan);
+  }
+
+  return out + scan.slice(pos, pos + (MAX_SOURCE_CHARS - kept));
+}
+
+/**
  * Reduce a fetched page to the part an extraction can actually read.
  *
  * The previous `html.slice(0, 30_000)` cut the page at a fixed byte offset, which failed for a
@@ -778,13 +856,15 @@ const JSON_LD_RE = /<script(?=[\s/>])[^>]{0,512}\stype\s*=\s*["']application\/ld
  * — but it now applies to content rather than to boilerplate, and it is raised to fit a stripped
  * page whole.
  *
- * FOUR bounds sit in this path, and this is the last of them. Each answers a different question,
+ * FIVE bounds sit in this path, and this is the last of them. Each answers a different question,
  * so removing any one is not covered by the others:
  *
  *   - `MAX_RESPONSE_BYTES` (5 MiB, `url-validation.ts`) — how much is DOWNLOADED. `fetchSafeUrl`
  *     validates the URL and every redirect hop against private ranges; this bounds the body it
  *     will buffer, which its 15s timeout does not.
  *   - `MAX_JSON_LD_SCAN_CHARS` (1 MiB) — how much the JSON-LD passes SCAN.
+ *   - `MAX_STRIP_SCAN_CHARS` (1 MiB) — how far the prose-budget walk searches for the end of a
+ *     block that straddles the cap. Bounds the SEARCH, not the output.
  *   - `MAX_SOURCE_CHARS` (150k) — how much the strippers SCAN, which is the quadratic one.
  *   - `EXTRACTION_CHAR_CAP` (60k, below) — how much reaches the PROMPT.
  *
@@ -825,9 +905,8 @@ export function extractableHtml(html: string): string {
   // page whose dates live only there rather than in prose.
   // JSON-LD is matched on the FULL body, then removed, and only what remains is truncated.
   //
-  // The order matters and is not the obvious one. This matcher is anchored on a literal attribute
-  // and is cheap -- ~1ms on the same adversarial input that costs the strippers ~6s -- so it is
-  // not part of the hazard. Truncating first would have broken the oversized-JSON-LD case that
+  // The order matters and is not the obvious one. Truncating first would have broken the
+  // oversized-JSON-LD case that
   // `leaves budget for prose when json-ld is oversized` protects: a 500KB `ld+json` block pushes
   // the page's prose past any sane source cap, and cutting there loses the very facts the
   // extraction is for. Removing the block first shrinks the remaining source by exactly the part
@@ -861,7 +940,19 @@ export function extractableHtml(html: string): string {
   // anything past it was never going to be extracted. It is kept only so the strippers below see
   // the same page a reader would, up to their own `MAX_SOURCE_CHARS` cut.
   const withoutJSONLD = jsonLd === '' ? html : ldSource.replace(JSON_LD_RE, ' ') + html.slice(ldSource.length);
-  const source = withoutJSONLD.length > MAX_SOURCE_CHARS ? withoutJSONLD.slice(0, MAX_SOURCE_CHARS) : withoutJSONLD;
+  // Cap by PROSE, not by raw characters.
+  //
+  // A flat `slice(0, MAX_SOURCE_CHARS)` cuts wherever 150k lands, and when that is INSIDE a
+  // `<style>`/`<script>`/`<svg>` block it takes the closing tag with it. The stripper regexes then
+  // no longer match, the markup survives as "prose", and it fills the whole budget: a 160k inline
+  // stylesheet followed by `<p>Tokyo</p>` returned 150k of CSS and no Tokyo -- exactly the
+  // fixed-slice failure this helper exists to fix, recreated at a different offset.
+  //
+  // Reordering to strip BEFORE the cap is the obvious fix and is far worse: the strippers are the
+  // quadratic pass, and at the 5 MiB ceiling they cost ~460s on unmatched `<script ` openings
+  // versus ~1ms here. So the cap stays first and instead walks the body, skipping each strippable
+  // block whole via `indexOf` -- linear, no backtracking -- and spending the 150k on text.
+  const source = boundedSource(withoutJSONLD);
   const stripped = source
     .replace(/<script(?=[\s/>])[\s\S]*?<\/script(\s[^>]*)?>/gi, ' ')
     .replace(/<style(?=[\s/>])[\s\S]*?<\/style(\s[^>]*)?>/gi, ' ')
