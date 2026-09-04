@@ -706,22 +706,14 @@ const JSON_LD_BUDGET = 20_000;
 const MAX_SOURCE_CHARS = 150_000;
 
 /**
- * The JSON-LD `<script>` element, matched once and used twice: to PRESERVE the block, and to
- * remove it before the remaining source is truncated.
- *
- * One constant rather than two literals because the two uses must stay identical -- if the
- * removal pattern drifted from the match pattern, a block would be preserved AND left in the
- * source, double-counting against the budget. `g` makes `.replace` remove every occurrence;
- * `lastIndex` is not shared across the two calls because `.match` and `.replace` each reset it
- * for a global regex.
- */
-/**
  * The JSON-LD OPENING tag alone, used to count blocks before the full matcher runs.
  *
- * Linear where the full matcher is quadratic: it has no lazy span, so there is nothing to
- * backtrack. That is the whole point -- see MAX_JSON_LD_BLOCKS.
+ * Cheaper than the full matcher because it has no lazy span: it stops at the first `>` rather
+ * than searching for a closing tag. Both patterns bound their attribute runs at 512 characters --
+ * unbounded, a `<script ` with no `>` at all made each scan to end-of-document from every start
+ * position, ~13.5s across the two passes on 400k chars and ~98s at the 5 MiB download ceiling.
  */
-const JSON_LD_OPENING_RE = /<script(?=[\s/>])[^>]*\stype\s*=\s*["']application\/ld\+json["'][^>]*>/gi;
+const JSON_LD_OPENING_RE = /<script(?=[\s/>])[^>]{0,512}\stype\s*=\s*["']application\/ld\+json["'][^>]{0,512}>/gi;
 
 /**
  * How many JSON-LD openings a page may contain before extraction gives up on them.
@@ -741,7 +733,31 @@ const JSON_LD_OPENING_RE = /<script(?=[\s/>])[^>]*\stype\s*=\s*["']application\/
  */
 const MAX_JSON_LD_BLOCKS = 64;
 
-const JSON_LD_RE = /<script(?=[\s/>])[^>]*\stype\s*=\s*["']application\/ld\+json["'][^>]*>[\s\S]*?<\/script(\s[^>]*)?>/gi;
+/**
+ * Characters the JSON-LD passes may scan, applied BEFORE either of them runs.
+ *
+ * Larger than `MAX_SOURCE_CHARS` on purpose: a legitimate `ld+json` block can be far bigger than
+ * the stripped prose budget -- the oversized-JSON-LD test carries a 500KB one -- so bounding these
+ * passes at 150k would discard exactly the structured data they exist to preserve. 1 MiB clears
+ * that case with room to spare and is well under the 5 MiB `fetchSafeUrl` will now download.
+ *
+ * This is the second of two bounds on these passes; the attribute spans above are the first. Both
+ * are needed: bounding the spans fixes the per-position cost, and this fixes the number of
+ * positions. Neither alone holds at 5 MiB.
+ */
+const MAX_JSON_LD_SCAN_CHARS = 1024 * 1024;
+
+/**
+ * The JSON-LD `<script>` element, matched once and used twice: to PRESERVE the block, and to
+ * remove it before the remaining source is truncated.
+ *
+ * One constant rather than two literals because the two uses must stay identical -- if the
+ * removal pattern drifted from the match pattern, a block would be preserved AND left in the
+ * source, double-counting against the budget. `g` makes `.replace` remove every occurrence;
+ * `lastIndex` is not shared across the two calls because `.match` and `.replace` each reset it
+ * for a global regex.
+ */
+const JSON_LD_RE = /<script(?=[\s/>])[^>]{0,512}\stype\s*=\s*["']application\/ld\+json["'][^>]{0,512}>[\s\S]*?<\/script(\s[^>]*)?>/gi;
 
 /**
  * Reduce a fetched page to the part an extraction can actually read.
@@ -762,10 +778,19 @@ const JSON_LD_RE = /<script(?=[\s/>])[^>]*\stype\s*=\s*["']application\/ld\+json
  * — but it now applies to content rather than to boilerplate, and it is raised to fit a stripped
  * page whole.
  *
- * This cap is the ONLY size bound in the path. `fetchSafeUrl` validates the URL and every redirect
- * hop against private address ranges, but it accumulates the response body with no byte ceiling —
- * only a 15s timeout — so nothing limits what arrives here. An earlier revision of this comment
- * claimed otherwise and would have sent a reader looking for a download limit that is not there.
+ * FOUR bounds sit in this path, and this is the last of them. Each answers a different question,
+ * so removing any one is not covered by the others:
+ *
+ *   - `MAX_RESPONSE_BYTES` (5 MiB, `url-validation.ts`) — how much is DOWNLOADED. `fetchSafeUrl`
+ *     validates the URL and every redirect hop against private ranges; this bounds the body it
+ *     will buffer, which its 15s timeout does not.
+ *   - `MAX_JSON_LD_SCAN_CHARS` (1 MiB) — how much the JSON-LD passes SCAN.
+ *   - `MAX_SOURCE_CHARS` (150k) — how much the strippers SCAN, which is the quadratic one.
+ *   - `EXTRACTION_CHAR_CAP` (60k, below) — how much reaches the PROMPT.
+ *
+ * An earlier revision of this comment said this cap was the only size bound and that nothing
+ * limited the download. That was true when written and is not now; a maintainer removing the
+ * upstream ceiling on the strength of it would reopen the hole it was added to close.
  *
  * `slice` counts UTF-16 code units, while the byte figures above are bytes: a CJK-heavy page can
  * carry up to ~3x those bytes within the same cap. That is deliberate — the cap exists to bound
@@ -809,14 +834,19 @@ export function extractableHtml(html: string): string {
   // that was never going to be scanned anyway.
   // COUNT before matching. The count is linear; the match is not, and on a page with thousands of
   // unmatched openings it stalls the event loop before `MAX_SOURCE_CHARS` below ever applies.
+  // Bounded BEFORE either pass. The count short-circuits only once 64 openings MATCH, so a page
+  // whose openings never match -- `'<script '` with no `>` at all -- pays a full-document scan per
+  // start position and short-circuits never. Measured at ~13.5s across both passes on 400k chars
+  // of that shape, which the 5 MiB download ceiling would let grow much further.
+  const ldSource = html.length > MAX_JSON_LD_SCAN_CHARS ? html.slice(0, MAX_JSON_LD_SCAN_CHARS) : html;
   JSON_LD_OPENING_RE.lastIndex = 0;
   let openings = 0;
-  while (openings <= MAX_JSON_LD_BLOCKS && JSON_LD_OPENING_RE.exec(html) !== null) {
+  while (openings <= MAX_JSON_LD_BLOCKS && JSON_LD_OPENING_RE.exec(ldSource) !== null) {
     openings++;
   }
   // Skipped, not truncated: a page with this many openings is adversarial, and its structured data
   // is not worth the scan. Prose still reaches the prompt through the stripped body below.
-  const jsonLd = openings > MAX_JSON_LD_BLOCKS ? '' : (html.match(JSON_LD_RE) ?? []).join(' ');
+  const jsonLd = openings > MAX_JSON_LD_BLOCKS ? '' : (ldSource.match(JSON_LD_RE) ?? []).join(' ');
   // Now truncate. Every pass below is quadratic on pathological input -- an unclosed `<style `
   // makes each start position scan to end-of-document -- so capping the OUTPUT afterwards would
   // be too late: the cost is already paid.
@@ -833,9 +863,10 @@ export function extractableHtml(html: string): string {
   // BUDGETED, not concatenated. An earlier revision returned `jsonLd + stripped.slice(0, 60_000)`,
   // which bounded only the second term: a page with a 500KB `ld+json` block produced 500,055
   // characters against a documented 60,000 cap, and JSON-LD is MORE attacker-controllable than
-  // prose, since it is machine-written and invisible on the rendered page. Nothing upstream caps
-  // it either — `fetchSafeUrl` validates the URL and every redirect hop but accumulates the body
-  // with only a 15s timeout — so this really is the last line of defence on prompt size.
+  // prose, since it is machine-written and invisible on the rendered page. Upstream bounds exist
+  // now -- `MAX_RESPONSE_BYTES` caps the download at 5 MiB and `MAX_JSON_LD_SCAN_CHARS` caps what
+  // these passes scan -- but neither bounds the PROMPT, which is what this budget is for: 1 MiB of
+  // scanned JSON-LD is still ~17x the output cap.
   //
   // JSON-LD still wins the space it needs, because it holds the structured facts the extraction
   // is for; it simply cannot take the whole budget. What it does not use goes to the prose.

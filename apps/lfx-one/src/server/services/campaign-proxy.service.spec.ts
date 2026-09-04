@@ -842,16 +842,37 @@ describe('extractableHtml', () => {
   // measured at ~7.7s for 40k openings. An earlier version of this file claimed this matcher was
   // "anchored and costs ~1ms": true against `<style` input, wrong for its own worst case.
   it('does not stall on a page full of unmatched json-ld openings', () => {
-    const evil = '<script type="application/ld+json">'.repeat(40_000);
+    // `'<script '` with NO `>` anywhere, which is the shape that actually stalls. An earlier
+    // version of this test used `'<script type="application/ld+json">'.repeat(...)`: every token
+    // contains `>`, so the greedy attribute span never backtracks, the count short-circuits at 65
+    // openings, and the whole thing finished in 1ms — green while the production stall was intact.
+    // On this input the same code path took ~13.5s across both JSON-LD passes.
+    const evil = '<script '.repeat(50_000);
 
     const started = Date.now();
     const out = extractableHtml(`${evil}<p>Tokyo</p>`);
     const elapsed = Date.now() - started;
 
-    // 4s for the same reason as the sibling test above: separate ~0ms from the ~7.7s this guards
-    // against, with room for a loaded CI runner in between.
+    // 4s for the same reason as the sibling test above: separate this from the ~13.5s the
+    // unbounded attribute spans cost, with room for a loaded CI runner in between.
     expect(elapsed, `extractableHtml took ${elapsed}ms on 40k unmatched json-ld openings`).toBeLessThan(4000);
     expect(out.length).toBeLessThanOrEqual(60_000);
+  });
+
+  // At the FULL download ceiling, which is the largest body that can now reach this function.
+  //
+  // This is what makes `MAX_JSON_LD_SCAN_CHARS` honest about its own role: with the attribute
+  // spans bounded the JSON-LD passes are LINEAR, so 5 MiB costs ~1s rather than growing
+  // quadratically, and the 1 MiB scan cap is defence in depth rather than the thing holding this
+  // up. Removing that cap alone does not fail a test, and the comment says so instead of implying
+  // it is load-bearing.
+  it('stays bounded at the full fetch ceiling', () => {
+    const fiveMiB = '<script '.repeat((5 * 1024 * 1024) / 8);
+
+    const started = Date.now();
+    extractableHtml(fiveMiB);
+
+    expect(Date.now() - started, 'the json-ld passes are not linear at the download ceiling').toBeLessThan(6000);
   });
 
   it('returns an empty string for input that is entirely strippable', () => {
