@@ -8,28 +8,28 @@ import { provideNoopAnimations } from '@angular/platform-browser/animations';
 import { provideRouter } from '@angular/router';
 import { beforeEach, describe, expect, it } from 'vitest';
 
-import { OrgClaGroupsComponent } from './org-cla-groups.component';
+import { OrgEasyclaComponent } from './org-easycla.component';
 
-describe('OrgClaGroupsComponent', () => {
-  let fixture: ComponentFixture<OrgClaGroupsComponent>;
+describe('OrgEasyclaComponent', () => {
+  let fixture: ComponentFixture<OrgEasyclaComponent>;
 
   beforeEach(async () => {
     await TestBed.configureTestingModule({
-      imports: [OrgClaGroupsComponent],
+      imports: [OrgEasyclaComponent],
       providers: [provideRouter([]), provideNoopAnimations()],
     }).compileComponents();
 
-    fixture = TestBed.createComponent(OrgClaGroupsComponent);
+    fixture = TestBed.createComponent(OrgEasyclaComponent);
     fixture.detectChanges();
   });
 
   it('renders the empty-state scaffold', () => {
-    const root = fixture.nativeElement.querySelector('[data-testid="org-cla-groups"]');
-    const empty = fixture.nativeElement.querySelector('[data-testid="org-cla-groups-empty-state"]');
+    const root = fixture.nativeElement.querySelector('[data-testid="org-easycla"]');
+    const empty = fixture.nativeElement.querySelector('[data-testid="org-easycla-empty-state"]');
 
     expect(root).toBeTruthy();
     expect(empty).toBeTruthy();
-    expect(root.textContent).toContain('CLA Groups');
-    expect(empty.textContent).toContain('No CLA Groups yet');
+    expect(root.textContent).toContain('EasyCLA');
+    expect(empty.textContent).toContain('No CLAs signed yet');
   });
 });

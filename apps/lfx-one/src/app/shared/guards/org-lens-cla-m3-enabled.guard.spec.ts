@@ -17,7 +17,7 @@ describe('orgLensClaM3EnabledGuard', () => {
     parseUrl: ReturnType<typeof vi.fn>;
   };
 
-  const route: Route = { path: 'cla-groups', data: { lens: 'org' } };
+  const route: Route = { path: 'easycla', data: { lens: 'org' } };
   const segments: UrlSegment[] = [];
 
   const runGuard = (): ReturnType<typeof orgLensClaM3EnabledGuard> => TestBed.runInInjectionContext(() => orgLensClaM3EnabledGuard(route, segments));

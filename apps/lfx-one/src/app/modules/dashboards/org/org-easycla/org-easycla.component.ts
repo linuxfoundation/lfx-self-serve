@@ -6,9 +6,9 @@ import { ChangeDetectionStrategy, Component } from '@angular/core';
 import { EmptyStateComponent } from '@components/empty-state/empty-state.component';
 
 @Component({
-  selector: 'lfx-org-cla-groups',
+  selector: 'lfx-org-easycla',
   imports: [EmptyStateComponent],
-  templateUrl: './org-cla-groups.component.html',
+  templateUrl: './org-easycla.component.html',
   changeDetection: ChangeDetectionStrategy.OnPush,
 })
-export class OrgClaGroupsComponent {}
+export class OrgEasyclaComponent {}

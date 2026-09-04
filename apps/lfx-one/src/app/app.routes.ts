@@ -140,18 +140,18 @@ export const routes: Routes = [
             // Componentless parent, so the dark-launch guard is declared once and later M3
             // children (list, sign, managers, …) inherit it. A looser copy would be a way
             // into the unfinished feature while `org-lens-cla-m3-enabled` is off.
-            path: 'cla-groups',
+            path: 'easycla',
             canMatch: [orgLensClaM3EnabledGuard],
             data: {
               lens: 'org',
-              title: 'CLA Groups',
-              description: 'Corporate CLA Groups your organization is party to.',
+              title: 'EasyCLA',
+              description: 'Corporate CLAs your organization has signed.',
               icon: 'fa-light fa-file-signature',
             },
             children: [
               {
                 path: '',
-                loadComponent: () => import('./modules/dashboards/org/org-cla-groups/org-cla-groups.component').then((m) => m.OrgClaGroupsComponent),
+                loadComponent: () => import('./modules/dashboards/org/org-easycla/org-easycla.component').then((m) => m.OrgEasyclaComponent),
               },
             ],
           },

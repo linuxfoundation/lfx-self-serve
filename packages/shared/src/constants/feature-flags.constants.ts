@@ -20,7 +20,7 @@ export const WG_ENGAGEMENT_METRICS_FLAG = 'wg-engagement-metrics';
 /** Browser-only flag for the Org Lens ROI page — it gates no endpoint. */
 export const ORG_LENS_ROI_ENABLED_FLAG = 'org-lens-roi-enabled';
 /**
- * Dark-launch gate for the M3 Organization Lens CLA module (#1982) — the CLA Groups
+ * Dark-launch gate for the M3 Organization Lens CLA module (#1982) — the EasyCLA
  * route and sidebar entry. The org-lens prefix keeps it in the lens family alongside
  * `ORG_LENS_ROI_ENABLED_FLAG`; the `m3` suffix follows the `MY_CLAS_M2_ENABLED_FLAG`
  * milestone-gate precedent. Default false: a missing LaunchDarkly flag keeps the
