@@ -1007,7 +1007,19 @@ export class CommitteeService {
    * fields.
    */
   public async getMyPendingInvitations(req: Request, email: string): Promise<PendingInvitation[]> {
-    const pendingInvites = await this.fetchPendingCommitteeInvitesByEmail(req, email);
+    const fetchedInvites = await this.fetchPendingCommitteeInvitesByEmail(req, email);
+
+    // Drop expired invites so neither surface shows an Accept button whose request is guaranteed to
+    // fail — committee-service rejects acceptance past `expires_at`. Legacy records with no expiry,
+    // and any with an unparseable timestamp, stay visible (never hide a genuinely-pending invite).
+    const now = Date.now();
+    const pendingInvites = fetchedInvites.filter((invite) => {
+      if (!invite.expires_at) {
+        return true;
+      }
+      const expiresAt = Date.parse(invite.expires_at);
+      return Number.isNaN(expiresAt) || expiresAt > now;
+    });
     if (pendingInvites.length === 0) {
       return [];
     }
