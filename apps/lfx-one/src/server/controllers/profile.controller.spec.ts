@@ -498,6 +498,10 @@ describe('ProfileController impersonation-blocked auth callbacks', () => {
 
   it('handleSocialCallback redirects to /profile/identities without linking the identity', async () => {
     isImpersonatingMock.mockReturnValue(true);
+    // Without a management token, the unguarded path would also stop before exchangeCodeForToken/
+    // linkIdentity (at the no_management_token branch) — stub it so those assertions can actually
+    // fail if the impersonation guard regresses.
+    profileAuthSvc.getManagementToken.mockReturnValue('mgmt-token');
     const res = buildRes();
 
     await controller.handleSocialCallback(buildReq({ path: '/social/callback', query: { code: 'c', state: 's' } }), res);
