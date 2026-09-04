@@ -32,6 +32,7 @@ import type {
 import {
   alreadySignedAgreementsForGroup,
   claSignRoute,
+  claStatusDateNote,
   claStatusLabel,
   claStatusSeverity,
   downloadFromUrl,
@@ -658,10 +659,16 @@ export class ProfileClasComponent {
   }
 
   /**
-   * Explanatory note beneath the status pill. Only a completed Approved List
-   * miss (`not_on_approval_list`) gets copy; unknown and omitted reasons do not.
+   * Explanatory note beneath the status pill. Invalidated / Revoked take
+   * `{Label} · {date}` when the producer recorded a parseable date (#1913);
+   * a completed Approved List miss takes the mockup sentence. Other rows
+   * have no note — including undated Invalidated/Revoked, where a missing
+   * date must not be invented.
    */
   private statusNote(agreement: MyClaAgreement): string | undefined {
+    const dateIso = agreement.status === 'revoked' ? agreement.flaggedAt : agreement.invalidatedAt;
+    const dated = claStatusDateNote(agreement.status, dateIso);
+    if (dated) return dated;
     if (agreement.kind === 'ICLA' || agreement.statusReason !== 'not_on_approval_list') {
       return undefined;
     }

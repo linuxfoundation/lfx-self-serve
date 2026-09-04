@@ -63,6 +63,16 @@ export interface EasyClaMyCla {
   valid?: boolean;
   status: 'valid' | 'needs_attention' | 'revoked' | 'invalidated' | 'unknown';
   statusReason?: 'not_on_approval_list' | 'unknown';
+  /**
+   * Stored `date_invalidated`. Omitted on rows invalidated before the field existed,
+   * and on every non-invalidated row.
+   */
+  invalidatedAt?: string;
+  /**
+   * Employer's stored `sanctioned_date` (first live detection, then stable).
+   * Present only when `status` is `revoked` and a stored date exists.
+   */
+  flaggedAt?: string;
   documentMajorVersion?: number;
   documentMinorVersion?: number;
   /** True when the record is a signed ICLA eligible for PDF retrieval. */

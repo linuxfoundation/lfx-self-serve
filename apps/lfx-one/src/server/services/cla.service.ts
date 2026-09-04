@@ -353,6 +353,8 @@ export function toMyClaAgreement(cla: EasyClaMyCla): MyClaAgreement {
     signedAs: cla.signedAs?.trim() || undefined,
     status,
     statusReason,
+    invalidatedAt: cla.invalidatedAt?.trim() || undefined,
+    flaggedAt: cla.flaggedAt?.trim() || undefined,
     documentVersion,
     pdfAvailable: isIcla && cla.pdfAvailable === true,
   };
