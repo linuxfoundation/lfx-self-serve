@@ -208,7 +208,7 @@ describe('ProfileLayoutComponent — Flow C error message ownership (#1935)', ()
     ['invalid_state', 'Security validation failed. Please try again.'],
     ['no_code', 'Authorization did not complete. Please try again.'],
   ])('toasts, clears the URL, and clears the stash for %s', async (error, detail) => {
-    const { add, navigateByUrl } = await setup(error, { savedAt: Date.now(), userMetadata: { about_me: 'x' } });
+    const { add, navigateByUrl } = await setup(error, { savedAt: Date.now(), userMetadata: { bio: 'x' } });
 
     expect(add).toHaveBeenCalledWith(expect.objectContaining({ severity: 'error', summary: 'Authorization Error', detail }));
     expect(navigateByUrl).toHaveBeenCalledWith('/profile', { replaceUrl: true });
