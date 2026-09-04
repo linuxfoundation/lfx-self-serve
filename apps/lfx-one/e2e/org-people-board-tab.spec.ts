@@ -456,11 +456,24 @@ test.describe('Org People → Board tab', () => {
     await expect(page.getByTestId('person-detail-drawer-email-failed')).toBeVisible();
     await expect(page.getByTestId('person-detail-drawer-email')).toHaveCount(0);
 
-    // 3. Lookup FAILED → "couldn't be loaded", never an assertion about what the person holds.
-    await stubCompanyEmails((route) => route.fulfill({ status: 500, body: 'warehouse unavailable' }));
+    // 3. Lookup FAILED → "couldn't be loaded", never an assertion about what the person holds. The
+    //    server catches the warehouse error and answers 200 with `companyEmailsStatus: 'failed'`, never
+    //    a 5xx — this is the payload the status-mapping branch sees in production.
+    await stubCompanyEmails((route) =>
+      route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify({ companyEmails: [], companyEmailsStatus: 'failed' }) })
+    );
     await openDrawer();
     await expect(page.getByTestId('person-detail-drawer-email-failed')).toBeVisible();
     await expect(page.getByTestId('person-detail-drawer-email-none')).toHaveCount(0);
+    await expect(page.getByTestId('person-detail-drawer-email')).toHaveCount(0);
+
+    // 3b. Transport error (the controller's `next(error)` path, or no response at all) → the client's
+    //     catchError must land on the same state as 3.
+    await stubCompanyEmails((route) => route.fulfill({ status: 500, body: 'transport error' }));
+    await openDrawer();
+    await expect(page.getByTestId('person-detail-drawer-email-failed')).toBeVisible();
+    await expect(page.getByTestId('person-detail-drawer-email-none')).toHaveCount(0);
+    await expect(page.getByTestId('person-detail-drawer-email')).toHaveCount(0);
 
     // 4. No identity to look up → "not available from this view", and NO request is made: with no
     //    username there is nothing to key on, and the address must never be used as one.
