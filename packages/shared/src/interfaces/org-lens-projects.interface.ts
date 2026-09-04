@@ -70,6 +70,17 @@ export interface OrgLensProject {
   foundation: OrgLensProjectFoundation;
   /** CHAOSS health classification. */
   health: HealthScore;
+  /**
+   * Warehouse-computed max score for `health` (100 when all 3 CHAOSS categories are covered; 60/65/75 when
+   * exactly one is missing; `null` when fewer than 2 are covered, matching `health: 'unavailable'`). Sourced
+   * straight from `health_max_score_v2` — never recompute this locally.
+   */
+  healthMaxScore: number | null;
+  /**
+   * Warehouse-computed count (0–3) of CHAOSS categories covered for `health`. `healthMaxScore < 100` (i.e. `2`)
+   * marks a partial score — sourced straight from `covered_category_count_v2`, never recomputed locally.
+   */
+  healthCoveredCategoryCount: number | null;
   /** Technical influence band. */
   technicalInfluence: InfluenceBand;
   /** Ecosystem influence band. */
@@ -258,6 +269,8 @@ export interface OrgLensProjectRow {
   DBT_RUN_AT: string | Date | null;
   HEALTH_OVERALL_SCORE_V2: number | null;
   HEALTH_SCORE_CATEGORY_V2: string | null;
+  COVERED_CATEGORY_COUNT_V2: number | null;
+  HEALTH_MAX_SCORE_V2: number | null;
   HEALTH_CONTRIBUTOR_PERCENTAGE: number | null;
   HEALTH_POPULARITY_PERCENTAGE: number | null;
   HEALTH_DEVELOPMENT_PERCENTAGE: number | null;

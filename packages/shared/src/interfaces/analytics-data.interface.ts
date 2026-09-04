@@ -2256,6 +2256,8 @@ export interface FoundationProjectsDetailRow {
   LAST_UPDATED_TS: Date | string | null;
   // Joined from PROJECT_HEALTH_METRICS_LATEST (newest score per project); null when unscored.
   HEALTH_SCORE_CATEGORY_V2: string | null;
+  // Warehouse-computed count (0-3) of categories covered; 2 marks a partial score.
+  COVERED_CATEGORY_COUNT_V2: number | null;
 }
 
 /**
