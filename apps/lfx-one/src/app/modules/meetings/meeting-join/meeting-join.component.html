@@ -7,7 +7,30 @@
 <div [ngClass]="{ 'pt-12': userService.impersonating() }">
   <lfx-header></lfx-header>
 
-  @if (meeting()) {
+  @if (meetingLoadFailed() && (!meeting() || !meetingMatchesRoute())) {
+    <!-- Checked ahead of `meeting()` — `toSignal` retains the last successful meeting across a
+         later terminal failure (each failing `catchError` returns `EMPTY`, no new emission), so
+         checking `meeting()` first would keep showing stale content instead of this error state
+         (GH-2041 follow-up). 404/403/400 already redirect to /meetings/not-found in
+         initializeMeeting(), so this only covers the case that would otherwise leave the skeleton
+         spinning forever on the *initial* load (e.g. a 5xx or network error). `!meeting()` scopes
+         this to loads with no settled meeting yet — `refreshTrigger$` re-entering the pipeline
+         after a successful registration or materials change (meeting-join.component.ts:619, 667)
+         can also call `setMeetingLoadFailed()` on a transient failure, but `meeting()` still holds
+         the working meeting then, and a blipped background refetch must not tear down an
+         otherwise-working page (dealako review on #2046). `!meetingMatchesRoute()` additionally
+         catches a failed fetch after navigating to a *different* `/meetings/:id` — without it,
+         `meeting()`'s retained value would keep rendering the PREVIOUS meeting (incl. its
+         `host_key`/join links) under the new URL instead of this error state (cursor / copilot
+         review on #2046). -->
+    <div class="bg-gray-50 min-h-screen flex items-center justify-center" role="alert" data-testid="meeting-join-error">
+      <div class="text-center flex flex-col items-center gap-2">
+        <i class="fa-light fa-triangle-exclamation text-4xl text-gray-400"></i>
+        <p class="text-lg text-gray-600">Something went wrong loading this meeting.</p>
+        <p class="text-sm text-gray-500">Please refresh the page to try again.</p>
+      </div>
+    </div>
+  } @else if (meeting() && meetingMatchesRoute()) {
     <div class="bg-gray-50 min-h-screen">
       <!-- Main Content Container -->
       <div class="container mx-auto py-6 px-8">
@@ -853,6 +876,27 @@
           (materialsChanged)="onMaterialsChanged($event)">
         </lfx-meeting-materials-drawer>
       }
+    </div>
+  } @else {
+    <!-- Skeleton shown only for client-side navigations with no SSR-transferred state (GH-2041) —
+         the seeded first paint in `initializeMeeting()` means this never flashes on a fresh load. -->
+    <div class="bg-gray-50 min-h-screen" role="status" aria-live="polite" data-testid="meeting-join-skeleton">
+      <span class="sr-only">Loading meeting details…</span>
+      <div class="container mx-auto py-6 px-8">
+        <div class="max-w-[900px] mx-auto flex flex-col">
+          <div class="flex items-center justify-center mb-6">
+            <p-skeleton width="8rem" height="3.5rem" animation="wave" />
+          </div>
+          <lfx-card class="rounded-[12.75px] mb-6">
+            <div class="flex flex-col gap-4">
+              <p-skeleton width="10rem" height="1.5rem" borderRadius="9999px" animation="wave" />
+              <p-skeleton width="60%" height="2rem" animation="wave" />
+              <p-skeleton width="14rem" height="1.5rem" borderRadius="9999px" animation="wave" />
+              <p-skeleton width="100%" height="4rem" animation="wave" />
+            </div>
+          </lfx-card>
+        </div>
+      </div>
     </div>
   }
 </div>

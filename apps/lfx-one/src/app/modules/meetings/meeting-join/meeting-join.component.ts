@@ -2,8 +2,21 @@
 // SPDX-License-Identifier: MIT
 
 import { Clipboard, ClipboardModule } from '@angular/cdk/clipboard';
-import { DatePipe, isPlatformServer, NgClass } from '@angular/common';
-import { afterNextRender, Component, computed, DestroyRef, inject, OnInit, PLATFORM_ID, signal, Signal, WritableSignal } from '@angular/core';
+import { DatePipe, isPlatformBrowser, isPlatformServer, NgClass } from '@angular/common';
+import {
+  afterNextRender,
+  Component,
+  computed,
+  DestroyRef,
+  inject,
+  makeStateKey,
+  OnInit,
+  PLATFORM_ID,
+  signal,
+  Signal,
+  TransferState,
+  WritableSignal,
+} from '@angular/core';
 import { takeUntilDestroyed, toObservable, toSignal } from '@angular/core/rxjs-interop';
 import { FormControl, FormGroup, ReactiveFormsModule, Validators } from '@angular/forms';
 import { ActivatedRoute, Router } from '@angular/router';
@@ -37,6 +50,7 @@ import {
   MaterialsChangedEvent,
   MeetingAttachment,
   MeetingHostCandidate,
+  MeetingJoinPageState,
   MeetingOccurrence,
   MeetingRecurrence,
   getMeetingSeriesUid,
@@ -82,6 +96,7 @@ import {
   merge,
   Observable,
   of,
+  scan,
   skip,
   startWith,
   Subject,
@@ -140,6 +155,12 @@ export class MeetingJoinComponent implements OnInit {
   private readonly dialogService = inject(DialogService);
   private readonly destroyRef = inject(DestroyRef);
   private readonly platformId = inject(PLATFORM_ID);
+  private readonly transferState = inject(TransferState);
+
+  // Persists the SSR-resolved meeting so the client's first paint matches the server DOM instead
+  // of tearing it down at hydration (GH-2041) — see `MeetingJoinPageState` for why the meeting
+  // alone isn't enough. Same pattern as `PublicProfilePageComponent`.
+  private readonly stateKey = makeStateKey<MeetingJoinPageState>('meetingJoinState');
 
   // Class variables with types
   public authenticated: WritableSignal<boolean>;
@@ -204,6 +225,26 @@ export class MeetingJoinComponent implements OnInit {
   // time-based fallback for non-hyphenated URLs where past-ness is only knowable from the clock.
   protected loadedViaPastMeetingId = signal(false);
   protected pastMeetingFullAccess = signal(false);
+  // Set when the meeting fetch settles with an error that doesn't navigate away (e.g. a 5xx or
+  // network failure) — 404/403/400 already redirect to /meetings/not-found, so this only covers
+  // the terminal, non-navigating case where the skeleton would otherwise spin forever (GH-2041).
+  protected meetingLoadFailed = signal(false);
+  // Route `id` param the fetch pipeline is currently attempting (or last attempted) — set
+  // synchronously as soon as a new attempt starts, so it updates immediately on navigation, before
+  // that attempt's response (success or failure) settles.
+  private meetingRouteId = signal<string | null>(null);
+  // Route `id` param the currently-held `meeting()` value actually resolved successfully for. Only
+  // updated on a successful fetch.
+  private meetingResolvedRouteId = signal<string | null>(null);
+  // False right after navigating to a different `/meetings/:id` until that route's fetch settles.
+  // `toSignal` retains `meeting()`'s last emission across both a failing `catchError`'s `EMPTY` and
+  // an in-flight new-route fetch, so without this the template would keep rendering the PREVIOUS
+  // meeting (incl. its `host_key`/join links) under the new URL — either as a stale error state, or
+  // as stale *success* content while the new route is still pending (copilot review on #2046).
+  // Gates both the error branch (so a same-route background refresh failure, dealako review on
+  // #2046, still doesn't tear down the page) and the success branch (so cross-meeting navigation
+  // shows the skeleton, not meeting A's content, until meeting B resolves).
+  protected meetingMatchesRoute = computed(() => this.meetingRouteId() === this.meetingResolvedRouteId());
   private refreshTrigger$ = new BehaviorSubject<void>(undefined);
   private pastMeetingAttachmentsRefresh$ = new BehaviorSubject<void>(undefined);
   // Set immediately on self-registration success so the UI responds before the meeting refetch
@@ -327,7 +368,41 @@ export class MeetingJoinComponent implements OnInit {
   public constructor() {
     // Initialize all class variables
     this.authenticated = this.userService.authenticated;
-    this.meeting = this.initializeMeeting();
+
+    // Seed the client's first paint from the SSR-serialized state (matches the server's resolved
+    // branch, no blank flash on hydration — GH-2041). Null on the server and on client
+    // navigations with no prior SSR state for this component instance.
+    const transferredMeeting = this.transferState.get(this.stateKey, null);
+    // Consume the SSR state exactly once so a later re-creation of this component (e.g. a
+    // different `/meetings/:id`) can't paint the previous meeting's state under the new URL.
+    if (isPlatformBrowser(this.platformId) && transferredMeeting) {
+      this.transferState.remove(this.stateKey);
+    }
+    if (transferredMeeting) {
+      this.loadedViaPastMeetingId.set(transferredMeeting.loadedViaPastMeetingId);
+      this.pastMeetingFullAccess.set(transferredMeeting.pastMeetingFullAccess);
+      if (transferredMeeting.meetingLoadFailed) {
+        this.meetingLoadFailed.set(true);
+        // Seed `meetingRouteId` here too — otherwise the first hydration emission (route id vs.
+        // the signal's initial `null`) reads as a navigation and clears this flag while the
+        // client's matching refetch is still in flight, flashing the skeleton until it fails
+        // again (cursor / copilot review on #2046).
+        this.meetingRouteId.set(this.activatedRoute.snapshot.paramMap.get('id'));
+      } else if (transferredMeeting.meeting) {
+        this.project.set(transferredMeeting.meeting.project);
+        const seededRouteId = this.activatedRoute.snapshot.paramMap.get('id');
+        this.meetingRouteId.set(seededRouteId);
+        this.meetingResolvedRouteId.set(seededRouteId);
+      }
+    }
+
+    // Set synchronously from the route snapshot before `meeting` is exposed below —
+    // `initializeSeriesOccurrences()` subscribes to `meeting` immediately and would otherwise
+    // read `password` before the debounced pipeline (line ~755) gets a chance to set it,
+    // sending a password-gated recurring meeting's occurrences request with no password.
+    this.password.set(this.activatedRoute.snapshot.queryParamMap.get('password'));
+
+    this.meeting = this.initializeMeeting(transferredMeeting);
     this.currentOccurrence = this.initializeCurrentOccurrence();
     this.displayRecurrence = computed(() => resolveOccurrenceRecurrence(this.meeting(), this.currentOccurrence()));
     this.seriesOccurrences = this.initializeSeriesOccurrences();
@@ -711,43 +786,70 @@ export class MeetingJoinComponent implements OnInit {
       });
   }
 
-  private initializeMeeting() {
-    return toSignal<Meeting & { project: PublicMeetingProject }>(
-      combineLatest([this.activatedRoute.paramMap, this.activatedRoute.queryParamMap, this.refreshTrigger$]).pipe(
-        debounceTime(0), // Coalesce rapid SSR hydration emissions so the fallback chain isn't canceled
-        switchMap(([params, queryParams]) => {
-          const meetingId = params.get('id');
-          this.password.set(queryParams.get('password'));
+  private initializeMeeting(seed: MeetingJoinPageState | null) {
+    const meeting$ = combineLatest([this.activatedRoute.paramMap, this.activatedRoute.queryParamMap, this.refreshTrigger$]).pipe(
+      // Update `meetingRouteId` here, ahead of `debounceTime`, so `meetingMatchesRoute` flips to
+      // false the instant a route change is observed. Setting it inside `switchMap` instead left a
+      // one-macrotask window (the debounce itself) where the old route's id was still current and
+      // the template kept rendering the previous meeting's content under the new URL
+      // (copilot review on #2046).
+      tap(([params]) => {
+        const meetingId = params.get('id');
+        const previousRouteId = this.meetingRouteId();
+        this.meetingRouteId.set(meetingId);
+        // Only clear a stale `meetingLoadFailed` when the route id actually changed (a real
+        // navigation to a different meeting) — not on a same-route re-emission (`refreshTrigger$`,
+        // or the initial hydration matching a seeded terminal-error state). Otherwise a prior
+        // same-route background failure (dealako review on #2046) would still be flagged when
+        // navigating away, and the new route's `!meetingMatchesRoute()` mismatch would trip the
+        // error branch immediately, before this attempt's fetch even starts (cursor review on #2046).
+        if (meetingId !== previousRouteId) {
+          this.meetingLoadFailed.set(false);
+        }
+      }),
+      debounceTime(0), // Coalesce rapid SSR hydration emissions so the fallback chain isn't canceled
+      switchMap(([params, queryParams]) => {
+        const meetingId = params.get('id');
+        this.password.set(queryParams.get('password'));
 
-          if (!meetingId) {
-            this.router.navigate(['/meetings/not-found']);
-            return EMPTY;
-          }
+        if (!meetingId) {
+          this.router.navigate(['/meetings/not-found']);
+          return EMPTY;
+        }
 
-          // Check if this is a past meeting occurrence ID (format: meetingId-timestamp)
-          if (isPastMeetingCompositeId(meetingId)) {
-            this.loadedViaPastMeetingId.set(true);
-            return this.meetingService.getPublicPastMeeting(meetingId).pipe(
-              tap((res: PublicPastMeetingResponse) => {
-                this.pastMeetingFullAccess.set(res.full_access);
-              }),
-              map((res: PublicPastMeetingResponse) => ({
-                meeting: res.meeting,
-                project: res.project,
-              })),
-              catchError((error) => {
-                if ([404, 403, 400].includes(error.status)) {
-                  this.router.navigate(['/meetings/not-found']);
-                }
-                return EMPTY;
-              })
-            );
-          }
+        let result$: Observable<{ meeting: Meeting; project: PublicMeetingProject }>;
 
-          // No hyphen — could be upcoming or past. Try upcoming first.
-          this.loadedViaPastMeetingId.set(false);
-          this.pastMeetingFullAccess.set(false);
-          return this.meetingService.getPublicMeeting(meetingId, this.password()).pipe(
+        // Check if this is a past meeting occurrence ID (format: meetingId-timestamp)
+        if (isPastMeetingCompositeId(meetingId)) {
+          this.loadedViaPastMeetingId.set(true);
+          result$ = this.meetingService.getPublicPastMeeting(meetingId).pipe(
+            tap((res: PublicPastMeetingResponse) => {
+              this.pastMeetingFullAccess.set(res.full_access);
+            }),
+            map((res: PublicPastMeetingResponse) => ({
+              meeting: res.meeting,
+              project: res.project,
+            })),
+            catchError((error) => {
+              if ([404, 403, 400].includes(error.status)) {
+                this.router.navigate(['/meetings/not-found']);
+              } else {
+                this.setMeetingLoadFailed();
+              }
+              return EMPTY;
+            })
+          );
+        } else {
+          // No hyphen — could be upcoming or past. Try upcoming first. Flags are reset to
+          // "upcoming" only once that lookup actually succeeds (tap below), not eagerly here —
+          // a seeded past-meeting id re-entering this branch on hydration (e.g. refreshTrigger$)
+          // would otherwise flip to the upcoming/default view and cancel the past-meeting's
+          // summary/recording/attachments/participant streams before the 404 fallback resolves.
+          result$ = this.meetingService.getPublicMeeting(meetingId, this.password()).pipe(
+            tap(() => {
+              this.loadedViaPastMeetingId.set(false);
+              this.pastMeetingFullAccess.set(false);
+            }),
             catchError((error) => {
               if (error.status === 404) {
                 return this.meetingService.getPublicPastMeeting(meetingId).pipe(
@@ -759,25 +861,72 @@ export class MeetingJoinComponent implements OnInit {
                     meeting: res.meeting,
                     project: res.project,
                   })),
-                  catchError(() => {
-                    this.router.navigate(['/meetings/not-found']);
+                  catchError((fallbackError) => {
+                    if ([404, 403, 400].includes(fallbackError.status)) {
+                      this.router.navigate(['/meetings/not-found']);
+                    } else {
+                      this.setMeetingLoadFailed();
+                    }
                     return EMPTY;
                   })
                 );
               }
               if ([403, 400].includes(error.status)) {
                 this.router.navigate(['/meetings/not-found']);
+              } else {
+                this.setMeetingLoadFailed();
               }
               return EMPTY;
             })
           );
-        }),
-        map((res) => ({ ...res.meeting, project: res.project })),
-        tap((res) => {
-          this.project.set(res.project);
-        })
-      )
-    ) as Signal<Meeting & { project: PublicMeetingProject }>;
+        }
+
+        return result$;
+      }),
+      map((res) => ({ ...res.meeting, project: res.project })),
+      tap((res) => {
+        this.project.set(res.project);
+        // Clear any prior terminal-error state here, not eagerly at the top of the pipeline —
+        // clearing eagerly would reset a seeded terminal-error hydration before the refetch it
+        // triggers actually settles, flashing the error view back to the skeleton (GH-2041
+        // follow-up). Only a settled success should clear it.
+        this.meetingLoadFailed.set(false);
+        this.meetingResolvedRouteId.set(this.meetingRouteId());
+        // Persist the resolved state during SSR so the client can hydrate to the same branch.
+        // Angular defers serialization until this tracked HTTP call settles.
+        if (isPlatformServer(this.platformId)) {
+          this.transferState.set(this.stateKey, {
+            meeting: res,
+            loadedViaPastMeetingId: this.loadedViaPastMeetingId(),
+            pastMeetingFullAccess: this.pastMeetingFullAccess(),
+            meetingLoadFailed: false,
+          });
+        }
+      })
+    );
+
+    // Two overload shapes rather than one `initialValue: seed?.meeting` call — `toSignal`'s
+    // `initialValue` overload requires a value assignable to `T`, not `T | undefined`, so the
+    // branch is on `seed?.meeting` itself rather than threading the optionality through the
+    // option object. A seed carrying the terminal-error branch (`meeting: null`) falls through to
+    // the no-initial-value overload — `meetingLoadFailed` (seeded synchronously in the
+    // constructor) already renders the SSR-matching error branch before this signal settles.
+    return (seed?.meeting ? toSignal(meeting$, { initialValue: seed.meeting }) : toSignal(meeting$)) as Signal<Meeting & { project: PublicMeetingProject }>;
+  }
+
+  // Persists the terminal-error branch during SSR so the client hydrates to the same error view
+  // instead of starting `meetingLoadFailed` at `false` and tearing down the SSR-rendered error
+  // content (GH-2041 follow-up). Mirrors the success-path `TransferState` write in `initializeMeeting`.
+  private setMeetingLoadFailed(): void {
+    this.meetingLoadFailed.set(true);
+    if (isPlatformServer(this.platformId)) {
+      this.transferState.set(this.stateKey, {
+        meeting: null,
+        loadedViaPastMeetingId: this.loadedViaPastMeetingId(),
+        pastMeetingFullAccess: this.pastMeetingFullAccess(),
+        meetingLoadFailed: true,
+      });
+    }
   }
 
   private initializeCurrentOccurrence(): Signal<MeetingOccurrence | null> {
@@ -1265,11 +1414,28 @@ export class MeetingJoinComponent implements OnInit {
     });
   }
 
+  // `meeting` re-emits a new object for the same resource on hydration refetch (the seeded value
+  // is replaced once `meeting$` resolves) — dedupe on the pair that actually determines whether a
+  // past-meeting resource fetch should (re)run, so that refetch doesn't cancel/restart every one
+  // of these fan-out requests for no reason. `refreshTrigger` carries an explicit refresh signal
+  // through undeduped, since its whole purpose is to force a refetch even when the key is stable.
+  private pastMeetingResourceKey$<T>(refreshTrigger: Observable<T>): Observable<{ hasAccess: boolean; id: string | null }> {
+    // `refreshTrigger` emissions must always force a refetch, even when `hasAccess`/`id` are
+    // unchanged — tagging each emission with a monotonically increasing tick (rather than the
+    // trigger's own value, which for a void `Subject` is always the same) keeps every refresh
+    // distinct from the previous key so `distinctUntilChanged` below never swallows one.
+    const tick$ = refreshTrigger.pipe(scan((count) => count + 1, 0));
+    return combineLatest([toObservable(this.pastMeetingFullAccess), toObservable(this.meeting), tick$]).pipe(
+      map(([hasAccess, meeting, tick]) => ({ hasAccess, id: meeting ? getPastMeetingResourceId(meeting) : null, tick })),
+      distinctUntilChanged((a, b) => a.hasAccess === b.hasAccess && a.id === b.id && a.tick === b.tick),
+      map(({ hasAccess, id }) => ({ hasAccess, id }))
+    );
+  }
+
   private initializePastMeetingSummary(): Signal<PastMeetingSummary | null> {
     return toSignal(
-      combineLatest([toObservable(this.pastMeetingFullAccess), toObservable(this.meeting)]).pipe(
-        switchMap(([hasAccess, meeting]) => {
-          const id = meeting ? getPastMeetingResourceId(meeting) : null;
+      this.pastMeetingResourceKey$(of(null)).pipe(
+        switchMap(({ hasAccess, id }) => {
           if (!hasAccess || !id || !this.authenticated()) return of(null);
           return this.meetingService.getPastMeetingSummary(id).pipe(catchError(() => of(null)));
         })
@@ -1280,9 +1446,8 @@ export class MeetingJoinComponent implements OnInit {
 
   private initializePastMeetingRecording(): Signal<PastMeetingRecording | null> {
     return toSignal(
-      combineLatest([toObservable(this.pastMeetingFullAccess), toObservable(this.meeting)]).pipe(
-        switchMap(([hasAccess, meeting]) => {
-          const id = meeting ? getPastMeetingResourceId(meeting) : null;
+      this.pastMeetingResourceKey$(of(null)).pipe(
+        switchMap(({ hasAccess, id }) => {
           if (!hasAccess || !id || !this.authenticated()) return of(null);
           return this.meetingService.getPastMeetingRecording(id).pipe(catchError(() => of(null)));
         })
@@ -1293,9 +1458,8 @@ export class MeetingJoinComponent implements OnInit {
 
   private initializePastMeetingAttachments(): Signal<PastMeetingAttachment[]> {
     return toSignal(
-      combineLatest([toObservable(this.pastMeetingFullAccess), toObservable(this.meeting), this.pastMeetingAttachmentsRefresh$]).pipe(
-        switchMap(([hasAccess, meeting]) => {
-          const id = meeting ? getPastMeetingResourceId(meeting) : null;
+      this.pastMeetingResourceKey$(this.pastMeetingAttachmentsRefresh$).pipe(
+        switchMap(({ hasAccess, id }) => {
           if (!hasAccess || !id || !this.authenticated()) return of([] as PastMeetingAttachment[]);
           return this.meetingService.getPastMeetingAttachments(id).pipe(
             tap((attachments) => {
@@ -1320,9 +1484,8 @@ export class MeetingJoinComponent implements OnInit {
 
   private initializePastMeetingParticipants(): Signal<PastMeetingParticipant[]> {
     return toSignal(
-      combineLatest([toObservable(this.pastMeetingFullAccess), toObservable(this.meeting)]).pipe(
-        switchMap(([hasAccess, meeting]) => {
-          const id = meeting ? getPastMeetingResourceId(meeting) : null;
+      this.pastMeetingResourceKey$(of(null)).pipe(
+        switchMap(({ hasAccess, id }) => {
           if (!hasAccess || !id || !this.authenticated()) return of([] as PastMeetingParticipant[]);
           return this.meetingService.getPastMeetingParticipants(id).pipe(catchError(() => of([] as PastMeetingParticipant[])));
         })
@@ -1352,9 +1515,8 @@ export class MeetingJoinComponent implements OnInit {
     // Transcripts are a separate query-service resource — NOT part of the
     // recording's recording_files — so they must be fetched independently.
     return toSignal(
-      combineLatest([toObservable(this.pastMeetingFullAccess), toObservable(this.meeting)]).pipe(
-        switchMap(([hasAccess, meeting]) => {
-          const id = meeting ? getPastMeetingResourceId(meeting) : null;
+      this.pastMeetingResourceKey$(of(null)).pipe(
+        switchMap(({ hasAccess, id }) => {
           if (!hasAccess || !id || !this.authenticated()) return of(null);
           return this.meetingService.getPastMeetingTranscript(id).pipe(
             map((transcript) => getPastMeetingTranscriptUrl(transcript)),
