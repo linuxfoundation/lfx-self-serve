@@ -28,7 +28,15 @@ describe('FORMATION_TEMPLATE', () => {
   it('pins the v1 content fingerprint — bump `version` above once this needs to change post-ship', () => {
     const subItemFingerprint = (subItem: FormationTemplateSubItem): string => [subItem.key, subItem.title, subItem.owner_team].join('|');
     const itemFingerprint = (item: FormationTemplateItem): string =>
-      [item.key, item.title, item.owner_team, item.action, item.is_gating, (item.sub_items ?? []).map(subItemFingerprint).join(',')].join('|');
+      [
+        item.key,
+        item.title,
+        item.owner_team,
+        item.action,
+        item.action_link ?? '',
+        item.is_gating,
+        (item.sub_items ?? []).map(subItemFingerprint).join(','),
+      ].join('|');
     const sectionFingerprint = (section: FormationTemplateSection): string =>
       `${section.key}::${section.title}::[${section.items.map(itemFingerprint).join(';')}]`;
 
@@ -37,27 +45,27 @@ describe('FORMATION_TEMPLATE', () => {
     expect(FORMATION_TEMPLATE.sections.map(sectionFingerprint)).toEqual([
       'legal_and_entity::Legal and entity::[' +
         [
-          'formation_review_packet|Formation review and packet|brand_counsel|manual|true|',
-          'preliminary_trademark_search|Preliminary trademark search|brand_counsel|manual|false|',
-          'charter_agreed|Charter agreed|formation|manual|true|',
-          'contribution_agreement|Contribution agreement (DocuSign)|formation|link|true|',
-          'indepth_trademark_search_series_llc|In-depth trademark search and Series LLC|brand_counsel|manual|true|',
-          'membership_tiers|Membership tiers|product|manual|false|',
+          'formation_review_packet|Formation review and packet|brand_counsel|manual||true|',
+          'preliminary_trademark_search|Preliminary trademark search|brand_counsel|manual||false|',
+          'charter_agreed|Charter agreed|formation|manual||true|',
+          'contribution_agreement|Contribution agreement (DocuSign)|formation|link||true|',
+          'indepth_trademark_search_series_llc|In-depth trademark search and Series LLC|brand_counsel|manual||true|',
+          'membership_tiers|Membership tiers|product|manual||false|',
         ].join(';') +
         ']',
       'community_and_launch::Community and launch::[' +
         [
-          'repositories_github_owner|Repositories and GitHub owner|community|provisionable|false|',
-          'domain_dns|Domain/DNS|it|manual|false|',
-          'website_logo_footer|Website/logo/footer|marketing|manual|false|',
-          'mailing_lists|Mailing lists|community|manual|false|',
-          'chat_workspace|Chat workspace|it|request|false|chat_workspace_create|Create workspace|it,chat_workspace_channels|Configure channels|it,chat_workspace_roles|Set up roles and permissions|it,chat_workspace_onboard_admins|Onboard admins|it',
-          'insights_access|Insights access|product_ops|request|false|',
-          'asset_transfers|Asset transfers|formation|manual|false|',
-          'tsc_kickoff|TSC and kickoff|community|provisionable|false|',
-          'member_join_page|Member join page|product|manual|false|',
-          'comms|Launch comms|marketing|manual|false|',
-          'blog_post|Launch blog post|marketing|manual|false|',
+          'repositories_github_owner|Repositories and GitHub owner|community|provisionable||false|',
+          'domain_dns|Domain/DNS|it|manual||false|',
+          'website_logo_footer|Website/logo/footer|marketing|manual||false|',
+          'mailing_lists|Mailing lists|community|provisionable||false|',
+          'chat_workspace|Chat workspace|it|request||false|chat_workspace_create|Create workspace|it,chat_workspace_channels|Configure channels|it,chat_workspace_roles|Set up roles and permissions|it,chat_workspace_onboard_admins|Onboard admins|it',
+          'insights_access|Insights access|product_ops|request||false|',
+          'asset_transfers|Asset transfers|formation|manual||false|',
+          'tsc_kickoff|TSC and kickoff|community|provisionable||false|',
+          'member_join_page|Member join page|product|manual||false|',
+          'comms|Launch comms|marketing|manual||false|',
+          'blog_post|Launch blog post|marketing|manual||false|',
         ].join(';') +
         ']',
     ]);

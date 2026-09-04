@@ -101,8 +101,11 @@ export const FORMATION_TEMPLATE: FormationTemplate = deepFreeze({
           is_gating: false,
         },
         {
-          // Provisioning, not approval — a project cannot go Active on a "pending request for
-          // domain" waiting on someone else's ticket, so this is manual rather than request-shaped.
+          // LFX does not register domains — someone does this work elsewhere, so the row is
+          // manual and records status rather than provisioning. It should still say where that
+          // work happens (action_link exists for exactly this), but no canonical IT/domain
+          // destination is defined anywhere in this repo, so it is left unset rather than guessed
+          // — see GH-1959 for the open question raised with the formation/IT owners.
           key: 'domain_dns',
           title: 'Domain/DNS',
           owner_team: FormationOwnerTeam.IT,
@@ -117,11 +120,12 @@ export const FORMATION_TEMPLATE: FormationTemplate = deepFreeze({
           is_gating: false,
         },
         {
-          // Same provisioning rationale as domain_dns above.
+          // LFX provisions mailing lists itself — this is what `provisionable` means, not an
+          // approval workflow waiting on someone else's ticket.
           key: 'mailing_lists',
           title: 'Mailing lists',
           owner_team: FormationOwnerTeam.COMMUNITY,
-          action: FormationActionType.MANUAL,
+          action: FormationActionType.PROVISIONABLE,
           is_gating: false,
         },
         {
