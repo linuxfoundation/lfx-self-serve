@@ -13,7 +13,10 @@ import {
   CreateMeetingRequest,
   CreateMeetingRsvpRequest,
   ITXCreateMeetingResponseRequest,
+  ITXCreatePastMeetingParticipantRequest,
   ITXMeetingResponseResult,
+  ITXPastMeetingParticipantResult,
+  ITXUpdatePastMeetingParticipantRequest,
   Meeting,
   MeetingAttachment,
   MeetingJoinURL,
@@ -41,6 +44,7 @@ import {
 import {
   buildRecurrenceNeverEndDate,
   getPastMeetingTranscriptUrl,
+  isUnresolvableParticipantName,
   mapITXResponseToMeetingRsvp,
   normalizeIndexedMeetingAiSummary,
   normalizeIndexedMeetingInviteResponses,
@@ -344,20 +348,31 @@ export class MeetingService {
    * (`meeting_id`). No `filter_grants` — callers run this in a public/M2M context and
    * the projection carries timestamps only. Completeness is not guaranteed: a later-page
    * fetch failure returns the pages already accumulated (acceptable for navigation).
+   *
+   * By default a fetch failure is swallowed and treated as "no occurrences" — fine for
+   * navigation callers. Callers that need to distinguish "genuinely no history" from
+   * "history is unknown because the fetch failed" (e.g. reconciliation, which must not
+   * treat a failed fetch as a complete candidate pool) should pass `throwOnFailure: true`.
    */
-  public async getPastOccurrencesForMeeting(req: Request, meetingUid: string): Promise<PastOccurrenceSummary[]> {
+  public async getPastOccurrencesForMeeting(req: Request, meetingUid: string, options: { throwOnFailure?: boolean } = {}): Promise<PastOccurrenceSummary[]> {
     logger.debug(req, 'get_past_occurrences_for_meeting', 'Fetching past occurrences', {
       meeting_id: meetingUid,
     });
 
-    const records = await fetchAllQueryResources<PastMeeting>(req, (pageToken) =>
-      this.microserviceProxy.proxyRequest<QueryServiceResponse<PastMeeting>>(req, 'LFX_V2_SERVICE', '/query/resources', 'GET', {
-        type: 'v1_past_meeting',
-        filters: [`meeting_id:${meetingUid}`],
-        page_size: 500,
-        ...(pageToken && { page_token: pageToken }),
-      })
+    const records = await fetchAllQueryResources<PastMeeting>(
+      req,
+      (pageToken) =>
+        this.microserviceProxy.proxyRequest<QueryServiceResponse<PastMeeting>>(req, 'LFX_V2_SERVICE', '/query/resources', 'GET', {
+          type: 'v1_past_meeting',
+          filters: [`meeting_id:${meetingUid}`],
+          page_size: 500,
+          ...(pageToken && { page_token: pageToken }),
+        }),
+      { failOnPartial: options.throwOnFailure }
     ).catch((error) => {
+      if (options.throwOnFailure) {
+        throw error;
+      }
       logger.warning(req, 'get_past_occurrences_for_meeting', 'Failed to fetch past occurrences, returning empty list', {
         meeting_id: meetingUid,
         error: error instanceof Error ? error.message : 'Unknown error',
@@ -955,9 +970,15 @@ export class MeetingService {
 
   /**
    * Fetches past meeting participants by past meeting UID.
-   * Deduplicates by email — the query service can emit multiple records per person.
+   * Deduplicates by pairwise identity match, grouped via connected components — the query service
+   * can emit multiple records per person, and a single derived key (e.g. prefer email, else uid)
+   * can't correctly merge two records whose strongest available signal differs (one has a username,
+   * the other only an email). Connected components (rather than a single left-to-right pass) are
+   * required because merging is not a simple equivalence check: record A may only match record C
+   * through a "bridge" record B (e.g. A and B share an email, B and C share a username), and a
+   * one-pass merge would miss that A and C belong to the same person depending on encounter order.
    */
-  public async getPastMeetingParticipants(req: Request, pastMeetingUid: string): Promise<PastMeetingParticipant[]> {
+  public async getPastMeetingParticipants(req: Request, pastMeetingUid: string, failOnPartial: boolean = false): Promise<PastMeetingParticipant[]> {
     logger.debug(req, 'get_past_meeting_participants', 'Fetching past meeting participants', {
       past_meeting_id: pastMeetingUid,
     });
@@ -967,39 +988,58 @@ export class MeetingService {
       tags: `meeting_and_occurrence_id:${pastMeetingUid}`,
     };
 
-    const raw = await fetchAllQueryResources<PastMeetingParticipant>(req, (pageToken) =>
-      this.microserviceProxy.proxyRequest<QueryServiceResponse<PastMeetingParticipant>>(req, 'LFX_V2_SERVICE', '/query/resources', 'GET', {
-        ...params,
-        ...(pageToken && { page_token: pageToken }),
-      })
+    const raw = await fetchAllQueryResources<PastMeetingParticipant>(
+      req,
+      (pageToken) =>
+        this.microserviceProxy.proxyRequest<QueryServiceResponse<PastMeetingParticipant>>(req, 'LFX_V2_SERVICE', '/query/resources', 'GET', {
+          ...params,
+          ...(pageToken && { page_token: pageToken }),
+        }),
+      { failOnPartial }
     );
 
-    const seen = new Map<string, PastMeetingParticipant>();
-    for (const participant of raw) {
-      const normalizedEmail = participant.email?.trim().toLowerCase();
-      const key = normalizedEmail || participant.uid;
-      const existing = seen.get(key);
-      if (!existing) {
-        seen.set(key, participant);
-        continue;
+    // Plain union-find over connected identity-match edges (pure transitive closure, no
+    // conflict veto during union). isSamePerson is not transitive — a no-username row can
+    // share an email with two records that carry different, conflicting usernames — so a
+    // component can chain together records that never agree pairwise. Conflicts are detected
+    // and split out afterward, per component, in splitConflictingComponent.
+    const parent = raw.map((_, index) => index);
+    const find = (index: number): number => {
+      // Path halving: reparent every other node to its grandparent so later find() calls stay
+      // near O(1) amortized. This mutates `parent` even on a plain lookup.
+      while (parent[index] !== index) {
+        parent[index] = parent[parent[index]];
+        index = parent[index];
       }
-      const preferred = participant.is_attended && !existing.is_attended ? participant : existing;
-      const other = preferred === participant ? existing : participant;
-      seen.set(key, {
-        ...preferred,
-        is_attended: existing.is_attended || participant.is_attended,
-        is_invited: existing.is_invited || participant.is_invited,
-        host: existing.host || participant.host,
-        org_is_member: existing.org_is_member || participant.org_is_member,
-        org_is_project_member: existing.org_is_project_member || participant.org_is_project_member,
-        avatar_url: preferred.avatar_url ?? other.avatar_url,
-        job_title: preferred.job_title ?? other.job_title,
-        org_name: preferred.org_name ?? other.org_name,
-        username: preferred.username ?? other.username,
-      });
+      return index;
+    };
+
+    for (let i = 0; i < raw.length; i++) {
+      for (let j = i + 1; j < raw.length; j++) {
+        if (!this.isSamePerson(raw[i], raw[j])) {
+          continue;
+        }
+        const rootI = find(i);
+        const rootJ = find(j);
+        if (rootI !== rootJ) {
+          parent[rootI] = rootJ;
+        }
+      }
     }
 
-    return [...seen.values()];
+    const components = new Map<number, PastMeetingParticipant[]>();
+    raw.forEach((participant, index) => {
+      const root = find(index);
+      const component = components.get(root);
+      if (component) {
+        component.push(participant);
+      } else {
+        components.set(root, [participant]);
+      }
+    });
+
+    const groups = Array.from(components.values()).flatMap((component) => this.splitConflictingComponent(component));
+    return groups.map((group) => this.mergePastMeetingParticipantGroup(group));
   }
 
   /**
@@ -1804,6 +1844,67 @@ export class MeetingService {
   }
 
   /**
+   * Creates a new past meeting participant (invitee and/or attendee record) via ITX proxy
+   */
+  public async createPastMeetingParticipant(
+    req: Request,
+    pastMeetingUid: string,
+    participantData: ITXCreatePastMeetingParticipantRequest
+  ): Promise<ITXPastMeetingParticipantResult> {
+    logger.debug(req, 'create_past_meeting_participant', 'Creating past meeting participant', { past_meeting_id: pastMeetingUid });
+
+    return this.microserviceProxy.proxyRequest<ITXPastMeetingParticipantResult>(
+      req,
+      'LFX_V2_SERVICE',
+      `/itx/past_meetings/${encodeURIComponent(pastMeetingUid)}/participants`,
+      'POST',
+      undefined,
+      participantData
+    );
+  }
+
+  /**
+   * Updates a past meeting participant's invitee and/or attendee record via ITX proxy
+   */
+  public async updatePastMeetingParticipant(
+    req: Request,
+    pastMeetingUid: string,
+    participantId: string,
+    participantData: ITXUpdatePastMeetingParticipantRequest
+  ): Promise<ITXPastMeetingParticipantResult> {
+    logger.debug(req, 'update_past_meeting_participant', 'Updating past meeting participant', {
+      past_meeting_id: pastMeetingUid,
+      participant_id: participantId,
+    });
+
+    return this.microserviceProxy.proxyRequest<ITXPastMeetingParticipantResult>(
+      req,
+      'LFX_V2_SERVICE',
+      `/itx/past_meetings/${encodeURIComponent(pastMeetingUid)}/participants/${encodeURIComponent(participantId)}`,
+      'PUT',
+      undefined,
+      participantData
+    );
+  }
+
+  /**
+   * Deletes a past meeting participant via ITX proxy
+   */
+  public async deletePastMeetingParticipant(req: Request, pastMeetingUid: string, participantId: string): Promise<void> {
+    logger.debug(req, 'delete_past_meeting_participant', 'Deleting past meeting participant', {
+      past_meeting_id: pastMeetingUid,
+      participant_id: participantId,
+    });
+
+    await this.microserviceProxy.proxyRequest<void>(
+      req,
+      'LFX_V2_SERVICE',
+      `/itx/past_meetings/${encodeURIComponent(pastMeetingUid)}/participants/${encodeURIComponent(participantId)}`,
+      'DELETE'
+    );
+  }
+
+  /**
    * Registers the authenticated user as a meeting registrant using their bearer token.
    * Email and username are sourced from the user's JWT by the meeting service — they must
    * not be included in the payload. Only public meetings are supported; private meetings
@@ -1933,5 +2034,143 @@ export class MeetingService {
       recurrence_type: recurrence.type,
     });
     return { ...recurrence, end_date_time: neverEndDate };
+  }
+
+  /**
+   * Compares two participant records for identity equality: prefer LFID username when both have
+   * one, else overlapping email when both have one, else normalized display name. A single derived
+   * key can't do this since which signal is "strongest" differs per record (e.g. a guest who later
+   * links an LFX account on a subsequent occurrence). Email is only decisive when BOTH records have
+   * one — an asymmetric email (one record has it, the other doesn't) falls through to the
+   * username-asymmetry guard and then the name fallback, so the common case of a partially-enriched
+   * duplicate (same person, one record still missing an email) can still merge on matching names.
+   * The name-only fallback is an accepted PCC-parity tradeoff: two distinct guests who share a
+   * display name and have no email/username on any record will be merged. Callers needing a
+   * stronger guarantee should require a corroborating signal before relying on this path.
+   */
+  /**
+   * Splits a connected component of identity-matched records into safe merge groups. Pure
+   * transitive closure can chain records that never agree pairwise — e.g. a no-username row
+   * shares an email with two records that carry different, conflicting usernames — and blindly
+   * attaching that bridge row to whichever side it happens to reach first would misattribute its
+   * own attendance/host data depending on scan order. Instead, once a component has 2+ distinct
+   * hard identifiers (usernames, or emails among the username-less members), it's split by that
+   * identifier and any row lacking it is isolated as its own group rather than guessed into one
+   * side — matching the reviewer-suggested resolution of leaving an ambiguous row separate.
+   */
+  private splitConflictingComponent(members: PastMeetingParticipant[]): PastMeetingParticipant[][] {
+    const usernames = new Set(members.map((m) => m.username).filter((u): u is string => !!u));
+    const usernameConflict = usernames.size > 1;
+
+    const usernameless = members.filter((m) => !m.username);
+    const usernamelessEmails = new Set(usernameless.map((m) => m.email?.trim().toLowerCase()).filter((e): e is string => !!e));
+    const emailConflict = !usernameConflict && usernamelessEmails.size > 1;
+
+    if (!usernameConflict && !emailConflict) {
+      return [members];
+    }
+
+    const groupKey = (member: PastMeetingParticipant): string | undefined =>
+      usernameConflict ? member.username || undefined : member.email?.trim().toLowerCase() || undefined;
+
+    const byKey = new Map<string, PastMeetingParticipant[]>();
+    const floaters: PastMeetingParticipant[] = [];
+    for (const member of members) {
+      const key = groupKey(member);
+      if (!key) {
+        floaters.push(member);
+        continue;
+      }
+      const existing = byKey.get(key);
+      if (existing) {
+        existing.push(member);
+      } else {
+        byKey.set(key, [member]);
+      }
+    }
+
+    return [...Array.from(byKey.values()), ...floaters.map((floater) => [floater])];
+  }
+
+  private isSamePerson(a: PastMeetingParticipant, b: PastMeetingParticipant): boolean {
+    if (a.username && b.username) {
+      return a.username === b.username;
+    }
+
+    const aEmail = a.email?.trim().toLowerCase();
+    const bEmail = b.email?.trim().toLowerCase();
+    if (aEmail && bEmail) {
+      return aEmail === bEmail;
+    }
+
+    if (a.username || b.username) {
+      return false;
+    }
+
+    const aName = this.normalizeParticipantName(a);
+    const bName = this.normalizeParticipantName(b);
+    return !!aName && aName === bName;
+  }
+
+  /**
+   * Normalized display name for identity comparison. Empty when both name parts are missing, or
+   * when the name is an unresolvable placeholder (e.g. "unknown" / "[unknown]") that upstream emits
+   * for unidentified Zoom/dial-in rows, so two such rows never falsely merge into one person.
+   */
+  private normalizeParticipantName(participant: PastMeetingParticipant): string {
+    if (isUnresolvableParticipantName(participant.first_name, participant.last_name)) {
+      return '';
+    }
+    const first = participant.first_name?.trim();
+    const last = participant.last_name?.trim();
+    return `${first ?? ''} ${last ?? ''}`.trim().toLowerCase();
+  }
+
+  /**
+   * Prefers a non-blank string value, treating whitespace-only strings the same as missing.
+   * Matches `isSamePerson`'s own email normalization — some upstream records carry `''` as an
+   * "empty" sentinel rather than omitting the field, and `??` alone would treat that as present.
+   */
+  private pickNonBlank<T extends string | undefined>(preferred: T, fallback: T): T {
+    return preferred?.trim() ? preferred : fallback;
+  }
+
+  /** Folds a connected group of identity-matched participant records into one merged record. */
+  private mergePastMeetingParticipantGroup(group: PastMeetingParticipant[]): PastMeetingParticipant {
+    const merged = group.reduce((merged, participant) => {
+      const preferred = participant.is_attended && !merged.is_attended ? participant : merged;
+      const other = preferred === participant ? merged : participant;
+      return {
+        ...preferred,
+        is_attended: merged.is_attended || participant.is_attended,
+        is_invited: merged.is_invited || participant.is_invited,
+        host: merged.host || participant.host,
+        org_is_member: merged.org_is_member || participant.org_is_member,
+        org_is_project_member: merged.org_is_project_member || participant.org_is_project_member,
+        avatar_url: this.pickNonBlank(preferred.avatar_url, other.avatar_url),
+        job_title: this.pickNonBlank(preferred.job_title, other.job_title),
+        org_name: this.pickNonBlank(preferred.org_name, other.org_name),
+        username: this.pickNonBlank(preferred.username, other.username),
+        email: this.pickNonBlank(preferred.email, other.email),
+      };
+    });
+
+    return { ...merged, email: this.pickMergedEmail(group) ?? merged.email };
+  }
+
+  /**
+   * Prefers the invited/account email over an ad-hoc attended-session email when a merged group
+   * carries two different, both non-blank, emails (e.g. records that match on a shared LFID
+   * username but disagree on email). `mergePastMeetingParticipantGroup`'s attended-first
+   * preference would otherwise silently discard the invited email even though downstream
+   * committee-enrichment lookups join on `participant.email` against the invited/account address,
+   * not whatever ad-hoc address Zoom captured for that session.
+   */
+  private pickMergedEmail(group: PastMeetingParticipant[]): string | undefined {
+    const invitedEmail = group.find((participant) => participant.is_invited && participant.email?.trim())?.email;
+    if (invitedEmail) {
+      return invitedEmail;
+    }
+    return group.find((participant) => participant.email?.trim())?.email;
   }
 }

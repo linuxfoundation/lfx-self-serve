@@ -4,7 +4,7 @@
 import { Component, computed, DestroyRef, inject, Signal, signal } from '@angular/core';
 import { takeUntilDestroyed, toObservable, toSignal } from '@angular/core/rxjs-interop';
 import { FormControl, FormGroup, ReactiveFormsModule, Validators } from '@angular/forms';
-import { ActivatedRoute, NavigationEnd, Router, RouterLink } from '@angular/router';
+import { ActivatedRoute, Router, RouterLink } from '@angular/router';
 import { HttpErrorResponse } from '@angular/common/http';
 import { ButtonComponent } from '@components/button/button.component';
 import { CommitteeSelectorComponent } from '@components/committee-selector/committee-selector.component';
@@ -17,20 +17,19 @@ import {
   EntityWithProject,
   GroupsIOMailingList,
   GroupsIOService,
-  ProjectContext,
 } from '@lfx-one/shared/interfaces';
-import { computeIsFoundation, markFormControlsAsTouched } from '@lfx-one/shared/utils';
+import { markFormControlsAsTouched } from '@lfx-one/shared/utils';
 import { announcementVisibilityValidator, htmlMaxLengthValidator, htmlMinLengthValidator, htmlRequiredValidator } from '@lfx-one/shared/validators';
 import { MailingListService } from '@services/mailing-list.service';
 import { ProjectContextService } from '@services/project-context.service';
 import { ProjectService } from '@services/project.service';
 import { MessageService } from 'primeng/api';
 import { StepperModule } from 'primeng/stepper';
-import { catchError, distinctUntilChanged, filter, map, merge, Observable, of, switchMap, tap, throwError } from 'rxjs';
+import { catchError, filter, Observable, of, switchMap, tap, throwError } from 'rxjs';
 
 import { MailingListBasicInfoComponent } from '../components/mailing-list-basic-info/mailing-list-basic-info.component';
 import { MailingListSettingsComponent } from '../components/mailing-list-settings/mailing-list-settings.component';
-import { applyEntityProjectContext, canonicalizeTierPrefix, syncEntityProjectContext } from '@shared/utils/entity-project-context.util';
+import { syncEntityProjectContext, syncEntityProjectContextFallback } from '@shared/utils/entity-project-context.util';
 import { evictOnWriteAccessLoss } from '@shared/utils/evict-on-write-access-loss.util';
 
 @Component({
@@ -103,7 +102,10 @@ export class MailingListManageComponent {
       preferEntityKind: true,
       canonicalizeRoute: true,
     });
-    this.initMailingListContextFallback();
+    syncEntityProjectContextFallback(this.mailingListEntityContext, this.projectService, this.projectContextService, this.router, this.destroyRef, {
+      entityKind: 'mailing list',
+      canonicalizeRoute: true,
+    });
     this.form()
       .get('group_name')
       ?.valueChanges.pipe(takeUntilDestroyed())
@@ -268,47 +270,6 @@ export class MailingListManageComponent {
         is_foundation: list.is_foundation ?? null,
       };
     });
-  }
-
-  /**
-   * Unenriched-payload fallback (project_uid but no usable project_slug): resolve the project by
-   * uid and set context from it; NavigationEnd re-applies it, mirroring syncEntityProjectContext (GH-1567).
-   */
-  private initMailingListContextFallback(): void {
-    const unresolvedEntity$ = toObservable(this.mailingListEntityContext).pipe(
-      distinctUntilChanged((a, b) => a?.uid === b?.uid && a?.project_uid === b?.project_uid)
-    );
-    const navigationReapply$ = this.router.events.pipe(
-      filter((event) => event instanceof NavigationEnd),
-      map(() => this.mailingListEntityContext())
-    );
-    merge(unresolvedEntity$, navigationReapply$)
-      .pipe(
-        filter((entity): entity is EntityWithProject => !!entity?.project_uid && !entity.project_slug),
-        // current: false — don't clobber ProjectService's shared state; null on failure leaves the stale context untouched.
-        switchMap((entity) =>
-          this.projectService.getProject(entity.project_uid, false).pipe(
-            map((project) => {
-              if (!project) {
-                return null;
-              }
-              const context: ProjectContext = { uid: project.uid, name: project.name, slug: project.slug };
-              return { context, isFoundation: computeIsFoundation(project) };
-            })
-          )
-        ),
-        takeUntilDestroyed(this.destroyRef)
-      )
-      .subscribe((resolved) => {
-        if (!resolved) {
-          return;
-        }
-        // Mirror syncEntityProjectContext: only write ?project= to the URL when already present.
-        const syncUrl = 'project' in this.router.parseUrl(this.router.url).queryParams;
-        applyEntityProjectContext(this.projectContextService, resolved.context, resolved.isFoundation, syncUrl);
-        // Heal a wrong-tier URL the same way the enriched sync path does (GH-1567).
-        canonicalizeTierPrefix(this.router, resolved.isFoundation, resolved.context.slug);
-      });
   }
 
   private initMailingList(): Signal<GroupsIOMailingList | null> {

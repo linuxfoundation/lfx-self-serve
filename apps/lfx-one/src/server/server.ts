@@ -17,6 +17,7 @@ import { CrowdfundingController } from './controllers/crowdfunding.controller';
 import { ProfileController } from './controllers/profile.controller';
 import { CrowdfundingAuthService } from './services/crowdfunding-auth.service';
 import { customErrorSerializer } from './helpers/error-serializer';
+import { applySsrCacheHeaders } from './helpers/ssr-cache-headers.helper';
 import { validateAndSanitizeUrl } from './helpers/url-validation';
 import { AuthenticationError } from './errors';
 import { authMiddleware } from './middleware/auth.middleware';
@@ -96,6 +97,12 @@ const browserDistFolder = resolve(serverDistFolder, '../browser');
 
 const angularApp = new AngularNodeAppEngine();
 const app = express();
+
+// Cold-start phase marks (see #1378) — performance.now() is monotonic and
+// zeroed at process start, so each mark is elapsed-ms since the process spawned.
+// Captured after engine/app construction so engine_ms reflects that work, not
+// just the module-graph evaluation that precedes it.
+const engineStartMs = performance.now();
 
 // Trust first proxy so req.ip resolves from X-Forwarded-For.
 app.set('trust proxy', 1);
@@ -366,11 +373,13 @@ app.use('/api/mktg-agents', mktgAgentsRouter);
 app.use('/public/api/*', apiErrorHandler);
 app.use('/api/*', apiErrorHandler);
 
-// Profile auth callback registered in Auth0 Profile Client.
+// Profile auth callback registered in Auth0 Profile Client. Sits outside the /api error-handler
+// mount, so its impersonation guard lives in-handler rather than via blockDuringImpersonation
+// — see ProfileController.blockCallbackDuringImpersonation.
 const profileCallbackController = new ProfileController();
 app.get('/passwordless/callback', authRateLimiter, (req, res) => profileCallbackController.handleProfileAuthCallback(req, res));
 
-// GitHub/LinkedIn OAuth redirect target.
+// GitHub/LinkedIn OAuth redirect target. Same in-handler impersonation guard as above.
 app.get('/social/callback', authRateLimiter, (req, res) => profileCallbackController.handleSocialCallback(req, res));
 
 const crowdfundingCallbackController = new CrowdfundingController();
@@ -501,6 +510,8 @@ app.use('/**', async (req: Request, res: Response, next: NextFunction) => {
         return next();
       }
 
+      applySsrCacheHeaders(response);
+
       // Web `Response.status` is read-only, so rebuild with 404 when the render flagged not-found.
       // Buffer the body first (404 pages are small) so we never hand a consumed stream to the new Response.
       if (renderContext.notFound && response.status === 200) {
@@ -571,6 +582,10 @@ app.use((error: Error, req: Request, res: Response, next: NextFunction) => {
 
   apiErrorHandler(error, req, res, next);
 });
+
+// Cold-start phase mark (see #1378) — router mounting + middleware complete,
+// including the SSR catch-all and global error handler above.
+const routesReadyMs = performance.now();
 
 let httpServer: HttpServer | undefined;
 
@@ -695,11 +710,15 @@ async function gracefulShutdown(signal: string): Promise<void> {
 export function startServer() {
   const port = process.env['PORT'] || 4000;
   httpServer = app.listen(port, () => {
-    logger.debug(undefined, 'server_startup', 'Node Express server started', {
+    logger.info(undefined, 'server_startup', 'Node Express server started', {
       port,
       url: `http://localhost:${port}`,
       node_env: process.env['NODE_ENV'] || 'development',
       pm2: process.env['PM2'] === 'true',
+      // Cold-start phase breakdown (see #1378) — ms elapsed since process start.
+      engine_ms: Math.round(engineStartMs),
+      routes_ms: Math.round(routesReadyMs),
+      boot_ms: Math.round(performance.now()),
     });
   });
 }

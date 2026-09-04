@@ -320,7 +320,18 @@ test.describe('Newsletter schedule — arm from the review screen', () => {
     const draft = buildDraft({ scheduled_at: scheduledAt });
 
     await stubNewsletterApis(page, draft, {
-      scheduleHandler: (route) => route.fulfill({ status: 503, contentType: 'application/json', body: JSON.stringify({ error: 'provider_unavailable' }) }),
+      // `upstreamCode`, not `error`. This route stubs what the BROWSER receives, and the BFF is
+      // what maps upstream's `error` field onto `upstreamCode` (MicroserviceError.toResponse) --
+      // a step this stub bypasses entirely. The component now requires that mapped field as
+      // POSITIVE proof the newsletter service itself answered, because an ingress 503 carries
+      // neither it nor a transport marker; stubbing the raw upstream shape would send this test
+      // down the "request did not complete" branch and quietly assert the wrong copy.
+      scheduleHandler: (route) =>
+        route.fulfill({
+          status: 503,
+          contentType: 'application/json',
+          body: JSON.stringify({ error: 'provider_unavailable', upstreamCode: 'provider_unavailable' }),
+        }),
     });
 
     await gotoEditUrl(page);

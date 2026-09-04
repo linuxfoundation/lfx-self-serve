@@ -170,9 +170,9 @@ export class CreatePickerService {
   }
 
   /**
-   * Resolves each committee's parent project via `ProjectService.getProjectsByIds` — a true
-   * single-request-per-chunk batch (`filters_or=uid:X`), not `enrichWithProjectData`'s N
-   * individual per-project lookups. Committees whose project can't be resolved are omitted
+   * Resolves each committee's parent project via `ProjectService.getProjectsByIds` — the same
+   * batched `filters_or=uid:X` lookup `enrichWithProjectData` uses, minus its payload-fallback
+   * merge: committees whose project can't be resolved are omitted
    * entirely rather than emitted with blank `projectSlug`/`projectName`: a picked row with an
    * empty project slug would navigate with `?project=` empty, which `writerGuard` cannot resolve —
    * exactly the post-selection dead end this picker is supposed to make impossible.

@@ -10,7 +10,7 @@ import { CommitteeSelectorComponent } from '@components/committee-selector/commi
 import { InputTextComponent } from '@components/input-text/input-text.component';
 import { SelectComponent } from '@components/select/select.component';
 import { TextareaComponent } from '@components/textarea/textarea.component';
-import { COMMITTEE_LABEL, VOTE_ELIGIBLE_PARTICIPANTS, VOTE_LABEL } from '@lfx-one/shared/constants';
+import { COMMITTEE_LABEL, VOTE_ALLOW_ABSTAIN_OPTIONS, VOTE_ELIGIBLE_PARTICIPANTS, VOTE_LABEL } from '@lfx-one/shared/constants';
 
 @Component({
   selector: 'lfx-vote-basics',
@@ -28,6 +28,7 @@ export class VoteBasicsComponent {
   public readonly committeeLabel = COMMITTEE_LABEL;
   public readonly voteLabel = VOTE_LABEL;
   public readonly eligibleParticipantsOptions = [...VOTE_ELIGIBLE_PARTICIPANTS];
+  public readonly allowAbstainOptions = [...VOTE_ALLOW_ABSTAIN_OPTIONS];
   public readonly minDate = (() => {
     const tomorrow = new Date();
     tomorrow.setDate(tomorrow.getDate() + 1);

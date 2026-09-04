@@ -219,13 +219,18 @@ const binds = [email];
 
 When calling the query service, use the correct parameter names:
 
-| Parameter    | Purpose                    | Note                                                         |
-| ------------ | -------------------------- | ------------------------------------------------------------ |
-| `page_size`  | Number of results per page | NOT `limit`                                                  |
-| `page_token` | Cursor for pagination      | Opaque string from previous response                         |
-| `name`       | Typeahead search           | Uses `multi_match` with `bool_prefix`                        |
-| `filters`    | Field filtering            | Format: `field:value`, auto-prefixed with `data.`            |
-| `sort`       | Sort order                 | Enum: `name_asc`, `name_desc`, `updated_asc`, `updated_desc` |
+| Parameter    | Purpose                    | Note                                                                                          |
+| ------------ | -------------------------- | --------------------------------------------------------------------------------------------- |
+| `page_size`  | Number of results per page | NOT `limit`                                                                                   |
+| `page_token` | Cursor for pagination      | Opaque string from previous response                                                          |
+| `name`       | Typeahead search           | Uses `multi_match` with `bool_prefix`                                                         |
+| `filters`    | Field filtering            | Format: `field:value`, auto-prefixed with `data.`                                             |
+| `sort`       | Sort order                 | Enum: `name_asc` (upstream default), `name_desc`, `updated_asc`, `updated_desc`, `best_match` |
+
+`best_match` opts into upstream `_score` ordering and is meaningful only alongside `name`. Pass it
+whenever you pass `name`: the upstream default is `name_asc`, and OpenSearch discards relevance
+scoring whenever an explicit non-`_score` sort is present, so omitting it returns the
+alphabetically-first page of matches rather than the closest ones.
 
 **Violation:**
 

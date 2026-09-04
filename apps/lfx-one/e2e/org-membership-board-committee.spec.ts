@@ -21,6 +21,9 @@
  */
 
 import { expect, test, type Page } from '@playwright/test';
+import { skipWhenAuthMissing } from './helpers/auth.helper';
+
+test.beforeEach(() => skipWhenAuthMissing());
 
 const DETAIL_URL_BOARD = '/org/memberships/sample-foundation#board';
 const DATA_LOAD_TIMEOUT = 30_000;

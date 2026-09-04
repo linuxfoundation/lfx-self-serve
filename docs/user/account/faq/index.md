@@ -4,7 +4,7 @@ description: Frequently asked questions about account settings, affiliations, id
 audience: [all]
 product_area: Account
 tags: [account, faq, settings, affiliations, cla, easycla, transactions, billing]
-last_updated: 2026-08-31
+last_updated: 2026-09-04
 intercom_collection: Account
 ---
 
@@ -76,9 +76,13 @@ The CLAs tab matches agreements to your LF username, verified emails, and linked
 
 You can start there. Select **Sign CLA**, search for the project, CLA group, or repository you need to sign for, and choose which linked GitHub account to sign under. Self Serve then hands you off to the EasyCLA Contributor Console, which presents and records the agreement — the signing itself does not happen in Self Serve. See [How do I sign a new CLA?](../my-clas/#how-do-i-sign-a-new-cla).
 
+## Why does a search result say "Already signed as" when I search for a CLA to sign?
+
+In the **Sign a CLA** dialog, a result you already hold a CLA for is tagged **Already signed as** followed by the account it was signed under. The result stays selectable: holding a CLA under one identity does not stop you signing under another, and holding one contract type — an ICLA (Individual CLA) or an ECLA (Employee CLA) — does not stop you signing the other type with the same identity when the group offers both. The identity step greys out an account only when that identity already holds every contract type the group offers — and only when that account is one of the GitHub accounts linked to your profile, or the CLA was signed under your LF identity through Gerrit. Results are matched per CLA group, not per project, so a project with more than one CLA group only tags the group you signed. An **Invalidated** CLA greys out nothing — that agreement no longer covers you, so you can sign again with the same identity. See [Why does a search result say "Already signed as"?](../my-clas/#why-does-a-search-result-say-already-signed-as).
+
 ## What do the CLA status labels mean?
 
-**Valid** means the agreement covers your contributions. **Needs attention** means an Employee CLA no longer covers you, usually because you have dropped off your employer's **Approved List**. **Invalidated** means the agreement is no longer in force — someone removed you from an Approved List, a maintainer invalidated your ICLA, or the CLA group was deleted. **Revoked** is reserved for a sanctions-screening outcome against your employer and cannot be changed from Self Serve. See [What do the status labels mean?](../my-clas/#what-do-the-status-labels-mean).
+**Valid** means the agreement covers your contributions. **Needs attention** means an Employee CLA no longer covers you, usually because you have dropped off your employer's **Approved List**. **Invalidated** means the agreement is no longer in force — someone removed you from an Approved List, a maintainer invalidated your ICLA, or the CLA group was deleted. **Revoked** is reserved for a sanctions-screening outcome against your employer and cannot be changed from Self Serve. **Invalidated** and **Revoked** also show a date under the label when EasyCLA recorded one; if there is no date, the label stands alone. See [What do the status labels mean?](../my-clas/#what-do-the-status-labels-mean).
 
 ## Which account was my CLA signed under?
 

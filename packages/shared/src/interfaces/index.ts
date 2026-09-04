@@ -137,6 +137,9 @@ export * from './public-group.interface';
 // Lens interfaces
 export * from './lens.interface';
 
+// Formation interfaces
+export * from './formation.interface';
+
 // Navigation interfaces
 export * from './navigation.interface';
 
@@ -334,5 +337,8 @@ export * from './social-listening.interface';
 // Per-user preference store + BFF wire contracts (LFXV2-3002 Block 0)
 export * from './user-preference.interface';
 
-// Formation checklist template (GH-1959, Epic 1 #1965)
+// Individual Dashboard → LFX migration banner (LFXV2-3336)
+export * from './id-migration.interface';
+
+// Formation checklist template (GH-1959/GH-2163, Epic 1 #1965)
 export * from './formation.interface';

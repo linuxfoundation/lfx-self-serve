@@ -5,10 +5,11 @@ import { ChangeDetectionStrategy, Component, computed, inject, Signal, signal } 
 import { takeUntilDestroyed } from '@angular/core/rxjs-interop';
 import { FormControl, FormGroup, ReactiveFormsModule } from '@angular/forms';
 import { CLA_GROUP_SEARCH_DEBOUNCE_MS, CLA_GROUP_SEARCH_MIN_CHARS } from '@lfx-one/shared/constants';
-import type { ClaGroupOptionView, ClaGroupSearchResponse } from '@lfx-one/shared/interfaces';
-import { toClaGroupOptionView } from '@lfx-one/shared/utils';
+import type { AlreadySignedNote, ClaGroupOptionView, ClaGroupSearchResponse, ClaGroupSelectDialogData, MyClaAgreement } from '@lfx-one/shared/interfaces';
+import { alreadySignedAgreementForGroup, alreadySignedChipLabel, alreadySignedGroupTooltip, claSignRoute, toClaGroupOptionView } from '@lfx-one/shared/utils';
 import { MyClasService } from '@services/my-clas.service';
-import { DynamicDialogRef } from 'primeng/dynamicdialog';
+import { DynamicDialogConfig, DynamicDialogRef } from 'primeng/dynamicdialog';
+import { TooltipModule } from 'primeng/tooltip';
 import { catchError, debounceTime, map, of, Subject, switchMap } from 'rxjs';
 
 import { ButtonComponent } from '@components/button/button.component';
@@ -25,16 +26,25 @@ import { InputTextComponent } from '@components/input-text/input-text.component'
  * Closes with the chosen `ClaGroupOption`, or `null` if the contributor backs out; the caller
  * resolves the hand-off URL. Searching happens here and upstream rather than by filtering a
  * fetched list, so #1250 can put the real four-source search behind the same route untouched.
+ *
+ * A group the contributor already holds a CLA for is tagged with the identity that signed it,
+ * and stays selectable (#1914). It has to: one contributor can hold several identities, and an
+ * ICLA signed under one of them says nothing about whether another can still sign. The refusal
+ * therefore belongs to the identity step, which grays out the identity already on an agreement.
  */
 @Component({
   selector: 'lfx-cla-group-select',
-  imports: [ReactiveFormsModule, ButtonComponent, InputTextComponent],
+  imports: [ReactiveFormsModule, ButtonComponent, InputTextComponent, TooltipModule],
   templateUrl: './cla-group-select.component.html',
   changeDetection: ChangeDetectionStrategy.OnPush,
 })
 export class ClaGroupSelectComponent {
   private readonly ref = inject(DynamicDialogRef);
   private readonly myClasService = inject(MyClasService);
+  private readonly config = inject<DynamicDialogConfig<ClaGroupSelectDialogData>>(DynamicDialogConfig);
+
+  /** The CLAs tab's loaded list — this dialog never fetches it. */
+  private readonly agreements: readonly MyClaAgreement[] = this.config.data?.agreements ?? [];
 
   protected readonly searchForm = new FormGroup({
     query: new FormControl(''),
@@ -59,6 +69,13 @@ export class ClaGroupSelectComponent {
    * going" from "that term matched nothing".
    */
   protected readonly queryBand: Signal<'empty' | 'short' | 'searchable'> = this.initQueryBand();
+
+  /**
+   * Tag and tooltip per CLA group the contributor already holds, keyed by group id (#1914).
+   * Informational only — every row stays selectable, because another of their identities may
+   * still be able to sign it. The identity step is what refuses.
+   */
+  protected readonly alreadySignedByGroupId: Signal<Map<string, AlreadySignedNote>> = this.initAlreadySignedByGroupId();
 
   private readonly search$ = new Subject<string>();
 
@@ -216,6 +233,22 @@ export class ClaGroupSelectComponent {
     this.options.set([]);
     this.truncated.set(false);
     this.highlightedIndex.set(-1);
+  }
+
+  private initAlreadySignedByGroupId(): Signal<Map<string, AlreadySignedNote>> {
+    return computed(() => {
+      const notes = new Map<string, AlreadySignedNote>();
+      for (const option of this.options()) {
+        const held = alreadySignedAgreementForGroup(this.agreements, option.claGroupId);
+        if (held) {
+          notes.set(option.claGroupId, {
+            chip: alreadySignedChipLabel(held),
+            tooltip: alreadySignedGroupTooltip(held, claSignRoute(option.organizations)),
+          });
+        }
+      }
+      return notes;
+    });
   }
 
   private initQueryBand(): Signal<'empty' | 'short' | 'searchable'> {

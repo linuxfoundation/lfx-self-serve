@@ -2,14 +2,15 @@
 // SPDX-License-Identifier: MIT
 
 import { isPlatformBrowser, NgClass } from '@angular/common';
-import { afterNextRender, Component, computed, DestroyRef, inject, PLATFORM_ID, Signal, signal } from '@angular/core';
-import { takeUntilDestroyed, toSignal } from '@angular/core/rxjs-interop';
+import { afterNextRender, Component, computed, DestroyRef, inject, Injector, PLATFORM_ID, Signal, signal } from '@angular/core';
+import { takeUntilDestroyed, toObservable, toSignal } from '@angular/core/rxjs-interop';
 import { AbstractControl, FormBuilder, FormControl, FormGroup, ReactiveFormsModule, ValidationErrors, ValidatorFn, Validators } from '@angular/forms';
 import { BadgeComponent } from '@components/badge/badge.component';
 import { ButtonComponent } from '@components/button/button.component';
 import { InputTextComponent } from '@components/input-text/input-text.component';
 import { TokenRevealDialogComponent } from '@components/token-reveal-dialog/token-reveal-dialog.component';
 import { markFormControlsAsTouched } from '@lfx-one/shared';
+import { ACCOUNT_SETTINGS_SECTIONS, PROFILE_EMAILS_PATH } from '@lfx-one/shared/constants';
 import { ActivatedRoute } from '@angular/router';
 import { useResendCooldown } from '@shared/utils/resend-cooldown';
 import { clearPendingProfileSave } from '@shared/utils/pending-profile-save.util';
@@ -21,7 +22,7 @@ import { DialogService, DynamicDialogModule } from 'primeng/dynamicdialog';
 import { ToastModule } from 'primeng/toast';
 import { TooltipModule } from 'primeng/tooltip';
 import { HttpErrorResponse } from '@angular/common/http';
-import { BehaviorSubject, catchError, finalize, of, switchMap, take } from 'rxjs';
+import { BehaviorSubject, catchError, filter, finalize, map, of, switchMap, take, tap } from 'rxjs';
 
 @Component({
   selector: 'lfx-account-settings',
@@ -51,6 +52,7 @@ export class AccountSettingsComponent {
   private readonly platformId = inject(PLATFORM_ID);
   private readonly destroyRef = inject(DestroyRef);
   private readonly route = inject(ActivatedRoute);
+  private readonly injector = inject(Injector);
 
   // Hosted inside the Profile shell (route data `embedded`), which owns the page header.
   public readonly embedded = this.route.snapshot.data['embedded'] === true;
@@ -63,8 +65,19 @@ export class AccountSettingsComponent {
   public resendCooldown = this.resendCooldownUtil.cooldown;
 
   // ── TOC active section ──
-  public activeSection = signal('email-settings');
+  private static readonly sectionIds = [
+    ACCOUNT_SETTINGS_SECTIONS.EMAIL_SETTINGS,
+    ACCOUNT_SETTINGS_SECTIONS.PASSWORD,
+    ACCOUNT_SETTINGS_SECTIONS.DEVELOPER_SETTINGS,
+  ] as const;
+  public activeSection = signal<string>(ACCOUNT_SETTINGS_SECTIONS.EMAIL_SETTINGS);
   private scrollSpyObserver?: IntersectionObserver;
+  // Set once the user explicitly picks a section, so the deferred deep-link re-scroll below
+  // can't smooth-scroll them back to the original fragment after they've already navigated away.
+  private userPickedSection = false;
+  // Non-null while a deep-link re-scroll is pending — see armOutsideScrollCancellation().
+  private outsideScrollCancelHandler?: () => void;
+  private outsideScrollKeydownHandler?: (event: KeyboardEvent) => void;
 
   // ══════════════════════════════════════════
   // EMAIL SETTINGS
@@ -171,14 +184,51 @@ export class AccountSettingsComponent {
       this.loadDeveloperToken();
     }
 
-    afterNextRender(() => {
-      this.setupScrollSpy();
-    });
+    afterNextRender(() => this.setupScrollSpy());
+
+    // Deep-link support (profile.routes.ts): router anchorScrolling scrolls on navigation, but the
+    // email section's spinner-to-list swap can shift #password — re-settle once loaded per fragment.
+    const emailLoaded$ = toObservable(this.emailLoading).pipe(filter((loading) => !loading));
+    this.route.fragment
+      .pipe(
+        filter((fragment): fragment is string => !!fragment && (AccountSettingsComponent.sectionIds as readonly string[]).includes(fragment)),
+        tap((validFragment) => {
+          this.activeSection.set(validFragment);
+          this.armOutsideScrollCancellation();
+        }),
+        switchMap((validFragment) =>
+          emailLoaded$.pipe(
+            take(1),
+            map(() => validFragment)
+          )
+        ),
+        takeUntilDestroyed()
+      )
+      // afterNextRender (not a direct call): waits for the loaded-state DOM swap to actually
+      // paint before measuring scrollIntoView, so the layout shift can't race the scroll.
+      .subscribe((validFragment) =>
+        afterNextRender(
+          () => {
+            // The TOC stays clickable during the email-loading window; if the user already picked
+            // (or scrolled to) a different section by the time this fires, respect that instead of
+            // smooth-scrolling them back to the original deep-link fragment.
+            this.disarmOutsideScrollCancellation();
+            if (this.userPickedSection) return;
+            this.scrollToSection(validFragment);
+          },
+          { injector: this.injector }
+        )
+      );
   }
 
   // ══════════════════════════════════════════
   // TOC NAVIGATION
   // ══════════════════════════════════════════
+
+  public selectSection(sectionId: string): void {
+    this.userPickedSection = true;
+    this.scrollToSection(sectionId);
+  }
 
   public scrollToSection(sectionId: string): void {
     this.activeSection.set(sectionId);
@@ -293,7 +343,7 @@ export class AccountSettingsComponent {
       .pipe(take(1))
       .subscribe((status) => {
         if (!status.authorized) {
-          this.redirectToProfileAuth('/api/profile/auth/start?returnTo=/profile/settings');
+          this.redirectToProfileAuth(`/api/profile/auth/start?returnTo=${PROFILE_EMAILS_PATH}`);
           return;
         }
 
@@ -446,10 +496,8 @@ export class AccountSettingsComponent {
   // ══════════════════════════════════════════
 
   /**
-   * Redirect into a profile-auth (Flow C) flow for an email/password operation.
-   * Clears any stored profile-edit pending-save first so an abandoned edit
-   * authorization can't be silently replayed when this flow returns to the
-   * profile shell (these settings now live at /profile/settings).
+   * Redirect into a profile-auth (Flow C) flow, after clearing any stored pending-save
+   * so an abandoned edit can't replay when this flow returns to /profile/settings.
    */
   private redirectToProfileAuth(url: string): void {
     if (!isPlatformBrowser(this.platformId)) return;
@@ -489,6 +537,38 @@ export class AccountSettingsComponent {
           this.developerV1Token.set('');
         },
       });
+  }
+
+  // Cancels the deferred deep-link re-scroll on ANY user-initiated scroll gesture (wheel, touch
+  // drag, scroll-key) during the email-loading window — selectSection() alone only catches TOC
+  // clicks. Deliberately narrower than "any keydown/touchstart": typing in a still-visible form
+  // field or tapping to focus it isn't a scroll signal and shouldn't cancel the re-scroll.
+  private armOutsideScrollCancellation(): void {
+    if (!isPlatformBrowser(this.platformId) || this.outsideScrollCancelHandler) return;
+    const scrollKeys = new Set(['ArrowUp', 'ArrowDown', 'PageUp', 'PageDown', 'Home', 'End', ' ']);
+    const cancel = (): void => {
+      this.userPickedSection = true;
+      this.disarmOutsideScrollCancellation();
+    };
+    const onKeydown = (event: KeyboardEvent): void => {
+      if (scrollKeys.has(event.key)) cancel();
+    };
+    this.outsideScrollCancelHandler = cancel;
+    this.outsideScrollKeydownHandler = onKeydown;
+    document.addEventListener('wheel', cancel, { passive: true });
+    document.addEventListener('touchmove', cancel, { passive: true });
+    document.addEventListener('keydown', onKeydown);
+    this.destroyRef.onDestroy(() => this.disarmOutsideScrollCancellation());
+  }
+
+  private disarmOutsideScrollCancellation(): void {
+    const cancel = this.outsideScrollCancelHandler;
+    if (!cancel) return;
+    document.removeEventListener('wheel', cancel);
+    document.removeEventListener('touchmove', cancel);
+    if (this.outsideScrollKeydownHandler) document.removeEventListener('keydown', this.outsideScrollKeydownHandler);
+    this.outsideScrollCancelHandler = undefined;
+    this.outsideScrollKeydownHandler = undefined;
   }
 
   private maskTokenValue(token: string): string {
@@ -547,7 +627,7 @@ export class AccountSettingsComponent {
     // Observe the section heading rows (sentinels) rather than the full section divs.
     // A heading is short enough that at most one fits in the activation band, which
     // avoids two sections being considered active during the transition.
-    const sectionIds = ['email-settings', 'password', 'developer-settings'];
+    const sectionIds = AccountSettingsComponent.sectionIds;
     const headingByElement = new Map<Element, string>();
     for (const id of sectionIds) {
       const heading = document.getElementById(`${id}-heading`);
