@@ -14,10 +14,6 @@ export const environment = {
     contributorConsole: 'https://contributor.easycla.lfx.linuxfoundation.org/',
     // LFX Corporate CLA Console — My CLAs "Manage in CCLA Console" (#1575).
     corporateConsole: 'https://organization.lfx.linuxfoundation.org/',
-    // Individual Dashboard (soft-migration return link target, LFXV2-3336).
-    // openprofile.dev is the production public domain for the Individual Dashboard — not a
-    // *.linuxfoundation.org host — so this deliberately diverges from the other service URLs.
-    individualDashboard: 'https://openprofile.dev',
   },
   segment: {
     cdnUrl: 'https://lfx-segment.platform.linuxfoundation.org/latest/lfx-segment-analytics.min.js?ver=1.0.1',
