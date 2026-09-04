@@ -6,6 +6,7 @@ import { inject, Injectable } from '@angular/core';
 import { CAMPAIGN_JOB_POLL_INTERVAL_MS, JOB_LOST_MESSAGE } from '@lfx-one/shared/constants';
 import {
   AudienceDemographics,
+  BriefMetrics,
   BuildAudienceResult,
   BulkKeywordActionRequest,
   BulkKeywordActionResponse,
@@ -20,6 +21,7 @@ import {
   CampaignJobOutcome,
   CampaignJobStatus,
   CampaignListResult,
+  CampaignMetricsWindow,
   CampaignMonitorResponse,
   CampaignSSEEventType,
   CampaignStatusToggleParams,
@@ -321,8 +323,35 @@ export class CampaignService {
     });
   }
 
+  /**
+   * Reads campaign-service's own metrics for every campaign on one brief.
+   *
+   * `window` is deliberately optional and is NOT defaulted here. campaign-service resolves a
+   * per-platform default inside its fan-out, so sending a constant would override a considered
+   * per-row choice with a guess made in the browser. The BFF refuses a present-but-empty or
+   * repeated value, so only omit it — never send `''`.
+   *
+   * Callers must read `rows[].status` before `rows[].metrics`: a row that could not be measured
+   * omits `metrics` entirely rather than zero-filling it, and defaulting the absence to zeroes
+   * would render an unsent draft or an outage as a measurement of nothing.
+   */
+  public getBriefMetrics(projectSlug: string, briefId: string, window?: CampaignMetricsWindow): Observable<BriefMetrics> {
+    let params = new HttpParams().set('project', projectSlug).set('brief_id', briefId);
+    if (window !== undefined) {
+      params = params.set('window', window);
+    }
+    return this.http.get<BriefMetrics>('/api/campaigns/brief/metrics', { params });
+  }
+
   public lookupHubSpotUtm(projectSlug: string, eventName: string): Observable<HubSpotUtmLookupResult> {
-    return this.http.get<HubSpotUtmLookupResult>('/api/campaigns/hubspot/utm', { params: { project: projectSlug, event_name: eventName } });
+    return this.http.get<HubSpotUtmLookupResult>('/api/campaigns/hubspot/utm', {
+      // Declares that THIS bundle understands `found: true` with a null `hs_utm` (a campaign that
+      // exists but carries no UTM token). The previous bundle read that as absence and offered
+      // Create, so the server withholds the shape unless a client asks for it by name. Sent as a
+      // parameter rather than inferred, because during a rolling deploy the only thing that
+      // reliably distinguishes the two bundles is what the bundle itself says.
+      params: { project: projectSlug, event_name: eventName, tokenless_found: '1' },
+    });
   }
 
   public createHubSpotUtm(projectSlug: string, eventName: string): Observable<HubSpotUtmCreateResult> {

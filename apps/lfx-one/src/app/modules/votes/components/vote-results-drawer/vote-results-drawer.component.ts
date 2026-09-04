@@ -20,7 +20,13 @@ import {
   VoteResultsResponse,
 } from '@lfx-one/shared/interfaces';
 import { VOTE_COMMENT_RESULTS_PAGE_SIZE, VOTE_COMMENT_RESULTS_ROWS_PER_PAGE_OPTIONS } from '@lfx-one/shared/constants';
-import { getVoteEndedEarlyDetailTooltip, isVoteEndedEarly, sortCommentResponsesByRecency, splitIntoParagraphs } from '@lfx-one/shared/utils';
+import {
+  computeVoteParticipationStats,
+  getVoteEndedEarlyDetailTooltip,
+  isVoteEndedEarly,
+  sortCommentResponsesByRecency,
+  splitIntoParagraphs,
+} from '@lfx-one/shared/utils';
 import { LinkifyPipe } from '@pipes/linkify.pipe';
 import { PollStatusLabelPipe } from '@pipes/poll-status-label.pipe';
 import { PollStatusSeverityPipe } from '@pipes/poll-status-severity.pipe';
@@ -106,6 +112,8 @@ export class VoteResultsDrawerComponent {
   /** Creator-scope inline cast CTA gate: active vote where the viewer is also a voter awaiting response. Voter audience uses the dedicated State A panel instead. */
   protected readonly canCastVoteFromDrawer: Signal<boolean> = this.initCanCastVoteFromDrawer();
   protected readonly participationStats: Signal<VoteParticipationStats> = this.initParticipationStats();
+  /** Abstain UI follows the data, not just the flag: shows when the vote allows abstain OR results report abstentions (e.g. flag edited off mid-vote) — mirrors the hasZeroVotes short-circuit. */
+  protected readonly showAbstain: Signal<boolean> = computed(() => !!this.vote()?.allow_abstain || this.participationStats().abstainedVoters > 0);
   protected readonly isVoteClosed: Signal<boolean> = this.initIsVoteClosed();
   protected readonly questionsWithResults: Signal<VoteResultsQuestion[]> = this.initQuestionsWithResults();
   protected readonly rankedQuestions: Signal<RankedQuestionView[]> = this.initRankedQuestions();
@@ -222,18 +230,7 @@ export class VoteResultsDrawerComponent {
   }
 
   private initParticipationStats(): Signal<VoteParticipationStats> {
-    return computed(() => {
-      const results = this.voteResults();
-      if (!results) {
-        return { eligibleVoters: 0, totalResponses: 0, participationRate: 0 };
-      }
-
-      const eligibleVoters = results.num_recipients || 0;
-      const totalResponses = results.num_votes_cast || 0;
-      const participationRate = eligibleVoters > 0 ? Math.round((totalResponses / eligibleVoters) * 100) : 0;
-
-      return { eligibleVoters, totalResponses, participationRate };
-    });
+    return computed(() => computeVoteParticipationStats(this.voteResults()));
   }
 
   private initQuestionsWithResults(): Signal<VoteResultsQuestion[]> {
@@ -248,7 +245,7 @@ export class VoteResultsDrawerComponent {
       return results.poll_results.map((pollResult) => {
         const choiceVotes = pollResult.generic_choice_votes || [];
 
-        // Compute total votes first for percentage calculation
+        // Per-question choice-vote sum — drives the question model's totalVotes (zero-state detection), not percentages.
         const totalVotes = choiceVotes.reduce((sum, cv) => sum + cv.vote_count, 0);
 
         // Build options with vote counts from the results API
@@ -256,7 +253,7 @@ export class VoteResultsDrawerComponent {
           choiceId: cv.choice_id,
           text: pollResult.question.choices.find((c) => c.choice_id === cv.choice_id)?.choice_text || cv.choice_id,
           voteCount: cv.vote_count,
-          percentage: this.computePercentage(cv.percentage, cv.vote_count, totalVotes),
+          percentage: this.computePercentage(cv.percentage, cv.vote_count, results.num_votes_cast || 0),
           isWinner: false,
           isTied: false,
           isLeading: false,
@@ -379,10 +376,11 @@ export class VoteResultsDrawerComponent {
     });
   }
 
-  private computePercentage(apiPercentage: number, voteCount: number, totalVotes: number): number {
+  /** Fallback base is num_votes_cast (all responses cast) so a missing upstream percentage stays on the same denominator upstream uses — not the per-question choice-vote sum. */
+  private computePercentage(apiPercentage: number, voteCount: number, totalResponses: number): number {
     if (apiPercentage > 0) return apiPercentage;
-    if (totalVotes <= 0) return 0;
-    return Math.round((voteCount / totalVotes) * 100);
+    if (totalResponses <= 0) return 0;
+    return Math.round((voteCount / totalResponses) * 100);
   }
 
   private initVotingMethodText(): Signal<string> {
@@ -476,6 +474,8 @@ export class VoteResultsDrawerComponent {
 
   private initHasZeroVotes(): Signal<boolean> {
     return computed(() => {
+      // Abstentions are cast responses upstream but excluded from choice tallies — they must not read as "no votes".
+      if (this.participationStats().abstainedVoters > 0) return false;
       const qs = this.questionsWithResults();
       if (!qs.length) return true;
       return qs.every((q) => q.totalVotes === 0);

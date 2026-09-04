@@ -18,6 +18,9 @@
  *   - The same for a context-less mailing-list EDIT link (`/project/mailing-lists/:uid/edit`,
  *     GH-1567): context syncs from the loaded list (enriched payload or uid fallback), and
  *     writerGuard authorizes against the list's own project via its entity probe.
+ *   - The same for a context-less vote EDIT link (`/project/votes/:uid/edit`, GH-1568):
+ *     context syncs from the loaded vote (enriched payload or uid fallback), and writerGuard
+ *     authorizes against the vote's own project via its entity probe.
  *
  * Prerequisites:
  *   - Dev server reachable at the Playwright baseURL (default http://localhost:4200)
@@ -41,6 +44,7 @@ const MOCK_COMMITTEE_UID = 'c0000000-0000-0000-0000-00000000d001';
 const OTHER_PROJECT_SLUG = 'other-project';
 const OTHER_PROJECT_UID = 'p0000000-0000-0000-0000-00000000d003';
 const MOCK_MEETING_UID = 'm0000000-0000-0000-0000-00000000d001';
+const MOCK_VOTE_UID = 'v0000000-0000-0000-0000-00000000d001';
 const MOCK_MAILING_LIST_UID = 'l1000000-0000-0000-0000-00000000d001';
 
 function buildProjectStub(uid: string, slug: string, name: string) {
@@ -273,6 +277,52 @@ async function stubMeetingEditDetail(page: Page, meeting: ReturnType<typeof buil
   await page.route(`**/api/meetings/${MOCK_MEETING_UID}`, (route) => {
     if (route.request().method() !== 'GET') return route.fallback();
     return route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify(meeting) });
+  });
+}
+
+/**
+ * Same route shapes as stubMeetingEditDetail, but the detail GET fulfills an error status —
+ * exercises meeting-manage's non-404 inline error state and 404 eject (GH-2037).
+ */
+async function stubMeetingEditDetailError(page: Page, status: number): Promise<void> {
+  await page.route('**/api/meetings*', (route) => {
+    if (route.request().method() !== 'GET') return route.fallback();
+    return route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify({ data: [] }) });
+  });
+  await page.route(`**/api/meetings/${MOCK_MEETING_UID}/attachments`, (route) => route.fulfill({ status: 200, contentType: 'application/json', body: '[]' }));
+  await page.route(`**/api/meetings/${MOCK_MEETING_UID}`, (route) => {
+    if (route.request().method() !== 'GET') return route.fallback();
+    return route.fulfill({ status, contentType: 'application/json', body: JSON.stringify({ message: 'stub detail failure' }) });
+  });
+}
+
+/**
+ * Vote detail payload for the edit page. `enriched: false` simulates the BFF project
+ * enrichment having failed (project_slug/project_name/is_foundation absent from the detail
+ * payload) so the component's resolve-by-uid fallback is exercised instead.
+ */
+function buildVoteStub(enriched: boolean) {
+  return {
+    uid: MOCK_VOTE_UID,
+    name: 'Test Foundation Board Ballot',
+    description: 'Vote stub for project-context deep-link specs',
+    status: 'disabled',
+    project_uid: MOCK_FOUNDATION_UID,
+    ...(enriched ? { project_slug: MOCK_FOUNDATION_SLUG, project_name: 'Test Foundation', is_foundation: true } : {}),
+    end_time: '2099-06-01T18:00:00Z',
+  };
+}
+
+async function stubVoteEditDetail(page: Page, vote: ReturnType<typeof buildVoteStub>): Promise<void> {
+  // Catch-all registered FIRST (Playwright matches routes in reverse registration order) so
+  // incidental list/count calls from the edit page don't escape to the real BFF.
+  await page.route('**/api/votes*', (route) => {
+    if (route.request().method() !== 'GET') return route.fallback();
+    return route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify({ data: [] }) });
+  });
+  await page.route(`**/api/votes/${MOCK_VOTE_UID}`, (route) => {
+    if (route.request().method() !== 'GET') return route.fallback();
+    return route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify(vote) });
   });
 }
 
@@ -534,6 +584,203 @@ test.describe('Meeting edit deep-link resolves the meeting’s project context (
 
     await expect(page.getByTestId('project-selector')).toContainText('Test Foundation', { timeout: ELEMENT_TIMEOUT });
     await expect(page.getByTestId('sidebar-item-meetings')).toHaveAttribute('href', /[?&]project=test-foundation/, { timeout: ELEMENT_TIMEOUT });
+
+    await page.waitForTimeout(500);
+    expect(new URL(page.url()).searchParams.has('project')).toBe(false);
+  });
+});
+
+test.describe('Meeting edit load failure (GH-2037)', () => {
+  test.beforeEach(async ({ page }) => {
+    // Same shape as the gh-1432 meeting block: ED persona skips the writerGuard entity probe,
+    // so the component's own detail-fetch error branch is what runs.
+    await setPersonaAndLensCookies(page, ['executive-director'], 'project');
+    await setProjectCookie(page, OTHER_PROJECT_UID, OTHER_PROJECT_SLUG, 'Other Project');
+    await stubPersona(page, ['executive-director']);
+    await stubProjectApi(page);
+    await stubCommittees(page, buildCommittees());
+    await stubLensItems(page);
+  });
+
+  test('transient detail-load failure stays mounted with retry/back instead of ejecting (AC-1)', async ({ page }) => {
+    await stubMeetingEditDetailError(page, 500);
+
+    await gotoSpa(page, `/project/meetings/${MOCK_MEETING_UID}/edit`, {
+      uid: OTHER_PROJECT_UID,
+      slug: OTHER_PROJECT_SLUG,
+      name: 'Other Project',
+      foundation: false,
+    });
+
+    // Inline error state replaces the skeleton; no "not found" toast; URL stays on /edit.
+    await expect(page.getByTestId('meeting-manage-retry')).toBeVisible({ timeout: PAGE_LOAD_TIMEOUT });
+    await expect(page.getByTestId('meeting-manage-back')).toBeVisible();
+    await expect(page.getByTestId('meeting-manage-loading')).not.toBeVisible();
+    // Give a (never-fired) toast a render window — negative assertions pass instantly otherwise.
+    await page.waitForTimeout(500);
+    await expect(page.locator('.p-toast')).not.toBeVisible();
+    expect(page.url()).toContain(`/project/meetings/${MOCK_MEETING_UID}/edit`);
+  });
+
+  test('Retry after a transient failure re-fetches the meeting and renders the form (AC-1, AC-3)', async ({ page }) => {
+    await stubMeetingEditDetailError(page, 500);
+
+    await gotoSpa(page, `/project/meetings/${MOCK_MEETING_UID}/edit`, {
+      uid: OTHER_PROJECT_UID,
+      slug: OTHER_PROJECT_SLUG,
+      name: 'Other Project',
+      foundation: false,
+    });
+    await expect(page.getByTestId('meeting-manage-retry')).toBeVisible({ timeout: PAGE_LOAD_TIMEOUT });
+
+    // "Backend recovered": re-registering the detail route takes precedence over the error
+    // stub (Playwright matches in reverse registration order), so the retry fetch gets a 200.
+    await stubMeetingEditDetail(page, buildMeetingStub(true));
+    await page.getByTestId('meeting-manage-retry').click();
+
+    await expect(page.getByTestId('meeting-manage-stepper')).toBeVisible({ timeout: PAGE_LOAD_TIMEOUT });
+    await expect(page.getByTestId('meeting-manage-load-error')).not.toBeVisible();
+    expect(page.url()).toContain(`/project/meetings/${MOCK_MEETING_UID}/edit`);
+  });
+
+  test('a real 404 still ejects to the meetings list with the not-found toast (AC-2)', async ({ page }) => {
+    await stubMeetingEditDetailError(page, 404);
+
+    await gotoSpa(page, `/project/meetings/${MOCK_MEETING_UID}/edit`, {
+      uid: OTHER_PROJECT_UID,
+      slug: OTHER_PROJECT_SLUG,
+      name: 'Other Project',
+      foundation: false,
+    });
+
+    // Toast first: it fires synchronously with the eject and expires (default p-toast life)
+    // before a URL-first assertion would observe it.
+    await expect(page.locator('.p-toast')).toContainText('Meeting not found or you do not have permission to access it', {
+      timeout: PAGE_LOAD_TIMEOUT,
+    });
+    await expect(page).toHaveURL(/\/meetings(\?|$)/, { timeout: ELEMENT_TIMEOUT });
+  });
+
+  test('non-ED writer persona: a transient probe failure redirects to the project overview (guard fail-closed)', async ({ page }) => {
+    // Documents the guard-level path the AC-1 tests can't reach: non-ED personas run the
+    // writerGuard entity probe before the component mounts, and a non-404 probe failure
+    // resolves no slug — the guard fails closed to /project/overview (no `_notice` toast)
+    // rather than authorizing against a possibly stale context (writer.guard.ts). The
+    // component's inline error state only renders for personas that bypass or pass the probe.
+    await setPersonaAndLensCookies(page, ['maintainer'], 'project');
+    await stubPersona(page, ['maintainer']);
+    await stubMeetingEditDetailError(page, 500);
+
+    await gotoSpa(page, `/project/meetings/${MOCK_MEETING_UID}/edit`, {
+      uid: OTHER_PROJECT_UID,
+      slug: OTHER_PROJECT_SLUG,
+      name: 'Other Project',
+      foundation: false,
+    });
+
+    await expect(page).toHaveURL(/\/project\/overview(\?|$)/, { timeout: PAGE_LOAD_TIMEOUT });
+  });
+});
+
+test.describe('Vote edit deep-link resolves the vote’s project context (GH-1568)', () => {
+  test.beforeEach(async ({ page }) => {
+    // Mirror the issue: the user was last working in an unrelated PROJECT (cookie-restored),
+    // then opens a context-less edit link for a vote owned by Test Foundation.
+    await setPersonaAndLensCookies(page, ['executive-director'], 'project');
+    await setProjectCookie(page, OTHER_PROJECT_UID, OTHER_PROJECT_SLUG, 'Other Project');
+    await stubPersona(page, ['executive-director']);
+    await stubProjectApi(page);
+    await stubCommittees(page, buildCommittees());
+    await stubLensItems(page);
+    await page.route(`**/api/projects/${OTHER_PROJECT_SLUG}*`, (route) =>
+      route.fulfill({
+        status: 200,
+        contentType: 'application/json',
+        body: JSON.stringify(buildProjectStub(OTHER_PROJECT_UID, OTHER_PROJECT_SLUG, 'Other Project')),
+      })
+    );
+  });
+
+  test('edit link without ?project= switches context to the vote’s foundation (BFF-enriched payload)', async ({ page }) => {
+    await stubVoteEditDetail(page, buildVoteStub(true));
+
+    await gotoSpa(page, `/project/votes/${MOCK_VOTE_UID}/edit`, {
+      uid: OTHER_PROJECT_UID,
+      slug: OTHER_PROJECT_SLUG,
+      name: 'Other Project',
+      foundation: false,
+    });
+    await expect(page.getByTestId('vote-manage-title')).toBeVisible({ timeout: PAGE_LOAD_TIMEOUT });
+
+    // The sync derives context from the loaded vote (Test Foundation), replacing the
+    // cookie-restored Other Project — the selector and sidebar links follow the correction.
+    await expect(page.getByTestId('project-selector')).toContainText('Test Foundation', { timeout: ELEMENT_TIMEOUT });
+    await expect(page.getByTestId('sidebar-item-votes')).toHaveAttribute('href', /[?&]project=test-foundation/, { timeout: ELEMENT_TIMEOUT });
+
+    // The context correction must NOT inject ?project= into the entity URL (syncUrl guard) —
+    // give any NavigationEnd-driven backfill a tick to (not) fire before asserting absence.
+    await page.waitForTimeout(500);
+    expect(new URL(page.url()).searchParams.has('project')).toBe(false);
+  });
+
+  test('writerGuard authorizes the edit page against the vote’s project, not the stale context (Bug 2)', async ({ page }) => {
+    // Non-ED persona: no synchronous fast path — the guard must probe the vote (tap-free
+    // fetchVote via the entityProbes registry) for its project slug. The stale cookie context
+    // (Other Project) is intentionally NOT writable: if the guard authorizes against it, the
+    // page redirects to /project/overview?_notice=...
+    await setPersonaAndLensCookies(page, ['maintainer'], 'project');
+    await stubPersona(page, ['maintainer']);
+    await page.route(`**/api/projects/${OTHER_PROJECT_SLUG}*`, (route) =>
+      route.fulfill({
+        status: 200,
+        contentType: 'application/json',
+        body: JSON.stringify({ ...buildProjectStub(OTHER_PROJECT_UID, OTHER_PROJECT_SLUG, 'Other Project'), writer: false }),
+      })
+    );
+    await stubVoteEditDetail(page, buildVoteStub(true));
+
+    await gotoSpa(page, `/project/votes/${MOCK_VOTE_UID}/edit`, {
+      uid: OTHER_PROJECT_UID,
+      slug: OTHER_PROJECT_SLUG,
+      name: 'Other Project',
+      foundation: false,
+    });
+    await expect(page.getByTestId('vote-manage-title')).toBeVisible({ timeout: PAGE_LOAD_TIMEOUT });
+
+    // Still on the edit page (no access-denied redirect): the sync canonicalizes the URL to
+    // the vote's foundation tier — await the rewrite instead of racing it.
+    await expect(page).toHaveURL(new RegExp(`/foundation/votes/${MOCK_VOTE_UID}/edit`), { timeout: ELEMENT_TIMEOUT });
+    await expect(page.getByTestId('project-selector')).toContainText('Test Foundation', { timeout: ELEMENT_TIMEOUT });
+  });
+
+  test('edit link without ?project= falls back to resolving the project by uid when enrichment is absent', async ({ page }) => {
+    // Enrichment-failed payload: project_uid only. The component fallback fetches the project
+    // by uid — this route satisfies computeIsFoundation (Funded + Membership + Active), so the
+    // resolved context lands in the foundation slot just like the enriched path.
+    await stubVoteEditDetail(page, buildVoteStub(false));
+    await page.route(`**/api/projects/${MOCK_FOUNDATION_UID}*`, (route) =>
+      route.fulfill({
+        status: 200,
+        contentType: 'application/json',
+        body: JSON.stringify({
+          ...buildProjectStub(MOCK_FOUNDATION_UID, MOCK_FOUNDATION_SLUG, 'Test Foundation'),
+          funding: 'Funded',
+          funding_model: ['Membership'],
+          legal_entity_type: 'Series LLC',
+        }),
+      })
+    );
+
+    await gotoSpa(page, `/project/votes/${MOCK_VOTE_UID}/edit`, {
+      uid: OTHER_PROJECT_UID,
+      slug: OTHER_PROJECT_SLUG,
+      name: 'Other Project',
+      foundation: false,
+    });
+    await expect(page.getByTestId('vote-manage-title')).toBeVisible({ timeout: PAGE_LOAD_TIMEOUT });
+
+    await expect(page.getByTestId('project-selector')).toContainText('Test Foundation', { timeout: ELEMENT_TIMEOUT });
+    await expect(page.getByTestId('sidebar-item-votes')).toHaveAttribute('href', /[?&]project=test-foundation/, { timeout: ELEMENT_TIMEOUT });
 
     await page.waitForTimeout(500);
     expect(new URL(page.url()).searchParams.has('project')).toBe(false);

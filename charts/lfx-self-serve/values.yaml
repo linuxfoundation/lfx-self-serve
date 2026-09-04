@@ -450,7 +450,7 @@ environment:
   #   Roll back: CREATE off first -> let outstanding UUID jobs drain -> then JOBS
   #
   #   STATUS_TOGGLE is NOT part of that sequence. Turning it off strands every campaign-service
-  #   campaign that already exists: a UUID is permanent, and campaign.controller.ts:1156 refuses
+  #   campaign that already exists: a UUID is permanent, and campaign.controller.ts refuses
   #   its pause whenever the flag is off. Unlike JOBS there is nothing to drain — keep it on for
   #   as long as any UUID campaign can still spend.
   #
@@ -480,7 +480,7 @@ environment:
   #
   # STATUS_TOGGLE below must be on and CONVERGED before this goes on. Otherwise a new pod mints a
   # UUID campaign while an old pod, still without the toggle flag, refuses that campaign's
-  # pause/resume at campaign.controller.ts:1156. Requests are not sticky and this chart runs
+  # pause/resume at campaign.controller.ts. Requests are not sticky and this chart runs
   # replicaCount: 3 with maxSurge: "100%", so during such an overlap pause — the primary
   # cost-control lever — can intermittently 400 on a campaign created moments earlier.
   #
@@ -583,7 +583,7 @@ environment:
   # That is a narrower claim than it first appears, and an earlier revision of this comment
   # overstated it as "rollout overlap is safe". Disjoint id spaces mean a flag-off pod handed a
   # UUID REFUSES rather than answering a confident falsehood — but a refusal is still a failure.
-  # It returns 400 at campaign.controller.ts:1156, and a caller that cannot pause a spending
+  # It returns 400 at campaign.controller.ts, and a caller that cannot pause a spending
   # campaign is not much comforted that the error was well-formed. That is why CREATE above is
   # sequenced AFTER this flag: no UUID-keyed campaign exists to be refused until CREATE is on.
   #
@@ -594,6 +594,150 @@ environment:
   # that is the overlap described above. Same accepted values as the flags above.
   LFX_CUTOVER_CAMPAIGN_SERVICE_STATUS_TOGGLE:
     value: "true"
+
+  # Routes the Google Ads keyword and audience READS (campaign.controller.ts getKeywords /
+  # getAudience) to campaign-service instead of the BFF's own Google Ads queries.
+  #
+  # THIS ONE CHANGES THE NUMBERS, which no other flag here does, and it is the reason it is
+  # separate. The BFF's own queries carry NO campaign filter, so they report the whole shared
+  # Google Ads customer — every foundation's keywords and demographics, shown to whichever
+  # project is on screen. Campaign-service scopes the same reads to the project's own campaigns.
+  # Turning this on therefore makes the tables SMALLER, and the rows it drops are other
+  # foundations' spend. TELL PEOPLE BEFORE FLIPPING IT: a reader who is not warned files the
+  # drop as a bug, and "the dashboard lost half its keywords" is a plausible-sounding report.
+  #
+  # A project with no campaign-service campaigns reads EMPTY rather than falling back. That is
+  # deliberate — the fallback would be the account-wide read, which is the cross-tenant leak
+  # this flag exists to close.
+  #
+  # UNLIKE STATUS_TOGGLE, THIS COMES BACK OFF CLEANLY. Both routes are reads with no persisted
+  # state and no UUID-keyed id space, so nothing is stranded by disabling it: flipping back
+  # restores the previous behaviour exactly, leak included. It has no ordering dependency on
+  # any other flag on this list.
+  #
+  # Does NOT gate keyword ACTIONS (pause/remove). Those have their own flag,
+  # LFX_CUTOVER_CAMPAIGN_SERVICE_KEYWORD_ACTIONS, immediately below — a write needs a rollback
+  # story a read does not, so the two are enabled independently and neither implies the other.
+  # Same accepted values as the flags above.
+  LFX_CUTOVER_CAMPAIGN_SERVICE_INSIGHTS:
+    value: "false"
+
+  # Routes keyword pause/remove (campaign.controller.ts executeKeywordActions) through
+  # campaign-service instead of the BFF's own Google Ads mutate calls.
+  #
+  # SEPARATE from the INSIGHTS flag above, which covers the two READS. This one MUTATES live
+  # paid campaigns and needs a rollback story a read does not: a REMOVE is irreversible, since
+  # Google cannot re-enable a removed criterion, only create a new one with a new id.
+  #
+  # THE GRANULARITY OF FAILURE CHANGES when this is on. The legacy path issues one Google call
+  # per keyword, so each succeeds or fails alone. campaign-service takes one ATOMIC batch per
+  # campaign, so a request spanning several campaigns is atomic per campaign and not overall:
+  # one campaign's keywords can pause while another's do not. Every keyword is still reported
+  # individually, and a campaign-level failure marks all of that campaign's keywords failed.
+  #
+  # "OFF" IS NOT A WORKING FALLBACK HERE, unlike every other flag on this list. The legacy path
+  # calls getGadsClient(), which throws whenever the GADS_* variables are absent — and they were
+  # deactivated deliberately. So with this off, keyword actions do not work at all; this flag is
+  # what makes them work, not what changes which backend serves them.
+  #
+  # TWO CHANGES APPLY WITH THIS FLAG OFF, both deliberate. First: the
+  # /keywords/actions endpoint now refuses a body of more than 50 keyword rows on
+  # BOTH paths, where before only a non-empty array was required.
+  #
+  # The cap sits with the other request validators, ahead of this flag, because
+  # the risk it bounds is not specific to the campaign-service path. The fan-out
+  # is per CAMPAIGN in the body -- a resolver call then a mutation call, made
+  # sequentially while the request is held open -- so one authenticated request
+  # could amplify into thousands of upstream calls against a live ad account and
+  # trip rate limiting that fails campaigns for unrelated reasons.
+  #
+  # The two paths amplify DIFFERENTLY, which an earlier version of this note got
+  # wrong by calling them the same shape. Campaign-service costs a resolver call
+  # plus a mutation call per CAMPAIGN in the body; the legacy loop makes one
+  # Google Ads mutate call per KEYWORD. Both are unbounded without the cap, which
+  # is why gating it on the flag would leave the default-off deployment as the
+  # UNPROTECTED one -- but they are not the same fan-out.
+  #
+  # 50 is above anything this UI can produce, so it bounds abuse rather than the
+  # product. An API consumer sending larger batches is the only caller affected,
+  # and gets a 400 naming the limit.
+  #
+  # A SECOND ungated change rides with it: malformed Google Ads ids are now
+  # refused at the request boundary on BOTH paths. Campaign-service declares these
+  # ids as `^[0-9]+$` and refuses them upstream anyway -- but by then the rows
+  # AHEAD of the bad one in the same request have already been mutated, and a
+  # keyword REMOVE is irreversible, so a half-applied batch is not recoverable by
+  # retrying. Refusing the whole request keeps it all-or-nothing.
+  #
+  # What changes with the flag OFF: the legacy path used to run the valid rows and
+  # report a per-keyword outcome for each. An API caller mixing valid and
+  # malformed ids in one request now gets a single 400 instead, and none of the
+  # valid rows run. The LFX One client cannot produce a malformed id, so this
+  # affects direct API callers only.
+  LFX_CUTOVER_CAMPAIGN_SERVICE_KEYWORD_ACTIONS:
+    value: "false"
+
+  # Routes the HubSpot campaign UTM lookup and create (campaign.controller.ts
+  # lookupHubSpotUtm / createHubSpotUtm) through campaign-service.
+  #
+  # "OFF" IS NOT A WORKING FALLBACK, as with the keyword-actions flag above. The legacy path
+  # calls hsHeaders(), which throws whenever HUBSPOT_ACCESS_TOKEN is absent — and it is, by
+  # design, since the credential moved into campaign-service's encrypted connection store. With
+  # this off the Planning tab's UTM lookup does not work at all.
+  #
+  # FOUR BEHAVIOURS CHANGE ON BOTH PATHS, INCLUDING WITH THIS FLAG OFF. Read this before
+  # assuming a default-off deployment is inert — it is not.
+  #
+  # 1. The legacy path FABRICATED a utm token ("<id>-<name>") whenever HubSpot had none, so a
+  #    campaign with no configured token still appeared tokenised — and links tagged with that
+  #    invented value attribute traffic to a campaign HubSpot cannot report on. BOTH paths now
+  #    report a missing token as missing. Expect fewer apparent tokens, and expect that to be
+  #    the correct answer. This is deliberately not gated: holding it behind a default-off flag
+  #    would keep a known-wrong value in production.
+  #
+  # 2. The legacy search limit rose from 10 to 200 (HubSpot's per-request maximum, raised from
+  #    100 on their side in September 2024), and both
+  #    paths now report whether the search was CAPPED. The two go together: `capped` is what
+  #    suppresses the create offer, and at a limit of 10 nearly every search on a busy portal
+  #    would report capped, leaving an operator unable to create anything.
+  #
+  #    `capped` MEANS "THIS SEARCH IS NOT PROVEN COMPLETE", which is broader than literal
+  #    truncation. A response whose total is absent, or whose total contradicts the rows
+  #    returned, sets it too — those cannot be shown complete either, and treating them as
+  #    complete is what would license a duplicate create. So the remedy is not always "narrow
+  #    the search until it fits": an operator seeing `capped` on an obviously small result set
+  #    is looking at an unprovable total, not 200 hidden rows.
+  #
+  # 3. Campaign-name matching now NORMALISES before comparing -- CASE and WHITESPACE only
+  #    (`trim().toLowerCase()` plus internal run-length collapsed), so "KubeCon  NA 2026" and
+  #    "kubecon na 2026" are one name. Punctuation and word order are NOT stripped and still
+  #    distinguish campaigns, so do not expect "KubeCon: NA" and "KubeCon NA" to tie. Names the
+  #    legacy path treated as distinct can now TIE. A tie is refused rather than
+  #    guessed: the lookup returns the candidates and declines to auto-apply one, which surfaces
+  #    as a picker instead of a silent match. The legacy path picked the first row it saw, which
+  #    could attribute a brief's links to the wrong campaign of a similarly-named pair.
+  #
+  # 4. Both paths now REFUSE a lone weak match. A single candidate sharing one long word with
+  #    the event name used to be auto-applied, writing its UTM into the brief's links unattended;
+  #    an exact NORMALISED name match is now required before either path reports `found`. The
+  #    candidate still travels, so the operator can pick it deliberately. Expect fewer automatic
+  #    matches on the legacy path, and expect that to be the correct answer -- this is the change
+  #    most likely to be noticed, because it is the one an operator sees on every lookup.
+  #
+  # The CREATE path writes into a PORTAL-WIDE namespace: the campaign is visible to everyone
+  # working in the HubSpot account the project is connected to, whatever project scoped the
+  # request. (Not necessarily the LF's own account — HubSpot connections are stored per project
+  # with their own token and portal_id, and campaign-service refuses the LF system fallback for
+  # HubSpot.) It performs no duplicate check, which is why the UI must warn before offering it.
+  # DEPENDS ON UPSTREAM ENDPOINTS THAT ARE NOT YET DEPLOYED. Both handlers call
+  # /projects/{id}/connection-hubspot/campaigns, added in
+  # linuxfoundation/lfx-v2-campaign-service#193 (itself stacked on #192 of that repo — a bare
+  # "#193" resolves to an unrelated PR in THIS repository, hence the full reference).
+  # Enabling this before those merge AND deploy routes both handlers at a 404,
+  # which surfaces as "HubSpot lookup failed" — indistinguishable from a real HubSpot outage.
+  # Verify the endpoints respond in the target environment before flipping this on.
+  LFX_CUTOVER_CAMPAIGN_SERVICE_HUBSPOT_UTM:
+    value: "false"
 
   # Set to 'live' to proxy WG Weekly Brief endpoints to committee-service (LFXV2-2175/2176).
   # The BFF refuses to serve mock brief data when NODE_ENV=production and this

@@ -212,6 +212,110 @@ export enum ServerFeatureFlag {
   CampaignServiceStatusToggle = 'LFX_CUTOVER_CAMPAIGN_SERVICE_STATUS_TOGGLE',
 
   /**
+   * Gates the Google Ads keyword and audience READS (`getKeywords`, `getAudience` in
+   * `campaign.controller.ts`) on campaign-service instead of this BFF's own Google Ads calls.
+   *
+   * Unlike every other cutover flag, this one changes the NUMBERS rather than only the backend.
+   * The legacy queries in `campaign-metrics.service.ts` carry no campaign filter at all, so they
+   * report the whole shared Google Ads customer — every foundation's keywords and demographics,
+   * to whichever project happens to be on screen. Campaign-service scopes the identical reads to
+   * the project's own campaigns (`campaignScopePredicate`). Turning this on therefore makes the
+   * tables SMALLER, and that is the fix, not a regression: the larger figures were other
+   * foundations' spend. Say so when enabling it, because a reader who is not told will file the
+   * drop as a bug.
+   *
+   * A project with no campaign-service campaigns reads EMPTY rather than falling back, and that
+   * is deliberate. The fallback would be the account-wide read, which is the cross-tenant leak
+   * this flag exists to close — so an empty table is the honest answer for a project whose
+   * campaigns were never created through campaign-service.
+   *
+   * SAFE TO TURN OFF. Both routes are reads with no persisted state, so flipping back restores
+   * the previous behaviour exactly, leak included. That is the opposite of
+   * `CampaignServiceStatusToggle`, which does not come back off — no UUID-shaped id is involved
+   * here, so there is no id space that only one backend can address.
+   *
+   * Does NOT gate `executeKeywordActions`. That route MUTATES live keywords, so it has its own
+   * flag — `CampaignServiceKeywordActions`, defined just below — because a write needs a
+   * rollback story a read does not. The two are independent: enabling this one leaves keyword
+   * actions wherever their own flag puts them.
+   */
+  CampaignServiceInsights = 'LFX_CUTOVER_CAMPAIGN_SERVICE_INSIGHTS',
+
+  /**
+   * Routes keyword pause/remove through campaign-service instead of this BFF's own Google Ads
+   * mutate calls.
+   *
+   * SEPARATE from `CampaignServiceInsights`, which covers the two keyword/audience READS, and
+   * the split is deliberate: this one MUTATES live paid campaigns, so it needs a rollback story
+   * a read does not. The reads can be flipped back with no trace; a REMOVE cannot be undone —
+   * Google cannot re-enable a removed criterion, only create a new one with a new id.
+   *
+   * THE GRANULARITY OF FAILURE CHANGES. The legacy path issues one Google call per keyword, so
+   * each succeeds or fails alone. campaign-service takes one atomic batch per campaign, so a
+   * request spanning several campaigns becomes atomic PER CAMPAIGN and not overall: one
+   * campaign's keywords can pause while another's do not. The response still reports every
+   * keyword individually, and a campaign-level failure marks all of that campaign's keywords
+   * failed rather than leaving anyone to guess which half applied.
+   *
+   * The fan-out lives in the BFF because `api-catalog.md` rule 5 forbids a bulk cross-campaign
+   * mutation endpoint upstream — each call the BFF makes is one permission-evaluated target.
+   *
+   * The legacy path is ALREADY BROKEN in every environment where the `GADS_*` variables were
+   * deactivated: `getGadsClient()` throws before any mutate is attempted. So "off" is not a
+   * working fallback here the way it is for the reads — it is the state in which keyword actions
+   * do not work at all. Same accepted values as the flags above.
+   */
+  CampaignServiceKeywordActions = 'LFX_CUTOVER_CAMPAIGN_SERVICE_KEYWORD_ACTIONS',
+
+  /**
+   * Routes the HubSpot campaign UTM lookup and create through campaign-service instead of this
+   * BFF's own HubSpot calls.
+   *
+   * FOUR BEHAVIOURS CHANGE ON BOTH PATHS, INCLUDING WITH THIS FLAG OFF. This flag switches the
+   * BACKEND; it does not gate either of them.
+   *
+   * 1. The legacy path fabricated a utm token (`id-name`) whenever HubSpot had none, so a
+   *    campaign with no configured token still appeared tokenised — and links tagged with that
+   *    invented value attribute traffic to a campaign HubSpot cannot report on. BOTH paths now
+   *    report a missing token as missing, which the UI already models (`hs_utm` is
+   *    `string | null`). Expect fewer apparent tokens, and expect that to be the correct answer.
+   *    Deliberately not gated: holding it behind a default-off flag keeps a known-wrong value
+   *    in production.
+   * 2. The legacy search limit rose from 10 to HubSpot's per-request maximum, and both paths
+   *    report whether a match may be hidden. The two go together — that signal is what
+   *    suppresses the create offer, and at a limit of 10 nearly every search on a busy portal
+   *    would report inconclusive, leaving an operator unable to create anything.
+   * 3. Neither path auto-applies a token when the top two candidates SCORE THE SAME. This became
+   *    reachable in this PR: the shared scorer now compares normalised names, so campaigns
+   *    differing only by case or whitespace tie where one previously won outright, and `sort` is
+   *    stable — so the winner would have been whichever row HubSpot returned first. Also not
+   *    gated, and for the same reason as (1): a default-off flag would leave a coin-flip
+   *    deciding which campaign's UTM goes into an event's links.
+   * 4. Neither path auto-applies a LONE WEAK match any more. A single candidate sharing one
+   *    long word with the event name used to win by default; an exact NORMALISED name match is
+   *    now required before either path reports `found`. Ungated for the same reason as (1) and
+   *    (3): auto-applying a weak match writes the wrong campaign's UTM into an event's links,
+   *    and holding the correction behind a default-off flag keeps the wrong answer shipping.
+   *
+   * The create path writes into a PORTAL-WIDE namespace — visible to everyone working in the
+   * HubSpot account the project is connected to, which is not necessarily the LF's own, since
+   * connections are per project with their own token and portal_id — and performs no duplicate
+   * check, which is why the UI warns before offering it.
+   *
+   * NOT SAFE TO TURN OFF, which an earlier version of this line got backwards. "Off" selects the
+   * legacy backend, and that path calls `hsHeaders()` — which throws whenever
+   * `HUBSPOT_ACCESS_TOKEN` is absent, and it is absent by design, since the credential moved into
+   * campaign-service's encrypted connection store. Flipping this off therefore does not roll back
+   * to working behaviour: it breaks BOTH UTM routes outright. An operator reaching for it during
+   * an incident would disable the lookup and the create rather than restore them (Copilot).
+   *
+   * It is also not a full rollback even where the legacy path can run: flipping back restores the
+   * previous BACKEND, not the previous BEHAVIOUR. Fabricated tokens, the old search limit, the
+   * tie refusal and the weak-match refusal all changed on both paths and are ungated.
+   */
+  CampaignServiceHubSpotUtm = 'LFX_CUTOVER_CAMPAIGN_SERVICE_HUBSPOT_UTM',
+
+  /**
    * Gates `committee.service.ts`'s `updateCommittee` (the `chat_webhook_url` write) and
    * `weekly-brief.service.ts`'s `shareToSlack` (the Slack send) server-side. `WG_WEEKLY_BRIEF_SLACK_FLAG`
    * (`wg-weekly-brief-slack`, an OpenFeature/GrowthBook flag) only gates the Angular UI — the

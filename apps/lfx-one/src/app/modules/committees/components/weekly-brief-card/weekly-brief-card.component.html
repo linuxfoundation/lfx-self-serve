@@ -1,9 +1,8 @@
 <!-- Copyright The Linux Foundation and each contributor to LFX. -->
 <!-- SPDX-License-Identifier: MIT -->
 
-@if (canEdit()) {
-  @if (isGoverningBoardCommittee() && !fetchLoading() && hasCurrentActivityData()) {
-    <!--
+@if (isGoverningBoardCommittee() && !fetchLoading() && hasCurrentActivityData()) {
+  <!--
       "This week so far" activity tally (GH-1922) — a raw count of the current, not-yet-closed
       week's activity, separate from the AI Assistant card's own completed-week brief below (a
       board meeting held today won't appear in that brief until next week, Sunday through
@@ -14,78 +13,94 @@
       (isGoverningBoardCommittee). role="group" makes the container naming-capable so
       aria-label is actually announced — a bare <div> has no implicit role that supports one.
     -->
-    <div
-      class="flex flex-wrap items-baseline gap-x-1 gap-y-1 text-xs text-gray-500"
-      role="group"
-      [attr.aria-label]="currentActivityLine()"
-      data-testid="weekly-brief-card-current-activity">
-      <span>{{ currentActivityPrefix }}</span>
-      @if (currentActivity().length) {
-        @for (section of currentActivity(); track section.kind; let last = $last) {
-          @let sectionExpanded = expandedActivityKinds().has(section.kind);
-          <button
-            type="button"
-            class="inline border-0 bg-transparent p-0 text-xs text-gray-500 underline decoration-dotted cursor-pointer hover:text-gray-700 transition-colors"
-            [attr.aria-expanded]="sectionExpanded"
-            [attr.aria-controls]="sectionExpanded ? 'weekly-brief-card-current-activity-items-' + section.kind : null"
-            (click)="onToggleActivityKind(section.kind)"
-            [attr.data-testid]="'weekly-brief-card-current-activity-toggle-' + section.kind">
-            <!-- Comma is part of the button's own text, not a sibling flex item — a separate
+  <div
+    class="flex flex-wrap items-baseline gap-x-1 gap-y-1 text-xs text-gray-500"
+    role="group"
+    [attr.aria-label]="currentActivityLine()"
+    data-testid="weekly-brief-card-current-activity">
+    <span>{{ currentActivityPrefix }}</span>
+    @if (currentActivity().length) {
+      @for (section of currentActivity(); track section.kind; let last = $last) {
+        @let sectionExpanded = expandedActivityKinds().has(section.kind);
+        <button
+          type="button"
+          class="inline border-0 bg-transparent p-0 text-xs text-gray-500 underline decoration-dotted cursor-pointer hover:text-gray-700 transition-colors"
+          [attr.aria-expanded]="sectionExpanded"
+          [attr.aria-controls]="sectionExpanded ? 'weekly-brief-card-current-activity-items-' + section.kind : null"
+          (click)="onToggleActivityKind(section.kind)"
+          [attr.data-testid]="'weekly-brief-card-current-activity-toggle-' + section.kind">
+          <!-- Comma is part of the button's own text, not a sibling flex item — a separate
                  element here would pick up gap-x-1 as space BEFORE the comma (misrendering
                  "1 meeting held , 1 vote closed") and could wrap onto its own line. -->
-            {{ section.countText }}{{ last ? '' : ',' }}
-          </button>
+          {{ section.countText }}{{ last ? '' : ',' }}
+        </button>
+      }
+    } @else {
+      <span>{{ currentActivityEmptyText() }}</span>
+    }
+  </div>
+  @for (section of currentActivity(); track section.kind) {
+    @if (expandedActivityKinds().has(section.kind)) {
+      <div
+        class="flex flex-col gap-0.5 pl-2"
+        [id]="'weekly-brief-card-current-activity-items-' + section.kind"
+        [attr.data-testid]="'weekly-brief-card-current-activity-items-' + section.kind">
+        @for (ref of section.refs; track ref.id) {
+          <span class="text-xs text-gray-500">{{ ref.title || section.label }}</span>
         }
-      } @else {
-        <span>no activity yet</span>
-      }
-    </div>
-    @for (section of currentActivity(); track section.kind) {
-      @if (expandedActivityKinds().has(section.kind)) {
-        <div
-          class="flex flex-col gap-0.5 pl-2"
-          [id]="'weekly-brief-card-current-activity-items-' + section.kind"
-          [attr.data-testid]="'weekly-brief-card-current-activity-items-' + section.kind">
-          @for (ref of section.refs; track ref.id) {
-            <span class="text-xs text-gray-500">{{ ref.title || section.label }}</span>
-          }
-        </div>
-      }
+      </div>
     }
   }
-  @if (fetchLoading()) {
-    <lfx-card>
-      <div class="flex flex-col gap-3">
-        <p-skeleton width="40%" height="1.5rem" />
-        <p-skeleton width="100%" height="1rem" />
-        <p-skeleton width="95%" height="1rem" />
-        <p-skeleton width="90%" height="1rem" />
-      </div>
-    </lfx-card>
-  } @else if (generating() || brief()?.state === 'generating' || pollTimedOut()) {
-    <!-- pollTimedOut in the outer condition: once the poll's attempt cap trips, its last tick may
+  @if (isTruncated()) {
+    <!-- GH-1998: current-week activity filled a full upstream page, so source_refs above is a
+           lower bound, not proof of partiality (see WeeklyBriefCurrentActivity.truncated's own
+           doc comment) — styled after org-roi-projects-bar.component.html's own truncation-note
+           precedent (that one gets its gap from a parent flex-col container; this note is a bare
+           sibling of the tally above with no such wrapper, so mt-2 is the local substitute for
+           that gap, not a pixel match to it). Placed after the expanded @for above (not before
+           it) so the per-kind toggle buttons stay DOM-adjacent to the content their aria-controls
+           targets. -->
+    <p
+      class="mt-2 flex items-start gap-2 rounded-md bg-gray-50 px-3 py-2.5 text-xs text-gray-600"
+      data-testid="weekly-brief-card-current-activity-truncation-note">
+      <i class="fa-light fa-circle-info mt-0.5 text-gray-400" aria-hidden="true"></i>
+      <span>{{ currentActivityTruncationNote() }}</span>
+    </p>
+  }
+}
+@if (fetchLoading()) {
+  <lfx-card>
+    <div class="flex flex-col gap-3">
+      <p-skeleton width="40%" height="1.5rem" />
+      <p-skeleton width="100%" height="1rem" />
+      <p-skeleton width="95%" height="1rem" />
+      <p-skeleton width="90%" height="1rem" />
+    </div>
+  </lfx-card>
+} @else if (generating() || brief()?.state === 'generating' || pollTimedOut()) {
+  <!-- pollTimedOut in the outer condition: once the poll's attempt cap trips, its last tick may
          have written a non-terminal brief() (e.g. a read-lag null/'empty' response) into
          briefResponse — without checking pollTimedOut() here directly, the card would fall
          through to the empty/error/renderableBrief branches below and silently drop the
          "still generating, quota already spent" state instead of showing the Refresh escape
          hatch (dealako review: LFXV2-2176 round 2). -->
-    <lfx-card>
-      <div class="flex flex-col items-center justify-center gap-3 py-8" data-testid="weekly-brief-card-generating-state">
-        <i class="fa-light fa-sparkles text-2xl text-blue-500 animate-pulse"></i>
-        <span class="text-sm text-gray-600">Generating your brief…</span>
-        @if (pollTimedOut() || !generating()) {
-          <!-- pollTimedOut: this tab's own poll exhausted its attempt cap. !generating():
+  <lfx-card>
+    <div class="flex flex-col items-center justify-center gap-3 py-8" data-testid="weekly-brief-card-generating-state">
+      <i class="fa-light fa-sparkles text-2xl text-blue-500 animate-pulse"></i>
+      <span class="text-sm text-gray-600">Generating your brief…</span>
+      @if (pollTimedOut() || !generating()) {
+        <!-- pollTimedOut: this tab's own poll exhausted its attempt cap. !generating():
                no poll is active in this tab at all (e.g. the card loaded straight into
                this state and initBriefResponseSubscription hasn't started polling yet) —
                either way, showing "Generating…" with no escape but a page reload is a
                dead end. -->
-          <span class="text-sm text-gray-500">This is taking longer than expected.</span>
-          <lfx-button label="Refresh" severity="secondary" [outlined]="true" (onClick)="onRetry()" data-testid="weekly-brief-card-generating-refresh-button" />
-        }
-      </div>
-    </lfx-card>
-  } @else if (isQuietWeek()) {
-    <!-- Calm, non-error empty state: state:'error' + error_reason:'no_sources' means the
+        <span class="text-sm text-gray-500">This is taking longer than expected.</span>
+        <lfx-button label="Refresh" severity="secondary" [outlined]="true" (onClick)="onRetry()" data-testid="weekly-brief-card-generating-refresh-button" />
+      }
+    </div>
+  </lfx-card>
+} @else if (isQuietWeek()) {
+  <!-- Calm, non-error empty state: state:'error' + error_reason:'no_sources' means the
          committee had no activity in the lookback window, not a real generation failure —
          regenerating can never succeed and would only spend a regeneration slot (LFXV2-3000).
          "Check again" re-fetches via onRetry() (a plain GET), not onGenerate() — it costs no
@@ -99,21 +114,22 @@
          re-derives its window dates from briefWindow() on every GET but never changes state,
          so "Check again" against it always returns the same quiet-week brief regardless of
          date; it cannot demonstrate the rollover. -->
-    <lfx-card>
-      <div class="flex flex-col items-center gap-3 py-8 text-center" data-testid="weekly-brief-card-quiet-week-state">
-        <i class="fa-light fa-sparkles text-2xl text-gray-300" aria-hidden="true"></i>
-        <div>
-          <p class="text-sm font-medium text-gray-500">Quiet week</p>
-          <p class="text-xs text-gray-500 mt-1">No committee activity to summarize. We'll check again next week.</p>
-        </div>
-        <lfx-button label="Check again" severity="secondary" [text]="true" (onClick)="onRetry()" data-testid="weekly-brief-card-quiet-week-refresh-button" />
+  <lfx-card>
+    <div class="flex flex-col items-center gap-3 py-8 text-center" data-testid="weekly-brief-card-quiet-week-state">
+      <i class="fa-light fa-sparkles text-2xl text-gray-300" aria-hidden="true"></i>
+      <div>
+        <p class="text-sm font-medium text-gray-500">Quiet week</p>
+        <p class="text-xs text-gray-500 mt-1">No committee activity to summarize. We'll check again next week.</p>
       </div>
-    </lfx-card>
-  } @else if (brief()?.state === 'error') {
-    <lfx-card>
-      <div class="flex flex-col items-center justify-center gap-3 py-8" data-testid="weekly-brief-card-error-state">
-        <i class="fa-light fa-triangle-exclamation text-2xl text-red-500"></i>
-        <span class="text-sm text-gray-700">Brief generation failed for this week.</span>
+      <lfx-button label="Check again" severity="secondary" [text]="true" (onClick)="onRetry()" data-testid="weekly-brief-card-quiet-week-refresh-button" />
+    </div>
+  </lfx-card>
+} @else if (brief()?.state === 'error') {
+  <lfx-card>
+    <div class="flex flex-col items-center justify-center gap-3 py-8" data-testid="weekly-brief-card-error-state">
+      <i class="fa-light fa-triangle-exclamation text-2xl text-red-500"></i>
+      <span class="text-sm text-gray-700">Brief generation failed for this week.</span>
+      @if (canEdit()) {
         <lfx-button
           label="Try again"
           severity="info"
@@ -121,79 +137,81 @@
           [tooltip]="canRegenerate() ? '' : 'Weekly regeneration limit reached'"
           (onClick)="onGenerate()"
           data-testid="weekly-brief-card-error-retry-button" />
-      </div>
-    </lfx-card>
-  } @else if (renderableBrief(); as b) {
-    <lfx-card>
-      <div class="flex flex-col gap-4">
-        <!-- Header -->
-        <div class="flex flex-wrap items-center justify-between gap-2">
-          <div class="flex items-center gap-2">
-            <i class="fa-light fa-sparkles text-blue-500"></i>
-            <span class="font-semibold">AI Assistant</span>
-            <span class="text-xs text-gray-500">{{ weekLabel() }}</span>
-          </div>
-          <div class="flex items-center gap-2">
-            @if (staleness()?.stale) {
-              <lfx-tag
-                value="May be out of date"
-                severity="warn"
-                icon="fa-light fa-clock-rotate-left"
-                [tooltip]="stalenessTooltip()"
-                data-testid="weekly-brief-card-staleness-tag" />
-            }
-            @if (b.state === 'generated') {
-              <span class="rounded bg-blue-100 px-2 py-0.5 text-xs text-blue-700" data-testid="weekly-brief-card-state-badge">Generated</span>
-            } @else if (b.state === 'edited') {
-              <span class="rounded bg-amber-100 px-2 py-0.5 text-xs text-amber-700" data-testid="weekly-brief-card-state-badge">Edited</span>
-            } @else if (b.state === 'approved') {
-              <span class="rounded bg-emerald-100 px-2 py-0.5 text-xs text-emerald-700" data-testid="weekly-brief-card-state-badge">Approved</span>
-            }
-          </div>
+      }
+    </div>
+  </lfx-card>
+} @else if (renderableBrief(); as b) {
+  <lfx-card>
+    <div class="flex flex-col gap-4">
+      <!-- Header -->
+      <div class="flex flex-wrap items-center justify-between gap-2">
+        <div class="flex items-center gap-2">
+          <i class="fa-light fa-sparkles text-blue-500"></i>
+          <span class="font-semibold">AI Assistant</span>
+          <span class="text-xs text-gray-500">{{ weekLabel() }}</span>
         </div>
+        <div class="flex items-center gap-2">
+          @if (staleness()?.stale) {
+            <lfx-tag
+              value="May be out of date"
+              severity="warn"
+              icon="fa-light fa-clock-rotate-left"
+              [tooltip]="stalenessTooltip()"
+              data-testid="weekly-brief-card-staleness-tag" />
+          }
+          @if (b.state === 'generated') {
+            <span class="rounded bg-blue-100 px-2 py-0.5 text-xs text-blue-700" data-testid="weekly-brief-card-state-badge">Generated</span>
+          } @else if (b.state === 'edited') {
+            <span class="rounded bg-amber-100 px-2 py-0.5 text-xs text-amber-700" data-testid="weekly-brief-card-state-badge">Edited</span>
+          } @else if (b.state === 'approved') {
+            <span class="rounded bg-emerald-100 px-2 py-0.5 text-xs text-emerald-700" data-testid="weekly-brief-card-state-badge">Approved</span>
+          }
+        </div>
+      </div>
 
-        @if (b.private_source_present) {
-          <div class="flex items-center gap-2 rounded bg-amber-50 p-2 text-sm text-amber-800">
-            <i class="fa-light fa-triangle-exclamation"></i>
-            <span>Contains private source data – review before sharing</span>
-          </div>
-        }
+      @if (b.private_source_present) {
+        <div class="flex items-center gap-2 rounded bg-amber-50 p-2 text-sm text-amber-800">
+          <i class="fa-light fa-triangle-exclamation"></i>
+          <span>Contains private source data – review before sharing</span>
+        </div>
+      }
 
-        @if (editMode()) {
-          <!-- lfx-textarea forwards dataTest as [attr.data-test] onto the inner <textarea>
+      @if (editMode() && canEdit()) {
+        <!-- lfx-textarea forwards dataTest as [attr.data-test] onto the inner <textarea>
                itself (unlike a data-testid on the <lfx-textarea> host, which wouldn't reach
                it) — matches every other lfx-textarea call site in the repo. No visible field
                label precedes this control (only the card's "AI Assistant" heading above,
                which isn't programmatically associated with it) — the sr-only label + id below
                give screen-reader users a name for what this textarea edits. -->
-          <label for="weekly-brief-card-edit-textarea" class="sr-only">Edit weekly brief</label>
-          <lfx-textarea
-            [form]="editForm"
-            control="briefText"
-            [rows]="8"
-            [maxlength]="briefTextMaxLength"
-            id="weekly-brief-card-edit-textarea"
-            styleClass="w-full h-48 text-sm"
-            dataTest="weekly-brief-card-edit-textarea" />
+        <label for="weekly-brief-card-edit-textarea" class="sr-only">Edit weekly brief</label>
+        <lfx-textarea
+          [form]="editForm"
+          control="briefText"
+          [rows]="8"
+          [maxlength]="briefTextMaxLength"
+          id="weekly-brief-card-edit-textarea"
+          styleClass="w-full h-48 text-sm"
+          dataTest="weekly-brief-card-edit-textarea" />
 
-          <div class="flex gap-2">
-            <lfx-button label="Save" (onClick)="onSave()" [loading]="saving()" data-testid="weekly-brief-card-save-button" />
-            <lfx-button label="Cancel" severity="secondary" [text]="true" (onClick)="onCancelEdit()" data-testid="weekly-brief-card-cancel-button" />
+        <div class="flex gap-2">
+          <lfx-button label="Save" (onClick)="onSave()" [loading]="saving()" data-testid="weekly-brief-card-save-button" />
+          <lfx-button label="Cancel" severity="secondary" [text]="true" (onClick)="onCancelEdit()" data-testid="weekly-brief-card-cancel-button" />
+        </div>
+      } @else {
+        <pre class="max-h-64 overflow-y-auto whitespace-pre-wrap rounded bg-gray-50 p-3 text-sm text-gray-700" data-testid="weekly-brief-card-body">{{
+          b.brief_text
+        }}</pre>
+        <div class="flex items-center justify-between">
+          <div class="flex items-center gap-2 text-xs text-gray-500">
+            <i class="fa-light fa-circle-info"></i>
+            <span>Generated by AI – Review before sharing</span>
           </div>
-        } @else {
-          <pre class="max-h-64 overflow-y-auto whitespace-pre-wrap rounded bg-gray-50 p-3 text-sm text-gray-700" data-testid="weekly-brief-card-body">{{
-            b.brief_text
-          }}</pre>
-          <div class="flex items-center justify-between">
-            <div class="flex items-center gap-2 text-xs text-gray-500">
-              <i class="fa-light fa-circle-info"></i>
-              <span>Generated by AI – Review before sharing</span>
-            </div>
+          @if (canEdit()) {
             <!-- Subtle, secondary to the primary action row below — a quality signal on the
-                 generation itself, not an action a user takes on the brief's content.
-                 No [tooltip] here: <lfx-button>'s [ariaPressed] and [tooltip] share the same
-                 PrimeNG `pt` passthrough, so ariaPressed is silently dropped whenever tooltip
-                 is set (see button.component.ts) — ariaLabel alone carries the accessible name. -->
+                   generation itself, not an action a user takes on the brief's content.
+                   No [tooltip] here: <lfx-button>'s [ariaPressed] and [tooltip] share the same
+                   PrimeNG `pt` passthrough, so ariaPressed is silently dropped whenever tooltip
+                   is set (see button.component.ts) — ariaLabel alone carries the accessible name. -->
             <div class="flex items-center gap-1" data-testid="weekly-brief-card-rating">
               <lfx-button
                 icon="fa-light fa-thumbs-up"
@@ -214,85 +232,87 @@
                 (onClick)="onRate('down')"
                 data-testid="weekly-brief-card-rating-down-button" />
             </div>
-          </div>
+          }
+        </div>
 
-          <!--
+        <!--
             Shared per-chip fragment (LFXV2-3335) — reused by the flat (≤threshold) row and the
             sectioned disclosure below, and recursively for a group chip's expanded instances, so
             the ungrouped/grouped chip markup isn't tripled across those three call sites.
           -->
-          <ng-template #sourceChipTpl lfxSourceChipContext let-chip="chip">
-            @if (chip.group; as group) {
-              @let groupExpanded = expandedSourceGroups().has(chip.id);
-              <button
-                type="button"
-                class="inline-flex items-center gap-1 border-0 bg-transparent p-0 cursor-pointer hover:opacity-80 transition-opacity"
-                [attr.aria-expanded]="groupExpanded"
-                (click)="onToggleSourceGroup(chip.id)"
-                [attr.data-testid]="'weekly-brief-card-source-group-toggle-' + chip.id">
-                <lfx-tag [value]="group.badgeLabel" [icon]="chip.icon" [rounded]="true" [outlined]="true" />
-                <i class="fa-light fa-caret-down text-[10px] text-gray-500 transition-transform" [class.rotate-180]="groupExpanded"></i>
-              </button>
-              @if (groupExpanded) {
-                @for (instance of group.instances; track instance.id) {
-                  <ng-container [ngTemplateOutlet]="sourceChipTpl" [ngTemplateOutletContext]="{ chip: instance }" />
-                }
+        <ng-template #sourceChipTpl lfxSourceChipContext let-chip="chip">
+          @if (chip.group; as group) {
+            @let groupExpanded = expandedSourceGroups().has(chip.id);
+            <button
+              type="button"
+              class="inline-flex items-center gap-1 border-0 bg-transparent p-0 cursor-pointer hover:opacity-80 transition-opacity"
+              [attr.aria-expanded]="groupExpanded"
+              (click)="onToggleSourceGroup(chip.id)"
+              [attr.data-testid]="'weekly-brief-card-source-group-toggle-' + chip.id">
+              <lfx-tag [value]="group.badgeLabel" [icon]="chip.icon" [rounded]="true" [outlined]="true" />
+              <i class="fa-light fa-caret-down text-[10px] text-gray-500 transition-transform" [class.rotate-180]="groupExpanded"></i>
+            </button>
+            @if (groupExpanded) {
+              @for (instance of group.instances; track instance.id) {
+                <ng-container [ngTemplateOutlet]="sourceChipTpl" [ngTemplateOutletContext]="{ chip: instance }" />
               }
-            } @else if (chip.action; as action) {
+            }
+          } @else if (chip.action; as action) {
+            <button
+              type="button"
+              class="inline-flex border-0 bg-transparent p-0 cursor-pointer hover:opacity-80 transition-opacity"
+              (click)="onSourceChipAction(action)"
+              [attr.data-testid]="'weekly-brief-card-source-chip-' + chip.id">
+              <lfx-tag [value]="chip.label" [icon]="chip.icon" [rounded]="true" [outlined]="true" />
+            </button>
+          } @else {
+            <lfx-tag
+              [value]="chip.label"
+              [icon]="chip.icon"
+              [rounded]="true"
+              [outlined]="true"
+              [attr.data-testid]="'weekly-brief-card-source-chip-' + chip.id" />
+          }
+        </ng-template>
+
+        @if (sourceRefCount() > 0) {
+          @if (sourceRefCount() <= sourcesCollapseThreshold) {
+            <div class="flex flex-wrap items-center gap-2" data-testid="weekly-brief-card-sources">
+              <span class="text-xs font-medium text-gray-500">Sources</span>
+              @for (chip of sourceChips(); track chip.id) {
+                <ng-container [ngTemplateOutlet]="sourceChipTpl" [ngTemplateOutletContext]="{ chip: chip }" />
+              }
+            </div>
+          } @else {
+            <div class="flex flex-col gap-2" data-testid="weekly-brief-card-sources">
               <button
                 type="button"
-                class="inline-flex border-0 bg-transparent p-0 cursor-pointer hover:opacity-80 transition-opacity"
-                (click)="onSourceChipAction(action)"
-                [attr.data-testid]="'weekly-brief-card-source-chip-' + chip.id">
-                <lfx-tag [value]="chip.label" [icon]="chip.icon" [rounded]="true" [outlined]="true" />
+                class="flex items-center gap-1.5 self-start border-0 bg-transparent p-0 text-xs font-medium text-gray-500 cursor-pointer hover:text-gray-700 transition-colors"
+                [attr.aria-expanded]="sourcesExpanded()"
+                (click)="onToggleSources()"
+                data-testid="weekly-brief-card-sources-toggle">
+                <span>Sources ({{ sourceRefCount() }})</span>
+                <i class="fa-light fa-chevron-down text-[10px] transition-transform" [class.rotate-180]="sourcesExpanded()"></i>
               </button>
-            } @else {
-              <lfx-tag
-                [value]="chip.label"
-                [icon]="chip.icon"
-                [rounded]="true"
-                [outlined]="true"
-                [attr.data-testid]="'weekly-brief-card-source-chip-' + chip.id" />
-            }
-          </ng-template>
-
-          @if (sourceRefCount() > 0) {
-            @if (sourceRefCount() <= sourcesCollapseThreshold) {
-              <div class="flex flex-wrap items-center gap-2" data-testid="weekly-brief-card-sources">
-                <span class="text-xs font-medium text-gray-500">Sources</span>
-                @for (chip of sourceChips(); track chip.id) {
-                  <ng-container [ngTemplateOutlet]="sourceChipTpl" [ngTemplateOutletContext]="{ chip: chip }" />
-                }
-              </div>
-            } @else {
-              <div class="flex flex-col gap-2" data-testid="weekly-brief-card-sources">
-                <button
-                  type="button"
-                  class="flex items-center gap-1.5 self-start border-0 bg-transparent p-0 text-xs font-medium text-gray-500 cursor-pointer hover:text-gray-700 transition-colors"
-                  [attr.aria-expanded]="sourcesExpanded()"
-                  (click)="onToggleSources()"
-                  data-testid="weekly-brief-card-sources-toggle">
-                  <span>Sources ({{ sourceRefCount() }})</span>
-                  <i class="fa-light fa-chevron-down text-[10px] transition-transform" [class.rotate-180]="sourcesExpanded()"></i>
-                </button>
-                @if (sourcesExpanded()) {
-                  <div class="flex flex-col gap-2">
-                    @for (section of sourceChipSections(); track section.kind) {
-                      <div class="flex flex-col gap-1" [attr.data-testid]="'weekly-brief-card-source-section-' + section.kind">
-                        <span class="text-[11px] font-medium uppercase text-gray-400">{{ section.label }}</span>
-                        <div class="flex flex-wrap items-center gap-2">
-                          @for (chip of section.chips; track chip.id) {
-                            <ng-container [ngTemplateOutlet]="sourceChipTpl" [ngTemplateOutletContext]="{ chip: chip }" />
-                          }
-                        </div>
+              @if (sourcesExpanded()) {
+                <div class="flex flex-col gap-2">
+                  @for (section of sourceChipSections(); track section.kind) {
+                    <div class="flex flex-col gap-1" [attr.data-testid]="'weekly-brief-card-source-section-' + section.kind">
+                      <span class="text-[11px] font-medium uppercase text-gray-400">{{ section.label }}</span>
+                      <div class="flex flex-wrap items-center gap-2">
+                        @for (chip of section.chips; track chip.id) {
+                          <ng-container [ngTemplateOutlet]="sourceChipTpl" [ngTemplateOutletContext]="{ chip: chip }" />
+                        }
                       </div>
-                    }
-                  </div>
-                }
-              </div>
-            }
+                    </div>
+                  }
+                </div>
+              }
+            </div>
           }
+        }
 
+        @if (canEdit()) {
           <div class="flex flex-wrap gap-2">
             <lfx-button
               label="Regenerate"
@@ -325,9 +345,9 @@
           </div>
 
           <!-- Visible hints rather than tooltips on these disabled buttons: a
-               disabled native <button> never receives focus/hover, so a
-               tooltip-only explanation would be unreachable by keyboard and
-               screen-reader users. -->
+                 disabled native <button> never receives focus/hover, so a
+                 tooltip-only explanation would be unreachable by keyboard and
+                 screen-reader users. -->
           @if (!canRegenerate()) {
             <span class="text-xs text-gray-500" data-testid="weekly-brief-card-regenerate-disabled-hint">Weekly regeneration limit reached</span>
           }
@@ -342,27 +362,31 @@
             <span class="text-xs text-gray-500" data-testid="weekly-brief-card-share-slack-disabled-hint">No Slack webhook configured for this committee</span>
           }
         }
+      }
 
+      @if (canEdit()) {
         @if (throttle(); as t) {
           <span class="text-xs text-gray-500" data-testid="weekly-brief-card-throttle">
             {{ t.generates_used }}/{{ t.generates_limit }} generates · {{ t.regenerations_used }}/{{ t.regenerations_limit }} regenerations used this week
           </span>
         }
-      </div>
-    </lfx-card>
-  } @else if (fetchError()) {
-    <lfx-card>
-      <div class="flex flex-col items-center justify-center gap-3 py-8" data-testid="weekly-brief-card-unavailable-state">
-        <i class="fa-light fa-triangle-exclamation text-2xl text-gray-400"></i>
-        <span class="text-sm text-gray-700">Couldn't load this week's brief — the service may be temporarily unavailable.</span>
-        <lfx-button label="Retry" severity="secondary" [outlined]="true" (onClick)="onRetry()" data-testid="weekly-brief-card-unavailable-retry-button" />
-      </div>
-    </lfx-card>
-  } @else {
-    <lfx-card>
-      <div class="flex flex-col items-center justify-center gap-3 py-8" data-testid="weekly-brief-card-empty-state">
-        <i class="fa-light fa-sparkles text-2xl text-blue-500"></i>
-        <span class="text-sm text-gray-600">No brief yet for this week</span>
+      }
+    </div>
+  </lfx-card>
+} @else if (fetchError()) {
+  <lfx-card>
+    <div class="flex flex-col items-center justify-center gap-3 py-8" data-testid="weekly-brief-card-unavailable-state">
+      <i class="fa-light fa-triangle-exclamation text-2xl text-gray-400"></i>
+      <span class="text-sm text-gray-700">Couldn't load this week's brief — the service may be temporarily unavailable.</span>
+      <lfx-button label="Retry" severity="secondary" [outlined]="true" (onClick)="onRetry()" data-testid="weekly-brief-card-unavailable-retry-button" />
+    </div>
+  </lfx-card>
+} @else {
+  <lfx-card>
+    <div class="flex flex-col items-center justify-center gap-3 py-8" data-testid="weekly-brief-card-empty-state">
+      <i class="fa-light fa-sparkles text-2xl text-blue-500"></i>
+      <span class="text-sm text-gray-600">No brief yet for this week</span>
+      @if (canEdit()) {
         <lfx-button
           label="Generate Brief"
           severity="info"
@@ -372,22 +396,24 @@
         @if (throttle(); as t) {
           <span class="text-xs text-gray-500"> {{ t.generates_used }}/{{ t.generates_limit }} generates used this week </span>
         }
-      </div>
-    </lfx-card>
-  }
-
-  @if (hasArchiveBriefs()) {
-    <div class="flex">
-      <button
-        type="button"
-        class="text-xs text-blue-600 hover:text-blue-800 hover:underline transition-colors"
-        (click)="onOpenArchive()"
-        data-testid="weekly-brief-card-past-briefs-button">
-        View past briefs
-      </button>
+      }
     </div>
-  }
+  </lfx-card>
+}
 
+@if (hasArchiveBriefs()) {
+  <div class="flex">
+    <button
+      type="button"
+      class="text-xs text-blue-600 hover:text-blue-800 hover:underline transition-colors"
+      (click)="onOpenArchive()"
+      data-testid="weekly-brief-card-past-briefs-button">
+      View past briefs
+    </button>
+  </div>
+}
+
+@if (canEdit()) {
   <p-confirmDialog />
 }
 

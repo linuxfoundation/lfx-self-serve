@@ -51,8 +51,8 @@ export class WeeklyBriefService {
    * opts out on top of that (also gated on `isGoverningBoardCommittee()`, so it never mistakes
    * that deliberate non-poll-load opt-out for a transient degrade) once the current_activity KEY
    * is present on what it already holds — `null` counts as present (a settled "doesn't apply"
-   * answer for a non-governance committee, or a week whose activity fills a full page) and stops
-   * the asking just as a real value would; only a genuinely absent key on a governance committee
+   * answer for a non-governance committee) and stops the asking just as a real value (possibly
+   * `truncated: true`) would; only a genuinely absent key on a governance committee
    * keeps the poll asking, up to its own attempt cap — see
    * `WeeklyBriefCurrentResponse.current_activity`'s doc comment for the three-state
    * absent/null/present contract this depends on.
