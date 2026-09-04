@@ -1,0 +1,165 @@
+<!-- Copyright The Linux Foundation and each contributor to LFX. -->
+<!-- SPDX-License-Identifier: MIT -->
+
+<p-drawer
+  [(visible)]="visible"
+  position="right"
+  [modal]="true"
+  [showCloseIcon]="false"
+  styleClass="xl:w-[45%] lg:w-[55%] md:w-[70%] sm:w-[90%] w-full"
+  data-testid="formation-item-drawer">
+  <ng-template #header>
+    <div class="flex items-start justify-between gap-4 w-full">
+      <div class="flex flex-col gap-1 flex-1 min-w-0">
+        <!-- `title` is a hover-only affordance in Chromium/WebKit — a tabindex here wouldn't expose
+             it to keyboard focus (and would wrongly become the drawer's focus-trap entry point
+             ahead of Close). The full title is already in the DOM text regardless of the `lg:truncate`
+             visual clipping, so screen readers announce it either way; this is a mouse-only nicety. -->
+        <h2 class="text-lg font-semibold text-gray-900 lg:truncate" [attr.title]="item()?.title">{{ item()?.title }}</h2>
+        @if (item(); as currentItem) {
+          @if (currentItem.is_gating) {
+            <span [attr.data-testid]="'formation-item-drawer-gates-active-' + currentItem.uid">
+              <lfx-tag value="Gates Active" severity="warn" />
+            </span>
+          }
+        }
+      </div>
+      <button
+        type="button"
+        (click)="onClose()"
+        class="p-1 text-gray-400 hover:text-gray-600"
+        aria-label="Close panel"
+        data-testid="formation-item-drawer-close">
+        <i class="fa-light fa-xmark text-xl" aria-hidden="true"></i>
+      </button>
+    </div>
+  </ng-template>
+
+  <div class="flex flex-col gap-6 pb-2">
+    @if (loading()) {
+      <div class="flex items-center justify-center py-12" data-testid="formation-item-drawer-loading">
+        <i class="fa-light fa-spinner-third fa-spin text-2xl text-gray-400"></i>
+      </div>
+    } @else if (loadFailed()) {
+      <div class="flex flex-col items-center gap-2 py-12 text-center" data-testid="formation-item-drawer-error">
+        <p class="text-sm text-red-700">Something went wrong loading this item.</p>
+      </div>
+    } @else if (item(); as currentItem) {
+      <div class="flex flex-col gap-2">
+        @if (currentItem.status !== 'done') {
+          <div class="flex items-center gap-2">
+            <lfx-button
+              label="Mark complete"
+              size="small"
+              severity="primary"
+              [disabled]="!currentItem.can_complete || busy()"
+              [loading]="completing()"
+              (onClick)="onMarkComplete()"
+              data-testid="formation-item-drawer-mark-complete" />
+            @if (currentItem.is_gating) {
+              <lfx-button
+                label="Skip…"
+                size="small"
+                severity="secondary"
+                [outlined]="true"
+                [disabled]="!currentItem.can_complete || busy()"
+                [loading]="skipInFlight()"
+                (onClick)="onSkip()"
+                data-testid="formation-item-drawer-skip" />
+            }
+          </div>
+          @if (!currentItem.can_complete) {
+            <!-- A disabled button isn't focusable, so a hover-only tooltip would never reach a keyboard/screen-reader user — render the reason as visible text instead. -->
+            <span class="text-xs text-gray-500">Requires gate_writer access</span>
+          }
+        }
+      </div>
+
+      <div class="flex flex-col gap-2" data-testid="formation-item-drawer-notes">
+        <span class="text-xs font-medium text-gray-500 uppercase tracking-wide">Notes</span>
+        <lfx-textarea [form]="editForm" control="notes" [rows]="4" placeholder="Add notes…" styleClass="w-full" />
+      </div>
+
+      <div class="flex flex-col gap-3 sm:flex-row">
+        <div class="flex flex-col gap-2 flex-1" data-testid="formation-item-drawer-assignee">
+          <span class="text-xs font-medium text-gray-500 uppercase tracking-wide">Assignee</span>
+          <lfx-input-text [form]="editForm" control="ownerUsername" placeholder="Username" />
+        </div>
+        <div class="flex flex-col gap-2 flex-1" data-testid="formation-item-drawer-due-date">
+          <span class="text-xs font-medium text-gray-500 uppercase tracking-wide">Due date</span>
+          <lfx-calendar [form]="editForm" control="dueDate" placeholder="Select a date" />
+        </div>
+      </div>
+
+      <div>
+        <lfx-button
+          label="Save"
+          size="small"
+          severity="secondary"
+          [disabled]="busy()"
+          [loading]="savingDetails()"
+          (onClick)="onSaveDetails()"
+          data-testid="formation-item-drawer-save" />
+      </div>
+
+      @if (safeLinks().length > 0) {
+        <div class="flex flex-col gap-2" data-testid="formation-item-drawer-links">
+          <span class="text-xs font-medium text-gray-500 uppercase tracking-wide">Links</span>
+          <div class="flex flex-col gap-1">
+            @for (link of safeLinks(); track link.href) {
+              <a
+                [href]="link.href"
+                target="_blank"
+                rel="noopener noreferrer"
+                class="text-sm text-blue-600 hover:underline"
+                [attr.data-testid]="'formation-item-drawer-link-' + link.href">
+                {{ link.label }}
+              </a>
+            }
+          </div>
+        </div>
+      }
+
+      @if (currentItem.sub_items.length > 0) {
+        <div class="flex flex-col gap-2" data-testid="formation-item-drawer-sub-items">
+          <span class="text-xs font-medium text-gray-500 uppercase tracking-wide">Sub-items</span>
+          <div class="flex flex-col gap-1">
+            @for (subItem of currentItem.sub_items; track subItem.uid) {
+              <div class="flex items-center justify-between text-sm">
+                <span class="text-gray-700">{{ subItem.title }}</span>
+                <span class="text-gray-500">{{ subItem.status }}</span>
+              </div>
+            }
+          </div>
+        </div>
+      }
+
+      @if (currentItem.skip_reason) {
+        <div class="flex flex-col gap-1 p-3 bg-gray-50 border border-gray-200 rounded-lg" data-testid="formation-item-drawer-skip-reason">
+          <span class="text-xs font-medium text-gray-500 uppercase tracking-wide">Skip reason</span>
+          <span class="text-sm text-gray-700">{{ currentItem.skip_reason }}</span>
+        </div>
+      }
+
+      <div class="flex flex-col gap-2" data-testid="formation-item-drawer-history">
+        <span class="text-xs font-medium text-gray-500 uppercase tracking-wide">History</span>
+        @if (history().length === 0) {
+          <span class="text-sm text-gray-500">No activity yet.</span>
+        } @else {
+          <div class="flex flex-col gap-2">
+            @for (entry of history(); track entry.uid) {
+              <div class="flex flex-col text-sm border-b border-gray-100 pb-2 last:border-b-0">
+                <span class="text-gray-700">{{ entry.actor.name }} {{ entry.message }}</span>
+                <span class="text-xs text-gray-400">{{ entry.created_at | date: 'medium' }}</span>
+              </div>
+            }
+          </div>
+        }
+      </div>
+    } @else {
+      <div class="text-center py-8 border border-slate-200 rounded-lg">
+        <p class="text-sm text-gray-500">No item selected.</p>
+      </div>
+    }
+  </div>
+</p-drawer>

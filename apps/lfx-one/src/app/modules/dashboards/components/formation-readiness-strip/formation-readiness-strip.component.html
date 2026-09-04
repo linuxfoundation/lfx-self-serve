@@ -1,0 +1,38 @@
+<!-- Copyright The Linux Foundation and each contributor to LFX. -->
+<!-- SPDX-License-Identifier: MIT -->
+
+<div class="flex items-center gap-6 p-4 bg-white border border-gray-200 rounded-xl" data-testid="formation-readiness-strip">
+  <div class="flex flex-col gap-1.5 flex-1 min-w-0">
+    <div class="flex items-baseline justify-between gap-2">
+      <span class="text-sm font-medium text-gray-900 whitespace-nowrap">Ready for go-live</span>
+      <span class="text-xs text-gray-500 tabular-nums" data-testid="formation-readiness-strip-counts">{{ countsLabel() }}</span>
+    </div>
+    <div class="flex gap-0.5 h-1.5" data-testid="formation-readiness-strip-segment-bar" role="img" [attr.aria-label]="countsLabel()">
+      @for (segment of summary().segments; track $index) {
+        <div class="flex-1 rounded-sm" [ngClass]="segmentColorClass[segment]"></div>
+      }
+    </div>
+  </div>
+
+  <div class="w-px self-stretch bg-gray-200" aria-hidden="true"></div>
+
+  <div class="flex flex-col gap-0.5 w-36" data-testid="formation-readiness-strip-announcement">
+    <span class="text-[11px] text-gray-500">Announcement date</span>
+    <span class="text-sm font-medium text-gray-900">{{ announcementLabel() }}</span>
+  </div>
+
+  <div class="flex flex-col gap-0.5 w-44" data-testid="formation-readiness-strip-gating">
+    @if (summary().isActivating) {
+      <span class="text-[11px] text-gray-500">Gating Active</span>
+      <span class="text-sm font-medium text-amber-700" data-testid="formation-readiness-strip-activating-text">Activating</span>
+    } @else {
+      <span class="text-[11px] text-gray-500">Gating Active</span>
+      <span class="text-sm font-medium text-amber-700" data-testid="formation-readiness-strip-gating-text"
+        >{{ summary().openGatingItems }} of {{ summary().totalGatingItems }} open</span
+      >
+    }
+    <span class="text-[10.5px] leading-tight text-gray-500 mt-1" data-testid="formation-readiness-strip-notify-text">
+      formation&#64; is emailed when all {{ summary().totalGatingItems }} are done
+    </span>
+  </div>
+</div>

@@ -14,6 +14,10 @@ import { TooltipModule } from 'primeng/tooltip';
   imports: [NgClass, ButtonModule, RouterModule, TooltipModule],
   templateUrl: './button.component.html',
   styleUrl: './button.component.scss',
+  // Exposes `loading()` on the host itself so specs can assert per-button loading state via
+  // `[data-loading="true"]` instead of reaching into PrimeNG's internal spinner-icon markup
+  // (`[data-p-icon="spinner"]`), which breaks silently on a PrimeNG version bump.
+  host: { '[attr.data-loading]': 'loading()' },
 })
 export class ButtonComponent {
   // Text and Icon properties

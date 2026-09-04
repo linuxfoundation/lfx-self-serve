@@ -44,6 +44,28 @@ export interface FeatureConfig {
 }
 
 /**
+ * Reason-prompt dialog config
+ * @description `DynamicDialogConfig.data` shape for `ReasonPromptDialogComponent`, the generic
+ * "confirm with a required reason" modal (skip a formation item, decline a formation, etc.)
+ */
+export interface ReasonPromptDialogData {
+  /** e.g. "Skip {{title}}" — rendered as the body's leading sentence. */
+  prompt: string;
+  placeholder: string;
+  confirmLabel: string;
+  /** Defaults to `'danger'`. */
+  confirmSeverity?: 'danger' | 'primary';
+}
+
+/**
+ * Reason-prompt dialog result
+ * @description `DynamicDialogRef.onClose` payload for `ReasonPromptDialogComponent`
+ */
+export interface ReasonPromptDialogResult {
+  reason: string;
+}
+
+/**
  * Card selector option info
  * @description Information displayed for each card option in card selector
  */
@@ -79,9 +101,13 @@ export type ButtonSeverity = 'success' | 'info' | 'warn' | 'danger' | 'help' | '
 
 /**
  * Tag severity type
- * @description Severity levels for Tag component
+ * @description Severity levels for Tag component. `'accent'` (violet) is handled entirely inside
+ * `TagComponent` — it is not a PrimeNG `p-tag` severity, so it never reaches the `<p-tag>` binding;
+ * `TagComponent` renders its own violet-styled element for it, the same way it already hand-rolls
+ * the `outlined` variant. Used for states with no good fit among PrimeNG's built-in severities
+ * (e.g. a "Waiting on partner" formation-item status, GH-1958).
  */
-export type TagSeverity = 'success' | 'info' | 'warn' | 'danger' | 'secondary' | 'contrast';
+export type TagSeverity = 'success' | 'info' | 'warn' | 'danger' | 'secondary' | 'contrast' | 'accent';
 
 /**
  * Badge severity type

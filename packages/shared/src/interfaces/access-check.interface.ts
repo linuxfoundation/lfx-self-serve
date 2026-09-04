@@ -53,4 +53,11 @@ export type AccessCheckAccessType =
   | 'member'
   | 'marketing_auditor'
   | 'campaign_manager'
-  | 'marketing_ops';
+  | 'marketing_ops'
+  /**
+   * TODO(#1957): not yet a real FGA relation — `lfx-v2-formation-service`/`lfx-v2-helm` haven't
+   * shipped the `formation_item` type or its `gate_writer` relation. Added now so the frontend/BFF
+   * types are ready; until then `FormationItemAccessService.canComplete` fabricates this value from
+   * a real LF-staff check rather than an actual `checkSingleAccess` call.
+   */
+  | 'gate_writer';

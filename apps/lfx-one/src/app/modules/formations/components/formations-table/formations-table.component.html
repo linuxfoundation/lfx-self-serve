@@ -1,0 +1,72 @@
+<!-- Copyright The Linux Foundation and each contributor to LFX. -->
+<!-- SPDX-License-Identifier: MIT -->
+
+<lfx-card styleClass="[&_.p-card-body]:p-0 [&_.p-card-content]:p-0" data-testid="formations-table-card">
+  <lfx-card-tabs-bar
+    [options]="statusTabOptions()"
+    [selectedFilter]="statusTab()"
+    (filterChange)="onStatusTabChange($event)"
+    data-testid="formations-status-tabs">
+  </lfx-card-tabs-bar>
+
+  <div class="px-5 pt-4 pb-3">
+    <div class="w-full sm:w-72">
+      <lfx-input-text
+        [form]="searchForm"
+        control="search"
+        placeholder="Search formations…"
+        icon="fa-light fa-search"
+        styleClass="w-full"
+        size="small"
+        data-testid="formations-search-input">
+      </lfx-input-text>
+    </div>
+  </div>
+
+  <div class="px-5 pb-5">
+    @if (!loading() && rows().length === 0) {
+      <lfx-empty-state
+        [withCard]="false"
+        icon="fa-light fa-eyes"
+        [title]="isFiltered() ? 'No results found' : 'No formations yet'"
+        [subtitle]="isFiltered() ? 'Try adjusting your filters.' : ''"
+        data-testid="formations-table-empty">
+      </lfx-empty-state>
+    } @else {
+      <lfx-table [value]="displayRows()" [loading]="loading()" [ariaLabel]="'Formations queue'" data-testid="formations-table">
+        <ng-template #header>
+          <tr>
+            <th class="w-[28%]">Formation</th>
+            <th class="w-[12%]">Type</th>
+            <th class="w-[18%]">Stage</th>
+            <th class="w-[12%]">Progress</th>
+            <th class="w-[14%]">Announcement</th>
+            <th class="w-[16%]">Blocking</th>
+          </tr>
+        </ng-template>
+
+        <ng-template #body let-row let-rowIndex="rowIndex">
+          <tr [attr.data-row-index]="rowIndex" [attr.data-testid]="'formations-table-row-' + row.uid">
+            <td>
+              <a
+                [routerLink]="['/project/overview']"
+                [queryParams]="{ project: row.parent_project_slug }"
+                class="flex flex-col gap-0.5 no-underline hover:underline"
+                [attr.data-testid]="'formations-table-open-' + row.uid">
+                <span class="text-sm font-medium text-gray-900">{{ row.parent_project_name }}</span>
+                @if (row.subtitle) {
+                  <span class="text-xs text-gray-500">{{ row.subtitle }}</span>
+                }
+              </a>
+            </td>
+            <td class="text-sm text-gray-700 capitalize">{{ row.entity_type }}</td>
+            <td><lfx-tag [value]="row.stageLabel" [severity]="row.stageSeverity" /></td>
+            <td class="text-sm text-gray-700 tabular-nums">{{ row.gating_items_total - row.gating_items_open }} of {{ row.gating_items_total }}</td>
+            <td class="text-sm text-gray-700">{{ row.announcement_date ? (row.announcement_date | date: 'MMM d') : 'Not set' }}</td>
+            <td class="text-sm text-gray-700">{{ row.blocking_item_title || '—' }}</td>
+          </tr>
+        </ng-template>
+      </lfx-table>
+    }
+  </div>
+</lfx-card>

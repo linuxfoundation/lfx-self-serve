@@ -48,6 +48,7 @@ export class PersonaDetectionService {
   private readonly lfStaffRequestCache = new WeakMap<Request, Promise<boolean>>();
   private readonly rootMarketingAuditorRequestCache = new WeakMap<Request, Promise<boolean>>();
   private readonly rootCampaignManagerRequestCache = new WeakMap<Request, Promise<boolean>>();
+  private readonly rootAuditorRequestCache = new WeakMap<Request, Promise<boolean>>();
   // Dedupes the projectSlug -> uid NATS lookup within a single request — checkMarketingAuditorAccess
   // and checkCampaignManagerAccess both resolve the same slug in the same getPersonas Promise.all.
   private readonly projectSlugRequestCache = new WeakMap<Request, Map<string, Promise<{ uid: string; exists: boolean }>>>();
@@ -125,6 +126,12 @@ export class PersonaDetectionService {
     // (bearer-token dependent) — resolve per-request and merge. The marketing-ops checks are
     // skipped entirely while their server flag is off, so this endpoint costs nothing extra
     // for the default (flag-off) case.
+    // isAuditor (GH-1958) is deliberately unconditional here too, grouped with isRootWriter/isLFStaff
+    // rather than gated behind marketingRelations like the marketing checks — its only consumer today
+    // is the dark-launched, auditor-only Formations queue guard, so this is a real (if small) per-request
+    // FGA call every caller of getPersonas now pays for, including the 'none'-relations middleware paths
+    // that never read it. Left this way rather than overload marketingRelations for an unrelated purpose;
+    // revisit if isAuditor gains enough narrow-purpose callers to justify its own opt-out.
     const marketingOpsFgaEnabled = isServerFeatureEnabled(ServerFeatureFlag.MarketingOpsFga);
     const needsMarketingAuditor = marketingOpsFgaEnabled && (marketingRelations === 'both' || marketingRelations === 'marketing_auditor');
     const needsCampaignManager = marketingOpsFgaEnabled && (marketingRelations === 'both' || marketingRelations === 'campaign_manager');
@@ -134,11 +141,12 @@ export class PersonaDetectionService {
     // add a round trip. Surfacing them separately lets the frontend tell a ROOT-cascading grant apart
     // from a project-scoped one instead of inferring scope from the `projectSlug` it happened to pass
     // (Copilot finding, PR #1835).
-    const [detections, isRootWriter, isLFStaff, isMarketingAuditor, isCampaignManager, isMarketingAuditorRootGrant, isCampaignManagerRootGrant] =
+    const [detections, isRootWriter, isLFStaff, isAuditor, isMarketingAuditor, isCampaignManager, isMarketingAuditorRootGrant, isCampaignManagerRootGrant] =
       await Promise.all([
         this.getPersonaDetections(req, username, email, cacheKey),
         this.checkRootWriter(req),
         this.checkLFStaff(req),
+        this.checkRootAuditor(req),
         needsMarketingAuditor ? this.checkMarketingAuditorAccess(req, projectSlug) : Promise.resolve(false),
         needsCampaignManager ? this.checkCampaignManagerAccess(req, projectSlug) : Promise.resolve(false),
         needsMarketingAuditor ? this.checkRootMarketingAuditor(req) : Promise.resolve(false),
@@ -163,6 +171,7 @@ export class PersonaDetectionService {
       personas,
       isRootWriter,
       isLFStaff,
+      isAuditor,
       isMarketingAuditor,
       isCampaignManager,
       isMarketingAuditorRootGrant,
@@ -225,6 +234,19 @@ export class PersonaDetectionService {
     return this.checkRootAccess(req, this.rootCampaignManagerRequestCache, 'marketing_ops', 'check_root_campaign_manager');
   }
 
+  /**
+   * Checks whether the current user holds `auditor` on the tenant ROOT project — the Formations
+   * queue's (`foundation/formations`, GH-1958) authorization boundary. Unlike
+   * `checkRootMarketingAuditor`/`checkRootCampaignManager`, `auditor` has no project-scoped variant
+   * to fold in, so callers never need a `checkAuditorAccess(req, projectSlug)` counterpart — this is
+   * the whole check. Mirrors {@link checkRootWriter}: request-cached, resolves the ROOT uid via
+   * NATS, and fails closed to `false` so transient errors never widen access. `auditor` is already a
+   * real `AccessCheckAccessType` (unlike `gate_writer`), so this needs no #1957 TODO.
+   */
+  public async checkRootAuditor(req: Request): Promise<boolean> {
+    return this.checkRootAccess(req, this.rootAuditorRequestCache, 'auditor', 'check_root_auditor');
+  }
+
   /** ROOT grant OR a grant scoped to `projectSlug` (when given). Mirrors `requireMarketingAccess`. */
   private async checkMarketingAuditorAccess(req: Request, projectSlug?: string): Promise<boolean> {
     if (await this.checkRootMarketingAuditor(req)) return true;
@@ -277,7 +299,7 @@ export class PersonaDetectionService {
   private async checkRootAccess(
     req: Request,
     cache: WeakMap<Request, Promise<boolean>>,
-    access: 'marketing_auditor' | 'campaign_manager' | 'marketing_ops',
+    access: 'marketing_auditor' | 'campaign_manager' | 'marketing_ops' | 'auditor',
     operation: string
   ): Promise<boolean> {
     const cached = cache.get(req);

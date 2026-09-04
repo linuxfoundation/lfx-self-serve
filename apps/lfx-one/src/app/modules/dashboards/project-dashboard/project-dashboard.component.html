@@ -10,6 +10,20 @@
 
   <div class="flex flex-col xl:flex-row xl:items-start xl:gap-10 gap-10" data-testid="project-dashboard-sections-grid">
     <div class="flex flex-col gap-10 flex-1 min-w-0">
+      @if (isFormationStageProject()) {
+        @defer (on idle) {
+          <lfx-formation-checklist-section />
+        } @placeholder {
+          <section data-testid="project-dashboard-formation-checklist-placeholder">
+            <div class="flex items-center justify-between mb-4">
+              <p-skeleton width="12rem" height="1.5rem" />
+            </div>
+            <p-skeleton width="100%" height="4.5rem" borderRadius="12px" styleClass="mb-4" />
+            <p-skeleton width="100%" height="12rem" borderRadius="16px" />
+          </section>
+        }
+      }
+
       @defer (on idle) {
         <lfx-recent-progress />
       } @placeholder {
