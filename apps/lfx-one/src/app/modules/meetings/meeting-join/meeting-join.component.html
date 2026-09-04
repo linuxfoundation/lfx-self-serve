@@ -23,7 +23,7 @@
          `meeting()`'s retained value would keep rendering the PREVIOUS meeting (incl. its
          `host_key`/join links) under the new URL instead of this error state (cursor / copilot
          review on #2046). -->
-    <div class="bg-gray-50 min-h-screen flex items-center justify-center" data-testid="meeting-join-error">
+    <div class="bg-gray-50 min-h-screen flex items-center justify-center" role="alert" data-testid="meeting-join-error">
       <div class="text-center flex flex-col items-center gap-2">
         <i class="fa-light fa-triangle-exclamation text-4xl text-gray-400"></i>
         <p class="text-lg text-gray-600">Something went wrong loading this meeting.</p>
@@ -880,7 +880,8 @@
   } @else {
     <!-- Skeleton shown only for client-side navigations with no SSR-transferred state (GH-2041) —
          the seeded first paint in `initializeMeeting()` means this never flashes on a fresh load. -->
-    <div class="bg-gray-50 min-h-screen" data-testid="meeting-join-skeleton">
+    <div class="bg-gray-50 min-h-screen" role="status" aria-live="polite" data-testid="meeting-join-skeleton">
+      <span class="sr-only">Loading meeting details…</span>
       <div class="container mx-auto py-6 px-8">
         <div class="max-w-[900px] mx-auto flex flex-col">
           <div class="flex items-center justify-center mb-6">

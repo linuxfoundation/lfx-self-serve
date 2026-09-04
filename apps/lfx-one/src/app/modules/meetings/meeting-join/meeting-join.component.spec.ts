@@ -603,6 +603,52 @@ describe('MeetingJoinComponent', () => {
       expect(fixture.nativeElement.querySelector('[data-testid="meeting-join-error"]')).not.toBeNull();
     });
 
+    // Bot review follow-up on PR #2046 (cursor): the leak-prevention fix above only cleared
+    // `meetingLoadFailed` on a settled success, not synchronously when a new route attempt starts.
+    // So a same-route background failure that left `meetingLoadFailed` set would still be flagged
+    // after navigating to a genuinely different meeting, and the new route's `!meetingMatchesRoute()`
+    // mismatch tripped the error branch immediately — before the new route's fetch even started.
+    it('shows the skeleton, not a stale error, while a newly-navigated meeting is still fetching after a same-route failure', async () => {
+      const MEETING_ID_2 = 'meeting-2';
+      const initialRefresh$ = new Subject<{ meeting: Meeting; project: PublicMeetingProject }>();
+      const refetch$ = new Subject<{ meeting: Meeting; project: PublicMeetingProject }>();
+      getPublicMeeting.mockImplementation((id: string) => {
+        if (id === MEETING_ID_2) {
+          return refetch$;
+        }
+        return initialRefresh$;
+      });
+
+      await TestBed.compileComponents();
+      const fixture = TestBed.createComponent(MeetingJoinComponent);
+      const component = fixture.componentInstance;
+      await TestBed.inject(ApplicationRef).whenStable();
+      fixture.detectChanges();
+
+      initialRefresh$.next({ meeting: buildMeeting(), project: buildProject() });
+      await TestBed.inject(ApplicationRef).whenStable();
+      fixture.detectChanges();
+
+      // Same-route background failure (dealako's original scenario): flags `meetingLoadFailed`
+      // but the error branch stays suppressed because the route still matches.
+      component.onMaterialsChanged();
+      await new Promise((resolve) => setTimeout(resolve, 0));
+      initialRefresh$.error({ status: 500 });
+      await TestBed.inject(ApplicationRef).whenStable();
+      fixture.detectChanges();
+      expect((component as unknown as { meetingLoadFailed: () => boolean }).meetingLoadFailed()).toBe(true);
+      expect(fixture.nativeElement.querySelector('[data-testid="meeting-join-error"]')).toBeNull();
+
+      // Navigate to a different meeting. Its fetch is still pending — must not show the error
+      // branch just because the previous route's failure flag was never cleared.
+      paramMap$.next(convertToParamMap({ id: MEETING_ID_2 }));
+      await new Promise((resolve) => setTimeout(resolve, 0));
+      fixture.detectChanges();
+
+      expect((component as unknown as { meetingLoadFailed: () => boolean }).meetingLoadFailed()).toBe(false);
+      expect(fixture.nativeElement.querySelector('[data-testid="meeting-join-error"]')).toBeNull();
+    });
+
     it('sets meetingLoadFailed (not a not-found redirect) when the nested past-meeting fallback fails with a non-terminal status', async () => {
       getPublicMeeting.mockReturnValue(throwError(() => ({ status: 404 })));
       getPublicPastMeeting.mockReturnValue(throwError(() => ({ status: 500 })));

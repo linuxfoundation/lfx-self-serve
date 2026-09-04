@@ -785,7 +785,17 @@ export class MeetingJoinComponent implements OnInit {
       switchMap(([params, queryParams]) => {
         const meetingId = params.get('id');
         this.password.set(queryParams.get('password'));
+        const previousRouteId = this.meetingRouteId();
         this.meetingRouteId.set(meetingId);
+        // Only clear a stale `meetingLoadFailed` when the route id actually changed (a real
+        // navigation to a different meeting) — not on a same-route re-emission (`refreshTrigger$`,
+        // or the initial hydration matching a seeded terminal-error state). Otherwise a prior
+        // same-route background failure (dealako review on #2046) would still be flagged when
+        // navigating away, and the new route's `!meetingMatchesRoute()` mismatch would trip the
+        // error branch immediately, before this attempt's fetch even starts (cursor review on #2046).
+        if (meetingId !== previousRouteId) {
+          this.meetingLoadFailed.set(false);
+        }
 
         if (!meetingId) {
           this.router.navigate(['/meetings/not-found']);
