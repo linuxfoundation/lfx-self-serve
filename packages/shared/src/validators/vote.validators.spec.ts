@@ -4,7 +4,7 @@
 import type { AbstractControl, ValidationErrors } from '@angular/forms';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
-import { voteDeadlineValidator } from './date.validators';
+import { voteDeadlineValidator } from './vote.validators';
 
 // The validator reads close_date/close_time/timezone off a FormGroup-shaped object via
 // `.get(name)?.value` — a minimal stub covers it (same pattern as newsletter.validators.spec.ts).

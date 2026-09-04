@@ -727,14 +727,8 @@ export class VoteManageComponent {
 
     switch (step) {
       case 1: {
-        // Use form validators for all Step 1 fields
-        // Validators: title (trimmedRequired, trimmedMinLength(3), maxLength(200))
-        //             committee (required, validCommitteeReference)
-        //             eligible_participants (required)
-        //             close_date (required)
-        //             close_time (required)
-        //             timezone (required)
-        //             group: voteDeadlineValidator (futureDateTime — lives on form.errors, not a control)
+        // Use form validators for all Step 1 fields.
+        // Group-level voteDeadlineValidator surfaces on form.errors, not a control.
         const titleValid = !!form.get('title')?.valid;
         // Committee is valid if locked via group context, or if the form control passes validation
         const committeeValid = !!this.committeeContext() || !!form.get('committee')?.valid;
