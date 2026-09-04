@@ -120,4 +120,30 @@ describe('buildCertificateFileName', () => {
     const name = buildCertificateFileName(longName, '2025-11-10T00:00:00.000Z', 'evt-12');
     expect(name.endsWith('-2025-11-10.pdf')).toBe(true);
   });
+
+  it('preserves combining marks in scripts that require them (e.g. Devanagari) instead of dropping them', () => {
+    // हिन्दी is base consonants + combining vowel signs/virama — a \p{L}-only filter reduces it
+    // to the unreadable "ह-न-द" and can collide distinct names on the same date.
+    expect(buildCertificateFileName('हिन्दी', null, 'evt-16')).toBe('certificate-of-attendance-हिन्दी.pdf');
+  });
+
+  it('never leaves an unpaired surrogate after truncating an astral-character event name', () => {
+    vi.stubEnv('TZ', 'UTC');
+    // U+10400 is an astral letter, i.e. a surrogate pair — a naive UTF-16 code-unit slice can
+    // split the pair and leave a lone high surrogate, which makes encodeURIComponent() throw
+    // downstream in contentDispositionAttachment().
+    const astralName = '𐐀'.repeat(200);
+    const name = buildCertificateFileName(astralName, '2025-06-01T00:00:00.000Z', 'evt-15');
+    expect(() => encodeURIComponent(name)).not.toThrow();
+  });
+
+  it('keeps the date suffix intact for a long name whose diacritics expand under NFD normalization', () => {
+    vi.stubEnv('TZ', 'UTC');
+    // sanitizeFilename() NFD-normalizes the whole string, which expands each precomposed 'é'
+    // into 'e' + a combining acute — budgeting the name against the pre-expansion length let a
+    // long accented name grow past the overall cap and crowd the date out of the final trim.
+    const accentedName = 'é'.repeat(100);
+    const name = buildCertificateFileName(accentedName, '2025-06-01T00:00:00.000Z', 'evt-14');
+    expect(name.endsWith('-2025-06-01.pdf')).toBe(true);
+  });
 });
