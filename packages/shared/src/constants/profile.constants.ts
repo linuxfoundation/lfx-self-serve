@@ -179,6 +179,27 @@ export const LFX_ONE_WORK_EXPERIENCE_SOURCE = 'lfxOne';
 export const EMAIL_ALREADY_LINKED_MESSAGE = 'This email is already linked to another account';
 
 /**
+ * Path/fragment vocabulary for the Flow C `returnTo` contract and the Settings page's TOC
+ * deep-link sections. Shared across the BFF allowlist (profile.controller.ts), the legacy-page
+ * redirects (profile.routes.ts), and AccountSettingsComponent's section ids so a rename can't
+ * silently desync the redirect target from the deep link it's supposed to land on.
+ */
+export const PROFILE_SETTINGS_PATH = '/profile/settings';
+export const PROFILE_EMAIL_PATH = '/profile/email';
+export const PROFILE_EMAILS_PATH = '/profile/emails';
+export const PROFILE_PASSWORD_PATH = '/profile/password';
+
+/**
+ * AccountSettingsComponent's TOC section ids, doubling as the DOM element ids the deep-link
+ * fragment scrolls to. See the note on the path constants above.
+ */
+export const ACCOUNT_SETTINGS_SECTIONS = {
+  EMAIL_SETTINGS: 'email-settings',
+  PASSWORD: 'password',
+  DEVELOPER_SETTINGS: 'developer-settings',
+} as const;
+
+/**
  * Error codes from the Flow C profile-auth (`/passwordless/callback`) round trip,
  * owned by ProfileLayoutComponent — it's alive on every /profile/* route, so it
  * handles these once regardless of which tab triggered the flow. `invalid_state`

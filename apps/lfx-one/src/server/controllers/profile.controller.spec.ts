@@ -38,6 +38,8 @@ const {
   },
   emailVerificationSvc: {
     getUserEmails: vi.fn(),
+    setPrimaryEmail: vi.fn(),
+    sendPasswordResetLink: vi.fn(),
   },
   forwardsSvc: {
     getForward: vi.fn(),
@@ -58,6 +60,10 @@ vi.mock('@lfx-one/shared/constants', () => ({
   EMAIL_ALREADY_LINKED_MESSAGE: 'already linked',
   EMAIL_REGEX: /.+/,
   PURCHASE_LINUX_URL: 'https://example.com',
+  PROFILE_EMAIL_PATH: '/profile/email',
+  PROFILE_EMAILS_PATH: '/profile/emails',
+  PROFILE_PASSWORD_PATH: '/profile/password',
+  PROFILE_SETTINGS_PATH: '/profile/settings',
 }));
 vi.mock('@lfx-one/shared/interfaces', () => ({}));
 vi.mock('@lfx-one/shared/utils', () => ({ isIdentityAlreadyLinkedError: vi.fn(() => false) }));
@@ -354,5 +360,59 @@ describe('ProfileController.getLinuxAlias', () => {
     expect(res.json).toHaveBeenCalledWith(expect.objectContaining({ state: 'claimed', forwardTo: null }));
     expect(res.json.mock.calls[0][0]).not.toHaveProperty('forwardAuthRequired');
     expect(forwardsSvc.getForward).not.toHaveBeenCalled();
+  });
+});
+
+describe('ProfileController.setPrimaryEmail', () => {
+  let controller: ProfileController;
+
+  beforeEach(() => {
+    vi.clearAllMocks();
+    profileAuthSvc.isProfileAuthConfigured.mockReturnValue(true);
+    controller = new ProfileController();
+  });
+
+  it('responds 403 management_token_required with the /profile/emails authorize_url when no management token is in session', async () => {
+    profileAuthSvc.getManagementToken.mockReturnValue(undefined);
+    const res = buildRes();
+    const next = vi.fn();
+
+    await controller.setPrimaryEmail(buildReq({ params: { emailId: 'user@example.com' } }), res, next);
+
+    expect(res.status).toHaveBeenCalledWith(403);
+    expect(res.json).toHaveBeenCalledWith({
+      error: 'management_token_required',
+      message: 'Profile authorization required to change the primary email',
+      authorize_url: '/api/profile/auth/start?returnTo=%2Fprofile%2Femails',
+    });
+    expect(emailVerificationSvc.setPrimaryEmail).not.toHaveBeenCalled();
+    expect(next).not.toHaveBeenCalled();
+  });
+});
+
+describe('ProfileController.sendPasswordResetEmail', () => {
+  let controller: ProfileController;
+
+  beforeEach(() => {
+    vi.clearAllMocks();
+    profileAuthSvc.isProfileAuthConfigured.mockReturnValue(true);
+    controller = new ProfileController();
+  });
+
+  it('responds 403 management_token_required with the /profile/password authorize_url when no management token is in session', async () => {
+    profileAuthSvc.getManagementToken.mockReturnValue(undefined);
+    const res = buildRes();
+    const next = vi.fn();
+
+    await controller.sendPasswordResetEmail(buildReq(), res, next);
+
+    expect(res.status).toHaveBeenCalledWith(403);
+    expect(res.json).toHaveBeenCalledWith({
+      error: 'management_token_required',
+      message: 'Profile authorization required to send a password reset link',
+      authorize_url: '/api/profile/auth/start?returnTo=%2Fprofile%2Fpassword',
+    });
+    expect(emailVerificationSvc.sendPasswordResetLink).not.toHaveBeenCalled();
+    expect(next).not.toHaveBeenCalled();
   });
 });
