@@ -94,7 +94,7 @@
             <!-- Close-date: countdown chip at ≤ 7 days (amber pill), absolute date otherwise. State C reads "Closed". -->
             @if (voterState() === 'closed') {
               <span class="inline-flex items-center gap-1" data-testid="vote-results-drawer-voter-close-date">
-                <span>Closed {{ voteData.end_time | date: 'MMM d, y' }}</span>
+                <span>Closed {{ voteData.end_time | voteDeadline: voteData.end_time_timezone }}</span>
                 @if (voteEndedEarlyTooltip(); as earlyCloseTooltip) {
                   <button
                     type="button"
@@ -111,11 +111,10 @@
             } @else if (closeDateDisplay().isCountdown) {
               <span
                 class="bg-amber-50 text-amber-700 border border-amber-200 text-xs px-2.5 py-1 rounded font-medium"
-                [pTooltip]="closeDateDisplay().absolute"
-                tooltipPosition="top"
                 data-testid="vote-results-drawer-voter-countdown">
                 {{ closeDateDisplay().chip }}
               </span>
+              <span class="text-xs text-slate-500" data-testid="vote-results-drawer-voter-deadline">{{ closeDateDisplay().absolute }}</span>
             } @else {
               <span data-testid="vote-results-drawer-voter-close-date">{{ closeDateDisplay().chip }}</span>
             }
@@ -134,7 +133,7 @@
             <span class="text-slate-400">•</span>
             @if (isVoteClosed()) {
               <span class="inline-flex items-center gap-1">
-                <span>Closed {{ voteData.end_time | date: 'MMM d, y' }}</span>
+                <span>Closed {{ voteData.end_time | voteDeadline: voteData.end_time_timezone }}</span>
                 @if (voteEndedEarlyTooltip(); as earlyCloseTooltip) {
                   <button
                     type="button"
@@ -149,7 +148,7 @@
                 }
               </span>
             } @else {
-              <span>Due {{ voteData.end_time | date: 'MMM d, y' }}</span>
+              <span>Due {{ voteData.end_time | voteDeadline: voteData.end_time_timezone }}</span>
             }
             <span class="text-slate-400">•</span>
             <span>{{ votingMethodText() }}</span>

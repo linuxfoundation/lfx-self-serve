@@ -3,7 +3,7 @@
 
 import { afterEach, describe, expect, it, vi } from 'vitest';
 
-import { formatIsoDateLabel, localDateStamp, normalizeSnowflakeTimestamp, timeAgo } from './date-time.utils';
+import { daysUntilInTimezone, formatIsoDateLabel, formatVoteDeadline, localDateStamp, normalizeSnowflakeTimestamp, timeAgo } from './date-time.utils';
 
 /**
  * The fallback contract is the whole point of this helper: anything that is not a real
@@ -139,5 +139,52 @@ describe('localDateStamp', () => {
     vi.setSystemTime(new Date('2026-01-05T20:00:00Z'));
 
     expect(localDateStamp()).toBe('20260105');
+  });
+});
+
+describe('formatVoteDeadline', () => {
+  // 2026-11-16T01:00Z is Nov 15, 5:00 PM in Los Angeles (PST, UTC-8) and 8:00 PM in New York (EST, UTC-5).
+  const INSTANT = '2026-11-16T01:00:00.000Z';
+
+  it('renders the deadline in the vote timezone', () => {
+    expect(formatVoteDeadline(INSTANT, 'America/New_York')).toBe('Nov 15, 2026 8:00 PM EST');
+  });
+
+  it('falls back to Pacific for legacy votes with no stored zone', () => {
+    expect(formatVoteDeadline(INSTANT, null)).toBe('Nov 15, 2026 5:00 PM PST');
+    expect(formatVoteDeadline(INSTANT)).toBe('Nov 15, 2026 5:00 PM PST');
+  });
+
+  it('falls back to Pacific for an unparseable zone rather than throwing', () => {
+    expect(formatVoteDeadline(INSTANT, 'Not/AZone')).toBe('Nov 15, 2026 5:00 PM PST');
+  });
+
+  it('returns an empty string for missing or invalid input', () => {
+    expect(formatVoteDeadline(null)).toBe('');
+    expect(formatVoteDeadline('not-a-date', 'America/New_York')).toBe('');
+  });
+});
+
+describe('daysUntilInTimezone', () => {
+  afterEach(() => {
+    vi.useRealTimers();
+  });
+
+  // Noon UTC on Aug 11; the due instant is Aug 11 11:59 PM Pacific but Aug 12 in UTC —
+  // the one case where the zone decides whether a vote closes "today" or "tomorrow".
+  it('counts day boundaries in the given zone, not the host zone', () => {
+    vi.useFakeTimers();
+    vi.setSystemTime(new Date('2026-08-11T12:00:00Z'));
+    const due = '2026-08-12T06:59:00.000Z';
+
+    expect(daysUntilInTimezone(due, 'America/Los_Angeles')).toBe(0);
+    expect(daysUntilInTimezone(due, 'UTC')).toBe(1);
+  });
+
+  it('falls back to Pacific when no zone is given', () => {
+    vi.useFakeTimers();
+    vi.setSystemTime(new Date('2026-08-11T12:00:00Z'));
+
+    expect(daysUntilInTimezone('2026-08-12T06:59:00.000Z', null)).toBe(0);
   });
 });

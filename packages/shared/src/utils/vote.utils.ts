@@ -2,10 +2,13 @@
 // SPDX-License-Identifier: MIT
 
 import { addDays } from 'date-fns';
+import { toZonedTime } from 'date-fns-tz';
 import { FormControl, type FormGroup } from '@angular/forms';
 import { DRAFT_VOTE_DEFAULT_DURATION_DAYS, DRAFT_VOTE_PLACEHOLDER_QUESTION, VOTE_COMMENT_RESPONSE_MAX_LENGTH } from '../constants/poll.constants';
+import { LEGACY_VOTE_TIMEZONE } from '../constants/timezones.constants';
 import { CommitteeMemberVotingStatus } from '../enums/committee-member.enum';
 import { maxCodePointsValidator } from '../validators/max-code-points.validator';
+import { combineDateTime, formatTo12HourInTimezone } from './date-time.utils';
 import type { PaginatedResponse } from '../interfaces/api.interface';
 import type { CommitteeReference } from '../interfaces/committee.interface';
 import type {
@@ -115,13 +118,18 @@ export function mapApiCommentPromptToFormValue(prompt: PollCommentPrompt): Comme
  */
 export function mapVoteToFormValue(vote: Vote): VoteFormValue {
   const committee: CommitteeReference | null = vote.committee_uid ? { uid: vote.committee_uid, name: vote.committee_name } : null;
+  // Legacy votes carry no stored zone — hydrate in Pacific, the canonical reading of their end_time.
+  const zone = vote.end_time_timezone || LEGACY_VOTE_TIMEZONE;
+  const endDate = vote.end_time ? new Date(vote.end_time) : null;
 
   return {
     title: vote.name,
     description: vote.description || '',
     committee,
     eligible_participants: mapFiltersToEligibility(vote.committee_filters),
-    close_date: vote.end_time ? new Date(vote.end_time) : null,
+    close_date: endDate ? toZonedTime(endDate, zone) : null,
+    close_time: endDate ? formatTo12HourInTimezone(endDate, zone) : '11:59 PM',
+    timezone: zone,
     allow_abstain: vote.allow_abstain ?? false,
     questions: (vote.poll_questions?.filter((question) => !isDraftPlaceholderPollQuestion(question)) ?? []).map(mapApiQuestionToFormValue),
     commentPrompts: (vote.poll_comment_prompts ?? []).map(mapApiCommentPromptToFormValue),
@@ -260,7 +268,8 @@ export function buildCreateVoteRequest(formValue: VoteFormValue, projectUid: str
   return {
     name: formValue.title.trim(),
     description: formValue.description?.trim() || '',
-    end_time: formValue.close_date ? formValue.close_date.toISOString() : '',
+    end_time: formValue.close_date ? combineDateTime(formValue.close_date, formValue.close_time, formValue.timezone) : '',
+    end_time_timezone: formValue.timezone || undefined,
     project_uid: projectUid,
     committee_uid: formValue.committee?.uid || '',
     committee_filters: mapEligibilityToFilters(formValue.eligible_participants),
@@ -278,7 +287,10 @@ export function buildDraftVoteRequest(formValue: VoteFormValue, projectUid: stri
   return {
     name: formValue.title.trim(),
     description: formValue.description?.trim() || '',
-    end_time: formValue.close_date?.toISOString() ?? addDays(new Date(), DRAFT_VOTE_DEFAULT_DURATION_DAYS).toISOString(),
+    end_time: formValue.close_date
+      ? combineDateTime(formValue.close_date, formValue.close_time, formValue.timezone)
+      : addDays(new Date(), DRAFT_VOTE_DEFAULT_DURATION_DAYS).toISOString(),
+    end_time_timezone: formValue.timezone || undefined,
     project_uid: projectUid,
     committee_uid: formValue.committee?.uid || '',
     committee_filters: mapEligibilityToFilters(formValue.eligible_participants),
@@ -298,7 +310,8 @@ export function buildUpdateVoteRequest(formValue: VoteFormValue, projectUid: str
   return {
     name: formValue.title.trim(),
     description: formValue.description?.trim() || '',
-    end_time: formValue.close_date ? formValue.close_date.toISOString() : '',
+    end_time: formValue.close_date ? combineDateTime(formValue.close_date, formValue.close_time, formValue.timezone) : '',
+    end_time_timezone: formValue.timezone || undefined,
     project_uid: projectUid,
     committee_uid: formValue.committee?.uid || '',
     committee_filters: mapEligibilityToFilters(formValue.eligible_participants),
@@ -316,7 +329,10 @@ export function buildDraftUpdateVoteRequest(formValue: VoteFormValue, projectUid
   return {
     name: formValue.title.trim(),
     description: formValue.description?.trim() || '',
-    end_time: formValue.close_date?.toISOString() ?? addDays(new Date(), DRAFT_VOTE_DEFAULT_DURATION_DAYS).toISOString(),
+    end_time: formValue.close_date
+      ? combineDateTime(formValue.close_date, formValue.close_time, formValue.timezone)
+      : addDays(new Date(), DRAFT_VOTE_DEFAULT_DURATION_DAYS).toISOString(),
+    end_time_timezone: formValue.timezone || undefined,
     project_uid: projectUid,
     committee_uid: formValue.committee?.uid || '',
     committee_filters: mapEligibilityToFilters(formValue.eligible_participants),

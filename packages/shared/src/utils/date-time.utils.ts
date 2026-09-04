@@ -1,7 +1,7 @@
 // Copyright The Linux Foundation and each contributor to LFX.
 // SPDX-License-Identifier: MIT
 
-import { fromZonedTime, getTimezoneOffset, toZonedTime } from 'date-fns-tz';
+import { formatInTimeZone, fromZonedTime, getTimezoneOffset, toZonedTime } from 'date-fns-tz';
 
 // Direct file imports (not the '../constants' barrel): unlike activity-feed.utils.ts (see its
 // comment, and constants/index.spec.ts for the invariant), this isn't just defensive — a live path
@@ -9,7 +9,7 @@ import { fromZonedTime, getTimezoneOffset, toZonedTime } from 'date-fns-tz';
 // '../utils/committee.utils' -> './date-time.utils'), so importing the constants barrel here would
 // close an actual cycle today. The two underlying constant files sidestep that entirely.
 import { DAYS_IN_WEEK, DEFAULT_REPEAT_INTERVAL, MINUTES_IN_HOUR, MS_IN_DAY, TIME_ROUNDING_MINUTES, WEEKDAY_CODES } from '../constants/meeting.constants';
-import { TIMEZONES } from '../constants/timezones.constants';
+import { LEGACY_VOTE_TIMEZONE, TIMEZONES } from '../constants/timezones.constants';
 import { RecurrenceType } from '../enums';
 import type { MeetingRecurrence, TimezoneOption } from '../interfaces';
 
@@ -241,6 +241,37 @@ export function formatShortDateInTimezone(date: Date, timezone: string): string 
 }
 
 /**
+ * Formats a vote deadline as "MMM d, yyyy h:mm a zzz" (e.g. "Nov 15, 2026 5:00 PM PST") in the
+ * vote's own timezone — LEGACY_VOTE_TIMEZONE when the vote predates stored zones.
+ */
+export function formatVoteDeadline(value: string | Date | null | undefined, timezone?: string | null): string {
+  if (!value) return '';
+  const date = typeof value === 'string' ? new Date(value) : value;
+  if (Number.isNaN(date.getTime())) return '';
+
+  try {
+    return formatInTimeZone(date, timezone || LEGACY_VOTE_TIMEZONE, 'MMM d, yyyy h:mm a zzz');
+  } catch {
+    return formatInTimeZone(date, LEGACY_VOTE_TIMEZONE, 'MMM d, yyyy h:mm a zzz');
+  }
+}
+
+/**
+ * Whole calendar days from today to the given instant, both days read in the given timezone
+ * (LEGACY_VOTE_TIMEZONE fallback) — single source so the table chip and drawer countdown agree.
+ */
+export function daysUntilInTimezone(value: string | Date, timezone?: string | null): number {
+  const zone = timezone || LEGACY_VOTE_TIMEZONE;
+  const due = typeof value === 'string' ? new Date(value) : value;
+  const zonedNow = toZonedTime(new Date(), zone);
+  const zonedDue = toZonedTime(due, zone);
+  const today = new Date(zonedNow.getFullYear(), zonedNow.getMonth(), zonedNow.getDate());
+  const dueDay = new Date(zonedDue.getFullYear(), zonedDue.getMonth(), zonedDue.getDate());
+  // round, not ceil: same-zone midnights differ by exact 24h multiples except across DST (23/25h days)
+  return Math.round((dueDay.getTime() - today.getTime()) / MS_IN_DAY);
+}
+
+/**
  * Parses a 12-hour time string and returns hours and minutes
  */
 export function parseTime12Hour(time: string): { hours: number; minutes: number } | null {
@@ -283,6 +314,20 @@ export function getTimezoneUtcOffsetString(timezone: string, date: Date): string
   } catch {
     return '';
   }
+}
+
+/**
+ * Maps TIMEZONES to select options with each zone's UTC offset at the given date appended —
+ * the catalog's static offsets lie across DST boundaries, so labels are computed per deadline date.
+ */
+export function buildTimezoneOptions(date: Date): { label: string; value: string }[] {
+  return TIMEZONES.map((tz) => {
+    const offset = getTimezoneUtcOffsetString(tz.value, date);
+    return {
+      label: offset ? `${tz.label} (${offset})` : tz.label,
+      value: tz.value,
+    };
+  });
 }
 
 /**

@@ -22,6 +22,8 @@ import {
 import { VOTE_COMMENT_RESULTS_PAGE_SIZE, VOTE_COMMENT_RESULTS_ROWS_PER_PAGE_OPTIONS } from '@lfx-one/shared/constants';
 import {
   computeVoteParticipationStats,
+  daysUntilInTimezone,
+  formatVoteDeadline,
   getVoteEndedEarlyDetailTooltip,
   isVoteEndedEarly,
   sortCommentResponsesByRecency,
@@ -30,6 +32,7 @@ import {
 import { LinkifyPipe } from '@pipes/linkify.pipe';
 import { PollStatusLabelPipe } from '@pipes/poll-status-label.pipe';
 import { PollStatusSeverityPipe } from '@pipes/poll-status-severity.pipe';
+import { VoteDeadlinePipe } from '@pipes/vote-deadline.pipe';
 import { VoteService } from '@services/vote.service';
 import { DrawerModule } from 'primeng/drawer';
 import { PaginatorModule, PaginatorState } from 'primeng/paginator';
@@ -52,6 +55,7 @@ import { catchError, combineLatest, distinctUntilChanged, EMPTY, finalize, map, 
     TooltipModule,
     ExpandableTextComponent,
     LinkifyPipe,
+    VoteDeadlinePipe,
   ],
   templateUrl: './vote-results-drawer.component.html',
   styleUrl: './vote-results-drawer.component.scss',
@@ -486,10 +490,9 @@ export class VoteResultsDrawerComponent {
     return computed(() => {
       const v = this.vote();
       if (!v?.end_time) return { chip: '', absolute: '', isCountdown: false };
-      const end = new Date(v.end_time);
-      const absolute = formatDate(end, 'MMM d, y', 'en-US');
-      const msLeft = end.getTime() - Date.now();
-      const daysLeft = Math.ceil(msLeft / (1000 * 60 * 60 * 24));
+      // Both strings read the vote's zone (Pacific for legacy votes) so chip and absolute never disagree.
+      const absolute = formatVoteDeadline(v.end_time, v.end_time_timezone);
+      const daysLeft = daysUntilInTimezone(v.end_time, v.end_time_timezone);
       if (daysLeft >= 0 && daysLeft <= 7) {
         let chip: string;
         if (daysLeft === 0) chip = 'Closes today';

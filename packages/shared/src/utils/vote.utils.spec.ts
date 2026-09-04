@@ -29,6 +29,8 @@ function formValue(overrides: Partial<VoteFormValue> = {}): VoteFormValue {
     committee: { uid: 'committee-uid', name: 'Board' },
     eligible_participants: 'voting_rep',
     close_date: new Date('2025-06-01T00:00:00Z'),
+    close_time: '11:59 PM',
+    timezone: 'UTC',
     allow_abstain: false,
     questions: [{ question: 'Who should join?', response_type: 'single', options: ['Alice', 'Bob'] }],
     commentPrompts: [],
@@ -58,6 +60,15 @@ for (const [name, build] of voteRequestBuilders) {
       expect(request.allow_abstain).toBe(false);
       expect('allow_abstain' in request).toBe(true);
     });
+
+    // close_date is built with the local constructor because the calendar (and combineDateTime)
+    // read local wall-clock fields — an ISO-string fixture would shift with the test machine's TZ.
+    it('combines close_date and close_time into end_time in the picked timezone', () => {
+      const request = build(formValue({ close_date: new Date(2025, 5, 1) }), 'project-uid');
+
+      expect(request.end_time).toBe('2025-06-01T23:59:00.000Z');
+      expect(request.end_time_timezone).toBe('UTC');
+    });
   });
 }
 
@@ -84,6 +95,27 @@ describe('mapVoteToFormValue', () => {
 
   it('defaults allow_abstain to false when the vote predates the field', () => {
     expect(mapVoteToFormValue(vote()).allow_abstain).toBe(false);
+  });
+
+  it('hydrates close time and zone from end_time in the stored timezone', () => {
+    // 2025-06-01T06:59Z is 2:59 AM in New York (EDT, UTC-4).
+    const form = mapVoteToFormValue(vote({ end_time: '2025-06-01T06:59:00.000Z', end_time_timezone: 'America/New_York' }));
+
+    expect(form.timezone).toBe('America/New_York');
+    expect(form.close_time).toBe('02:59 AM');
+    // close_date's local fields read the vote zone's wall-clock (toZonedTime shift), host-TZ independent.
+    expect(form.close_date?.getFullYear()).toBe(2025);
+    expect(form.close_date?.getMonth()).toBe(5);
+    expect(form.close_date?.getDate()).toBe(1);
+  });
+
+  it('hydrates legacy votes (no stored zone) in the Pacific fallback zone', () => {
+    // 2025-06-01T07:00Z is midnight in Los Angeles (PDT, UTC-7).
+    const form = mapVoteToFormValue(vote({ end_time: '2025-06-01T07:00:00.000Z' }));
+
+    expect(form.timezone).toBe('America/Los_Angeles');
+    expect(form.close_time).toBe('12:00 AM');
+    expect(form.close_date?.getDate()).toBe(1);
   });
 });
 

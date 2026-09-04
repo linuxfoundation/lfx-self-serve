@@ -22,10 +22,11 @@ import {
   buildDraftUpdateVoteRequest,
   buildDraftVoteRequest,
   buildUpdateVoteRequest,
+  getUserTimezone,
   mapVoteToFormValue,
   markFormControlsAsTouched,
 } from '@lfx-one/shared/utils';
-import { maxCodePointsValidator, trimmedMinLength, trimmedRequired, validCommitteeReference } from '@lfx-one/shared/validators';
+import { maxCodePointsValidator, trimmedMinLength, trimmedRequired, validCommitteeReference, voteDeadlineValidator } from '@lfx-one/shared/validators';
 import { ProjectContextService } from '@services/project-context.service';
 import { ProjectService } from '@services/project.service';
 import { VoteService } from '@services/vote.service';
@@ -434,6 +435,8 @@ export class VoteManageComponent {
       committee: formValue.committee,
       eligible_participants: formValue.eligible_participants,
       close_date: formValue.close_date,
+      close_time: formValue.close_time,
+      timezone: formValue.timezone,
       allow_abstain: formValue.allow_abstain,
     });
 
@@ -475,21 +478,28 @@ export class VoteManageComponent {
 
   // Private initializer functions
   private createFormGroup(): FormGroup {
-    return new FormGroup({
-      // Step 1: Vote Basics
-      title: new FormControl('', [trimmedRequired(), trimmedMinLength(3), Validators.maxLength(200)]),
-      description: new FormControl(''),
-      committee: new FormControl<CommitteeReference | null>(null, [Validators.required, validCommitteeReference()]),
-      eligible_participants: new FormControl('', [Validators.required]),
-      close_date: new FormControl<Date | null>(null, [Validators.required]),
-      allow_abstain: new FormControl<boolean>(false, { nonNullable: true }),
+    return new FormGroup(
+      {
+        // Step 1: Vote Basics
+        title: new FormControl('', [trimmedRequired(), trimmedMinLength(3), Validators.maxLength(200)]),
+        description: new FormControl(''),
+        committee: new FormControl<CommitteeReference | null>(null, [Validators.required, validCommitteeReference()]),
+        eligible_participants: new FormControl('', [Validators.required]),
+        close_date: new FormControl<Date | null>(null, [Validators.required]),
+        close_time: new FormControl<string>('11:59 PM', { nonNullable: true, validators: [Validators.required] }),
+        // Deliberately stricter than the API contract — end_time_timezone is optional only so legacy votes
+        // stay valid; combineDateTime needs a zone to build a meaningful end_time, so the form requires one.
+        timezone: new FormControl<string>(getUserTimezone(), { nonNullable: true, validators: [Validators.required] }),
+        allow_abstain: new FormControl<boolean>(false, { nonNullable: true }),
 
-      // Step 2: Vote Questions (array of questions)
-      questions: new FormArray([this.createQuestionFormGroup()], [Validators.minLength(1)]),
+        // Step 2: Vote Questions (array of questions)
+        questions: new FormArray([this.createQuestionFormGroup()], [Validators.minLength(1)]),
 
-      // Step 2: Comment Questions (array of optional comment prompts)
-      commentPrompts: new FormArray([]),
-    });
+        // Step 2: Comment Questions (array of optional comment prompts)
+        commentPrompts: new FormArray([]),
+      },
+      { validators: voteDeadlineValidator() }
+    );
   }
 
   private initIsEditMode(): Signal<boolean> {
@@ -717,17 +727,17 @@ export class VoteManageComponent {
 
     switch (step) {
       case 1: {
-        // Use form validators for all Step 1 fields
-        // Validators: title (trimmedRequired, trimmedMinLength(3), maxLength(200))
-        //             committee (required, validCommitteeReference)
-        //             eligible_participants (required)
-        //             close_date (required)
+        // Use form validators for all Step 1 fields.
+        // Group-level voteDeadlineValidator surfaces on form.errors, not a control.
         const titleValid = !!form.get('title')?.valid;
         // Committee is valid if locked via group context, or if the form control passes validation
         const committeeValid = !!this.committeeContext() || !!form.get('committee')?.valid;
         const eligibleParticipantsValid = !!form.get('eligible_participants')?.valid;
         const closeDateValid = !!form.get('close_date')?.valid;
-        return titleValid && committeeValid && eligibleParticipantsValid && closeDateValid;
+        const closeTimeValid = !!form.get('close_time')?.valid;
+        const timezoneValid = !!form.get('timezone')?.valid;
+        const deadlineValid = !form.errors?.['futureDateTime'];
+        return titleValid && committeeValid && eligibleParticipantsValid && closeDateValid && closeTimeValid && timezoneValid && deadlineValid;
       }
       case 2: {
         const questionsArray = form.get('questions') as FormArray;

@@ -1,7 +1,7 @@
 // Copyright The Linux Foundation and each contributor to LFX.
 // SPDX-License-Identifier: MIT
 
-import { DatePipe, formatDate } from '@angular/common';
+import { formatDate } from '@angular/common';
 import { Component, computed, DestroyRef, effect, inject, input, output, signal, Signal, untracked } from '@angular/core';
 import { takeUntilDestroyed, toObservable } from '@angular/core/rxjs-interop';
 import { FormControl, FormGroup, ReactiveFormsModule } from '@angular/forms';
@@ -20,6 +20,7 @@ import { DueDateLabelColorPipe } from '@pipes/due-date-label-color.pipe';
 import { DueDateLabelPipe } from '@pipes/due-date-label.pipe';
 import { PollStatusLabelPipe } from '@pipes/poll-status-label.pipe';
 import { PollStatusSeverityPipe } from '@pipes/poll-status-severity.pipe';
+import { VoteDeadlinePipe } from '@pipes/vote-deadline.pipe';
 import { VoteService } from '@services/vote.service';
 import { ConfirmationService, MessageService } from 'primeng/api';
 import { ConfirmDialogModule } from 'primeng/confirmdialog';
@@ -34,7 +35,6 @@ import { combineLatest, debounceTime, distinctUntilChanged, map, startWith, take
     TableComponent,
     TagComponent,
     ButtonComponent,
-    DatePipe,
     ReactiveFormsModule,
     InputTextComponent,
     SelectComponent,
@@ -42,6 +42,7 @@ import { combineLatest, debounceTime, distinctUntilChanged, map, startWith, take
     PollStatusSeverityPipe,
     DueDateLabelPipe,
     DueDateLabelColorPipe,
+    VoteDeadlinePipe,
     TooltipModule,
     ConfirmDialogModule,
     EmptyStateComponent,
