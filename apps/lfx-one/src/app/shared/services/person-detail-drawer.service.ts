@@ -79,13 +79,19 @@ export class PersonDetailDrawerService {
           this._identityUnavailable.set(false);
           const url = `/api/orgs/${encodeURIComponent(orgUid)}/lens/people/${encodeURIComponent(context.personKey)}/detail`;
           return this.http.get<OrgAllEmployeeDetail>(url).pipe(
-            map((detail) => ({ detail, companyEmails: detail.companyEmails })),
+            // Fail closed on the status. `resolved` is the ONLY value that exposes addresses; anything
+            // else — `failed`, `unavailable`, or a missing status — is rendered as "couldn't be loaded"
+            // or "not available", never as "none on record". A missing status is the pre-change detail
+            // shape from an older replica during a rolling deployment, whose `companyEmails` held the
+            // demo-derived addresses this feature deletes; those must not reach the panel.
+            map((detail) => ({
+              detail,
+              companyEmails: detail.companyEmailsStatus === 'resolved' ? detail.companyEmails : [],
+            })),
             tap((result) => {
-              // The address read is isolated server-side, so the detail response can succeed while the
-              // address section did not. Reflect that here rather than letting an empty array be read
-              // as "none on record".
-              this._emailError.set(result.detail?.companyEmailsStatus === 'failed');
-              this._identityUnavailable.set(result.detail?.companyEmailsStatus === 'unavailable');
+              const status = result.detail?.companyEmailsStatus;
+              this._identityUnavailable.set(status === 'unavailable');
+              this._emailError.set(status !== 'resolved' && status !== 'unavailable');
               this._loading.set(false);
             }),
             catchError(() => {
@@ -108,8 +114,21 @@ export class PersonDetailDrawerService {
           this._identityUnavailable.set(false);
           const url = `/api/orgs/${encodeURIComponent(orgUid)}/lens/people/by-username/${encodeURIComponent(context.username)}/company-emails`;
           return this.http.get<OrgPersonCompanyEmailsResponse>(url).pipe(
-            map((response) => ({ detail: null, companyEmails: response.companyEmails })),
-            tap(() => this._loading.set(false)),
+            // Same fail-closed contract as the detail branch: `unavailable` is a real answer here (the
+            // username is not on the address model's spine — an Access principal with no warehouse
+            // presence — or the server flag is off) and must render as "not available", not "none on
+            // record". A missing status is an older replica and is treated as failed. The signals are
+            // set before `map` drops the status from the result.
+            tap((response) => {
+              const status = response.companyEmailsStatus;
+              this._identityUnavailable.set(status === 'unavailable');
+              this._emailError.set(status !== 'resolved' && status !== 'unavailable');
+              this._loading.set(false);
+            }),
+            map((response) => ({
+              detail: null,
+              companyEmails: response.companyEmailsStatus === 'resolved' ? response.companyEmails : [],
+            })),
             // Keep failures local to this optional lookup — no personKey means no activity was ever
             // fetched, so setting the shared _error signal here would wrongly flip the activity tabs
             // to "Couldn't load this person's details" instead of the truthful "not available" state.

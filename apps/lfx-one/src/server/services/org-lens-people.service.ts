@@ -20,6 +20,7 @@ import { isFilterSafeIdentifier, splitDisplayName } from '@lfx-one/shared/utils'
 
 import { Request } from 'express';
 
+import { isServerFeatureEnabled, ServerFeatureFlag } from '../helpers/server-feature-flag.helper';
 import { logger } from './logger.service';
 import { OrgPeopleDirectoryService } from './org-people-directory.service';
 import { SnowflakeService } from './snowflake.service';
@@ -161,7 +162,7 @@ export class OrgLensPeopleService {
       // empty, and the drawer renders "not available from this view" rather than asserting the person
       // has no company address.
       const username = await this.resolveLiveOnlyUsername(req, accountId, personKey);
-      const live = username ? await this.tryFetchCompanyEmailsByUsername(accountId, username) : UNAVAILABLE_COMPANY_EMAILS;
+      const live = username ? await this.getCompanyEmailsByUsername(accountId, username) : UNAVAILABLE_COMPANY_EMAILS;
       return {
         personKey,
         boardSeats: [],
@@ -212,9 +213,45 @@ export class OrgLensPeopleService {
     };
   }
 
-  /** Company-affiliated emails for a person the caller identifies by LF username (governance surfaces). */
-  public async getCompanyEmailsByUsername(accountId: string, username: string): Promise<string[]> {
-    return this.fetchCompanyEmailsByUsername(accountId, username);
+  /**
+   * Company-affiliated emails for a person the caller identifies by LF username (governance surfaces).
+   *
+   * Returns a status, not a bare list, because an empty list has two very different meanings here and
+   * the panel must not conflate them (FR-009). `unavailable` when the server-side flag is off, or when
+   * the username is not on the address model's spine at this account — an Org Lens Access principal
+   * who is not a committee member, key contact or roster person has no warehouse presence, so the
+   * address model cannot speak to them at all. `resolved` with `[]` only when the spine knows the
+   * person and they genuinely hold no qualifying address.
+   */
+  public async getCompanyEmailsByUsername(accountId: string, username: string): Promise<CompanyEmailsResult> {
+    if (!isServerFeatureEnabled(ServerFeatureFlag.OrgLensCompanyEmails)) {
+      return UNAVAILABLE_COMPANY_EMAILS;
+    }
+    try {
+      if (!(await this.isUsernameOnSpine(accountId, username))) {
+        return UNAVAILABLE_COMPANY_EMAILS;
+      }
+    } catch (error) {
+      logger.info(undefined, 'get_org_lens_people_company_emails_by_username', 'spine probe failed; serving unavailable', { err: error });
+      return FAILED_COMPANY_EMAILS;
+    }
+    return this.tryFetchCompanyEmailsByUsername(accountId, username);
+  }
+
+  /**
+   * Whether the address model's spine knows this username at this account. Probed on the SPINE
+   * (`_ORG_PEOPLE_SPINE`), not on the emails table: the emails table only has rows where addresses
+   * exist, so it cannot distinguish "not on spine" from "no addresses".
+   */
+  private async isUsernameOnSpine(accountId: string, username: string): Promise<boolean> {
+    const query = `
+      SELECT 1 AS PRESENT
+      FROM ANALYTICS.PLATINUM_LFX_ONE._ORG_PEOPLE_SPINE
+      WHERE ACCOUNT_ID = ? AND LF_USERNAME = ?
+      LIMIT 1
+    `;
+    const result = await this.snowflakeService.execute<{ PRESENT: number }>(query, [accountId, username]);
+    return result.rows.length > 0;
   }
 
   /** Looks up a live-only person's LF username from the live roster (access/board/committee/keyContact sources). */
@@ -393,7 +430,7 @@ export class OrgLensPeopleService {
       this.fetchCodeContributionRows(accountId, personKey),
       this.fetchEventRows(accountId, personKey),
       this.fetchTrainingRows(accountId, personKey),
-      this.tryFetchCompanyEmails(accountId, personKey),
+      this.tryFetchCompanyEmailsForPersonKey(accountId, personKey),
     ]);
     return {
       committeeRows,
@@ -405,8 +442,23 @@ export class OrgLensPeopleService {
     };
   }
 
-  /** Wraps the keyed read so a failure degrades this one section rather than the whole detail response. */
-  private async tryFetchCompanyEmails(accountId: string, personKey: string): Promise<CompanyEmailsResult> {
+  /**
+   * Wraps the keyed read so a failure degrades this one section rather than the whole detail response.
+   *
+   * Two identity states short-circuit to `unavailable` before any query: the server-side flag being off,
+   * and a `cdp:`-prefixed person key. The latter is a CDP roster member for whom the platform identity
+   * crosswalk (`silver_dim_member_user_mapping`) produced no Salesforce user — either they hold no LF
+   * identity, or they hold one but have no Crowd.dev activity since the mapping's activity window
+   * (measured: 10,093 current roster members with an LFID fall on that side). The address model is
+   * keyed on the Salesforce user, so a `cdp:` key can never join to it. Querying would return an empty
+   * set that the panel renders as "no company email on record" — a false statement for anyone in that
+   * population who holds a qualifying address. No verified identity resolved → not available, never
+   * none on record (DR-005 corollary 2, DR-011).
+   */
+  private async tryFetchCompanyEmailsForPersonKey(accountId: string, personKey: string): Promise<CompanyEmailsResult> {
+    if (!isServerFeatureEnabled(ServerFeatureFlag.OrgLensCompanyEmails) || personKey.startsWith('cdp:')) {
+      return UNAVAILABLE_COMPANY_EMAILS;
+    }
     try {
       return { companyEmails: await this.fetchCompanyEmails(accountId, personKey), companyEmailsStatus: 'resolved' };
     } catch (error) {

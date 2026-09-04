@@ -123,12 +123,16 @@ export class OrgLensPeopleController {
       this.assertUsername(username, operation);
       const startTime = logger.startOperation(req, operation, { org_uid: orgUid });
 
-      const companyEmails = await this.service.getCompanyEmailsByUsername(orgUid, username);
+      const result = await this.service.getCompanyEmailsByUsername(orgUid, username);
 
-      logger.success(req, operation, startTime, { org_uid: orgUid, company_email_count: companyEmails.length });
+      logger.success(req, operation, startTime, {
+        org_uid: orgUid,
+        company_email_count: result.companyEmails.length,
+        company_emails_status: result.companyEmailsStatus,
+      });
 
       res.setHeader('Cache-Control', 'no-store');
-      res.json({ companyEmails });
+      res.json(result);
     } catch (error) {
       next(error);
     }

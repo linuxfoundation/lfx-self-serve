@@ -13,7 +13,7 @@ import {
   ResolvedMembershipContext,
   ReplaceKeyContactRequest,
 } from '@lfx-one/shared/interfaces';
-import { isFilterSafeIdentifier } from '@lfx-one/shared/utils';
+import { agreedUsername, isFilterSafeIdentifier } from '@lfx-one/shared/utils';
 import { Request } from 'express';
 
 import { MicroserviceError } from '../errors';
@@ -198,14 +198,25 @@ export class OrgLensKeyContactsService {
       })
     );
 
-    const byEmail = new Map<string, KeyContactEmployee>();
+    // Group every active document by address first, then resolve one username per group. Taking the
+    // username from whichever document happened to arrive first would let a group such as
+    // [bob, null] resolve to Bob, while the same incomplete group is rejected by agreedUsername on
+    // every other governance surface — and this identity is what the drawer fetches Bob's real
+    // addresses with. Fail closed instead: the group must agree on one non-empty username.
+    const docsByEmail = new Map<string, KeyContactDoc[]>();
     for (const d of docs) {
       if ((d.status ?? '').toLowerCase() === 'inactive') continue;
       const email = this.resolveEmail(d);
-      if (!email || byEmail.has(email)) continue;
+      if (!email) continue;
+      docsByEmail.set(email, [...(docsByEmail.get(email) ?? []), d]);
+    }
+
+    const employees: KeyContactEmployee[] = [];
+    for (const [email, group] of docsByEmail) {
+      const d = group[0];
       const firstName = (d.first_name ?? '').trim();
       const lastName = (d.last_name ?? '').trim();
-      byEmail.set(email, {
+      employees.push({
         email,
         firstName,
         lastName,
@@ -214,11 +225,12 @@ export class OrgLensKeyContactsService {
         initials: this.deriveInitials(firstName, lastName),
         avatarUrl: d.avatar?.trim() ? d.avatar.trim() : null,
         // Carried so a key-contact-only row in the All Employees roster still has an identity the
-        // person drawer can resolve addresses on. Null when the index omits it.
-        lfUsername: d.username?.trim() ? d.username.trim() : null,
+        // person drawer can resolve addresses on. Null when the index omits it on any document for
+        // this address, or when the documents disagree.
+        lfUsername: agreedUsername(group.map((doc) => doc.username)),
       });
     }
-    return [...byEmail.values()].sort((a, b) => a.fullName.localeCompare(b.fullName));
+    return employees.sort((a, b) => a.fullName.localeCompare(b.fullName));
   }
 
   // Resolves an active membership context or throws a not-found MicroserviceError.

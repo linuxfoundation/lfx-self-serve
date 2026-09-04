@@ -211,6 +211,14 @@ export type OrgCompanyEmailsStatus = 'resolved' | 'unavailable' | 'failed';
  */
 export interface OrgPersonCompanyEmailsResponse {
   companyEmails: string[];
+  /**
+   * Same three-way status as `OrgAllEmployeeDetail.companyEmailsStatus`. `unavailable` is the
+   * answer when the username is not on the address model's spine at this account (an Org Lens Access
+   * principal who is not a committee member, key contact or roster person), or when the server-side
+   * feature flag is off — never "none on record". A client that sees no status must treat the
+   * response as unavailable, not as an empty set.
+   */
+  companyEmailsStatus: OrgCompanyEmailsStatus;
 }
 
 /**
