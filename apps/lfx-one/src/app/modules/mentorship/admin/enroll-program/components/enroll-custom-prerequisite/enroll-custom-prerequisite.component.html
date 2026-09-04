@@ -1,0 +1,67 @@
+<!-- Copyright The Linux Foundation and each contributor to LFX. -->
+<!-- SPDX-License-Identifier: MIT -->
+
+<section class="rounded-2xl border border-gray-200 bg-white p-6 md:p-8 flex flex-col gap-5" [attr.data-testid]="'mentorship-enroll-custom-prereq-' + index()">
+  <div class="flex items-center justify-between gap-3">
+    <h3 class="text-base font-semibold text-gray-900">{{ title() }}</h3>
+    <lfx-button
+      label="Delete"
+      [text]="true"
+      size="small"
+      styleClass="!text-red-600 !px-0"
+      (onClick)="onDelete()"
+      [attr.data-testid]="'mentorship-enroll-custom-prereq-delete-' + index()" />
+  </div>
+
+  <div class="flex flex-col gap-1">
+    <div class="flex items-center justify-between">
+      <label class="text-sm font-medium text-gray-700" [attr.for]="'custom-prereq-name-' + index()">
+        Prerequisite Name <span class="text-red-500">*</span>
+      </label>
+      <span class="text-xs text-gray-400">{{ nameLength() }} / {{ nameMax }}</span>
+    </div>
+    <lfx-input-text
+      [form]="form"
+      control="name"
+      [id]="'custom-prereq-name-' + index()"
+      placeholder="Enter Prerequisite Name"
+      [dataTest]="'mentorship-enroll-custom-prereq-name-' + index()" />
+    @if (showErrors() && !form.controls.name.value.trim()) {
+      <p class="text-xs text-red-600">Prerequisite name is required.</p>
+    }
+  </div>
+
+  <div class="flex flex-col gap-1">
+    <label class="text-sm font-medium text-gray-700">Due Date <span class="text-red-500">*</span></label>
+    <lfx-calendar [form]="form" control="dueDate" placeholder="YYYY-MM-DD" dateFormat="yy-mm-dd" appendTo="body" styleClass="w-full" />
+    @if (showErrors() && !form.controls.dueDate.value) {
+      <p class="text-xs text-red-600">Due date is required.</p>
+    }
+  </div>
+
+  <div class="flex flex-col gap-1">
+    <div class="flex items-center justify-between">
+      <label class="text-sm font-medium text-gray-700" [attr.for]="'custom-prereq-description-' + index()">
+        Prerequisite Description <span class="text-red-500">*</span>
+      </label>
+      <span class="text-xs text-gray-400">{{ descriptionLength() }} / {{ descriptionMax }}</span>
+    </div>
+    <lfx-textarea
+      [form]="form"
+      control="description"
+      [id]="'custom-prereq-description-' + index()"
+      placeholder="Write a short description about your prerequisite"
+      [rows]="4"
+      [maxlength]="descriptionMax"
+      styleClass="w-full"
+      [required]="true" />
+    @if (showErrors() && !form.controls.description.value.trim()) {
+      <p class="text-xs text-red-600">Prerequisite description is required.</p>
+    }
+  </div>
+
+  <div class="flex items-start gap-3">
+    <lfx-checkbox [form]="form" control="requireFile" />
+    <p class="min-w-0 flex-1 text-sm text-gray-700 leading-5">{{ fileLabel }}</p>
+  </div>
+</section>

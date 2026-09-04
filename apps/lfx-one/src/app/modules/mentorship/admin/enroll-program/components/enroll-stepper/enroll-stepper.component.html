@@ -1,0 +1,46 @@
+<!-- Copyright The Linux Foundation and each contributor to LFX. -->
+<!-- SPDX-License-Identifier: MIT -->
+
+<div class="rounded-2xl border border-gray-200 bg-white px-4 py-5 md:px-6" data-testid="mentorship-enroll-stepper">
+  <ol class="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
+    @for (step of steps; track step; let index = $index) {
+      <li class="flex items-center gap-3 min-w-0 flex-1">
+        <div class="flex items-center gap-3 min-w-0">
+          <span
+            class="flex size-7 shrink-0 items-center justify-center rounded-full text-xs font-semibold"
+            [class.bg-emerald-500]="isComplete(step)"
+            [class.text-white]="isComplete(step)"
+            [class.bg-blue-50]="isCurrent(step)"
+            [class.border]="isCurrent(step)"
+            [class.border-blue-500]="isCurrent(step)"
+            [class.bg-gray-100]="!isComplete(step) && !isCurrent(step)"
+            [class.text-gray-500]="!isComplete(step) && !isCurrent(step)">
+            @if (isComplete(step)) {
+              <i class="fa-solid fa-check text-white text-xs" aria-hidden="true"></i>
+            } @else if (isCurrent(step)) {
+              <span class="size-3 rounded-full bg-blue-500"></span>
+            } @else {
+              <span class="size-3 rounded-full bg-gray-300"></span>
+            }
+          </span>
+          <span
+            class="text-sm truncate"
+            [class.text-emerald-600]="isComplete(step)"
+            [class.font-medium]="isComplete(step)"
+            [class.text-blue-700]="isCurrent(step)"
+            [class.font-semibold]="isCurrent(step)"
+            [class.text-gray-500]="!isComplete(step) && !isCurrent(step)">
+            {{ labels[step] }}
+          </span>
+        </div>
+        @if (index < steps.length - 1) {
+          <div
+            class="hidden sm:block h-px flex-1 mx-2"
+            [class.bg-emerald-500]="isComplete(step)"
+            [class.bg-gray-200]="!isComplete(step)"
+            aria-hidden="true"></div>
+        }
+      </li>
+    }
+  </ol>
+</div>

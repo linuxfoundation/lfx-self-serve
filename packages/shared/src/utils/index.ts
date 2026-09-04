@@ -51,6 +51,7 @@ export * from './invitation.utils';
 export * from './lens.utils';
 export * from './map-v1-band-to-v2';
 export * from './crowdfunding.utils';
+export * from './mentorship.utils';
 export * from './persona.utils';
 export * from './metric-trend.utils';
 export * from './org-meetings-insights.utils';

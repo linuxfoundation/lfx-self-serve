@@ -1,0 +1,53 @@
+<!-- Copyright The Linux Foundation and each contributor to LFX. -->
+<!-- SPDX-License-Identifier: MIT -->
+
+<div
+  class="flex items-center gap-4 p-5 cursor-pointer hover:bg-gray-50 transition-colors"
+  role="button"
+  tabindex="0"
+  [attr.aria-label]="program().name"
+  [attr.data-testid]="'mentorship-program-card-' + program().id"
+  (click)="onCardClick()"
+  (keydown.enter)="onCardClick()"
+  (keydown.space)="onCardClick(); $event.preventDefault()">
+  <!-- Avatar / Initials -->
+  <lfx-avatar
+    [image]="program().logoUrl"
+    [label]="initials()"
+    shape="square"
+    size="large"
+    [styleClass]="avatarStyleClass()"
+    [ariaLabel]="program().name + ' avatar'" />
+
+  <!-- Content -->
+  <div class="flex flex-col gap-1 min-w-0 flex-1">
+    <div class="flex items-center gap-2 flex-wrap">
+      <span class="text-xs font-medium text-gray-500">{{ seasonLine() }}</span>
+      <span class="inline-flex items-center text-xs font-semibold px-2 py-0.5 rounded-full" [class]="statusBadgeClass()">
+        {{ statusLabel() }}
+      </span>
+    </div>
+    <span class="text-base font-bold text-gray-900 truncate">{{ program().name }}</span>
+  </div>
+
+  <!-- Metrics -->
+  <div class="flex items-center gap-8 flex-shrink-0" data-testid="mentorship-program-card-metrics">
+    <div class="flex flex-col items-end">
+      <span class="text-[10px] font-semibold tracking-wider text-gray-400 uppercase">Mentors</span>
+      <span class="text-lg font-bold text-gray-900">{{ program().stats.mentors }}</span>
+    </div>
+    <div class="flex flex-col items-end">
+      <span class="text-[10px] font-semibold tracking-wider text-gray-400 uppercase">Mentees</span>
+      <span class="text-lg font-bold text-gray-900">{{ program().stats.mentees }}</span>
+    </div>
+    <div class="flex flex-col items-end">
+      <span class="text-[10px] font-semibold tracking-wider text-gray-400 uppercase">Graduated</span>
+      <span class="text-lg font-bold text-gray-900">{{ program().stats.graduated }}</span>
+    </div>
+  </div>
+
+  <!-- Chevron -->
+  <div class="flex-shrink-0 text-gray-300" aria-hidden="true">
+    <i class="fa-light fa-chevron-right text-sm"></i>
+  </div>
+</div>
