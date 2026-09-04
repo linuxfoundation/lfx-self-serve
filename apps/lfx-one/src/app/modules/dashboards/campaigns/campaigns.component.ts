@@ -1088,7 +1088,7 @@ export class CampaignsComponent {
    * Names the project the search actually queried, for the "connect HubSpot" empty state.
    *
    * campaign-service answers the same typed 404 for an absent connection row and for a project id
-   * that does not exist (`campaign.interface.ts:1223-1226`), so "not connected" and "no such
+   * that does not exist (the typed 404 both cases share), so "not connected" and "no such
    * project" are indistinguishable here. Naming the slug is what makes a typo visible instead of
    * being reported as a missing integration.
    *

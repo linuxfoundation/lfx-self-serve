@@ -1429,7 +1429,7 @@ export class CampaignServiceClient {
     // that may not exist, with an undefined name, and the UI would then block Create for it. The
     // operator is told it worked and left unable to try again.
     //
-    // `id` and `name` are both required by the contract (campaign.interface.ts:1804). Failing
+    // `id` and `name` are both required by the contract (`CampaignServiceHubSpotCampaign`). Failing
     // here surfaces as a create error, which is recoverable, rather than a fabricated success.
     // TRIMMED, and `name` length-checked too. `created.id === ''` let a whitespace-only id
     // through, and `name` was only type-checked -- so a malformed 2xx became `created: true`,
