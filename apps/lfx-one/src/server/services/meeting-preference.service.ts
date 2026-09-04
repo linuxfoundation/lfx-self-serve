@@ -54,11 +54,12 @@ export class MeetingPreferenceService {
         return null;
       }
 
-      if (parsed.error) {
+      const getError = this.extractUpstreamError(parsed);
+      if (getError !== null) {
         // Upstream error copy can embed the mailbox (e.g. validation messages) — redact before
         // it reaches the WARN log, which persists in production.
         logger.warning(req, 'get_meeting_invite_email', 'NATS preferred_email.get returned an error', {
-          error: redactEmailAddresses(parsed.error),
+          error: redactEmailAddresses(getError),
         });
         return null;
       }
@@ -128,14 +129,15 @@ export class MeetingPreferenceService {
       return { success: false, reason: 'upstream', error: 'Internal server error' };
     }
 
-    if (parsed.error) {
+    const setError = this.extractUpstreamError(parsed);
+    if (setError !== null) {
       // Warning-level logs are emitted in production; redact the address the validation copy
       // can embed rather than persisting it as PII. The returned `error` stays raw — the
       // controller substitutes fixed user-facing copy per `reason`, so nothing leaks to the client.
       logger.warning(req, 'set_meeting_invite_email', 'NATS preferred_email.set returned an error', {
-        error: redactEmailAddresses(parsed.error),
+        error: redactEmailAddresses(setError),
       });
-      return { success: false, reason: this.classifyPreferredEmailError(parsed.error), error: parsed.error };
+      return { success: false, reason: this.classifyPreferredEmailError(setError), error: setError };
     }
 
     if (!this.isValidMeetingInviteReply(parsed)) {
@@ -148,6 +150,19 @@ export class MeetingPreferenceService {
     }
 
     return { success: true, data: { email_id: parsed.email_id, email: parsed.email } };
+  }
+
+  // A reply is only `{ error }` when it's a non-null object whose `error` is itself a string —
+  // valid JSON can also decode to null, a primitive, or `{ error: <non-string> }`, and accessing
+  // `.error` on the former or handing the latter to the string-only redactor would throw, turning
+  // a handled contract failure into an uncaught exception. Anything that doesn't match falls
+  // through to the shape-validation branch below instead.
+  private extractUpstreamError(value: unknown): string | null {
+    if (typeof value !== 'object' || value === null) {
+      return null;
+    }
+    const { error } = value as Record<string, unknown>;
+    return typeof error === 'string' ? error : null;
   }
 
   // The upstream contract always emits both keys as strings (an override) or both as null (no

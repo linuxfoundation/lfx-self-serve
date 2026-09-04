@@ -104,6 +104,19 @@ describe('MeetingPreferenceService', () => {
       await expect(service.getMeetingInviteEmail(req, V1_TOKEN)).resolves.toBeNull();
     });
 
+    // Valid JSON can still decode to null, a primitive, or `{ error: <non-string> }` — none of
+    // those are a `{ error: string }` shape, so accessing `.error` or handing the value to the
+    // string-only redactor must not throw past this method's fail-closed contract.
+    it.each([
+      ['a JSON null reply', null],
+      ['a primitive reply', 42],
+      ['an object with a non-string error', { error: 123 }],
+    ])('fails closed to null on %s without throwing', async (_label, body) => {
+      natsRequest.mockResolvedValue(reply(body));
+
+      await expect(service.getMeetingInviteEmail(req, V1_TOKEN)).resolves.toBeNull();
+    });
+
     // JSON.parse's error message can embed a snippet of the malformed input (e.g. a bare email
     // address body), so a parse failure must never log the raw error.
     it('never logs the raw parse error on an unparseable reply', async () => {
@@ -261,6 +274,22 @@ describe('MeetingPreferenceService', () => {
       ['a string id with a null email', { email_id: 'email-1', email: null }],
       ['a null id with a string email', { email_id: null, email: ALTERNATE_EMAIL }],
     ])('classifies a reply mixing %s as upstream, not a confirmed write', async (_label, body) => {
+      natsRequest.mockResolvedValue(reply(body));
+
+      await expect(service.setMeetingInviteEmail(req, V1_TOKEN, ALTERNATE_EMAIL)).resolves.toEqual({
+        success: false,
+        reason: 'upstream',
+        error: 'Internal server error',
+      });
+    });
+
+    // Same non-`{ error: string }` shapes as the GET path — must fail closed through the
+    // shape-validation branch rather than throw when `.error` is accessed or redacted.
+    it.each([
+      ['a JSON null reply', null],
+      ['a primitive reply', 42],
+      ['an object with a non-string error', { error: 123 }],
+    ])('classifies %s as upstream without throwing', async (_label, body) => {
       natsRequest.mockResolvedValue(reply(body));
 
       await expect(service.setMeetingInviteEmail(req, V1_TOKEN, ALTERNATE_EMAIL)).resolves.toEqual({
