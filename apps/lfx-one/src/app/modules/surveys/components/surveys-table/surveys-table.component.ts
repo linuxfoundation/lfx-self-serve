@@ -14,8 +14,8 @@ import { SelectComponent } from '@components/select/select.component';
 import { TableComponent } from '@components/table/table.component';
 import { TagComponent } from '@components/tag/tag.component';
 import { SURVEY_LABEL, SURVEY_TYPE_LABELS, SurveyStatus } from '@lfx-one/shared';
-import { FilterPillOption, Survey } from '@lfx-one/shared/interfaces';
-import { getSurveyDisplayStatus } from '@lfx-one/shared/utils';
+import { FilterPillOption, Survey, SurveyTableRow } from '@lfx-one/shared/interfaces';
+import { getEntityCommands, getSurveyDisplayStatus } from '@lfx-one/shared/utils';
 import { DueDateLabelColorPipe } from '@pipes/due-date-label-color.pipe';
 import { DueDateLabelPipe } from '@pipes/due-date-label.pipe';
 import { ScheduledSendAriaLabelPipe, ScheduledSendTooltipPipe } from '@pipes/scheduled-send-tooltip.pipe';
@@ -73,7 +73,9 @@ export class SurveysTableComponent {
   public readonly showFoundationFilter = input<boolean>(false);
   public readonly showProjectFilter = input<boolean>(false);
   public readonly isMeLens = input<boolean>(false);
-  public readonly editQueryParams = input<Record<string, string>>({});
+  // Viewed-committee override (committee tab): rows stamp committees[0] by default, but a
+  // committee writer's guard fallback must probe the committee they're actually viewing (GH-1569).
+  public readonly committeeUid = input<string>('');
 
   // === Outputs ===
   public readonly viewResults = output<Survey>();
@@ -101,7 +103,7 @@ export class SurveysTableComponent {
   private readonly typeFilter: Signal<string | null> = this.initTypeFilter();
   protected readonly groupOptions: Signal<{ label: string; value: string | null }[]> = this.initGroupOptions();
   protected readonly typeOptions: Signal<{ label: string; value: string | null }[]> = this.initTypeOptions();
-  protected readonly filteredSurveys: Signal<(Survey & { displayStatus: SurveyStatus })[]> = this.initFilteredSurveys();
+  protected readonly filteredSurveys: Signal<SurveyTableRow[]> = this.initFilteredSurveys();
   protected readonly isFiltered = computed(
     () => this.searchTerm() !== '' || this.statusTab() !== 'all' || this.groupFilter() !== null || this.typeFilter() !== null
   );
@@ -243,13 +245,18 @@ export class SurveysTableComponent {
     });
   }
 
-  private initFilteredSurveys(): Signal<(Survey & { displayStatus: SurveyStatus })[]> {
+  private initFilteredSurveys(): Signal<SurveyTableRow[]> {
     return computed(() => {
       // Precompute displayStatus once per row so the template, filter, and sort
       // all agree on cutoff/case-normalized status (matches what the badge pipe shows).
+      // Also stamp the per-row edit link: canonical commands derive from the SURVEY's owning
+      // tier (is_foundation), not the viewer's active lens; unenriched rows (undefined tier)
+      // fall back to the flat path, which lensRedirectGuard prefixes (GH-1569).
       let filtered = this.surveys().map((survey) => ({
         ...survey,
         displayStatus: getSurveyDisplayStatus(survey),
+        editCommands: getEntityCommands('surveys', survey.uid, survey.is_foundation, 'edit') ?? ['/surveys', survey.uid, 'edit'],
+        editQueryParams: this.buildEditQueryParams(survey),
       }));
 
       const searchTerm = this.searchTerm()?.toLowerCase() || '';
@@ -281,7 +288,20 @@ export class SurveysTableComponent {
   }
 
   // === Private Helpers ===
-  private sortSurveys<T extends Survey & { displayStatus: SurveyStatus }>(surveys: T[]): T[] {
+  // Mirrors meeting-card's per-row params: the row's own project slug + committee scope, so the
+  // edit page opens in the survey's project context even from a context-less list (GH-1569).
+  // Without a viewed-committee override (global list) the scope resolves to the primary committee,
+  // so a writer of a non-primary committee is fail-closed denied from the list and edits via their
+  // committee tab instead — iterating committees[] per row is follow-up work (GH-2190).
+  private buildEditQueryParams(survey: Survey): Record<string, string> {
+    const params: Record<string, string> = {};
+    if (survey.project_slug) params['project'] = survey.project_slug;
+    const committeeUid = this.committeeUid() || survey.committees?.[0]?.committee_uid;
+    if (committeeUid) params['committee_uid'] = committeeUid;
+    return params;
+  }
+
+  private sortSurveys<T extends SurveyTableRow>(surveys: T[]): T[] {
     const statusPriority: Record<string, number> = {
       [SurveyStatus.OPEN]: 1,
       [SurveyStatus.DRAFT]: 2,

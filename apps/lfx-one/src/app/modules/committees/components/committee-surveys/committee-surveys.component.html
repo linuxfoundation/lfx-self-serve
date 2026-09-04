@@ -7,7 +7,7 @@
       [surveys]="surveys()"
       [hasPMOAccess]="canEdit()"
       [loading]="loading()"
-      [editQueryParams]="editSurveyQueryParams()"
+      [committeeUid]="committee().uid"
       (viewResults)="viewSurveyResults($event)"
       (rowClick)="viewSurveyResults($event)">
       @if (canEdit()) {
