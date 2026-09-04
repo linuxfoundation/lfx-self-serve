@@ -1695,7 +1695,7 @@ export class PlanningTabComponent implements OnInit {
     // sends an operator to retype an input that cannot fix a credential or connection problem.
     //
     // Read from `error.error`, which is where BaseApiError.toResponse puts the operator-facing
-    // text (base.error.ts:78); the hard-coded prompt below remains the fallback for a response
+    // text (`toResponse` in base.error.ts); the hard-coded prompt below remains the fallback for a response
     // that carries none.
     if (status === 400) {
       const body = (err as { error?: { error?: string; message?: string } | string } | undefined)?.error;
