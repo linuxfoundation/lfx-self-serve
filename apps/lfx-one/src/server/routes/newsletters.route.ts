@@ -1,7 +1,7 @@
 // Copyright The Linux Foundation and each contributor to LFX.
 // SPDX-License-Identifier: MIT
 
-import { Router } from 'express';
+import express, { Router } from 'express';
 
 import { NewsletterController } from '../controllers/newsletter.controller';
 
@@ -28,6 +28,11 @@ router.post('/generate', (req, res, next) => newsletterController.generate(req, 
 router.post('/recipient-count', (req, res, next) => newsletterController.getRecipientCount(req, res, next));
 router.post('/recipients', (req, res, next) => newsletterController.getRecipients(req, res, next));
 router.post('/test-send', (req, res, next) => newsletterController.testSend(req, res, next));
+
+// Upload a newsletter body image — receives raw binary, BFF forwards multipart/form-data
+// to the upstream newsletter-service. Static segment, registered before the
+// `/:newsletterUid` catch-alls so Express doesn't parse "images" as a newsletter UID.
+router.post('/images', express.raw({ type: '*/*', limit: '25mb' }), (req, res, next) => newsletterController.uploadImage(req, res, next));
 
 // Newsletter list + create.
 router.get('/', (req, res, next) => newsletterController.listNewsletters(req, res, next));

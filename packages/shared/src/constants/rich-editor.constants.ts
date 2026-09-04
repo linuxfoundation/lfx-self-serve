@@ -45,5 +45,6 @@ export const RICH_EDITOR_TOOLBAR_BUTTONS: readonly RichEditorToolbarButton[] = [
   { id: 'bulletList', icon: 'fa-light fa-list-ul', label: 'Bullet list', command: 'bulletList', activeKey: 'bulletList' },
   { id: 'orderedList', icon: 'fa-light fa-list-ol', label: 'Numbered list', command: 'orderedList', activeKey: 'orderedList', divider: true },
   { id: 'link', icon: 'fa-light fa-link', label: 'Link', command: 'link', activeKey: 'link' },
+  { id: 'image', icon: 'fa-light fa-image', label: 'Insert image', command: 'image' },
   { id: 'clear', icon: 'fa-light fa-eraser', label: 'Clear formatting', command: 'clear' },
 ];

@@ -5,7 +5,7 @@ export interface RichEditorToolbarButton {
   id: string;
   icon: string;
   label: string;
-  command: 'h2' | 'h3' | 'bold' | 'italic' | 'underline' | 'strike' | 'bulletList' | 'orderedList' | 'link' | 'clear';
+  command: 'h2' | 'h3' | 'bold' | 'italic' | 'underline' | 'strike' | 'bulletList' | 'orderedList' | 'link' | 'image' | 'clear';
   activeKey?: string;
   activeAttrs?: Record<string, unknown>;
   divider?: boolean;

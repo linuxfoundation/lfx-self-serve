@@ -7624,6 +7624,15 @@ __metadata:
   languageName: node
   linkType: hard
 
+"@tiptap/extension-image@npm:^2":
+  version: 2.27.2
+  resolution: "@tiptap/extension-image@npm:2.27.2"
+  peerDependencies:
+    "@tiptap/core": ^2.7.0
+  checksum: 10c0/9a10826e0e98b86b6a62be2c05674d832591c95c3513930b1249428f703d2390581449d41f6acb3e510808adf30a6987c942500f38436fbf5b819605c7b70fa8
+  languageName: node
+  linkType: hard
+
 "@tiptap/extension-italic@npm:^2.27.2":
   version: 2.27.2
   resolution: "@tiptap/extension-italic@npm:2.27.2"
@@ -14465,6 +14474,7 @@ __metadata:
     "@primeuix/themes": "npm:^2.0.2"
     "@tailwindcss/typography": "npm:^0.5.16"
     "@tiptap/core": "npm:^2"
+    "@tiptap/extension-image": "npm:^2"
     "@tiptap/extension-link": "npm:^2"
     "@tiptap/extension-placeholder": "npm:^2"
     "@tiptap/extension-underline": "npm:^2"
