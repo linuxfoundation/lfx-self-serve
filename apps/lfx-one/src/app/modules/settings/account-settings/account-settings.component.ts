@@ -117,9 +117,10 @@ export class AccountSettingsComponent {
   // have two independent PUTs land out of order, leaving the losing address selected.
   public savingMeetingInvite = signal(false);
 
-  // Address currently mid-delete (auth-status check through confirm/reject), null otherwise. The
-  // deleteEmail() guard only checks meetingInviteEmail() at click time — this closes the window
-  // where that same address is picked as the meeting-invite override while the delete is pending.
+  // Address currently mid-delete (auth-status check through confirm/reject), null otherwise. Also
+  // blocks starting a second delete workflow — otherwise a second row's tracker overwrite would
+  // reopen the window where the first row is picked as the meeting-invite override before its
+  // own delete lands.
   private deletingEmailAddress = signal<string | null>(null);
 
   public allEmails = computed((): UserEmail[] => {
@@ -386,7 +387,15 @@ export class AccountSettingsComponent {
     // Never delete the meeting-invitation address — and never delete anything mid-write, since
     // meetingInviteEmail() still holds the old selection until the refresh lands. When the invite
     // fetch itself failed, which address is protected is unknown — fail closed and block every row.
-    if (this.savingMeetingInvite() || this.emailState().inviteLoadFailed || emailsEqual(email.email, this.meetingInviteEmail())) {
+    // Also refuse a second delete workflow while one is already in flight (deletingEmailAddress
+    // non-null) — otherwise a second row's click overwrites the tracker before the first row's
+    // write lands, reopening the same orphaned-preference race.
+    if (
+      this.deletingEmailAddress() !== null ||
+      this.savingMeetingInvite() ||
+      this.emailState().inviteLoadFailed ||
+      emailsEqual(email.email, this.meetingInviteEmail())
+    ) {
       return;
     }
 
@@ -620,6 +629,9 @@ export class AccountSettingsComponent {
       // Disables the action on every row, not just the one clicked — the guard has to cover the
       // whole set or a second row can still queue a competing write.
       const savingInvite = this.savingMeetingInvite();
+      // Same reasoning for delete: a second row's Delete click must not be able to overwrite
+      // deletingEmailAddress while a delete is already in flight — disable every row's Delete item.
+      const deletingInProgress = this.deletingEmailAddress() !== null;
       for (const email of this.emailsWithMetadata()) {
         const items: MenuItem[] = [];
         if (email.canSetPrimary) {
@@ -637,7 +649,7 @@ export class AccountSettingsComponent {
           });
         }
         if (email.canDelete) {
-          const blockedReason = this.getDeleteBlockedReason(email.isMeetingInvite, savingInvite, this.emailState().inviteLoadFailed);
+          const blockedReason = this.getDeleteBlockedReason(email.isMeetingInvite, savingInvite, this.emailState().inviteLoadFailed, deletingInProgress);
           if (blockedReason) {
             items.push({ label: 'Delete', icon: 'fa-light fa-trash', styleClass: 'text-red-500', disabled: true, title: blockedReason });
           } else {
@@ -655,13 +667,18 @@ export class AccountSettingsComponent {
    * previous selection until the refresh lands, so an in-flight write has to block every row —
    * otherwise the address just picked stays deletable for the whole SET and orphans the preference.
    * `inviteLoadFailed` means which address is protected is unknown, so every row blocks.
+   * `deletingInProgress` means another row's delete is already in flight — every row blocks so a
+   * second click can't overwrite the tracked address before the first delete lands.
    */
-  private getDeleteBlockedReason(isMeetingInvite: boolean, savingInvite: boolean, inviteLoadFailed: boolean): string | null {
+  private getDeleteBlockedReason(isMeetingInvite: boolean, savingInvite: boolean, inviteLoadFailed: boolean, deletingInProgress: boolean): string | null {
     if (inviteLoadFailed) {
       return 'Could not confirm your meeting-invitation email. Reload the page before deleting an address.';
     }
     if (savingInvite) {
       return 'Updating the meeting-invitation email. Wait for it to finish before deleting an address.';
+    }
+    if (deletingInProgress) {
+      return 'Deleting an email address. Wait for it to finish before deleting another.';
     }
     if (isMeetingInvite) {
       return 'This email is set for meeting invitations. Choose a different meeting-invitation email before deleting it.';
