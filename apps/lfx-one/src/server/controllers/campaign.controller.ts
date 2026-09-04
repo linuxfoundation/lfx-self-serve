@@ -31,7 +31,9 @@ import {
   MICROSOFT_MAX_BUDGET,
   MICROSOFT_MAX_CPC_BID,
   CAMPAIGN_EMAIL_STAGES,
+  isCanonicalGoogleAdsResourceId,
   MICROSOFT_MAX_GEO_TARGETS,
+  MAX_BULK_KEYWORD_ACTIONS,
   MICROSOFT_MAX_KEYWORDS,
   MICROSOFT_MAX_KEYWORD_TEXT_LENGTH,
   MICROSOFT_MIN_CPC_BID,
@@ -45,6 +47,9 @@ import { validateScrapeUrl } from '../helpers/url-validation';
 import { isServerFeatureEnabled, ServerFeatureFlag } from '../helpers/server-feature-flag.helper';
 import { getLinkedInConfig } from '../services/linkedin-ads.service';
 import { CampaignProxyService } from '../services/campaign-proxy.service';
+import { toAudienceDemographics, toKeywordMetricsResponse, windowForDays } from '../services/campaign-insights-mapper';
+import { applyKeywordActionsViaCampaignService } from '../services/campaign-keyword-actions';
+import { toUtmCreateResult, toUtmLookupResult } from '../services/campaign-utm-mapper';
 import { CampaignServiceClient, deriveEventSlug, isCampaignServiceJobId } from '../services/campaign-service.service';
 import { logger } from '../services/logger.service';
 import { addShutdownHook, isShuttingDown } from '../utils/shutdown';
@@ -952,13 +957,64 @@ export class CampaignController {
     }
   }
 
+  /**
+   * Keyword performance for the campaigns table.
+   *
+   * Behind `CampaignServiceInsights` this reads from campaign-service, scoped to the
+   * project's OWN campaigns; with the flag off it keeps the legacy account-wide Google Ads
+   * query. The cutover therefore makes the table SMALLER on a shared ad account, because the
+   * rows it drops belong to other foundations — see the flag's own docs.
+   *
+   * The project is REQUIRED on the campaign-service arm and not defaulted: campaign-service
+   * scopes by project, and `/foundation/campaigns` is reachable by an ED of any foundation,
+   * so a fallback constant would report one foundation's keywords to another. The legacy arm
+   * ignores the project entirely, which is precisely the leak being closed.
+   */
   public async getKeywords(req: Request, res: Response, next: NextFunction): Promise<void> {
     const days = Number(req.query['days']) || 14;
-    const startTime = logger.startOperation(req, 'campaign_keywords', { days });
+    const viaCampaignService = isServerFeatureEnabled(ServerFeatureFlag.CampaignServiceInsights);
+    const startTime = logger.startOperation(req, 'campaign_keywords', { days, viaCampaignService });
 
     try {
+      if (viaCampaignService) {
+        const projectSlug = typeof req.query['project'] === 'string' ? req.query['project'].trim() : '';
+        if (projectSlug === '') {
+          next(
+            ServiceValidationError.forField('project', 'A project is required to read keywords', {
+              operation: 'campaign_keywords',
+              service: 'campaign_controller',
+              path: req.path,
+            })
+          );
+          return;
+        }
+
+        // The window is what campaign-service actually applies; effectiveDays is what the
+        // response reports. They must come from the same call — deriving the label separately
+        // is how a 30-day figure ends up labelled as 20 days.
+        const { window, effectiveDays } = windowForDays(days);
+        const payload = await this.campaignServiceClient.getGoogleAdsKeywords(req, projectSlug, window);
+        const data = toKeywordMetricsResponse(payload, effectiveDays, new Date().toISOString());
+
+        // `truncated` reaches the client through the response as well as this log line — the
+        // totals are a subtotal over the capped slice, and both keyword consumers qualify what
+        // they claim when it is set. It is logged too because the log is where a capped result
+        // is visible to whoever is investigating a number, not just to whoever is looking at it.
+        logger.success(req, 'campaign_keywords', startTime, {
+          viaCampaignService: true,
+          keywords: data.totalKeywords,
+          // Upstream's own count alongside the converted one. They should agree; logging both
+          // means a conversion that silently drops rows shows up as a disagreement here rather
+          // than as a quietly shorter table.
+          rowCount: payload.row_count,
+          truncated: payload.truncated,
+        });
+        res.json(data);
+        return;
+      }
+
       const data = await this.metricsService.getKeywords(req, days);
-      logger.success(req, 'campaign_keywords', startTime, {});
+      logger.success(req, 'campaign_keywords', startTime, { viaCampaignService: false });
       res.json(data);
     } catch (error) {
       next(error);
@@ -1057,11 +1113,53 @@ export class CampaignController {
       return;
     }
 
-    const startTime = logger.startOperation(req, 'hubspot_utm_lookup', { eventName });
+    const viaCampaignService = isServerFeatureEnabled(ServerFeatureFlag.CampaignServiceHubSpotUtm);
+    // Read ONCE, above the branch, because BOTH producers emit the tokenless `found: true` shape
+    // and both must gate it identically -- otherwise flipping the feature flag would change
+    // whether an old bundle can be told a campaign is absent when it is not.
+    const clientUnderstandsTokenlessFound = req.query['tokenless_found'] === '1';
+    const startTime = logger.startOperation(req, 'hubspot_utm_lookup', { eventName, viaCampaignService });
 
     try {
-      const result = await this.proxyService.lookupHubSpotUtm(req, eventName);
-      logger.success(req, 'hubspot_utm_lookup', startTime, { found: result.found });
+      if (viaCampaignService) {
+        const projectSlug = typeof req.query['project'] === 'string' ? req.query['project'].trim() : '';
+        if (projectSlug === '') {
+          next(
+            ServiceValidationError.forField('project', 'A project is required for HubSpot campaign lookup', {
+              operation: 'hubspot_utm_lookup',
+              service: 'campaign_controller',
+              path: req.path,
+            })
+          );
+          return;
+        }
+
+        const payload = await this.campaignServiceClient.searchHubSpotCampaigns(req, projectSlug, eventName);
+        const result = toUtmLookupResult(payload, eventName, clientUnderstandsTokenlessFound);
+        // `matches` is upstream's raw fuzzy count; `found` is whether one candidate was
+        // CONFIDENT enough to auto-apply -- an exact normalised match, alone in that, from a
+        // result set proven complete.
+        //
+        // Both are logged because the gap is diagnostic, but NOT as "noise" -- an earlier version
+        // of this comment said that, and it predates the confidence gate. A large gap is the
+        // normal shape for a weak, tied or capped search: candidates scored, none earned an
+        // unattended apply. Reading it as noise would send someone tuning the scorer when the
+        // right answer is that the operator picks (Copilot).
+        logger.success(req, 'hubspot_utm_lookup', startTime, {
+          viaCampaignService: true,
+          // Guarded: `toUtmLookupResult` fail-closes on a malformed envelope (`{}` or a body with
+          // no `campaigns` array) and returns `inconclusive: true` -- a TESTED safe path. Reading
+          // `.length` off it unguarded threw a TypeError before `res.json(result)`, converting
+          // that deliberate safe answer into a 500 (dealako, blocking).
+          matches: Array.isArray(payload?.campaigns) ? payload.campaigns.length : null,
+          found: result.found,
+        });
+        res.json(result);
+        return;
+      }
+
+      const result = await this.proxyService.lookupHubSpotUtm(req, eventName, clientUnderstandsTokenlessFound);
+      logger.success(req, 'hubspot_utm_lookup', startTime, { viaCampaignService: false, found: result.found });
       res.json(result);
     } catch (error) {
       next(error);
@@ -1076,11 +1174,33 @@ export class CampaignController {
       return;
     }
 
-    const startTime = logger.startOperation(req, 'hubspot_utm_create', { eventName });
+    const viaCampaignService = isServerFeatureEnabled(ServerFeatureFlag.CampaignServiceHubSpotUtm);
+    const startTime = logger.startOperation(req, 'hubspot_utm_create', { eventName, viaCampaignService });
 
     try {
+      if (viaCampaignService) {
+        const projectSlug = typeof req.query['project'] === 'string' ? req.query['project'].trim() : '';
+        if (projectSlug === '') {
+          next(
+            ServiceValidationError.forField('project', 'A project is required to create a HubSpot campaign', {
+              operation: 'hubspot_utm_create',
+              service: 'campaign_controller',
+              path: req.path,
+            })
+          );
+          return;
+        }
+
+        // ALWAYS creates: upstream performs no duplicate check, deliberately, because a
+        // search-then-create still races a concurrent caller. The UI searches and warns first.
+        const created = await this.campaignServiceClient.createHubSpotCampaign(req, projectSlug, eventName);
+        logger.success(req, 'hubspot_utm_create', startTime, { viaCampaignService: true, campaignId: created.id });
+        res.json(toUtmCreateResult(created));
+        return;
+      }
+
       const result = await this.proxyService.createHubSpotUtm(req, eventName);
-      logger.success(req, 'hubspot_utm_create', startTime, { created: result.created });
+      logger.success(req, 'hubspot_utm_create', startTime, { viaCampaignService: false, created: result.created });
       res.json(result);
     } catch (error) {
       next(error);
@@ -1127,13 +1247,48 @@ export class CampaignController {
     }
   }
 
+  /**
+   * Age/gender/device breakdowns for the campaigns table.
+   *
+   * Same flag, same project requirement and same narrowing as `getKeywords` above.
+   *
+   * Campaign-service fails the whole read if any one breakdown fails rather than returning
+   * the two that loaded, so there is no partial-success arm to handle here: an error is an
+   * error, and a rendered pair of breakdowns is never a silently-missing third.
+   */
   public async getAudience(req: Request, res: Response, next: NextFunction): Promise<void> {
     const days = Number(req.query['days']) || 14;
-    const startTime = logger.startOperation(req, 'campaign_audience', { days });
+    const viaCampaignService = isServerFeatureEnabled(ServerFeatureFlag.CampaignServiceInsights);
+    const startTime = logger.startOperation(req, 'campaign_audience', { days, viaCampaignService });
 
     try {
+      if (viaCampaignService) {
+        const projectSlug = typeof req.query['project'] === 'string' ? req.query['project'].trim() : '';
+        if (projectSlug === '') {
+          next(
+            ServiceValidationError.forField('project', 'A project is required to read audience demographics', {
+              operation: 'campaign_audience',
+              service: 'campaign_controller',
+              path: req.path,
+            })
+          );
+          return;
+        }
+
+        const { window, effectiveDays } = windowForDays(days);
+        const payload = await this.campaignServiceClient.getGoogleAdsAudience(req, projectSlug, window);
+        const data = toAudienceDemographics(payload, effectiveDays, new Date().toISOString());
+
+        logger.success(req, 'campaign_audience', startTime, {
+          viaCampaignService: true,
+          buckets: payload.bucket_count,
+        });
+        res.json(data);
+        return;
+      }
+
       const data = await this.metricsService.getAudience(req, days);
-      logger.success(req, 'campaign_audience', startTime, {});
+      logger.success(req, 'campaign_audience', startTime, { viaCampaignService: false });
       res.json(data);
     } catch (error) {
       next(error);
@@ -1145,6 +1300,22 @@ export class CampaignController {
 
     if (!body.keywords || !Array.isArray(body.keywords) || body.keywords.length === 0) {
       next(ServiceValidationError.forField('keywords', 'keywords array is required', { operation: 'keyword_actions', service: 'campaign_controller' }));
+      return;
+    }
+
+    // Bounded before grouping, because the cost is per CAMPAIGN in the body: each one is a
+    // resolver call and then a mutation call, made sequentially while the request is held open.
+    // Only a non-empty array was required here, so one authenticated request could amplify into
+    // thousands of upstream calls against a live ad account and trip rate limiting that fails
+    // campaigns for reasons unrelated to the request. The cap is above anything this UI can
+    // produce, so it bounds abuse rather than the product.
+    if (body.keywords.length > MAX_BULK_KEYWORD_ACTIONS) {
+      next(
+        ServiceValidationError.forField('keywords', `keywords array must contain at most ${MAX_BULK_KEYWORD_ACTIONS} rows`, {
+          operation: 'keyword_actions',
+          service: 'campaign_controller',
+        })
+      );
       return;
     }
 
@@ -1163,13 +1334,54 @@ export class CampaignController {
         );
         return;
       }
+      // FORMAT too, not just presence. Campaign-service declares these ids as `^[0-9]+$`, so a
+      // malformed one was refused upstream instead — and by then the rows AHEAD of it in the same
+      // request have already been mutated, because the fan-out below is sequential. A keyword
+      // REMOVE is irreversible, so a half-applied batch is not recoverable by retrying.
+      //
+      // Refusing the whole request here is what keeps it all-or-nothing, and matches the
+      // reject-all rule the Microsoft keyword path already states: a partial application that
+      // reports success is worse than a refusal the operator can act on.
+      if (!isCanonicalGoogleAdsResourceId(kw.campaignId) || !isCanonicalGoogleAdsResourceId(kw.adGroupId) || !isCanonicalGoogleAdsResourceId(kw.criterionId)) {
+        next(
+          ServiceValidationError.forField('keywords', 'campaignId, adGroupId, and criterionId must each be a positive integer id', {
+            operation: 'keyword_actions',
+            service: 'campaign_controller',
+          })
+        );
+        return;
+      }
     }
 
-    const startTime = logger.startOperation(req, 'keyword_actions', { action: body.action, count: body.keywords.length });
+    const viaCampaignService = isServerFeatureEnabled(ServerFeatureFlag.CampaignServiceKeywordActions);
+    const startTime = logger.startOperation(req, 'keyword_actions', { action: body.action, count: body.keywords.length, viaCampaignService });
 
     try {
+      if (viaCampaignService) {
+        const projectSlug = typeof req.query['project'] === 'string' ? req.query['project'].trim() : '';
+        if (projectSlug === '') {
+          next(
+            ServiceValidationError.forField('project', 'A project is required to change keywords', {
+              operation: 'keyword_actions',
+              service: 'campaign_controller',
+              path: req.path,
+            })
+          );
+          return;
+        }
+
+        const result = await applyKeywordActionsViaCampaignService(req, this.campaignServiceClient, projectSlug, body);
+        logger.success(req, 'keyword_actions', startTime, {
+          viaCampaignService: true,
+          succeeded: result.succeeded,
+          failed: result.failed,
+        });
+        res.json(result);
+        return;
+      }
+
       const result = await this.proxyService.executeKeywordActions(req, body);
-      logger.success(req, 'keyword_actions', startTime, { succeeded: result.succeeded, failed: result.failed });
+      logger.success(req, 'keyword_actions', startTime, { viaCampaignService: false, succeeded: result.succeeded, failed: result.failed });
       res.json(result);
     } catch (error) {
       next(error);

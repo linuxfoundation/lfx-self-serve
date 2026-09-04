@@ -1,9 +1,11 @@
 // Copyright The Linux Foundation and each contributor to LFX.
 // SPDX-License-Identifier: MIT
 
+import { KEYWORD_ACTION_DEADLINE_MS } from '../services/campaign-keyword-actions';
 import type { NextFunction, Request, Response } from 'express';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 
+import { MAX_BULK_KEYWORD_ACTIONS } from '@lfx-one/shared/constants';
 import type { CampaignBriefOutput } from '@lfx-one/shared/interfaces';
 
 import { ServiceValidationError } from '../errors';
@@ -21,6 +23,17 @@ const {
   toggleCampaignStatus,
   listBriefCampaigns,
   getBriefMetrics,
+  svcGetKeywords,
+  svcResolveCampaign,
+  svcApplyKeywordActions,
+  legacyKeywordActions,
+  svcGetAudience,
+  svcSearchHsCampaigns,
+  svcCreateHsCampaign,
+  legacyLookupUtm,
+  legacyCreateUtm,
+  legacyGetKeywords,
+  legacyGetAudience,
   legacyUpdateStatus,
   isServerFeatureEnabled,
   logger,
@@ -36,6 +49,17 @@ const {
   toggleCampaignStatus: vi.fn(),
   listBriefCampaigns: vi.fn(),
   getBriefMetrics: vi.fn(),
+  svcGetKeywords: vi.fn(),
+  svcResolveCampaign: vi.fn(),
+  svcApplyKeywordActions: vi.fn(),
+  legacyKeywordActions: vi.fn(),
+  svcGetAudience: vi.fn(),
+  svcSearchHsCampaigns: vi.fn(),
+  svcCreateHsCampaign: vi.fn(),
+  legacyLookupUtm: vi.fn(),
+  legacyCreateUtm: vi.fn(),
+  legacyGetKeywords: vi.fn(),
+  legacyGetAudience: vi.fn(),
   legacyUpdateStatus: vi.fn(),
   isServerFeatureEnabled: vi.fn(),
   logger: { startOperation: vi.fn(() => 0), success: vi.fn(), error: vi.fn(), warning: vi.fn(), debug: vi.fn(), info: vi.fn() },
@@ -58,6 +82,12 @@ vi.mock('../services/campaign-service.service', async (importOriginal) => {
       public toggleCampaignStatus = toggleCampaignStatus;
       public listBriefCampaigns = listBriefCampaigns;
       public getBriefMetrics = getBriefMetrics;
+      public getGoogleAdsKeywords = svcGetKeywords;
+      public resolveGoogleAdsCampaign = svcResolveCampaign;
+      public applyKeywordActions = svcApplyKeywordActions;
+      public getGoogleAdsAudience = svcGetAudience;
+      public searchHubSpotCampaigns = svcSearchHsCampaigns;
+      public createHubSpotCampaign = svcCreateHsCampaign;
     },
   };
 });
@@ -70,10 +100,16 @@ vi.mock('../services/campaign-proxy.service', () => ({
     public createCampaign = legacyCreate;
     public getJobStatus = legacyGetJobStatus;
     public updateCampaignStatus = legacyUpdateStatus;
+    public executeKeywordActions = legacyKeywordActions;
+    public lookupHubSpotUtm = legacyLookupUtm;
+    public createHubSpotUtm = legacyCreateUtm;
   },
 }));
 vi.mock('../services/campaign-metrics.service', () => ({
-  CampaignMetricsService: class {},
+  CampaignMetricsService: class {
+    public getKeywords = legacyGetKeywords;
+    public getAudience = legacyGetAudience;
+  },
   LinkedInMetricsService: class {},
   RedditMetricsService: class {},
   MetaMetricsService: class {},
@@ -917,7 +953,7 @@ describe('CampaignController.createCampaign cutover', () => {
   });
 
   /**
-   * The client refuses these BEFORE its first create call (`targeting.go:183`, `:195`,
+   * The client refuses these BEFORE its first create call (`targeting.go:183` and its siblings,
    * `geo.go:243`), so an over-cap list is an async dead job rather than a refusal of the request.
    * Refused whole rather than TRUNCATED: silently dropping the 61st keyword would dispatch a
    * campaign targeting less than the operator asked for, with nothing saying so.
@@ -2001,5 +2037,808 @@ describe('CampaignController.getBriefMetrics', () => {
 
     expect(res.json).not.toHaveBeenCalled();
     expect(next).toHaveBeenCalledWith(expect.any(Error));
+  });
+});
+
+/**
+ * The Google Ads insight reads behind `CampaignServiceInsights`.
+ *
+ * The conversion arithmetic has its own direct tests in `campaign-insights-mapper.spec.ts`.
+ * What is only decidable HERE is the layer boundary: which backend a request reaches, that the
+ * flag is read per-flag rather than as a blanket toggle, that the project the campaign-service
+ * arm scopes by is required rather than defaulted, and that a failure reaches the error
+ * middleware instead of being answered with a 200 the table renders as real data.
+ */
+describe('CampaignController Google Ads insight reads', () => {
+  let controller: CampaignController;
+  let res: Response;
+  let next: NextFunction;
+
+  /** Only the insights flag on. Everything else stays off so a blanket toggle cannot pass. */
+  const onlyInsights = (flag: string): boolean => String(flag) === 'LFX_CUTOVER_CAMPAIGN_SERVICE_INSIGHTS';
+
+  function insightsReq(query: Record<string, unknown>): Request {
+    return { body: {}, query, path: '/api/campaigns/keywords' } as unknown as Request;
+  }
+
+  const keywordsPayload = {
+    window: 'last_30_days',
+    row_count: 1,
+    truncated: true,
+    rows: [
+      {
+        criterion_id: '305729261',
+        ad_group_id: '176216228',
+        campaign_id: '555',
+        ad_group_name: 'Registration - Exact',
+        campaign_name: 'KubeCon NA 2026 - Search',
+        text: 'kubernetes training',
+        match_type: 'EXACT',
+        status: 'ENABLED',
+        impressions: 1000,
+        clicks: 40,
+        cost_micros: 25_000_000,
+        ctr: 0.04,
+        conversions: 12.5,
+        quality_score: 7,
+      },
+    ],
+  };
+
+  const audiencePayload = {
+    window: 'last_30_days',
+    bucket_count: 1,
+    buckets: [{ dimension: 'age', value: 'AGE_RANGE_25_34', impressions: 1000, clicks: 40, cost_micros: 25_000_000, ctr: 0.04, conversions: 12.5 }],
+  };
+
+  beforeEach(() => {
+    vi.clearAllMocks();
+    controller = new CampaignController();
+    res = buildRes();
+    next = vi.fn();
+    svcGetKeywords.mockResolvedValue(keywordsPayload);
+    svcGetAudience.mockResolvedValue(audiencePayload);
+    legacyGetKeywords.mockResolvedValue({ pulledAt: 'x', days: 14, totalKeywords: 0, totals: {}, keywords: [] });
+    legacyGetAudience.mockResolvedValue({ pulledAt: 'x', days: 14, age: [], gender: [], device: [] });
+  });
+
+  describe('getKeywords', () => {
+    it('reads from campaign-service when the flag is on, and not from the legacy path', async () => {
+      isServerFeatureEnabled.mockImplementation(onlyInsights);
+
+      await controller.getKeywords(insightsReq({ project: 'tlf', days: '30' }), res, next);
+
+      expect(svcGetKeywords).toHaveBeenCalledWith(expect.anything(), 'tlf', 'last_30_days');
+      // Asserted explicitly: a branch that called BOTH would still return the right body while
+      // doubling the upstream cost and keeping the leak this cutover exists to close.
+      expect(legacyGetKeywords).not.toHaveBeenCalled();
+      expect(next).not.toHaveBeenCalled();
+    });
+
+    it('keeps the legacy path when the flag is off', async () => {
+      isServerFeatureEnabled.mockReturnValue(false);
+
+      await controller.getKeywords(insightsReq({ project: 'tlf', days: '30' }), res, next);
+
+      expect(legacyGetKeywords).toHaveBeenCalled();
+      expect(svcGetKeywords).not.toHaveBeenCalled();
+    });
+
+    // The handler must read ITS OWN flag. With a blanket `mockReturnValue(true)` this test
+    // passes no matter which flag is checked, so the other flags are held OFF: a handler
+    // reading, say, CampaignServiceCreate would take the legacy arm and fail here.
+    it('routes on the insights flag specifically, not on any cutover flag', async () => {
+      isServerFeatureEnabled.mockImplementation((flag: string) => !onlyInsights(flag));
+
+      await controller.getKeywords(insightsReq({ project: 'tlf', days: '30' }), res, next);
+
+      expect(legacyGetKeywords).toHaveBeenCalled();
+      expect(svcGetKeywords).not.toHaveBeenCalled();
+    });
+
+    // Not defaulted to a constant: campaign-service scopes by project and /foundation/campaigns
+    // is reachable by an ED of any foundation, so a fallback would report one foundation's
+    // keywords to another.
+    it('refuses a campaign-service read with no project rather than defaulting one', async () => {
+      isServerFeatureEnabled.mockImplementation(onlyInsights);
+
+      await controller.getKeywords(insightsReq({ days: '30' }), res, next);
+
+      expect(svcGetKeywords).not.toHaveBeenCalled();
+      expect(next).toHaveBeenCalled();
+      const error = vi.mocked(next).mock.calls[0][0] as unknown as ServiceValidationError;
+      expect(error).toBeInstanceOf(ServiceValidationError);
+      expect(res.json).not.toHaveBeenCalled();
+    });
+
+    it('refuses a whitespace-only project', async () => {
+      isServerFeatureEnabled.mockImplementation(onlyInsights);
+
+      await controller.getKeywords(insightsReq({ project: '   ', days: '30' }), res, next);
+
+      expect(svcGetKeywords).not.toHaveBeenCalled();
+      expect(next).toHaveBeenCalled();
+    });
+
+    // The window sent upstream must be the one the requested days SNAP to, not the raw value.
+    it('sends the snapped window for an arbitrary day count', async () => {
+      isServerFeatureEnabled.mockImplementation(onlyInsights);
+
+      await controller.getKeywords(insightsReq({ project: 'tlf', days: '9' }), res, next);
+
+      expect(svcGetKeywords).toHaveBeenCalledWith(expect.anything(), 'tlf', 'last_14_days');
+      // And the body reports the EFFECTIVE days, never the requested 9 — the number is shown
+      // beside the figures, so echoing 9 over a 14-day window mislabels the period.
+      expect(vi.mocked(res.json).mock.calls[0][0]).toMatchObject({ days: 14 });
+    });
+
+    // Assert the operational log metadata: `row_count` identifies the upstream result size and
+    // `truncated` records whether the returned rows are capped.
+    it('logs the truncation flag and upstream row count', async () => {
+      isServerFeatureEnabled.mockImplementation(onlyInsights);
+
+      await controller.getKeywords(insightsReq({ project: 'tlf', days: '30' }), res, next);
+
+      expect(logger.success).toHaveBeenCalledWith(
+        expect.anything(),
+        'campaign_keywords',
+        expect.anything(),
+        expect.objectContaining({ truncated: true, rowCount: 1 })
+      );
+    });
+
+    it('converts the payload into the UI contract', async () => {
+      isServerFeatureEnabled.mockImplementation(onlyInsights);
+
+      await controller.getKeywords(insightsReq({ project: 'tlf', days: '30' }), res, next);
+
+      const body = vi.mocked(res.json).mock.calls[0][0] as { keywords: { spend: number; ctr: number; adGroup: string }[] };
+      // Spot-checked here rather than re-tested: the point is that the controller runs the
+      // conversion at all, not that the arithmetic is right, which the mapper spec pins.
+      expect(body.keywords[0].spend).toBe(25);
+      expect(body.keywords[0].ctr).toBe(4);
+      expect(body.keywords[0].adGroup).toBe('Registration - Exact');
+    });
+
+    // A failed read must not be answered with a 200. An empty keywords table is
+    // indistinguishable from a project that genuinely has no keywords, which is how an outage
+    // gets read as a measurement.
+    it('forwards an upstream failure to the error middleware instead of answering 200', async () => {
+      isServerFeatureEnabled.mockImplementation(onlyInsights);
+      svcGetKeywords.mockRejectedValue(new Error('campaign-service unavailable'));
+
+      await controller.getKeywords(insightsReq({ project: 'tlf', days: '30' }), res, next);
+
+      expect(next).toHaveBeenCalled();
+      expect(res.json).not.toHaveBeenCalled();
+    });
+  });
+
+  describe('getAudience', () => {
+    it('reads from campaign-service when the flag is on, and not from the legacy path', async () => {
+      isServerFeatureEnabled.mockImplementation(onlyInsights);
+
+      await controller.getAudience(insightsReq({ project: 'tlf', days: '30' }), res, next);
+
+      expect(svcGetAudience).toHaveBeenCalledWith(expect.anything(), 'tlf', 'last_30_days');
+      expect(legacyGetAudience).not.toHaveBeenCalled();
+    });
+
+    it('keeps the legacy path when the flag is off', async () => {
+      isServerFeatureEnabled.mockReturnValue(false);
+
+      await controller.getAudience(insightsReq({ project: 'tlf', days: '30' }), res, next);
+
+      expect(legacyGetAudience).toHaveBeenCalled();
+      expect(svcGetAudience).not.toHaveBeenCalled();
+    });
+
+    it('routes on the insights flag specifically, not on any cutover flag', async () => {
+      isServerFeatureEnabled.mockImplementation((flag: string) => !onlyInsights(flag));
+
+      await controller.getAudience(insightsReq({ project: 'tlf', days: '30' }), res, next);
+
+      expect(legacyGetAudience).toHaveBeenCalled();
+      expect(svcGetAudience).not.toHaveBeenCalled();
+    });
+
+    it('refuses a campaign-service read with no project rather than defaulting one', async () => {
+      isServerFeatureEnabled.mockImplementation(onlyInsights);
+
+      await controller.getAudience(insightsReq({ days: '30' }), res, next);
+
+      expect(svcGetAudience).not.toHaveBeenCalled();
+      expect(next).toHaveBeenCalled();
+      expect(res.json).not.toHaveBeenCalled();
+    });
+
+    it('regroups the flat bucket array into the three the UI renders', async () => {
+      isServerFeatureEnabled.mockImplementation(onlyInsights);
+
+      await controller.getAudience(insightsReq({ project: 'tlf', days: '30' }), res, next);
+
+      const body = vi.mocked(res.json).mock.calls[0][0] as { age: unknown[]; gender: unknown[]; device: unknown[] };
+      expect(body.age).toHaveLength(1);
+      expect(body.gender).toEqual([]);
+      expect(body.device).toEqual([]);
+    });
+
+    it('forwards an upstream failure to the error middleware instead of answering 200', async () => {
+      isServerFeatureEnabled.mockImplementation(onlyInsights);
+      svcGetAudience.mockRejectedValue(new Error('campaign-service unavailable'));
+
+      await controller.getAudience(insightsReq({ project: 'tlf', days: '30' }), res, next);
+
+      expect(next).toHaveBeenCalled();
+      expect(res.json).not.toHaveBeenCalled();
+    });
+  });
+});
+
+/**
+ * Keyword actions through campaign-service.
+ *
+ * The grouping and per-outcome mapping have direct tests in
+ * `campaign-keyword-actions.spec.ts`. What is only decidable HERE is what the controller does
+ * with the answers: whether an unowned or ambiguous campaign is refused rather than acted on,
+ * whether one campaign's failure takes down the others, and whether every keyword is accounted
+ * for in the response. A keyword that silently vanishes from `results` is the worst outcome —
+ * the caller believes it was handled.
+ */
+describe('CampaignController.executeKeywordActions via campaign-service', () => {
+  let controller: CampaignController;
+  let res: Response;
+  let next: NextFunction;
+
+  const onlyActions = (flag: string): boolean => String(flag) === 'LFX_CUTOVER_CAMPAIGN_SERVICE_KEYWORD_ACTIONS';
+
+  function actionsReq(keywords: unknown[], query: Record<string, unknown> = { project: 'tlf' }): Request {
+    return { body: { keywords, action: 'pause' }, query, path: '/api/campaigns/keywords/actions' } as unknown as Request;
+  }
+
+  // `adGroupId` is a real Google ad-group id shape (digits), not a label: campaign-service
+  // declares ad_group_id/criterion_id as `^[0-9]+$` with MaxLength(19), and the controller now
+  // enforces that before any fan-out. A placeholder like 'ag-1' would make every fixture an
+  // invalid request and the suite would test the refusal path by accident.
+  const keyword = (campaignId: string, criterionId: string) => ({ campaignId, adGroupId: '176216228', criterionId, action: 'pause' });
+  // `platform_campaign_id` ECHOES the requested id, as the real contract does. It was hardcoded
+  // 'x', which meant every fixture described a different campaign than the one asked for -- fine
+  // while nothing checked the echo, and exactly what the new guard refuses.
+  const resolvedTo = (campaignId: string, briefId: string, platformCampaignId = '24183781329') => ({
+    platform_campaign_id: platformCampaignId,
+    match_count: 1,
+    matches: [{ campaign_id: campaignId, brief_id: briefId }],
+  });
+
+  beforeEach(() => {
+    vi.clearAllMocks();
+    controller = new CampaignController();
+    res = buildRes();
+    next = vi.fn();
+    isServerFeatureEnabled.mockImplementation(onlyActions);
+    // Echoes the REQUESTED id, as the real contract does, so a test using any campaign id gets a
+    // consistent resolution without restating it. The guard refuses a mismatched echo.
+    svcResolveCampaign.mockImplementation((_req: unknown, _slug: string, platformCampaignId: string) =>
+      Promise.resolve(resolvedTo('c-1', 'b-1', platformCampaignId))
+    );
+    // Confirms exactly what a single-keyword request sends. An empty `results` array is NOT a
+    // valid confirmation — the controller now checks the returned multiset against the request,
+    // because upstream derives applied_count from its own results rather than from the request.
+    svcApplyKeywordActions.mockResolvedValue({
+      campaign_id: 'c-1',
+      applied_count: 1,
+      results: [{ ad_group_id: '176216228', criterion_id: '1', action: 'PAUSE' }],
+    });
+  });
+
+  it('refuses a bulk request above the fan-out cap before calling upstream', async () => {
+    // The cost is per CAMPAIGN in the body: a resolver call and then a mutation call each,
+    // sequentially, while the request is held open. Unbounded, one authenticated request
+    // amplifies into thousands of upstream calls against a live ad account. Refused BEFORE any
+    // upstream call, so an oversized request costs nothing rather than being half-applied.
+    const tooMany = Array.from({ length: MAX_BULK_KEYWORD_ACTIONS + 1 }, (_, i) => keyword(String(24183781329 + i), String(i)));
+
+    await controller.executeKeywordActions(actionsReq(tooMany), res, next);
+
+    // The operator-facing text lives in validationErrors, not on the error's own message.
+    expect(next).toHaveBeenCalledWith(
+      expect.objectContaining({
+        validationErrors: expect.arrayContaining([expect.objectContaining({ field: 'keywords', message: expect.stringContaining('at most') })]),
+      })
+    );
+    expect(svcResolveCampaign).not.toHaveBeenCalled();
+    expect(svcApplyKeywordActions).not.toHaveBeenCalled();
+  });
+
+  it('refuses a malformed id in the LAST row before mutating the rows ahead of it', async () => {
+    // The position is the point. Campaign-service declares these ids as `^[0-9]+$`, so a malformed
+    // one was previously refused UPSTREAM — by which time the earlier rows in the same request had
+    // already been mutated, because the fan-out is sequential. A keyword REMOVE is irreversible,
+    // so a half-applied batch is not something a retry can undo.
+    //
+    // A valid row FIRST, so passing this cannot be explained by the request being rejected on its
+    // very first entry.
+    const rows = [keyword('24183781329', '1'), keyword('24183781329', '2'), keyword('not-an-id', '3')];
+
+    await controller.executeKeywordActions(actionsReq(rows), res, next);
+
+    expect(next).toHaveBeenCalledWith(
+      expect.objectContaining({
+        validationErrors: expect.arrayContaining([expect.objectContaining({ field: 'keywords', message: expect.stringContaining('positive integer') })]),
+      })
+    );
+    // Nothing upstream, not even for the two well-formed rows that preceded the bad one.
+    expect(svcResolveCampaign).not.toHaveBeenCalled();
+    expect(svcApplyKeywordActions).not.toHaveBeenCalled();
+  });
+
+  it('allows a bulk request exactly at the fan-out cap', async () => {
+    // The boundary is inclusive: a request the UI can actually produce must not be refused.
+    // 1-based: "0" is not a canonical Google Ads resource id, and validation now enforces that.
+    const atCap = Array.from({ length: MAX_BULK_KEYWORD_ACTIONS }, (_, i) => keyword(String(24183781329 + i), String(i + 1)));
+
+    await controller.executeKeywordActions(actionsReq(atCap), res, next);
+
+    expect(svcResolveCampaign).toHaveBeenCalled();
+  });
+
+  it('resolves the campaign and applies the batch under its brief', async () => {
+    await controller.executeKeywordActions(actionsReq([keyword('24183781329', '1')]), res, next);
+
+    // Fourth arg is the resolver's share of the request budget -- matched loosely because it is
+    // wall-clock. Bounding the mutation alone left THIS call able to overrun the window.
+    expect(svcResolveCampaign).toHaveBeenCalledWith(expect.anything(), 'tlf', '24183781329', expect.any(Number));
+    const resolveBudget = svcResolveCampaign.mock.calls[0][3] as number;
+    expect(resolveBudget, 'the resolver was given no deadline, or one outside the budget').toBeGreaterThan(0);
+    expect(resolveBudget).toBeLessThanOrEqual(KEYWORD_ACTION_DEADLINE_MS);
+    // The brief and campaign must come from the RESOLUTION, not from the request — the request
+    // carries neither, which is the whole reason the resolver exists.
+    expect(svcApplyKeywordActions).toHaveBeenCalledWith(
+      expect.anything(),
+      'tlf',
+      'b-1',
+      'c-1',
+      [{ ad_group_id: '176216228', criterion_id: '1', action: 'PAUSE' }],
+      // The fan-out's REMAINING budget, so the mutation cannot outlive the request deadline.
+      // Matched as "a positive number within the budget" rather than an exact value: it is
+      // wall-clock, so pinning it would make this test fail on a slow machine for no reason.
+      expect.any(Number)
+    );
+    const passedTimeout = svcApplyKeywordActions.mock.calls[0][5] as number;
+    expect(passedTimeout, 'the mutation was given no deadline, or one outside the budget').toBeGreaterThan(0);
+    expect(passedTimeout).toBeLessThanOrEqual(KEYWORD_ACTION_DEADLINE_MS);
+    expect(legacyKeywordActions).not.toHaveBeenCalled();
+  });
+
+  it('hands the MUTATION only the time the resolve left, not a fresh budget', async () => {
+    // dealako (#1923 round 7): the invariant of this round is that the resolve and the
+    // irreversible mutation cannot outlive the 45s deadline, because each is handed the REMAINING
+    // time. The assertions above are `> 0` and `<= DEADLINE`, which both still pass if the
+    // mutation is handed a fresh full budget -- the exact regression they exist to catch.
+    //
+    // A controlled clock makes the remainder observable: the resolve consumes 30s, so the
+    // mutation must receive strictly less than the resolve did.
+    let now = 0;
+    const nowSpy = vi.spyOn(Date, 'now').mockImplementation(() => now);
+    try {
+      svcResolveCampaign.mockImplementation(() => {
+        now += 30_000;
+        return Promise.resolve({ platform_campaign_id: '555', match_count: 1, matches: [{ campaign_id: 'c-1', brief_id: 'b-1' }] });
+      });
+
+      await controller.executeKeywordActions(actionsReq([keyword('555', '1')]), res, next);
+
+      const resolveBudget = svcResolveCampaign.mock.calls[0][3] as number;
+      const mutateBudget = svcApplyKeywordActions.mock.calls[0][5] as number;
+
+      expect(resolveBudget).toBeLessThanOrEqual(KEYWORD_ACTION_DEADLINE_MS);
+      // The binding assertion: the mutation is bounded by what is LEFT.
+      expect(mutateBudget, 'the mutation was handed a fresh budget rather than the remainder').toBeLessThan(resolveBudget);
+      expect(mutateBudget).toBeLessThanOrEqual(KEYWORD_ACTION_DEADLINE_MS - 30_000);
+      // And the two together cannot exceed the deadline, which is the property that matters.
+      expect(30_000 + mutateBudget, 'resolve + mutate can outlive the request deadline').toBeLessThanOrEqual(KEYWORD_ACTION_DEADLINE_MS);
+    } finally {
+      nowSpy.mockRestore();
+    }
+  });
+
+  it('keeps the legacy path when the flag is off', async () => {
+    isServerFeatureEnabled.mockReturnValue(false);
+    legacyKeywordActions.mockResolvedValue({ success: true, total: 1, succeeded: 1, failed: 0, results: [] });
+
+    await controller.executeKeywordActions(actionsReq([keyword('555', '1')]), res, next);
+
+    expect(legacyKeywordActions).toHaveBeenCalled();
+    expect(svcResolveCampaign).not.toHaveBeenCalled();
+  });
+
+  it('routes on its own flag, not on any cutover flag', async () => {
+    isServerFeatureEnabled.mockImplementation((flag: string) => !onlyActions(flag));
+    legacyKeywordActions.mockResolvedValue({ success: true, total: 1, succeeded: 1, failed: 0, results: [] });
+
+    await controller.executeKeywordActions(actionsReq([keyword('555', '1')]), res, next);
+
+    expect(legacyKeywordActions).toHaveBeenCalled();
+    expect(svcResolveCampaign).not.toHaveBeenCalled();
+  });
+
+  it('refuses a campaign-service request with no project', async () => {
+    await controller.executeKeywordActions(actionsReq([keyword('555', '1')], {}), res, next);
+
+    expect(svcResolveCampaign).not.toHaveBeenCalled();
+    expect(next).toHaveBeenCalled();
+    expect(res.json).not.toHaveBeenCalled();
+  });
+
+  it('issues one call per campaign rather than one flat batch', async () => {
+    svcResolveCampaign.mockResolvedValueOnce(resolvedTo('c-1', 'b-1', '555')).mockResolvedValueOnce(resolvedTo('c-2', 'b-2', '666'));
+
+    await controller.executeKeywordActions(actionsReq([keyword('555', '1'), keyword('666', '2'), keyword('555', '3')]), res, next);
+
+    expect(svcApplyKeywordActions).toHaveBeenCalledTimes(2);
+    // Campaign 555's two keywords travel together; 666's alone. A flat batch would be one call.
+    expect(svcApplyKeywordActions.mock.calls[0][4]).toHaveLength(2);
+    expect(svcApplyKeywordActions.mock.calls[1][4]).toHaveLength(1);
+  });
+
+  // An unowned id is a 200 with no matches, so it must be CHECKED. Acting on it is impossible,
+  // and skipping it silently would drop the keyword from the response entirely.
+  it('refuses a campaign the project does not own, and says so per keyword', async () => {
+    svcResolveCampaign.mockResolvedValue({ platform_campaign_id: '555', match_count: 0, matches: [] });
+
+    await controller.executeKeywordActions(actionsReq([keyword('555', '1'), keyword('555', '2')]), res, next);
+
+    expect(svcApplyKeywordActions).not.toHaveBeenCalled();
+    const body = vi.mocked(res.json).mock.calls[0][0] as { success: boolean; failed: number; results: { success: boolean }[] };
+    expect(body.success).toBe(false);
+    // BOTH keywords are accounted for. A response listing one would leave the other looking
+    // handled.
+    expect(body.results).toHaveLength(2);
+    expect(body.failed).toBe(2);
+  });
+
+  // Ambiguity is refused rather than resolved by taking the first match: acting would mutate a
+  // campaign nobody named.
+  it('refuses an ambiguous campaign id rather than picking a match', async () => {
+    svcResolveCampaign.mockResolvedValue({
+      platform_campaign_id: '555',
+      match_count: 2,
+      matches: [
+        { campaign_id: 'c-1', brief_id: 'b-1' },
+        { campaign_id: 'c-2', brief_id: 'b-2' },
+      ],
+    });
+
+    await controller.executeKeywordActions(actionsReq([keyword('555', '1')]), res, next);
+
+    expect(svcApplyKeywordActions).not.toHaveBeenCalled();
+    const body = vi.mocked(res.json).mock.calls[0][0] as { failed: number };
+    expect(body.failed).toBe(1);
+  });
+
+  // One campaign's failure must not take down the others: the batch is atomic per campaign, and
+  // the remaining campaigns' actions should still be attempted.
+  /**
+   * A 2xx is not proof the batch applied as asked.
+   *
+   * Upstream derives `applied_count` from the results it actually returns rather than asserting
+   * it against the request, so a short or altered confirmation agrees with itself. Marking every
+   * requested keyword as changed on that basis would tell someone a still-spending keyword was
+   * paused — the one thing this path must never do.
+   *
+   * Reported as UNCONFIRMED rather than failed: upstream returned a 2xx, so the mutation
+   * probably ran, and a retried REMOVE is irreversible.
+   */
+  it.each([
+    ['a short confirmation', { campaign_id: 'c-1', applied_count: 1, results: [{ ad_group_id: '176216228', criterion_id: '1', action: 'PAUSE' }] }],
+    [
+      'a criterion that was not requested',
+      {
+        campaign_id: 'c-1',
+        applied_count: 2,
+        results: [
+          { ad_group_id: '176216228', criterion_id: '1', action: 'PAUSE' },
+          { ad_group_id: '176216228', criterion_id: '999', action: 'PAUSE' },
+        ],
+      },
+    ],
+  ])('reports %s as unconfirmed rather than applied', async (_label, applied) => {
+    svcApplyKeywordActions.mockResolvedValue(applied);
+
+    await controller.executeKeywordActions(actionsReq([keyword('555', '1'), keyword('555', '2')]), res, next);
+
+    const body = vi.mocked(res.json).mock.calls[0][0] as { succeeded: number; failed: number; results: { message: string }[] };
+    expect(body.succeeded).toBe(0);
+    expect(body.failed).toBe(2);
+    // The wording must send the caller to verify, not to retry: a retried REMOVE cannot be undone.
+    expect(body.results[0].message).toMatch(/check the campaign/i);
+  });
+
+  it('accepts a confirmation that matches the request regardless of order', async () => {
+    svcApplyKeywordActions.mockResolvedValue({
+      campaign_id: 'c-1',
+      applied_count: 2,
+      // Reversed: order is not part of the contract, membership and count are.
+      results: [
+        { ad_group_id: '176216228', criterion_id: '2', action: 'PAUSE' },
+        { ad_group_id: '176216228', criterion_id: '1', action: 'PAUSE' },
+      ],
+    });
+
+    await controller.executeKeywordActions(actionsReq([keyword('555', '1'), keyword('555', '2')]), res, next);
+
+    const body = vi.mocked(res.json).mock.calls[0][0] as { succeeded: number; failed: number };
+    expect(body.succeeded).toBe(2);
+    expect(body.failed).toBe(0);
+  });
+
+  it('continues to the next campaign when one fails, and reports both outcomes', async () => {
+    svcResolveCampaign.mockResolvedValueOnce(resolvedTo('c-1', 'b-1', '555')).mockResolvedValueOnce(resolvedTo('c-2', 'b-2', '666'));
+    svcApplyKeywordActions
+      // A 422, not a bare Error. This case is "campaign-service REFUSED this one, keep going"; a
+      // bare Error has no status and is a transport failure by definition, which now stops the
+      // fan-out -- so a bare Error here would assert the opposite of what the name describes.
+      .mockRejectedValueOnce(Object.assign(new Error('upstream refused'), { statusCode: 422 }))
+      .mockResolvedValueOnce({ campaign_id: 'c-2', applied_count: 1, results: [{ ad_group_id: '176216228', criterion_id: '2', action: 'PAUSE' }] });
+
+    await controller.executeKeywordActions(actionsReq([keyword('555', '1'), keyword('666', '2')]), res, next);
+
+    expect(svcApplyKeywordActions).toHaveBeenCalledTimes(2);
+    const body = vi.mocked(res.json).mock.calls[0][0] as { success: boolean; succeeded: number; failed: number; results: { message: string }[] };
+    expect(body.succeeded).toBe(1);
+    expect(body.failed).toBe(1);
+    // A partially applied request is NOT a success, even though each campaign was atomic.
+    expect(body.success).toBe(false);
+    // The upstream message survives, because campaign-service distinguishes a definite failure
+    // from an unconfirmed one where the mutate may already have applied — flattening that would
+    // leave someone retrying an irreversible REMOVE.
+    expect(body.results.some((r) => r.message.includes('upstream refused'))).toBe(true);
+  });
+
+  // A failed LOOKUP is this campaign's problem, not the request's.
+  it('stops the fan-out after a transport failure instead of probing every campaign', async () => {
+    // The loop is sequential and the controller admits up to MAX_BULK_KEYWORD_ACTIONS distinct
+    // campaigns, each costing a lookup at the client's 30s default -- so an outage held ONE
+    // request open for ~25 minutes while sending 50 doomed probes for a single user action.
+    // 1-based: "0" is not a canonical Google Ads resource id and is refused before the fan-out.
+    const rows = Array.from({ length: 5 }, (_, i) => keyword(String(24183781329 + i), String(i + 1)));
+    // Every lookup fails the same way a dead service does: no status at all.
+    svcResolveCampaign.mockRejectedValue(new Error('socket hang up'));
+
+    await controller.executeKeywordActions(actionsReq(rows), res, next);
+
+    // ONE probe, not five. The remaining groups are reported without being attempted.
+    expect(svcResolveCampaign).toHaveBeenCalledTimes(1);
+    expect(svcApplyKeywordActions).not.toHaveBeenCalled();
+
+    const body = vi.mocked(res.json).mock.calls[0][0] as { failed: number; results: { success: boolean; message: string }[] };
+    // Every keyword still gets a result -- the client zips results onto the list it sent, so a
+    // short array would misalign a still-spending keyword onto another row's outcome.
+    expect(body.results).toHaveLength(5);
+    expect(body.failed).toBe(5);
+    // And they read as retryable, not as "not managed here": nothing was established about them.
+    expect(body.results.every((r) => /try again/i.test(r.message))).toBe(true);
+  });
+
+  it('reports a failed resolution against that campaign and keeps going', async () => {
+    // A 4xx: campaign-service ANSWERED and refused this campaign, which says nothing about the
+    // next one -- so the batch must keep going. A bare Error (no status) is a TRANSPORT failure
+    // and now deliberately stops the fan-out, so it can no longer stand in for this case.
+    const refused = Object.assign(new Error('resolver refused'), { statusCode: 422 });
+    svcResolveCampaign.mockRejectedValueOnce(refused).mockResolvedValueOnce(resolvedTo('c-2', 'b-2', '666'));
+    // Campaign 666 sends criterion 2, so its confirmation must name criterion 2 — the default
+    // stub confirms criterion 1 and would now be rejected as a mismatch.
+    svcApplyKeywordActions.mockResolvedValue({
+      campaign_id: 'c-2',
+      applied_count: 1,
+      results: [{ ad_group_id: '176216228', criterion_id: '2', action: 'PAUSE' }],
+    });
+
+    await controller.executeKeywordActions(actionsReq([keyword('555', '1'), keyword('666', '2')]), res, next);
+
+    expect(svcApplyKeywordActions).toHaveBeenCalledTimes(1);
+    const body = vi.mocked(res.json).mock.calls[0][0] as { succeeded: number; failed: number; results: { success: boolean; message: string }[] };
+    expect(body.succeeded).toBe(1);
+    expect(body.failed).toBe(1);
+    // A FAILED lookup must not read as "not managed here". That message tells the caller the
+    // campaign will never be actionable, so they stop retrying — and a campaign they meant to
+    // pause keeps spending. It must invite a retry instead.
+    const failedEntry = body.results.find((r) => !r.success);
+    expect(failedEntry?.message).toMatch(/try again/i);
+    expect(failedEntry?.message).not.toMatch(/not managed here/i);
+  });
+
+  // Every keyword sent must appear in the response exactly once, whatever happened to it.
+  it('accounts for every requested keyword in the response', async () => {
+    svcResolveCampaign
+      .mockResolvedValueOnce(resolvedTo('c-1', 'b-1', '555'))
+      .mockResolvedValueOnce({ platform_campaign_id: '666', match_count: 0, matches: [] });
+
+    await controller.executeKeywordActions(actionsReq([keyword('555', '1'), keyword('555', '2'), keyword('666', '3')]), res, next);
+
+    const body = vi.mocked(res.json).mock.calls[0][0] as { total: number; results: { keyword: string }[] };
+    expect(body.total).toBe(3);
+    expect(body.results.map((r) => r.keyword).sort()).toEqual(['Criterion 1', 'Criterion 2', 'Criterion 3']);
+  });
+});
+
+describe('CampaignController HubSpot UTM', () => {
+  let controller: CampaignController;
+  let res: Response;
+  let next: NextFunction;
+
+  /** Only the UTM flag on. Everything else stays off so a blanket toggle cannot pass. */
+  const onlyUtm = (flag: string): boolean => String(flag) === 'LFX_CUTOVER_CAMPAIGN_SERVICE_HUBSPOT_UTM';
+
+  function utmReq(query: Record<string, unknown>, body: Record<string, unknown> = {}): Request {
+    return { body, query, path: '/api/campaigns/hubspot/utm' } as unknown as Request;
+  }
+
+  beforeEach(() => {
+    vi.clearAllMocks();
+    controller = new CampaignController();
+    res = buildRes();
+    next = vi.fn();
+    svcSearchHsCampaigns.mockResolvedValue({ campaigns: [{ id: '1', name: 'KubeCon NA 2026', utm: 'kubecon-na-2026' }], capped: false });
+    svcCreateHsCampaign.mockResolvedValue({ id: '1', name: 'KubeCon NA 2026', utm: 'kubecon-na-2026' });
+    legacyLookupUtm.mockResolvedValue({ found: false, hs_utm: null, campaign_name: '', all_matches: [], capped: false });
+    legacyCreateUtm.mockResolvedValue({ created: true, hs_utm: 'x', campaign_name: 'KubeCon NA 2026' });
+  });
+
+  describe('lookupHubSpotUtm', () => {
+    it('reads from campaign-service when the flag is on, and not from the legacy path', async () => {
+      isServerFeatureEnabled.mockImplementation(onlyUtm);
+
+      await controller.lookupHubSpotUtm(utmReq({ project: 'tlf', event_name: 'KubeCon NA 2026' }), res, next);
+
+      expect(svcSearchHsCampaigns).toHaveBeenCalledWith(expect.anything(), 'tlf', 'KubeCon NA 2026');
+      // Asserted explicitly: a branch calling BOTH would still return the right body while
+      // doubling the upstream cost and keeping the legacy path live.
+      expect(legacyLookupUtm).not.toHaveBeenCalled();
+      expect(next).not.toHaveBeenCalled();
+    });
+
+    it('forwards the client capability flag to the mapper, and withholds without it', async () => {
+      // dealako (#1923): nothing asserted that the controller READS the capability and forwards
+      // it, so the seam could invert or disappear with every test green -- and the whole gate
+      // depends on it. A tokenless winner is the shape the flag governs.
+      isServerFeatureEnabled.mockImplementation(onlyUtm);
+      svcSearchHsCampaigns.mockResolvedValue({ campaigns: [{ id: '1', name: 'KubeCon NA 2026' }], capped: false });
+
+      // Declared: the tokenless winner is reported as found.
+      await controller.lookupHubSpotUtm(utmReq({ project: 'tlf', event_name: 'KubeCon NA 2026', tokenless_found: '1' }), res, next);
+      const declared = vi.mocked(res.json).mock.calls[0][0] as { found: boolean; hs_utm: string | null };
+      expect(declared.found, 'a capable client was denied the tokenless shape').toBe(true);
+      expect(declared.hs_utm).toBeNull();
+
+      vi.mocked(res.json).mockClear();
+
+      // Absent: the same upstream answer is withheld, as inconclusive rather than proven absence.
+      await controller.lookupHubSpotUtm(utmReq({ project: 'tlf', event_name: 'KubeCon NA 2026' }), res, next);
+      const bare = vi.mocked(res.json).mock.calls[0][0] as { found: boolean; inconclusive: boolean };
+      expect(bare.found, 'the tokenless shape reached a client that cannot parse it').toBe(false);
+      expect(bare.inconclusive, 'an existing campaign was reported to an old bundle as proven absence').toBe(true);
+    });
+
+    it('treats any value other than "1" as an undeclared capability', async () => {
+      // Fail-closed on the parse too: `tokenless_found=true` is not the contract, and reading it
+      // loosely would hand the new shape to a client that never declared it.
+      isServerFeatureEnabled.mockImplementation(onlyUtm);
+      svcSearchHsCampaigns.mockResolvedValue({ campaigns: [{ id: '1', name: 'KubeCon NA 2026' }], capped: false });
+
+      await controller.lookupHubSpotUtm(utmReq({ project: 'tlf', event_name: 'KubeCon NA 2026', tokenless_found: 'true' }), res, next);
+
+      const body = vi.mocked(res.json).mock.calls[0][0] as { found: boolean };
+      expect(body.found).toBe(false);
+    });
+
+    it('answers a malformed upstream envelope with the mapper safe result, not a 500', async () => {
+      // dealako (#2079, blocking): `toUtmLookupResult` deliberately fail-closes on a body with no
+      // `campaigns` array and returns `inconclusive: true` -- a TESTED safe path. The success log
+      // then read `payload.campaigns.length` unguarded and threw a TypeError before
+      // `res.json(result)`, converting that deliberate safe answer into a generic 500.
+      isServerFeatureEnabled.mockImplementation(onlyUtm);
+      svcSearchHsCampaigns.mockResolvedValueOnce({ capped: false } as never);
+
+      await controller.lookupHubSpotUtm(utmReq({ project: 'tlf', event_name: 'KubeCon NA 2026' }), res, next);
+
+      expect(next, 'the fail-closed lookup was turned into an error by its own success log').not.toHaveBeenCalled();
+      const body = vi.mocked(res.json).mock.calls[0][0] as { found: boolean; inconclusive: boolean };
+      expect(body.found).toBe(false);
+      expect(body.inconclusive, 'a malformed envelope must not read as proven absence').toBe(true);
+    });
+
+    it('keeps the legacy path when the flag is off', async () => {
+      isServerFeatureEnabled.mockReturnValue(false);
+
+      await controller.lookupHubSpotUtm(utmReq({ event_name: 'KubeCon NA 2026' }), res, next);
+
+      expect(legacyLookupUtm).toHaveBeenCalled();
+      expect(svcSearchHsCampaigns).not.toHaveBeenCalled();
+    });
+
+    // With a blanket `mockReturnValue(true)` this passes no matter which flag is read, so every
+    // OTHER flag is held on and this one off: a handler checking the wrong flag fails here.
+    it('routes on the UTM flag specifically, not on any cutover flag', async () => {
+      isServerFeatureEnabled.mockImplementation((flag: string) => !onlyUtm(flag));
+
+      await controller.lookupHubSpotUtm(utmReq({ project: 'tlf', event_name: 'KubeCon NA 2026' }), res, next);
+
+      expect(legacyLookupUtm).toHaveBeenCalled();
+      expect(svcSearchHsCampaigns).not.toHaveBeenCalled();
+    });
+
+    it('requires the project on the campaign-service arm rather than defaulting one', async () => {
+      // campaign-service scopes the HubSpot connection BY PROJECT. Defaulting would read another
+      // project's portal, so the absence must be an error rather than a guess.
+      isServerFeatureEnabled.mockImplementation(onlyUtm);
+
+      await controller.lookupHubSpotUtm(utmReq({ event_name: 'KubeCon NA 2026' }), res, next);
+
+      expect(svcSearchHsCampaigns).not.toHaveBeenCalled();
+      expect(next).toHaveBeenCalledWith(expect.any(Error));
+    });
+
+    it('sends an upstream failure to the error middleware, not a 200', async () => {
+      // A failure answered as 200 renders as "no campaign found" -- the one answer the panel
+      // acts on by creating a campaign, which is how a duplicate gets made from an outage.
+      isServerFeatureEnabled.mockImplementation(onlyUtm);
+      svcSearchHsCampaigns.mockRejectedValue(new Error('campaign-service unavailable'));
+
+      await controller.lookupHubSpotUtm(utmReq({ project: 'tlf', event_name: 'KubeCon NA 2026' }), res, next);
+
+      expect(res.json).not.toHaveBeenCalled();
+      expect(next).toHaveBeenCalledWith(expect.any(Error));
+    });
+  });
+
+  describe('createHubSpotUtm', () => {
+    it('writes through campaign-service when the flag is on, and not the legacy path', async () => {
+      isServerFeatureEnabled.mockImplementation(onlyUtm);
+
+      await controller.createHubSpotUtm(utmReq({ project: 'tlf', event_name: 'KubeCon NA 2026' }), res, next);
+
+      expect(svcCreateHsCampaign).toHaveBeenCalledWith(expect.anything(), 'tlf', 'KubeCon NA 2026');
+      // Calling BOTH would create TWO campaigns in a shared namespace, not merely duplicate work.
+      expect(legacyCreateUtm).not.toHaveBeenCalled();
+      expect(next).not.toHaveBeenCalled();
+    });
+
+    it('keeps the legacy path when the flag is off', async () => {
+      isServerFeatureEnabled.mockReturnValue(false);
+
+      await controller.createHubSpotUtm(utmReq({ event_name: 'KubeCon NA 2026' }), res, next);
+
+      expect(legacyCreateUtm).toHaveBeenCalled();
+      expect(svcCreateHsCampaign).not.toHaveBeenCalled();
+    });
+
+    it('routes on the UTM flag specifically, not on any cutover flag', async () => {
+      isServerFeatureEnabled.mockImplementation((flag: string) => !onlyUtm(flag));
+
+      await controller.createHubSpotUtm(utmReq({ project: 'tlf', event_name: 'KubeCon NA 2026' }), res, next);
+
+      expect(legacyCreateUtm).toHaveBeenCalled();
+      expect(svcCreateHsCampaign).not.toHaveBeenCalled();
+    });
+
+    it('requires the project on the campaign-service arm rather than defaulting one', async () => {
+      isServerFeatureEnabled.mockImplementation(onlyUtm);
+
+      await controller.createHubSpotUtm(utmReq({ event_name: 'KubeCon NA 2026' }), res, next);
+
+      expect(svcCreateHsCampaign).not.toHaveBeenCalled();
+      expect(next).toHaveBeenCalledWith(expect.any(Error));
+    });
+
+    it('sends an upstream failure to the error middleware, not a 200', async () => {
+      isServerFeatureEnabled.mockImplementation(onlyUtm);
+      svcCreateHsCampaign.mockRejectedValue(new Error('campaign-service unavailable'));
+
+      await controller.createHubSpotUtm(utmReq({ project: 'tlf', event_name: 'KubeCon NA 2026' }), res, next);
+
+      expect(res.json).not.toHaveBeenCalled();
+      expect(next).toHaveBeenCalledWith(expect.any(Error));
+    });
   });
 });

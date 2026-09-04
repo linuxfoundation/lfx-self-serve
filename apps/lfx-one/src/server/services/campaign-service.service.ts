@@ -35,6 +35,13 @@ import type {
   QueryServiceResponse,
   RedditAdVariant,
   RedditBriefCopy,
+  CampaignServiceAudience,
+  CampaignServiceCampaignResolution,
+  CampaignServiceHubSpotCampaign,
+  CampaignServiceHubSpotCampaigns,
+  CampaignServiceKeywordActionInput,
+  CampaignServiceKeywordActions,
+  CampaignServiceKeywords,
 } from '@lfx-one/shared/interfaces';
 import type { Request } from 'express';
 
@@ -140,7 +147,10 @@ function toAudienceStatus(status: string): CampaignAudienceStatus {
  * Local to this file for the same reason the brief shapes are: it is a WIRE type, and exporting
  * it would invite the app to depend on upstream naming that this layer exists to translate.
  */
-interface CampaignServiceAudience {
+// Renamed from CampaignServiceAudience: the SHARED type of that name is the Google Ads
+// age/gender/device breakdown, and this is the HubSpot audience LIST row -- two different shapes
+// that collided when this branch began importing the shared one.
+interface CampaignServiceAudienceList {
   id: string;
   project_id: string;
   brief_id: string;
@@ -291,7 +301,7 @@ const NEVER_SENT_ERROR_CODES: ReadonlySet<string> = new Set(['ECONNREFUSED', 'EN
 
 function requestNeverLeft(error: unknown): boolean {
   // A MicroserviceError is NOT automatically a response. `ApiClientService.executeRequest`
-  // (`api-client.service.ts:313-320`) wraps a Node fetch failure as
+  // (`api-client.service.ts`) wraps a Node fetch failure as
   // `MicroserviceError(500, cause.code)` — so the production shape of an unreachable service is a
   // 500 whose `code` is `ECONNREFUSED`, not a raw Error. An earlier revision returned false for
   // every MicroserviceError and therefore fixed nothing in production; the tests passed only
@@ -857,7 +867,7 @@ export class CampaignServiceClient {
     try {
       // Fifth argument is `query`, sixth is `data` — this call has neither. Passing anything
       // fifth would serialise it into the query string and send no body.
-      const response = await this.microserviceProxy.proxyRequestWithResponse<CampaignServiceAudience>(
+      const response = await this.microserviceProxy.proxyRequestWithResponse<CampaignServiceAudienceList>(
         req,
         'LFX_V2_CAMPAIGN_SERVICE',
         path,
@@ -1013,7 +1023,7 @@ export class CampaignServiceClient {
     // :1327-1338), and nothing clears it when Google is deselected. The form now defaults
     // `includeDemandGen` to false, so this is no longer the untouched-form case — it is RETAINED
     // state: a user who ticks Demand Gen and then deselects Google, or a saved draft restoring
-    // the old default through `:1611`. Either way a LinkedIn-only create arrives carrying
+    // the old default through `persistBrief`. Either way a LinkedIn-only create arrives carrying
     // `demand-gen`, and refusing on the type alone rejected creates that have no Google campaign
     // in them at all.
     if (platforms.includes('google-ads') && campaignTypes?.includes('demand-gen') && campaignTypes.includes('search')) {
@@ -1352,6 +1362,223 @@ export class CampaignServiceClient {
   }
 
   /**
+   * Google Ads keyword performance for the project's OWN campaigns.
+   *
+   * ## This is narrower than the read it replaces
+   *
+   * The BFF's own query (`campaign-metrics.service.ts`) carries no campaign filter, so it
+   * reports the entire shared Google Ads customer — every foundation's keywords. This one is
+   * scoped upstream by `campaignScopePredicate`, so a project sees only its own. Fewer rows
+   * here is the correct answer, not a partial one.
+   *
+   * ## The window is a QUERY parameter
+   *
+   * Fifth argument, which is `query`; the sixth is the body. A window passed in the body
+   * position reaches the wire as no window at all — no type error, and campaign-service
+   * silently applies its own default instead of the one the caller asked for.
+   *
+   * ## `truncated` is not decoration
+   *
+   * Upstream caps the row set and reports whether more exist. A caller that totals the rows
+   * while ignoring the flag presents the top slice as the project's whole spend, so the flag
+   * travels with the rows rather than being dropped in conversion.
+   */
+  public async getGoogleAdsKeywords(req: Request, projectSlug: string, window?: CampaignMetricsWindow): Promise<CampaignServiceKeywords> {
+    if (projectSlug === '') {
+      // Refused rather than sent, for the reason getBriefMetrics refuses: an empty segment
+      // makes `/projects//google-ads/keywords`, a different route that 404s at the
+      // gateway — and a gateway 404 is not campaign-service saying the project has no keywords.
+      throw new Error('A keyword read requires the project it is scoped to.');
+    }
+    return this.microserviceProxy.proxyRequest<CampaignServiceKeywords>(
+      req,
+      'LFX_V2_CAMPAIGN_SERVICE',
+      `/projects/${encodeURIComponent(projectSlug)}/google-ads/keywords`,
+      'GET',
+      window ? { window } : undefined
+    );
+  }
+
+  /**
+   * Find LF HubSpot campaigns by name, to read back an existing campaign's utm token.
+   *
+   * THE ANSWER IS PORTAL-WIDE: HubSpot's campaign namespace is the whole portal, so this
+   * returns every campaign in it regardless of which project scoped the request.
+   *
+   * `projectSlug` gates permission AND selects WHICH portal is visible — campaign-service
+   * resolves the HubSpot credential from it, and connections are stored per project with their
+   * own token and portal_id. Two projects therefore see the same campaigns only when they point
+   * at the same portal, which is common under the LF umbrella but is not a guarantee. Calling
+   * this LF-global would have a future caller ignore a real connection-selection boundary.
+   *
+   * An empty `campaigns` array is a 200, not a 404 — "nothing is named that" is the answer the
+   * caller acts on by offering to create one, so callers must check the array rather than
+   * relying on this to throw.
+   */
+  public async searchHubSpotCampaigns(req: Request, projectSlug: string, query: string): Promise<CampaignServiceHubSpotCampaigns> {
+    if (projectSlug === '' || query === '') {
+      throw new Error('A HubSpot campaign search requires both the project and a search term.');
+    }
+    return this.microserviceProxy.proxyRequest<CampaignServiceHubSpotCampaigns>(
+      req,
+      'LFX_V2_CAMPAIGN_SERVICE',
+      `/projects/${encodeURIComponent(projectSlug)}/connection-hubspot/campaigns`,
+      'GET',
+      { q: query }
+    );
+  }
+
+  /**
+   * Create a portal-wide HubSpot campaign, returning the token when the response carries one.
+   *
+   * Which portal is the project's connection's, not necessarily the LF's own — see
+   * searchHubSpotCampaigns above.
+   *
+   * IT ALWAYS CREATES and performs no duplicate check — upstream documents why: a
+   * search-then-create still races a concurrent caller and cannot prevent a duplicate, so the
+   * check belongs with the operator who can read the candidate names. Search first, warn, then
+   * create.
+   *
+   * The created campaign lands in a PORTAL-WIDE namespace: visible to everyone working in the
+   * HubSpot portal this project's connection points at, whatever project scoped the request.
+   * That is the boundary — not "every foundation", which overstates it, and not "this project",
+   * which understates it. Two projects connected to the same portal share the namespace; two
+   * connected to different portals do not.
+   *
+   * The name is the SIXTH argument (body), not the fifth (query): a POST payload in the query
+   * position sends no body at all, and upstream would reject it as a request naming no campaign.
+   */
+  public async createHubSpotCampaign(req: Request, projectSlug: string, name: string): Promise<CampaignServiceHubSpotCampaign> {
+    if (projectSlug === '' || name === '') {
+      throw new Error('A HubSpot campaign creation requires both the project and a campaign name.');
+    }
+    const created = await this.microserviceProxy.proxyRequest<CampaignServiceHubSpotCampaign>(
+      req,
+      'LFX_V2_CAMPAIGN_SERVICE',
+      `/projects/${encodeURIComponent(projectSlug)}/connection-hubspot/campaigns`,
+      'POST',
+      undefined,
+      { name }
+    );
+    // VALIDATED, not merely cast. proxyRequest types the body it returns but does not check it,
+    // and this is a non-idempotent create: `toUtmCreateResult` hard-codes `created: true`, so a
+    // 2xx carrying `{}` -- a rewritten gateway body, a contract drift -- would report a campaign
+    // that may not exist, with an undefined name, and the UI would then block Create for it. The
+    // operator is told it worked and left unable to try again.
+    //
+    // `id` and `name` are both required by the contract (campaign.interface.ts:1804). Failing
+    // here surfaces as a create error, which is recoverable, rather than a fabricated success.
+    // TRIMMED, and `name` length-checked too. `created.id === ''` let a whitespace-only id
+    // through, and `name` was only type-checked -- so a malformed 2xx became `created: true`,
+    // permanently suppressing another create while showing a blank campaign name. Upstream's
+    // contract is non-whitespace for both (Copilot).
+    if (typeof created?.id !== 'string' || created.id.trim() === '' || typeof created?.name !== 'string' || created.name.trim() === '') {
+      throw new Error('The campaign service reported a create but returned no usable campaign.');
+    }
+    return created;
+  }
+
+  /**
+   * Resolve one Google Ads campaign id to campaign-service's own campaign and brief.
+   *
+   * A keyword row carries GOOGLE's numeric campaign id; the keyword-actions route is keyed by
+   * campaign-service's campaign UUID under its brief. This is the only bridge between them.
+   *
+   * An unowned id comes back as a 200 with an empty `matches`, NOT a 404 — so callers must check
+   * `match_count` rather than relying on this to throw. That is deliberate upstream: "not your
+   * campaign" is an answer to act on, while a 404 would mean the request itself was wrong.
+   */
+  public async resolveGoogleAdsCampaign(
+    req: Request,
+    projectSlug: string,
+    platformCampaignID: string,
+    // Same caller-supplied budget as `applyKeywordActions`. A fan-out that bounds only the
+    // mutation still lets THIS call overrun the request window one step earlier.
+    timeoutMs?: number
+  ): Promise<CampaignServiceCampaignResolution> {
+    if (projectSlug === '' || platformCampaignID === '') {
+      throw new Error('A campaign reference lookup requires both the project and the platform campaign id.');
+    }
+    return this.microserviceProxy.proxyRequest<CampaignServiceCampaignResolution>(
+      req,
+      'LFX_V2_CAMPAIGN_SERVICE',
+      `/projects/${encodeURIComponent(projectSlug)}/google-ads/campaign-ref`,
+      'GET',
+      { platform_campaign_id: platformCampaignID },
+      undefined,
+      undefined,
+      timeoutMs === undefined ? undefined : { timeoutMs }
+    );
+  }
+
+  /**
+   * Apply keyword actions to ONE campaign, atomically.
+   *
+   * The batch either applies in full or not at all — upstream sends it as a single mutate with
+   * partial failure disabled — so a rejected action rolls back the rest. That is why the caller
+   * groups by campaign rather than sending one flat list: each campaign is its own atomic unit
+   * and its own permission-evaluated target.
+   *
+   * The actions are the SIXTH argument, which is the body. The fifth is the query, and a POST
+   * payload passed there would go out as a query string with no body at all — the mirror of the
+   * trap the read methods above document.
+   */
+  public async applyKeywordActions(
+    req: Request,
+    projectSlug: string,
+    briefId: string,
+    campaignId: string,
+    actions: CampaignServiceKeywordActionInput[],
+    // Caller-supplied budget, so a fan-out can BOUND this call rather than only checking a
+    // clock before starting it. Omitted falls back to the client's 30s default.
+    timeoutMs?: number
+  ): Promise<CampaignServiceKeywordActions> {
+    if (projectSlug === '' || briefId === '' || campaignId === '') {
+      throw new Error('A keyword action requires the project, brief and campaign it applies to.');
+    }
+    if (actions.length === 0) {
+      // Refused rather than sent: upstream declares MinLength(1), so an empty batch is a 400
+      // round-trip, and answering it as a success would tell a caller their keywords were paused
+      // when no request was ever made.
+      throw new Error('A keyword action request must carry at least one action.');
+    }
+    return this.microserviceProxy.proxyRequest<CampaignServiceKeywordActions>(
+      req,
+      'LFX_V2_CAMPAIGN_SERVICE',
+      `/projects/${encodeURIComponent(projectSlug)}/briefs/${encodeURIComponent(briefId)}/campaigns/${encodeURIComponent(campaignId)}/keyword-actions`,
+      'POST',
+      undefined,
+      { actions },
+      undefined,
+      timeoutMs === undefined ? undefined : { timeoutMs }
+    );
+  }
+
+  /**
+   * Google Ads age/gender/device breakdowns for the project's OWN campaigns.
+   *
+   * Same scoping and same query-parameter placement as `getGoogleAdsKeywords` above, and the
+   * same narrowing against the legacy account-wide read.
+   *
+   * The three breakdowns arrive as ONE flat array discriminated by `dimension`, not as three
+   * arrays. They are also not independently failable: upstream fails the whole request if any
+   * one breakdown fails, rather than returning the two that loaded — a partial demographic
+   * picture presented as a whole one is how a campaign gets re-targeted on half the data.
+   */
+  public async getGoogleAdsAudience(req: Request, projectSlug: string, window?: CampaignMetricsWindow): Promise<CampaignServiceAudience> {
+    if (projectSlug === '') {
+      throw new Error('An audience read requires the project it is scoped to.');
+    }
+    return this.microserviceProxy.proxyRequest<CampaignServiceAudience>(
+      req,
+      'LFX_V2_CAMPAIGN_SERVICE',
+      `/projects/${encodeURIComponent(projectSlug)}/google-ads/audience`,
+      'GET',
+      window ? { window } : undefined
+    );
+  }
+
+  /**
    * After an ambiguous create failure, find out whether the POST actually committed.
    *
    * Returns the row when it is provably THIS request's, and `null` when the create did not happen
@@ -1675,7 +1902,7 @@ export class CampaignServiceClient {
       // result (see the no-ETag branch above), and the read path re-reads the ETag from the
       // server before every write, so nothing downstream is left without one.
       // 408 is EXCLUDED even though it is a 4xx. `ApiClientService` turns a local `AbortError`
-      // into `MicroserviceError(408, 'TIMEOUT')` (`api-client.service.ts:122` and `:306`), so a
+      // into `MicroserviceError(408, 'TIMEOUT')` (`api-client.service.ts`, `request`/`executeRequest`), so a
       // 408 here is our own deadline firing, not campaign-service refusing anything — the
       // request may well have committed upstream with its response lost, which is precisely the
       // indeterminate case this branch exists to keep out of `writeEtag`. A 408 that genuinely
@@ -1911,10 +2138,45 @@ function toUpstreamEventDetails(details: CampaignEventDetails): Record<string, u
  *
  * 5xx OTHER than a deliberate 503 stays generic: an unexpected server error can carry stack or
  * infrastructure detail that is not the operator's to read, and "try again" is honest advice for
- * it. A transport failure has no upstream message at all and falls through the same way.
+ * it.
+ *
+ * A TRANSPORT failure falls through too, and now needs saying explicitly. It used to be a 500,
+ * so the 5xx rule caught it; it is now a 503 (a lost connection is an unconfirmed outcome, not a
+ * proof nothing happened), which would otherwise make it "controlled" and surface a BFF-raised
+ * message where an operator-facing remedy belongs. The interpolated transport text this once
+ * quoted is gone — every such site now emits the fixed "The request could not be completed.
+ * Please try again." — but the exclusion still stands: that message is about the BFF's own
+ * failure to reach the service, not an answer the service gave. Those are
+ * distinguished from a 503 the service deliberately returned by their ORIGIN, tested as
+ * `transportFailure === true` — a flag the throwing site DECLARES. Not `originalError`, which
+ * seven non-transport services also populate from a caught error, and not the syscall code,
+ * which an ingress 503 mimics exactly.
+ *
+ * NOT the `NETWORK_ERROR` code, which executeRequest emits only as a fallback when `cause.code`
+ * is absent — see the guard's own comment below.
+ *
+ * The 502 'Upstream returned no response body' is deliberately NOT suppressed: upstream replied,
+ * so that is a response-shape fault rather than a transport one, and its message is already
+ * operator-facing.
  */
 function upstreamMessageOr(error: unknown, fallback: string): string {
   if (!(error instanceof MicroserviceError)) {
+    return fallback;
+  }
+  // A BFF-raised transport failure is not an upstream message, whatever its status.
+  //
+  // Matched by ORIGIN, not by a code string. The first attempt keyed on 'NETWORK_ERROR', which
+  // executeRequest only emits `NETWORK_ERROR` as a fallback when `cause.code` is absent — real
+  // failures arrive as ECONNRESET, ENOTFOUND or UND_ERR_SOCKET, so keying on that string missed
+  // the common case and the leak it existed to stop was still live.
+  //
+  // Keyed on `transportFailure`, which the throwing site DECLARES, not on `originalError`. Those
+  // are different questions: seven non-transport sites attach a caught error to originalError
+  // (committee-access, org-lens x2, guild, snowflake x2, project), so inferring from it calls a
+  // genuine service fault a lost connection. Only ApiClientService reaches this function today,
+  // which made the inference harmless by COINCIDENCE rather than by construction -- not what a
+  // guard against leaking transport text should rest on.
+  if (error.transportFailure === true) {
     return fallback;
   }
   const controlled = error.statusCode === 503 || (error.statusCode >= 400 && error.statusCode < 500);
@@ -2095,7 +2357,7 @@ export function fromBriefResponse(found: CampaignServiceBrief): CampaignBriefOut
     // Each platform requires exactly the string fields ITS variant interface declares, because
     // those are the ones consumers dereference without checking:
     //   LinkedIn — `variant.introText.length` (implementation-tab.component.html:338)
-    //   Meta     — `v.primaryText.trim()` and `v.headline.trim()` (…component.ts:238)
+    //   Meta     — `v.primaryText.trim()` and `v.headline.trim()` (…component.ts)
     // Requiring only the shared `headline` was not enough, and a per-platform list that is not
     // the interface's own field set is a claim that goes stale the moment a field is added.
     linkedInCopy: asVariantCopy<LinkedInBriefCopy>(copy['linkedIn'], LINKEDIN_VARIANT_FIELDS),
@@ -2203,7 +2465,7 @@ function asEventDetails(value: unknown, topLevelSlug: string): CampaignEventDeta
  * Checking that a field is an array is not enough to make it safe to cast. These blocks come out
  * of campaign-service's opaque `Any` columns, which nothing validates on the way in, so an older
  * or hand-edited row can hold `[null]` as easily as objects — and the Implementation tab
- * dereferences elements directly (`v.primaryText.trim()` at implementation-tab.component.ts:238,
+ * dereferences elements directly (`v.primaryText.trim()` at implementation-tab.component.ts,
  * `g.urn` at :243), so one bad element crashes Restore rather than degrading it.
  *
  * The element type differs BY FIELD and getting that backwards is its own bug: `variants` and
@@ -2226,7 +2488,7 @@ function asEventDetails(value: unknown, topLevelSlug: string): CampaignEventDeta
  * app's own briefs never reach.
  *
  * The dereferences are the same shape as the camelCase side, on differently-named fields:
- * `v.primary_text` (implementation-tab.component.ts:578) on Meta variants, and Reddit variants
+ * `v.primary_text` (implementation-tab.component.ts) on Meta variants, and Reddit variants
  * cast straight into a typed signal the template then reads. A `null` element throws.
  *
  * Unknown keys are preserved untouched: this blob is opaque and another client may store blocks
@@ -2276,7 +2538,7 @@ const STRUCTURED_VARIANT_BLOCKS: readonly (readonly [string, readonly string[]])
  * The string-list fields inside structured blocks, by block.
  *
  * `google_search.headlines` reaches a `for...of` in `populateFromBrief`
- * (implementation-tab.component.ts:527), so a stored `42` throws "is not iterable" rather than
+ * (implementation-tab.component.ts), so a stored `42` throws "is not iterable" rather than
  * degrading — a different failure from the variant case, and one the variant filter does not
  * touch. The others are cast straight into typed signals the template iterates.
  */
@@ -2306,8 +2568,8 @@ function objectElements(value: unknown): Record<string, unknown>[] {
  *
  * Object-ness alone is not enough, which the first version of this filter got wrong: a stored
  * `{}` is a plain object, survives `objectElements`, and is then cast to `MetaAdVariant` — where
- * `canSubmit` calls `v.primaryText.trim()` (implementation-tab.component.ts:238) and throws. The
- * same holds for a geo target with no `urn` (`:243`).
+ * `canSubmit` calls `v.primaryText.trim()` (implementation-tab.component.ts) and throws. The
+ * same holds for a geo target with no `urn` (`hasPlatformConfig`).
  *
  * Requiring the fields the consumer READS is the check that matches the hazard. An element
  * missing them cannot be rendered or submitted, so dropping it loses nothing recoverable.
@@ -2329,7 +2591,7 @@ function asVariantCopy<T>(value: unknown, variantRequiredFields: readonly string
   // `variants` is NOT in VARIANT_COPY_ARRAY_FIELDS — that list is the RECOMMENDATION fields — so
   // it is filtered explicitly here. It is also the field the crash reports named.
   // Which fields are required depends on the PLATFORM, because the dereferences do. `canSubmit`
-  // reads `v.primaryText.trim()` on Meta variants (implementation-tab.component.ts:238), so a
+  // reads `v.primaryText.trim()` on Meta variants (implementation-tab.component.ts), so a
   // Meta variant carrying only `headline` still throws — requiring the shared field alone was not
   // enough, and reasoning that such a variant "has nothing to submit anyway" missed that the
   // dereference happens BEFORE any such judgement.

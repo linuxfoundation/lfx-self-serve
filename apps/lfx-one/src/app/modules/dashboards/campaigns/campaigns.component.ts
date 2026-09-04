@@ -2029,9 +2029,11 @@ export class CampaignsComponent {
    *
    * TWO upstream calls, in order, because creation is brief-scoped: the route is
    * `/projects/{slug}/briefs/{brief_id}/campaigns`, so a brief id must exist BEFORE create.
-   * The email planner never persisted one (it skips the saved-brief lookup entirely, because
-   * persistence is keyed on (foundation, event) with no delivery type and the row it would find
-   * is a PAID brief), so this persists first and uses the id that comes back.
+   * The email planner may not have persisted one yet -- staging can be the first write for this
+   * send -- so this persists first and uses the id that comes back. It used to be that email
+   * NEVER had one, because persistence was keyed on (foundation, event) with no delivery
+   * dimension and the only row a lookup could find was a PAID brief; LFXV2-3198 widened the key,
+   * so an email send now has a row of its own to find or create.
    *
    * The persist goes through `ensureEmailBriefId`, which consults `knownBriefIds` for a row this
    * session already owns at this (project, event) and RECORDS the row it persists. An earlier

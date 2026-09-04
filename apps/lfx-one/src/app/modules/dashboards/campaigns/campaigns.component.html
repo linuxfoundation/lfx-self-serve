@@ -117,12 +117,15 @@
             used to claim, and the paragraph below already listed more than that — the two
             contradicted each other.
 
-            Brief save/restore is NOT shared: email skips the saved-brief lookup entirely, because
-            persistence is keyed on (foundation, event) with no delivery type, so the row it would
-            find is a PAID brief. Email persistence and email refinement do not exist yet.
+            Brief save/restore IS surface-scoped now. Persistence used to be keyed on
+            (foundation, event) with no delivery dimension, so the only row a lookup could find was
+            a PAID brief and email skipped the lookup entirely. LFXV2-3198 widened the key to
+            (project, event_slug, delivery_type, stage), so an event holds a paid brief and one per
+            stage of its email series -- all live at once, and each addressable on its own.
 
             In email mode the planner drops the Ad Channels and Budget cards, hides Refine / Edit /
-            Copy All, refuses a refine outright, skips the saved-brief lookup, drops the
+            Copy All, refuses a refine outright, looks a brief up under its own delivery type and
+            stage rather than the paid one, drops the
             ad-platform requirement from `canGenerate`, and sends `deliveryType: 'email'` so the
             server skips ad-copy and keyword generation rather than falling back to its paid
             default — omitting `platforms` alone does not achieve that, because the generator

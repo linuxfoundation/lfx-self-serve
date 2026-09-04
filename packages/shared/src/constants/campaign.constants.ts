@@ -621,6 +621,70 @@ export const MICROSOFT_MAX_KEYWORD_TEXT_LENGTH = 100;
 export const MICROSOFT_MAX_GEO_TARGETS = 30;
 
 /**
+ * Maximum keyword rows one bulk pause/remove request may carry.
+ *
+ * This bounds SERVER FAN-OUT, not a platform limit. Each distinct campaign in the body costs a
+ * resolver call and then a mutation call, made sequentially while the request is held open, so
+ * an unbounded array turns one authenticated request into thousands of upstream calls against
+ * a live ad account — the shape most likely to trip upstream rate limiting and fail campaigns
+ * for a reason that has nothing to do with the request. 50 is the most rows this UI's keyword
+ * table exposes at once, so it cannot be reached by the product's own flows.
+ */
+export const MAX_BULK_KEYWORD_ACTIONS = 50;
+
+/**
+ * Google Ads resource ids are the canonical base-10 spelling of a positive int64.
+ *
+ * Mirrors campaign-service's own declaration on `keyword-action-input` — `Pattern("^[0-9]+$")`
+ * with `MaxLength(19)` — and its design states why the digits-only rule is load-bearing rather
+ * than cosmetic: these ids are concatenated into a Google Ads resource NAME, so the same
+ * injection reasoning that governs the customer id applies. 19 rather than 20 because
+ * `math.MaxInt64` ("9223372036854775807") has nineteen digits.
+ *
+ * Shape only. Kept as the first gate because these ids are concatenated into a Google Ads
+ * resource NAME, so the same injection reasoning that governs the customer id applies; the RANGE
+ * check lives in `isCanonicalGoogleAdsResourceId` below, because the int64 ceiling is arithmetic
+ * a regex states badly — an attempt to spell it as alternation silently rejected
+ * `math.MaxInt64` itself.
+ */
+export const GOOGLE_ADS_RESOURCE_ID_RE = /^[0-9]{1,19}$/;
+
+/**
+ * Whether an id is a CANONICAL positive int64, which is what callers' error messages promise.
+ *
+ * The regex above admits "0", the leading-zero spelling "0305729261", and the out-of-range
+ * "9999999999999999999". Those were deferred to campaign-service, so the controller refused
+ * malformed ids with a message it did not actually enforce, and these three reached upstream to
+ * be rejected there instead.
+ *
+ * Ruling them out BEFORE any fan-out is what keeps the batch all-or-nothing: the controller
+ * validates every row before mutating anything, and a keyword REMOVE is irreversible, so a
+ * half-applied batch cannot be undone by retrying.
+ *
+ * BigInt, not Number: `math.MaxInt64` exceeds `Number.MAX_SAFE_INTEGER`, so a Number comparison
+ * cannot distinguish the ceiling from the values just past it.
+ */
+const MAX_INT64 = 9223372036854775807n;
+
+export function isCanonicalGoogleAdsResourceId(value: unknown): boolean {
+  // `unknown`, not `string`: the caller validates req.body, which is CAST rather than parsed, so
+  // a JSON number reaches here as a number. RE.test() coerces it and passes, and the
+  // startsWith() below then threw a TypeError -- turning malformed input into a 500 instead of
+  // the 400 the validation exists to produce.
+  if (typeof value !== 'string') {
+    return false;
+  }
+  if (!GOOGLE_ADS_RESOURCE_ID_RE.test(value)) {
+    return false;
+  }
+  // Rejects "0" and every leading-zero spelling: a canonical id never starts with '0'.
+  if (value.startsWith('0')) {
+    return false;
+  }
+  return BigInt(value) <= MAX_INT64;
+}
+
+/**
  * The match type a newly added keyword starts at.
  *
  * `Phrase` is the middle of Microsoft's three: `Broad` can spend on loosely related queries and

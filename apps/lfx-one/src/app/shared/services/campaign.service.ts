@@ -361,7 +361,14 @@ export class CampaignService {
   }
 
   public lookupHubSpotUtm(projectSlug: string, eventName: string): Observable<HubSpotUtmLookupResult> {
-    return this.http.get<HubSpotUtmLookupResult>('/api/campaigns/hubspot/utm', { params: { project: projectSlug, event_name: eventName } });
+    return this.http.get<HubSpotUtmLookupResult>('/api/campaigns/hubspot/utm', {
+      // Declares that THIS bundle understands `found: true` with a null `hs_utm` (a campaign that
+      // exists but carries no UTM token). The previous bundle read that as absence and offered
+      // Create, so the server withholds the shape unless a client asks for it by name. Sent as a
+      // parameter rather than inferred, because during a rolling deploy the only thing that
+      // reliably distinguishes the two bundles is what the bundle itself says.
+      params: { project: projectSlug, event_name: eventName, tokenless_found: '1' },
+    });
   }
 
   public createHubSpotUtm(projectSlug: string, eventName: string): Observable<HubSpotUtmCreateResult> {
