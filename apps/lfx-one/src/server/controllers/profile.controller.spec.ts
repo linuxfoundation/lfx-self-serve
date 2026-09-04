@@ -58,6 +58,9 @@ vi.mock('@lfx-one/shared/constants', () => ({
   EMAIL_ALREADY_LINKED_MESSAGE: 'already linked',
   EMAIL_REGEX: /.+/,
   PURCHASE_LINUX_URL: 'https://example.com',
+  PROFILE_EMAILS_PATH: '/profile/emails',
+  PROFILE_PASSWORD_PATH: '/profile/password',
+  PROFILE_SETTINGS_PATH: '/profile/settings',
 }));
 vi.mock('@lfx-one/shared/interfaces', () => ({}));
 vi.mock('@lfx-one/shared/utils', () => ({ isIdentityAlreadyLinkedError: vi.fn(() => false) }));
