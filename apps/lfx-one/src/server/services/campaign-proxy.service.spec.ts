@@ -689,6 +689,42 @@ describe('extractableHtml', () => {
     expect(out).toContain('Tokyo');
   });
 
+  // HTML permits whitespace between a closing tag's name and its `>`, and browsers honour it, so
+  // `</script >` closes the element exactly as `</script>` does. A stripper anchored on `</script>`
+  // matches neither and leaves the WHOLE element -- body included -- in the output. Reported by
+  // CodeQL as "Bad HTML filtering regexp"; all four patterns here had it, not only the one flagged.
+  //
+  // Asserted per-variant rather than in one blob because each `.replace` is its own regex: a fix
+  // applied to `script` alone would still pass a test that only fed it a script tag.
+  it.each([
+    ['space', '<script>alert(1)</script >'],
+    ['tab', '<script>alert(1)</script\t>'],
+    ['newline', '<script>alert(1)</script\n>'],
+  ])('strips a script closed with %s before the bracket', (_label, markup) => {
+    const out = extractableHtml(`<p>before</p>${markup}<p>after</p>`);
+
+    expect(out).not.toContain('alert(1)');
+    expect(out).toContain('before');
+    expect(out).toContain('after');
+  });
+
+  it('strips style and svg closed with whitespace before the bracket', () => {
+    const out = extractableHtml('<style>.a{color:red}</style ><svg><path d="M0"/></svg ><p>kept</p>');
+
+    expect(out).not.toContain('color:red');
+    expect(out).not.toContain('<path');
+    expect(out).toContain('kept');
+  });
+
+  // The JSON-LD matcher is a fourth copy of the same closing pattern. It fails the OTHER way: a
+  // block closed `</script >` goes unmatched here and is then stripped as an ordinary script, so
+  // the structured event facts the extraction depends on are silently lost rather than leaked.
+  it('preserves json-ld closed with whitespace before the bracket', () => {
+    const out = extractableHtml('<script type="application/ld+json">{"startDate":"2027-03-15"}</script ><p>x</p>');
+
+    expect(out).toContain('"startDate":"2027-03-15"');
+  });
+
   it('returns an empty string for input that is entirely strippable', () => {
     expect(extractableHtml('<style>.a{color:red}</style>').trim()).toBe('');
   });

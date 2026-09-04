@@ -534,16 +534,26 @@ const EXTRACTION_CHAR_CAP = 60_000;
 const JSON_LD_BUDGET = 20_000;
 
 export function extractableHtml(html: string): string {
+  // Every closing tag below matches `<\/tag\s*>`, not `<\/tag>`. HTML permits whitespace between a
+  // closing tag's name and its `>` — `</script >`, `</script\n>` — and browsers honour it, so a
+  // regex anchored on `</script>` leaves the whole element in place. That is not cosmetic here:
+  // the survivors are script and style BODIES, which are attacker-controllable text on an
+  // untrusted fetched page, and this string becomes an LLM extraction prompt. Reported by CodeQL
+  // as "Bad HTML filtering regexp" against the `</script>` form; verified for all four patterns.
+  //
+  // This is a heuristic strip on untrusted input, not a sanitiser — the output is never rendered
+  // as HTML, only read as prompt text, so a residual edge case degrades extraction quality rather
+  // than crossing a trust boundary.
   // JSON-LD is PRESERVED before the rest of the scripts go. Event pages publish `startDate`,
   // `endDate` and `location` as schema.org `Event` data in `<script type="application/ld+json">`,
   // which is the most reliable source for exactly the fields the extraction prompt asks for — and
   // stripping every `<script>` discarded it, keeping the "no date survived" failure alive on any
   // page whose dates live only there rather than in prose.
-  const jsonLd = (html.match(/<script[^>]*type=["']application\/ld\+json["'][^>]*>[\s\S]*?<\/script>/gi) ?? []).join(' ');
+  const jsonLd = (html.match(/<script[^>]*type=["']application\/ld\+json["'][^>]*>[\s\S]*?<\/script\s*>/gi) ?? []).join(' ');
   const stripped = html
-    .replace(/<script[\s\S]*?<\/script>/gi, ' ')
-    .replace(/<style[\s\S]*?<\/style>/gi, ' ')
-    .replace(/<svg[\s\S]*?<\/svg>/gi, ' ')
+    .replace(/<script[\s\S]*?<\/script\s*>/gi, ' ')
+    .replace(/<style[\s\S]*?<\/style\s*>/gi, ' ')
+    .replace(/<svg[\s\S]*?<\/svg\s*>/gi, ' ')
     .replace(/<!--[\s\S]*?-->/g, ' ')
     // Collapse the whitespace those removals leave behind. Templated markup is heavily indented,
     // so this is not cosmetic: it recovers several KB of the budget on a typical page.
