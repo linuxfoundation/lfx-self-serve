@@ -61,8 +61,18 @@ export class ProjectSelectorComponent {
 
   /** True when a curated `items` list is supplied — switches sourcing/search/pagination to local mode. */
   protected readonly isCurated: Signal<boolean> = computed(() => this.items() !== null);
-  /** Curated-mode search term (nav mode routes search through NavigationService instead). */
-  private readonly localSearchTerm = signal<string>('');
+  /**
+   * The term currently typed into the selector, mirrored for every mode. Curated mode filters on it
+   * directly; nav mode also routes it through `NavigationService` to drive the upstream query, and
+   * reads it back here only to know whether a search is active (see `isSearching`).
+   */
+  private readonly searchTerm = signal<string>('');
+  /**
+   * While searching, the upstream order is relevance (`sort: 'best_match'`) and must be preserved —
+   * re-sorting alphabetically would bury the closest match under every other match. Role-tier
+   * ordering only applies to the unfiltered browse list.
+   */
+  private readonly isSearching: Signal<boolean> = computed(() => this.searchTerm().trim().length > 0);
 
   // Sidebar panel pins fixed to the right of the rail; the curated (dialog) variant drops that
   // sidebar-only positioning so PrimeNG anchors the popover to its own trigger inside the dialog.
@@ -90,8 +100,8 @@ export class ProjectSelectorComponent {
 
   public constructor() {
     this.searchControl.valueChanges.pipe(takeUntilDestroyed()).subscribe((term) => {
+      this.searchTerm.set(term);
       if (this.isCurated()) {
-        this.localSearchTerm.set(term);
         return;
       }
       if (this.hybridMode()) {
@@ -121,8 +131,8 @@ export class ProjectSelectorComponent {
     this.isPanelOpen.set(false);
     this.activeTab.set('all');
     this.searchControl.setValue('', { emitEvent: false });
+    this.searchTerm.set('');
     if (this.isCurated()) {
-      this.localSearchTerm.set('');
       return;
     }
     if (this.hybridMode()) {
@@ -258,7 +268,7 @@ export class ProjectSelectorComponent {
 
   /** Curated-mode source: the `items` input filtered by kind (null = any) and the local search term. */
   private curatedItems(foundation: boolean | null): LensItem[] {
-    const term = this.localSearchTerm().trim().toLowerCase();
+    const term = this.searchTerm().trim().toLowerCase();
     return (this.items() ?? [])
       .filter((item) => foundation === null || item.isFoundation === foundation)
       .filter((item) => !term || (item.name ?? '').toLowerCase().includes(term) || (item.slug ?? '').toLowerCase().includes(term));
@@ -295,14 +305,14 @@ export class ProjectSelectorComponent {
     return computed(() => {
       const selectedUid = this.selectedProject()?.uid ?? null;
       if (!this.hybridMode()) {
-        return this.sortByRole(this.rawProjectItems()).map((item) => this.toDisplayItem(item, false, selectedUid));
+        return this.orderItems(this.rawProjectItems()).map((item) => this.toDisplayItem(item, false, selectedUid));
       }
       const tab = this.activeTab();
       if (tab === 'foundations') {
-        return this.sortByRole(this.foundationItems()).map((item) => this.toDisplayItem(item, false, selectedUid));
+        return this.orderItems(this.foundationItems()).map((item) => this.toDisplayItem(item, false, selectedUid));
       }
       if (tab === 'projects') {
-        return this.sortByRole(this.rawProjectItems()).map((item) => this.toDisplayItem(item, false, selectedUid));
+        return this.orderItems(this.rawProjectItems()).map((item) => this.toDisplayItem(item, false, selectedUid));
       }
       return this.buildAllTabItems(selectedUid);
     });
@@ -377,6 +387,14 @@ export class ProjectSelectorComponent {
     return priority.length;
   }
 
+  /**
+   * Browse order: role tier first, then alphabetical. Search order: whatever the source already
+   * produced, which is relevance for nav-backed search and the curated list's own order otherwise.
+   */
+  private orderItems(items: LensItem[]): LensItem[] {
+    return this.isSearching() ? items : this.sortByRole(items);
+  }
+
   private sortByRole(items: LensItem[]): LensItem[] {
     return [...items].sort((a, b) => {
       const diff = this.roleIndex(a) - this.roleIndex(b);
@@ -385,8 +403,8 @@ export class ProjectSelectorComponent {
   }
 
   private buildAllTabItems(selectedUid: string | null): DisplayLensItem[] {
-    const sortedFoundations = this.sortByRole(this.foundationItems());
-    const sortedProjects = this.sortByRole(this.rawProjectItems());
+    const sortedFoundations = this.orderItems(this.foundationItems());
+    const sortedProjects = this.orderItems(this.rawProjectItems());
 
     // Pre-group projects by parent foundation in a single pass so nesting is O(F + P), not O(F × P).
     const detectedProjects = this.personaService.detectedProjects();

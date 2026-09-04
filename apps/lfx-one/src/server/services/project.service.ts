@@ -378,11 +378,16 @@ export class ProjectService {
 
   /**
    * Search projects by name
+   *
+   * `sort: 'best_match'` is required for relevance ordering. The query service defaults `sort` to
+   * `name_asc`, and OpenSearch discards scoring whenever an explicit non-`_score` sort is present —
+   * so without this the caller gets the alphabetically-first page of matches, not the closest ones.
    */
   public async searchProjects(req: Request, searchQuery: string): Promise<Project[]> {
     const params = {
       type: 'project',
       name: searchQuery,
+      sort: 'best_match',
     };
 
     const { resources } = await this.microserviceProxy.proxyRequest<QueryServiceResponse<Project>>(req, 'LFX_V2_SERVICE', '/query/resources', 'GET', params);
@@ -487,6 +492,11 @@ export class ProjectService {
         {
           type: 'project',
           name: searchQuery,
+          // Relevance ordering matters more here than anywhere else: this method truncates to
+          // `pageSize` and gives up after `SEARCH_PAGE_LIMIT` pages, so whatever upstream puts
+          // first is what the user sees. Under the default `name_asc` that is the alphabetically
+          // earliest matches, which buries the project the user is actually typing.
+          sort: 'best_match',
           page_size: pageSize,
           ...(pageToken && { page_token: pageToken }),
         }
