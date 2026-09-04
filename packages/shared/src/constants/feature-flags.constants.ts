@@ -26,10 +26,10 @@ export const ORG_LENS_ROI_ENABLED_FLAG = 'org-lens-roi-enabled';
  * milestone-gate precedent. Default false: a missing LaunchDarkly flag keeps the
  * module invisible. The route guard fails closed (unlike `myClasEnabledGuard`).
  *
- * **UI-only** — evaluated through `FeatureFlagService.getBooleanFlag`. Does not
- * gate the BFF; the Express org-CLA stub mounts regardless. Hiding the route and
- * nav is how the module stays unreachable from this page. No `ServerFeatureFlag`
- * kill switch in this scaffold (the stub returns an empty list, no v4 call, no writes).
+ * Client half of a two-flag gate — evaluated through `FeatureFlagService.getBooleanFlag`,
+ * which is the Web SDK and never runs server-side. It hides the route and nav only;
+ * `ServerFeatureFlag.OrgLensClaM3` is what closes the BFF. Both must be on for the module
+ * to work, and the server flag must be rolled out first (see its doc for why).
  */
 export const ORG_LENS_CLA_M3_ENABLED_FLAG = 'org-lens-cla-m3-enabled';
 /**
