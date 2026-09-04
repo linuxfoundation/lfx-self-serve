@@ -30,6 +30,7 @@ import {
   MICROSOFT_CONTROL_CHAR_RE,
   MICROSOFT_MAX_BUDGET,
   MICROSOFT_MAX_CPC_BID,
+  CAMPAIGN_EMAIL_STAGES,
   MICROSOFT_MAX_GEO_TARGETS,
   MICROSOFT_MAX_KEYWORDS,
   MICROSOFT_MAX_KEYWORD_TEXT_LENGTH,
@@ -771,12 +772,18 @@ export class CampaignController {
     // failing it closed toward the pre-existing behaviour cannot expose a brief that was hidden
     // before, whereas honouring an unknown surface could match a row belonging to neither.
     const deliveryTypeParam = typeof req.query['delivery_type'] === 'string' ? req.query['delivery_type'] : '';
+    // `stage` completes the key. Without it every lookup asked upstream for the empty stage, which
+    // is the PAID brief's stage — so an email caller naming a real stage was answered `none` for a
+    // brief sitting right there. Validated against the stage list rather than forwarded, so an
+    // unrecognised value addresses the paid slot instead of a brief nobody meant.
+    const stageParam = typeof req.query['stage'] === 'string' ? req.query['stage'] : '';
+    const stage = (CAMPAIGN_EMAIL_STAGES as readonly string[]).includes(stageParam) ? stageParam : '';
     const deliveryType: CampaignDeliveryType = deliveryTypeParam === 'email' ? 'email' : 'paid-marketing';
 
     const startTime = logger.startOperation(req, 'campaign_load_brief', { eventSlug, projectSlug, deliveryType });
 
     try {
-      const result = await this.campaignServiceClient.loadBrief(req, eventSlug, projectSlug, deliveryType);
+      const result = await this.campaignServiceClient.loadBrief(req, eventSlug, projectSlug, deliveryType, stage);
       // `status` is logged on every arm, `unreadable` included: it is the one outcome that says
       // a stored brief exists and this build cannot open it, and nothing else would record it.
       logger.success(req, 'campaign_load_brief', startTime, { eventSlug, projectSlug, status: result.status, briefId: result.briefId });

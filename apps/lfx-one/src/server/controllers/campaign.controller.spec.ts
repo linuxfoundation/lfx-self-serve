@@ -340,7 +340,7 @@ describe('CampaignController.loadBrief', () => {
 
     await controller.loadBrief(buildLoadReq(), res, next);
 
-    expect(loadBrief).toHaveBeenCalledWith(expect.any(Object), 'kubecon-eu-2026', 'tlf', 'paid-marketing');
+    expect(loadBrief).toHaveBeenCalledWith(expect.any(Object), 'kubecon-eu-2026', 'tlf', 'paid-marketing', '');
     expect(next).not.toHaveBeenCalled();
     expect(res.json).toHaveBeenCalledWith({ status: 'none', briefId: null, brief: null, etag: null, approved: false });
   });
@@ -357,7 +357,7 @@ describe('CampaignController.loadBrief', () => {
 
     await controller.loadBrief(buildLoadReq(), res, next);
 
-    expect(loadBrief).toHaveBeenCalledWith(expect.any(Object), 'kubecon-eu-2026', 'tlf', 'paid-marketing');
+    expect(loadBrief).toHaveBeenCalledWith(expect.any(Object), 'kubecon-eu-2026', 'tlf', 'paid-marketing', '');
     expect(next).not.toHaveBeenCalled();
     expect(res.json).toHaveBeenCalledWith({ status: 'loaded', briefId: 'brief-abc123', brief: mockBrief, etag: 'W/"7"', approved: true });
   });
@@ -372,7 +372,7 @@ describe('CampaignController.loadBrief', () => {
 
     await controller.loadBrief(buildLoadReq(), res, next);
 
-    expect(loadBrief).toHaveBeenCalledWith(expect.any(Object), 'kubecon-eu-2026', 'tlf', 'paid-marketing');
+    expect(loadBrief).toHaveBeenCalledWith(expect.any(Object), 'kubecon-eu-2026', 'tlf', 'paid-marketing', '');
     expect(next).not.toHaveBeenCalled();
     expect(res.json).toHaveBeenCalledWith({ status: 'unreadable', briefId: 'brief-def456', brief: null, etag: 'W/"9"', approved: false });
   });
@@ -386,8 +386,32 @@ describe('CampaignController.loadBrief', () => {
 
     await controller.loadBrief(buildLoadReq({ event_slug: 'kubecon-eu-2026', project: 'tlf', delivery_type: 'email' }), res, next);
 
-    expect(loadBrief).toHaveBeenCalledWith(expect.any(Object), 'kubecon-eu-2026', 'tlf', 'email');
+    expect(loadBrief).toHaveBeenCalledWith(expect.any(Object), 'kubecon-eu-2026', 'tlf', 'email', '');
     expect(next).not.toHaveBeenCalled();
+  });
+
+  // Regression: the controller read `delivery_type` and NOT `stage`, so every lookup asked
+  // upstream for the empty stage — the PAID brief's stage. An email caller naming a real stage was
+  // answered `none` for a brief sitting right there in the database. Caught by driving the browser
+  // against a live service, not by any unit test, because both halves were individually correct:
+  // the client sent the stage and the service used it; only the controller dropped it in between.
+  it('forwards stage, so a send in an email series is reachable', async () => {
+    loadBrief.mockResolvedValue({ status: 'none', briefId: null, brief: null, etag: null, approved: false });
+
+    await controller.loadBrief(buildLoadReq({ event_slug: 'kubecon-eu-2026', project: 'tlf', delivery_type: 'email', stage: 'Registration Push' }), res, next);
+
+    expect(loadBrief).toHaveBeenCalledWith(expect.any(Object), 'kubecon-eu-2026', 'tlf', 'email', 'Registration Push');
+    expect(next).not.toHaveBeenCalled();
+  });
+
+  // An unrecognised stage addresses the paid slot rather than a brief nobody meant, matching how
+  // an unrecognised delivery type is handled: narrow toward the pre-existing behaviour.
+  it('falls back to the empty stage for an unrecognised one', async () => {
+    loadBrief.mockResolvedValue({ status: 'none', briefId: null, brief: null, etag: null, approved: false });
+
+    await controller.loadBrief(buildLoadReq({ event_slug: 'kubecon-eu-2026', project: 'tlf', delivery_type: 'email', stage: 'Not A Stage' }), res, next);
+
+    expect(loadBrief).toHaveBeenCalledWith(expect.any(Object), 'kubecon-eu-2026', 'tlf', 'email', '');
   });
 
   it('falls back to paid-marketing for an unrecognised delivery_type rather than rejecting it', async () => {
@@ -399,7 +423,7 @@ describe('CampaignController.loadBrief', () => {
 
     await controller.loadBrief(buildLoadReq({ event_slug: 'kubecon-eu-2026', project: 'tlf', delivery_type: 'not-a-surface' }), res, next);
 
-    expect(loadBrief).toHaveBeenCalledWith(expect.any(Object), 'kubecon-eu-2026', 'tlf', 'paid-marketing');
+    expect(loadBrief).toHaveBeenCalledWith(expect.any(Object), 'kubecon-eu-2026', 'tlf', 'paid-marketing', '');
     expect(next).not.toHaveBeenCalled();
   });
 
