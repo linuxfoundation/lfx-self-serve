@@ -10,7 +10,7 @@ import { InputTextComponent } from '@components/input-text/input-text.component'
 import { CAMPAIGN_GOALS, CAMPAIGN_PLATFORMS } from '@lfx-one/shared/constants';
 import { CampaignService } from '@services/campaign.service';
 import { ProjectContextService } from '@services/project-context.service';
-import { catchError, combineLatest, debounceTime, distinctUntilChanged, map, of, skip, Subject, Subscription, switchMap } from 'rxjs';
+import { catchError, combineLatest, debounceTime, distinctUntilChanged, map, merge, of, skip, Subject, Subscription, switchMap } from 'rxjs';
 
 import type {
   CampaignBriefLoadResult,
@@ -431,13 +431,21 @@ export class PlanningTabComponent implements OnInit {
     // That state is keyed by project and event, neither of which the surface switch changes, and
     // the UTM token found for this event is equally valid on both. Re-asking would be a request
     // nobody made. `skip(1)` for the same reason as above — the initial replay is not a change.
-    this.deliveryType$.pipe(skip(1), takeUntilDestroyed(this.destroyRef)).subscribe(() => {
-      this.savedBrief.set(null);
-      this.savedBriefId = null;
-      this.savedBriefEtag = null;
-      this.savedBriefApproved = false;
-      this.savedBriefWarning.set(null);
-    });
+    //
+    // The STAGE is merged in because it is identity too, not a filter: a CFP Launch and a Final
+    // Countdown are different briefs upstream, so a stage change invalidates the current offer
+    // exactly as a surface change does. Clearing on delivery type alone left the previous stage's
+    // Restore button live and clickable for the whole debounce window while its replacement
+    // lookup was still in flight — long enough to restore the wrong send.
+    merge(this.deliveryType$.pipe(skip(1)), this.emailStage$.pipe(skip(1)))
+      .pipe(takeUntilDestroyed(this.destroyRef))
+      .subscribe(() => {
+        this.savedBrief.set(null);
+        this.savedBriefId = null;
+        this.savedBriefEtag = null;
+        this.savedBriefApproved = false;
+        this.savedBriefWarning.set(null);
+      });
   }
 
   // === Public Methods ===

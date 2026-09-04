@@ -1443,8 +1443,19 @@ export class CampaignServiceClient {
         }
       }
       try {
+        // The recovery read must name the SAME brief the lost write targeted, which means all
+        // four parts of the upstream key -- not just the slug. Sending the slug alone let
+        // campaign-service apply its defaults (`paid-marketing`, `''`), so a timed-out EMAIL
+        // write reconciled against the paid brief: either a 404 that rethrew the original
+        // failure, or worse, a 200 for a row this request never wrote, whose version could
+        // satisfy `versionIsAcceptable` and hand back the wrong brief's id and ETag.
+        //
+        // Taken from the ENVELOPE rather than from parameters, so it cannot drift from the write
+        // being reconciled: this is by definition the identity that write used.
         const read = await this.microserviceProxy.proxyRequestWithResponse<CampaignServiceBrief>(req, 'LFX_V2_CAMPAIGN_SERVICE', basePath, 'GET', {
           event_slug: eventSlug,
+          delivery_type: envelope.brief.delivery_type ?? 'paid-marketing',
+          stage: envelope.brief.stage ?? '',
         });
         found = read ?? null;
         // A successful read is not the same as a settled write, and this is where create and

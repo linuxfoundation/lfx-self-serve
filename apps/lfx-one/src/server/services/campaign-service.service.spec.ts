@@ -820,6 +820,34 @@ describe('CampaignServiceClient.saveBrief', () => {
     expect(reconcileReads).toBe(1);
   }, 20000);
 
+  // The recovery read has to name the SAME brief the lost write targeted, which under 000030 means
+  // all four parts of the key. Sending only `event_slug` let campaign-service apply its defaults
+  // (`paid-marketing`, `''`), so a timed-out EMAIL write reconciled against the PAID brief -- and
+  // a 200 for that row could satisfy the version check and hand back another brief's id and ETag.
+  it('reconciles against the same delivery type and stage the write used', async () => {
+    const emailBrief = { ...briefWithSlug('e'), deliveryType: 'email' as const, emailStage: 'Final Countdown' as const };
+
+    proxyRequestWithResponse
+      .mockRejectedValueOnce(NOT_FOUND) // the pre-save lookup: no brief yet
+      .mockRejectedValueOnce(new MicroserviceError('timeout', 408, 'TIMEOUT', {})) // the POST times out
+      // Echoed from the POST body actually sent, as the reconciliation tests above do, so the
+      // committed row is recognisable as ours and the loop stops rather than exhausting its
+      // attempts on a payload mismatch unrelated to what this test is about.
+      .mockImplementation(() => {
+        const envelope = proxyRequestWithResponse.mock.calls[1][5] as { brief: Record<string, unknown> };
+        return Promise.resolve(apiResponse({ id: 'brief-9', version: 1, ...envelope.brief }, { etag: '"1"' }));
+      });
+
+    await new CampaignServiceClient().saveBrief(req, emailBrief, 'e', 'tlf');
+
+    // Asserting on the recovery GET's QUERY, not merely that a read happened: a read of the WRONG
+    // row also happens, and that is precisely the bug. The reconciliation read is the GET issued
+    // after the POST, so take the last GET rather than the last call.
+    const gets = proxyRequestWithResponse.mock.calls.filter((c) => c[3] === 'GET') as unknown as [unknown, unknown, unknown, string, Record<string, string>][];
+    expect(gets.length, 'no reconciliation GET was issued').toBeGreaterThan(0);
+    expect(gets.at(-1)?.[4]).toMatchObject({ event_slug: 'e', delivery_type: 'email', stage: 'Final Countdown' });
+  }, 20000);
+
   it('gives up rather than guessing when the create never resolves', async () => {
     // Bounded: the request has already spent part of its own budget on the failed POST, so the
     // retry cannot chase a late commit indefinitely. When the attempts run out the ORIGINAL

@@ -288,30 +288,21 @@
                 }
 
                 <!--
-                  The email TYPE, above the generate control because it changes what generation
-                  produces. Twelve types map onto six stages: a CFP launch and a co-located CFP
-                  reminder are the same stage, sent at different times, so the operator picks the
-                  type they recognise and the stage is derived.
+                  The email TYPE, shown but NOT selectable here. Twelve types map onto six stages:
+                  a CFP launch and a co-located CFP reminder are the same stage, sent at different
+                  times, so the operator picks the type they recognise and the stage is derived.
+                  It sits above the generate control because it is what generation produces from.
+                  It is READ-ONLY on this tab, and that is the fix for a real desync rather than a
+                  simplification. Both tabs used to bind the same `emailType` control, but only the
+                  planner's lookup follows a change -- so switching type HERE moved the stage while
+                  `emailBriefId` still named the previous stage's brief, and `onGenerateEmailCopy()`
+                  sent the new stage against the old brief's id. The choice belongs where the
+                  lookup can answer it: above the planner, which re-asks upstream on every change.
                 -->
                 <div class="flex flex-col gap-1">
-                  <label for="email-type" class="font-mono text-xs uppercase tracking-wide text-gray-400">Email type</label>
-                  <!--
-                    A FORM CONTROL, not a native <select> with `selected` on each option. The raw
-                    control ignored a `[value]` binding applied before its options existed and fell
-                    back to the FIRST option -- CFP Launch -- while the signal held the Main
-                    Registration Push default, so every operator who ignored the selector silently
-                    got CFP copy. A form-driven wrapper has no such ordering hazard, and
-                    `frontend-checklist.md` 14.1 requires it for a changed control.
-                  -->
-                  <lfx-select
-                    [form]="selectorForm"
-                    control="emailType"
-                    [options]="emailTypes"
-                    optionLabel="label"
-                    optionValue="id"
-                    inputId="email-type"
-                    styleClass="w-full max-w-md"
-                    dataTest="campaigns-email-type-select" />
+                  <span class="font-mono text-xs uppercase tracking-wide text-gray-400">Email type</span>
+                  <p class="text-sm text-gray-900" data-testid="campaigns-email-type-display">{{ selectedEmailTypeLabel() }}</p>
+                  <p class="text-xs text-gray-500">Change the type above the planner — each type is its own brief.</p>
                 </div>
 
                 <div class="flex items-center gap-3">

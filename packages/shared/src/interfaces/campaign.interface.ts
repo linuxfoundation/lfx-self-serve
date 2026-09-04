@@ -209,11 +209,16 @@ export interface CampaignBriefOutput {
   /**
    * Which delivery surface this brief was authored for.
    *
-   * Persisted (into `targeting`, which is free-form) rather than derived, because brief storage is
-   * keyed on `(project, event_slug)` with no delivery dimension: without this, an email brief and a
-   * paid brief for the same event are the SAME ROW, and restoring one under the other surface hands
-   * back RSA headlines and a keyword list to an email plan. `loadBrief` compares it against the
-   * surface asking, so a brief authored elsewhere is reported as absent rather than mis-restored.
+   * Part of the brief's IDENTITY upstream, alongside `emailStage`: campaign-service keys a brief
+   * on `(project, event_slug, delivery_type, stage)`, so an event's paid brief and its email
+   * series are different rows rather than one shared row. An earlier revision smuggled this value
+   * into the free-form `targeting` blob to avoid a migration, back when storage had no delivery
+   * dimension and the two surfaces genuinely collided; it is a top-level wire field now.
+   *
+   * `loadBrief` still compares it against the surface asking. That is defence in depth rather than
+   * the separation itself -- the storage key does that -- but a paid brief opened on the email
+   * planner carries RSA headlines and a keyword list, and a stale upstream mid-rollout is exactly
+   * when a mismatched row would arrive.
    *
    * Optional, and absence is meaningful: rows written before this field existed carry no delivery
    * type and are treated as paid, which is what they are — every brief predating it was authored on

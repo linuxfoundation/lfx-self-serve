@@ -1015,6 +1015,17 @@ export class CampaignsComponent {
     () => CAMPAIGN_EMAIL_TYPES.find((t) => t.id === this.selectedEmailTypeId())?.stage
   );
 
+  /**
+   * The chosen type's label, for the read-only line on Implement.
+   *
+   * Implement DISPLAYS the type; it no longer selects it. Both surfaces used to bind the same
+   * `emailType` control, but only the planner's lookup follows a change -- so switching type on
+   * Implement moved the stage while `emailBriefId` still named the previous stage's brief, and
+   * `onGenerateEmailCopy()` then sent the new stage against the old brief's id. The picker lives
+   * above the planner, where the lookup can answer it.
+   */
+  protected readonly selectedEmailTypeLabel = computed<string>(() => CAMPAIGN_EMAIL_TYPES.find((t) => t.id === this.selectedEmailTypeId())?.label ?? '');
+
   /** The full type list, for the selector. */
   // A mutable COPY for the template. `lfx-select` types `options` as `any[]`, and a readonly
   // array is not assignable to it -- widening the wrapper's input would relax it for every caller
@@ -3605,7 +3616,22 @@ export class CampaignsComponent {
     // A newline separator, not a hyphen: both slugs are drawn from `[a-z0-9-]`, so a separator
     // from that set could be produced by the slugs themselves and let `("a-b", "c")` collide
     // with `("a", "b-c")`.
-    return `${projectSlug}\n${eventSlug}`;
+    //
+    // The key carries ALL FOUR parts of the upstream identity, not just the two slugs. Since
+    // campaign-service keys a brief on `(project, event_slug, delivery_type, stage)`, one event
+    // holds a paid brief AND every stage of its email series at once. Under the two-part key
+    // those all shared one map entry, so restoring one email stage overwrote the cached id and
+    // ETag of the paid brief and of every sibling stage -- and the next save of one of THOSE
+    // would send the wrong `knownBriefId` and be refused as `unowned-brief-exists`. That is the
+    // same failure the event-slug trimming note above guards against, reached a different way.
+    //
+    // Read off the BRIEF, never off the current selection: this keys the brief in hand, which is
+    // not always the one on screen (a restore, a reconcile, or a save that resolves after the
+    // operator has switched type). `deliveryType` absent means paid -- rows predating the field
+    // were all paid -- and a paid brief's stage is empty, which is its real stage upstream.
+    const deliveryType = brief.deliveryType ?? 'paid-marketing';
+    const stage = brief.emailStage ?? '';
+    return `${projectSlug}\n${eventSlug}\n${deliveryType}\n${stage}`;
   }
 
   /**

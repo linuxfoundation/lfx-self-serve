@@ -3126,14 +3126,13 @@ describe('CampaignsComponent — email delivery channel', () => {
 
     it('renders the selector defaulted to the registration push type', () => {
       selectEmail();
-      internals().selectedEmailTab.set('implementation');
-      internals().emailBriefOutput.set(emailBrief);
       fixture.detectChanges();
 
-      // `data-test`, not `data-testid`: that is the attribute `lfx-select` renders from its
-      // `dataTest` input, and querying the wrong one returns null on a control that IS present.
-      const sel = (fixture.nativeElement as HTMLElement).querySelector('[data-test="campaigns-email-type-select"]');
-      expect(sel, 'the email-type selector is not rendered').not.toBeNull();
+      // The picker lives above the PLANNER now, not on Implement. It moved because the stage it
+      // resolves to is part of a brief's identity upstream, so it has to be answered before the
+      // lookup rather than after a brief already exists.
+      const sel = (fixture.nativeElement as HTMLElement).querySelector('[data-testid="campaigns-email-stage-select"]');
+      expect(sel, 'the email-type selector is not rendered above the planner').not.toBeNull();
 
       // The RENDERED label, not the signal, and not the form value either. The raw <select> this
       // replaced ignored a `[value]` binding applied before its options existed and fell back to
@@ -3146,6 +3145,30 @@ describe('CampaignsComponent — email delivery channel', () => {
 
       // The signal the rest of the component reads must agree with what is on screen.
       expect(internals().selectedEmailTypeId()).toBe('main-registration-push');
+    });
+
+    // Implement DISPLAYS the type; it must not offer a second control for it. Two selectors bound
+    // to the same `emailType` control is what the bots caught: only the planner's lookup follows a
+    // change, so switching type on Implement moved the stage while `emailBriefId` still named the
+    // previous stage's brief, and generation then sent the new stage against the old brief's id.
+    it('shows the chosen type on implement without a second selector', () => {
+      selectEmail();
+      internals().selectedEmailTab.set('implementation');
+      internals().emailBriefOutput.set(emailBrief);
+      fixture.detectChanges();
+
+      const host = fixture.nativeElement as HTMLElement;
+      const display = host.querySelector('[data-testid="campaigns-email-type-display"]');
+      expect(display, 'implement does not show which email type is selected').not.toBeNull();
+      expect(display?.textContent).toContain('Main Registration Push');
+
+      // `data-test`, not `data-testid`: that is the attribute `lfx-select` renders from its
+      // `dataTest` input, and querying the wrong one returns null on a control that IS present --
+      // which would make this assertion pass for the wrong reason.
+      expect(
+        host.querySelector('[data-test="campaigns-email-type-select"]'),
+        'implement still renders a second email-type selector; changing it there desyncs the loaded brief'
+      ).toBeNull();
     });
 
     it('drops copy written for the previous type when the type changes', () => {
@@ -3351,12 +3374,34 @@ describe('CampaignsComponent — email delivery channel', () => {
 
       await (internals() as unknown as { ensureEmailBriefId(b: unknown, p: string): Promise<string> }).ensureEmailBriefId(emailBrief, 'tlf');
 
-      // Briefs are keyed on (project, event) and SHARED across delivery types, so a first-save
-      // call -- which sends no brief_id -- is refused as `unowned-brief-exists` against a row the
-      // paid side created. That made email unusable for every event paid had touched.
+      // A first-save call sends no brief_id and is refused as `unowned-brief-exists` against a row
+      // this session actually owns. Reusing the recorded id is what keeps a second save on the
+      // same brief from looking like an attempt to create a duplicate.
       const [, , knownId, knownEtag] = persist.mock.calls[0] as unknown as [unknown, string, string | null, string | null];
       expect(knownId).toBe('brief-77');
       expect(knownEtag).toBe('W/"3"');
+    });
+
+    // The ownership map is keyed on the SAME four parts campaign-service keys a brief on. Under
+    // the old two-part key (project, event) an event's paid brief and every stage of its email
+    // series shared one entry, so recording one overwrote the others -- and the next save of a
+    // sibling sent that other brief's id and was refused as `unowned-brief-exists`. That is the
+    // exact failure the reuse test above depends on NOT happening.
+    it('keys ownership per delivery type and stage, not per event', () => {
+      const key = (b: unknown): string => (internals() as unknown as { ownershipKey(p: string, b: unknown): string }).ownershipKey('tlf', b);
+
+      const paid = { ...emailBrief, deliveryType: 'paid-marketing', emailStage: undefined };
+      const cfp = { ...emailBrief, deliveryType: 'email', emailStage: 'CFP Launch' };
+      const countdown = { ...emailBrief, deliveryType: 'email', emailStage: 'Final Countdown' };
+
+      const keys = [key(paid), key(cfp), key(countdown)];
+      expect(new Set(keys).size, `siblings of one event collapsed onto the same ownership key: ${JSON.stringify(keys)}`).toBe(3);
+
+      // A brief with no delivery type is a pre-000030 row, and every one of those was paid. It
+      // must land on the SAME key as an explicit paid brief, or restoring a legacy brief would
+      // orphan the ownership record written for the same row under its explicit identity.
+      const legacy = { ...emailBrief, deliveryType: undefined, emailStage: undefined };
+      expect(key(legacy)).toBe(key(paid));
     });
 
     it('reports an error when the staging job FAILS after the ack', async () => {

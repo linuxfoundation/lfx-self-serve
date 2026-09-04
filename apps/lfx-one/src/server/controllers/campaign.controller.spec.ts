@@ -289,6 +289,38 @@ describe('CampaignController.loadBrief', () => {
     expect(error.toResponse()['errors']).toEqual([{ field: 'event_slug', message: 'event_slug is required', code: 'FIELD_VALIDATION_ERROR' }]);
   });
 
+  // An earlier revision folded an unrecognised stage to `''` and claimed that addressed the paid
+  // slot. It did not: `delivery_type` stayed `email`, so the lookup addressed `(email, '')` -- a
+  // real and DIFFERENT key -- and the caller got a confident answer about a brief it never asked
+  // for. Unlike `delivery_type`, where every unknown collapses toward the one pre-existing surface
+  // and can expose nothing that was hidden, stages are siblings with no narrower fallback.
+  it('refuses a stage outside the known list instead of silently querying another brief', async () => {
+    await controller.loadBrief(buildLoadReq({ event_slug: 'kubecon-eu-2026', project: 'tlf', delivery_type: 'email', stage: 'Fnal Countdown' }), res, next);
+
+    expect(loadBrief, 'a malformed stage still reached campaign-service').not.toHaveBeenCalled();
+    expect(res.json).not.toHaveBeenCalled();
+    const error = vi.mocked(next).mock.calls[0][0] as unknown as ServiceValidationError;
+    expect(error).toBeInstanceOf(ServiceValidationError);
+    expect(error.statusCode).toBe(400);
+    expect((error.toResponse()['errors'] as { field: string }[])[0].field).toBe('stage');
+  });
+
+  // The EMPTY stage is the paid brief's real stage, not a malformed value, so it must pass. A
+  // guard written as "reject anything not in CAMPAIGN_EMAIL_STAGES" would refuse every paid
+  // lookup -- the common case -- which is why this is asserted next to the rejection above.
+  it.each([
+    ['an omitted stage', { event_slug: 'kubecon-eu-2026', project: 'tlf' }],
+    ['an explicitly empty stage', { event_slug: 'kubecon-eu-2026', project: 'tlf', stage: '' }],
+    ['a recognised stage', { event_slug: 'kubecon-eu-2026', project: 'tlf', delivery_type: 'email', stage: 'Final Countdown' }],
+  ])('accepts %s', async (_label, query) => {
+    loadBrief.mockResolvedValue({ status: 'none', briefId: null, brief: null, etag: null, approved: false });
+
+    await controller.loadBrief(buildLoadReq(query), res, next);
+
+    expect(next).not.toHaveBeenCalled();
+    expect(loadBrief).toHaveBeenCalled();
+  });
+
   it.each([
     ['no event_slug param at all', { project: 'tlf' }],
     ['a blank event_slug param', { event_slug: '   ', project: 'tlf' }],
@@ -404,15 +436,11 @@ describe('CampaignController.loadBrief', () => {
     expect(next).not.toHaveBeenCalled();
   });
 
-  // An unrecognised stage addresses the paid slot rather than a brief nobody meant, matching how
-  // an unrecognised delivery type is handled: narrow toward the pre-existing behaviour.
-  it('falls back to the empty stage for an unrecognised one', async () => {
-    loadBrief.mockResolvedValue({ status: 'none', briefId: null, brief: null, etag: null, approved: false });
-
-    await controller.loadBrief(buildLoadReq({ event_slug: 'kubecon-eu-2026', project: 'tlf', delivery_type: 'email', stage: 'Not A Stage' }), res, next);
-
-    expect(loadBrief).toHaveBeenCalledWith(expect.any(Object), 'kubecon-eu-2026', 'tlf', 'email', '');
-  });
+  // The unrecognised-stage case is asserted above, as a REJECTION. An earlier revision of this
+  // suite pinned the opposite -- that a bad stage silently became `''` -- which is the behaviour
+  // the fix removed: with `delivery_type` still `email`, `''` is not the paid slot but the real
+  // and different key `(email, '')`, so the caller was answered about a brief nobody asked for.
+  // The two assertions cannot both stand, so that test is gone rather than left contradicting.
 
   it('falls back to paid-marketing for an unrecognised delivery_type rather than rejecting it', async () => {
     // Fails CLOSED toward the pre-existing behaviour. This parameter NARROWS what a caller may

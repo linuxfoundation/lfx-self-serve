@@ -774,10 +774,31 @@ export class CampaignController {
     const deliveryTypeParam = typeof req.query['delivery_type'] === 'string' ? req.query['delivery_type'] : '';
     // `stage` completes the key. Without it every lookup asked upstream for the empty stage, which
     // is the PAID brief's stage — so an email caller naming a real stage was answered `none` for a
-    // brief sitting right there. Validated against the stage list rather than forwarded, so an
-    // unrecognised value addresses the paid slot instead of a brief nobody meant.
+    // brief sitting right there.
+    //
+    // A non-empty stage outside the list is REJECTED, not narrowed. An earlier revision folded it
+    // to `''` and claimed that addressed the paid slot; it did not — `delivery_type` stayed
+    // `email`, so the lookup addressed `(email, '')`, a real and different key, and the caller got
+    // a confident answer about a brief it never asked for. Unlike `delivery_type` above, where
+    // every unknown value collapses toward the one pre-existing surface and can expose nothing
+    // that was hidden before, there is no "narrower" stage to fall back to: they are siblings, not
+    // a hierarchy. Campaign-service rejects a bad stage at its own edge for the same reason, so
+    // answering here keeps the two ends agreeing.
+    //
+    // The EMPTY string stays valid and means the paid brief's stage — that is an omitted `stage`,
+    // not a malformed one.
     const stageParam = typeof req.query['stage'] === 'string' ? req.query['stage'] : '';
-    const stage = (CAMPAIGN_EMAIL_STAGES as readonly string[]).includes(stageParam) ? stageParam : '';
+    if (stageParam !== '' && !(CAMPAIGN_EMAIL_STAGES as readonly string[]).includes(stageParam)) {
+      next(
+        ServiceValidationError.forField('stage', `stage must be one of: ${CAMPAIGN_EMAIL_STAGES.join(', ')}`, {
+          operation: 'campaign_load_brief',
+          service: 'campaign_controller',
+          path: req.path,
+        })
+      );
+      return;
+    }
+    const stage = stageParam;
     const deliveryType: CampaignDeliveryType = deliveryTypeParam === 'email' ? 'email' : 'paid-marketing';
 
     const startTime = logger.startOperation(req, 'campaign_load_brief', { eventSlug, projectSlug, deliveryType });
