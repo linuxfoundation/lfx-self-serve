@@ -664,6 +664,31 @@ describe('extractableHtml', () => {
     expect(extractableHtml('<p>' + 'y'.repeat(200_000) + '</p>').length).toBeLessThanOrEqual(60_000);
   });
 
+  // The case the cap test above CANNOT reach, and the one that matters most. An earlier revision
+  // composed the result as `jsonLd + stripped.slice(0, 60_000)`, bounding only the second term:
+  // a 500KB `ld+json` block produced 500,055 characters against a documented 60,000 cap. The
+  // preserved-JSON-LD fix introduced that hole, which is why each arm needs its own assertion --
+  // a test that feeds only prose exercises the one path that was already bounded.
+  //
+  // JSON-LD is the more attacker-controllable of the two: it is machine-written and invisible on
+  // the rendered page, and nothing upstream bounds the download (`fetchSafeUrl` has a 15s timeout
+  // and no byte ceiling), so this is the last line of defence on prompt size.
+  it('caps the composed result, not merely the stripped body', () => {
+    const hugeLd = `<script type="application/ld+json">${'x'.repeat(500_000)}</script><p>short</p>`;
+    const hugeBoth = `<script type="application/ld+json">${'x'.repeat(500_000)}</script><p>${'y'.repeat(500_000)}</p>`;
+
+    expect(extractableHtml(hugeLd).length).toBeLessThanOrEqual(60_000);
+    expect(extractableHtml(hugeBoth).length).toBeLessThanOrEqual(60_000);
+  });
+
+  // Budgeted rather than truncated wholesale: an oversized JSON-LD block must not starve the prose
+  // of the entire budget, or a page whose facts are in prose loses them to a block of markup.
+  it('leaves budget for prose when json-ld is oversized', () => {
+    const out = extractableHtml(`<script type="application/ld+json">${'x'.repeat(500_000)}</script><p>Tokyo</p>`);
+
+    expect(out).toContain('Tokyo');
+  });
+
   it('returns an empty string for input that is entirely strippable', () => {
     expect(extractableHtml('<style>.a{color:red}</style>').trim()).toBe('');
   });

@@ -1384,6 +1384,39 @@ describe('CampaignServiceClient.loadBrief', () => {
     expect(proxyRequestWithResponse).toHaveBeenCalledTimes(1);
   });
 
+  // The guard reads `targeting.deliveryType` DIRECTLY rather than through `fromBriefResponse`.
+  // That distinction matters for a row this build cannot fully reconstruct: `fromBriefResponse`
+  // returns null for those, and going through it was wrong twice over -- `?.deliveryType ?? 'paid'`
+  // collapsed null into a real type, making an unreadable row indistinguishable from a paid one,
+  // while refusing on null broke sixteen ordinary saves, because the minimal
+  // `{id, version, program_type, event_slug}` shape a create returns has no `event_details` to
+  // reconstruct either. Reading the one validated string where it lives keeps the guard answering
+  // only its own question.
+  it('compares the stored delivery type even when the row cannot be fully reconstructed', async () => {
+    const unreconstructable = {
+      id: 'b-1',
+      version: 4,
+      program_type: 'events',
+      event_slug: 'kubecon-eu-2026',
+      targeting: { deliveryType: 'email' },
+    };
+    proxyRequestWithResponse.mockResolvedValueOnce(apiResponse(unreconstructable, { etag: '"3"' }));
+
+    const paid = await new CampaignServiceClient().saveBrief(
+      req,
+      { ...briefWithSlug('kubecon-eu-2026'), deliveryType: 'paid-marketing' },
+      'kubecon-eu-2026',
+      'tlf',
+      'b-1',
+      '"3"',
+      false
+    );
+
+    expect(paid.conflict).toBe('other-delivery-type-brief-exists');
+    // The find ran; no write followed it.
+    expect(proxyRequestWithResponse).toHaveBeenCalledTimes(1);
+  });
+
   // Delivery scoping. Storage is keyed `(project_id, event_slug)` with no delivery dimension
   // (`uq_campaign_briefs_project_event`), so ONE event has ONE row however many surfaces plan it.
   // Handing that row to whichever surface asks is exactly what kept the email restore path

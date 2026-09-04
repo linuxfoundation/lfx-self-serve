@@ -654,9 +654,30 @@ export class CampaignServiceClient {
     // Fails CLOSED. Storage still holds one row per event (LFXV2-3198's remaining half is the
     // delivery-aware key), so refusing is the only answer that does not destroy one of the two
     // briefs; creating for an untouched event is unaffected, because `existing` is null there.
+    // Three states, kept distinct on purpose. `fromBriefResponse` returns `null` for a row this
+    // build cannot parse, and an earlier revision collapsed that into `'paid-marketing'` with
+    // `?.` -- which made an UNREADABLE row indistinguishable from a genuinely paid one, so a paid
+    // save sailed past this guard and replaced content nobody could read to check. The read path
+    // (`loadBrief`) already keeps them apart by testing `brief !== null` before comparing; these
+    // two must agree about what an unparseable row means or the same row is protected on read and
+    // replaceable on write.
+    //
+    // Read from `targeting` DIRECTLY rather than through `fromBriefResponse`, which was the first
+    // attempt and was wrong twice over. It returns `null` for any row this build cannot fully
+    // reconstruct — including the minimal `{id, version, program_type, event_slug}` shape the
+    // service legitimately returns from a create/replace — and `?.deliveryType ?? 'paid-marketing'`
+    // then collapsed that `null` into a real delivery type, making an unreadable row
+    // indistinguishable from a paid one. Refusing on `null` instead was worse still: it blocked
+    // sixteen ordinary saves whose stored row simply had no `event_details` to reconstruct.
+    //
+    // The delivery type does not depend on any of that. It is one validated string in a JSONB
+    // column, so reading it where it lives answers exactly the question this guard asks and stays
+    // silent about everything it does not need. Absence reads as paid, per the field's contract.
     const sentDelivery = brief.deliveryType ?? 'paid-marketing';
-    const storedDelivery = existing === null ? null : (fromBriefResponse(existing.brief)?.deliveryType ?? 'paid-marketing');
-    if (existing !== null && storedDelivery !== null && storedDelivery !== sentDelivery) {
+    const storedTargeting = existing === null ? null : asRecord(existing.brief.targeting);
+    const storedRaw = storedTargeting?.['deliveryType'];
+    const storedDelivery = storedRaw === 'email' || storedRaw === 'paid-marketing' ? storedRaw : 'paid-marketing';
+    if (existing !== null && storedDelivery !== sentDelivery) {
       return {
         enabled: true,
         briefId: '',

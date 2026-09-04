@@ -527,6 +527,12 @@ If a field cannot be determined, use null.`;
  * the PROMPT, which is measured in tokens rather than bytes, and code units track tokens more
  * closely than bytes do for non-Latin scripts.
  */
+/** Total characters of page content that may reach the extraction prompt. */
+const EXTRACTION_CHAR_CAP = 60_000;
+
+/** The slice of that budget JSON-LD may claim before prose gets the rest. */
+const JSON_LD_BUDGET = 20_000;
+
 export function extractableHtml(html: string): string {
   // JSON-LD is PRESERVED before the rest of the scripts go. Event pages publish `startDate`,
   // `endDate` and `location` as schema.org `Event` data in `<script type="application/ld+json">`,
@@ -542,9 +548,18 @@ export function extractableHtml(html: string): string {
     // Collapse the whitespace those removals leave behind. Templated markup is heavily indented,
     // so this is not cosmetic: it recovers several KB of the budget on a typical page.
     .replace(/\s{2,}/g, ' ');
-  // Prepended rather than appended: the cap truncates the TAIL, so the structured facts must sit
-  // where a long page cannot push them out.
-  return (jsonLd ? jsonLd + ' ' : '') + stripped.slice(0, 60_000);
+  // BUDGETED, not concatenated. An earlier revision returned `jsonLd + stripped.slice(0, 60_000)`,
+  // which bounded only the second term: a page with a 500KB `ld+json` block produced 500,055
+  // characters against a documented 60,000 cap, and JSON-LD is MORE attacker-controllable than
+  // prose, since it is machine-written and invisible on the rendered page. Nothing upstream caps
+  // it either — `fetchSafeUrl` validates the URL and every redirect hop but accumulates the body
+  // with only a 15s timeout — so this really is the last line of defence on prompt size.
+  //
+  // JSON-LD still wins the space it needs, because it holds the structured facts the extraction
+  // is for; it simply cannot take the whole budget. What it does not use goes to the prose.
+  const lead = jsonLd.slice(0, JSON_LD_BUDGET);
+  const remaining = Math.max(0, EXTRACTION_CHAR_CAP - lead.length - (lead ? 1 : 0));
+  return (lead ? lead + ' ' : '') + stripped.slice(0, remaining);
 }
 
 function getExtractionPrompt(programType?: CampaignProgramType): string {

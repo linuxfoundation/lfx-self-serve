@@ -440,6 +440,21 @@ export class CampaignsComponent {
    */
   private emailBriefPersistGeneration = 0;
 
+  /**
+   * The conflict token from the most recent email save, or `null` when it did not conflict.
+   *
+   * `persistEmailBrief` resolves to a brief id and reports failure as an empty string, which
+   * cannot carry WHY the save failed — so every email action rendered "The brief could not be
+   * saved… Try again." even for `other-delivery-type-brief-exists`, which retrying can never
+   * clear. That is the same dead end the `unowned-brief-exists` copy was reworded to stop
+   * promising, reintroduced one surface over — and it is the surface most likely to hit it, since
+   * an event already planned on paid trips the guard on the FIRST email action.
+   *
+   * Held here rather than widened into the return type because all three callers already branch
+   * on the empty id; this lets them name the cause without changing that shape.
+   */
+  private emailBriefConflict: NonNullable<CampaignBriefPersistResult['conflict']> | null = null;
+
   private briefPersistenceGeneration = 0;
 
   /**
@@ -1828,7 +1843,7 @@ export class CampaignsComponent {
       }
       if (briefId === '') {
         this.emailAudienceState.set('error');
-        this.emailAudienceMessage.set('The brief could not be saved, so no audience was built.');
+        this.emailAudienceMessage.set(this.emailSaveFailureMessage('so no audience was built.'));
         return;
       }
 
@@ -1937,7 +1952,7 @@ export class CampaignsComponent {
       }
       if (briefId === '') {
         this.emailCopyState.set('error');
-        this.emailCopyError.set('The brief could not be saved, so no copy was generated.');
+        this.emailCopyError.set(this.emailSaveFailureMessage('so no copy was generated.'));
         return;
       }
 
@@ -2031,7 +2046,7 @@ export class CampaignsComponent {
       // would post a second brief for the same event.
       if (briefId === '') {
         this.emailStaging.set('error');
-        this.emailStagingMessage.set('The brief could not be saved, so the send was not staged. Try again.');
+        this.emailStagingMessage.set(this.emailSaveFailureMessage('so the send was not staged. Try again.'));
         return;
       }
 
@@ -3169,6 +3184,17 @@ export class CampaignsComponent {
   }
 
   /** The persist itself, wrapped by `ensureEmailBriefId`'s in-flight dedup. */
+  /**
+   * The message an email action shows when the save produced no brief id.
+   *
+   * Prefers the conflict's own copy, which names the actual obstacle and the way out. Falls back
+   * to the generic sentence for an ordinary failure, where retrying IS the right advice.
+   */
+  private emailSaveFailureMessage(consequence: string): string {
+    const conflict = this.emailBriefConflict;
+    return conflict === null ? `The brief could not be saved, ${consequence}` : this.conflictMessages[conflict];
+  }
+
   private async persistEmailBrief(brief: CampaignBriefOutput, projectSlug: string): Promise<string> {
     const known = this.emailBriefId();
     if (known !== '') {
@@ -3192,6 +3218,9 @@ export class CampaignsComponent {
       this.campaignService.persistBrief(brief, projectSlug, owned?.id ?? null, owned?.etag ?? null, owned?.absence === 'overwrite')
     );
     const briefId = persisted.briefId ?? '';
+    // Recorded BEFORE the branches below, so a refusal that yields no id can still explain
+    // itself. Cleared on success so a later save never renders a previous attempt's reason.
+    this.emailBriefConflict = briefId === '' ? (persisted.conflict ?? null) : null;
     // An id is not enough: campaign-service gates `build-audience` AND campaign creation on the
     // brief having reached `approved`, and `saveBrief` deliberately returns an id with
     // `approved: false` when the approve step failed. Caching that id would make every downstream
