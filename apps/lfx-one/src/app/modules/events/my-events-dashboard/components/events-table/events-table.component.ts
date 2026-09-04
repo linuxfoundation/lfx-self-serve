@@ -8,7 +8,7 @@ import { TableComponent } from '@components/table/table.component';
 import { TagComponent } from '@components/tag/tag.component';
 import { MY_EVENT_STATUS } from '@lfx-one/shared/constants';
 import { MyEventsResponse, PageChangeEvent, SortChangeEvent, TagSeverity } from '@lfx-one/shared/interfaces';
-import { parseContentDispositionFilename, sanitizeFilename } from '@lfx-one/shared/utils';
+import { downloadFromUrl, parseContentDispositionFilename } from '@lfx-one/shared/utils';
 import { MessageService } from 'primeng/api';
 import { take } from 'rxjs/operators';
 
@@ -89,6 +89,8 @@ export class EventsTableComponent {
   }
 
   protected downloadCertificate(eventId: string): void {
+    // No catchError: this is a one-shot subscription (take(1)), and the subscribe `error`
+    // callback below already surfaces failures via the toast — a deliberate, equivalent trade-off.
     this.eventsService
       .getCertificate({ eventId })
       .pipe(take(1))
@@ -97,12 +99,9 @@ export class EventsTableComponent {
           const blob = response.body;
           if (!blob) return;
           const headerFileName = parseContentDispositionFilename(response.headers.get('Content-Disposition'));
-          const fileName = headerFileName ? sanitizeFilename(headerFileName) : `certificate-${eventId}.pdf`;
+          const fileName = headerFileName ?? `certificate-${eventId}.pdf`;
           const url = URL.createObjectURL(blob);
-          const anchor = document.createElement('a');
-          anchor.href = url;
-          anchor.download = fileName;
-          anchor.click();
+          downloadFromUrl(url, fileName);
           URL.revokeObjectURL(url);
         },
         error: () => {

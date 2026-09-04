@@ -1,7 +1,7 @@
 // Copyright The Linux Foundation and each contributor to LFX.
 // SPDX-License-Identifier: MIT
 
-import { beforeEach, describe, expect, it, vi } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
 // Mirrors brand-kit.service.spec.ts: the `@lfx-one/shared/*` alias is wired into vitest.config.ts,
 // but the `utils` barrel transitively imports Angular-dependent modules that can't load in this
@@ -253,7 +253,12 @@ describe('CertificateService', () => {
   });
 
   describe('fileName', () => {
+    afterEach(() => vi.unstubAllEnvs());
+
     it('builds the download filename from the event name and start date', async () => {
+      // Pinned to UTC: the fixture's EVENT_START_DATE is 'Z'-anchored midnight, and the filename's
+      // date is now derived in local time (matching the PDF body) — see event.utils.ts.
+      vi.stubEnv('TZ', 'UTC');
       mockRow();
 
       const result = await service.generateCertificate(req, { eventId: '-1', userEmail: 'attendee@example.com', userName: 'Test Attendee' });

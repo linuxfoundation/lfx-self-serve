@@ -324,9 +324,13 @@ export interface CertificateData {
   userName: string;
 }
 
-/** Result of generating a Certificate of Attendance PDF: the buffer plus its download filename. */
+/**
+ * Result of generating a Certificate of Attendance PDF: the buffer plus its download filename.
+ * Typed as `Uint8Array` (which `Buffer` structurally satisfies) so this browser-consumed shared
+ * package doesn't couple its type surface to Node's `Buffer` global.
+ */
 export interface CertificateResult {
-  pdf: Buffer;
+  pdf: Uint8Array;
   fileName: string;
 }
 

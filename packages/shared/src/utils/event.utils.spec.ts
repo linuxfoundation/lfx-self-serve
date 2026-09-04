@@ -1,7 +1,7 @@
 // Copyright The Linux Foundation and each contributor to LFX.
 // SPDX-License-Identifier: MIT
 
-import { describe, expect, it } from 'vitest';
+import { afterEach, describe, expect, it, vi } from 'vitest';
 
 import { buildCertificateFileName, isBackfillEventSource } from './event.utils';
 
@@ -41,29 +41,38 @@ describe('isBackfillEventSource', () => {
 });
 
 describe('buildCertificateFileName', () => {
-  it('slugifies the event name and appends the UTC start date', () => {
+  // Pinned to UTC so a 'Z'-anchored input's local-calendar-date rendering (matching
+  // CertificateService's PDF body date) is deterministic regardless of the machine's TZ.
+  afterEach(() => vi.unstubAllEnvs());
+
+  it('slugifies the event name and appends the start date', () => {
+    vi.stubEnv('TZ', 'UTC');
     expect(buildCertificateFileName('KubeCon + CloudNativeCon NA 2025', '2025-11-10T00:00:00.000Z', 'evt-1')).toBe(
       'certificate-of-attendance-kubecon-cloudnativecon-na-2025-2025-11-10.pdf'
     );
   });
 
-  it('handles a Snowflake-formatted timestamp (space-separated, no offset)', () => {
+  it('handles a Snowflake-formatted timestamp (space-separated, no offset), parsed in local time', () => {
+    vi.stubEnv('TZ', 'UTC');
     expect(buildCertificateFileName('Open Source Summit', '2025-11-10 08:00:00', 'evt-2')).toBe('certificate-of-attendance-open-source-summit-2025-11-10.pdf');
   });
 
   it('handles a Date instance', () => {
+    vi.stubEnv('TZ', 'UTC');
     expect(buildCertificateFileName('Open Source Summit', new Date('2025-11-10T00:00:00.000Z'), 'evt-3')).toBe(
       'certificate-of-attendance-open-source-summit-2025-11-10.pdf'
     );
   });
 
   it('drops punctuation from the event name into hyphens rather than mangling the slug', () => {
+    vi.stubEnv('TZ', 'UTC');
     expect(buildCertificateFileName("O'Reilly's Conf: AI & ML!", '2025-06-01T00:00:00.000Z', 'evt-4')).toBe(
       'certificate-of-attendance-o-reilly-s-conf-ai-ml-2025-06-01.pdf'
     );
   });
 
   it('slugifies a non-ASCII event name into a safe, readable name rather than rejecting it', () => {
+    vi.stubEnv('TZ', 'UTC');
     const name = buildCertificateFileName('Kubernetes 会議 2025', '2025-06-01T00:00:00.000Z', 'evt-5');
     expect(name.startsWith('certificate-of-attendance-')).toBe(true);
     expect(name.endsWith('-2025-06-01.pdf')).toBe(true);
@@ -78,6 +87,7 @@ describe('buildCertificateFileName', () => {
   });
 
   it('omits the name segment when the event name is missing', () => {
+    vi.stubEnv('TZ', 'UTC');
     expect(buildCertificateFileName(null, '2025-11-10T00:00:00.000Z', 'evt-8')).toBe('certificate-of-attendance-2025-11-10.pdf');
   });
 
@@ -87,5 +97,20 @@ describe('buildCertificateFileName', () => {
 
   it('falls back to the event id when the name slugifies to nothing (e.g. punctuation-only)', () => {
     expect(buildCertificateFileName('!!!', null, 'evt-10')).toBe('certificate-of-attendance-evt-10.pdf');
+  });
+
+  it('renders the date in local time, matching the PDF body rather than the UTC date', () => {
+    vi.stubEnv('TZ', 'America/Los_Angeles');
+    // Still Nov 9 in America/Los_Angeles (UTC-8 in November) — the local calendar date, not the UTC one.
+    expect(buildCertificateFileName('Open Source Summit', '2025-11-10T05:00:00.000Z', 'evt-11')).toBe(
+      'certificate-of-attendance-open-source-summit-2025-11-09.pdf'
+    );
+  });
+
+  it('truncates a very long event name so the date discriminator is never dropped by the overall filename cap', () => {
+    vi.stubEnv('TZ', 'UTC');
+    const longName = 'A'.repeat(200);
+    const name = buildCertificateFileName(longName, '2025-11-10T00:00:00.000Z', 'evt-12');
+    expect(name.endsWith('-2025-11-10.pdf')).toBe(true);
   });
 });

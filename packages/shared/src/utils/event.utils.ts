@@ -4,7 +4,6 @@
 import { EVENT_SOURCE_BACKFILL } from '../constants/events.constants';
 import { sanitizeFilename } from './file.utils';
 import { slugify } from './string.utils';
-import { normalizeSnowflakeTimestamp } from './date-time.utils';
 
 /**
  * True when an event registration row came from the CSV backfill import.
@@ -30,12 +29,21 @@ export function isBackfillEventSource(source: string | null | undefined): boolea
   return source?.replace(/^[ \t\n\r]+|[ \t\n\r]+$/g, '').toLowerCase() === EVENT_SOURCE_BACKFILL;
 }
 
-/** UTC `YYYY-MM-DD` for a Snowflake-or-ISO timestamp, or '' when missing/unparseable. */
-function toUtcDateStamp(value: Date | string | null | undefined): string {
+/** Certificate filename length budget for the slugified event name, leaving room for the fixed prefix, date suffix, and extension. */
+const MAX_NAME_SLUG_LENGTH = 100;
+
+/**
+ * Local calendar-date `YYYY-MM-DD` for a timestamp, matching the date `CertificateService` prints
+ * in the PDF body (also derived from local `Date` getters) so the filename and the certificate
+ * text never disagree. Returns '' when missing/unparseable.
+ */
+function toDateStamp(value: Date | string | null | undefined): string {
   if (!value) return '';
-  const normalized = typeof value === 'string' ? normalizeSnowflakeTimestamp(value) : value;
-  const date = new Date(normalized);
-  return isNaN(date.getTime()) ? '' : date.toISOString().slice(0, 10);
+  const date = new Date(value);
+  if (isNaN(date.getTime())) return '';
+  const month = String(date.getMonth() + 1).padStart(2, '0');
+  const day = String(date.getDate()).padStart(2, '0');
+  return `${date.getFullYear()}-${month}-${day}`;
 }
 
 /**
@@ -45,8 +53,8 @@ function toUtcDateStamp(value: Date | string | null | undefined): string {
  * discriminator.
  */
 export function buildCertificateFileName(eventName: string | null | undefined, startDate: Date | string | null | undefined, eventId: string): string {
-  const nameSlug = eventName ? slugify(eventName) : '';
-  const dateStamp = toUtcDateStamp(startDate);
+  const nameSlug = eventName ? slugify(eventName).slice(0, MAX_NAME_SLUG_LENGTH) : '';
+  const dateStamp = toDateStamp(startDate);
 
   const parts = ['certificate-of-attendance'];
   if (nameSlug) parts.push(nameSlug);
