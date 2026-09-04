@@ -222,20 +222,25 @@ export class OrgLensPeopleService {
    * who is not a committee member, key contact or roster person has no warehouse presence, so the
    * address model cannot speak to them at all. `resolved` with `[]` only when the spine knows the
    * person and they genuinely hold no qualifying address.
+   *
+   * The spine probe runs only when the address read came back empty: the common path (addresses found)
+   * stays one query, and the spine is a view — a three-way UNION re-evaluated per call — so probing it
+   * unconditionally would double the cost of every governance-drawer open. SC-005 measures this path.
    */
   public async getCompanyEmailsByUsername(accountId: string, username: string): Promise<CompanyEmailsResult> {
     if (!isServerFeatureEnabled(ServerFeatureFlag.OrgLensCompanyEmails)) {
       return UNAVAILABLE_COMPANY_EMAILS;
     }
+    const read = await this.tryFetchCompanyEmailsByUsername(accountId, username);
+    if (read.companyEmailsStatus !== 'resolved' || read.companyEmails.length > 0) {
+      return read;
+    }
     try {
-      if (!(await this.isUsernameOnSpine(accountId, username))) {
-        return UNAVAILABLE_COMPANY_EMAILS;
-      }
+      return (await this.isUsernameOnSpine(accountId, username)) ? read : UNAVAILABLE_COMPANY_EMAILS;
     } catch (error) {
       logger.info(undefined, 'get_org_lens_people_company_emails_by_username', 'spine probe failed; serving unavailable', { err: error });
       return FAILED_COMPANY_EMAILS;
     }
-    return this.tryFetchCompanyEmailsByUsername(accountId, username);
   }
 
   /**
@@ -399,9 +404,13 @@ export class OrgLensPeopleService {
       return this.runEmployeeDetailFetch(accountId, personKey);
     }
 
+    // The flag state is part of the key. A dark-launch response (`unavailable`, no addresses) is a
+    // valid cacheable shape, so without this a flag-OFF read would be memoized and flipping the flag
+    // ON would keep serving "not available" for the rest of the TTL.
+    const emailsSuffix = isServerFeatureEnabled(ServerFeatureFlag.OrgLensCompanyEmails) ? 'emails' : 'noemails';
     return withOrgCache(
       accountId,
-      `people-detail:${personKey}`,
+      `people-detail:${personKey}:${emailsSuffix}`,
       VALKEY_CACHE.ORG_LENS_SNOWFLAKE_TTL_SECONDS,
       () => this.runEmployeeDetailFetch(accountId, personKey),
       isEmployeeDetailRaw,

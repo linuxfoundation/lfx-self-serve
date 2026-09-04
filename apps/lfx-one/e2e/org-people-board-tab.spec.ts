@@ -420,18 +420,40 @@ test.describe('Org People → Board tab', () => {
       });
     };
 
+    // Every stub carries `companyEmailsStatus`: the client fails closed on a missing or non-`resolved`
+    // status (an older replica during a rolling deployment must never leak demo-shape addresses), so a
+    // fixture without it would render as "couldn't be loaded" and mis-assert states 1 and 2.
+    const resolved = (companyEmails: string[]) => JSON.stringify({ companyEmails, companyEmailsStatus: 'resolved' });
+
     // 1. Resolved WITH addresses → the addresses render verbatim.
     await stubBoardMembers(page, boardMembersResponse({ username: JORDAN_USERNAME }));
-    await stubCompanyEmails((route) =>
-      route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify({ companyEmails: [JORDAN_COMPANY_EMAIL] }) })
-    );
+    await stubCompanyEmails((route) => route.fulfill({ status: 200, contentType: 'application/json', body: resolved([JORDAN_COMPANY_EMAIL]) }));
     await openDrawer();
     await expect(page.getByTestId('person-detail-drawer-email-0')).toHaveText(JORDAN_COMPANY_EMAIL);
 
     // 2. Resolved EMPTY → "no company email on record". Only this state may make that claim.
-    await stubCompanyEmails((route) => route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify({ companyEmails: [] }) }));
+    await stubCompanyEmails((route) => route.fulfill({ status: 200, contentType: 'application/json', body: resolved([]) }));
     await openDrawer();
     await expect(page.getByTestId('person-detail-drawer-email-none')).toBeVisible();
+    await expect(page.getByTestId('person-detail-drawer-email')).toHaveCount(0);
+
+    // 2b. Server says UNAVAILABLE (username not on the address model's spine, or the server flag is
+    //     off) → "not available from this view". A 200 with an empty list is NOT "none on record" here.
+    await stubCompanyEmails((route) =>
+      route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify({ companyEmails: [], companyEmailsStatus: 'unavailable' }) })
+    );
+    await openDrawer();
+    await expect(page.getByTestId('person-detail-drawer-email-not-available')).toBeVisible();
+    await expect(page.getByTestId('person-detail-drawer-email-none')).toHaveCount(0);
+
+    // 2c. Pre-change response shape (no status at all) → treated as failed, addresses NOT shown. This is
+    //     the older-replica-during-rollout case; the demo-derived addresses such a replica would carry
+    //     must never reach the panel.
+    await stubCompanyEmails((route) =>
+      route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify({ companyEmails: ['stale@demo.example'] }) })
+    );
+    await openDrawer();
+    await expect(page.getByTestId('person-detail-drawer-email-failed')).toBeVisible();
     await expect(page.getByTestId('person-detail-drawer-email')).toHaveCount(0);
 
     // 3. Lookup FAILED → "couldn't be loaded", never an assertion about what the person holds.
