@@ -339,3 +339,6 @@ export * from './user-preference.interface';
 
 // Individual Dashboard → LFX migration banner (LFXV2-3336)
 export * from './id-migration.interface';
+
+// Formation checklist template (GH-1959/GH-2163, Epic 1 #1965)
+export * from './formation.interface';
