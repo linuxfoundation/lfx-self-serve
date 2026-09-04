@@ -569,6 +569,83 @@ describe('MeetingJoinComponent', () => {
       expect(fixture.nativeElement.querySelector('[data-testid="meeting-join-skeleton"]')).toBeNull();
     });
 
+    // Bot review follow-up on PR #2046 (cursor, copilot-pull-request-reviewer): a seeded
+    // terminal-error state never initialized `meetingRouteId`, so the first debounced hydration
+    // emission compared the real route id against the signal's initial `null`, read that as a
+    // navigation, and eagerly cleared `meetingLoadFailed` while the matching refetch was still in
+    // flight — flashing the skeleton until the refetch failed again.
+    it('holds the error branch, without an intermediate skeleton flash, through a real debounce flush of the matching hydration refetch', async () => {
+      const refetch$ = new Subject<{ meeting: Meeting; project: PublicMeetingProject }>();
+      getPublicMeeting.mockReturnValue(refetch$);
+
+      const transferState = TestBed.inject(TransferState);
+      transferState.set(MEETING_JOIN_STATE_KEY, {
+        meeting: null,
+        loadedViaPastMeetingId: false,
+        pastMeetingFullAccess: false,
+        meetingLoadFailed: true,
+      });
+
+      await TestBed.compileComponents();
+      const fixture = TestBed.createComponent(MeetingJoinComponent);
+      const component = fixture.componentInstance;
+
+      // Flush the debounced pipeline's first emission with a real macrotask tick, not just
+      // `whenStable()` — this is the exact race the bots flagged.
+      await new Promise((resolve) => setTimeout(resolve, 0));
+      fixture.detectChanges();
+
+      expect((component as unknown as { meetingLoadFailed: () => boolean }).meetingLoadFailed()).toBe(true);
+      expect(fixture.nativeElement.querySelector('[data-testid="meeting-join-error"]')).not.toBeNull();
+      expect(fixture.nativeElement.querySelector('[data-testid="meeting-join-skeleton"]')).toBeNull();
+
+      refetch$.error({ status: 500 });
+      await TestBed.inject(ApplicationRef).whenStable();
+      fixture.detectChanges();
+
+      expect((component as unknown as { meetingLoadFailed: () => boolean }).meetingLoadFailed()).toBe(true);
+      expect(fixture.nativeElement.querySelector('[data-testid="meeting-join-error"]')).not.toBeNull();
+      expect(fixture.nativeElement.querySelector('[data-testid="meeting-join-skeleton"]')).toBeNull();
+    });
+
+    // Bot review follow-up on PR #2046 (copilot-pull-request-reviewer): the template's success
+    // branch only checked `meeting()`, not `meetingMatchesRoute()`. `toSignal` retains `meeting()`'s
+    // last emission, so navigating to a different `/meetings/:id` kept rendering the PREVIOUS
+    // meeting's full content (incl. its `host_key`/join links) under the new URL for the entire
+    // window the new route's fetch was pending, since no failure had settled yet to trip the error
+    // branch.
+    it("shows the skeleton, not the previous meeting's content, while a newly-navigated meeting's fetch is still pending", async () => {
+      const MEETING_ID_2 = 'meeting-2';
+      const pending$ = new Subject<{ meeting: Meeting; project: PublicMeetingProject }>();
+      getPublicMeeting.mockImplementation((id: string) => (id === MEETING_ID_2 ? pending$ : of({ meeting: buildMeeting(), project: buildProject() })));
+
+      await TestBed.compileComponents();
+      const fixture = TestBed.createComponent(MeetingJoinComponent);
+      const component = fixture.componentInstance;
+      await TestBed.inject(ApplicationRef).whenStable();
+      fixture.detectChanges();
+
+      expect((component as unknown as { meeting: () => Meeting | undefined }).meeting()?.id).toBe(MEETING_ID);
+      expect(fixture.nativeElement.querySelector('[data-testid="meeting-join-error"]')).toBeNull();
+
+      paramMap$.next(convertToParamMap({ id: MEETING_ID_2 }));
+      await new Promise((resolve) => setTimeout(resolve, 0));
+      fixture.detectChanges();
+
+      // `meeting()` still retains meeting-1 (no new emission yet) — the skeleton must gate on
+      // `meetingMatchesRoute()`, not just `meeting()`, so meeting-1's content doesn't leak under
+      // the meeting-2 URL.
+      expect(fixture.nativeElement.querySelector('[data-testid="meeting-join-skeleton"]')).not.toBeNull();
+      expect(fixture.nativeElement.querySelector('[data-testid="meeting-join-error"]')).toBeNull();
+
+      pending$.next({ meeting: buildMeeting({ id: MEETING_ID_2 }), project: buildProject() });
+      await TestBed.inject(ApplicationRef).whenStable();
+      fixture.detectChanges();
+
+      expect((component as unknown as { meeting: () => Meeting | undefined }).meeting()?.id).toBe(MEETING_ID_2);
+      expect(fixture.nativeElement.querySelector('[data-testid="meeting-join-skeleton"]')).toBeNull();
+    });
+
     // Bot review follow-up on PR #2046 (cursor, copilot-pull-request-reviewer): the `!meeting()`
     // scoping fix above only distinguishes "no settled meeting yet" from "have one" — it doesn't
     // tell whether that settled meeting belongs to the CURRENT route. `toSignal` retains `meeting()`
@@ -578,9 +655,7 @@ describe('MeetingJoinComponent', () => {
     it("shows the error branch instead of leaking the previous meeting's content when a refetch for a newly-navigated meeting fails", async () => {
       const MEETING_ID_2 = 'meeting-2';
       const refetch$ = new Subject<{ meeting: Meeting; project: PublicMeetingProject }>();
-      getPublicMeeting.mockImplementation((id: string) =>
-        id === MEETING_ID_2 ? refetch$ : of({ meeting: buildMeeting(), project: buildProject() })
-      );
+      getPublicMeeting.mockImplementation((id: string) => (id === MEETING_ID_2 ? refetch$ : of({ meeting: buildMeeting(), project: buildProject() })));
 
       await TestBed.compileComponents();
       const fixture = TestBed.createComponent(MeetingJoinComponent);

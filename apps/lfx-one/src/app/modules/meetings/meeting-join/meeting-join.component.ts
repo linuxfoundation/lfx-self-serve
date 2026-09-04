@@ -237,11 +237,13 @@ export class MeetingJoinComponent implements OnInit {
   // updated on a successful fetch.
   private meetingResolvedRouteId = signal<string | null>(null);
   // False right after navigating to a different `/meetings/:id` until that route's fetch settles.
-  // `toSignal` retains `meeting()`'s last emission across a failing `catchError`'s `EMPTY`, so
-  // without this a failed fetch for a new route would keep rendering the PREVIOUS meeting (incl.
-  // its `host_key`/join links) under the new URL. Gates the template's error branch so a same-route
-  // background refresh failure (dealako review on #2046) still doesn't tear down the page, while a
-  // failure after navigating to a different meeting does (cursor / copilot review on #2046).
+  // `toSignal` retains `meeting()`'s last emission across both a failing `catchError`'s `EMPTY` and
+  // an in-flight new-route fetch, so without this the template would keep rendering the PREVIOUS
+  // meeting (incl. its `host_key`/join links) under the new URL — either as a stale error state, or
+  // as stale *success* content while the new route is still pending (copilot review on #2046).
+  // Gates both the error branch (so a same-route background refresh failure, dealako review on
+  // #2046, still doesn't tear down the page) and the success branch (so cross-meeting navigation
+  // shows the skeleton, not meeting A's content, until meeting B resolves).
   protected meetingMatchesRoute = computed(() => this.meetingRouteId() === this.meetingResolvedRouteId());
   private refreshTrigger$ = new BehaviorSubject<void>(undefined);
   private pastMeetingAttachmentsRefresh$ = new BehaviorSubject<void>(undefined);
@@ -381,6 +383,11 @@ export class MeetingJoinComponent implements OnInit {
       this.pastMeetingFullAccess.set(transferredMeeting.pastMeetingFullAccess);
       if (transferredMeeting.meetingLoadFailed) {
         this.meetingLoadFailed.set(true);
+        // Seed `meetingRouteId` here too — otherwise the first hydration emission (route id vs.
+        // the signal's initial `null`) reads as a navigation and clears this flag while the
+        // client's matching refetch is still in flight, flashing the skeleton until it fails
+        // again (cursor / copilot review on #2046).
+        this.meetingRouteId.set(this.activatedRoute.snapshot.paramMap.get('id'));
       } else if (transferredMeeting.meeting) {
         this.project.set(transferredMeeting.meeting.project);
         const seededRouteId = this.activatedRoute.snapshot.paramMap.get('id');
