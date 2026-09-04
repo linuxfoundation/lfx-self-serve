@@ -44,13 +44,13 @@ describe('OrgEasyclaComponent', () => {
   // Matches the sibling org-lens pages (memberships, projects) and the approved M3 design,
   // which titles the page "EasyCLA — {Company}".
   it('titles the page with the selected company', async () => {
-    selectedAccount.set({ accountName: 'Red Hat, Inc.' });
+    selectedAccount.set({ accountName: 'Acme Motors, Inc.' });
 
     const fixture = await render();
     const title = fixture.nativeElement.querySelector('[data-testid="org-easycla-title"]');
 
     expect(title.textContent).toContain('EasyCLA');
-    expect(title.textContent).toContain('Red Hat, Inc.');
+    expect(title.textContent).toContain('Acme Motors, Inc.');
   });
 
   it('falls back to the bare title before an account resolves', async () => {

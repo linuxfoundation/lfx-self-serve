@@ -3,7 +3,7 @@
 
 import type { Request } from 'express';
 
-import type { OrgClaGroupList } from '../types/org-cla.types';
+import type { OrgClaGroupList } from '@lfx-one/shared/interfaces';
 
 export class OrgClaService {
   public async listClaGroups(_req: Request, orgUid: string): Promise<OrgClaGroupList> {
