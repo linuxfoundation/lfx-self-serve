@@ -76,10 +76,20 @@ describe('MeetingPreferenceService', () => {
       await expect(service.getMeetingInviteEmail(req, V1_TOKEN)).resolves.toEqual({ email_id: null, email: null });
     });
 
-    it('normalizes absent fields to null', async () => {
+    // A reply missing both keys is a contract break, not a confirmed "no override" — treating it
+    // as { email_id: null, email: null } would silently re-enable Remove on the actual invite
+    // identity, so it must fail closed like a transport error instead.
+    it('fails closed to null on a reply missing both fields, rather than normalizing to no-override', async () => {
       natsRequest.mockResolvedValue(reply({}));
 
-      await expect(service.getMeetingInviteEmail(req, V1_TOKEN)).resolves.toEqual({ email_id: null, email: null });
+      await expect(service.getMeetingInviteEmail(req, V1_TOKEN)).resolves.toBeNull();
+      expect(loggerMock.warning).toHaveBeenCalledWith(req, 'get_meeting_invite_email', expect.any(String), { keys: [] });
+    });
+
+    it('fails closed to null when a field has the wrong type', async () => {
+      natsRequest.mockResolvedValue(reply({ email_id: 123, email: ALTERNATE_EMAIL }));
+
+      await expect(service.getMeetingInviteEmail(req, V1_TOKEN)).resolves.toBeNull();
     });
 
     it('fails open to null when the reply carries an error', async () => {
@@ -204,6 +214,18 @@ describe('MeetingPreferenceService', () => {
     // mislabeled `unavailable` (retryable) instead of `upstream`.
     it('classifies a malformed resolved reply as upstream, not a transport failure', async () => {
       natsRequest.mockResolvedValue({ data: new TextEncoder().encode('not json') });
+
+      await expect(service.setMeetingInviteEmail(req, V1_TOKEN, ALTERNATE_EMAIL)).resolves.toEqual({
+        success: false,
+        reason: 'upstream',
+        error: 'Internal server error',
+      });
+    });
+
+    // A reply that parses fine but is missing both keys must not be read as a confirmed write of
+    // "no override" — same contract-break guard as the GET path.
+    it('classifies a reply missing both fields as upstream, not a confirmed no-override write', async () => {
+      natsRequest.mockResolvedValue(reply({}));
 
       await expect(service.setMeetingInviteEmail(req, V1_TOKEN, ALTERNATE_EMAIL)).resolves.toEqual({
         success: false,

@@ -28,6 +28,7 @@ describe('AccountSettingsComponent — fragment deep-link (#2177)', () => {
     const userServiceMock = {
       impersonating: signal(true), // skips the developer-token fetch — irrelevant to this suite
       getUserEmails: vi.fn(() => of(null)),
+      getMeetingInviteEmail: vi.fn(() => of({ email_id: null, email: null })),
     };
 
     TestBed.configureTestingModule({
@@ -86,6 +87,7 @@ describe('AccountSettingsComponent — deferred re-scroll waits for email load (
     const userServiceMock = {
       impersonating: signal(true),
       getUserEmails: vi.fn(() => emails$),
+      getMeetingInviteEmail: vi.fn(() => of({ email_id: null, email: null })),
     };
 
     TestBed.configureTestingModule({
@@ -132,6 +134,7 @@ describe('AccountSettingsComponent — deferred re-scroll waits for email load (
     const userServiceMock = {
       impersonating: signal(true),
       getUserEmails: vi.fn(() => emails$),
+      getMeetingInviteEmail: vi.fn(() => of({ email_id: null, email: null })),
     };
 
     TestBed.configureTestingModule({

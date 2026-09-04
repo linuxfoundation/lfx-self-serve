@@ -230,6 +230,7 @@ export class ProfileIdentitiesComponent implements OnInit {
     return {
       id: enriched.id,
       provider: enriched.platform as IdentityProvider,
+      type: enriched.type,
       identifier: enriched.value,
       state: enriched.displayState === 'verified' ? 'verified' : 'unverified',
       icon: enriched.icon,
@@ -265,7 +266,9 @@ export class ProfileIdentitiesComponent implements OnInit {
   }
 
   private isMeetingInviteIdentity(identity: ConnectedIdentityFull): boolean {
-    if (identity.provider !== 'email') {
+    // Use `type`, not `provider` — the server rewrites a Google-cross-matched CDP email row's
+    // `provider` to 'google' while keeping `type: 'email'`, and that row must still be guarded.
+    if (identity.type !== 'email') {
       return false;
     }
     // Which identity is protected can't be determined when the invite fetch failed — fail closed

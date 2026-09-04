@@ -55,7 +55,16 @@ export class MeetingPreferenceService {
         return null;
       }
 
-      return { email_id: parsed.email_id ?? null, email: parsed.email ?? null };
+      if (!this.isValidMeetingInviteReply(parsed)) {
+        // A contract-breaking reply (missing/malformed fields) must not be read as a confirmed
+        // "no override" — that would silently re-enable Remove on the actual invite-email identity.
+        logger.warning(req, 'get_meeting_invite_email', 'NATS preferred_email.get returned an unexpected shape', {
+          keys: Object.keys(parsed ?? {}),
+        });
+        return null;
+      }
+
+      return { email_id: parsed.email_id, email: parsed.email };
     } catch (error) {
       logger.warning(req, 'get_meeting_invite_email', 'Failed to fetch preferred meeting-invite email via NATS', {
         err: error,
@@ -114,13 +123,33 @@ export class MeetingPreferenceService {
         return { success: false, reason: this.classifyPreferredEmailError(parsed.error), error: parsed.error };
       }
 
-      return { success: true, data: { email_id: parsed.email_id ?? null, email: parsed.email ?? null } };
+      if (!this.isValidMeetingInviteReply(parsed)) {
+        // Same contract-break guard as the GET path — a malformed success reply must fail rather
+        // than silently confirm the write with a fabricated "no override" result.
+        logger.warning(req, 'set_meeting_invite_email', 'NATS preferred_email.set returned an unexpected shape', {
+          keys: Object.keys(parsed ?? {}),
+        });
+        return { success: false, reason: 'upstream', error: 'Internal server error' };
+      }
+
+      return { success: true, data: { email_id: parsed.email_id, email: parsed.email } };
     } catch (error) {
       logger.warning(req, 'set_meeting_invite_email', 'Failed to parse NATS preferred_email.set reply', {
         err: error,
       });
       return { success: false, reason: 'upstream', error: 'Internal server error' };
     }
+  }
+
+  // The upstream contract always emits both keys on a non-error reply. Anything else (missing
+  // key, wrong type) is a contract break, not a valid "no override" — callers must fail rather
+  // than default the field to null themselves.
+  private isValidMeetingInviteReply(value: unknown): value is MeetingInviteEmail {
+    if (typeof value !== 'object' || value === null) {
+      return false;
+    }
+    const { email_id, email } = value as Record<string, unknown>;
+    return (email_id === null || typeof email_id === 'string') && (email === null || typeof email === 'string');
   }
 
   // Classify the upstream error string (the NATS reply carries only `{ error }`, no code) so the
