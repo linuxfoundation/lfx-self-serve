@@ -137,7 +137,7 @@ describe('PlanningTabComponent brief read-back', () => {
 
     await typeEventUrl('https://events.example.com/kubecon-eu-2026');
 
-    expect(campaignService.loadBrief).toHaveBeenCalledWith('kubecon-eu-2026', 'foundation-a', 'paid-marketing');
+    expect(campaignService.loadBrief).toHaveBeenCalledWith('kubecon-eu-2026', 'foundation-a', 'paid-marketing', '');
     expect(savedBrief()).toEqual(exampleBrief);
     expect(savedBriefWarning()).toBeNull();
   });
@@ -171,7 +171,7 @@ describe('PlanningTabComponent brief read-back', () => {
 
     // The url segment is `kubecon-eu-2026`; the STORED brief is named `kubecon-europe-2026`.
     await typeEventUrl('https://events.example.com/kubecon-eu-2026');
-    expect(campaignService.loadBrief).toHaveBeenCalledWith('kubecon-eu-2026', 'foundation-a', 'paid-marketing');
+    expect(campaignService.loadBrief).toHaveBeenCalledWith('kubecon-eu-2026', 'foundation-a', 'paid-marketing', '');
 
     const emitted: { brief: CampaignBriefOutput }[] = [];
     const component = fixture.componentInstance as unknown as {
@@ -446,7 +446,7 @@ describe('PlanningTabComponent brief read-back', () => {
     await fixture.whenStable();
 
     // The new lookup should still fire under the new foundation.
-    expect(campaignService.loadBrief).toHaveBeenCalledWith('kubecon-eu-2026', 'foundation-b', 'paid-marketing');
+    expect(campaignService.loadBrief).toHaveBeenCalledWith('kubecon-eu-2026', 'foundation-b', 'paid-marketing', '');
 
     // When it completes, the brief is offered again (under the new foundation).
     slowNewFoundationLookup.next({
@@ -498,7 +498,7 @@ describe('PlanningTabComponent brief read-back', () => {
 
     // Lookup under foundation A.
     await typeEventUrl('https://events.example.com/kubecon-eu-2026');
-    expect(campaignService.loadBrief).toHaveBeenCalledWith('kubecon-eu-2026', 'foundation-a', 'paid-marketing');
+    expect(campaignService.loadBrief).toHaveBeenCalledWith('kubecon-eu-2026', 'foundation-a', 'paid-marketing', '');
     const firstCallCount = campaignService.loadBrief.mock.calls.length;
 
     // Switch foundation without changing the slug. This should trigger another lookup.
@@ -511,7 +511,7 @@ describe('PlanningTabComponent brief read-back', () => {
     await new Promise((resolve) => setTimeout(resolve, BRIEF_LOOKUP_DEBOUNCE_WAIT_MS));
     await fixture.whenStable();
 
-    expect(campaignService.loadBrief).toHaveBeenCalledWith('kubecon-eu-2026', 'foundation-b', 'paid-marketing');
+    expect(campaignService.loadBrief).toHaveBeenCalledWith('kubecon-eu-2026', 'foundation-b', 'paid-marketing', '');
     expect(campaignService.loadBrief.mock.calls.length).toBeGreaterThan(firstCallCount);
   });
 
@@ -565,7 +565,7 @@ describe('PlanningTabComponent brief read-back', () => {
     campaignService.loadBrief.mockReturnValue(slowFirstLookup);
 
     await typeEventUrl('https://events.example.com/kubecon-eu-2026');
-    expect(campaignService.loadBrief).toHaveBeenCalledWith('kubecon-eu-2026', 'foundation-a', 'paid-marketing');
+    expect(campaignService.loadBrief).toHaveBeenCalledWith('kubecon-eu-2026', 'foundation-a', 'paid-marketing', '');
 
     // Move to a different event before the first lookup answers. Its result is now stale.
     //
@@ -779,6 +779,34 @@ describe('PlanningTabComponent delivery-type mode', () => {
    * argument is. Asserting on the ARGUMENT rather than merely on the call is the point: a lookup
    * that fired without it would silently be answered as paid, which is the defect this replaces.
    */
+  // The stage is part of the lookup key, so switching sends must re-ask rather than filter. One
+  // event holds a CFP Launch and a Registration Push at once; asking without the stage found the
+  // paid brief's empty stage and answered "no brief" for a series sitting in storage.
+  it('re-asks when the email stage changes, because each send is its own brief', async () => {
+    const loadBrief = vi.fn().mockReturnValue(new Subject());
+    vi.spyOn(TestBed.inject(CampaignService), 'loadBrief').mockImplementation(loadBrief);
+
+    await build('email');
+    fixture.componentRef.setInput('emailStage', 'CFP Launch');
+    const component = fixture.componentInstance as unknown as { briefForm: FormGroup; onUrlInput(): void };
+    component.briefForm.controls['url'].setValue('https://events.example.com/kubecon-eu-2026');
+    fixture.detectChanges();
+    component.onUrlInput();
+    await new Promise((resolve) => setTimeout(resolve, 600));
+    await fixture.whenStable();
+
+    expect(loadBrief).toHaveBeenCalledWith('kubecon-eu-2026', 'foundation-a', 'email', 'CFP Launch');
+
+    // A different send of the same series is a DIFFERENT brief, so this must issue its own lookup.
+    loadBrief.mockClear();
+    fixture.componentRef.setInput('emailStage', 'Final Countdown');
+    fixture.detectChanges();
+    await new Promise((resolve) => setTimeout(resolve, 600));
+    await fixture.whenStable();
+
+    expect(loadBrief).toHaveBeenCalledWith('kubecon-eu-2026', 'foundation-a', 'email', 'Final Countdown');
+  });
+
   it('looks a saved brief up in email mode, scoped to the email surface', async () => {
     const loadBrief = vi.fn().mockReturnValue(new Subject());
     vi.spyOn(TestBed.inject(CampaignService), 'loadBrief').mockImplementation(loadBrief);
@@ -791,7 +819,7 @@ describe('PlanningTabComponent delivery-type mode', () => {
     await new Promise((resolve) => setTimeout(resolve, 600));
     await fixture.whenStable();
 
-    expect(loadBrief).toHaveBeenCalledWith('kubecon-eu-2026', 'foundation-a', 'email');
+    expect(loadBrief).toHaveBeenCalledWith('kubecon-eu-2026', 'foundation-a', 'email', '');
   });
 
   it('still looks up a saved brief in paid mode', async () => {

@@ -17,6 +17,7 @@ import type {
   CampaignBriefOutput,
   CampaignBriefRefineRequest,
   CampaignDeliveryType,
+  CampaignEmailStage,
   CampaignEventDetails,
   CampaignGoal,
   CampaignKeyword,
@@ -76,6 +77,18 @@ export class PlanningTabComponent implements OnInit {
    * additive — an omitted binding keeps exactly today's behaviour.
    */
   public readonly deliveryType = input<CampaignDeliveryType>('paid-marketing');
+
+  /**
+   * Which send in an email series this planner is working on.
+   *
+   * Required for EMAIL because the stage is part of a brief's identity upstream — one event holds
+   * a CFP Launch and a Final Countdown at once, so "the brief for this event" no longer names one
+   * thing. Without it the lookup asked for the empty stage, which is the PAID brief's stage, and
+   * an email planner was answered "no brief" for a series sitting in storage.
+   *
+   * Empty for paid, which has no series, and the default keeps every paid caller unchanged.
+   */
+  public readonly emailStage = input<CampaignEmailStage | ''>('');
 
   /** Whether this planner is planning an email rather than paid ads. */
   protected readonly isEmail = computed(() => this.deliveryType() === 'email');
@@ -321,6 +334,11 @@ export class PlanningTabComponent implements OnInit {
   // the current one is not allowed to open.
   private readonly deliveryType$ = toObservable(this.deliveryType);
 
+  // Part of the lookup key, so a stage change must re-ask. Selecting Final Countdown after CFP
+  // Launch names a DIFFERENT brief, not a filter on the same one — without this the planner would
+  // keep the previous stage's restore offer on screen for a brief the new stage does not have.
+  private readonly emailStage$ = toObservable(this.emailStage);
+
   // === Lifecycle ===
   public ngOnInit(): void {
     this.urlInput$.pipe(debounceTime(500), takeUntilDestroyed(this.destroyRef)).subscribe((eventName) => this.lookupHubSpot(eventName));
@@ -350,7 +368,7 @@ export class PlanningTabComponent implements OnInit {
     // exists. `onUrlInput` and the foundation subscription below both clear the offer
     // eagerly; without this guard the late response simply sets it again, for an event or a
     // foundation the user has already left.
-    combineLatest([this.slugInput$, this.activeFoundationSlug$, this.deliveryType$])
+    combineLatest([this.slugInput$, this.activeFoundationSlug$, this.deliveryType$, this.emailStage$])
       .pipe(
         // Runs for BOTH surfaces. This was `filter(() => !this.isEmail())` while brief storage had
         // no delivery dimension: one row per `(foundation, event)` meant the row an email caller
@@ -364,24 +382,25 @@ export class PlanningTabComponent implements OnInit {
         // OPEN, not what may be stored; two surfaces still cannot hold separate briefs for one
         // event, which is LFXV2-3198's remaining half.
         distinctUntilChanged(
-          ([slug, project, delivery], [nextSlug, nextProject, nextDelivery]) => slug === nextSlug && project === nextProject && delivery === nextDelivery
+          ([slug, project, delivery, stage], [nextSlug, nextProject, nextDelivery, nextStage]) =>
+            slug === nextSlug && project === nextProject && delivery === nextDelivery && stage === nextStage
         ),
         debounceTime(500),
-        switchMap(([slug, project, delivery]) =>
-          this.campaignService.loadBrief(slug, project, delivery).pipe(
-            map((result) => ({ slug, project, delivery, result })),
-            catchError(() => of({ slug, project, delivery, result: null }))
+        switchMap(([slug, project, delivery, stage]) =>
+          this.campaignService.loadBrief(slug, project, delivery, stage).pipe(
+            map((result) => ({ slug, project, delivery, stage, result })),
+            catchError(() => of({ slug, project, delivery, stage, result: null }))
           )
         ),
         takeUntilDestroyed(this.destroyRef)
       )
-      .subscribe(({ slug, project, delivery, result }) => {
+      .subscribe(({ slug, project, delivery, stage, result }) => {
         // `delivery` joins the staleness check for the same reason `slug` and `project` are in it:
         // `switchMap` cancels the previous REQUEST, but a response already in flight when the user
         // flips Paid <-> Email still arrives, and it answers a question about the other surface.
         // Applying it would put a paid brief's Restore offer on the email planner — the exact
         // outcome the delivery scoping exists to prevent, reintroduced as a race.
-        if (slug !== this.currentSlug || project !== this.activeFoundationSlug() || delivery !== this.deliveryType()) {
+        if (slug !== this.currentSlug || project !== this.activeFoundationSlug() || delivery !== this.deliveryType() || stage !== this.emailStage()) {
           return;
         }
         this.applySavedBrief(result);
@@ -687,6 +706,9 @@ export class PlanningTabComponent implements OnInit {
       selectedPlatforms: [...this.selectedPlatforms()],
       linkedInCopy: this.getLinkedInCopy(),
       programType: this.programTypeConfig().id,
+      // Carried onto the SAVED brief so the row records which send it is. Without it every stage
+      // of a series would save to the same key and overwrite the one before it.
+      emailStage: this.emailStage() || undefined,
       // Carried onto the SAVED brief, not just the generate request. The request's copy is
       // consumed and discarded server-side to pick generators; this one is persisted, and it is
       // what a later `loadBrief` compares against to decide whether this row belongs to the
