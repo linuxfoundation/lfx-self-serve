@@ -202,8 +202,14 @@ export class CampaignsComponent {
     // longer means "the other delivery type has it": paid and email are separate rows now, so a
     // paid brief cannot refuse an email save. The old wording named the wrong cause and sent the
     // user to check a surface that is no longer involved.
+    //
+    // It also names the RE-SELECT step, which is not optional advice: a reload resets
+    // `selectedEmailTypeId` to the default, so re-entering the URL under a non-default stage
+    // legitimately finds nothing until the operator picks the type back. And it no longer says
+    // another session "is holding" the row -- nothing holds it. Loading the same full key is what
+    // grants ownership, so the remedy is to load it, not to wait for someone to let go.
     'unowned-brief-exists':
-      'This event already has a saved brief for this send that was not opened here, so this one was not saved over it. Reload and re-enter the event URL to open it — if nothing appears, another session is holding it.',
+      'This event already has a saved brief for this send that was not opened here, so this one was not saved over it. Reload, re-select this email type, and re-enter the event URL to open it.',
     // Does NOT advise a reload, even though this branch adds the read path that would make one
     // work. Here it would be actively destructive: a stale-brief refusal PROMOTES this session to
     // explicit overwrite permission (see the conflict handler), so the very next Proceed saves
@@ -3265,7 +3271,7 @@ export class CampaignsComponent {
     }
     // Capitalised, because the conflict message is a COMPLETE sentence ending in a period while
     // each consequence is a lowercase clause written to follow a comma. Joining them raw produced
-    // "...another session is holding it. so no audience was built."
+    // "...re-enter the event URL to open it. so no audience was built."
     const [first, ...rest] = consequence;
     return `${this.conflictMessages[conflict]} ${first.toUpperCase()}${rest.join('')}`;
   }

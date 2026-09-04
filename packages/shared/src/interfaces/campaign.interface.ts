@@ -2407,10 +2407,15 @@ export interface BriefMetrics {
 /**
  * The event-lifecycle stage an email belongs to, as campaign-service enumerates it.
  *
- * Closed because upstream's `generate-email-copy` declares it closed: an unrecognised value is
- * refused with a 400 naming the valid ones, so a typo cannot quietly become registration copy.
- */
-/**
+ * Closed because brief STORAGE declares it closed. A stage is part of a brief's identity, so
+ * `find-brief` enums it, `BriefInput` enums it, and the column carries a CHECK -- a value outside
+ * this list writes a row no lookup can name.
+ *
+ * `generate-email-copy` is deliberately the OPPOSITE and is not what this type constrains: its
+ * `stage` is free text, and `emailstage.Resolve` falls back to Registration Push under a 200
+ * rather than erroring, so copy generation is never blocked by a misspelling. Do not expect a 400
+ * from that endpoint -- it does not produce one.
+ *
  * Derived from `CAMPAIGN_EMAIL_STAGES` rather than restated, so the runtime list that validates a
  * wire value and the type that describes it cannot drift apart.
  */
