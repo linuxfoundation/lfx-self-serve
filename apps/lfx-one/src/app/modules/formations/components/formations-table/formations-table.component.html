@@ -59,11 +59,18 @@
                 }
               </a>
             </td>
-            <td class="text-sm text-gray-700 capitalize">{{ row.entity_type }}</td>
+            <td class="text-sm text-gray-700">{{ row.entityTypeLabel }}</td>
             <td><lfx-tag [value]="row.stageLabel" [severity]="row.stageSeverity" /></td>
-            <td class="text-sm text-gray-700 tabular-nums">{{ row.gating_items_total - row.gating_items_open }} of {{ row.gating_items_total }}</td>
+            <td>
+              <div class="flex items-center gap-2">
+                <span class="text-sm text-gray-700 tabular-nums">{{ row.gating_items_total - row.gating_items_open }} of {{ row.gating_items_total }}</span>
+                @if (row.is_activating) {
+                  <lfx-tag value="Gates cleared" severity="warn" />
+                }
+              </div>
+            </td>
             <td class="text-sm text-gray-700">{{ row.announcement_date ? (row.announcement_date | date: 'MMM d') : 'Not set' }}</td>
-            <td class="text-sm text-gray-700">{{ row.blocking_item_title || '—' }}</td>
+            <td class="text-sm text-gray-700">{{ row.blocking_item_title || (row.is_activating ? 'Formation to set Active' : '—') }}</td>
           </tr>
         </ng-template>
       </lfx-table>

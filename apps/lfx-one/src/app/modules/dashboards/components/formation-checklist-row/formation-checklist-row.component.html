@@ -3,7 +3,15 @@
 
 <div class="flex items-center gap-4 py-3 px-4 border-b border-gray-200 last:border-b-0" [attr.data-testid]="'formation-checklist-row-' + item().uid">
   <div class="w-40 shrink-0" [attr.data-testid]="'formation-checklist-row-status-chip-' + item().uid">
-    <lfx-tag [value]="statusLabel()" [severity]="statusSeverity()" [outlined]="statusOutlined()" />
+    <lfx-menu #statusMenu [model]="statusMenuItems" [popup]="true" appendTo="body"></lfx-menu>
+    <button
+      type="button"
+      class="bg-transparent border-none p-0 cursor-pointer"
+      [attr.aria-label]="'Change status for ' + item().title"
+      (click)="toggleStatusMenu($event, statusMenu)"
+      [attr.data-testid]="'formation-checklist-row-status-trigger-' + item().uid">
+      <lfx-tag [value]="statusLabel()" [severity]="statusSeverity()" [outlined]="statusOutlined()" />
+    </button>
   </div>
 
   <div class="flex-1 min-w-0 flex flex-col gap-1">
@@ -23,43 +31,61 @@
       }
       @if (item().is_gating) {
         <span [attr.data-testid]="'formation-checklist-row-gates-active-chip-' + item().uid">
-          <lfx-tag value="Gates Active" severity="warn" />
+          <lfx-tag value="Required for Active" severity="warn" />
         </span>
       }
     </div>
-    @if (item().detail) {
-      <span class="text-xs text-gray-500">{{ item().detail }}</span>
-    }
+    <div class="flex items-center gap-2 flex-wrap">
+      @if (item().detail) {
+        <span class="text-xs text-gray-500">{{ item().detail }}</span>
+      }
+      @if (subItemsSummary(); as summary) {
+        <span class="text-xs text-gray-500" [attr.data-testid]="'formation-checklist-row-sub-items-' + item().uid">{{ summary }}</span>
+      }
+    </div>
   </div>
 
-  <div class="shrink-0" [attr.data-testid]="'formation-checklist-row-action-' + item().uid">
-    @switch (item().action) {
-      @case ('link') {
-        <ng-container *ngTemplateOutlet="externalLinkAction; context: linkActions.link" />
-      }
-      @case ('status_only') {
-        <ng-container *ngTemplateOutlet="externalLinkAction; context: linkActions.status_only" />
-      }
-      @case ('provisionable') {
-        @if (isActionable()) {
-          <ng-container *ngTemplateOutlet="gatedAction; context: gatedActions.provisionable" />
+  <div class="shrink-0 flex items-center gap-1">
+    <div [attr.data-testid]="'formation-checklist-row-action-' + item().uid">
+      @switch (item().action) {
+        @case ('link') {
+          <ng-container *ngTemplateOutlet="externalLinkAction; context: linkActions.link" />
+        }
+        @case ('status_only') {
+          <ng-container *ngTemplateOutlet="externalLinkAction; context: linkActions.status_only" />
+        }
+        @case ('provisionable') {
+          @if (isActionable()) {
+            <ng-container *ngTemplateOutlet="gatedAction; context: gatedActions.provisionable" />
+          }
+        }
+        @case ('request') {
+          @if (isActionable()) {
+            <ng-container *ngTemplateOutlet="gatedAction; context: gatedActions.request" />
+          }
+        }
+        @case ('manual') {
+          <lfx-button
+            label="View details"
+            size="small"
+            severity="secondary"
+            [outlined]="true"
+            (onClick)="onOpenDrawer()"
+            [attr.data-testid]="'formation-checklist-row-manual-' + item().uid" />
         }
       }
-      @case ('request') {
-        @if (isActionable()) {
-          <ng-container *ngTemplateOutlet="gatedAction; context: gatedActions.request" />
-        }
-      }
-      @case ('manual') {
-        <lfx-button
-          label="View details"
-          size="small"
-          severity="secondary"
-          [outlined]="true"
-          (onClick)="onOpenDrawer()"
-          [attr.data-testid]="'formation-checklist-row-manual-' + item().uid" />
-      }
-    }
+    </div>
+
+    <lfx-menu #overflowMenu [model]="overflowMenuItems" [popup]="true" appendTo="body"></lfx-menu>
+    <lfx-button
+      icon="fa-light fa-ellipsis-vertical"
+      [text]="true"
+      [rounded]="true"
+      size="small"
+      severity="secondary"
+      ariaLabel="More actions"
+      (onClick)="toggleOverflowMenu($event, overflowMenu)"
+      [attr.data-testid]="'formation-checklist-row-overflow-' + item().uid" />
   </div>
 </div>
 

@@ -31,7 +31,6 @@ function buildFormation(overrides: Partial<Formation> = {}): Formation {
     entity_type: 'foundation',
     template_uid: 'template-1',
     template_version: 1,
-    state: 'active',
     sub_stage: 'engaged',
     announcement_date: null,
     is_activating: false,
@@ -84,13 +83,13 @@ describe('formation-store.service', () => {
       const item = buildItem(formation.uid);
       seedFormation(formation, [item]);
 
-      putStoredFormation({ ...formation, sub_stage: 'activating' });
+      putStoredFormation({ ...formation, sub_stage: 'on_hold' });
       putStoredItem({ ...item, status: 'done' });
 
       // Re-seeding with the original (stale) objects must not clobber the writes above.
       seedFormation(formation, [item]);
 
-      expect(getStoredFormation(formation.uid)?.sub_stage).toBe('activating');
+      expect(getStoredFormation(formation.uid)?.sub_stage).toBe('on_hold');
       expect(getStoredItem(item.uid)?.status).toBe('done');
     });
   });

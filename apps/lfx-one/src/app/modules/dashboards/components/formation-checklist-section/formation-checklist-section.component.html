@@ -52,7 +52,11 @@
                 [item]="item"
                 [submitting]="submittingItemUids().has(item.uid)"
                 (openDrawer)="onOpenDrawer($event)"
-                (actionTriggered)="onRowAction($event)" />
+                (actionTriggered)="onRowAction($event)"
+                (statusChanged)="onRowStatusChanged($event)"
+                (blockRequested)="onRowBlockRequested($event)"
+                (completeRequested)="onRowCompleteRequested($event)"
+                (skipRequested)="onSkipRequested($event)" />
             }
           </div>
         }

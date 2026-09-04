@@ -74,4 +74,15 @@ export interface FormationLinkRowActionConfig {
 export interface FormationTableRow extends Formation {
   stageLabel: string;
   stageSeverity: TagSeverity;
+  entityTypeLabel: string;
+}
+
+/**
+ * `FormationChecklistRowComponent`'s status-menu output payload for the two "plain" transitions
+ * that carry no extra data — `blocked` rides on its own `blockRequested` output instead (it needs
+ * an optional note via `ReasonPromptDialogComponent`), and completion rides on `completeRequested`.
+ */
+export interface FormationRowStatusChange {
+  item: FormationItem;
+  status: Extract<FormationItemStatus, 'not_started' | 'in_progress'>;
 }

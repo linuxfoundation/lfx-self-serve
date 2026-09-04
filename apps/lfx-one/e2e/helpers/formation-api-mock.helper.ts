@@ -75,12 +75,11 @@ export class FormationApiMockHelper {
         exploratory: rows.filter((row) => row.sub_stage === 'exploratory').length,
         engaged: rows.filter((row) => row.sub_stage === 'engaged').length,
         on_hold: rows.filter((row) => row.sub_stage === 'on_hold').length,
-        activating: rows.filter((row) => row.sub_stage === 'activating').length,
         total: rows.length,
         foundations: rows.filter((row) => row.entity_type === 'foundation').length,
         // Mirrors formation.service.ts's buildQueueTiles — a bare 'project' entity rolls into the
-        // subprojects count so it isn't dropped from the breakdown while still counting toward total.
-        subprojects: rows.filter((row) => row.entity_type === 'subproject' || row.entity_type === 'project').length,
+        // child_projects count so it isn't dropped from the breakdown while still counting toward total.
+        child_projects: rows.filter((row) => row.entity_type === 'child_project' || row.entity_type === 'project').length,
       };
 
       await route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify({ tiles, rows: filtered, data_source: 'fixture' }) });
@@ -141,7 +140,7 @@ export class FormationApiMockHelper {
         await route.fulfill({ status: 404, contentType: 'application/json', body: JSON.stringify({ error: 'No mock item for this uid' }) });
         return;
       }
-      await route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify({ ...item, status: 'waiting_on_partner' }) });
+      await route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify({ ...item, status: 'blocked' }) });
     });
   }
 }

@@ -11,8 +11,8 @@ import { InputTextComponent } from '@components/input-text/input-text.component'
 import { TagComponent } from '@components/tag/tag.component';
 import { TextareaComponent } from '@components/textarea/textarea.component';
 import { FormationService } from '@services/formation.service';
-import type { FormationDrawerData, FormationItem, FormationItemLink } from '@lfx-one/shared/interfaces';
-import { createEmptyFormationDrawerData } from '@lfx-one/shared/constants';
+import type { FormationDrawerData, FormationItem, FormationItemLink, FormationItemStatus } from '@lfx-one/shared/interfaces';
+import { createEmptyFormationDrawerData, FORMATION_ITEM_STATUS_LABELS, FORMATION_ITEM_STATUS_SEVERITY } from '@lfx-one/shared/constants';
 import { isValidUrl } from '@lfx-one/shared/utils';
 import { MessageService } from 'primeng/api';
 import { DrawerModule } from 'primeng/drawer';
@@ -108,6 +108,18 @@ export class FormationItemDrawerComponent {
   protected readonly history = computed(() => this.drawerData().history);
   /** `link.href` is API-sourced — never trust it into `[href]` unvalidated; drop anything that isn't http(s). */
   protected readonly safeLinks: Signal<FormationItemLink[]> = computed(() => (this.item()?.links ?? []).filter((link) => isValidUrl(link.href)));
+  /** "Mark complete" relabels to "Accept" once the item is sitting with the formation team and this caller can close it out — mirrors `FormationChecklistRowComponent`'s `completeLabel`. */
+  protected readonly completeLabel = computed(() => {
+    const currentItem = this.item();
+    return currentItem?.status === 'awaiting_acceptance' && currentItem.can_complete ? 'Accept' : 'Mark complete';
+  });
+  /** Sub-item status chip, upgraded from a raw status string — same label/severity maps the parent item's own status chip uses. */
+  protected subItemStatusLabel(status: FormationItemStatus): string {
+    return FORMATION_ITEM_STATUS_LABELS[status];
+  }
+  protected subItemStatusSeverity(status: FormationItemStatus): (typeof FORMATION_ITEM_STATUS_SEVERITY)[FormationItemStatus] {
+    return FORMATION_ITEM_STATUS_SEVERITY[status];
+  }
 
   protected onClose(): void {
     this.visible.set(false);

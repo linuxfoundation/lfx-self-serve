@@ -3,7 +3,17 @@
 
 import { ProjectStage } from '@lfx-one/shared/enums';
 import { SEEDED_FORMATION_TEMPLATE_UID } from '@lfx-one/shared/constants';
-import type { Formation, FormationItem, FormationItemStatus, FormationLead, FormationSubStage, FormationTemplate } from '@lfx-one/shared/interfaces';
+import { FormationActionType, FormationOwnerTeam, FormationTemplateSectionKey } from '@lfx-one/shared/enums';
+import type {
+  Formation,
+  FormationItem,
+  FormationItemStatus,
+  FormationSubItem,
+  FormationSubStage,
+  FormationTemplate,
+  FormationTemplateSubItem,
+  FormationUser,
+} from '@lfx-one/shared/interfaces';
 import crypto from 'crypto';
 
 /**
@@ -20,7 +30,7 @@ import crypto from 'crypto';
  * #1959 landing first.
  */
 
-const SYNTHETIC_STAFF: FormationLead[] = [
+const SYNTHETIC_STAFF: FormationUser[] = [
   { username: 'alex.rivera', name: 'Alex Rivera' },
   { username: 'sam.chen', name: 'Sam Chen' },
   { username: 'jordan.blake', name: 'Jordan Blake' },
@@ -28,102 +38,159 @@ const SYNTHETIC_STAFF: FormationLead[] = [
   { username: 'morgan.hale', name: 'Morgan Hale' },
 ];
 
+const CHAT_WORKSPACE_SUB_ITEMS: FormationTemplateSubItem[] = [
+  { key: 'workspace-created', title: 'Slack workspace created', owner_team: FormationOwnerTeam.IT },
+  { key: 'channels-configured', title: 'Default channels configured', owner_team: FormationOwnerTeam.IT },
+  { key: 'integrations-connected', title: 'Integrations connected (GitHub, calendar)', owner_team: FormationOwnerTeam.IT },
+  { key: 'access-granted', title: 'Project lead access granted', owner_team: FormationOwnerTeam.IT },
+];
+
 interface SeedTemplateItem {
   key: string;
   title: string;
   is_gating: boolean;
-  owner_team: string;
-  action: FormationItem['action'];
+  owner_team: FormationOwnerTeam;
+  action: FormationActionType;
+  sub_items?: FormationTemplateSubItem[];
 }
 
 interface SeedSection {
-  key: string;
+  key: FormationTemplateSectionKey;
   title: string;
   items: SeedTemplateItem[];
 }
 
 const SEED_SECTIONS: SeedSection[] = [
   {
-    key: 'legal-and-entity',
+    key: FormationTemplateSectionKey.LEGAL_AND_ENTITY,
     title: 'Legal and entity',
     items: [
-      { key: 'draft-project-record', title: 'Draft project record (Prospect)', is_gating: true, owner_team: 'PMO', action: 'link' },
-      { key: 'intake-form-submitted', title: 'Intake form submitted', is_gating: true, owner_team: 'Community', action: 'link' },
+      {
+        key: 'draft-project-record',
+        title: 'Draft project record (Prospect)',
+        is_gating: true,
+        owner_team: FormationOwnerTeam.PRODUCT_OPS,
+        action: FormationActionType.LINK,
+      },
+      {
+        key: 'intake-form-submitted',
+        title: 'Intake form submitted',
+        is_gating: true,
+        owner_team: FormationOwnerTeam.COMMUNITY,
+        action: FormationActionType.LINK,
+      },
       {
         key: 'formation-review-packet',
         title: 'Formation review and instruction packet',
         is_gating: true,
-        owner_team: 'Formation',
-        action: 'link',
+        owner_team: FormationOwnerTeam.FORMATION,
+        action: FormationActionType.LINK,
       },
       {
         key: 'preliminary-trademark-search',
         title: 'Preliminary trademark search',
         is_gating: false,
-        owner_team: 'Brand Counsel',
-        action: 'link',
+        owner_team: FormationOwnerTeam.BRAND_COUNSEL,
+        action: FormationActionType.LINK,
       },
       {
         key: 'technical-charter-agreed',
         title: 'Technical charter reviewed and agreed',
         is_gating: true,
-        owner_team: 'Community',
-        action: 'link',
+        owner_team: FormationOwnerTeam.COMMUNITY,
+        action: FormationActionType.LINK,
       },
       {
         key: 'contribution-agreement-executed',
         title: 'Contribution agreement executed',
         is_gating: true,
-        owner_team: 'Formation',
-        action: 'link',
+        owner_team: FormationOwnerTeam.FORMATION,
+        action: FormationActionType.LINK,
       },
       {
         key: 'in-depth-trademark-series-llc',
         title: 'In-depth trademark search and Series LLC',
         is_gating: true,
-        owner_team: 'Formation',
-        action: 'manual',
+        owner_team: FormationOwnerTeam.FORMATION,
+        action: FormationActionType.MANUAL,
       },
     ],
   },
   {
-    key: 'community-and-launch',
+    key: FormationTemplateSectionKey.COMMUNITY_AND_LAUNCH,
     title: 'Community and launch',
     items: [
       {
         key: 'repositories-connected',
         title: 'Repositories connected; GitHub org set up',
         is_gating: false,
-        owner_team: 'Community',
-        action: 'provisionable',
+        owner_team: FormationOwnerTeam.COMMUNITY,
+        action: FormationActionType.PROVISIONABLE,
       },
-      { key: 'domain-and-dns-transfer', title: 'Domain and DNS transfer', is_gating: false, owner_team: 'Community', action: 'request' },
-      { key: 'website-logo-footer', title: 'Website, logo and entity footer', is_gating: false, owner_team: 'PMO', action: 'link' },
-      { key: 'mailing-lists', title: 'Mailing lists', is_gating: false, owner_team: 'PMO', action: 'provisionable' },
-      { key: 'chat-workspace', title: 'Chat workspace (Slack)', is_gating: false, owner_team: 'IT', action: 'provisionable' },
+      {
+        key: 'domain-and-dns-transfer',
+        title: 'Domain and DNS transfer',
+        is_gating: false,
+        owner_team: FormationOwnerTeam.COMMUNITY,
+        action: FormationActionType.REQUEST,
+      },
+      {
+        key: 'website-logo-footer',
+        title: 'Website, logo and entity footer',
+        is_gating: false,
+        owner_team: FormationOwnerTeam.PRODUCT_OPS,
+        action: FormationActionType.LINK,
+      },
+      { key: 'mailing-lists', title: 'Mailing lists', is_gating: false, owner_team: FormationOwnerTeam.PRODUCT_OPS, action: FormationActionType.PROVISIONABLE },
+      {
+        key: 'chat-workspace',
+        title: 'Chat workspace (Slack)',
+        is_gating: false,
+        owner_team: FormationOwnerTeam.IT,
+        action: FormationActionType.PROVISIONABLE,
+        sub_items: CHAT_WORKSPACE_SUB_ITEMS,
+      },
       {
         key: 'insights-onboarding',
         title: 'LFX Insights onboarding and project lead access',
         is_gating: false,
-        owner_team: 'PMO',
-        action: 'request',
+        owner_team: FormationOwnerTeam.PRODUCT_OPS,
+        action: FormationActionType.REQUEST,
       },
       {
         key: 'asset-transfers',
         title: 'Asset transfers: trademarks, service accounts, social',
         is_gating: false,
-        owner_team: 'PMO',
-        action: 'manual',
+        owner_team: FormationOwnerTeam.PRODUCT_OPS,
+        action: FormationActionType.MANUAL,
       },
-      { key: 'tsc-formed', title: 'TSC formed and kickoff scheduled', is_gating: false, owner_team: 'PMO', action: 'provisionable' },
-      { key: 'member-join-page', title: 'Member join page', is_gating: false, owner_team: 'Product', action: 'provisionable' },
-      { key: 'launch-communications', title: 'Launch communications', is_gating: false, owner_team: 'Marketing', action: 'link' },
+      {
+        key: 'tsc-formed',
+        title: 'TSC formed and kickoff scheduled',
+        is_gating: false,
+        owner_team: FormationOwnerTeam.PRODUCT_OPS,
+        action: FormationActionType.PROVISIONABLE,
+      },
+      {
+        key: 'member-join-page',
+        title: 'Member join page',
+        is_gating: false,
+        owner_team: FormationOwnerTeam.PRODUCT,
+        action: FormationActionType.PROVISIONABLE,
+      },
+      {
+        key: 'launch-communications',
+        title: 'Launch communications',
+        is_gating: false,
+        owner_team: FormationOwnerTeam.MARKETING,
+        action: FormationActionType.LINK,
+      },
       {
         key: 'formation-sets-active',
         title: 'Formation sets stage to Active',
         is_gating: false,
-        owner_team: 'Formation',
-        action: 'status_only',
+        owner_team: FormationOwnerTeam.FORMATION,
+        action: FormationActionType.STATUS_ONLY,
       },
     ],
   },
@@ -142,6 +209,7 @@ export const SEEDED_FORMATION_TEMPLATE: FormationTemplate = {
       is_gating: item.is_gating,
       owner_team: item.owner_team,
       action: item.action,
+      sub_items: item.sub_items,
     })),
   })),
 };
@@ -162,12 +230,20 @@ function deriveItemStatus(seed: string, position: number, total: number): Format
   const score = progress * 0.7 + hashToUnitFloat(seed) * 0.3;
   if (score > 0.72) return 'done';
   if (score > 0.5) return 'in_progress';
-  if (score > 0.44) return 'waiting_on_partner';
+  if (score > 0.44) return 'blocked';
   return 'not_started';
 }
 
-function mapProjectStageToSubStage(stage: ProjectStage | string | undefined, isActivating: boolean): FormationSubStage {
-  if (isActivating) return 'activating';
+function deriveSubItems(seed: string, subItems: FormationTemplateSubItem[] | undefined): FormationSubItem[] {
+  if (!subItems || subItems.length === 0) return [];
+  return subItems.map((subItem, index) => ({
+    uid: `formation-sub-item:${seed}:${subItem.key}`,
+    title: subItem.title,
+    status: deriveItemStatus(`${seed}:${subItem.key}`, index, subItems.length),
+  }));
+}
+
+function mapProjectStageToSubStage(stage: ProjectStage | string | undefined): FormationSubStage {
   switch (stage) {
     case ProjectStage.FormationExploratory:
       return 'exploratory';
@@ -209,16 +285,20 @@ export function generateMockFormation(input: GenerateFormationInput): { formatio
       owner_team: item.owner_team,
       owner,
       due_date: null,
-      action: item.action,
+      // FormationActionType's enum members share the exact string values of FormationItemAction's
+      // union, but TS treats string enums nominally — bridge the gap with a double cast rather than
+      // duplicating every seed entry under two parallel types.
+      action: item.action as unknown as FormationItem['action'],
       // '#' isn't an absolute http(s) URL, so isValidUrl (the same guard action_href is checked
       // against before it ever reaches [href]) rejects it — every generated link/status_only item
       // would render the disabled "Link unavailable" fallback against a real dev server. A
       // synthetic but valid absolute URL keeps the enabled path exercisable outside of e2e's mocks.
-      action_href: item.action === 'link' || item.action === 'status_only' ? `https://example.com/formation/${item.key}` : null,
+      action_href:
+        item.action === FormationActionType.LINK || item.action === FormationActionType.STATUS_ONLY ? `https://example.com/formation/${item.key}` : null,
       detail: null,
       notes: null,
       links: [],
-      sub_items: [],
+      sub_items: deriveSubItems(seed, item.sub_items),
       // deriveItemStatus never returns 'skipped' for a freshly generated item — only skipFormationItem sets it, after generation.
       skip_reason: null,
       // Overwritten by FormationItemAccessService.canComplete before the response leaves formation.service.ts.
@@ -232,23 +312,23 @@ export function generateMockFormation(input: GenerateFormationInput): { formatio
   // A skipped gating item is resolved, not open — see the matching note on refreshFormationReadiness.
   const openGatingItems = gatingItems.filter((item) => item.status !== 'done' && item.status !== 'skipped');
   const isActivating = gatingItems.length > 0 && openGatingItems.length === 0;
-  const blockingItem = openGatingItems[0] ?? null;
+  const blockedGatingItems = gatingItems.filter((item) => item.status === 'blocked');
+  const blockingItemTitle = blockedGatingItems.length > 0 ? blockedGatingItems.map((item) => item.title).join(', ') : null;
 
   const formation: Formation = {
     uid: `formation:${input.projectUid}`,
     parent_project_uid: input.projectUid,
     parent_project_slug: input.projectSlug,
     parent_project_name: input.projectName,
-    entity_type: input.parentProjectUid ? 'subproject' : 'foundation',
+    entity_type: input.parentProjectUid ? 'child_project' : 'foundation',
     template_uid: SEEDED_FORMATION_TEMPLATE_UID,
     template_version: 1,
-    state: 'active',
-    sub_stage: mapProjectStageToSubStage(input.stage, isActivating),
+    sub_stage: mapProjectStageToSubStage(input.stage),
     announcement_date: isActivating ? new Date(Date.now() + 3 * 24 * 60 * 60 * 1000).toISOString() : null,
     is_activating: isActivating,
     gating_items_open: openGatingItems.length,
     gating_items_total: gatingItems.length,
-    blocking_item_title: blockingItem?.title ?? null,
+    blocking_item_title: blockingItemTitle,
     subtitle: null,
     created_at: new Date(0).toISOString(),
     updated_at: new Date(0).toISOString(),
@@ -270,7 +350,6 @@ export const STATIC_QUEUE_FORMATIONS: Formation[] = [
     entity_type: 'foundation',
     template_uid: SEEDED_FORMATION_TEMPLATE_UID,
     template_version: 1,
-    state: 'active',
     sub_stage: 'engaged',
     announcement_date: new Date(Date.now() + 3 * 24 * 60 * 60 * 1000).toISOString(),
     is_activating: false,
@@ -286,10 +365,9 @@ export const STATIC_QUEUE_FORMATIONS: Formation[] = [
     parent_project_uid: 'queue-project-3',
     parent_project_slug: 'lakeshore-toolkit',
     parent_project_name: 'Lakeshore compartmentalization toolkit',
-    entity_type: 'subproject',
+    entity_type: 'child_project',
     template_uid: SEEDED_FORMATION_TEMPLATE_UID,
     template_version: 1,
-    state: 'active',
     sub_stage: 'exploratory',
     announcement_date: null,
     is_activating: false,
@@ -308,7 +386,6 @@ export const STATIC_QUEUE_FORMATIONS: Formation[] = [
     entity_type: 'project',
     template_uid: SEEDED_FORMATION_TEMPLATE_UID,
     template_version: 1,
-    state: 'active',
     sub_stage: 'engaged',
     announcement_date: new Date(Date.now() + 12 * 24 * 60 * 60 * 1000).toISOString(),
     is_activating: false,
@@ -327,8 +404,7 @@ export const STATIC_QUEUE_FORMATIONS: Formation[] = [
     entity_type: 'foundation',
     template_uid: SEEDED_FORMATION_TEMPLATE_UID,
     template_version: 1,
-    state: 'active',
-    sub_stage: 'activating',
+    sub_stage: 'engaged',
     announcement_date: new Date(Date.now() - 60 * 24 * 60 * 60 * 1000).toISOString(),
     is_activating: true,
     gating_items_open: 0,

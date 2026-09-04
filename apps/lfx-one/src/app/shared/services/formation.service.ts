@@ -3,7 +3,14 @@
 
 import { HttpClient, HttpParams } from '@angular/common/http';
 import { Injectable, inject } from '@angular/core';
-import type { FormationActivity, FormationChecklistResponse, FormationItem, FormationSubStage, FormationsQueueResponse } from '@lfx-one/shared/interfaces';
+import type {
+  FormationActivity,
+  FormationChecklistResponse,
+  FormationItem,
+  FormationItemStatus,
+  FormationSubStage,
+  FormationsQueueResponse,
+} from '@lfx-one/shared/interfaces';
 import { Observable, take } from 'rxjs';
 
 @Injectable({ providedIn: 'root' })
@@ -28,6 +35,11 @@ export class FormationService {
 
   public requestFormationItem(itemUid: string): Observable<FormationItem> {
     return this.http.patch<FormationItem>(`/api/formation-items/${encodeURIComponent(itemUid)}/request`, {}).pipe(take(1));
+  }
+
+  /** The three "plain" status transitions (not_started / in_progress / blocked) — completion and skip keep their own dedicated endpoints. */
+  public updateFormationItemStatus(itemUid: string, status: FormationItemStatus, note?: string): Observable<FormationItem> {
+    return this.http.patch<FormationItem>(`/api/formation-items/${encodeURIComponent(itemUid)}/status`, { status, note }).pipe(take(1));
   }
 
   public updateFormationItem(itemUid: string, patch: { notes?: string; owner_username?: string; due_date?: string | null }): Observable<FormationItem> {

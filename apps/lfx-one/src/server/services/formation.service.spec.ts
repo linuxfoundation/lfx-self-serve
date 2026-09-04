@@ -43,7 +43,6 @@ function buildFormation(overrides: Partial<Formation> = {}): Formation {
     entity_type: 'foundation',
     template_uid: 'template-1',
     template_version: 1,
-    state: 'active',
     sub_stage: 'engaged',
     announcement_date: null,
     is_activating: false,
@@ -245,13 +244,15 @@ describe('FormationService', () => {
   });
 
   describe('gate_writer gate — complete/skip/request', () => {
-    it('completeFormationItem rejects a gating item when canComplete denies', async () => {
+    it('completeFormationItem sets a gating item to awaiting_acceptance (not done) when canComplete denies, instead of throwing', async () => {
       const { item } = seedItem({ is_gating: true });
       getProjectById.mockResolvedValue({ writer: true });
       canComplete.mockResolvedValue(false);
 
-      await expect(service.completeFormationItem(buildReq(), item.uid)).rejects.toThrow(/gate_writer/i);
-      expect(getStoredItem(item.uid)?.status).toBe('not_started');
+      const result = await service.completeFormationItem(buildReq(), item.uid);
+
+      expect(result.status).toBe('awaiting_acceptance');
+      expect(getStoredItem(item.uid)?.status).toBe('awaiting_acceptance');
     });
 
     it('skipFormationItem rejects a gating item when canComplete denies, even with a reason supplied', async () => {
@@ -292,16 +293,29 @@ describe('FormationService', () => {
       expect(getStoredFormation(formation.uid)?.gating_items_open).toBe(1);
     });
 
-    it('completing the last open gating item flips sub_stage to activating, and reopening it via request reverts to engaged', async () => {
+    it('completing the last open gating item flips is_activating true without touching sub_stage, and reopening it via request reverts is_activating — sub_stage never changes', async () => {
       const { formation, item } = seedItem({ is_gating: true, action: 'request' });
       getProjectById.mockResolvedValue({ writer: true });
       canComplete.mockResolvedValue(true);
 
       await service.completeFormationItem(buildReq(), item.uid);
-      expect(getStoredFormation(formation.uid)?.sub_stage).toBe('activating');
+      expect(getStoredFormation(formation.uid)?.is_activating).toBe(true);
+      expect(getStoredFormation(formation.uid)?.sub_stage).toBe('engaged');
 
       await service.requestFormationItem(buildReq(), item.uid);
+      expect(getStoredFormation(formation.uid)?.is_activating).toBe(false);
       expect(getStoredFormation(formation.uid)?.sub_stage).toBe('engaged');
+    });
+
+    it('requestFormationItem sets the item to blocked, and refreshFormationReadiness reflects it in blocking_item_title', async () => {
+      const { formation, item } = seedItem({ is_gating: true, action: 'request', title: 'Some item' });
+      getProjectById.mockResolvedValue({ writer: true });
+      canComplete.mockResolvedValue(true);
+
+      await service.requestFormationItem(buildReq(), item.uid);
+
+      expect(getStoredItem(item.uid)?.status).toBe('blocked');
+      expect(getStoredFormation(formation.uid)?.blocking_item_title).toBe('Some item');
     });
   });
 
@@ -429,12 +443,12 @@ describe('FormationService', () => {
       expect(result.tiles.total).toBe(STATIC_QUEUE_FORMATIONS.length);
     });
 
-    it('the foundations/subprojects tile breakdown sums to total — a bare "project" entity rolls into subprojects rather than being dropped', async () => {
+    it('the foundations/child_projects tile breakdown sums to total — a bare "project" entity rolls into child_projects rather than being dropped', async () => {
       expect(STATIC_QUEUE_FORMATIONS.some((row) => row.entity_type === 'project')).toBe(true);
 
       const result = await service.getFormationsQueue(buildReq());
 
-      expect(result.tiles.foundations + result.tiles.subprojects).toBe(result.tiles.total);
+      expect(result.tiles.foundations + result.tiles.child_projects).toBe(result.tiles.total);
     });
   });
 });

@@ -19,7 +19,7 @@
         @if (item(); as currentItem) {
           @if (currentItem.is_gating) {
             <span [attr.data-testid]="'formation-item-drawer-gates-active-' + currentItem.uid">
-              <lfx-tag value="Gates Active" severity="warn" />
+              <lfx-tag value="Required for Active" severity="warn" />
             </span>
           }
         }
@@ -49,7 +49,7 @@
         @if (currentItem.status !== 'done') {
           <div class="flex items-center gap-2">
             <lfx-button
-              label="Mark complete"
+              [label]="completeLabel()"
               size="small"
               severity="primary"
               [disabled]="!currentItem.can_complete || busy()"
@@ -127,7 +127,7 @@
             @for (subItem of currentItem.sub_items; track subItem.uid) {
               <div class="flex items-center justify-between text-sm">
                 <span class="text-gray-700">{{ subItem.title }}</span>
-                <span class="text-gray-500">{{ subItem.status }}</span>
+                <lfx-tag [value]="subItemStatusLabel(subItem.status)" [severity]="subItemStatusSeverity(subItem.status)" />
               </div>
             }
           </div>
