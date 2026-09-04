@@ -780,6 +780,23 @@ export class CampaignController {
     // confident answer to a question the caller did not ask. Upstream's `find-brief` restricts this
     // param to `paid-marketing | email`, so honouring a third value was never the contract — and
     // `stage` two lines below already rejects rather than narrows. The two now agree.
+    // PRESENT-but-not-a-string is rejected before the absent-value default, matching
+    // `getBriefMetrics`' handling of `window`. A repeated `?delivery_type=a&delivery_type=b`
+    // arrives as an ARRAY, and a bare `typeof === 'string'` test collapses that to `''` — which is
+    // indistinguishable from "omitted" and therefore silently answered with the PAID brief. The
+    // same applies to `stage` below.
+    for (const key of ['delivery_type', 'stage']) {
+      if (req.query[key] !== undefined && typeof req.query[key] !== 'string') {
+        next(
+          ServiceValidationError.forField(key, `${key} must be a single value`, {
+            operation: 'campaign_load_brief',
+            service: 'campaign_controller',
+            path: req.path,
+          })
+        );
+        return;
+      }
+    }
     const deliveryTypeParam = typeof req.query['delivery_type'] === 'string' ? req.query['delivery_type'] : '';
     if (deliveryTypeParam !== '' && deliveryTypeParam !== 'email' && deliveryTypeParam !== 'paid-marketing') {
       next(

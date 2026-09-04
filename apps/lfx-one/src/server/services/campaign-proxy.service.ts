@@ -735,7 +735,7 @@ export function extractableHtml(html: string): string {
   // which is the most reliable source for exactly the fields the extraction prompt asks for — and
   // stripping every `<script>` discarded it, keeping the "no date survived" failure alive on any
   // page whose dates live only there rather than in prose.
-  const jsonLd = (html.match(/<script[^>]*type=["']application\/ld\+json["'][^>]*>[\s\S]*?<\/script(\s[^>]*)?>/gi) ?? []).join(' ');
+  const jsonLd = (html.match(/<script[^>]*\stype\s*=\s*["']application\/ld\+json["'][^>]*>[\s\S]*?<\/script(\s[^>]*)?>/gi) ?? []).join(' ');
   const stripped = html
     .replace(/<script[\s\S]*?<\/script(\s[^>]*)?>/gi, ' ')
     .replace(/<style[\s\S]*?<\/style(\s[^>]*)?>/gi, ' ')

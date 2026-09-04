@@ -478,6 +478,23 @@ describe('CampaignController.loadBrief', () => {
   // and different key `(email, '')`, so the caller was answered about a brief nobody asked for.
   // The two assertions cannot both stand, so that test is gone rather than left contradicting.
 
+  // A repeated `?delivery_type=a&delivery_type=b` arrives as an ARRAY. A bare `typeof === 'string'`
+  // test collapses that to `''`, which is indistinguishable from "omitted" and therefore answered
+  // with the PAID brief — so a malformed request got a confident answer about a brief it never
+  // asked for. Rejected before the absent-value default, as `getBriefMetrics` does for `window`.
+  it.each([
+    ['delivery_type', { event_slug: 'kubecon-eu-2026', project: 'tlf', delivery_type: ['email', 'paid-marketing'] }],
+    ['stage', { event_slug: 'kubecon-eu-2026', project: 'tlf', stage: ['CFP Launch', 'Post-Event'] }],
+  ])('refuses a repeated %s rather than defaulting it', async (field, query) => {
+    await controller.loadBrief(buildLoadReq(query), res, next);
+
+    expect(loadBrief, 'a repeated parameter still reached campaign-service').not.toHaveBeenCalled();
+    const error = vi.mocked(next).mock.calls[0][0] as unknown as ServiceValidationError;
+    expect(error).toBeInstanceOf(ServiceValidationError);
+    expect(error.statusCode).toBe(400);
+    expect((error.toResponse()['errors'] as { field: string }[])[0].field).toBe(field);
+  });
+
   it('refuses an explicitly unrecognised delivery_type instead of returning the paid brief', async () => {
     // An earlier revision narrowed a typo to paid, reasoning that failing closed toward the
     // pre-existing behaviour could not expose a brief that was hidden before. True, and beside the

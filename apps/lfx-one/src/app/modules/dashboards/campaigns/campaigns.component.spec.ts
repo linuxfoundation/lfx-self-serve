@@ -2908,7 +2908,6 @@ describe('CampaignsComponent — email delivery channel', () => {
 
     it("sends the selected type's STAGE, not its id", async () => {
       selectEmail();
-      internals().emailBriefOutput.set(emailBrief);
       const gen = vi
         .spyOn(TestBed.inject(CampaignService), 'generateEmailCopy')
         .mockReturnValue(of({ enabled: true, copy: { subject: 's', preheader: 'p', body: '<p>b</p>', cta: 'c' } }) as never);
@@ -2919,6 +2918,9 @@ describe('CampaignsComponent — email delivery channel', () => {
       // the bug rather than the contract. Selecting first, then caching, keeps this test about the
       // stage-vs-type-id distinction it is named for.
       (internals() as unknown as { onSelectEmailType(id: string): void }).onSelectEmailType('thank-you-survey');
+      // BOTH set after the type change: it now clears the brief output as well as the id, since
+      // the previous stage's CONTENT would otherwise be persisted under the new stage.
+      internals().emailBriefOutput.set(emailBrief);
       internals().emailBriefId.set('brief-77');
 
       await internals().onGenerateEmailCopy();
@@ -3420,6 +3422,21 @@ describe('CampaignsComponent — email delivery channel', () => {
     // the loaded brief there would make the operator re-fetch and re-generate for no reason, and
     // would silently drop a built audience. Resetting only when the STAGE moves is what separates
     // the two cases; without this test, a reset on every type change passes just as happily.
+    // Clearing the cached ID alone is not enough. `emailBriefOutput` holds the CONTENT of the
+    // previous stage's brief, and `ensureEmailBriefId` persists whatever it is handed — so with an
+    // empty id it creates a NEW row for the new stage carrying the OLD stage's copy, which is the
+    // wrong-brief association the id clearing exists to prevent, reached one step later.
+    it('drops the previous stage brief output, not just its id', () => {
+      selectEmail();
+      internals().emailBriefOutput.set(emailBrief);
+      internals().emailBriefId.set('brief-cfp');
+
+      (internals() as unknown as { onSelectEmailType(id: string): void }).onSelectEmailType('thank-you-survey');
+
+      expect(internals().emailBriefId()).toBe('');
+      expect(internals().emailBriefOutput(), "the previous stage's brief content survived; a persist would file it under the new stage").toBeNull();
+    });
+
     it('keeps the loaded brief when two types share one stage', () => {
       selectEmail();
       internals().emailBriefOutput.set(emailBrief);

@@ -1941,6 +1941,12 @@ export class CampaignsComponent {
     if (this.selectedEmailStage() !== previousStage) {
       this.emailBriefPersistGeneration++;
       this.emailBriefId.set('');
+      // The CONTENT too, not only the id. `ensureEmailBriefId` persists whatever brief it is
+      // handed, so leaving the previous stage's output in place meant an empty id produced a NEW
+      // row for the new stage carrying the OLD stage's copy -- the wrong-brief association the id
+      // clearing exists to prevent, reached one step later. The planner re-answers with the newly
+      // addressed stage's brief, or with nothing if that send has none yet.
+      this.emailBriefOutput.set(null);
       this.emailAudience.set(null);
       this.emailAudienceState.set('idle');
       this.emailAudienceMessage.set('');

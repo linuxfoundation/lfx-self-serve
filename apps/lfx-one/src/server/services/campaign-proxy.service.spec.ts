@@ -746,6 +746,30 @@ describe('extractableHtml', () => {
     expect(out).toContain('"startDate":"2027-03-15"');
   });
 
+  // `data-type="application/ld+json"` is not the `type` attribute. Matching any attribute name
+  // ENDING in `type` copied an ordinary script into `jsonLd`, where it survived the strip below
+  // and reached the extraction prompt as attacker-controllable text — the same leak the end-tag
+  // fixes closed, through the attribute side instead.
+  it.each([
+    ['data-type decoy', '<script type="text/javascript" data-type="application/ld+json">alert(1)</script>'],
+    ['xtype decoy', '<script xtype="application/ld+json">alert(1)</script>'],
+  ])('does not treat %s as json-ld', (_label, markup) => {
+    const out = extractableHtml(`${markup}<p>KEPT</p>`);
+
+    expect(out).not.toContain('alert(1)');
+    expect(out).toContain('KEPT');
+  });
+
+  // The real attribute must still match, including the spacing HTML permits around `=`.
+  it.each([
+    ['plain', '<script type="application/ld+json">{"startDate":"2027-03-15"}</script>'],
+    ['spaced equals', '<script type = "application/ld+json">{"startDate":"2027-03-15"}</script>'],
+    ['single quotes', '<script type=\'application/ld+json\'>{"startDate":"2027-03-15"}</script>'],
+    ['other attributes', '<script id="ld" type="application/ld+json" defer>{"startDate":"2027-03-15"}</script>'],
+  ])('preserves json-ld written with %s', (_label, markup) => {
+    expect(extractableHtml(`${markup}<p>x</p>`)).toContain('"startDate":"2027-03-15"');
+  });
+
   it('returns an empty string for input that is entirely strippable', () => {
     expect(extractableHtml('<style>.a{color:red}</style>').trim()).toBe('');
   });
