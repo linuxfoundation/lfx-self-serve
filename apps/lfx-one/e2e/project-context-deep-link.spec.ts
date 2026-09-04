@@ -24,6 +24,10 @@
  *   - The same for a context-less survey EDIT link (`/project/surveys/:uid/edit`, GH-1569):
  *     context syncs from the loaded survey (enriched payload or uid fallback), and writerGuard
  *     authorizes against the survey's own project via its entity probe.
+ *   - A newsletter EDIT link whose `:projectUid` route param disagrees with the cookie-restored
+ *     context (GH-1570): newsletterAccessGuard authorizes against the route's project (resolving
+ *     the param's uid — including at the lens mount, where the param lives on the child
+ *     snapshot), and the manage page reconciles context from the route param.
  *
  * Prerequisites:
  *   - Dev server reachable at the Playwright baseURL (default http://localhost:4200)
@@ -50,6 +54,7 @@ const MOCK_MEETING_UID = 'm0000000-0000-0000-0000-00000000d001';
 const MOCK_VOTE_UID = 'v0000000-0000-0000-0000-00000000d001';
 const MOCK_MAILING_LIST_UID = 'l1000000-0000-0000-0000-00000000d001';
 const MOCK_SURVEY_UID = 's0000000-0000-0000-0000-00000000d001';
+const MOCK_NEWSLETTER_UID = 'n0000000-0000-0000-0000-00000000d001';
 
 function buildProjectStub(uid: string, slug: string, name: string) {
   return {
@@ -422,6 +427,40 @@ async function stubSurveyEditDetail(page: Page, survey: ReturnType<typeof buildS
 // Gated on env vars rather than on URL sniffing so genuine auth-flow regressions (expired
 // storageState, broken Auth0 login helper) still fail loudly when creds ARE configured.
 const AUTH_CREDS_PRESENT = !!process.env.TEST_USERNAME && !!process.env.TEST_PASSWORD;
+
+/**
+ * Newsletter draft payload for the edit page. The route itself carries the owning
+ * project (`:projectUid`), so unlike the meeting/vote/list stubs there is no enriched
+ * vs unenriched variant — context reconciliation resolves the project by the route uid.
+ */
+function buildNewsletterStub() {
+  return {
+    id: MOCK_NEWSLETTER_UID,
+    project_uid: MOCK_FOUNDATION_UID,
+    subject: 'Test Foundation Monthly',
+    body_html: '<p>Newsletter stub for project-context deep-link specs</p>',
+    committee_uids: [],
+    status: 'draft',
+    version: 1,
+    scheduled_at: null,
+    created_at: '2025-01-15T00:00:00Z',
+    updated_at: '2025-06-01T00:00:00Z',
+  };
+}
+
+async function stubNewsletterEditDetail(page: Page, newsletter: ReturnType<typeof buildNewsletterStub>): Promise<void> {
+  // Catch-all registered FIRST (Playwright matches in reverse registration order) so
+  // incidental list calls under the project don't escape to the real BFF. `*` doesn't
+  // cross `/`, so the detail route needs its own exact pattern.
+  await page.route(`**/api/projects/${MOCK_FOUNDATION_UID}/newsletters`, (route) => {
+    if (route.request().method() !== 'GET') return route.fallback();
+    return route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify({ data: [] }) });
+  });
+  await page.route(`**/api/projects/${MOCK_FOUNDATION_UID}/newsletters/${MOCK_NEWSLETTER_UID}`, (route) => {
+    if (route.request().method() !== 'GET') return route.fallback();
+    return route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify(newsletter) });
+  });
+}
 
 function skipWhenAuthMissing(): void {
   if (!AUTH_CREDS_PRESENT) {
@@ -1069,5 +1108,100 @@ test.describe('Survey edit deep-link resolves the survey’s project context (GH
 
     await page.waitForTimeout(500);
     expect(new URL(page.url()).searchParams.has('project')).toBe(false);
+  });
+});
+
+test.describe('Newsletter edit deep-link resolves the route’s project context (GH-1570)', () => {
+  test.beforeEach(async ({ page }) => {
+    // Mirror the issue: the user was last working in an unrelated PROJECT (cookie-restored),
+    // then opens an edit link whose :projectUid belongs to Test Foundation.
+    await setPersonaAndLensCookies(page, ['executive-director'], 'project');
+    await setProjectCookie(page, OTHER_PROJECT_UID, OTHER_PROJECT_SLUG, 'Other Project');
+    await stubPersona(page, ['executive-director']);
+    await stubProjectApi(page);
+    await stubCommittees(page, buildCommittees());
+    await stubLensItems(page);
+    await page.route(`**/api/projects/${OTHER_PROJECT_SLUG}*`, (route) =>
+      route.fulfill({
+        status: 200,
+        contentType: 'application/json',
+        body: JSON.stringify(buildProjectStub(OTHER_PROJECT_UID, OTHER_PROJECT_SLUG, 'Other Project')),
+      })
+    );
+    // The guard and the page reconciliation both resolve the route's :projectUid — the uid form
+    // needs its own stub (stubProjectApi keys on slugs). Funded + Membership + Series LLC
+    // satisfies computeIsFoundation, so the reconciled context lands in the foundation slot.
+    await page.route(`**/api/projects/${MOCK_FOUNDATION_UID}*`, (route) =>
+      route.fulfill({
+        status: 200,
+        contentType: 'application/json',
+        body: JSON.stringify({
+          ...buildProjectStub(MOCK_FOUNDATION_UID, MOCK_FOUNDATION_SLUG, 'Test Foundation'),
+          funding: 'Funded',
+          funding_model: ['Membership'],
+          legal_entity_type: 'Series LLC',
+        }),
+      })
+    );
+  });
+
+  test('edit link with a stale cookie context switches to the route’s project', async ({ page }) => {
+    await stubNewsletterEditDetail(page, buildNewsletterStub());
+
+    // The flat URL also exercises the lensRedirectGuard prefix redirect (project lens active):
+    // the rest of the path — including the route's :projectUid — must survive it.
+    await gotoSpa(page, `/newsletters/${MOCK_FOUNDATION_UID}/${MOCK_NEWSLETTER_UID}/edit`, {
+      uid: OTHER_PROJECT_UID,
+      slug: OTHER_PROJECT_SLUG,
+      name: 'Other Project',
+      foundation: false,
+    });
+    await expect(page).toHaveURL(new RegExp(`/project/newsletters/${MOCK_FOUNDATION_UID}/${MOCK_NEWSLETTER_UID}/edit`), {
+      timeout: PAGE_LOAD_TIMEOUT,
+    });
+    await expect(page.getByTestId('newsletter-manage-title')).toBeVisible({ timeout: PAGE_LOAD_TIMEOUT });
+
+    // The page reconciles context from the route's :projectUid (Test Foundation), replacing the
+    // cookie-restored Other Project — the selector and sidebar links follow the correction. The
+    // active lens stays 'project' (only routeLensKind re-points), so the project-lens item is
+    // the one carrying the corrected slug.
+    await expect(page.getByTestId('project-selector')).toContainText('Test Foundation', { timeout: ELEMENT_TIMEOUT });
+    await expect(page.getByTestId('sidebar-project-newsletters')).toHaveAttribute('href', /[?&]project=test-foundation/, {
+      timeout: ELEMENT_TIMEOUT,
+    });
+
+    // The context correction must NOT inject ?project= into the entity URL (syncUrl guard) —
+    // give any NavigationEnd-driven backfill a tick to (not) fire before asserting absence.
+    await page.waitForTimeout(500);
+    expect(new URL(page.url()).searchParams.has('project')).toBe(false);
+  });
+
+  test('newsletterAccessGuard authorizes the edit page against the route’s :projectUid, not the stale context', async ({ page }) => {
+    // Non-ED persona: no synchronous fast path — the guard must resolve the route's :projectUid
+    // (also at the /project/newsletters mount, where the param sits on the child snapshot). The
+    // stale cookie context (Other Project) is intentionally NOT writable: if the guard authorized
+    // against it (the pre-fix behavior), the page would redirect to /project/overview.
+    await setPersonaAndLensCookies(page, ['maintainer'], 'project');
+    await stubPersona(page, ['maintainer']);
+    await page.route(`**/api/projects/${OTHER_PROJECT_SLUG}*`, (route) =>
+      route.fulfill({
+        status: 200,
+        contentType: 'application/json',
+        body: JSON.stringify({ ...buildProjectStub(OTHER_PROJECT_UID, OTHER_PROJECT_SLUG, 'Other Project'), writer: false }),
+      })
+    );
+    await stubNewsletterEditDetail(page, buildNewsletterStub());
+
+    await gotoSpa(page, `/project/newsletters/${MOCK_FOUNDATION_UID}/${MOCK_NEWSLETTER_UID}/edit`, {
+      uid: OTHER_PROJECT_UID,
+      slug: OTHER_PROJECT_SLUG,
+      name: 'Other Project',
+      foundation: false,
+    });
+    await expect(page.getByTestId('newsletter-manage-title')).toBeVisible({ timeout: PAGE_LOAD_TIMEOUT });
+
+    // Still on the edit page (no access-denied redirect), and the context follows the route's project.
+    expect(page.url()).toContain(`/project/newsletters/${MOCK_FOUNDATION_UID}/${MOCK_NEWSLETTER_UID}/edit`);
+    await expect(page.getByTestId('project-selector')).toContainText('Test Foundation', { timeout: ELEMENT_TIMEOUT });
   });
 });

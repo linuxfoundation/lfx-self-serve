@@ -32,6 +32,7 @@ import {
 } from '@lfx-one/shared/interfaces';
 import {
   combineDateTime,
+  computeIsFoundation,
   formatFutureRelativeTime,
   formatRelativeTime,
   formatTo12HourInTimezone,
@@ -46,6 +47,7 @@ import { NewsletterService } from '@services/newsletter.service';
 import { ProjectContextService } from '@services/project-context.service';
 import { ProjectService } from '@services/project.service';
 import { UserService } from '@services/user.service';
+import { applyEntityProjectContext } from '@shared/utils/entity-project-context.util';
 import { isSchedulingDisabledReply } from '@shared/utils/upstream-error.utils';
 import { extractErrorMessage } from '@shared/utils/http-error.utils';
 import { toZonedTime } from 'date-fns-tz';
@@ -177,6 +179,13 @@ export class NewsletterManageComponent {
   // project context switch. Create mode has no projectUid segment, so we fall
   // back to the active context.
   private readonly routeProjectUid: Signal<string | null> = toSignal(this.route.paramMap.pipe(map((p) => p.get('projectUid'))), { initialValue: null });
+  // Route uid that disagrees with the active context (null when they match, or
+  // when the route carries no uid — create mode). Drives initRouteContextReconciliation.
+  private readonly unreconciledRouteProjectUid: Signal<string | null> = computed(() => {
+    const routeUid = this.routeProjectUid();
+    if (!routeUid || routeUid === this.projectContextService.activeContextUid()) return null;
+    return routeUid;
+  });
   public readonly projectUid: Signal<string> = computed(() => this.routeProjectUid() || this.projectContextService.activeContextUid());
   public readonly displayName: Signal<string> = computed(() => this.activeContext()?.name ?? '');
   private readonly fetchedLogoUrl = signal<string | undefined>(undefined);
@@ -391,6 +400,7 @@ export class NewsletterManageComponent {
   public constructor() {
     this.initScheduleTimezone();
     this.initContextLogo();
+    this.initRouteContextReconciliation();
     this.initFormMirrors();
     this.initLoadDraft();
     this.initSaveChannel();
@@ -1354,6 +1364,48 @@ export class NewsletterManageComponent {
         takeUntilDestroyed(this.destroyRef)
       )
       .subscribe((url) => this.fetchedLogoUrl.set(url));
+  }
+
+  /**
+   * Reconciles the active context with the route's own `:projectUid` (edit mode).
+   * The URL carries the owning project, but `displayName`/`logoUrl` (and every
+   * other context-derived read) follow `activeContext()` — after a project switch
+   * or a shared/bookmarked link, the cookie-restored context can point at a
+   * different project, showing the wrong name/logo over the right project's data
+   * (GH-1570). When the two disagree, resolve the route project by uid and
+   * re-point the context via applyEntityProjectContext — the uid-only variant of
+   * gh-1432's fallback path, since there is no enriched entity payload here.
+   *
+   * The write makes route uid and context agree, which quiets the trigger; a
+   * later route-lens re-assert (e.g. MainLayout on `?step=N` navigations) flips
+   * the mismatch back on, so the correction self-heals without NavigationEnd
+   * wiring. The re-apply hits the shareReplay-cached getProject — the guard has
+   * already resolved the same uid on activation, so the happy path costs no
+   * extra request. A failed uid lookup leaves the existing context untouched
+   * (legacy behavior, same degradation philosophy as gh-1432's guard probe).
+   */
+  private initRouteContextReconciliation(): void {
+    toObservable(this.unreconciledRouteProjectUid)
+      .pipe(
+        filter((uid): uid is string => uid !== null),
+        switchMap((uid) => this.projectService.getProject(uid, false)),
+        takeUntilDestroyed(this.destroyRef)
+      )
+      .subscribe((project) => {
+        // null = deleted/unknown project (or no viewer relation) — keep the
+        // existing context rather than erroring the page.
+        if (!project) return;
+        const context: ProjectContext = {
+          uid: project.uid,
+          name: project.name,
+          slug: project.slug,
+          parent_uid: project.parent_uid,
+          logoUrl: project.logo_url,
+        };
+        // Mirror the entity-context utils: only write ?project= to the URL when already present.
+        const syncUrl = 'project' in this.router.parseUrl(this.router.url).queryParams;
+        applyEntityProjectContext(this.projectContextService, context, computeIsFoundation(project), syncUrl);
+      });
   }
 
   private initLoadDraft(): void {

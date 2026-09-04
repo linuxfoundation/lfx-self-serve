@@ -2,8 +2,8 @@
 // SPDX-License-Identifier: MIT
 
 import { inject } from '@angular/core';
-import { ActivatedRouteSnapshot, CanActivateFn, Router } from '@angular/router';
-import { map } from 'rxjs';
+import { ActivatedRouteSnapshot, CanActivateFn, Router, UrlTree } from '@angular/router';
+import { map, Observable, of, switchMap } from 'rxjs';
 
 import { PersonaService } from '../services/persona.service';
 import { ProjectContextService } from '../services/project-context.service';
@@ -14,15 +14,21 @@ import { ProjectService } from '../services/project.service';
  *
  * Grants access to:
  *   - Executive Director persona (fast path, synchronous), OR
- *   - Users with writer (or owner-equivalent) permission on the currently
- *     active foundation/project — `project.writer === true` set by the
- *     backend's FGA-driven role check.
+ *   - Users with writer (or owner-equivalent) permission on the route's
+ *     foundation/project — `project.writer === true` set by the backend's
+ *     FGA-driven role check.
  *
- * Slug resolution prefers the URL's `?project=<slug>` query param so deep
- * links and hard reloads work before the lens has finished syncing the
- * active context. Falls back to the active context's slug only when no
- * query param is present (e.g., the bare `/newsletters` lens-redirect
- * path). Redirects to the lens-appropriate overview on denial to preserve
+ * Project resolution order:
+ *   1. The route's own `:projectUid` param (edit/analytics routes) — the URL
+ *      carries the owning project, so a stale `?project=` or cookie-restored
+ *      context can't deny a legitimate manager (or authorize against the wrong
+ *      project) (GH-1570).
+ *   2. The URL's `?project=<slug>` query param, then the active context's
+ *      slug — the legacy chain, used by the list/create routes and as the
+ *      fallback when uid resolution fails (deleted/unknown project), so a
+ *      fetch error degrades to the old behavior instead of denying.
+ *
+ * Redirects to the lens-appropriate overview on denial to preserve
  * the active project context without triggering a lens switch.
  */
 export const newsletterAccessGuard: CanActivateFn = (route: ActivatedRouteSnapshot) => {
@@ -37,27 +43,52 @@ export const newsletterAccessGuard: CanActivateFn = (route: ActivatedRouteSnapsh
     return true;
   }
 
-  // Prefer the URL's project query param: it's authoritative for the
-  // navigation target and doesn't depend on the lens having synced yet.
-  // Fall back to the active context for cases where the URL doesn't carry
-  // it (e.g., the `/newsletters` lens-redirect parent).
-  const slug = route.queryParamMap.get('project') ?? projectContextService.activeContext()?.slug ?? null;
-
   const routeLens = route.parent?.data?.['lens'] ?? route.data?.['lens'];
   const overviewPath = routeLens === 'foundation' ? '/foundation/overview' : '/project/overview';
 
-  if (!slug) {
-    return router.parseUrl(overviewPath);
+  const checkWriterAccess = (slug: string): Observable<boolean | UrlTree> =>
+    projectService.getProject(slug, false).pipe(
+      map((project) => {
+        if (project?.writer !== true) {
+          return router.createUrlTree([overviewPath], { queryParams: { project: slug } });
+        }
+        return true;
+      })
+    );
+
+  // Legacy slug chain: prefer the URL's `?project=` query param (authoritative
+  // for deep links before the lens has synced), then the active context for
+  // routes that carry neither (e.g., the `/newsletters` lens-redirect parent).
+  const contextSlug = route.queryParamMap.get('project') ?? projectContextService.activeContext()?.slug ?? null;
+
+  // Edit/analytics routes carry the owning project as `:projectUid` — it wins
+  // over the query param and the cookie-restored context, both of which can be
+  // stale when a link is shared or the user switched projects since it was cut.
+  // The /foundation|project/newsletters mounts run this guard at the parent too
+  // (the flat mount deliberately omits it), where the param lives on the child
+  // snapshot being activated — look one level down so the mount-level invocation
+  // authorizes against the same route project instead of the legacy chain.
+  const projectUid = route.paramMap.get('projectUid') ?? route.firstChild?.paramMap.get('projectUid') ?? null;
+  if (projectUid) {
+    return projectService.getProject(projectUid, false).pipe(
+      switchMap((resolved) => {
+        if (!resolved) {
+          // Deleted/unknown project — degrade to the legacy chain rather than
+          // deny on a fetch error.
+          return contextSlug ? checkWriterAccess(contextSlug) : of(router.parseUrl(overviewPath));
+        }
+        // The uid lookup already returned the project entity, so check writer
+        // directly on it; the resolved slug is only needed for the denial redirect.
+        if (resolved.writer !== true) {
+          return of(router.createUrlTree([overviewPath], { queryParams: { project: resolved.slug } }));
+        }
+        return of(true);
+      })
+    );
   }
 
-  const deniedUrl = router.createUrlTree([overviewPath], { queryParams: { project: slug } });
-
-  return projectService.getProject(slug, false).pipe(
-    map((project) => {
-      if (project?.writer !== true) {
-        return deniedUrl;
-      }
-      return true;
-    })
-  );
+  if (!contextSlug) {
+    return router.parseUrl(overviewPath);
+  }
+  return checkWriterAccess(contextSlug);
 };

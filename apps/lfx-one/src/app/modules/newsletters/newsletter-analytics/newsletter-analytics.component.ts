@@ -4,20 +4,24 @@
 import { DatePipe, isPlatformBrowser } from '@angular/common';
 import { HttpErrorResponse } from '@angular/common/http';
 import { Component, computed, inject, PLATFORM_ID, signal, Signal } from '@angular/core';
-import { takeUntilDestroyed } from '@angular/core/rxjs-interop';
+import { takeUntilDestroyed, toObservable } from '@angular/core/rxjs-interop';
 import { ActivatedRoute, Router } from '@angular/router';
 import { CardComponent } from '@components/card/card.component';
 import { ChartComponent } from '@components/chart/chart.component';
 import { EmptyStateComponent } from '@components/empty-state/empty-state.component';
 import { TableComponent } from '@components/table/table.component';
 import { lfxColors, NEWSLETTER_TOP_LINKS_LIMIT } from '@lfx-one/shared/constants';
-import { NewsletterAnalytics, NewsletterChartData, NewsletterLinkRow } from '@lfx-one/shared/interfaces';
-import { normalizeToUrl } from '@lfx-one/shared/utils';
+import { NewsletterAnalytics, NewsletterChartData, NewsletterLinkRow, ProjectContext } from '@lfx-one/shared/interfaces';
+import { computeIsFoundation, normalizeToUrl } from '@lfx-one/shared/utils';
 import { NewsletterService } from '@services/newsletter.service';
+import { ProjectContextService } from '@services/project-context.service';
+import { ProjectService } from '@services/project.service';
 import { MessageService } from 'primeng/api';
 import { SkeletonModule } from 'primeng/skeleton';
 import { TooltipModule } from 'primeng/tooltip';
-import { catchError, finalize, of, switchMap, take } from 'rxjs';
+import { catchError, filter, finalize, of, switchMap, take } from 'rxjs';
+
+import { applyEntityProjectContext } from '@shared/utils/entity-project-context.util';
 
 import { NewsletterFailedRecipientsDrawerComponent } from '../components/newsletter-failed-recipients-drawer/newsletter-failed-recipients-drawer.component';
 import { NewsletterRecipientEngagementComponent } from '../components/newsletter-recipient-engagement/newsletter-recipient-engagement.component';
@@ -43,6 +47,8 @@ export class NewsletterAnalyticsComponent {
   private readonly route = inject(ActivatedRoute);
   private readonly router = inject(Router);
   private readonly newsletterService = inject(NewsletterService);
+  private readonly projectContextService = inject(ProjectContextService);
+  private readonly projectService = inject(ProjectService);
   private readonly messageService = inject(MessageService);
   private readonly platformId = inject(PLATFORM_ID);
 
@@ -55,6 +61,13 @@ export class NewsletterAnalyticsComponent {
   // Route params, retained for the recipient engagement child component's inputs.
   protected readonly projectUid = signal<string>('');
   protected readonly newsletterId = signal<string>('');
+  // Route uid that disagrees with the active context (null when they match).
+  // Drives initRouteContextReconciliation.
+  private readonly unreconciledRouteProjectUid: Signal<string | null> = computed(() => {
+    const routeUid = this.projectUid();
+    if (!routeUid || routeUid === this.projectContextService.activeContextUid()) return null;
+    return routeUid;
+  });
 
   // === Computed (complex bodies extracted to private init* methods) ===
   protected readonly openRatePercent: Signal<number | null> = this.initOpenRatePercent();
@@ -131,6 +144,8 @@ export class NewsletterAnalyticsComponent {
       .subscribe((data) => {
         this.analytics.set(data);
       });
+
+    this.initRouteContextReconciliation();
   }
 
   // `['..']` on a 2-segment route resolves to `/<id>` — anchor to route.parent + explicit 'list' child.
@@ -259,6 +274,41 @@ export class NewsletterAnalyticsComponent {
         href: normalizeToUrl(link.url),
       }));
     });
+  }
+
+  /**
+   * Same route-carried-project reconciliation as the manage component (GH-1570):
+   * the URL's `:projectUid` is authoritative for the fetch below, but page chrome
+   * (name/logo, sidebar) follows `activeContext()`, which a stale cookie-restored
+   * context can leave pointing at a different project. When the two disagree,
+   * resolve the route project by uid and re-point the context via
+   * applyEntityProjectContext; the write quiets the trigger, and a route-lens
+   * re-assert flips the mismatch back on so the correction self-heals. A failed
+   * uid lookup leaves the existing context untouched. See
+   * NewsletterManageComponent.initRouteContextReconciliation for the full rationale.
+   */
+  private initRouteContextReconciliation(): void {
+    toObservable(this.unreconciledRouteProjectUid)
+      .pipe(
+        filter((uid): uid is string => uid !== null),
+        switchMap((uid) => this.projectService.getProject(uid, false)),
+        takeUntilDestroyed()
+      )
+      .subscribe((project) => {
+        // null = deleted/unknown project (or no viewer relation) — keep the
+        // existing context rather than erroring the page.
+        if (!project) return;
+        const context: ProjectContext = {
+          uid: project.uid,
+          name: project.name,
+          slug: project.slug,
+          parent_uid: project.parent_uid,
+          logoUrl: project.logo_url,
+        };
+        // Mirror the entity-context utils: only write ?project= to the URL when already present.
+        const syncUrl = 'project' in this.router.parseUrl(this.router.url).queryParams;
+        applyEntityProjectContext(this.projectContextService, context, computeIsFoundation(project), syncUrl);
+      });
   }
 
   // Chart.js expects an rgba string for area fills; lfxColors entries are #RRGGBB.
