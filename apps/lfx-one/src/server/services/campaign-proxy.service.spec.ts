@@ -700,10 +700,31 @@ describe('extractableHtml', () => {
     ['space', '<script>alert(1)</script >'],
     ['tab', '<script>alert(1)</script\t>'],
     ['newline', '<script>alert(1)</script\n>'],
+    // CodeQL's SECOND report, after a `\s*>` fix closed only the whitespace cases. An end tag is
+    // `</` name then anything up to `>`, so junk after the name still closes the element.
+    ['whitespace then junk', '<script>alert(1)</script\t\n bar>'],
+    ['attribute-shaped junk', '<script>alert(1)</script foo=bar>'],
   ])('strips a script closed with %s before the bracket', (_label, markup) => {
     const out = extractableHtml(`<p>before</p>${markup}<p>after</p>`);
 
     expect(out).not.toContain('alert(1)');
+    expect(out).toContain('before');
+    expect(out).toContain('after');
+  });
+
+  // The leading `\s` in `<\/script(\s[^>]*)?>` is load-bearing. Without it the pattern would also
+  // swallow `</scriptx>`, which names a different tag and closes nothing — so everything from the
+  // opening tag to the next real `</script>` would vanish, silently deleting page content.
+  it('does not treat a longer tag name as a closing script tag', () => {
+    const out = extractableHtml('<p>before</p><script>alert(1)</scriptx>INSIDE</script><p>after</p>');
+
+    // `</scriptx>` closes nothing, so the element runs to the REAL `</script>` and everything
+    // between goes with it. Asserting only that `alert(1)` is gone would not discriminate: the
+    // `\s`-less pattern also removes it, just by stopping at the wrong tag. What separates the
+    // two is whether `INSIDE` — text after the decoy and still inside the script — survives.
+    expect(out).not.toContain('alert(1)');
+    expect(out).not.toContain('INSIDE');
+    expect(out).not.toContain('</script');
     expect(out).toContain('before');
     expect(out).toContain('after');
   });
