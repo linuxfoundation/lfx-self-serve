@@ -9,7 +9,7 @@ import { PermissionsService } from '@services/permissions.service';
 import { ProjectContextService } from '@services/project-context.service';
 import { ProjectService } from '@services/project.service';
 import { Observable, of, throwError } from 'rxjs';
-import { describe, expect, it } from 'vitest';
+import { describe, expect, it, vi } from 'vitest';
 
 import { FormationCardComponent } from './formation-card.component';
 
@@ -56,14 +56,21 @@ function settings(): ProjectSettings {
 
 describe('FormationCardComponent', () => {
   let fixture: ComponentFixture<FormationCardComponent>;
+  let getProjectSpy: ReturnType<typeof vi.fn>;
 
   async function render(
     stage: string,
-    staff: boolean,
-    options: { sfid?: string | null; settingsResult?: Observable<ProjectSettings>; projectOverrides?: Partial<Project> } = {}
+    auditor: boolean,
+    options: {
+      sfid?: string | null;
+      settingsResult?: Observable<ProjectSettings>;
+      projectOverrides?: Partial<Project>;
+      getProjectResult?: Partial<Project>;
+    } = {}
   ): Promise<void> {
-    const { sfid = 'sfid-1', settingsResult = of(settings()), projectOverrides = {} } = options;
+    const { sfid = 'sfid-1', settingsResult = of(settings()), projectOverrides = {}, getProjectResult } = options;
     TestBed.resetTestingModule();
+    getProjectSpy = vi.fn(() => of(getProjectResult ? project(stage, getProjectResult) : project(stage, { ...projectOverrides, auditor })));
     await TestBed.configureTestingModule({
       imports: [FormationCardComponent],
       providers: [
@@ -71,7 +78,7 @@ describe('FormationCardComponent', () => {
           provide: ProjectService,
           useValue: {
             getProjectSfid: () => of(sfid),
-            getProject: () => of(project(stage, { ...projectOverrides, auditor: staff })),
+            getProject: getProjectSpy,
           },
         },
         { provide: PermissionsService, useValue: { getProjectSettings: () => settingsResult } },
@@ -114,25 +121,34 @@ describe('FormationCardComponent', () => {
     expect(text()).not.toContain('PCC');
   });
 
-  it('hides the admin-tool links and "Staff only" chip for a non-staff user', async () => {
+  it('hides the admin-tool links and "Admin only" chip for a non-auditor, non-writer user', async () => {
     await render('Formation - Engaged', false);
 
     expect(fixture.nativeElement.querySelector('[data-testid="formation-card-admin-links"]')).toBeNull();
   });
 
-  it('shows the admin-tool link and "Staff only" chip for an LF-staff user with a resolved SFID', async () => {
+  it('shows the admin-tool link and "Admin only" chip for an auditor with a resolved SFID', async () => {
     await render('Formation - Engaged', true, { sfid: 'sfid-1' });
 
     const links = fixture.nativeElement.querySelector('[data-testid="formation-card-admin-links"]');
     expect(links).not.toBeNull();
-    expect(text()).toContain('Staff only');
+    expect(text()).toContain('Admin only');
     expect(text()).toContain('Open in admin tool');
     expect(fixture.nativeElement.querySelector('[data-testid="formation-card-admin-tool-link"]').getAttribute('href')).toBe(
       'https://pcc.dev.platform.linuxfoundation.org/project/sfid-1'
     );
+    expect(getProjectSpy).toHaveBeenCalledWith('proj-1', false, { auditor: true });
   });
 
-  it('hides the admin-tool links for an LF-staff user with no v1 mapping (null SFID)', async () => {
+  it('shows the admin-tool link for a project writer even though the server omits `auditor` for writers', async () => {
+    // Mirrors the server: getProjectById returns early for writers, so `auditor` comes back
+    // undefined rather than true. `isAuditor`'s `writer === true` OR-branch must still admit them.
+    await render('Formation - Engaged', true, { sfid: 'sfid-1', getProjectResult: { writer: true, auditor: undefined } });
+
+    expect(fixture.nativeElement.querySelector('[data-testid="formation-card-admin-links"]')).not.toBeNull();
+  });
+
+  it('hides the admin-tool links for an auditor with no v1 mapping (null SFID)', async () => {
     await render('Formation - Engaged', true, { sfid: null });
 
     expect(fixture.nativeElement.querySelector('[data-testid="formation-card-admin-links"]')).toBeNull();
@@ -152,7 +168,7 @@ describe('FormationCardComponent', () => {
     expect(fixture.nativeElement.querySelector('[data-testid="formation-card-error"]')).not.toBeNull();
     expect(text()).toContain('Engaged');
     expect(text()).toContain('project-one');
-    // Admin links depend on isLFStaff/sfid, not on the failed settings fetch — they must still show.
+    // Admin links depend on isAuditor/sfid, not on the failed settings fetch — they must still show.
     expect(fixture.nativeElement.querySelector('[data-testid="formation-card-admin-links"]')).not.toBeNull();
   });
 });

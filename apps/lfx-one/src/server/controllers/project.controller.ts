@@ -167,12 +167,18 @@ export class ProjectController {
       if (isUuid(slug)) {
         // If the slug is a uuid, get the project by id
         const project = await this.projectService.getProjectById(req, slug, true, includeMeetingCoordinator, includeAuditor);
+
+        logger.success(req, 'get_project_by_slug', startTime, {
+          slug,
+          project_uid: project.uid,
+        });
+
         res.json(project);
         return;
       }
 
       // If the slug is not a uuid, get the project by slug
-      const project = await this.projectService.getProjectBySlug(req, slug, includeMeetingCoordinator);
+      const project = await this.projectService.getProjectBySlug(req, slug, includeMeetingCoordinator, includeAuditor);
 
       // Log the success
       logger.success(req, 'get_project_by_slug', startTime, {

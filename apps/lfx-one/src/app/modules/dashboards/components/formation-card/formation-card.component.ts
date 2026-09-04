@@ -25,10 +25,12 @@ import { catchError, filter, map, of, switchMap, tap } from 'rxjs';
  * directly above this card in the sidebar already covers `executive_director`/`program_manager`/
  * `opportunity_owner`.
  *
- * **Staff-only gating**: FGA defines `writer`/`auditor`/`participant`/`item_owner` on `formation`;
- * GH-1954 grants LF Staff `auditor` (not `writer`) on non-public projects, so the guard checks
- * `auditor` OR `writer` on the project (see `initIsAuditor` below) — a `writer`-only guard would
- * hide this deep link from most of staff.
+ * **Admin-link gating**: the guard checks `auditor` OR `writer` on the *project* FGA type (see
+ * `initIsAuditor` below) — GH-1954 grants LF Staff `auditor` (not `writer`) on non-public
+ * projects, so a `writer`-only guard would hide this deep link from most of staff. Note this
+ * check resolves wider than "staff": project `writer`s (maintainers, EDs) and `auditor`s
+ * inherited from the parent foundation (`project#auditor` cascades from `parent`) also pass it —
+ * the chip below is worded accordingly rather than as a literal staff-only claim.
  *
  * The ticket also asked for two distinct admin-tool links ("Edit stage" and "Set up"). Neither a
  * `?tab=` param nor a `/setup` sub-route exists on `environment.urls.pcc` (verified — see
@@ -38,7 +40,9 @@ import { catchError, filter, map, of, switchMap, tap } from 'rxjs';
  *
  * Reads `ProjectContextService.activeProject` for project fields and its own `uid` (no
  * `projectUid` input) — this card only ever renders for the currently active project, so there's
- * no other project it could mean, and no independent `getProject` call.
+ * no other project it could mean. The `auditor` gate is the one exception: it needs a flag
+ * `activeProject` doesn't carry, so `initIsAuditor` makes its own dedicated
+ * `getProject(uid, false, { auditor: true })` call.
  */
 @Component({
   selector: 'lfx-formation-card',
@@ -105,13 +109,15 @@ export class FormationCardComponent {
   // skips the auditor check entirely once a caller is already a writer (a strict superset of
   // access), so a writer's `auditor` field comes back `undefined` — without the OR, a project
   // writer would be wrongly denied this deep link.
+  // No catchError here — ProjectService.getProject already resolves any HTTP failure to `null`
+  // internally (logging as it does so), so `project?.writer`/`project?.auditor` on a failed fetch
+  // are both `undefined`, and the map below already yields `false` for that case.
   private initIsAuditor(): Signal<boolean> {
     return toSignal(
       toObservable(this.projectUid).pipe(
         filter((uid): uid is string => !!uid),
         switchMap((uid) => this.projectService.getProject(uid, false, { auditor: true })),
-        map((project) => project?.writer === true || project?.auditor === true),
-        catchError(() => of(false))
+        map((project) => project?.writer === true || project?.auditor === true)
       ),
       { initialValue: false }
     );
