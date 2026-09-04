@@ -107,6 +107,10 @@ describe('FormationTemplate shape', () => {
       ],
     } satisfies FormationTemplate;
 
+    // JSON.stringify/parse of a plain string cannot itself fail — this doesn't gate a regression
+    // today. It documents the actual transport boundary `action_link` crosses (an HTTP JSON
+    // payload from #1957) and guards against a future step (e.g. accidental URL-encoding) that
+    // would otherwise mangle the `{{project.uid}}` placeholder silently.
     const roundTripped = JSON.parse(JSON.stringify(template)) as FormationTemplate;
     const [manualItem, linkItem, noLinkItem] = roundTripped.sections[0].items;
 
