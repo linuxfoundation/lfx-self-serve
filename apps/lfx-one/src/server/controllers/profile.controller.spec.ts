@@ -147,7 +147,7 @@ function buildReq(overrides: Record<string, unknown> = {}): any {
 }
 
 function buildRes(): any {
-  return { status: vi.fn().mockReturnThis(), json: vi.fn(), send: vi.fn() };
+  return { status: vi.fn().mockReturnThis(), json: vi.fn(), send: vi.fn(), redirect: vi.fn() };
 }
 
 describe('ProfileController.uploadProfilePicture', () => {
@@ -414,5 +414,31 @@ describe('ProfileController.sendPasswordResetEmail', () => {
     });
     expect(emailVerificationSvc.sendPasswordResetLink).not.toHaveBeenCalled();
     expect(next).not.toHaveBeenCalled();
+  });
+});
+
+describe('ProfileController.startProfileAuth — returnTo allowlist', () => {
+  let controller: ProfileController;
+
+  beforeEach(() => {
+    vi.clearAllMocks();
+    profileAuthSvc.isProfileAuthConfigured.mockReturnValue(false);
+    controller = new ProfileController();
+  });
+
+  it('falls back to /profile for the dead /settings entry — the profile shell never mounts there', async () => {
+    const res = buildRes();
+
+    await controller.startProfileAuth(buildReq({ query: { returnTo: '/settings' } }), res);
+
+    expect(res.redirect).toHaveBeenCalledWith('/profile?error=profile_auth_not_configured');
+  });
+
+  it('keeps /profile/settings as an allowed returnTo', async () => {
+    const res = buildRes();
+
+    await controller.startProfileAuth(buildReq({ query: { returnTo: '/profile/settings' } }), res);
+
+    expect(res.redirect).toHaveBeenCalledWith('/profile/settings?error=profile_auth_not_configured');
   });
 });
