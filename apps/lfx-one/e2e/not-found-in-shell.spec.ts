@@ -2,6 +2,9 @@
 // SPDX-License-Identifier: MIT
 
 import { expect, test } from '@playwright/test';
+import { skipWhenAuthMissing } from './helpers/auth.helper';
+
+test.beforeEach(() => skipWhenAuthMissing());
 
 /**
  * LFXV2-3095 — the primary catch-all behavior: an authenticated user hitting an

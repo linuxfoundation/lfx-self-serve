@@ -6,26 +6,33 @@
 // an Angular component-test harness.
 
 import {
+  ALREADY_SIGNED_CLA_LABEL,
   CLA_GROUP_MATCH_TYPE_LABELS,
   CLA_GROUP_ORG_SOURCE_ICONS,
   CLA_GROUP_ORG_SOURCE_LABELS,
-  GERRIT_CONSOLE_CONTRACT_TYPE,
   GERRIT_CONSOLE_ROUTE_PREFIX,
+  GERRIT_CONTRACT_TYPE_CORPORATE,
+  GERRIT_CONTRACT_TYPE_INDIVIDUAL,
   UNNAMED_CLA_GROUP,
 } from '../constants/cla.constants';
 import { PROFILE_TABS } from '../constants/profile.constants';
 import { BadgeSeverity, TagSeverity } from '../interfaces/components.interface';
 import { ProfileTab } from '../interfaces';
-import {
+import type {
+  ClaGroupEnablement,
   ClaGroupOption,
   ClaGroupOptionView,
   ClaGroupOrg,
+  ClaKind,
   ClaSignedVia,
   ClaSignRoute,
   ClaStatus,
+  GerritContractType,
   MyClaAgreement,
   MyClasIdentitySummary,
+  SignIdentityRef,
 } from '../interfaces/cla.interface';
+import { formatIsoDateLabel } from './date-time.utils';
 
 /**
  * Profile subtab list, with the read-only "CLAs" tab appended (before Transactions)
@@ -112,6 +119,52 @@ export function claStatusSeverity(status: ClaStatus): TagSeverity {
   }
 }
 
+const CLA_SIGNED_ON_DATE_ONLY = /^\d{4}-\d{2}-\d{2}$/;
+
+/**
+ * Date-only Sign Date for My CLAs (#2032).
+ *
+ * Producer `signedOn` is a real RFC3339 instant, not a calendar-day stored as UTC
+ * midnight. Pinning the formatter to UTC (the DatePipe `'UTC'` argument, or
+ * `{ timeZone: 'UTC' }` on `toLocaleDateString`) shifts the calendar day for
+ * viewers in negative offsets — a Pacific afternoon signature displays as the
+ * next UTC date. Omitting `timeZone` uses the viewer's local zone; pass an IANA
+ * name in tests so CI (UTC) can still pin the Pacific case.
+ *
+ * A bare `YYYY-MM-DD` parses as UTC midnight (ECMA-262), so it is pinned to UTC
+ * to keep that calendar day — the reverse of the instant case.
+ *
+ * Safe here only because the CLAs rows never render under SSR (`initState`
+ * returns unloaded off-browser). Do not call from a server-rendered path
+ * without passing an explicit `timeZone` (see `formatHubSpotUpdatedAt`).
+ *
+ * Empty, unparseable, or an impossible calendar date (Feb 31) → `'—'`
+ * (same placeholder as `claStatusLabel('unknown')`).
+ */
+export function formatClaSignedOn(iso: string, timeZone?: string): string {
+  const trimmed = iso.trim();
+  if (!trimmed) return '—';
+
+  if (CLA_SIGNED_ON_DATE_ONLY.test(trimmed)) {
+    const label = formatIsoDateLabel(trimmed);
+    return label === trimmed ? '—' : label;
+  }
+
+  const datePart = trimmed.slice(0, 10);
+  if (CLA_SIGNED_ON_DATE_ONLY.test(datePart) && formatIsoDateLabel(datePart) === datePart) {
+    return '—';
+  }
+
+  const date = new Date(trimmed);
+  if (Number.isNaN(date.getTime())) return '—';
+  return date.toLocaleDateString('en-US', {
+    month: 'short',
+    day: 'numeric',
+    year: 'numeric',
+    ...(timeZone ? { timeZone } : {}),
+  });
+}
+
 /**
  * Second line under the signed date (#1573). Undefined ⇒ the Signed cell is date-only.
  *
@@ -127,15 +180,20 @@ export function claStatusSeverity(status: ClaStatus): TagSeverity {
 export function signedAsLine(signedVia: ClaSignedVia | undefined, signedAs: string | undefined): string | undefined {
   const identity = signedAs?.trim();
   if (!identity) return undefined;
+  return `Signed as ${identityWithPlatform(signedVia, identity)}`;
+}
+
+/** `<identity> (GitHub)`, or the bare identity when the platform is absent or unrecognised. */
+function identityWithPlatform(signedVia: ClaSignedVia | undefined, identity: string): string {
   switch (signedVia) {
     case 'github':
-      return `Signed as ${identity} (GitHub)`;
+      return `${identity} (GitHub)`;
     case 'gitlab':
-      return `Signed as ${identity} (GitLab)`;
+      return `${identity} (GitLab)`;
     case 'gerrit':
-      return `Signed as ${identity} (Gerrit)`;
+      return `${identity} (Gerrit)`;
     default:
-      return `Signed as ${identity}`;
+      return identity;
   }
 }
 
@@ -202,7 +260,7 @@ export function claSignRoute(organizations: ClaGroupOrg[]): ClaSignRoute {
  * Returns `null` rather than a malformed address when the base or the group id is unusable,
  * so the caller reports a failure instead of navigating somewhere that cannot work.
  */
-export function gerritSignUrl(consoleBaseUrl: string, claGroupId: string, returnUrl: string): string | null {
+export function gerritSignUrl(consoleBaseUrl: string, claGroupId: string, returnUrl: string, contractType: GerritContractType): string | null {
   // Trailing slashes are stripped by scanning, not by an anchored `/\/+$/`: that pattern
   // backtracks polynomially on a long run of slashes, which CodeQL flags as a ReDoS even
   // though this particular input is build-time configuration.
@@ -220,8 +278,210 @@ export function gerritSignUrl(consoleBaseUrl: string, claGroupId: string, return
     return null;
   }
 
+  // The segment is the contract type verbatim. Coercing an unrecognized value to `individual`
+  // would reinstate #2066's silent default in the one function that decides the route, so the
+  // type is the only guard — a bad caller must fail to compile, not sign the wrong agreement.
   const redirect = encodeURIComponent(returnUrl);
-  return `${base}/${GERRIT_CONSOLE_ROUTE_PREFIX}/${encodeURIComponent(groupId)}/${GERRIT_CONSOLE_CONTRACT_TYPE}?redirect=${redirect}`;
+  return `${base}/${GERRIT_CONSOLE_ROUTE_PREFIX}/${encodeURIComponent(groupId)}/${contractType}?redirect=${redirect}`;
+}
+
+/**
+ * Whether the Gerrit hand-off needs a contract-type step, and which segment to use when it does not (#2066).
+ *
+ * Returns `chooser` when both ICLA and CCLA are enabled; a concrete type when exactly one is;
+ * `none` when neither is — the caller must fail visibly rather than navigate.
+ */
+export function resolveGerritContractType(iclaEnabled: boolean, cclaEnabled: boolean): GerritContractType | 'chooser' | 'none' {
+  if (iclaEnabled && cclaEnabled) return 'chooser';
+  if (iclaEnabled) return GERRIT_CONTRACT_TYPE_INDIVIDUAL;
+  if (cclaEnabled) return GERRIT_CONTRACT_TYPE_CORPORATE;
+  return 'none';
+}
+
+/**
+ * Statuses that mean signing again with the same identity cannot produce a new agreement (#1914).
+ *
+ * `invalidated` is excluded: that signature no longer covers contributions, so the
+ * contributor may need to sign again. `unknown` is included — we cannot tell they are
+ * uncovered, and walking them through a ceremony that produces nothing is worse.
+ */
+const ALREADY_SIGNED_CLA_STATUSES: ReadonlySet<ClaStatus> = new Set(['valid', 'needs_attention', 'revoked', 'unknown', 'superseded']);
+
+/**
+ * The agreement that makes this CLA group already-signed, if any. First match wins;
+ * the My CLAs list is already newest-first.
+ *
+ * Already-signed is not the same as covered: `needs_attention` and `revoked` do not cover
+ * contributions, but signing again cannot restore them either.
+ *
+ * Group grain is for the **tag** on a search result, not for blocking. One contributor can
+ * hold several identities and sign the same group again under a different one, so the group
+ * stays selectable and it is the identity picker that blocks — see
+ * `alreadySignedAgreementForIdentity`.
+ */
+export function alreadySignedAgreementForGroup(agreements: readonly MyClaAgreement[], claGroupId: string): MyClaAgreement | undefined {
+  const id = claGroupId.trim();
+  if (!id) return undefined;
+  return agreements.find((agreement) => agreement.claGroupId === id && ALREADY_SIGNED_CLA_STATUSES.has(agreement.status));
+}
+
+/** Every agreement already held for this CLA group, across identities. */
+export function alreadySignedAgreementsForGroup(agreements: readonly MyClaAgreement[], claGroupId: string): MyClaAgreement[] {
+  const id = claGroupId.trim();
+  if (!id) return [];
+  return agreements.filter((agreement) => agreement.claGroupId === id && ALREADY_SIGNED_CLA_STATUSES.has(agreement.status));
+}
+
+/**
+ * Tag on a Sign a CLA search result the contributor already holds a CLA for (#1914). Names the
+ * identity, because that is what tells them which of their accounts is already covered.
+ */
+export function alreadySignedChipLabel(agreement: MyClaAgreement): string {
+  const identity = agreement.signedAs?.trim();
+  if (!identity) return ALREADY_SIGNED_CLA_LABEL;
+  return `${ALREADY_SIGNED_CLA_LABEL} as ${identityWithPlatform(agreement.signedVia, identity)}`;
+}
+
+/**
+ * Tooltip on a tagged Sign a CLA result (#1914). Names the kind they already hold, the employer
+ * covering an ECLA, and — since the row is still selectable — that another identity may sign it.
+ *
+ * The closing sentence is dropped on any route that cannot offer a second identity, because
+ * there it names an escape that does not exist: `gerrit` offers exactly one card, the
+ * contributor's own LF identity, and `gitlab-unsupported` offers none at all — Self Serve cannot
+ * sign a GitLab-only group, so the block is the route rather than the account.
+ *
+ * Where it is kept it stays conditional, because the agreements list says nothing about how many
+ * identities are linked or whether they too have signed. A route that offers several identities
+ * is the most this can honestly claim; the identity step is what knows which ones are refused.
+ */
+export function alreadySignedGroupTooltip(agreement: MyClaAgreement, route: ClaSignRoute): string {
+  const kind = agreement.kind === 'ECLA' ? 'an ECLA' : 'an ICLA';
+  const company = agreement.kind === 'ECLA' ? agreement.companyName?.trim() : undefined;
+  const held = company ? `You already have ${kind} for this CLA group, covered by ${company}.` : `You already have ${kind} for this CLA group.`;
+  const signed = signedAsLine(agreement.signedVia, agreement.signedAs);
+  const offersOneIdentityAtMost = route === 'gerrit' || route === 'gitlab-unsupported';
+  const another = offersOneIdentityAtMost ? '' : ' If you have another identity linked, you can still sign with it.';
+
+  return `${signed ? `${held} ${signed}.` : held}${another}`;
+}
+
+/** The agreements this identity holds for the group, newest first. Shared by the two readers below. */
+function agreementsMatchingIdentity(agreements: readonly MyClaAgreement[], identity: SignIdentityRef, offeredHandles: readonly string[]): MyClaAgreement[] {
+  const handles = new Set(offeredHandles.map((handle) => handle.trim().toLowerCase()).filter(Boolean));
+
+  return agreements.filter((agreement) => {
+    if (!ALREADY_SIGNED_CLA_STATUSES.has(agreement.status)) return false;
+    if (identity.platform === 'gerrit') return agreement.signedVia === 'gerrit';
+    if (agreement.signedVia !== 'github') return false;
+
+    const signedAs = agreement.signedAs?.trim().toLowerCase();
+    if (!signedAs) return false;
+
+    const username = identity.username?.trim().toLowerCase();
+    if (username && signedAs === username) return true;
+
+    return !handles.has(signedAs) && signedAs === identity.githubId.trim().toLowerCase();
+  });
+}
+
+/**
+ * Which contract types this identity already holds for the group.
+ *
+ * The contract-type step reads this to offer a held type as held rather than as a choice. It
+ * shares the identity matcher with the gate below so the two cannot disagree about what is held —
+ * a step that offered a type the gate counted would let through the re-sign the gate prevents.
+ */
+export function heldClaKindsForIdentity(agreements: readonly MyClaAgreement[], identity: SignIdentityRef, offeredHandles: readonly string[]): ClaKind[] {
+  return [...new Set(agreementsMatchingIdentity(agreements, identity, offeredHandles).map((agreement) => agreement.kind))];
+}
+
+/**
+ * The agreement that blocks this identity from signing again, if any — the check that actually
+ * blocks (#1914).
+ *
+ * Blocks when every contract type the group enables is already held under this identity
+ * (`enabled ⊆ held`), and on any match at all when the group enables nothing. A dual-type group
+ * therefore stays selectable on that identity until it holds both an ICLA and an ECLA; a
+ * single-type group still blocks once that one type is held.
+ *
+ * That second rule is why the subset test is not applied to an empty `enabled`. A group enabling
+ * neither type is not one with nothing to sign; it is one whose CLA Group record the producer
+ * could not resolve, which arrives here as two false flags. The empty set is a subset of every
+ * set, so the test would pass for every identity and retire this check for that group without
+ * saying so. The kind-blind block stands in — what this gate did before it knew about kinds. The
+ * Gerrit hand-off refuses such a group outright, so the fallback costs that route nothing, and
+ * it is the whole of the protection on the GitHub route, which never reads these flags at all.
+ *
+ * The producer records one identity string per agreement, derived as the GitHub handle when it
+ * had one and the account number when it did not. So the GitHub branch compares against both
+ * keys the card carries. The number is an exact, stable match; the handle is best-effort, since
+ * handles get renamed and reclaimed. Both are acceptable here and nowhere else: this decides
+ * whether to gray a card, while the hand-off still submits `githubId`, and EasyCLA re-derives
+ * the attested set from the caller's own token regardless of what is sent.
+ *
+ * Nothing in the recorded string says which of the two it is, and GitHub handles can be all
+ * digits — login `12345` is a real account, whose number is something else entirely. So a
+ * number is only read as a number once no handle on offer claims that same string; where one
+ * does, the string is that contributor's handle and grays their card alone. Without this a
+ * contributor who had signed as a numerically-named account could find a wholly unrelated
+ * account of theirs grayed, which on a single-account step would leave them nothing to pick.
+ *
+ * **On the GitHub branch only**, an agreement with no recorded identity matches nothing and
+ * blocks no card. Naming a card as already-signed on the strength of a blank is the worse error:
+ * it would strand a contributor whose only account is the one it grayed out.
+ *
+ * The Gerrit branch cannot make that trade, because it has nothing to compare. Only one Gerrit
+ * card is ever offered and it is the contributor's own LF identity, so the platform alone
+ * identifies it — which does mean a Gerrit agreement with a blank handle still matches that
+ * card, and then the enablement rule decides whether the match blocks.
+ */
+export function alreadySignedAgreementForIdentity(
+  agreements: readonly MyClaAgreement[],
+  identity: SignIdentityRef,
+  offeredHandles: readonly string[],
+  enabled: ClaGroupEnablement
+): MyClaAgreement | undefined {
+  const matched = agreementsMatchingIdentity(agreements, identity, offeredHandles);
+  if (matched.length === 0) return undefined;
+
+  const enabledKinds = new Set<ClaKind>();
+  if (enabled.iclaEnabled) enabledKinds.add('ICLA');
+  if (enabled.cclaEnabled) enabledKinds.add('ECLA');
+  if (enabledKinds.size === 0) return matched[0];
+
+  const heldKinds = new Set(matched.map((agreement) => agreement.kind));
+  for (const kind of enabledKinds) {
+    if (!heldKinds.has(kind)) return undefined;
+  }
+
+  // An identity can hold a kind the group no longer offers, and that agreement can be the newest
+  // one matched. Returning it would block on an enabled kind while naming a type this group
+  // cannot be signed for, so the reason is drawn from an enabled kind. Every enabled kind is
+  // held by this point, so this always finds one.
+  return matched.find((agreement) => enabledKinds.has(agreement.kind));
+}
+
+/**
+ * Tooltip on a grayed-out identity card: this account is the one already on the agreement.
+ *
+ * Points at another identity only when the step actually offers one that has not signed. A
+ * Gerrit-only step offers a single card, so once that card is grayed there is nothing left to
+ * choose, and "choose another identity" would be the one instruction the contributor cannot
+ * follow. Stating the position without prescribing a way out is the honest form there.
+ *
+ * When the card is grayed because both an ICLA and an ECLA are held, the reason names both.
+ * The `anotherSelectable` sentence is independent of that and stays conditional.
+ */
+export function alreadySignedIdentityTooltip(agreement: MyClaAgreement, anotherSelectable: boolean, heldKinds: readonly ClaKind[] = [agreement.kind]): string {
+  const hasIcla = heldKinds.includes('ICLA');
+  const hasEcla = heldKinds.includes('ECLA');
+  let kind = 'an ICLA';
+  if (hasIcla && hasEcla) kind = 'an ICLA and an ECLA';
+  else if (hasEcla) kind = 'an ECLA';
+  const held = `You already have ${kind} for this CLA group signed with this account.`;
+
+  return anotherSelectable ? `${held} Choose another identity to sign again.` : held;
 }
 
 /** Maps a producer search result to the picker view model. */

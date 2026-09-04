@@ -351,6 +351,24 @@ export function buildOrgCacheKey(accountId: string, subResource: string): string
   return `${keyPrefix()}:${VALKEY_CACHE.ORG_LENS_SNOWFLAKE_NAMESPACE}:${accountId}:${subResource}`;
 }
 
+/**
+ * Per-org Org Lens Groups-aggregate cache key (GH-1809); null (fail-closed → direct fetch) when the
+ * org uid isn't filter-safe, so it can't corrupt the `:`-delimited key.
+ *
+ * A sibling of `buildOrgCacheKey` rather than a reuse of it: that one hardcodes the Snowflake
+ * namespace, and this value comes from committee-service, so sharing it would misfile a
+ * committee-service value under the Snowflake family (and inherit its 1-hour TTL).
+ *
+ * The org uid is the whole key. This read takes no project scope — `getGroups(req, orgUid)` drains
+ * the org-wide roster — so there is no second input that varies the value. If a project-scoped
+ * Groups read is ever added it MUST take its own key rather than reusing this one, the same line
+ * `fetchAllOrgSeats` already draws by caching only the full, non-truncated drain.
+ */
+export function buildOrgGroupsCacheKey(orgUid: string): string | null {
+  if (!isFilterSafeIdentifier(orgUid)) return null;
+  return `${keyPrefix()}:${VALKEY_CACHE.ORG_LENS_GROUPS_NAMESPACE}:${orgUid}`;
+}
+
 /** Per-committee Snowflake-namespace cache key (committee uid + caller-chosen sub-resource); null (fail-closed → direct fetch) when the uid isn't filter-safe, so it can't corrupt the `:`-delimited key. */
 export function buildCommitteeCacheKey(committeeUid: string, subResource: string): string | null {
   if (!isFilterSafeIdentifier(committeeUid)) return null;
@@ -444,6 +462,16 @@ export function withOrgCache<T>(
   accept?: (value: unknown) => boolean
 ): Promise<T> {
   return valkeyService.withCache(buildOrgCacheKey(accountId, subResource), ttlSeconds, fetcher, accept);
+}
+
+/** Read-through helper for the per-org Groups-aggregate namespace; a null key (unsafe org uid) fetches directly. */
+export function withOrgGroupsCache<T>(orgUid: string, ttlSeconds: number, fetcher: () => Promise<T>, accept?: (value: unknown) => boolean): Promise<T> {
+  return valkeyService.withCache(buildOrgGroupsCacheKey(orgUid), ttlSeconds, fetcher, accept);
+}
+
+/** Best-effort discard of an org's Groups aggregate after an org-scoped seat write, so the next load reflects the change instead of waiting out the 15-minute window; an unsafe org uid yields a null key → no-op. */
+export function invalidateOrgGroupsCache(orgUid: string): Promise<boolean> {
+  return valkeyService.del(buildOrgGroupsCacheKey(orgUid));
 }
 
 /** Best-effort invalidation of a per-user org key (e.g. after a write so the caller's own next read is fresh); an unsafe identity yields a null key → no-op. */

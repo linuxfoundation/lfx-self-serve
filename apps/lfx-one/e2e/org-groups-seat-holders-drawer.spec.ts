@@ -13,6 +13,7 @@
  */
 
 import { expect, test } from '@playwright/test';
+import { skipWhenAuthMissing } from './helpers/auth.helper';
 
 import {
   DATA_LOAD_TIMEOUT,
@@ -26,6 +27,8 @@ import {
   stubGroups,
   gotoGroups,
 } from './helpers/org-groups.helper';
+
+test.beforeEach(() => skipWhenAuthMissing());
 
 test.setTimeout(120_000);
 

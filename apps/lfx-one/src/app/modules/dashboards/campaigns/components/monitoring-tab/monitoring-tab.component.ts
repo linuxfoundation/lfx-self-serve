@@ -25,6 +25,7 @@ import type {
   RedditPacingLabel,
 } from '@lfx-one/shared/interfaces';
 
+import { extractErrorMessage } from '@shared/utils/http-error.utils';
 import { MetaPacingClassPipe } from '@pipes/campaign-optimization.pipe';
 import { AudienceDemographicsComponent } from '../audience-demographics/audience-demographics.component';
 
@@ -112,14 +113,46 @@ export class MonitoringTabComponent implements OnInit {
   protected readonly pulledAt = computed(() => this.monitorData()?.pulledAt ?? '');
   protected readonly hasCampaigns = computed(() => this.campaigns().length > 0);
 
-  protected readonly totalCtr = computed(() => {
+  /**
+   * Account CTR, or NULL when it cannot be computed.
+   *
+   * Returning 0 conflated two different facts: "no totals arrived" (the read failed, or has not
+   * loaded) and "there were impressions but no clicks" — a measured zero. The template rendered
+   * both as `0.0%`, so an outage displayed as a real measurement.
+   *
+   * `null` for both non-computable cases, which the template renders as an em dash. That is
+   * what the LinkedIn, Reddit and Meta panels in this same file already do — Google was the
+   * odd one out.
+   *
+   * Zero impressions stays non-computable rather than 0: clicks/0 is undefined, and reporting
+   * 0% for a campaign that served nothing states a click-through rate that was never measured.
+   */
+  protected readonly totalCtr = computed<number | null>(() => {
     const totals = this.accountTotals();
-    if (!totals || totals.impressions === 0) return 0;
+    if (!totals || totals.impressions === 0) return null;
     return (totals.clicks / totals.impressions) * 100;
   });
 
   protected readonly keywords = computed(() => this.keywordsData()?.keywords ?? []);
   protected readonly keywordTotals = computed(() => this.keywordsData()?.totals ?? null);
+  /**
+   * True only when the backend positively reported more keywords than it returned.
+   *
+   * `=== true` rather than a truthiness check, deliberately: the field is optional because the
+   * legacy path cannot know (a bare LIMIT with no probe for a further row), and `undefined` there
+   * means "unknown", not "complete". Treating unknown as truncated would caption every legacy
+   * response as partial; treating it as complete is the status quo those numbers already carry.
+   */
+  protected readonly keywordTotalsPartial = computed(() => this.keywordsData()?.truncated === true);
+  /**
+   * Completeness was never established (`truncated` absent = UNKNOWN per the contract).
+   *
+   * Weaker consequence here than on the optimization tab, deliberately. This tab attaches no
+   * claim to the totals when the flag is false -- it simply omits the "(top N)" qualifier -- so
+   * the failure mode is a missing caveat, not a false statement. The caption below says which
+   * keywords the numbers cover WITHOUT asserting they are all of them.
+   */
+  protected readonly keywordTotalsUnverified = computed(() => this.keywordsData()?.truncated === undefined);
   protected readonly hasKeywords = computed(() => this.keywords().length > 0);
   protected readonly keywordTotalPages = computed(() => Math.max(1, Math.ceil(this.keywords().length / KEYWORD_PAGE_SIZE)));
   protected readonly hasKeywordPrevPage = computed(() => this.keywordPage() > 1);
@@ -193,7 +226,12 @@ export class MonitoringTabComponent implements OnInit {
           this.loading.set(false);
         },
         error: (err) => {
-          this.error.set(err?.error?.message || err?.message || 'Failed to load campaign data');
+          // `extractErrorMessage`, not `err?.error?.message`. BaseApiError.toResponse serialises
+          // the operator-facing text as `{ error: string }` (`BaseApiError.toResponse`), so `.error.message`
+          // is undefined for every error this path produces and the operator got Angular's generic
+          // "Http failure response for <url>" instead of the actionable upstream reason. The same
+          // reading already exists in `toTransportOutcome`; these loaders never got it (Copilot).
+          this.error.set(extractErrorMessage(err, 'Failed to load campaign data'));
           this.loading.set(false);
         },
       });
@@ -211,7 +249,7 @@ export class MonitoringTabComponent implements OnInit {
         },
         error: (err: unknown) => {
           const httpErr = err as { error?: { message?: string }; message?: string };
-          this.keywordsError.set(httpErr?.error?.message || httpErr?.message || 'Failed to load keywords');
+          this.keywordsError.set(extractErrorMessage(httpErr, 'Failed to load keywords'));
           this.keywordsLoading.set(false);
         },
       });
@@ -273,7 +311,7 @@ export class MonitoringTabComponent implements OnInit {
         },
         error: (err: unknown) => {
           const httpErr = err as { error?: { message?: string }; message?: string };
-          this.linkedInError.set(httpErr?.error?.message || httpErr?.message || 'Failed to load LinkedIn data');
+          this.linkedInError.set(extractErrorMessage(httpErr, 'Failed to load LinkedIn data'));
           this.linkedInLoading.set(false);
         },
       });
@@ -318,7 +356,7 @@ export class MonitoringTabComponent implements OnInit {
         },
         error: (err: unknown) => {
           const httpErr = err as { error?: { message?: string }; message?: string };
-          this.redditError.set(httpErr?.error?.message || httpErr?.message || 'Failed to load Reddit data');
+          this.redditError.set(extractErrorMessage(httpErr, 'Failed to load Reddit data'));
           this.redditLoading.set(false);
         },
       });
@@ -355,7 +393,7 @@ export class MonitoringTabComponent implements OnInit {
         },
         error: (err: unknown) => {
           const httpErr = err as { error?: { message?: string }; message?: string };
-          this.metaError.set(httpErr?.error?.message || httpErr?.message || 'Failed to load Meta data');
+          this.metaError.set(extractErrorMessage(httpErr, 'Failed to load Meta data'));
           this.metaLoading.set(false);
         },
       });
@@ -485,7 +523,7 @@ export class MonitoringTabComponent implements OnInit {
         error: (err: unknown) => {
           if (linkedInSlug !== this.activeFoundationSlug()) return;
           const httpErr = err as { error?: { message?: string }; message?: string };
-          this.linkedInError.set(httpErr?.error?.message || httpErr?.message || 'Failed to load LinkedIn accounts');
+          this.linkedInError.set(extractErrorMessage(httpErr, 'Failed to load LinkedIn accounts'));
         },
       });
     const redditSlug = this.activeFoundationSlug();
@@ -506,7 +544,7 @@ export class MonitoringTabComponent implements OnInit {
         error: (err: unknown) => {
           if (redditSlug !== this.activeFoundationSlug()) return;
           const httpErr = err as { error?: { message?: string }; message?: string };
-          this.redditError.set(httpErr?.error?.message || httpErr?.message || 'Failed to load Reddit accounts');
+          this.redditError.set(extractErrorMessage(httpErr, 'Failed to load Reddit accounts'));
         },
       });
     const metaSlug = this.activeFoundationSlug();
@@ -527,7 +565,7 @@ export class MonitoringTabComponent implements OnInit {
         error: (err: unknown) => {
           if (metaSlug !== this.activeFoundationSlug()) return;
           const httpErr = err as { error?: { message?: string }; message?: string };
-          this.metaError.set(httpErr?.error?.message || httpErr?.message || 'Failed to load Meta accounts');
+          this.metaError.set(extractErrorMessage(httpErr, 'Failed to load Meta accounts'));
         },
       });
   }

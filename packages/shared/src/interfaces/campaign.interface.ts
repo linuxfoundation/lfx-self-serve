@@ -16,7 +16,7 @@ export type CampaignPlatform = 'google-ads' | 'microsoft-ads' | 'linkedin-ads' |
  * interchangeable (`docs/api-catalog.md` records the platform enum as `"hubspot"`, and `campaigns`
  * is unique on `(brief_id, platform)`), but here they are not: `CampaignPlatform`'s members are
  * enumerated by `CAMPAIGN_PLATFORMS`, which renders the paid Ad Channels picker
- * (`planning-tab.component.ts:96`). Widening that union would offer HubSpot as an ad channel a
+ * (`planning-tab.component.ts`). Widening that union would offer HubSpot as an ad channel a
  * paid brief could select — email is not an ad channel, it is a different delivery type that
  * happens to dispatch through one.
  */
@@ -150,6 +150,31 @@ export interface CampaignBriefRequest {
   totalBudget?: number;
   refineFeedback?: string;
   previousCopy?: Record<string, unknown>;
+}
+
+/**
+ * The event's terms, split by how much authority each kind carries when suggesting a template.
+ *
+ * Three kinds rather than one list, because they answer different questions and conflating them
+ * produced two real false positives:
+ *
+ * - `decisive` (event name and slug) is the ONLY kind that may push a template over the
+ *   suggestion threshold. These identify the event itself.
+ * - `ranking` (city) orders results but can never justify a suggestion on its own. Operators do
+ *   name templates by city, so the terms are worth sorting by -- but "Salt Lake City visitor
+ *   guide" matched `salt`, `lake` and `city` for a KubeCon brief and cleared the threshold with
+ *   no event term at all.
+ * - `year` breaks ties and nothing more. Dropping it made annual editions score identically, so
+ *   the server's order chose between "KubeCon NA 2025" and "KubeCon NA 2026"; counting it toward
+ *   the threshold would let "Open newsletter 2028" match an "Open Source Summit 2028" brief.
+ */
+export interface EventTemplateTerms {
+  /** Name and slug tokens. The only kind that can reach the suggestion threshold. */
+  decisive: string[];
+  /** City tokens. Improve ordering; never sufficient for a suggestion. */
+  ranking: string[];
+  /** The event's year, if it names one. A tie-break between otherwise-equal templates. */
+  year: string;
 }
 
 export interface CampaignEventDetails {
@@ -1296,6 +1321,16 @@ export interface KeywordMetricsResponse {
   pulledAt: string;
   days: number;
   totalKeywords: number;
+  /**
+   * True when the project has MORE keywords than `keywords` carries.
+   *
+   * The rows are the top N by impressions, so when this is set `totals` is a subtotal over that
+   * slice and not the project's figures. A consumer must say so rather than render the numbers
+   * flat — "Spend: $412" for a project whose real spend is higher is a wrong number, not merely
+   * an incomplete one. Optional because the legacy Google Ads path cannot know: it issues a bare
+   * `LIMIT 50` with no probe for a further row, so absence means "unknown", not "complete".
+   */
+  truncated?: boolean;
   totals: KeywordTotals;
   keywords: KeywordMetrics[];
 }
@@ -1319,6 +1354,150 @@ export interface AudienceDemographics {
   age: AudienceBucket[];
   gender: AudienceBucket[];
   device: AudienceBucket[];
+}
+
+// ---------------------------------------------------------------------------
+// Campaign-service insight reads (wire shapes)
+//
+// These mirror campaign-service's `google-ads-keywords` and `google-ads-audience` types
+// exactly, in ITS vocabulary rather than the UI's: snake_case keys, `cost_micros` instead of
+// a currency amount, a `window` token instead of a day count, and CTR as a FRACTION rather
+// than a percentage. They exist so the conversion into `KeywordMetricsResponse` /
+// `AudienceDemographics` is one explicit, testable step instead of an inline cast.
+//
+// Do not widen these toward the UI shapes. The gap between the two is exactly where the unit
+// conversions live, and collapsing them would let a micro-unit or a fraction reach a template
+// that formats it as a currency amount or a percentage — a wrong number that renders
+// perfectly.
+// ---------------------------------------------------------------------------
+
+export interface CampaignServiceKeywordRow {
+  criterion_id: string;
+  ad_group_id: string;
+  campaign_id: string;
+  ad_group_name: string;
+  campaign_name: string;
+  text: string;
+  match_type: string;
+  status: string;
+  impressions: number;
+  clicks: number;
+  /** Micro-units of the account's native currency: divide by 1e6 for a currency amount. */
+  cost_micros: number;
+  /** A FRACTION (0.045), not a percentage. */
+  ctr: number;
+  conversions: number;
+  /**
+   * ABSENT when Google has not rated the keyword yet — normal for one with few impressions.
+   * Optional rather than nullable because campaign-service omits the key entirely, and 0 is
+   * off the 1-10 scale, so a caller must render absence as unknown and never as a low score.
+   */
+  quality_score?: number;
+}
+
+export interface CampaignServiceKeywords {
+  window: CampaignMetricsWindow;
+  rows: CampaignServiceKeywordRow[];
+  row_count: number;
+  /**
+   * True when the project has more keywords than were returned. The rows are the TOP ones by
+   * impressions, so totalling them does not give the project's whole spend.
+   */
+  truncated: boolean;
+}
+
+export interface CampaignServiceAudienceBucket {
+  dimension: 'age' | 'gender' | 'device';
+  /** Google's own enum literal, e.g. `AGE_RANGE_25_34`. */
+  value: string;
+  impressions: number;
+  clicks: number;
+  cost_micros: number;
+  /** A FRACTION (0.045), not a percentage. */
+  ctr: number;
+  conversions: number;
+}
+
+export interface CampaignServiceCampaignRef {
+  campaign_id: string;
+  brief_id: string;
+}
+
+/**
+ * The answer to "which of my campaigns is this platform id?".
+ *
+ * An EMPTY array is a 200, not an error: the project genuinely owns no campaign with that id,
+ * which is an answer a caller acts on by refusing rather than retrying.
+ *
+ * `matches` is an array, but on the ONE platform that has a resolver today it should never hold
+ * more than one. campaign-service migration 000020 puts a unique index on
+ * `(platform, platform_campaign_id)` scoped `WHERE platform = 'google-ads'`, because Google Ads
+ * is a single shared customer id across every foundation — two bindings would fight over the
+ * same paid campaign. So a second google-ads match is an INVARIANT VIOLATION, not a normal
+ * state, and callers refuse it rather than designing around it.
+ *
+ * The array shape is still right, for two reasons. It makes that violation representable and
+ * therefore refusable instead of silently taking the first row. And the constraint is
+ * deliberately NOT global: Microsoft campaign ids are account-scoped and legitimately collide
+ * across per-project connections, so when a second platform gets a resolver, multiplicity there
+ * is real rather than a defect.
+ */
+export interface CampaignServiceCampaignResolution {
+  platform_campaign_id: string;
+  matches: CampaignServiceCampaignRef[];
+  match_count: number;
+}
+
+/**
+ * One outcome together with the request entry it belongs to.
+ *
+ * The pairing is what makes a keyword-action response re-orderable: the BFF groups the request
+ * by campaign before dispatching, so the grouped sequence is not the request sequence — and the
+ * client reads `results` POSITIONALLY against the list it sent.
+ */
+export interface OrderedKeywordResult {
+  source: KeywordActionRequest;
+  response: KeywordActionResponse;
+}
+
+/** One campaign's worth of a keyword-action request, keyed by the platform campaign id. */
+export interface KeywordActionGroup {
+  platformCampaignId: string;
+  keywords: KeywordActionRequest[];
+}
+
+export interface CampaignServiceKeywordActionInput {
+  ad_group_id: string;
+  criterion_id: string;
+  /** UPPERCASE upstream, unlike the UI's lowercase `KeywordActionType`. */
+  action: 'PAUSE' | 'REMOVE';
+}
+
+export interface CampaignServiceKeywordActionResult {
+  ad_group_id: string;
+  criterion_id: string;
+  action: 'PAUSE' | 'REMOVE';
+  resource_name: string;
+}
+
+/**
+ * The outcome of one campaign's keyword batch.
+ *
+ * There is NO partial success within a batch: upstream sends it as a single atomic mutate with
+ * partial failure disabled, so `applied_count` always equals the number requested or the whole
+ * request failed. A caller must not read it as "how many of my actions worked".
+ */
+export interface CampaignServiceKeywordActions {
+  campaign_id: string;
+  results: CampaignServiceKeywordActionResult[];
+  applied_count: number;
+}
+
+export interface CampaignServiceAudience {
+  window: CampaignMetricsWindow;
+  /** Every bucket across all three breakdowns, discriminated by `dimension`. */
+  buckets: CampaignServiceAudienceBucket[];
+  bucket_count: number;
 }
 
 // ---------------------------------------------------------------------------
@@ -1635,6 +1814,57 @@ export interface HubSpotEmailSearchResult {
   error: string | null;
 }
 
+/**
+ * One campaign as campaign-service returns it.
+ *
+ * `utm` is OPTIONAL because a campaign can exist with no token configured — a real state, not a
+ * missing answer. The legacy BFF path fabricated a token from the id and name when HubSpot had
+ * none; upstream does not, and neither does the conversion, because a fabricated token attributes
+ * traffic to a campaign HubSpot cannot report on.
+ */
+export interface CampaignServiceHubSpotCampaign {
+  id: string;
+  name: string;
+  utm?: string;
+  start_date?: string;
+}
+
+export interface CampaignServiceHubSpotCampaigns {
+  campaigns: CampaignServiceHubSpotCampaign[];
+  /**
+   * Mirrors campaign-service's `capped` on `GET /projects/{id}/connection-hubspot/campaigns`.
+   *
+   * True when the search could NOT be shown to be COMPLETE — which is broader than "truncated".
+   * It covers HubSpot reporting more matches than it returned, and equally the cases where
+   * completeness is simply unknown: an absent `total`, or one that contradicts the rows (negative,
+   * or fewer than were returned). All of them fail CLOSED, because "we cannot tell" must not be
+   * reported as the proven absence a caller acts on.
+   *
+   * While it is true, absence from `campaigns` is NOT proof the campaign does not exist, and the
+   * UI must not offer an unqualified create — that would duplicate a campaign in a namespace
+   * shared by everyone on the portal.
+   */
+  capped: boolean;
+}
+
+// ---------------------------------------------------------------------------
+// Keyword actions
+// ---------------------------------------------------------------------------
+
+/**
+ * One keyword action's outcome as the UI stores it.
+ *
+ * `state` is derived ONCE when the result is recorded, not in the template: a keyword action has
+ * THREE outcomes and `success` can only express two. An UNCONFIRMED action may already have
+ * applied, and a retried REMOVE is irreversible — so rendering it as "failed" invites exactly
+ * the retry that must not happen.
+ */
+export interface KeywordActionOutcome {
+  success: boolean;
+  message: string;
+  state: 'done' | 'unconfirmed' | 'failed';
+}
+
 // ---------------------------------------------------------------------------
 // HubSpot UTM
 // ---------------------------------------------------------------------------
@@ -1644,6 +1874,32 @@ export interface HubSpotUtmLookupResult {
   hs_utm: string | null;
   campaign_name: string;
   all_matches: { name: string; hs_utm: string }[];
+  /**
+   * True when the search cannot be PROVEN complete.
+   *
+   * Not strictly truncation, which is what an earlier version of this comment claimed. Both
+   * producers set it more broadly: campaign-service reports it when HubSpot's `total` is absent
+   * or contradicts the returned count (`resp.Total == nil || *resp.Total != len(out)`), and the
+   * legacy path did the same for an omitted or unusable total. A response that cannot describe
+   * its own completeness must not resolve to the proven absence that licenses a create.
+   *
+   * So a consumer may use this to SUPPRESS a create, but must not tell the operator that HubSpot
+   * matched more than it returned — that is only one of the reasons this is set, and stating it
+   * for an absent total sends them to narrow a term when the real remedy is to check the name.
+   */
+  capped: boolean;
+
+  /**
+   * True when a match may exist that this result does not show — for ANY reason.
+   *
+   * The union of `capped` and "upstream returned rows that local scoring rejected". Both mean
+   * absence is not proof of non-existence, which is what the UI acts on: it offers the create
+   * only when this is false, because creating on an inconclusive search duplicates a campaign
+   * in a shared namespace. Kept separate from `capped` so the UI never claims HubSpot truncated
+   * a result it did not truncate — the two answers differ in what the operator should DO
+   * (narrow the term vs check the name), and one flag could not say both.
+   */
+  inconclusive: boolean;
 }
 
 export interface HubSpotUtmCreateResult {

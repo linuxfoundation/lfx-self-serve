@@ -10,15 +10,19 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 // constructor, so they must be mocked at module level; `enrichFoundationNames` and
 // `getCommitteesByIds` are mocked directly so tests can control each enrichment source
 // independently without exercising the real query-service calls underneath.
-const { fetchAllOrgSeats, enrichFoundationNames, getCommitteesByIds } = vi.hoisted(() => ({
-  fetchAllOrgSeats: vi.fn(),
+const { fetchAllOrgSeatsUncached, enrichFoundationNames, getCommitteesByIds } = vi.hoisted(() => ({
+  fetchAllOrgSeatsUncached: vi.fn(),
   enrichFoundationNames: vi.fn(),
   getCommitteesByIds: vi.fn(),
 }));
 
+// Deliberately exposes only the uncached drain: this aggregate is retained for far longer than the
+// per-caller seats cache, so reading through that cache would bake a just-reassigned seat into the
+// stored aggregate for the full window. Switching back to the cached drain fails here rather than
+// silently.
 vi.mock('./org-lens-board-committee.service', () => ({
   OrgLensBoardCommitteeService: class {
-    public fetchAllOrgSeats = fetchAllOrgSeats;
+    public fetchAllOrgSeatsUncached = fetchAllOrgSeatsUncached;
   },
 }));
 vi.mock('./project.service', () => ({
@@ -42,6 +46,15 @@ vi.mock('./logger.service', () => ({
 vi.mock('@lfx-one/shared/interfaces', () => ({}));
 vi.mock('@lfx-one/shared/constants', () => ({
   isBoardCategory: (category: string | null | undefined) => (category ?? '').trim().toLowerCase() === 'board',
+  VALKEY_CACHE: { ORG_LENS_GROUPS_TTL_SECONDS: 900 },
+}));
+
+// The cache layer pulls in the Valkey client, which this node suite has no business starting.
+// `withOrgGroupsCache` is stubbed as a straight pass-through to its fetcher — i.e. a permanent
+// cache miss — so these tests keep exercising the aggregation logic rather than the cache.
+vi.mock('./valkey.service', () => ({
+  buildOrgGroupsCacheKey: (orgUid: string) => `test:org-lens-groups:v1:${orgUid}`,
+  withOrgGroupsCache: (_orgUid: string, _ttl: number, fetcher: () => Promise<unknown>) => fetcher(),
 }));
 
 import type { Request } from 'express';
@@ -66,7 +79,8 @@ function seat(over: Partial<CommitteeServiceOrgSeat> = {}): CommitteeServiceOrgS
 }
 
 async function run(): Promise<OrgLensGroupsResponse> {
-  return new OrgLensGroupsService().getGroups(req, ORG_UID);
+  // `org-grant` is the shared-cache path; a staff-only caller would bypass the cache entirely.
+  return new OrgLensGroupsService().getGroups(req, ORG_UID, 'org-grant');
 }
 
 beforeEach(() => {
@@ -83,7 +97,7 @@ afterEach(() => {
 
 describe('OrgLensGroupsService.getGroups', () => {
   it('uses the live project-index name and never asks the committee index about that group', async () => {
-    fetchAllOrgSeats.mockResolvedValue([seat()]);
+    fetchAllOrgSeatsUncached.mockResolvedValue([seat()]);
     // Argument-respecting, not a blanket resolved-value: only returns data for uids it was
     // actually asked about, so this test can't pass by the mock supplying data the real
     // targeting logic (org-lens-groups.service.ts) would never have requested in the first
@@ -104,7 +118,7 @@ describe('OrgLensGroupsService.getGroups', () => {
   });
 
   it('skips the committee-index fan-out entirely when the project index already resolved every group', async () => {
-    fetchAllOrgSeats.mockResolvedValue([seat()]);
+    fetchAllOrgSeatsUncached.mockResolvedValue([seat()]);
     enrichFoundationNames.mockResolvedValue(new Map([['p-cncf', 'Cloud Native Computing Foundation']]));
 
     await run();
@@ -113,12 +127,14 @@ describe('OrgLensGroupsService.getGroups', () => {
     // the project index resolves everything, calling it with an empty array short-circuits to no
     // upstream request at all (CommitteeService.getCommitteesByIds returns early on []).
     expect(getCommitteesByIds).toHaveBeenCalledWith(req, []);
-    // No gaps to report — the enrichment INFO log is gated on there being something to log.
-    expect(logger.info).not.toHaveBeenCalled();
+    // No gaps to report — the enrichment INFO log is gated on there being something to log. Asserted
+    // against that event specifically, since every request also emits an `org_lens_groups_request`
+    // INFO line carrying the cold/warm result source.
+    expect(logger.info).not.toHaveBeenCalledWith(req, 'org_lens_groups_enrich', expect.any(String), expect.anything());
   });
 
   it('falls back to the committee-index name when the project index has no match (e.g. uepf-style gap)', async () => {
-    fetchAllOrgSeats.mockResolvedValue([seat()]);
+    fetchAllOrgSeatsUncached.mockResolvedValue([seat()]);
     getCommitteesByIds.mockResolvedValue(new Map([['c-1', { uid: 'c-1', project_name: 'Ultra Ethernet Consortium Fund' }]]));
     enrichFoundationNames.mockResolvedValue(new Map());
 
@@ -137,7 +153,7 @@ describe('OrgLensGroupsService.getGroups', () => {
   });
 
   it('omits project_name (but keeps project_slug) when both enrichment sources miss', async () => {
-    fetchAllOrgSeats.mockResolvedValue([seat()]);
+    fetchAllOrgSeatsUncached.mockResolvedValue([seat()]);
 
     const result = await run();
 
@@ -153,7 +169,7 @@ describe('OrgLensGroupsService.getGroups', () => {
   });
 
   it('omits project_name when neither enrichment nor project_slug is available', async () => {
-    fetchAllOrgSeats.mockResolvedValue([seat({ project_uid: undefined, project_slug: undefined })]);
+    fetchAllOrgSeatsUncached.mockResolvedValue([seat({ project_uid: undefined, project_slug: undefined })]);
 
     const result = await run();
 
@@ -161,7 +177,7 @@ describe('OrgLensGroupsService.getGroups', () => {
   });
 
   it('still returns groups (falling back to the slug) when the committee-index lookup throws', async () => {
-    fetchAllOrgSeats.mockResolvedValue([seat()]);
+    fetchAllOrgSeatsUncached.mockResolvedValue([seat()]);
     getCommitteesByIds.mockRejectedValue(new Error('query-service unavailable'));
     enrichFoundationNames.mockResolvedValue(new Map());
 
@@ -173,7 +189,7 @@ describe('OrgLensGroupsService.getGroups', () => {
   });
 
   it('excludes board committees from the roster', async () => {
-    fetchAllOrgSeats.mockResolvedValue([seat({ committee_category: 'Board' })]);
+    fetchAllOrgSeatsUncached.mockResolvedValue([seat({ committee_category: 'Board' })]);
 
     const result = await run();
 
