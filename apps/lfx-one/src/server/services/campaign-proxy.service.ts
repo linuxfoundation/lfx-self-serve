@@ -716,6 +716,12 @@ const EXTRACTION_CHAR_CAP = 60_000;
 const JSON_LD_BUDGET = 20_000;
 
 export function extractableHtml(html: string): string {
+  // Each OPENING tag requires a boundary after the name -- `(?=[\s/>])` -- so `<svg` matches `<svg>`,
+  // `<svg width=…>` and `<svg/>` but NOT `<svg-icon>`. Without it a custom element sharing the
+  // prefix started a match that ran to the next real `</svg>`, deleting every bit of event prose in
+  // between. That is the opposite failure from the closing-tag bugs below: not content surviving
+  // that should be stripped, but content stripped that should survive.
+  //
   // Every closing tag below matches `<\/tag(\s[^>]*)?>`, not `<\/tag>`. An HTML end tag is
   // `</` name, then anything up to `>` — browsers skip whatever sits between the name and the
   // bracket, so `</script >`, `</script\n>` and even `</script\t\n bar>` all close the element.
@@ -735,11 +741,11 @@ export function extractableHtml(html: string): string {
   // which is the most reliable source for exactly the fields the extraction prompt asks for — and
   // stripping every `<script>` discarded it, keeping the "no date survived" failure alive on any
   // page whose dates live only there rather than in prose.
-  const jsonLd = (html.match(/<script[^>]*\stype\s*=\s*["']application\/ld\+json["'][^>]*>[\s\S]*?<\/script(\s[^>]*)?>/gi) ?? []).join(' ');
+  const jsonLd = (html.match(/<script(?=[\s/>])[^>]*\stype\s*=\s*["']application\/ld\+json["'][^>]*>[\s\S]*?<\/script(\s[^>]*)?>/gi) ?? []).join(' ');
   const stripped = html
-    .replace(/<script[\s\S]*?<\/script(\s[^>]*)?>/gi, ' ')
-    .replace(/<style[\s\S]*?<\/style(\s[^>]*)?>/gi, ' ')
-    .replace(/<svg[\s\S]*?<\/svg(\s[^>]*)?>/gi, ' ')
+    .replace(/<script(?=[\s/>])[\s\S]*?<\/script(\s[^>]*)?>/gi, ' ')
+    .replace(/<style(?=[\s/>])[\s\S]*?<\/style(\s[^>]*)?>/gi, ' ')
+    .replace(/<svg(?=[\s/>])[\s\S]*?<\/svg(\s[^>]*)?>/gi, ' ')
     .replace(/<!--[\s\S]*?-->/g, ' ')
     // Collapse the whitespace those removals leave behind. Templated markup is heavily indented,
     // so this is not cosmetic: it recovers several KB of the budget on a typical page.

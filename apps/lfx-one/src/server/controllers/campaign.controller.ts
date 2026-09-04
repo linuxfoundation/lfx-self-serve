@@ -797,8 +797,14 @@ export class CampaignController {
         return;
       }
     }
-    const deliveryTypeParam = typeof req.query['delivery_type'] === 'string' ? req.query['delivery_type'] : '';
-    if (deliveryTypeParam !== '' && deliveryTypeParam !== 'email' && deliveryTypeParam !== 'paid-marketing') {
+    // PRESENCE, not emptiness. `?delivery_type=` is a parameter the caller SENT, and an empty
+    // string is not one of the two values upstream accepts -- treating it as "omitted" answered a
+    // malformed request with the paid brief. Absence is `undefined`; anything present must be one
+    // of the two. Same rule as `stage` below, where `''` IS a legal value (the paid brief's stage)
+    // and so is checked differently -- the asymmetry is in the contract, not in the handling.
+    const deliveryTypeRaw = req.query['delivery_type'];
+    const deliveryTypeParam = typeof deliveryTypeRaw === 'string' ? deliveryTypeRaw : '';
+    if (deliveryTypeRaw !== undefined && deliveryTypeParam !== 'email' && deliveryTypeParam !== 'paid-marketing') {
       next(
         ServiceValidationError.forField('delivery_type', 'delivery_type must be one of: paid-marketing, email', {
           operation: 'campaign_load_brief',

@@ -770,6 +770,27 @@ describe('extractableHtml', () => {
     expect(extractableHtml(`${markup}<p>x</p>`)).toContain('"startDate":"2027-03-15"');
   });
 
+  // A custom element sharing a stripped tag's PREFIX must not start a match. `<svg-icon>` begins
+  // with `<svg`, so without a boundary assertion the strip ran from there to the next real
+  // `</svg>` and deleted every bit of event prose in between. That is the opposite failure from
+  // the closing-tag cases above: not content surviving that should be stripped, but content
+  // stripped that should survive — and on an extraction prompt, silently losing the event's own
+  // description is the worse of the two.
+  it.each([
+    ['svg-icon', '<svg-icon>KEEP THIS PROSE</svg-icon><svg><path d="M0"/></svg>'],
+    ['style-guide', '<style-guide>KEEP THIS PROSE</style-guide><style>.a{color:red}</style>'],
+    ['scriptorium', '<scriptorium>KEEP THIS PROSE</scriptorium><script>alert(1)</script>'],
+  ])('does not let <%s> start a strip', (_label, markup) => {
+    const out = extractableHtml(`${markup}<p>after</p>`);
+
+    expect(out, 'a prefix-sharing custom element swallowed the prose after it').toContain('KEEP THIS PROSE');
+    expect(out).toContain('after');
+    // The REAL element is still stripped; the boundary must not weaken that.
+    expect(out).not.toContain('<path');
+    expect(out).not.toContain('color:red');
+    expect(out).not.toContain('alert(1)');
+  });
+
   it('returns an empty string for input that is entirely strippable', () => {
     expect(extractableHtml('<style>.a{color:red}</style>').trim()).toBe('');
   });

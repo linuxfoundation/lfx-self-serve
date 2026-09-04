@@ -514,6 +514,19 @@ describe('CampaignController.loadBrief', () => {
   // The OMITTED case keeps its old meaning, and that half is what the rejection above must not
   // break: every caller predating the parameter is paid, so an absent value has to keep restoring
   // paid briefs exactly as before.
+  // An EXPLICIT `?delivery_type=` is a parameter the caller sent, and `''` is not one of the two
+  // values upstream accepts. Treating it as "omitted" answered a malformed request with the paid
+  // brief. Contrast `stage`, where `''` IS legal — it is the paid brief's real stage — so the two
+  // are checked differently on purpose.
+  it('refuses an explicitly empty delivery_type rather than defaulting it to paid', async () => {
+    await controller.loadBrief(buildLoadReq({ event_slug: 'kubecon-eu-2026', project: 'tlf', delivery_type: '' }), res, next);
+
+    expect(loadBrief, 'an empty delivery_type was treated as absent and answered with the paid brief').not.toHaveBeenCalled();
+    const error = vi.mocked(next).mock.calls[0][0] as unknown as ServiceValidationError;
+    expect(error).toBeInstanceOf(ServiceValidationError);
+    expect(error.statusCode).toBe(400);
+  });
+
   it('still defaults an omitted delivery_type to paid-marketing', async () => {
     loadBrief.mockResolvedValue({ status: 'none', briefId: null, brief: null, etag: null, approved: false });
 

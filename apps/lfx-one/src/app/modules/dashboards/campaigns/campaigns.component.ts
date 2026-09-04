@@ -3250,7 +3250,14 @@ export class CampaignsComponent {
    */
   private emailSaveFailureMessage(consequence: string): string {
     const conflict = this.emailBriefConflict;
-    return conflict === null ? `The brief could not be saved, ${consequence}` : `${this.conflictMessages[conflict]} ${consequence}`;
+    if (conflict === null) {
+      return `The brief could not be saved, ${consequence}`;
+    }
+    // Capitalised, because the conflict message is a COMPLETE sentence ending in a period while
+    // each consequence is a lowercase clause written to follow a comma. Joining them raw produced
+    // "...another session is holding it. so no audience was built."
+    const [first, ...rest] = consequence;
+    return `${this.conflictMessages[conflict]} ${first.toUpperCase()}${rest.join('')}`;
   }
 
   /** The persist itself, wrapped by `ensureEmailBriefId`'s in-flight dedup. */
@@ -3658,7 +3665,11 @@ export class CampaignsComponent {
     });
   }
 
-  /** The `(foundation, event)` pair the server keys a brief on, as one map key. */
+  /**
+   * The four parts the server keys a brief on -- `(project, event_slug, delivery_type, stage)` --
+   * as one map key. It was the `(foundation, event)` pair until LFXV2-3198 widened the upstream
+   * key; see the body for why all four are load-bearing.
+   */
   private ownershipKey(projectSlug: string, brief: CampaignBriefOutput): string | null {
     const eventSlug = brief.eventDetails?.slug ?? '';
     // Trim to TEST emptiness, never to build the key — `deriveEventSlug` returns the untrimmed
