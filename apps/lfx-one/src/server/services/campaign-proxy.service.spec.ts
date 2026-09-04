@@ -710,8 +710,14 @@ describe('CampaignProxyService HubSpot campaign lookup', () => {
     // id-less 2xx before claiming `created: true`.
     //
     // Deleting the guard and restoring the cast left the suite green, which is what this covers.
-    fetchMock.mockReset();
+    // BOTH fetches are queued, even though the guard should stop at the first. Queueing only the
+    // create made the revert fail on `Cannot read properties of undefined (reading 'catch')` --
+    // the follow-up search getting no mock -- rather than on the creation claim. The test failed
+    // either way, so it looked binding while pinning a mock-arity artifact instead of the guard
+    // (dealako + asitha). With the search mocked, a reverted guard reaches the real path and the
+    // assertion fails on what it is actually about.
     fetchMock.mockResolvedValueOnce({ ok: true, status: 201, json: async () => body, text: async () => '{}' });
+    fetchMock.mockResolvedValueOnce({ ok: true, status: 200, json: async () => ({ results: [] }), text: async () => '{}' });
 
     await expect(service.createHubSpotUtm(req, 'KubeCon NA 2026')).rejects.toThrow(/no usable campaign id/i);
   });

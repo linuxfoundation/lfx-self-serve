@@ -1037,8 +1037,8 @@ export class PlanningTabComponent implements OnInit {
           // governs what campaign-service SENDS, and this status is not read from
           // campaign-service. It is read from OUR BFF, which raises its own 500 for a fault at any
           // position: error-handler.middleware.ts:92 returns 500 for any non-BaseApiError, and
-          // ApiClientService parses the upstream body with JSON.parse AFTER a 2xx
-          // (api-client.service.ts:305). A malformed success body therefore reaches the browser as
+          // ApiClientService parses the upstream body with JSON.parse AFTER a 2xx (the post-2xx
+          // parse in `executeRequest`). A malformed success body therefore reaches the browser as
           // 500 with the campaign ALREADY CREATED in HubSpot.
           //
           // Re-offering Create there is the duplicate this whole handler exists to prevent, and

@@ -262,8 +262,9 @@ export enum ServerFeatureFlag {
    *
    * The legacy path is ALREADY BROKEN in every environment where the `GADS_*` variables were
    * deactivated: `getGadsClient()` throws before any mutate is attempted. So "off" is not a
-   * working fallback here the way it is for the reads — it is the state in which keyword actions
-   * do not work at all. Same accepted values as the flags above.
+   * working fallback here — it is the state in which keyword actions do not work at all. Nor is
+   * it one for the INSIGHTS reads, whose legacy arm calls the same `getGadsClient()`; the
+   * difference is only that a failed read is visible immediately while a failed write is not. Same accepted values as the flags above.
    */
   CampaignServiceKeywordActions = 'LFX_CUTOVER_CAMPAIGN_SERVICE_KEYWORD_ACTIONS',
 
