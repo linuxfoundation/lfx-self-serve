@@ -929,6 +929,72 @@ describe('extractableHtml', () => {
     expect(out.trim()).toBe('');
   });
 
+  // The opening pattern and the strippers are both `/i`, so the close search must be too. A
+  // case-sensitive search does not find `</SCRIPT>`, and the block is then treated as unclosed:
+  // its CONTENTS are kept as prose and spend the budget, and on a large enough block they push the
+  // real text out entirely. Uppercase tags are ordinary in CMS and legacy markup.
+  //
+  // The assertion is on the block CONTENTS, not on the trailing prose. A first draft asserted only
+  // that `Tokyo` survived, which it does either way on a short block -- the test passed against a
+  // deliberately case-sensitive search and proved nothing.
+  describe.each([
+    ['SCRIPT', '<SCRIPT>var leaked=1;</SCRIPT>', 'var leaked=1'],
+    ['STYLE', '<STYLE>.leaked{color:red}</STYLE>', '.leaked'],
+    ['SVG', '<SVG><desc>leaked</desc></SVG>', 'leaked'],
+  ])('finds an uppercase </%s> close', (tag, block, contents) => {
+    it('skips the block instead of keeping its contents as prose', () => {
+      const out = extractableHtml(`${block}<p>Tokyo</p>${'word '.repeat(40_000)}`);
+
+      expect(out, `the uppercase ${tag} block was treated as unclosed`).not.toContain(contents);
+      expect(out).toContain('Tokyo');
+    });
+  });
+
+  // The same defect at the scale where it also costs the prose: a large uppercase block treated as
+  // unclosed fills the entire budget, and the text after it is gone.
+  it('does not let an uppercase block consume the whole budget', () => {
+    const out = extractableHtml(`<SCRIPT>${'x'.repeat(200_000)}</SCRIPT><p>Tokyo</p>`);
+
+    expect(out).toContain('Tokyo');
+  });
+
+  // A self-closing `<svg/>` has no close tag. Returning early on "no close found" discarded every
+  // word after an inline icon; inline icons sit between words on ordinary pages.
+  it('keeps prose after a self-closing svg', () => {
+    const out = extractableHtml(`<svg width="10" height="10"/><p>Tokyo</p>${'word '.repeat(40_000)}`);
+
+    expect(out).toContain('Tokyo');
+  });
+
+  // Same for a block that genuinely never closes: skip the opening tag, keep walking.
+  it('keeps prose after a block that never closes', () => {
+    const out = extractableHtml(`<script>x<p>Tokyo</p>${'word '.repeat(40_000)}`);
+
+    expect(out).toContain('Tokyo');
+  });
+
+  // Self-closing tags must be detected from the OPENING tag, not by failing to find a close.
+  // Searching for an absent close runs to the scan bound from every icon -- 100k inline `<svg/>`
+  // cost ~5s that way, against ~8ms here. Guards the fix for the previous test from regressing
+  // into a performance bug.
+  it('stays linear on a page dense with self-closing svgs', () => {
+    const body = `${'<svg/>'.repeat(100_000)}<p>Tokyo</p>${'word '.repeat(40_000)}`;
+
+    const started = Date.now();
+    const out = extractableHtml(body);
+
+    expect(Date.now() - started, 'the self-closing path searched for an absent close tag').toBeLessThan(2000);
+    expect(out).toContain('Tokyo');
+  });
+
+  // The strippers replace each block with `' '`. The walk must too, or the same markup produces
+  // different words depending only on whether the page was above or below the cap.
+  it('leaves a separator where a skipped block was', () => {
+    const out = extractableHtml(`Held in Tokyo<style>.a{}</style>Japan, March 15 2027.${'word '.repeat(40_000)}`);
+
+    expect(out).toMatch(/Tokyo\s+Japan/);
+  });
+
   it('returns an empty string for input that is entirely strippable', () => {
     expect(extractableHtml('<style>.a{color:red}</style>').trim()).toBe('');
   });

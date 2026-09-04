@@ -794,9 +794,13 @@ const JSON_LD_RE = /<script(?=[\s/>])[^>]{0,512}\stype\s*=\s*["']application\/ld
  * bodies that make the regex strippers quadratic: 5 MiB of unmatched `<script ` openings costs
  * ~1ms here against ~460s through the strippers, which is why this must keep running before them.
  *
- * A block whose close is missing, or lies beyond `MAX_STRIP_SCAN_CHARS`, ends the walk: there is
- * no trustworthy end to skip to, and continuing past an unclosed block would hand the strippers
- * the very shape they are slow on.
+ * A block with no close -- a self-closing `<svg/>`, or markup that never closes it -- skips only
+ * its opening tag and the walk continues, so an inline icon mid-sentence does not cost every word
+ * after it. Self-closing tags are detected from the opening tag itself rather than by failing to
+ * find a close, because that search runs to the scan bound and is quadratic in the icon count.
+ * Only an opening tag that itself never ends stops the walk, since nothing past it can be trusted.
+ * Each skipped block leaves a `' '` behind, matching what the strippers substitute, so a page above
+ * the cap and one below it produce the same word boundaries.
  */
 function boundedSource(html: string): string {
   if (html.length <= MAX_SOURCE_CHARS) {
@@ -822,14 +826,40 @@ function boundedSource(html: string): string {
       return out;
     }
 
-    const close = scan.indexOf(`</${opening[1].toLowerCase()}`, opening.index);
-    const closeEnd = close === -1 ? -1 : scan.indexOf('>', close);
+    // Match the strippers' own separator. They replace each block with `' '`, so a page under the
+    // cap keeps the word boundary around it; jumping the block with no separator would fuse the
+    // words on either side and make extraction quality depend on page SIZE for identical markup.
+    out += ' ';
+    kept += 1;
 
-    if (closeEnd === -1) {
+    // Find where the opening tag itself ends first. This is a bounded look — an opening tag is a
+    // handful of characters — and it decides whether a close search is needed at all.
+    const openEnd = scan.indexOf('>', opening.index);
+    if (openEnd === -1) {
+      // The tag never ends. Nothing past it can be trusted, so stop rather than guess.
       return out;
     }
 
-    pos = closeEnd + 1;
+    if (scan[openEnd - 1] === '/') {
+      // Self-closing `<svg/>`: there is no close tag to find, and searching for one would scan to
+      // EOF from every such tag. That is quadratic in the icon count — measured at ~5s on 100k
+      // inline `<svg/>` at the 1 MiB scan bound — so this case must be settled before the search
+      // below, not inside its failure path.
+      pos = openEnd + 1;
+    } else {
+      // Case-INSENSITIVE, like the opening pattern and the strippers below. A case-sensitive
+      // `indexOf` missed `</SCRIPT>` on pages using uppercase tags — common in CMS and legacy
+      // markup — and every such miss discarded the rest of the document.
+      const closeRe = new RegExp(`</${opening[1]}`, 'gi');
+      closeRe.lastIndex = openEnd;
+      const close = closeRe.exec(scan);
+      const closeEnd = close === null ? -1 : scan.indexOf('>', close.index);
+
+      // A block that opens and never closes: skip only its opening tag and keep walking, rather
+      // than discarding the rest of the page.
+      pos = closeEnd === -1 ? openEnd + 1 : closeEnd + 1;
+    }
+
     STRIPPABLE_OPENING_RE.lastIndex = pos;
     opening = STRIPPABLE_OPENING_RE.exec(scan);
   }
