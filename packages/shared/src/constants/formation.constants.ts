@@ -3,10 +3,44 @@
 
 import type { TagSeverity } from '../interfaces/components.interface';
 import type { FormationDrawerData, FormationLinkRowActionConfig, FormationRowActionConfig } from '../interfaces/formation-checklist.interface';
-import type { FormationItemStatus, FormationQueueTiles, FormationsQueueResponse, FormationSubStage } from '../interfaces/formation.interface';
+import type {
+  FormationEntityType,
+  FormationItemStatus,
+  FormationQueueTiles,
+  FormationsQueueResponse,
+  FormationSubStage,
+} from '../interfaces/formation.interface';
+
+/**
+ * Display labels for the canonical {@link FormationSubStage} union (GH-2163) — the Formations
+ * queue's stage column and stage-filter pills. This is the one label map for that union; it does
+ * not cover `ProjectStage`'s separate 5-value Formation taxonomy (which includes `Disengaged` and
+ * `Confidential`, neither a `FormationSubStage` member, and backs `isFormationStage`/
+ * `getFormationSubStageLabel` in `project.utils.ts`) — that map is project-domain data and is named
+ * distinctly to avoid colliding with this one.
+ */
+export const FORMATION_SUB_STAGE_LABELS = {
+  exploratory: 'Formation · Exploratory',
+  engaged: 'Formation · Engaged',
+  on_hold: 'Formation · On Hold',
+} as const satisfies Record<FormationSubStage, string>;
+
+/** `FormationsTableComponent`'s stage chip severities, keyed by queue sub-stage. */
+export const FORMATION_SUB_STAGE_SEVERITY = {
+  exploratory: 'accent',
+  engaged: 'accent',
+  on_hold: 'accent',
+} as const satisfies Record<FormationSubStage, TagSeverity>;
 
 /** Queue filter-pill order (`All` is derived, not listed) — formations already in flight only. */
-export const FORMATION_QUEUE_SUB_STAGES: FormationSubStage[] = ['exploratory', 'engaged', 'on_hold', 'activating'];
+export const FORMATION_QUEUE_SUB_STAGES: FormationSubStage[] = ['exploratory', 'engaged', 'on_hold'];
+
+/** `FormationsTableComponent`'s Type column display label — `entity_type` is stored as-is (never renamed for UI), so the raw value never reaches the template directly. */
+export const FORMATION_ENTITY_TYPE_LABELS = {
+  foundation: 'Foundation',
+  child_project: 'Child project',
+  project: 'Project',
+} as const satisfies Record<FormationEntityType, string>;
 
 /**
  * The single Epic-1 seeded template's fixture UID (#1959 owns the real seed content). Shared
@@ -54,10 +88,9 @@ export const FORMATION_EMPTY_QUEUE_TILES = {
   exploratory: 0,
   engaged: 0,
   on_hold: 0,
-  activating: 0,
   total: 0,
   foundations: 0,
-  subprojects: 0,
+  child_projects: 0,
 } as const satisfies FormationQueueTiles;
 
 /**
@@ -73,7 +106,8 @@ export function createEmptyFormationsQueueResponse(): FormationsQueueResponse {
 export const FORMATION_ITEM_STATUS_LABELS = {
   done: 'Done',
   in_progress: 'In progress',
-  waiting_on_partner: 'Waiting on partner',
+  blocked: 'Blocked',
+  awaiting_acceptance: 'With formation team',
   not_started: 'Not started',
   skipped: 'Skipped',
 } as const satisfies Record<FormationItemStatus, string>;
@@ -82,32 +116,18 @@ export const FORMATION_ITEM_STATUS_LABELS = {
 export const FORMATION_ITEM_STATUS_SEVERITY = {
   done: 'success',
   in_progress: 'warn',
-  waiting_on_partner: 'accent',
+  blocked: 'danger',
+  awaiting_acceptance: 'info',
   not_started: 'secondary',
   skipped: 'secondary',
 } as const satisfies Record<FormationItemStatus, TagSeverity>;
 
-/** `FormationReadinessStripComponent`'s per-segment fill color, keyed by item status. */
+/** `FormationReadinessStripComponent`'s per-segment fill color, keyed by item status. Not `done` must never read green. */
 export const FORMATION_ITEM_SEGMENT_COLORS = {
   done: 'bg-emerald-600',
   in_progress: 'bg-amber-500',
-  waiting_on_partner: 'bg-violet-500',
+  blocked: 'bg-red-500',
+  awaiting_acceptance: 'bg-blue-500',
   not_started: 'bg-gray-200',
   skipped: 'bg-gray-400',
 } as const satisfies Record<FormationItemStatus, string>;
-
-/** `FormationsTableComponent`'s stage chip labels, keyed by queue sub-stage. */
-export const FORMATION_SUB_STAGE_LABELS = {
-  exploratory: 'Formation · Exploratory',
-  engaged: 'Formation · Engaged',
-  on_hold: 'Formation · On Hold',
-  activating: 'Activating',
-} as const satisfies Record<FormationSubStage, string>;
-
-/** `FormationsTableComponent`'s stage chip severities, keyed by queue sub-stage. */
-export const FORMATION_SUB_STAGE_SEVERITY = {
-  exploratory: 'accent',
-  engaged: 'accent',
-  on_hold: 'accent',
-  activating: 'warn',
-} as const satisfies Record<FormationSubStage, TagSeverity>;

@@ -113,6 +113,27 @@ export const updateFormationItem = async (req: Request, res: Response, next: Nex
   }
 };
 
+/**
+ * Handles the three "plain" status-chip transitions (not_started/in_progress/blocked) — the row's
+ * status menu (GH-1958 finding #2). Completion and skip keep their own dedicated endpoints above.
+ */
+export const updateFormationItemStatus = async (req: Request, res: Response, next: NextFunction) => {
+  const { uid } = req.params;
+  const startTime = logger.startOperation(req, 'update_formation_item_status', { uid });
+
+  if (!validateUidParameter(uid, req, next, { operation: 'update_formation_item_status' })) {
+    return;
+  }
+
+  try {
+    const result = await formationService.updateFormationItemStatus(req, uid, req.body?.status, req.body?.note);
+    logger.success(req, 'update_formation_item_status', startTime, { uid });
+    return res.json(result);
+  } catch (error) {
+    return next(error);
+  }
+};
+
 function parseSubStage(value: unknown): FormationSubStage | undefined {
   return typeof value === 'string' && (FORMATION_QUEUE_SUB_STAGES as string[]).includes(value) ? (value as FormationSubStage) : undefined;
 }

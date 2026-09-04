@@ -84,7 +84,6 @@ export async function mockFormationChecklistApis(page: Page, opts: { project: Pr
             entity_type: 'foundation',
             template_uid: 'seed',
             template_version: 1,
-            state: 'active',
             sub_stage: 'engaged',
             announcement_date: null,
             is_activating: false,

@@ -42,18 +42,22 @@ function item(partial: Partial<FormationItem> & { status: FormationItemStatus })
   };
 }
 
-/** Builds a FormationTemplateSection fixture with no items — `groupFormationItemsBySection`/`collectFormationOrphanItems` only read `key`. */
+/**
+ * Builds a FormationTemplateSection fixture with no items — `groupFormationItemsBySection`/
+ * `collectFormationOrphanItems` only read `key`, so these tests use arbitrary string keys rather
+ * than real `FormationTemplateSectionKey` members (hence the cast).
+ */
 function section(key: string, title = key): FormationTemplateSection {
-  return { key, title, items: [] };
+  return { key, title, items: [] } as FormationTemplateSection;
 }
 
 describe('deriveFormationReadinessSummary', () => {
   it('returns one segment per item, in item order, colored by that item’s own status', () => {
-    const items = [item({ status: 'done' }), item({ status: 'in_progress' }), item({ status: 'waiting_on_partner' }), item({ status: 'not_started' })];
+    const items = [item({ status: 'done' }), item({ status: 'in_progress' }), item({ status: 'blocked' }), item({ status: 'not_started' })];
 
     const summary = deriveFormationReadinessSummary(items);
 
-    expect(summary.segments).toEqual(['done', 'in_progress', 'waiting_on_partner', 'not_started']);
+    expect(summary.segments).toEqual(['done', 'in_progress', 'blocked', 'not_started']);
     expect(summary.totalItems).toBe(4);
   });
 
@@ -65,7 +69,8 @@ describe('deriveFormationReadinessSummary', () => {
     expect(summary.counts).toEqual({
       not_started: 1,
       in_progress: 0,
-      waiting_on_partner: 0,
+      blocked: 0,
+      awaiting_acceptance: 0,
       done: 2,
       skipped: 1,
     });
@@ -130,7 +135,8 @@ describe('deriveFormationReadinessSummary', () => {
     expect(summary.counts).toEqual({
       not_started: 0,
       in_progress: 0,
-      waiting_on_partner: 0,
+      blocked: 0,
+      awaiting_acceptance: 0,
       done: 0,
       skipped: 0,
     });

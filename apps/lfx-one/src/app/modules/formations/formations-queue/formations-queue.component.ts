@@ -71,12 +71,12 @@ export class FormationsQueueComponent {
         {
           value: t.total,
           label: 'In formation',
-          subLine: `${t.foundations} foundations · ${t.subprojects} subprojects`,
+          subLine: `${t.foundations} foundations · ${t.child_projects} child projects`,
           icon: 'fa-light fa-diagram-project',
           iconContainerClass: 'bg-blue-50 text-blue-600',
         },
         {
-          value: t.activating,
+          value: this.rows().filter((row) => row.is_activating).length,
           label: 'Ready to activate',
           subLine: 'Gating items done',
           icon: 'fa-light fa-flag-checkered',

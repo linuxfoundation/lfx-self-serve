@@ -8,7 +8,8 @@ import { FORMATION_ORPHAN_SECTION } from '../constants/formation.constants';
 const EMPTY_COUNTS: Record<FormationItemStatus, number> = {
   not_started: 0,
   in_progress: 0,
-  waiting_on_partner: 0,
+  blocked: 0,
+  awaiting_acceptance: 0,
   done: 0,
   skipped: 0,
 };
@@ -58,7 +59,7 @@ export function deriveFormationReadinessSummary(items: FormationItem[]): Formati
  * the two can't fall out of sync on what counts as "orphaned."
  */
 export function collectFormationOrphanItems(items: FormationItem[], sections: FormationTemplateSection[]): FormationItem[] {
-  const knownKeys = new Set(sections.map((section) => section.key));
+  const knownKeys = new Set<string>(sections.map((section) => section.key));
   return items.filter((item) => !knownKeys.has(item.section_key));
 }
 
@@ -77,7 +78,9 @@ export function groupFormationItemsBySection(items: FormationItem[], sections: F
 
   const orphans = collectFormationOrphanItems(items, sections);
   if (orphans.length > 0) {
-    rendered.push({ section: { ...FORMATION_ORPHAN_SECTION, items: [] }, items: orphans });
+    // FORMATION_ORPHAN_SECTION's key ('__orphan__') is deliberately outside FormationTemplateSectionKey —
+    // it's a synthetic fallback bucket, never a real template section.
+    rendered.push({ section: { ...FORMATION_ORPHAN_SECTION, items: [] } as unknown as FormationTemplateSection, items: orphans });
   }
 
   return rendered;

@@ -18,9 +18,9 @@ import { personaDetectionService } from '../utils/persona-helper';
  * access: 'gate_writer' })`; the call shape already type-checks against `AccessCheckAccessType`, so
  * no caller of `canComplete` needs to change.
  *
- * TODO(#2148): the FGA model has no `gate_writer` relation at all — whether one gets added, or
+ * TODO(#1957): the FGA model has no `gate_writer` relation at all — whether one gets added, or
  * gating access is modeled some other way, is an open product/architecture question tracked there,
- * not something this PR resolves. The LF-staff stand-in above stays until #2148 is answered.
+ * not something this PR resolves. The LF-staff stand-in above stays until #1957 is answered.
  */
 export class FormationItemAccessService {
   /** Non-gating items: anyone with checklist access may complete them. Gating items: LF-staff only, standing in for a real `gate_writer` grant. */

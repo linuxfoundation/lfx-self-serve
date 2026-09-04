@@ -12,7 +12,7 @@ import { EmptyStateComponent } from '@components/empty-state/empty-state.compone
 import { InputTextComponent } from '@components/input-text/input-text.component';
 import { TableComponent } from '@components/table/table.component';
 import { TagComponent } from '@components/tag/tag.component';
-import { FORMATION_QUEUE_SUB_STAGES, FORMATION_SUB_STAGE_LABELS, FORMATION_SUB_STAGE_SEVERITY } from '@lfx-one/shared/constants';
+import { FORMATION_ENTITY_TYPE_LABELS, FORMATION_QUEUE_SUB_STAGES, FORMATION_SUB_STAGE_LABELS, FORMATION_SUB_STAGE_SEVERITY } from '@lfx-one/shared/constants';
 import type { FilterPillOption, Formation, FormationsQueueFilterState, FormationSubStage, FormationTableRow } from '@lfx-one/shared/interfaces';
 import { debounceTime, distinctUntilChanged, map } from 'rxjs';
 
@@ -78,7 +78,12 @@ export class FormationsTableComponent {
   /** PrimeNG types the `#body` row context `any` — precomputing the chip label/severity here lets the template do a plain property read instead of a method call. */
   private initDisplayRows(): Signal<FormationTableRow[]> {
     return computed(() =>
-      this.rows().map((row) => ({ ...row, stageLabel: FORMATION_SUB_STAGE_LABELS[row.sub_stage], stageSeverity: FORMATION_SUB_STAGE_SEVERITY[row.sub_stage] }))
+      this.rows().map((row) => ({
+        ...row,
+        stageLabel: FORMATION_SUB_STAGE_LABELS[row.sub_stage],
+        stageSeverity: FORMATION_SUB_STAGE_SEVERITY[row.sub_stage],
+        entityTypeLabel: FORMATION_ENTITY_TYPE_LABELS[row.entity_type],
+      }))
     );
   }
 

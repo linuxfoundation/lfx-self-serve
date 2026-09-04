@@ -11,6 +11,7 @@ import type {
   FormationChecklistResponse,
   FormationItem,
   FormationRenderedSection,
+  FormationRowStatusChange,
   ReasonPromptDialogResult,
 } from '@lfx-one/shared/interfaces';
 import { collectFormationOrphanItems, groupFormationItemsBySection } from '@lfx-one/shared/utils';
@@ -115,6 +116,81 @@ export class FormationChecklistSectionComponent {
         error: (error: unknown) => {
           console.error('[FormationChecklistSection] Row action failed', error);
           this.messageService.add({ severity: 'error', summary: 'Error', detail: 'Could not complete this action.' });
+        },
+      });
+  }
+
+  /** Status-menu "Mark in progress" / "Back to not started" — the two plain transitions that carry no extra data. */
+  protected onRowStatusChanged(change: FormationRowStatusChange): void {
+    if (!this.beginSubmitting(change.item.uid, 'row')) return;
+
+    this.formationService
+      .updateFormationItemStatus(change.item.uid, change.status)
+      .pipe(
+        take(1),
+        finalize(() => this.endSubmitting(change.item.uid))
+      )
+      .subscribe({
+        next: () => this.refresh$.next(),
+        error: (error: unknown) => {
+          console.error('[FormationChecklistSection] Row status change failed', error);
+          this.messageService.add({ severity: 'error', summary: 'Error', detail: 'Could not change this item’s status.' });
+        },
+      });
+  }
+
+  /**
+   * Status-menu "Mark blocked…" — same required-reason dialog pattern as `onSkipRequested`, against
+   * the plain status-update endpoint rather than the dedicated skip endpoint. `ReasonPromptDialogComponent`
+   * is a "confirm with a required reason" dialog (its `canConfirm` rejects an empty/whitespace value) —
+   * there's no built-in optional-note mode, so blocking a row always requires a reason, same as skip.
+   */
+  protected onRowBlockRequested(item: FormationItem): void {
+    const ref = this.dialogService.open(ReasonPromptDialogComponent, {
+      header: 'Mark blocked',
+      width: '480px',
+      modal: true,
+      data: {
+        prompt: `Marking "${item.title}" blocked requires a reason. This is logged in the item's history.`,
+        placeholder: 'What is blocking this item?',
+        confirmLabel: 'Mark blocked',
+      },
+    });
+
+    ref?.onClose.pipe(take(1)).subscribe((result: ReasonPromptDialogResult | undefined) => {
+      if (!result?.reason || !this.beginSubmitting(item.uid, 'row')) return;
+
+      this.formationService
+        .updateFormationItemStatus(item.uid, 'blocked', result.reason)
+        .pipe(
+          take(1),
+          finalize(() => this.endSubmitting(item.uid))
+        )
+        .subscribe({
+          next: () => this.refresh$.next(),
+          error: (error: unknown) => {
+            console.error('[FormationChecklistSection] Mark blocked failed', error);
+            this.messageService.add({ severity: 'error', summary: 'Error', detail: 'Could not mark this item blocked.' });
+          },
+        });
+    });
+  }
+
+  /** Status-menu "Mark done" / "Accept" — both call the existing complete endpoint; `formation.service.ts`'s `completeFormationItem` decides whether that lands on `done` or `awaiting_acceptance`. */
+  protected onRowCompleteRequested(item: FormationItem): void {
+    if (!this.beginSubmitting(item.uid, 'row')) return;
+
+    this.formationService
+      .completeFormationItem(item.uid)
+      .pipe(
+        take(1),
+        finalize(() => this.endSubmitting(item.uid))
+      )
+      .subscribe({
+        next: () => this.refresh$.next(),
+        error: (error: unknown) => {
+          console.error('[FormationChecklistSection] Mark complete failed', error);
+          this.messageService.add({ severity: 'error', summary: 'Error', detail: 'Could not complete this item.' });
         },
       });
   }

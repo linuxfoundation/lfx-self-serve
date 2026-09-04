@@ -101,7 +101,7 @@ test.describe('Formations queue — structural contract', () => {
 
     test('renders a filter pill for "all" and every queue sub-stage', async ({ page }) => {
       const tabs = page.getByTestId('formations-status-tabs');
-      for (const id of ['all', 'exploratory', 'engaged', 'on_hold', 'activating']) {
+      for (const id of ['all', 'exploratory', 'engaged', 'on_hold']) {
         const pill = tabs.getByTestId(`filter-pill-${id}`);
         await expect(pill).toBeAttached();
         await expect(pill).toHaveAttribute('aria-pressed', id === 'all' ? 'true' : 'false');

@@ -21,12 +21,13 @@
     <span class="text-sm font-medium text-gray-900">{{ announcementLabel() }}</span>
   </div>
 
-  <div class="flex flex-col gap-0.5 w-44" data-testid="formation-readiness-strip-gating">
+  <div class="flex flex-col gap-0.5 flex-1 min-w-0" data-testid="formation-readiness-strip-gating">
     @if (summary().isActivating) {
-      <span class="text-[11px] text-gray-500">Gating Active</span>
-      <span class="text-sm font-medium text-amber-700" data-testid="formation-readiness-strip-activating-text">Activating</span>
+      <span class="text-sm font-medium text-amber-700" data-testid="formation-readiness-strip-activating-text"
+        >All gating items done — the formation team can set Active in the admin tool on the announcement date.</span
+      >
     } @else {
-      <span class="text-[11px] text-gray-500">Gating Active</span>
+      <span class="text-[11px] text-gray-500">Required for Active</span>
       <span class="text-sm font-medium text-amber-700" data-testid="formation-readiness-strip-gating-text"
         >{{ summary().openGatingItems }} of {{ summary().totalGatingItems }} open</span
       >

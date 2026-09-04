@@ -1,7 +1,14 @@
 // Copyright The Linux Foundation and each contributor to LFX.
 // SPDX-License-Identifier: MIT
 
-import type { FormationActivity, FormationChecklistResponse, FormationItem, FormationsQueueResponse, FormationSubStage } from '@lfx-one/shared/interfaces';
+import type {
+  FormationActivity,
+  FormationChecklistResponse,
+  FormationItem,
+  FormationItemStatus,
+  FormationsQueueResponse,
+  FormationSubStage,
+} from '@lfx-one/shared/interfaces';
 import { FORMATION_QUEUE_SUB_STAGES } from '@lfx-one/shared/constants';
 import { Request } from 'express';
 
@@ -36,6 +43,7 @@ import { ProjectService } from './project.service';
  */
 export class FormationService {
   private readonly projectService = new ProjectService();
+  private static readonly plainStatusTransitions: ReadonlySet<FormationItemStatus> = new Set(['not_started', 'in_progress', 'blocked']);
 
   public async getProjectFormation(req: Request, projectSlug: string): Promise<FormationChecklistResponse> {
     logger.debug(req, 'get_project_formation', 'Fetching formation checklist', { projectSlug });
@@ -97,19 +105,31 @@ export class FormationService {
     return { item: enriched, history: getActivityForItem(item.formation_uid, item.uid) };
   }
 
-  // TODO(#1957): swap the putStoredItem/recordActivity fixture writes below for a real
-  // lfx-v2-formation-service mutation call once it ships.
+  /**
+   * A gating item without gate-writer access doesn't close outright — it moves to
+   * `awaiting_acceptance` and sits with the formation team until a `can_complete` caller accepts
+   * it (calling this same method again, which then resolves to `done` since they have access).
+   * Non-gating items and gate-writer callers on a gating item still resolve straight to `done`.
+   * TODO(#1957): swap the putStoredItem/recordActivity fixture writes below for a real
+   * lfx-v2-formation-service mutation call once it ships.
+   */
   public async completeFormationItem(req: Request, itemUid: string, notes?: unknown): Promise<FormationItem> {
     this.assertValidNotes(notes, req, 'complete_formation_item');
     const item = await this.getFormationItemOrThrow(req, itemUid);
     await this.assertItemProjectWriteAccess(req, item);
-    await this.assertCanComplete(req, item, 'complete_formation_item');
-    const updated: FormationItem = { ...item, status: 'done', skip_reason: null, notes: notes ?? item.notes, updated_at: new Date().toISOString() };
+    const canComplete = await formationItemAccessService.canComplete(req, item);
+    const nextStatus: FormationItemStatus = item.is_gating && !canComplete ? 'awaiting_acceptance' : 'done';
+    const updated: FormationItem = { ...item, status: nextStatus, skip_reason: null, notes: notes ?? item.notes, updated_at: new Date().toISOString() };
     putStoredItem(updated);
-    this.recordActivity(req, updated, 'item_completed', `marked "${updated.title}" done`);
+    this.recordActivity(
+      req,
+      updated,
+      'item_completed',
+      nextStatus === 'done' ? `marked "${updated.title}" done` : `marked "${updated.title}" ready for the formation team to accept`
+    );
     this.refreshFormationReadiness(updated.formation_uid);
 
-    logger.info(req, 'complete_formation_item', 'Formation item marked done', { item_uid: itemUid, is_gating: updated.is_gating });
+    logger.info(req, 'complete_formation_item', 'Formation item completion recorded', { item_uid: itemUid, is_gating: updated.is_gating, status: nextStatus });
     return this.enrichSingle(req, updated);
   }
 
@@ -133,7 +153,9 @@ export class FormationService {
 
   /**
    * Files the lightweight Epic-1 `request` action (GH-1958 finding #1) — flips the item to
-   * `waiting_on_partner`. No SLA/target-team object; that richer `request` type is #1957/Epic 2.
+   * `blocked`, the canonical status's direct successor to the old `waiting_on_partner` (dropped
+   * from `FormationItemStatus`; a requested item is, by definition, blocked on someone else). No
+   * SLA/target-team object; that richer `request` type is #1957/Epic 2.
    * TODO(#1957): swap the fixture writes below for a real lfx-v2-formation-service mutation call.
    */
   public async requestFormationItem(req: Request, itemUid: string): Promise<FormationItem> {
@@ -142,14 +164,53 @@ export class FormationService {
     // Same gate as complete/skip: `request` also changes `status`, so a gating item's status must
     // not be movable through this action by a caller `complete`/`skip` would deny.
     await this.assertCanComplete(req, item, 'request_formation_item');
-    const updated: FormationItem = { ...item, status: 'waiting_on_partner', updated_at: new Date().toISOString() };
+    const updated: FormationItem = { ...item, status: 'blocked', updated_at: new Date().toISOString() };
     putStoredItem(updated);
     this.recordActivity(req, updated, 'item_requested', `requested "${updated.title}"`);
     // request also moves `status`, same as complete/skip — the readiness rollup must reflect it
-    // (e.g. a previously-done gating item moved back to waiting_on_partner reopens is_activating).
+    // (e.g. a previously-done gating item moved back to blocked reopens is_activating).
     this.refreshFormationReadiness(updated.formation_uid);
 
     logger.info(req, 'request_formation_item', 'Formation item request filed', { item_uid: itemUid });
+    return this.enrichSingle(req, updated);
+  }
+
+  /**
+   * The three "plain" status transitions a row's status-chip menu can trigger directly
+   * (in_progress / blocked+note / not_started) — completion and skip keep their own dedicated
+   * endpoints/methods above since their semantics genuinely differ (gate_writer/`awaiting_acceptance`
+   * branching, required skip reason). No `assertCanComplete` gate here by design, matching
+   * `updateFormationItem`'s existing pattern — these are reversible, non-gating-status-of-record
+   * moves, not a gate decision.
+   * TODO(#1957): swap the fixture writes below for a real lfx-v2-formation-service mutation call.
+   */
+  public async updateFormationItemStatus(req: Request, itemUid: string, status: unknown, note?: unknown): Promise<FormationItem> {
+    if (typeof status !== 'string' || !FormationService.plainStatusTransitions.has(status as FormationItemStatus)) {
+      throw ServiceValidationError.forField('status', 'status must be one of not_started, in_progress, blocked', {
+        operation: 'update_formation_item_status',
+        service: 'formation_service',
+        path: req.path,
+      });
+    }
+    if (note !== undefined) {
+      this.assertValidNotes(note, req, 'update_formation_item_status');
+    }
+
+    const item = await this.getFormationItemOrThrow(req, itemUid);
+    await this.assertItemProjectWriteAccess(req, item);
+    const nextStatus = status as FormationItemStatus;
+    const updated: FormationItem = {
+      ...item,
+      status: nextStatus,
+      skip_reason: null,
+      notes: nextStatus === 'blocked' && typeof note === 'string' ? note : item.notes,
+      updated_at: new Date().toISOString(),
+    };
+    putStoredItem(updated);
+    this.recordActivity(req, updated, 'item_reopened', `moved "${updated.title}" to ${nextStatus}`);
+    this.refreshFormationReadiness(updated.formation_uid);
+
+    logger.info(req, 'update_formation_item_status', 'Formation item status changed', { item_uid: itemUid, status: nextStatus });
     return this.enrichSingle(req, updated);
   }
 
@@ -247,14 +308,14 @@ export class FormationService {
       bySubStage[row.sub_stage] = (bySubStage[row.sub_stage] ?? 0) + 1;
     }
 
-    // The tile subLine only has room for a foundations/subprojects split — a bare 'project' entity
-    // (no foundation/subproject formation ceremony) rolls into the subprojects count so it isn't
-    // silently dropped from the breakdown while still counting toward `total`.
+    // The tile subLine only has room for a foundations/child_projects split — a bare 'project'
+    // entity (no foundation/child_project formation ceremony) rolls into the child_projects count
+    // so it isn't silently dropped from the breakdown while still counting toward `total`.
     return {
       ...bySubStage,
       total: rows.length,
       foundations: rows.filter((row) => row.entity_type === 'foundation').length,
-      subprojects: rows.filter((row) => row.entity_type === 'subproject' || row.entity_type === 'project').length,
+      child_projects: rows.filter((row) => row.entity_type === 'child_project' || row.entity_type === 'project').length,
     };
   }
 
@@ -278,6 +339,12 @@ export class FormationService {
     });
   }
 
+  /**
+   * `sub_stage` (exploratory/engaged/on_hold) is never touched here — it tracks the project's real
+   * stage independently of gating status. Only `is_activating` flips on gating completion; there is
+   * no lossy "revert to engaged" case to worry about since nothing ever overwrites `sub_stage` in
+   * the first place.
+   */
   private refreshFormationReadiness(formationUid: string): void {
     const formation = getStoredFormation(formationUid);
     if (!formation) return;
@@ -289,26 +356,17 @@ export class FormationService {
     // permanently unreachable for any formation that ever uses it.
     const openGatingItems = gatingItems.filter((item) => item.status !== 'done' && item.status !== 'skipped');
     const isActivating = gatingItems.length > 0 && openGatingItems.length === 0;
-
-    // `generateMockFormation` derives the initial sub_stage from is_activating (mapProjectStageToSubStage)
-    // — this recompute must track it the same way, or completing the last gating item leaves a stored
-    // formation with is_activating: true but a stale sub_stage. The original pre-activating sub_stage
-    // isn't preserved anywhere, so reverting out of 'activating' falls back to 'engaged' — the
-    // generator's own default case.
-    let subStage: FormationSubStage = formation.sub_stage;
-    if (isActivating) {
-      subStage = 'activating';
-    } else if (formation.sub_stage === 'activating') {
-      subStage = 'engaged';
-    }
+    // Blocking column reflects items actually in `blocked` status specifically, not "first not-done
+    // gating item" — `awaiting_acceptance`/`in_progress`/`not_started` items are open but not blocking.
+    const blockedGatingItems = gatingItems.filter((item) => item.status === 'blocked');
+    const blockingItemTitle = blockedGatingItems.length > 0 ? blockedGatingItems.map((item) => item.title).join(', ') : null;
 
     putStoredFormation({
       ...formation,
-      sub_stage: subStage,
       gating_items_open: openGatingItems.length,
       gating_items_total: gatingItems.length,
       is_activating: isActivating,
-      blocking_item_title: openGatingItems[0]?.title ?? null,
+      blocking_item_title: blockingItemTitle,
       updated_at: new Date().toISOString(),
     });
   }

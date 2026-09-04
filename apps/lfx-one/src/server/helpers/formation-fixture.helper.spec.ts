@@ -47,6 +47,6 @@ describe('STATIC_QUEUE_FORMATIONS', () => {
   it('covers exactly the three known entity_type values', () => {
     const entityTypes = new Set(STATIC_QUEUE_FORMATIONS.map((row) => row.entity_type));
 
-    expect(entityTypes).toEqual(new Set(['foundation', 'subproject', 'project']));
+    expect(entityTypes).toEqual(new Set(['foundation', 'child_project', 'project']));
   });
 });
