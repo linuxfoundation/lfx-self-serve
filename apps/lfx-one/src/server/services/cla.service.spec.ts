@@ -273,6 +273,8 @@ describe('toMyClaAgreement', () => {
     expect(revoked.status).toBe('revoked');
   });
 
+  // A sanctioned ECLA that was also invalidated still carries both dates: the
+  // producer copies invalidatedAt before the sanctions override to revoked.
   it('copies invalidatedAt and flaggedAt from the producer and omits blanks', () => {
     const dated = toMyClaAgreement(
       ecla({ status: 'revoked', approved: true, valid: false, flaggedAt: '2026-08-01T12:00:00Z', invalidatedAt: '  2026-06-03T12:00:00Z  ' })

@@ -64,8 +64,10 @@ export interface EasyClaMyCla {
   status: 'valid' | 'needs_attention' | 'revoked' | 'invalidated' | 'unknown';
   statusReason?: 'not_on_approval_list' | 'unknown';
   /**
-   * Stored `date_invalidated`. Omitted on rows invalidated before the field existed,
-   * and on every non-invalidated row.
+   * Stored `date_invalidated`. Omitted when the producer sent none (rows
+   * invalidated before the field existed, or never invalidated). Independent of
+   * `status`: a sanctioned ECLA is `revoked` and can still carry this date,
+   * because EasyCLA copies it before the sanctions override.
    */
   invalidatedAt?: string;
   /**

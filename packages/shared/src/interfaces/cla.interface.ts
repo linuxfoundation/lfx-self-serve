@@ -105,9 +105,11 @@ export interface MyClaAgreement {
   statusReason?: ClaStatusReason;
   /**
    * Producer `invalidatedAt` — stored invalidation instant. Omitted when the
-   * producer sent none (legacy rows, or any non-invalidated status). Empty after
-   * trim is treated as omitted. The status note is `{Label} · {date}` only when
-   * this parses; a wrong date is worse than none.
+   * producer sent none (legacy rows, or never invalidated). Empty after trim is
+   * treated as omitted. Independent of `status`: a revoked ECLA can still carry
+   * this date, because EasyCLA copies it before the sanctions override. The
+   * Invalidated status note is `{Label} · {date}` only when this parses; a
+   * wrong date is worse than none. Revoked notes read `flaggedAt` instead.
    */
   invalidatedAt?: string;
   /**

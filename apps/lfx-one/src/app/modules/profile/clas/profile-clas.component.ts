@@ -663,7 +663,8 @@ export class ProfileClasComponent {
    * `{Label} · {date}` when the producer recorded a parseable date (#1913);
    * a completed Approved List miss takes the mockup sentence. Other rows
    * have no note — including undated Invalidated/Revoked, where a missing
-   * date must not be invented.
+   * date must not be invented. Revoked reads `flaggedAt` even when
+   * `invalidatedAt` is also present (sanctions override Invalidated).
    */
   private statusNote(agreement: MyClaAgreement): string | undefined {
     const dateIso = agreement.status === 'revoked' ? agreement.flaggedAt : agreement.invalidatedAt;
