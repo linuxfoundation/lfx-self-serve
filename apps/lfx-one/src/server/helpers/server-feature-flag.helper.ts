@@ -234,10 +234,13 @@ export enum ServerFeatureFlag {
    * `CampaignServiceStatusToggle`, where only one backend can address the id space.
    *
    * That is not the same as "off works". Where the `GADS_*` variables were deactivated, the
-   * legacy arm calls `getGadsClient()`, which throws before any read — the same mechanism
-   * documented on `CampaignServiceKeywordActions` below. In those environments flipping back
-   * does not restore the previous behaviour; it breaks the keywords and audience reads
-   * outright.
+   * legacy arm calls `getGadsClient()`, which throws before any read. In those environments
+   * flipping back does not restore the previous behaviour; it breaks the keywords and audience
+   * reads outright.
+   *
+   * This is a property of the GADS_* credentials, not of this flag — every legacy path that
+   * reaches `getGadsClient()` shares it. Do not read any flag's note as a promise that the
+   * others roll back cleanly; check the mechanism each one names.
    *
    * Does NOT gate `executeKeywordActions`. That route MUTATES live keywords, so it has its own
    * flag — `CampaignServiceKeywordActions`, defined just below — because a write needs a

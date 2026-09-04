@@ -640,9 +640,11 @@ environment:
   # one campaign's keywords can pause while another's do not. Every keyword is still reported
   # individually, and a campaign-level failure marks all of that campaign's keywords failed.
   #
-  # "OFF" IS NOT A WORKING FALLBACK HERE, unlike the create-pipeline flags (JOBS / BRIEFS /
-  # CREATE) -- and LIKE the INSIGHTS flag above, whose legacy path calls the same
-  # getGadsClient(). The legacy path
+  # "OFF" IS NOT A WORKING FALLBACK HERE. This is a property of the GADS_* credentials, not of
+  # this flag: every legacy path reaching getGadsClient() shares it, INSIGHTS above included.
+  # Do not read it as a promise that the other flags roll back cleanly -- JOBS must stay on and
+  # comes off LAST, and legacy CREATE reaches the same client through getCustomer(). The legacy
+  # path
   # calls getGadsClient(), which throws whenever the GADS_* variables are absent — and they were
   # deactivated deliberately. So with this off, keyword actions do not work at all; this flag is
   # what makes them work, not what changes which backend serves them.

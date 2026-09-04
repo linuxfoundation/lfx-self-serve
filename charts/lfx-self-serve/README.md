@@ -385,8 +385,7 @@ campaign-service. It is separate from the reads flag above because it MUTATES li
 campaigns, and a REMOVE is irreversible — Google cannot re-enable a removed criterion, only
 create a new one with a new id.
 
-**Off is not a working fallback here either** — the same as the HubSpot UTM flag above and the
-INSIGHTS flag below, and unlike the create-pipeline flags (JOBS / BRIEFS / CREATE). The legacy
+**Off is not a working fallback here.** The legacy
 path
 calls `getGadsClient()`, which throws whenever the `GADS_*` variables are absent — and they were
 deactivated deliberately. With this off, keyword actions do not work at all. This flag is what

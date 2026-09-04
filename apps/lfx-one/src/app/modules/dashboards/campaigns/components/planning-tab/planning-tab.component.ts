@@ -1036,10 +1036,15 @@ export class PlanningTabComponent implements OnInit {
           // create returned without error is a 503", design/connection.go) -- but that contract
           // governs what campaign-service SENDS, and this status is not read from
           // campaign-service. It is read from OUR BFF, which raises its own 500 for a fault at any
-          // position: error-handler.middleware.ts:92 returns 500 for any non-BaseApiError, and
-          // ApiClientService parses the upstream body with JSON.parse AFTER a 2xx (the post-2xx
-          // parse in `executeRequest`). A malformed success body therefore reaches the browser as
-          // 500 with the campaign ALREADY CREATED in HubSpot.
+          // position, INCLUDING after the create has already landed: `createHubSpotCampaign`
+          // validates the upstream response and throws a plain Error when a 2xx carries no
+          // usable campaign ("The campaign service reported a create but returned no usable
+          // campaign"), and the error handler answers any non-BaseApiError with 500. The
+          // campaign exists at that point -- so a 500 here can mean ALREADY CREATED IN HUBSPOT.
+          //
+          // Not the post-2xx JSON.parse route an earlier version of this comment cited: a parse
+          // failure is a SyntaxError, which `executeRequest`'s catch-all now classifies as a
+          // transport 503, not a 500 (Copilot).
           //
           // Re-offering Create there is the duplicate this whole handler exists to prevent, and
           // the duplicate cannot be removed from this UI. A 500 costs a re-check; a duplicate
