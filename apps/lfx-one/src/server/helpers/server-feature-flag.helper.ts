@@ -255,8 +255,10 @@ export enum ServerFeatureFlag {
    *
    * SEPARATE from `CampaignServiceInsights`, which covers the two keyword/audience READS, and
    * the split is deliberate: this one MUTATES live paid campaigns, so it needs a rollback story
-   * a read does not. The reads can be flipped back with no trace; a REMOVE cannot be undone —
-   * Google cannot re-enable a removed criterion, only create a new one with a new id.
+   * a read does not. Flipping the reads back STRANDS nothing -- they persist no state, so there
+   * is nothing left behind either way (whether the legacy read still functions is a separate
+   * question, answered on `CampaignServiceInsights` itself). A REMOVE cannot be undone: Google
+   * cannot re-enable a removed criterion, only create a new one with a new id.
    *
    * THE GRANULARITY OF FAILURE CHANGES. The legacy path issues one Google call per keyword, so
    * each succeeds or fails alone. campaign-service takes one atomic batch per campaign, so a

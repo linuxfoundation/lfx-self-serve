@@ -385,11 +385,10 @@ campaign-service. It is separate from the reads flag above because it MUTATES li
 campaigns, and a REMOVE is irreversible — Google cannot re-enable a removed criterion, only
 create a new one with a new id.
 
-**Off is not a working fallback here.** The legacy
-path
-calls `getGadsClient()`, which throws whenever the `GADS_*` variables are absent — and they were
-deactivated deliberately. With this off, keyword actions do not work at all. This flag is what
-makes them work, not what changes which backend serves them.
+**Off is not a working fallback here.** The legacy path calls `getGadsClient()`, which throws
+whenever the `GADS_*` variables are absent — and they were deactivated deliberately. With this
+off, keyword actions do not work at all. This flag is what makes them work, not what changes which
+backend serves them.
 
 The granularity of failure changes when it is on. The legacy path issued one Google call per
 keyword, so each succeeded or failed alone. campaign-service takes one atomic batch per
