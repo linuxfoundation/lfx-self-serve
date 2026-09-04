@@ -557,6 +557,23 @@ environment:
   LFX_MARKETING_OPS_FGA_ENABLED:
     value:
 
+  # Serves the M3 Organization Lens EasyCLA routes (/api/orgs/:orgUid/lens/cla-groups and the
+  # children added as M3 lands). Off answers the whole module 409 FEATURE_DISABLED.
+  #
+  # This is the server half of a two-flag dark launch. The client-side org-lens-cla-m3-enabled
+  # OpenFeature flag hides the /org/easycla route and its nav item, but the Web SDK never runs
+  # server-side, so on its own it leaves the BFF reachable by direct call. Both must be on for
+  # the module to work.
+  #
+  # Rollout ordering (same shape as LFX_MARKETING_OPS_FGA_ENABLED): set this true and confirm the
+  # rolling update has fully converged BEFORE enabling the client flag, or the UI advertises a
+  # page that a not-yet-converged pod still 409s. Reverse to roll back — client flag off first.
+  #
+  # Overlap during the rollout is harmless while the module is read-only: a caller gets either the
+  # list or a 409, never a partial write. Revisit once the M3 write paths land behind this flag.
+  LFX_ORG_LENS_CLA_M3_ENABLED:
+    value:
+
   # Serves PATCH /api/campaigns/:campaignId/status from campaign-service instead of the
   # per-platform SDK calls in campaign-proxy.service.ts (LFXV2-3226).
   #

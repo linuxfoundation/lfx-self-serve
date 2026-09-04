@@ -3,7 +3,13 @@
 
 import { signal } from '@angular/core';
 import { TestBed } from '@angular/core/testing';
-import { MKTG_OS_AGENTS_ENABLED_FLAG, MKTG_OS_AGENTS_LABEL, ORG_LENS_CLA_M3_ENABLED_FLAG, ORG_LENS_ENABLED_FLAG } from '@lfx-one/shared/constants';
+import {
+  MKTG_OS_AGENTS_ENABLED_FLAG,
+  MKTG_OS_AGENTS_LABEL,
+  ORG_LENS_CLA_M3_ENABLED_FLAG,
+  ORG_LENS_ENABLED_FLAG,
+  ORG_LENS_ROI_ENABLED_FLAG,
+} from '@lfx-one/shared/constants';
 import { Lens, SidebarMenuItem } from '@lfx-one/shared/interfaces';
 import { AnalyticsService } from '@services/analytics.service';
 import { FeatureFlagService } from '@services/feature-flag.service';
@@ -22,6 +28,7 @@ describe('SidebarNavService', () => {
   const mktgOsEnabled = signal(false);
   const orgLensEnabled = signal(false);
   const orgEasyclaEnabled = signal(false);
+  const orgRoiEnabled = signal(false);
   const hasFullFoundationAccess = signal(true);
   const currentPersona = signal('executive-director');
 
@@ -37,6 +44,7 @@ describe('SidebarNavService', () => {
     mktgOsEnabled.set(false);
     orgLensEnabled.set(false);
     orgEasyclaEnabled.set(false);
+    orgRoiEnabled.set(false);
     hasFullFoundationAccess.set(true);
     currentPersona.set('executive-director');
 
@@ -50,6 +58,7 @@ describe('SidebarNavService', () => {
               if (key === MKTG_OS_AGENTS_ENABLED_FLAG) return mktgOsEnabled;
               if (key === ORG_LENS_ENABLED_FLAG) return orgLensEnabled;
               if (key === ORG_LENS_CLA_M3_ENABLED_FLAG) return orgEasyclaEnabled;
+              if (key === ORG_LENS_ROI_ENABLED_FLAG) return orgRoiEnabled;
               return signal(false);
             }),
           },
@@ -180,5 +189,20 @@ describe('SidebarNavService', () => {
     );
     expect(engagementLabels.indexOf('EasyCLA')).toBe(engagementLabels.indexOf('Code Contributions') + 1);
     expect(engagementLabels.indexOf('Events')).toBe(engagementLabels.indexOf('EasyCLA') + 1);
+  });
+
+  it('keeps ROI after Projects while EasyCLA stays in the section when both flags are on', () => {
+    activeLens.set('org');
+    orgLensEnabled.set(true);
+    orgEasyclaEnabled.set(true);
+    orgRoiEnabled.set(true);
+
+    const items = TestBed.inject(SidebarNavService).sidebarItems();
+    const itemLabels = labels(items);
+    const engagementLabels = labels(sectionItems(items, 'Organization Engagement'));
+
+    // The two flags are independent: EasyCLA must not displace ROI's slot, or vice versa.
+    expect(itemLabels.indexOf('ROI Metrics')).toBe(itemLabels.indexOf('Projects') + 1);
+    expect(engagementLabels.indexOf('EasyCLA')).toBe(engagementLabels.indexOf('Code Contributions') + 1);
   });
 });

@@ -519,9 +519,10 @@ reviewed chart commit — a values override is invisible to review, a chart chan
 
 #### Marketing Ops FGA Enforcement
 
-| Parameter                                   | Description                                                                                    | Required | Default |
-| ------------------------------------------- | ---------------------------------------------------------------------------------------------- | -------- | ------- |
-| `environment.LFX_MARKETING_OPS_FGA_ENABLED` | Gates FGA-based `marketing_auditor` / `campaign_manager` authorization on the marketing routes | No       | off     |
+| Parameter                                   | Description                                                                                                                         | Required | Default |
+| ------------------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------- | -------- | ------- |
+| `environment.LFX_MARKETING_OPS_FGA_ENABLED` | Gates FGA-based `marketing_auditor` / `campaign_manager` authorization on the marketing routes                                      | No       | off     |
+| `environment.LFX_ORG_LENS_CLA_M3_ENABLED`   | Serves the M3 Organization Lens EasyCLA routes; off answers the module 409. Enable before the client `org-lens-cla-m3-enabled` flag | No       | off     |
 
 Same accepted-values and default-deny rules as the campaign-service cutover flags above. OFF (the
 default) establishes an `executive_director`-only baseline: analytics routes already gated by

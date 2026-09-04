@@ -1,11 +1,19 @@
 // Copyright The Linux Foundation and each contributor to LFX.
 // SPDX-License-Identifier: MIT
 
-import { describe, expect, it, vi } from 'vitest';
+import { beforeEach, describe, expect, it, vi } from 'vitest';
 
 import type { Request } from 'express';
 
-import { OrgClaService } from './org-cla.service';
+const { gatewayFetch } = vi.hoisted(() => ({ gatewayFetch: vi.fn() }));
+
+vi.mock('../helpers/gateway-fetch.helper', () => ({ gatewayFetch }));
+
+const { OrgClaService } = await import('./org-cla.service');
+
+beforeEach(() => {
+  vi.clearAllMocks();
+});
 
 describe('OrgClaService.listClaGroups', () => {
   it('returns an empty list for the grant-checked org and does not read a client-passed user id', async () => {
@@ -17,8 +25,6 @@ describe('OrgClaService.listClaGroups', () => {
   });
 
   it('does not call EasyCLA v4', async () => {
-    const gatewayFetch = vi.fn();
-
     await new OrgClaService().listClaGroups({} as Request, '0014100000Te2ovAAB');
 
     expect(gatewayFetch).not.toHaveBeenCalled();

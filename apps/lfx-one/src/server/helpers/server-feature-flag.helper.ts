@@ -369,6 +369,26 @@ export enum ServerFeatureFlag {
    * flag exists so a bad rollout can be reverted with an env var, not a revert PR.
    */
   MarketingOpsFga = 'LFX_MARKETING_OPS_FGA_ENABLED',
+
+  /**
+   * Serves the M3 Organization Lens EasyCLA routes (`org-clas.route.ts`). OFF answers every
+   * route under the module with 409 `FEATURE_DISABLED` before any handler runs.
+   *
+   * Deliberately paired with, and independent of, the client-side `org-lens-cla-m3-enabled`
+   * OpenFeature flag. The Web SDK never runs server-side, so the client flag hides the route
+   * and nav but leaves the BFF reachable by direct call — this flag is what makes the dark
+   * launch a real kill switch rather than a UI convention. Both must be on for the module to
+   * work, which is #1982's acceptance criterion.
+   *
+   * Overlap during a rolling update is harmless while the module is read-only: a caller either
+   * gets the list or a 409, never a partial write. Re-read that once the M3 write paths (sign,
+   * managers, approval list) land behind this same flag.
+   *
+   * Rollout order mirrors `LFX_MARKETING_OPS_FGA_ENABLED`: enable this and let the rollout
+   * converge BEFORE turning the client flag on, or the UI advertises a page that a
+   * not-yet-converged pod still 409s. Reverse to roll back.
+   */
+  OrgLensClaM3 = 'LFX_ORG_LENS_CLA_M3_ENABLED',
 }
 
 /**

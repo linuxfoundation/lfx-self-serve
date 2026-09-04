@@ -5,7 +5,7 @@ import '@angular/compiler';
 
 import express from 'express';
 import type { Server } from 'node:http';
-import { afterAll, beforeAll, beforeEach, describe, expect, it, vi } from 'vitest';
+import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, it, vi } from 'vitest';
 
 const { listClaGroups } = vi.hoisted(() => ({ listClaGroups: vi.fn() }));
 
@@ -63,8 +63,13 @@ afterAll(async () => {
 
 beforeEach(() => {
   vi.clearAllMocks();
+  process.env['LFX_ORG_LENS_CLA_M3_ENABLED'] = 'true';
   listClaGroups.mockImplementation(ok);
   getAccessAwareOrgs.mockResolvedValue({ resolved: new Map([[GRANTED, { roleSource: 'direct-writer' }]]), upstreamFailed: false });
+});
+
+afterEach(() => {
+  delete process.env['LFX_ORG_LENS_CLA_M3_ENABLED'];
 });
 
 describe('org-clas router', () => {
@@ -75,11 +80,22 @@ describe('org-clas router', () => {
     expect(listClaGroups).not.toHaveBeenCalled();
   });
 
-  it('admits the list for a granted org and stays readable while impersonating', async () => {
+  it('admits the list for an org the caller holds a grant on', async () => {
     const res = await fetch(`${baseUrl}/api/orgs/${GRANTED}/lens/cla-groups`);
 
     expect(res.status).toBe(200);
     expect(listClaGroups).toHaveBeenCalled();
     expect(await res.json()).toEqual({ orgUid: GRANTED, claGroups: [] });
+  });
+
+  // The client flag only hides the page; this is what makes the dark launch a real kill switch.
+  it('refuses the list for a granted org when the server flag is off', async () => {
+    delete process.env['LFX_ORG_LENS_CLA_M3_ENABLED'];
+
+    const res = await fetch(`${baseUrl}/api/orgs/${GRANTED}/lens/cla-groups`);
+
+    expect(res.status).toBe(409);
+    expect(listClaGroups).not.toHaveBeenCalled();
+    expect(getAccessAwareOrgs).not.toHaveBeenCalled();
   });
 });
