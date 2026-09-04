@@ -185,6 +185,35 @@ describe('ProfileClasComponent', () => {
     expect(note?.textContent?.trim()).toBe('No longer matches the approval criteria.');
   });
 
+  it('shows Invalidated · date and Revoked · date under the pill when recorded', async () => {
+    await render([
+      agreement({ id: 's-inv', kind: 'ICLA', status: 'invalidated', pdfAvailable: false, invalidatedAt: '2026-06-03' }),
+      agreement({ id: 's-rev', kind: 'ECLA', status: 'revoked', pdfAvailable: false, companyName: 'Acme', flaggedAt: '2026-08-01' }),
+    ]);
+
+    expect(statusTag('s-inv').value()).toBe('Invalidated');
+    expect(fixture.nativeElement.querySelector('[data-testid="agreement-status-note-s-inv"]')?.textContent?.trim()).toBe('Invalidated · Jun 3, 2026');
+    expect(statusTag('s-rev').value()).toBe('Revoked');
+    expect(fixture.nativeElement.querySelector('[data-testid="agreement-status-note-s-rev"]')?.textContent?.trim()).toBe('Revoked · Aug 1, 2026');
+  });
+
+  it('leaves Invalidated and Revoked undated when the producer sent no date', async () => {
+    await render([
+      agreement({ id: 's-inv', status: 'invalidated', pdfAvailable: false }),
+      agreement({ id: 's-rev', kind: 'ECLA', status: 'revoked', pdfAvailable: false, companyName: 'Acme' }),
+    ]);
+
+    expect(fixture.nativeElement.querySelector('[data-testid="agreement-status-note-s-inv"]')).toBeNull();
+    expect(fixture.nativeElement.querySelector('[data-testid="agreement-status-note-s-rev"]')).toBeNull();
+  });
+
+  it('does not invent an Invalidated date from signedOn', async () => {
+    await render([agreement({ id: 's-inv', status: 'invalidated', pdfAvailable: false, signedOn: '2022-01-01T18:40:42Z', invalidatedAt: 'not-a-date' })]);
+
+    expect(statusTag('s-inv').value()).toBe('Invalidated');
+    expect(fixture.nativeElement.querySelector('[data-testid="agreement-status-note-s-inv"]')).toBeNull();
+  });
+
   it('renders unknown as plain-text em dash, not a tag and not the list-miss sentence', async () => {
     await render([
       agreement({ id: 's-unknown', kind: 'ECLA', status: 'unknown', statusReason: 'unknown', pdfAvailable: false, companyName: 'Acme' }),

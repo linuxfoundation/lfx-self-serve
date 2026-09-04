@@ -103,6 +103,21 @@ export interface MyClaAgreement {
   signedAs?: string;
   status: ClaStatus;
   statusReason?: ClaStatusReason;
+  /**
+   * Producer `invalidatedAt` — stored invalidation instant. Omitted when the
+   * producer sent none (legacy rows, or never invalidated). Empty after trim is
+   * treated as omitted. Independent of `status`: a revoked ECLA can still carry
+   * this date, because EasyCLA copies it before the sanctions override. The
+   * Invalidated status note is `{Label} · {date}` only when this parses; a
+   * wrong date is worse than none. Revoked notes read `flaggedAt` instead.
+   */
+  invalidatedAt?: string;
+  /**
+   * Producer `flaggedAt` — employer's stored sanctioned_date. Omitted when the
+   * producer sent none. Empty after trim is treated as omitted. Feeds the
+   * Revoked date note the same way `invalidatedAt` feeds Invalidated.
+   */
+  flaggedAt?: string;
   /** Signed document version, when exposed upstream (display only). */
   documentVersion?: string;
   /** True only for ICLA — ECLAs have no signed PDF and never offer download. */

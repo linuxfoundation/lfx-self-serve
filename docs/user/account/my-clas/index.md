@@ -4,7 +4,7 @@ description: View your signed Individual and Employee CLAs in LFX Self Serve, st
 audience: [all]
 product_area: Account
 tags: [account, cla, easycla, icla, ecla, ccla, identities, signing]
-last_updated: 2026-09-03
+last_updated: 2026-09-04
 intercom_collection: Account
 ---
 
@@ -68,7 +68,11 @@ The **Status** column on the CLAs tab tells you whether an agreement still cover
 | **Invalidated**     | The agreement is no longer in force. A CLA manager removed you from your employer's **Approved List**, a project maintainer invalidated your ICLA, or the CLA group was deleted. | ICLA, ECLA |
 | **Revoked**         | Your employer was flagged by sanctions screening. This is set by EasyCLA, cannot be changed from Self Serve, and leaves no actions on the row.                                   | ECLA only  |
 
-When an ECLA needs attention because you are no longer on the Approved List, the row adds a line under the status: _No longer matches \<company\>'s approval criteria._
+Some statuses add a second line under the label.
+
+When an Employee CLA (ECLA) needs attention because you are no longer on the Approved List, that line reads _No longer matches \<company\>'s approval criteria._
+
+When the status is **Invalidated** or **Revoked**, the second line is the date EasyCLA recorded for that change — written as _Invalidated · Sep 1, 2026_ or _Revoked · Sep 1, 2026_, in the same calendar-day format as the **Signed** column — or the label stands alone if EasyCLA has no date. Older invalidated agreements often have no date, because EasyCLA started storing it later.
 
 **Invalidated and Revoked are not the same thing**, and the tab keeps them visibly apart on purpose. **Revoked** is only ever a sanctions-screening outcome. Being removed from an Approved List — including at your own request — or having a maintainer invalidate your ICLA shows as **Invalidated**, so that an ordinary administrative change is never presented as a screening result.
 
