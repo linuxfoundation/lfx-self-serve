@@ -21,6 +21,7 @@ import type {
   LinkedInMonitorResponse,
   MetaAccountOption,
   MetaActionItem,
+  KeywordActionOutcome,
   MetaMonitorResponse,
   RedditAccountOption,
   RedditActionItem,
@@ -42,6 +43,7 @@ import {
   normalizeCampaignStatus,
 } from '@lfx-one/shared/constants';
 import { AdsCurrencyPipe, AdsPctPipe, EventLabelPipe, PacingClassPipe, PriorityClassPipe, QualityScoreClassPipe } from '@pipes/campaign-optimization.pipe';
+import { extractErrorMessage } from '@shared/utils/http-error.utils';
 import { CampaignService } from '@services/campaign.service';
 import { MessageService } from 'primeng/api';
 import { skip, take, type Subscription } from 'rxjs';
@@ -118,6 +120,7 @@ export class OptimizationTabComponent implements OnInit {
    * boolean would disable every button while one request is out, and worse, an error on one row
    * would render against another.
    */
+
   /**
    * Holds the DIRECTION dispatched, not merely `true`.
    *
@@ -429,6 +432,28 @@ export class OptimizationTabComponent implements OnInit {
   });
 
   protected readonly hasWastedKeywords = computed(() => this.wastedKeywords().length > 0);
+  /**
+   * True when the keyword set was capped upstream, so "no wasted keywords" covers only the
+   * returned slice.
+   *
+   * `=== true` rather than truthiness: the field is optional because the legacy path issues a
+   * bare LIMIT with no probe for a further row, so absence means UNKNOWN, not complete.
+   * Qualifying every legacy response would be its own false statement.
+   */
+  protected readonly keywordsPartial = computed(() => this.keywordsData()?.truncated === true);
+  /**
+   * Completeness was never established: `truncated` is absent, which the contract defines as
+   * UNKNOWN rather than complete.
+   *
+   * Kept distinct from `keywordsPartial` because the two license different sentences. An
+   * unqualified "all keywords with spend are generating conversions" is a claim about EVERY
+   * keyword, and making it over a set nobody proved complete hides exactly the waste it says is
+   * absent. Reporting unknown as truncated would be its own false statement, so the template
+   * gets a third arm rather than folding this into either boolean.
+   */
+  protected readonly keywordsCompletenessUnknown = computed(() => this.keywordsData()?.truncated === undefined);
+  /** How many keywords were actually examined, for the qualified all-clear. */
+  protected readonly keywordsExamined = computed(() => this.keywordsData()?.keywords.length ?? 0);
   protected readonly hasLowQualityKeywords = computed(() => this.lowQualityKeywords().length > 0);
   protected readonly hasDisplayCampaigns = computed(() => this.displayCampaigns().length > 0);
 
@@ -459,7 +484,23 @@ export class OptimizationTabComponent implements OnInit {
   protected readonly metaActionItems = computed<MetaActionItem[]>(() => this.metaData()?.actionItems ?? []);
 
   protected readonly actionInProgress = signal<Record<string, boolean>>({});
-  protected readonly actionResults = signal<Record<string, { success: boolean; message: string }>>({});
+  protected readonly actionResults = signal<Record<string, KeywordActionOutcome>>({});
+  /**
+   * Label and colour per outcome state, as lookup maps so the template does no work.
+   *
+   * The three states are not two with a variant: an UNCONFIRMED action may already have applied,
+   * and a retried REMOVE is irreversible, so it must never read as "Failed".
+   */
+  protected readonly OUTCOME_LABEL: Record<KeywordActionOutcome['state'], string> = {
+    done: 'Done',
+    unconfirmed: 'Unconfirmed',
+    failed: 'Failed',
+  };
+  protected readonly OUTCOME_CLASS: Record<KeywordActionOutcome['state'], string> = {
+    done: 'text-green-600',
+    unconfirmed: 'text-amber-600',
+    failed: 'text-red-600',
+  };
 
   protected readonly activeFoundationSlug = computed(() => this.projectSlug());
 
@@ -684,7 +725,12 @@ export class OptimizationTabComponent implements OnInit {
           this.loading.set(false);
         },
         error: (err) => {
-          this.error.set(err?.error?.message || err?.message || 'Failed to load optimization data');
+          // `extractErrorMessage`, not `err?.error?.message`. BaseApiError.toResponse serialises
+          // the operator-facing text as `{ error: string }` (`BaseApiError.toResponse`), so `.error.message`
+          // is undefined for every error this path produces and the operator got Angular's generic
+          // "Http failure response for <url>" instead of the actionable upstream reason. The same
+          // reading already exists in `toTransportOutcome`; these loaders never got it (Copilot).
+          this.error.set(extractErrorMessage(err, 'Failed to load optimization data'));
           this.loading.set(false);
         },
       });
@@ -701,7 +747,12 @@ export class OptimizationTabComponent implements OnInit {
           this.keywordsLoading.set(false);
         },
         error: (err) => {
-          this.keywordsError.set(err?.error?.message || err?.message || 'Failed to load keyword data');
+          // `extractErrorMessage`, not `err?.error?.message`. BaseApiError.toResponse serialises
+          // the operator-facing text as `{ error: string }` (`BaseApiError.toResponse`), so `.error.message`
+          // is undefined for every error this path produces and the operator got Angular's generic
+          // "Http failure response for <url>" instead of the actionable upstream reason. The same
+          // reading already exists in `toTransportOutcome`; these loaders never got it (Copilot).
+          this.keywordsError.set(extractErrorMessage(err, 'Failed to load keyword data'));
           this.keywordsLoading.set(false);
         },
       });
@@ -732,7 +783,7 @@ export class OptimizationTabComponent implements OnInit {
         },
         error: (err: unknown) => {
           const httpErr = err as { error?: { message?: string }; message?: string };
-          this.linkedInError.set(httpErr?.error?.message || httpErr?.message || 'Failed to load LinkedIn data');
+          this.linkedInError.set(extractErrorMessage(httpErr, 'Failed to load LinkedIn data'));
           this.linkedInLoading.set(false);
         },
       });
@@ -769,7 +820,7 @@ export class OptimizationTabComponent implements OnInit {
         },
         error: (err: unknown) => {
           const httpErr = err as { error?: { message?: string }; message?: string };
-          this.redditError.set(httpErr?.error?.message || httpErr?.message || 'Failed to load Reddit data');
+          this.redditError.set(extractErrorMessage(httpErr, 'Failed to load Reddit data'));
           this.redditLoading.set(false);
         },
       });
@@ -806,7 +857,7 @@ export class OptimizationTabComponent implements OnInit {
         },
         error: (err: unknown) => {
           const httpErr = err as { error?: { message?: string }; message?: string };
-          this.metaError.set(httpErr?.error?.message || httpErr?.message || 'Failed to load Meta data');
+          this.metaError.set(extractErrorMessage(httpErr, 'Failed to load Meta data'));
           this.metaLoading.set(false);
         },
       });
@@ -821,22 +872,36 @@ export class OptimizationTabComponent implements OnInit {
         action,
         keywords: [{ campaignId: kw.campaignId, adGroupId: kw.adGroupId, criterionId: kw.criterionId, action }],
       })
-      .pipe(takeUntilDestroyed(this.destroyRef))
+      // `take(1)`, NOT `takeUntilDestroyed` -- the same call the campaign toggle above makes, for
+      // the same reason. This component lives inside `@case ('optimization')`, so switching tab
+      // DESTROYS it and `takeUntilDestroyed` would abort the request mid-flight. A keyword REMOVE
+      // is irreversible and may already have applied upstream, so aborting loses the outcome of a
+      // mutation that happened. `take(1)` still bounds the subscription -- an HttpClient request
+      // is finite and self-completing -- it just does not cancel it.
+      //
+      // The signal writes below become inert once this component is gone, which is harmless. The
+      // toast is what carries the outcome across the tab switch, because MessageService is
+      // provided at app root.
+      .pipe(take(1))
       .subscribe({
         next: (res) => {
           this.actionInProgress.update((map) => ({ ...map, [key]: false }));
           const result = res.results[0];
+          const outcome = this.positionalOutcome(result);
           this.actionResults.update((map) => ({
             ...map,
-            [key]: { success: result?.success ?? false, message: result?.message ?? 'Unknown result' },
+            [key]: outcome,
           }));
+          this.announceKeywordOutcome(action, 1, outcome.state, outcome.message);
         },
         error: (err) => {
           this.actionInProgress.update((map) => ({ ...map, [key]: false }));
+          const outcome = this.toTransportOutcome(err);
           this.actionResults.update((map) => ({
             ...map,
-            [key]: { success: false, message: err?.error?.message || err?.message || 'Action failed' },
+            [key]: outcome,
           }));
+          this.announceKeywordOutcome(action, 1, outcome.state, outcome.message);
         },
       });
   }
@@ -853,7 +918,11 @@ export class OptimizationTabComponent implements OnInit {
 
     this.campaignService
       .executeKeywordActions(this.activeFoundationSlug(), { action, keywords: items })
-      .pipe(takeUntilDestroyed(this.destroyRef))
+      // `take(1)` for the same reason as the single-keyword path: a tab switch destroys this
+      // component, and aborting a BULK remove mid-flight is worse -- the fan-out is sequential
+      // upstream, so a cancelled request can leave part of the selection already mutated with no
+      // outcome shown anywhere.
+      .pipe(take(1))
       .subscribe({
         next: (res) => {
           this.actionInProgress.update((map) => {
@@ -864,11 +933,35 @@ export class OptimizationTabComponent implements OnInit {
           this.actionResults.update((map) => {
             const updated = { ...map };
             for (let i = 0; i < keys.length; i++) {
-              const result = res.results[i];
-              updated[keys[i]] = { success: result?.success ?? false, message: result?.message ?? 'Done' };
+              // `?? false` here marked every unmatched key "Failed" -- across the WHOLE
+              // selection when the array came back short. Positional absence is unconfirmed.
+              updated[keys[i]] = this.positionalOutcome(res.results[i]);
             }
             return updated;
           });
+          // Summarised for the toast: the per-row detail lives in the table, which an operator
+          // who switched tabs cannot see. Reports the worst state in the batch, because a
+          // partially-unconfirmed bulk REMOVE is the case that needs acting on.
+          const outcomes = keys.map((_, i) => this.positionalOutcome(res.results[i]).state);
+          // UNCONFIRMED OUTRANKS FAILED, which is the opposite of the intuitive ordering and is
+          // the same rule the error arm states twenty lines below: a definite failure did NOT
+          // apply, so retrying it is safe; an unconfirmed row MAY have applied, so retrying can
+          // duplicate an irreversible REMOVE. A batch carrying both was summarised as "Remove
+          // failed", which invites exactly that retry (Copilot).
+          const worst = (['unconfirmed', 'failed', 'done'] as const).find((state) => outcomes.includes(state)) ?? 'done';
+          // The COUNT must describe the state it is paired with. `keys.length` is the whole
+          // selection, so one unconfirmed row in a batch of ten announced "10 unconfirmed" --
+          // overstating an irreversible-REMOVE hazard by the size of the selection, and telling
+          // the operator to check nine rows that are fine (dealako, #1923 round 7).
+          const worstCount = outcomes.filter((state) => state === worst).length;
+          this.announceKeywordOutcome(
+            action,
+            worstCount,
+            worst,
+            worst === 'done'
+              ? 'All rows in the selection completed.'
+              : 'Some rows did not complete. Open the Optimize tab to see which, and check the platform before retrying.'
+          );
         },
         error: (err) => {
           this.actionInProgress.update((map) => {
@@ -876,14 +969,124 @@ export class OptimizationTabComponent implements OnInit {
             for (const key of keys) updated[key] = false;
             return updated;
           });
-          const msg = err?.error?.message || err?.message || 'Bulk action failed';
+          // Classified the same way as the single-keyword path. A dropped, timed-out or 5xx bulk
+          // response says NOTHING about whether the mutations applied -- and it covers every
+          // keyword in the selection, so rendering "Failed" here invites an operator to re-run a
+          // bulk REMOVE that may already have gone through. `toActionOutcome(false, msg)` reads
+          // the MESSAGE for an unconfirmed marker, which a transport failure never carries: the
+          // request died before campaign-service could describe its own outcome.
+          const outcome = this.toTransportOutcome(err);
           this.actionResults.update((map) => {
             const updated = { ...map };
-            for (const key of keys) updated[key] = { success: false, message: msg };
+            for (const key of keys) updated[key] = outcome;
             return updated;
           });
+          this.announceKeywordOutcome(action, keys.length, outcome.state, outcome.message);
         },
       });
+  }
+
+  /**
+   * Whether a failed action's outcome is UNKNOWN rather than known-failed.
+   *
+   * The BFF deliberately surfaces campaign-service's unconfirmed message instead of flattening it,
+   * because that is the one distinction a caller must act on — and rendering every non-success as
+   * "Failed" threw it away right at the end. A retried REMOVE is irreversible, so an operator told
+   * "Failed" about a change that may already have applied is being invited to run it twice.
+   *
+   * Matched on the message because that is what the wire carries; `success` alone cannot express
+   * three states.
+   *
+   * TWO producers reach here, and an earlier version recognised only one. The BFF writes its own
+   * text when the returned outcomes do not match what was asked ("confirmation did not match"),
+   * while campaign-service reports its own ambiguity in its own words — "UNCONFIRMED (... the
+   * changes may have been applied ...)" from the Google Ads client, or "is unconfirmed" from the
+   * service layer — and that message passes through the BFF verbatim. Missing the second meant
+   * a genuine upstream ambiguity still rendered as "Failed", which is the exact retry-an-
+   * irreversible-REMOVE hazard this exists to prevent.
+   *
+   * Matched case-insensitively on the WORD, not a full sentence, so a wording tweak upstream
+   * cannot silently re-collapse the states.
+   */
+
+  /**
+   * Build the stored outcome, classifying it ONCE at the point of storage.
+   *
+   * The template must not call this: the repo's frontend checklist allows only signal reads,
+   * computeds and pipes there, precisely so logic does not re-run per row per change detection.
+   * Deriving here also means every write site gets the same classification for free, rather than
+   * each one remembering to.
+   */
+
+  /**
+   * Classify a browser-to-BFF failure, which carries no structured result to read.
+   *
+   * The BFF may already have dispatched the mutation when the connection dropped, timed out, or
+   * returned a 5xx — so the outcome is UNKNOWN, not failed. Reporting `failed` for a
+   * spend-affecting pause/remove tells the operator nothing happened and invites a retry of a
+   * change that may have applied; on a REMOVE that is irreversible.
+   *
+   * Only a 4xx the BFF produced BEFORE dispatching is a definite failure: those are validation
+   * refusals (a bad payload, too many rows), and a request refused at the boundary never
+   * reached the platform. 0 (network), 408 (timeout) and 5xx are all unconfirmed.
+   */
+  private toTransportOutcome(err: unknown): KeywordActionOutcome {
+    const e = err as { status?: number; error?: { error?: string; message?: string } | string; message?: string };
+    const status = typeof e?.status === 'number' ? e.status : 0;
+    // `error.error` FIRST: BaseApiError.toResponse serialises the operator-facing text as
+    // `{ error: string }`, not `{ message: string }` (`BaseApiError.toResponse`). Reading only `.message`
+    // dropped every actionable 4xx -- "adGroupId must be numeric", a permission refusal -- and
+    // rendered Angular's generic "Http failure response for <url>" in the row instead, which
+    // tells the operator nothing they can act on. `.message` and a plain-string body are kept as
+    // fallbacks so a non-BaseApiError shape still surfaces something.
+    const body = e?.error;
+    const message = (typeof body === 'string' ? body : body?.error || body?.message) || e?.message || 'Action failed';
+    const definitelyRefused = status >= 400 && status < 500 && status !== 408;
+    if (definitelyRefused) {
+      return { success: false, message, state: 'failed' };
+    }
+    return {
+      success: false,
+      message: `${message} — this may or may not have been applied; check the platform before retrying.`,
+      state: 'unconfirmed',
+    };
+  }
+
+  /**
+   * The outcome for ONE positional entry of a keyword-action response.
+   *
+   * A MISSING entry is unconfirmed, never failed. The response is positional -- the client zips
+   * `results[i]` onto the list it sent -- so a 2xx whose array is short says nothing about
+   * whether that mutation applied. Rendering "Failed" there invites a retry of a REMOVE that may
+   * already have run, and Google cannot re-enable a removed criterion.
+   *
+   * Shared by the single and bulk paths deliberately: both read positionally, and the bulk one is
+   * the more dangerous of the two because one short array covers an entire selection.
+   */
+  private positionalOutcome(result: { success: boolean; message: string } | undefined): KeywordActionOutcome {
+    if (!result) {
+      return {
+        success: false,
+        message: 'The change was sent but no outcome came back for it. Check the keyword in the platform before retrying.',
+        state: 'unconfirmed',
+      };
+    }
+    return this.toActionOutcome(result.success, result.message);
+  }
+
+  private toActionOutcome(success: boolean, message: string): KeywordActionOutcome {
+    if (success) {
+      return { success, message, state: 'done' };
+    }
+    return { success, message, state: this.isUnconfirmed({ success, message }) ? 'unconfirmed' : 'failed' };
+  }
+
+  private isUnconfirmed(result: { success: boolean; message: string }): boolean {
+    if (result.success) {
+      return false;
+    }
+    const message = result.message.toLowerCase();
+    return message.includes('unconfirmed') || message.includes('confirmation did not match');
   }
 
   private loadForActiveFoundation(): void {
@@ -953,7 +1156,7 @@ export class OptimizationTabComponent implements OnInit {
         error: (err: unknown) => {
           if (linkedInSlug !== this.activeFoundationSlug()) return;
           const httpErr = err as { error?: { message?: string }; message?: string };
-          this.linkedInError.set(httpErr?.error?.message || httpErr?.message || 'Failed to load LinkedIn accounts');
+          this.linkedInError.set(extractErrorMessage(httpErr, 'Failed to load LinkedIn accounts'));
         },
       });
     const redditSlug = this.activeFoundationSlug();
@@ -972,7 +1175,7 @@ export class OptimizationTabComponent implements OnInit {
         error: (err: unknown) => {
           if (redditSlug !== this.activeFoundationSlug()) return;
           const httpErr = err as { error?: { message?: string }; message?: string };
-          this.redditError.set(httpErr?.error?.message || httpErr?.message || 'Failed to load Reddit accounts');
+          this.redditError.set(extractErrorMessage(httpErr, 'Failed to load Reddit accounts'));
         },
       });
     const metaSlug = this.activeFoundationSlug();
@@ -991,7 +1194,7 @@ export class OptimizationTabComponent implements OnInit {
         error: (err: unknown) => {
           if (metaSlug !== this.activeFoundationSlug()) return;
           const httpErr = err as { error?: { message?: string }; message?: string };
-          this.metaError.set(httpErr?.error?.message || httpErr?.message || 'Failed to load Meta accounts');
+          this.metaError.set(extractErrorMessage(httpErr, 'Failed to load Meta accounts'));
         },
       });
   }
@@ -1166,6 +1369,31 @@ export class OptimizationTabComponent implements OnInit {
           });
         }
       });
+  }
+
+  /**
+   * Narrates a keyword action to the toast, which is the surface that SURVIVES a tab switch.
+   *
+   * `lfx-optimization-tab` renders inside `@case ('optimization')`, so leaving the tab destroys
+   * it and every signal these handlers write becomes inert. `MessageService` is provided at app
+   * root, so this is the only channel that still reaches an operator who has moved on -- the same
+   * reasoning the campaign toggle above already runs on.
+   *
+   * `sticky` for anything that is not a clean success: an unconfirmed or failed REMOVE is
+   * irreversible and still spending, which is not something to let time out on its own.
+   */
+  private announceKeywordOutcome(action: KeywordActionType, count: number, outcome: 'done' | 'failed' | 'unconfirmed', detail: string): void {
+    const noun = count === 1 ? 'keyword' : `${count} keywords`;
+    if (outcome === 'done') {
+      this.messageService.add({ severity: 'success', summary: `${action === 'pause' ? 'Paused' : 'Removed'} ${noun}`, detail, life: 5000 });
+      return;
+    }
+    this.messageService.add({
+      severity: outcome === 'unconfirmed' ? 'warn' : 'error',
+      summary: `${action === 'pause' ? 'Pause' : 'Remove'} ${outcome === 'unconfirmed' ? 'not confirmed' : 'failed'} for ${noun}`,
+      detail,
+      sticky: true,
+    });
   }
 
   /**
