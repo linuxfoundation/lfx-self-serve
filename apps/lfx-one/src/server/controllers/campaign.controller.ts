@@ -10,6 +10,7 @@ import type {
   CampaignBriefRefineRequest,
   CampaignBriefRequest,
   CampaignCreateRequest,
+  CampaignDeliveryType,
   CampaignMetricsWindow,
   CampaignPlatform,
   CampaignSSEEventType,
@@ -29,6 +30,7 @@ import {
   MICROSOFT_CONTROL_CHAR_RE,
   MICROSOFT_MAX_BUDGET,
   MICROSOFT_MAX_CPC_BID,
+  CAMPAIGN_EMAIL_STAGES,
   isCanonicalGoogleAdsResourceId,
   MICROSOFT_MAX_GEO_TARGETS,
   MAX_BULK_KEYWORD_ACTIONS,
@@ -768,10 +770,102 @@ export class CampaignController {
       return;
     }
 
-    const startTime = logger.startOperation(req, 'campaign_load_brief', { eventSlug, projectSlug });
+    // ABSENT means paid; an explicit unrecognised value is REJECTED. Callers predating this
+    // parameter are all paid — it is the only surface whose restore path was ever enabled — so an
+    // omitted value must keep restoring paid briefs exactly as before.
+    //
+    // An earlier revision also narrowed an explicit typo to paid, reasoning that failing closed
+    // toward the pre-existing behaviour could not expose a brief that was hidden before. True, and
+    // beside the point: `?delivery_type=emial` then returns the PAID brief under a 200, which is a
+    // confident answer to a question the caller did not ask. Upstream's `find-brief` restricts this
+    // param to `paid-marketing | email`, so honouring a third value was never the contract — and
+    // `stage` two lines below already rejects rather than narrows. The two now agree.
+    // PRESENT-but-not-a-string is rejected before the absent-value default, matching
+    // `getBriefMetrics`' handling of `window`. A repeated `?delivery_type=a&delivery_type=b`
+    // arrives as an ARRAY, and a bare `typeof === 'string'` test collapses that to `''` — which is
+    // indistinguishable from "omitted" and therefore silently answered with the PAID brief. The
+    // same applies to `stage` below.
+    for (const key of ['delivery_type', 'stage']) {
+      if (req.query[key] !== undefined && typeof req.query[key] !== 'string') {
+        next(
+          ServiceValidationError.forField(key, `${key} must be a single value`, {
+            operation: 'campaign_load_brief',
+            service: 'campaign_controller',
+            path: req.path,
+          })
+        );
+        return;
+      }
+    }
+    // PRESENCE, not emptiness. `?delivery_type=` is a parameter the caller SENT, and an empty
+    // string is not one of the two values upstream accepts -- treating it as "omitted" answered a
+    // malformed request with the paid brief. Absence is `undefined`; anything present must be one
+    // of the two. Same rule as `stage` below, where `''` IS a legal value (the paid brief's stage)
+    // and so is checked differently -- the asymmetry is in the contract, not in the handling.
+    const deliveryTypeRaw = req.query['delivery_type'];
+    const deliveryTypeParam = typeof deliveryTypeRaw === 'string' ? deliveryTypeRaw : '';
+    if (deliveryTypeRaw !== undefined && deliveryTypeParam !== 'email' && deliveryTypeParam !== 'paid-marketing') {
+      next(
+        ServiceValidationError.forField('delivery_type', 'delivery_type must be one of: paid-marketing, email', {
+          operation: 'campaign_load_brief',
+          service: 'campaign_controller',
+          path: req.path,
+        })
+      );
+      return;
+    }
+    // `stage` completes the key. Without it every lookup asked upstream for the empty stage, which
+    // is the PAID brief's stage — so an email caller naming a real stage was answered `none` for a
+    // brief sitting right there.
+    //
+    // A non-empty stage outside the list is REJECTED, not narrowed. An earlier revision folded it
+    // to `''` and claimed that addressed the paid slot; it did not — `delivery_type` stayed
+    // `email`, so the lookup addressed `(email, '')`, a real and different key, and the caller got
+    // a confident answer about a brief it never asked for. Unlike `delivery_type` above, where
+    // every unknown value collapses toward the one pre-existing surface and can expose nothing
+    // that was hidden before, there is no "narrower" stage to fall back to: they are siblings, not
+    // a hierarchy. Campaign-service rejects a bad stage at its own edge for the same reason, so
+    // answering here keeps the two ends agreeing.
+    //
+    // The EMPTY string stays valid and means the paid brief's stage — that is an omitted `stage`,
+    // not a malformed one.
+    const stageParam = typeof req.query['stage'] === 'string' ? req.query['stage'] : '';
+    if (stageParam !== '' && !(CAMPAIGN_EMAIL_STAGES as readonly string[]).includes(stageParam)) {
+      next(
+        ServiceValidationError.forField('stage', `stage must be one of: ${CAMPAIGN_EMAIL_STAGES.join(', ')}`, {
+          operation: 'campaign_load_brief',
+          service: 'campaign_controller',
+          path: req.path,
+        })
+      );
+      return;
+    }
+    const stage = stageParam;
+
+    const deliveryType: CampaignDeliveryType = deliveryTypeParam === 'email' ? 'email' : 'paid-marketing';
+    // The PAIR, matching campaign-service exactly. Each value is valid alone and the COMBINATION
+    // is not: paid has no series, so its stage must be empty, and an email send is always some
+    // stage. Upstream refuses both with a 400 (`campaign_briefs_delivery_stage_pair_valid` and the
+    // service guard above it), so without this check the BFF forwards a request that cannot
+    // succeed and relays an upstream error for something it could have named here.
+    const pairIsValid = deliveryType === 'paid-marketing' ? stage === '' : (CAMPAIGN_EMAIL_STAGES as readonly string[]).includes(stage);
+    if (!pairIsValid) {
+      next(
+        ServiceValidationError.forField(
+          'stage',
+          deliveryType === 'paid-marketing'
+            ? 'a paid-marketing brief has no series, so stage must be empty'
+            : `an email brief names one send in the series, so stage must be one of: ${CAMPAIGN_EMAIL_STAGES.join(', ')}`,
+          { operation: 'campaign_load_brief', service: 'campaign_controller', path: req.path }
+        )
+      );
+      return;
+    }
+
+    const startTime = logger.startOperation(req, 'campaign_load_brief', { eventSlug, projectSlug, deliveryType });
 
     try {
-      const result = await this.campaignServiceClient.loadBrief(req, eventSlug, projectSlug);
+      const result = await this.campaignServiceClient.loadBrief(req, eventSlug, projectSlug, deliveryType, stage);
       // `status` is logged on every arm, `unreadable` included: it is the one outcome that says
       // a stored brief exists and this build cannot open it, and nothing else would record it.
       logger.success(req, 'campaign_load_brief', startTime, { eventSlug, projectSlug, status: result.status, briefId: result.briefId });

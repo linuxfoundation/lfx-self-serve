@@ -117,12 +117,15 @@
             used to claim, and the paragraph below already listed more than that — the two
             contradicted each other.
 
-            Brief save/restore is NOT shared: email skips the saved-brief lookup entirely, because
-            persistence is keyed on (foundation, event) with no delivery type, so the row it would
-            find is a PAID brief. Email persistence and email refinement do not exist yet.
+            Brief save/restore IS surface-scoped now. Persistence used to be keyed on
+            (foundation, event) with no delivery dimension, so the only row a lookup could find was
+            a PAID brief and email skipped the lookup entirely. LFXV2-3198 widened the key to
+            (project, event_slug, delivery_type, stage), so an event holds a paid brief and one per
+            stage of its email series -- all live at once, and each addressable on its own.
 
             In email mode the planner drops the Ad Channels and Budget cards, hides Refine / Edit /
-            Copy All, refuses a refine outright, skips the saved-brief lookup, drops the
+            Copy All, refuses a refine outright, looks a brief up under its own delivery type and
+            stage rather than the paid one, drops the
             ad-platform requirement from `canGenerate`, and sends `deliveryType: 'email'` so the
             server skips ad-copy and keyword generation rather than falling back to its paid
             default — omitting `platforms` alone does not achieve that, because the generator
@@ -163,10 +166,37 @@
             each mode renders is exactly the thing this ticket changes.
           -->
         @for (program of [selectedProgramType()]; track program) {
+          <!--
+            The email TYPE selector sits above the planner rather than on Implement, because the
+            stage it resolves to is part of a brief's IDENTITY: one event holds a CFP Launch and a
+            Final Countdown at once, so the planner cannot look a brief up until it knows which
+            send is meant. Left on Implement, every lookup asked for the empty stage — the paid
+            brief's stage — and answered "no brief" for a series sitting in storage.
+          -->
+          <div class="flex flex-col gap-2" data-testid="campaigns-email-stage-picker">
+            <label for="email-stage" class="font-mono text-xs uppercase tracking-wide text-gray-400">Email type</label>
+            <lfx-select
+              [form]="selectorForm"
+              control="emailType"
+              inputId="email-stage"
+              [options]="emailTypes"
+              optionLabel="label"
+              optionValue="id"
+              size="small"
+              ariaLabel="Email type"
+              dataTest="campaigns-email-stage-select" />
+            <p class="text-xs text-gray-500">
+              Each <em>stage</em> is its own brief for this event, so a campaign can run as a series. Some types share a stage and therefore the same brief;
+              switching to a type in a different stage opens that send&apos;s brief.
+            </p>
+          </div>
+
           <lfx-planning-tab
             [programTypeConfig]="activeProgramTypeConfig()"
             deliveryType="email"
+            [emailStage]="selectedEmailStage() ?? ''"
             (proceedToImplementation)="onEmailProceedToImplementation($event)"
+            (restoreSavedBriefRequested)="onRestoreSavedEmailBrief($event.brief, $event.briefId, $event.etag, $event.approved)"
             data-testid="campaigns-email-planning-tab" />
         }
       </div>
@@ -262,30 +292,21 @@
                 }
 
                 <!--
-                  The email TYPE, above the generate control because it changes what generation
-                  produces. Twelve types map onto six stages: a CFP launch and a co-located CFP
-                  reminder are the same stage, sent at different times, so the operator picks the
-                  type they recognise and the stage is derived.
+                  The email TYPE, shown but NOT selectable here. Twelve types map onto six stages:
+                  a CFP launch and a co-located CFP reminder are the same stage, sent at different
+                  times, so the operator picks the type they recognise and the stage is derived.
+                  It sits above the generate control because it is what generation produces from.
+                  It is READ-ONLY on this tab, and that is the fix for a real desync rather than a
+                  simplification. Both tabs used to bind the same `emailType` control, but only the
+                  planner's lookup follows a change -- so switching type HERE moved the stage while
+                  `emailBriefId` still named the previous stage's brief, and `onGenerateEmailCopy()`
+                  sent the new stage against the old brief's id. The choice belongs where the
+                  lookup can answer it: above the planner, which re-asks upstream on every change.
                 -->
                 <div class="flex flex-col gap-1">
-                  <label for="email-type" class="font-mono text-xs uppercase tracking-wide text-gray-400">Email type</label>
-                  <!--
-                    A FORM CONTROL, not a native <select> with `selected` on each option. The raw
-                    control ignored a `[value]` binding applied before its options existed and fell
-                    back to the FIRST option -- CFP Launch -- while the signal held the Main
-                    Registration Push default, so every operator who ignored the selector silently
-                    got CFP copy. A form-driven wrapper has no such ordering hazard, and
-                    `frontend-checklist.md` 14.1 requires it for a changed control.
-                  -->
-                  <lfx-select
-                    [form]="selectorForm"
-                    control="emailType"
-                    [options]="emailTypes"
-                    optionLabel="label"
-                    optionValue="id"
-                    inputId="email-type"
-                    styleClass="w-full max-w-md"
-                    dataTest="campaigns-email-type-select" />
+                  <span class="font-mono text-xs uppercase tracking-wide text-gray-400">Email type</span>
+                  <p class="text-sm text-gray-900" data-testid="campaigns-email-type-display">{{ selectedEmailTypeLabel() }}</p>
+                  <p class="text-xs text-gray-500">Change the type above the planner — each stage is its own brief.</p>
                 </div>
 
                 <div class="flex items-center gap-3">
@@ -405,7 +426,16 @@
                       }
                     </p>
                   }
-                  <ul class="flex flex-col gap-2" data-testid="campaigns-email-template-list">
+                  <!--
+                    Height-capped and scrolled INTERNALLY. The list renders up to 100 templates
+                    inline, which pushed "Send audience", the preview and "Stage Email Draft" past
+                    7000px on an 8000px page — far enough that wheel-scrolling the page stalled
+                    inside the list and the rest of the flow could not be reached at all. Bounding
+                    the list keeps every later step on screen no matter how many templates the
+                    portal returns. `overscroll-contain` stops a scroll that reaches the end of the
+                    list from continuing into the page, which is what made the two feel tangled.
+                  -->
+                  <ul class="flex max-h-96 flex-col gap-2 overflow-y-auto overscroll-contain pr-1" data-testid="campaigns-email-template-list">
                     @for (template of emailTemplatesRendered(); track template.id) {
                       <li>
                         <button

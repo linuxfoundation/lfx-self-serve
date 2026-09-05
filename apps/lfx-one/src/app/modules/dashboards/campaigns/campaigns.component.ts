@@ -194,8 +194,27 @@ export class CampaignsComponent {
     // initializes empty and `loadBrief` runs only once a url is entered, so a reloaded page shows
     // nothing until the user pastes the event url again. Advice that stops at "reload" leaves
     // them on a blank Planning tab wondering where the brief went.
+    //
+    // It no longer PROMISES that re-entering the URL surfaces the stored brief, because the brief
+    // this refusal names may not be one this session can open. Under the widened key
+    // `(project, event_slug, delivery_type, stage)` a refusal means another writer holds THIS
+    // send's row — a different browser session, or the same event's brief opened elsewhere. It no
+    // longer means "the other delivery type has it": paid and email are separate rows now, so a
+    // paid brief cannot refuse an email save. The old wording named the wrong cause and sent the
+    // user to check a surface that is no longer involved.
+    //
+    // It also names the RE-SELECT step, which is not optional advice: a reload resets
+    // `selectedEmailTypeId` to the default, so re-entering the URL under a non-default stage
+    // legitimately finds nothing until the operator picks the type back. And it no longer says
+    // another session "is holding" the row -- nothing holds it. Loading the same full key is what
+    // grants ownership, so the remedy is to load it, not to wait for someone to let go.
+    //
+    // SURFACE-NEUTRAL, because `conflictMessages` feeds the paid persist banner as well as the
+    // email actions. An earlier revision put "re-select this email type" here and so told paid
+    // users to use a control their surface does not have. The email-only step is appended by
+    // `emailSaveFailureMessage`, which is the one caller that knows the stage matters.
     'unowned-brief-exists':
-      'This event already has a saved brief that was not opened here, so this one was not saved over it. Reload and re-enter the event URL to work from the stored brief.',
+      'This event already has a saved brief for this send that was not opened here, so this one was not saved over it. Reload and re-enter the event URL to open it.',
     // Does NOT advise a reload, even though this branch adds the read path that would make one
     // work. Here it would be actively destructive: a stale-brief refusal PROMOTES this session to
     // explicit overwrite permission (see the conflict handler), so the very next Proceed saves
@@ -423,6 +442,26 @@ export class CampaignsComponent {
    * harmlessly; that is only true if it does not write.
    */
   private emailBriefPersistGeneration = 0;
+
+  /**
+   * The conflict token from the most recent email save, or `null` when it did not conflict.
+   *
+   * `persistEmailBrief` resolves to a brief id and reports failure as an empty string, which
+   * cannot carry WHY the save failed — so every email action rendered "The brief could not be
+   * saved… Try again." for conflicts that retrying can never clear. `unowned-brief-exists` is the
+   * live example: the row belongs to a session that opened it, and no number of retries changes
+   * that. The paid surface has always named its conflicts; this gives email the same.
+   *
+   * Held here rather than widened into the return type because all three callers already branch
+   * on the empty id; this lets them name the cause without changing that shape.
+   */
+  private emailBriefConflict: NonNullable<CampaignBriefPersistResult['conflict']> | null = null;
+  /**
+   * An overwrite promotion earned by a conflict but not yet granted, because the operator has not
+   * yet been shown the warning that justifies it. Applied by `emailSaveFailureMessage`, which is
+   * the single point every email conflict message renders through.
+   */
+  private pendingEmailOverwrite: { key: string; id: string; generation: number; conflict: NonNullable<CampaignBriefPersistResult['conflict']> } | null = null;
 
   private briefPersistenceGeneration = 0;
 
@@ -991,6 +1030,17 @@ export class CampaignsComponent {
   protected readonly selectedEmailStage = computed<CampaignEmailStage | undefined>(
     () => CAMPAIGN_EMAIL_TYPES.find((t) => t.id === this.selectedEmailTypeId())?.stage
   );
+
+  /**
+   * The chosen type's label, for the read-only line on Implement.
+   *
+   * Implement DISPLAYS the type; it no longer selects it. Both surfaces used to bind the same
+   * `emailType` control, but only the planner's lookup follows a change -- so switching type on
+   * Implement moved the stage while `emailBriefId` still named the previous stage's brief, and
+   * `onGenerateEmailCopy()` then sent the new stage against the old brief's id. The picker lives
+   * above the planner, where the lookup can answer it.
+   */
+  protected readonly selectedEmailTypeLabel = computed<string>(() => CAMPAIGN_EMAIL_TYPES.find((t) => t.id === this.selectedEmailTypeId())?.label ?? '');
 
   /** The full type list, for the selector. */
   // A mutable COPY for the template. `lfx-select` types `options` as `any[]`, and a readonly
@@ -1726,9 +1776,16 @@ export class CampaignsComponent {
    * The Email side's handoff, deliberately NOT routed through `onProceedToImplementation`.
    *
    * It sets the email tab and the email brief, which are separate signals — see the
-   * delivery-type effect. It also does not persist: brief persistence is keyed on
-   * `(foundation, event)` and the email channel's brief shape is still LFXV2-3201's to settle,
-   * so saving one now would file a paid-shaped row under an email brief's key.
+   * delivery-type effect. It also does not persist, but no longer for the reason this comment
+   * used to give. It said a save here "would file a paid-shaped row under an email brief's key",
+   * which stopped being true once the row began recording `deliveryType`: an email brief is now
+   * stored as an email brief and `loadBrief` hands it back only to the email surface.
+   *
+   * What remains is a sequencing choice. The handoff must not block on a write, and every email
+   * action that genuinely needs a brief id already routes through `ensureEmailBriefId` — building
+   * an audience, generating copy, and staging a draft all await it, and it caches the id after
+   * the first persist resolves. So the save happens on demand, once, rather than on every trip
+   * through this handoff; persisting here as well would write the same row twice for one action.
    */
   protected onEmailProceedToImplementation(brief: CampaignBriefOutput): void {
     this.emailBriefOutput.set(brief);
@@ -1738,6 +1795,72 @@ export class CampaignsComponent {
     // the portal's most recently updated templates already listed. Someone staging a send usually
     // wants a recent one, and an empty box with no options reads as a broken channel.
     this.searchEmailTemplates('');
+  }
+
+  /**
+   * Adopt a stored EMAIL brief, the counterpart to `onRestoreSavedBrief` for this surface.
+   *
+   * Separate from the paid handler rather than shared because the two hand off differently: the
+   * paid one ends in `onProceedToImplementation`, which persists, and re-saving a brief that was
+   * just read back would rewrite a row nothing changed. This one reuses the email handoff, which
+   * does not persist, so a restore stays a read.
+   *
+   * Recording ownership is the part that matters and the part a naive version would omit. Without
+   * it the next save arrives with no `knownBriefId`, and `persistBrief` refuses it as
+   * `unowned-brief-exists` — the guard that stops a caller replacing a brief it never opened.
+   * Having actually opened it is precisely what this call records.
+   */
+  protected onRestoreSavedEmailBrief(brief: CampaignBriefOutput, briefId: string, etag: string | null | undefined, approved: boolean): void {
+    // Adopt the brief's own PROGRAM first, exactly as the paid restore does. `program_type` is not
+    // part of the upstream brief key, so an Events brief can be offered while the selector says
+    // Education -- and correcting that by hand afterwards fires the program-switch reset, which
+    // discards the brief the operator just restored. `adoptingRestoredProgram` is what stops the
+    // subscription treating this as an operator-initiated switch.
+    //
+    // Driven through the CONTROL rather than the signal, for the same reason as the paid path: the
+    // subscription mirrors the control into `selectedProgramType`, so writing the signal alone
+    // would leave the visible selector showing the old program.
+    if (brief.programType !== undefined && brief.programType !== this.selectedProgramType()) {
+      this.adoptingRestoredProgram = true;
+      try {
+        this.selectorForm.controls.programType.setValue(brief.programType);
+      } finally {
+        // `finally`, so a throw inside the subscription cannot leave the flag set and turn every
+        // later program switch into a silent no-reset.
+        this.adoptingRestoredProgram = false;
+      }
+    }
+
+    const key = this.ownershipKey(this.activeFoundationSlug(), brief);
+    if (key !== null) {
+      // Bumped for the same reason the paid path bumps it: a restore makes this session the writer
+      // of record for the row, so any save still in flight from before the restore must not be
+      // able to report its result against the brief now on screen.
+      this.ownershipEpochs.set(key, (this.ownershipEpochs.get(key) ?? 0) + 1);
+      const validator = etag ?? null;
+      // A restore with no ETag still records ownership, with `absence: 'overwrite'` — the caller
+      // demonstrably read this row, so its next save is an edit rather than a blind replace. The
+      // ETag is preferred when present so a concurrent editor's change is refused as `stale-brief`
+      // instead of being silently overwritten.
+      this.rememberBriefId(key, { id: briefId, etag: validator, ...(validator === null ? { absence: 'overwrite' as const } : {}) });
+    }
+    // Order matters and is the reverse of what it looks like it should be. The handoff calls
+    // `resetEmailBriefDerivedState`, which CLEARS `emailBriefId` (along with the audience, copy
+    // and stage state that belong to a previous brief). Setting the id first would therefore be
+    // wiped by the very call meant to carry it, and the next save would arrive with an empty id
+    // and mint a SECOND row for an event that already has one. Restoring the id after the reset
+    // is what makes the following save a PUT against the row just opened.
+    this.onEmailProceedToImplementation(brief);
+    // The id is cached ONLY for an approved brief, which is the same rule `persistEmailBrief`
+    // applies at its own call site. `ensureEmailBriefId` short-circuits on a non-empty
+    // `emailBriefId`, so caching an unapproved one means the persist -- which is what approves --
+    // never runs again, and audience, copy and staging keep failing against a brief
+    // campaign-service refuses to create from. Leaving it empty lets the next action re-persist
+    // and re-approve; ownership is still recorded above, so that save is an edit of the row just
+    // opened rather than an attempt to mint a second one.
+    if (approved) {
+      this.emailBriefId.set(briefId);
+    }
   }
 
   /**
@@ -1768,7 +1891,7 @@ export class CampaignsComponent {
       }
       if (briefId === '') {
         this.emailAudienceState.set('error');
-        this.emailAudienceMessage.set('The brief could not be saved, so no audience was built.');
+        this.emailAudienceMessage.set(this.emailSaveFailureMessage('so no audience was built.'));
         return;
       }
 
@@ -1816,7 +1939,9 @@ export class CampaignsComponent {
     if (typeId === this.selectedEmailTypeId()) {
       return;
     }
+    const previousStage = this.selectedEmailStage();
     this.selectedEmailTypeId.set(typeId);
+
     // Invalidate any generate still in flight. Clearing the signals is not enough: the older
     // response resolves afterwards and would repopulate the panel with the previous stage's copy.
     this.emailCopyGeneration++;
@@ -1837,6 +1962,54 @@ export class CampaignsComponent {
     this.emailCopy.set(null);
     this.emailCopyState.set('idle');
     this.emailCopyError.set('');
+
+    // LAST, and only when the STAGE actually moved. A stage change changes which brief this tab is
+    // working on, because the stage is part of a brief's identity upstream. Moving the picker above
+    // the planner re-pointed the PLANNER's lookup; `emailBriefId` is the parent's own cached state
+    // and survived it, so generate and stage kept addressing the previous stage's row under the new
+    // stage's label -- and staging WRITES, cloning a HubSpot draft against that brief's audience.
+    //
+    // Gated on the stage, not the type: twelve types collapse onto six stages, so switching between
+    // two types that share a stage (CFP Launch has three) addresses the SAME brief and must not
+    // discard a loaded one.
+    //
+    // The BRIEF identity only -- deliberately NOT `resetEmailBriefDerivedState()`. That helper also
+    // clears `selectedEmailTemplateId`/`selectedEmailTemplateRow`, and the template is the
+    // operator's own choice: the block above has just re-derived a suggestion for the new type, and
+    // wiping it here would undo that and discard a hand-picked template too. Four existing specs
+    // pin exactly that behaviour.
+    //
+    // The generation counters are bumped for the same reason the helper bumps them: clearing a
+    // signal cannot reach a request already on the wire, and an audience response landing after
+    // this would report a BUILT audience for the previous brief -- which `canStageEmail` reads, so
+    // the stale success would re-enable staging against the wrong row. The persist promise is
+    // dropped because a caller joining it after this point would receive the previous brief's id.
+    if (this.selectedEmailStage() !== previousStage) {
+      this.emailBriefPersistGeneration++;
+      this.emailBriefId.set('');
+      // The CONTENT too, not only the id. `ensureEmailBriefId` persists whatever brief it is
+      // handed, so leaving the previous stage's output in place meant an empty id produced a NEW
+      // row for the new stage carrying the OLD stage's copy -- the wrong-brief association the id
+      // clearing exists to prevent, reached one step later. The planner re-answers with the newly
+      // addressed stage's brief, or with nothing if that send has none yet.
+      this.emailBriefOutput.set(null);
+      this.emailAudience.set(null);
+      this.emailAudienceState.set('idle');
+      this.emailAudienceMessage.set('');
+      this.emailAudienceGeneration++;
+      this.emailStagingGeneration++;
+      this.emailBriefPersistInFlight = null;
+      // CANCEL the poll, do not merely bump past it. `pollStagingJob` never reads
+      // `emailStagingGeneration`, so the counter only guards the awaits BEFORE the poll starts; a
+      // subscription already running keeps writing `done`/`error` and would announce "Draft
+      // created" for the PREVIOUS send under the newly selected stage.
+      // `resetEmailBriefDerivedState` cancels it for exactly this reason, and a stage change is
+      // the same hazard by a different route.
+      this.stagingJobSubscription?.unsubscribe();
+      this.stagingJobSubscription = null;
+      this.emailStaging.set('idle');
+      this.emailStagingMessage.set('');
+    }
   }
 
   /**
@@ -1877,7 +2050,7 @@ export class CampaignsComponent {
       }
       if (briefId === '') {
         this.emailCopyState.set('error');
-        this.emailCopyError.set('The brief could not be saved, so no copy was generated.');
+        this.emailCopyError.set(this.emailSaveFailureMessage('so no copy was generated.'));
         return;
       }
 
@@ -1918,9 +2091,11 @@ export class CampaignsComponent {
    *
    * TWO upstream calls, in order, because creation is brief-scoped: the route is
    * `/projects/{slug}/briefs/{brief_id}/campaigns`, so a brief id must exist BEFORE create.
-   * The email planner never persisted one (it skips the saved-brief lookup entirely, because
-   * persistence is keyed on (foundation, event) with no delivery type and the row it would find
-   * is a PAID brief), so this persists first and uses the id that comes back.
+   * The email planner may not have persisted one yet -- staging can be the first write for this
+   * send -- so this persists first and uses the id that comes back. It used to be that email
+   * NEVER had one, because persistence was keyed on (foundation, event) with no delivery
+   * dimension and the only row a lookup could find was a PAID brief; LFXV2-3198 widened the key,
+   * so an email send now has a row of its own to find or create.
    *
    * The persist goes through `ensureEmailBriefId`, which consults `knownBriefIds` for a row this
    * session already owns at this (project, event) and RECORDS the row it persists. An earlier
@@ -1971,7 +2146,7 @@ export class CampaignsComponent {
       // would post a second brief for the same event.
       if (briefId === '') {
         this.emailStaging.set('error');
-        this.emailStagingMessage.set('The brief could not be saved, so the send was not staged. Try again.');
+        this.emailStagingMessage.set(this.emailSaveFailureMessage('so the send was not staged. Try again.'));
         return;
       }
 
@@ -2603,7 +2778,20 @@ export class CampaignsComponent {
           // the contract, and an older service that omits it entirely would otherwise report every
           // successful staging as an error. Only an explicit `ok: false` is a failure.
           this.emailStaging.set('done');
-          this.emailStagingMessage.set('Draft created in HubSpot. Review and send it from there.');
+          // The id is INCLUDED, because without it this message sends the user to hunt for one
+          // draft among the hundreds the portal lists — the picker above says "Showing 100 of 500".
+          // `campaignId` is already on the result and was simply discarded here.
+          //
+          // The id is shown rather than linked: a HubSpot deep link needs the PORTAL id, which the
+          // connection row does not reliably carry (it is empty for `tlf` today), and a link built
+          // without it points at whichever portal the reader happens to be signed into. An id the
+          // user can paste into HubSpot's own search is worth more than a link that may 404.
+          const draftId = hubspotResult?.campaignId ?? '';
+          this.emailStagingMessage.set(
+            draftId === ''
+              ? 'Draft created in HubSpot. Review and send it from there.'
+              : `Draft created in HubSpot (id ${draftId}). Review and send it from there.`
+          );
         },
         error: () => {
           this.emailStaging.set('error');
@@ -3095,6 +3283,56 @@ export class CampaignsComponent {
     }
   }
 
+  /**
+   * The message an email action shows when the save produced no brief id.
+   *
+   * Prefers the conflict's own copy, which names the actual obstacle and the way out. Falls back
+   * to the generic sentence for an ordinary failure, where retrying IS the right advice.
+   *
+   * The CONSEQUENCE is appended either way. Three callers pass a distinct one -- no audience was
+   * built, no copy was generated, the send was not staged -- and an earlier revision dropped it on
+   * the conflict branch, so all three rendered the same sentence. That told the operator why the
+   * save failed but not which action died with it, which matters most for staging: "not staged" is
+   * the part they need in order to know nothing reached HubSpot.
+   */
+  private emailSaveFailureMessage(consequence: string): string {
+    const conflict = this.emailBriefConflict;
+
+    // Taken BEFORE the early return, so a staged promotion can never outlive the render that was
+    // supposed to grant it. Reading it after meant a plain non-conflict failure returned without
+    // dropping the entry, and a LATER unrelated conflict then applied it -- handing out overwrite
+    // permission earned by a refusal the operator saw, against a row a different refusal named.
+    const pending = this.pendingEmailOverwrite;
+    this.pendingEmailOverwrite = null;
+
+    if (conflict === null) {
+      return `The brief could not be saved, ${consequence}`;
+    }
+
+    // Grant the escape the message below is about to promise. Doing it HERE rather than at the
+    // persist is what keeps the promotion and the warning inseparable: a caller that returns
+    // before rendering never reaches this line, so it never hands out permission silently.
+    //
+    // Two things are re-checked, and each closes a different hole:
+    //   - the GENERATION, against the current one rather than the one captured when it was
+    //     staged: a reset in between means the entry belongs to a brief the page no longer holds.
+    //   - the CONFLICT, against the one being rendered: permission belongs to the refusal that
+    //     actually warned the operator, not to whichever refusal happens to render next.
+    if (pending !== null && pending.generation === this.emailBriefPersistGeneration && pending.conflict === conflict) {
+      this.rememberBriefId(pending.key, { id: pending.id, etag: null, absence: 'overwrite' });
+    }
+    // Capitalised, because the conflict message is a COMPLETE sentence ending in a period while
+    // each consequence is a lowercase clause written to follow a comma. Joining them raw produced
+    // "...re-enter the event URL to open it. so no audience was built."
+    const [first, ...rest] = consequence;
+    // The re-select step is appended HERE rather than in `conflictMessages`, which the paid
+    // surface shares: a reload resets `selectedEmailTypeId` to the default, so under a non-default
+    // stage re-entering the URL finds nothing until the operator picks the type back. That advice
+    // is meaningless on paid, which has no type selector.
+    const reselect = conflict === 'unowned-brief-exists' ? ' Re-select this email type first.' : '';
+    return `${this.conflictMessages[conflict]}${reselect} ${first.toUpperCase()}${rest.join('')}`;
+  }
+
   /** The persist itself, wrapped by `ensureEmailBriefId`'s in-flight dedup. */
   private async persistEmailBrief(brief: CampaignBriefOutput, projectSlug: string): Promise<string> {
     const known = this.emailBriefId();
@@ -3102,12 +3340,16 @@ export class CampaignsComponent {
       return known;
     }
 
-    // Name the row if this session already owns it. Briefs are keyed on (project, event) and
-    // SHARED across delivery types, so an event whose paid brief was generated or restored in
-    // this session already has a row -- and a first-save call, which sends no `brief_id`, is
-    // refused against it as `unowned-brief-exists`. That made the email channel unusable for
-    // every event the paid side had touched. `knownBriefIds` is the same ownership record the
-    // paid save consults; reading it here is what lets email REPLACE rather than only create.
+    // Name the row if this session already owns it. A first-save call sends no `brief_id` and is
+    // refused as `unowned-brief-exists` against a row that already exists, so reading the
+    // ownership record is what lets a second save REPLACE rather than look like a duplicate
+    // create. `knownBriefIds` is the same record the paid save consults.
+    //
+    // The key is all four identity parts, matching upstream (see `ownershipKey`). It used to be
+    // (project, event) alone, which was right while a brief was SHARED across delivery types --
+    // and became wrong the moment it was not: one event now holds a paid brief and one per stage
+    // of its email series, so a two-part key filed them all under one entry and the last one
+    // recorded overwrote its siblings' ids.
     // `null` when the brief has no event slug -- there is no row to own, so this falls through to
     // a plain first save exactly as before.
     const ownershipKey = this.ownershipKey(projectSlug, brief);
@@ -3119,6 +3361,53 @@ export class CampaignsComponent {
       this.campaignService.persistBrief(brief, projectSlug, owned?.id ?? null, owned?.etag ?? null, owned?.absence === 'overwrite')
     );
     const briefId = persisted.briefId ?? '';
+    // Keyed on the RETURN PATH, not on whether the server sent an id back.
+    //
+    // `stale-brief` and `unverified-validator` both return a NON-EMPTY briefId with
+    // `approved: false`, so testing `briefId === ''` dropped exactly those two: this method still
+    // returns `''` for them (the approval gate below refuses the id), and the operator was then
+    // shown the generic "Try again" copy for a refusal that retrying alone cannot clear. That is
+    // the gap this field exists to close.
+    //
+    // Recorded provisionally here so a refusal explains itself, and cleared only on the ONE path
+    // that actually succeeds -- see the `return briefId` branches below.
+    this.emailBriefConflict = persisted.conflict ?? null;
+    // Grant the escape the message promises, exactly as the paid path does (see the
+    // `stale-brief` / `unverified-validator` / `superseded-after-write` promotion below).
+    //
+    // Recording the conflict makes the refusal EXPLAIN itself; it does not make the next attempt
+    // able to succeed. The ownership entry still holds the validator that was just refused, so
+    // every retry re-sends it and is refused identically -- while the banner tells the operator
+    // that trying again will work. That dead end was fixed once on the paid surface and was
+    // reintroduced here by adding the refusal without its escape.
+    //
+    // Generation-scoped: a reset while this was on the wire means the entry belongs to a brief
+    // the page no longer holds, and promoting it would license an overwrite of a row this session
+    // has abandoned.
+    //
+    // STAGED here, APPLIED by `emailSaveFailureMessage`. The promotion's whole justification is
+    // that the operator has been warned, so it must not outrun the warning. A same-stage type
+    // change bumps `emailCopyGeneration` without bumping `emailBriefPersistGeneration`, so an
+    // in-flight persist stays current by its own generation while its caller has already returned
+    // early and rendered no banner -- promoting there would hand out overwrite permission for a
+    // refusal nobody was told about. The paid path avoids this by promoting after the check that
+    // gates its banner; staging the intent is the same ordering expressed through the one function
+    // that every email conflict message goes through.
+    if (
+      ownershipKey !== null &&
+      generation === this.emailBriefPersistGeneration &&
+      (persisted.conflict === 'stale-brief' || persisted.conflict === 'unverified-validator' || persisted.conflict === 'superseded-after-write')
+    ) {
+      // `superseded-after-write` records the row it just wrote when the server named one: it is
+      // the id the next save must address, and without it that save creates a second brief for an
+      // event that already has one. The other two keep the id they already own.
+      const owned = this.knownBriefIds.get(ownershipKey);
+      const supersededId = persisted.conflict === 'superseded-after-write' ? briefId : '';
+      const id = supersededId !== '' ? supersededId : (owned?.id ?? '');
+      if (id !== '') {
+        this.pendingEmailOverwrite = { key: ownershipKey, id, generation, conflict: persisted.conflict };
+      }
+    }
     // An id is not enough: campaign-service gates `build-audience` AND campaign creation on the
     // brief having reached `approved`, and `saveBrief` deliberately returns an id with
     // `approved: false` when the approve step failed. Caching that id would make every downstream
@@ -3129,8 +3418,13 @@ export class CampaignsComponent {
       // holds. Returning it is fine -- the caller that started this persist asked for it -- but
       // writing it into the SHARED cache is what strands the next action on the abandoned brief.
       if (generation !== this.emailBriefPersistGeneration) {
+        // Cleared on this path too: the persist SUCCEEDED, and the caller that started it is
+        // about to receive the id. Leaving a conflict set would render a stale reason against a
+        // save that worked.
+        this.emailBriefConflict = null;
         return briefId;
       }
+      this.emailBriefConflict = null;
       this.emailBriefId.set(briefId);
       // Record OWNERSHIP too, not just the id. `emailBriefId` is cleared by
       // `resetEmailBriefDerivedState`, so caching only there meant the next save after a Proceed
@@ -3493,7 +3787,11 @@ export class CampaignsComponent {
     });
   }
 
-  /** The `(foundation, event)` pair the server keys a brief on, as one map key. */
+  /**
+   * The four parts the server keys a brief on -- `(project, event_slug, delivery_type, stage)` --
+   * as one map key. It was the `(foundation, event)` pair until LFXV2-3198 widened the upstream
+   * key; see the body for why all four are load-bearing.
+   */
   private ownershipKey(projectSlug: string, brief: CampaignBriefOutput): string | null {
     const eventSlug = brief.eventDetails?.slug ?? '';
     // Trim to TEST emptiness, never to build the key — `deriveEventSlug` returns the untrimmed
@@ -3511,7 +3809,24 @@ export class CampaignsComponent {
     // A newline separator, not a hyphen: both slugs are drawn from `[a-z0-9-]`, so a separator
     // from that set could be produced by the slugs themselves and let `("a-b", "c")` collide
     // with `("a", "b-c")`.
-    return `${projectSlug}\n${eventSlug}`;
+    //
+    // The key carries ALL FOUR parts of the upstream identity, not just the two slugs. Since
+    // campaign-service keys a brief on `(project, event_slug, delivery_type, stage)`, one event
+    // holds a paid brief AND every stage of its email series at once. Under the two-part key
+    // those all shared one map entry, so restoring one email stage overwrote the cached id and
+    // ETag of the paid brief and of every sibling stage -- and the next save of one of THOSE
+    // would send the wrong `knownBriefId` and be refused as `unowned-brief-exists`. That is the
+    // same failure the event-slug trimming note above guards against, reached a different way.
+    //
+    // Read off the BRIEF, never off the current selection: this keys the brief in hand, which is
+    // not always the one on screen (a restore, a reconcile, or a save that resolves after the
+    // operator has switched type). Absence normalizes to paid with an empty stage, matching the
+    // wire default on both sides of the request. That is a CONVENTION, not evidence of where a row
+    // came from: pre-field email briefs exist (linuxfoundation/lfx-self-serve#2214) and are
+    // indistinguishable from paid ones after the backfill.
+    const deliveryType = brief.deliveryType ?? 'paid-marketing';
+    const stage = brief.emailStage ?? '';
+    return `${projectSlug}\n${eventSlug}\n${deliveryType}\n${stage}`;
   }
 
   /**

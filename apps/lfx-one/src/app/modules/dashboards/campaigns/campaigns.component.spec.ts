@@ -2496,6 +2496,156 @@ describe('CampaignsComponent — email delivery channel', () => {
       expect(internals().emailCopyState()).toBe('error');
     });
 
+    // Each conflict must leave the NEXT email action able to succeed. Recording the conflict makes
+    // the refusal explain itself; it does not make a retry possible. Without promoting the
+    // ownership entry the same validator is re-sent and refused identically, while the banner says
+    // trying again will work -- the dead end the paid path already had to fix.
+    describe.each([
+      ['stale-brief', 'brief-77'],
+      ['unverified-validator', 'brief-77'],
+      // `superseded-after-write` COMMITTED its write, so the row it names is the one the next save
+      // must address. Not recording it creates a second brief for an event that already has one.
+      ['superseded-after-write', 'brief-99'],
+    ])('after a %s refusal', (conflict, expectedId) => {
+      it('lets the next email action through instead of re-sending the refused validator', async () => {
+        selectEmail();
+        internals().emailBriefOutput.set(emailBrief);
+        fixture.detectChanges();
+
+        // A first save records id + validator, so the retry has something to promote.
+        persist.mockReturnValue(of({ status: 'saved', briefId: 'brief-77', etag: '"1"', approved: true }));
+        vi.spyOn(TestBed.inject(CampaignService), 'generateEmailCopy').mockReturnValue(of({ enabled: true, copy }));
+        await internals().onGenerateEmailCopy();
+
+        // Refused: the validator this session holds is no longer the one the row carries.
+        persist.mockReturnValue(
+          of({ status: 'saved', briefId: conflict === 'superseded-after-write' ? 'brief-99' : 'brief-77', etag: null, approved: false, conflict })
+        );
+        internals().emailBriefId.set('');
+        await internals().onGenerateEmailCopy();
+
+        // The operator has now been warned, so the retry carries explicit overwrite permission
+        // rather than the validator that was just refused.
+        //
+        // NOT awaited: `NEVER` keeps the persist open on purpose, and the claim under test is what
+        // this call SENDS, which is already decided by the time the request is issued. Awaiting it
+        // would only wait for a response the test never intends to deliver.
+        persist.mockClear();
+        persist.mockReturnValue(NEVER);
+        internals().emailBriefId.set('');
+        void internals().onGenerateEmailCopy();
+        await fixture.whenStable();
+
+        expect(persist).toHaveBeenLastCalledWith(emailBrief, expect.anything(), expectedId, null, true);
+      });
+    });
+
+    // The promotion must not outrun the warning that justifies it. A same-stage email-type change
+    // bumps `emailCopyGeneration` without bumping `emailBriefPersistGeneration`, so an in-flight
+    // persist is still current by its own generation while its caller has already returned early
+    // and rendered NO banner. Promoting there would hand out overwrite permission for a refusal
+    // the operator was never shown.
+    it('withholds the overwrite until the conflict warning is actually rendered', async () => {
+      selectEmail();
+      internals().emailBriefOutput.set(emailBrief);
+      fixture.detectChanges();
+
+      persist.mockReturnValue(of({ status: 'saved', briefId: 'brief-77', etag: '"1"', approved: true }));
+      vi.spyOn(TestBed.inject(CampaignService), 'generateEmailCopy').mockReturnValue(of({ enabled: true, copy }));
+      await internals().onGenerateEmailCopy();
+
+      // Refused — and the caller is invalidated mid-flight, so it returns before any banner.
+      persist.mockReturnValue(of({ status: 'saved', briefId: 'brief-77', etag: null, approved: false, conflict: 'stale-brief' }));
+      internals().emailBriefId.set('');
+      // The REAL trigger, not a poked counter. `cfp-launch` and `colocated-cfp-reminder` share the
+      // stage `CFP Launch`, so this bumps the copy generation and leaves the persist generation
+      // (and the brief) alone -- which is exactly the desync under test. A DIFFERENT-stage change
+      // would clear `emailBriefOutput` and there would be no persist to reason about at all.
+      (internals() as unknown as { onSelectEmailType(id: string): void }).onSelectEmailType('cfp-launch');
+      internals().emailBriefOutput.set(emailBrief);
+      fixture.detectChanges();
+
+      const inFlight = internals().onGenerateEmailCopy();
+      (internals() as unknown as { onSelectEmailType(id: string): void }).onSelectEmailType('colocated-cfp-reminder');
+      await inFlight;
+
+      // No banner was shown, so no permission may have been granted.
+      persist.mockClear();
+      persist.mockReturnValue(NEVER);
+      internals().emailBriefId.set('');
+      void internals().onGenerateEmailCopy();
+      await fixture.whenStable();
+
+      expect(persist).toHaveBeenLastCalledWith(emailBrief, expect.anything(), 'brief-77', '"1"', false);
+    });
+
+    // A staged promotion must not outlive the render that was supposed to grant it. Reading it
+    // only after the `conflict === null` guard meant a plain non-conflict failure returned without
+    // dropping it, and a LATER unrelated conflict then applied it -- overwrite permission earned
+    // by one refusal, spent against the row a different refusal named.
+    //
+    // Asserted on `knownBriefIds` directly rather than by driving three UI actions: the promotion
+    // IS an ownership write, and the persist dedup plus the type-change resets make a three-action
+    // script assert far less than it appears to.
+    it('drops a staged overwrite when a non-conflict failure renders instead', () => {
+      selectEmail();
+      internals().emailBriefOutput.set(emailBrief);
+      fixture.detectChanges();
+
+      const priv = internals() as unknown as {
+        ownershipKey(p: string, b: unknown): string | null;
+        knownBriefIds: Map<string, { id: string; etag: string | null; absence?: string }>;
+        activeFoundationSlug(): string;
+        pendingEmailOverwrite: { key: string; id: string; generation: number; conflict: string } | null;
+        emailBriefConflict: string | null;
+        emailBriefPersistGeneration: number;
+        emailSaveFailureMessage(consequence: string): string;
+      };
+      const key = priv.ownershipKey(priv.activeFoundationSlug(), emailBrief) as string;
+      expect(key).not.toBeNull();
+      priv.knownBriefIds.set(key, { id: 'brief-77', etag: '"1"' });
+
+      // A stale-brief refusal staged a promotion, and its caller returned before rendering.
+      priv.pendingEmailOverwrite = { key, id: 'brief-77', generation: priv.emailBriefPersistGeneration, conflict: 'stale-brief' };
+
+      // A plain failure with NO conflict renders next. It must DROP the staged entry.
+      priv.emailBriefConflict = null;
+      priv.emailSaveFailureMessage('so no copy was generated.');
+      expect(priv.pendingEmailOverwrite, 'a non-conflict render left the staged promotion behind').toBeNull();
+
+      // A later, unrelated refusal must not be able to spend it.
+      priv.emailBriefConflict = 'unowned-brief-exists';
+      priv.emailSaveFailureMessage('so no copy was generated.');
+      expect(priv.knownBriefIds.get(key)?.absence, 'a stale staged overwrite was applied by an unrelated conflict').toBeUndefined();
+      expect(priv.knownBriefIds.get(key)?.etag).toBe('"1"');
+    });
+
+    // The other half of the same rule: a promotion IS granted when the refusal that staged it is
+    // the one being rendered. Without this the test above could pass by never promoting at all.
+    it('applies the staged overwrite when its own conflict is the one rendered', () => {
+      selectEmail();
+      internals().emailBriefOutput.set(emailBrief);
+      fixture.detectChanges();
+
+      const priv = internals() as unknown as {
+        ownershipKey(p: string, b: unknown): string | null;
+        knownBriefIds: Map<string, { id: string; etag: string | null; absence?: string }>;
+        activeFoundationSlug(): string;
+        pendingEmailOverwrite: { key: string; id: string; generation: number; conflict: string } | null;
+        emailBriefConflict: string | null;
+        emailBriefPersistGeneration: number;
+        emailSaveFailureMessage(consequence: string): string;
+      };
+      const key = priv.ownershipKey(priv.activeFoundationSlug(), emailBrief) as string;
+      priv.knownBriefIds.set(key, { id: 'brief-77', etag: '"1"' });
+      priv.pendingEmailOverwrite = { key, id: 'brief-77', generation: priv.emailBriefPersistGeneration, conflict: 'stale-brief' };
+
+      priv.emailBriefConflict = 'stale-brief';
+      priv.emailSaveFailureMessage('so no copy was generated.');
+
+      expect(priv.knownBriefIds.get(key)).toEqual(expect.objectContaining({ id: 'brief-77', etag: null, absence: 'overwrite' }));
+    });
+
     it('surfaces the upstream refusal rather than a generic message', async () => {
       selectEmail();
       internals().emailBriefOutput.set(emailBrief);
@@ -2908,13 +3058,21 @@ describe('CampaignsComponent — email delivery channel', () => {
 
     it("sends the selected type's STAGE, not its id", async () => {
       selectEmail();
-      internals().emailBriefOutput.set(emailBrief);
-      internals().emailBriefId.set('brief-77');
       const gen = vi
         .spyOn(TestBed.inject(CampaignService), 'generateEmailCopy')
         .mockReturnValue(of({ enabled: true, copy: { subject: 's', preheader: 'p', body: '<p>b</p>', cta: 'c' } }) as never);
 
+      // The type is chosen BEFORE the brief id is cached, deliberately. An earlier revision set
+      // `emailBriefId` first and then switched to a different stage, which pinned the id across a
+      // stage change -- the exact desync `onSelectEmailType` now clears, so that ordering asserted
+      // the bug rather than the contract. Selecting first, then caching, keeps this test about the
+      // stage-vs-type-id distinction it is named for.
       (internals() as unknown as { onSelectEmailType(id: string): void }).onSelectEmailType('thank-you-survey');
+      // BOTH set after the type change: it now clears the brief output as well as the id, since
+      // the previous stage's CONTENT would otherwise be persisted under the new stage.
+      internals().emailBriefOutput.set(emailBrief);
+      internals().emailBriefId.set('brief-77');
+
       await internals().onGenerateEmailCopy();
 
       // campaign-service enumerates STAGES, not type ids -- sending 'thank-you-survey' would be
@@ -3126,14 +3284,17 @@ describe('CampaignsComponent — email delivery channel', () => {
 
     it('renders the selector defaulted to the registration push type', () => {
       selectEmail();
-      internals().selectedEmailTab.set('implementation');
-      internals().emailBriefOutput.set(emailBrief);
       fixture.detectChanges();
 
+      // The picker lives above the PLANNER now, not on Implement. It moved because the stage it
+      // resolves to is part of a brief's identity upstream, so it has to be answered before the
+      // lookup rather than after a brief already exists.
       // `data-test`, not `data-testid`: that is the attribute `lfx-select` renders from its
-      // `dataTest` input, and querying the wrong one returns null on a control that IS present.
-      const sel = (fixture.nativeElement as HTMLElement).querySelector('[data-test="campaigns-email-type-select"]');
-      expect(sel, 'the email-type selector is not rendered').not.toBeNull();
+      // `dataTest` input. Querying `data-testid` matched the <lfx-select> HOST element instead of
+      // the control, so this passed for the wrong reason — the same trap the sibling test below
+      // documents.
+      const sel = (fixture.nativeElement as HTMLElement).querySelector('[data-test="campaigns-email-stage-select"]');
+      expect(sel, 'the email-type selector is not rendered above the planner').not.toBeNull();
 
       // The RENDERED label, not the signal, and not the form value either. The raw <select> this
       // replaced ignored a `[value]` binding applied before its options existed and fell back to
@@ -3146,6 +3307,30 @@ describe('CampaignsComponent — email delivery channel', () => {
 
       // The signal the rest of the component reads must agree with what is on screen.
       expect(internals().selectedEmailTypeId()).toBe('main-registration-push');
+    });
+
+    // Implement DISPLAYS the type; it must not offer a second control for it. Two selectors bound
+    // to the same `emailType` control is what the bots caught: only the planner's lookup follows a
+    // change, so switching type on Implement moved the stage while `emailBriefId` still named the
+    // previous stage's brief, and generation then sent the new stage against the old brief's id.
+    it('shows the chosen type on implement without a second selector', () => {
+      selectEmail();
+      internals().selectedEmailTab.set('implementation');
+      internals().emailBriefOutput.set(emailBrief);
+      fixture.detectChanges();
+
+      const host = fixture.nativeElement as HTMLElement;
+      const display = host.querySelector('[data-testid="campaigns-email-type-display"]');
+      expect(display, 'implement does not show which email type is selected').not.toBeNull();
+      expect(display?.textContent).toContain('Main Registration Push');
+
+      // `data-test`, not `data-testid`: that is the attribute `lfx-select` renders from its
+      // `dataTest` input, and querying the wrong one returns null on a control that IS present --
+      // which would make this assertion pass for the wrong reason.
+      expect(
+        host.querySelector('[data-test="campaigns-email-type-select"]'),
+        'implement still renders a second email-type selector; changing it there desyncs the loaded brief'
+      ).toBeNull();
     });
 
     it('drops copy written for the previous type when the type changes', () => {
@@ -3351,12 +3536,219 @@ describe('CampaignsComponent — email delivery channel', () => {
 
       await (internals() as unknown as { ensureEmailBriefId(b: unknown, p: string): Promise<string> }).ensureEmailBriefId(emailBrief, 'tlf');
 
-      // Briefs are keyed on (project, event) and SHARED across delivery types, so a first-save
-      // call -- which sends no brief_id -- is refused as `unowned-brief-exists` against a row the
-      // paid side created. That made email unusable for every event paid had touched.
+      // A first-save call sends no brief_id and is refused as `unowned-brief-exists` against a row
+      // this session actually owns. Reusing the recorded id is what keeps a second save on the
+      // same brief from looking like an attempt to create a duplicate.
       const [, , knownId, knownEtag] = persist.mock.calls[0] as unknown as [unknown, string, string | null, string | null];
       expect(knownId).toBe('brief-77');
       expect(knownEtag).toBe('W/"3"');
+    });
+
+    // The ownership map is keyed on the SAME four parts campaign-service keys a brief on. Under
+    // the old two-part key (project, event) an event's paid brief and every stage of its email
+    // series shared one entry, so recording one overwrote the others -- and the next save of a
+    // sibling sent that other brief's id and was refused as `unowned-brief-exists`. That is the
+    // exact failure the reuse test above depends on NOT happening.
+    // The stage IS the brief's identity upstream, so changing the type changes WHICH brief the
+    // Implement tab is working on. Moving the picker above the planner re-pointed the planner's
+    // LOOKUP, but the parent's cached `emailBriefId` is separate state and survived the change --
+    // so generate and stage ran the new stage against the previous stage's row. Staging is the
+    // one that writes: it clones a HubSpot draft against that brief's audience.
+    it('drops the cached brief id when the type change moves the stage', () => {
+      selectEmail();
+      internals().emailBriefOutput.set(emailBrief);
+      internals().emailBriefId.set('brief-cfp');
+
+      // 'main-registration-push' -> 'thank-you-survey' is a real STAGE change
+      // (Registration Push -> Post-Event), not merely a label change.
+      (internals() as unknown as { onSelectEmailType(id: string): void }).onSelectEmailType('thank-you-survey');
+
+      expect(internals().emailBriefId(), 'the previous stage brief id survived a type change; generate and stage would address the wrong row').toBe('');
+    });
+
+    // The other half of the gate, and the one a wholesale reset would break. Twelve types collapse
+    // onto six stages -- `cfp-launch` and `colocated-cfp-reminder` are both CFP Launch -- so
+    // switching between two types that share a stage addresses the SAME brief upstream. Discarding
+    // the loaded brief there would make the operator re-fetch and re-generate for no reason, and
+    // would silently drop a built audience. Resetting only when the STAGE moves is what separates
+    // the two cases; without this test, a reset on every type change passes just as happily.
+    // Clearing the cached ID alone is not enough. `emailBriefOutput` holds the CONTENT of the
+    // previous stage's brief, and `ensureEmailBriefId` persists whatever it is handed — so with an
+    // empty id it creates a NEW row for the new stage carrying the OLD stage's copy, which is the
+    // wrong-brief association the id clearing exists to prevent, reached one step later.
+    it('drops the previous stage brief output, not just its id', () => {
+      selectEmail();
+      internals().emailBriefOutput.set(emailBrief);
+      internals().emailBriefId.set('brief-cfp');
+
+      (internals() as unknown as { onSelectEmailType(id: string): void }).onSelectEmailType('thank-you-survey');
+
+      expect(internals().emailBriefId()).toBe('');
+      expect(internals().emailBriefOutput(), "the previous stage's brief content survived; a persist would file it under the new stage").toBeNull();
+    });
+
+    // An UNAPPROVED restore must not cache the id. `ensureEmailBriefId` short-circuits on a
+    // non-empty `emailBriefId`, so caching an unapproved brief's id means the persist -- which is
+    // what approves -- never runs again, and audience, copy and staging keep failing against a
+    // brief campaign-service will not create from. `persistEmailBrief` already applies this exact
+    // rule at its own call site ("caching that id would make every downstream call fail"); the
+    // restore path is the other way in.
+    it('does not cache the restored brief id when the stored brief is unapproved', () => {
+      selectEmail();
+
+      (
+        internals() as unknown as {
+          onRestoreSavedEmailBrief(b: unknown, id: string, etag: string | null, approved: boolean): void;
+        }
+      ).onRestoreSavedEmailBrief(emailBrief, 'brief-unapproved', 'W/"2"', false);
+
+      expect(internals().emailBriefId(), 'an unapproved brief id was cached; ensureEmailBriefId will short-circuit and never retry approval').toBe('');
+    });
+
+    it('caches the restored brief id when the stored brief IS approved', () => {
+      selectEmail();
+
+      (
+        internals() as unknown as {
+          onRestoreSavedEmailBrief(b: unknown, id: string, etag: string | null, approved: boolean): void;
+        }
+      ).onRestoreSavedEmailBrief(emailBrief, 'brief-approved', 'W/"2"', true);
+
+      expect(internals().emailBriefId()).toBe('brief-approved');
+    });
+
+    // A live staging POLL must be cancelled by a stage change, not merely counted past.
+    // `pollStagingJob` never reads `emailStagingGeneration`, so bumping it only guards the awaits
+    // BEFORE the poll starts. A subscription already running keeps writing `done`/`error` — and
+    // announces "Draft created" for the PREVIOUS send under the newly selected stage.
+    // `resetEmailBriefDerivedState` cancels it for exactly this reason; the stage-change path has
+    // the same hazard and had none of the protection.
+    it('cancels a live staging poll when the type change moves the stage', () => {
+      selectEmail();
+      internals().emailStaging.set('staging');
+      const sub = { unsubscribe: vi.fn(), closed: false };
+      (internals() as unknown as { stagingJobSubscription: unknown }).stagingJobSubscription = sub;
+
+      (internals() as unknown as { onSelectEmailType(id: string): void }).onSelectEmailType('thank-you-survey');
+
+      expect(sub.unsubscribe, 'the previous stage poll kept running and can still report against the new stage').toHaveBeenCalled();
+      expect((internals() as unknown as { stagingJobSubscription: unknown }).stagingJobSubscription).toBeNull();
+      expect(internals().emailStaging()).toBe('idle');
+    });
+
+    // `conflictMessages` is SHARED with the paid persist banner, so the email-only "re-select this
+    // email type" step must not live in it -- paid has no type selector, and an earlier revision
+    // told paid users to use one. The step belongs to `emailSaveFailureMessage`, the one caller
+    // that knows a stage is involved.
+    it('keeps the email re-select step out of the shared conflict copy', () => {
+      selectEmail();
+      const shared = (internals() as unknown as { conflictMessages: Record<string, string> }).conflictMessages;
+
+      expect(shared['unowned-brief-exists'], 'the shared copy names a control the paid surface does not have').not.toContain('email type');
+
+      const priv = internals() as unknown as {
+        emailBriefConflict: string | null;
+        emailSaveFailureMessage(c: string): string;
+      };
+      priv.emailBriefConflict = 'unowned-brief-exists';
+      const emailCopy = priv.emailSaveFailureMessage('so no audience was built.');
+      expect(emailCopy, 'the email path dropped the re-select step').toContain('Re-select this email type');
+    });
+
+    // `stale-brief` and `unverified-validator` return a NON-EMPTY briefId with approved:false, so
+    // recording the conflict only when the id is empty dropped it — and the operator got the
+    // generic "Try again" copy for a refusal that retrying alone cannot clear. That is the exact
+    // gap `emailBriefConflict` was added to close.
+    it.each([['stale-brief'], ['unverified-validator']])('records the %s conflict even though the server returned a brief id', async (conflict) => {
+      selectEmail();
+      internals().emailBriefOutput.set(emailBrief);
+      vi.spyOn(TestBed.inject(CampaignService), 'persistBrief').mockReturnValue(
+        of({ enabled: true, briefId: 'brief-77', etag: null, created: false, approved: false, conflict }) as never
+      );
+
+      await (internals() as unknown as { ensureEmailBriefId(b: unknown, p: string): Promise<string> }).ensureEmailBriefId(emailBrief, 'tlf');
+
+      const priv = internals() as unknown as { emailBriefConflict: string | null; emailSaveFailureMessage(c: string): string };
+      expect(priv.emailBriefConflict, 'the conflict was dropped because the server returned an id').toBe(conflict);
+      expect(priv.emailSaveFailureMessage('so no audience was built.')).not.toContain('The brief could not be saved,');
+    });
+
+    // Ownership is what `onRestoreSavedEmailBrief`'s own JSDoc calls "the part that matters", and
+    // no test asserted it: removing the `rememberBriefId` block left the restore tests green.
+    // Without the record, the next save arrives with no `knownBriefId` and is refused as
+    // `unowned-brief-exists` — against a row this session demonstrably just opened.
+    //
+    // The UNAPPROVED case is the one that needs it most: `emailBriefId` deliberately stays empty
+    // there, so ownership is the ONLY thing carrying the restore forward.
+    it.each([
+      ['an approved brief', true, 'brief-approved'],
+      ['an unapproved brief', false, 'brief-unapproved'],
+    ])('records ownership when restoring %s', (_label, approved, id) => {
+      selectEmail();
+
+      (
+        internals() as unknown as {
+          onRestoreSavedEmailBrief(b: unknown, id: string, etag: string | null, approved: boolean): void;
+        }
+      ).onRestoreSavedEmailBrief(emailBrief, id, 'W/"4"', approved);
+
+      const priv = internals() as unknown as {
+        ownershipKey(p: string, b: unknown): string | null;
+        knownBriefIds: Map<string, { id: string; etag: string | null }>;
+        activeFoundationSlug(): string;
+      };
+      // The handler keys on `activeFoundationSlug()`, so the test must read the same source rather
+      // than hardcode a slug -- a mismatch here would look like "no ownership recorded".
+      const key = priv.ownershipKey(priv.activeFoundationSlug(), emailBrief);
+      expect(key).not.toBeNull();
+      expect(priv.knownBriefIds.get(key as string), 'the restore recorded no ownership; the next save will be refused as unowned').toEqual(
+        expect.objectContaining({ id, etag: 'W/"4"' })
+      );
+    });
+
+    // The paid restore adopts the brief's own program; the email restore did not, so an Events
+    // brief could be opened while the selector still said Education. Correcting it by hand then
+    // triggers the program-switch reset and discards the brief the operator just restored.
+    it('adopts the restored email brief program', () => {
+      selectEmail();
+      internals().selectorForm.controls.programType.setValue('education');
+
+      (
+        internals() as unknown as {
+          onRestoreSavedEmailBrief(b: unknown, id: string, etag: string | null, approved: boolean): void;
+        }
+      ).onRestoreSavedEmailBrief({ ...emailBrief, programType: 'events' }, 'brief-1', 'W/"1"', true);
+
+      const programControl = internals().selectorForm.controls.programType as unknown as { value: string };
+      expect(programControl.value, 'the restored brief opened under the wrong program').toBe('events');
+    });
+
+    it('keeps the loaded brief when two types share one stage', () => {
+      selectEmail();
+      internals().emailBriefOutput.set(emailBrief);
+      (internals() as unknown as { onSelectEmailType(id: string): void }).onSelectEmailType('cfp-launch');
+      internals().emailBriefId.set('brief-cfp');
+
+      (internals() as unknown as { onSelectEmailType(id: string): void }).onSelectEmailType('colocated-cfp-reminder');
+
+      expect(internals().emailBriefId(), 'a same-stage type change discarded the loaded brief; it addresses the same row upstream').toBe('brief-cfp');
+    });
+
+    it('keys ownership per delivery type and stage, not per event', () => {
+      const key = (b: unknown): string => (internals() as unknown as { ownershipKey(p: string, b: unknown): string }).ownershipKey('tlf', b);
+
+      const paid = { ...emailBrief, deliveryType: 'paid-marketing', emailStage: undefined };
+      const cfp = { ...emailBrief, deliveryType: 'email', emailStage: 'CFP Launch' };
+      const countdown = { ...emailBrief, deliveryType: 'email', emailStage: 'Final Countdown' };
+
+      const keys = [key(paid), key(cfp), key(countdown)];
+      expect(new Set(keys).size, `siblings of one event collapsed onto the same ownership key: ${JSON.stringify(keys)}`).toBe(3);
+
+      // A brief with no delivery type is a pre-000030 row, and every one of those was paid. It
+      // must land on the SAME key as an explicit paid brief, or restoring a legacy brief would
+      // orphan the ownership record written for the same row under its explicit identity.
+      const legacy = { ...emailBrief, deliveryType: undefined, emailStage: undefined };
+      expect(key(legacy)).toBe(key(paid));
     });
 
     it('reports an error when the staging job FAILS after the ack', async () => {

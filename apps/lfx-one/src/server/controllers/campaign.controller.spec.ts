@@ -325,6 +325,38 @@ describe('CampaignController.loadBrief', () => {
     expect(error.toResponse()['errors']).toEqual([{ field: 'event_slug', message: 'event_slug is required', code: 'FIELD_VALIDATION_ERROR' }]);
   });
 
+  // An earlier revision folded an unrecognised stage to `''` and claimed that addressed the paid
+  // slot. It did not: `delivery_type` stayed `email`, so the lookup addressed `(email, '')` -- a
+  // real and DIFFERENT key -- and the caller got a confident answer about a brief it never asked
+  // for. Unlike `delivery_type`, where every unknown collapses toward the one pre-existing surface
+  // and can expose nothing that was hidden, stages are siblings with no narrower fallback.
+  it('refuses a stage outside the known list instead of silently querying another brief', async () => {
+    await controller.loadBrief(buildLoadReq({ event_slug: 'kubecon-eu-2026', project: 'tlf', delivery_type: 'email', stage: 'Fnal Countdown' }), res, next);
+
+    expect(loadBrief, 'a malformed stage still reached campaign-service').not.toHaveBeenCalled();
+    expect(res.json).not.toHaveBeenCalled();
+    const error = vi.mocked(next).mock.calls[0][0] as unknown as ServiceValidationError;
+    expect(error).toBeInstanceOf(ServiceValidationError);
+    expect(error.statusCode).toBe(400);
+    expect((error.toResponse()['errors'] as { field: string }[])[0].field).toBe('stage');
+  });
+
+  // The EMPTY stage is the paid brief's real stage, not a malformed value, so it must pass. A
+  // guard written as "reject anything not in CAMPAIGN_EMAIL_STAGES" would refuse every paid
+  // lookup -- the common case -- which is why this is asserted next to the rejection above.
+  it.each([
+    ['an omitted stage', { event_slug: 'kubecon-eu-2026', project: 'tlf' }],
+    ['an explicitly empty stage', { event_slug: 'kubecon-eu-2026', project: 'tlf', stage: '' }],
+    ['a recognised stage', { event_slug: 'kubecon-eu-2026', project: 'tlf', delivery_type: 'email', stage: 'Final Countdown' }],
+  ])('accepts %s', async (_label, query) => {
+    loadBrief.mockResolvedValue({ status: 'none', briefId: null, brief: null, etag: null, approved: false });
+
+    await controller.loadBrief(buildLoadReq(query), res, next);
+
+    expect(next).not.toHaveBeenCalled();
+    expect(loadBrief).toHaveBeenCalled();
+  });
+
   it.each([
     ['no event_slug param at all', { project: 'tlf' }],
     ['a blank event_slug param', { event_slug: '   ', project: 'tlf' }],
@@ -376,7 +408,7 @@ describe('CampaignController.loadBrief', () => {
 
     await controller.loadBrief(buildLoadReq(), res, next);
 
-    expect(loadBrief).toHaveBeenCalledWith(expect.any(Object), 'kubecon-eu-2026', 'tlf');
+    expect(loadBrief).toHaveBeenCalledWith(expect.any(Object), 'kubecon-eu-2026', 'tlf', 'paid-marketing', '');
     expect(next).not.toHaveBeenCalled();
     expect(res.json).toHaveBeenCalledWith({ status: 'none', briefId: null, brief: null, etag: null, approved: false });
   });
@@ -393,7 +425,7 @@ describe('CampaignController.loadBrief', () => {
 
     await controller.loadBrief(buildLoadReq(), res, next);
 
-    expect(loadBrief).toHaveBeenCalledWith(expect.any(Object), 'kubecon-eu-2026', 'tlf');
+    expect(loadBrief).toHaveBeenCalledWith(expect.any(Object), 'kubecon-eu-2026', 'tlf', 'paid-marketing', '');
     expect(next).not.toHaveBeenCalled();
     expect(res.json).toHaveBeenCalledWith({ status: 'loaded', briefId: 'brief-abc123', brief: mockBrief, etag: 'W/"7"', approved: true });
   });
@@ -408,9 +440,118 @@ describe('CampaignController.loadBrief', () => {
 
     await controller.loadBrief(buildLoadReq(), res, next);
 
-    expect(loadBrief).toHaveBeenCalledWith(expect.any(Object), 'kubecon-eu-2026', 'tlf');
+    expect(loadBrief).toHaveBeenCalledWith(expect.any(Object), 'kubecon-eu-2026', 'tlf', 'paid-marketing', '');
     expect(next).not.toHaveBeenCalled();
     expect(res.json).toHaveBeenCalledWith({ status: 'unreadable', briefId: 'brief-def456', brief: null, etag: 'W/"9"', approved: false });
+  });
+
+  it('forwards delivery_type=email so an email caller cannot be handed a paid brief', async () => {
+    // The parameter is what scopes the read to one surface. Briefs were stored one row per
+    // `(project, event_slug)` with no delivery dimension BEFORE LFXV2-3198 widened the key, so an
+    // email caller and a paid caller resolved to the SAME row -- which is why the email restore
+    // path was disabled outright rather than shipped with a known wrong answer.
+    //
+    // A STAGE is sent with it, because `(email, '')` is not an identity any brief can have: paid
+    // has no series and an email send is always some stage. An earlier version of this test
+    // asserted that impossible pair, mocking an upstream state that cannot exist.
+    loadBrief.mockResolvedValue({ status: 'none', briefId: null, brief: null, etag: null, approved: false });
+
+    await controller.loadBrief(buildLoadReq({ event_slug: 'kubecon-eu-2026', project: 'tlf', delivery_type: 'email', stage: 'Registration Push' }), res, next);
+
+    expect(loadBrief).toHaveBeenCalledWith(expect.any(Object), 'kubecon-eu-2026', 'tlf', 'email', 'Registration Push');
+    expect(next).not.toHaveBeenCalled();
+  });
+
+  // The pair the BFF now refuses locally rather than forwarding. Upstream rejects it with a 400,
+  // so relaying it would spend a round trip to learn something this layer already knows.
+  it.each([
+    ['email with no stage', { event_slug: 'kubecon-eu-2026', project: 'tlf', delivery_type: 'email' }],
+    ['paid with an email stage', { event_slug: 'kubecon-eu-2026', project: 'tlf', stage: 'CFP Launch' }],
+  ])('refuses %s without calling campaign-service', async (_label, query) => {
+    await controller.loadBrief(buildLoadReq(query), res, next);
+
+    expect(loadBrief, 'an impossible identity pair was forwarded upstream').not.toHaveBeenCalled();
+    const error = vi.mocked(next).mock.calls[0][0] as unknown as ServiceValidationError;
+    expect(error).toBeInstanceOf(ServiceValidationError);
+    expect(error.statusCode).toBe(400);
+  });
+
+  // Regression: the controller read `delivery_type` and NOT `stage`, so every lookup asked
+  // upstream for the empty stage — the PAID brief's stage. An email caller naming a real stage was
+  // answered `none` for a brief sitting right there in the database. Caught by driving the browser
+  // against a live service, not by any unit test, because both halves were individually correct:
+  // the client sent the stage and the service used it; only the controller dropped it in between.
+  it('forwards stage, so a send in an email series is reachable', async () => {
+    loadBrief.mockResolvedValue({ status: 'none', briefId: null, brief: null, etag: null, approved: false });
+
+    await controller.loadBrief(buildLoadReq({ event_slug: 'kubecon-eu-2026', project: 'tlf', delivery_type: 'email', stage: 'Registration Push' }), res, next);
+
+    expect(loadBrief).toHaveBeenCalledWith(expect.any(Object), 'kubecon-eu-2026', 'tlf', 'email', 'Registration Push');
+    expect(next).not.toHaveBeenCalled();
+  });
+
+  // The unrecognised-stage case is asserted above, as a REJECTION. An earlier revision of this
+  // suite pinned the opposite -- that a bad stage silently became `''` -- which is the behaviour
+  // the fix removed: with `delivery_type` still `email`, `''` is not the paid slot but the real
+  // and different key `(email, '')`, so the caller was answered about a brief nobody asked for.
+  // The two assertions cannot both stand, so that test is gone rather than left contradicting.
+
+  // A repeated `?delivery_type=a&delivery_type=b` arrives as an ARRAY. A bare `typeof === 'string'`
+  // test collapses that to `''`, which is indistinguishable from "omitted" and therefore answered
+  // with the PAID brief — so a malformed request got a confident answer about a brief it never
+  // asked for. Rejected before the absent-value default, as `getBriefMetrics` does for `window`.
+  it.each([
+    ['delivery_type', { event_slug: 'kubecon-eu-2026', project: 'tlf', delivery_type: ['email', 'paid-marketing'] }],
+    ['stage', { event_slug: 'kubecon-eu-2026', project: 'tlf', stage: ['CFP Launch', 'Post-Event'] }],
+  ])('refuses a repeated %s rather than defaulting it', async (field, query) => {
+    await controller.loadBrief(buildLoadReq(query), res, next);
+
+    expect(loadBrief, 'a repeated parameter still reached campaign-service').not.toHaveBeenCalled();
+    const error = vi.mocked(next).mock.calls[0][0] as unknown as ServiceValidationError;
+    expect(error).toBeInstanceOf(ServiceValidationError);
+    expect(error.statusCode).toBe(400);
+    expect((error.toResponse()['errors'] as { field: string }[])[0].field).toBe(field);
+  });
+
+  it('refuses an explicitly unrecognised delivery_type instead of returning the paid brief', async () => {
+    // An earlier revision narrowed a typo to paid, reasoning that failing closed toward the
+    // pre-existing behaviour could not expose a brief that was hidden before. True, and beside the
+    // point: `?delivery_type=emial` then answered 200 with the PAID brief — a confident answer to a
+    // question the caller never asked. Upstream restricts this param to two values, so a third was
+    // never the contract, and `stage` already rejects rather than narrows.
+    await controller.loadBrief(buildLoadReq({ event_slug: 'kubecon-eu-2026', project: 'tlf', delivery_type: 'not-a-surface' }), res, next);
+
+    expect(loadBrief, 'a malformed delivery_type still reached campaign-service').not.toHaveBeenCalled();
+    expect(res.json).not.toHaveBeenCalled();
+    const error = vi.mocked(next).mock.calls[0][0] as unknown as ServiceValidationError;
+    expect(error).toBeInstanceOf(ServiceValidationError);
+    expect(error.statusCode).toBe(400);
+    expect((error.toResponse()['errors'] as { field: string }[])[0].field).toBe('delivery_type');
+  });
+
+  // The OMITTED case keeps its old meaning, and that half is what the rejection above must not
+  // break: every caller predating the parameter is paid, so an absent value has to keep restoring
+  // paid briefs exactly as before.
+  // An EXPLICIT `?delivery_type=` is a parameter the caller sent, and `''` is not one of the two
+  // values upstream accepts. Treating it as "omitted" answered a malformed request with the paid
+  // brief. Contrast `stage`, where `''` IS legal — it is the paid brief's real stage — so the two
+  // are checked differently on purpose.
+  it('refuses an explicitly empty delivery_type rather than defaulting it to paid', async () => {
+    await controller.loadBrief(buildLoadReq({ event_slug: 'kubecon-eu-2026', project: 'tlf', delivery_type: '' }), res, next);
+
+    expect(loadBrief, 'an empty delivery_type was treated as absent and answered with the paid brief').not.toHaveBeenCalled();
+    const error = vi.mocked(next).mock.calls[0][0] as unknown as ServiceValidationError;
+    expect(error).toBeInstanceOf(ServiceValidationError);
+    expect(error.statusCode).toBe(400);
+  });
+
+  it('still defaults an omitted delivery_type to paid-marketing', async () => {
+    loadBrief.mockResolvedValue({ status: 'none', briefId: null, brief: null, etag: null, approved: false });
+
+    await controller.loadBrief(buildLoadReq({ event_slug: 'kubecon-eu-2026', project: 'tlf' }), res, next);
+
+    expect(loadBrief).toHaveBeenCalledWith(expect.any(Object), 'kubecon-eu-2026', 'tlf', 'paid-marketing', '');
+    expect(next).not.toHaveBeenCalled();
   });
 
   it('sends a failed load to the error middleware instead of returning a degraded result', async () => {

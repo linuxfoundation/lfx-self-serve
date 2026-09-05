@@ -17,6 +17,7 @@ import {
   CampaignBriefRequest,
   CampaignCreateRequest,
   CampaignCreateResponse,
+  CampaignDeliveryType,
   CampaignEmailStage,
   CampaignJobOutcome,
   CampaignJobStatus,
@@ -125,9 +126,27 @@ export class CampaignService {
    * restore a brief filed under a foundation they are not looking at. The server refuses the
    * request outright when it is missing rather than defaulting.
    */
-  public loadBrief(eventSlug: string, projectSlug: string): Observable<CampaignBriefLoadResult> {
+  public loadBrief(
+    eventSlug: string,
+    projectSlug: string,
+    deliveryType: CampaignDeliveryType = 'paid-marketing',
+    // Which send in an email series to open. Empty addresses the paid brief, which has no series.
+    stage: CampaignEmailStage | '' = ''
+  ): Observable<CampaignBriefLoadResult> {
     return this.http.get<CampaignBriefLoadResult>('/api/campaigns/brief', {
-      params: new HttpParams().set('event_slug', eventSlug).set('project', projectSlug),
+      // `delivery_type` and `stage` are two of the four parts of a brief's identity upstream, which
+      // keys a row on `(project, event_slug, delivery_type, stage)`. They are not filters over a
+      // result set: an event holds a paid brief AND one per stage of its email series, so a lookup
+      // naming only the slug does not name one brief. Sending them is what makes a send
+      // addressable; omitting them is what once handed an email caller a paid brief and kept the
+      // email restore path disabled.
+      //
+      // Both are defaulted here as well as on the server so the two agree on what an omitted
+      // parameter means: `paid-marketing` and the empty stage. That agreement is the point — it is
+      // a wire default for backward-compatible callers, not a claim about stored rows. Pre-field
+      // email briefs exist and share that identity after the backfill
+      // (linuxfoundation/lfx-self-serve#2214).
+      params: new HttpParams().set('event_slug', eventSlug).set('project', projectSlug).set('delivery_type', deliveryType).set('stage', stage),
     });
   }
 

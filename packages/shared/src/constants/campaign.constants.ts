@@ -1195,3 +1195,12 @@ export const CAMPAIGN_EMAIL_TYPES: readonly CampaignEmailTypeOption[] = [
  * -- so an operator who ignores the selector gets exactly the copy they get today.
  */
 export const DEFAULT_CAMPAIGN_EMAIL_TYPE_ID = 'main-registration-push';
+
+/**
+ * Every stage an email campaign can occupy, in the order a series runs.
+ *
+ * A runtime list rather than only a type, because the values are validated at the wire boundary:
+ * campaign-service keys a brief on its stage, so a stage the UI does not recognise must be
+ * rejected there rather than silently addressing a different brief.
+ */
+export const CAMPAIGN_EMAIL_STAGES = ['CFP Launch', 'Schedule Announcement', 'Registration Push', 'Discount Offer', 'Final Countdown', 'Post-Event'] as const;

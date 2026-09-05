@@ -278,6 +278,23 @@ export async function validateScrapeUrl(url: string): Promise<string> {
   return `https://${target.host}${target.path}`;
 }
 
+/**
+ * Bytes of response body this fetch will accumulate before abandoning the request.
+ *
+ * The 15s timeout bounds TIME, not MEMORY: on a fast link a server can stream gigabytes inside it,
+ * and every byte is buffered here before any caller sees it. This is a server-side fetch of a
+ * user-supplied URL, so the size is chosen by whoever supplies the URL.
+ *
+ * 5 MiB is far above any real event page -- the largest we scrape are ~1 MiB of markup -- and far
+ * below what threatens the process. The consumer (`extractableHtml`) caps its own input at 150k
+ * characters anyway, so nothing downstream wants more than this.
+ *
+ * The request is DESTROYED on breach rather than truncated: a truncated page is a page that lies
+ * about its own content, and would be handed to an extraction prompt as though complete. Failing
+ * loudly is the honest outcome, and matches how the other guards in this file behave.
+ */
+const MAX_RESPONSE_BYTES = 5 * 1024 * 1024;
+
 export async function fetchSafeUrl(url: string, signal: AbortSignal): Promise<{ html: string; ok: boolean; status: number }> {
   const https = await import('node:https');
   const combinedSignal = AbortSignal.any([signal, AbortSignal.timeout(15_000)]);
@@ -296,7 +313,19 @@ export async function fetchSafeUrl(url: string, signal: AbortSignal): Promise<{ 
         },
         (res) => {
           const chunks: Buffer[] = [];
-          res.on('data', (chunk: Buffer) => chunks.push(chunk));
+          let received = 0;
+          res.on('data', (chunk: Buffer) => {
+            received += chunk.length;
+            if (received > MAX_RESPONSE_BYTES) {
+              // Destroy the REQUEST, not just the response: this stops the transfer at the socket
+              // rather than letting the remote keep streaming into a buffer nobody will read. The
+              // reject lands before the 'end' handler can resolve, so no partial body escapes.
+              req.destroy();
+              reject(new Error(`Response exceeded ${MAX_RESPONSE_BYTES} bytes`));
+              return;
+            }
+            chunks.push(chunk);
+          });
           res.on('end', () => {
             const loc = res.headers['location'];
             resolve({ body: Buffer.concat(chunks).toString('utf-8'), statusCode: res.statusCode ?? 0, location: Array.isArray(loc) ? loc[0] : loc });

@@ -25,7 +25,7 @@ vi.mock('../helpers/url-validation', () => ({
 import { CAMPAIGN_DELIVERY_TYPES } from '@lfx-one/shared/constants';
 import type { Request } from 'express';
 
-import { buildFinalUrl, CampaignProxyService } from './campaign-proxy.service';
+import { buildFinalUrl, CampaignProxyService, extractableHtml } from './campaign-proxy.service';
 
 const req = {} as unknown as Request;
 
@@ -608,6 +608,827 @@ describe('CampaignProxyService legacy platform gate', () => {
     expect(text).toMatch(/Unsupported platform/i);
     // And the four that ARE wired are still offered, so the message says what to do instead.
     expect(text).toContain('google-ads');
+  });
+});
+
+describe('extractableHtml', () => {
+  // The regression this function exists to prevent. Measured on the Open Source Summit Japan page:
+  // 151,727 bytes total, of which 62,784 are `<style>` and 38,281 are `<script>`; the venue string
+  // sits at byte 30,351, just past the old blind `slice(0, 30_000)`. The extractor was handed a
+  // window that was almost entirely CSS, reported the facts absent, and downstream copy invented
+  // replacements. These pin the properties that make that impossible rather than the byte counts,
+  // which belong to one page and would rot.
+  it('keeps prose that a fixed 30k slice would have cut, by removing style and script first', () => {
+    const html = `<style>${'a{color:red}'.repeat(3000)}</style><p>Tokyo, December 7-9 2026</p>`;
+
+    expect(html.slice(0, 30_000)).not.toContain('Tokyo');
+    expect(extractableHtml(html)).toContain('Tokyo, December 7-9 2026');
+  });
+
+  // JSON-LD is where event pages most reliably publish `startDate`/`endDate`/`location` as
+  // machine-readable schema.org data -- exactly the fields the extraction prompt asks for. An
+  // earlier revision stripped every `<script>`, which discarded it and kept the "no date survived"
+  // failure alive for any page whose dates live only there.
+  it('preserves application/ld+json while stripping every other script', () => {
+    const html =
+      `<script type="application/ld+json">{"startDate":"2027-03-15","location":"Barcelona"}</script>` + `<script>var tracking = 1;</script><p>prose</p>`;
+
+    const out = extractableHtml(html);
+
+    expect(out).toContain('"startDate":"2027-03-15"');
+    expect(out).toContain('Barcelona');
+    expect(out).not.toContain('var tracking');
+    expect(out).toContain('prose');
+  });
+
+  // Prepended, not appended: the cap truncates the TAIL, so a page long enough to hit it must not
+  // be able to push the structured facts out of the window.
+  it('keeps json-ld even when the stripped body fills the entire cap', () => {
+    const html = `<script type="application/ld+json">{"startDate":"2027-03-15"}</script><p>${'x'.repeat(200_000)}</p>`;
+
+    expect(extractableHtml(html)).toContain('"startDate":"2027-03-15"');
+  });
+
+  it('removes style, svg and comments', () => {
+    const out = extractableHtml('<style>.a{color:red}</style><svg><path d="M0"/></svg><!-- note --><p>kept</p>');
+
+    expect(out).not.toContain('color:red');
+    expect(out).not.toContain('<path');
+    expect(out).not.toContain('note');
+    expect(out).toContain('kept');
+  });
+
+  // The cap is the only bound on what reaches the prompt, so it has to hold for input that
+  // survives stripping entirely.
+  it('caps the stripped body', () => {
+    expect(extractableHtml('<p>' + 'y'.repeat(200_000) + '</p>').length).toBeLessThanOrEqual(60_000);
+  });
+
+  // The case the cap test above CANNOT reach, and the one that matters most. An earlier revision
+  // composed the result as `jsonLd + stripped.slice(0, 60_000)`, bounding only the second term:
+  // a 500KB `ld+json` block produced 500,055 characters against a documented 60,000 cap. The
+  // preserved-JSON-LD fix introduced that hole, which is why each arm needs its own assertion --
+  // a test that feeds only prose exercises the one path that was already bounded.
+  //
+  // JSON-LD is the more attacker-controllable of the two: it is machine-written and invisible on
+  // the rendered page. `fetchSafeUrl` now bounds the DOWNLOAD at 5 MiB, but that is two orders of
+  // magnitude above the prompt budget and says nothing about how much of a permitted body is
+  // structured data -- a 1 MiB page well inside the ceiling can be almost entirely `ld+json`.
+  // This cap is what bounds the PROMPT, and it is the only one that does.
+  it('caps the composed result, not merely the stripped body', () => {
+    const hugeLd = `<script type="application/ld+json">${'x'.repeat(500_000)}</script><p>short</p>`;
+    const hugeBoth = `<script type="application/ld+json">${'x'.repeat(500_000)}</script><p>${'y'.repeat(500_000)}</p>`;
+
+    expect(extractableHtml(hugeLd).length).toBeLessThanOrEqual(60_000);
+    expect(extractableHtml(hugeBoth).length).toBeLessThanOrEqual(60_000);
+  });
+
+  // Budgeted rather than truncated wholesale: an oversized JSON-LD block must not starve the prose
+  // of the entire budget, or a page whose facts are in prose loses them to a block of markup.
+  it('leaves budget for prose when json-ld is oversized', () => {
+    const out = extractableHtml(`<script type="application/ld+json">${'x'.repeat(500_000)}</script><p>Tokyo</p>`);
+
+    expect(out).toContain('Tokyo');
+  });
+
+  // HTML permits whitespace between a closing tag's name and its `>`, and browsers honour it, so
+  // `</script >` closes the element exactly as `</script>` does. A stripper anchored on `</script>`
+  // matches neither and leaves the WHOLE element -- body included -- in the output. Reported by
+  // CodeQL as "Bad HTML filtering regexp"; all four patterns here had it, not only the one flagged.
+  //
+  // Asserted per-variant rather than in one blob because each `.replace` is its own regex: a fix
+  // applied to `script` alone would still pass a test that only fed it a script tag.
+  it.each([
+    ['space', '<script>alert(1)</script >'],
+    ['tab', '<script>alert(1)</script\t>'],
+    ['newline', '<script>alert(1)</script\n>'],
+    // CodeQL's SECOND report, after a `\s*>` fix closed only the whitespace cases. An end tag is
+    // `</` name then anything up to `>`, so junk after the name still closes the element.
+    ['whitespace then junk', '<script>alert(1)</script\t\n bar>'],
+    ['attribute-shaped junk', '<script>alert(1)</script foo=bar>'],
+  ])('strips a script closed with %s before the bracket', (_label, markup) => {
+    const out = extractableHtml(`<p>before</p>${markup}<p>after</p>`);
+
+    expect(out).not.toContain('alert(1)');
+    expect(out).toContain('before');
+    expect(out).toContain('after');
+  });
+
+  // The leading `\s` in `<\/script(\s[^>]*)?>` is load-bearing. Without it the pattern would also
+  // swallow `</scriptx>`, which names a different tag and closes nothing — so everything from the
+  // opening tag to the next real `</script>` would vanish, silently deleting page content.
+  it('does not treat a longer tag name as a closing script tag', () => {
+    const out = extractableHtml('<p>before</p><script>alert(1)</scriptx>INSIDE</script><p>after</p>');
+
+    // `</scriptx>` closes nothing, so the element runs to the REAL `</script>` and everything
+    // between goes with it. Asserting only that `alert(1)` is gone would not discriminate: the
+    // `\s`-less pattern also removes it, just by stopping at the wrong tag. What separates the
+    // two is whether `INSIDE` — text after the decoy and still inside the script — survives.
+    expect(out).not.toContain('alert(1)');
+    expect(out).not.toContain('INSIDE');
+    expect(out).not.toContain('</script');
+    expect(out).toContain('before');
+    expect(out).toContain('after');
+  });
+
+  it('strips style and svg closed with whitespace before the bracket', () => {
+    const out = extractableHtml('<style>.a{color:red}</style ><svg><path d="M0"/></svg ><p>kept</p>');
+
+    expect(out).not.toContain('color:red');
+    expect(out).not.toContain('<path');
+    expect(out).toContain('kept');
+  });
+
+  // The JSON-LD matcher is a fourth copy of the same closing pattern. It fails the OTHER way: a
+  // block closed `</script >` goes unmatched here and is then stripped as an ordinary script, so
+  // the structured event facts the extraction depends on are silently lost rather than leaked.
+  it('preserves json-ld closed with whitespace before the bracket', () => {
+    const out = extractableHtml('<script type="application/ld+json">{"startDate":"2027-03-15"}</script ><p>x</p>');
+
+    expect(out).toContain('"startDate":"2027-03-15"');
+  });
+
+  // `data-type="application/ld+json"` is not the `type` attribute. Matching any attribute name
+  // ENDING in `type` copied an ordinary script into `jsonLd`, where it survived the strip below
+  // and reached the extraction prompt as attacker-controllable text — the same leak the end-tag
+  // fixes closed, through the attribute side instead.
+  it.each([
+    ['data-type decoy', '<script type="text/javascript" data-type="application/ld+json">alert(1)</script>'],
+    ['xtype decoy', '<script xtype="application/ld+json">alert(1)</script>'],
+  ])('does not treat %s as json-ld', (_label, markup) => {
+    const out = extractableHtml(`${markup}<p>KEPT</p>`);
+
+    expect(out).not.toContain('alert(1)');
+    expect(out).toContain('KEPT');
+  });
+
+  // The real attribute must still match, including the spacing HTML permits around `=`.
+  it.each([
+    ['plain', '<script type="application/ld+json">{"startDate":"2027-03-15"}</script>'],
+    ['spaced equals', '<script type = "application/ld+json">{"startDate":"2027-03-15"}</script>'],
+    ['single quotes', '<script type=\'application/ld+json\'>{"startDate":"2027-03-15"}</script>'],
+    ['other attributes', '<script id="ld" type="application/ld+json" defer>{"startDate":"2027-03-15"}</script>'],
+  ])('preserves json-ld written with %s', (_label, markup) => {
+    expect(extractableHtml(`${markup}<p>x</p>`)).toContain('"startDate":"2027-03-15"');
+  });
+
+  // A custom element sharing a stripped tag's PREFIX must not start a match. `<svg-icon>` begins
+  // with `<svg`, so without a boundary assertion the strip ran from there to the next real
+  // `</svg>` and deleted every bit of event prose in between. That is the opposite failure from
+  // the closing-tag cases above: not content surviving that should be stripped, but content
+  // stripped that should survive — and on an extraction prompt, silently losing the event's own
+  // description is the worse of the two.
+  it.each([
+    ['svg-icon', '<svg-icon>KEEP THIS PROSE</svg-icon><svg><path d="M0"/></svg>'],
+    ['style-guide', '<style-guide>KEEP THIS PROSE</style-guide><style>.a{color:red}</style>'],
+    ['scriptorium', '<scriptorium>KEEP THIS PROSE</scriptorium><script>alert(1)</script>'],
+  ])('does not let <%s> start a strip', (_label, markup) => {
+    const out = extractableHtml(`${markup}<p>after</p>`);
+
+    expect(out, 'a prefix-sharing custom element swallowed the prose after it').toContain('KEEP THIS PROSE');
+    expect(out).toContain('after');
+    // The REAL element is still stripped; the boundary must not weaken that.
+    expect(out).not.toContain('<path');
+    expect(out).not.toContain('color:red');
+    expect(out).not.toContain('alert(1)');
+  });
+
+  // A pathological page must not stall the SSR event loop. Every stripper is lazy-quantified, so
+  // an unclosed `<style ` makes each start position scan to end-of-document for a close that never
+  // arrives -- quadratic in the count, and Node is single-threaded, so the whole BFF freezes for
+  // every concurrent user while it runs. Any authenticated user can supply the scrape URL.
+  //
+  // The assertion is a TIME budget rather than a length one, because length is not what hurts:
+  // capping the OUTPUT leaves the work already done. 2s is deliberately loose against the ~0.4s
+  // this should take -- CI machines are slower and a flaky perf test is worse than none -- but it
+  // is far below the ~6s the unbounded version took on this exact input.
+  it('does not stall on an adversarial page of unclosed tags', () => {
+    const evil = '<style '.repeat(80_000);
+
+    const started = Date.now();
+    const out = extractableHtml(`${evil}<p>Tokyo</p>`);
+    const elapsed = Date.now() - started;
+
+    // 4s, not 2s. Locally this is ~0.4s and the unbounded version was ~6.1s, so the budget only has
+    // to separate those two -- and a shared CI runner sits between them: 2s failed there at 2212ms
+    // while the cap was working correctly. A perf assertion that fails on a slow runner teaches
+    // people to re-run CI, which is worse than no assertion.
+    expect(elapsed, `extractableHtml took ${elapsed}ms on 80k unclosed <style tokens; the input cap is not applied`).toBeLessThan(4000);
+    expect(out.length).toBeLessThanOrEqual(60_000);
+  });
+
+  // The source cap must not become the binding constraint on ordinary pages: what a large
+  // templated page strips down to has to stay above the OUTPUT cap, or truncation would start
+  // deciding what the prompt sees instead of the 60k budget doing it.
+  //
+  // Asserted as "still fills the output cap", not "this specific prose survives" -- a first
+  // version of this test put prose after 81k of boilerplate and failed, but on the pre-existing
+  // 60k output slice rather than on the new truncation. That would have pinned the wrong thing.
+  it('leaves a large templated page still filling the output cap', () => {
+    const boiler = '<div class="wrapper"><span class="x">   </span></div>\n'.repeat(1500);
+
+    const out = extractableHtml(`${boiler}<p>KubeCon Europe, Amsterdam</p>${boiler}`);
+
+    expect(out.length, 'the source cap now binds before the output cap does').toBe(60_000);
+  });
+
+  // Prose EARLY in such a page -- where an event's own description sits -- must survive both caps.
+  it('keeps prose that precedes the boilerplate', () => {
+    const boiler = '<div class="wrapper"><span class="x">   </span></div>\n'.repeat(1500);
+
+    expect(extractableHtml(`<p>KubeCon Europe, Amsterdam</p>${boiler}`)).toContain('Amsterdam');
+  });
+
+  // The JSON-LD matcher runs BEFORE the source cap, so it needs its own bound. Its lazy span makes
+  // every UNMATCHED opening rescan the rest of the document — quadratic in the opening count, and
+  // measured at ~7.7s for 40k openings. An earlier version of this file claimed this matcher was
+  // "anchored and costs ~1ms": true against `<style` input, wrong for its own worst case.
+  it('does not stall on a page full of unmatched json-ld openings', () => {
+    // `'<script '` with NO `>` anywhere, which is the shape that actually stalls. An earlier
+    // version of this test used `'<script type="application/ld+json">'.repeat(...)`: every token
+    // contains `>`, so the greedy attribute span never backtracks, the count short-circuits at 65
+    // openings, and the whole thing finished in 1ms — green while the production stall was intact.
+    // On this input the same code path took ~13.5s across both JSON-LD passes.
+    const evil = '<script '.repeat(50_000);
+
+    const started = Date.now();
+    const out = extractableHtml(`${evil}<p>Tokyo</p>`);
+    const elapsed = Date.now() - started;
+
+    // 4s for the same reason as the sibling test above: separate this from the ~13.5s the
+    // unbounded attribute spans cost, with room for a loaded CI runner in between.
+    expect(elapsed, `extractableHtml took ${elapsed}ms on 40k unmatched json-ld openings`).toBeLessThan(4000);
+    expect(out.length).toBeLessThanOrEqual(60_000);
+  });
+
+  // At the FULL download ceiling, which is the largest body that can now reach this function.
+  //
+  // This is what makes `MAX_JSON_LD_SCAN_CHARS` honest about its own role: with the attribute
+  // spans bounded the JSON-LD passes are LINEAR, so 5 MiB costs ~1s rather than growing
+  // quadratically, and the 1 MiB scan cap is defence in depth rather than the thing holding this
+  // up. Removing that cap alone does not fail a test, and the comment says so instead of implying
+  // it is load-bearing.
+  it('stays bounded at the full fetch ceiling', () => {
+    const fiveMiB = '<script '.repeat((5 * 1024 * 1024) / 8);
+
+    const started = Date.now();
+    extractableHtml(fiveMiB);
+
+    expect(Date.now() - started, 'the json-ld passes are not linear at the download ceiling').toBeLessThan(6000);
+  });
+
+  // The REMOVAL pass is capped like the two above it. A body with one valid block early and
+  // unmatched openings past the cap used to send this pass over the whole 5 MiB -- 491ms versus
+  // 99ms bounded. Not a stall on its own now that the attribute spans are bounded, but a cap that
+  // one of three passes ignores stops being true the moment something else is relaxed.
+  it('bounds the json-ld removal pass, not just the match', () => {
+    const body = `<script type="application/ld+json">{"startDate":"2027-03-15"}</script>${'<script '.repeat((5 * 1024 * 1024) / 8)}`;
+
+    const started = Date.now();
+    const out = extractableHtml(body);
+
+    expect(Date.now() - started, 'the removal pass scanned past MAX_JSON_LD_SCAN_CHARS').toBeLessThan(4000);
+    // The block found inside the cap is still preserved -- bounding must not cost the extraction.
+    expect(out).toContain('"startDate":"2027-03-15"');
+  });
+
+  // A flat `slice(0, MAX_SOURCE_CHARS)` cut whichever block 150k landed inside, taking its closing
+  // tag with it -- the stripper then could not match, and 150k of CSS filled the budget as prose
+  // while the text after it was lost. This is the fixed-slice failure the helper exists to fix,
+  // recreated at a different offset, so it is pinned per strippable tag rather than once.
+  describe.each([
+    ['style', `<style>${'a'.repeat(160_000)}</style>`],
+    ['script', `<script>${'x'.repeat(160_000)}</script>`],
+    ['svg', `<svg>${'x'.repeat(160_000)}</svg>`],
+  ])('keeps prose after a %s block that straddles the source cap', (tag, block) => {
+    it('drops the block and keeps the text behind it', () => {
+      const out = extractableHtml(`${block}<p>Tokyo</p>`);
+
+      expect(out, `the ${tag} block survived the cap and filled the budget`).not.toContain(`<${tag}`);
+      expect(out).toContain('Tokyo');
+    });
+  });
+
+  // The budget is spent on PROSE, so text on both sides of a straddling block survives.
+  it('keeps prose from before and after a straddling block', () => {
+    const out = extractableHtml(`<p>Osaka</p><style>${'a'.repeat(160_000)}</style><p>Tokyo</p>`);
+
+    expect(out).toContain('Osaka');
+    expect(out).toContain('Tokyo');
+  });
+
+  // Skipping blocks whole must not become the new hazard: the walk searches forward for each
+  // close, and a body whose blocks never close would run that search to EOF from every opening.
+  // `indexOf` does not backtrack, so this is linear where the strippers are quadratic -- the same
+  // input costs ~460s if the strippers ever see it unbounded.
+  it('stays bounded when no strippable block ever closes', () => {
+    const openings = '<script '.repeat((5 * 1024 * 1024) / 8);
+
+    const started = Date.now();
+    const out = extractableHtml(openings);
+
+    expect(Date.now() - started, 'the prose-budget walk scanned quadratically').toBeLessThan(4000);
+    expect(out.trim()).toBe('');
+  });
+
+  // The opening pattern and the strippers are both `/i`, so the close search must be too. A
+  // case-sensitive search does not find `</SCRIPT>`, and the block is then treated as unclosed:
+  // its CONTENTS are kept as prose and spend the budget, and on a large enough block they push the
+  // real text out entirely. Uppercase tags are ordinary in CMS and legacy markup.
+  //
+  // The assertion is on the block CONTENTS, not on the trailing prose. A first draft asserted only
+  // that `Tokyo` survived, which it does either way on a short block -- the test passed against a
+  // deliberately case-sensitive search and proved nothing.
+  describe.each([
+    ['SCRIPT', '<SCRIPT>var leaked=1;</SCRIPT>', 'var leaked=1'],
+    ['STYLE', '<STYLE>.leaked{color:red}</STYLE>', '.leaked'],
+    ['SVG', '<SVG><desc>leaked</desc></SVG>', 'leaked'],
+  ])('finds an uppercase </%s> close', (tag, block, contents) => {
+    it('skips the block instead of keeping its contents as prose', () => {
+      const out = extractableHtml(`${block}<p>Tokyo</p>${'word '.repeat(40_000)}`);
+
+      expect(out, `the uppercase ${tag} block was treated as unclosed`).not.toContain(contents);
+      expect(out).toContain('Tokyo');
+    });
+  });
+
+  // The same defect at the scale where it also costs the prose: a large uppercase block treated as
+  // unclosed fills the entire budget, and the text after it is gone.
+  it('does not let an uppercase block consume the whole budget', () => {
+    const out = extractableHtml(`<SCRIPT>${'x'.repeat(200_000)}</SCRIPT><p>Tokyo</p>`);
+
+    expect(out).toContain('Tokyo');
+  });
+
+  // A self-closing `<svg/>` has no close tag. Returning early on "no close found" discarded every
+  // word after an inline icon; inline icons sit between words on ordinary pages.
+  it('keeps prose after a self-closing svg', () => {
+    const out = extractableHtml(`<svg width="10" height="10"/><p>Tokyo</p>${'word '.repeat(40_000)}`);
+
+    expect(out).toContain('Tokyo');
+  });
+
+  // A raw-text block that never closes takes the rest of the document with it, and MUST.
+  //
+  // An earlier revision skipped just the opening tag and kept walking, which reads as the
+  // forgiving choice but is not: everything after an unclosed `<script>` is still script BODY, so
+  // "keeping the prose" meant copying executable text into the extraction prompt. A 1.2 MiB script
+  // whose close lay past the scan bound filled the entire 60k prompt with itself that way.
+  //
+  // The two cannot both hold -- that is the contradiction this replaced -- and this is the safe
+  // half: a page whose script never closes is malformed, and losing its tail costs a page that was
+  // already unparseable, while the other choice costs every well-formed page that hits the bound.
+  it('drops the remainder of a raw-text block that never closes', () => {
+    const out = extractableHtml(`<script>x<p>Tokyo</p>${'word '.repeat(40_000)}`);
+
+    expect(out).not.toContain('Tokyo');
+  });
+
+  // The consequence that matters, stated as its own case: a block whose close lies beyond
+  // `MAX_SCAN_CHARS` is unclosed as far as this function can prove, so its body never becomes
+  // prose. This is the case Copilot reported against the previous revision.
+  it('does not copy a raw-text body that straddles the scan bound', () => {
+    const out = extractableHtml(`<script>${'x'.repeat(1_200_000)}</script><p>Tokyo</p>`);
+
+    expect(out, 'a 1.2 MiB script body reached the extraction prompt').not.toContain('xxxxx');
+  });
+
+  // Self-closing tags must be detected from the OPENING tag, not by failing to find a close.
+  // Searching for an absent close runs to the scan bound from every icon -- 100k inline `<svg/>`
+  // cost ~5s that way, against ~8ms here. Guards the fix for the previous test from regressing
+  // into a performance bug.
+  it('stays linear on a page dense with self-closing svgs', () => {
+    const body = `${'<svg/>'.repeat(100_000)}<p>Tokyo</p>${'word '.repeat(40_000)}`;
+
+    const started = Date.now();
+    const out = extractableHtml(body);
+
+    expect(Date.now() - started, 'the self-closing path searched for an absent close tag').toBeLessThan(2000);
+    expect(out).toContain('Tokyo');
+  });
+
+  // The strippers replace each block with `' '`. The walk must too, or the same markup produces
+  // different words depending only on whether the page was above or below the cap.
+  it('leaves a separator where a skipped block was', () => {
+    const out = extractableHtml(`Held in Tokyo<style>.a{}</style>Japan, March 15 2027.${'word '.repeat(40_000)}`);
+
+    expect(out).toMatch(/Tokyo\s+Japan/);
+  });
+
+  // The close search must require the same boundary the strippers do. Without `(?=[\s>])`,
+  // `</scriptx>` was accepted as the end of `<script>`, so everything from the decoy to the real
+  // close -- still script body -- was kept as prose and spent the budget.
+  describe.each([
+    ['script', '<script>var leaked=1;</scriptx>DECOYED BODY</script>', 'DECOYED BODY'],
+    ['style', '<style>.a{}</stylesheet>DECOYED CSS</style>', 'DECOYED CSS'],
+    ['svg', '<svg><x/></svgx>DECOYED SVG</svg>', 'DECOYED SVG'],
+  ])('rejects a decoy close for %s', (tag, block, decoyed) => {
+    it('does not treat a longer tag name as the end of the block', () => {
+      const out = extractableHtml(`${block}<p>Tokyo</p>${'word '.repeat(40_000)}`);
+
+      expect(out, `a decoy close ended the ${tag} block early`).not.toContain(decoyed);
+      expect(out).toContain('Tokyo');
+    });
+  });
+
+  // The boundary must not reject LEGITIMATE closes: `</script >` carries trailing whitespace and
+  // is what the stripper below already accepts.
+  it('still finds a close that carries trailing whitespace', () => {
+    const out = extractableHtml(`<script>x</script ><p>Tokyo</p>${'word '.repeat(40_000)}`);
+
+    expect(out).not.toContain('<script');
+    expect(out).toContain('Tokyo');
+  });
+
+  // `<svg>` is the one strippable element that NESTS, and a non-greedy regex stops at the FIRST
+  // close -- leaving the rest of the outer element as prose, which reaches the extraction prompt.
+  // This is true below the source cap too, so it is not something the walk can compensate for.
+  describe.each([
+    ['one level', '<svg><svg>x</svg><text>SECRET</text></svg>'],
+    ['two levels', '<svg><svg><svg>x</svg></svg><text>SECRET</text></svg>'],
+    ['nested with a self-closing sibling', '<svg><svg/><text>SECRET</text></svg>'],
+  ])('strips a nested svg (%s)', (_label, block) => {
+    it('does not leave the outer body behind', () => {
+      expect(extractableHtml(`${block}<p>Tokyo</p>`)).not.toContain('SECRET');
+    });
+  });
+
+  // Depth tracking must not swallow what follows a well-formed element, nor treat a self-closing
+  // icon as an unbalanced open -- that would leave the scan permanently nested and drop the page.
+  it('keeps prose between and after svg blocks', () => {
+    const out = extractableHtml('<svg>a</svg>Held in<svg/>Tokyo, March 2027.');
+
+    expect(out).toContain('Held in');
+    expect(out).toContain('Tokyo');
+  });
+
+  // An svg that never closes: drop what it opened rather than letting raw markup through, which
+  // is how the walk treats an unclosed block too.
+  it('drops the remainder of an svg that never closes', () => {
+    expect(extractableHtml('<svg><text>SECRET</text>')).not.toContain('SECRET');
+  });
+
+  // `<svg>` legitimately contains `<style>` -- exported icons and maps do it routinely -- so the
+  // walk's close search must bound at the next opening of the SAME tag, not of any strippable tag.
+  // Bounding at any opening treated such an svg as unclosed and kept its markup as prose.
+  it('does not treat an svg containing a style block as unclosed', () => {
+    const icon = '<svg viewBox="0 0 10 10"><style>.c{fill:red}</style><path d="M0 0"/></svg>';
+
+    const out = extractableHtml(`${icon}<p>Tokyo</p>${'word '.repeat(40_000)}`);
+
+    expect(out, 'the nested style ended the svg early').not.toContain('M0 0');
+    expect(out).toContain('Tokyo');
+  });
+
+  // Same defect reached through a raw-text body: a script whose CONTENT mentions another tag.
+  it('does not end a script at a tag name inside its own body', () => {
+    const body = `<script>const tpl = '<style>'; SECRET_SCRIPT_TEXT;</script><p>Tokyo</p>${'word '.repeat(40_000)}`;
+
+    const out = extractableHtml(body);
+
+    expect(out).not.toContain('SECRET_SCRIPT_TEXT');
+    expect(out).toContain('Tokyo');
+  });
+
+  // The nested-svg cases above are all SHORT, so they exercise the stripper and never reach
+  // `boundedSource`. Above the source cap the walk decides where a block ends, and bounding svg
+  // like a raw-text element made a nested one look unclosed: the walk skipped only the opening
+  // tags and copied the outer tail through, where the stripper saw an unmatched close and left the
+  // body in the prompt. These force the capped path.
+  describe.each([
+    ['one level', '<svg><svg>x</svg><text>SECRET</text></svg>'],
+    ['two levels', '<svg><svg><svg>x</svg></svg><text>SECRET</text></svg>'],
+    ['uppercase', '<SVG><SVG>x</SVG><text>SECRET</text></SVG>'],
+  ])('strips a nested svg above the source cap (%s)', (_label, block) => {
+    it('does not leak the outer body through the walk', () => {
+      const out = extractableHtml(`${block}<p>Tokyo</p>${'word '.repeat(40_000)}`);
+
+      expect(out, 'the nested svg was treated as unclosed by the walk').not.toContain('SECRET');
+      expect(out).toContain('Tokyo');
+    });
+  });
+
+  // An svg that never closes: everything after it is still inside the element, so the walk must
+  // drop the remainder rather than copy markup through for the stripper to find unmatched.
+  it('drops the remainder of an unclosed svg above the source cap', () => {
+    const out = extractableHtml(`<svg><text>SECRET</text><p>Tokyo</p>${'word '.repeat(40_000)}`);
+
+    expect(out).not.toContain('SECRET');
+  });
+
+  // Depth tracking must not swallow a well-formed block's siblings or its trailing prose.
+  it('keeps prose after a nested svg above the source cap', () => {
+    const out = extractableHtml(`Held in Tokyo<svg><svg>a</svg>b</svg>Japan.${'word '.repeat(40_000)}`);
+
+    expect(out).toMatch(/Tokyo\s+Japan/);
+  });
+
+  // A commented-out `<svg` or `<script` is not markup, but the walk cannot tell: it sees the token,
+  // treats it as a block opening, and hunts for a close that never comes -- taking the rest of the
+  // page with it. Comments are therefore removed before the cap and before any tag-aware pass.
+  describe.each([
+    ['svg', '<!-- <svg placeholder -->'],
+    ['script', '<!-- <script src="x" -->'],
+    ['style', '<!-- <style media="print" -->'],
+  ])('a commented-out %s opening', (tag, comment) => {
+    it('does not end the document', () => {
+      const out = extractableHtml(`${comment}<p>Tokyo</p>${'word '.repeat(40_000)}`);
+
+      expect(out, `the commented ${tag} token was walked as real markup`).toContain('Tokyo');
+    });
+  });
+
+  it('drops what a comment contains', () => {
+    expect(extractableHtml(`<!-- SECRET --><p>Tokyo</p>${'word '.repeat(40_000)}`)).not.toContain('SECRET');
+  });
+
+  // Removing comments first must not cost the raw-text case: `<!--` inside a script STRING is not
+  // a comment, and treating it as an unterminated one would swallow the rest of the page. The
+  // remainder is left in place instead -- the script block is stripped downstream anyway.
+  it('keeps prose after an unterminated comment token', () => {
+    const out = extractableHtml(`<script>var a = "<!-- x";</script><p>Tokyo</p>${'word '.repeat(40_000)}`);
+
+    expect(out).toContain('Tokyo');
+  });
+
+  // The comment pass runs BEFORE the source cap, so it must not backtrack. A lazy
+  // `<!--[\s\S]*?-->` rescans to end of input from every unmatched `<!-- ` -- 67ms/248ms/996ms/
+  // 3987ms at 50k/100k/200k/400k, and ~27s on 1 MiB even with the input bounded, because the bound
+  // limits what it sees and not how many times it rescans that. `indexOf` does neither.
+  it('stays linear on a page dense with unterminated comment openings', () => {
+    const body = '<!-- '.repeat((5 * 1024 * 1024) / 5);
+
+    const started = Date.now();
+    extractableHtml(body);
+
+    expect(Date.now() - started, 'the comment pass backtracked').toBeLessThan(2000);
+  });
+
+  // `stripSvgBlocks` depth-tracks but has no notion of raw text, so an `<svg` token inside a
+  // script STRING opened a block that never closed and took the rest of the page with it. Script
+  // and style are therefore removed before the svg pass. The walk already skips raw-text blocks
+  // whole, which is why this only bit inputs under the source cap.
+  it('does not open an svg block on a tag name inside a script string', () => {
+    const out = extractableHtml(`<script>el.innerHTML = "<svg viewBox='0 0 16 16'>" + paths;</script><p>Tokyo</p>`);
+
+    expect(out, 'the svg token inside the script body was treated as markup').toContain('Tokyo');
+  });
+
+  // A capped attribute span silently failed to recognise a root `<svg>` carrying more than 512
+  // characters of attributes -- ordinary in Illustrator exports and chart roots -- so the whole
+  // element survived into the prompt. Removing the cap is not the fix: `[^>]*>` backtracks across
+  // the document on unmatched `<svg ` tokens. The tag END is found with `indexOf` instead, which
+  // has neither failure.
+  describe.each([
+    ['under the source cap', ''],
+    ['above the source cap', 'word '.repeat(40_000)],
+  ])('an svg whose open tag exceeds 512 characters of attributes (%s)', (_label, padding) => {
+    it('is still recognised and stripped', () => {
+      const long = `<svg class="${'c'.repeat(600)}"><text>SECRET</text></svg>`;
+
+      const out = extractableHtml(`${long}<p>Tokyo</p>${padding}`);
+
+      expect(out, 'the long-attribute svg was not recognised').not.toContain('SECRET');
+      expect(out).toContain('Tokyo');
+    });
+  });
+
+  // The tag scan must stay linear: an unbounded attribute span ran for over ten minutes here.
+  it('stays linear on a page dense with unmatched svg openings', () => {
+    const body = '<svg '.repeat((5 * 1024 * 1024) / 5);
+
+    const started = Date.now();
+    extractableHtml(body);
+
+    expect(Date.now() - started, 'the svg tag scan backtracked').toBeLessThan(2000);
+  });
+
+  // A `<!--` inside a script body is raw TEXT, not a comment. Recognising it as one paired it with
+  // the next real `-->` far below and deleted everything between -- the script's own close tag and
+  // the page's prose along with it.
+  it('does not pair a comment marker inside a script with a later real close', () => {
+    const out = extractableHtml(`<script>const marker='<!--'</script><p>Tokyo</p><!-- footer -->`);
+
+    expect(out, 'the marker inside the script body was read as a comment').toContain('Tokyo');
+    expect(out).not.toContain('marker');
+  });
+
+  // Commented-out schema is disabled markup. Collecting it fed the model a stale event's dates
+  // alongside the live ones, and the stale set could win.
+  it('ignores json-ld inside a comment while keeping the live block', () => {
+    const stale = '<!-- <script type="application/ld+json">{"startDate":"1999-01-01"}</script> -->';
+    const live = '<script type="application/ld+json">{"startDate":"2027-03-15"}</script>';
+
+    const out = extractableHtml(`${stale}${live}<p>Tokyo</p>`);
+
+    expect(out).toContain('2027-03-15');
+    expect(out, 'commented-out schema reached the prompt').not.toContain('1999-01-01');
+  });
+
+  // One scan means one answer. These are the shapes that used to make two passes disagree; each
+  // was a separate defect before the passes were merged.
+  describe.each([
+    ['a comment containing an svg opening', `<!-- <svg placeholder --><p>Tokyo</p>`, 'placeholder'],
+    ['a comment containing a script opening', `<!-- <script src="x" --><p>Tokyo</p>`, 'src='],
+    ['an svg token inside a script string', `<script>el.innerHTML = "<svg viewBox='0 0'>" + p;</script><p>Tokyo</p>`, 'innerHTML'],
+    ['a style token inside a script string', `<script>const t = '<style>';</script><p>Tokyo</p>`, 'const t'],
+  ])('resolves %s in a single pass', (_label, body, markup) => {
+    it('keeps the prose and drops the markup', () => {
+      const out = extractableHtml(body);
+
+      expect(out).toContain('Tokyo');
+      expect(out).not.toContain(markup);
+    });
+  });
+
+  // The prose budget must not stop the scan. Merging the old passes into one loop coupled them,
+  // so a `ld+json` block sitting after 150k of prose was never reached -- and which facts the
+  // extraction received then depended on where in the page the schema happened to sit. Footer
+  // schema is ordinary, so this is the common half of that split, not the rare one.
+  describe.each([
+    ['one long run between two blocks', `<style>.a{}</style>${'word '.repeat(40_000)}<style>.b{}</style>`],
+    ['many small blocks', `${'<style>.a{}</style>' + 'word '.repeat(200)}`.repeat(200)],
+  ])('json-ld that follows a full prose budget (%s)', (_label, prefix) => {
+    it('is still collected', () => {
+      const out = extractableHtml(`${prefix}<script type="application/ld+json">{"startDate":"2027-03-15"}</script>`);
+
+      expect(out, 'the prose budget terminated the scan before the schema').toContain('2027-03-15');
+    });
+  });
+
+  // The slash is IGNORED on HTML raw-text elements: a browser reads `<script/>body</script>` as a
+  // script whose content is `body`. Treating it as an empty element resumed prose extraction at
+  // once and sent that body -- and its closing tag -- to the prompt. Only `svg`, which is foreign
+  // content, is genuinely self-closing.
+  describe.each([
+    ['script', '<script/>SECRET_BODY</script>', 'SECRET_BODY'],
+    ['style', '<style/>.secret{color:red}</style>', '.secret'],
+  ])('a slash-closed %s is not an empty element', (tag, block, hidden) => {
+    it('keeps its content out of the prompt', () => {
+      const out = extractableHtml(`${block}<p>Tokyo</p>`);
+
+      expect(out, `the slash-closed ${tag} body reached the prompt`).not.toContain(hidden);
+      expect(out).toContain('Tokyo');
+    });
+  });
+
+  // The other half: `svg` IS self-closing, so this must not regress into treating `<svg/>` as an
+  // element that swallows the rest of the page.
+  it('still treats a slash-closed svg as an empty element', () => {
+    expect(extractableHtml('<svg/><p>Tokyo</p>')).toContain('Tokyo');
+  });
+
+  // A commented `<svg>` or `</svg>` INSIDE an svg is text, not a tag. The depth scan runs beneath
+  // the main loop, which already consumes comments, so it has to do the same -- otherwise the two
+  // readers disagree, which is the defect class the single scan exists to remove, reappearing one
+  // level down. It broke both ways: a commented OPENING left the element looking unclosed and
+  // dropped every word after it; a commented CLOSE ended it early and leaked the real body.
+  it('does not count a commented svg opening as nesting', () => {
+    const out = extractableHtml('<svg><!-- <svg> --></svg><p>Event details</p>');
+
+    expect(out, 'the commented opening left the svg looking unclosed').toContain('Event details');
+  });
+
+  it('does not let a commented svg close end the element early', () => {
+    const out = extractableHtml('<svg><!-- </svg> --><text>SECRET</text></svg><p>Tokyo</p>');
+
+    expect(out, 'the commented close ended the svg early').not.toContain('SECRET');
+    expect(out).toContain('Tokyo');
+  });
+
+  // Real nesting must still count, or the fix above becomes a way to smuggle markup through.
+  it('still counts real nesting alongside a comment', () => {
+    const out = extractableHtml('<svg><!-- x --><svg>y</svg><text>SECRET</text></svg><p>Tokyo</p>');
+
+    expect(out).not.toContain('SECRET');
+    expect(out).toContain('Tokyo');
+  });
+
+  // `>` is ordinary inside an attribute value, so the tag scan has to know when it is inside one.
+  // A plain `indexOf('>')` ended the tag early, the self-closing check then read the wrong
+  // character, the element looked unclosed, and every following word was dropped.
+  describe.each([
+    ['self-closing', '<svg aria-label="next >"/>'],
+    ['with a close tag', '<svg aria-label="a > b"><path/></svg>'],
+  ])('an svg with a > inside an attribute (%s)', (_label, block) => {
+    it('does not end the tag early', () => {
+      expect(extractableHtml(`${block}<p>Tokyo</p>`), 'the attribute > ended the tag').toContain('Tokyo');
+    });
+  });
+
+  // Inside an svg, a `<!--` or a tag-like token can be the CONTENT of a nested raw-text element
+  // rather than markup. Counting those broke the depth in both directions.
+  it('does not treat a comment marker inside a nested style as a comment', () => {
+    const out = extractableHtml('<svg><style>a{content:"<!--"}</style><path/></svg><p>Tokyo</p>');
+
+    expect(out).toContain('Tokyo');
+  });
+
+  it('does not let a close tag inside a nested style end the svg', () => {
+    const out = extractableHtml('<svg><style>a{content:"</svg>"}</style><text>SECRET</text></svg><p>Tokyo</p>');
+
+    expect(out, 'the css string ended the svg early').not.toContain('SECRET');
+    expect(out).toContain('Tokyo');
+  });
+
+  // A `type` attribute mentioned inside ANOTHER attribute's value is not a type declaration.
+  it('does not classify a script as json-ld from text inside another attribute', () => {
+    const out = extractableHtml(`<script data-note=" type='application/ld+json'">alert(1)</script><p>Tokyo</p>`);
+
+    expect(out, 'a quoted attribute value was read as the type attribute').not.toContain('alert(1)');
+    expect(out).toContain('Tokyo');
+  });
+
+  // The inert walk carries a forward cursor and bounds each search to the window it needs. Both
+  // matter: re-deriving from the element start was quadratic on NESTING (6.4s at 1k levels), and
+  // an unbounded lookahead was quadratic on SIBLINGS (24.7s on 5 MiB of ordinary svg markup).
+  it('stays linear across many sibling svg elements', () => {
+    const body = '<svg><text>x</text></svg>'.repeat(32_000);
+
+    const started = Date.now();
+    extractableHtml(body);
+
+    expect(Date.now() - started, 'the inert walk scanned past its window').toBeLessThan(2000);
+  });
+
+  it('stays linear on deeply nested svg carrying comments', () => {
+    const body = `${'<svg><!-- x -->'.repeat(8_000)}y${'</svg>'.repeat(8_000)}`;
+
+    const started = Date.now();
+    extractableHtml(body);
+
+    expect(Date.now() - started, 'the inert walk re-derived regions per tag').toBeLessThan(2000);
+  });
+
+  // HTML permits unquoted attribute values, so the JSON-LD test must accept all three forms. Only
+  // the quoted ones were recognised, and an unquoted block was stripped as an ordinary script --
+  // losing exactly the structured data the extraction is for.
+  describe.each([
+    ['double-quoted', '<script type="application/ld+json">'],
+    ['single-quoted', "<script type='application/ld+json'>"],
+    ['unquoted', '<script type=application/ld+json>'],
+  ])('json-ld declared with a %s type', (_label, open) => {
+    it('is collected', () => {
+      const out = extractableHtml(`${open}{"startDate":"2027-03-15"}</script><p>Tokyo</p>`);
+
+      expect(out).toContain('2027-03-15');
+    });
+  });
+
+  // Widening to unquoted must not widen to the wrong things.
+  it('does not collect a script whose unquoted type is something else', () => {
+    const out = extractableHtml(`<script type=text/javascript>{"startDate":"2027-03-15"}</script><p>Tokyo</p>`);
+
+    expect(out).not.toContain('2027-03-15');
+  });
+
+  it('does not collect an unquoted type mentioned inside another attribute', () => {
+    const out = extractableHtml(`<script data-note=" type=application/ld+json">alert(1)</script><p>Tokyo</p>`);
+
+    expect(out).not.toContain('alert(1)');
+    expect(out).toContain('Tokyo');
+  });
+
+  // Inside an `<svg>` the content is FOREIGN, where a slash really does close the element --
+  // unlike the HTML raw-text rule applied at the top level. Treating `<style/>` as unclosed there
+  // reported the whole graphic unclosed and dropped every word after it.
+  describe.each([
+    ['style', '<svg><style/><path/></svg>'],
+    ['script', '<svg><script/><path/></svg>'],
+  ])('a self-closing %s inside an svg', (tag, block) => {
+    it('does not make the graphic look unclosed', () => {
+      expect(extractableHtml(`${block}<p>Tokyo</p>`), `the self-closing ${tag} swallowed the page`).toContain('Tokyo');
+    });
+  });
+
+  // The existing linearity tests keep an svg token BETWEEN the inert regions, so the walk's window
+  // shrinks each iteration and they stayed green at ~5ms while this shape stalled. Many regions
+  // inside ONE element is the case that does not shrink -- the searches have to RESUME rather than
+  // restart, or N regions cost O(N x window).
+  it('stays linear on one svg holding many comments', () => {
+    const body = `<svg>${'<!---->'.repeat(80_000)}<path/></svg><p>Tokyo</p>`;
+
+    const started = Date.now();
+    const out = extractableHtml(body);
+
+    expect(Date.now() - started, 'the inert walk restarted its searches per region').toBeLessThan(2000);
+    expect(out).toContain('Tokyo');
+  });
+
+  // Same shape for the attribute walk: one tag with very many attributes. An unanchored test at
+  // each boundary re-scanned the whole tag remainder, so this cost ~18s at the 1 MiB scan bound.
+  it('stays linear on a script tag carrying many attributes', () => {
+    const body = `<script ${'a '.repeat(200_000)}>x</script><p>Tokyo</p>`;
+
+    const started = Date.now();
+    const out = extractableHtml(body);
+
+    expect(Date.now() - started, 'the attribute test scanned the tag remainder per boundary').toBeLessThan(2000);
+    expect(out).toContain('Tokyo');
+  });
+
+  it('returns an empty string for input that is entirely strippable', () => {
+    expect(extractableHtml('<style>.a{color:red}</style>').trim()).toBe('');
   });
 });
 

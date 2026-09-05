@@ -680,6 +680,497 @@ const EDUCATION_EXTRACTION_PROMPT = `Extract structured course/certification det
 
 If a field cannot be determined, use null.`;
 
+/** Total characters of page content that may reach the extraction prompt. */
+const EXTRACTION_CHAR_CAP = 60_000;
+
+/** The slice of that budget JSON-LD may claim before prose gets the rest. */
+const JSON_LD_BUDGET = 20_000;
+
+/**
+ * How many JSON-LD blocks a page may contribute before the rest are ignored.
+ *
+ * schema.org markup on a real event page runs to a handful of blocks; a page carrying more is not
+ * one whose structured data is worth trusting. Bounding the COUNT also bounds the work, since each
+ * block is copied out of the document as it is found.
+ */
+const MAX_JSON_LD_BLOCKS = 64;
+
+/**
+ * Characters of a fetched page the scan will look at.
+ *
+ * `MAX_RESPONSE_BYTES` (5 MiB, `url-validation.ts`) bounds the DOWNLOAD; this bounds how much of it
+ * is examined, and `MAX_SOURCE_CHARS` below bounds how much prose comes out. 1 MiB is far above any
+ * real event page and leaves room for an oversized `ld+json` block, which can legitimately dwarf
+ * the prose.
+ */
+const MAX_SCAN_CHARS = 1024 * 1024;
+
+/** Prose characters the scan will collect, before the JSON-LD budget is added. */
+const MAX_SOURCE_CHARS = 150_000;
+
+/** Identifies a `<script>` whose `type` marks it as JSON-LD, tested against its opening tag only. */
+const JSON_LD_ATTR_RE = /\stype\s*=\s*(?:["']application\/ld\+json["']|application\/ld\+json(?=[\s/>]|$))/iy;
+
+/** The three elements whose CONTENT is never prose: two raw-text elements and one that nests. */
+const EXTRACTABLE_BLOCK_RE = /^<(script|style|svg)(?=[\s/>])/i;
+
+/**
+ * A `<script>` or `<style>` OPENING tag.
+ *
+ * Used only by the svg depth scan, to skip a nested raw-text body whose CONTENT can contain
+ * `<svg`-looking text. The token alone, with the tag end resolved by `startTagEnd`, for the same
+ * reason `SVG_TAG_RE` carries no attribute span.
+ */
+const RAW_TEXT_OPEN_RE = /<(script|style)(?=[\s/>])/gi;
+
+/** A nested `<svg>` open or close tag, used for depth matching. */
+const SVG_TAG_RE = /<(\/?)svg(?=[\s/>])/gi;
+
+/**
+ * The index just past a start tag's closing `>`, respecting quoted attribute values, or -1.
+ *
+ * `indexOf('>')` is wrong for this and was the cause of three separate defects: a `>` inside an
+ * attribute (`<svg aria-label="next >"/>`) ended the tag early, so the self-closing check read the
+ * wrong character, the element looked unclosed, and every following word was dropped. Attribute
+ * values are the one place a `>` is ordinary rather than structural, so the scan has to know when
+ * it is inside one.
+ *
+ * Linear and allocation-free: one pass over the tag, tracking only which quote character opened
+ * the current value.
+ */
+function startTagEnd(html: string, from: number): number {
+  let quote = '';
+  for (let i = from; i < html.length; i++) {
+    const ch = html[i];
+    if (quote !== '') {
+      if (ch === quote) {
+        quote = '';
+      }
+      continue;
+    }
+    if (ch === '"' || ch === "'") {
+      quote = ch;
+      continue;
+    }
+    if (ch === '>') {
+      return i;
+    }
+  }
+  return -1;
+}
+
+/**
+ * Whether a `<script>` opening tag really declares `type="application/ld+json"`.
+ *
+ * A regex over the whole tag matches the text inside ANOTHER attribute's value:
+ * `<script data-note=" type='application/ld+json'">` was classified as JSON-LD, so ordinary script
+ * content was preserved and spent the structured-data budget. Attribute values are scanned past
+ * rather than searched, so only a real `type` attribute counts.
+ */
+function isJsonLdTag(html: string, tagStart: number, openEnd: number): boolean {
+  let quote = '';
+  for (let i = tagStart; i < openEnd; i++) {
+    const ch = html[i];
+    if (quote !== '') {
+      if (ch === quote) {
+        quote = '';
+      }
+      continue;
+    }
+    if (ch === '"' || ch === "'") {
+      quote = ch;
+      continue;
+    }
+    if (ch !== ' ' && ch !== '\t' && ch !== '\n' && ch !== '\r' && ch !== '\f') {
+      continue;
+    }
+
+    // STICKY, tested at this boundary only. Unanchored, each boundary re-scanned the whole tag
+    // remainder for a match anywhere in it -- O(attributes x tag length), which cost ~18s on a
+    // 1 MiB tag carrying half a million attributes. The `y` flag makes a test answer "does the
+    // attribute START here", which is the only question a boundary can answer, and turns the walk
+    // into one pass over the tag.
+    //
+    // Reaching a boundary outside a quoted value is also what makes the match structural: the
+    // value-skipping above is what stops `data-note=" type='application/ld+json'"` counting.
+    JSON_LD_ATTR_RE.lastIndex = i;
+    if (JSON_LD_ATTR_RE.test(html)) {
+      return true;
+    }
+  }
+  return false;
+}
+
+/**
+ * Split a fetched page into the prose worth extracting from and its JSON-LD, in ONE scan.
+ *
+ * This replaced six independent passes -- JSON-LD match, JSON-LD removal, comment strip, a prose
+ * cap that walked block openings, a raw-text strip and an svg strip -- each of which decided for
+ * itself what counted as markup. Every one of them was individually defensible and they did not
+ * agree, which is the whole history of this function: a comment containing `<svg` opened a block
+ * for the walk that the comment strip had already removed; an `<svg` inside a script STRING opened
+ * a block for the svg strip, which has no notion of raw text; a `<!--` inside a script string
+ * paired with a real `-->` far below it and deleted the prose in between; JSON-LD was collected
+ * before comments were removed, so commented-out schema reached the prompt. Each fix reordered or
+ * bounded one pass and desynchronised another.
+ *
+ * A single left-to-right scan cannot have that class of bug: every construct that may contain a
+ * `<` which is not a tag -- a comment, a raw-text body -- is recognised HERE and consumed whole, so
+ * there is no second reader to disagree with. The three questions the old passes answered
+ * separately (is this markup? does it nest? is it JSON-LD?) are answered once, at the point the
+ * scan is standing on the tag.
+ *
+ * Linear by construction: `indexOf` throughout, each character visited once, and every regex
+ * anchored at a known offset with no lazy span to backtrack over. The shapes that stalled earlier
+ * revisions -- 5 MiB of unmatched `<script `, `<svg ` or `<!-- ` -- cost single-digit milliseconds.
+ *
+ * Bounds, in order: `MAX_SCAN_CHARS` how much is read, `MAX_SOURCE_CHARS` how much prose is kept,
+ * `MAX_JSON_LD_BLOCKS` how many structured blocks contribute, and `EXTRACTION_CHAR_CAP` /
+ * `JSON_LD_BUDGET` at the caller how much reaches the prompt.
+ */
+function scanExtractable(html: string): { prose: string; jsonLd: string } {
+  const scan = html.length > MAX_SCAN_CHARS ? html.slice(0, MAX_SCAN_CHARS) : html;
+  let prose = '';
+  let kept = 0;
+  let jsonLd = '';
+  let ldBlocks = 0;
+  let cursor = 0;
+  let textStart = 0;
+
+  // Text between blocks, truncated to the remaining prose budget. Spending the budget on TEXT is
+  // the point: a flat slice of the document would cut inside a block and leave its markup in.
+  const flush = (end: number): void => {
+    if (kept >= MAX_SOURCE_CHARS) {
+      return;
+    }
+    const text = scan.slice(textStart, end);
+    prose += text.slice(0, MAX_SOURCE_CHARS - kept);
+    kept += Math.min(text.length, MAX_SOURCE_CHARS - kept);
+  };
+
+  // The prose budget does NOT stop the scan. Coupling them meant a `ld+json` block sitting after
+  // 150k of prose was never reached, so which facts the extraction got depended on where in the
+  // page the schema happened to sit -- and footer schema is ordinary. `flush` already refuses to
+  // exceed the budget, so scanning on costs a walk over the remaining markup and nothing else.
+  while (cursor < scan.length) {
+    const lt = scan.indexOf('<', cursor);
+    if (lt === -1) {
+      break;
+    }
+
+    // A comment is consumed WHOLE and first. Whatever it contains -- `<svg`, `<script`, a full
+    // `ld+json` block -- is disabled markup, and because this scan is the only reader, nothing
+    // downstream can mistake it for the real thing.
+    if (scan.startsWith('<!--', lt)) {
+      flush(lt);
+      if (kept < MAX_SOURCE_CHARS) {
+        prose += ' ';
+        kept += 1;
+      }
+      const commentEnd = scan.indexOf('-->', lt + 4);
+      if (commentEnd === -1) {
+        // Unterminated: the rest of the document is inside it, as a browser would read it. Safe to
+        // apply here, unlike in the old standalone pass, because a `<!--` inside a raw-text body
+        // is never reached -- the block containing it was consumed below.
+        return { prose: normalizeProse(prose), jsonLd };
+      }
+      cursor = textStart = commentEnd + 3;
+      continue;
+    }
+
+    const block = EXTRACTABLE_BLOCK_RE.exec(scan.slice(lt, lt + 8));
+    if (block === null) {
+      cursor = lt + 1;
+      continue;
+    }
+
+    const tag = block[1].toLowerCase();
+    // The tag END comes from a quote-aware scan, never from an attribute span in a pattern. A
+    // capped span silently failed to recognise a root `<svg>` carrying more than 512 characters of
+    // attributes; an uncapped one backtracks across the document on an unmatched opening; and a
+    // plain `indexOf('>')` stops inside `aria-label="next >"`.
+    const openEnd = startTagEnd(scan, lt);
+    if (openEnd === -1) {
+      flush(lt);
+      return { prose: normalizeProse(prose), jsonLd };
+    }
+
+    flush(lt);
+    // The separator a removed block leaves behind, so the words on either side stay separate.
+    //
+    // Suppressed once the budget is full. Past that point the scan continues only to find JSON-LD,
+    // and a page of a million tiny blocks would otherwise append a separator per block to a string
+    // nothing will read. Deliberately NOT covered by a test: `normalizeProse` collapses whitespace
+    // runs and `EXTRACTION_CHAR_CAP` truncates long before any drift could surface, so the effect
+    // is unobservable in the output -- a test for it would pass with the guard removed.
+    if (kept < MAX_SOURCE_CHARS) {
+      prose += ' ';
+      kept += 1;
+    }
+
+    // Slash-closing applies to `svg` ONLY. `svg` is foreign content, where `<svg/>` really is an
+    // empty element -- but on the HTML raw-text elements the slash is IGNORED: a browser reads
+    // `<script/>body</script>` as a script whose content is `body`. Treating it as empty resumed
+    // prose extraction immediately and sent the script body, and its closing tag, to the prompt.
+    if (tag === 'svg' && scan[openEnd - 1] === '/') {
+      cursor = textStart = openEnd + 1;
+      continue;
+    }
+
+    const blockEnd = tag === 'svg' ? svgBlockEnd(scan, openEnd) : rawTextBlockEnd(scan, tag, openEnd);
+
+    if (blockEnd === -1) {
+      // Unclosed -- genuinely, or because its close lies past `MAX_SCAN_CHARS`. Either way what
+      // follows is still INSIDE the element, so it must not be copied out as prose. An earlier
+      // revision advanced past the opening tag here and fed a 1.2 MiB script body to the prompt.
+      return { prose: normalizeProse(prose), jsonLd };
+    }
+
+    // JSON-LD is preserved, and only from a real `<script>` block: a commented one never reaches
+    // this line. This is where the extraction gets `startDate`, `endDate` and `location` on pages
+    // that publish them as schema.org data rather than as prose.
+    if (tag === 'script' && ldBlocks < MAX_JSON_LD_BLOCKS && isJsonLdTag(scan, lt, openEnd)) {
+      const body = scan.slice(openEnd + 1, blockEnd).replace(/<\/script[^>]*>$/i, '');
+      jsonLd += (jsonLd === '' ? '' : ' ') + body;
+      ldBlocks++;
+    }
+
+    cursor = textStart = blockEnd;
+  }
+
+  flush(scan.length);
+  return { prose: normalizeProse(prose), jsonLd };
+}
+
+/**
+ * The end of a `<script>` or `<style>` element, or -1 if it does not close within the scan.
+ *
+ * Raw text: the first correctly-formed close wins, and a `<` inside the body is not a tag. The
+ * `(?=[\s>])` boundary is what stops `</scriptx>` -- a different tag name -- from closing it.
+ */
+function rawTextBlockEnd(scan: string, tag: string, openEnd: number): number {
+  const closeRe = new RegExp(`</${tag}(?=[\\s>])`, 'gi');
+  closeRe.lastIndex = openEnd;
+  const close = closeRe.exec(scan);
+  if (close === null) {
+    return -1;
+  }
+  const closeEnd = startTagEnd(scan, close.index);
+  return closeEnd === -1 ? -1 : closeEnd + 1;
+}
+
+/**
+ * How far the inert-region walk looks ahead for the next comment or raw-text opening.
+ *
+ * Bounding the scan is what keeps it linear, and the bound has to be a fixed stride rather than
+ * "the rest of the window": slicing to the window made N regions inside one element cost
+ * O(N x window), and not slicing at all made every sibling element scan the rest of the page.
+ * A fixed stride costs the same per step no matter how much document remains.
+ */
+const INERT_LOOKAHEAD = 4096;
+
+/** The longest token the walk looks for, used to overlap steps so one cannot straddle a boundary. */
+const INERT_TOKEN_MAX = 8;
+
+/**
+ * Walk inert regions -- comments and raw-text bodies -- from `from` up to `at`.
+ *
+ * Returns the index just past the region containing `at` when one does, `at` itself when none
+ * does, or -1 when a region never terminates. The caller carries the returned value forward as a
+ * cursor, so each region is walked once across the whole element rather than once per tag.
+ *
+ * The svg depth scan runs beneath the main loop and sees the element's raw interior, where a
+ * `<svg`-looking token can be a comment's content or a nested `<style>` body's text rather than a
+ * tag. Both have to be skipped, or the depth count is wrong in one direction or the other.
+ */
+function advanceInert(html: string, from: number, at: number): number {
+  let cursor = from;
+
+  // Bounded by SLICING, not by testing the result of an unbounded search.
+  //
+  // `indexOf(x, cursor)` scans to the end of the document when there is no hit, so rejecting a
+  // late hit afterwards pays the full cost anyway -- the same mistake as bounding a regex with
+  // `lastIndex`. The slice is what stops the scan. It is taken once per REGION rather than once
+  // per tag, which is the other half: re-slicing per tag made N regions inside one element cost
+  // O(N x window) (~8s on 150k comments), while not slicing at all made every sibling `<svg>`
+  // scan the rest of the page (24.7s on 5 MiB of svg markup).
+  while (cursor < at) {
+    // Scan a bounded LOOKAHEAD rather than the whole remaining window. `INERT_LOOKAHEAD` is far
+    // larger than any opening tag or comment marker, so a region starting within the window is
+    // always found -- and when the lookahead is clear the cursor jumps by its whole length, which
+    // is what keeps a page of 150k comments from re-slicing a large window 150k times.
+    const limit = Math.min(cursor + INERT_LOOKAHEAD, at);
+    const window = html.slice(cursor, limit);
+
+    const commentOffset = window.indexOf('<!--');
+    RAW_TEXT_OPEN_RE.lastIndex = 0;
+    const rawMatch = RAW_TEXT_OPEN_RE.exec(window);
+
+    if (commentOffset === -1 && rawMatch === null) {
+      if (limit >= at) {
+        return at;
+      }
+      // Nothing inert starts in this stretch. Step forward, overlapping by the longest token so a
+      // region straddling the boundary is not missed.
+      cursor = limit - INERT_TOKEN_MAX;
+      continue;
+    }
+
+    const commentFirst = rawMatch === null || (commentOffset !== -1 && commentOffset < rawMatch.index);
+
+    if (commentFirst) {
+      const start = cursor + commentOffset;
+      const end = html.indexOf('-->', start + 4);
+      if (end === -1) {
+        return -1;
+      }
+      cursor = end + 3;
+      if (cursor > at) {
+        return cursor;
+      }
+      continue;
+    }
+
+    const start = cursor + (rawMatch as RegExpExecArray).index;
+    const openEnd = startTagEnd(html, start);
+    if (openEnd === -1) {
+      return -1;
+    }
+    // Inside an `<svg>` this is FOREIGN content, where the slash really does close the element --
+    // unlike the HTML raw-text rule the main loop applies. `<svg><style/><path/></svg>` otherwise
+    // looked like a `<style>` that never closes, which reported the whole graphic unclosed and
+    // dropped every word after it.
+    if (html[openEnd - 1] === '/') {
+      cursor = openEnd + 1;
+      if (cursor > at) {
+        return cursor;
+      }
+      continue;
+    }
+    const end = rawTextBlockEnd(html, (rawMatch as RegExpExecArray)[1].toLowerCase(), openEnd);
+    if (end === -1) {
+      return -1;
+    }
+    cursor = end;
+    if (cursor > at) {
+      return cursor;
+    }
+  }
+  return at;
+} /**
+ * The end of an `<svg>` element, counting nesting, or -1 if it does not close within the scan.
+ *
+ * `svg` is the one element here that can contain another of its own kind -- exported icons and
+ * charts do it routinely -- so its end is the MATCHING close, not the first one.
+ */
+function svgBlockEnd(scan: string, openEnd: number): number {
+  SVG_TAG_RE.lastIndex = openEnd + 1;
+  let depth = 1;
+  // How far the inert-region walk has already classified. Forward-only; see the note below.
+  let inertCursor = openEnd;
+  let tag = SVG_TAG_RE.exec(scan);
+
+  while (tag !== null) {
+    // A commented `<svg>` or `</svg>` inside the element is TEXT, not a tag. Counting it broke the
+    // depth both ways: a commented opening left the element looking unclosed and dropped every
+    // word after it, and a commented close ended it early and leaked the real body into the
+    // prompt. The main loop already consumes comments; this scan runs beneath it and has to do the
+    // same, or the two readers disagree -- which is the defect class the single scan exists to
+    // remove, reappearing one level down.
+    // Anything between the opening tag and here that is NOT ordinary markup -- a comment, or a
+    // nested `<script>`/`<style>` body -- can contain a `<svg`-looking token that is plain text.
+    // Counting those broke the depth both ways: a commented opening left the element unclosed and
+    // dropped every following word, a commented close ended it early and leaked the body. An
+    // earlier fix handled comments but not the raw-text case, which is the same hazard one step
+    // over: `<svg><style>a{content:"<!--"}</style>` has a `<!--` that is CSS, not a comment.
+    //
+    // `inertCursor` only ever moves FORWARD. Re-deriving the inert regions from the element start
+    // for each tag was correct and quadratic -- 6.4s on 1k levels of nesting with comments --
+    // because every tag rescanned everything before it. Carrying the cursor makes each region cost
+    // one visit no matter how many tags follow it.
+    if (tag.index >= inertCursor) {
+      const skipTo = advanceInert(scan, inertCursor, tag.index);
+      if (skipTo === -1) {
+        // Unterminated inert region: nothing past it can be classified.
+        return -1;
+      }
+      inertCursor = skipTo;
+      if (skipTo > tag.index) {
+        SVG_TAG_RE.lastIndex = skipTo;
+        tag = SVG_TAG_RE.exec(scan);
+        continue;
+      }
+    }
+
+    const tagEnd = startTagEnd(scan, tag.index);
+    if (tagEnd === -1) {
+      return -1;
+    }
+    if (tag[1] === '/') {
+      depth--;
+      if (depth === 0) {
+        return tagEnd + 1;
+      }
+    } else if (scan[tagEnd - 1] !== '/') {
+      depth++;
+    }
+    SVG_TAG_RE.lastIndex = tagEnd + 1;
+    tag = SVG_TAG_RE.exec(scan);
+  }
+
+  return -1;
+}
+
+/**
+ * Collapse the whitespace the removals leave behind.
+ *
+ * Not cosmetic: templated markup is heavily indented, so this recovers several KB of the prompt
+ * budget on a typical page.
+ */
+function normalizeProse(prose: string): string {
+  return prose.replace(/\s{2,}/g, ' ');
+}
+
+/**
+ * Reduce a fetched page to the text an extraction prompt should see.
+ *
+ * A raw event page is mostly not prose. One measured example was 512,384 bytes with the first
+ * mention of "Tokyo" at byte 31,204 -- so a fixed slice of the head returned navigation and inline
+ * CSS and the extraction reported no date, no venue, nothing. Removing the markup that carries
+ * rendering and behaviour rather than facts dropped the same page to 44,829 bytes and moved
+ * "Tokyo" to byte 1,396.
+ *
+ * The work is done by `scanExtractable`, in one pass. It returns the page's prose and its JSON-LD
+ * separately, because they compete for the same prompt budget and the structured data is worth
+ * more per character: schema.org `Event` markup carries `startDate`, `endDate` and `location`
+ * exactly as the prompt asks for them, while prose has to be read for the same facts.
+ *
+ * FOUR bounds sit in this path. Each answers a different question, so removing any one is not
+ * covered by the others:
+ *
+ *   - `MAX_RESPONSE_BYTES` (5 MiB, `url-validation.ts`) — how much is DOWNLOADED. `fetchSafeUrl`
+ *     validates the URL and every redirect hop against private ranges; this bounds the body it
+ *     will buffer, which its 15s timeout does not.
+ *   - `MAX_SCAN_CHARS` (1 MiB) — how much of that body is READ.
+ *   - `MAX_SOURCE_CHARS` (150k) — how much PROSE is kept.
+ *   - `EXTRACTION_CHAR_CAP` (60k) with `JSON_LD_BUDGET` (20k) — how much reaches the PROMPT.
+ */
+export function extractableHtml(html: string): string {
+  const { prose, jsonLd } = scanExtractable(html);
+
+  // BUDGETED, not concatenated. An earlier revision returned `jsonLd + prose.slice(0, 60_000)`,
+  // which bounded only the second term: a page with a 500KB `ld+json` block produced 500,055
+  // characters against a documented 60,000 cap. JSON-LD is the more attacker-controllable of the
+  // two -- machine-written and invisible on the rendered page -- so it is the half that most needs
+  // a ceiling of its own.
+  //
+  // It still wins the space it needs, because it holds the structured facts the extraction is for;
+  // it simply cannot take the whole budget. What it does not use goes to the prose.
+  const lead = jsonLd.slice(0, JSON_LD_BUDGET);
+  const remaining = Math.max(0, EXTRACTION_CHAR_CAP - lead.length - (lead === '' ? 0 : 1));
+  return (lead === '' ? '' : lead + ' ') + prose.slice(0, remaining);
+}
+
 function getExtractionPrompt(programType?: CampaignProgramType): string {
   return programType === 'education' ? EDUCATION_EXTRACTION_PROMPT : EVENT_EXTRACTION_PROMPT;
 }
@@ -913,7 +1404,7 @@ export class CampaignProxyService {
 
     if (!isRefinement) {
       try {
-        const extraction = await aiChat(getExtractionPrompt(body.programType), `URL: ${body.url}\n\nHTML:\n${html.slice(0, 30_000)}`);
+        const extraction = await aiChat(getExtractionPrompt(body.programType), `URL: ${body.url}\n\nHTML:\n${extractableHtml(html)}`);
         eventDetails = JSON.parse(stripJsonFences(extraction)) as Record<string, unknown>;
         // Education extraction also yields price, certification_code, prerequisites — deferred until CampaignEventDetails supports them
         yield {
