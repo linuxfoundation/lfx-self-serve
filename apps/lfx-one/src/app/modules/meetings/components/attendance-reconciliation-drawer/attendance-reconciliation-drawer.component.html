@@ -1,0 +1,172 @@
+<!-- Copyright The Linux Foundation and each contributor to LFX. -->
+<!-- SPDX-License-Identifier: MIT -->
+
+<p-drawer
+  [(visible)]="visible"
+  position="right"
+  [modal]="true"
+  [showCloseIcon]="false"
+  styleClass="xl:w-[45%] lg:w-[55%] md:w-[70%] sm:w-[90%] w-full"
+  data-testid="attendance-reconciliation-drawer">
+  <ng-template #header>
+    <div class="flex items-start justify-between gap-4 w-full">
+      <div class="flex flex-col gap-1 flex-1">
+        <h2 class="text-lg font-semibold text-gray-900">Reconcile Attendance</h2>
+        <p class="text-sm text-gray-500">Review AI-matched attendees and confirm, reassign, or leave them unknown</p>
+      </div>
+      <button
+        type="button"
+        (click)="onClose()"
+        class="p-1 text-gray-400 hover:text-gray-600 hover:bg-gray-100 rounded-md transition-colors flex-shrink-0"
+        aria-label="Close panel"
+        data-testid="reconciliation-drawer-close">
+        <i class="fa-light fa-xmark text-xl"></i>
+      </button>
+    </div>
+  </ng-template>
+
+  @if (loading()) {
+    <div class="flex items-center justify-center py-12">
+      <i class="fa-light fa-spinner-third fa-spin text-2xl text-gray-400"></i>
+    </div>
+  } @else {
+    <div class="flex flex-col gap-4 pb-2">
+      @if (poolDegraded()) {
+        <div class="flex items-center gap-2 px-3 py-2 rounded-lg border border-amber-200 bg-amber-50" data-testid="reconciliation-pool-degraded-banner">
+          <i class="fa-light fa-triangle-exclamation text-amber-500"></i>
+          <span class="text-sm text-amber-700">Some candidate sources failed to load, so no matches were auto-applied this run. Review all results below.</span>
+        </div>
+      }
+
+      <lfx-card styleClass="p-0">
+        <lfx-card-tabs-bar [options]="tabOptions()" [selectedFilter]="activeTab()" (filterChange)="selectTab($event)" />
+
+        <div class="flex flex-col gap-3 p-4" data-testid="reconciliation-results-list">
+          @if (visibleResults().length === 0) {
+            <p class="text-sm text-gray-500 py-6 text-center">No attendees in this tab.</p>
+          }
+
+          @for (result of visibleResults(); track result.attendee_id) {
+            <div
+              class="flex flex-col gap-3 px-3 py-3 rounded-lg border border-gray-200 bg-gray-50"
+              [attr.data-testid]="'reconciliation-row-' + result.attendee_id">
+              <div class="flex items-center justify-between gap-3">
+                <div class="flex items-center gap-3 min-w-0">
+                  <lfx-avatar [label]="result.zoom_user_name || 'Unknown'" size="normal" />
+                  <div class="flex flex-col gap-0 min-w-0">
+                    <span class="text-sm font-medium text-gray-900 whitespace-normal break-words" [title]="result.zoom_user_name || 'Unknown attendee'">
+                      {{ result.zoom_user_name || 'Unknown attendee' }}
+                    </span>
+                    <span class="text-xs text-gray-500">{{ result.confidence }} confidence &middot; {{ result.method }}</span>
+                  </div>
+                </div>
+
+                @if (activeTab() !== 'auto-matched') {
+                  <div class="flex items-center gap-2 flex-shrink-0">
+                    @if (result.matched_candidate && activeTab() === 'needs-review') {
+                      <lfx-button
+                        label="Confirm Match"
+                        size="small"
+                        severity="primary"
+                        [disabled]="rowActionLoading().has(result.attendee_id)"
+                        [loading]="rowActionLoading().has(result.attendee_id)"
+                        (onClick)="confirmMatch(result)"
+                        [attr.data-testid]="'confirm-match-' + result.attendee_id">
+                      </lfx-button>
+                    }
+                    <lfx-button
+                      label="Assign"
+                      size="small"
+                      severity="secondary"
+                      [outlined]="true"
+                      [disabled]="rowActionLoading().has(result.attendee_id)"
+                      (onClick)="openAssign(result)"
+                      [attr.data-testid]="'open-assign-' + result.attendee_id">
+                    </lfx-button>
+                    @if (activeTab() === 'unmatched') {
+                      <lfx-button
+                        label="Leave Unknown"
+                        size="small"
+                        severity="secondary"
+                        [text]="true"
+                        [disabled]="rowActionLoading().has(result.attendee_id)"
+                        (onClick)="leaveUnknown(result)"
+                        [attr.data-testid]="'leave-unknown-' + result.attendee_id">
+                      </lfx-button>
+                    }
+                  </div>
+                }
+              </div>
+
+              @if (result.matched_candidate && activeTab() !== 'auto-matched') {
+                <div class="text-xs text-gray-500 pl-11">
+                  Suggested: {{ result.matched_candidate.first_name }} {{ result.matched_candidate.last_name }}
+                  @if (result.matched_candidate.email) {
+                    ({{ result.matched_candidate.email }})
+                  }
+                  @if (result.matched_candidate.org_name) {
+                    &middot; {{ result.matched_candidate.org_name }}
+                  }
+                </div>
+              }
+
+              @if (assigningAttendeeId() === result.attendee_id) {
+                <div class="flex flex-col gap-2 pl-11 pt-2 border-t border-gray-200" data-testid="assign-form">
+                  <div class="flex items-center gap-2">
+                    <lfx-input-text
+                      size="small"
+                      [form]="assignForm"
+                      control="email"
+                      placeholder="Email (required)"
+                      styleClass="flex-1"
+                      [attr.data-testid]="'assign-email-input'">
+                    </lfx-input-text>
+                    <lfx-input-text
+                      size="small"
+                      [form]="assignForm"
+                      control="username"
+                      placeholder="Username"
+                      styleClass="flex-1"
+                      [attr.data-testid]="'assign-username-input'">
+                    </lfx-input-text>
+                  </div>
+                  <div class="flex items-center gap-2">
+                    <lfx-input-text
+                      size="small"
+                      [form]="assignForm"
+                      control="first_name"
+                      placeholder="First name"
+                      styleClass="flex-1"
+                      [attr.data-testid]="'assign-first-name-input'">
+                    </lfx-input-text>
+                    <lfx-input-text
+                      size="small"
+                      [form]="assignForm"
+                      control="last_name"
+                      placeholder="Last name"
+                      styleClass="flex-1"
+                      [attr.data-testid]="'assign-last-name-input'">
+                    </lfx-input-text>
+                  </div>
+                  <div class="flex items-center justify-end gap-2">
+                    <lfx-button label="Cancel" size="small" severity="secondary" [text]="true" (onClick)="cancelAssign()" data-testid="assign-cancel-btn">
+                    </lfx-button>
+                    <lfx-button
+                      label="Save Assignment"
+                      size="small"
+                      severity="primary"
+                      [disabled]="rowActionLoading().has(result.attendee_id)"
+                      [loading]="rowActionLoading().has(result.attendee_id)"
+                      (onClick)="submitAssign(result)"
+                      data-testid="assign-save-btn">
+                    </lfx-button>
+                  </div>
+                </div>
+              }
+            </div>
+          }
+        </div>
+      </lfx-card>
+    </div>
+  }
+</p-drawer>
