@@ -35,11 +35,11 @@ export class AttendanceReconciliationDrawerComponent {
 
   /** Composite meeting_and_occurrence_id of the past meeting being reconciled */
   public readonly pastMeetingId = input.required<string>();
-  public visible = model<boolean>(false);
   /** Emits after any row action succeeds so the parent can refresh its participant list */
   public readonly reconciliationChanged = output<void>();
 
   public readonly assignForm: FormGroup = this.fb.group({ email: [''], username: [''], first_name: [''], last_name: [''] });
+  public visible = model<boolean>(false);
 
   // === Writable Signals ===
   public loading = signal(false);
@@ -50,8 +50,8 @@ export class AttendanceReconciliationDrawerComponent {
   private readonly results = signal<AttendanceReconciliationResult[]>([]);
 
   // === Computed Signals ===
-  public readonly needsReviewResults = computed(() => this.results().filter((r) => r.confidence === 'medium'));
-  public readonly unmatchedResults = computed(() => this.results().filter((r) => r.confidence === 'low' || r.confidence === 'none'));
+  public readonly needsReviewResults = computed(() => this.results().filter((r) => !r.auto_applied && r.confidence !== 'low' && r.confidence !== 'none'));
+  public readonly unmatchedResults = computed(() => this.results().filter((r) => !r.auto_applied && (r.confidence === 'low' || r.confidence === 'none')));
   public readonly autoMatchedResults = computed(() => this.results().filter((r) => r.auto_applied));
   public readonly visibleResults: Signal<AttendanceReconciliationResult[]> = this.initVisibleResults();
   public readonly tabOptions: Signal<FilterPillOption[]> = this.initTabOptions();

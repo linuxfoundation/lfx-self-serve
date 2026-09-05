@@ -86,6 +86,18 @@ describe('AttendanceReconciliationDrawerComponent', () => {
     expect(fixture.componentInstance.visibleResults().map((r) => r.attendee_id)).toEqual(['a1']);
   });
 
+  it('routes high-confidence results that were not auto-applied (degraded pool) into needs-review', async () => {
+    const results = [buildResult({ attendee_id: 'a1', confidence: 'high', auto_applied: false })];
+    reconcilePastMeetingParticipants.mockReturnValue(of(buildResponse(results, { pool_degraded: true })));
+
+    const fixture = createComponent();
+    await openDrawer(fixture);
+
+    expect(fixture.componentInstance.needsReviewResults().map((r) => r.attendee_id)).toEqual(['a1']);
+    expect(fixture.componentInstance.unmatchedResults()).toEqual([]);
+    expect(fixture.componentInstance.autoMatchedResults()).toEqual([]);
+  });
+
   it('surfaces the pool-degraded flag from the reconcile response', async () => {
     reconcilePastMeetingParticipants.mockReturnValue(of(buildResponse([], { pool_degraded: true })));
 

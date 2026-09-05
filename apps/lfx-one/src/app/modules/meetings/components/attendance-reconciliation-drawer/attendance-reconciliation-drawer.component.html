@@ -68,8 +68,8 @@
                         label="Confirm Match"
                         size="small"
                         severity="primary"
-                        [disabled]="isRowLoading(result.attendee_id)"
-                        [loading]="isRowLoading(result.attendee_id)"
+                        [disabled]="rowActionLoading().has(result.attendee_id)"
+                        [loading]="rowActionLoading().has(result.attendee_id)"
                         (onClick)="confirmMatch(result)"
                         [attr.data-testid]="'confirm-match-' + result.attendee_id">
                       </lfx-button>
@@ -79,7 +79,7 @@
                       size="small"
                       severity="secondary"
                       [outlined]="true"
-                      [disabled]="isRowLoading(result.attendee_id)"
+                      [disabled]="rowActionLoading().has(result.attendee_id)"
                       (onClick)="openAssign(result)"
                       [attr.data-testid]="'open-assign-' + result.attendee_id">
                     </lfx-button>
@@ -89,7 +89,7 @@
                         size="small"
                         severity="secondary"
                         [text]="true"
-                        [disabled]="isRowLoading(result.attendee_id)"
+                        [disabled]="rowActionLoading().has(result.attendee_id)"
                         (onClick)="leaveUnknown(result)"
                         [attr.data-testid]="'leave-unknown-' + result.attendee_id">
                       </lfx-button>
@@ -155,8 +155,8 @@
                       label="Save Assignment"
                       size="small"
                       severity="primary"
-                      [disabled]="isRowLoading(result.attendee_id)"
-                      [loading]="isRowLoading(result.attendee_id)"
+                      [disabled]="rowActionLoading().has(result.attendee_id)"
+                      [loading]="rowActionLoading().has(result.attendee_id)"
                       (onClick)="submitAssign(result)"
                       data-testid="assign-save-btn">
                     </lfx-button>
