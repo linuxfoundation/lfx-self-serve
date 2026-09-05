@@ -1360,6 +1360,47 @@ describe('extractableHtml', () => {
     expect(Date.now() - started, 'the inert walk re-derived regions per tag').toBeLessThan(2000);
   });
 
+  // HTML permits unquoted attribute values, so the JSON-LD test must accept all three forms. Only
+  // the quoted ones were recognised, and an unquoted block was stripped as an ordinary script --
+  // losing exactly the structured data the extraction is for.
+  describe.each([
+    ['double-quoted', '<script type="application/ld+json">'],
+    ['single-quoted', "<script type='application/ld+json'>"],
+    ['unquoted', '<script type=application/ld+json>'],
+  ])('json-ld declared with a %s type', (_label, open) => {
+    it('is collected', () => {
+      const out = extractableHtml(`${open}{"startDate":"2027-03-15"}</script><p>Tokyo</p>`);
+
+      expect(out).toContain('2027-03-15');
+    });
+  });
+
+  // Widening to unquoted must not widen to the wrong things.
+  it('does not collect a script whose unquoted type is something else', () => {
+    const out = extractableHtml(`<script type=text/javascript>{"startDate":"2027-03-15"}</script><p>Tokyo</p>`);
+
+    expect(out).not.toContain('2027-03-15');
+  });
+
+  it('does not collect an unquoted type mentioned inside another attribute', () => {
+    const out = extractableHtml(`<script data-note=" type=application/ld+json">alert(1)</script><p>Tokyo</p>`);
+
+    expect(out).not.toContain('alert(1)');
+    expect(out).toContain('Tokyo');
+  });
+
+  // Inside an `<svg>` the content is FOREIGN, where a slash really does close the element --
+  // unlike the HTML raw-text rule applied at the top level. Treating `<style/>` as unclosed there
+  // reported the whole graphic unclosed and dropped every word after it.
+  describe.each([
+    ['style', '<svg><style/><path/></svg>'],
+    ['script', '<svg><script/><path/></svg>'],
+  ])('a self-closing %s inside an svg', (tag, block) => {
+    it('does not make the graphic look unclosed', () => {
+      expect(extractableHtml(`${block}<p>Tokyo</p>`), `the self-closing ${tag} swallowed the page`).toContain('Tokyo');
+    });
+  });
+
   it('returns an empty string for input that is entirely strippable', () => {
     expect(extractableHtml('<style>.a{color:red}</style>').trim()).toBe('');
   });

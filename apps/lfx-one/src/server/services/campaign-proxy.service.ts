@@ -709,7 +709,7 @@ const MAX_SCAN_CHARS = 1024 * 1024;
 const MAX_SOURCE_CHARS = 150_000;
 
 /** Identifies a `<script>` whose `type` marks it as JSON-LD, tested against its opening tag only. */
-const JSON_LD_ATTR_RE = /\stype\s*=\s*["']application\/ld\+json["']/i;
+const JSON_LD_ATTR_RE = /\stype\s*=\s*(?:["']application\/ld\+json["']|application\/ld\+json(?=[\s/>]|$))/i;
 
 /** The three elements whose CONTENT is never prose: two raw-text elements and one that nests. */
 const EXTRACTABLE_BLOCK_RE = /^<(script|style|svg)(?=[\s/>])/i;
@@ -1021,6 +1021,17 @@ function advanceInert(html: string, from: number, at: number): number {
     const openEnd = startTagEnd(html, rawAt);
     if (openEnd === -1) {
       return -1;
+    }
+    // Inside an `<svg>` this is FOREIGN content, where the slash really does close the element --
+    // unlike the HTML raw-text rule the main loop applies. `<svg><style/><path/></svg>` otherwise
+    // looked like a `<style>` that never closes, which reported the whole graphic unclosed and
+    // dropped every word after it.
+    if (html[openEnd - 1] === '/') {
+      cursor = openEnd + 1;
+      if (cursor > at) {
+        return cursor;
+      }
+      continue;
     }
     const end = rawTextBlockEnd(html, (raw as RegExpExecArray)[1].toLowerCase(), openEnd);
     if (end === -1) {
