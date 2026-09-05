@@ -709,7 +709,7 @@ const MAX_SCAN_CHARS = 1024 * 1024;
 const MAX_SOURCE_CHARS = 150_000;
 
 /** Identifies a `<script>` whose `type` marks it as JSON-LD, tested against its opening tag only. */
-const JSON_LD_ATTR_RE = /\stype\s*=\s*(?:["']application\/ld\+json["']|application\/ld\+json(?=[\s/>]|$))/i;
+const JSON_LD_ATTR_RE = /\stype\s*=\s*(?:["']application\/ld\+json["']|application\/ld\+json(?=[\s/>]|$))/iy;
 
 /** The three elements whose CONTENT is never prose: two raw-text elements and one that nests. */
 const EXTRACTABLE_BLOCK_RE = /^<(script|style|svg)(?=[\s/>])/i;
@@ -769,7 +769,6 @@ function startTagEnd(html: string, from: number): number {
  */
 function isJsonLdTag(html: string, tagStart: number, openEnd: number): boolean {
   let quote = '';
-  let attrStart = -1;
   for (let i = tagStart; i < openEnd; i++) {
     const ch = html[i];
     if (quote !== '') {
@@ -782,40 +781,24 @@ function isJsonLdTag(html: string, tagStart: number, openEnd: number): boolean {
       quote = ch;
       continue;
     }
-    if (/\s/.test(ch)) {
-      attrStart = i;
+    if (ch !== ' ' && ch !== '\t' && ch !== '\n' && ch !== '\r' && ch !== '\f') {
       continue;
     }
-    if (attrStart !== -1 && JSON_LD_ATTR_RE.test(html.slice(attrStart, openEnd + 1))) {
-      // `JSON_LD_ATTR_RE` is anchored on the leading whitespace, so testing from a boundary that
-      // is not inside a quoted value is what makes the match structural rather than textual.
-      const remainder = html.slice(attrStart, openEnd + 1);
-      const m = JSON_LD_ATTR_RE.exec(remainder);
-      if (m !== null && !isInsideQuotes(remainder, m.index)) {
-        return true;
-      }
+
+    // STICKY, tested at this boundary only. Unanchored, each boundary re-scanned the whole tag
+    // remainder for a match anywhere in it -- O(attributes x tag length), which cost ~18s on a
+    // 1 MiB tag carrying half a million attributes. The `y` flag makes a test answer "does the
+    // attribute START here", which is the only question a boundary can answer, and turns the walk
+    // into one pass over the tag.
+    //
+    // Reaching a boundary outside a quoted value is also what makes the match structural: the
+    // value-skipping above is what stops `data-note=" type='application/ld+json'"` counting.
+    JSON_LD_ATTR_RE.lastIndex = i;
+    if (JSON_LD_ATTR_RE.test(html)) {
+      return true;
     }
-    attrStart = -1;
   }
   return false;
-}
-
-/** Whether `index` falls inside a quoted attribute value within `tag`. */
-function isInsideQuotes(tag: string, index: number): boolean {
-  let quote = '';
-  for (let i = 0; i < index; i++) {
-    const ch = tag[i];
-    if (quote !== '') {
-      if (ch === quote) {
-        quote = '';
-      }
-      continue;
-    }
-    if (ch === '"' || ch === "'") {
-      quote = ch;
-    }
-  }
-  return quote !== '';
 }
 
 /**
@@ -977,6 +960,19 @@ function rawTextBlockEnd(scan: string, tag: string, openEnd: number): number {
 }
 
 /**
+ * How far the inert-region walk looks ahead for the next comment or raw-text opening.
+ *
+ * Bounding the scan is what keeps it linear, and the bound has to be a fixed stride rather than
+ * "the rest of the window": slicing to the window made N regions inside one element cost
+ * O(N x window), and not slicing at all made every sibling element scan the rest of the page.
+ * A fixed stride costs the same per step no matter how much document remains.
+ */
+const INERT_LOOKAHEAD = 4096;
+
+/** The longest token the walk looks for, used to overlap steps so one cannot straddle a boundary. */
+const INERT_TOKEN_MAX = 8;
+
+/**
  * Walk inert regions -- comments and raw-text bodies -- from `from` up to `at`.
  *
  * Returns the index just past the region containing `at` when one does, `at` itself when none
@@ -989,25 +985,42 @@ function rawTextBlockEnd(scan: string, tag: string, openEnd: number): number {
  */
 function advanceInert(html: string, from: number, at: number): number {
   let cursor = from;
+
+  // Bounded by SLICING, not by testing the result of an unbounded search.
+  //
+  // `indexOf(x, cursor)` scans to the end of the document when there is no hit, so rejecting a
+  // late hit afterwards pays the full cost anyway -- the same mistake as bounding a regex with
+  // `lastIndex`. The slice is what stops the scan. It is taken once per REGION rather than once
+  // per tag, which is the other half: re-slicing per tag made N regions inside one element cost
+  // O(N x window) (~8s on 150k comments), while not slicing at all made every sibling `<svg>`
+  // scan the rest of the page (24.7s on 5 MiB of svg markup).
   while (cursor < at) {
-    // Both searches are bounded to the window. Unbounded, each looked ahead to the next match
-    // ANYWHERE in the document -- so on a page of sibling `<svg>` elements every one of them
-    // scanned the whole remainder and the walk went quadratic: 24.7s on 5 MiB of ordinary svg
-    // markup, against 9ms before the inert walk existed. The window is the only region whose
-    // classification this call needs.
-    const window = html.slice(cursor, at);
+    // Scan a bounded LOOKAHEAD rather than the whole remaining window. `INERT_LOOKAHEAD` is far
+    // larger than any opening tag or comment marker, so a region starting within the window is
+    // always found -- and when the lookahead is clear the cursor jumps by its whole length, which
+    // is what keeps a page of 150k comments from re-slicing a large window 150k times.
+    const limit = Math.min(cursor + INERT_LOOKAHEAD, at);
+    const window = html.slice(cursor, limit);
+
     const commentOffset = window.indexOf('<!--');
     RAW_TEXT_OPEN_RE.lastIndex = 0;
-    const raw = RAW_TEXT_OPEN_RE.exec(window);
-    const rawAt = raw === null ? -1 : cursor + raw.index;
-    const commentAt = commentOffset === -1 ? -1 : cursor + commentOffset;
+    const rawMatch = RAW_TEXT_OPEN_RE.exec(window);
 
-    if (commentAt === -1 && rawAt === -1) {
-      return at;
+    if (commentOffset === -1 && rawMatch === null) {
+      if (limit >= at) {
+        return at;
+      }
+      // Nothing inert starts in this stretch. Step forward, overlapping by the longest token so a
+      // region straddling the boundary is not missed.
+      cursor = limit - INERT_TOKEN_MAX;
+      continue;
     }
 
-    if (commentAt !== -1 && (rawAt === -1 || commentAt < rawAt)) {
-      const end = html.indexOf('-->', commentAt + 4);
+    const commentFirst = rawMatch === null || (commentOffset !== -1 && commentOffset < rawMatch.index);
+
+    if (commentFirst) {
+      const start = cursor + commentOffset;
+      const end = html.indexOf('-->', start + 4);
       if (end === -1) {
         return -1;
       }
@@ -1018,7 +1031,8 @@ function advanceInert(html: string, from: number, at: number): number {
       continue;
     }
 
-    const openEnd = startTagEnd(html, rawAt);
+    const start = cursor + (rawMatch as RegExpExecArray).index;
+    const openEnd = startTagEnd(html, start);
     if (openEnd === -1) {
       return -1;
     }
@@ -1033,7 +1047,7 @@ function advanceInert(html: string, from: number, at: number): number {
       }
       continue;
     }
-    const end = rawTextBlockEnd(html, (raw as RegExpExecArray)[1].toLowerCase(), openEnd);
+    const end = rawTextBlockEnd(html, (rawMatch as RegExpExecArray)[1].toLowerCase(), openEnd);
     if (end === -1) {
       return -1;
     }
@@ -1043,9 +1057,7 @@ function advanceInert(html: string, from: number, at: number): number {
     }
   }
   return at;
-}
-
-/**
+} /**
  * The end of an `<svg>` element, counting nesting, or -1 if it does not close within the scan.
  *
  * `svg` is the one element here that can contain another of its own kind -- exported icons and

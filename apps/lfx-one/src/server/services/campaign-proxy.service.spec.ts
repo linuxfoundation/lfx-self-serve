@@ -1401,6 +1401,32 @@ describe('extractableHtml', () => {
     });
   });
 
+  // The existing linearity tests keep an svg token BETWEEN the inert regions, so the walk's window
+  // shrinks each iteration and they stayed green at ~5ms while this shape stalled. Many regions
+  // inside ONE element is the case that does not shrink -- the searches have to RESUME rather than
+  // restart, or N regions cost O(N x window).
+  it('stays linear on one svg holding many comments', () => {
+    const body = `<svg>${'<!---->'.repeat(80_000)}<path/></svg><p>Tokyo</p>`;
+
+    const started = Date.now();
+    const out = extractableHtml(body);
+
+    expect(Date.now() - started, 'the inert walk restarted its searches per region').toBeLessThan(2000);
+    expect(out).toContain('Tokyo');
+  });
+
+  // Same shape for the attribute walk: one tag with very many attributes. An unanchored test at
+  // each boundary re-scanned the whole tag remainder, so this cost ~18s at the 1 MiB scan bound.
+  it('stays linear on a script tag carrying many attributes', () => {
+    const body = `<script ${'a '.repeat(200_000)}>x</script><p>Tokyo</p>`;
+
+    const started = Date.now();
+    const out = extractableHtml(body);
+
+    expect(Date.now() - started, 'the attribute test scanned the tag remainder per boundary').toBeLessThan(2000);
+    expect(out).toContain('Tokyo');
+  });
+
   it('returns an empty string for input that is entirely strippable', () => {
     expect(extractableHtml('<style>.a{color:red}</style>').trim()).toBe('');
   });
