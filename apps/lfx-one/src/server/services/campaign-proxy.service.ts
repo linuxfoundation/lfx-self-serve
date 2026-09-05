@@ -764,7 +764,11 @@ function scanExtractable(html: string): { prose: string; jsonLd: string } {
     kept += Math.min(text.length, MAX_SOURCE_CHARS - kept);
   };
 
-  while (cursor < scan.length && kept < MAX_SOURCE_CHARS) {
+  // The prose budget does NOT stop the scan. Coupling them meant a `ld+json` block sitting after
+  // 150k of prose was never reached, so which facts the extraction got depended on where in the
+  // page the schema happened to sit -- and footer schema is ordinary. `flush` already refuses to
+  // exceed the budget, so scanning on costs a walk over the remaining markup and nothing else.
+  while (cursor < scan.length) {
     const lt = scan.indexOf('<', cursor);
     if (lt === -1) {
       break;
@@ -775,8 +779,10 @@ function scanExtractable(html: string): { prose: string; jsonLd: string } {
     // downstream can mistake it for the real thing.
     if (scan.startsWith('<!--', lt)) {
       flush(lt);
-      prose += ' ';
-      kept += 1;
+      if (kept < MAX_SOURCE_CHARS) {
+        prose += ' ';
+        kept += 1;
+      }
       const commentEnd = scan.indexOf('-->', lt + 4);
       if (commentEnd === -1) {
         // Unterminated: the rest of the document is inside it, as a browser would read it. Safe to
@@ -806,8 +812,16 @@ function scanExtractable(html: string): { prose: string; jsonLd: string } {
 
     flush(lt);
     // The separator a removed block leaves behind, so the words on either side stay separate.
-    prose += ' ';
-    kept += 1;
+    //
+    // Suppressed once the budget is full. Past that point the scan continues only to find JSON-LD,
+    // and a page of a million tiny blocks would otherwise append a separator per block to a string
+    // nothing will read. Deliberately NOT covered by a test: `normalizeProse` collapses whitespace
+    // runs and `EXTRACTION_CHAR_CAP` truncates long before any drift could surface, so the effect
+    // is unobservable in the output -- a test for it would pass with the guard removed.
+    if (kept < MAX_SOURCE_CHARS) {
+      prose += ' ';
+      kept += 1;
+    }
 
     if (scan[openEnd - 1] === '/') {
       cursor = textStart = openEnd + 1;

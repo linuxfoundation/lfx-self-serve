@@ -1241,6 +1241,21 @@ describe('extractableHtml', () => {
     });
   });
 
+  // The prose budget must not stop the scan. Merging the old passes into one loop coupled them,
+  // so a `ld+json` block sitting after 150k of prose was never reached -- and which facts the
+  // extraction received then depended on where in the page the schema happened to sit. Footer
+  // schema is ordinary, so this is the common half of that split, not the rare one.
+  describe.each([
+    ['one long run between two blocks', `<style>.a{}</style>${'word '.repeat(40_000)}<style>.b{}</style>`],
+    ['many small blocks', `${'<style>.a{}</style>' + 'word '.repeat(200)}`.repeat(200)],
+  ])('json-ld that follows a full prose budget (%s)', (_label, prefix) => {
+    it('is still collected', () => {
+      const out = extractableHtml(`${prefix}<script type="application/ld+json">{"startDate":"2027-03-15"}</script>`);
+
+      expect(out, 'the prose budget terminated the scan before the schema').toContain('2027-03-15');
+    });
+  });
+
   it('returns an empty string for input that is entirely strippable', () => {
     expect(extractableHtml('<style>.a{color:red}</style>').trim()).toBe('');
   });
