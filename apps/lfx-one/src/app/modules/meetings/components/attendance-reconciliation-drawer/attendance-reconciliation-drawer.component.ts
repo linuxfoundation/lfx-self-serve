@@ -3,12 +3,13 @@
 
 import { Component, computed, DestroyRef, inject, input, model, output, signal, Signal } from '@angular/core';
 import { takeUntilDestroyed, toObservable } from '@angular/core/rxjs-interop';
+import { FormBuilder, FormGroup } from '@angular/forms';
 import { AvatarComponent } from '@components/avatar/avatar.component';
 import { ButtonComponent } from '@components/button/button.component';
 import { CardComponent } from '@components/card/card.component';
 import { CardTabsBarComponent } from '@components/card-tabs-bar/card-tabs-bar.component';
+import { InputTextComponent } from '@components/input-text/input-text.component';
 import {
-  AttendanceAssignFormValue,
   AttendanceReconciliationResult,
   AttendanceReconciliationTab,
   FilterPillOption,
@@ -19,11 +20,9 @@ import { MessageService } from 'primeng/api';
 import { DrawerModule } from 'primeng/drawer';
 import { catchError, of, skip, switchMap, take, tap } from 'rxjs';
 
-const EMPTY_ASSIGN_FORM: AttendanceAssignFormValue = { email: '', first_name: '', last_name: '', username: '' };
-
 @Component({
   selector: 'lfx-attendance-reconciliation-drawer',
-  imports: [DrawerModule, ButtonComponent, CardComponent, CardTabsBarComponent, AvatarComponent],
+  imports: [DrawerModule, ButtonComponent, CardComponent, CardTabsBarComponent, AvatarComponent, InputTextComponent],
   templateUrl: './attendance-reconciliation-drawer.component.html',
   styleUrl: './attendance-reconciliation-drawer.component.scss',
 })
@@ -32,6 +31,7 @@ export class AttendanceReconciliationDrawerComponent {
   private readonly meetingService = inject(MeetingService);
   private readonly messageService = inject(MessageService);
   private readonly destroyRef = inject(DestroyRef);
+  private readonly fb = inject(FormBuilder);
 
   /** Composite meeting_and_occurrence_id of the past meeting being reconciled */
   public readonly pastMeetingId = input.required<string>();
@@ -39,13 +39,14 @@ export class AttendanceReconciliationDrawerComponent {
   /** Emits after any row action succeeds so the parent can refresh its participant list */
   public readonly reconciliationChanged = output<void>();
 
+  public readonly assignForm: FormGroup = this.fb.group({ email: [''], username: [''], first_name: [''], last_name: [''] });
+
   // === Writable Signals ===
   public loading = signal(false);
   public poolDegraded = signal(false);
   public activeTab = signal<AttendanceReconciliationTab>('needs-review');
   public rowActionLoading = signal<Set<string>>(new Set());
   public assigningAttendeeId = signal<string | null>(null);
-  public assignForm = signal<AttendanceAssignFormValue>(EMPTY_ASSIGN_FORM);
   private readonly results = signal<AttendanceReconciliationResult[]>([]);
 
   // === Computed Signals ===
@@ -76,7 +77,7 @@ export class AttendanceReconciliationDrawerComponent {
       this.results.set(response?.results ?? []);
       this.poolDegraded.set(response?.pool_degraded ?? false);
       this.assigningAttendeeId.set(null);
-      this.assignForm.set(EMPTY_ASSIGN_FORM);
+      this.assignForm.reset();
       this.activeTab.set('needs-review');
     })
   );
@@ -116,7 +117,7 @@ export class AttendanceReconciliationDrawerComponent {
 
   public openAssign(result: AttendanceReconciliationResult): void {
     const candidate = result.matched_candidate;
-    this.assignForm.set({
+    this.assignForm.reset({
       email: candidate?.email ?? '',
       first_name: candidate?.first_name ?? '',
       last_name: candidate?.last_name ?? '',
@@ -127,11 +128,7 @@ export class AttendanceReconciliationDrawerComponent {
 
   public cancelAssign(): void {
     this.assigningAttendeeId.set(null);
-    this.assignForm.set(EMPTY_ASSIGN_FORM);
-  }
-
-  public updateAssignForm(field: keyof AttendanceAssignFormValue, value: string): void {
-    this.assignForm.update((current) => ({ ...current, [field]: value }));
+    this.assignForm.reset();
   }
 
   /**
@@ -140,17 +137,18 @@ export class AttendanceReconciliationDrawerComponent {
    * pending lfx-v2-meeting-service#276.
    */
   public submitAssign(result: AttendanceReconciliationResult): void {
-    const form = this.assignForm();
-    if (!form.email.trim()) {
+    const form = this.assignForm.value;
+    const email = (form.email ?? '').trim();
+    if (!email) {
       this.messageService.add({ severity: 'error', summary: 'Email Required', detail: 'Enter an email to assign this attendee.' });
       return;
     }
 
     this.runRowAction(result.attendee_id, {
-      email: form.email.trim(),
-      username: form.username.trim() || undefined,
-      first_name: form.first_name.trim() || undefined,
-      last_name: form.last_name.trim() || undefined,
+      email,
+      username: (form.username ?? '').trim() || undefined,
+      first_name: (form.first_name ?? '').trim() || undefined,
+      last_name: (form.last_name ?? '').trim() || undefined,
       is_verified: true,
       is_ai_reconciled: false,
     });
@@ -208,7 +206,7 @@ export class AttendanceReconciliationDrawerComponent {
           });
           this.results.update((current) => current.filter((r) => r.attendee_id !== attendeeId));
           this.assigningAttendeeId.set(null);
-          this.assignForm.set(EMPTY_ASSIGN_FORM);
+          this.assignForm.reset();
           this.messageService.add({ severity: 'success', summary: 'Attendee Updated', detail: 'The attendance record has been updated.' });
           this.reconciliationChanged.emit();
         },

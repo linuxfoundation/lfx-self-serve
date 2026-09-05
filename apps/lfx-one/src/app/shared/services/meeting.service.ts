@@ -470,6 +470,7 @@ export class MeetingService {
     return this.http.get<PastMeetingParticipant[]>(`/api/past-meetings/${encodeURIComponent(pastMeetingUid)}/participants`);
   }
 
+  // Not yet called from any component — scaffolded alongside the reconciliation drawer (GH-1672 item 5) for a future manual-add/remove-participant action.
   public createPastMeetingParticipant(pastMeetingUid: string, payload: ITXCreatePastMeetingParticipantRequest): Observable<ITXPastMeetingParticipantResult> {
     return this.http.post<ITXPastMeetingParticipantResult>(`/api/past-meetings/${encodeURIComponent(pastMeetingUid)}/participants`, payload).pipe(take(1));
   }
@@ -487,6 +488,7 @@ export class MeetingService {
       .pipe(take(1));
   }
 
+  // Not yet called from any component — scaffolded alongside the reconciliation drawer (GH-1672 item 5) for a future manual-add/remove-participant action.
   public deletePastMeetingParticipant(pastMeetingUid: string, participantId: string): Observable<void> {
     return this.http.delete<void>(`/api/past-meetings/${encodeURIComponent(pastMeetingUid)}/participants/${encodeURIComponent(participantId)}`).pipe(take(1));
   }

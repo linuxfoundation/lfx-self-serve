@@ -154,7 +154,7 @@ describe('AttendanceReconciliationDrawerComponent', () => {
     await openDrawer(fixture);
 
     fixture.componentInstance.openAssign(result);
-    fixture.componentInstance.updateAssignForm('email', '   ');
+    fixture.componentInstance.assignForm.get('email')?.setValue('   ');
     fixture.componentInstance.submitAssign(result);
     await TestBed.inject(ApplicationRef).whenStable();
 
@@ -170,7 +170,7 @@ describe('AttendanceReconciliationDrawerComponent', () => {
     await openDrawer(fixture);
 
     fixture.componentInstance.openAssign(result);
-    fixture.componentInstance.updateAssignForm('email', 'manual@example.com');
+    fixture.componentInstance.assignForm.get('email')?.setValue('manual@example.com');
     fixture.componentInstance.submitAssign(result);
     await TestBed.inject(ApplicationRef).whenStable();
 

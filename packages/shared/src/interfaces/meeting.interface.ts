@@ -1770,11 +1770,3 @@ export interface PublicProjectMeetingsResponse {
 
 /** Confidence-driven tab in the attendance reconciliation drawer */
 export type AttendanceReconciliationTab = 'needs-review' | 'unmatched' | 'auto-matched';
-
-/** Manual identity fields entered for the "Assign" row action, prefilled from a suggested candidate when available */
-export interface AttendanceAssignFormValue {
-  email: string;
-  first_name: string;
-  last_name: string;
-  username: string;
-}

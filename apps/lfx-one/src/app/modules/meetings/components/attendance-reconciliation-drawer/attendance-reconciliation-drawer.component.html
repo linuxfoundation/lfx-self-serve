@@ -54,7 +54,9 @@
                 <div class="flex items-center gap-3 min-w-0">
                   <lfx-avatar [label]="result.zoom_user_name || 'Unknown'" size="normal" />
                   <div class="flex flex-col gap-0 min-w-0">
-                    <span class="text-sm font-medium text-gray-900 truncate">{{ result.zoom_user_name || 'Unknown attendee' }}</span>
+                    <span class="text-sm font-medium text-gray-900 whitespace-normal break-words" [title]="result.zoom_user_name || 'Unknown attendee'">
+                      {{ result.zoom_user_name || 'Unknown attendee' }}
+                    </span>
                     <span class="text-xs text-gray-500">{{ result.confidence }} confidence &middot; {{ result.method }}</span>
                   </div>
                 </div>
@@ -111,32 +113,40 @@
               @if (assigningAttendeeId() === result.attendee_id) {
                 <div class="flex flex-col gap-2 pl-11 pt-2 border-t border-gray-200" data-testid="assign-form">
                   <div class="flex items-center gap-2">
-                    <input
-                      [value]="assignForm().email"
-                      (input)="updateAssignForm('email', $any($event.target).value)"
+                    <lfx-input-text
+                      size="small"
+                      [form]="assignForm"
+                      control="email"
                       placeholder="Email (required)"
-                      class="flex-1 h-9 px-3 text-sm border border-gray-200 rounded-lg focus:outline-none focus:ring-1 focus:ring-blue-300"
-                      data-testid="assign-email-input" />
-                    <input
-                      [value]="assignForm().username"
-                      (input)="updateAssignForm('username', $any($event.target).value)"
+                      styleClass="flex-1"
+                      [attr.data-testid]="'assign-email-input'">
+                    </lfx-input-text>
+                    <lfx-input-text
+                      size="small"
+                      [form]="assignForm"
+                      control="username"
                       placeholder="Username"
-                      class="flex-1 h-9 px-3 text-sm border border-gray-200 rounded-lg focus:outline-none focus:ring-1 focus:ring-blue-300"
-                      data-testid="assign-username-input" />
+                      styleClass="flex-1"
+                      [attr.data-testid]="'assign-username-input'">
+                    </lfx-input-text>
                   </div>
                   <div class="flex items-center gap-2">
-                    <input
-                      [value]="assignForm().first_name"
-                      (input)="updateAssignForm('first_name', $any($event.target).value)"
+                    <lfx-input-text
+                      size="small"
+                      [form]="assignForm"
+                      control="first_name"
                       placeholder="First name"
-                      class="flex-1 h-9 px-3 text-sm border border-gray-200 rounded-lg focus:outline-none focus:ring-1 focus:ring-blue-300"
-                      data-testid="assign-first-name-input" />
-                    <input
-                      [value]="assignForm().last_name"
-                      (input)="updateAssignForm('last_name', $any($event.target).value)"
+                      styleClass="flex-1"
+                      [attr.data-testid]="'assign-first-name-input'">
+                    </lfx-input-text>
+                    <lfx-input-text
+                      size="small"
+                      [form]="assignForm"
+                      control="last_name"
                       placeholder="Last name"
-                      class="flex-1 h-9 px-3 text-sm border border-gray-200 rounded-lg focus:outline-none focus:ring-1 focus:ring-blue-300"
-                      data-testid="assign-last-name-input" />
+                      styleClass="flex-1"
+                      [attr.data-testid]="'assign-last-name-input'">
+                    </lfx-input-text>
                   </div>
                   <div class="flex items-center justify-end gap-2">
                     <lfx-button label="Cancel" size="small" severity="secondary" [text]="true" (onClick)="cancelAssign()" data-testid="assign-cancel-btn">
