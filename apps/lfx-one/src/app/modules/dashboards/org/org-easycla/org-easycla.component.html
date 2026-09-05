@@ -33,6 +33,14 @@
       <p-skeleton width="14rem" height="1.5rem" />
       <p-skeleton width="100%" height="8rem" />
     </section>
+  } @else if (!hasCompany()) {
+    <!-- LF staff reach this page with no organization selected, and the CLA empty state would tell
+         them no CLAs are signed without naming whose. -->
+    <lfx-empty-state
+      data-testid="org-easycla-no-company-empty-state"
+      icon="fa-light fa-building"
+      title="No org selected"
+      subtitle="Select an organization to view its CLAs." />
   } @else {
     <lfx-empty-state
       data-testid="org-easycla-empty-state"

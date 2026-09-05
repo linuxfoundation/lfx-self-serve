@@ -8,6 +8,7 @@ import { OpenIntercomDirective } from '@shared/directives/open-intercom.directiv
 import { AccountContextService } from '@services/account-context.service';
 import { OrgRoleGrantsService } from '@services/org-role-grants.service';
 import { PersonaService } from '@services/persona.service';
+import { OrgNavigationService } from '@shared/services/org-navigation.service';
 import { SkeletonModule } from 'primeng/skeleton';
 
 @Component({
@@ -20,8 +21,11 @@ export class OrgEasyclaComponent {
   private readonly accountContext = inject(AccountContextService);
   private readonly orgRoleGrantsService = inject(OrgRoleGrantsService);
   private readonly personaService = inject(PersonaService);
+  private readonly orgNavigation = inject(OrgNavigationService);
 
   protected readonly companyName = computed(() => this.accountContext.selectedAccount()?.accountName ?? '');
+
+  protected readonly hasCompany = computed(() => !!this.accountContext.selectedAccount()?.uid);
 
   /**
    * True once both grant fetches have returned and the caller holds no org access. The route guard
@@ -37,8 +41,16 @@ export class OrgEasyclaComponent {
     () => this.orgRoleGrantsService.loaded() && this.personaService.personaLoaded() && !this.accountContext.hasOrgSelectorAccess()
   );
 
-  /** No-access is a settled answer in its own right, so it does not wait behind the loading branch. */
+  /**
+   * No-access is a settled answer in its own right, so it does not wait behind the loading branch.
+   *
+   * `orgNavigation.loaded()` is part of the authorized branch because grants and personas can both
+   * be loaded while the org list is still being fetched and default-selected — for a direct
+   * writer/auditor whose persona payload carries no organization seed, and for LF staff, who
+   * satisfy `hasOrgSelectorAccess` with an empty account list. Without it those users would see a
+   * settled answer about their CLAs before any company was selected.
+   */
   protected readonly orgContextLoaded: Signal<boolean> = computed(
-    () => this.hasNoOrgAccess() || (this.orgRoleGrantsService.loaded() && this.personaService.personaLoaded())
+    () => this.hasNoOrgAccess() || (this.orgNavigation.loaded() && this.orgRoleGrantsService.loaded() && this.personaService.personaLoaded())
   );
 }

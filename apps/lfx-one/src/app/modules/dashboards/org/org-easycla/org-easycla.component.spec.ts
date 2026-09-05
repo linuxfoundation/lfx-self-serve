@@ -10,6 +10,7 @@ import { provideRouter } from '@angular/router';
 import { AccountContextService } from '@services/account-context.service';
 import { OrgRoleGrantsService } from '@services/org-role-grants.service';
 import { PersonaService } from '@services/persona.service';
+import { OrgNavigationService } from '@shared/services/org-navigation.service';
 // The no-access branch renders a `lfxOpenIntercom` support button, which injects MessageService.
 import { MessageService } from 'primeng/api';
 import { beforeEach, describe, expect, it } from 'vitest';
@@ -17,10 +18,13 @@ import { beforeEach, describe, expect, it } from 'vitest';
 import { OrgEasyclaComponent } from './org-easycla.component';
 
 describe('OrgEasyclaComponent', () => {
-  const selectedAccount = signal<{ accountName: string } | null>(null);
+  const SELECTED_ACCOUNT = { uid: 'org-acme', accountName: 'Acme Motors, Inc.' };
+
+  const selectedAccount = signal<{ uid?: string; accountName: string } | null>(null);
   const hasOrgSelectorAccess = signal(true);
   const grantsLoaded = signal(true);
   const personaLoaded = signal(true);
+  const navLoaded = signal(true);
 
   async function render(): Promise<ComponentFixture<OrgEasyclaComponent>> {
     TestBed.resetTestingModule();
@@ -32,6 +36,7 @@ describe('OrgEasyclaComponent', () => {
         { provide: AccountContextService, useValue: { selectedAccount, hasOrgSelectorAccess } },
         { provide: OrgRoleGrantsService, useValue: { loaded: grantsLoaded } },
         { provide: PersonaService, useValue: { personaLoaded } },
+        { provide: OrgNavigationService, useValue: { loaded: navLoaded } },
         MessageService,
       ],
     }).compileComponents();
@@ -42,10 +47,11 @@ describe('OrgEasyclaComponent', () => {
   }
 
   beforeEach(() => {
-    selectedAccount.set(null);
+    selectedAccount.set(SELECTED_ACCOUNT);
     hasOrgSelectorAccess.set(true);
     grantsLoaded.set(true);
     personaLoaded.set(true);
+    navLoaded.set(true);
   });
 
   it('renders the empty-state scaffold', async () => {
@@ -61,8 +67,6 @@ describe('OrgEasyclaComponent', () => {
   // Matches the sibling org-lens pages (memberships, projects) and the approved M3 design,
   // which titles the page "EasyCLA — {Company}".
   it('titles the page with the selected company', async () => {
-    selectedAccount.set({ accountName: 'Acme Motors, Inc.' });
-
     const fixture = await render();
     const title = fixture.nativeElement.querySelector('[data-testid="org-easycla-title"]');
 
@@ -71,6 +75,8 @@ describe('OrgEasyclaComponent', () => {
   });
 
   it('falls back to the bare title before an account resolves', async () => {
+    selectedAccount.set(null);
+
     const fixture = await render();
     const title = fixture.nativeElement.querySelector('[data-testid="org-easycla-title"]');
 
@@ -98,6 +104,29 @@ describe('OrgEasyclaComponent', () => {
 
     expect(fixture.nativeElement.querySelector('[data-testid="org-easycla-loading"]')).toBeTruthy();
     expect(fixture.nativeElement.querySelector('[data-testid="org-easycla-no-access-state"]')).toBeNull();
+    expect(fixture.nativeElement.querySelector('[data-testid="org-easycla-empty-state"]')).toBeNull();
+  });
+
+  // Grants and personas can settle while the org list is still being fetched and default-selected,
+  // so an authorized user would otherwise be told they have no CLAs before a company existed.
+  it('keeps waiting while the org list is still resolving, even with grants and personas settled', async () => {
+    navLoaded.set(false);
+    selectedAccount.set(null);
+
+    const fixture = await render();
+
+    expect(fixture.nativeElement.querySelector('[data-testid="org-easycla-loading"]')).toBeTruthy();
+    expect(fixture.nativeElement.querySelector('[data-testid="org-easycla-empty-state"]')).toBeNull();
+  });
+
+  // LF staff satisfy hasOrgSelectorAccess with an empty account list, so "no CLAs signed yet" would
+  // be a claim about an organization they have not picked.
+  it('asks for an organization rather than reporting no CLAs when none is selected', async () => {
+    selectedAccount.set(null);
+
+    const fixture = await render();
+
+    expect(fixture.nativeElement.querySelector('[data-testid="org-easycla-no-company-empty-state"]')).toBeTruthy();
     expect(fixture.nativeElement.querySelector('[data-testid="org-easycla-empty-state"]')).toBeNull();
   });
 });
