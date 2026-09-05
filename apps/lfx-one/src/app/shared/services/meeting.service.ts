@@ -20,6 +20,9 @@ import {
   CreateMeetingRsvpRequest,
   GenerateAgendaRequest,
   GenerateAgendaResponse,
+  ITXCreatePastMeetingParticipantRequest,
+  ITXPastMeetingParticipantResult,
+  ITXUpdatePastMeetingParticipantRequest,
   Meeting,
   MeetingAttachment,
   MeetingJoinURL,
@@ -42,6 +45,7 @@ import {
   PublicPastMeetingResponse,
   PublicProjectMeetingsResponse,
   QueryServiceCountResponse,
+  ReconcilePastMeetingParticipantsResponse,
   UpdateMeetingAttachmentRequest,
   UpdateMeetingRegistrantRequest,
   UpdateMeetingRequest,
@@ -464,6 +468,36 @@ export class MeetingService {
 
   public getPastMeetingParticipants(pastMeetingUid: string): Observable<PastMeetingParticipant[]> {
     return this.http.get<PastMeetingParticipant[]>(`/api/past-meetings/${encodeURIComponent(pastMeetingUid)}/participants`);
+  }
+
+  public createPastMeetingParticipant(pastMeetingUid: string, payload: ITXCreatePastMeetingParticipantRequest): Observable<ITXPastMeetingParticipantResult> {
+    return this.http.post<ITXPastMeetingParticipantResult>(`/api/past-meetings/${encodeURIComponent(pastMeetingUid)}/participants`, payload).pipe(take(1));
+  }
+
+  public updatePastMeetingParticipant(
+    pastMeetingUid: string,
+    participantId: string,
+    payload: ITXUpdatePastMeetingParticipantRequest
+  ): Observable<ITXPastMeetingParticipantResult> {
+    return this.http
+      .put<ITXPastMeetingParticipantResult>(
+        `/api/past-meetings/${encodeURIComponent(pastMeetingUid)}/participants/${encodeURIComponent(participantId)}`,
+        payload
+      )
+      .pipe(take(1));
+  }
+
+  public deletePastMeetingParticipant(pastMeetingUid: string, participantId: string): Observable<void> {
+    return this.http.delete<void>(`/api/past-meetings/${encodeURIComponent(pastMeetingUid)}/participants/${encodeURIComponent(participantId)}`).pipe(take(1));
+  }
+
+  /**
+   * Triggers AI-assisted attendance reconciliation (GH-1672 item 4) for a past meeting occurrence.
+   * High-confidence deterministic matches are auto-applied server-side; the rest are returned for
+   * admin review in the reconciliation drawer.
+   */
+  public reconcilePastMeetingParticipants(pastMeetingUid: string): Observable<ReconcilePastMeetingParticipantsResponse> {
+    return this.http.post<ReconcilePastMeetingParticipantsResponse>(`/api/past-meetings/${encodeURIComponent(pastMeetingUid)}/reconcile`, {}).pipe(take(1));
   }
 
   public clearPastMeetingRecordingCache(): void {

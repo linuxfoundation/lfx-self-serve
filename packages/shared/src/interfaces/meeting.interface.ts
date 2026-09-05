@@ -1767,3 +1767,14 @@ export interface PublicProjectMeetingsResponse {
   /** Slim project envelope for the page header; `name` is empty when project lookup fails */
   project: { uid: string; name: string };
 }
+
+/** Confidence-driven tab in the attendance reconciliation drawer */
+export type AttendanceReconciliationTab = 'needs-review' | 'unmatched' | 'auto-matched';
+
+/** Manual identity fields entered for the "Assign" row action, prefilled from a suggested candidate when available */
+export interface AttendanceAssignFormValue {
+  email: string;
+  first_name: string;
+  last_name: string;
+  username: string;
+}
