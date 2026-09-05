@@ -729,7 +729,16 @@ export class PlanningTabComponent implements OnInit {
         // step, and deliberately KEEPS the url and the restore offer -- the url because the
         // operator typed it and the event has not changed, the offer because it is keyed on
         // `(slug, foundation)` which a stage change does not touch.
+        //
+        // It does clear the HubSpot state, which this handler must NOT: the preamble above says
+        // so, and it is right -- that state is keyed by project and event, neither of which a
+        // stage change touches, and nothing re-runs the lookup afterwards (`lastLookedUpEvent` is
+        // unchanged, so it early-returns). Losing it silently drops attribution from every brief
+        // generated after a stage switch. Carried across rather than reordering `reset()`, whose
+        // other callers -- Cancel and New Brief -- do want it cleared.
+        const hsUtm = this.hsUtm();
         this.reset();
+        this.hsUtm.set(hsUtm);
 
         // The offer, however, IS stage-specific: it names one stored row, and under the widened
         // key that row belongs to the stage that was selected when it was looked up. So it is

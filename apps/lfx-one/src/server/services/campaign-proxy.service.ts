@@ -794,7 +794,7 @@ const JSON_LD_RE = /<script(?=[\s/>])[^>]{0,512}\stype\s*=\s*["']application\/ld
  * linear, no backtracking, and it degrades safely -- an unbalanced document simply strips to the
  * end of what it can prove is inside the element.
  */
-const SVG_TAG_RE = /<(\/?)svg(?=[\s/>])[^>]{0,512}>/gi;
+const SVG_TAG_RE = /<(\/?)svg(?=[\s/>])/gi;
 
 /** Replace every top-level `<svg>...</svg>`, nesting included, with a single space. */
 function stripSvgBlocks(html: string): string {
@@ -806,22 +806,34 @@ function stripSvgBlocks(html: string): string {
   let tag = SVG_TAG_RE.exec(html);
 
   while (tag !== null) {
+    // The tag's END is found with `indexOf`, not by an attribute span in the pattern. A capped
+    // span (`[^>]{0,512}>`) silently failed to recognise a root `<svg>` carrying more than 512
+    // characters of attributes -- ordinary in Illustrator exports and chart roots -- and left the
+    // whole element in the prompt. Removing the cap is not the fix either: `[^>]*>` backtracks
+    // across the document on unmatched `<svg ` tokens and ran for over ten minutes on 5 MiB.
+    // Matching the token alone and scanning for `>` has neither failure: 1ms on that same input,
+    // and no attribute length it cannot handle.
+    const tagEnd = html.indexOf('>', tag.index);
+    if (tagEnd === -1) {
+      break;
+    }
+
     const isClose = tag[1] === '/';
     // A self-closing `<svg .../>` opens and closes in one tag: it is a whole block at depth 0 and
     // must not increment, or every icon on the page would leave the scan permanently nested.
-    const selfClosing = !isClose && tag[0].endsWith('/>');
+    const selfClosing = !isClose && html[tagEnd - 1] === '/';
 
     if (selfClosing) {
       if (depth === 0) {
         out += html.slice(copied, tag.index) + ' ';
-        copied = tag.index + tag[0].length;
+        copied = tagEnd + 1;
       }
     } else if (isClose) {
       if (depth > 0) {
         depth--;
         if (depth === 0) {
           out += html.slice(copied, blockStart) + ' ';
-          copied = tag.index + tag[0].length;
+          copied = tagEnd + 1;
         }
       }
     } else {
@@ -831,6 +843,7 @@ function stripSvgBlocks(html: string): string {
       depth++;
     }
 
+    SVG_TAG_RE.lastIndex = tagEnd + 1;
     tag = SVG_TAG_RE.exec(html);
   }
 
@@ -858,14 +871,19 @@ function svgBlockEnd(scan: string, openIndex: number, openEnd: number): number {
   let tag = SVG_TAG_RE.exec(scan);
 
   while (tag !== null && depth > 0) {
+    const tagEnd = scan.indexOf('>', tag.index);
+    if (tagEnd === -1) {
+      break;
+    }
     if (tag[1] === '/') {
       depth--;
       if (depth === 0) {
-        return tag.index + tag[0].length;
+        return tagEnd + 1;
       }
-    } else if (!tag[0].endsWith('/>')) {
+    } else if (scan[tagEnd - 1] !== '/') {
       depth++;
     }
+    SVG_TAG_RE.lastIndex = tagEnd + 1;
     tag = SVG_TAG_RE.exec(scan);
   }
 
@@ -1183,10 +1201,16 @@ export function extractableHtml(html: string): string {
   // input. An unterminated comment consumes the remainder, which is what a browser does with it.
   const withoutComments = stripComments(withoutJSONLD);
   const source = boundedSource(withoutComments);
-  const stripped = stripSvgBlocks(source)
-    .replace(/<script(?=[\s/>])[\s\S]*?<\/script(\s[^>]*)?>/gi, ' ')
-    .replace(/<style(?=[\s/>])[\s\S]*?<\/style(\s[^>]*)?>/gi, ' ')
-
+  // Raw-text elements FIRST, then svg.
+  //
+  // `stripSvgBlocks` tracks depth but has no notion of raw text, so an `<svg` token inside a
+  // script STRING -- `el.innerHTML = "<svg viewBox='0 0 16 16'>" + paths` -- opened a block that
+  // never closed and took the rest of the page with it. Removing script and style first means the
+  // svg pass only ever sees markup. The walk above already skips raw-text blocks whole, which is
+  // why this only bit the under-cap path.
+  const stripped = stripSvgBlocks(
+    source.replace(/<script(?=[\s/>])[\s\S]*?<\/script(\s[^>]*)?>/gi, ' ').replace(/<style(?=[\s/>])[\s\S]*?<\/style(\s[^>]*)?>/gi, ' ')
+  )
     // Collapse the whitespace those removals leave behind. Templated markup is heavily indented,
     // so this is not cosmetic: it recovers several KB of the budget on a typical page.
     .replace(/\s{2,}/g, ' ');

@@ -849,6 +849,29 @@ describe('PlanningTabComponent delivery-type mode', () => {
     expect(priv.eventDetails(), 'the previous stage event details survived the stage change').toBeNull();
   });
 
+  // The stage-change reset must not take the HubSpot state with it. That state is keyed by project
+  // and event, neither of which a stage change touches, and nothing re-runs the lookup afterwards
+  // (`lastLookedUpEvent` is unchanged, so it early-returns) -- so losing it silently drops
+  // attribution from every brief generated after a stage switch.
+  it('keeps the HubSpot utm across a stage change', async () => {
+    await build('email');
+    fixture.componentRef.setInput('emailStage', 'CFP Launch');
+    fixture.detectChanges();
+
+    const priv = fixture.componentInstance as unknown as {
+      hsUtm: { set(v: string | null): void; (): string | null };
+      step: { set(v: string): void; (): string };
+    };
+    priv.hsUtm.set('kubecon-eu-2026-utm');
+    priv.step.set('review');
+
+    fixture.componentRef.setInput('emailStage', 'Final Countdown');
+    fixture.detectChanges();
+
+    expect(priv.step(), 'the draft should still be discarded').toBe('input');
+    expect(priv.hsUtm(), 'the stage-change reset cleared the HubSpot utm').toBe('kubecon-eu-2026-utm');
+  });
+
   it('looks a saved brief up in email mode, scoped to the email surface', async () => {
     const loadBrief = vi.fn().mockReturnValue(new Subject());
     vi.spyOn(TestBed.inject(CampaignService), 'loadBrief').mockImplementation(loadBrief);

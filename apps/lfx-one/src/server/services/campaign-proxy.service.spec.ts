@@ -1146,6 +1146,45 @@ describe('extractableHtml', () => {
     expect(Date.now() - started, 'the comment pass backtracked').toBeLessThan(2000);
   });
 
+  // `stripSvgBlocks` depth-tracks but has no notion of raw text, so an `<svg` token inside a
+  // script STRING opened a block that never closed and took the rest of the page with it. Script
+  // and style are therefore removed before the svg pass. The walk already skips raw-text blocks
+  // whole, which is why this only bit inputs under the source cap.
+  it('does not open an svg block on a tag name inside a script string', () => {
+    const out = extractableHtml(`<script>el.innerHTML = "<svg viewBox='0 0 16 16'>" + paths;</script><p>Tokyo</p>`);
+
+    expect(out, 'the svg token inside the script body was treated as markup').toContain('Tokyo');
+  });
+
+  // A capped attribute span silently failed to recognise a root `<svg>` carrying more than 512
+  // characters of attributes -- ordinary in Illustrator exports and chart roots -- so the whole
+  // element survived into the prompt. Removing the cap is not the fix: `[^>]*>` backtracks across
+  // the document on unmatched `<svg ` tokens. The tag END is found with `indexOf` instead, which
+  // has neither failure.
+  describe.each([
+    ['under the source cap', ''],
+    ['above the source cap', 'word '.repeat(40_000)],
+  ])('an svg whose open tag exceeds 512 characters of attributes (%s)', (_label, padding) => {
+    it('is still recognised and stripped', () => {
+      const long = `<svg class="${'c'.repeat(600)}"><text>SECRET</text></svg>`;
+
+      const out = extractableHtml(`${long}<p>Tokyo</p>${padding}`);
+
+      expect(out, 'the long-attribute svg was not recognised').not.toContain('SECRET');
+      expect(out).toContain('Tokyo');
+    });
+  });
+
+  // The tag scan must stay linear: an unbounded attribute span ran for over ten minutes here.
+  it('stays linear on a page dense with unmatched svg openings', () => {
+    const body = '<svg '.repeat((5 * 1024 * 1024) / 5);
+
+    const started = Date.now();
+    extractableHtml(body);
+
+    expect(Date.now() - started, 'the svg tag scan backtracked').toBeLessThan(2000);
+  });
+
   it('returns an empty string for input that is entirely strippable', () => {
     expect(extractableHtml('<style>.a{color:red}</style>').trim()).toBe('');
   });
