@@ -45,10 +45,10 @@ export class OrgProfileComponent {
   private readonly retryTrigger = signal(0);
   private readonly loadState = signal<'loading' | 'loaded' | 'error'>('loading');
 
-  /** Writer detection (FR-005) — uses the existing role-grants signal seeded at bootstrap. */
+  /** Writer detection, widened to roll-up-derived editors (LFXV2-3029) — uses the existing role-grants signal seeded at bootstrap. */
   protected readonly canEdit = computed(() => {
     const uid = this.accountContext.selectedAccount()?.uid;
-    return !!uid && this.orgRoleGrants.writerSet().has(uid);
+    return !!uid && this.orgRoleGrants.editorSet().has(uid);
   });
 
   /** Auto-prepend `https://` when the stored value lacks a protocol (FR-003). */

@@ -436,7 +436,10 @@ export class CommitteeMembersComponent {
   private initCanEdit(): boolean {
     const uid = this.accountContext.selectedAccount()?.uid;
     if (!uid) return false;
-    return this.roleGrants.writerSet().has(uid);
+    // LFXV2-3029 — widened to roll-up-derived editors, not just a direct grant. The upstream
+    // write (committee seat reassignment) is gateway-enforced against `b2b_org#writer` (see
+    // `org-lens-board-committee.service.ts`), so this display gate simply mirrors it.
+    return this.roleGrants.editorSet().has(uid);
   }
 
   private initAriaSortMap(): Record<CommitteeMembersSortColumn, 'ascending' | 'descending' | 'none'> {
