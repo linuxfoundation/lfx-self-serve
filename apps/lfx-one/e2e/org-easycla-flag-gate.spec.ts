@@ -22,7 +22,7 @@
 
 import { ACCOUNT_COOKIE_KEY } from '@lfx-one/shared/constants/accounts.constants';
 import { ORG_LENS_CLA_M3_ENABLED_FLAG } from '@lfx-one/shared/constants/feature-flags.constants';
-import { expect, Page, test } from '@playwright/test';
+import { expect, Locator, Page, test } from '@playwright/test';
 
 import { stubFeatureFlags } from './helpers/org-roi.helper';
 
@@ -32,6 +32,10 @@ const PAGE_LOAD_TIMEOUT = 30_000;
 const MOCK_ACCOUNT_ID = '0014100000Te2QjAAJ';
 const MOCK_ACCOUNT_NAME = 'Acme Motors';
 const MOCK_ACCOUNT_SLUG = 'acme-motors';
+
+function sidebarLink(page: Page, name: string): Locator {
+  return page.getByTestId('sidebar').getByRole('link', { name, exact: true });
+}
 
 function fulfillJson(page: Page, glob: string, body: unknown): Promise<void> {
   return page.route(glob, (route) => route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify(body) }));
@@ -115,7 +119,12 @@ test.describe('Org Lens EasyCLA dark-launch gate', () => {
 
     await expect(page).toHaveURL(/\/org\/overview/, { timeout: PAGE_LOAD_TIMEOUT });
     await expect(page.getByTestId('org-easycla-page')).toHaveCount(0);
-    await expect(page.getByTestId('sidebar').getByRole('link', { name: 'EasyCLA' })).toHaveCount(0);
+
+    // Wait for a sibling item before asserting EasyCLA's absence. Org-lens nav items only render
+    // after hydration and lens load, so an unanchored `toHaveCount(0)` would resolve against the
+    // skeleton and pass even with the nav gate removed.
+    await expect(sidebarLink(page, 'Code Contributions')).toBeVisible({ timeout: PAGE_LOAD_TIMEOUT });
+    await expect(sidebarLink(page, 'EasyCLA')).toHaveCount(0);
   });
 
   test('renders the page and the nav item once the flag is on', async ({ page }) => {
@@ -125,6 +134,6 @@ test.describe('Org Lens EasyCLA dark-launch gate', () => {
     await expect(page.getByTestId('org-easycla-page')).toBeVisible({ timeout: PAGE_LOAD_TIMEOUT });
     await expect(page.getByTestId('org-easycla-title')).toContainText(MOCK_ACCOUNT_NAME);
     await expect(page.getByTestId('org-easycla-empty-state')).toBeVisible();
-    await expect(page.getByTestId('sidebar').getByRole('link', { name: 'EasyCLA' })).toBeVisible({ timeout: PAGE_LOAD_TIMEOUT });
+    await expect(sidebarLink(page, 'EasyCLA')).toBeVisible({ timeout: PAGE_LOAD_TIMEOUT });
   });
 });
