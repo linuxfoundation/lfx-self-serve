@@ -172,6 +172,15 @@ export class CommitteeController {
         return;
       }
 
+      // Vanity `/groups/<sso_group_name>` URLs land here with a slug, not a UID. Resolve first so
+      // Heimdall's `committee:{uid}#viewer` check hits the object that actually has tuples
+      // (GH #2072). UUIDs pass through unchanged.
+      const committeeUid = await this.committeeService.resolveCommitteeUid(req, id, {
+        operation: 'get_committee_by_id',
+        service: 'committee_controller',
+        path: req.path,
+      });
+
       // Get the committee by ID — include caller membership so the UI can render
       // visitor / member / chair states without a second round-trip, enrich with
       // project metadata so the detail page's Parent Project link can resolve project_uid
@@ -179,7 +188,7 @@ export class CommitteeController {
       // so the members roster can label foundation-level managers correctly (LFXV2-2059),
       // and include mailing-list status (upstream does not reliably populate
       // has_mailing_list on this endpoint — LFXV2-2914).
-      const committee = await this.committeeService.getCommitteeById(req, id, {
+      const committee = await this.committeeService.getCommitteeById(req, committeeUid, {
         includeMembership: true,
         includeProjectMetadata: true,
         includeInheritedPermissions: true,
@@ -188,7 +197,7 @@ export class CommitteeController {
 
       // Log the success
       logger.success(req, 'get_committee_by_id', startTime, {
-        committee_id: id,
+        committee_id: committeeUid,
         committee_category: committee.category,
       });
 

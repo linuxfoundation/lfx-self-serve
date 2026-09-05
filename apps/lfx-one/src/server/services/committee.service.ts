@@ -1,7 +1,7 @@
 // Copyright The Linux Foundation and each contributor to LFX.
 // SPDX-License-Identifier: MIT
 
-import { CHAT_WEBHOOK_URL_MAX_LENGTH, SLACK_INCOMING_WEBHOOK_URL_PATTERN } from '@lfx-one/shared/constants';
+import { CHAT_WEBHOOK_URL_MAX_LENGTH, SLACK_INCOMING_WEBHOOK_URL_PATTERN, UUID_REGEX } from '@lfx-one/shared/constants';
 import { CommitteeMemberRole } from '@lfx-one/shared/enums';
 import {
   AcceptCommitteeInviteRequest,
@@ -316,6 +316,45 @@ export class CommitteeService {
     }
 
     return permitted.slice(0, pageSize).map((c) => this.stripChatWebhookUrl(c));
+  }
+
+  /**
+   * Resolves a committee route param to a UID. UUIDs pass through; anything else is treated as an
+   * `sso_group_name` vanity slug and looked up via query-service (same tag the public group page
+   * uses — GH #2072 / LFXV2-2012). Uses the caller's bearer token so FGA filtering applies: a
+   * project admin who is not a group member still sees committees they can view, and a private
+   * group they cannot view resolves as not found rather than leaking existence.
+   *
+   * Must run before proxying `GET /committees/{uid}` — Heimdall authorizes `committee:{id}#viewer`
+   * using the path capture, and every FGA tuple is keyed by UID, not slug.
+   */
+  public async resolveCommitteeUid(
+    req: Request,
+    id: string,
+    options: { operation?: string; service?: string; path?: string; resourceType?: string } = {}
+  ): Promise<string> {
+    const operation = options.operation ?? 'resolve_committee_uid';
+    const service = options.service ?? 'committee_service';
+    const resourceType = options.resourceType ?? 'Committee';
+    const path = options.path ?? `/committees/${id}`;
+
+    if (UUID_REGEX.test(id)) {
+      return id;
+    }
+
+    const { resources } = await this.microserviceProxy.proxyRequest<QueryServiceResponse<Committee>>(req, 'LFX_V2_SERVICE', '/query/resources', 'GET', {
+      type: 'committee',
+      tags: `sso_group_name:${id.toLowerCase()}`,
+      page_size: 1,
+    });
+
+    const committeeUid = resources[0]?.data?.uid;
+    if (!committeeUid) {
+      throw new ResourceNotFoundError(resourceType, id, { operation, service, path });
+    }
+
+    logger.debug(req, operation, 'Resolved group slug to UID', { slug: id, group_uid: committeeUid });
+    return committeeUid;
   }
 
   /**
