@@ -229,8 +229,8 @@ export interface CampaignBriefOutput {
    * writes carried no delivery type either. Such a row backfills to `paid-marketing` with an empty
    * stage, so it becomes restorable on the paid planner and unreachable from the email stage it was
    * actually authored for. The same ambiguity exists mid-rollout while an older client is still
-   * writing. Tracked separately — it needs a data decision, not a client-side guess, and nothing
-   * here can distinguish the two cases after the fact.
+   * writing. Tracked in linuxfoundation/lfx-self-serve#2214 — it needs a data decision, not a
+   * client-side guess, and nothing here can distinguish the two cases after the fact.
    */
   deliveryType?: CampaignDeliveryType;
   /**
