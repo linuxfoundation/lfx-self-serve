@@ -968,11 +968,29 @@ describe('extractableHtml', () => {
     expect(out).toContain('Tokyo');
   });
 
-  // Same for a block that genuinely never closes: skip the opening tag, keep walking.
-  it('keeps prose after a block that never closes', () => {
+  // A raw-text block that never closes takes the rest of the document with it, and MUST.
+  //
+  // An earlier revision skipped just the opening tag and kept walking, which reads as the
+  // forgiving choice but is not: everything after an unclosed `<script>` is still script BODY, so
+  // "keeping the prose" meant copying executable text into the extraction prompt. A 1.2 MiB script
+  // whose close lay past the scan bound filled the entire 60k prompt with itself that way.
+  //
+  // The two cannot both hold -- that is the contradiction this replaced -- and this is the safe
+  // half: a page whose script never closes is malformed, and losing its tail costs a page that was
+  // already unparseable, while the other choice costs every well-formed page that hits the bound.
+  it('drops the remainder of a raw-text block that never closes', () => {
     const out = extractableHtml(`<script>x<p>Tokyo</p>${'word '.repeat(40_000)}`);
 
-    expect(out).toContain('Tokyo');
+    expect(out).not.toContain('Tokyo');
+  });
+
+  // The consequence that matters, stated as its own case: a block whose close lies beyond
+  // `MAX_SCAN_CHARS` is unclosed as far as this function can prove, so its body never becomes
+  // prose. This is the case Copilot reported against the previous revision.
+  it('does not copy a raw-text body that straddles the scan bound', () => {
+    const out = extractableHtml(`<script>${'x'.repeat(1_200_000)}</script><p>Tokyo</p>`);
+
+    expect(out, 'a 1.2 MiB script body reached the extraction prompt').not.toContain('xxxxx');
   });
 
   // Self-closing tags must be detected from the OPENING tag, not by failing to find a close.
@@ -1183,6 +1201,44 @@ describe('extractableHtml', () => {
     extractableHtml(body);
 
     expect(Date.now() - started, 'the svg tag scan backtracked').toBeLessThan(2000);
+  });
+
+  // A `<!--` inside a script body is raw TEXT, not a comment. Recognising it as one paired it with
+  // the next real `-->` far below and deleted everything between -- the script's own close tag and
+  // the page's prose along with it.
+  it('does not pair a comment marker inside a script with a later real close', () => {
+    const out = extractableHtml(`<script>const marker='<!--'</script><p>Tokyo</p><!-- footer -->`);
+
+    expect(out, 'the marker inside the script body was read as a comment').toContain('Tokyo');
+    expect(out).not.toContain('marker');
+  });
+
+  // Commented-out schema is disabled markup. Collecting it fed the model a stale event's dates
+  // alongside the live ones, and the stale set could win.
+  it('ignores json-ld inside a comment while keeping the live block', () => {
+    const stale = '<!-- <script type="application/ld+json">{"startDate":"1999-01-01"}</script> -->';
+    const live = '<script type="application/ld+json">{"startDate":"2027-03-15"}</script>';
+
+    const out = extractableHtml(`${stale}${live}<p>Tokyo</p>`);
+
+    expect(out).toContain('2027-03-15');
+    expect(out, 'commented-out schema reached the prompt').not.toContain('1999-01-01');
+  });
+
+  // One scan means one answer. These are the shapes that used to make two passes disagree; each
+  // was a separate defect before the passes were merged.
+  describe.each([
+    ['a comment containing an svg opening', `<!-- <svg placeholder --><p>Tokyo</p>`, 'placeholder'],
+    ['a comment containing a script opening', `<!-- <script src="x" --><p>Tokyo</p>`, 'src='],
+    ['an svg token inside a script string', `<script>el.innerHTML = "<svg viewBox='0 0'>" + p;</script><p>Tokyo</p>`, 'innerHTML'],
+    ['a style token inside a script string', `<script>const t = '<style>';</script><p>Tokyo</p>`, 'const t'],
+  ])('resolves %s in a single pass', (_label, body, markup) => {
+    it('keeps the prose and drops the markup', () => {
+      const out = extractableHtml(body);
+
+      expect(out).toContain('Tokyo');
+      expect(out).not.toContain(markup);
+    });
   });
 
   it('returns an empty string for input that is entirely strippable', () => {

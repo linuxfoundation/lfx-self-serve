@@ -687,193 +687,190 @@ const EXTRACTION_CHAR_CAP = 60_000;
 const JSON_LD_BUDGET = 20_000;
 
 /**
- * Characters of RAW page source the strippers may scan, before any of them runs.
+ * How many JSON-LD blocks a page may contribute before the rest are ignored.
  *
- * The output cap below bounds what reaches the prompt; this bounds the WORK. The strippers are
- * lazy-quantified, so an unclosed `<style ` makes each start position scan to end-of-document
- * looking for a close that never comes -- quadratic in the number of such tokens, and the SSR
- * process is single-threaded, so the whole BFF stalls for every concurrent user. Measured on an
- * adversarial page of repeated `<style ` tokens: 4x the tokens costs 64x the time.
- *
- * 150k is chosen from that measurement, not by feel. Worst case at 150k is ~0.4s; at 500k it is
- * ~4.9s and at 1M ~19.5s. It costs no extraction quality either: a heavily-templated page
- * truncated to 150k still strips to ~144k, well above the 60k the output cap would keep.
- *
- * Tightening the REGEXES was tried first and is worse. An unrolled `[^<]*(?:<(?!\/style)[^<]*)*`
- * takes ~55s on the same input, and bounding the lazy span with `{0,200000}?` takes ~16s -- both
- * far worse than the 6s they were meant to fix. Bounding the input is what actually works.
- */
-const MAX_SOURCE_CHARS = 150_000;
-
-/**
- * Characters the prose-budget walk may scan while looking for the end of a straddling block.
- *
- * The walk below skips `<script>`/`<style>`/`<svg>` blocks whole so the 150k budget is spent on
- * text rather than on markup the strippers would have discarded anyway. Finding the end of a block
- * means searching forward, and on a body whose block never closes that search would run to EOF --
- * so it is bounded, and a block whose close lies past this point is treated as unclosed.
- *
- * 1 MiB matches `MAX_JSON_LD_SCAN_CHARS` and is well under the 5 MiB download ceiling. The cost is
- * that a single block larger than this drops the prose behind it; that is the deliberate trade,
- * and `keeps prose after a block that straddles the source cap` pins the case it does handle.
- */
-const MAX_STRIP_SCAN_CHARS = 1024 * 1024;
-
-/**
- * The strippable block OPENINGS, used to walk the body rather than to match whole blocks.
- *
- * Deliberately has no lazy span. The strippers below carry `[\s\S]*?` and are quadratic on
- * unmatched openings -- 5 MiB of `'<script '` with no `>` costs ~460s through them -- which is why
- * the source cap runs BEFORE they do and must keep running before them.
- */
-const STRIPPABLE_OPENING_RE = /<(script|style|svg)(?=[\s/>])/gi;
-
-/**
- * The JSON-LD OPENING tag alone, used to count blocks before the full matcher runs.
- *
- * Cheaper than the full matcher because it has no lazy span: it stops at the first `>` rather
- * than searching for a closing tag. Both patterns bound their attribute runs at 512 characters --
- * unbounded, a `<script ` with no `>` at all made each scan to end-of-document from every start
- * position, ~13.5s across the two passes on 400k chars and ~98s at the 5 MiB download ceiling.
- */
-const JSON_LD_OPENING_RE = /<script(?=[\s/>])[^>]{0,512}\stype\s*=\s*["']application\/ld\+json["'][^>]{0,512}>/gi;
-
-/**
- * How many JSON-LD openings a page may contain before extraction gives up on them.
- *
- * The full matcher carries a lazy `[\s\S]*?`, so every UNMATCHED opening rescans the rest of the
- * document for a `</script>` that never comes -- quadratic in the opening count. Measured: 40k
- * unmatched openings cost ~7.7s, which is the same event-loop stall `MAX_SOURCE_CHARS` fixes for
- * the strippers, reached through the one pass that runs BEFORE it.
- *
- * An earlier revision of this file asserted this matcher was "anchored and costs ~1ms" and so not
- * part of the hazard. That was measured only against `<style` input, where it is indeed 1ms; it
- * was wrong for its own worst case, and review caught it.
- *
- * Counting first is cheap because `JSON_LD_OPENING_RE` has no lazy span: ~0ms on the adversarial
- * page. 64 is far above any real page -- schema.org markup runs to a handful of blocks -- so a
- * page carrying more is not one whose structured data is worth trusting.
+ * schema.org markup on a real event page runs to a handful of blocks; a page carrying more is not
+ * one whose structured data is worth trusting. Bounding the COUNT also bounds the work, since each
+ * block is copied out of the document as it is found.
  */
 const MAX_JSON_LD_BLOCKS = 64;
 
 /**
- * Characters the JSON-LD passes may scan, applied BEFORE either of them runs.
+ * Characters of a fetched page the scan will look at.
  *
- * Larger than `MAX_SOURCE_CHARS` on purpose: a legitimate `ld+json` block can be far bigger than
- * the stripped prose budget -- the oversized-JSON-LD test carries a 500KB one -- so bounding these
- * passes at 150k would discard exactly the structured data they exist to preserve. 1 MiB clears
- * that case with room to spare and is well under the 5 MiB `fetchSafeUrl` will now download.
- *
- * This is the second of two bounds on these passes; the attribute spans above are the first. Both
- * are needed: bounding the spans fixes the per-position cost, and this fixes the number of
- * positions. Neither alone holds at 5 MiB.
+ * `MAX_RESPONSE_BYTES` (5 MiB, `url-validation.ts`) bounds the DOWNLOAD; this bounds how much of it
+ * is examined, and `MAX_SOURCE_CHARS` below bounds how much prose comes out. 1 MiB is far above any
+ * real event page and leaves room for an oversized `ld+json` block, which can legitimately dwarf
+ * the prose.
  */
-const MAX_JSON_LD_SCAN_CHARS = 1024 * 1024;
+const MAX_SCAN_CHARS = 1024 * 1024;
 
-/**
- * The JSON-LD `<script>` element, matched once and used twice: to PRESERVE the block, and to
- * remove it before the remaining source is truncated.
- *
- * One constant rather than two literals because the two uses must stay identical -- if the
- * removal pattern drifted from the match pattern, a block would be preserved AND left in the
- * source, double-counting against the budget. `g` makes `.replace` remove every occurrence;
- * `lastIndex` is not shared across the two calls because `.match` and `.replace` each reset it
- * for a global regex.
- */
-const JSON_LD_RE = /<script(?=[\s/>])[^>]{0,512}\stype\s*=\s*["']application\/ld\+json["'][^>]{0,512}>[\s\S]*?<\/script(\s[^>]*)?>/gi;
+/** Prose characters the scan will collect, before the JSON-LD budget is added. */
+const MAX_SOURCE_CHARS = 150_000;
 
-/**
- * `<svg>` is the one strippable element here that NESTS.
- *
- * A non-greedy `[\s\S]*?<\/svg...>` stops at the FIRST `</svg>`, so on `<svg><svg>x</svg>
- * <text>SECRET</text></svg>` it strips the inner element and leaves the rest of the outer body as
- * prose -- which reaches the extraction prompt. `script` and `style` cannot nest (their content is
- * raw text, and the first close ends them), so only this one needs depth tracking.
- *
- * Matched with a single global scan over openings and closes rather than a recursive pattern:
- * linear, no backtracking, and it degrades safely -- an unbalanced document simply strips to the
- * end of what it can prove is inside the element.
- */
+/** Identifies a `<script>` whose `type` marks it as JSON-LD, tested against its opening tag only. */
+const JSON_LD_ATTR_RE = /\stype\s*=\s*["']application\/ld\+json["']/i;
+
+/** The three elements whose CONTENT is never prose: two raw-text elements and one that nests. */
+const EXTRACTABLE_BLOCK_RE = /^<(script|style|svg)(?=[\s/>])/i;
+
+/** A nested `<svg>` open or close tag, used for depth matching. */
 const SVG_TAG_RE = /<(\/?)svg(?=[\s/>])/gi;
 
-/** Replace every top-level `<svg>...</svg>`, nesting included, with a single space. */
-function stripSvgBlocks(html: string): string {
-  SVG_TAG_RE.lastIndex = 0;
-  let out = '';
-  let copied = 0;
-  let depth = 0;
-  let blockStart = 0;
-  let tag = SVG_TAG_RE.exec(html);
+/**
+ * Split a fetched page into the prose worth extracting from and its JSON-LD, in ONE scan.
+ *
+ * This replaced six independent passes -- JSON-LD match, JSON-LD removal, comment strip, a prose
+ * cap that walked block openings, a raw-text strip and an svg strip -- each of which decided for
+ * itself what counted as markup. Every one of them was individually defensible and they did not
+ * agree, which is the whole history of this function: a comment containing `<svg` opened a block
+ * for the walk that the comment strip had already removed; an `<svg` inside a script STRING opened
+ * a block for the svg strip, which has no notion of raw text; a `<!--` inside a script string
+ * paired with a real `-->` far below it and deleted the prose in between; JSON-LD was collected
+ * before comments were removed, so commented-out schema reached the prompt. Each fix reordered or
+ * bounded one pass and desynchronised another.
+ *
+ * A single left-to-right scan cannot have that class of bug: every construct that may contain a
+ * `<` which is not a tag -- a comment, a raw-text body -- is recognised HERE and consumed whole, so
+ * there is no second reader to disagree with. The three questions the old passes answered
+ * separately (is this markup? does it nest? is it JSON-LD?) are answered once, at the point the
+ * scan is standing on the tag.
+ *
+ * Linear by construction: `indexOf` throughout, each character visited once, and every regex
+ * anchored at a known offset with no lazy span to backtrack over. The shapes that stalled earlier
+ * revisions -- 5 MiB of unmatched `<script `, `<svg ` or `<!-- ` -- cost single-digit milliseconds.
+ *
+ * Bounds, in order: `MAX_SCAN_CHARS` how much is read, `MAX_SOURCE_CHARS` how much prose is kept,
+ * `MAX_JSON_LD_BLOCKS` how many structured blocks contribute, and `EXTRACTION_CHAR_CAP` /
+ * `JSON_LD_BUDGET` at the caller how much reaches the prompt.
+ */
+function scanExtractable(html: string): { prose: string; jsonLd: string } {
+  const scan = html.length > MAX_SCAN_CHARS ? html.slice(0, MAX_SCAN_CHARS) : html;
+  let prose = '';
+  let kept = 0;
+  let jsonLd = '';
+  let ldBlocks = 0;
+  let cursor = 0;
+  let textStart = 0;
 
-  while (tag !== null) {
-    // The tag's END is found with `indexOf`, not by an attribute span in the pattern. A capped
-    // span (`[^>]{0,512}>`) silently failed to recognise a root `<svg>` carrying more than 512
-    // characters of attributes -- ordinary in Illustrator exports and chart roots -- and left the
-    // whole element in the prompt. Removing the cap is not the fix either: `[^>]*>` backtracks
-    // across the document on unmatched `<svg ` tokens and ran for over ten minutes on 5 MiB.
-    // Matching the token alone and scanning for `>` has neither failure: 1ms on that same input,
-    // and no attribute length it cannot handle.
-    const tagEnd = html.indexOf('>', tag.index);
-    if (tagEnd === -1) {
+  // Text between blocks, truncated to the remaining prose budget. Spending the budget on TEXT is
+  // the point: a flat slice of the document would cut inside a block and leave its markup in.
+  const flush = (end: number): void => {
+    if (kept >= MAX_SOURCE_CHARS) {
+      return;
+    }
+    const text = scan.slice(textStart, end);
+    prose += text.slice(0, MAX_SOURCE_CHARS - kept);
+    kept += Math.min(text.length, MAX_SOURCE_CHARS - kept);
+  };
+
+  while (cursor < scan.length && kept < MAX_SOURCE_CHARS) {
+    const lt = scan.indexOf('<', cursor);
+    if (lt === -1) {
       break;
     }
 
-    const isClose = tag[1] === '/';
-    // A self-closing `<svg .../>` opens and closes in one tag: it is a whole block at depth 0 and
-    // must not increment, or every icon on the page would leave the scan permanently nested.
-    const selfClosing = !isClose && html[tagEnd - 1] === '/';
-
-    if (selfClosing) {
-      if (depth === 0) {
-        out += html.slice(copied, tag.index) + ' ';
-        copied = tagEnd + 1;
+    // A comment is consumed WHOLE and first. Whatever it contains -- `<svg`, `<script`, a full
+    // `ld+json` block -- is disabled markup, and because this scan is the only reader, nothing
+    // downstream can mistake it for the real thing.
+    if (scan.startsWith('<!--', lt)) {
+      flush(lt);
+      prose += ' ';
+      kept += 1;
+      const commentEnd = scan.indexOf('-->', lt + 4);
+      if (commentEnd === -1) {
+        // Unterminated: the rest of the document is inside it, as a browser would read it. Safe to
+        // apply here, unlike in the old standalone pass, because a `<!--` inside a raw-text body
+        // is never reached -- the block containing it was consumed below.
+        return { prose: normalizeProse(prose), jsonLd };
       }
-    } else if (isClose) {
-      if (depth > 0) {
-        depth--;
-        if (depth === 0) {
-          out += html.slice(copied, blockStart) + ' ';
-          copied = tagEnd + 1;
-        }
-      }
-    } else {
-      if (depth === 0) {
-        blockStart = tag.index;
-      }
-      depth++;
+      cursor = textStart = commentEnd + 3;
+      continue;
     }
 
-    SVG_TAG_RE.lastIndex = tagEnd + 1;
-    tag = SVG_TAG_RE.exec(html);
+    const block = EXTRACTABLE_BLOCK_RE.exec(scan.slice(lt, lt + 8));
+    if (block === null) {
+      cursor = lt + 1;
+      continue;
+    }
+
+    const tag = block[1].toLowerCase();
+    // The tag END comes from `indexOf`, never from an attribute span in a pattern. A capped span
+    // silently failed to recognise a root `<svg>` carrying more than 512 characters of attributes;
+    // an uncapped one backtracks across the document on an unmatched opening.
+    const openEnd = scan.indexOf('>', lt);
+    if (openEnd === -1) {
+      flush(lt);
+      return { prose: normalizeProse(prose), jsonLd };
+    }
+
+    flush(lt);
+    // The separator a removed block leaves behind, so the words on either side stay separate.
+    prose += ' ';
+    kept += 1;
+
+    if (scan[openEnd - 1] === '/') {
+      cursor = textStart = openEnd + 1;
+      continue;
+    }
+
+    const blockEnd = tag === 'svg' ? svgBlockEnd(scan, openEnd) : rawTextBlockEnd(scan, tag, openEnd);
+
+    if (blockEnd === -1) {
+      // Unclosed -- genuinely, or because its close lies past `MAX_SCAN_CHARS`. Either way what
+      // follows is still INSIDE the element, so it must not be copied out as prose. An earlier
+      // revision advanced past the opening tag here and fed a 1.2 MiB script body to the prompt.
+      return { prose: normalizeProse(prose), jsonLd };
+    }
+
+    // JSON-LD is preserved, and only from a real `<script>` block: a commented one never reaches
+    // this line. This is where the extraction gets `startDate`, `endDate` and `location` on pages
+    // that publish them as schema.org data rather than as prose.
+    if (tag === 'script' && ldBlocks < MAX_JSON_LD_BLOCKS && JSON_LD_ATTR_RE.test(scan.slice(lt, openEnd + 1))) {
+      const body = scan.slice(openEnd + 1, blockEnd).replace(/<\/script[^>]*>$/i, '');
+      jsonLd += (jsonLd === '' ? '' : ' ') + body;
+      ldBlocks++;
+    }
+
+    cursor = textStart = blockEnd;
   }
 
-  // An element that never closes: drop what remains, matching how the walk treats an unclosed
-  // block rather than letting raw markup through.
-  return depth > 0 ? out + html.slice(copied, blockStart) : out + html.slice(copied);
+  flush(scan.length);
+  return { prose: normalizeProse(prose), jsonLd };
 }
 
 /**
- * Where an `<svg>` block ends, counting nesting.
+ * The end of a `<script>` or `<style>` element, or -1 if it does not close within the scan.
  *
- * `svg` is the only strippable element here that can contain another of its own kind, so its end
- * is the MATCHING close rather than the first one. Scans forward once with `SVG_TAG_RE`, which is
- * linear and never backtracks; an element that never closes returns the position just past its
- * opening tag, so the walk skips the tag and keeps going rather than discarding the rest of the
- * page.
+ * Raw text: the first correctly-formed close wins, and a `<` inside the body is not a tag. The
+ * `(?=[\s>])` boundary is what stops `</scriptx>` -- a different tag name -- from closing it.
  */
-function svgBlockEnd(scan: string, openIndex: number, openEnd: number): number {
-  if (scan[openEnd - 1] === '/') {
-    return openEnd + 1;
+function rawTextBlockEnd(scan: string, tag: string, openEnd: number): number {
+  const closeRe = new RegExp(`</${tag}(?=[\\s>])`, 'gi');
+  closeRe.lastIndex = openEnd;
+  const close = closeRe.exec(scan);
+  if (close === null) {
+    return -1;
   }
+  const closeEnd = scan.indexOf('>', close.index);
+  return closeEnd === -1 ? -1 : closeEnd + 1;
+}
 
+/**
+ * The end of an `<svg>` element, counting nesting, or -1 if it does not close within the scan.
+ *
+ * `svg` is the one element here that can contain another of its own kind -- exported icons and
+ * charts do it routinely -- so its end is the MATCHING close, not the first one.
+ */
+function svgBlockEnd(scan: string, openEnd: number): number {
   SVG_TAG_RE.lastIndex = openEnd + 1;
   let depth = 1;
   let tag = SVG_TAG_RE.exec(scan);
 
-  while (tag !== null && depth > 0) {
+  while (tag !== null) {
     const tagEnd = scan.indexOf('>', tag.index);
     if (tagEnd === -1) {
-      break;
+      return -1;
     }
     if (tag[1] === '/') {
       depth--;
@@ -887,346 +884,57 @@ function svgBlockEnd(scan: string, openIndex: number, openEnd: number): number {
     tag = SVG_TAG_RE.exec(scan);
   }
 
-  // Never closed. Unlike a raw-text block, the remainder cannot simply be walked past: whatever
-  // follows is still INSIDE the element, and `stripSvgBlocks` downstream would see only an
-  // unmatched close and leave it in the prompt. `-1` tells the walk to drop the rest, which is
-  // what the stripper does with an unclosed element below the cap -- so both paths agree.
-  void openIndex;
   return -1;
 }
 
 /**
- * Remove HTML comments with a non-backtracking scan.
+ * Collapse the whitespace the removals leave behind.
  *
- * This runs BEFORE the cap and the tag-aware passes, because a commented-out `<svg` or `<script`
- * is not markup and nothing downstream can tell: the walk would see the token, treat it as a block
- * opening, and hunt for a close that never comes -- `<!-- <svg placeholder --><p>Tokyo</p>` lost
- * Tokyo entirely.
- *
- * Running first is exactly why it cannot be a regex. A lazy `[\s\S]*?` rescans to end of input
- * from every unmatched `<!-- `, which is quadratic and reached ~27s on 1 MiB of them -- a worse
- * stall than the one this file was written to fix, introduced by moving the pass earlier.
+ * Not cosmetic: templated markup is heavily indented, so this recovers several KB of the prompt
+ * budget on a typical page.
  */
-function stripComments(html: string): string {
-  let open = html.indexOf('<!--');
-  if (open === -1) {
-    return html;
-  }
-
-  let out = '';
-  let copied = 0;
-  while (open !== -1) {
-    out += html.slice(copied, open) + ' ';
-    const close = html.indexOf('-->', open + 4);
-    if (close === -1) {
-      // Unterminated. A browser reads the rest of the document as commented out, but that is too
-      // destructive to apply on a token this pass cannot fully trust: `<!--` inside a script
-      // STRING is not a comment, and treating one as unterminated would swallow the whole page --
-      // `<script>var a = "<!-- x";</script><p>Tokyo</p>` lost Tokyo. The raw-text blocks are
-      // stripped downstream anyway, so leaving the remainder for them costs nothing and cannot
-      // drop real prose.
-      return out + html.slice(open);
-    }
-    copied = close + 3;
-    open = html.indexOf('<!--', copied);
-  }
-  return out + html.slice(copied);
+function normalizeProse(prose: string): string {
+  return prose.replace(/\s{2,}/g, ' ');
 }
 
 /**
- * Cap the source at `MAX_SOURCE_CHARS` of PROSE, skipping strippable blocks whole.
+ * Reduce a fetched page to the text an extraction prompt should see.
  *
- * A flat slice can land inside a `<script>`/`<style>`/`<svg>` block and cut its closing tag off,
- * which leaves the stripper regexes below unable to match it. The markup then survives the strip
- * and consumes the whole budget as if it were prose. This walks the openings instead and jumps
- * each block end-to-end, so the budget is spent on text and no block is ever half-included.
+ * A raw event page is mostly not prose. One measured example was 512,384 bytes with the first
+ * mention of "Tokyo" at byte 31,204 -- so a fixed slice of the head returned navigation and inline
+ * CSS and the extraction reported no date, no venue, nothing. Removing the markup that carries
+ * rendering and behaviour rather than facts dropped the same page to 44,829 bytes and moved
+ * "Tokyo" to byte 1,396.
  *
- * The walk uses `indexOf` throughout and never backtracks, so it stays linear on the adversarial
- * bodies that make the regex strippers quadratic: 5 MiB of unmatched `<script ` openings costs
- * ~1ms here against ~460s through the strippers, which is why this must keep running before them.
+ * The work is done by `scanExtractable`, in one pass. It returns the page's prose and its JSON-LD
+ * separately, because they compete for the same prompt budget and the structured data is worth
+ * more per character: schema.org `Event` markup carries `startDate`, `endDate` and `location`
+ * exactly as the prompt asks for them, while prose has to be read for the same facts.
  *
- * A block with no close -- a self-closing `<svg/>`, or markup that never closes it -- skips only
- * its opening tag and the walk continues, so an inline icon mid-sentence does not cost every word
- * after it. Self-closing tags are detected from the opening tag itself rather than by failing to
- * find a close, because that search runs to the scan bound and is quadratic in the icon count.
- * Only an opening tag that itself never ends stops the walk, since nothing past it can be trusted.
- * Each skipped block leaves a `' '` behind, matching what the strippers substitute, so a page above
- * the cap and one below it produce the same word boundaries.
- */
-function boundedSource(html: string): string {
-  if (html.length <= MAX_SOURCE_CHARS) {
-    return html;
-  }
-
-  const scan = html.length > MAX_STRIP_SCAN_CHARS ? html.slice(0, MAX_STRIP_SCAN_CHARS) : html;
-  let out = '';
-  let pos = 0;
-  let kept = 0;
-
-  STRIPPABLE_OPENING_RE.lastIndex = 0;
-  let opening = STRIPPABLE_OPENING_RE.exec(scan);
-
-  while (kept < MAX_SOURCE_CHARS && opening !== null) {
-    const text = scan.slice(pos, opening.index);
-    const room = MAX_SOURCE_CHARS - kept;
-
-    out += text.slice(0, room);
-    kept += Math.min(text.length, room);
-
-    if (kept >= MAX_SOURCE_CHARS) {
-      return out;
-    }
-
-    // Match the strippers' own separator. They replace each block with `' '`, so a page under the
-    // cap keeps the word boundary around it; jumping the block with no separator would fuse the
-    // words on either side and make extraction quality depend on page SIZE for identical markup.
-    out += ' ';
-    kept += 1;
-
-    // Find where the opening tag itself ends first. This is a bounded look — an opening tag is a
-    // handful of characters — and it decides whether a close search is needed at all.
-    const openEnd = scan.indexOf('>', opening.index);
-    if (openEnd === -1) {
-      // The tag never ends. Nothing past it can be trusted, so stop rather than guess.
-      return out;
-    }
-
-    if (scan[openEnd - 1] === '/') {
-      // Self-closing `<svg/>`: there is no close tag to find, and searching for one would scan to
-      // EOF from every such tag. That is quadratic in the icon count — measured at ~5s on 100k
-      // inline `<svg/>` at the 1 MiB scan bound — so this case must be settled before the search
-      // below, not inside its failure path.
-      pos = openEnd + 1;
-    } else {
-      // Case-INSENSITIVE, like the opening pattern and the strippers below. A case-sensitive
-      // `indexOf` missed `</SCRIPT>` on pages using uppercase tags — common in CMS and legacy
-      // markup — and every such miss discarded the rest of the document.
-      // Search only as far as the NEXT opening of the same kind, not to the scan bound.
-      //
-      // An unclosed block otherwise scans to `MAX_STRIP_SCAN_CHARS` from every opening, which is
-      // quadratic in the opening count -- the same hazard the self-closing fast path above exists
-      // to avoid, left on the neighbouring branch. Measured on dense unclosed `<script>`:
-      // 67ms / 152ms / 382ms / 1076ms at 5k / 10k / 20k / 40k.
-      //
-      // Bounding at the next opening is safe because a second `<script` before any `</script`
-      // means this one never closed: HTML does not nest these elements, and the strippers below
-      // are non-greedy and stop at the first close too. So both paths agree on where the block
-      // ends, which is the property that matters.
-      // The next opening of the SAME tag, not of any strippable tag. `<svg>` legitimately
-      // contains `<style>` -- exported icons and maps do it routinely -- so bounding at any
-      // opening treated such an svg as unclosed and kept its markup as prose. An earlier revision
-      // of this comment asserted "HTML does not nest these elements"; that is true only per tag
-      // name, which is exactly the bound this needs.
-      // `svg` is the one strippable element that NESTS, so its block ends at its MATCHING close,
-      // not at the next opening of its own kind. Bounding it like the raw-text elements made a
-      // nested `<svg>` look unclosed above the source cap: the walk skipped only the opening tags
-      // and copied the outer tail through, where `stripSvgBlocks` then saw an unmatched close and
-      // left the body in the prompt. Below the cap the stripper handled it, which is exactly why
-      // the first round of nested-svg tests -- all short inputs -- passed over this.
-      if (opening[1].toLowerCase() === 'svg') {
-        const end = svgBlockEnd(scan, opening.index, openEnd);
-        if (end === -1) {
-          // Unclosed: everything after it is still inside the element. Stop, rather than copy
-          // markup through for the stripper to find unmatched.
-          return out;
-        }
-        pos = end;
-        STRIPPABLE_OPENING_RE.lastIndex = pos;
-        opening = STRIPPABLE_OPENING_RE.exec(scan);
-        continue;
-      }
-
-      const nextSameRe = new RegExp(`<${opening[1]}(?=[\\s/>])`, 'gi');
-      nextSameRe.lastIndex = openEnd;
-      const nextOpening = nextSameRe.exec(scan);
-      const limit = nextOpening === null ? scan.length : nextOpening.index;
-
-      // Search a SLICE, not the whole document with a `lastIndex`.
-      //
-      // Setting `lastIndex` moves where a match may start; it does not stop the engine scanning
-      // to end-of-string when there is none. Bounding by comparing `close.index` afterwards is
-      // therefore too late -- the full scan has already happened, once per opening. Measured on
-      // 40k dense unclosed `<script>`: 1061ms with a post-hoc bound, unchanged from no bound at
-      // all, against ~6ms slicing. The slice is what makes this linear.
-      //
-      // `(?=[\s>])` matches the boundary the strippers require. Without it `</scriptx>` was
-      // accepted as the end of `<script>`, and everything from the decoy to the real close --
-      // still script body -- was kept as prose and spent the budget.
-      const window = scan.slice(openEnd, limit);
-      const close = new RegExp(`</${opening[1]}(?=[\\s>])`, 'i').exec(window);
-      const closeEnd = close === null ? -1 : scan.indexOf('>', openEnd + close.index);
-
-      // A block that opens and never closes: skip only its opening tag and keep walking, rather
-      // than discarding the rest of the page.
-      pos = closeEnd === -1 ? openEnd + 1 : closeEnd + 1;
-    }
-
-    STRIPPABLE_OPENING_RE.lastIndex = pos;
-    opening = STRIPPABLE_OPENING_RE.exec(scan);
-  }
-
-  return out + scan.slice(pos, pos + (MAX_SOURCE_CHARS - kept));
-}
-
-/**
- * Reduce a fetched page to the part an extraction can actually read.
- *
- * The previous `html.slice(0, 30_000)` cut the page at a fixed byte offset, which failed for a
- * reason that had nothing to do with the event: measured on the Open Source Summit Japan page,
- * the document is 151,727 bytes, of which 62,784 are `<style>` and 38,281 are `<script>`. The
- * venue string "Tokyo" sits at byte 30,351 — 351 bytes past the cut. Dates never survived at all.
- * So the model was asked to find facts from a window containing almost none of the page's prose,
- * reported them as absent, and the copy generator then invented replacements (prices, session
- * counts) that no source ever stated.
- *
- * Stripping script/style/svg/comments first drops the same page to 44,829 bytes and moves "Tokyo"
- * to byte 1,396. Nothing worth extracting lives in any of those elements: they carry rendering
- * and behaviour, not the event's dates, venue or audience.
- *
- * The cap is KEPT — a fetched page is untrusted input and must not be able to set the prompt size
- * — but it now applies to content rather than to boilerplate, and it is raised to fit a stripped
- * page whole.
- *
- * FIVE bounds sit in this path, and this is the last of them. Each answers a different question,
- * so removing any one is not covered by the others:
+ * FOUR bounds sit in this path. Each answers a different question, so removing any one is not
+ * covered by the others:
  *
  *   - `MAX_RESPONSE_BYTES` (5 MiB, `url-validation.ts`) — how much is DOWNLOADED. `fetchSafeUrl`
  *     validates the URL and every redirect hop against private ranges; this bounds the body it
  *     will buffer, which its 15s timeout does not.
- *   - `MAX_JSON_LD_SCAN_CHARS` (1 MiB) — how much the JSON-LD passes SCAN.
- *   - `MAX_STRIP_SCAN_CHARS` (1 MiB) — how far the prose-budget walk searches for the end of a
- *     block that straddles the cap. Bounds the SEARCH, not the output.
- *   - `MAX_SOURCE_CHARS` (150k) — how much the strippers SCAN, which is the quadratic one.
- *   - `EXTRACTION_CHAR_CAP` (60k, below) — how much reaches the PROMPT.
- *
- * An earlier revision of this comment said this cap was the only size bound and that nothing
- * limited the download. That was true when written and is not now; a maintainer removing the
- * upstream ceiling on the strength of it would reopen the hole it was added to close.
- *
- * `slice` counts UTF-16 code units, while the byte figures above are bytes: a CJK-heavy page can
- * carry up to ~3x those bytes within the same cap. That is deliberate — the cap exists to bound
- * the PROMPT, which is measured in tokens rather than bytes, and code units track tokens more
- * closely than bytes do for non-Latin scripts.
+ *   - `MAX_SCAN_CHARS` (1 MiB) — how much of that body is READ.
+ *   - `MAX_SOURCE_CHARS` (150k) — how much PROSE is kept.
+ *   - `EXTRACTION_CHAR_CAP` (60k) with `JSON_LD_BUDGET` (20k) — how much reaches the PROMPT.
  */
 export function extractableHtml(html: string): string {
-  // Each OPENING tag requires a boundary after the name -- `(?=[\s/>])` -- so `<svg` matches `<svg>`,
-  // `<svg width=…>` and `<svg/>` but NOT `<svg-icon>`. Without it a custom element sharing the
-  // prefix started a match that ran to the next real `</svg>`, deleting every bit of event prose in
-  // between. That is the opposite failure from the closing-tag bugs below: not content surviving
-  // that should be stripped, but content stripped that should survive.
-  //
-  // Every closing tag below matches `<\/tag(\s[^>]*)?>`, not `<\/tag>`. An HTML end tag is
-  // `</` name, then anything up to `>` — browsers skip whatever sits between the name and the
-  // bracket, so `</script >`, `</script\n>` and even `</script\t\n bar>` all close the element.
-  // A regex anchored on `</script>` matches none of them and leaves the WHOLE element in place.
-  //
-  // That is not cosmetic: the survivors are script and style BODIES, which are
-  // attacker-controllable text on an untrusted fetched page, and this string becomes an LLM
-  // extraction prompt. CodeQL reported it twice — first for `</script >`, then again for
-  // `</script\t\n bar>` after a `\s*>` fix that closed only the whitespace case. The leading
-  // `\s` is what keeps `</scriptx>` from matching: that names a different tag and closes nothing.
-  //
-  // This is a heuristic strip on untrusted input, not a sanitiser — the output is never rendered
-  // as HTML, only read as prompt text, so a residual edge case degrades extraction quality rather
-  // than crossing a trust boundary.
-  // JSON-LD is PRESERVED before the rest of the scripts go. Event pages publish `startDate`,
-  // `endDate` and `location` as schema.org `Event` data in `<script type="application/ld+json">`,
-  // which is the most reliable source for exactly the fields the extraction prompt asks for — and
-  // stripping every `<script>` discarded it, keeping the "no date survived" failure alive on any
-  // page whose dates live only there rather than in prose.
-  // JSON-LD is matched within `MAX_JSON_LD_SCAN_CHARS`, removed, and only what remains is capped.
-  //
-  // The order matters and is not the obvious one. Truncating first would have broken the
-  // oversized-JSON-LD case that
-  // `leaves budget for prose when json-ld is oversized` protects: a 500KB `ld+json` block pushes
-  // the page's prose past any sane source cap, and cutting there loses the very facts the
-  // extraction is for. Removing the block first shrinks the remaining source by exactly the part
-  // that was never going to be scanned anyway.
-  // COUNT before matching. The count is linear; the match is not, and on a page with thousands of
-  // unmatched openings it stalls the event loop before `MAX_SOURCE_CHARS` below ever applies.
-  // Bounded BEFORE either pass. The count short-circuits only once 64 openings MATCH, so a page
-  // whose openings never match -- `'<script '` with no `>` at all -- pays a full-document scan per
-  // start position and short-circuits never. Measured at ~13.5s across both passes on 400k chars
-  // of that shape, which the 5 MiB download ceiling would let grow much further.
-  const ldSource = html.length > MAX_JSON_LD_SCAN_CHARS ? html.slice(0, MAX_JSON_LD_SCAN_CHARS) : html;
-  JSON_LD_OPENING_RE.lastIndex = 0;
-  let openings = 0;
-  while (openings <= MAX_JSON_LD_BLOCKS && JSON_LD_OPENING_RE.exec(ldSource) !== null) {
-    openings++;
-  }
-  // Skipped, not truncated: a page with this many openings is adversarial, and its structured data
-  // is not worth the scan. Prose still reaches the prompt through the stripped body below.
-  const jsonLd = openings > MAX_JSON_LD_BLOCKS ? '' : (ldSource.match(JSON_LD_RE) ?? []).join(' ');
-  // Now truncate. Every pass below is quadratic on pathological input -- an unclosed `<style `
-  // makes each start position scan to end-of-document -- so capping the OUTPUT afterwards would
-  // be too late: the cost is already paid.
-  // The removal is bounded to `ldSource` too, then the unscanned suffix is re-attached. Running it
-  // on the full body would let the one pass that is NOT capped scan past the limit the two above
-  // respect -- measured at 491ms at the 5 MiB ceiling versus 99ms bounded. That is an
-  // inconsistency rather than a stall, since the attribute spans are bounded now, but a cap that
-  // one of three passes ignores is the kind of thing that stops being true when a later change
-  // relaxes something else.
-  //
-  // The suffix cannot contain a block worth preserving: `ldSource` is where the matcher looked, so
-  // anything past it was never going to be extracted. It is kept only so the strippers below see
-  // the same page a reader would, up to their own `MAX_SOURCE_CHARS` cut.
-  const withoutJSONLD = jsonLd === '' ? html : ldSource.replace(JSON_LD_RE, ' ') + html.slice(ldSource.length);
-  // Cap by PROSE, not by raw characters.
-  //
-  // A flat `slice(0, MAX_SOURCE_CHARS)` cuts wherever 150k lands, and when that is INSIDE a
-  // `<style>`/`<script>`/`<svg>` block it takes the closing tag with it. The stripper regexes then
-  // no longer match, the markup survives as "prose", and it fills the whole budget: a 160k inline
-  // stylesheet followed by `<p>Tokyo</p>` returned 150k of CSS and no Tokyo -- exactly the
-  // fixed-slice failure this helper exists to fix, recreated at a different offset.
-  //
-  // Reordering to strip BEFORE the cap is the obvious fix and is far worse: the strippers are the
-  // quadratic pass, and at the 5 MiB ceiling they cost ~460s on unmatched `<script ` openings
-  // versus ~1ms here. So the cap stays first and instead walks the body, skipping each strippable
-  // block whole via `indexOf` -- linear, no backtracking -- and spending the 150k on text.
-  // Comments go FIRST, before the cap and before any tag-aware pass.
-  //
-  // A commented-out `<svg` or `<script` is not markup, but nothing downstream knows that: the walk
-  // sees the token, treats it as a block opening, and looks for a close that does not exist --
-  // `<!-- <svg placeholder --><p>Tokyo</p>` lost Tokyo entirely. Removing comments before the walk
-  // is what makes every later pass agree about what is real markup.
-  //
-  // Safe against the raw-text case that motivated the current ordering: a `<!--` inside a script
-  // STRING is removed as a comment here, but the script block is stripped whole later anyway, so
-  // nothing that survives depends on it.
-  //
-  // Removed with `indexOf`, not a regex. `<!--[\s\S]*?-->` carries a lazy span, so every unmatched
-  // `<!-- ` rescans to end of input: 67ms / 248ms / 996ms / 3987ms at 50k / 100k / 200k / 400k, and
-  // 27s on 1 MiB even with the input bounded -- the bound limits how much it sees, not how many
-  // times it rescans what it sees. `indexOf` never backtracks, so this stays linear on the same
-  // input. An unterminated comment consumes the remainder, which is what a browser does with it.
-  const withoutComments = stripComments(withoutJSONLD);
-  const source = boundedSource(withoutComments);
-  // Raw-text elements FIRST, then svg.
-  //
-  // `stripSvgBlocks` tracks depth but has no notion of raw text, so an `<svg` token inside a
-  // script STRING -- `el.innerHTML = "<svg viewBox='0 0 16 16'>" + paths` -- opened a block that
-  // never closed and took the rest of the page with it. Removing script and style first means the
-  // svg pass only ever sees markup. The walk above already skips raw-text blocks whole, which is
-  // why this only bit the under-cap path.
-  const stripped = stripSvgBlocks(
-    source.replace(/<script(?=[\s/>])[\s\S]*?<\/script(\s[^>]*)?>/gi, ' ').replace(/<style(?=[\s/>])[\s\S]*?<\/style(\s[^>]*)?>/gi, ' ')
-  )
-    // Collapse the whitespace those removals leave behind. Templated markup is heavily indented,
-    // so this is not cosmetic: it recovers several KB of the budget on a typical page.
-    .replace(/\s{2,}/g, ' ');
-  // BUDGETED, not concatenated. An earlier revision returned `jsonLd + stripped.slice(0, 60_000)`,
+  const { prose, jsonLd } = scanExtractable(html);
+
+  // BUDGETED, not concatenated. An earlier revision returned `jsonLd + prose.slice(0, 60_000)`,
   // which bounded only the second term: a page with a 500KB `ld+json` block produced 500,055
-  // characters against a documented 60,000 cap, and JSON-LD is MORE attacker-controllable than
-  // prose, since it is machine-written and invisible on the rendered page. Upstream bounds exist
-  // now -- `MAX_RESPONSE_BYTES` caps the download at 5 MiB and `MAX_JSON_LD_SCAN_CHARS` caps what
-  // these passes scan -- but neither bounds the PROMPT, which is what this budget is for: 1 MiB of
-  // scanned JSON-LD is still ~17x the output cap.
+  // characters against a documented 60,000 cap. JSON-LD is the more attacker-controllable of the
+  // two -- machine-written and invisible on the rendered page -- so it is the half that most needs
+  // a ceiling of its own.
   //
-  // JSON-LD still wins the space it needs, because it holds the structured facts the extraction
-  // is for; it simply cannot take the whole budget. What it does not use goes to the prose.
+  // It still wins the space it needs, because it holds the structured facts the extraction is for;
+  // it simply cannot take the whole budget. What it does not use goes to the prose.
   const lead = jsonLd.slice(0, JSON_LD_BUDGET);
-  const remaining = Math.max(0, EXTRACTION_CHAR_CAP - lead.length - (lead ? 1 : 0));
-  return (lead ? lead + ' ' : '') + stripped.slice(0, remaining);
+  const remaining = Math.max(0, EXTRACTION_CHAR_CAP - lead.length - (lead === '' ? 0 : 1));
+  return (lead === '' ? '' : lead + ' ') + prose.slice(0, remaining);
 }
 
 function getExtractionPrompt(programType?: CampaignProgramType): string {
