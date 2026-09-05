@@ -20,6 +20,19 @@ export const WG_ENGAGEMENT_METRICS_FLAG = 'wg-engagement-metrics';
 /** Browser-only flag for the Org Lens ROI page — it gates no endpoint. */
 export const ORG_LENS_ROI_ENABLED_FLAG = 'org-lens-roi-enabled';
 /**
+ * Dark-launch gate for the M3 Organization Lens CLA module (#1982) — the EasyCLA
+ * route and sidebar entry. The org-lens prefix keeps it in the lens family alongside
+ * `ORG_LENS_ROI_ENABLED_FLAG`; the `m3` suffix follows the `MY_CLAS_M2_ENABLED_FLAG`
+ * milestone-gate precedent. Default false: a missing LaunchDarkly flag keeps the
+ * module invisible. The route guard fails closed (unlike `myClasEnabledGuard`).
+ *
+ * Client half of a two-flag gate — evaluated through `FeatureFlagService.getBooleanFlag`,
+ * which is the Web SDK and never runs server-side. It hides the route and nav only;
+ * `ServerFeatureFlag.OrgLensClaM3` is what closes the BFF. Both must be on for the module
+ * to work, and the server flag must be rolled out first (see its doc for why).
+ */
+export const ORG_LENS_CLA_M3_ENABLED_FLAG = 'org-lens-cla-m3-enabled';
+/**
  * Dark-launch gate for Slack-webhook sharing (LFXV2-3080) — the settings card
  * (committee-settings-tab) and the "Share to Slack" action (weekly-brief-card) both check this
  * directly. Not a strict child of 'wg-weekly-brief': weekly-brief-card does render under that

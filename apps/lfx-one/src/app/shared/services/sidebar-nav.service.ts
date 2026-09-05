@@ -11,6 +11,7 @@ import {
   MARKETING_OPS_FGA_ENABLED_FLAG,
   MKTG_OS_AGENTS_ENABLED_FLAG,
   MKTG_OS_AGENTS_LABEL,
+  ORG_LENS_CLA_M3_ENABLED_FLAG,
   ORG_LENS_ENABLED_FLAG,
   ORG_LENS_ROI_ENABLED_FLAG,
   SURVEY_LABEL,
@@ -43,6 +44,9 @@ export class SidebarNavService {
   private readonly userService = inject(UserService);
   private readonly writerGrantsService = inject(WriterGrantsService);
 
+  /** The section EasyCLA is inserted into; matched by label because the tree is built inline. */
+  private readonly orgEngagementSectionLabel = 'Organization Engagement';
+
   /** Dark-launch gate; falls back to Me Lens nav when off. */
   private readonly isOrgLensEnabled = this.featureFlagService.getBooleanFlag(ORG_LENS_ENABLED_FLAG, false);
   /** Dark-launch gate for the Akrites admin dashboard; hides the Security nav section when off. */
@@ -51,6 +55,8 @@ export class SidebarNavService {
   private readonly isMktgOsAgentsEnabled = this.featureFlagService.getBooleanFlag(MKTG_OS_AGENTS_ENABLED_FLAG, false);
   /** Dark-launch gate for the Org Lens ROI Metrics page; hides its org-lens nav entry when off. */
   private readonly isOrgLensRoiEnabled = this.featureFlagService.getBooleanFlag(ORG_LENS_ROI_ENABLED_FLAG, false);
+  /** Dark-launch gate for the M3 org-lens CLA module; hides the EasyCLA nav entry when off. */
+  private readonly isOrgLensClaM3Enabled = this.featureFlagService.getBooleanFlag(ORG_LENS_CLA_M3_ENABLED_FLAG, false);
   /** Dual-gated with `ServerFeatureFlag.MarketingOpsFga` — unlocks Marketing nav for marketing_auditor/campaign_manager grants (LFXV2-2235/LFXV2-2236). */
   private readonly isMarketingOpsFgaEnabled = this.featureFlagService.getBooleanFlag(MARKETING_OPS_FGA_ENABLED_FLAG, false);
 
@@ -105,12 +111,13 @@ export class SidebarNavService {
   });
 
   private readonly visibleOrgLensItems = computed((): SidebarMenuItem[] => {
-    if (!this.isOrgLensRoiEnabled()) return this.orgLensItems;
-    const projectsIndex = this.orgLensItems.findIndex((item) => item.routerLink === '/org/projects');
+    const items = this.isOrgLensClaM3Enabled() ? this.withEasyclaNavItem(this.orgLensItems) : this.orgLensItems;
+    if (!this.isOrgLensRoiEnabled()) return items;
+    const projectsIndex = items.findIndex((item) => item.routerLink === '/org/projects');
     // Append rather than prepend if Projects ever goes away, so ROI can't silently jump to the top.
-    if (projectsIndex === -1) return [...this.orgLensItems, this.orgRoiNavItem];
+    if (projectsIndex === -1) return [...items, this.orgRoiNavItem];
     const afterProjects = projectsIndex + 1;
-    return [...this.orgLensItems.slice(0, afterProjects), this.orgRoiNavItem, ...this.orgLensItems.slice(afterProjects)];
+    return [...items.slice(0, afterProjects), this.orgRoiNavItem, ...items.slice(afterProjects)];
   });
 
   // Me Lens nav with feature-flagged sections stripped (Security/Akrites is dark-launched).
@@ -580,6 +587,13 @@ export class SidebarNavService {
     testId: 'sidebar-org-roi',
   };
 
+  private readonly orgEasyclaNavItem: SidebarMenuItem = {
+    label: 'EasyCLA',
+    icon: 'fa-light fa-file-signature',
+    routerLink: '/org/easycla',
+    testId: 'sidebar-org-easycla',
+  };
+
   private readonly orgLensItems: SidebarMenuItem[] = [
     {
       label: 'Dashboard',
@@ -599,7 +613,7 @@ export class SidebarNavService {
     // INFO: Future Epic implementation — the Governance page is hidden until built. Restore as a
     // top-level item or a section when re-enabled.
     {
-      label: 'Organization Engagement',
+      label: this.orgEngagementSectionLabel,
       isSection: true,
       expanded: true,
       items: [
@@ -635,6 +649,20 @@ export class SidebarNavService {
       dividerBefore: true,
     },
   ];
+
+  /**
+   * The M3 prototype places EasyCLA inside Organization Engagement, between Code Contributions
+   * and Events — not at top level beside Memberships/Projects. Falls back to the end of the
+   * section if Code Contributions moves, so the item can never land above People.
+   */
+  private withEasyclaNavItem(items: SidebarMenuItem[]): SidebarMenuItem[] {
+    return items.map((item) => {
+      if (!item.isSection || item.label !== this.orgEngagementSectionLabel || !item.items) return item;
+      const afterContributions = item.items.findIndex((child) => child.routerLink === '/org/contributions') + 1;
+      const at = afterContributions === 0 ? item.items.length : afterContributions;
+      return { ...item, items: [...item.items.slice(0, at), this.orgEasyclaNavItem, ...item.items.slice(at)] };
+    });
+  }
 
   private initCanSeeNewsletters(): Signal<boolean> {
     return computed(() => this.personaService.currentPersona() === 'executive-director' || this.projectContextService.canWrite());

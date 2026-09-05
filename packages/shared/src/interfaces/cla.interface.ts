@@ -566,3 +566,15 @@ export interface ClaRow {
   /** False ⇒ render no ⋮ trigger at all, rather than one that opens an empty menu. */
   hasActions: boolean;
 }
+
+/**
+ * Response of `GET /api/orgs/:orgUid/lens/cla-groups` — the Organization Lens EasyCLA list.
+ *
+ * `orgUid` echoes the grant-checked path parameter rather than anything the caller sent in a
+ * body or query, so the client can key a cache on the org the server actually served.
+ * `claGroups` is empty until the BE-1 wiring (#1978) lands.
+ */
+export interface OrgClaGroupList {
+  orgUid: string;
+  claGroups: [];
+}
