@@ -886,6 +886,26 @@ function svgBlockEnd(scan: string, openEnd: number): number {
   let tag = SVG_TAG_RE.exec(scan);
 
   while (tag !== null) {
+    // A commented `<svg>` or `</svg>` inside the element is TEXT, not a tag. Counting it broke the
+    // depth both ways: a commented opening left the element looking unclosed and dropped every
+    // word after it, and a commented close ended it early and leaked the real body into the
+    // prompt. The main loop already consumes comments; this scan runs beneath it and has to do the
+    // same, or the two readers disagree -- which is the defect class the single scan exists to
+    // remove, reappearing one level down.
+    const commentStart = scan.lastIndexOf('<!--', tag.index);
+    if (commentStart > openEnd) {
+      const commentEnd = scan.indexOf('-->', commentStart + 4);
+      if (commentEnd === -1) {
+        // Unterminated inside the element: nothing past it can be classified.
+        return -1;
+      }
+      if (commentEnd > tag.index) {
+        SVG_TAG_RE.lastIndex = commentEnd + 3;
+        tag = SVG_TAG_RE.exec(scan);
+        continue;
+      }
+    }
+
     const tagEnd = scan.indexOf('>', tag.index);
     if (tagEnd === -1) {
       return -1;

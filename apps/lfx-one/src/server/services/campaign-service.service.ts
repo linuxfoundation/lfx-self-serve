@@ -2035,8 +2035,10 @@ function storedBriefMatches(stored: CampaignServiceBrief, sent: CampaignServiceB
   // that ignores the new parameters is exactly when it answers with a sibling anyway, which is the
   // case this comparison exists to catch.
   //
-  // Both sides are normalized the same way: absent means paid with an empty stage, the identity
-  // every brief written before the widening carries.
+  // Both sides are normalized the same way: absent means paid with an empty stage. What matters
+  // here is only that the two sides AGREE, so a missing field never reads as a mismatch -- not
+  // where such a row originated. Pre-field email briefs share that identity after the backfill
+  // (linuxfoundation/lfx-self-serve#2214).
   const storedDelivery = stored.delivery_type ?? 'paid-marketing';
   const sentDelivery = sent.delivery_type ?? 'paid-marketing';
   const storedStage = stored.stage ?? '';

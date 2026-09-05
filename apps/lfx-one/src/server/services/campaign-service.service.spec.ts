@@ -1501,11 +1501,14 @@ describe('CampaignServiceClient.loadBrief', () => {
     });
   });
 
-  // Backward compatibility, and the reason absence means paid rather than "matches everything".
-  // Every row written before the delivery type was recorded came from the paid surface — it was
-  // the only one whose restore path was ever enabled — so paid callers keep restoring their
-  // existing briefs untouched, and an email caller correctly sees that no email brief exists yet
-  // rather than adopting a paid one it cannot use.
+  // Backward compatibility, and the reason absence means paid rather than "matches everything":
+  // a paid caller keeps restoring its existing briefs untouched, and an email caller sees that no
+  // email brief exists yet rather than adopting a paid one it cannot use.
+  //
+  // The behaviour is deliberate; the historical justification it once carried was false. Pre-field
+  // EMAIL briefs exist too — the email flow persisted them before the field did — and after the
+  // backfill they carry this same paid/empty identity and cannot be told apart. Tracked in
+  // linuxfoundation/lfx-self-serve#2214; this expectation is unaffected either way.
   it('treats a brief stored without a delivery type as paid', async () => {
     proxyRequestWithResponse
       .mockResolvedValueOnce(apiResponse(storedBrief(), { etag: '"3"' }))

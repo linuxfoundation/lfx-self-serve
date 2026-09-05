@@ -1278,6 +1278,32 @@ describe('extractableHtml', () => {
     expect(extractableHtml('<svg/><p>Tokyo</p>')).toContain('Tokyo');
   });
 
+  // A commented `<svg>` or `</svg>` INSIDE an svg is text, not a tag. The depth scan runs beneath
+  // the main loop, which already consumes comments, so it has to do the same -- otherwise the two
+  // readers disagree, which is the defect class the single scan exists to remove, reappearing one
+  // level down. It broke both ways: a commented OPENING left the element looking unclosed and
+  // dropped every word after it; a commented CLOSE ended it early and leaked the real body.
+  it('does not count a commented svg opening as nesting', () => {
+    const out = extractableHtml('<svg><!-- <svg> --></svg><p>Event details</p>');
+
+    expect(out, 'the commented opening left the svg looking unclosed').toContain('Event details');
+  });
+
+  it('does not let a commented svg close end the element early', () => {
+    const out = extractableHtml('<svg><!-- </svg> --><text>SECRET</text></svg><p>Tokyo</p>');
+
+    expect(out, 'the commented close ended the svg early').not.toContain('SECRET');
+    expect(out).toContain('Tokyo');
+  });
+
+  // Real nesting must still count, or the fix above becomes a way to smuggle markup through.
+  it('still counts real nesting alongside a comment', () => {
+    const out = extractableHtml('<svg><!-- x --><svg>y</svg><text>SECRET</text></svg><p>Tokyo</p>');
+
+    expect(out).not.toContain('SECRET');
+    expect(out).toContain('Tokyo');
+  });
+
   it('returns an empty string for input that is entirely strippable', () => {
     expect(extractableHtml('<style>.a{color:red}</style>').trim()).toBe('');
   });

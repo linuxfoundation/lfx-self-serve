@@ -142,8 +142,10 @@ export class CampaignService {
       // email restore path disabled.
       //
       // Both are defaulted here as well as on the server so the two agree on what an omitted
-      // parameter means: `paid-marketing` and the empty stage — the identity every brief written
-      // before the widening carries, since paid was the only surface that could save one.
+      // parameter means: `paid-marketing` and the empty stage. That agreement is the point — it is
+      // a wire default for backward-compatible callers, not a claim about stored rows. Pre-field
+      // email briefs exist and share that identity after the backfill
+      // (linuxfoundation/lfx-self-serve#2214).
       params: new HttpParams().set('event_slug', eventSlug).set('project', projectSlug).set('delivery_type', deliveryType).set('stage', stage),
     });
   }

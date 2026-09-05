@@ -3820,8 +3820,10 @@ export class CampaignsComponent {
     //
     // Read off the BRIEF, never off the current selection: this keys the brief in hand, which is
     // not always the one on screen (a restore, a reconcile, or a save that resolves after the
-    // operator has switched type). `deliveryType` absent means paid -- rows predating the field
-    // were all paid -- and a paid brief's stage is empty, which is its real stage upstream.
+    // operator has switched type). Absence normalizes to paid with an empty stage, matching the
+    // wire default on both sides of the request. That is a CONVENTION, not evidence of where a row
+    // came from: pre-field email briefs exist (linuxfoundation/lfx-self-serve#2214) and are
+    // indistinguishable from paid ones after the backfill.
     const deliveryType = brief.deliveryType ?? 'paid-marketing';
     const stage = brief.emailStage ?? '';
     return `${projectSlug}\n${eventSlug}\n${deliveryType}\n${stage}`;
