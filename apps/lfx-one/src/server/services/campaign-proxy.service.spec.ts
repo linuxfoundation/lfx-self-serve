@@ -1304,6 +1304,62 @@ describe('extractableHtml', () => {
     expect(out).toContain('Tokyo');
   });
 
+  // `>` is ordinary inside an attribute value, so the tag scan has to know when it is inside one.
+  // A plain `indexOf('>')` ended the tag early, the self-closing check then read the wrong
+  // character, the element looked unclosed, and every following word was dropped.
+  describe.each([
+    ['self-closing', '<svg aria-label="next >"/>'],
+    ['with a close tag', '<svg aria-label="a > b"><path/></svg>'],
+  ])('an svg with a > inside an attribute (%s)', (_label, block) => {
+    it('does not end the tag early', () => {
+      expect(extractableHtml(`${block}<p>Tokyo</p>`), 'the attribute > ended the tag').toContain('Tokyo');
+    });
+  });
+
+  // Inside an svg, a `<!--` or a tag-like token can be the CONTENT of a nested raw-text element
+  // rather than markup. Counting those broke the depth in both directions.
+  it('does not treat a comment marker inside a nested style as a comment', () => {
+    const out = extractableHtml('<svg><style>a{content:"<!--"}</style><path/></svg><p>Tokyo</p>');
+
+    expect(out).toContain('Tokyo');
+  });
+
+  it('does not let a close tag inside a nested style end the svg', () => {
+    const out = extractableHtml('<svg><style>a{content:"</svg>"}</style><text>SECRET</text></svg><p>Tokyo</p>');
+
+    expect(out, 'the css string ended the svg early').not.toContain('SECRET');
+    expect(out).toContain('Tokyo');
+  });
+
+  // A `type` attribute mentioned inside ANOTHER attribute's value is not a type declaration.
+  it('does not classify a script as json-ld from text inside another attribute', () => {
+    const out = extractableHtml(`<script data-note=" type='application/ld+json'">alert(1)</script><p>Tokyo</p>`);
+
+    expect(out, 'a quoted attribute value was read as the type attribute').not.toContain('alert(1)');
+    expect(out).toContain('Tokyo');
+  });
+
+  // The inert walk carries a forward cursor and bounds each search to the window it needs. Both
+  // matter: re-deriving from the element start was quadratic on NESTING (6.4s at 1k levels), and
+  // an unbounded lookahead was quadratic on SIBLINGS (24.7s on 5 MiB of ordinary svg markup).
+  it('stays linear across many sibling svg elements', () => {
+    const body = '<svg><text>x</text></svg>'.repeat(32_000);
+
+    const started = Date.now();
+    extractableHtml(body);
+
+    expect(Date.now() - started, 'the inert walk scanned past its window').toBeLessThan(2000);
+  });
+
+  it('stays linear on deeply nested svg carrying comments', () => {
+    const body = `${'<svg><!-- x -->'.repeat(8_000)}y${'</svg>'.repeat(8_000)}`;
+
+    const started = Date.now();
+    extractableHtml(body);
+
+    expect(Date.now() - started, 'the inert walk re-derived regions per tag').toBeLessThan(2000);
+  });
+
   it('returns an empty string for input that is entirely strippable', () => {
     expect(extractableHtml('<style>.a{color:red}</style>').trim()).toBe('');
   });

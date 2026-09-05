@@ -714,8 +714,109 @@ const JSON_LD_ATTR_RE = /\stype\s*=\s*["']application\/ld\+json["']/i;
 /** The three elements whose CONTENT is never prose: two raw-text elements and one that nests. */
 const EXTRACTABLE_BLOCK_RE = /^<(script|style|svg)(?=[\s/>])/i;
 
+/**
+ * A `<script>` or `<style>` OPENING tag.
+ *
+ * Used only by the svg depth scan, to skip a nested raw-text body whose CONTENT can contain
+ * `<svg`-looking text. The token alone, with the tag end resolved by `startTagEnd`, for the same
+ * reason `SVG_TAG_RE` carries no attribute span.
+ */
+const RAW_TEXT_OPEN_RE = /<(script|style)(?=[\s/>])/gi;
+
 /** A nested `<svg>` open or close tag, used for depth matching. */
 const SVG_TAG_RE = /<(\/?)svg(?=[\s/>])/gi;
+
+/**
+ * The index just past a start tag's closing `>`, respecting quoted attribute values, or -1.
+ *
+ * `indexOf('>')` is wrong for this and was the cause of three separate defects: a `>` inside an
+ * attribute (`<svg aria-label="next >"/>`) ended the tag early, so the self-closing check read the
+ * wrong character, the element looked unclosed, and every following word was dropped. Attribute
+ * values are the one place a `>` is ordinary rather than structural, so the scan has to know when
+ * it is inside one.
+ *
+ * Linear and allocation-free: one pass over the tag, tracking only which quote character opened
+ * the current value.
+ */
+function startTagEnd(html: string, from: number): number {
+  let quote = '';
+  for (let i = from; i < html.length; i++) {
+    const ch = html[i];
+    if (quote !== '') {
+      if (ch === quote) {
+        quote = '';
+      }
+      continue;
+    }
+    if (ch === '"' || ch === "'") {
+      quote = ch;
+      continue;
+    }
+    if (ch === '>') {
+      return i;
+    }
+  }
+  return -1;
+}
+
+/**
+ * Whether a `<script>` opening tag really declares `type="application/ld+json"`.
+ *
+ * A regex over the whole tag matches the text inside ANOTHER attribute's value:
+ * `<script data-note=" type='application/ld+json'">` was classified as JSON-LD, so ordinary script
+ * content was preserved and spent the structured-data budget. Attribute values are scanned past
+ * rather than searched, so only a real `type` attribute counts.
+ */
+function isJsonLdTag(html: string, tagStart: number, openEnd: number): boolean {
+  let quote = '';
+  let attrStart = -1;
+  for (let i = tagStart; i < openEnd; i++) {
+    const ch = html[i];
+    if (quote !== '') {
+      if (ch === quote) {
+        quote = '';
+      }
+      continue;
+    }
+    if (ch === '"' || ch === "'") {
+      quote = ch;
+      continue;
+    }
+    if (/\s/.test(ch)) {
+      attrStart = i;
+      continue;
+    }
+    if (attrStart !== -1 && JSON_LD_ATTR_RE.test(html.slice(attrStart, openEnd + 1))) {
+      // `JSON_LD_ATTR_RE` is anchored on the leading whitespace, so testing from a boundary that
+      // is not inside a quoted value is what makes the match structural rather than textual.
+      const remainder = html.slice(attrStart, openEnd + 1);
+      const m = JSON_LD_ATTR_RE.exec(remainder);
+      if (m !== null && !isInsideQuotes(remainder, m.index)) {
+        return true;
+      }
+    }
+    attrStart = -1;
+  }
+  return false;
+}
+
+/** Whether `index` falls inside a quoted attribute value within `tag`. */
+function isInsideQuotes(tag: string, index: number): boolean {
+  let quote = '';
+  for (let i = 0; i < index; i++) {
+    const ch = tag[i];
+    if (quote !== '') {
+      if (ch === quote) {
+        quote = '';
+      }
+      continue;
+    }
+    if (ch === '"' || ch === "'") {
+      quote = ch;
+    }
+  }
+  return quote !== '';
+}
 
 /**
  * Split a fetched page into the prose worth extracting from and its JSON-LD, in ONE scan.
@@ -801,10 +902,11 @@ function scanExtractable(html: string): { prose: string; jsonLd: string } {
     }
 
     const tag = block[1].toLowerCase();
-    // The tag END comes from `indexOf`, never from an attribute span in a pattern. A capped span
-    // silently failed to recognise a root `<svg>` carrying more than 512 characters of attributes;
-    // an uncapped one backtracks across the document on an unmatched opening.
-    const openEnd = scan.indexOf('>', lt);
+    // The tag END comes from a quote-aware scan, never from an attribute span in a pattern. A
+    // capped span silently failed to recognise a root `<svg>` carrying more than 512 characters of
+    // attributes; an uncapped one backtracks across the document on an unmatched opening; and a
+    // plain `indexOf('>')` stops inside `aria-label="next >"`.
+    const openEnd = startTagEnd(scan, lt);
     if (openEnd === -1) {
       flush(lt);
       return { prose: normalizeProse(prose), jsonLd };
@@ -844,7 +946,7 @@ function scanExtractable(html: string): { prose: string; jsonLd: string } {
     // JSON-LD is preserved, and only from a real `<script>` block: a commented one never reaches
     // this line. This is where the extraction gets `startDate`, `endDate` and `location` on pages
     // that publish them as schema.org data rather than as prose.
-    if (tag === 'script' && ldBlocks < MAX_JSON_LD_BLOCKS && JSON_LD_ATTR_RE.test(scan.slice(lt, openEnd + 1))) {
+    if (tag === 'script' && ldBlocks < MAX_JSON_LD_BLOCKS && isJsonLdTag(scan, lt, openEnd)) {
       const body = scan.slice(openEnd + 1, blockEnd).replace(/<\/script[^>]*>$/i, '');
       jsonLd += (jsonLd === '' ? '' : ' ') + body;
       ldBlocks++;
@@ -870,8 +972,66 @@ function rawTextBlockEnd(scan: string, tag: string, openEnd: number): number {
   if (close === null) {
     return -1;
   }
-  const closeEnd = scan.indexOf('>', close.index);
+  const closeEnd = startTagEnd(scan, close.index);
   return closeEnd === -1 ? -1 : closeEnd + 1;
+}
+
+/**
+ * Walk inert regions -- comments and raw-text bodies -- from `from` up to `at`.
+ *
+ * Returns the index just past the region containing `at` when one does, `at` itself when none
+ * does, or -1 when a region never terminates. The caller carries the returned value forward as a
+ * cursor, so each region is walked once across the whole element rather than once per tag.
+ *
+ * The svg depth scan runs beneath the main loop and sees the element's raw interior, where a
+ * `<svg`-looking token can be a comment's content or a nested `<style>` body's text rather than a
+ * tag. Both have to be skipped, or the depth count is wrong in one direction or the other.
+ */
+function advanceInert(html: string, from: number, at: number): number {
+  let cursor = from;
+  while (cursor < at) {
+    // Both searches are bounded to the window. Unbounded, each looked ahead to the next match
+    // ANYWHERE in the document -- so on a page of sibling `<svg>` elements every one of them
+    // scanned the whole remainder and the walk went quadratic: 24.7s on 5 MiB of ordinary svg
+    // markup, against 9ms before the inert walk existed. The window is the only region whose
+    // classification this call needs.
+    const window = html.slice(cursor, at);
+    const commentOffset = window.indexOf('<!--');
+    RAW_TEXT_OPEN_RE.lastIndex = 0;
+    const raw = RAW_TEXT_OPEN_RE.exec(window);
+    const rawAt = raw === null ? -1 : cursor + raw.index;
+    const commentAt = commentOffset === -1 ? -1 : cursor + commentOffset;
+
+    if (commentAt === -1 && rawAt === -1) {
+      return at;
+    }
+
+    if (commentAt !== -1 && (rawAt === -1 || commentAt < rawAt)) {
+      const end = html.indexOf('-->', commentAt + 4);
+      if (end === -1) {
+        return -1;
+      }
+      cursor = end + 3;
+      if (cursor > at) {
+        return cursor;
+      }
+      continue;
+    }
+
+    const openEnd = startTagEnd(html, rawAt);
+    if (openEnd === -1) {
+      return -1;
+    }
+    const end = rawTextBlockEnd(html, (raw as RegExpExecArray)[1].toLowerCase(), openEnd);
+    if (end === -1) {
+      return -1;
+    }
+    cursor = end;
+    if (cursor > at) {
+      return cursor;
+    }
+  }
+  return at;
 }
 
 /**
@@ -883,6 +1043,8 @@ function rawTextBlockEnd(scan: string, tag: string, openEnd: number): number {
 function svgBlockEnd(scan: string, openEnd: number): number {
   SVG_TAG_RE.lastIndex = openEnd + 1;
   let depth = 1;
+  // How far the inert-region walk has already classified. Forward-only; see the note below.
+  let inertCursor = openEnd;
   let tag = SVG_TAG_RE.exec(scan);
 
   while (tag !== null) {
@@ -892,21 +1054,32 @@ function svgBlockEnd(scan: string, openEnd: number): number {
     // prompt. The main loop already consumes comments; this scan runs beneath it and has to do the
     // same, or the two readers disagree -- which is the defect class the single scan exists to
     // remove, reappearing one level down.
-    const commentStart = scan.lastIndexOf('<!--', tag.index);
-    if (commentStart > openEnd) {
-      const commentEnd = scan.indexOf('-->', commentStart + 4);
-      if (commentEnd === -1) {
-        // Unterminated inside the element: nothing past it can be classified.
+    // Anything between the opening tag and here that is NOT ordinary markup -- a comment, or a
+    // nested `<script>`/`<style>` body -- can contain a `<svg`-looking token that is plain text.
+    // Counting those broke the depth both ways: a commented opening left the element unclosed and
+    // dropped every following word, a commented close ended it early and leaked the body. An
+    // earlier fix handled comments but not the raw-text case, which is the same hazard one step
+    // over: `<svg><style>a{content:"<!--"}</style>` has a `<!--` that is CSS, not a comment.
+    //
+    // `inertCursor` only ever moves FORWARD. Re-deriving the inert regions from the element start
+    // for each tag was correct and quadratic -- 6.4s on 1k levels of nesting with comments --
+    // because every tag rescanned everything before it. Carrying the cursor makes each region cost
+    // one visit no matter how many tags follow it.
+    if (tag.index >= inertCursor) {
+      const skipTo = advanceInert(scan, inertCursor, tag.index);
+      if (skipTo === -1) {
+        // Unterminated inert region: nothing past it can be classified.
         return -1;
       }
-      if (commentEnd > tag.index) {
-        SVG_TAG_RE.lastIndex = commentEnd + 3;
+      inertCursor = skipTo;
+      if (skipTo > tag.index) {
+        SVG_TAG_RE.lastIndex = skipTo;
         tag = SVG_TAG_RE.exec(scan);
         continue;
       }
     }
 
-    const tagEnd = scan.indexOf('>', tag.index);
+    const tagEnd = startTagEnd(scan, tag.index);
     if (tagEnd === -1) {
       return -1;
     }
