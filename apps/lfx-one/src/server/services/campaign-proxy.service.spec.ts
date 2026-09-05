@@ -1256,6 +1256,28 @@ describe('extractableHtml', () => {
     });
   });
 
+  // The slash is IGNORED on HTML raw-text elements: a browser reads `<script/>body</script>` as a
+  // script whose content is `body`. Treating it as an empty element resumed prose extraction at
+  // once and sent that body -- and its closing tag -- to the prompt. Only `svg`, which is foreign
+  // content, is genuinely self-closing.
+  describe.each([
+    ['script', '<script/>SECRET_BODY</script>', 'SECRET_BODY'],
+    ['style', '<style/>.secret{color:red}</style>', '.secret'],
+  ])('a slash-closed %s is not an empty element', (tag, block, hidden) => {
+    it('keeps its content out of the prompt', () => {
+      const out = extractableHtml(`${block}<p>Tokyo</p>`);
+
+      expect(out, `the slash-closed ${tag} body reached the prompt`).not.toContain(hidden);
+      expect(out).toContain('Tokyo');
+    });
+  });
+
+  // The other half: `svg` IS self-closing, so this must not regress into treating `<svg/>` as an
+  // element that swallows the rest of the page.
+  it('still treats a slash-closed svg as an empty element', () => {
+    expect(extractableHtml('<svg/><p>Tokyo</p>')).toContain('Tokyo');
+  });
+
   it('returns an empty string for input that is entirely strippable', () => {
     expect(extractableHtml('<style>.a{color:red}</style>').trim()).toBe('');
   });

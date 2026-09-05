@@ -823,7 +823,11 @@ function scanExtractable(html: string): { prose: string; jsonLd: string } {
       kept += 1;
     }
 
-    if (scan[openEnd - 1] === '/') {
+    // Slash-closing applies to `svg` ONLY. `svg` is foreign content, where `<svg/>` really is an
+    // empty element -- but on the HTML raw-text elements the slash is IGNORED: a browser reads
+    // `<script/>body</script>` as a script whose content is `body`. Treating it as empty resumed
+    // prose extraction immediately and sent the script body, and its closing tag, to the prompt.
+    if (tag === 'svg' && scan[openEnd - 1] === '/') {
       cursor = textStart = openEnd + 1;
       continue;
     }

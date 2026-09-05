@@ -220,9 +220,17 @@ export interface CampaignBriefOutput {
    * planner carries RSA headlines and a keyword list, and a stale upstream mid-rollout is exactly
    * when a mismatched row would arrive.
    *
-   * Optional, and absence is meaningful: rows written before this field existed carry no delivery
-   * type and are treated as paid, which is what they are — every brief predating it was authored on
-   * the paid surface, the only one whose restore path was ever enabled.
+   * Optional, and absence defaults to paid. That default is right for anything THIS client writes,
+   * which always sends the field — but it is a default, not a fact about the stored data, and an
+   * earlier revision of this comment claimed otherwise.
+   *
+   * It is not true that every pre-field row is paid: the email flow persisted briefs before this
+   * field existed (`ensureEmailBriefId` on Build Audience, Generate Copy and Stage Send), and those
+   * writes carried no delivery type either. Such a row backfills to `paid-marketing` with an empty
+   * stage, so it becomes restorable on the paid planner and unreachable from the email stage it was
+   * actually authored for. The same ambiguity exists mid-rollout while an older client is still
+   * writing. Tracked separately — it needs a data decision, not a client-side guess, and nothing
+   * here can distinguish the two cases after the fact.
    */
   deliveryType?: CampaignDeliveryType;
   /**
