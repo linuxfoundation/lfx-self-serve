@@ -1105,6 +1105,47 @@ describe('extractableHtml', () => {
     expect(out).toMatch(/Tokyo\s+Japan/);
   });
 
+  // A commented-out `<svg` or `<script` is not markup, but the walk cannot tell: it sees the token,
+  // treats it as a block opening, and hunts for a close that never comes -- taking the rest of the
+  // page with it. Comments are therefore removed before the cap and before any tag-aware pass.
+  describe.each([
+    ['svg', '<!-- <svg placeholder -->'],
+    ['script', '<!-- <script src="x" -->'],
+    ['style', '<!-- <style media="print" -->'],
+  ])('a commented-out %s opening', (tag, comment) => {
+    it('does not end the document', () => {
+      const out = extractableHtml(`${comment}<p>Tokyo</p>${'word '.repeat(40_000)}`);
+
+      expect(out, `the commented ${tag} token was walked as real markup`).toContain('Tokyo');
+    });
+  });
+
+  it('drops what a comment contains', () => {
+    expect(extractableHtml(`<!-- SECRET --><p>Tokyo</p>${'word '.repeat(40_000)}`)).not.toContain('SECRET');
+  });
+
+  // Removing comments first must not cost the raw-text case: `<!--` inside a script STRING is not
+  // a comment, and treating it as an unterminated one would swallow the rest of the page. The
+  // remainder is left in place instead -- the script block is stripped downstream anyway.
+  it('keeps prose after an unterminated comment token', () => {
+    const out = extractableHtml(`<script>var a = "<!-- x";</script><p>Tokyo</p>${'word '.repeat(40_000)}`);
+
+    expect(out).toContain('Tokyo');
+  });
+
+  // The comment pass runs BEFORE the source cap, so it must not backtrack. A lazy
+  // `<!--[\s\S]*?-->` rescans to end of input from every unmatched `<!-- ` -- 67ms/248ms/996ms/
+  // 3987ms at 50k/100k/200k/400k, and ~27s on 1 MiB even with the input bounded, because the bound
+  // limits what it sees and not how many times it rescans that. `indexOf` does neither.
+  it('stays linear on a page dense with unterminated comment openings', () => {
+    const body = '<!-- '.repeat((5 * 1024 * 1024) / 5);
+
+    const started = Date.now();
+    extractableHtml(body);
+
+    expect(Date.now() - started, 'the comment pass backtracked').toBeLessThan(2000);
+  });
+
   it('returns an empty string for input that is entirely strippable', () => {
     expect(extractableHtml('<style>.a{color:red}</style>').trim()).toBe('');
   });

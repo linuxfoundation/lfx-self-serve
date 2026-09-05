@@ -878,6 +878,44 @@ function svgBlockEnd(scan: string, openIndex: number, openEnd: number): number {
 }
 
 /**
+ * Remove HTML comments with a non-backtracking scan.
+ *
+ * This runs BEFORE the cap and the tag-aware passes, because a commented-out `<svg` or `<script`
+ * is not markup and nothing downstream can tell: the walk would see the token, treat it as a block
+ * opening, and hunt for a close that never comes -- `<!-- <svg placeholder --><p>Tokyo</p>` lost
+ * Tokyo entirely.
+ *
+ * Running first is exactly why it cannot be a regex. A lazy `[\s\S]*?` rescans to end of input
+ * from every unmatched `<!-- `, which is quadratic and reached ~27s on 1 MiB of them -- a worse
+ * stall than the one this file was written to fix, introduced by moving the pass earlier.
+ */
+function stripComments(html: string): string {
+  let open = html.indexOf('<!--');
+  if (open === -1) {
+    return html;
+  }
+
+  let out = '';
+  let copied = 0;
+  while (open !== -1) {
+    out += html.slice(copied, open) + ' ';
+    const close = html.indexOf('-->', open + 4);
+    if (close === -1) {
+      // Unterminated. A browser reads the rest of the document as commented out, but that is too
+      // destructive to apply on a token this pass cannot fully trust: `<!--` inside a script
+      // STRING is not a comment, and treating one as unterminated would swallow the whole page --
+      // `<script>var a = "<!-- x";</script><p>Tokyo</p>` lost Tokyo. The raw-text blocks are
+      // stripped downstream anyway, so leaving the remainder for them costs nothing and cannot
+      // drop real prose.
+      return out + html.slice(open);
+    }
+    copied = close + 3;
+    open = html.indexOf('<!--', copied);
+  }
+  return out + html.slice(copied);
+}
+
+/**
  * Cap the source at `MAX_SOURCE_CHARS` of PROSE, skipping strippable blocks whole.
  *
  * A flat slice can land inside a `<script>`/`<style>`/`<svg>` block and cut its closing tag off,
@@ -1127,12 +1165,28 @@ export function extractableHtml(html: string): string {
   // quadratic pass, and at the 5 MiB ceiling they cost ~460s on unmatched `<script ` openings
   // versus ~1ms here. So the cap stays first and instead walks the body, skipping each strippable
   // block whole via `indexOf` -- linear, no backtracking -- and spending the 150k on text.
-  const source = boundedSource(withoutJSONLD);
+  // Comments go FIRST, before the cap and before any tag-aware pass.
+  //
+  // A commented-out `<svg` or `<script` is not markup, but nothing downstream knows that: the walk
+  // sees the token, treats it as a block opening, and looks for a close that does not exist --
+  // `<!-- <svg placeholder --><p>Tokyo</p>` lost Tokyo entirely. Removing comments before the walk
+  // is what makes every later pass agree about what is real markup.
+  //
+  // Safe against the raw-text case that motivated the current ordering: a `<!--` inside a script
+  // STRING is removed as a comment here, but the script block is stripped whole later anyway, so
+  // nothing that survives depends on it.
+  //
+  // Removed with `indexOf`, not a regex. `<!--[\s\S]*?-->` carries a lazy span, so every unmatched
+  // `<!-- ` rescans to end of input: 67ms / 248ms / 996ms / 3987ms at 50k / 100k / 200k / 400k, and
+  // 27s on 1 MiB even with the input bounded -- the bound limits how much it sees, not how many
+  // times it rescans what it sees. `indexOf` never backtracks, so this stays linear on the same
+  // input. An unterminated comment consumes the remainder, which is what a browser does with it.
+  const withoutComments = stripComments(withoutJSONLD);
+  const source = boundedSource(withoutComments);
   const stripped = stripSvgBlocks(source)
     .replace(/<script(?=[\s/>])[\s\S]*?<\/script(\s[^>]*)?>/gi, ' ')
     .replace(/<style(?=[\s/>])[\s\S]*?<\/style(\s[^>]*)?>/gi, ' ')
 
-    .replace(/<!--[\s\S]*?-->/g, ' ')
     // Collapse the whitespace those removals leave behind. Templated markup is heavily indented,
     // so this is not cosmetic: it recovers several KB of the budget on a typical page.
     .replace(/\s{2,}/g, ' ');
