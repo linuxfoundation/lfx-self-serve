@@ -442,7 +442,8 @@ export class BoardMembersComponent {
   private initCanEdit(): boolean {
     const uid = this.accountContext.selectedAccount()?.uid;
     if (!uid) return false;
-    return this.roleGrants.writerSet().has(uid);
+    // LFXV2-3029 — widened to roll-up-derived editors, not just a direct grant.
+    return this.roleGrants.editorSet().has(uid);
   }
 
   private initAriaSortMap(): Record<BoardMembersSortColumn, 'ascending' | 'descending' | 'none'> {

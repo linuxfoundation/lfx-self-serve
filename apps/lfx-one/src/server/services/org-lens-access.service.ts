@@ -282,13 +282,13 @@ export class OrgLensAccessService {
     return users.map((user) => ({ ...user, jobTitle: titleByEmail.get(user.email) ?? null }));
   }
 
-  /** Caller can manage iff the selected org uid is a direct writer grant (D-005). UX gate only. */
+  /** Caller can manage iff the org uid is a direct or roll-up-derived (LFXV2-3029) editor grant. UX gate only. */
   private async resolveCanManage(req: Request, orgUid: string): Promise<boolean> {
     const username = getEffectiveUsername(req);
     if (!username) return false;
     try {
       const grants = await this.roleGrants.getRoleGrants(req, username);
-      return grants.writers.includes(orgUid);
+      return OrgRoleGrantsService.hasEditorAccess(grants, orgUid);
     } catch (error) {
       logger.warning(req, 'resolve_org_access_can_manage', 'Role-grants lookup failed; defaulting canManage=false', {
         org_uid: orgUid,
@@ -299,9 +299,10 @@ export class OrgLensAccessService {
   }
 
   /**
-   * Write gate: throws 403 when the caller is verified NOT to be a direct writer, but a retriable
-   * 503 when the role-grants lookup itself fails — so a transient outage doesn't masquerade as
-   * "no permission". (The lenient `resolveCanManage` is for the read/list UX gate only.)
+   * Write gate: throws 403 when the caller is verified NOT to be an editor (direct or roll-up-
+   * derived), but a retriable 503 when the role-grants lookup itself fails — so a transient
+   * outage doesn't masquerade as "no permission". (The lenient `resolveCanManage` is for the
+   * read/list UX gate only.)
    */
   private async assertCanManage(req: Request, orgUid: string, operation: string): Promise<void> {
     const forbidden = (): MicroserviceError =>
@@ -319,7 +320,7 @@ export class OrgLensAccessService {
     let isWriter: boolean;
     try {
       const grants = await this.roleGrants.getRoleGrants(req, username);
-      isWriter = grants.writers.includes(orgUid);
+      isWriter = OrgRoleGrantsService.hasEditorAccess(grants, orgUid);
     } catch (error) {
       // Couldn't verify (transient role-grants outage) — surface a retriable error, not a 403.
       logger.warning(req, 'assert_org_access_can_manage', 'Role-grants lookup failed; cannot verify manager permission', {

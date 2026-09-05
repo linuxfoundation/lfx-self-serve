@@ -221,7 +221,8 @@ export class OrgProjectsComponent {
    */
   protected readonly canManageWorkspaces = computed(() => {
     const uid = this.accountContext.selectedAccount()?.uid;
-    return !!uid && this.orgRoleGrants.writerSet().has(uid);
+    // LFXV2-3029 — widened to roll-up-derived editors, not just a direct grant.
+    return !!uid && this.orgRoleGrants.editorSet().has(uid);
   });
   protected readonly canAddProjects = computed(() => this.canManageWorkspaces() && !!this.selectedWorkspace() && !this.loading() && !this.error());
   protected readonly addProjectDisabledReason = computed(() => this.initAddProjectDisabledReason());

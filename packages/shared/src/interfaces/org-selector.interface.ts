@@ -107,6 +107,8 @@ export interface RoleGrantsResponse {
   loaded_at: string;
   /** Caller belongs to `team:lf-staff` and so holds `auditor` on every `b2b_org`. Always present, never optional, so a client cannot read "absent" as "unknown". Orthogonal to the grant arrays above: a staff caller who also administers orgs has both. `false` whenever the determination could not be completed. */
   isStaff: boolean;
+  /** LFXV2-3029 — true when authoritative classification could not be completed for one or more discovered organizations, so the list is a lower bound rather than the caller's full resolved set. Lets the client say the lookup broke rather than that the caller has no organizations. Always present. */
+  degraded: boolean;
 }
 
 /** Canonical org record returned by `GET /api/orgs/:accountId` (member-service snake_case → camelCase). Spec 002: keyed by the org account id (18-char SFID). */
@@ -233,6 +235,14 @@ export interface B2bOrgIndexedDoc {
   is_parent?: boolean;
   /** Member-service `LF_Membership_Status__c` (`json:"status,omitempty"`), published whole by the indexer. Frequently absent. */
   status?: string | null;
+  /** LFXV2-3029 — already published by the indexer; the upward-traversal edge for the connected-component walk. Absent for top-level orgs. */
+  parent_uid?: string | null;
+  /** LFXV2-3029 — denormalized parent name/logo, already published; avoids a second lookup for the source-organization name in the provenance tooltip. Absent for top-level orgs. */
+  parent_detail?: {
+    uid?: string | null;
+    name?: string | null;
+    logo_url?: string | null;
+  } | null;
 }
 
 /** One accepted-or-pending member entry in the flattened `members[]` indexer view (member-service `b2bOrgMemberView`). */
@@ -315,6 +325,8 @@ export interface AccessAwareOrgsResult {
   username: string;
   /** Caller holds the LF staff grant. Resolved independently of the roster, so it is meaningful even when `resolved` is empty or `upstreamFailed` is true. */
   isStaff: boolean;
+  /** LFXV2-3029 — true when the connected-component walk was truncated by the hard cap, or when authoritative classification of discovered candidates could not be completed. Distinct from `upstreamFailed`: the direct-grant roster still loaded, but the widened (inherited) portion of the set is a lower bound. Surfaces on `RoleGrantsResponse.degraded`. */
+  degraded: boolean;
 }
 
 /** Serializable form of `AccessAwareOrgsResult` for the shared cache — Maps stored as ordered entry arrays. */
@@ -326,4 +338,6 @@ export interface AccessAwareOrgsCacheEntry {
   username: string;
   /** Required, so an entry written before this field existed fails the shape guard and is recomputed rather than answering `undefined` for a staff caller. */
   isStaff: boolean;
+  /** Optional — an entry cached before this field existed simply had no truncation/classification-failure signal to record; deserialize defaults a missing value to `false` rather than rejecting the whole entry as a miss. */
+  degraded?: boolean;
 }

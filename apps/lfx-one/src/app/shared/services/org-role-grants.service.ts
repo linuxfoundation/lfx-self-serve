@@ -2,7 +2,7 @@
 // SPDX-License-Identifier: MIT
 
 import { HttpClient } from '@angular/common/http';
-import { afterNextRender, inject, Injectable, Signal, signal, WritableSignal } from '@angular/core';
+import { afterNextRender, computed, inject, Injectable, Signal, signal, WritableSignal } from '@angular/core';
 import { CascadingRoleGrant, RoleGrantsResponse } from '@lfx-one/shared/interfaces';
 import { catchError, map, Observable, of, tap } from 'rxjs';
 
@@ -37,6 +37,14 @@ export class OrgRoleGrantsService {
   public readonly auditorSet: Signal<Set<string>> = this.auditorSetInternal.asReadonly();
   public readonly inheritedWriterSet: Signal<Set<string>> = this.inheritedWriterSetInternal.asReadonly();
   public readonly inheritedAuditorSet: Signal<Set<string>> = this.inheritedAuditorSetInternal.asReadonly();
+  /**
+   * LFXV2-3029 — "editor from any source": `writerSet` (direct) union `inheritedWriterSet`
+   * (roll-up-derived). Every organization-edit capability gate should read this, not the
+   * direct-only `writerSet` — every edit surface a direct editor can reach is meant to also open
+   * for a roll-up editor. `writerSet` itself is kept direct-only for callers that still need that
+   * narrower, direct-only answer specifically.
+   */
+  public readonly editorSet: Signal<Set<string>> = computed(() => new Set([...this.writerSetInternal(), ...this.inheritedWriterSetInternal()]));
   /** Child uid → parent display name; used to render the dropdown tooltip without a second lookup. */
   public readonly parentNameByUid: Signal<Map<string, string>> = this.parentNameByUidInternal.asReadonly();
   public readonly loaded: Signal<boolean> = this.loadedInternal.asReadonly();
