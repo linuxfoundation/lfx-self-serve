@@ -128,19 +128,16 @@ describe('AttendanceReconciliationDrawerComponent', () => {
     fixture.componentInstance.confirmMatch(result);
     await TestBed.inject(ApplicationRef).whenStable();
 
-    expect(updatePastMeetingParticipant).toHaveBeenCalledWith(
-      PAST_MEETING_ID,
-      'a1',
-      expect.objectContaining({
-        email: candidate.email,
-        username: candidate.username,
-        lf_user_id: candidate.lf_user_id,
-        first_name: candidate.first_name,
-        last_name: candidate.last_name,
-        is_verified: true,
-        is_ai_reconciled: true,
-      })
-    );
+    expect(updatePastMeetingParticipant).toHaveBeenCalledWith(PAST_MEETING_ID, 'a1', {
+      is_attended: true,
+      email: candidate.email,
+      username: candidate.username,
+      lf_user_id: candidate.lf_user_id,
+      first_name: candidate.first_name,
+      last_name: candidate.last_name,
+      is_verified: true,
+      is_ai_reconciled: true,
+    });
     expect(fixture.componentInstance.needsReviewResults()).toEqual([]);
   });
 
@@ -154,7 +151,7 @@ describe('AttendanceReconciliationDrawerComponent', () => {
     fixture.componentInstance.leaveUnknown(result);
     await TestBed.inject(ApplicationRef).whenStable();
 
-    expect(updatePastMeetingParticipant).toHaveBeenCalledWith(PAST_MEETING_ID, 'a2', { is_verified: false, is_ai_reconciled: false });
+    expect(updatePastMeetingParticipant).toHaveBeenCalledWith(PAST_MEETING_ID, 'a2', { is_attended: true, is_verified: false, is_ai_reconciled: false });
     expect(fixture.componentInstance.unmatchedResults()).toEqual([]);
   });
 
@@ -189,9 +186,48 @@ describe('AttendanceReconciliationDrawerComponent', () => {
     expect(updatePastMeetingParticipant).toHaveBeenCalledWith(
       PAST_MEETING_ID,
       'a4',
-      expect.objectContaining({ email: 'manual@example.com', is_verified: true, is_ai_reconciled: false })
+      expect.objectContaining({ is_attended: true, email: 'manual@example.com', is_verified: true, is_ai_reconciled: false })
     );
     expect(fixture.componentInstance.assigningAttendeeId()).toBeNull();
+  });
+
+  it('does not clear another row assign form in progress when a different row action succeeds', async () => {
+    const resultA = buildResult({ attendee_id: 'a6', confidence: 'low' });
+    const resultB = buildResult({ attendee_id: 'a7', confidence: 'low' });
+    reconcilePastMeetingParticipants.mockReturnValue(of(buildResponse([resultA, resultB])));
+
+    const fixture = createComponent();
+    await openDrawer(fixture);
+
+    fixture.componentInstance.leaveUnknown(resultA);
+    fixture.componentInstance.openAssign(resultB);
+    fixture.componentInstance.assignForm.get('email')?.setValue('pending@example.com');
+    await TestBed.inject(ApplicationRef).whenStable();
+
+    expect(fixture.componentInstance.assigningAttendeeId()).toBe('a7');
+    expect(fixture.componentInstance.assignForm.get('email')?.value).toBe('pending@example.com');
+  });
+
+  it('emits reconciliationChanged when the reconcile response auto-applies matches', async () => {
+    const emitted = vi.fn();
+    reconcilePastMeetingParticipants.mockReturnValue(of(buildResponse([], { auto_applied_count: 2 })));
+
+    const fixture = createComponent();
+    fixture.componentInstance.reconciliationChanged.subscribe(emitted);
+    await openDrawer(fixture);
+
+    expect(emitted).toHaveBeenCalledTimes(1);
+  });
+
+  it('does not emit reconciliationChanged when the reconcile response auto-applies nothing', async () => {
+    const emitted = vi.fn();
+    reconcilePastMeetingParticipants.mockReturnValue(of(buildResponse([], { auto_applied_count: 0 })));
+
+    const fixture = createComponent();
+    fixture.componentInstance.reconciliationChanged.subscribe(emitted);
+    await openDrawer(fixture);
+
+    expect(emitted).not.toHaveBeenCalled();
   });
 
   it('shows an error toast and keeps the row when a row action fails', async () => {

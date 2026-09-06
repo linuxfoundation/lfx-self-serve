@@ -79,6 +79,9 @@ export class AttendanceReconciliationDrawerComponent {
       this.assigningAttendeeId.set(null);
       this.assignForm.reset();
       this.activeTab.set('needs-review');
+      if ((response?.auto_applied_count ?? 0) > 0) {
+        this.reconciliationChanged.emit();
+      }
     })
   );
 
@@ -105,6 +108,7 @@ export class AttendanceReconciliationDrawerComponent {
     if (!candidate) return;
 
     this.runRowAction(result.attendee_id, {
+      is_attended: true,
       email: candidate.email,
       username: candidate.username,
       lf_user_id: candidate.lf_user_id,
@@ -145,6 +149,7 @@ export class AttendanceReconciliationDrawerComponent {
     }
 
     this.runRowAction(result.attendee_id, {
+      is_attended: true,
       email,
       username: (form.username ?? '').trim() || undefined,
       first_name: (form.first_name ?? '').trim() || undefined,
@@ -160,7 +165,7 @@ export class AttendanceReconciliationDrawerComponent {
    * persist a true `is_unknown` flag upstream until lfx-v2-meeting-service#276 merges and deploys.
    */
   public leaveUnknown(result: AttendanceReconciliationResult): void {
-    this.runRowAction(result.attendee_id, { is_verified: false, is_ai_reconciled: false });
+    this.runRowAction(result.attendee_id, { is_attended: true, is_verified: false, is_ai_reconciled: false });
   }
 
   // === Protected Methods ===
@@ -205,8 +210,10 @@ export class AttendanceReconciliationDrawerComponent {
             return next;
           });
           this.results.update((current) => current.filter((r) => r.attendee_id !== attendeeId));
-          this.assigningAttendeeId.set(null);
-          this.assignForm.reset();
+          if (this.assigningAttendeeId() === attendeeId) {
+            this.assigningAttendeeId.set(null);
+            this.assignForm.reset();
+          }
           this.messageService.add({ severity: 'success', summary: 'Attendee Updated', detail: 'The attendance record has been updated.' });
           this.reconciliationChanged.emit();
         },
