@@ -129,23 +129,31 @@ export class CommitteeService {
    * enrichment) twice on every edit-page load. Probe-friendly: no `committee` signal
    * side-effect. Entries evict on error and on write (updateCommittee/updateCommitteePermissions/
    * deleteCommittee and the membership-changing writes: join/leave, member CRUD, application
-   * approve). Pass `skipCache` to force a fresh fetch when a caller needs enrichment that
-   * a cached payload may predate — including polls that wait for a just-written membership change
-   * to propagate (a cached pre-write payload would otherwise replay through the whole poll
-   * window). `skipCache` replaces the cache entry with the new `request$`
-   * rather than invalidating — callers already subscribed to the prior `shareReplay(1)`
+   * approve). Vanity `/groups/<slug>` loads cache under the route slug; writes key by UID —
+   * both keys (and a lowercased slug) alias the same entry so a UID eviction cannot leave a
+   * stale slug payload for the next refresh (GH-2072). Pass `skipCache` to force a fresh fetch
+   * when a caller needs enrichment that a cached payload may predate — including polls that wait
+   * for a just-written membership change to propagate (a cached pre-write payload would otherwise
+   * replay through the whole poll window). `skipCache` replaces the cache entry with the new
+   * `request$` rather than invalidating — callers already subscribed to the prior `shareReplay(1)`
    * observable continue to completion with the old payload, so racing `skipCache` callers can
    * still observe a stale result. Mirrors MeetingService.getMeetingDetail.
    */
   public getCommitteeDetail(id: string, options?: { skipCache?: boolean }): Observable<Committee> {
-    const cached = this.committeeDetailCache.get(id);
+    const cached = this.lookupCommitteeDetailCache(id);
     if (!options?.skipCache && cached && Date.now() - cached.cachedAt < COMMITTEE_DETAIL_CACHE_TTL_MS) {
       return cached.observable;
     }
     if (cached) {
-      this.committeeDetailCache.delete(id);
+      this.evictCommitteeDetailCache(id);
     }
-    const request$ = this.http.get<Committee>(`/api/committees/${id}`).pipe(tap({ error: () => this.committeeDetailCache.delete(id) }), shareReplay(1));
+    const request$ = this.http.get<Committee>(`/api/committees/${id}`).pipe(
+      tap({
+        next: (committee) => this.aliasCommitteeDetailCache(id, committee),
+        error: () => this.evictCommitteeDetailCache(id),
+      }),
+      shareReplay(1)
+    );
     this.pruneExpiredCommitteeDetailCache();
     this.committeeDetailCache.set(id, { observable: request$, cachedAt: Date.now() });
     return request$;
@@ -154,7 +162,7 @@ export class CommitteeService {
   public deleteCommittee(id: string): Observable<void> {
     return this.http.delete<void>(`/api/committees/${id}`).pipe(
       take(1),
-      tap(() => this.committeeDetailCache.delete(id))
+      tap(() => this.evictCommitteeDetailCache(id))
     );
   }
 
@@ -168,7 +176,7 @@ export class CommitteeService {
   public updateCommittee(id: string, committee: CommitteeUpdateData & Pick<CommitteeSettingsData, 'chat_webhook_url'>): Observable<Committee> {
     return this.http.put<Committee>(`/api/committees/${id}`, committee).pipe(
       take(1),
-      tap(() => this.committeeDetailCache.delete(id))
+      tap(() => this.evictCommitteeDetailCache(id))
     );
   }
 
@@ -176,7 +184,7 @@ export class CommitteeService {
   public updateCommitteePermissions(committeeId: string, writers: CommitteeUser[], auditors: CommitteeUser[]): Observable<Committee> {
     return this.http.put<Committee>(`/api/committees/${committeeId}`, { writers, auditors }).pipe(
       take(1),
-      tap(() => this.committeeDetailCache.delete(committeeId))
+      tap(() => this.evictCommitteeDetailCache(committeeId))
     );
   }
 
@@ -219,21 +227,21 @@ export class CommitteeService {
 
     return this.http.post<CommitteeMember>(`/api/committees/${committeeId}/members`, memberData, { params }).pipe(
       take(1),
-      tap(() => this.committeeDetailCache.delete(committeeId))
+      tap(() => this.evictCommitteeDetailCache(committeeId))
     );
   }
 
   public updateCommitteeMember(committeeId: string, memberId: string, memberData: Partial<CreateCommitteeMemberRequest>): Observable<CommitteeMember> {
     return this.http.put<CommitteeMember>(`/api/committees/${committeeId}/members/${memberId}`, memberData).pipe(
       take(1),
-      tap(() => this.committeeDetailCache.delete(committeeId))
+      tap(() => this.evictCommitteeDetailCache(committeeId))
     );
   }
 
   public deleteCommitteeMember(committeeId: string, memberId: string): Observable<void> {
     return this.http.delete<void>(`/api/committees/${committeeId}/members/${memberId}`).pipe(
       take(1),
-      tap(() => this.committeeDetailCache.delete(committeeId))
+      tap(() => this.evictCommitteeDetailCache(committeeId))
     );
   }
 
@@ -264,7 +272,7 @@ export class CommitteeService {
     const body = organization ? { organization } : {};
     return this.http.post<CommitteeMember>(`/api/committees/${committeeId}/join`, body).pipe(
       take(1),
-      tap(() => this.committeeDetailCache.delete(committeeId))
+      tap(() => this.evictCommitteeDetailCache(committeeId))
     );
   }
 
@@ -272,7 +280,7 @@ export class CommitteeService {
   public leaveCommittee(committeeId: string): Observable<void> {
     return this.http.delete<void>(`/api/committees/${committeeId}/leave`).pipe(
       take(1),
-      tap(() => this.committeeDetailCache.delete(committeeId))
+      tap(() => this.evictCommitteeDetailCache(committeeId))
     );
   }
 
@@ -291,7 +299,7 @@ export class CommitteeService {
   public approveApplication(committeeId: string, applicationId: string, body?: ApproveCommitteeJoinApplicationRequest): Observable<CommitteeMember> {
     return this.http.post<CommitteeMember>(`/api/committees/${committeeId}/applications/${applicationId}/approve`, { notify: true, ...body }).pipe(
       take(1),
-      tap(() => this.committeeDetailCache.delete(committeeId))
+      tap(() => this.evictCommitteeDetailCache(committeeId))
     );
   }
 
@@ -408,6 +416,54 @@ export class CommitteeService {
       params = params.set('project_uid', projectUid);
     }
     return this.http.get<string[]>('/api/committees/my-committee-uids', { params }).pipe(catchError(() => of([])));
+  }
+
+  private lookupCommitteeDetailCache(id: string): { observable: Observable<Committee>; cachedAt: number } | undefined {
+    const exact = this.committeeDetailCache.get(id);
+    if (exact) {
+      return exact;
+    }
+    const lower = id.toLowerCase();
+    return lower === id ? undefined : this.committeeDetailCache.get(lower);
+  }
+
+  /**
+   * Points the UID and vanity slug at the same cache entry as `requestId` so a later write
+   * that only knows the UID still evicts the slug-keyed load (GH-2072).
+   */
+  private aliasCommitteeDetailCache(requestId: string, committee: Committee): void {
+    const entry = this.committeeDetailCache.get(requestId);
+    if (!entry) {
+      return;
+    }
+    this.committeeDetailCache.set(committee.uid, entry);
+    const slug = committee.sso_group_name?.trim();
+    if (!slug) {
+      return;
+    }
+    this.committeeDetailCache.set(slug, entry);
+    const lower = slug.toLowerCase();
+    if (lower !== slug) {
+      this.committeeDetailCache.set(lower, entry);
+    }
+  }
+
+  /**
+   * Drops every cache key that aliases the same in-flight/cached detail observable —
+   * the route slug and the UID must evict together so a write keyed by UID cannot leave a
+   * stale slug entry for the next refresh (GH-2072).
+   */
+  private evictCommitteeDetailCache(id: string): void {
+    const entry = this.lookupCommitteeDetailCache(id);
+    if (!entry) {
+      this.committeeDetailCache.delete(id);
+      return;
+    }
+    for (const [key, value] of this.committeeDetailCache) {
+      if (value.observable === entry.observable) {
+        this.committeeDetailCache.delete(key);
+      }
+    }
   }
 
   private pruneExpiredCommitteeDetailCache(): void {
