@@ -40,11 +40,16 @@ vi.mock('@lfx-one/shared/enums', () => ({
   CommitteeMemberVisibility: { HIDDEN: 'hidden', BASIC_PROFILE: 'basic_profile' },
 }));
 vi.mock('@lfx-one/shared/utils', () => ({ invitationRequiresOrganization: vi.fn() }));
-vi.mock('@lfx-one/shared/constants', () => ({
-  SLACK_INCOMING_WEBHOOK_URL_PATTERN: /^https:\/\/hooks\.slack\.com\/services\/T[A-Za-z0-9]+\/B[A-Za-z0-9]+\/[A-Za-z0-9]+$/,
-  CHAT_WEBHOOK_URL_MAX_LENGTH: 500,
-  UUID_REGEX: /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i,
-}));
+vi.mock('@lfx-one/shared/constants', async () => {
+  const regex = await vi.importActual<typeof import('../../../../../packages/shared/src/constants/regex.constants')>(
+    '../../../../../packages/shared/src/constants/regex.constants'
+  );
+  return {
+    SLACK_INCOMING_WEBHOOK_URL_PATTERN: /^https:\/\/hooks\.slack\.com\/services\/T[A-Za-z0-9]+\/B[A-Za-z0-9]+\/[A-Za-z0-9]+$/,
+    CHAT_WEBHOOK_URL_MAX_LENGTH: 500,
+    UUID_REGEX: regex.UUID_REGEX,
+  };
+});
 vi.mock('./microservice-proxy.service', () => ({
   MicroserviceProxyService: class {
     public proxyRequest = proxyRequest;
@@ -423,6 +428,7 @@ describe('CommitteeService — chat_webhook_url (LFXV2-3080)', () => {
     });
 
     it('resolves a vanity slug via sso_group_name tag lookup and lowercases the slug', async () => {
+      vi.mocked(logger.debug).mockClear();
       proxyRequest.mockResolvedValueOnce(pageOf([{ uid: COMMITTEE_UUID }]));
 
       const result = await service.resolveCommitteeUid(req, 'My-Group-Slug');
@@ -435,6 +441,12 @@ describe('CommitteeService — chat_webhook_url (LFXV2-3080)', () => {
         tags: 'sso_group_name:my-group-slug',
         page_size: 1,
       });
+      expect(logger.debug).toHaveBeenCalledWith(
+        req,
+        'resolve_committee_uid',
+        'Resolved slug to UID',
+        expect.objectContaining({ slug: 'My-Group-Slug', committee_uid: COMMITTEE_UUID })
+      );
     });
 
     it('throws ResourceNotFoundError when the slug matches no committee the caller can see', async () => {

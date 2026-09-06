@@ -246,7 +246,7 @@ describe('CommitteeController.getCommitteeCalendar', () => {
   });
 });
 
-describe('CommitteeController.getCommitteeById — vanity slug resolution (GH #2072)', () => {
+describe('CommitteeController.getCommitteeById — vanity slug resolution (GH-2072)', () => {
   let controller: CommitteeController;
 
   beforeEach(() => {

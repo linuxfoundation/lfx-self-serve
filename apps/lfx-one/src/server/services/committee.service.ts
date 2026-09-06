@@ -321,12 +321,22 @@ export class CommitteeService {
   /**
    * Resolves a committee route param to a UID. UUIDs pass through; anything else is treated as an
    * `sso_group_name` vanity slug and looked up via query-service (same tag the public group page
-   * uses — GH #2072 / LFXV2-2012). Uses the caller's bearer token so FGA filtering applies: a
-   * project admin who is not a group member still sees committees they can view, and a private
-   * group they cannot view resolves as not found rather than leaking existence.
+   * uses — GH-2072 / LFXV2-2012).
+   *
+   * Authorization depends on the caller's `req.bearerToken`:
+   * - Authenticated `GET /api/committees/:id` keeps the user token, so query-service FGA filtering
+   *   applies. A project admin who is not a group member still sees committees they can view; a
+   *   private group they cannot view resolves as not found rather than leaking existence.
+   * - Public `GET /public/api/groups/:id` swaps in an M2M token before calling this; privacy is
+   *   enforced afterwards by rejecting `!committee.public`.
    *
    * Must run before proxying `GET /committees/{uid}` — Heimdall authorizes `committee:{id}#viewer`
    * using the path capture, and every FGA tuple is keyed by UID, not slug.
+   *
+   * @param options.operation Logger / error operation name (defaults to `resolve_committee_uid`)
+   * @param options.service Error `service` field (defaults to `committee_service`)
+   * @param options.path Error `path` field (defaults to `/committees/${id}`)
+   * @param options.resourceType Not-found resource label (defaults to `Committee`; public groups pass `Group`)
    */
   public async resolveCommitteeUid(
     req: Request,
@@ -353,7 +363,7 @@ export class CommitteeService {
       throw new ResourceNotFoundError(resourceType, id, { operation, service, path });
     }
 
-    logger.debug(req, operation, 'Resolved group slug to UID', { slug: id, group_uid: committeeUid });
+    logger.debug(req, operation, 'Resolved slug to UID', { slug: id, committee_uid: committeeUid });
     return committeeUid;
   }
 
@@ -1075,6 +1085,7 @@ export class CommitteeService {
         project_name?: string | null;
         project_slug?: string | null;
         is_foundation?: boolean | null;
+        sso_group_name?: string | null;
       }
     >();
 
@@ -1095,6 +1106,7 @@ export class CommitteeService {
             // consumers treat it as "no slug", never as an empty-string slug.
             project_slug: enrichedCommittee?.project_slug || null,
             is_foundation: enrichedCommittee?.is_foundation ?? null,
+            sso_group_name: committee.sso_group_name || null,
           });
         }
       }
@@ -1117,6 +1129,7 @@ export class CommitteeService {
         project_name: context?.project_name ?? null,
         project_slug: context?.project_slug ?? null,
         is_foundation: context?.is_foundation ?? null,
+        sso_group_name: context?.sso_group_name ?? null,
         category: context?.category ?? null,
         role: invite.role ?? null,
         invitee_email: invite.invitee_email,

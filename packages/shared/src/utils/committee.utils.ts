@@ -90,9 +90,12 @@ export function getGroupCommands(committee: Pick<Committee, 'uid' | 'is_foundati
 /**
  * True when a `/groups/:id` (or lens-prefixed) route param names this committee — either by UID
  * or by vanity `sso_group_name` slug (case-insensitive). Authenticated vanity URLs keep the slug
- * in the route while the loaded payload carries the UID (GH #2072).
+ * in the route while the loaded payload carries the UID (GH-2072).
  */
-export function committeeRouteIdMatches(routeId: string | null | undefined, committee: Pick<Committee, 'uid' | 'sso_group_name'> | null | undefined): boolean {
+export function committeeRouteIdMatches(
+  routeId: string | null | undefined,
+  committee: (Pick<Committee, 'uid'> & { sso_group_name?: string | null }) | null | undefined
+): boolean {
   if (!routeId || !committee?.uid) {
     return false;
   }

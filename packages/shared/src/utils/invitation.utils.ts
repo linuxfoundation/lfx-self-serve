@@ -5,6 +5,7 @@ import { PENDING_ACTION_BUTTON_ICON, PENDING_ACTION_SEVERITY } from '../constant
 import { PendingActionItem } from '../interfaces/components.interface';
 import type { CommitteeOrganizationFormValue, CommitteeOrganizationReference, PendingInvitation } from '../interfaces/committee.interface';
 import type { WorkExperienceEntry } from '../interfaces/profile.interface';
+import { committeeRouteIdMatches } from './committee.utils';
 
 /**
  * Returns true when a committee requires organization on invite create/accept.
@@ -161,18 +162,23 @@ export function buildInvitationActions(invitations: PendingInvitation[]): Pendin
  *
  * Shared by the group-detail invite banner: it matches the shared invitation cache against the
  * committee being viewed, excluding any invite already accepted/declined this session (so the banner
- * disappears the moment the user acts, in sync with the other surfaces). Returns null when there is
- * no committee UID or no matching pending invite.
+ * disappears the moment the user acts, in sync with the other surfaces). `committeeId` may be a UID
+ * or a vanity `sso_group_name` slug (GH-2072). Returns null when there is no committee id or no
+ * matching pending invite.
  */
 export function findPendingInvitationForCommittee(
   invitations: PendingInvitation[],
   resolvedUids: ReadonlySet<string>,
-  committeeUid: string | null | undefined
+  committeeId: string | null | undefined
 ): PendingInvitation | null {
-  if (!committeeUid) {
+  if (!committeeId) {
     return null;
   }
-  return invitations.find((invite) => invite.committee_uid === committeeUid && !resolvedUids.has(invite.uid)) ?? null;
+  return (
+    invitations.find(
+      (invite) => !resolvedUids.has(invite.uid) && committeeRouteIdMatches(committeeId, { uid: invite.committee_uid, sso_group_name: invite.sso_group_name })
+    ) ?? null
+  );
 }
 
 /**

@@ -174,7 +174,7 @@ export class CommitteeController {
 
       // Vanity `/groups/<sso_group_name>` URLs land here with a slug, not a UID. Resolve first so
       // Heimdall's `committee:{uid}#viewer` check hits the object that actually has tuples
-      // (GH #2072). UUIDs pass through unchanged.
+      // (GH-2072). UUIDs pass through unchanged.
       const committeeUid = await this.committeeService.resolveCommitteeUid(req, id, {
         operation: 'get_committee_by_id',
         service: 'committee_controller',

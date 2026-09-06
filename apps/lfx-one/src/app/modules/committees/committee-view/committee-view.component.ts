@@ -317,7 +317,7 @@ export class CommitteeViewComponent {
     const state = this.meetingCoordinatorState();
     const committee = this.committee();
     // Route param may be a vanity slug while `state.committeeUid` / `committee.uid` are UUIDs
-    // (GH #2072). Compare the loaded committee to the route, then confirm the probe belongs to it.
+    // (GH-2072). Compare the loaded committee to the route, then confirm the probe belongs to it.
     return !committeeRouteIdMatches(this.committeeId(), committee) || state.committeeUid !== committee?.uid || state.loading;
   });
   // Only trusts the resolved grant once meetingCoordinatorState belongs to the CURRENT committee —
@@ -962,7 +962,7 @@ export class CommitteeViewComponent {
           // navigating between groups (e.g. a parent/subgroup link) would otherwise misread a still-
           // loading different group as a silent refresh and skip the retry window (Cursor Bugbot).
           // Vanity `/groups/<slug>` routes keep the slug in the param while `committee.uid` is the
-          // UUID — treat slug and UID as the same committee (GH #2072).
+          // UUID — treat slug and UID as the same committee (GH-2072).
           const isInitialLoad = !committeeRouteIdMatches(committeeId, this.committee());
 
           return this.readCommitteeToleratingPropagation(committeeId, isInitialLoad).pipe(
@@ -1270,10 +1270,10 @@ export class CommitteeViewComponent {
       // on route.paramMap); `committee()` — and therefore `uid` below — only catches up once the
       // async committee fetch resolves. Comparing the two detects the in-between window where
       // engagement()/engagementLoading still reflect the PREVIOUS committee (Cursor Bugbot).
-      // Vanity URLs keep a slug in the route while `uid` is the UUID (GH #2072).
+      // Vanity URLs keep a slug in the route while `uid` is the UUID (GH-2072).
       routeCommitteeId: this.committeeId(),
       uid: this.committee()?.uid ?? null,
-      ssoGroupName: this.committee()?.sso_group_name ?? null,
+      ssoGroupName: this.committee()?.sso_group_name,
       window: this.engagementWindow(),
       // FeatureFlagService.providerReady() — not initialized(), which only confirms user context was
       // applied to the LaunchDarkly client, not that the provider has actually streamed real flag
@@ -1346,8 +1346,8 @@ export class CommitteeViewComponent {
           // committee/window data with no loading indicator. Clear immediately (not EMPTY, which
           // would preserve it) and show the skeleton. Distinct from an ordinary same-committee
           // roleLoading refresh below, where the still-valid prior data should keep rendering.
-          // Vanity slugs must not be treated as a different committee than the loaded UID (GH #2072).
-          if (!committeeRouteIdMatches(routeCommitteeId, { uid, sso_group_name: ssoGroupName ?? undefined })) {
+          // Vanity slugs must not be treated as a different committee than the loaded UID (GH-2072).
+          if (!committeeRouteIdMatches(routeCommitteeId, { uid, sso_group_name: ssoGroupName })) {
             this.engagementLoading.set(true);
             return of(null);
           }
