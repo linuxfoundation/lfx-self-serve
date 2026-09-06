@@ -936,6 +936,8 @@ export interface PastMeetingParticipant {
   is_invited: boolean;
   /** Whether the attendee record has been verified (attendee only) */
   is_verified?: boolean;
+  /** Whether the attendee could not be matched to any known user (attendee only) */
+  is_unknown?: boolean;
   /** Whether the attendee record was last updated via AI reconciliation (attendee only) */
   is_ai_reconciled?: boolean;
   /** Whether the attendee was automatically matched to an invitee by name (attendee only) */
@@ -1065,6 +1067,8 @@ export interface ITXUpdatePastMeetingParticipantRequest {
   committee_voting_status?: string;
   /** Whether the attendee has been verified (attendee only) */
   is_verified?: boolean;
+  /** Whether the attendee is marked as unknown (attendee only) */
+  is_unknown?: boolean;
   /** Whether the attendee record was updated via AI reconciliation (attendee only) */
   is_ai_reconciled?: boolean;
   /** Whether the attendee name was auto-matched to a registrant's email (attendee only) */

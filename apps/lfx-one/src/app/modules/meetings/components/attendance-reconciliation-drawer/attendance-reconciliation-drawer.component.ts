@@ -99,9 +99,10 @@ export class AttendanceReconciliationDrawerComponent {
   }
 
   /**
-   * Attaches the AI's suggested candidate identity to the attendee record. Cannot yet clear
-   * `is_unknown` upstream — that field is absent from ITXUpdatePastMeetingParticipantRequest until
-   * lfx-v2-meeting-service#276 merges and deploys.
+   * Attaches the suggested candidate identity to the attendee record. `is_ai_reconciled` reflects
+   * `result.method` rather than being hardcoded — a degraded candidate pool routes even a
+   * deterministic high-confidence match into Needs Review (see attendance-reconciliation.service.ts),
+   * and confirming that row must not mislabel it as AI-derived.
    */
   public confirmMatch(result: AttendanceReconciliationResult): void {
     const candidate = result.matched_candidate;
@@ -115,7 +116,8 @@ export class AttendanceReconciliationDrawerComponent {
       first_name: candidate.first_name,
       last_name: candidate.last_name,
       is_verified: true,
-      is_ai_reconciled: true,
+      is_unknown: false,
+      is_ai_reconciled: result.method === 'ai',
     });
   }
 
@@ -136,9 +138,7 @@ export class AttendanceReconciliationDrawerComponent {
   }
 
   /**
-   * Persists a manually-entered identity for this attendee. Reuses the item-3 update-participant
-   * route already wired for real — only the upstream ITX identity-attach behavior behind it is
-   * pending lfx-v2-meeting-service#276.
+   * Persists a manually-entered identity for this attendee via the item-3 update-participant route.
    */
   public submitAssign(result: AttendanceReconciliationResult): void {
     const form = this.assignForm.value;
@@ -155,17 +155,19 @@ export class AttendanceReconciliationDrawerComponent {
       first_name: (form.first_name ?? '').trim() || undefined,
       last_name: (form.last_name ?? '').trim() || undefined,
       is_verified: true,
+      is_unknown: false,
       is_ai_reconciled: false,
     });
   }
 
   /**
    * Marks the attendee reviewed without attaching an identity — the explicit admin decision this
-   * repo's "never silently auto-tag unknown" rule requires for low/none confidence rows. Cannot yet
-   * persist a true `is_unknown` flag upstream until lfx-v2-meeting-service#276 merges and deploys.
+   * repo's "never silently auto-tag unknown" rule requires for low/none confidence rows. Sets
+   * `is_unknown: true` so the reconciliation service's unverified filter excludes this attendee on
+   * future runs instead of re-selecting it every time the drawer reopens.
    */
   public leaveUnknown(result: AttendanceReconciliationResult): void {
-    this.runRowAction(result.attendee_id, { is_attended: true, is_verified: false, is_ai_reconciled: false });
+    this.runRowAction(result.attendee_id, { is_attended: true, is_verified: false, is_unknown: true, is_ai_reconciled: false });
   }
 
   // === Protected Methods ===

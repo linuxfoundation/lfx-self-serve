@@ -98,9 +98,10 @@
                 }
               </div>
 
-              @if (result.matched_candidate && activeTab() !== 'auto-matched') {
+              @if (result.matched_candidate) {
                 <div class="text-xs text-gray-500 pl-11">
-                  Suggested: {{ result.matched_candidate.first_name }} {{ result.matched_candidate.last_name }}&nbsp;
+                  {{ activeTab() === 'auto-matched' ? 'Matched' : 'Suggested' }}: {{ result.matched_candidate.first_name }}
+                  {{ result.matched_candidate.last_name }}&nbsp;
                   @if (result.matched_candidate.email) {
                     ({{ result.matched_candidate.email }})
                   }

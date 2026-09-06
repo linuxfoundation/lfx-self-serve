@@ -136,12 +136,27 @@ describe('AttendanceReconciliationDrawerComponent', () => {
       first_name: candidate.first_name,
       last_name: candidate.last_name,
       is_verified: true,
+      is_unknown: false,
       is_ai_reconciled: true,
     });
     expect(fixture.componentInstance.needsReviewResults()).toEqual([]);
   });
 
-  it('leaveUnknown marks the attendee reviewed without attaching an identity', async () => {
+  it('confirmMatch marks is_ai_reconciled false for a deterministic match', async () => {
+    const candidate = { email: 'jane@example.com', username: 'jdoe', lf_user_id: 'lfid-1', first_name: 'Jane', last_name: 'Doe' };
+    const result = buildResult({ attendee_id: 'a8', confidence: 'high', method: 'deterministic', matched_candidate: candidate as never });
+    reconcilePastMeetingParticipants.mockReturnValue(of(buildResponse([result])));
+
+    const fixture = createComponent();
+    await openDrawer(fixture);
+
+    fixture.componentInstance.confirmMatch(result);
+    await TestBed.inject(ApplicationRef).whenStable();
+
+    expect(updatePastMeetingParticipant).toHaveBeenCalledWith(PAST_MEETING_ID, 'a8', expect.objectContaining({ is_ai_reconciled: false }));
+  });
+
+  it('leaveUnknown marks the attendee reviewed and persists is_unknown so it is excluded from future runs', async () => {
     const result = buildResult({ attendee_id: 'a2', confidence: 'none' });
     reconcilePastMeetingParticipants.mockReturnValue(of(buildResponse([result])));
 
@@ -151,7 +166,12 @@ describe('AttendanceReconciliationDrawerComponent', () => {
     fixture.componentInstance.leaveUnknown(result);
     await TestBed.inject(ApplicationRef).whenStable();
 
-    expect(updatePastMeetingParticipant).toHaveBeenCalledWith(PAST_MEETING_ID, 'a2', { is_attended: true, is_verified: false, is_ai_reconciled: false });
+    expect(updatePastMeetingParticipant).toHaveBeenCalledWith(PAST_MEETING_ID, 'a2', {
+      is_attended: true,
+      is_verified: false,
+      is_unknown: true,
+      is_ai_reconciled: false,
+    });
     expect(fixture.componentInstance.unmatchedResults()).toEqual([]);
   });
 
@@ -186,7 +206,7 @@ describe('AttendanceReconciliationDrawerComponent', () => {
     expect(updatePastMeetingParticipant).toHaveBeenCalledWith(
       PAST_MEETING_ID,
       'a4',
-      expect.objectContaining({ is_attended: true, email: 'manual@example.com', is_verified: true, is_ai_reconciled: false })
+      expect.objectContaining({ is_attended: true, email: 'manual@example.com', is_verified: true, is_unknown: false, is_ai_reconciled: false })
     );
     expect(fixture.componentInstance.assigningAttendeeId()).toBeNull();
   });

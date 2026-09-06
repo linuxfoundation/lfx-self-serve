@@ -64,7 +64,7 @@ export class AttendanceReconciliationService {
     logger.debug(req, 'reconcile_attendance_pool', 'Starting attendance reconciliation', { past_meeting_id: pastMeetingUid });
 
     const participants = await this.meetingService.getPastMeetingParticipants(req, pastMeetingUid, true);
-    const unverified = participants.filter((p) => p.is_attended && !p.is_verified);
+    const unverified = participants.filter((p) => p.is_attended && !p.is_verified && !p.is_unknown);
 
     if (unverified.length === 0) {
       return { results: [], candidate_pool_size: 0, auto_applied_count: 0, needs_review_count: 0, pool_degraded: false };
