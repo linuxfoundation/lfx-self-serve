@@ -62,6 +62,7 @@ import { CategoryAvatarColorPipe } from '@pipes/category-avatar-color.pipe';
 import { InitialsPipe } from '@pipes/initials.pipe';
 import { InvitationSubtextPipe } from '@pipes/invitation-subtext.pipe';
 import { JoinModeLabelPipe } from '@pipes/join-mode-label.pipe';
+import { CharterDialogComponent } from '../components/charter-dialog/charter-dialog.component';
 import { DescriptionDialogComponent } from '../components/description-dialog/description-dialog.component';
 import { MessageService } from 'primeng/api';
 import {
@@ -530,6 +531,38 @@ export class CommitteeViewComponent {
       },
       error: (err: HttpErrorResponse) => {
         this.messageService.add({ severity: 'error', summary: 'Error', detail: getHttpErrorDetail(err, 'Failed to update description. Please try again.') });
+      },
+    });
+  }
+
+  public openEditCharter(): void {
+    const ref = this.dialogService.open(CharterDialogComponent, {
+      header: this.committee()?.charter?.url ? 'Edit Charter' : 'Add Charter',
+      width: '560px',
+      modal: true,
+      closable: true,
+      draggable: false,
+      data: { url: this.committee()?.charter?.url || '' },
+    });
+    ref?.onClose.pipe(take(1)).subscribe((newUrl: string | undefined) => {
+      if (newUrl !== undefined) {
+        this.saveCharter(newUrl);
+      }
+    });
+  }
+
+  public saveCharter(url: string): void {
+    const committee = this.committee();
+    if (!committee) {
+      return;
+    }
+    this.committeeService.updateCommittee(committee.uid, { charter: { url } }).subscribe({
+      next: () => {
+        this.messageService.add({ severity: 'success', summary: 'Success', detail: 'Charter updated' });
+        this.refreshCommittee();
+      },
+      error: (err: HttpErrorResponse) => {
+        this.messageService.add({ severity: 'error', summary: 'Error', detail: getHttpErrorDetail(err, 'Failed to update charter. Please try again.') });
       },
     });
   }

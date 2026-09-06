@@ -203,6 +203,56 @@
     </div>
   </lfx-card>
 
+  <!-- Charter -->
+  <lfx-card data-testid="committee-about-charter-card">
+    <div class="flex flex-col gap-2">
+      <h3 class="text-sm font-semibold text-gray-900">Charter</h3>
+      <div class="flex items-start gap-2">
+        @if (committee().charter?.url) {
+          <div class="flex-1 flex flex-col gap-1 min-w-0">
+            <a
+              [href]="committee().charter!.url"
+              target="_blank"
+              rel="noopener"
+              class="text-sm text-blue-600 hover:text-blue-800 break-all"
+              data-testid="committee-about-charter-link">
+              {{ committee().charter!.url }}
+            </a>
+            @if (committee().charter?.updated_by; as updatedBy) {
+              <span class="text-xs text-gray-400" data-testid="committee-about-charter-updated-by"
+                >Last updated by {{ updatedBy.name || updatedBy.username }}</span
+              >
+            }
+          </div>
+        } @else if (committee().charter; as charter) {
+          <span
+            class="text-gray-400 text-sm italic flex-1 underline decoration-dotted"
+            [pTooltip]="
+              'Removed by ' + (charter.updated_by?.name || charter.updated_by?.username || 'someone') + ' on ' + (charter.updated_at | date: 'MMM d, y')
+            "
+            tooltipPosition="top"
+            data-testid="committee-about-charter-empty"
+            >No charter yet</span
+          >
+        } @else {
+          <span class="text-gray-400 text-sm italic flex-1" data-testid="committee-about-charter-empty">No charter yet</span>
+        }
+        @if (canEdit()) {
+          <lfx-button
+            icon="fa-light fa-pen-to-square"
+            [text]="true"
+            [rounded]="true"
+            size="small"
+            severity="secondary"
+            [ariaLabel]="committee().charter?.url ? 'Edit charter' : 'Add charter'"
+            [tooltip]="committee().charter?.url ? 'Edit charter' : 'Add charter'"
+            (onClick)="editCharterRequested.emit()"
+            data-testid="committee-about-edit-charter-btn"></lfx-button>
+        }
+      </div>
+    </div>
+  </lfx-card>
+
   <!-- Visitor Join CTA. data-testid sits directly on the component host (no wrapper div) — the
        host still exists in the DOM even when GroupJoinCtaComponent renders neither of its own
        branches (e.g. an application-mode visitor), but a toBeVisible() check on it correctly fails

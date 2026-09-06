@@ -14,6 +14,7 @@ import { JoinModeLabelPipe } from '@pipes/join-mode-label.pipe';
 import { DialogService } from 'primeng/dynamicdialog';
 import { PopoverModule } from 'primeng/popover';
 import { SkeletonModule } from 'primeng/skeleton';
+import { TooltipModule } from 'primeng/tooltip';
 
 import { CommitteeChannelsCardComponent } from '../committee-channels-card/committee-channels-card.component';
 import { GroupJoinCtaComponent } from '../group-join-cta/group-join-cta.component';
@@ -37,6 +38,7 @@ import { openIcalSubscribeDialog } from '../../utils/ical-subscribe.util';
     TagComponent,
     SkeletonModule,
     PopoverModule,
+    TooltipModule,
     NgClass,
     GroupJoinCtaComponent,
     CommitteeChannelsCardComponent,
@@ -72,6 +74,7 @@ export class CommitteeAboutComponent {
   // Outputs
   public readonly joinRequested = output<void>();
   public readonly editDescriptionRequested = output<void>();
+  public readonly editCharterRequested = output<void>();
   public readonly parentProjectNavigationRequested = output<void>();
   public readonly parentGroupNavigationRequested = output<void>();
   public readonly subGroupNavigationRequested = output<Committee>();
