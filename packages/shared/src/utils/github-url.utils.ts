@@ -22,6 +22,9 @@ const GITHUB_OWNER_SEGMENT_RE = /^[A-Za-z0-9](?:-?[A-Za-z0-9])*$/;
 /** GitHub's account-name length limit; anything longer cannot be an owner. */
 const GITHUB_OWNER_MAX_LENGTH = 39;
 
+/** GitHub's repository-name length limit; anything longer cannot be a repository. */
+const GITHUB_REPO_MAX_LENGTH = 100;
+
 /**
  * First path segments github.com reserves for its OWN routes, which can never
  * be an account name. Without this, `github.com/orgs/<org>/repositories` — the
@@ -127,7 +130,7 @@ export function parseGithubUrlTarget(githubUrl: string): GithubUrlTarget | null 
   }
 
   const repo = segments[1].replace(/\.git$/, '');
-  if (!GITHUB_REPO_SEGMENT_RE.test(repo)) {
+  if (!GITHUB_REPO_SEGMENT_RE.test(repo) || repo.length > GITHUB_REPO_MAX_LENGTH) {
     return null;
   }
   return { kind: 'repository', owner, repo };

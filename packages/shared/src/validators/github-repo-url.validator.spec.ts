@@ -67,6 +67,11 @@ describe('githubRepoUrlValidator', () => {
     expect(validate('https://github.com/example-org/example_repo.v2')).toBeNull();
   });
 
+  it('rejects a repository name past GitHub’s 100-character limit', () => {
+    expect(validate(`https://github.com/example-org/${'r'.repeat(101)}`)).toEqual({ githubRepoUrl: { reason: 'unrecognized' } });
+    expect(validate(`https://github.com/example-org/${'r'.repeat(100)}`)).toBeNull();
+  });
+
   it('leaves emptiness to `required` so the two never double-report', () => {
     expect(validate('')).toBeNull();
     expect(validate('   ')).toBeNull();

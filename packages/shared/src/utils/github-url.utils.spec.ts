@@ -83,6 +83,21 @@ describe('parseGithubUrlTarget', () => {
     });
   });
 
+  it('holds the repository name to GitHub’s 100-character limit, measured after the .git suffix', () => {
+    expect(parseGithubUrlTarget(`https://github.com/example-org/${'r'.repeat(101)}`)).toBeNull();
+    expect(parseGithubUrlTarget(`https://github.com/example-org/${'r'.repeat(100)}`)).toEqual({
+      kind: 'repository',
+      owner: 'example-org',
+      repo: 'r'.repeat(100),
+    });
+    // `.git` is stripped first, so a 100-char repo written as `<name>.git` still parses.
+    expect(parseGithubUrlTarget(`https://github.com/example-org/${'r'.repeat(100)}.git`)).toEqual({
+      kind: 'repository',
+      owner: 'example-org',
+      repo: 'r'.repeat(100),
+    });
+  });
+
   it('returns null for github.com’s own reserved routes rather than reading them as an owner/repo', () => {
     // `/orgs/<org>/repositories` is what a user copies out of an organization's
     // repository list; read positionally it looks exactly like `owner/repo`.
