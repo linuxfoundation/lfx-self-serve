@@ -1,11 +1,11 @@
 // Copyright The Linux Foundation and each contributor to LFX.
 // SPDX-License-Identifier: MIT
 
-import { computed, DestroyRef, Signal } from '@angular/core';
+import { DestroyRef, Signal } from '@angular/core';
 import { takeUntilDestroyed, toObservable } from '@angular/core/rxjs-interop';
 import { NavigationEnd, Router } from '@angular/router';
 import { EntityWithProject, ProjectContext } from '@lfx-one/shared/interfaces';
-import { computeIsFoundation } from '@lfx-one/shared/utils';
+import { computeIsFoundation, isSameProjectContext } from '@lfx-one/shared/utils';
 import { catchError, distinctUntilChanged, filter, map, merge, Observable, of, switchMap } from 'rxjs';
 
 import { ProjectContextService } from '../services/project-context.service';
@@ -117,15 +117,24 @@ export function syncEntityProjectContext<T extends EntityWithProject>(
  * as a `:projectUid` route param (newsletter edit/analytics, GH-1570) rather than inside the
  * entity payload. The URL is authoritative for the page's fetches, but page chrome (name/logo,
  * sidebar) follows `activeContext()`, which a stale cookie-restored context can leave pointing
- * at a different project. When the two disagree, resolve the route project by uid and re-point
- * the context via applyEntityProjectContext — the uid-only variant of the entity-signal syncs
- * above, for routes with no enriched entity payload.
+ * at a different project. Resolve the route project by uid and re-point the context via
+ * applyEntityProjectContext — the uid-only variant of the entity-signal syncs above, for routes
+ * with no enriched entity payload.
  *
- * The mismatch is computed over BOTH the route uid and `activeContextUid()`: the context write
- * makes them agree, which quiets the trigger, and a later route-lens re-assert (e.g. MainLayout
- * on `?step=N` navigations) flips the mismatch back on, so the correction self-heals without
- * NavigationEnd wiring. The re-apply hits the shareReplay-cached getProject — the route's guard
- * has already resolved the same uid on activation, so the happy path costs no extra request.
+ * Two triggers:
+ *  - Route-uid changes resolve at least once per activation, even when the active context's uid
+ *    already matches: a uid-equal cookie context can still carry a stale name/logo/slug or sit
+ *    under the wrong context kind (a foundation-owned newsletter under /project/newsletters), so
+ *    the write below only suppresses once the FULL context (isSameProjectContext) and the
+ *    computed kind both match. The resolve hits the shareReplay-cached getProject — the route's
+ *    guard already resolved the same uid on activation — so the happy path costs no request.
+ *  - NavigationEnd re-applies synchronously from the per-uid resolved cache: query-param-only
+ *    navigations (?step=N) don't re-run guards, but MainLayout.syncLensFromRoute re-asserts the
+ *    route's DECLARED lens kind on every navigation, clobbering this correction when the route
+ *    project contradicts the URL lens. Ordering is safe (MainLayout subscribed at bootstrap, so
+ *    its re-assert runs first on the same NavigationEnd), and applying before change detection
+ *    runs means chrome never renders the stale context — a post-hoc signal self-heal would
+ *    flash the wrong project for a frame per step change.
  *
  * Call once from the component constructor (injection context is required for toObservable).
  * A failed uid lookup resolves null (relation-gated `getProject(uid, false)`) and leaves the
@@ -138,32 +147,60 @@ export function reconcileRouteProjectContext(
   router: Router,
   destroyRef: DestroyRef
 ): void {
-  const unreconciledRouteProjectUid = computed(() => {
-    const uid = routeProjectUid();
-    if (!uid || uid === projectContextService.activeContextUid()) return null;
-    return uid;
-  });
+  // Resolved route projects by uid: populated on first resolve, read by NavigationEnd re-applies
+  // so they run synchronously (pre-change-detection) instead of healing a frame late.
+  const resolvedCache = new Map<string, { context: ProjectContext; isFoundation: boolean }>();
 
-  toObservable(unreconciledRouteProjectUid)
+  const routeProjectChange$ = toObservable(routeProjectUid).pipe(distinctUntilChanged());
+  const navigationReapply$ = router.events.pipe(
+    filter((event) => event instanceof NavigationEnd),
+    map(() => routeProjectUid())
+  );
+
+  merge(routeProjectChange$, navigationReapply$)
     .pipe(
-      filter((uid): uid is string => uid !== null),
-      switchMap((uid) => projectService.getProject(uid, false)),
+      filter((uid): uid is string => !!uid),
+      switchMap((uid) => {
+        const cached = resolvedCache.get(uid);
+        if (cached) {
+          return of(cached);
+        }
+        return projectService.getProject(uid, false).pipe(
+          map((project) => {
+            // null = deleted/unknown project (or no viewer relation) — keep the
+            // existing context rather than erroring the page.
+            if (!project) return null;
+            const resolved = {
+              context: {
+                uid: project.uid,
+                name: project.name,
+                slug: project.slug,
+                parent_uid: project.parent_uid,
+                logoUrl: project.logo_url,
+              },
+              isFoundation: computeIsFoundation(project),
+            };
+            resolvedCache.set(uid, resolved);
+            return resolved;
+          })
+        );
+      }),
       takeUntilDestroyed(destroyRef)
     )
-    .subscribe((project) => {
-      // null = deleted/unknown project (or no viewer relation) — keep the
-      // existing context rather than erroring the page.
-      if (!project) return;
-      const context: ProjectContext = {
-        uid: project.uid,
-        name: project.name,
-        slug: project.slug,
-        parent_uid: project.parent_uid,
-        logoUrl: project.logo_url,
-      };
+    .subscribe((resolved) => {
+      if (!resolved) return;
+      // Suppress the repeat only once the FULL context (isSameProjectContext compares
+      // name/slug/logoUrl, not just uid) and the computed kind both match — a uid-equal cookie
+      // context can still carry stale chrome or sit under the wrong kind.
+      if (
+        projectContextService.activeRouteLensKind() === (resolved.isFoundation ? 'foundation' : 'project') &&
+        isSameProjectContext(projectContextService.activeContext(), resolved.context)
+      ) {
+        return;
+      }
       // Mirror syncEntityProjectContext: only write ?project= to the URL when already present.
       const syncUrl = 'project' in router.parseUrl(router.url).queryParams;
-      applyEntityProjectContext(projectContextService, context, computeIsFoundation(project), syncUrl);
+      applyEntityProjectContext(projectContextService, resolved.context, resolved.isFoundation, syncUrl);
     });
 }
 
