@@ -339,6 +339,31 @@ export class SidebarNavService {
     { initialValue: '' }
   );
 
+  /**
+   * Bootstraps `PersonaService.isAuditor`/`isRootWriter` (via a root-scoped, no-slug
+   * `refreshEnrichedPersonas` probe) whenever an authenticated user is on the foundation lens — the
+   * same reactive-per-lens pattern `marketingPersonaSlug` above uses. Without this, a formation-team
+   * auditor with no other foundation grant could load straight into the foundation lens with those
+   * signals still at their `false` default and never see the Formations item.
+   */
+  private readonly foundationAuditorBootstrap: Signal<unknown> = toSignal(
+    toObservable(computed(() => this.userService.authenticated() && this.activeLens() === 'foundation')).pipe(
+      switchMap((shouldProbe) => (shouldProbe ? this.personaService.refreshEnrichedPersonas() : of(null)))
+    ),
+    { initialValue: null }
+  );
+
+  /**
+   * Mirrors `formationsQueueAuditorGuard`'s allow condition (`isAuditor || isRootWriter`) as a
+   * Signal — that guard is `CanActivate`-only (it needs to redirect via `UrlTree`), so it can't be
+   * called directly from here; this reproduces its exact check instead of duplicating the guard's
+   * redirect/observable plumbing under a different shape.
+   */
+  private readonly canSeeFormationsQueue = computed(() => {
+    this.foundationAuditorBootstrap();
+    return this.personaService.isRootWriter() || this.personaService.isAuditor();
+  });
+
   // --- Foundation Lens Items ---
   private readonly foundationLensItems = computed((): SidebarMenuItem[] => {
     // Marketing-only FGA users (marketing_auditor / campaign_manager with no board, root-writer,
@@ -373,7 +398,14 @@ export class SidebarNavService {
           label: 'Events',
           icon: 'fa-light fa-ticket',
           routerLink: '/foundation/events',
-        },
+        }
+      );
+
+      if (this.isFormationEnabled() && this.canSeeFormationsQueue()) {
+        items.push(this.formationsQueueNavItem);
+      }
+
+      items.push(
         {
           label: MAILING_LIST_LABEL.plural,
           icon: 'fa-light fa-envelope',
@@ -464,6 +496,14 @@ export class SidebarNavService {
     // `/foundation/mktg-os-agents` is already routed and guarded for this lens.
     if (this.isMktgOsAgentsEnabled() && !this.hasFullFoundationAccess()) {
       items.push(this.foundationMktgOsAgentsNavItem);
+    }
+
+    // A root `auditor` FGA grant reaches this lens without any of hasFullFoundationAccess's grants
+    // (board role, root-writer, LF-staff, writer-foundation) — same reduced-sidebar situation as
+    // marketing-only FGA users above. Surface Formations here too, or an auditor-only formation-team
+    // member has no way into a route `formationsQueueAuditorGuard` already lets them reach.
+    if (this.isFormationEnabled() && this.canSeeFormationsQueue() && !this.hasFullFoundationAccess()) {
+      items.push(this.formationsQueueNavItem);
     }
 
     const marketingSection = this.marketingSectionItem();
@@ -567,6 +607,14 @@ export class SidebarNavService {
     icon: 'fa-light fa-list-check',
     routerLink: '/project/formation',
     testId: 'sidebar-project-formation',
+  };
+
+  // --- Foundation — Formations queue (GH-1958; dark-launched, auditor-only) ---
+  private readonly formationsQueueNavItem: SidebarMenuItem = {
+    label: 'Formations',
+    icon: 'fa-light fa-list-check',
+    routerLink: '/foundation/formations',
+    testId: 'sidebar-foundation-formations',
   };
 
   // --- Project / Foundation — Mktg OS agents (dark-launched; inserted directly under Documents) ---

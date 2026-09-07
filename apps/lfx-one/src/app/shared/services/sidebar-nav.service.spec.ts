@@ -36,6 +36,7 @@ describe('SidebarNavService', () => {
   const activeProjectStage = signal<string | null>(null);
   const hasFullFoundationAccess = signal(true);
   const currentPersona = signal('executive-director');
+  const isAuditor = signal(false);
 
   const labels = (items: SidebarMenuItem[]): string[] => items.map((item) => item.label);
 
@@ -55,6 +56,7 @@ describe('SidebarNavService', () => {
     activeProjectStage.set(null);
     hasFullFoundationAccess.set(true);
     currentPersona.set('executive-director');
+    isAuditor.set(false);
 
     TestBed.configureTestingModule({
       providers: [
@@ -86,6 +88,7 @@ describe('SidebarNavService', () => {
             marketingGrantSlug: signal(null),
             isMarketingAuditor: signal(false),
             isCampaignManager: signal(false),
+            isAuditor,
             refreshEnrichedPersonas: vi.fn(() => of({})),
           },
         },
@@ -276,5 +279,59 @@ describe('SidebarNavService', () => {
     // The two flags are independent: EasyCLA must not displace ROI's slot, or vice versa.
     expect(itemLabels.indexOf('ROI Metrics')).toBe(itemLabels.indexOf('Projects') + 1);
     expect(engagementLabels.indexOf('EasyCLA')).toBe(engagementLabels.indexOf('Code Contributions') + 1);
+  });
+
+  it('inserts Formations between Events and Mailing Lists on foundation lens for a full-access user when the flag is on', () => {
+    formationEnabled.set(true);
+
+    const items = TestBed.inject(SidebarNavService).sidebarItems();
+    const itemLabels = labels(items);
+
+    expect(findByLink(items, '/foundation/formations')).toEqual(
+      expect.objectContaining({
+        label: 'Formations',
+        routerLink: '/foundation/formations',
+        testId: 'sidebar-foundation-formations',
+      })
+    );
+    expect(itemLabels.indexOf('Formations')).toBe(itemLabels.indexOf('Events') + 1);
+    expect(itemLabels.indexOf('Mailing Lists')).toBe(itemLabels.indexOf('Formations') + 1);
+  });
+
+  it('still shows Formations for an auditor without full foundation sidebar access when the flag is on', () => {
+    formationEnabled.set(true);
+    hasFullFoundationAccess.set(false);
+    currentPersona.set('contributor');
+    isAuditor.set(true);
+
+    const items = TestBed.inject(SidebarNavService).sidebarItems();
+
+    expect(findByLink(items, '/foundation/formations')).toEqual(
+      expect.objectContaining({
+        label: 'Formations',
+        routerLink: '/foundation/formations',
+      })
+    );
+    expect(labels(items)).not.toContain('Dashboard');
+  });
+
+  it('hides Formations on foundation lens when the flag is off, even for an auditor', () => {
+    formationEnabled.set(false);
+    isAuditor.set(true);
+
+    const items = TestBed.inject(SidebarNavService).sidebarItems();
+
+    expect(findByLink(items, '/foundation/formations')).toBeUndefined();
+  });
+
+  it('hides Formations on foundation lens for a user who is neither auditor nor root-writer, even when the flag is on', () => {
+    formationEnabled.set(true);
+    hasFullFoundationAccess.set(false);
+    currentPersona.set('contributor');
+    isAuditor.set(false);
+
+    const items = TestBed.inject(SidebarNavService).sidebarItems();
+
+    expect(findByLink(items, '/foundation/formations')).toBeUndefined();
   });
 });
