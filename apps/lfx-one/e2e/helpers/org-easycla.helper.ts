@@ -39,6 +39,9 @@ export function claGroup(overrides: Partial<OrgClaGroup> = {}): OrgClaGroup {
     id: 'signature-uuid-1',
     claGroupId: 'cla-group-uuid-1',
     claGroupName: 'Nimbus Foundation CLA',
+    // Present on every fixture row so the signing-entity subline renders: the server sends it only
+    // when it differs from the organization's own name, which is what makes the subline meaningful.
+    signingEntityName: 'Acme Motors GmbH',
     foundationName: 'Nimbus Foundation',
     projects: [{ projectSfid: 'a09410000182dD3AAI', projectName: 'Cascade' }],
     status: 'signed',

@@ -49,6 +49,19 @@ export class OrgEasyclaCardComponent {
     return foundationName ? [foundationName, projectsChip] : [projectsChip];
   });
 
+  /**
+   * Names the signing entity, and says it signed only where the status says so.
+   *
+   * "Signed by" is an assertion in its own right, sitting under a pill that may read "Not
+   * started" — the card would then both deny and affirm the same agreement. Only `signed`
+   * licenses the word: `not-started` has not been signed, and `sanctioned` deliberately says
+   * nothing about signedness, since it is what the status collapses toward when both are true.
+   */
+  protected readonly signingEntityLabel = computed(() => {
+    const { signingEntityName, status } = this.claGroup();
+    return status === 'signed' ? `Signed by ${signingEntityName}` : `Signing entity: ${signingEntityName}`;
+  });
+
   protected readonly managersLabel = computed(() => {
     const count = this.claGroup().claManagersCount;
     return `CLA Manager${count === 1 ? '' : 's'}`;

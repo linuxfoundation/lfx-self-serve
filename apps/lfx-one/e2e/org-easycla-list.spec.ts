@@ -85,6 +85,12 @@ test.describe('Org Lens EasyCLA list — content', () => {
     // about what this organization has agreed to.
     await expect(card('Lumen CLA').getByTestId('org-easycla-card-status')).toHaveText('Not started');
     await expect(card('Lumen CLA').getByTestId('org-easycla-card-status')).not.toHaveText('Signed');
+
+    // And the whole card must agree with its own pill: the signing-entity subline is a second
+    // claim about the same agreement, so an unsigned card must not carry "Signed by" beneath a
+    // pill that reads "Not started".
+    await expect(card('Lumen CLA')).not.toContainText('Signed by');
+    await expect(card('Nimbus Foundation CLA').getByTestId('org-easycla-card-signing-entity')).toContainText('Signed by');
   });
 
   test('reports counts, agreeing in number, and marks an unavailable count as unavailable', async ({ page }) => {

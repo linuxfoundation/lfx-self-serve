@@ -54,9 +54,26 @@ describe('OrgEasyclaCardComponent', () => {
     });
 
     it('shows the signing entity when the server sent one', async () => {
-      const fixture = await render(claGroup({ signingEntityName: 'Vertex Robotics GmbH' }));
+      const fixture = await render(claGroup({ signingEntityName: 'Vertex Robotics GmbH', status: 'signed' }));
 
-      expect(textOf(fixture, 'org-easycla-card-signing-entity')).toContain('Vertex Robotics GmbH');
+      expect(textOf(fixture, 'org-easycla-card-signing-entity')).toBe('Signed by Vertex Robotics GmbH');
+    });
+
+    // The subline is a claim of its own, sitting under the status pill. Saying "Signed by" beneath
+    // a pill reading "Not started" makes the card deny and affirm the same agreement at once.
+    it('does not say the entity signed when the agreement is not signed', async () => {
+      const fixture = await render(claGroup({ signingEntityName: 'Vertex Robotics GmbH', status: 'not-started' }));
+
+      expect(textOf(fixture, 'org-easycla-card-signing-entity')).toBe('Signing entity: Vertex Robotics GmbH');
+      expect(textOf(fixture, 'org-easycla-card-signing-entity')).not.toContain('Signed by');
+    });
+
+    // Sanctioned is what the status collapses to when an agreement is both signed and sanctioned,
+    // so it carries no signedness of its own and the subline must not supply one.
+    it('stays non-committal about signing on a sanctioned agreement', async () => {
+      const fixture = await render(claGroup({ signingEntityName: 'Vertex Robotics GmbH', status: 'sanctioned' }));
+
+      expect(textOf(fixture, 'org-easycla-card-signing-entity')).not.toContain('Signed by');
     });
 
     // The server suppresses it when it matches the organization's own name, which is the common

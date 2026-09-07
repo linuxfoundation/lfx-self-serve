@@ -7,8 +7,8 @@
     <!-- Only when the signing entity differs from the organization — the server suppresses it
          otherwise, so this never repeats the page title. It is what distinguishes two cards that
          share a CLA Group name because the organization signed under several entities. -->
-    @if (claGroup().signingEntityName; as signingEntityName) {
-      <p class="text-xs text-gray-500" data-testid="org-easycla-card-signing-entity">Signed by {{ signingEntityName }}</p>
+    @if (claGroup().signingEntityName) {
+      <p class="text-xs text-gray-500" data-testid="org-easycla-card-signing-entity">{{ signingEntityLabel() }}</p>
     }
   </header>
 

@@ -570,23 +570,19 @@ export interface ClaRow {
 /**
  * Status of one organization CCLA, derived server-side (#1978).
  *
- * Upstream exposes signed-ness and the sanctions flag as two independent booleans; the card
- * has one slot, and sanctions win — presenting a sanctioned entity's agreement as ordinarily
- * signed is the more damaging of the two possible errors.
- *
- * The approved design's third value, "not started", is **not producible** here: the upstream
- * list is derived from signed + approved CCLA signatures, so every row it returns is signed.
- * An unsigned CLA Group is the Sign CLA flow's subject, not this list's. Recorded rather than
- * omitted so its absence does not read as a defect to someone comparing against the design.
- */
-/**
- * The three statuses the approved design's status pill carries.
+ * All three of the approved design's status values are reachable here. Upstream exposes
+ * signed-ness and the sanctions flag as two independent booleans; the card has one slot, and
+ * sanctions win — presenting a sanctioned entity's agreement as ordinarily signed is the more
+ * damaging of the two possible errors.
  *
  * `not-started` covers an agreement the CLA service reports as unsigned. The list is mostly
  * signed agreements, but it is not exclusively so — the producer passes the signature's own
  * signed flag through, and an unsigned record reaches the list. Rendering one as `signed`
  * would be a false statement about the organization's legal position, which is the same
  * failure the sanctions precedence and the empty-versus-failure split exist to prevent.
+ *
+ * Because signed-ness is folded in here rather than carried separately, copy elsewhere on the
+ * card must not assert signing on its own: only `signed` licenses the word.
  */
 export type OrgClaGroupStatus = 'signed' | 'not-started' | 'sanctioned';
 
