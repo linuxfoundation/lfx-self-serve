@@ -1,8 +1,8 @@
 // Copyright The Linux Foundation and each contributor to LFX.
 // SPDX-License-Identifier: MIT
 
-import { ChangeDetectionStrategy, Component, computed, effect, input, output } from '@angular/core';
-import { takeUntilDestroyed, toSignal } from '@angular/core/rxjs-interop';
+import { ChangeDetectionStrategy, Component, computed, input, output } from '@angular/core';
+import { takeUntilDestroyed, toObservable, toSignal } from '@angular/core/rxjs-interop';
 import { FormControl, FormGroup, ReactiveFormsModule } from '@angular/forms';
 import { ButtonComponent } from '@components/button/button.component';
 import { CalendarComponent } from '@components/calendar/calendar.component';
@@ -55,18 +55,19 @@ export class EnrollCustomPrerequisiteComponent {
   });
 
   public constructor() {
-    effect(() => {
-      const item = this.item();
-      this.form.patchValue(
-        {
-          name: item.name,
-          dueDate: item.dueDate ? parseMentorshipDateOnly(item.dueDate) : null,
-          description: item.description,
-          requireFile: item.requireFile === true,
-        },
-        { emitEvent: false }
-      );
-    });
+    toObservable(this.item)
+      .pipe(takeUntilDestroyed())
+      .subscribe((item) => {
+        this.form.patchValue(
+          {
+            name: item.name,
+            dueDate: item.dueDate ? parseMentorshipDateOnly(item.dueDate) : null,
+            description: item.description,
+            requireFile: item.requireFile === true,
+          },
+          { emitEvent: false }
+        );
+      });
 
     this.form.valueChanges.pipe(takeUntilDestroyed()).subscribe(() => this.emitChange());
   }

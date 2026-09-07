@@ -3,7 +3,7 @@
 
 import { ChangeDetectionStrategy, Component, computed, inject, signal } from '@angular/core';
 import { toSignal } from '@angular/core/rxjs-interop';
-import { FormControl, FormGroup, ReactiveFormsModule, Validators } from '@angular/forms';
+import { AbstractControl, FormControl, FormGroup, ReactiveFormsModule, Validators } from '@angular/forms';
 import { ButtonComponent } from '@components/button/button.component';
 import { CalendarComponent } from '@components/calendar/calendar.component';
 import { InputTextComponent } from '@components/input-text/input-text.component';
@@ -17,6 +17,7 @@ import {
   parseMentorshipMonthYear,
   toMentorshipDateOnly,
 } from '@lfx-one/shared/utils';
+import { trimmedRequired } from '@lfx-one/shared/validators';
 import { DynamicDialogConfig, DynamicDialogRef } from 'primeng/dynamicdialog';
 
 @Component({
@@ -38,7 +39,7 @@ export class EnrollTermDialogComponent {
   protected readonly dateErrors = signal<Record<string, string>>({});
 
   protected readonly form = new FormGroup({
-    name: new FormControl('', { nonNullable: true, validators: [Validators.required, Validators.maxLength(MENTORSHIP_TERM_NAME_MAX)] }),
+    name: new FormControl('', { nonNullable: true, validators: [trimmedRequired(), Validators.maxLength(MENTORSHIP_TERM_NAME_MAX)] }),
     startMonth: new FormControl('', { nonNullable: true, validators: [Validators.required] }),
     startYear: new FormControl('', { nonNullable: true, validators: [Validators.required] }),
     endMonth: new FormControl('', { nonNullable: true, validators: [Validators.required] }),
@@ -71,9 +72,9 @@ export class EnrollTermDialogComponent {
 
   protected onSubmit(): void {
     const name = this.form.controls.name.value.trim();
-    if (name.length > MENTORSHIP_TERM_NAME_MAX) {
-      this.form.controls.name.setValue(name.slice(0, MENTORSHIP_TERM_NAME_MAX), { emitEvent: false });
-    }
+    this.form.controls.name.setValue(name.slice(0, MENTORSHIP_TERM_NAME_MAX), { emitEvent: false });
+    this.clearManualOrderError(this.form.controls.endYear);
+    this.clearManualOrderError(this.form.controls.applicationEndDate);
 
     if (this.form.invalid) {
       this.showErrors.set(true);
@@ -117,5 +118,13 @@ export class EnrollTermDialogComponent {
     };
 
     this.dialogRef.close(term);
+  }
+
+  private clearManualOrderError(control: AbstractControl): void {
+    const errors = control.errors;
+    if (!errors?.['order']) return;
+    const next = { ...errors };
+    delete next['order'];
+    control.setErrors(Object.keys(next).length ? next : null);
   }
 }

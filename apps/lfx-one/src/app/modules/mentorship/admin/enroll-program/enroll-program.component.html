@@ -12,7 +12,7 @@
         [text]="true"
         size="small"
         styleClass="!text-blue-600 !px-0 self-start"
-        routerLink="/mentorship/admin"
+        (onClick)="onCancel()"
         data-testid="mentorship-enroll-back-to-programs" />
       <div class="flex flex-col gap-1">
         <h1 class="font-display font-light text-2xl" data-testid="mentorship-enroll-title">Enroll a Program</h1>

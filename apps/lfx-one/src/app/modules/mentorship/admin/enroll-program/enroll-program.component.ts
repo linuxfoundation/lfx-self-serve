@@ -2,8 +2,8 @@
 // SPDX-License-Identifier: MIT
 
 import { isPlatformBrowser } from '@angular/common';
-import { ChangeDetectionStrategy, Component, computed, inject, PLATFORM_ID, signal } from '@angular/core';
-import { toSignal } from '@angular/core/rxjs-interop';
+import { ChangeDetectionStrategy, Component, computed, DestroyRef, inject, PLATFORM_ID, signal } from '@angular/core';
+import { takeUntilDestroyed, toSignal } from '@angular/core/rxjs-interop';
 import { FormControl, FormGroup, Validators } from '@angular/forms';
 import { Router } from '@angular/router';
 import { ButtonComponent } from '@components/button/button.component';
@@ -64,6 +64,7 @@ export class EnrollProgramComponent {
   private readonly messageService = inject(MessageService);
   private readonly confirmationService = inject(ConfirmationService);
   private readonly platformId = inject(PLATFORM_ID);
+  private readonly destroyRef = inject(DestroyRef);
 
   protected readonly form = new FormGroup({
     importProgramId: new FormControl('', { nonNullable: true }),
@@ -149,7 +150,7 @@ export class EnrollProgramComponent {
     const programName = this.form.controls.name.value.trim();
     if (current === 'details' && programName.length >= MENTORSHIP_ENROLL_NAME_MIN && this.nameLookupStatus() !== 'available') {
       this.showErrors.set(true);
-      const detail = this.nameLookupStatus() === 'loading' ? MENTORSHIP_ENROLL_NAME_CHECKING : MENTORSHIP_ENROLL_NAME_TAKEN;
+      const detail = this.nameLookupStatus() === 'taken' ? MENTORSHIP_ENROLL_NAME_TAKEN : MENTORSHIP_ENROLL_NAME_CHECKING;
       this.messageService.add({ severity: 'warn', summary: 'Check this step', detail, life: 4000 });
       return;
     }
@@ -157,7 +158,7 @@ export class EnrollProgramComponent {
     const ciiId = this.form.controls.ciiProjectId.value.trim();
     if (current === 'details' && ciiId && this.ciiLookupStatus() !== 'valid') {
       this.showErrors.set(true);
-      const detail = this.ciiLookupStatus() === 'loading' ? MENTORSHIP_CII_CHECKING : MENTORSHIP_CII_INVALID_ID;
+      const detail = this.ciiLookupStatus() === 'invalid' ? MENTORSHIP_CII_INVALID_ID : MENTORSHIP_CII_CHECKING;
       this.messageService.add({ severity: 'warn', summary: 'Check this step', detail, life: 4000 });
       return;
     }
@@ -175,10 +176,16 @@ export class EnrollProgramComponent {
   }
 
   protected onCiiLookupStatusChange(status: MentorshipCiiLookupStatus): void {
+    if (status === 'idle' && this.form.controls.ciiProjectId.value.trim()) {
+      return;
+    }
     this.ciiLookupStatus.set(status);
   }
 
   protected onNameLookupStatusChange(status: MentorshipNameLookupStatus): void {
+    if (status === 'idle' && this.form.controls.name.value.trim().length >= MENTORSHIP_ENROLL_NAME_MIN) {
+      return;
+    }
     this.nameLookupStatus.set(status);
   }
 
@@ -201,28 +208,31 @@ export class EnrollProgramComponent {
   private submitEnrollment(): void {
     if (this.submitting()) return;
     this.submitting.set(true);
-    this.mentorshipService.enrollProgram(this.toEnrollForm(this.form.getRawValue())).subscribe({
-      next: () => {
-        this.submitting.set(false);
-        this.revokeLogoPreview();
-        this.messageService.add({
-          severity: 'success',
-          summary: 'Enrollment submitted',
-          detail: 'Your program was submitted and is pending review.',
-          life: 5000,
-        });
-        void this.router.navigate(['/mentorship/admin']);
-      },
-      error: () => {
-        this.submitting.set(false);
-        this.messageService.add({
-          severity: 'error',
-          summary: 'Enrollment failed',
-          detail: 'Could not submit the program. Please try again.',
-          life: 5000,
-        });
-      },
-    });
+    this.mentorshipService
+      .enrollProgram(this.toEnrollForm(this.form.getRawValue()))
+      .pipe(takeUntilDestroyed(this.destroyRef))
+      .subscribe({
+        next: () => {
+          this.submitting.set(false);
+          this.revokeLogoPreview();
+          this.messageService.add({
+            severity: 'success',
+            summary: 'Enrollment submitted',
+            detail: 'Your program was submitted and is pending review.',
+            life: 5000,
+          });
+          void this.router.navigate(['/mentorship/admin']);
+        },
+        error: () => {
+          this.submitting.set(false);
+          this.messageService.add({
+            severity: 'error',
+            summary: 'Enrollment failed',
+            detail: 'Could not submit the program. Please try again.',
+            life: 5000,
+          });
+        },
+      });
   }
 
   private toEnrollForm(value: Partial<MentorshipEnrollForm> = this.form.getRawValue()): MentorshipEnrollForm {

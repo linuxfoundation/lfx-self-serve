@@ -1,7 +1,7 @@
 // Copyright The Linux Foundation and each contributor to LFX.
 // SPDX-License-Identifier: MIT
 
-import { ChangeDetectionStrategy, Component, computed, effect, ElementRef, inject, input, output, signal, viewChild } from '@angular/core';
+import { ChangeDetectionStrategy, Component, computed, ElementRef, inject, input, output, signal, viewChild } from '@angular/core';
 import { takeUntilDestroyed, toObservable, toSignal } from '@angular/core/rxjs-interop';
 import { FormControl, FormGroup, ReactiveFormsModule } from '@angular/forms';
 import { ButtonComponent } from '@components/button/button.component';
@@ -10,6 +10,7 @@ import { RichEditorComponent } from '@components/rich-editor/rich-editor.compone
 import { SelectComponent } from '@components/select/select.component';
 import {
   formFromImportedMentorshipProgram,
+  isMentorshipProgramImportable,
   MENTORSHIP_CII_APPLY_URL,
   MENTORSHIP_CII_CHECKING,
   MENTORSHIP_CII_INTRO,
@@ -36,7 +37,23 @@ import {
 import { MentorshipCiiLookupStatus, MentorshipEnrollFieldErrors, MentorshipLfProject, MentorshipNameLookupStatus } from '@lfx-one/shared/interfaces';
 import { isMentorshipCiiProjectId, isMentorshipLogoFileName, mentorshipDescriptionLength } from '@lfx-one/shared/utils';
 import { MentorshipService } from '@services/mentorship.service';
-import { debounceTime, map, of, startWith, Subject, switchMap, timer } from 'rxjs';
+import {
+  catchError,
+  debounceTime,
+  distinctUntilChanged,
+  EMPTY,
+  exhaustMap,
+  map,
+  merge,
+  of,
+  share,
+  startWith,
+  Subject,
+  switchMap,
+  takeUntil,
+  tap,
+  timer,
+} from 'rxjs';
 
 @Component({
   selector: 'lfx-mentorship-enroll-details-step',
@@ -52,6 +69,8 @@ export class EnrollDetailsStepComponent {
 
   private readonly mentorshipService = inject(MentorshipService);
   private readonly lfFilter$ = new Subject<string>();
+  private readonly lfLoadMore$ = new Subject<void>();
+  protected readonly lfProjectItemSize = 40;
 
   protected readonly fileInput = viewChild<ElementRef<HTMLInputElement>>('fileInput');
   protected readonly logoError = signal('');
@@ -157,23 +176,67 @@ export class EnrollDetailsStepComponent {
   });
 
   public constructor() {
-    effect(() => this.ciiLookupStatusChange.emit(this.ciiLookup().status));
-    effect(() => this.nameLookupStatusChange.emit(this.nameLookup().status));
+    toObservable(this.ciiLookup)
+      .pipe(takeUntilDestroyed())
+      .subscribe((lookup) => this.ciiLookupStatusChange.emit(lookup.status));
+    toObservable(this.nameLookup)
+      .pipe(takeUntilDestroyed())
+      .subscribe((lookup) => this.nameLookupStatusChange.emit(lookup.status));
 
-    this.mentorshipService.getPrograms().subscribe({
-      next: (response) => {
-        this.importOptions.set([{ value: '', label: 'None' }, ...response.data.map((program) => ({ value: program.id, label: program.name }))]);
-        this.importLoading.set(false);
-      },
-      error: () => this.importLoading.set(false),
-    });
+    this.mentorshipService
+      .getPrograms()
+      .pipe(takeUntilDestroyed())
+      .subscribe({
+        next: (response) => {
+          this.importOptions.set([
+            { value: '', label: 'None' },
+            ...response.data.filter((program) => isMentorshipProgramImportable(program.id)).map((program) => ({ value: program.id, label: program.name })),
+          ]);
+          this.importLoading.set(false);
+        },
+        error: () => this.importLoading.set(false),
+      });
 
-    this.loadLfProjects('', 0, false);
+    const search$ = this.lfFilter$.pipe(debounceTime(300), startWith(''), distinctUntilChanged(), share());
 
-    this.lfFilter$.pipe(debounceTime(300), takeUntilDestroyed()).subscribe((search) => {
-      this.lfSearch = search;
-      this.loadLfProjects(search, 0, false);
-    });
+    const firstPage$ = search$.pipe(
+      tap((search) => {
+        this.lfSearch = search;
+        this.lfProjectsLoading.set(true);
+      }),
+      switchMap((search) =>
+        this.mentorshipService.getLfProjects({ search, offset: 0, limit: MENTORSHIP_LF_PROJECT_PAGE_SIZE }).pipe(
+          map((response) => ({ ...response, append: false as const })),
+          catchError(() => {
+            this.lfProjectsLoading.set(false);
+            return EMPTY;
+          })
+        )
+      )
+    );
+
+    const nextPage$ = this.lfLoadMore$.pipe(
+      exhaustMap(() => {
+        if (this.lfProjectsLoading() || this.lfProjects().length >= this.lfProjectsTotal()) return EMPTY;
+        this.lfProjectsLoading.set(true);
+        return this.mentorshipService.getLfProjects({ search: this.lfSearch, offset: this.lfProjects().length, limit: MENTORSHIP_LF_PROJECT_PAGE_SIZE }).pipe(
+          takeUntil(search$),
+          map((response) => ({ ...response, append: true as const })),
+          catchError(() => {
+            this.lfProjectsLoading.set(false);
+            return EMPTY;
+          })
+        );
+      })
+    );
+
+    merge(firstPage$, nextPage$)
+      .pipe(takeUntilDestroyed())
+      .subscribe((page) => {
+        this.lfProjects.set(page.append ? [...this.lfProjects(), ...page.data] : page.data);
+        this.lfProjectsTotal.set(page.total);
+        this.lfProjectsLoading.set(false);
+      });
   }
 
   protected onImportProgram(): void {
@@ -192,7 +255,7 @@ export class EnrollDetailsStepComponent {
   protected onLfLazyLoad(event?: { last?: number }): void {
     if (this.lfProjectsLoading() || this.lfProjects().length >= this.lfProjectsTotal()) return;
     if (event?.last !== undefined && event.last < this.lfProjects().length - 1) return;
-    this.loadLfProjects(this.lfSearch, this.lfProjects().length, true);
+    this.lfLoadMore$.next();
   }
 
   protected addTechnology(): void {
@@ -244,18 +307,6 @@ export class EnrollDetailsStepComponent {
 
   protected projectInitial(name: string): string {
     return name.trim().charAt(0).toUpperCase() || '?';
-  }
-
-  private loadLfProjects(search: string, offset: number, append: boolean): void {
-    this.lfProjectsLoading.set(true);
-    this.mentorshipService.getLfProjects({ search, offset, limit: MENTORSHIP_LF_PROJECT_PAGE_SIZE }).subscribe({
-      next: (response) => {
-        this.lfProjects.set(append ? [...this.lfProjects(), ...response.data] : response.data);
-        this.lfProjectsTotal.set(response.total);
-        this.lfProjectsLoading.set(false);
-      },
-      error: () => this.lfProjectsLoading.set(false),
-    });
   }
 
   private revokeLogoPreview(): void {
