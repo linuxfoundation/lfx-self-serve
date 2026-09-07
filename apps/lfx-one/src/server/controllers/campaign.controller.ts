@@ -770,9 +770,13 @@ export class CampaignController {
       return;
     }
 
-    // ABSENT means paid; an explicit unrecognised value is REJECTED. Callers predating this
-    // parameter are all paid — it is the only surface whose restore path was ever enabled — so an
-    // omitted value must keep restoring paid briefs exactly as before.
+    // ABSENT means paid; an explicit unrecognised value is REJECTED. A caller predating this
+    // parameter cannot say which surface it wants, and defaulting to paid is what keeps those
+    // callers restoring exactly as before.
+    //
+    // The default is a wire convention, not a statement about the stored row: pre-field email
+    // briefs exist and share this identity after the backfill
+    // (linuxfoundation/lfx-self-serve#2214).
     //
     // An earlier revision also narrowed an explicit typo to paid, reasoning that failing closed
     // toward the pre-existing behaviour could not expose a brief that was hidden before. True, and

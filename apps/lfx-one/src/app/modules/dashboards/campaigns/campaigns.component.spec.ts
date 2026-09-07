@@ -3744,9 +3744,13 @@ describe('CampaignsComponent — email delivery channel', () => {
       const keys = [key(paid), key(cfp), key(countdown)];
       expect(new Set(keys).size, `siblings of one event collapsed onto the same ownership key: ${JSON.stringify(keys)}`).toBe(3);
 
-      // A brief with no delivery type is a pre-000030 row, and every one of those was paid. It
-      // must land on the SAME key as an explicit paid brief, or restoring a legacy brief would
-      // orphan the ownership record written for the same row under its explicit identity.
+      // A brief with no delivery type normalizes to paid with an empty stage, so it must land on
+      // the SAME key as an explicit paid brief -- otherwise restoring a legacy brief would orphan
+      // the ownership record written for the same row under its explicit identity.
+      //
+      // That is a KEY-COMPATIBILITY requirement, not a claim about where such a row came from:
+      // pre-field email briefs exist and are indistinguishable after the backfill
+      // (linuxfoundation/lfx-self-serve#2214). This assertion holds either way.
       const legacy = { ...emailBrief, deliveryType: undefined, emailStage: undefined };
       expect(key(legacy)).toBe(key(paid));
     });
