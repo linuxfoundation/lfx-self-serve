@@ -267,7 +267,6 @@ export interface OrgLensProjectRow {
   TREND_DIRECTION: string | null;
   COMBINED_SCORE_SERIES: unknown;
   DBT_RUN_AT: string | Date | null;
-  HEALTH_OVERALL_SCORE_V2: number | null;
   HEALTH_SCORE_CATEGORY_V2: string | null;
   COVERED_CATEGORY_COUNT_V2: number | null;
   HEALTH_MAX_SCORE_V2: number | null;
