@@ -2,6 +2,7 @@
 // SPDX-License-Identifier: MIT
 
 import { expect, test } from '@playwright/test';
+import { skipWhenAuthMissing } from './helpers/auth.helper';
 // Imported from the module, not the `utils` barrel: the barrel re-exports form.utils, which pulls
 // in @angular/common and fails to load outside the Angular app with a JIT compiler error.
 import { ORG_LENS_ROI_METHOD_STORAGE_KEY } from '@lfx-one/shared/constants/org-lens-roi.constants';
@@ -20,6 +21,8 @@ import {
   orgRoiProjectDetailUrl,
   stubOrgLensContext,
 } from './helpers/org-roi.helper';
+
+test.beforeEach(() => skipWhenAuthMissing());
 
 test.setTimeout(120_000);
 

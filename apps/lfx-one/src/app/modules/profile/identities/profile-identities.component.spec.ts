@@ -60,9 +60,17 @@ describe('ProfileIdentitiesComponent — Flow C vs identity-link error ownership
     expect(add).toHaveBeenCalledWith(expect.objectContaining({ severity: 'error', detail: 'Social authentication failed. Please try again.' }));
   });
 
-  it('toasts the specific message for no_code', async () => {
+  // invalid_state/no_code moved into PROFILE_AUTH_ERROR_MESSAGES (owned by the layout) so a
+  // failure toasts on every /profile/* route, not just this tab — this component must now skip
+  // them the same as any other Flow C code.
+  it('does not toast invalid_state — the layout owns it', async () => {
+    const { add } = await setup({ error: 'invalid_state' });
+    expect(add).not.toHaveBeenCalled();
+  });
+
+  it('does not toast no_code — the layout owns it', async () => {
     const { add } = await setup({ error: 'no_code' });
-    expect(add).toHaveBeenCalledWith(expect.objectContaining({ severity: 'error', detail: 'Authorization did not complete. Please try again.' }));
+    expect(add).not.toHaveBeenCalled();
   });
 
   it('falls back to the generic message for an unmapped code', async () => {

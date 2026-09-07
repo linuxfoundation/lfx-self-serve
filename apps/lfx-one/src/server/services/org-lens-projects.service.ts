@@ -408,6 +408,8 @@ export class OrgLensProjectsService {
         FOUNDATION_LOGO_URL,
         HEALTH_OVERALL_SCORE_V2,
         HEALTH_SCORE_CATEGORY_V2,
+        COVERED_CATEGORY_COUNT_V2,
+        HEALTH_MAX_SCORE_V2,
         HEALTH_CONTRIBUTOR_PERCENTAGE,
         HEALTH_POPULARITY_PERCENTAGE,
         HEALTH_DEVELOPMENT_PERCENTAGE,
@@ -456,6 +458,8 @@ export class OrgLensProjectsService {
         DBT_RUN_AT,
         HEALTH_OVERALL_SCORE_V2,
         HEALTH_SCORE_CATEGORY_V2,
+        COVERED_CATEGORY_COUNT_V2,
+        HEALTH_MAX_SCORE_V2,
         HEALTH_CONTRIBUTOR_PERCENTAGE,
         HEALTH_POPULARITY_PERCENTAGE,
         HEALTH_DEVELOPMENT_PERCENTAGE,
@@ -499,6 +503,9 @@ export class OrgLensProjectsService {
       logoUrl: row.PROJECT_LOGO_URL ?? '',
       foundation: this.mapFoundation(row),
       health: hasHealthScore ? this.mapHealthScore(row) : 'unavailable',
+      // Sourced straight from the warehouse — never recomputed, per mapHealthScore's v2-category/score precedence.
+      healthMaxScore: row.HEALTH_MAX_SCORE_V2 ?? null,
+      healthCoveredCategoryCount: row.COVERED_CATEGORY_COUNT_V2 ?? null,
       // These 'silent'/'non-lf' fallbacks are only user-visible for real (activity) rows. For no-activity rows the
       // UI shows "Unavailable" and compareInfluenceAvailability sinks them past measured rows, so the fallback band
       // is never compared against a measured one — it only affects the (tied) ordering of two no-activity rows.

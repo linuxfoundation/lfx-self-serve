@@ -5,7 +5,8 @@ import { ComponentFixture, TestBed } from '@angular/core/testing';
 import { provideNoopAnimations } from '@angular/platform-browser/animations';
 import { provideRouter } from '@angular/router';
 import { SIGN_CONTRACT_TYPE_COPY } from '@lfx-one/shared/constants';
-import { DynamicDialogRef } from 'primeng/dynamicdialog';
+import type { ClaKind } from '@lfx-one/shared/interfaces';
+import { DynamicDialogConfig, DynamicDialogRef } from 'primeng/dynamicdialog';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 
 import { SignContractTypeSelectComponent } from './sign-contract-type-select.component';
@@ -17,18 +18,25 @@ import { SignContractTypeSelectComponent } from './sign-contract-type-select.com
  * segment the hand-off uses. The two are joined only by a template `[value]`, and getting them
  * the wrong way round would send a contributor who chose "Individual Contributor" to sign a
  * corporate agreement — so the choice is always made by clicking, never by writing to the form.
+ * The single exception is the held-type submit guard, which exists for the case where something
+ * other than a click supplied the value, and so cannot be reached by clicking.
  */
 describe('SignContractTypeSelectComponent', () => {
   let close: ReturnType<typeof vi.fn>;
   let fixture: ComponentFixture<SignContractTypeSelectComponent>;
 
-  async function setup(): Promise<void> {
+  async function setup(heldKinds: readonly ClaKind[] = []): Promise<void> {
     TestBed.resetTestingModule();
     close = vi.fn();
 
     TestBed.configureTestingModule({
       imports: [SignContractTypeSelectComponent],
-      providers: [provideRouter([]), provideNoopAnimations(), { provide: DynamicDialogRef, useValue: { close } }],
+      providers: [
+        provideRouter([]),
+        provideNoopAnimations(),
+        { provide: DynamicDialogRef, useValue: { close } },
+        { provide: DynamicDialogConfig, useValue: { data: { heldKinds } } },
+      ],
     });
 
     fixture = TestBed.createComponent(SignContractTypeSelectComponent);
@@ -49,6 +57,15 @@ describe('SignContractTypeSelectComponent', () => {
 
   function continueToSign(): void {
     (fixture.componentInstance as any).onContinue();
+  }
+
+  /**
+   * Writes the form the way nothing in the UI does — the deliberate exception to the rule above,
+   * used only to reach the submit path with the cards bypassed.
+   */
+  function preselect(contractType: 'individual' | 'corporate'): void {
+    (fixture.componentInstance as any).selectForm.controls.contractType.setValue(contractType);
+    fixture.detectChanges();
   }
 
   beforeEach(async () => {
@@ -122,5 +139,62 @@ describe('SignContractTypeSelectComponent', () => {
     (fixture.componentInstance as any).onCancel();
 
     expect(close).toHaveBeenCalledWith(null);
+  });
+
+  describe('a type the identity already holds', () => {
+    // The identity step lets a contributor this far precisely because one type is still unsigned.
+    // Offering the type they already hold as freely as the one they need would hand back the
+    // redundant signing ceremony the identity gate exists to prevent.
+
+    it('offers a held ICLA as held, and leaves the corporate route open', async () => {
+      await setup(['ICLA']);
+
+      expect(query('sign-contract-type-select-individual')?.getAttribute('aria-disabled')).toBe('true');
+      expect(query('sign-contract-type-select-corporate')?.getAttribute('aria-disabled')).not.toBe('true');
+      expect(fixture.nativeElement.textContent).toContain(SIGN_CONTRACT_TYPE_COPY.alreadyHeld);
+    });
+
+    it('offers a held ECLA as held, and leaves the individual route open', async () => {
+      await setup(['ECLA']);
+
+      expect(query('sign-contract-type-select-corporate')?.getAttribute('aria-disabled')).toBe('true');
+      expect(query('sign-contract-type-select-individual')?.getAttribute('aria-disabled')).not.toBe('true');
+    });
+
+    it('refuses the click on the held card, so the form never takes that type', async () => {
+      await setup(['ICLA']);
+      await choose('sign-contract-type-select-individual');
+
+      expect((fixture.componentInstance as any).selectedType()).toBeNull();
+      continueToSign();
+      expect(close).not.toHaveBeenCalled();
+    });
+
+    it('refuses to submit the held type even when the form is written another way', async () => {
+      // The one place the form is written directly, and only to prove the click is not the only
+      // thing standing between a held type and the hand-off. A preselection or a form patch
+      // reaches `onContinue` with the disabled card never involved, which is why the guard is on
+      // the submit path too rather than on the card alone.
+      await setup(['ICLA']);
+      preselect('individual');
+      continueToSign();
+
+      expect(close).not.toHaveBeenCalled();
+    });
+
+    it('still closes on the type that is left to sign', async () => {
+      await setup(['ICLA']);
+      await choose('sign-contract-type-select-corporate');
+      continueToSign();
+
+      expect(close).toHaveBeenCalledWith({ contractType: 'corporate' });
+    });
+
+    it('disables neither card when the identity holds nothing', async () => {
+      await setup([]);
+
+      expect(query('sign-contract-type-select-individual')?.getAttribute('aria-disabled')).not.toBe('true');
+      expect(query('sign-contract-type-select-corporate')?.getAttribute('aria-disabled')).not.toBe('true');
+    });
   });
 });

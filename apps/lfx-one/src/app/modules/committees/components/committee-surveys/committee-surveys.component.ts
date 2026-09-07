@@ -44,7 +44,6 @@ export class CommitteeSurveysComponent {
   // Data
   public surveys: Signal<Survey[]> = this.initSurveys();
   public createSurveyQueryParams: Signal<Record<string, string>> = this.initCreateSurveyQueryParams();
-  public editSurveyQueryParams: Signal<Record<string, string>> = this.createSurveyQueryParams;
 
   public viewSurveyResults(survey: Survey): void {
     this.selectedSurveyId.set(survey.uid);

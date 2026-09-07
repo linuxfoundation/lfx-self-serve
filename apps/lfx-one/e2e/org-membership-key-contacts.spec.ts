@@ -4,6 +4,9 @@
 // Org Membership Key Contacts spec-024 E2E coverage with deterministic BFF route stubs.
 
 import { expect, Page, test } from '@playwright/test';
+import { skipWhenAuthMissing } from './helpers/auth.helper';
+
+test.beforeEach(() => skipWhenAuthMissing());
 
 function foundationId(): string {
   return 'a0941000002wBz4AAE';

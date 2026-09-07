@@ -138,6 +138,8 @@ export interface PendingInvitation {
   project_slug?: string | null;
   /** Whether the owning project is a foundation — enriched (optional); drives the `/foundation` vs `/project` tier prefix on the view link. Null/absent means tier unknown → callers keep the flat `/groups/:uid` fallback (GH-1566). */
   is_foundation?: boolean | null;
+  /** Vanity SSO group slug — enriched (optional); used to match `/groups/<slug>` invite banners (GH-2072). */
+  sso_group_name?: string | null;
   /** Committee category, for the My Groups class badge (optional) */
   category?: string | null;
   /** Suggested role on acceptance (from the invite) */

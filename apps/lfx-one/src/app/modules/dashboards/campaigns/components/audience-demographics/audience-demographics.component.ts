@@ -1,6 +1,7 @@
 // Copyright The Linux Foundation and each contributor to LFX.
 // SPDX-License-Identifier: MIT
 
+import { extractErrorMessage } from '@shared/utils/http-error.utils';
 import { Component, computed, DestroyRef, inject, input, signal } from '@angular/core';
 import { takeUntilDestroyed, toObservable } from '@angular/core/rxjs-interop';
 import type { Subscription } from 'rxjs';
@@ -30,7 +31,14 @@ export class AudienceDemographicsComponent {
   protected readonly error = signal<string | null>(null);
 
   // === Computed Signals ===
-  protected readonly hasData = computed(() => !!this.data());
+  // At least one BUCKET, not merely a non-null response. The cutover returns a valid
+  // `{ age: [], gender: [], device: [] }` for a project campaign-service knows no campaigns for,
+  // and `!!this.data()` is true for that -- so the empty state never rendered and the operator got
+  // three blank cards instead of "No audience data" (Copilot).
+  protected readonly hasData = computed(() => {
+    const d = this.data();
+    return !!d && (d.age.length > 0 || d.gender.length > 0 || d.device.length > 0);
+  });
   protected readonly ageBuckets = computed(() => this.data()?.age ?? []);
   protected readonly genderBuckets = computed(() => this.data()?.gender ?? []);
   protected readonly deviceBuckets = computed(() => this.data()?.device ?? []);
@@ -64,7 +72,12 @@ export class AudienceDemographicsComponent {
         },
         error: (err: unknown) => {
           const httpErr = err as { error?: { message?: string }; message?: string };
-          this.error.set(httpErr?.error?.message || httpErr?.message || 'Failed to load audience data');
+          // `extractErrorMessage`, for the reason the sibling campaign loaders now carry:
+          // BaseApiError.toResponse serialises operator text as `{ error: string }`, so
+          // `.error.message` is undefined here and the operator saw Angular's generic "Http
+          // failure response" instead of the upstream reason. This loader was the one my earlier
+          // sweep of the two tabs missed -- it lives in its own component (Copilot).
+          this.error.set(extractErrorMessage(httpErr, 'Failed to load audience data'));
           this.loading.set(false);
         },
       });

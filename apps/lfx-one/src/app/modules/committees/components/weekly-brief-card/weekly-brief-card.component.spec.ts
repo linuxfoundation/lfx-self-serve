@@ -1422,3 +1422,116 @@ describe('WeeklyBriefCardComponent — staleness indicator (GH-1966)', () => {
     expect(stalenessTag()).toBeNull();
   });
 });
+
+/**
+ * Covers the read-only auditor path introduced by GH-2031: Board members (committee#auditor,
+ * canEdit=false) can now see the card, brief text, and "this week so far" tally, while all
+ * write controls are absent. Also pins the editMode && canEdit() guard that prevents the edit
+ * textarea from leaking through if editMode is set while canEdit is false.
+ */
+describe('WeeklyBriefCardComponent — read-only auditor path (GH-2031)', () => {
+  let fixture: ComponentFixture<WeeklyBriefCardComponent>;
+
+  // category: 'Board' satisfies isGoverningBoard(), enabling the current-activity tally.
+  const BOARD_COMMITTEE: Committee = {
+    uid: 'committee-board',
+    name: 'Board of Directors',
+    project_uid: 'project-1',
+    category: 'Board',
+  } as Committee;
+
+  const BRIEF_WITH_ACTIVITY: WeeklyBriefCurrentResponse = {
+    brief: {
+      uid: 'brief-1',
+      committee_uid: 'committee-board',
+      window_start: '2026-08-02T00:00:00Z',
+      window_end: '2026-08-08T23:59:59Z',
+      state: 'generated',
+      brief_text: 'Weekly board summary.',
+      source_refs: [],
+      prompt_version: 'v1',
+      model: 'test-model',
+      regeneration_count: 0,
+      private_source_present: false,
+      created_at: '2026-08-08T00:00:00Z',
+      updated_at: '2026-08-08T00:00:00Z',
+      revision: 1,
+    },
+    throttle: { generates_used: 0, generates_limit: 2, regenerations_used: 0, regenerations_limit: 3, window_resets_at: '2026-08-09T00:00:00Z' },
+    caller_rating: null,
+    current_activity: {
+      window_start: '2026-08-07T00:00:00Z',
+      window_end: '2026-08-08T12:00:00Z',
+      source_refs: [{ id: 'meeting-1', kind: 'meeting_held', title: 'Board Meeting' }],
+    },
+  };
+
+  beforeEach(async () => {
+    await TestBed.configureTestingModule({
+      imports: [WeeklyBriefCardComponent],
+      providers: [
+        provideRouter([]),
+        provideNoopAnimations(),
+        {
+          provide: WeeklyBriefService,
+          useValue: {
+            getWeeklyBrief: vi.fn(() => of(BRIEF_WITH_ACTIVITY)),
+            listWeeklyBriefs: vi.fn(() => of({ data: [] })),
+            generateWeeklyBrief: vi.fn(),
+          },
+        },
+        { provide: FeatureFlagService, useValue: { getBooleanFlag: vi.fn(() => signal(false)) } },
+        { provide: MessageService, useValue: { add: vi.fn() } },
+        ConfirmationService,
+        { provide: UserService, useValue: { impersonating: signal(false) } },
+      ],
+    }).compileComponents();
+
+    fixture = TestBed.createComponent(WeeklyBriefCardComponent);
+    fixture.componentRef.setInput('committee', BOARD_COMMITTEE);
+    fixture.componentRef.setInput('canEdit', false); // read-only board member (committee#auditor)
+    await fixture.whenStable();
+  });
+
+  it('renders the brief text for a read-only auditor', () => {
+    expect(fixture.nativeElement.querySelector('[data-testid="weekly-brief-card-body"]')).not.toBeNull();
+  });
+
+  it('renders the this-week-so-far activity tally for a read-only auditor — core GH-2031 fix', () => {
+    expect(fixture.nativeElement.querySelector('[data-testid="weekly-brief-card-current-activity"]')).not.toBeNull();
+  });
+
+  it('does not render the Generate Brief button for a read-only auditor', () => {
+    expect(fixture.nativeElement.querySelector('[data-testid="weekly-brief-card-generate-button"]')).toBeNull();
+  });
+
+  it('does not render the Regenerate button for a read-only auditor', () => {
+    expect(fixture.nativeElement.querySelector('[data-testid="weekly-brief-card-regenerate-button"]')).toBeNull();
+  });
+
+  it('does not render the Edit button for a read-only auditor', () => {
+    expect(fixture.nativeElement.querySelector('[data-testid="weekly-brief-card-edit-button"]')).toBeNull();
+  });
+
+  it('does not render the Copy & Share button for a read-only auditor', () => {
+    expect(fixture.nativeElement.querySelector('[data-testid="weekly-brief-card-copy-button"]')).toBeNull();
+  });
+
+  it('does not render the Share to Mailing List button for a read-only auditor', () => {
+    expect(fixture.nativeElement.querySelector('[data-testid="weekly-brief-card-share-button"]')).toBeNull();
+  });
+
+  it('does not render the rating controls for a read-only auditor', () => {
+    expect(fixture.nativeElement.querySelector('[data-testid="weekly-brief-card-rating"]')).toBeNull();
+  });
+
+  it('does not show the edit textarea even when editMode is forced true — pins the canEdit() guard on @if(editMode() && canEdit())', async () => {
+    // editMode is normally only reachable via the Edit button (itself canEdit-gated). Setting
+    // the signal directly verifies that the template's own @if(editMode() && canEdit()) check
+    // prevents the textarea from leaking through to a non-writer.
+    fixture.componentInstance.editMode.set(true);
+    fixture.detectChanges();
+    await fixture.whenStable();
+    expect(fixture.nativeElement.querySelector('[data-test="weekly-brief-card-edit-textarea"]')).toBeNull();
+  });
+});

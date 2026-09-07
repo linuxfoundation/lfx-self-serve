@@ -11,14 +11,15 @@ import { MeetingService } from '@shared/services/meeting.service';
 import { PersonaService } from '@shared/services/persona.service';
 import { ProjectContextService } from '@shared/services/project-context.service';
 import { ProjectService } from '@shared/services/project.service';
+import { SurveyService } from '@shared/services/survey.service';
 import { VoteService } from '@shared/services/vote.service';
-import { Committee, GroupsIOMailingList, Meeting, Vote } from '@lfx-one/shared/interfaces';
+import { Committee, GroupsIOMailingList, Meeting, Survey, Vote } from '@lfx-one/shared/interfaces';
 import { firstValueFrom, of, throwError } from 'rxjs';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 
 import { writerGuard } from './writer.guard';
 
-// Pins the fail-closed entity-scoped slug contract (GH-1579/GH-1566/GH-1567/GH-1568): only a 404 probe read
+// Pins the fail-closed entity-scoped slug contract (GH-1579/GH-1566/GH-1567/GH-1568/GH-1569): only a 404 probe read
 // falls back to the stale context — anything else resolves no slug. Also covers the ED fast path and non-entity-scoped features.
 describe('writerGuard', () => {
   const MEETING_UID = 'meeting-uid-1';
@@ -29,6 +30,8 @@ describe('writerGuard', () => {
   const VOTE_SLUG = 'vote-project';
   const MAILING_LIST_UID = 'mailing-list-uid-1';
   const MAILING_LIST_SLUG = 'mailing-list-project';
+  const SURVEY_UID = 'survey-uid-1';
+  const SURVEY_SLUG = 'survey-project';
   const STALE_SLUG = 'stale-project';
 
   let getMeetingDetail: ReturnType<typeof vi.fn>;
@@ -37,6 +40,7 @@ describe('writerGuard', () => {
   let fetchCommittee: ReturnType<typeof vi.fn>;
   let fetchVote: ReturnType<typeof vi.fn>;
   let getMailingList: ReturnType<typeof vi.fn>;
+  let getSurvey: ReturnType<typeof vi.fn>;
   let router: { parseUrl: ReturnType<typeof vi.fn>; createUrlTree: ReturnType<typeof vi.fn> };
   let currentPersona: ReturnType<typeof signal<string>>;
 
@@ -74,6 +78,14 @@ describe('writerGuard', () => {
       parent: null,
     }) as unknown as ActivatedRouteSnapshot;
 
+  const surveyRoute = (): ActivatedRouteSnapshot =>
+    ({
+      queryParamMap: convertToParamMap({}),
+      paramMap: convertToParamMap({ id: SURVEY_UID }),
+      data: { writeFeature: 'surveys', entityScopedSlug: true },
+      parent: null,
+    }) as unknown as ActivatedRouteSnapshot;
+
   const runGuard = async (route: ActivatedRouteSnapshot = meetingRoute()) => {
     // The guard returns `true` synchronously for the ED fast path, an Observable otherwise —
     // never a bare UrlTree (redirects are always wrapped in `of(...)`).
@@ -88,6 +100,7 @@ describe('writerGuard', () => {
     fetchCommittee = vi.fn();
     fetchVote = vi.fn();
     getMailingList = vi.fn();
+    getSurvey = vi.fn();
     currentPersona = signal('maintainer');
     router = {
       parseUrl: vi.fn().mockImplementation((url: string) => ({ redirect: url }) as unknown as UrlTree),
@@ -102,6 +115,7 @@ describe('writerGuard', () => {
         { provide: CommitteeService, useValue: { getCommittee, fetchCommittee } },
         { provide: MailingListService, useValue: { getMailingList } },
         { provide: MeetingService, useValue: { getMeetingDetail } },
+        { provide: SurveyService, useValue: { getSurvey } },
         { provide: VoteService, useValue: { fetchVote } },
         { provide: Router, useValue: router },
       ],
@@ -330,6 +344,127 @@ describe('writerGuard', () => {
     expect(getMeetingDetail).not.toHaveBeenCalled();
     expect(getProject).not.toHaveBeenCalled();
     expect(getCommittee).not.toHaveBeenCalled();
+  });
+
+  it('authorizes survey edit against the survey’s own project when the read succeeds', async () => {
+    getSurvey.mockReturnValue(of({ uid: SURVEY_UID, project_uid: 's-uid', project_slug: SURVEY_SLUG } as unknown as Survey));
+    getProject.mockReturnValue(of({ uid: 's-uid', slug: SURVEY_SLUG, writer: true }));
+
+    const result = await runGuard(surveyRoute());
+
+    expect(result).toBe(true);
+    expect(getSurvey).toHaveBeenCalledWith(SURVEY_UID);
+    expect(getMeetingDetail).not.toHaveBeenCalled();
+    expect(getProject).toHaveBeenCalledWith(SURVEY_SLUG, false, { meetingCoordinator: false });
+  });
+
+  it('resolves the survey uid when the payload lacks an enriched slug, never the stale context', async () => {
+    // Survey.project_uid is typed optional — the probe maps absent to '' and
+    // resolveEntityWriteSlug treats '' as absent, so only a real uid reaches the lookup.
+    getSurvey.mockReturnValue(of({ uid: SURVEY_UID, project_uid: 's-uid' } as unknown as Survey));
+    getProject.mockReturnValue(of({ uid: 's-uid', slug: SURVEY_SLUG, writer: true }));
+
+    const result = await runGuard(surveyRoute());
+
+    expect(result).toBe(true);
+    expect(getProject).toHaveBeenCalledWith('s-uid', false, { meetingCoordinator: false });
+  });
+
+  it('falls back to the active context only on a 404 survey read', async () => {
+    getSurvey.mockReturnValue(throwError(() => httpError(404)));
+    getProject.mockReturnValue(of({ uid: 'stale-uid', slug: STALE_SLUG, writer: true }));
+
+    const result = await runGuard(surveyRoute());
+
+    expect(result).toBe(true);
+    expect(getProject).toHaveBeenCalledWith(STALE_SLUG, false, { meetingCoordinator: false });
+  });
+
+  it('fails closed on a 500 survey read without probing the stale project', async () => {
+    getSurvey.mockReturnValue(throwError(() => httpError(500)));
+
+    const result = await runGuard(surveyRoute());
+
+    expect(router.parseUrl).toHaveBeenCalledWith('/project/overview');
+    expect(result).toEqual({ redirect: '/project/overview' });
+    expect(getProject).not.toHaveBeenCalled();
+    expect(getCommittee).not.toHaveBeenCalled();
+  });
+
+  it('admits a committee writer via a URL committee_uid the survey’s own committees contain', async () => {
+    getSurvey.mockReturnValue(
+      of({
+        uid: SURVEY_UID,
+        project_uid: 's-uid',
+        project_slug: SURVEY_SLUG,
+        committees: [{ committee_uid: COMMITTEE_UID }, { committee_uid: 'other-committee' }],
+      } as unknown as Survey)
+    );
+    getProject.mockReturnValue(of({ uid: 's-uid', slug: SURVEY_SLUG, writer: false }));
+    getCommittee.mockReturnValue(of({ uid: COMMITTEE_UID, writer: true } as unknown as Committee));
+    const route = {
+      queryParamMap: convertToParamMap({ committee_uid: COMMITTEE_UID }),
+      paramMap: convertToParamMap({ id: SURVEY_UID }),
+      data: { writeFeature: 'surveys', entityScopedSlug: true },
+      parent: null,
+    } as unknown as ActivatedRouteSnapshot;
+
+    const result = await runGuard(route);
+
+    expect(result).toBe(true);
+    expect(getCommittee).toHaveBeenCalledWith(COMMITTEE_UID);
+  });
+
+  it('authorizes against the survey’s primary committee, not a URL committee_uid naming an unrelated one', async () => {
+    getSurvey.mockReturnValue(
+      of({ uid: SURVEY_UID, project_uid: 's-uid', project_slug: SURVEY_SLUG, committees: [{ committee_uid: 'survey-committee' }] } as unknown as Survey)
+    );
+    getProject.mockReturnValue(of({ uid: 's-uid', slug: SURVEY_SLUG, writer: false }));
+    getCommittee.mockReturnValue(of({ uid: 'survey-committee', writer: false } as unknown as Committee));
+    const route = {
+      queryParamMap: convertToParamMap({ committee_uid: 'attacker-committee' }),
+      paramMap: convertToParamMap({ id: SURVEY_UID }),
+      data: { writeFeature: 'surveys', entityScopedSlug: true },
+      parent: null,
+    } as unknown as ActivatedRouteSnapshot;
+
+    const result = await runGuard(route);
+
+    expect(getCommittee).toHaveBeenCalledWith('survey-committee');
+    expect(getCommittee).not.toHaveBeenCalledWith('attacker-committee');
+    expect(result).not.toBe(true);
+  });
+
+  it('authorizes against the survey’s primary committee when the URL omits committee_uid', async () => {
+    getSurvey.mockReturnValue(
+      of({ uid: SURVEY_UID, project_uid: 's-uid', project_slug: SURVEY_SLUG, committees: [{ committee_uid: 'survey-committee' }] } as unknown as Survey)
+    );
+    getProject.mockReturnValue(of({ uid: 's-uid', slug: SURVEY_SLUG, writer: false }));
+    getCommittee.mockReturnValue(of({ uid: 'survey-committee', writer: true } as unknown as Committee));
+
+    const result = await runGuard(surveyRoute());
+
+    expect(result).toBe(true);
+    expect(getCommittee).toHaveBeenCalledWith('survey-committee');
+  });
+
+  it('falls back to the URL committee_uid for a committee-less survey', async () => {
+    // Pins the documented deliberate path: a committee-less project survey has no entity committee
+    // to win, so the (attacker-controllable but backend-enforced) URL param is the only committee leg.
+    getSurvey.mockReturnValue(of({ uid: SURVEY_UID, project_uid: 's-uid', project_slug: SURVEY_SLUG, committees: [] } as unknown as Survey));
+    getProject.mockReturnValue(of({ uid: 's-uid', slug: SURVEY_SLUG, writer: false }));
+    getCommittee.mockReturnValue(of({ uid: COMMITTEE_UID, writer: true } as unknown as Committee));
+    const route = {
+      queryParamMap: convertToParamMap({ committee_uid: COMMITTEE_UID }),
+      paramMap: convertToParamMap({ id: SURVEY_UID }),
+      data: { writeFeature: 'surveys', entityScopedSlug: true },
+      parent: null,
+    } as unknown as ActivatedRouteSnapshot;
+
+    const result = await runGuard(route);
+
+    expect(result).toBe(true);
+    expect(getCommittee).toHaveBeenCalledWith(COMMITTEE_UID);
   });
 
   it('fails closed when an entity-scoped route has no :id param', async () => {

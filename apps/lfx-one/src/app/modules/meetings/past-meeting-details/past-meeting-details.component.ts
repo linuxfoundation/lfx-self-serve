@@ -5,6 +5,7 @@ import { Location, NgClass } from '@angular/common';
 import { Component, computed, DestroyRef, inject, Signal, signal } from '@angular/core';
 import { takeUntilDestroyed, toObservable, toSignal } from '@angular/core/rxjs-interop';
 import { ActivatedRoute, Router } from '@angular/router';
+import { AttendanceReconciliationDrawerComponent } from '@app/modules/meetings/components/attendance-reconciliation-drawer/attendance-reconciliation-drawer.component';
 import { MeetingMaterialsDrawerComponent } from '@app/modules/meetings/components/meeting-materials-drawer/meeting-materials-drawer.component';
 import { MeetingOrganizerComponent } from '@app/modules/meetings/components/meeting-organizer/meeting-organizer.component';
 import { MeetingSummaryModalComponent } from '@app/modules/meetings/components/meeting-summary-modal/meeting-summary-modal.component';
@@ -59,6 +60,7 @@ import { BehaviorSubject, catchError, combineLatest, distinctUntilChanged, filte
     TooltipModule,
     MeetingMaterialsDrawerComponent,
     MeetingOrganizerComponent,
+    AttendanceReconciliationDrawerComponent,
   ],
   templateUrl: './past-meeting-details.component.html',
 })
@@ -80,9 +82,11 @@ export class PastMeetingDetailsComponent {
   public attendanceFilter = signal<'all' | 'attended' | 'absent'>('all');
   public votingOnly = signal(false);
   public materialsDrawerVisible = signal(false);
+  public reconciliationDrawerVisible = signal(false);
 
-  // Must be declared before initAttachments() is called so combineLatest receives the subject, not undefined.
+  // Must be declared before initAttachments()/initParticipants() are called so combineLatest receives the subject, not undefined.
   private readonly attachmentRefresh$ = new BehaviorSubject<void>(undefined);
+  private readonly participantsRefresh$ = new BehaviorSubject<void>(undefined);
 
   // Complex signals via init functions
   public meeting: Signal<PastMeeting | null> = this.initMeeting();
@@ -145,6 +149,17 @@ export class PastMeetingDetailsComponent {
     timer(1000)
       .pipe(takeUntilDestroyed(this.destroyRef))
       .subscribe(() => this.attachmentRefresh$.next());
+  }
+
+  public openReconciliationDrawer(): void {
+    this.reconciliationDrawerVisible.set(true);
+  }
+
+  public onReconciliationChanged(): void {
+    this.participantsRefresh$.next();
+    timer(1000)
+      .pipe(takeUntilDestroyed(this.destroyRef))
+      .subscribe(() => this.participantsRefresh$.next());
   }
 
   public openSummaryModal(): void {
@@ -258,12 +273,15 @@ export class PastMeetingDetailsComponent {
 
   private initParticipants(): Signal<EnrichedPastMeetingParticipant[]> {
     return toSignal(
-      toObservable(this.meeting).pipe(
-        filter((m): m is PastMeeting => !!m?.id),
-        distinctUntilChanged((a, b) => a.id === b.id),
-        take(1),
+      combineLatest([
+        toObservable(this.meeting).pipe(
+          filter((m): m is PastMeeting => !!m?.id),
+          distinctUntilChanged((a, b) => a.id === b.id)
+        ),
+        this.participantsRefresh$,
+      ]).pipe(
         tap(() => this.participantsLoading.set(true)),
-        switchMap((meeting) => {
+        switchMap(([meeting]) => {
           const committeeUids = (meeting.committees || []).map((c) => c.uid).filter(Boolean);
           const committeeMembers$ =
             committeeUids.length > 0

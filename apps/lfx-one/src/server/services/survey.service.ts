@@ -8,6 +8,7 @@ import { getSurveyDisplayStatus } from '@lfx-one/shared/utils';
 import { Request } from 'express';
 
 import { ResourceNotFoundError } from '../errors';
+import { fetchEntityProject, toEntityProjectFields } from '../helpers/entity-project-enrichment.helper';
 import { pollEndpoint } from '../helpers/poll-endpoint.helper';
 import { fetchAllQueryResources } from '../helpers/query-service.helper';
 import { validateAndSanitizeUrl } from '../helpers/url-validation';
@@ -83,14 +84,24 @@ export class SurveyService {
       responded_in_result: respondedInResult,
     });
 
-    return enriched;
+    // The survey index carries project identity only inside committees[] — flatten the primary
+    // project uid and enrich so list rows expose project_slug/project_name/is_foundation for
+    // per-row canonical edit links (GH-1569; mirrors the meetings list enrichment).
+    const flattened = enriched.map((s) => ({
+      ...s,
+      project_uid: s.project_uid || s.committees?.[0]?.project_uid || '',
+    }));
+    return this.projectService.enrichWithProjectData(req, flattened) as Promise<Survey[]>;
   }
 
   /**
    * Fetches a single survey by UID.
    * Passes project_uid (V2 UUID) directly to upstream — no SFID translation needed.
+   * `includeProject` opts into BFF project enrichment (project_slug/project_name/is_foundation)
+   * for the edit page's context sync and the writerGuard entity probe (GH-1569); the shared
+   * helper no-ops when the payload lacks project_uid and warn-and-continues on lookup failure.
    */
-  public async getSurveyById(req: Request, surveyUid: string, projectId?: string): Promise<Survey> {
+  public async getSurveyById(req: Request, surveyUid: string, projectId?: string, includeProject = false): Promise<Survey> {
     logger.debug(req, 'get_survey_by_id', 'Fetching survey by ID', {
       survey_uid: surveyUid,
       project_uid: projectId,
@@ -110,6 +121,19 @@ export class SurveyService {
         service: 'survey_service',
         path: `/surveys/${surveyUid}`,
       });
+    }
+
+    // The upstream detail payload (SurveyScheduleResult) carries project identity only inside
+    // committees[] — flatten the primary project uid and stamp it top-level so the enrichment
+    // below, the writerGuard probe, and the manage page's resolve-by-uid fallback all receive a
+    // real uid (GH-1569; mirrors the list path's flatten in getSurveys).
+    survey.project_uid = survey.project_uid || survey.committees?.[0]?.project_uid;
+
+    if (includeProject) {
+      const project = await fetchEntityProject(req, this.projectService, survey.project_uid, { operation: 'get_survey_by_id', survey_uid: survey.uid });
+      if (project) {
+        Object.assign(survey, toEntityProjectFields(project));
+      }
     }
 
     logger.debug(req, 'get_survey_by_id', 'Completed survey fetch', {

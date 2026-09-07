@@ -18,6 +18,15 @@ vi.mock('@lfx-one/shared/enums', async (importOriginal) => importOriginal());
 vi.mock('@lfx-one/shared/utils', () => ({
   buildRecurrenceNeverEndDate: vi.fn(),
   getPastMeetingTranscriptUrl: vi.fn(),
+  // Intentionally a light behavioral double, not a frozen copy meant to track the real predicate:
+  // it only needs to exercise the placeholder-vs-blank branch in this file's dedup tests. The
+  // predicate's own placeholder-token coverage lives in meeting.utils.spec.ts — a future token
+  // added there won't be reflected here, but that's the authoritative test for this behavior.
+  isUnresolvableParticipantName: vi.fn((first?: string | null, last?: string | null) => {
+    const tokens = [first, last].map((token) => (token ?? '').trim().toLowerCase());
+    const meaningful = tokens.filter((token) => token && token !== 'unknown' && token !== '[unknown]');
+    return meaningful.length === 0;
+  }),
   mapITXResponseToMeetingRsvp: vi.fn(),
   normalizeIndexedMeetingAiSummary: vi.fn((meeting) => meeting),
   normalizeIndexedMeetingInviteResponses: vi.fn((meeting) => meeting),
@@ -693,5 +702,285 @@ describe('MeetingService.getAuthorizedRegistrantsForImport', () => {
 
     const [, , , , query] = proxyRequest.mock.calls[1];
     expect(query.page_size).toBe(51);
+  });
+});
+
+describe('MeetingService.getPastMeetingParticipants', () => {
+  let service: MeetingService;
+
+  const participantRecord = (id: string, overrides: Record<string, unknown> = {}) => ({
+    id: `v1_past_meeting_participant:${id}`,
+    data: {
+      uid: id,
+      meeting_id: 'meeting-1',
+      meeting_and_occurrence_id: 'meeting-1-occ-1',
+      past_meeting_id: 'past-1',
+      first_name: 'Jane',
+      last_name: 'Doe',
+      host: false,
+      is_attended: false,
+      is_invited: true,
+      org_is_member: false,
+      org_is_project_member: false,
+      created_at: '2026-01-01T00:00:00.000Z',
+      updated_at: '2026-01-01T00:00:00.000Z',
+      ...overrides,
+    },
+  });
+
+  beforeEach(() => {
+    proxyRequest.mockReset();
+    service = new MeetingService();
+  });
+
+  it('merges two records sharing the same LFID username, even with different emails', async () => {
+    proxyRequest.mockResolvedValueOnce({
+      resources: [
+        participantRecord('a', { email: 'jane@example.com', username: 'jdoe', is_invited: true, is_attended: false }),
+        participantRecord('b', { email: 'jane.alt@example.com', username: 'jdoe', is_invited: false, is_attended: true }),
+      ],
+    });
+
+    const result = await service.getPastMeetingParticipants(req, 'meeting-1-occ-1');
+
+    expect(result).toHaveLength(1);
+    expect(result[0].is_invited).toBe(true);
+    expect(result[0].is_attended).toBe(true);
+    expect(result[0].email).toBe('jane@example.com');
+  });
+
+  it('does not merge two records with the same email but different usernames', async () => {
+    proxyRequest.mockResolvedValueOnce({
+      resources: [
+        participantRecord('a', { email: 'shared@example.com', username: 'user-a' }),
+        participantRecord('b', { email: 'shared@example.com', username: 'user-b' }),
+      ],
+    });
+
+    const result = await service.getPastMeetingParticipants(req, 'meeting-1-occ-1');
+
+    expect(result).toHaveLength(2);
+  });
+
+  it('merges by email when neither record has a username', async () => {
+    proxyRequest.mockResolvedValueOnce({
+      resources: [participantRecord('a', { email: 'guest@example.com' }), participantRecord('b', { email: 'GUEST@example.com' })],
+    });
+
+    const result = await service.getPastMeetingParticipants(req, 'meeting-1-occ-1');
+
+    expect(result).toHaveLength(1);
+  });
+
+  it('merges on matching email even when only one side has a username — email is checked before the username-asymmetry fallback', async () => {
+    proxyRequest.mockResolvedValueOnce({
+      resources: [participantRecord('a', { email: 'guest@example.com', username: 'jdoe' }), participantRecord('b', { email: 'guest@example.com' })],
+    });
+
+    const result = await service.getPastMeetingParticipants(req, 'meeting-1-occ-1');
+
+    expect(result).toHaveLength(1);
+  });
+
+  it('does not merge asymmetric-username records when neither has an email to fall back on', async () => {
+    proxyRequest.mockResolvedValueOnce({
+      resources: [
+        participantRecord('a', { username: 'jdoe', first_name: 'Jane', last_name: 'Doe' }),
+        participantRecord('b', { first_name: 'Jane', last_name: 'Doe' }),
+      ],
+    });
+
+    const result = await service.getPastMeetingParticipants(req, 'meeting-1-occ-1');
+
+    expect(result).toHaveLength(2);
+  });
+
+  it('falls back to normalized display name when neither username nor email is present', async () => {
+    proxyRequest.mockResolvedValueOnce({
+      resources: [participantRecord('a', { first_name: 'Jane', last_name: 'Doe' }), participantRecord('b', { first_name: 'jane', last_name: 'doe' })],
+    });
+
+    const result = await service.getPastMeetingParticipants(req, 'meeting-1-occ-1');
+
+    expect(result).toHaveLength(1);
+  });
+
+  it('does not merge different people who share no identity signal at all', async () => {
+    proxyRequest.mockResolvedValueOnce({
+      resources: [participantRecord('a', { first_name: 'Jane', last_name: 'Doe' }), participantRecord('b', { first_name: 'John', last_name: 'Smith' })],
+    });
+
+    const result = await service.getPastMeetingParticipants(req, 'meeting-1-occ-1');
+
+    expect(result).toHaveLength(2);
+  });
+
+  it('does not merge two unnamed records with no email or username to fall back on', async () => {
+    proxyRequest.mockResolvedValueOnce({
+      resources: [
+        participantRecord('a', { first_name: undefined, last_name: undefined }),
+        participantRecord('b', { first_name: undefined, last_name: undefined }),
+      ],
+    });
+
+    const result = await service.getPastMeetingParticipants(req, 'meeting-1-occ-1');
+
+    expect(result).toHaveLength(2);
+  });
+
+  it('does not merge two records with placeholder "[unknown]" names', async () => {
+    proxyRequest.mockResolvedValueOnce({
+      resources: [
+        participantRecord('a', { first_name: '[unknown]', last_name: '[unknown]' }),
+        participantRecord('b', { first_name: '[unknown]', last_name: '[unknown]' }),
+      ],
+    });
+
+    const result = await service.getPastMeetingParticipants(req, 'meeting-1-occ-1');
+
+    expect(result).toHaveLength(2);
+  });
+
+  it('merges on matching name when only one side has an email', async () => {
+    proxyRequest.mockResolvedValueOnce({
+      resources: [
+        participantRecord('a', { email: 'jane@example.com', first_name: 'Jane', last_name: 'Doe' }),
+        participantRecord('b', { first_name: 'Jane', last_name: 'Doe' }),
+      ],
+    });
+
+    const result = await service.getPastMeetingParticipants(req, 'meeting-1-occ-1');
+
+    expect(result).toHaveLength(1);
+  });
+
+  it('coalesces three records into one person via a bridging record, regardless of encounter order', async () => {
+    proxyRequest.mockResolvedValueOnce({
+      resources: [
+        participantRecord('a', { email: 'shared@example.com', username: undefined }),
+        participantRecord('b', { email: 'other@example.com', username: 'jdoe' }),
+        participantRecord('c', { email: 'shared@example.com', username: 'jdoe' }),
+      ],
+    });
+
+    const result = await service.getPastMeetingParticipants(req, 'meeting-1-occ-1');
+
+    expect(result).toHaveLength(1);
+  });
+
+  it('isolates an ambiguous shared-email bridge record rather than guessing which of two conflicting LFID usernames it belongs to', async () => {
+    const resources = [
+      participantRecord('a', { username: 'user-a', email: 'shared@example.com', is_attended: true }),
+      participantRecord('b', { username: undefined, email: 'shared@example.com', is_attended: true, host: true }),
+      participantRecord('c', { username: 'user-b', email: 'shared@example.com' }),
+    ];
+
+    proxyRequest.mockResolvedValueOnce({ resources });
+    const forward = await service.getPastMeetingParticipants(req, 'meeting-1-occ-1');
+
+    proxyRequest.mockResolvedValueOnce({ resources: [...resources].reverse() });
+    const reversed = await service.getPastMeetingParticipants(req, 'meeting-1-occ-1');
+
+    for (const result of [forward, reversed]) {
+      expect(result).toHaveLength(3);
+      expect(result.map((p) => p.username).sort()).toEqual([undefined, 'user-a', 'user-b'].sort());
+
+      // The ambiguous bridge record's own attendance/host flags must not bleed into either
+      // conflicting username's group, regardless of encounter order.
+      const bridgeRecord = result.find((p) => !p.username);
+      const userA = result.find((p) => p.username === 'user-a');
+      const userB = result.find((p) => p.username === 'user-b');
+      expect(bridgeRecord?.is_attended).toBe(true);
+      expect(bridgeRecord?.host).toBe(true);
+      expect(userA?.host).toBe(false);
+      expect(userB?.is_attended).toBe(false);
+    }
+  });
+
+  it('refuses to bridge two conflicting guest emails through a shared-name no-email record', async () => {
+    proxyRequest.mockResolvedValueOnce({
+      resources: [
+        participantRecord('a', { email: 'guest-one@example.com', first_name: 'Sam', last_name: 'Guest' }),
+        participantRecord('b', { email: undefined, first_name: 'Sam', last_name: 'Guest' }),
+        participantRecord('c', { email: 'guest-two@example.com', first_name: 'Sam', last_name: 'Guest' }),
+      ],
+    });
+
+    const result = await service.getPastMeetingParticipants(req, 'meeting-1-occ-1');
+
+    expect(result).toHaveLength(3);
+    expect(result.map((p) => p.email).sort()).toEqual(['guest-one@example.com', 'guest-two@example.com', undefined].sort());
+  });
+
+  it('does not let a blank-string email sentinel on the preferred record discard a real email on merge', async () => {
+    proxyRequest.mockResolvedValueOnce({
+      resources: [
+        participantRecord('a', { email: '', first_name: 'Jane', last_name: 'Doe', is_attended: true }),
+        participantRecord('b', { email: 'jane@example.com', first_name: 'Jane', last_name: 'Doe', is_attended: false }),
+      ],
+    });
+
+    const result = await service.getPastMeetingParticipants(req, 'meeting-1-occ-1');
+
+    expect(result).toHaveLength(1);
+    expect(result[0].email).toBe('jane@example.com');
+  });
+});
+
+describe('MeetingService participant write methods', () => {
+  let service: MeetingService;
+
+  beforeEach(() => {
+    proxyRequest.mockReset();
+    service = new MeetingService();
+  });
+
+  it('createPastMeetingParticipant posts to the participants endpoint with the given body', async () => {
+    const created = { id: 'p-1', past_meeting_id: 'pm-1', meeting_id: 'mtg-1', is_attended: true, zoom_user_name: 'Alice Z' };
+    proxyRequest.mockResolvedValueOnce(created);
+
+    const result = await service.createPastMeetingParticipant(req, 'pm-1', { is_attended: true, is_unknown: false });
+
+    expect(proxyRequest).toHaveBeenCalledTimes(1);
+    const [, , path, method, , body] = proxyRequest.mock.calls[0];
+    expect(path).toBe('/itx/past_meetings/pm-1/participants');
+    expect(method).toBe('POST');
+    expect(body).toEqual({ is_attended: true, is_unknown: false });
+    expect(result).toEqual(created);
+  });
+
+  it('updatePastMeetingParticipant puts to the participant endpoint with the participant id in the path', async () => {
+    const updated = { id: 'p-1', past_meeting_id: 'pm-1', meeting_id: 'mtg-1', is_verified: true };
+    proxyRequest.mockResolvedValueOnce(updated);
+
+    const result = await service.updatePastMeetingParticipant(req, 'pm-1', 'p-1', { is_verified: true });
+
+    expect(proxyRequest).toHaveBeenCalledTimes(1);
+    const [, , path, method, , body] = proxyRequest.mock.calls[0];
+    expect(path).toBe('/itx/past_meetings/pm-1/participants/p-1');
+    expect(method).toBe('PUT');
+    expect(body).toEqual({ is_verified: true });
+    expect(result).toEqual(updated);
+  });
+
+  it('deletePastMeetingParticipant deletes the participant endpoint and returns nothing', async () => {
+    proxyRequest.mockResolvedValueOnce(undefined);
+
+    const result = await service.deletePastMeetingParticipant(req, 'pm-1', 'p-1');
+
+    expect(proxyRequest).toHaveBeenCalledTimes(1);
+    const [, , path, method] = proxyRequest.mock.calls[0];
+    expect(path).toBe('/itx/past_meetings/pm-1/participants/p-1');
+    expect(method).toBe('DELETE');
+    expect(result).toBeUndefined();
+  });
+
+  it('encodes past meeting id and participant id in the URL', async () => {
+    proxyRequest.mockResolvedValueOnce({ id: 'p/1', past_meeting_id: 'pm 1', meeting_id: 'mtg-1' });
+
+    await service.updatePastMeetingParticipant(req, 'pm 1', 'p/1', {});
+
+    const [, , path] = proxyRequest.mock.calls[0];
+    expect(path).toBe('/itx/past_meetings/pm%201/participants/p%2F1');
   });
 });

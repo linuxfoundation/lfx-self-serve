@@ -378,11 +378,16 @@ export class ProjectService {
 
   /**
    * Search projects by name
+   *
+   * `sort: 'best_match'` is required for relevance ordering. The query service defaults `sort` to
+   * `name_asc`, and OpenSearch discards scoring whenever an explicit non-`_score` sort is present —
+   * so without this the caller gets the alphabetically-first page of matches, not the closest ones.
    */
   public async searchProjects(req: Request, searchQuery: string): Promise<Project[]> {
     const params = {
       type: 'project',
       name: searchQuery,
+      sort: 'best_match',
     };
 
     const { resources } = await this.microserviceProxy.proxyRequest<QueryServiceResponse<Project>>(req, 'LFX_V2_SERVICE', '/query/resources', 'GET', params);
@@ -487,6 +492,11 @@ export class ProjectService {
         {
           type: 'project',
           name: searchQuery,
+          // Relevance ordering matters more here than anywhere else: this method truncates to
+          // `pageSize` and gives up after `SEARCH_PAGE_LIMIT` pages, so whatever upstream puts
+          // first is what the user sees. Under the default `name_asc` that is the alphabetically
+          // earliest matches, which buries the project the user is actually typing.
+          sort: 'best_match',
           page_size: pageSize,
           ...(pageToken && { page_token: pageToken }),
         }
@@ -1923,7 +1933,8 @@ export class ProjectService {
         d.MAINTAINERS_CURRENT_COUNT,
         d.STARS_YTD_COUNT,
         d.LAST_UPDATED_TS,
-        d.HEALTH_SCORE_CATEGORY_V2
+        d.HEALTH_SCORE_CATEGORY_V2,
+        d.COVERED_CATEGORY_COUNT_V2
       FROM ANALYTICS.PLATINUM_LFX_ONE.FOUNDATION_TOTAL_PROJECTS_DETAIL d
       WHERE d.FOUNDATION_SLUG = ?
       ORDER BY d.PROJECT_NAME ASC
@@ -1954,6 +1965,7 @@ export class ProjectService {
         // Normalize the upstream capitalized category to our lowercase union; guard
         // against unexpected strings so the interface's promise (FoundationHealthScore | null) holds.
         healthScoreCategory: normalizeHealthScoreCategoryV2(row.HEALTH_SCORE_CATEGORY_V2),
+        healthCoveredCategoryCount: row.COVERED_CATEGORY_COUNT_V2 ?? null,
       }));
 
       logger.debug(undefined, 'get_foundation_projects_detail', 'Fetched project detail rows', { count: projects.length });

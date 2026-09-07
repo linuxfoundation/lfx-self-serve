@@ -175,7 +175,9 @@ export class SurveyController {
       }
 
       const projectId = req.query['project_id'] as string | undefined;
-      const survey = await this.surveyService.getSurveyById(req, uid, projectId);
+      // includeProject: the edit page's context sync and the writerGuard entity probe need the
+      // owning project's slug/tier on the detail payload (GH-1569).
+      const survey = await this.surveyService.getSurveyById(req, uid, projectId, true);
 
       logger.success(req, 'get_survey_by_id', startTime, {
         survey_uid: uid,

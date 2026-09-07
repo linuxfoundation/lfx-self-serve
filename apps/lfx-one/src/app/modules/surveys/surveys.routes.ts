@@ -22,6 +22,9 @@ export const SURVEY_ROUTES: Routes = [
     path: ':id/edit',
     loadComponent: () => import('./survey-manage/survey-manage.component').then((m) => m.SurveyManageComponent),
     canActivate: [authGuard, writerGuard],
-    data: { writeFeature: 'surveys' },
+    // entityScopedSlug: writerGuard resolves the authorization slug from the survey itself on
+    // this route. A route-data flag, not a path check, so a route rename/restructure
+    // can't silently revert the guard to stale-context authorization.
+    data: { writeFeature: 'surveys', entityScopedSlug: true },
   },
 ];

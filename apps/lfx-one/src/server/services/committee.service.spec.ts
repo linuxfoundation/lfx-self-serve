@@ -40,10 +40,16 @@ vi.mock('@lfx-one/shared/enums', () => ({
   CommitteeMemberVisibility: { HIDDEN: 'hidden', BASIC_PROFILE: 'basic_profile' },
 }));
 vi.mock('@lfx-one/shared/utils', () => ({ invitationRequiresOrganization: vi.fn() }));
-vi.mock('@lfx-one/shared/constants', () => ({
-  SLACK_INCOMING_WEBHOOK_URL_PATTERN: /^https:\/\/hooks\.slack\.com\/services\/T[A-Za-z0-9]+\/B[A-Za-z0-9]+\/[A-Za-z0-9]+$/,
-  CHAT_WEBHOOK_URL_MAX_LENGTH: 500,
-}));
+vi.mock('@lfx-one/shared/constants', async () => {
+  const regex = await vi.importActual<typeof import('../../../../../packages/shared/src/constants/regex.constants')>(
+    '../../../../../packages/shared/src/constants/regex.constants'
+  );
+  return {
+    SLACK_INCOMING_WEBHOOK_URL_PATTERN: /^https:\/\/hooks\.slack\.com\/services\/T[A-Za-z0-9]+\/B[A-Za-z0-9]+\/[A-Za-z0-9]+$/,
+    CHAT_WEBHOOK_URL_MAX_LENGTH: 500,
+    UUID_REGEX: regex.UUID_REGEX,
+  };
+});
 vi.mock('./microservice-proxy.service', () => ({
   MicroserviceProxyService: class {
     public proxyRequest = proxyRequest;
@@ -408,6 +414,64 @@ describe('CommitteeService — chat_webhook_url (LFXV2-3080)', () => {
 
       expect('chat_webhook_url' in result).toBe(false);
       expect(result.project_slug).toBe('test-project');
+    });
+  });
+
+  describe('resolveCommitteeUid', () => {
+    const COMMITTEE_UUID = '7cad5a8d-19d0-41a4-81a6-043453daf9ee';
+
+    it('returns a UUID unchanged without querying', async () => {
+      const result = await service.resolveCommitteeUid(req, COMMITTEE_UUID);
+
+      expect(result).toBe(COMMITTEE_UUID);
+      expect(proxyRequest).not.toHaveBeenCalled();
+    });
+
+    it('resolves a vanity slug via sso_group_name tag lookup and lowercases the slug', async () => {
+      vi.mocked(logger.debug).mockClear();
+      proxyRequest.mockResolvedValueOnce(pageOf([{ uid: COMMITTEE_UUID }]));
+
+      const result = await service.resolveCommitteeUid(req, 'My-Group-Slug');
+
+      expect(result).toBe(COMMITTEE_UUID);
+      expect(proxyRequest).toHaveBeenCalledOnce();
+      expect(proxyRequest.mock.calls[0][2]).toBe('/query/resources');
+      expect(proxyRequest.mock.calls[0][4]).toMatchObject({
+        type: 'committee',
+        tags: 'sso_group_name:my-group-slug',
+        page_size: 1,
+      });
+      expect(logger.debug).toHaveBeenCalledWith(
+        req,
+        'resolve_committee_uid',
+        'Resolved slug to UID',
+        expect.objectContaining({ slug: 'My-Group-Slug', committee_uid: COMMITTEE_UUID })
+      );
+    });
+
+    it('throws ResourceNotFoundError when the slug matches no committee the caller can see', async () => {
+      proxyRequest.mockResolvedValueOnce(pageOf([]));
+
+      await expect(service.resolveCommitteeUid(req, 'missing-group')).rejects.toMatchObject({
+        statusCode: 404,
+        message: "Committee with ID 'missing-group' not found",
+      });
+    });
+
+    it('uses resourceType Group when the public group path asks for it', async () => {
+      proxyRequest.mockResolvedValueOnce(pageOf([]));
+
+      await expect(
+        service.resolveCommitteeUid(req, 'missing-group', {
+          operation: 'get_public_group_by_id',
+          service: 'public_groups_controller',
+          path: '/groups/missing-group',
+          resourceType: 'Group',
+        })
+      ).rejects.toMatchObject({
+        statusCode: 404,
+        message: "Group with ID 'missing-group' not found",
+      });
     });
   });
 

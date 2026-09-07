@@ -352,7 +352,28 @@
       } @else if (!hasWastedKeywords()) {
         <div class="flex items-center gap-2 rounded-lg border border-dashed border-green-300 bg-green-50 px-4 py-3">
           <i class="fa-light fa-circle-check text-green-500" aria-hidden="true"></i>
-          <p class="text-sm text-green-700">All keywords with spend are generating conversions.</p>
+          <!--
+            The all-clear is a claim about EVERY keyword, so it must not be made over a capped
+            slice: omitted rows can carry exactly the waste it says is absent. When the set was
+            truncated the same green state reports only what was actually examined.
+          -->
+          @if (keywordsPartial()) {
+            <p class="text-sm text-green-700" data-testid="wasted-keywords-partial-clear">
+              No wasted spend among the top {{ keywordsExamined() }} keywords by impressions. Keywords beyond that were not checked.
+            </p>
+          } @else if (keywordsCompletenessUnknown()) {
+            <!--
+              Completeness UNKNOWN, not proven complete. The legacy read applies a bare LIMIT with
+              no probe for a further row, so it cannot say whether more keywords exist. An
+              unqualified all-clear here would be a claim about every keyword, made over a set
+              nobody established was whole -- hiding the very waste it says is absent.
+            -->
+            <p class="text-sm text-green-700" data-testid="wasted-keywords-unverified-clear">
+              No wasted spend among the {{ keywordsExamined() }} keywords checked. Whether more keywords exist could not be established.
+            </p>
+          } @else {
+            <p class="text-sm text-green-700" data-testid="wasted-keywords-all-clear">All keywords with spend are generating conversions.</p>
+          }
         </div>
       } @else {
         <div class="flex justify-end">
@@ -406,8 +427,21 @@
                     <td class="px-4 py-2.5 text-right font-medium text-red-600">0</td>
                     <td class="px-4 py-2.5 text-center">
                       @if (actionResults()[kw.adGroupId + '-' + kw.criterionId]; as result) {
-                        <span class="text-xs font-medium" [class]="result.success ? 'text-green-600' : 'text-red-600'">
-                          {{ result.success ? 'Done' : 'Failed' }}
+                        <!--
+                          THREE states, not two. An unconfirmed change may already have applied,
+                          and a retried REMOVE is irreversible — so "Failed" would invite exactly
+                          the retry that must not happen.
+
+                          The message is RENDERED rather than hidden behind `title`: a tooltip on
+                          a non-focusable span is unreachable by keyboard and touch, and the text
+                          it carries is the "verify before retrying" guidance — the one thing an
+                          operator must read before acting on an irreversible REMOVE.
+                        -->
+                        <span class="flex flex-col items-center gap-0.5">
+                          <span class="text-xs font-medium" [class]="OUTCOME_CLASS[result.state]">{{ OUTCOME_LABEL[result.state] }}</span>
+                          @if (!result.success) {
+                            <span class="max-w-[16rem] text-[11px] leading-tight" [class]="OUTCOME_CLASS[result.state]">{{ result.message }}</span>
+                          }
                         </span>
                       } @else if (actionInProgress()[kw.adGroupId + '-' + kw.criterionId]) {
                         <i class="fa-light fa-spinner-third fa-spin text-gray-400" aria-hidden="true"></i>
@@ -491,8 +525,21 @@
                     <td class="px-4 py-2.5 text-right text-gray-700">{{ kw.spend | adsCurrency }}</td>
                     <td class="px-4 py-2.5 text-center">
                       @if (actionResults()[kw.adGroupId + '-' + kw.criterionId]; as result) {
-                        <span class="text-xs font-medium" [class]="result.success ? 'text-green-600' : 'text-red-600'">
-                          {{ result.success ? 'Done' : 'Failed' }}
+                        <!--
+                          THREE states, not two. An unconfirmed change may already have applied,
+                          and a retried REMOVE is irreversible — so "Failed" would invite exactly
+                          the retry that must not happen.
+
+                          The message is RENDERED rather than hidden behind `title`: a tooltip on
+                          a non-focusable span is unreachable by keyboard and touch, and the text
+                          it carries is the "verify before retrying" guidance — the one thing an
+                          operator must read before acting on an irreversible REMOVE.
+                        -->
+                        <span class="flex flex-col items-center gap-0.5">
+                          <span class="text-xs font-medium" [class]="OUTCOME_CLASS[result.state]">{{ OUTCOME_LABEL[result.state] }}</span>
+                          @if (!result.success) {
+                            <span class="max-w-[16rem] text-[11px] leading-tight" [class]="OUTCOME_CLASS[result.state]">{{ result.message }}</span>
+                          }
                         </span>
                       } @else if (actionInProgress()[kw.adGroupId + '-' + kw.criterionId]) {
                         <i class="fa-light fa-spinner-third fa-spin text-gray-400" aria-hidden="true"></i>

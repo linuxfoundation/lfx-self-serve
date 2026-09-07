@@ -18,6 +18,8 @@ SPDX-License-Identifier: MIT
         control="contractType"
         [value]="individualValue"
         [label]="copy.individual.label"
+        [disabled]="individualHeld"
+        [disabledReason]="individualHeld ? copy.alreadyHeld : ''"
         describedBy="sign-contract-type-select-individual-description"
         testId="sign-contract-type-select-individual" />
       <p id="sign-contract-type-select-individual-description" class="pl-1 text-xs leading-relaxed text-slate-500">
@@ -31,6 +33,8 @@ SPDX-License-Identifier: MIT
         control="contractType"
         [value]="corporateValue"
         [label]="copy.corporate.label"
+        [disabled]="corporateHeld"
+        [disabledReason]="corporateHeld ? copy.alreadyHeld : ''"
         describedBy="sign-contract-type-select-corporate-description"
         testId="sign-contract-type-select-corporate" />
       <p id="sign-contract-type-select-corporate-description" class="pl-1 text-xs leading-relaxed text-slate-500">

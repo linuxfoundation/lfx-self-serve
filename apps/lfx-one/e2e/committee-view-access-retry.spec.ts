@@ -8,6 +8,7 @@
  */
 
 import { expect, Page, test } from '@playwright/test';
+import { skipWhenAuthMissing } from './helpers/auth.helper';
 
 import {
   buildBaseCommittee,
@@ -15,6 +16,8 @@ import {
   gotoCommitteeTab as gotoCommitteeTabHelper,
   mockCommitteeApis as mockCommitteeApisHelper,
 } from './helpers/committee-about.helper';
+
+test.beforeEach(() => skipWhenAuthMissing());
 
 const COMMITTEE_UID = 'e2e-access-retry-committee';
 

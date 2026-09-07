@@ -2,9 +2,12 @@
 // SPDX-License-Identifier: MIT
 
 import { expect, test } from '@playwright/test';
+import { skipWhenAuthMissing } from './helpers/auth.helper';
 import type { RewardsSummaryResponse } from '@lfx-one/shared/interfaces';
 
 import { mockRewardsSummary, mockTrainingShell, openRewards, rewardPromotion, rewardsSummary } from './helpers/rewards-impersonation.helper';
+
+test.beforeEach(() => skipWhenAuthMissing());
 
 test.describe('Rewards impersonation contract', () => {
   test.beforeEach(async ({ page }) => {

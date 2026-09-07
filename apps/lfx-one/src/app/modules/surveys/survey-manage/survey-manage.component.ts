@@ -1,7 +1,8 @@
 // Copyright The Linux Foundation and each contributor to LFX.
 // SPDX-License-Identifier: MIT
 
-import { Component, computed, inject, Signal, signal } from '@angular/core';
+import { HttpErrorResponse } from '@angular/common/http';
+import { Component, computed, DestroyRef, inject, Signal, signal } from '@angular/core';
 import { toObservable, toSignal } from '@angular/core/rxjs-interop';
 import { FormControl, FormGroup, ReactiveFormsModule, Validators } from '@angular/forms';
 import { ActivatedRoute, Router, RouterLink } from '@angular/router';
@@ -14,17 +15,29 @@ import {
   SURVEY_LABEL,
   SURVEY_MANAGE_TOTAL_STEPS,
 } from '@lfx-one/shared/constants';
-import { Committee, CommitteeReference, CreateSurveyRequest, SurveyDistributionMethod, SurveyReminderType } from '@lfx-one/shared/interfaces';
+import {
+  Committee,
+  CommitteeReference,
+  CreateSurveyRequest,
+  EntityWithProject,
+  Survey,
+  SurveyDistributionMethod,
+  SurveyReminderType,
+} from '@lfx-one/shared/interfaces';
 import { CommitteeService } from '@services/committee.service';
+import { ProjectContextService } from '@services/project-context.service';
+import { ProjectService } from '@services/project.service';
 import { SurveyService } from '@services/survey.service';
+import { syncEntityProjectContext, syncEntityProjectContextFallback } from '@shared/utils/entity-project-context.util';
 import { evictOnWriteAccessLoss } from '@shared/utils/evict-on-write-access-loss.util';
+import { resolveEntityWriteSlug } from '@shared/utils/write-access.util';
 import { MessageComponent } from '@components/message/message.component';
 import { markFormControlsAsTouched } from '@lfx-one/shared/utils';
 import { trimmedRequired } from '@lfx-one/shared/validators';
 import { ConfirmationService, MessageService } from 'primeng/api';
 import { ConfirmDialogModule } from 'primeng/confirmdialog';
 import { StepperModule } from 'primeng/stepper';
-import { catchError, combineLatest, distinctUntilChanged, filter, map, of, switchMap, take } from 'rxjs';
+import { catchError, combineLatest, distinctUntilChanged, filter, map, Observable, of, switchMap, take } from 'rxjs';
 
 import { SurveyAudienceTypeComponent } from '../components/survey-audience-type/survey-audience-type.component';
 import { SurveyEmailDraftComponent } from '../components/survey-email-draft/survey-email-draft.component';
@@ -56,6 +69,9 @@ export class SurveyManageComponent {
   private readonly messageService = inject(MessageService);
   private readonly committeeService = inject(CommitteeService);
   private readonly surveyService = inject(SurveyService);
+  private readonly projectContextService = inject(ProjectContextService);
+  private readonly projectService = inject(ProjectService);
+  private readonly destroyRef = inject(DestroyRef);
 
   // Committee context — when navigated from a committee tab with ?committee_uid=
   public readonly committeeContext = signal<Committee | null>(null);
@@ -75,6 +91,13 @@ export class SurveyManageComponent {
 
   // Complex computed/toSignal signals
   public readonly isEditMode: Signal<boolean> = this.initIsEditMode();
+  private readonly survey: Signal<Survey | null> = this.initSurvey();
+  // Survey → EntityWithProject adapter so the active project context syncs from the loaded
+  // survey, not a stale cookie-restored context (GH-1569).
+  private readonly surveyEntityContext: Signal<EntityWithProject | null> = this.initSurveyEntityContext();
+  // URL-stamped committee scope for the access predicate — mirrors writerGuard's committee leg.
+  private readonly committeeUidFromUrl = this.route.snapshot.queryParamMap.get('committee_uid');
+  private readonly writeAccess: Signal<boolean> = this.initWriteAccess();
   public readonly formValue: Signal<Record<string, unknown>> = this.initFormValue();
   public readonly canGoPrevious: Signal<boolean> = this.initCanGoPrevious();
   public readonly canGoNext: Signal<boolean> = this.initCanGoNext();
@@ -84,15 +107,42 @@ export class SurveyManageComponent {
   public readonly submitButtonLabel: Signal<string> = this.initSubmitButtonLabel();
 
   public constructor() {
+    // Sync context from the loaded survey itself — an edit deep link can arrive with no
+    // `?project=` under a stale cookie-restored context (GH-1569). Mirrors meeting-manage (gh-1432).
+    // canonicalizeRoute rewrites a wrong-tier URL (/project/* vs /foundation/*) to the survey's own
+    // tier so copied wizard links reflect ownership — mirrors vote-manage/mailing-list-manage.
+    syncEntityProjectContext(this.surveyEntityContext, this.projectContextService, this.router, this.destroyRef, {
+      preferEntityKind: true,
+      canonicalizeRoute: true,
+    });
+    // Unenriched-payload fallback (project_uid but no project_slug): resolve the project by uid;
+    // freshFetch re-reads the detail uncached as a last resort for a committee writer whose
+    // relation-gated project lookup resolves null (the enrichment needs no project relation).
+    syncEntityProjectContextFallback(this.surveyEntityContext, this.projectService, this.projectContextService, this.router, this.destroyRef, {
+      entityKind: 'survey',
+      canonicalizeRoute: true,
+      freshFetch: (uid) =>
+        this.surveyService.getSurvey(uid, undefined, { skipCache: true }).pipe(
+          map((survey) => ({
+            project_uid: survey.project_uid ?? '',
+            project_slug: survey.project_slug,
+            project_name: survey.project_name,
+            is_foundation: survey.is_foundation ?? null,
+          }))
+        ),
+    });
     this.initCommitteeContext();
-    evictOnWriteAccessLoss();
+    // Pass the guard-mirroring predicate — the default canWrite is project-writer-only and would
+    // evict guard-admitted committee writers the moment the context syncs to the survey's project.
+    evictOnWriteAccessLoss(this.writeAccess);
   }
 
   public nextStep(): void {
     const next = this.currentStep() + 1;
     if (next <= this.totalSteps && this.canNavigateToStep(next)) {
       if (this.isEditMode()) {
-        this.router.navigate([], { queryParams: { step: next } });
+        // Merge so the entity's `?project=` (context sync key) and `committee_uid` survive step changes (GH-1569).
+        this.router.navigate([], { queryParams: { step: next }, queryParamsHandling: 'merge' });
       } else {
         this.internalStep.set(next);
       }
@@ -103,7 +153,7 @@ export class SurveyManageComponent {
     const previous = this.currentStep() - 1;
     if (previous >= 1) {
       if (this.isEditMode()) {
-        this.router.navigate([], { queryParams: { step: previous } });
+        this.router.navigate([], { queryParams: { step: previous }, queryParamsHandling: 'merge' });
       } else {
         this.internalStep.set(previous);
       }
@@ -113,7 +163,7 @@ export class SurveyManageComponent {
   public goToStep(step: number | undefined): void {
     if (step !== undefined && step >= 1 && step <= this.totalSteps) {
       if (this.isEditMode()) {
-        this.router.navigate([], { queryParams: { step } });
+        this.router.navigate([], { queryParams: { step }, queryParamsHandling: 'merge' });
       } else {
         if (step <= this.currentStep() || this.canNavigateToStep(step)) {
           this.internalStep.set(step);
@@ -391,6 +441,160 @@ Thank you,
       }
     }
     return true;
+  }
+
+  /**
+   * Edit-mode entity fetch: loads the survey being edited so the project-context sync and the
+   * writerGuard probe derive from the entity itself, not a stale cookie-restored context
+   * (GH-1569). Shares the guard probe's short-TTL cached request via SurveyService.getSurvey.
+   * No form pre-population here — that's the edit-flow completion ticket.
+   */
+  private initSurvey(): Signal<Survey | null> {
+    return toSignal(
+      toObservable(this.surveyId).pipe(
+        switchMap((id) => {
+          if (!id) {
+            return of(null);
+          }
+          return this.surveyService.getSurvey(id).pipe(
+            catchError((error) => {
+              // Only a real 404 ejects — the fetch exists for context sync (no form pre-population
+              // yet), so a transient 5xx/network blip leaves the page mounted; the context simply
+              // stays uncorrected rather than mislabeling a server error as "not found".
+              if (error instanceof HttpErrorResponse && error.status === 404) {
+                this.messageService.add({
+                  severity: 'error',
+                  summary: 'Error',
+                  detail: `${this.surveyLabel.singular} not found`,
+                });
+                this.router.navigate(['/surveys']);
+              }
+              return of(null);
+            })
+          );
+        })
+      ),
+      { initialValue: null }
+    );
+  }
+
+  /**
+   * Adapts the loaded survey to {@link EntityWithProject}; a falsy `project_slug` (absent or
+   * empty) reads as "unenriched" to both the sync and the fallback helper.
+   */
+  private initSurveyEntityContext(): Signal<EntityWithProject | null> {
+    return computed(() => {
+      const survey = this.survey();
+      if (!survey) {
+        return null;
+      }
+      return {
+        uid: survey.uid,
+        project_uid: survey.project_uid ?? '',
+        project_slug: survey.project_slug,
+        project_name: survey.project_name,
+        is_foundation: survey.is_foundation ?? null,
+      };
+    });
+  }
+
+  /**
+   * Access predicate mirroring writerGuard's surveys standard — project writer on the survey's OWN
+   * project (never the boot context), or committee writer via the survey's own committees /
+   * ?committee_uid=; pending legs stay provisionally true so a resolving leg can't evict a
+   * guard-admitted committee writer mid-edit. Mirrors vote-manage's initWriteAccess (GH-1568).
+   */
+  private initWriteAccess(): Signal<boolean> {
+    const editSurveyId = this.route.snapshot.paramMap.get('id');
+    const projectKey$: Observable<string | null | undefined> = editSurveyId
+      ? toObservable(this.survey).pipe(
+          map((survey) => {
+            if (!survey) {
+              // Pending — in edit mode the authorization target comes from the survey itself.
+              return undefined;
+            }
+            // Mirror writerGuard's resolution order; the active-context fallback covers a survey
+            // carrying neither slug nor uid (the manage component owns that error path). The
+            // project_uid ?? '' mapping mirrors the guard probe — Survey.project_uid is typed
+            // optional and resolveEntityWriteSlug's || treats '' as absent.
+            return resolveEntityWriteSlug(
+              { project_slug: survey.project_slug, project_uid: survey.project_uid ?? '' },
+              this.projectContextService.activeContext()?.slug ?? null
+            );
+          })
+        )
+      : toObservable(this.projectContextService.activeContext).pipe(map((ctx) => ctx?.slug ?? null));
+
+    const projectAccess = toSignal(
+      projectKey$.pipe(
+        filter((key): key is string | null => key !== undefined),
+        distinctUntilChanged(),
+        switchMap((key) => {
+          if (!key) {
+            return of(false);
+          }
+          // writerGuard admits no coordinator-style role for surveys — project.writer only.
+          return this.projectService.getProject(key, false).pipe(
+            map((project) => project?.writer === true),
+            catchError(() => of(false))
+          );
+        })
+      )
+      // No initialValue: undefined doubles as the leg's pending state (see the doc above).
+    );
+    // Edit mode mirrors writerGuard's surveys probe selection: the URL ?committee_uid= wins only
+    // when the survey's own committees[] contains it, else the primary committee; a committee-less
+    // survey falls back to the URL param. Hoisted: toObservable needs the injection context, so it
+    // can't be created lazily inside the switchMap below.
+    const editCommitteeUid$: Observable<string | null | undefined> = toObservable(this.survey).pipe(
+      map((survey) => {
+        if (!survey) {
+          return undefined;
+        }
+        const url = this.committeeUidFromUrl;
+        const entityUid = url && survey.committees?.some((c) => c.committee_uid === url) ? url : survey.committees?.[0]?.committee_uid;
+        return entityUid ?? url;
+      })
+    );
+    // Gated on the project leg resolving false: a granted project leg makes the committee fetch
+    // moot, and while it's pending this leg stays pending too. undefined stays pending; null resolves immediately.
+    const committeeUid$: Observable<string | null | undefined> = toObservable(projectAccess).pipe(
+      filter((project): project is boolean => project !== undefined),
+      distinctUntilChanged(),
+      switchMap((project) => {
+        if (project) {
+          // Project leg granted — resolve the committee leg without firing the HTTP probe.
+          return of<string | null>(null);
+        }
+        return editSurveyId ? editCommitteeUid$ : of(this.committeeUidFromUrl);
+      })
+    );
+    const committeeAccess = toSignal(
+      committeeUid$.pipe(
+        filter((uid): uid is string | null => uid !== undefined),
+        distinctUntilChanged(),
+        switchMap((uid) =>
+          uid
+            ? this.committeeService.fetchCommittee(uid).pipe(
+                map((committee) => committee?.writer === true),
+                catchError(() => of(false))
+              )
+            : of(false)
+        )
+      )
+      // No initialValue: undefined doubles as the leg's pending state (see the doc above).
+    );
+    return computed(() => {
+      const project = projectAccess();
+      const committee = committeeAccess();
+      if (project === true || committee === true) {
+        return true;
+      }
+      if (project === undefined || committee === undefined) {
+        return true; // provisional — a pending leg can still grant access
+      }
+      return false;
+    });
   }
 
   private isStepValid(step: number): boolean {

@@ -273,6 +273,31 @@ describe('toMyClaAgreement', () => {
     expect(revoked.status).toBe('revoked');
   });
 
+  // A sanctioned ECLA that was also invalidated still carries both dates: the
+  // producer copies invalidatedAt before the sanctions override to revoked.
+  it('copies invalidatedAt and flaggedAt from the producer and omits blanks', () => {
+    const dated = toMyClaAgreement(
+      ecla({ status: 'revoked', approved: true, valid: false, flaggedAt: '2026-08-01T12:00:00Z', invalidatedAt: '  2026-06-03T12:00:00Z  ' })
+    );
+    expect(dated.flaggedAt).toBe('2026-08-01T12:00:00Z');
+    expect(dated.invalidatedAt).toBe('2026-06-03T12:00:00Z');
+
+    const omitted = toMyClaAgreement(ecla({ status: 'invalidated', approved: false, valid: false }));
+    expect(omitted.invalidatedAt).toBeUndefined();
+    expect(omitted.flaggedAt).toBeUndefined();
+
+    const blank = toMyClaAgreement(ecla({ status: 'invalidated', approved: false, valid: false, invalidatedAt: '   ', flaggedAt: '' }));
+    expect(blank.invalidatedAt).toBeUndefined();
+    expect(blank.flaggedAt).toBeUndefined();
+  });
+
+  it('does not invent an Invalidated or Revoked date from signedOn', () => {
+    const row = toMyClaAgreement(ecla({ status: 'invalidated', approved: false, valid: false, signedOn: '2022-01-01T18:40:42Z' }));
+    expect(row.signedOn).toBe('2022-01-01T18:40:42Z');
+    expect(row.invalidatedAt).toBeUndefined();
+    expect(row.flaggedAt).toBeUndefined();
+  });
+
   it('pins claGroupId from the producer and omits a blank value', () => {
     expect(toMyClaAgreement(ecla()).claGroupId).toBe('cg-2');
     expect(toMyClaAgreement(ecla({ claGroupID: '  ' })).claGroupId).toBeUndefined();

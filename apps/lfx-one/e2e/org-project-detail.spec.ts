@@ -21,6 +21,9 @@
  */
 
 import { expect, test } from '@playwright/test';
+import { skipWhenAuthMissing } from './helpers/auth.helper';
+
+test.beforeEach(() => skipWhenAuthMissing());
 
 const DETAIL_URL = '/org/projects/k8s';
 const DETAIL_URL_BOGUS = '/org/projects/totally-bogus-project';
