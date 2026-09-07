@@ -132,4 +132,42 @@ describe('OrgLensProjectsService health score mapping', () => {
     expect(response.projects[0]?.healthCoveredCategoryCount).toBe(3);
     expect(response.projects[0]?.healthMaxScore).toBe(100);
   });
+
+  it('uses the warehouse v2 category even when the raw v2 score is null (LFXV2-3379)', async () => {
+    mockProjectsRow(projectsRow({ HEALTH_OVERALL_SCORE_V2: null, HEALTH_SCORE_CATEGORY_V2: 'Fair' }));
+
+    const response = await service.getProjects(ACCOUNT_ID, ORG_NAME, null);
+
+    expect(response.projects[0]?.health).toBe('fair');
+  });
+
+  it('renders health metrics from the warehouse percentage columns even when the v2 category is null (LFXV2-3379)', async () => {
+    mockProjectsRow(
+      projectsRow({
+        HEALTH_SCORE_CATEGORY_V2: null,
+        HEALTH_CONTRIBUTOR_PERCENTAGE: 42,
+        HEALTH_POPULARITY_PERCENTAGE: 10,
+        HEALTH_DEVELOPMENT_PERCENTAGE: 75,
+        HEALTH_SECURITY_PERCENTAGE: 30,
+      })
+    );
+
+    const response = await service.getProjects(ACCOUNT_ID, ORG_NAME, null);
+
+    expect(response.projects[0]?.health).toBe('unavailable');
+    expect(response.projects[0]?.healthMetrics).toEqual([
+      { label: 'Contributors', value: 42 },
+      { label: 'Popularity', value: 10 },
+      { label: 'Development', value: 75 },
+      { label: 'Security', value: 30 },
+    ]);
+  });
+
+  it('omits health metrics when no warehouse percentage columns are present', async () => {
+    mockProjectsRow(projectsRow());
+
+    const response = await service.getProjects(ACCOUNT_ID, ORG_NAME, null);
+
+    expect(response.projects[0]?.healthMetrics).toEqual([]);
+  });
 });

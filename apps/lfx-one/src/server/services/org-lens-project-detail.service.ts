@@ -30,7 +30,7 @@ import type {
   OrgLensProjectTrendSeries,
   OrgLensTrendBlock,
 } from '@lfx-one/shared/interfaces';
-import { buildInsightsUrl, classifyHealthScore, normalizeHealthScoreCategoryV2 } from '@lfx-one/shared/utils';
+import { buildInsightsUrl, normalizeHealthScoreCategoryV2 } from '@lfx-one/shared/utils';
 
 import { toIsoDate } from '../helpers/date-format.helper';
 import { escapeSqlLikePattern } from '../helpers/validation.helper';
@@ -1892,12 +1892,10 @@ export class OrgLensProjectDetailService {
     };
   }
 
-  private mapHealth(row: Pick<HeroRow, 'HEALTH_OVERALL_SCORE_V2' | 'HEALTH_SCORE_CATEGORY_V2'>): OrgLensProjectHealth | null {
-    const v2 = normalizeHealthScoreCategoryV2(row.HEALTH_SCORE_CATEGORY_V2);
-    if (v2) return v2;
-    const score = row.HEALTH_OVERALL_SCORE_V2;
-    if (score === null || score === undefined) return null;
-    return classifyHealthScore(score);
+  private mapHealth(row: Pick<HeroRow, 'HEALTH_SCORE_CATEGORY_V2'>): OrgLensProjectHealth | null {
+    // The warehouse v2 category is the sole source of truth for the health label — never fall back to
+    // classifying the legacy v1 score when the v2 category is null (LFXV2-3379).
+    return normalizeHealthScoreCategoryV2(row.HEALTH_SCORE_CATEGORY_V2);
   }
 
   private buildTechnicalCards(cards: CardsRow | null, index: SparklineIndex, axis: string[]): OrgLensProjectInfluenceCard[] {

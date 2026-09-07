@@ -239,12 +239,20 @@ describe('OrgLensProjectDetailService.getHeroBlock health mapping', () => {
     });
   }
 
-  it('falls back to the raw v2 score when the v2 category is unrecognized', async () => {
+  it('returns null health when the v2 category is unrecognized, never falling back to the raw v2 score (LFXV2-3379)', async () => {
     mockHeroRow({ HEALTH_OVERALL_SCORE_V2: 50, HEALTH_SCORE_CATEGORY_V2: 'Typo' });
 
     const block = await service.getHeroBlock(ORG, SLUG);
 
-    expect(block?.hero.health).toBe('fair');
+    expect(block?.hero.health).toBeNull();
+  });
+
+  it('returns null health when a raw v2 score is present but the v2 category is not (LFXV2-3379)', async () => {
+    mockHeroRow({ HEALTH_OVERALL_SCORE_V2: 90, HEALTH_SCORE_CATEGORY_V2: null });
+
+    const block = await service.getHeroBlock(ORG, SLUG);
+
+    expect(block?.hero.health).toBeNull();
   });
 
   it('returns null health when no v2 score or category is present', async () => {

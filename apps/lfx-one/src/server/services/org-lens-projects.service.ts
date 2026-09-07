@@ -17,7 +17,6 @@ import {
 } from '@lfx-one/shared/constants';
 import { normalizeHealthScoreCategoryV2 } from '@lfx-one/shared/utils';
 import type {
-  HealthScore,
   InfluenceBand,
   InfluenceTrendDirection,
   OrgLensProject,
@@ -495,14 +494,15 @@ export class OrgLensProjectsService {
 
   private mapProject(row: OrgLensProjectRow, peopleRows: OrgLensProjectPersonRow[]): OrgLensProject {
     const people = peopleRows.filter((person) => person.PROJECT_SLUG === row.PROJECT_SLUG);
-    const hasHealthScore = this.hasHealthScore(row);
+    const category = normalizeHealthScoreCategoryV2(row.HEALTH_SCORE_CATEGORY_V2);
     return {
       slug: row.PROJECT_SLUG,
       name: row.PROJECT_NAME,
       logoUrl: row.PROJECT_LOGO_URL ?? '',
       foundation: this.mapFoundation(row),
-      health: hasHealthScore ? this.mapHealthScore(row) : 'unavailable',
-      // Sourced straight from the warehouse — never recomputed, per mapHealthScore's v2-category/score precedence.
+      health: category ?? 'unavailable',
+      // Sourced straight from the warehouse — never recomputed; independent of the category fallback removed
+      // by LFXV2-3379.
       healthMaxScore: row.HEALTH_MAX_SCORE_V2 ?? null,
       healthCoveredCategoryCount: row.COVERED_CATEGORY_COUNT_V2 ?? null,
       // These 'silent'/'non-lf' fallbacks are only user-visible for real (activity) rows. For no-activity rows the
@@ -526,7 +526,7 @@ export class OrgLensProjectsService {
       commits1y: 0,
       changeDriver: { label: 'Not calculated yet', direction: 'flat' },
       description: row.DESCRIPTION ?? `${row.PROJECT_NAME} is an open source project in the ${this.mapFoundation(row).name} ecosystem.`,
-      healthMetrics: hasHealthScore ? this.mapHealthMetrics(row) : [],
+      healthMetrics: this.hasHealthMetrics(row) ? this.mapHealthMetrics(row) : [],
       // Real org-scoped row (org-dashboard parity): every metric is genuine, including participating
       // projects with activity_count = 0. fetchNoActivityProjects overrides this for its fallback rows.
       metricsState: 'full',
@@ -572,13 +572,22 @@ export class OrgLensProjectsService {
     return value === 'up' || value === 'down' || value === 'flat' ? value : 'flat';
   }
 
-  private hasHealthScore(row: Pick<OrgLensProjectRow, 'HEALTH_OVERALL_SCORE_V2' | 'HEALTH_SCORE_CATEGORY_V2'>): boolean {
-    return row.HEALTH_OVERALL_SCORE_V2 != null && normalizeHealthScoreCategoryV2(row.HEALTH_SCORE_CATEGORY_V2) != null;
+  private hasHealthScore(row: Pick<OrgLensProjectRow, 'HEALTH_SCORE_CATEGORY_V2'>): boolean {
+    return normalizeHealthScoreCategoryV2(row.HEALTH_SCORE_CATEGORY_V2) != null;
   }
 
-  private mapHealthScore(row: Pick<OrgLensProjectRow, 'HEALTH_SCORE_CATEGORY_V2'>): Exclude<HealthScore, 'unavailable'> {
-    // Callers only invoke this when hasHealthScore() has confirmed the v2 category resolves to a known value.
-    return normalizeHealthScoreCategoryV2(row.HEALTH_SCORE_CATEGORY_V2)!;
+  private hasHealthMetrics(
+    row: Pick<
+      OrgLensProjectRow,
+      'HEALTH_CONTRIBUTOR_PERCENTAGE' | 'HEALTH_POPULARITY_PERCENTAGE' | 'HEALTH_DEVELOPMENT_PERCENTAGE' | 'HEALTH_SECURITY_PERCENTAGE'
+    >
+  ): boolean {
+    return (
+      row.HEALTH_CONTRIBUTOR_PERCENTAGE != null ||
+      row.HEALTH_POPULARITY_PERCENTAGE != null ||
+      row.HEALTH_DEVELOPMENT_PERCENTAGE != null ||
+      row.HEALTH_SECURITY_PERCENTAGE != null
+    );
   }
 
   private mapHealthMetrics(row: OrgLensProjectRow): OrgLensProject['healthMetrics'] {
