@@ -4,7 +4,7 @@
 import type { AbstractControl, ValidationErrors, ValidatorFn } from '@angular/forms';
 
 import type { CommitteeReference } from '../interfaces/committee.interface';
-import { combineDateTime, isDateTimeInFutureForTimezone } from '../utils/date-time.utils';
+import { combineDateTime, isDateTimeInFutureForTimezone, wallTimeExistsInTimezone } from '../utils/date-time.utils';
 
 /**
  * Validator that checks if a string value is non-empty after trimming whitespace.
@@ -101,6 +101,13 @@ export function voteDeadlineValidator(): ValidatorFn {
     const combinedDateTime = combineDateTime(closeDate, closeTime, timezone);
     if (!combinedDateTime) {
       return null; // Invalid time format
+    }
+
+    // A syntactically valid wall time can be nonexistent in the selected zone during the spring-forward
+    // gap (e.g. Mar 8 2026 2:30 AM in America/New_York) — fromZonedTime normalizes it to a different
+    // local time, so reject rather than store a deadline ~1h off the organizer's exact selection.
+    if (!wallTimeExistsInTimezone(closeDate, closeTime, timezone)) {
+      return { nonexistentWallTime: true };
     }
 
     if (!isDateTimeInFutureForTimezone(combinedDateTime, timezone)) {

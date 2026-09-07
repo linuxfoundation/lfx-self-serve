@@ -8,7 +8,7 @@ import { DRAFT_VOTE_DEFAULT_DURATION_DAYS, DRAFT_VOTE_PLACEHOLDER_QUESTION, VOTE
 import { LEGACY_VOTE_TIMEZONE } from '../constants/timezones.constants';
 import { CommitteeMemberVotingStatus } from '../enums/committee-member.enum';
 import { maxCodePointsValidator } from '../validators/max-code-points.validator';
-import { combineDateTime, formatTo12HourInTimezone } from './date-time.utils';
+import { combineDateTime, formatTo12HourInTimezone, parseTime12Hour } from './date-time.utils';
 import type { PaginatedResponse } from '../interfaces/api.interface';
 import type { CommitteeReference } from '../interfaces/committee.interface';
 import type {
@@ -260,7 +260,12 @@ function prepareDraftQuestions(questions: QuestionFormValue[]): CreatePollQuesti
 
 /** Draft end_time: the combined deadline when date+time combine cleanly, else the default-duration fallback — never an empty required field. */
 function resolveDraftEndTime(formValue: VoteFormValue): string {
-  const combined = formValue.close_date ? combineDateTime(formValue.close_date, formValue.close_time, formValue.timezone) : '';
+  // Drafts bypass form validators, so re-check what validTimeFormat() enforces before combining:
+  // an out-of-range time like '25:99 PM' would be Date-normalized rather than rejected, and an empty
+  // zone would be combined as browser-local then reopened as legacy Pacific (end_time_timezone omitted).
+  const { close_date: closeDate, close_time: closeTime, timezone } = formValue;
+  const canCombine = !!closeDate && !!timezone && parseTime12Hour(closeTime) !== null;
+  const combined = canCombine ? combineDateTime(closeDate, closeTime, timezone) : '';
   return combined || addDays(new Date(), DRAFT_VOTE_DEFAULT_DURATION_DAYS).toISOString();
 }
 

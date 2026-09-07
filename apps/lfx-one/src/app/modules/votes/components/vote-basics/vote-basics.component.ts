@@ -12,7 +12,7 @@ import { SelectComponent } from '@components/select/select.component';
 import { TimePickerComponent } from '@components/time-picker/time-picker.component';
 import { TextareaComponent } from '@components/textarea/textarea.component';
 import { COMMITTEE_LABEL, VOTE_ALLOW_ABSTAIN_OPTIONS, VOTE_ELIGIBLE_PARTICIPANTS, VOTE_LABEL } from '@lfx-one/shared/constants';
-import { buildTimezoneOptions, combineDateTime, getTimezoneUtcOffsetString, startOfTodayInTimezone } from '@lfx-one/shared/utils';
+import { buildTimezoneOptions, getTimezoneUtcOffsetString, parseTime12Hour, startOfTodayInTimezone } from '@lfx-one/shared/utils';
 
 @Component({
   selector: 'lfx-vote-basics',
@@ -45,7 +45,7 @@ export class VoteBasicsComponent {
   public readonly minDate: Signal<Date> = this.initMinDate();
   public readonly timezoneOptions: Signal<{ label: string; value: string }[]> = this.initTimezoneOptions();
 
-  // Offset labels must reflect the picked deadline instant — static catalog offsets lie across DST boundaries,
+  // Offset labels must reflect the picked wall-clock date/time — static catalog offsets lie across DST boundaries,
   // and date-only midnight mislabels DST transition evenings (Nov 1 2026 New York: midnight UTC-04, 11:59 PM UTC-05).
   private initTimezoneOptions(): Signal<{ label: string; value: string }[]> {
     return computed(() => {
@@ -53,8 +53,11 @@ export class VoteBasicsComponent {
       const closeDate = (this.form().get('close_date')?.value as Date | null) ?? new Date();
       const closeTime = this.form().get('close_time')?.value as string;
       const timezone = this.form().get('timezone')?.value as string;
-      const combined = closeTime ? combineDateTime(closeDate, closeTime, timezone) : '';
-      const deadline = combined ? new Date(combined) : closeDate;
+      // getTimezoneOffset reads the Date's wall-clock fields per candidate zone, so pass the picked
+      // date/time unconverted — converting through the selected zone first would label every other
+      // zone for the wrong wall time across a DST boundary (Mar 8 3:30 AM Tokyo → New York is -04:00, not -05:00).
+      const parsed = closeTime ? parseTime12Hour(closeTime) : null;
+      const deadline = parsed ? new Date(closeDate.getFullYear(), closeDate.getMonth(), closeDate.getDate(), parsed.hours, parsed.minutes) : closeDate;
       const options = buildTimezoneOptions(deadline);
       // A detected zone absent from the curated catalog (e.g. America/Phoenix) would render the
       // required select blank despite holding a value — surface it as a synthesized option.

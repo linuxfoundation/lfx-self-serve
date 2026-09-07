@@ -176,6 +176,10 @@
           @if (form().errors?.['futureDateTime'] && (isEditMode() || form().get('close_date')?.touched || form().get('close_time')?.touched)) {
             <p class="text-red-500 text-xs">The close date and time must be in the future.</p>
           }
+          <!-- Nonexistent wall time — spring-forward DST gap (e.g. 2:30 AM on the day clocks jump to 3:00 AM) -->
+          @if (form().errors?.['nonexistentWallTime'] && (isEditMode() || form().get('close_date')?.touched || form().get('close_time')?.touched)) {
+            <p class="text-red-500 text-xs">This close time doesn't exist in the selected timezone (DST transition) — pick another time.</p>
+          }
 
           <!-- Allow Abstain -->
           <div class="flex flex-col gap-1">

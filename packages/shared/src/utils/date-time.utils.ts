@@ -289,7 +289,8 @@ export function startOfTodayInTimezone(timezone: string): Date {
 }
 
 /**
- * Parses a 12-hour time string and returns hours and minutes
+ * Parses a 12-hour time string and returns hours and minutes.
+ * Returns null for out-of-range input (e.g. '25:99 PM') — a 12-hour clock has hours 1–12, minutes 0–59.
  */
 export function parseTime12Hour(time: string): { hours: number; minutes: number } | null {
   const match = time.match(/(\d{1,2}):(\d{2})\s*(AM|PM)/i);
@@ -300,6 +301,10 @@ export function parseTime12Hour(time: string): { hours: number; minutes: number 
   let hours = parseInt(match[1], 10);
   const minutes = parseInt(match[2], 10);
   const period = match[3].toUpperCase();
+
+  if (hours < 1 || hours > 12 || minutes > 59) {
+    return null;
+  }
 
   // Convert to 24-hour format
   if (period === 'PM' && hours !== 12) {
@@ -314,6 +319,51 @@ export function parseTime12Hour(time: string): { hours: number; minutes: number 
 // ============================================================================
 // Timezone Utilities
 // ============================================================================
+
+/**
+ * Returns true when the wall-clock date+time actually exists in the given timezone.
+ * Syntactically valid times can be nonexistent during the spring-forward gap (e.g. Mar 8 2026
+ * 2:30 AM in America/New_York) — fromZonedTime silently normalizes those to a different local
+ * time, so the wall fields are resolved via a two-pass offset convergence and compared.
+ *
+ * Wall fields come from Intl.DateTimeFormat parts, NOT toZonedTime: toZonedTime rebuilds its
+ * result through a runtime-local setHours(), which normalizes when the wall result falls inside
+ * the BROWSER zone's own DST gap (Mar 8 2:30 AM in a US browser would corrupt a Tokyo check).
+ * Ambiguous fall-back times converge to a real instant and return true.
+ */
+export function wallTimeExistsInTimezone(date: Date, time: string, timezone: string): boolean {
+  const parsed = parseTime12Hour(time);
+  if (!parsed) return false;
+
+  try {
+    const dtf = new Intl.DateTimeFormat('en-US', {
+      timeZone: timezone,
+      year: 'numeric',
+      month: 'numeric',
+      day: 'numeric',
+      hour: 'numeric',
+      minute: 'numeric',
+      hour12: false,
+    });
+    // Wall fields of an instant as a pure UTC timestamp — no runtime-local Date construction
+    const wallMs = (instant: Date): number => {
+      const parts = dtf.formatToParts(instant);
+      const get = (type: string): number => Number(parts.find((part) => part.type === type)?.value);
+      return Date.UTC(get('year'), get('month') - 1, get('day'), get('hour') % 24, get('minute'));
+    };
+
+    const desired = Date.UTC(date.getFullYear(), date.getMonth(), date.getDate(), parsed.hours, parsed.minutes);
+    let instant = new Date(desired);
+    for (let i = 0; i < 3; i++) {
+      const wall = wallMs(instant);
+      if (wall === desired) return true;
+      instant = new Date(instant.getTime() + (desired - wall));
+    }
+    return false; // gap times oscillate around the missing hour and never converge
+  } catch {
+    return false;
+  }
+}
 
 /**
  * Returns the UTC offset string for a timezone at a given date, reflecting DST.
