@@ -52,9 +52,9 @@ export function isMentorshipIsoDate(value: string): boolean {
   return date.getFullYear() === year && date.getMonth() === month - 1 && date.getDate() === day;
 }
 
-/** CII Best Practices project IDs are numeric, matching the old maintainer enroll form. */
+/** CII Best Practices project IDs are positive integers (`[1-9][0-9]*`). */
 export function isMentorshipCiiProjectId(value: string): boolean {
-  return /^\d+$/.test(value.trim());
+  return /^[1-9][0-9]*$/.test(value.trim());
 }
 
 /** Optional-or-required HTTP(S) URL, matching the old maintainer `CustomValidators.url`. */

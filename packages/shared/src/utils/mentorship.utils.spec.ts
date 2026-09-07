@@ -221,8 +221,10 @@ describe('mentorship term lifecycle helpers', () => {
 });
 
 describe('isMentorshipCiiProjectId', () => {
-  it('accepts digits only', () => {
+  it('accepts positive integers only', () => {
     expect(isMentorshipCiiProjectId('1842')).toBe(true);
+    expect(isMentorshipCiiProjectId('0')).toBe(false);
+    expect(isMentorshipCiiProjectId('01')).toBe(false);
     expect(isMentorshipCiiProjectId('abc')).toBe(false);
     expect(isMentorshipCiiProjectId('')).toBe(false);
   });
