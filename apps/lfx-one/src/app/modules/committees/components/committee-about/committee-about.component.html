@@ -220,8 +220,7 @@
             </a>
             @if (committee().charter?.updated_by; as updatedBy) {
               <span class="text-xs text-gray-400" data-testid="committee-about-charter-updated-by"
-                >Last updated by {{ updatedBy.name || updatedBy.username }} on
-                {{ committee().charter!.updated_at | date: 'MMM d, y' }}</span
+                >Last updated by {{ updatedBy.name || updatedBy.username }} on {{ committee().charter!.updated_at | date: 'MMM d, y' }}</span
               >
             }
           </div>
