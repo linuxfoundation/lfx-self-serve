@@ -3,9 +3,8 @@
 
 import { ChangeDetectionStrategy, Component, computed, input } from '@angular/core';
 import { toObservable, toSignal } from '@angular/core/rxjs-interop';
-import { FormGroup, ReactiveFormsModule } from '@angular/forms';
+import { FormControl, FormGroup, ReactiveFormsModule } from '@angular/forms';
 import { ButtonComponent } from '@components/button/button.component';
-import { CheckboxComponent } from '@components/checkbox/checkbox.component';
 import {
   createEmptyCustomMentorshipPrerequisite,
   MENTORSHIP_COVER_LETTER_PROMPTS,
@@ -14,13 +13,15 @@ import {
   mentorshipPolicyHref,
 } from '@lfx-one/shared/constants';
 import { MentorshipEnrollFieldErrors, MentorshipPrerequisite } from '@lfx-one/shared/interfaces';
+import { isMentorshipTermsAccepted } from '@lfx-one/shared/utils';
+import { CheckboxChangeEvent, CheckboxModule } from 'primeng/checkbox';
 import { startWith, switchMap } from 'rxjs';
 
 import { EnrollCustomPrerequisiteComponent } from '../enroll-custom-prerequisite/enroll-custom-prerequisite.component';
 
 @Component({
   selector: 'lfx-mentorship-enroll-prerequisites-step',
-  imports: [ReactiveFormsModule, ButtonComponent, CheckboxComponent, EnrollCustomPrerequisiteComponent],
+  imports: [ReactiveFormsModule, ButtonComponent, CheckboxModule, EnrollCustomPrerequisiteComponent],
   templateUrl: './enroll-prerequisites-step.component.html',
   changeDetection: ChangeDetectionStrategy.OnPush,
 })
@@ -39,6 +40,8 @@ export class EnrollPrerequisitesStepComponent {
   private readonly formSnapshot = toSignal(toObservable(this.form).pipe(switchMap((group) => group.valueChanges.pipe(startWith(group.getRawValue())))), {
     initialValue: {} as Record<string, unknown>,
   });
+
+  protected readonly termsControl = computed(() => this.form().controls['termsAccepted'] as FormControl<boolean>);
 
   protected readonly prerequisites = computed(() => {
     const fromSnapshot = this.formSnapshot()['prerequisites'];
@@ -72,6 +75,10 @@ export class EnrollPrerequisitesStepComponent {
 
   protected deleteCustomPrerequisite(id: string): void {
     this.setPrerequisites(this.prerequisites().filter((item) => item.id !== id));
+  }
+
+  protected onTermsAcceptedChange(event: CheckboxChangeEvent): void {
+    this.termsControl().setValue(isMentorshipTermsAccepted(event.checked));
   }
 
   private setPrerequisites(prerequisites: MentorshipPrerequisite[]): void {

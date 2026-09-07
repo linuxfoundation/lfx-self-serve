@@ -28,11 +28,11 @@ import {
   MentorshipPrerequisite,
   MentorshipProgramTerm,
 } from '@lfx-one/shared/interfaces';
-import { getMentorshipEnrollStepErrors } from '@lfx-one/shared/utils';
+import { getMentorshipEnrollStepErrors, isMentorshipTermsAccepted } from '@lfx-one/shared/utils';
 import { MentorshipService } from '@services/mentorship.service';
 import { ConfirmationService, MessageService } from 'primeng/api';
 import { ConfirmDialogModule } from 'primeng/confirmdialog';
-import { take, tap } from 'rxjs';
+import { map, startWith, take, tap } from 'rxjs';
 
 import { EnrollDetailsStepComponent } from './components/enroll-details-step/enroll-details-step.component';
 import { EnrollPrerequisitesStepComponent } from './components/enroll-prerequisites-step/enroll-prerequisites-step.component';
@@ -95,6 +95,8 @@ export class EnrollProgramComponent {
 
   private readonly formSnapshot = toSignal(
     this.form.valueChanges.pipe(
+      startWith(this.form.getRawValue()),
+      map(() => this.form.getRawValue()),
       tap(() => {
         const name = this.form.controls.name.value;
         if (name.length > MENTORSHIP_ENROLL_NAME_MAX) {
@@ -107,8 +109,11 @@ export class EnrollProgramComponent {
 
   protected readonly stepErrors = computed(() => {
     if (!this.showErrors()) return {};
-    return getMentorshipEnrollStepErrors(this.step(), this.toEnrollForm(this.formSnapshot()));
+    this.formSnapshot();
+    return getMentorshipEnrollStepErrors(this.step(), this.toEnrollForm(this.form.getRawValue()));
   });
+
+  protected readonly hasStepErrors = computed(() => Object.keys(this.stepErrors()).length > 0);
 
   protected readonly backLabel = computed(() => {
     const current = this.step();
@@ -244,7 +249,7 @@ export class EnrollProgramComponent {
       skills: [...(value.skills ?? [])],
       terms: (value.terms ?? empty.terms).map((term) => ({ ...term })),
       prerequisites: (value.prerequisites ?? empty.prerequisites).map((item) => ({ ...item })),
-      termsAccepted: value.termsAccepted === true,
+      termsAccepted: isMentorshipTermsAccepted(value.termsAccepted),
     };
   }
 
