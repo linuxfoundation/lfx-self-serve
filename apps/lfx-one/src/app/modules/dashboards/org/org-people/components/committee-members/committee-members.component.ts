@@ -169,7 +169,7 @@ export class CommitteeMembersComponent {
     // `group.email` is the grouping key and falls back to a seat `memberUid` when the upstream email is
     // blank — source the person's real email from the assignments instead.
     const email = group.assignments.find((a) => a.person.email)?.person.email;
-    // Email-keyed groups may span people: use a username as lookup key only when every seat that has one agrees.
+    // Email-keyed groups may span people: the username is a lookup key only when every seat carries the same one.
     const username = agreedUsername(group.assignments.map((a) => a.person.username));
     this.drawer.open({
       name: group.displayName,
