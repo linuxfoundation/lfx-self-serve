@@ -38,13 +38,10 @@ export class ProgramCardComponent {
     return MENTORSHIP_PROGRAM_AVATAR_PALETTE[idx];
   });
 
-  /** Two-letter initials pulled from the first two whitespace-delimited tokens of the title (e.g. "GridFlow: Time" → "GT"). */
+  /** First letter of the title. `AvatarComponent.displayLabel` only renders `label.charAt(0)`. */
   protected readonly initials = computed(() => {
-    const tokens = this.program().name.trim().split(/\s+/);
-    if (tokens.length === 0 || tokens[0].length === 0) return '?';
-    const first = tokens[0][0];
-    const second = tokens[1]?.[0] ?? tokens[0][1] ?? '';
-    return (first + second).toUpperCase();
+    const name = this.program().name.trim();
+    return name.length > 0 ? name[0].toUpperCase() : '?';
   });
 
   protected onCardClick(): void {

@@ -52,7 +52,7 @@ export const EMPTY_MENTORSHIP_PROGRAMS_RESPONSE: MentorshipProgramsResponse = {
  * Admin program-list page size. Passed as `limit` on `GET /api/mentorship/programs`.
  * Sized below `MOCK_MENTORSHIP_PROGRAMS.length` so Load more is exercisable against the mock BFF.
  */
-export const MENTORSHIP_PROGRAM_PAGE_SIZE = 10;
+export const MENTORSHIP_PROGRAM_PAGE_SIZE = 2;
 
 /** Underline tabs on `/mentorship/admin/:programId`. Order matches the admin screenshot. */
 export const MENTORSHIP_PROGRAM_DETAIL_TABS = [
