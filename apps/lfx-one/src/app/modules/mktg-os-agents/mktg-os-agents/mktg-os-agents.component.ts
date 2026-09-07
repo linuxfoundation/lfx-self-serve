@@ -9,8 +9,9 @@ import { ActivatedRoute, NavigationEnd, Router } from '@angular/router';
 import { EmptyStateComponent } from '@components/empty-state/empty-state.component';
 import { InputTextComponent } from '@components/input-text/input-text.component';
 import { TagComponent } from '@components/tag/tag.component';
-import { MKTG_AGENT_INTAKES, MKTG_AGENTS, MKTG_OS_AGENTS_LABEL } from '@lfx-one/shared/constants';
+import { MKTG_AGENTS, MKTG_OS_AGENTS_LABEL } from '@lfx-one/shared/constants';
 import { MktgAgent, MktgAgentAccent, MktgAgentTile, MktgDependencyDocument, ProjectContext } from '@lfx-one/shared/interfaces';
+import { mktgAgentDocumentName } from '@lfx-one/shared/utils';
 import { MktgAgentRunService } from '@services/mktg-agent-run.service';
 import { MktgDependencyService } from '@services/mktg-dependency.service';
 import { ProjectContextService } from '@services/project-context.service';
@@ -192,7 +193,7 @@ export class MktgOsAgentsComponent {
         // disabled until every dependency has stored output for the active
         // project. Unresolved (still loading / SSR) counts as missing — fail-closed.
         const missingDependencyNames =
-          agent.status === 'active' ? (agent.dependsOn ?? []).filter((id) => !dependencies[id]).map((id) => this.documentName(id)) : [];
+          agent.status === 'active' ? (agent.dependsOn ?? []).filter((id) => !dependencies[id]).map((id) => mktgAgentDocumentName(id)) : [];
         const disabled = agent.status !== 'active' || missingDependencyNames.length > 0;
         return {
           agent,
@@ -222,11 +223,6 @@ export class MktgOsAgentsComponent {
       return `${agent.name} (coming soon)`;
     }
     return `${agent.name} (requires ${missingDependencyNames.join(' and ')})`;
-  }
-
-  /** Display name of a dependency agent's document: its intake's document name, else the catalog agent name, else the id. */
-  private documentName(agentId: string): string {
-    return MKTG_AGENT_INTAKES[agentId]?.documentName ?? MKTG_AGENTS.find((candidate) => candidate.id === agentId)?.name ?? agentId;
   }
 
   private loadStoredVersions(projectUid: string): void {

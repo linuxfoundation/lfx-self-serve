@@ -38,8 +38,15 @@ export type MktgReadmeSource = 'repository' | 'org-profile';
  * so a thin document is never a silent mystery: the run says which of these
  * happened instead of leaving the user to guess why the agent had no code
  * context.
+ *
+ * The reasons are distinct because their REMEDIES are: `not-a-repo-url` and
+ * `no-readme` ask the user to change something, `not-public` says the repo is
+ * not readable anonymously (the LFX token is deliberately never used as a
+ * read oracle for it), and `fetch-failed` says GitHub itself failed and a
+ * retry is the right move. Collapsing them tells users to fix a URL that was
+ * never the problem.
  */
-export type MktgReadmeSkipReason = 'not-a-repo-url' | 'no-readme' | 'fetch-failed';
+export type MktgReadmeSkipReason = 'not-a-repo-url' | 'no-readme' | 'not-public' | 'fetch-failed';
 
 /**
  * Outcome of the server-side README fetch for one generation (agents with no

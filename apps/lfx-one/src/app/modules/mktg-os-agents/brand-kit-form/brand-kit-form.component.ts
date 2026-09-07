@@ -8,23 +8,24 @@ import { FormControl, FormGroup, ReactiveFormsModule, ValidatorFn, Validators } 
 import { ActivatedRoute, Router } from '@angular/router';
 import { ButtonComponent } from '@components/button/button.component';
 import { CardComponent } from '@components/card/card.component';
+import { InputTextComponent } from '@components/input-text/input-text.component';
 import { MarkdownRendererComponent } from '@components/markdown-renderer/markdown-renderer.component';
 import { MessageComponent } from '@components/message/message.component';
 import { TextareaComponent } from '@components/textarea/textarea.component';
-import { BRAND_KIT_INTAKE, BRAND_KIT_INTAKE_QUESTIONS, MKTG_INTAKE_FORMAT_ERRORS, MKTG_RUN_PERSIST_RETRY_MAX_ATTEMPTS } from '@lfx-one/shared/constants';
-import { BrandKitResultResponse, GithubRepoUrlError } from '@lfx-one/shared/interfaces';
+import {
+  BRAND_KIT_INTAKE,
+  BRAND_KIT_INTAKE_QUESTIONS,
+  MKTG_BRAND_KIT_FORM_POLL,
+  MKTG_INTAKE_FORMAT_ERRORS,
+  MKTG_RUN_PERSIST_RETRY_MAX_ATTEMPTS,
+} from '@lfx-one/shared/constants';
+import { BrandKitResultResponse, GithubRepoUrlError, MktgIntakeFieldKind } from '@lfx-one/shared/interfaces';
 import { githubRepoUrlValidator, trimmedRequired } from '@lfx-one/shared/validators';
 import { BrandKitService } from '@services/brand-kit.service';
 import { MktgAnswerMemoryService } from '@services/mktg-answer-memory.service';
 import { MktgDependencyService } from '@services/mktg-dependency.service';
 import { ProjectContextService } from '@services/project-context.service';
 import { map } from 'rxjs';
-
-/** Client-side poll cadence and cap for the generation session (~5 min). */
-const RESULT_POLL_INTERVAL_MS = 10_000;
-const RESULT_POLL_MAX_ATTEMPTS = 30;
-/** Consecutive transient poll failures tolerated before giving up. */
-const RESULT_POLL_MAX_CONSECUTIVE_ERRORS = 3;
 
 /**
  * One-page Brand Kit intake form (dec-brand-kit-intake-form): all 7 of Paul's
@@ -37,7 +38,7 @@ const RESULT_POLL_MAX_CONSECUTIVE_ERRORS = 3;
  */
 @Component({
   selector: 'lfx-brand-kit-form',
-  imports: [ReactiveFormsModule, ButtonComponent, CardComponent, MarkdownRendererComponent, MessageComponent, TextareaComponent],
+  imports: [ReactiveFormsModule, ButtonComponent, CardComponent, InputTextComponent, MarkdownRendererComponent, MessageComponent, TextareaComponent],
   templateUrl: './brand-kit-form.component.html',
   changeDetection: ChangeDetectionStrategy.OnPush,
 })
@@ -56,6 +57,13 @@ export class BrandKitFormComponent implements OnDestroy {
 
   // === Constants ===
   protected readonly questions = BRAND_KIT_INTAKE_QUESTIONS;
+  /**
+   * Control kind per question key, read from the SHARED intake definition so
+   * this standalone form and the form-first run shell render the same question
+   * the same way — the repository URL is a single-line answer, and a textarea
+   * invited the multi-line paste that a blocking URL rule now refuses.
+   */
+  protected readonly fieldKinds: Record<string, MktgIntakeFieldKind> = Object.fromEntries(BRAND_KIT_INTAKE.fields.map((field) => [field.key, field.kind]));
 
   // === Forms ===
   // Validators come from the SHARED intake definition, so this standalone form
@@ -234,7 +242,10 @@ export class BrandKitFormComponent implements OnDestroy {
             // Missing receipt: each extra poll re-triggers the server-side
             // content-addressed write, recovering from transient storage
             // outages without changing what the user sees.
-            this.pollTimer = setTimeout(() => this.pollResult(epoch, sessionId, ownerToken, attempt + 1, 0, persistRetries + 1), RESULT_POLL_INTERVAL_MS);
+            this.pollTimer = setTimeout(
+              () => this.pollResult(epoch, sessionId, ownerToken, attempt + 1, 0, persistRetries + 1),
+              MKTG_BRAND_KIT_FORM_POLL.intervalMs
+            );
             return;
           }
           if (this.result()) {
@@ -245,15 +256,18 @@ export class BrandKitFormComponent implements OnDestroy {
             // instead, mirroring the error branch below. (Once the document is
             // displayed, `attempt` is never consulted again on any branch.)
             if (persistRetries < MKTG_RUN_PERSIST_RETRY_MAX_ATTEMPTS) {
-              this.pollTimer = setTimeout(() => this.pollResult(epoch, sessionId, ownerToken, attempt + 1, 0, persistRetries + 1), RESULT_POLL_INTERVAL_MS);
+              this.pollTimer = setTimeout(
+                () => this.pollResult(epoch, sessionId, ownerToken, attempt + 1, 0, persistRetries + 1),
+                MKTG_BRAND_KIT_FORM_POLL.intervalMs
+              );
             }
             return;
           }
-          if (attempt >= RESULT_POLL_MAX_ATTEMPTS) {
+          if (attempt >= MKTG_BRAND_KIT_FORM_POLL.maxAttempts) {
             this.failGeneration('The generation is taking longer than expected. Please try again later.');
             return;
           }
-          this.pollTimer = setTimeout(() => this.pollResult(epoch, sessionId, ownerToken, attempt + 1, 0, persistRetries), RESULT_POLL_INTERVAL_MS);
+          this.pollTimer = setTimeout(() => this.pollResult(epoch, sessionId, ownerToken, attempt + 1, 0, persistRetries), MKTG_BRAND_KIT_FORM_POLL.intervalMs);
         },
         error: () => {
           if (epoch !== this.pollEpoch) {
@@ -265,19 +279,22 @@ export class BrandKitFormComponent implements OnDestroy {
             // Spend the remaining retry budget instead of abandoning it on a
             // single transient failure; the same cap bounds both paths.
             if (persistRetries < MKTG_RUN_PERSIST_RETRY_MAX_ATTEMPTS) {
-              this.pollTimer = setTimeout(() => this.pollResult(epoch, sessionId, ownerToken, attempt + 1, 0, persistRetries + 1), RESULT_POLL_INTERVAL_MS);
+              this.pollTimer = setTimeout(
+                () => this.pollResult(epoch, sessionId, ownerToken, attempt + 1, 0, persistRetries + 1),
+                MKTG_BRAND_KIT_FORM_POLL.intervalMs
+              );
             }
             return;
           }
           // Tolerate transient failures — a multi-minute generation should not be
           // lost to a single network blip; the attempt budget still applies.
-          if (consecutiveErrors + 1 > RESULT_POLL_MAX_CONSECUTIVE_ERRORS || attempt >= RESULT_POLL_MAX_ATTEMPTS) {
+          if (consecutiveErrors + 1 > MKTG_BRAND_KIT_FORM_POLL.maxConsecutiveErrors || attempt >= MKTG_BRAND_KIT_FORM_POLL.maxAttempts) {
             this.failGeneration('Could not fetch the generation result. Please try again.');
             return;
           }
           this.pollTimer = setTimeout(
             () => this.pollResult(epoch, sessionId, ownerToken, attempt + 1, consecutiveErrors + 1, persistRetries),
-            RESULT_POLL_INTERVAL_MS
+            MKTG_BRAND_KIT_FORM_POLL.intervalMs
           );
         },
       });

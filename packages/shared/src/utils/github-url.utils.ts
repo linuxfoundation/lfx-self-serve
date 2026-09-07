@@ -10,6 +10,62 @@ const GITHUB_HOSTS = new Set(['github.com', 'www.github.com']);
 const GITHUB_SEGMENT_RE = /^[A-Za-z0-9_.-]+$/;
 
 /**
+ * First path segments github.com reserves for its OWN routes, which can never
+ * be an account name. Without this, `github.com/orgs/<org>/repositories` — the
+ * URL a user copies straight out of an organization's repository list — parses
+ * as the repository `orgs/<org>`, clears the repository validator, and the BFF
+ * then asks the API for `/repos/orgs/<org>/readme`, gets a 404, and produces
+ * exactly the unexplained README-less document this contract exists to
+ * prevent. A reserved first segment is not a repository URL, so the parser
+ * refuses it here rather than letting every caller re-derive the rule.
+ *
+ * Deliberately a denylist of GitHub's product routes rather than an attempt at
+ * every reserved word: a miss degrades to today's behaviour (a 404 and a
+ * skip reason), while a false positive would reject a legitimate account.
+ */
+const GITHUB_RESERVED_ROOT_SEGMENTS = new Set([
+  'about',
+  'account',
+  'admin',
+  'apps',
+  'blog',
+  'business',
+  'codespaces',
+  'collections',
+  'contact',
+  'customer-stories',
+  'dashboard',
+  'enterprise',
+  'enterprises',
+  'events',
+  'explore',
+  'features',
+  'issues',
+  'join',
+  'login',
+  'logout',
+  'marketplace',
+  'new',
+  'notifications',
+  'organizations',
+  'orgs',
+  'pricing',
+  'pulls',
+  'search',
+  'security',
+  'sessions',
+  'settings',
+  'signup',
+  'site',
+  'sponsors',
+  'stars',
+  'topics',
+  'trending',
+  'users',
+  'watching',
+]);
+
+/**
  * Parses a user-supplied GitHub URL into the thing it actually names: an
  * owner/repo pair, or an owner on its own. Returns null for non-GitHub hosts,
  * malformed URLs, and hostile path segments.
@@ -46,6 +102,11 @@ export function parseGithubUrlTarget(githubUrl: string): GithubUrlTarget | null 
   const segments = parsed.pathname.split('/').filter(Boolean);
   const owner = segments[0] ?? '';
   if (!GITHUB_SEGMENT_RE.test(owner)) {
+    return null;
+  }
+  // A github.com product route (`/orgs/...`, `/marketplace/...`, ...) names no
+  // account, so nothing under it can be an owner or an owner/repo pair.
+  if (GITHUB_RESERVED_ROOT_SEGMENTS.has(owner.toLowerCase())) {
     return null;
   }
   if (segments.length < 2) {

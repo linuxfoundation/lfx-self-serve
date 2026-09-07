@@ -25,6 +25,7 @@ import {
   ProjectContext,
   User,
 } from '@lfx-one/shared/interfaces';
+import { mktgAgentDocumentName } from '@lfx-one/shared/utils';
 import { githubRepoUrlValidator, trimmedRequired } from '@lfx-one/shared/validators';
 import { MessageService } from 'primeng/api';
 import { combineLatest, distinctUntilChanged, EMPTY, filter, map, Subscription, switchMap } from 'rxjs';
@@ -190,6 +191,12 @@ export class MktgAgentRunComponent {
    * run produces a materially thinner document, and without this the user has
    * no way to connect that to the repo URL they gave. Empty when a README was
    * used, and for agents whose runs involve no README at all.
+   *
+   * Also empty for versions stored BEFORE this outcome existed: they carry no
+   * `readme` field, so whether their document was thin for this reason is
+   * unknown. Asserting a reason we never recorded would trade a real
+   * explanation for a plausible-sounding guess, which is the failure this note
+   * exists to end — the note appears from the next generation onward.
    */
   protected readonly readmeNote = computed(() => {
     const readme = this.currentVersion()?.readme;
@@ -528,16 +535,7 @@ export class MktgAgentRunComponent {
     if (!docs) {
       return [];
     }
-    return this.dependencyIds.filter((agentId) => !docs[agentId]).map((agentId) => this.agentDocumentName(agentId));
-  }
-
-  /**
-   * Display name of an agent's document — its intake's document name, else the
-   * catalog agent name, else the id. Used both for the missing-dependency note
-   * and for naming the run a reused answer came from.
-   */
-  private agentDocumentName(agentId: string): string {
-    return MKTG_AGENT_INTAKES[agentId]?.documentName ?? MKTG_AGENTS.find((candidate) => candidate.id === agentId)?.name ?? agentId;
+    return this.dependencyIds.filter((agentId) => !docs[agentId]).map((agentId) => mktgAgentDocumentName(agentId));
   }
 
   /**
@@ -662,7 +660,7 @@ export class MktgAgentRunComponent {
         continue;
       }
       control.setValue(entry.value);
-      this.fromPriorRun.update((labels) => ({ ...labels, [field.key]: `From your ${this.agentDocumentName(entry.agentId)} run` }));
+      this.fromPriorRun.update((labels) => ({ ...labels, [field.key]: `From your ${mktgAgentDocumentName(entry.agentId)} run` }));
     }
   }
 

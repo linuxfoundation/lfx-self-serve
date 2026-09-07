@@ -186,6 +186,8 @@ export const MKTG_INTAKE_FORMAT_ERRORS: Record<MktgIntakeFieldFormat, Record<Git
 export const MKTG_README_SKIP_NOTES: Record<MktgReadmeSkipReason, string> = {
   'not-a-repo-url': 'Generated without a README — the repo URL didn’t resolve to a readable repository, so the agent had no README to work from.',
   'no-readme': 'Generated without a README — that repository has no README the agent could read.',
+  'not-public':
+    'Generated without a README — that repository isn’t publicly readable, so the agent couldn’t open its README. Use a public repository, or add the details by hand.',
   'fetch-failed': 'Generated without a README — GitHub couldn’t be reached for that repository, so the agent had no README to work from.',
 };
 
@@ -238,6 +240,23 @@ export const MKTG_RUN_POLL = {
   intervalMs: 5000,
   /** Overall deadline for the agent's validated document to appear. */
   timeoutMs: 600000,
+} as const;
+
+/**
+ * Result-polling cadence for the STANDALONE Brand Kit intake form. Separate
+ * from {@link MKTG_RUN_POLL} because the two surfaces bound the wait
+ * differently — the run shell holds a wall-clock deadline while this form
+ * counts attempts — but it lives here, not as module-level state inside
+ * `apps/lfx-one`, so the cadence is reviewable next to the run shell's and
+ * both stay in the shared package where the repo's constants belong.
+ */
+export const MKTG_BRAND_KIT_FORM_POLL = {
+  /** Interval between result polls. */
+  intervalMs: 10000,
+  /** Poll budget for one generation (~5 minutes at the interval above). */
+  maxAttempts: 30,
+  /** Consecutive transient poll failures tolerated before giving up. */
+  maxConsecutiveErrors: 3,
 } as const;
 
 /**

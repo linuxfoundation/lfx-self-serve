@@ -24,4 +24,8 @@ export class InputTextComponent {
   public dataTest = input<string>();
   public icon = input<string>();
   public styleClass = input<string>();
+  /** Id of the element describing this input (e.g. its error message) — wired to `aria-describedby`. */
+  public describedBy = input<string>();
+  /** Marks the control invalid for assistive tech; the visible error text is the caller's. */
+  public invalid = input<boolean>(false);
 }

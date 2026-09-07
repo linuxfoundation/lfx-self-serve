@@ -177,6 +177,22 @@ describe('BrandKitFormComponent — generation poll state machine', () => {
       expect(generate).toHaveBeenCalledTimes(1);
     });
 
+    it('disables submit for a github.com product route that only looks like owner/repo', () => {
+      // `/orgs/<org>/repositories` used to validate as the repository
+      // `orgs/<org>` and reach the BFF as a guaranteed 404.
+      fillAll('https://github.com/orgs/aaif/repositories');
+
+      expect(fieldError()?.textContent).toContain('doesn’t look like a GitHub repository URL');
+      expect(submitButton()?.disabled).toBe(true);
+    });
+
+    it('renders the single-line repo URL as a text input, matching the run shell', () => {
+      const control = fixture.nativeElement.querySelector('[data-test="brand-kit-form-answer-github_url"]');
+      expect(control?.tagName).toBe('INPUT');
+      // A genuinely multi-line answer still gets a textarea.
+      expect(fixture.nativeElement.querySelector('[data-test="brand-kit-form-answer-primary_audience"]')?.tagName).toBe('TEXTAREA');
+    });
+
     it('leaves a blank answer to the required rule rather than reporting a format problem', () => {
       fillAll('');
 

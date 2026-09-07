@@ -64,10 +64,12 @@ const GITHUB_README_CACHE_MAX_ENTRIES = 100;
  * the requesting LFX user cannot see. When a token is configured, the repo's
  * visibility is verified via the repo metadata endpoint FIRST, and the
  * authenticated README request is only made for `public` repositories —
- * private and org-internal repos return null exactly like a missing README,
- * regardless of what the token itself could read. The organization fallback
- * runs through the same gate on the `.github` repo. Tokenless requests need no
- * check: unauthenticated GitHub hides private repos already.
+ * private and org-internal repos return a null README regardless of what the
+ * token itself could read, under their own `not-public` reason so the user is
+ * told about access rather than sent to fix a URL that was never wrong. The
+ * organization fallback runs through the same gate on the `.github` repo.
+ * Tokenless requests need no check: unauthenticated GitHub hides private
+ * repos already.
  *
  * Successful fetches are memoised per repo for
  * {@link GITHUB_README_CACHE_TTL_MS} so the regeneration loop (a full
@@ -171,13 +173,18 @@ export class GithubReadmeService {
     const url = `${GITHUB_API_BASE}/repos/${encodeURIComponent(owner)}/${encodeURIComponent(GITHUB_ORG_PROFILE_REPO)}/contents/${GITHUB_ORG_PROFILE_README_PATH}`;
     const attempt = await this.requestReadme(req, url, repo, cacheKey);
     if (attempt.readme === null) {
-      // Whatever went wrong on the .github repo, from the USER's point of view
-      // the URL they gave has no README behind it — that is what the result says.
-      logger.info(req, 'github_readme_fetch', 'No organization profile README — generating without a README', {
+      // Only a genuine ABSENCE (404 / empty profile README) means the URL the
+      // user gave has nothing readable behind it. A GitHub outage, a rate
+      // limit or a non-public `.github` repo is a different fact with a
+      // different remedy, so its reason is carried through rather than
+      // rewritten as "not a repository" — telling someone to fix a correct URL
+      // during a GitHub 5xx sends them after the wrong problem.
+      const skipReason = attempt.skipReason === 'no-readme' ? 'not-a-repo-url' : attempt.skipReason;
+      logger.info(req, 'github_readme_fetch', 'No organization profile README available — generating without a README', {
         owner,
-        reason: 'not-a-repo-url',
+        reason: skipReason,
       });
-      return { readme: null, outcome: { fetched: false, skipReason: 'not-a-repo-url' } };
+      return { readme: null, outcome: { fetched: false, skipReason } };
     }
     return { readme: attempt.readme, outcome: { fetched: true, source: 'org-profile' } };
   }
@@ -199,8 +206,11 @@ export class GithubReadmeService {
     try {
       // Confused-deputy guard: an authenticated request may only target repos
       // the anonymous public also sees — never repos only the token can read.
-      if (this.apiToken && !(await this.isPublicRepo(req, repo))) {
-        return { readme: null, skipReason: 'no-readme' };
+      if (this.apiToken) {
+        const visibility = await this.checkRepoVisibility(req, repo);
+        if (visibility !== 'public') {
+          return { readme: null, skipReason: visibility };
+        }
       }
 
       const response = await fetch(url, {
@@ -273,15 +283,21 @@ export class GithubReadmeService {
   }
 
   /**
-   * True only when the repo metadata endpoint confirms the repository is
-   * `public`. Called ONLY when a token is configured (see the class doc):
+   * `public` only when the repo metadata endpoint confirms the repository is
+   * public. Called ONLY when a token is configured (see the class doc):
    * private and `internal` repos — anything the requesting LFX user could
    * not read anonymously — are refused before the README request, so the
-   * BFF's token can never be used to exfiltrate them. Any metadata failure
-   * (404, rate limit, timeout) counts as not-public, keeping the fail-closed,
-   * never-throws contract.
+   * BFF's token can never be used to exfiltrate them.
+   *
+   * Fail-closed still means fail-HONEST. The gate never lets a non-public
+   * repo through, but it distinguishes "GitHub told us this repo is not
+   * publicly readable" (`not-public`, including a 404: the repository is not
+   * visible to us) from "we could not ask" (`fetch-failed` — rate limit,
+   * 5xx). Both skip the README; only the second is worth retrying, and the
+   * result copy says so. Never throws for a status; a transport error
+   * propagates to the caller's catch, which records `fetch-failed`.
    */
-  private async isPublicRepo(req: Request, repo: { owner: string; repo: string }): Promise<boolean> {
+  private async checkRepoVisibility(req: Request, repo: { owner: string; repo: string }): Promise<'public' | 'not-public' | 'fetch-failed'> {
     const url = `${GITHUB_API_BASE}/repos/${encodeURIComponent(repo.owner)}/${encodeURIComponent(repo.repo)}`;
     const response = await fetch(url, {
       method: 'GET',
@@ -291,7 +307,10 @@ export class GithubReadmeService {
 
     if (!response.ok) {
       this.logFailedResponse(req, 'GitHub repo visibility check', response, repo);
-      return false;
+      // 404 is GitHub's answer for "not visible to this credential" — a
+      // definitive not-public. Anything else (403 rate limit, 5xx) means the
+      // question went unanswered.
+      return response.status === 404 ? 'not-public' : 'fetch-failed';
     }
 
     const metadata = (await response.json()) as { private?: boolean; visibility?: string };
@@ -301,9 +320,9 @@ export class GithubReadmeService {
         repo: repo.repo,
         visibility: metadata.visibility,
       });
-      return false;
+      return 'not-public';
     }
-    return true;
+    return 'public';
   }
 
   /** Common GitHub REST headers; Authorization only when a token is configured. */

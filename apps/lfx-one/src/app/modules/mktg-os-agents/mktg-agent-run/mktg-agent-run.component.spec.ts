@@ -712,6 +712,17 @@ describe('MktgAgentRunComponent', () => {
         expect(query('mktg-agent-run-readme-note')?.textContent).toContain('couldn’t be reached');
       });
 
+      it('says a repository was not publicly readable rather than claiming it has no README', async () => {
+        // Different remedy: the repo may well HAVE a README — what failed was
+        // access, and telling the user to fix the URL sends them nowhere.
+        storedRuns = { 'proj-1:foundation-setup': runWithReadme({ fetched: false, skipReason: 'not-public' }) };
+        activeContext.set(PROJECT_1);
+        await fixture.whenStable();
+
+        expect(query('mktg-agent-run-readme-note')?.textContent).toContain('isn’t publicly readable');
+        expect(query('mktg-agent-run-readme-note')?.textContent).not.toContain('has no README');
+      });
+
       it('says nothing when a README WAS used, or when the run predates the outcome being recorded', async () => {
         storedRuns = { 'proj-1:foundation-setup': runWithReadme({ fetched: true, source: 'repository' }) };
         activeContext.set(PROJECT_1);

@@ -76,15 +76,26 @@
       @for (q of questions; track q.key) {
         <div class="flex flex-col gap-1.5">
           <label [for]="'brand-kit-q-' + q.questionNumber" class="text-sm font-medium text-gray-700"> {{ q.questionNumber }}. {{ q.question }} </label>
-          <lfx-textarea
-            [id]="'brand-kit-q-' + q.questionNumber"
-            [form]="intakeForm"
-            [control]="q.key"
-            [rows]="2"
-            [autoResize]="true"
-            [describedBy]="'brand-kit-q-' + q.questionNumber + '-error'"
-            [invalid]="intakeForm.controls[q.key].touched && intakeForm.controls[q.key].invalid"
-            [dataTest]="'brand-kit-form-answer-' + q.key" />
+          <!-- Control kind comes from the SHARED intake definition, so a single-line answer (the repository URL) is a text input here exactly as it is on the run shell. -->
+          @if (fieldKinds[q.key] === 'textarea') {
+            <lfx-textarea
+              [id]="'brand-kit-q-' + q.questionNumber"
+              [form]="intakeForm"
+              [control]="q.key"
+              [rows]="2"
+              [autoResize]="true"
+              [describedBy]="'brand-kit-q-' + q.questionNumber + '-error'"
+              [invalid]="intakeForm.controls[q.key].touched && intakeForm.controls[q.key].invalid"
+              [dataTest]="'brand-kit-form-answer-' + q.key" />
+          } @else {
+            <lfx-input-text
+              [id]="'brand-kit-q-' + q.questionNumber"
+              [form]="intakeForm"
+              [control]="q.key"
+              [describedBy]="'brand-kit-q-' + q.questionNumber + '-error'"
+              [invalid]="intakeForm.controls[q.key].touched && intakeForm.controls[q.key].invalid"
+              [dataTest]="'brand-kit-form-answer-' + q.key" />
+          }
           <!-- A format failure names the ACTUAL problem; the generic required message only covers a blank answer. -->
           @if (fieldFormatErrors()[q.key]; as formatError) {
             <span

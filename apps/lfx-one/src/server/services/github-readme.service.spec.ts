@@ -153,6 +153,30 @@ describe('GithubReadmeService', () => {
       expect(fetchMock.mock.calls[0][0]).toBe('https://api.github.com/repos/example-org/.github');
     });
 
+    it('reports a GitHub outage on the org fallback as fetch-failed, not as a bad URL', async () => {
+      // Telling a user to fix a URL that is fine, during a GitHub 5xx, sends
+      // them after the wrong problem — the right advice is to retry.
+      fetchMock.mockResolvedValue(textResponse('', false, 503));
+
+      const result = await service.fetchReadme(req, 'https://github.com/example-org');
+
+      expect(result.readme).toBeNull();
+      expect(result.outcome).toEqual({ fetched: false, skipReason: 'fetch-failed' });
+    });
+
+    it('reports a timeout on the org fallback as fetch-failed', async () => {
+      fetchMock.mockRejectedValue(new Error('timeout'));
+
+      expect((await service.fetchReadme(req, 'https://github.com/example-org')).outcome).toEqual({ fetched: false, skipReason: 'fetch-failed' });
+    });
+
+    it('reports a non-public .github repo on the org fallback as not-public', async () => {
+      vi.stubEnv('GITHUB_API_TOKEN', 'ghp_test-token');
+      fetchMock.mockResolvedValueOnce(jsonResponse({ private: true, visibility: 'private' }));
+
+      expect((await service.fetchReadme(req, 'https://github.com/example-org')).outcome).toEqual({ fetched: false, skipReason: 'not-public' });
+    });
+
     it('caches the profile README separately from the .github repo README', async () => {
       fetchMock.mockResolvedValue(textResponse('# Profile'));
 
@@ -202,6 +226,46 @@ describe('GithubReadmeService', () => {
 
       fetchMock.mockRejectedValue(new Error('timeout'));
       expect((await service.fetchReadme(req, 'https://github.com/example-org/third-repo')).outcome).toEqual({ fetched: false, skipReason: 'fetch-failed' });
+    });
+
+    it('reports a refused private repo as not-public — never as "this repo has no README"', async () => {
+      // The remedies differ: `no-readme` says add one / fix the URL, while
+      // `not-public` says the repository is not readable anonymously. A repo
+      // that HAS a README must never be described as having none.
+      vi.stubEnv('GITHUB_API_TOKEN', 'ghp_test-token');
+      fetchMock.mockResolvedValueOnce(jsonResponse({ private: true, visibility: 'private' }));
+
+      expect((await service.fetchReadme(req, 'https://github.com/example-org/secret-repo')).outcome).toEqual({ fetched: false, skipReason: 'not-public' });
+    });
+
+    it('reports an org-internal repo as not-public', async () => {
+      vi.stubEnv('GITHUB_API_TOKEN', 'ghp_test-token');
+      fetchMock.mockResolvedValueOnce(jsonResponse({ private: false, visibility: 'internal' }));
+
+      expect((await service.fetchReadme(req, 'https://github.com/example-org/internal-repo')).outcome).toEqual({ fetched: false, skipReason: 'not-public' });
+    });
+
+    it('separates a 404 on the visibility check (not visible to us) from GitHub failing it (5xx, rate limit)', async () => {
+      vi.stubEnv('GITHUB_API_TOKEN', 'ghp_test-token');
+
+      fetchMock.mockResolvedValueOnce(jsonResponse({}, false, 404));
+      expect((await service.fetchReadme(req, 'https://github.com/example-org/example-repo')).outcome).toEqual({ fetched: false, skipReason: 'not-public' });
+
+      fetchMock.mockResolvedValueOnce(jsonResponse({}, false, 500));
+      expect((await service.fetchReadme(req, 'https://github.com/example-org/other-repo')).outcome).toEqual({ fetched: false, skipReason: 'fetch-failed' });
+
+      fetchMock.mockResolvedValueOnce(jsonResponse({}, false, 403, { 'x-ratelimit-remaining': '0' }));
+      expect((await service.fetchReadme(req, 'https://github.com/example-org/third-repo')).outcome).toEqual({ fetched: false, skipReason: 'fetch-failed' });
+    });
+
+    it('never fetches for a github.com product route — /orgs/<org>/repositories is not a repository', async () => {
+      // Read positionally it looks like `owner/repo`; the BFF used to ask the
+      // API for /repos/orgs/<org>/readme and get a guaranteed 404.
+      const result = await service.fetchReadme(req, 'https://github.com/orgs/example-org/repositories');
+
+      expect(result.readme).toBeNull();
+      expect(result.outcome).toEqual({ fetched: false, skipReason: 'not-a-repo-url' });
+      expect(fetchMock).not.toHaveBeenCalled();
     });
 
     it('reports a blank README body as no-readme rather than a fetch failure', async () => {

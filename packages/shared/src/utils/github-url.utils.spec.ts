@@ -54,6 +54,26 @@ describe('parseGithubUrlTarget', () => {
     expect(parseGithubUrlTarget('https://github.com/owner/re po')).toBeNull();
   });
 
+  it('returns null for github.com’s own reserved routes rather than reading them as an owner/repo', () => {
+    // `/orgs/<org>/repositories` is what a user copies out of an organization's
+    // repository list; read positionally it looks exactly like `owner/repo`.
+    expect(parseGithubUrlTarget('https://github.com/orgs/aaif/repositories')).toBeNull();
+    expect(parseGithubUrlTarget('https://github.com/orgs/aaif')).toBeNull();
+    for (const url of [
+      'https://github.com/Orgs/aaif/repositories',
+      'https://github.com/marketplace/actions/checkout',
+      'https://github.com/apps/dependabot',
+      'https://github.com/settings/profile',
+      'https://github.com/sponsors/example-org',
+      'https://github.com/topics/kubernetes',
+      'https://github.com/collections/open-source-organizations',
+      'https://github.com/features/actions',
+      'https://github.com/login',
+    ]) {
+      expect(parseGithubUrlTarget(url)).toBeNull();
+    }
+  });
+
   it('returns null for a bare github.com with no owner at all', () => {
     expect(parseGithubUrlTarget('https://github.com')).toBeNull();
     expect(parseGithubUrlTarget('https://github.com/')).toBeNull();

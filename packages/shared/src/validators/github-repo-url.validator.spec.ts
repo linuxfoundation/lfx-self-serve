@@ -45,6 +45,20 @@ describe('githubRepoUrlValidator', () => {
     }
   });
 
+  it('rejects github.com’s own reserved routes, which read positionally as owner/repo', () => {
+    // Blocking regression: `/orgs/<org>/repositories` used to validate as the
+    // repository `orgs/<org>` and reach the BFF as a guaranteed 404.
+    for (const value of [
+      'https://github.com/orgs/aaif/repositories',
+      'https://github.com/orgs/aaif',
+      'https://github.com/marketplace/actions/checkout',
+      'https://github.com/settings/profile',
+      'https://github.com/topics/kubernetes',
+    ]) {
+      expect(validate(value)).toEqual({ githubRepoUrl: { reason: 'unrecognized' } });
+    }
+  });
+
   it('leaves emptiness to `required` so the two never double-report', () => {
     expect(validate('')).toBeNull();
     expect(validate('   ')).toBeNull();
