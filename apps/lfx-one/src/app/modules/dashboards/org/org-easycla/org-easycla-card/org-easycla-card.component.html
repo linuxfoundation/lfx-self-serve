@@ -1,0 +1,46 @@
+<!-- Copyright The Linux Foundation and each contributor to LFX. -->
+<!-- SPDX-License-Identifier: MIT -->
+
+<article class="flex flex-col gap-3 rounded-lg border border-gray-200 bg-white p-4" data-testid="org-easycla-card">
+  <header class="flex flex-col gap-0.5">
+    <h3 class="font-medium text-base text-gray-900" data-testid="org-easycla-card-title">{{ claGroup().claGroupName }}</h3>
+    <!-- Only when the signing entity differs from the organization — the server suppresses it
+         otherwise, so this never repeats the page title. It is what distinguishes two cards that
+         share a CLA Group name because the organization signed under several entities. -->
+    @if (claGroup().signingEntityName; as signingEntityName) {
+      <p class="text-xs text-gray-500" data-testid="org-easycla-card-signing-entity">Signed by {{ signingEntityName }}</p>
+    }
+  </header>
+
+  <div class="flex flex-wrap items-center gap-2">
+    <!-- Static by design: the coverage dialog ships with the agreement detail view. -->
+    @for (chip of coverageChips(); track chip) {
+      <span class="rounded-full bg-gray-100 px-2.5 py-0.5 text-xs text-gray-700" data-testid="org-easycla-card-coverage">{{ chip }}</span>
+    }
+
+    <lfx-tag [value]="status().label" [severity]="status().severity" data-testid="org-easycla-card-status" />
+
+    @if (claGroup().needsClaManager) {
+      <!-- Not in the approved design's card, which carries no unmanaged-group indicator at all.
+           Added because an unmanaged CLA Group silently blocks every contributor approval under it
+           and nothing else on this page would reveal it. -->
+      <lfx-tag
+        value="Needs a CLA Manager"
+        severity="warn"
+        icon="fa-light fa-triangle-exclamation"
+        tooltip="No one can approve contributors for this CLA Group until a CLA Manager is added."
+        data-testid="org-easycla-card-needs-manager" />
+    }
+  </div>
+
+  <dl class="flex flex-wrap gap-x-6 gap-y-1 text-sm text-gray-600">
+    <div class="flex items-baseline gap-1.5">
+      <dt class="order-2">approval entries</dt>
+      <dd class="order-1 font-semibold text-gray-900" data-testid="org-easycla-card-approval-count">{{ approvalCriteriaValue() }}</dd>
+    </div>
+    <div class="flex items-baseline gap-1.5">
+      <dt class="order-2">{{ managersLabel() }}</dt>
+      <dd class="order-1 font-semibold text-gray-900" data-testid="org-easycla-card-manager-count">{{ claGroup().claManagersCount }}</dd>
+    </div>
+  </dl>
+</article>
