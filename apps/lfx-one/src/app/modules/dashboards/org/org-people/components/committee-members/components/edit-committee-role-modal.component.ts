@@ -204,8 +204,6 @@ export class EditCommitteeRoleModalComponent {
       initials: person.initials,
       avatarUrl: person.avatarUrl ?? null,
       avatarColorClass: 'bg-purple-500',
-      email: person.email,
-      // Lookup key for company addresses; email is display-only and never resolves a person.
       username: person.username ?? null,
     });
   }

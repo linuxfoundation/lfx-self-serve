@@ -85,8 +85,6 @@ export class EditAccessRoleModalComponent {
       name: person.name,
       initials: person.initials,
       avatarColorClass: 'bg-blue-600',
-      email: person.email,
-      // Lookup key for company addresses; email is display-only and never resolves a person.
       username: person.username ?? null,
     });
   }

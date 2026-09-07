@@ -215,7 +215,7 @@ export class OrgLensAccessComponent {
       });
   }
 
-  // OrgAccessUser has no personKey. Company addresses are keyed on username only; email is display-only.
+  // OrgAccessUser has no personKey: company addresses are keyed on username only.
   protected onPersonClick(user: OrgAccessUser, event: Event): void {
     event.stopPropagation();
     this.drawer.open({
@@ -223,7 +223,6 @@ export class OrgLensAccessComponent {
       title: user.jobTitle,
       initials: user.initials,
       avatarUrl: user.avatarUrl,
-      email: user.email,
       username: user.username,
     });
   }

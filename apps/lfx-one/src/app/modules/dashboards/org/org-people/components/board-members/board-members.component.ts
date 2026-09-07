@@ -168,9 +168,6 @@ export class BoardMembersComponent {
 
   protected onPersonClick(group: BoardMemberPersonGroupVm, event: Event): void {
     event.stopPropagation();
-    // `group.email` is the grouping key and falls back to a seat `memberUid` when the upstream email is
-    // blank — source the person's real email from the assignments instead (see onMainPencilClick above).
-    const email = group.assignments.find((a) => a.person.email)?.person.email;
     // Email-keyed groups may span people: the username is a lookup key only when every seat carries the same one.
     const username = agreedUsername(group.assignments.map((a) => a.person.username));
     this.drawer.open({
@@ -180,7 +177,6 @@ export class BoardMembersComponent {
       avatarColorClass: 'bg-purple-500',
       defaultTab: 'governance',
       governanceSeats: toDrawerGovernanceSeats(group.assignments),
-      email,
       username,
     });
   }

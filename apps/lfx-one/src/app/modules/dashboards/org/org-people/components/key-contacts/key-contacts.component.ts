@@ -174,7 +174,6 @@ export class KeyContactsComponent {
       title: group.title,
       initials: group.initials,
       avatarUrl: group.avatarUrl,
-      email: group.email,
       // Email-keyed groups may span people: the username is a lookup key only when every assignment carries the same one.
       username: agreedUsername(group.assignments.map((a) => a.username)),
     });

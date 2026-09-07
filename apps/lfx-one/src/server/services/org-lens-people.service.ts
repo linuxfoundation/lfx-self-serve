@@ -219,7 +219,7 @@ export class OrgLensPeopleService {
     if (!normalizedUsername) {
       return UNAVAILABLE_COMPANY_EMAILS;
     }
-    // Hashed so the identifier never lands in a `:`-delimited key or a log line.
+    // Hashed so the raw identifier is never a `:`-delimited cache-key segment.
     const usernameDigest = createHash('sha256').update(normalizedUsername).digest('hex').slice(0, 16);
     try {
       return await withOrgCache(

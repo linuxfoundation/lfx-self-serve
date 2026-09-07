@@ -134,9 +134,6 @@ export class GroupSeatHoldersDrawerComponent {
     const seats = this.fullOrgAssignments().filter((a) =>
       normalizedEmail ? (a.person.email ?? '').trim().toLowerCase() === normalizedEmail : a.memberUid === vm.memberUid
     );
-    // vm.person.email is the grouping key and can itself be blank — source the real email from
-    // whichever seat actually carries one, mirroring committee-members.component.ts's onPersonClick.
-    const email = seats.find((a) => a.person.email)?.person.email;
     const username = agreedUsername(seats.map((a) => a.person.username));
     this.personDetailDrawer.open({
       name: vm.person.fullName,
@@ -145,7 +142,6 @@ export class GroupSeatHoldersDrawerComponent {
       avatarUrl: vm.person.avatarUrl,
       defaultTab: 'governance',
       governanceSeats: toDrawerGovernanceSeats(seats),
-      email,
       username,
     });
   }

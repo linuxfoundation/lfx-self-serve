@@ -243,8 +243,6 @@ export class ReassignCommitteeRolesModalComponent {
       initials: this.person.initials,
       avatarUrl: this.person.avatarUrl ?? null,
       avatarColorClass: 'bg-purple-500',
-      email: this.person.email,
-      // Lookup key for company addresses; email is display-only and never resolves a person.
       username: this.person.username ?? null,
     });
   }

@@ -137,7 +137,6 @@ export class BoardCommitteeCardComponent {
       title: person.jobTitle,
       initials: person.initials,
       avatarUrl: person.avatarUrl,
-      email: person.email,
       username: person.username,
     });
   }

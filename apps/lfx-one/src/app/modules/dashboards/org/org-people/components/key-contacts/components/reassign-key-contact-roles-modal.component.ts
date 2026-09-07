@@ -194,8 +194,6 @@ export class ReassignKeyContactRolesModalComponent {
       name: this.person.fullName,
       initials: this.person.initials,
       avatarColorClass: 'bg-purple-500',
-      email: this.person.email,
-      // Lookup key for company addresses; email is display-only and never resolves a person.
       username: this.person.username ?? null,
     });
   }

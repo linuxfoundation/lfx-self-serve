@@ -64,7 +64,7 @@ export class PersonDetailDrawerService {
             catchError(() => of({ ...EMPTY_FETCH_RESULT, request, companyEmailsStatus: 'failed', error: true }))
           );
         }
-        // Governance openers have no activity key: resolve addresses by LF username only, never by context.email (display-only).
+        // Governance openers have no activity key: addresses resolve by LF username only, never by an email address.
         if (context.username && companyEmailFeatureEnabled) {
           const url = `/api/orgs/${encodeURIComponent(orgUid)}/lens/people/by-username/${encodeURIComponent(context.username)}/company-emails`;
           return this.http.get<OrgPersonCompanyEmailsResponse>(url).pipe(

@@ -31,7 +31,7 @@ When a feature affects multiple personas differently, flag it explicitly.
 
 ## Quick Start
 
-**Prerequisites:** Node.js ≥22.13 and Yarn 4.x (via corepack). Docker or OrbStack is only needed when running the optional local microservice stack; normal app development uses the shared dev environment.
+**Prerequisites:** Node.js 22.13+ (or 23.4+; `node:sqlite` is unflagged from those releases) and Yarn 4.x (via corepack). Docker or OrbStack is only needed when running the optional local microservice stack; normal app development uses the shared dev environment.
 
 For first-time setup (1Password env vars, microservice stack, etc.) invoke the `/setup` skill — it handles prerequisites, clone, install, env vars, and the dev server.
 
