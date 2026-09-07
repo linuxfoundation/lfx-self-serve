@@ -17,6 +17,7 @@ import {
   isMentorshipCiiProjectId,
   isMentorshipEnrollStepValid,
   isMentorshipHttpUrl,
+  isMentorshipIsoDate,
   isMentorshipLogoFileName,
   matchesMentorshipPersonSearch,
   mentorshipMonthYearToStartDate,
@@ -103,6 +104,40 @@ describe('getMentorshipEnrollStepErrors', () => {
     expect(getMentorshipEnrollStepErrors('details', form).repositoryUrl).toBe('The link must be a valid URL.');
   });
 
+  it('rejects a blank term name and non-calendar dates on the setup step', () => {
+    const form = createEmptyMentorshipEnrollForm();
+    form.skills = ['GO'];
+    form.terms = [
+      {
+        id: '',
+        name: '',
+        startDate: '9999-z',
+        endDate: '9999-a',
+        applicationStartDate: '2026-12-01',
+        applicationEndDate: '2027-02-28',
+      },
+    ];
+
+    expect(getMentorshipEnrollStepErrors('setup', form).terms).toBe('Each term needs a name and valid calendar dates (YYYY-MM-DD).');
+  });
+
+  it('rejects lexical date strings that are not real calendar dates', () => {
+    const form = createEmptyMentorshipEnrollForm();
+    form.skills = ['GO'];
+    form.terms = [
+      {
+        id: 'term-bad',
+        name: 'Term 1 - 2027',
+        startDate: '2027-03-01',
+        endDate: '2027-05-01',
+        applicationStartDate: '9999-a',
+        applicationEndDate: '9999-z',
+      },
+    ];
+
+    expect(getMentorshipEnrollStepErrors('setup', form).terms).toBe('Enter a valid date (YYYY-MM-DD).');
+  });
+
   it('requires a coding-challenge URL when that prerequisite is required', () => {
     const form = createEmptyMentorshipEnrollForm();
     form.prerequisites = form.prerequisites.map((item) => (item.id === 'prereq-coding' ? { ...item, required: true, challengeUrl: '' } : item));
@@ -174,6 +209,15 @@ describe('isMentorshipCiiProjectId', () => {
     expect(isMentorshipCiiProjectId('1842')).toBe(true);
     expect(isMentorshipCiiProjectId('abc')).toBe(false);
     expect(isMentorshipCiiProjectId('')).toBe(false);
+  });
+});
+
+describe('isMentorshipIsoDate', () => {
+  it('accepts real calendar dates and rejects padded or impossible values', () => {
+    expect(isMentorshipIsoDate('2027-03-01')).toBe(true);
+    expect(isMentorshipIsoDate('2026-02-31')).toBe(false);
+    expect(isMentorshipIsoDate('9999-z')).toBe(false);
+    expect(isMentorshipIsoDate('2027-03-01T00:00:00Z')).toBe(false);
   });
 });
 
