@@ -53,8 +53,7 @@ export class PersonDetailDrawerService {
         if (context.personKey) {
           const url = `/api/orgs/${encodeURIComponent(orgUid)}/lens/people/${encodeURIComponent(context.personKey)}/detail`;
           return this.http.get<OrgAllEmployeeDetail>(url).pipe(
-            // Only a resolved lookup may expose addresses, including during rolling deployments
-            // where an older replica can return demo-derived addresses without a status.
+            // Only a resolved lookup may expose addresses; an older replica may return addresses without a status.
             map((detail) => ({
               request,
               detail,
@@ -65,8 +64,7 @@ export class PersonDetailDrawerService {
             catchError(() => of({ ...EMPTY_FETCH_RESULT, request, companyEmailsStatus: 'failed', error: true }))
           );
         }
-        // Governance openers have no activity key. Resolve addresses only by their LF username,
-        // never by context.email (display-only), and leave activity unavailable.
+        // Governance openers have no activity key: resolve addresses by LF username only, never by context.email (display-only).
         if (context.username && companyEmailFeatureEnabled) {
           const url = `/api/orgs/${encodeURIComponent(orgUid)}/lens/people/by-username/${encodeURIComponent(context.username)}/company-emails`;
           return this.http.get<OrgPersonCompanyEmailsResponse>(url).pipe(
@@ -90,8 +88,8 @@ export class PersonDetailDrawerService {
     { initialValue: null }
   );
 
-  // toObservable starts on the next effect flush; toSignal retains the last response until then.
-  // Match the whole request synchronously so neither its data nor its status can leak to a new person.
+  // toObservable starts on the next effect flush and toSignal retains the last response until then;
+  // match the whole request synchronously so nothing leaks to a newly opened person.
   private readonly currentResult = computed(() => {
     const result = this.fetchResult();
     return this._activeContext() && this.orgUid() && result?.request === this.request() ? result : null;

@@ -18,13 +18,8 @@ export interface CommitteeMemberPerson {
   initials: string;
   avatarUrl?: string | null;
   /**
-   * Seat holder's LF username, carried through from the upstream seat so the person drawer can look
-   * up their company-affiliated addresses. This is the only identity these rows have — resolving the
-   * person from `email` instead is prohibited, because that direction is known to produce false links.
-   *
-   * Null where the upstream seat records no username; coverage varies by organization (97.6% at the
-   * Linux Foundation down to 72.0% at Microsoft). A null must surface as "not available from this
-   * view" rather than be inferred or backfilled.
+   * Seat holder's LF username, the drawer's only address-lookup key; never resolve the person from
+   * `email`. Null must surface as "not available from this view", never inferred or backfilled.
    */
   username?: string | null;
 }
@@ -114,8 +109,7 @@ export interface ReassignCommitteeRolesPersonRef {
   email: string;
   initials: string;
   avatarUrl?: string | null;
-  /** LF username of the person being replaced, so the drawer opened from this dialog can look up
-   *  their company addresses. Null when upstream records none. */
+  /** LF username used by the drawer for address lookup. Null when upstream records none. */
   username?: string | null;
 }
 

@@ -225,8 +225,7 @@ export class OrgLensAccessComponent {
       initials: user.initials,
       avatarUrl: user.avatarUrl,
       email: user.email,
-      // The identity the drawer looks addresses up on. Without it the panel can only report that it
-      // cannot resolve this person, since it must never fall back to resolving them by address.
+      // Lookup key for company addresses; email is display-only and never resolves a person.
       username: user.username,
     });
   }

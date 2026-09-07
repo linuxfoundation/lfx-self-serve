@@ -391,13 +391,9 @@ export enum ServerFeatureFlag {
   OrgLensClaM3 = 'LFX_ORG_LENS_CLA_M3_ENABLED',
 
   /**
-   * Gates the company-email read in the Org Lens person drawer (LFXV2-3296). OFF (the default)
-   * means the server answers every company-email lookup with `companyEmailsStatus: 'unavailable'`
-   * and an empty list without querying the warehouse — on both the person-key detail path and the
-   * username-keyed governance path. Deliberately server-side: the client `org-lens-private-release`
-   * flag only decides whether the panel RENDERS the addresses, and a flag that ships the PII and
-   * hides the pixels is not a gate. The client flag and this one flip together for the feature to
-   * be live; either alone is safe.
+   * Gates the company-email read in the Org Lens person drawer (LFXV2-3296). OFF (default) answers
+   * `unavailable` without querying the warehouse. Server-side because the client flag only hides the
+   * pixels; a flag that ships the PII is not a gate.
    */
   OrgLensCompanyEmails = 'LFX_ORG_LENS_COMPANY_EMAILS_ENABLED',
 }

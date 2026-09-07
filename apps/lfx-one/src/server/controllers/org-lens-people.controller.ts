@@ -106,12 +106,7 @@ export class OrgLensPeopleController {
 
   /**
    * GET /api/orgs/:orgUid/lens/people/by-username/:username/company-emails — company-affiliated
-   * addresses for the governance surfaces (Board/Committee/Key Contacts/Access), whose rows carry an
-   * LF username rather than a personKey.
-   *
-   * Keyed on the username, which the caller already holds and which the page already displays. The
-   * address-keyed variant this replaces was withdrawn: returning real data would have made it an
-   * interface that, given any address, returns the other addresses the same human holds.
+   * addresses for the governance surfaces, keyed on LF username and never on an address.
    */
   public async getCompanyEmailsByUsername(req: Request, res: Response, next: NextFunction): Promise<void> {
     const orgUid = req.params['orgUid'];
@@ -372,13 +367,7 @@ export class OrgLensPeopleController {
     }
   }
 
-  /**
-   * Validate the LF username before it is bound into the warehouse lookup (400, not an upstream 5xx).
-   *
-   * Uses the username-shaped check rather than the identifier one: real LF usernames contain dots and
-   * other characters the stricter identifier pattern rejects, so validating with it would 400 people
-   * whose addresses resolve perfectly well.
-   */
+  /** Username-shaped check, not the identifier one: real LF usernames contain dots the stricter pattern rejects. */
   private assertUsername(username: string | undefined, operation: string): asserts username is string {
     if (!username || !isFilterSafeUsername(username)) {
       throw ServiceValidationError.forField('username', 'username path parameter is required and must be a valid username', { operation });

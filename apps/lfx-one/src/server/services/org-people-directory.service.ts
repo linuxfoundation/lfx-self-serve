@@ -247,11 +247,8 @@ export class OrgPeopleDirectoryService {
     if (keyContacts.status === 'fulfilled') {
       for (const emp of keyContacts.value) {
         const email = (emp.email ?? '').trim().toLowerCase();
-        // Merged at the EMAIL rung deliberately, even though the document may now carry a username.
-        // The username is member-service's resolution of this address, not an independently verified
-        // identity, so promoting it to a merge key would let one address decide that two rows are the
-        // same human — the address → identity direction this feature prohibits. It is safe to carry
-        // as a lookup key on the row it came from, and unsafe to join on.
+        // Merged by email even when the document carries a username: the username is safe to carry as a
+        // lookup key on its own row but unsafe to join on.
         const key = resolveMergeKey({ email });
         if (!key) continue;
         const existing = byKey.get(key);
@@ -259,12 +256,8 @@ export class OrgPeopleDirectoryService {
           this.addSource(existing, 'keyContact');
           this.addEmail(existing, email);
           this.fill(existing, { firstName: emp.firstName || null, lastName: emp.lastName || null, title: emp.jobTitle, avatarUrl: emp.avatarUrl ?? null });
-          // No username backfill (DR-010). The key contact's username is member-service's resolution of
-          // this ADDRESS; stamping it onto a row that merged here by address would attach an identity
-          // through the address → identity direction FR-008 prohibits, and when two humans share a
-          // mailbox it shows one person's addresses under the other's name. A row without an identity
-          // renders "not available from this view"; the same person stays resolvable from the Key
-          // Contacts tab, whose rows carry the username natively.
+          // No username backfill onto an email-merged row: the username is member-service's resolution of
+          // this address, and resolving identity from an address is prohibited.
         } else {
           byKey.set(key, this.rowFromKeyContact(emp, email, key));
         }
@@ -419,9 +412,6 @@ export class OrgPeopleDirectoryService {
   }
 
   private rowFromKeyContact(emp: KeyContactEmployee, email: string, key: string): OrgAllEmployeeRow {
-    // The username, where the key_contact document carries one, is what lets the person drawer look
-    // this row's company addresses up: a key-contact-only row has no Snowflake person_key, so without
-    // it the drawer can only say "not available from this view". Null when upstream omits it.
     return this.liveRow(email, emp.firstName || null, emp.lastName || null, emp.jobTitle, emp.avatarUrl ?? null, 'keyContact', key, emp.lfUsername ?? null);
   }
 

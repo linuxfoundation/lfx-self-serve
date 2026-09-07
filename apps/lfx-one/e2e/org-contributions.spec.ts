@@ -47,14 +47,7 @@ const MOCK_PERSON_DETAIL: OrgAllEmployeeDetail = {
   ],
   events: [],
   training: [],
-  // Two addresses on the employer's own domains — a corporate address and a contractor subdomain,
-  // which is the real shape this panel exists to surface (one human holding two identities at one
-  // employer). The previous fixture used a `.co.uk` sibling, which encoded the fabrication the panel
-  // used to perform rather than anything the warehouse can return.
   companyEmails: ['aramirez@acme-corp.example', 'aramirez@contractor.acme-corp.example'],
-  // Required by the response contract: the panel distinguishes "resolved with addresses" from
-  // "resolved with none", "lookup failed" and "no identity to look up", and an absent status would
-  // leave the fixture asserting a state the server can no longer send.
   companyEmailsStatus: 'resolved',
 };
 
@@ -293,9 +286,7 @@ test.describe('Org Lens Code Contributions — person detail drawer (S3)', () =>
     // settled state, not a fetch that merely hasn't started rendering the email yet.
     await expect(page.getByTestId('person-detail-drawer-loading')).toHaveCount(0, { timeout: DATA_LOAD_TIMEOUT });
 
-    // The fixture is `resolved` WITH addresses. With the flag off, the template gates every address
-    // state on `companyEmailFeatureEnabled()`, so neither the addresses nor a fallback may render —
-    // the response must not be re-read as "failed" or "not available" just because it is hidden.
+    // Flag off: no address state renders, and a hidden response must not be re-read as failed/not-available.
     await expect(page.getByTestId('person-detail-drawer-email')).toHaveCount(0);
     await expect(page.getByTestId('person-detail-drawer-email-failed')).toHaveCount(0);
     await expect(page.getByTestId('person-detail-drawer-email-not-available')).toHaveCount(0);

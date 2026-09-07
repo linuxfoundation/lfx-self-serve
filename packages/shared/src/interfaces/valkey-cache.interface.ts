@@ -22,10 +22,9 @@ export interface CachePort {
   del(key: string | null, timeoutMs?: number): Promise<boolean>;
 
   /**
-   * Read-through helper; `key === null` or a disabled cache runs `fetcher()` directly.
-   * `accept` rejects malformed cached values as misses; `storable` decides whether a fresh result
-   * may be written. A non-storable result still reaches the caller. Cache faults are swallowed,
-   * but errors from `fetcher()` propagate.
+   * Read-through helper; a null key or disabled cache runs `fetcher()` directly. `accept` treats a
+   * malformed cached value as a miss; a fresh result is written only when `storable` allows it but is
+   * still returned. Cache faults are swallowed; `fetcher()` errors propagate.
    */
   withCache<T>(
     key: string | null,

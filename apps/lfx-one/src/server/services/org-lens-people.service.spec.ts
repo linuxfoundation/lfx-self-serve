@@ -84,7 +84,7 @@ interface SqlDatabase {
   close(): void;
 }
 
-// The runtime is Node 22+, while this app's Node typings predate its built-in SQLite module.
+// node:sqlite needs Node >= 22.13; this app's Node typings predate the module, hence the local shape.
 const { DatabaseSync } = createRequire(import.meta.url)('node:sqlite') as { DatabaseSync: new (path: string) => SqlDatabase };
 
 const ACCOUNT = 'account-one';
@@ -95,7 +95,6 @@ let database: SqlDatabase;
 let service: OrgLensPeopleService;
 
 function addPerson(account: string, personKey: string, username: string, emails: string[] = []): void {
-  database.prepare('INSERT INTO _ORG_PEOPLE_SPINE VALUES (?, ?, ?)').run(account, personKey, username);
   const insertEmail = database.prepare('INSERT INTO ORG_PEOPLE_COMPANY_EMAILS VALUES (?, ?, ?, ?, ?)');
   for (const [index, email] of emails.entries()) {
     insertEmail.run(account, personKey, username, email, index === 0 ? 1 : 0);
@@ -108,12 +107,8 @@ beforeEach(() => {
   cacheValues.clear();
   ValkeyService.resetInstance();
   database = new DatabaseSync(':memory:');
-  database.exec(`
-    CREATE TABLE _ORG_PEOPLE_SPINE (ACCOUNT_ID TEXT, PERSON_KEY TEXT, LF_USERNAME TEXT);
-    CREATE TABLE ORG_PEOPLE_COMPANY_EMAILS (ACCOUNT_ID TEXT, PERSON_KEY TEXT, LF_USERNAME TEXT, EMAIL TEXT, IS_PRIMARY INTEGER);
-  `);
-  // Execute the service's relational query rather than duplicating its identity matching in a mock.
-  // Adapt schema qualifiers and booleans to SQLite; Snowflake returns boolean columns as booleans.
+  database.exec('CREATE TABLE ORG_PEOPLE_COMPANY_EMAILS (ACCOUNT_ID TEXT, PERSON_KEY TEXT, LF_USERNAME TEXT, EMAIL TEXT, IS_PRIMARY INTEGER)');
+  // Run the service's real SQL against SQLite instead of mocking its identity matching.
   execute.mockImplementation(async (query: string, binds: string[]) => {
     const rows = database.prepare(query.replaceAll('ANALYTICS.PLATINUM_LFX_ONE.', '')).all(...binds);
     for (const row of rows) {
@@ -151,44 +146,24 @@ describe('OrgLensPeopleService username company emails', () => {
     });
   });
 
-  it('reports no addresses only for a uniquely resolved mixed-case identity', async () => {
+  it('reports a known identity without qualifying addresses as unavailable, never as none on record', async () => {
     addPerson(ACCOUNT, 'person-one', 'MixedUser');
 
-    await expectBothPaths({ companyEmails: [], companyEmailsStatus: 'resolved' });
+    await expectBothPaths(UNAVAILABLE);
   });
 
-  it('reports a failed lookup when the spine is unavailable even if addresses exist', async () => {
+  it('reports a failed lookup when the address table is unavailable', async () => {
     addPerson(ACCOUNT, 'person-one', 'MixedUser', ['first@company.example']);
-    database.exec('DROP TABLE _ORG_PEOPLE_SPINE');
+    database.exec('DROP TABLE ORG_PEOPLE_COMPANY_EMAILS');
 
     await expectBothPaths({ companyEmails: [], companyEmailsStatus: 'failed' });
   });
 
-  it('fails closed for case-folded collisions when both people have addresses', async () => {
+  it('fails closed for case-folded collisions between people with addresses', async () => {
     addPerson(ACCOUNT, 'person-one', 'MixedUser', ['first@company.example']);
     addPerson(ACCOUNT, 'person-two', 'mixeduser', ['second@company.example']);
 
     await expectBothPaths(UNAVAILABLE);
-  });
-
-  it('fails closed for case-folded collisions when only one person has addresses', async () => {
-    addPerson(ACCOUNT, 'person-one', 'MixedUser', ['first@company.example']);
-    addPerson(ACCOUNT, 'person-two', 'mixeduser');
-
-    await expectBothPaths(UNAVAILABLE);
-  });
-
-  it('does not report none on record when an empty lookup has an ambiguous identity', async () => {
-    addPerson(ACCOUNT, 'person-one', 'MixedUser');
-    addPerson(ACCOUNT, 'person-two', 'mixeduser');
-
-    await expectBothPaths(UNAVAILABLE);
-  });
-
-  it('reports a failed lookup when the spine is unavailable and no addresses exist', async () => {
-    database.exec('DROP TABLE _ORG_PEOPLE_SPINE');
-
-    await expectBothPaths({ companyEmails: [], companyEmailsStatus: 'failed' });
   });
 
   it('does not treat identities that exist only at another account as resolved', async () => {
@@ -197,11 +172,14 @@ describe('OrgLensPeopleService username company emails', () => {
     await expectBothPaths(UNAVAILABLE);
   });
 
-  it('does not resolve addresses whose identity is absent from the spine', async () => {
+  it('reads the address table only, never the identity spine view', async () => {
     addPerson(ACCOUNT, 'person-one', 'MixedUser', ['first@company.example']);
-    database.exec('DELETE FROM _ORG_PEOPLE_SPINE');
 
-    await expectBothPaths(UNAVAILABLE);
+    await service.getCompanyEmailsByUsername(ACCOUNT, GOVERNANCE_USERNAME);
+
+    for (const [query] of execute.mock.calls as [string][]) {
+      expect(query).not.toMatch(/_ORG_PEOPLE_SPINE/i);
+    }
   });
 
   it('does not resolve blank usernames to blank warehouse identities', async () => {
@@ -217,7 +195,7 @@ describe('OrgLensPeopleService username company emails', () => {
     await expectBothPaths(UNAVAILABLE);
   });
 
-  it('reuses a normalized username result without rerunning the spine and keeps other accounts separate', async () => {
+  it('reuses a normalized username result without rerunning the warehouse read and keeps other accounts separate', async () => {
     addPerson(ACCOUNT, 'person-one', 'MixedUser', ['first@company.example']);
     addPerson('other-account', 'person-two', 'mixeduser', ['other@other.example']);
     expect(await service.getCompanyEmailsByUsername(ACCOUNT, 'MixedUser')).toEqual({
@@ -229,7 +207,7 @@ describe('OrgLensPeopleService username company emails', () => {
       companyEmailsStatus: 'resolved',
     });
     const warehouseReads = execute.mock.calls.length;
-    database.exec('DROP TABLE _ORG_PEOPLE_SPINE');
+    database.exec('DROP TABLE ORG_PEOPLE_COMPANY_EMAILS');
     expect(await service.getCompanyEmailsByUsername(ACCOUNT, ' mixeduser ')).toEqual({
       companyEmails: ['first@company.example'],
       companyEmailsStatus: 'resolved',
@@ -255,24 +233,22 @@ describe('OrgLensPeopleService username company emails', () => {
 
   it('retries a failed username lookup instead of caching the outage', async () => {
     addPerson(ACCOUNT, 'person-one', 'MixedUser', ['first@company.example']);
-    database.exec('ALTER TABLE _ORG_PEOPLE_SPINE RENAME TO SAVED_SPINE');
+    database.exec('ALTER TABLE ORG_PEOPLE_COMPANY_EMAILS RENAME TO SAVED_EMAILS');
     expect(await service.getCompanyEmailsByUsername(ACCOUNT, 'mixeduser')).toEqual({
       companyEmails: [],
       companyEmailsStatus: 'failed',
     });
-    database.exec('ALTER TABLE SAVED_SPINE RENAME TO _ORG_PEOPLE_SPINE');
+    database.exec('ALTER TABLE SAVED_EMAILS RENAME TO ORG_PEOPLE_COMPANY_EMAILS');
     expect(await service.getCompanyEmailsByUsername(ACCOUNT, 'mixeduser')).toEqual({
       companyEmails: ['first@company.example'],
       companyEmailsStatus: 'resolved',
     });
   });
 
-  it.each(['resolved', 'unavailable'] as const)('reuses a stable %s empty result without turning it into another state', async (status) => {
-    if (status === 'resolved') addPerson(ACCOUNT, 'person-one', 'MixedUser');
-    const expected = { companyEmails: [], companyEmailsStatus: status };
-    expect(await service.getCompanyEmailsByUsername(ACCOUNT, 'mixeduser')).toEqual(expected);
-    database.exec('DROP TABLE _ORG_PEOPLE_SPINE');
-    expect(await service.getCompanyEmailsByUsername(ACCOUNT, 'MIXEDUSER')).toEqual(expected);
+  it('reuses a stable unavailable result without turning it into another state', async () => {
+    expect(await service.getCompanyEmailsByUsername(ACCOUNT, 'mixeduser')).toEqual(UNAVAILABLE);
+    database.exec('DROP TABLE ORG_PEOPLE_COMPANY_EMAILS');
+    expect(await service.getCompanyEmailsByUsername(ACCOUNT, 'MIXEDUSER')).toEqual(UNAVAILABLE);
   });
 
   it('rejects a cached failed or status-less response instead of replaying it', async () => {

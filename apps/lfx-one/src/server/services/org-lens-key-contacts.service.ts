@@ -189,9 +189,7 @@ export class OrgLensKeyContactsService {
 
   private async getEmployeesByOrgUid(req: Request, b2bOrgUid: string): Promise<KeyContactEmployee[]> {
     if (!isFilterSafeIdentifier(b2bOrgUid)) return [];
-    // The username-agreement check below is only sound over the COMPLETE document set: a page that
-    // silently dropped could hide the one document that disagrees, and a partial group would then
-    // "agree" on an identity the full set rejects. Fail the fetch rather than compute on a subset.
+    // Username agreement is only sound over the complete document set, so a dropped page fails the fetch.
     const docs = await fetchAllQueryResources<KeyContactDoc>(
       req,
       (pageToken) =>
@@ -204,11 +202,7 @@ export class OrgLensKeyContactsService {
       { failOnPartial: true }
     );
 
-    // Group every active document by address first, then resolve one username per group. Taking the
-    // username from whichever document happened to arrive first would let a group such as
-    // [bob, null] resolve to Bob, while the same incomplete group is rejected by agreedUsername on
-    // every other governance surface — and this identity is what the drawer fetches Bob's real
-    // addresses with. Fail closed instead: the group must agree on one non-empty username.
+    // Group by address, then require the group to agree on one non-empty username; fail closed otherwise.
     const docsByEmail = new Map<string, KeyContactDoc[]>();
     for (const d of docs) {
       if ((d.status ?? '').toLowerCase() === 'inactive') continue;
@@ -230,9 +224,6 @@ export class OrgLensKeyContactsService {
         jobTitle: d.title?.trim() ? d.title.trim() : null,
         initials: this.deriveInitials(firstName, lastName),
         avatarUrl: d.avatar?.trim() ? d.avatar.trim() : null,
-        // Carried so a key-contact-only row in the All Employees roster still has an identity the
-        // person drawer can resolve addresses on. Null when the index omits it on any document for
-        // this address, or when the documents disagree.
         lfUsername: agreedUsername(group.map((doc) => doc.username)),
       });
     }

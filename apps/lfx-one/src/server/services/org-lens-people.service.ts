@@ -153,10 +153,8 @@ export class OrgLensPeopleService {
     // roster (access/board/committee/keyContact sources) instead of burning five Snowflake
     // connections just to resolve an email.
     if (personKey.startsWith('live-')) {
-      // A synthetic key joins to nothing in the warehouse, so resolve the person's LF username from
-      // the live roster and read on that instead. Where the roster carries no username the set is
-      // empty, and the drawer renders "not available from this view" rather than asserting the person
-      // has no company address.
+      // A synthetic key joins to nothing in the warehouse; read on the roster's LF username instead.
+      // No username → unavailable, never "no company address".
       const username = await this.resolveLiveOnlyUsername(req, accountId, personKey);
       const live = username ? await this.getCompanyEmailsByUsername(accountId, username) : UNAVAILABLE_COMPANY_EMAILS;
       return {
@@ -210,11 +208,8 @@ export class OrgLensPeopleService {
   }
 
   /**
-   * Company-affiliated emails for a person the caller identifies by LF username (governance surfaces).
-   *
-   * Each cache miss resolves exactly one person across the account's full normalized username spine
-   * before returning addresses. Identities without addresses still make a username ambiguous.
-   * Stable results use the same TTL as person-key detail; query failures are never cached.
+   * Company-affiliated emails for a person identified by LF username (governance surfaces).
+   * Cache misses read only the materialized address table; failures are never cached.
    */
   public async getCompanyEmailsByUsername(accountId: string, username: string): Promise<OrgPersonCompanyEmailsResponse> {
     if (!isServerFeatureEnabled(ServerFeatureFlag.OrgLensCompanyEmails)) {
@@ -388,9 +383,7 @@ export class OrgLensPeopleService {
       return this.runEmployeeDetailFetch(accountId, personKey);
     }
 
-    // The flag state is part of the key. A dark-launch response (`unavailable`, no addresses) is a
-    // valid cacheable shape, so without this a flag-OFF read would be memoized and flipping the flag
-    // ON would keep serving "not available" for the rest of the TTL.
+    // Flag state is part of the key so a flag-OFF `unavailable` response is not served after the flag flips ON.
     const emailsSuffix = isServerFeatureEnabled(ServerFeatureFlag.OrgLensCompanyEmails) ? 'emails' : 'noemails';
     return withOrgCache(
       accountId,
@@ -413,11 +406,8 @@ export class OrgLensPeopleService {
     companyEmails: string[];
     companyEmailsStatus: OrgCompanyEmailsStatus;
   }> {
-    // The address read runs alongside the activity reads so the panel opens no slower, but its
-    // rejection must not take the rest down with it: a warehouse hiccup on this one table would
-    // otherwise blank every activity tab and report the person's details as unloadable. It resolves
-    // to a status instead of throwing, which is also what lets the header say "couldn't be loaded"
-    // rather than the untrue "no company address on record".
+    // The address read resolves to a status instead of throwing so a failure on that one table cannot
+    // blank the activity tabs.
     const [committeeRows, codeRows, eventRows, trainingRows, companyEmailsResult] = await Promise.all([
       this.fetchCommitteeMembershipRows(accountId, personKey),
       this.fetchCodeContributionRows(accountId, personKey),
@@ -436,17 +426,10 @@ export class OrgLensPeopleService {
   }
 
   /**
-   * Wraps the keyed read so a failure degrades this one section rather than the whole detail response.
+   * A failure degrades this section only, never the whole detail response.
    *
-   * Two identity states short-circuit to `unavailable` before any query: the server-side flag being off,
-   * and a `cdp:`-prefixed person key. The latter is a CDP roster member for whom the platform identity
-   * crosswalk (`silver_dim_member_user_mapping`) produced no Salesforce user — either they hold no LF
-   * identity, or they hold one but have no Crowd.dev activity since the mapping's activity window
-   * (measured: 10,093 current roster members with an LFID fall on that side). The address model is
-   * keyed on the Salesforce user, so a `cdp:` key can never join to it. Querying would return an empty
-   * set that the panel renders as "no company email on record" — a false statement for anyone in that
-   * population who holds a qualifying address. No verified identity resolved → not available, never
-   * none on record (DR-005 corollary 2, DR-011).
+   * Flag off or a `cdp:` person key (no Salesforce identity to join on) short-circuits to `unavailable`:
+   * no verified identity → not available, never "none on record".
    */
   private async tryFetchCompanyEmailsForPersonKey(accountId: string, personKey: string): Promise<OrgPersonCompanyEmailsResponse> {
     if (!isServerFeatureEnabled(ServerFeatureFlag.OrgLensCompanyEmails) || personKey.startsWith('cdp:')) {
@@ -464,15 +447,11 @@ export class OrgLensPeopleService {
   }
 
   /**
-   * The person's company-affiliated addresses at this account.
+   * The person's company-affiliated addresses at this account. Inclusion rules live in the warehouse
+   * model; this is a plain keyed read with no cap.
    *
-   * Every inclusion rule lives in the warehouse model, so this is a plain keyed read: the addresses a
-   * person holds that are personal or belong to another employer are not filtered here, they are never
-   * returned. No cap — the observed maximum is ten for one person, and truncating would misrepresent
-   * the set the panel exists to show.
-   *
-   * Keyed on identity only. Resolving a person from an address is prohibited: that direction is known
-   * to contain false links, so it would attribute one named individual's addresses to another.
+   * Keyed on identity only. Resolving a person from an address is prohibited: that direction contains
+   * false links and would attribute one person's addresses to another.
    */
   private async fetchCompanyEmails(accountId: string, personKey: string): Promise<string[]> {
     const query = `
@@ -486,32 +465,34 @@ export class OrgLensPeopleService {
   }
 
   /**
-   * As above, for the governance surfaces (Board, Committee, Key Contacts, Access) whose rows carry an
-   * LF username rather than a person_key.
+   * As above, keyed on LF username for the governance surfaces (Board, Committee, Key Contacts, Access).
    *
-   * Resolve identity and read its prequalified addresses atomically. A left join preserves a known
-   * person with no addresses; an absent or ambiguous identity produces no rows.
+   * Reads only the materialized address table; identity is never re-resolved against the spine view at
+   * request time. The HAVING guard fails closed if two people collide after normalization. Zero rows is
+   * `unavailable`, never "none on record": this read cannot tell a known person without addresses from
+   * an unknown username.
    */
   private async fetchCompanyEmailsByUsername(accountId: string, username: string): Promise<OrgPersonCompanyEmailsResponse> {
     const query = `
       WITH resolved_person AS (
         SELECT ACCOUNT_ID, MIN(PERSON_KEY) AS PERSON_KEY
-        FROM ANALYTICS.PLATINUM_LFX_ONE._ORG_PEOPLE_SPINE
+        FROM ANALYTICS.PLATINUM_LFX_ONE.ORG_PEOPLE_COMPANY_EMAILS
         WHERE ACCOUNT_ID = ? AND LOWER(TRIM(LF_USERNAME)) = ?
         GROUP BY ACCOUNT_ID
         HAVING COUNT(DISTINCT PERSON_KEY) = 1
       )
       SELECT emails.EMAIL
       FROM resolved_person AS person
-      LEFT JOIN ANALYTICS.PLATINUM_LFX_ONE.ORG_PEOPLE_COMPANY_EMAILS AS emails
+      INNER JOIN ANALYTICS.PLATINUM_LFX_ONE.ORG_PEOPLE_COMPANY_EMAILS AS emails
         ON emails.ACCOUNT_ID = person.ACCOUNT_ID AND emails.PERSON_KEY = person.PERSON_KEY
       ORDER BY emails.IS_PRIMARY DESC, emails.EMAIL ASC
     `;
     const result = await this.snowflakeService.execute<{ EMAIL: string | null }>(query, [accountId, username]);
-    if (result.rows.length === 0) {
+    const companyEmails = result.rows.map((row) => row.EMAIL).filter((email): email is string => !!email);
+    if (companyEmails.length === 0) {
       return UNAVAILABLE_COMPANY_EMAILS;
     }
-    return { companyEmails: result.rows.map((row) => row.EMAIL).filter((email): email is string => !!email), companyEmailsStatus: 'resolved' };
+    return { companyEmails, companyEmailsStatus: 'resolved' };
   }
 
   private async fetchCommitteeMembershipRows(accountId: string, personKey: string): Promise<CommitteeMembershipRow[]> {
@@ -700,34 +681,15 @@ function isEmployeeDetailRaw(value: unknown): boolean {
     Array.isArray(v.codeRows) &&
     Array.isArray(v.eventRows) &&
     Array.isArray(v.trainingRows) &&
-    // Gates on `companyEmails`, which replaced the earlier single `email` field. An entry written
-    // before this change carries `email` and no `companyEmails`, so it fails here and is refetched
-    // rather than replayed — otherwise the fabricated addresses that field fed would keep being
-    // served from cache long after the code producing them was deleted.
+    // Entries cached before `companyEmails` existed are rejected as a miss rather than replayed.
     Array.isArray(v.companyEmails) &&
     v.companyEmails.every((email) => typeof email === 'string') &&
-    // Also gates on the status, so a cached entry that predates it is refetched rather than replayed
-    // with an undefined status the client would fall back to rendering as "none on record".
-    // 'failed' is NOT accepted: an entry in that state should never have been written (see
-    // isCacheableEmployeeDetail), and one left behind by an earlier deployment must expire on first
-    // read rather than keep reporting an outage that is over.
+    // 'failed' is never a valid cached state; legacy entries without a status are refetched.
     (v.companyEmailsStatus === 'resolved' || v.companyEmailsStatus === 'unavailable')
   );
 }
 
-/**
- * Whether a freshly fetched detail is eligible to be WRITTEN to the cache.
- *
- * `tryFetchCompanyEmails` deliberately turns a warehouse error into a fulfilled
- * `{ status: 'failed' }` so one bad table cannot blank the activity tabs. That degradation is right
- * for the response and wrong for the cache: persisting it would replay a single transient blip for
- * the full one-hour Org Lens TTL, so a warehouse hiccup lasting seconds would hide addresses for an
- * hour with no way to retry. The detail is returned to this caller and simply not stored, so the
- * next drawer open tries the warehouse again.
- *
- * 'unavailable' IS cacheable — it means no identity existed to look up, which is a stable property
- * of the row rather than a fault.
- */
+/** Failed lookups are never cached: a transient warehouse error must not hide addresses for the full TTL. `unavailable` is a stable property and is cacheable. */
 function isCacheableEmployeeDetail(value: { companyEmailsStatus: OrgCompanyEmailsStatus }): boolean {
   return value.companyEmailsStatus !== 'failed';
 }

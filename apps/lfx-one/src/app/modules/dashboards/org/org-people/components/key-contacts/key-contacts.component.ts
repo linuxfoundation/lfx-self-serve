@@ -175,9 +175,7 @@ export class KeyContactsComponent {
       initials: group.initials,
       avatarUrl: group.avatarUrl,
       email: group.email,
-      // Groups are email-keyed, so they are not guaranteed to be one human. Require every assignment
-      // that carries a username to agree before using it as the lookup key — otherwise a disagreeing
-      // group would show one person's addresses under another's name.
+      // Email-keyed groups may span people: use a username as lookup key only when every assignment that has one agrees.
       username: agreedUsername(group.assignments.map((a) => a.username)),
     });
   }

@@ -32,15 +32,8 @@ export class PersonDetailDrawerComponent implements OnDestroy {
   protected readonly codeTotals: Signal<{ commits: number; projects: number }> = computed(() => this.initCodeTotals());
   protected readonly companyEmails: Signal<string[]> = computed(() => this.initCompanyEmails());
 
-  /**
-   * The address section resolves to exactly one of four outcomes, and an administrator has to be able
-   * to tell them apart — this panel exists for troubleshooting identity problems, so an ambiguous
-   * empty state sends them down the wrong path.
-   *
-   * `none` and `notAvailable` are the pair that matters most: "this person holds no company address"
-   * is a factual claim about a named individual, and we must not make it on a surface that simply
-   * had no identity to look them up with.
-   */
+  // Failed, not-available and none-on-record are distinct states: "no company address" is a claim
+  // about a named person and must never be shown when there was no identity to look them up with.
   protected readonly companyEmailsFailed: Signal<boolean> = computed(() => this.drawer.emailError());
   protected readonly companyEmailsNotAvailable: Signal<boolean> = computed(() => this.drawer.identityUnavailable());
   protected readonly companyEmailsNoneOnRecord: Signal<boolean> = computed(() => this.drawer.companyEmailsResolved() && this.companyEmails().length === 0);

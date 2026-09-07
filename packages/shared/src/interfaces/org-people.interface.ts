@@ -174,25 +174,13 @@ export interface OrgAllEmployeeDetail {
   events: OrgAllEmployeeEvent[];
   training: OrgAllEmployeeTraining[];
   /**
-   * Every address this person holds on a domain belonging to the organization in context, ordered
-   * primary-first then alphabetically. Sourced from
-   * `ANALYTICS.PLATINUM_LFX_ONE.ORG_PEOPLE_COMPANY_EMAILS`.
-   *
-   * Uncapped — ten addresses for one person is a real observed value, so consumers must not assume a
-   * bound. Only `companyEmailsStatus === 'resolved'` makes an empty array mean none on record.
-   * Failed and unavailable lookups also return empty arrays. Address qualification happens in the
-   * warehouse; no client-side filtering is required or permitted.
+   * Addresses on the org's domains, primary-first. Uncapped. Empty means "none on record" only when
+   * `companyEmailsStatus === 'resolved'`; failed and unavailable lookups also return empty arrays.
    */
   companyEmails: string[];
   /**
-   * Why `companyEmails` looks the way it does. Without this the client cannot tell an authoritative
-   * empty result from a lookup that never ran, and would render "no company address on record" —
-   * a factual claim about a named individual — on the strength of a failure.
-   *
-   * - `resolved`: identity was available and the lookup succeeded; an empty array means none on record.
-   * - `unavailable`: the feature is disabled or no unique usable identity is available for the lookup.
-   * - `failed`: the lookup ran and errored. Deliberately does not fail the whole detail response —
-   *   the activity tabs must keep rendering.
+   * `resolved`: lookup succeeded, empty means none on record. `unavailable`: feature off or no usable
+   * identity. `failed`: lookup errored; never fails the whole detail response.
    */
   companyEmailsStatus: OrgCompanyEmailsStatus;
 }
@@ -200,22 +188,15 @@ export interface OrgAllEmployeeDetail {
 export type OrgCompanyEmailsStatus = 'resolved' | 'unavailable' | 'failed';
 
 /**
- * Response for the username-keyed company-emails lookup, used by the governance surfaces (Board,
- * Committee, Key Contacts, Org Lens Access) whose rows carry an LF username rather than a
- * `personKey`.
- *
- * Keyed on an identity, never on an address. The organization access gate applies before the handler.
- * An address-keyed variant was withdrawn because it would allow enumerating another address held by
- * a person from an arbitrary input address; organization access alone does not make that key safe.
+ * Response for the username-keyed company-emails lookup. Keyed on an identity, never on an address:
+ * an address key would let a caller enumerate a person's other addresses from an arbitrary input.
  */
 export interface OrgPersonCompanyEmailsResponse {
   companyEmails: string[];
   /**
-   * Same three-way status as `OrgAllEmployeeDetail.companyEmailsStatus`. `unavailable` is the
-   * answer when the username is absent or ambiguous on the address model's spine at this account,
-   * or when the server-side feature flag is off — never "none on record".
-   * A client that sees no status must treat the
-   * response as failed, not as unavailable or an empty set.
+   * A username-keyed response is `resolved` only with at least one address; `unavailable` otherwise
+   * (no username, no qualifying address, ambiguous match, or flag off). A missing status must be
+   * treated as `failed`, never as `unavailable` or an empty set.
    */
   companyEmailsStatus: OrgCompanyEmailsStatus;
 }

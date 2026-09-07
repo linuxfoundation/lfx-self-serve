@@ -164,16 +164,12 @@ export class CommitteeMembersComponent {
     this.toggleExpansion(email);
   }
 
-  // Open the drawer on Governance from already-loaded seats (Committee rows have no personKey); the
-  // person's company addresses are fetched server-side from the seat's LF username.
   protected onPersonClick(group: CommitteeMemberPersonGroupVm, event: Event): void {
     event.stopPropagation();
     // `group.email` is the grouping key and falls back to a seat `memberUid` when the upstream email is
     // blank — source the person's real email from the assignments instead.
     const email = group.assignments.find((a) => a.person.email)?.person.email;
-    // Groups are email-keyed and first-wins for the header name, so they are not guaranteed to be one
-    // human. Require every seat that carries a username to agree before using it as the lookup key —
-    // otherwise a disagreeing group would show one person's addresses under another's name.
+    // Email-keyed groups may span people: use a username as lookup key only when every seat that has one agrees.
     const username = agreedUsername(group.assignments.map((a) => a.person.username));
     this.drawer.open({
       name: group.displayName,

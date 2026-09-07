@@ -156,15 +156,9 @@ export class ValkeyService implements CachePort {
   }
 
   /**
-   * Read-through cache.
-   *
-   * `accept` validates a value read BACK from the cache (a shape gate, so entries written by an older
-   * deployment are treated as a miss). `storable` decides whether a freshly fetched value is worth
-   * WRITING. They are separate because a value can be perfectly well-shaped and still be something we
-   * must not persist: a result that encodes "this lookup failed" is valid to return to the caller once,
-   * but caching it replays one transient upstream blip for the whole TTL. Without `storable` a fetcher
-   * that degrades errors into a value — rather than throwing — silently converts a momentary fault into
-   * a long-lived one.
+   * Read-through cache. `accept` gates a value read back from the cache (older shapes are a miss);
+   * `storable` gates whether a freshly fetched value is written, so a well-shaped "lookup failed"
+   * result is served once but never persisted for the TTL.
    */
   public async withCache<T>(
     key: string | null,
@@ -190,7 +184,6 @@ export class ValkeyService implements CachePort {
     logger.debug(undefined, 'cache_miss', 'Cache miss — fetching from source', { cache_key: ValkeyService.redactKey(key) });
     const result = await fetcher();
     if (storable && !storable(result)) {
-      // Returned to this caller, deliberately not persisted, so the next request retries.
       logger.debug(undefined, 'cache_skip_write', 'Result not eligible for caching — serving without storing', {
         cache_key: ValkeyService.redactKey(key),
       });
