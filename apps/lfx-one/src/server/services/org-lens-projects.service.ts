@@ -533,7 +533,11 @@ export class OrgLensProjectsService {
       commits1y: 0,
       changeDriver: { label: 'Not calculated yet', direction: 'flat' },
       description: row.DESCRIPTION ?? `${row.PROJECT_NAME} is an open source project in the ${this.mapFoundation(row).name} ecosystem.`,
-      healthMetrics: category && this.hasHealthMetrics(row) ? this.mapHealthMetrics(row) : [],
+      // Independent of `category`/`health`: the warehouse can populate these percentage columns without a
+      // resolvable category, and per-metric "Unavailable" (see hasHealthMetrics) is the correct render for
+      // that case, not suppressing metrics that genuinely have data — same pattern as insights' health
+      // breakdown, where each sub-score renders off its own null-ness, not off the top-level label.
+      healthMetrics: this.hasHealthMetrics(row) ? this.mapHealthMetrics(row) : [],
       // Real org-scoped row (org-dashboard parity): every metric is genuine, including participating
       // projects with activity_count = 0. fetchNoActivityProjects overrides this for its fallback rows.
       metricsState: 'full',
