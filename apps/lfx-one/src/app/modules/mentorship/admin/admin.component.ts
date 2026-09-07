@@ -8,7 +8,7 @@ import { RouteLoadingComponent } from '@components/loading/route-loading.compone
 import { EMPTY_MENTORSHIP_PROGRAMS_RESPONSE, MENTORSHIP_PROGRAM_PAGE_SIZE } from '@lfx-one/shared/constants';
 import { MentorshipProgramsResponse, MentorshipProgramStatus } from '@lfx-one/shared/interfaces';
 import { MentorshipService } from '@services/mentorship.service';
-import { merge, Subject } from 'rxjs';
+import { merge, share, Subject } from 'rxjs';
 import { debounceTime, distinctUntilChanged, exhaustMap, finalize, map, scan, switchMap, takeUntil, tap } from 'rxjs/operators';
 
 import { ProgramsListComponent } from './components/programs-list/programs-list.component';
@@ -85,7 +85,11 @@ export class AdminComponent {
     // Debounce search input so keystroke bursts don't fan out to the BFF.
     const filters$ = toObservable(computed(() => ({ search: this.searchTerm(), status: this.statusFilter() }))).pipe(
       debounceTime(200),
-      distinctUntilChanged((a, b) => a.search === b.search && a.status === b.status)
+      distinctUntilChanged((a, b) => a.search === b.search && a.status === b.status),
+      // Multicast so `takeUntil(filters$)` late-subscribes without the subscribe-time
+      // replay. A new subscriber would otherwise get the current filters after 200 ms
+      // and cancel any load-more that takes longer than the debounce.
+      share()
     );
 
     const firstPage$ = filters$.pipe(
@@ -101,11 +105,15 @@ export class AdminComponent {
             offset: 0,
             limit: MENTORSHIP_PROGRAM_PAGE_SIZE,
           })
-          .pipe(
-            map((response) => ({ ...response, reset: true as const, failed: false })),
-            finalize(() => this.filterLoading.set(false))
-          )
-      )
+          .pipe(map((response) => ({ ...response, reset: true as const, failed: false })))
+      ),
+      // Clear after the latest first-page emission, not in the inner `finalize`.
+      // A cancelled in-flight filter fetch would otherwise set `filterLoading` false
+      // while the replacement request is still running and re-enable Load more.
+      tap({
+        next: () => this.filterLoading.set(false),
+        error: () => this.filterLoading.set(false),
+      })
     );
 
     const nextPage$ = this.loadMore$.pipe(
