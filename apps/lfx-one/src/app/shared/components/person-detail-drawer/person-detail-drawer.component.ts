@@ -43,17 +43,7 @@ export class PersonDetailDrawerComponent implements OnDestroy {
    */
   protected readonly companyEmailsFailed: Signal<boolean> = computed(() => this.drawer.emailError());
   protected readonly companyEmailsNotAvailable: Signal<boolean> = computed(() => this.drawer.identityUnavailable());
-  protected readonly companyEmailsNoneOnRecord: Signal<boolean> = computed(
-    () =>
-      !this.drawer.loading() &&
-      !this.drawer.emailError() &&
-      !this.drawer.identityUnavailable() &&
-      // A failed person-detail fetch also yields an empty list. Claiming "none on record" there would
-      // state something false about a named individual on the strength of a request that never
-      // succeeded, so the detail error has to suppress this state too.
-      !this.drawer.error() &&
-      this.companyEmails().length === 0
-  );
+  protected readonly companyEmailsNoneOnRecord: Signal<boolean> = computed(() => this.drawer.companyEmailsResolved() && this.companyEmails().length === 0);
 
   public ngOnDestroy(): void {
     this.drawer.close();
@@ -95,11 +85,6 @@ export class PersonDetailDrawerComponent implements OnDestroy {
     const supplied = this.drawer.activeContext()?.governanceSeats;
     if (supplied) {
       return supplied;
-    }
-    // detail() (toSignal) keeps the previous person's value while a new fetch is in flight, so
-    // return [] when loading/errored — otherwise the template skips its skeleton and shows stale seats.
-    if (this.drawer.loading() || this.drawer.error()) {
-      return [];
     }
     const detail = this.drawer.detail();
     if (!detail) {

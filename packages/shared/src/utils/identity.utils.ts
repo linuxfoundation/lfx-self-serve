@@ -86,7 +86,7 @@ export function agreedUsername(usernames: readonly (string | null | undefined)[]
     return null;
   }
 
-  // Return the original casing of the agreed value, since the lookup key is matched as stored.
+  // Preserve the source spelling; case-insensitive agreement does not rewrite the identity.
   const agreed = [...distinct][0];
   return usernames.find((u) => u?.trim().toLowerCase() === agreed)?.trim() ?? null;
 }

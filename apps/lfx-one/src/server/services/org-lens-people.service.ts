@@ -218,45 +218,28 @@ export class OrgLensPeopleService {
    *
    * Returns a status, not a bare list, because an empty list has two very different meanings here and
    * the panel must not conflate them (FR-009). `unavailable` when the server-side flag is off, or when
-   * the username is not on the address model's spine at this account — an Org Lens Access principal
-   * who is not a committee member, key contact or roster person has no warehouse presence, so the
-   * address model cannot speak to them at all. `resolved` with `[]` only when the spine knows the
-   * person and they genuinely hold no qualifying address.
+   * the username is absent or ambiguous on the address model's spine at this account. `resolved`
+   * with `[]` only when the spine identifies exactly one person and they hold no qualifying address.
    *
-   * The spine probe runs only when the address read came back empty: the common path (addresses found)
-   * stays one query, and the spine is a view — a three-way UNION re-evaluated per call — so probing it
-   * unconditionally would double the cost of every governance-drawer open. SC-005 measures this path.
+   * Resolve against the full spine, including people without addresses, before joining emails by
+   * person key. Otherwise case-folding could expose one person's addresses under another's name.
    */
   public async getCompanyEmailsByUsername(accountId: string, username: string): Promise<CompanyEmailsResult> {
     if (!isServerFeatureEnabled(ServerFeatureFlag.OrgLensCompanyEmails)) {
       return UNAVAILABLE_COMPANY_EMAILS;
     }
-    const read = await this.tryFetchCompanyEmailsByUsername(accountId, username);
-    if (read.companyEmailsStatus !== 'resolved' || read.companyEmails.length > 0) {
-      return read;
+    const normalizedUsername = username.trim().toLowerCase();
+    if (!normalizedUsername) {
+      return UNAVAILABLE_COMPANY_EMAILS;
     }
     try {
-      return (await this.isUsernameOnSpine(accountId, username)) ? read : UNAVAILABLE_COMPANY_EMAILS;
+      return await this.fetchCompanyEmailsByUsername(accountId, normalizedUsername);
     } catch (error) {
-      logger.info(undefined, 'get_org_lens_people_company_emails_by_username', 'spine probe failed; serving unavailable', { err: error });
+      logger.info(undefined, 'get_org_lens_people_company_emails_by_username', 'company email lookup failed; serving detail without addresses', {
+        err: error,
+      });
       return FAILED_COMPANY_EMAILS;
     }
-  }
-
-  /**
-   * Whether the address model's spine knows this username at this account. Probed on the SPINE
-   * (`_ORG_PEOPLE_SPINE`), not on the emails table: the emails table only has rows where addresses
-   * exist, so it cannot distinguish "not on spine" from "no addresses".
-   */
-  private async isUsernameOnSpine(accountId: string, username: string): Promise<boolean> {
-    const query = `
-      SELECT 1 AS PRESENT
-      FROM ANALYTICS.PLATINUM_LFX_ONE._ORG_PEOPLE_SPINE
-      WHERE ACCOUNT_ID = ? AND LF_USERNAME = ?
-      LIMIT 1
-    `;
-    const result = await this.snowflakeService.execute<{ PRESENT: number }>(query, [accountId, username]);
-    return result.rows.length > 0;
   }
 
   /** Looks up a live-only person's LF username from the live roster (access/board/committee/keyContact sources). */
@@ -479,18 +462,6 @@ export class OrgLensPeopleService {
     }
   }
 
-  /** As above, for the username-keyed read. */
-  private async tryFetchCompanyEmailsByUsername(accountId: string, username: string): Promise<CompanyEmailsResult> {
-    try {
-      return { companyEmails: await this.fetchCompanyEmailsByUsername(accountId, username), companyEmailsStatus: 'resolved' };
-    } catch (error) {
-      logger.info(undefined, 'get_org_lens_people_company_emails_by_username', 'company email lookup failed; serving detail without addresses', {
-        err: error,
-      });
-      return FAILED_COMPANY_EMAILS;
-    }
-  }
-
   /**
    * The person's company-affiliated addresses at this account.
    *
@@ -517,20 +488,30 @@ export class OrgLensPeopleService {
    * As above, for the governance surfaces (Board, Committee, Key Contacts, Access) whose rows carry an
    * LF username rather than a person_key.
    *
-   * The username is resolved inside the model rather than translated to a person_key here. Translating
-   * via ORG_PEOPLE_ALL would re-apply that model's engagement gate, which drops roughly three quarters
-   * of corporate key contacts — the panel would then report "no company address on record" for people
-   * whose addresses the warehouse holds.
+   * The full spine avoids ORG_PEOPLE_ALL's engagement gate, which drops most corporate key contacts.
+   * A unique person with no qualifying addresses still produces one row, with a null email; an
+   * absent or ambiguous username produces no rows.
    */
-  private async fetchCompanyEmailsByUsername(accountId: string, username: string): Promise<string[]> {
+  private async fetchCompanyEmailsByUsername(accountId: string, username: string): Promise<CompanyEmailsResult> {
     const query = `
-      SELECT EMAIL
-      FROM ANALYTICS.PLATINUM_LFX_ONE.ORG_PEOPLE_COMPANY_EMAILS
-      WHERE ACCOUNT_ID = ? AND LF_USERNAME = ?
-      ORDER BY IS_PRIMARY DESC, EMAIL ASC
+      WITH identity AS (
+        SELECT ACCOUNT_ID, MIN(PERSON_KEY) AS PERSON_KEY
+        FROM ANALYTICS.PLATINUM_LFX_ONE._ORG_PEOPLE_SPINE
+        WHERE ACCOUNT_ID = ? AND LOWER(TRIM(LF_USERNAME)) = ?
+        GROUP BY ACCOUNT_ID
+        HAVING COUNT(DISTINCT PERSON_KEY) = 1
+      )
+      SELECT emails.EMAIL
+      FROM identity
+      LEFT JOIN ANALYTICS.PLATINUM_LFX_ONE.ORG_PEOPLE_COMPANY_EMAILS emails
+        ON emails.ACCOUNT_ID = identity.ACCOUNT_ID AND emails.PERSON_KEY = identity.PERSON_KEY
+      ORDER BY emails.IS_PRIMARY DESC, emails.EMAIL ASC
     `;
-    const result = await this.snowflakeService.execute<{ EMAIL: string }>(query, [accountId, username]);
-    return result.rows.map((row) => row.EMAIL).filter((email): email is string => !!email);
+    const result = await this.snowflakeService.execute<{ EMAIL: string | null }>(query, [accountId, username]);
+    if (result.rows.length === 0) {
+      return UNAVAILABLE_COMPANY_EMAILS;
+    }
+    return { companyEmails: result.rows.map((row) => row.EMAIL).filter((email): email is string => !!email), companyEmailsStatus: 'resolved' };
   }
 
   private async fetchCommitteeMembershipRows(accountId: string, personKey: string): Promise<CommitteeMembershipRow[]> {
