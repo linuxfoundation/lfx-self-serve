@@ -20,67 +20,22 @@
  * route that was never guarded.
  */
 
-import { ACCOUNT_COOKIE_KEY } from '@lfx-one/shared/constants/accounts.constants';
 import { ORG_LENS_CLA_M3_ENABLED_FLAG } from '@lfx-one/shared/constants/feature-flags.constants';
 import { expect, Locator, Page, test } from '@playwright/test';
 
+import {
+  claGroupList,
+  CLA_GROUPS_ROUTE,
+  EASYCLA_URL,
+  fulfillJson,
+  MOCK_ACCOUNT_NAME,
+  PAGE_LOAD_TIMEOUT,
+  stubAccountContext,
+} from './helpers/org-easycla.helper';
 import { stubFeatureFlags } from './helpers/org-roi.helper';
-
-const EASYCLA_URL = '/org/easycla';
-const PAGE_LOAD_TIMEOUT = 30_000;
-
-const MOCK_ACCOUNT_ID = '0014100000Te2QjAAJ';
-const MOCK_ACCOUNT_NAME = 'Acme Motors';
-const MOCK_ACCOUNT_SLUG = 'acme-motors';
 
 function sidebarLink(page: Page, name: string): Locator {
   return page.getByTestId('sidebar').getByRole('link', { name, exact: true });
-}
-
-function fulfillJson(page: Page, glob: string, body: unknown): Promise<void> {
-  return page.route(glob, (route) => route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify(body) }));
-}
-
-/**
- * Enough org context for an account to be selected. Without it the lens has no organization, the
- * sidebar never builds its org section, and both cases would assert against a page still waiting.
- */
-async function stubAccountContext(page: Page): Promise<void> {
-  await fulfillJson(page, '**/api/user/personas*', {
-    personas: ['contributor'],
-    personaProjects: {},
-    projects: [],
-    organizations: [{ accountId: MOCK_ACCOUNT_ID, accountName: MOCK_ACCOUNT_NAME, accountSlug: MOCK_ACCOUNT_SLUG, membershipTier: '', uid: MOCK_ACCOUNT_ID }],
-    isRootWriter: false,
-  });
-
-  await fulfillJson(page, '**/api/analytics/org-lens-account-context*', [
-    { accountId: MOCK_ACCOUNT_ID, accountName: MOCK_ACCOUNT_NAME, accountSlug: MOCK_ACCOUNT_SLUG, membershipTier: 'Gold' },
-  ]);
-
-  await fulfillJson(page, '**/api/orgs/me/role-grants', {
-    writers: [MOCK_ACCOUNT_ID],
-    auditors: [],
-    cascadingWriters: [],
-    cascadingAuditors: [],
-    username: 'e2e-org-easycla',
-    loaded_at: new Date().toISOString(),
-  });
-
-  await fulfillJson(page, '**/api/nav/org-items*', {
-    items: [{ uid: MOCK_ACCOUNT_ID, accountId: MOCK_ACCOUNT_ID, name: MOCK_ACCOUNT_NAME, logoUrl: null, primaryDomain: 'acme-motors.example', isMember: true }],
-    next_page_token: null,
-    upstream_failed: false,
-    total: 1,
-  });
-
-  await page.context().addCookies([{ name: ACCOUNT_COOKIE_KEY, value: JSON.stringify({ uid: MOCK_ACCOUNT_ID }), domain: 'localhost', path: '/' }]);
-
-  // The page fetches its CLA list once an org is selected (GH-1978). Stubbed empty so the flag-on
-  // case still lands on the "signed nothing" state — unstubbed, the request would fail against the
-  // dev backend and the page would render its load-failure state instead, failing this spec for a
-  // reason that has nothing to do with the gate it exists to pin.
-  await fulfillJson(page, '**/api/orgs/*/lens/cla-groups', { orgUid: MOCK_ACCOUNT_ID, claGroups: [] });
 }
 
 /**
@@ -93,6 +48,12 @@ async function stubAccountContext(page: Page): Promise<void> {
 async function deepLinkToEasycla(page: Page, flagEnabled: boolean): Promise<void> {
   await stubFeatureFlags(page, { [ORG_LENS_CLA_M3_ENABLED_FLAG]: flagEnabled });
   await stubAccountContext(page);
+
+  // The page fetches its CLA list once an org is selected (GH-1978). Stubbed empty so the flag-on
+  // case still lands on the "signed nothing" state — unstubbed, the request would fail against the
+  // dev backend and the page would render its load-failure state instead, failing this spec for a
+  // reason that has nothing to do with the gate it exists to pin.
+  await fulfillJson(page, CLA_GROUPS_ROUTE, claGroupList([]));
 
   await page.goto('/', { waitUntil: 'domcontentloaded' });
   await expect(page).not.toHaveURL(/auth0\.com/);

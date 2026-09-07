@@ -7,10 +7,11 @@ import type { Request } from 'express';
 
 import type { EasyClaCompanyClaGroup, EasyClaCompanyClaGroupList } from '../types/cla.types';
 
-const { gatewayFetch } = vi.hoisted(() => ({ gatewayFetch: vi.fn() }));
+const { gatewayFetch, isImpersonating } = vi.hoisted(() => ({ gatewayFetch: vi.fn(), isImpersonating: vi.fn(() => false) }));
 
 vi.mock('../helpers/gateway-fetch.helper', () => ({ gatewayFetch }));
 vi.mock('../helpers/cla-service-url.helper', () => ({ claServiceBaseUrl: () => 'https://gw.example.org/cla-service' }));
+vi.mock('../utils/auth-helper', () => ({ isImpersonating }));
 
 const { OrgClaService } = await import('./org-cla.service');
 
@@ -57,6 +58,7 @@ function req(overrides: Partial<Request> = {}): Request {
 
 beforeEach(() => {
   vi.clearAllMocks();
+  isImpersonating.mockReturnValue(false);
 });
 
 describe('OrgClaService.listClaGroups — the upstream call', () => {
@@ -71,6 +73,37 @@ describe('OrgClaService.listClaGroups — the upstream call', () => {
       `https://gw.example.org/cla-service/v4/company/external/${ORG_UID}/cla-groups`,
       expect.objectContaining({ operation: 'org_cla_list_cla_groups', service: 'org_cla_service' })
     );
+  });
+
+  // The mapper keeps manager identities off the wire to the browser, but the fetch helper logs
+  // raw payloads on a non-OK status or an unparseable body. Without redaction that second path
+  // puts the same identities in application logs, defeating the boundary from the other side.
+  it('redacts the response body so manager identities cannot reach the logs', async () => {
+    gatewayFetch.mockResolvedValue(upstreamList());
+
+    await new OrgClaService().listClaGroups(req(), ORG_UID);
+
+    expect(gatewayFetch).toHaveBeenCalledWith(expect.anything(), expect.any(String), expect.objectContaining({ redactResponseBody: true }));
+  });
+
+  it('sends no explicit bearer token when nobody is being impersonated', async () => {
+    gatewayFetch.mockResolvedValue(upstreamList());
+
+    await new OrgClaService().listClaGroups(req(), ORG_UID);
+
+    expect(gatewayFetch).toHaveBeenCalledWith(expect.anything(), expect.any(String), expect.objectContaining({ bearerToken: undefined }));
+  });
+
+  // The route authorizes the impersonated user, so the upstream call has to run as that user.
+  // Sending the impersonator's token audits the request as the wrong identity, and fails
+  // outright wherever only the target holds the organization scope.
+  it("sends the target user's token while impersonating", async () => {
+    isImpersonating.mockReturnValue(true);
+    gatewayFetch.mockResolvedValue(upstreamList());
+
+    await new OrgClaService().listClaGroups(req({ bearerToken: 'target-user-token' } as Partial<Request>), ORG_UID);
+
+    expect(gatewayFetch).toHaveBeenCalledWith(expect.anything(), expect.any(String), expect.objectContaining({ bearerToken: 'target-user-token' }));
   });
 
   it('ignores a company id the caller tried to supply in the query or body', async () => {
@@ -110,10 +143,25 @@ describe('OrgClaService.listClaGroups — empty versus failed', () => {
     await expect(new OrgClaService().listClaGroups(req(), ORG_UID)).resolves.toEqual({ orgUid: ORG_UID, claGroups: [] });
   });
 
-  it('treats a null upstream body as an empty list', async () => {
+  // A body the contract does not allow is a failure, and must reach the client as one. Reading
+  // it as an empty list would state that the organization has signed nothing — the same false
+  // claim the rejected-request case below refuses to make, arrived at by a different route.
+  it('rejects a null upstream body rather than reading it as an empty list', async () => {
     gatewayFetch.mockResolvedValue(null);
 
-    await expect(new OrgClaService().listClaGroups(req(), ORG_UID)).resolves.toEqual({ orgUid: ORG_UID, claGroups: [] });
+    await expect(new OrgClaService().listClaGroups(req(), ORG_UID)).rejects.toMatchObject({ code: 'UPSTREAM_INVALID_RESPONSE' });
+  });
+
+  it('rejects a response whose list is missing', async () => {
+    gatewayFetch.mockResolvedValue({ companySFID: ORG_UID, resultCount: 0 });
+
+    await expect(new OrgClaService().listClaGroups(req(), ORG_UID)).rejects.toMatchObject({ code: 'UPSTREAM_INVALID_RESPONSE' });
+  });
+
+  it('rejects a response whose list is not an array', async () => {
+    gatewayFetch.mockResolvedValue({ companySFID: ORG_UID, list: 'not-a-list' });
+
+    await expect(new OrgClaService().listClaGroups(req(), ORG_UID)).rejects.toMatchObject({ code: 'UPSTREAM_INVALID_RESPONSE' });
   });
 
   it('lets an upstream failure propagate rather than degrading it to an empty list', async () => {
@@ -214,6 +262,36 @@ describe('OrgClaService.listClaGroups — status', () => {
     const [row] = (await new OrgClaService().listClaGroups(req(), ORG_UID)).claGroups;
 
     expect(row.status).toBe('signed');
+  });
+
+  // The producer passes the signature's own signed flag through and its tests pin a returned
+  // row whose flag is false, so this list is not exclusively signed agreements. Calling one
+  // signed would state that an organization has signed something it has not.
+  it('maps an unsigned agreement to not-started rather than to signed', async () => {
+    gatewayFetch.mockResolvedValue(upstreamList(upstreamEntry({ signed: false, sanctioned: false })));
+
+    const [row] = (await new OrgClaService().listClaGroups(req(), ORG_UID)).claGroups;
+
+    expect(row.status).toBe('not-started');
+  });
+
+  // Absence understates rather than overstates: upstream always sends the flag, so a missing
+  // one means a producer this consumer does not recognise, and claiming "signed" on its behalf
+  // is the direction that does harm.
+  it('treats a missing signed flag as not-started', async () => {
+    gatewayFetch.mockResolvedValue(upstreamList(upstreamEntry({ signed: undefined, sanctioned: false })));
+
+    const [row] = (await new OrgClaService().listClaGroups(req(), ORG_UID)).claGroups;
+
+    expect(row.status).toBe('not-started');
+  });
+
+  it('lets sanctioned win over an unsigned agreement too', async () => {
+    gatewayFetch.mockResolvedValue(upstreamList(upstreamEntry({ signed: false, sanctioned: true })));
+
+    const [row] = (await new OrgClaService().listClaGroups(req(), ORG_UID)).claGroups;
+
+    expect(row.status).toBe('sanctioned');
   });
 
   it('maps a sanctioned signing entity to sanctioned', async () => {

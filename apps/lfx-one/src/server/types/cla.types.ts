@@ -275,9 +275,13 @@ export interface EasyClaCompanyClaGroup {
   /** Sorted by `projectName` upstream. */
   projects?: EasyClaCompanyClaGroupProject[];
   /**
-   * Always true in practice: the list is derived from signed + approved CCLA signatures,
-   * so an unsigned group is not returned at all. Typed because the sanctions override
-   * reads better against an explicit flag than against its absence.
+   * Whether the CCLA is signed, taken from the signature the row was built from. It can be
+   * false: an unsigned record does reach this list, which the producer's own tests pin.
+   *
+   * Declared `x-omitempty: false` upstream, so a deployment always sends it and a `false`
+   * arrives explicitly rather than as an omission. Optional here only because the absence of
+   * a field is never assumed away — and absence is read as unsigned, which understates
+   * rather than overstates an organization's legal position.
    */
   signed?: boolean;
   signedOn?: string;

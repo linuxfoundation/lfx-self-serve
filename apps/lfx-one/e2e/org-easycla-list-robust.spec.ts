@@ -1,0 +1,112 @@
+// Copyright The Linux Foundation and each contributor to LFX.
+// SPDX-License-Identifier: MIT
+
+/**
+ * Org Lens EasyCLA list — structural E2E (GH-1978).
+ *
+ * The structural half of the repository's dual E2E architecture; `org-easycla-list.spec.ts` is the
+ * content half. This one asserts the `data-testid` contract and the component nesting rather than
+ * the copy, so the pair fails independently: reworded labels break only the content spec, and a
+ * card rebuilt behind the same testids leaves this one green.
+ *
+ * The states are mutually exclusive by construction — one list either has rows, or has none, or
+ * failed to load — so each is pinned together with the absence of the other two. A regression that
+ * renders two of them at once is otherwise invisible to a spec that only asserts presence.
+ *
+ * Prerequisites: as `org-easycla-list.spec.ts`.
+ */
+
+import { expect, Page, test } from '@playwright/test';
+
+import {
+  claGroup,
+  claGroupList,
+  CLA_GROUPS_ROUTE,
+  fulfillJson,
+  gotoEasyclaList,
+  PAGE_LOAD_TIMEOUT,
+  skipWithoutCredentials,
+} from './helpers/org-easycla.helper';
+
+const CARD_FIELDS = [
+  'org-easycla-card-title',
+  'org-easycla-card-status',
+  'org-easycla-card-approval-count',
+  'org-easycla-card-approval-label',
+  'org-easycla-card-manager-count',
+];
+
+function stubRows(count: number) {
+  const rows = Array.from({ length: count }, (_, i) => claGroup({ id: `sig-${i + 1}`, claGroupName: `CLA Group ${i + 1}` }));
+  return (page: Page) => fulfillJson(page, CLA_GROUPS_ROUTE, claGroupList(rows));
+}
+
+test.describe('Org Lens EasyCLA list — structure', () => {
+  test.use({ viewport: { width: 1440, height: 900 } });
+
+  test.beforeEach(() => skipWithoutCredentials());
+
+  test('nests the page, header, toolbar and grid as the shell expects', async ({ page }) => {
+    await gotoEasyclaList(page, stubRows(3));
+
+    const pageRoot = page.getByTestId('org-easycla-page');
+    await expect(pageRoot).toBeVisible({ timeout: PAGE_LOAD_TIMEOUT });
+
+    for (const testid of ['org-easycla-header', 'org-easycla-toolbar', 'org-easycla-grid']) {
+      await expect(pageRoot.getByTestId(testid)).toHaveCount(1);
+    }
+
+    await expect(pageRoot.getByTestId('org-easycla-header').getByTestId('org-easycla-title')).toHaveCount(1);
+    await expect(pageRoot.getByTestId('org-easycla-toolbar').locator('[data-test="org-easycla-search"]')).toHaveCount(1);
+    await expect(pageRoot.getByTestId('org-easycla-grid').getByTestId('org-easycla-card')).toHaveCount(3);
+  });
+
+  test('gives every card the full field contract', async ({ page }) => {
+    await gotoEasyclaList(page, stubRows(3));
+
+    const cards = page.getByTestId('org-easycla-card');
+    await expect(cards).toHaveCount(3, { timeout: PAGE_LOAD_TIMEOUT });
+
+    // Per card rather than per page: a page-level count of 3 titles is also satisfied by one card
+    // holding three and two holding none.
+    for (let i = 0; i < 3; i++) {
+      for (const field of CARD_FIELDS) {
+        await expect(cards.nth(i).getByTestId(field)).toHaveCount(1);
+      }
+    }
+  });
+
+  test('renders the pager only alongside a grid it can page', async ({ page }) => {
+    await gotoEasyclaList(page, stubRows(9));
+
+    await expect(page.getByTestId('org-easycla-grid')).toBeVisible({ timeout: PAGE_LOAD_TIMEOUT });
+
+    const pager = page.getByTestId('org-easycla-pager');
+    await expect(pager).toHaveCount(1);
+    await expect(pager.getByTestId('org-easycla-prev-page')).toHaveCount(1);
+    await expect(pager.getByTestId('org-easycla-next-page')).toHaveCount(1);
+    await expect(pager.getByTestId('org-easycla-page-label')).toHaveCount(1);
+  });
+
+  test('shows the empty state alone, with no grid and no error beside it', async ({ page }) => {
+    await gotoEasyclaList(page, stubRows(0));
+
+    await expect(page.getByTestId('org-easycla-empty-state')).toHaveCount(1, { timeout: PAGE_LOAD_TIMEOUT });
+    await expect(page.getByTestId('org-easycla-grid')).toHaveCount(0);
+    await expect(page.getByTestId('org-easycla-pager')).toHaveCount(0);
+    await expect(page.getByTestId('org-easycla-error-state')).toHaveCount(0);
+  });
+
+  test('shows the error state alone, with no grid and no empty state beside it', async ({ page }) => {
+    await gotoEasyclaList(page, (p) =>
+      p.route(CLA_GROUPS_ROUTE, (route) =>
+        route.fulfill({ status: 502, contentType: 'application/json', body: JSON.stringify({ code: 'UPSTREAM_ERROR', message: 'upstream unavailable' }) })
+      )
+    );
+
+    await expect(page.getByTestId('org-easycla-error-state')).toHaveCount(1, { timeout: PAGE_LOAD_TIMEOUT });
+    await expect(page.getByTestId('org-easycla-grid')).toHaveCount(0);
+    await expect(page.getByTestId('org-easycla-empty-state')).toHaveCount(0);
+    await expect(page.getByTestId('org-easycla-card')).toHaveCount(0);
+  });
+});

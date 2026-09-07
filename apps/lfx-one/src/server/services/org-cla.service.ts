@@ -12,8 +12,10 @@ import type { OrgClaGroup, OrgClaGroupList, OrgClaGroupProject, OrgClaGroupStatu
 import type { Request } from 'express';
 
 import type { EasyClaCompanyClaGroup, EasyClaCompanyClaGroupList } from '../types/cla.types';
+import { MicroserviceError } from '../errors';
 import { claServiceBaseUrl } from '../helpers/cla-service-url.helper';
 import { gatewayFetch } from '../helpers/gateway-fetch.helper';
+import { isImpersonating } from '../utils/auth-helper';
 
 const SERVICE = 'org_cla_service';
 
@@ -83,11 +85,19 @@ function toOrgClaGroup(entry: EasyClaCompanyClaGroup, companyName: string): OrgC
  * sanctioned entity's agreement as ordinarily signed is the more damaging of the two errors
  * available here.
  *
- * There is no unsigned case to handle. The upstream list is built from signed + approved
- * CCLA signatures, so an unsigned CLA Group never appears in it.
+ * An unsigned agreement is a real case, and it is read from the flag rather than assumed
+ * away. The producer sets each row's signed flag from the signature it was built from, and
+ * its own tests pin a returned row whose flag is false, so the list is not exclusively
+ * signed agreements. Defaulting to `signed` would state that an organization has signed
+ * something it has not — the same class of false claim the precedence above avoids, and the
+ * reason the flag is checked explicitly rather than treated as always true.
+ *
+ * Sanctions still win over an unsigned agreement, for the same reason they win over a signed
+ * one: the sanctions fact is the one a viewer must not miss.
  */
 function toStatus(entry: EasyClaCompanyClaGroup): OrgClaGroupStatus {
-  return entry.sanctioned === true ? 'sanctioned' : 'signed';
+  if (entry.sanctioned === true) return 'sanctioned';
+  return entry.signed === true ? 'signed' : 'not-started';
 }
 
 export class OrgClaService {
@@ -116,10 +126,30 @@ export class OrgClaService {
         service: SERVICE,
         errorMessage: 'Failed to fetch organization CLA groups',
         errorCode: 'UPSTREAM_ERROR',
+        // This response carries CLA managers by id and LF username. The mapper drops them, but
+        // that boundary only covers the browser: on a non-OK status or unparseable body the
+        // fetch helper logs the raw payload, which would put manager identities in application
+        // logs. Redaction closes the second path (same reason as rewards.service.ts).
+        redactResponseBody: true,
+        // The route authorizes the impersonated user, so the upstream call must run as that
+        // user too. Without this it runs as the impersonator, which is audited as the wrong
+        // identity and fails outright where only the target holds the organization scope.
+        bearerToken: isImpersonating(req) ? req.bearerToken : undefined,
       }
     );
 
-    const entries = upstream?.list ?? [];
+    // A malformed response is a failure, not an answer. `gatewayFetch` returns null on a 204,
+    // and a 200 can arrive without the list the contract guarantees; both would otherwise fall
+    // through to an empty list and be rendered as "this organization has signed nothing" —
+    // precisely the false claim the paragraph above refuses to make for a failed request.
+    if (!upstream || !Array.isArray(upstream.list)) {
+      throw new MicroserviceError('Failed to fetch organization CLA groups: malformed response from upstream', 502, 'UPSTREAM_INVALID_RESPONSE', {
+        operation: 'org_cla_list_cla_groups',
+        service: SERVICE,
+      });
+    }
+
+    const entries = upstream.list;
     const companyName = entries.find((entry) => !!entry.companyName)?.companyName ?? '';
 
     return {

@@ -579,7 +579,16 @@ export interface ClaRow {
  * An unsigned CLA Group is the Sign CLA flow's subject, not this list's. Recorded rather than
  * omitted so its absence does not read as a defect to someone comparing against the design.
  */
-export type OrgClaGroupStatus = 'signed' | 'sanctioned';
+/**
+ * The three statuses the approved design's status pill carries.
+ *
+ * `not-started` covers an agreement the CLA service reports as unsigned. The list is mostly
+ * signed agreements, but it is not exclusively so — the producer passes the signature's own
+ * signed flag through, and an unsigned record reaches the list. Rendering one as `signed`
+ * would be a false statement about the organization's legal position, which is the same
+ * failure the sanctions precedence and the empty-versus-failure split exist to prevent.
+ */
+export type OrgClaGroupStatus = 'signed' | 'not-started' | 'sanctioned';
 
 /** One Salesforce project covered by an organization's CLA Group (#1978). */
 export interface OrgClaGroupProject {

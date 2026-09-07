@@ -119,6 +119,15 @@ describe('OrgEasyclaCardComponent', () => {
       expect(textOf(fixture, 'org-easycla-card-status')).toContain('Sanctioned');
       expect(textOf(fixture, 'org-easycla-card-status')).not.toContain('Signed');
     });
+
+    // The word matters more than the styling here: an unsigned agreement described as signed
+    // is a false statement about the organization's legal position.
+    it('reads as not started for an unsigned agreement, never as signed', async () => {
+      const fixture = await render(claGroup({ status: 'not-started' }));
+
+      expect(textOf(fixture, 'org-easycla-card-status')).toContain('Not started');
+      expect(textOf(fixture, 'org-easycla-card-status')).not.toContain('Signed');
+    });
   });
 
   describe('needs a CLA manager', () => {
@@ -184,6 +193,26 @@ describe('OrgEasyclaCardComponent', () => {
       const fixture = await render(claGroup({ approvalCriteriaCount: 0 }));
 
       expect(textOf(fixture, 'org-easycla-card-approval-count')).toBe('0');
+    });
+
+    // Agreement in number, as the manager label beside it already does. Invisible while every
+    // value was a placeholder; a populated count of one exposed it.
+    it('says "approval entry" for exactly one', async () => {
+      const fixture = await render(claGroup({ approvalCriteriaCount: 1 }));
+
+      expect(textOf(fixture, 'org-easycla-card-approval-label')).toBe('approval entry');
+    });
+
+    it('says "approval entries" for a count that is not one', async () => {
+      const fixture = await render(claGroup({ approvalCriteriaCount: 4 }));
+
+      expect(textOf(fixture, 'org-easycla-card-approval-label')).toBe('approval entries');
+    });
+
+    it('keeps the plural when no count is available, since none has been stated', async () => {
+      const fixture = await render(claGroup());
+
+      expect(textOf(fixture, 'org-easycla-card-approval-label')).toBe('approval entries');
     });
   });
 });

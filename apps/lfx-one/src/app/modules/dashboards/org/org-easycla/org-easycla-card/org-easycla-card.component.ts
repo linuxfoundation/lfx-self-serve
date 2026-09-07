@@ -10,6 +10,7 @@ import { TagComponent } from '@components/tag/tag.component';
 /** Status label and severity, keyed by the server-derived status. */
 const STATUS_DISPLAY: Record<OrgClaGroup['status'], { label: string; severity: TagSeverity }> = {
   signed: { label: 'Signed', severity: 'success' },
+  'not-started': { label: 'Not started', severity: 'secondary' },
   sanctioned: { label: 'Sanctioned', severity: 'danger' },
 };
 
@@ -68,5 +69,17 @@ export class OrgEasyclaCardComponent {
   protected readonly approvalCriteriaValue = computed(() => {
     const count = this.claGroup().approvalCriteriaCount;
     return count === undefined ? '—' : String(count);
+  });
+
+  /**
+   * Agrees in number with the value beside it, as the manager label does.
+   *
+   * The unavailable case takes the plural, because no count has been stated for it to agree
+   * with — "— approval entry" would read as a singular claim about an agreement whose count
+   * is precisely what is unknown.
+   */
+  protected readonly approvalCriteriaLabel = computed(() => {
+    const count = this.claGroup().approvalCriteriaCount;
+    return `approval entr${count === 1 ? 'y' : 'ies'}`;
   });
 }
