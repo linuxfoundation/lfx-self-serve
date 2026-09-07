@@ -134,12 +134,12 @@ test.describe('Org Lens EasyCLA list — content', () => {
     await gotoEasyclaList(page, stubList(nineClaGroups()));
     await expect(page.getByTestId('org-easycla-card')).toHaveCount(8, { timeout: PAGE_LOAD_TIMEOUT });
 
-    await expect(page.getByTestId('org-easycla-pager')).toBeVisible();
+    await expect(page.getByTestId('org-easycla-pager')).toBeVisible({ timeout: PAGE_LOAD_TIMEOUT });
     await expect(page.getByTestId('org-easycla-card-title').filter({ hasText: 'Solstice CLA' })).toHaveCount(0);
 
     await page.getByTestId('org-easycla-next-page').click();
 
-    await expect(page.getByTestId('org-easycla-card')).toHaveCount(1);
+    await expect(page.getByTestId('org-easycla-card')).toHaveCount(1, { timeout: PAGE_LOAD_TIMEOUT });
     await expect(page.getByTestId('org-easycla-card-title')).toHaveText('Solstice CLA');
 
     await page.getByTestId('org-easycla-prev-page').click();

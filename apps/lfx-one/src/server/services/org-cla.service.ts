@@ -38,7 +38,14 @@ const SERVICE = 'org_cla_service';
  * feature, the second is folded into `status` so no consumer forms a second opinion about
  * what "signed" means for display.
  */
-function toOrgClaGroup(entry: EasyClaCompanyClaGroup, companyName: string): OrgClaGroup {
+/**
+ * Maps one upstream entry, once its signature id is known to be present.
+ *
+ * The id is required here rather than defaulted, so the check for it stays at the point where a
+ * malformed response can still be rejected as one. A default inside the mapper would silently
+ * produce a row that renders.
+ */
+function toOrgClaGroup(entry: EasyClaCompanyClaGroup & { signatureID: string }, companyName: string): OrgClaGroup {
   const projects: OrgClaGroupProject[] = (entry.projects ?? [])
     .map((project) => ({
       projectName: project.projectName?.trim() ?? '',
@@ -52,7 +59,7 @@ function toOrgClaGroup(entry: EasyClaCompanyClaGroup, companyName: string): OrgC
   const claGroupName = entry.claGroupName?.trim() ?? '';
 
   return {
-    id: entry.signatureID ?? '',
+    id: entry.signatureID,
     // Upstream declares claGroupName always present; the UUID fallback exists so a producer
     // that drops it yields an identifiable card rather than a blank heading.
     claGroupName: claGroupName || (entry.claGroupID ?? ''),
@@ -149,6 +156,17 @@ export class OrgClaService {
     // precisely the false claim the paragraph above refuses to make for a failed request.
     if (!upstream || !Array.isArray(upstream.list)) {
       throw new MicroserviceError('Failed to fetch organization CLA groups: malformed response from upstream', 502, 'UPSTREAM_INVALID_RESPONSE', {
+        operation: 'org_cla_list_cla_groups',
+        service: SERVICE,
+      });
+    }
+
+    // A row without its signature id is malformed for the same reason the envelope above is: the
+    // id is the row's identity, and the list renders keyed on it. Substituting an empty string
+    // makes every such row share one key, which lets the view reuse one card's DOM for another
+    // agreement — a worse outcome than the load failure this raises instead.
+    if (!upstream.list.every((entry): entry is EasyClaCompanyClaGroup & { signatureID: string } => !!entry?.signatureID)) {
+      throw new MicroserviceError('Failed to fetch organization CLA groups: upstream row is missing its signature id', 502, 'UPSTREAM_INVALID_RESPONSE', {
         operation: 'org_cla_list_cla_groups',
         service: SERVICE,
       });

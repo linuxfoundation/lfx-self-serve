@@ -7,13 +7,6 @@ import type { TagSeverity } from '@lfx-one/shared/interfaces';
 
 import { TagComponent } from '@components/tag/tag.component';
 
-/** Status label and severity, keyed by the server-derived status. */
-const STATUS_DISPLAY: Record<OrgClaGroup['status'], { label: string; severity: TagSeverity }> = {
-  signed: { label: 'Signed', severity: 'success' },
-  'not-started': { label: 'Not started', severity: 'secondary' },
-  sanctioned: { label: 'Sanctioned', severity: 'danger' },
-};
-
 /**
  * One corporate CLA on the Organization Lens EasyCLA list (#1978).
  *
@@ -27,9 +20,16 @@ const STATUS_DISPLAY: Record<OrgClaGroup['status'], { label: string; severity: T
   changeDetection: ChangeDetectionStrategy.OnPush,
 })
 export class OrgEasyclaCardComponent {
+  /** Status label and severity, keyed by the server-derived status. */
+  private static readonly statusDisplay: Record<OrgClaGroup['status'], { label: string; severity: TagSeverity }> = {
+    signed: { label: 'Signed', severity: 'success' },
+    'not-started': { label: 'Not started', severity: 'secondary' },
+    sanctioned: { label: 'Sanctioned', severity: 'danger' },
+  };
+
   public readonly claGroup = input.required<OrgClaGroup>();
 
-  protected readonly status = computed(() => STATUS_DISPLAY[this.claGroup().status]);
+  protected readonly status = computed(() => OrgEasyclaCardComponent.statusDisplay[this.claGroup().status]);
 
   /**
    * Coverage as the approved design frames it: name the project when there is exactly one,

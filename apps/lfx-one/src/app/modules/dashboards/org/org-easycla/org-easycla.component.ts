@@ -21,9 +21,6 @@ import { OrgNavigationService } from '@shared/services/org-navigation.service';
 
 import { OrgEasyclaCardComponent } from './org-easycla-card/org-easycla-card.component';
 
-/** Matches the approved design's page size. */
-const PAGE_SIZE = 8;
-
 @Component({
   selector: 'lfx-org-easycla',
   imports: [ButtonComponent, EmptyStateComponent, InputTextComponent, OpenIntercomDirective, OrgEasyclaCardComponent, SkeletonModule],
@@ -31,6 +28,9 @@ const PAGE_SIZE = 8;
   changeDetection: ChangeDetectionStrategy.OnPush,
 })
 export class OrgEasyclaComponent {
+  /** Matches the approved design's page size. */
+  private static readonly pageSize = 8;
+
   private readonly accountContext = inject(AccountContextService);
   private readonly orgRoleGrantsService = inject(OrgRoleGrantsService);
   private readonly personaService = inject(PersonaService);
@@ -101,7 +101,7 @@ export class OrgEasyclaComponent {
   protected readonly filteredClaGroups: Signal<OrgClaGroup[]> = this.initFilteredClaGroups();
 
   // ── Paging (client-side; the upstream list is unpaged) ────────────────────
-  protected readonly pageCount = computed(() => Math.max(1, Math.ceil(this.filteredClaGroups().length / PAGE_SIZE)));
+  protected readonly pageCount = computed(() => Math.max(1, Math.ceil(this.filteredClaGroups().length / OrgEasyclaComponent.pageSize)));
 
   /**
    * Clamped rather than read raw, so a narrowing that shrinks the result set below the current
@@ -110,7 +110,7 @@ export class OrgEasyclaComponent {
    */
   protected readonly currentPage = computed(() => Math.min(this.page(), this.pageCount() - 1));
   protected readonly pagedClaGroups: Signal<OrgClaGroup[]> = this.initPagedClaGroups();
-  protected readonly showPager = computed(() => this.filteredClaGroups().length > PAGE_SIZE);
+  protected readonly showPager = computed(() => this.filteredClaGroups().length > OrgEasyclaComponent.pageSize);
   protected readonly pageLabel: Signal<string> = this.initPageLabel();
   protected readonly onFirstPage = computed(() => this.currentPage() === 0);
   protected readonly onLastPage = computed(() => this.currentPage() >= this.pageCount() - 1);
@@ -212,8 +212,8 @@ export class OrgEasyclaComponent {
 
   private initPagedClaGroups(): Signal<OrgClaGroup[]> {
     return computed(() => {
-      const start = this.currentPage() * PAGE_SIZE;
-      return this.filteredClaGroups().slice(start, start + PAGE_SIZE);
+      const start = this.currentPage() * OrgEasyclaComponent.pageSize;
+      return this.filteredClaGroups().slice(start, start + OrgEasyclaComponent.pageSize);
     });
   }
 
@@ -222,8 +222,8 @@ export class OrgEasyclaComponent {
       const total = this.filteredClaGroups().length;
       if (total === 0) return '';
 
-      const start = this.currentPage() * PAGE_SIZE;
-      return `Showing ${start + 1}–${Math.min(start + PAGE_SIZE, total)} of ${total}`;
+      const start = this.currentPage() * OrgEasyclaComponent.pageSize;
+      return `Showing ${start + 1}–${Math.min(start + OrgEasyclaComponent.pageSize, total)} of ${total}`;
     });
   }
 }

@@ -52,7 +52,12 @@ test.describe('Org Lens EasyCLA list — structure', () => {
     const pageRoot = page.getByTestId('org-easycla-page');
     await expect(pageRoot).toBeVisible({ timeout: PAGE_LOAD_TIMEOUT });
 
-    for (const testid of ['org-easycla-header', 'org-easycla-toolbar', 'org-easycla-grid']) {
+    // Anchor on the grid before asserting the rest of the nesting. The page shell renders before
+    // the list resolves, so an unanchored count runs against a page that is still loading and
+    // fails on timing rather than on structure.
+    await expect(pageRoot.getByTestId('org-easycla-grid')).toHaveCount(1, { timeout: PAGE_LOAD_TIMEOUT });
+
+    for (const testid of ['org-easycla-header', 'org-easycla-toolbar']) {
       await expect(pageRoot.getByTestId(testid)).toHaveCount(1);
     }
 
@@ -82,7 +87,7 @@ test.describe('Org Lens EasyCLA list — structure', () => {
     await expect(page.getByTestId('org-easycla-grid')).toBeVisible({ timeout: PAGE_LOAD_TIMEOUT });
 
     const pager = page.getByTestId('org-easycla-pager');
-    await expect(pager).toHaveCount(1);
+    await expect(pager).toHaveCount(1, { timeout: PAGE_LOAD_TIMEOUT });
     await expect(pager.getByTestId('org-easycla-prev-page')).toHaveCount(1);
     await expect(pager.getByTestId('org-easycla-next-page')).toHaveCount(1);
     await expect(pager.getByTestId('org-easycla-page-label')).toHaveCount(1);

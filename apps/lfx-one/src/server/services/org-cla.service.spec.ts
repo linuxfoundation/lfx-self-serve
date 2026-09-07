@@ -164,6 +164,15 @@ describe('OrgClaService.listClaGroups — empty versus failed', () => {
     await expect(new OrgClaService().listClaGroups(req(), ORG_UID)).rejects.toMatchObject({ code: 'UPSTREAM_INVALID_RESPONSE' });
   });
 
+  // The signature id is the row's identity and the list is keyed on it. Defaulting it to an empty
+  // string would give every such row the same key, letting the view reuse one agreement's rendered
+  // card for another — worse than declining to render the list at all.
+  it('rejects a row that arrives without its signature id', async () => {
+    gatewayFetch.mockResolvedValue(upstreamList(upstreamEntry({ signatureID: undefined })));
+
+    await expect(new OrgClaService().listClaGroups(req(), ORG_UID)).rejects.toMatchObject({ code: 'UPSTREAM_INVALID_RESPONSE' });
+  });
+
   it('lets an upstream failure propagate rather than degrading it to an empty list', async () => {
     // The distinction matters more here than on most endpoints: upstream returns the same
     // empty list for an unknown organization as for one that has signed nothing, so if a
