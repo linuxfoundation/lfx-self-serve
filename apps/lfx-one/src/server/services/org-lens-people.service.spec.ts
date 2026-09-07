@@ -217,6 +217,80 @@ describe('OrgLensPeopleService username company emails', () => {
     await expectBothPaths(UNAVAILABLE);
   });
 
+  it('reuses a normalized username result without rerunning the spine and keeps other accounts separate', async () => {
+    addPerson(ACCOUNT, 'person-one', 'MixedUser', ['first@company.example']);
+    addPerson('other-account', 'person-two', 'mixeduser', ['other@other.example']);
+    expect(await service.getCompanyEmailsByUsername(ACCOUNT, 'MixedUser')).toEqual({
+      companyEmails: ['first@company.example'],
+      companyEmailsStatus: 'resolved',
+    });
+    expect(await service.getCompanyEmailsByUsername('other-account', 'MixedUser')).toEqual({
+      companyEmails: ['other@other.example'],
+      companyEmailsStatus: 'resolved',
+    });
+    const warehouseReads = execute.mock.calls.length;
+    database.exec('DROP TABLE _ORG_PEOPLE_SPINE');
+    expect(await service.getCompanyEmailsByUsername(ACCOUNT, ' mixeduser ')).toEqual({
+      companyEmails: ['first@company.example'],
+      companyEmailsStatus: 'resolved',
+    });
+    expect(execute).toHaveBeenCalledTimes(warehouseReads);
+    expect(cacheValues.size).toBe(2);
+    for (const key of cacheValues.keys()) {
+      expect(key.toLowerCase()).not.toContain('mixeduser');
+    }
+  });
+
+  it('does not serve cached username addresses when the server kill switch is off', async () => {
+    addPerson(ACCOUNT, 'person-one', 'MixedUser', ['first@company.example']);
+    await service.getCompanyEmailsByUsername(ACCOUNT, 'mixeduser');
+    isServerFeatureEnabled.mockReturnValue(false);
+    expect(await service.getCompanyEmailsByUsername(ACCOUNT, 'mixeduser')).toEqual(UNAVAILABLE);
+    isServerFeatureEnabled.mockReturnValue(true);
+    expect(await service.getCompanyEmailsByUsername(ACCOUNT, 'mixeduser')).toEqual({
+      companyEmails: ['first@company.example'],
+      companyEmailsStatus: 'resolved',
+    });
+  });
+
+  it('retries a failed username lookup instead of caching the outage', async () => {
+    addPerson(ACCOUNT, 'person-one', 'MixedUser', ['first@company.example']);
+    database.exec('ALTER TABLE _ORG_PEOPLE_SPINE RENAME TO SAVED_SPINE');
+    expect(await service.getCompanyEmailsByUsername(ACCOUNT, 'mixeduser')).toEqual({
+      companyEmails: [],
+      companyEmailsStatus: 'failed',
+    });
+    database.exec('ALTER TABLE SAVED_SPINE RENAME TO _ORG_PEOPLE_SPINE');
+    expect(await service.getCompanyEmailsByUsername(ACCOUNT, 'mixeduser')).toEqual({
+      companyEmails: ['first@company.example'],
+      companyEmailsStatus: 'resolved',
+    });
+  });
+
+  it.each(['resolved', 'unavailable'] as const)('reuses a stable %s empty result without turning it into another state', async (status) => {
+    if (status === 'resolved') addPerson(ACCOUNT, 'person-one', 'MixedUser');
+    const expected = { companyEmails: [], companyEmailsStatus: status };
+    expect(await service.getCompanyEmailsByUsername(ACCOUNT, 'mixeduser')).toEqual(expected);
+    database.exec('DROP TABLE _ORG_PEOPLE_SPINE');
+    expect(await service.getCompanyEmailsByUsername(ACCOUNT, 'MIXEDUSER')).toEqual(expected);
+  });
+
+  it('rejects a cached failed or status-less response instead of replaying it', async () => {
+    addPerson(ACCOUNT, 'person-one', 'MixedUser', ['first@company.example']);
+    await service.getCompanyEmailsByUsername(ACCOUNT, 'mixeduser');
+    for (const stale of [
+      { companyEmails: [], companyEmailsStatus: 'failed' },
+      { companyEmails: ['stale@company.example'] },
+      { companyEmails: ['stale@company.example'], companyEmailsStatus: 'unavailable' },
+    ]) {
+      for (const key of cacheValues.keys()) cacheValues.set(key, JSON.stringify(stale));
+      expect(await service.getCompanyEmailsByUsername(ACCOUNT, 'mixeduser')).toEqual({
+        companyEmails: ['first@company.example'],
+        companyEmailsStatus: 'resolved',
+      });
+    }
+  });
+
   it('reports warehouse failures without claiming there are no addresses', async () => {
     execute.mockRejectedValue(new Error('warehouse unavailable'));
 

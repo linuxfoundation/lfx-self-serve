@@ -18,6 +18,7 @@ import type {
   OrgPersonSource,
 } from '@lfx-one/shared/interfaces';
 import { isFilterSafeIdentifier, splitDisplayName } from '@lfx-one/shared/utils';
+import { createHash } from 'crypto';
 
 import { Request } from 'express';
 
@@ -211,8 +212,9 @@ export class OrgLensPeopleService {
   /**
    * Company-affiliated emails for a person the caller identifies by LF username (governance surfaces).
    *
-   * Resolve exactly one person across the account's full normalized username spine before returning
-   * any addresses. Identities without addresses still make a username ambiguous.
+   * Each cache miss resolves exactly one person across the account's full normalized username spine
+   * before returning addresses. Identities without addresses still make a username ambiguous.
+   * Stable results use the same TTL as person-key detail; query failures are never cached.
    */
   public async getCompanyEmailsByUsername(accountId: string, username: string): Promise<OrgPersonCompanyEmailsResponse> {
     if (!isServerFeatureEnabled(ServerFeatureFlag.OrgLensCompanyEmails)) {
@@ -222,8 +224,17 @@ export class OrgLensPeopleService {
     if (!normalizedUsername) {
       return UNAVAILABLE_COMPANY_EMAILS;
     }
+    // Hashed so the identifier never lands in a `:`-delimited key or a log line.
+    const usernameDigest = createHash('sha256').update(normalizedUsername).digest('hex').slice(0, 16);
     try {
-      return await this.fetchCompanyEmailsByUsername(accountId, normalizedUsername);
+      return await withOrgCache(
+        accountId,
+        `people-username:${usernameDigest}:emails`,
+        VALKEY_CACHE.ORG_LENS_SNOWFLAKE_TTL_SECONDS,
+        () => this.fetchCompanyEmailsByUsername(accountId, normalizedUsername),
+        isCompanyEmailsResponse,
+        isCacheableEmployeeDetail
+      );
     } catch (error) {
       logger.info(undefined, 'get_org_lens_people_company_emails_by_username', 'company email lookup failed; serving detail without addresses', {
         err: error,
@@ -719,6 +730,17 @@ function isEmployeeDetailRaw(value: unknown): boolean {
  */
 function isCacheableEmployeeDetail(value: { companyEmailsStatus: OrgCompanyEmailsStatus }): boolean {
   return value.companyEmailsStatus !== 'failed';
+}
+
+/** Reject legacy/failed cache entries; unavailable identities cannot carry addresses. */
+function isCompanyEmailsResponse(value: unknown): boolean {
+  const response = value as Partial<OrgPersonCompanyEmailsResponse> | null;
+  return (
+    !!response &&
+    Array.isArray(response.companyEmails) &&
+    response.companyEmails.every((email) => typeof email === 'string') &&
+    (response.companyEmailsStatus === 'resolved' || (response.companyEmailsStatus === 'unavailable' && response.companyEmails.length === 0))
+  );
 }
 
 /** Narrow upstream free-text voting status to the three badges; unknown values collapse to 'Non-voting'. */
