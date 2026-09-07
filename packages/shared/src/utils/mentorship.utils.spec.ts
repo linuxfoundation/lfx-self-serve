@@ -107,6 +107,7 @@ describe('getMentorshipEnrollStepErrors', () => {
 describe('mentorship URL and logo helpers', () => {
   it('accepts http(s) URLs and image extensions from the old logo field', () => {
     expect(isMentorshipHttpUrl('https://github.com/org/repo')).toBe(true);
+    expect(isMentorshipHttpUrl('google.com')).toBe(true);
     expect(isMentorshipHttpUrl('ftp://example.com')).toBe(false);
     expect(isMentorshipLogoFileName('logo.PNG')).toBe(true);
     expect(isMentorshipLogoFileName('notes.pdf')).toBe(false);

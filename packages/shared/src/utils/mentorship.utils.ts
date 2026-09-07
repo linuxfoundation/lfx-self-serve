@@ -24,7 +24,7 @@ import type {
 } from '../interfaces/mentorship.interface';
 import { monthYearToIsoDate } from './date-time.utils';
 import { stripHtml } from './html-utils';
-import { isValidUrl } from './url.utils';
+import { normalizeToUrl } from './url.utils';
 
 function isBlank(value: string): boolean {
   return !value.trim();
@@ -37,9 +37,7 @@ export function isMentorshipCiiProjectId(value: string): boolean {
 
 /** Optional-or-required HTTP(S) URL, matching the old maintainer `CustomValidators.url`. */
 export function isMentorshipHttpUrl(value: string): boolean {
-  const trimmed = value.trim();
-  if (!trimmed) return false;
-  return isValidUrl(trimmed);
+  return normalizeToUrl(value.trim()) !== null;
 }
 
 export function isMentorshipLogoFileName(fileName: string): boolean {
