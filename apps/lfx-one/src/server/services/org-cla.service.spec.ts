@@ -286,6 +286,27 @@ describe('OrgClaService.listClaGroups — status', () => {
     expect(row.status).toBe('not-started');
   });
 
+  // Upstream backfills its date field with the signature's creation time when there is no signing
+  // timestamp, so an unsigned row arrives carrying a real date that is not a signing date. Passing
+  // it on would give the detail view something to present as a signature date for an agreement
+  // that has none — the status fix above, undone one field over.
+  it('withholds the signed date on an unsigned agreement', async () => {
+    gatewayFetch.mockResolvedValue(upstreamList(upstreamEntry({ signed: false, signedOn: '2024-03-11T09:20:00Z' })));
+
+    const [row] = (await new OrgClaService().listClaGroups(req(), ORG_UID)).claGroups;
+
+    expect(row.signedOn).toBeUndefined();
+    expect(row.status).toBe('not-started');
+  });
+
+  it('carries the signed date on a signed agreement', async () => {
+    gatewayFetch.mockResolvedValue(upstreamList(upstreamEntry({ signed: true, signedOn: '2024-03-11T09:20:00Z' })));
+
+    const [row] = (await new OrgClaService().listClaGroups(req(), ORG_UID)).claGroups;
+
+    expect(row.signedOn).toBe('2024-03-11T09:20:00Z');
+  });
+
   it('lets sanctioned win over an unsigned agreement too', async () => {
     gatewayFetch.mockResolvedValue(upstreamList(upstreamEntry({ signed: false, sanctioned: true })));
 

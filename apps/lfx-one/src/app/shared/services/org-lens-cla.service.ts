@@ -11,7 +11,8 @@ import { Observable } from 'rxjs';
  *
  * No transformation here: the server already shapes the row, including the status the card
  * renders. Searching and paging are done in the page component over the fetched set, so this
- * is called once per page load and never again.
+ * is called once per selected organization — on load, and again whenever the selection
+ * changes — and never for a search term or a page turn.
  */
 @Injectable({
   providedIn: 'root',

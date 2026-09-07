@@ -284,6 +284,13 @@ export interface EasyClaCompanyClaGroup {
    * rather than overstates an organization's legal position.
    */
   signed?: boolean;
+  /**
+   * When the CCLA was signed — but only meaningful where `signed` is true.
+   *
+   * Upstream falls back to the signature's creation time when it holds no signing timestamp,
+   * so an unsigned row carries a real date that is not a signing date. Read it together with
+   * `signed`, never alone.
+   */
   signedOn?: string;
   signatureID?: string;
   /** Stored sanctions flag of the *signing entity*, not of the parent organization. */
@@ -293,10 +300,11 @@ export interface EasyClaCompanyClaGroup {
    *
    * Deliberately not mapped onto the list row. This is not the count the CLA Group card
    * previews: that slot is the approval *criteria* count, the rules that decide who may be
-   * covered, which this endpoint does not return in any form. The two are routinely
-   * confused because the surface being replaced labels its rules section as though it
-   * listed contributors. Substituting this here would put a real number under a label
-   * naming a different quantity.
+   * covered, which this endpoint returns separately as `approvalCriteriaCount`. The two are
+   * routinely confused because the surface being replaced labels its rules section as though
+   * it listed contributors. Substituting this here would put a real number under a label
+   * naming a different quantity — and now that the criteria count has its own field, doing so
+   * would also overwrite an accurate value with an unrelated one.
    */
   approvedContributorsCount?: number;
   /**

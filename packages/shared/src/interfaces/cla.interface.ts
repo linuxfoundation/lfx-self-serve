@@ -622,7 +622,14 @@ export interface OrgClaGroup {
   foundationSfid?: string;
   /** Covered projects, in the upstream's `projectName` order. May be empty. */
   projects: OrgClaGroupProject[];
-  /** RFC3339 instant the CCLA was signed. Carried for the agreement detail view. */
+  /**
+   * RFC3339 instant the CCLA was signed. Carried for the agreement detail view.
+   *
+   * Absent on an agreement that is not signed, and the absence is load-bearing: the source
+   * backfills its date field with the signature's creation time, so an unsigned agreement has
+   * a date that is not a signing date. The server withholds it rather than let a consumer
+   * present the moment signing began as the moment it completed.
+   */
   signedOn?: string;
   status: OrgClaGroupStatus;
   /**

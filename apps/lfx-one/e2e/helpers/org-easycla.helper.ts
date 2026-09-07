@@ -10,7 +10,7 @@
  */
 
 import { ACCOUNT_COOKIE_KEY } from '@lfx-one/shared/constants/accounts.constants';
-import { ORG_LENS_CLA_M3_ENABLED_FLAG } from '@lfx-one/shared/constants/feature-flags.constants';
+import { ORG_LENS_CLA_M3_ENABLED_FLAG, ORG_LENS_ENABLED_FLAG } from '@lfx-one/shared/constants/feature-flags.constants';
 import type { OrgClaGroup, OrgClaGroupList } from '@lfx-one/shared/interfaces';
 import { expect, Locator, Page, test } from '@playwright/test';
 
@@ -101,7 +101,10 @@ export async function stubAccountContext(page: Page): Promise<void> {
  * authenticated app running before the guarded URL is requested.
  */
 export async function gotoEasyclaList(page: Page, stubList: (page: Page) => Promise<void>): Promise<void> {
-  await stubFeatureFlags(page, { [ORG_LENS_CLA_M3_ENABLED_FLAG]: true });
+  // Both flags, not just this feature's. `/org/*` sits behind the parent lens flag as well, so
+  // pinning only the child leaves these tests at the mercy of a remote flag: wherever it is off
+  // they skip rather than fail, and a suite that skips reports the same green as one that ran.
+  await stubFeatureFlags(page, { [ORG_LENS_ENABLED_FLAG]: true, [ORG_LENS_CLA_M3_ENABLED_FLAG]: true });
   await stubAccountContext(page);
   await stubList(page);
 

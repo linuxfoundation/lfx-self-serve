@@ -65,7 +65,12 @@ function toOrgClaGroup(entry: EasyClaCompanyClaGroup, companyName: string): OrgC
     ...(entry.foundationName ? { foundationName: entry.foundationName } : {}),
     ...(entry.foundationSFID ? { foundationSfid: entry.foundationSFID } : {}),
     projects,
-    ...(entry.signedOn ? { signedOn: entry.signedOn } : {}),
+    // Only for an agreement that was actually signed. Upstream backfills this field with the
+    // signature's creation time when there is no signing timestamp, so on an unsigned row it
+    // holds when the signing was begun, not when it completed. Carrying it under a field the
+    // shared contract defines as the instant the CCLA was signed would hand the detail view a
+    // date to present as a signature date for an agreement that has none.
+    ...(entry.signed === true && entry.signedOn ? { signedOn: entry.signedOn } : {}),
     status: toStatus(entry),
     needsClaManager: entry.needsClaManager === true,
     claManagersCount: entry.claManagersCount ?? 0,
