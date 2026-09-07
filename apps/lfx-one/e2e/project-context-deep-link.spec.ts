@@ -27,7 +27,9 @@
  *   - A newsletter EDIT link whose `:projectUid` route param disagrees with the cookie-restored
  *     context (GH-1570): newsletterAccessGuard authorizes against the route's project (resolving
  *     the param's uid — including at the lens mount, where the param lives on the child
- *     snapshot), and the manage page reconciles context from the route param.
+ *     snapshot), and the manage page reconciles context from the route param. The same
+ *     stale-context case runs against the ANALYTICS link (`:projectUid/:id/analytics`), whose
+ *     component reconciles from its own route-param signal.
  *
  * Prerequisites:
  *   - Dev server reachable at the Playwright baseURL (default http://localhost:4200)
@@ -460,6 +462,40 @@ async function stubNewsletterEditDetail(page: Page, newsletter: ReturnType<typeo
     if (route.request().method() !== 'GET') return route.fallback();
     return route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify(newsletter) });
   });
+}
+
+/**
+ * Analytics payload for the analytics page (GH-1570). Minimal roll-up: no daily buckets and
+ * no click data, so every chart/click section renders its absent state and the test asserts
+ * only the header + context reconciliation. Like the edit route, the analytics URL carries
+ * the owning project (`:projectUid`), so reconciliation resolves by the route uid.
+ */
+function buildNewsletterAnalyticsStub() {
+  return {
+    newsletter_id: MOCK_NEWSLETTER_UID,
+    subject: 'Test Foundation Monthly',
+    status: 'sent',
+    sent_at: '2025-06-01T00:00:00Z',
+    total_recipients: 10,
+    delivered: 10,
+    failed: 0,
+    total_opens: 0,
+    unique_opens: 0,
+    open_rate: 0,
+    daily_opens: [],
+  };
+}
+
+async function stubNewsletterAnalytics(page: Page, analytics: ReturnType<typeof buildNewsletterAnalyticsStub>): Promise<void> {
+  await page.route(`**/api/projects/${MOCK_FOUNDATION_UID}/newsletters/${MOCK_NEWSLETTER_UID}/analytics`, (route) => {
+    if (route.request().method() !== 'GET') return route.fallback();
+    return route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify(analytics) });
+  });
+  // The recipient-engagement child fetches eagerly; 403 is its documented render-nothing
+  // path (endpoint is PII-gated behind the `auditor` relation), keeping the page chrome-only.
+  await page.route(`**/api/projects/${MOCK_FOUNDATION_UID}/newsletters/${MOCK_NEWSLETTER_UID}/analytics/recipients*`, (route) =>
+    route.fulfill({ status: 403, contentType: 'application/json', body: JSON.stringify({ message: 'auditor relation required' }) })
+  );
 }
 
 function skipWhenAuthMissing(): void {
@@ -1172,6 +1208,31 @@ test.describe('Newsletter edit deep-link resolves the route’s project context 
 
     // The context correction must NOT inject ?project= into the entity URL (syncUrl guard) —
     // give any NavigationEnd-driven backfill a tick to (not) fire before asserting absence.
+    await page.waitForTimeout(500);
+    expect(new URL(page.url()).searchParams.has('project')).toBe(false);
+  });
+
+  test('analytics link with a stale cookie context switches to the route’s project', async ({ page }) => {
+    // The analytics component has its own projectUid signal and constructor path — a regression
+    // dropping its reconcileRouteProjectContext call passes the edit-route cases above, so the
+    // analytics deep-link needs its own coverage (PR #2224 review).
+    await stubNewsletterAnalytics(page, buildNewsletterAnalyticsStub());
+
+    await gotoSpa(page, `/project/newsletters/${MOCK_FOUNDATION_UID}/${MOCK_NEWSLETTER_UID}/analytics`, {
+      uid: OTHER_PROJECT_UID,
+      slug: OTHER_PROJECT_SLUG,
+      name: 'Other Project',
+      foundation: false,
+    });
+    await expect(page.getByTestId('newsletter-analytics-subject')).toBeVisible({ timeout: PAGE_LOAD_TIMEOUT });
+
+    // Same reconciliation as the edit page: context follows the route's :projectUid (Test
+    // Foundation), replacing the cookie-restored Other Project.
+    await expect(page.getByTestId('project-selector')).toContainText('Test Foundation', { timeout: ELEMENT_TIMEOUT });
+    await expect(page.getByTestId('sidebar-project-newsletters')).toHaveAttribute('href', /[?&]project=test-foundation/, {
+      timeout: ELEMENT_TIMEOUT,
+    });
+
     await page.waitForTimeout(500);
     expect(new URL(page.url()).searchParams.has('project')).toBe(false);
   });
