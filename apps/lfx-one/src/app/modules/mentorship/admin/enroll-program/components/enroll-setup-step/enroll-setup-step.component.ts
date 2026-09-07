@@ -81,6 +81,8 @@ export class EnrollSetupStepComponent {
     return MENTORSHIP_SKILL_OPTIONS.filter((skill) => !selected.has(skill.toLowerCase())).map((skill) => ({ label: skill, value: skill }));
   });
 
+  protected readonly canAddTerm = computed(() => this.terms().length < this.maxTerms);
+
   protected addSkill(): void {
     const value = this.draftSkillForm.controls.skill.value.trim();
     if (!value) return;
@@ -93,8 +95,6 @@ export class EnrollSetupStepComponent {
   protected removeSkill(skill: string): void {
     this.form().controls['skills'].setValue(this.skills().filter((item) => item !== skill));
   }
-
-  protected readonly canAddTerm = computed(() => this.terms().length < this.maxTerms);
 
   protected addTerm(): void {
     if (!this.canAddTerm()) return;

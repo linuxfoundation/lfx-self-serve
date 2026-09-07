@@ -56,7 +56,7 @@ export class EnrollDetailsStepComponent {
   protected readonly fileInput = viewChild<ElementRef<HTMLInputElement>>('fileInput');
   protected readonly logoError = signal('');
   protected readonly importLoading = signal(true);
-  protected readonly importOptions = signal<Array<{ value: string; label: string }>>([{ value: '', label: 'None' }]);
+  protected readonly importOptions = signal<{ value: string; label: string }[]>([{ value: '', label: 'None' }]);
   protected readonly lfProjects = signal<MentorshipLfProject[]>([]);
   protected readonly lfProjectsLoading = signal(false);
   protected readonly lfProjectsTotal = signal(0);
