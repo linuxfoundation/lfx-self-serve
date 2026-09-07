@@ -122,6 +122,13 @@ export class MktgAgentRunComponent {
    */
   protected readonly fromPriorRun = signal<Record<string, string>>({});
   /**
+   * Field keys filled from the answer memory at all — a superset of
+   * {@link fromPriorRun}, which covers only the fills that earn a chip. The
+   * agent's OWN remembered answers fill without a chip, and the
+   * "not set on your LFX project" hint has to stand down for those too.
+   */
+  protected readonly filledFromMemory = signal<Record<string, boolean>>({});
+  /**
    * Resolved stored output per dependency agent id for the active project
    * (dec-agent-dependency-gating): server-persisted preferred, browser-stored
    * run fallback. `null` means resolution is still in flight (or hasn't
@@ -177,12 +184,14 @@ export class MktgAgentRunComponent {
   /**
    * Field keys that should show the "not set on your LFX project" hint: the
    * LFX source came back empty AND nothing else filled the control. A field
-   * prefilled from a prior run already states its provenance on the chip, so
-   * repeating the LFX-is-empty hint next to it is noise.
+   * filled from the answer memory already holds a value the user gave, so
+   * repeating the LFX-is-empty hint next to it is noise — or, for the
+   * agent's own remembered answers, which carry no chip, an instruction to
+   * supply what the form has already supplied.
    */
   protected readonly missingPrefillHintKeys: Signal<Record<string, boolean>> = computed(() => {
     const missing = this.lfxMissing();
-    const reused = this.fromPriorRun();
+    const reused = this.filledFromMemory();
     return Object.fromEntries(Object.entries(missing).map(([key, isMissing]) => [key, isMissing && !reused[key]]));
   });
   /**
@@ -578,6 +587,7 @@ export class MktgAgentRunComponent {
     this.fromLfx.set({});
     this.lfxMissing.set({});
     this.fromPriorRun.set({});
+    this.filledFromMemory.set({});
     this.copiedDerivative.set('');
     this.intakeForm.reset();
     this.feedbackForm.reset();
@@ -667,6 +677,7 @@ export class MktgAgentRunComponent {
         continue;
       }
       control.setValue(entry.value);
+      this.filledFromMemory.update((flags) => ({ ...flags, [field.key]: true }));
       if (entry.agentId !== this.agent?.id) {
         this.fromPriorRun.update((labels) => ({ ...labels, [field.key]: `From your ${mktgAgentDocumentName(entry.agentId)} run` }));
       }

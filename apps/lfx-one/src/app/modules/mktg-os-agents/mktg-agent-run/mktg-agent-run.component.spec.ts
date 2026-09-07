@@ -250,6 +250,22 @@ describe('MktgAgentRunComponent', () => {
       expect(priorRunChip('voice_adjectives')).toBeNull();
     });
 
+    it('suppresses the LFX-empty hint for the agent’s OWN remembered answer too, chip or no chip', async () => {
+      // Own-agent fills carry no provenance chip, so the hint has to be
+      // suppressed on the fill itself — otherwise the form tells the user to
+      // describe their project right next to the description it just filled.
+      projects = { 'proj-one': { repository_url: '', description: '' } };
+      rememberedAnswers = {
+        'proj-1': { one_line_description: { value: 'A runtime for agents.', agentId: 'brand-kit', savedAt: '2026-08-20T00:00:00.000Z' } },
+      };
+      activeContext.set(PROJECT_1);
+      await fixture.whenStable();
+
+      expect(component['intakeForm'].getRawValue()).toMatchObject({ one_line_description: 'A runtime for agents.' });
+      expect(priorRunChip('one_line_description')).toBeNull();
+      expect(host().textContent).not.toContain('Not set on your LFX project');
+    });
+
     it('suppresses the "not set on your LFX project" hint when a prior answer filled the field instead', async () => {
       projects = { 'proj-one': { repository_url: '', description: '' } };
       rememberedAnswers = {
