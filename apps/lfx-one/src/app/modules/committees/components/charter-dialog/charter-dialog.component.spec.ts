@@ -53,7 +53,12 @@ describe('CharterDialogComponent', () => {
   it('associates the visible label with the input by id, for accessible-name discovery', () => {
     create();
     const label: HTMLLabelElement = fixture.nativeElement.querySelector('label');
-    expect(label.getAttribute('for')).toBe(urlInput().id);
+    const id = urlInput().id;
+    expect(label.getAttribute('for')).toBe(id);
+    // A static `id=` on `lfx-input-text` lands on both the host and the native input it renders,
+    // so `label[for]` would resolve to the non-labelable host in a real browser -- guard against
+    // that regression by asserting the id is unique in the rendered DOM.
+    expect(fixture.nativeElement.querySelectorAll(`#${id}`).length).toBe(1);
   });
 
   it('accepts a contract-valid bare-host URL with no dot (matches the backend pattern, unlike the general website field)', async () => {

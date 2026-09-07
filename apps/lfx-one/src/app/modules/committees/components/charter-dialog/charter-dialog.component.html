@@ -3,10 +3,14 @@
 
 <div data-testid="committee-charter-edit-dialog">
   <label for="committee-charter-url" class="text-gray-950 block text-sm font-medium mb-2">Charter URL</label>
+  <!-- [id] (bound), not a static id=: a static attribute on a custom element lands on both the
+       <lfx-input-text> host and (via its id input()) the native <input> it renders -- two elements
+       sharing one id, with label[for] resolving to the first (the non-labelable host) in document
+       order. Binding it keeps the id off the host entirely. -->
   <lfx-input-text
     [form]="charterForm"
     control="url"
-    id="committee-charter-url"
+    [id]="'committee-charter-url'"
     type="url"
     placeholder="https://example.org/charter.pdf"
     styleClass="!w-full"
