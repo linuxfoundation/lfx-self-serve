@@ -12,6 +12,7 @@ import { merge, share, Subject } from 'rxjs';
 import { debounceTime, distinctUntilChanged, exhaustMap, finalize, map, scan, switchMap, takeUntil, tap } from 'rxjs/operators';
 
 import { ProgramsListComponent } from './components/programs-list/programs-list.component';
+import { Router } from '@angular/router';
 
 /**
  * Admin landing page for the mentorship module.
@@ -32,6 +33,7 @@ import { ProgramsListComponent } from './components/programs-list/programs-list.
 export class AdminComponent {
   // ─── Private Injections ────────────────────────────────────────────────────
   private readonly mentorshipService = inject(MentorshipService);
+  private readonly router = inject(Router);
 
   // ─── Simple WritableSignals ────────────────────────────────────────────────
   protected readonly hasLoaded = signal(false);
@@ -71,10 +73,7 @@ export class AdminComponent {
   }
 
   protected onEnrollProgram(): void {
-    // TODO: wire up program-enrollment flow (LFXV2-<TBD>) — currently a no-op
-    // so the CTA visibly renders without silently promising navigation the
-    // rest of the module doesn't yet support.
-    // void this.router.navigate(['/mentorship/admin/enroll']);
+    void this.router.navigate(['/mentorship/admin/enroll']);
   }
 
   protected onLoadMore(): void {

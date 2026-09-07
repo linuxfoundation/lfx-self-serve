@@ -24,4 +24,6 @@ export class InputTextComponent {
   public dataTest = input<string>();
   public icon = input<string>();
   public styleClass = input<string>();
+  public readonly = input<boolean>(false);
+  public maxlength = input<number>();
 }
