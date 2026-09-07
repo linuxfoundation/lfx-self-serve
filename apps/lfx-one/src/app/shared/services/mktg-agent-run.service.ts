@@ -66,17 +66,23 @@ export class MktgAgentRunService {
   private readonly memoryRuns = new Map<string, MktgStoredAgentRun>();
 
   /**
-   * Generates (or regenerates) an agent document. Emits `submitted` once the
-   * generate/chat POST resolves, then `document` with the updated stored run
-   * once the validated document lands.
+   * Generates (or regenerates) an agent document. Emits, in order:
    *
-   * The stream stays open a little longer than the last emission for agents
-   * that persist their document server-side: `retryPersistence` spends a small
-   * bounded budget of extra polls when the ready result carried no persistence
-   * receipt, so a transient storage failure still ends with the server copy
-   * written. It emits nothing, so the user sees the document at the same
-   * moment either way; cancelling the subscription (project switch, a new
-   * submission, leaving the page) cancels the retry with it.
+   * - `submitted` — the generate/chat POST resolved.
+   * - `document` — the validated document landed, with the updated stored run.
+   * - `persisted` — OPTIONAL and last: the server-side copy exists. Emitted
+   *   only for agents that persist their document (`persistsDocument`) whose
+   *   ready result carried no persistence receipt and whose retry later got
+   *   one. A subscriber that resolves anything from the SERVER copy has to
+   *   handle it — dependency gating does — because at `document` time the
+   *   server may still be serving the previous version.
+   *
+   * The stream therefore stays open a little longer than the document for
+   * those agents: `retryPersistence` spends a small bounded budget of extra
+   * polls so a transient storage failure still ends with the server copy
+   * written. It never delays what the user sees; cancelling the subscription
+   * (project switch, a new submission, leaving the page) cancels the retry
+   * with it.
    */
   public generate(request: MktgGenerateRequest): Observable<MktgGenerateProgress> {
     const stored = this.loadRun(request.projectUid, request.agentId);
