@@ -20,11 +20,14 @@ export class CharterDialogComponent {
 
   public readonly url = this.config.data.url;
 
-  // Same http(s) pattern used for the committee `website` field (committee-manage.component.ts)
-  // -- Validators.pattern treats an empty value as valid regardless of the pattern, so clearing
-  // the field (the charter-removal signal) is never blocked by this validator.
+  // Mirrors the backend's charterURLPattern/MaxLength(2048) exactly (cmd/committee-api/design/type.go
+  // in lfx-v2-committee-service) so a client-valid value is guaranteed API-valid -- no bare-host
+  // rejection (`http://committee/charter` is contract-valid, unlike the general `website` field's
+  // pattern) and no whitespace/length values that would pass here but fail upstream. Validators.pattern
+  // treats an empty value as valid regardless of the pattern, so clearing the field (the
+  // charter-removal signal) is never blocked by this validator.
   public charterForm = new FormGroup({
-    url: new FormControl(this.url, [Validators.pattern(/^https?:\/\/.+\..+/)]),
+    url: new FormControl(this.url, [Validators.pattern(/^https?:\/\/[^\s/$.?#][^\s]*$/), Validators.maxLength(2048)]),
   });
 
   public cancel(): void {

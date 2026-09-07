@@ -556,6 +556,12 @@ export class CommitteeViewComponent {
     if (!committee) {
       return;
     }
+    // Guard against stamping a removal when there was nothing to remove: an empty save against a
+    // charter that was never set would otherwise still write `{ url: '' }`, flipping the About
+    // card from "never set" to "set, then removed" for no reason.
+    if (url === (committee.charter?.url ?? '')) {
+      return;
+    }
     this.committeeService.updateCommittee(committee.uid, { charter: { url } }).subscribe({
       next: () => {
         this.messageService.add({ severity: 'success', summary: 'Success', detail: 'Charter updated' });

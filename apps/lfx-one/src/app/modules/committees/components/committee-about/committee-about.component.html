@@ -231,6 +231,12 @@
               'Removed by ' + (charter.updated_by?.name || charter.updated_by?.username || 'someone') + ' on ' + (charter.updated_at | date: 'MMM d, y')
             "
             tooltipPosition="top"
+            tooltipEvent="both"
+            tabindex="0"
+            role="note"
+            [attr.aria-label]="
+              'Removed by ' + (charter.updated_by?.name || charter.updated_by?.username || 'someone') + ' on ' + (charter.updated_at | date: 'MMM d, y')
+            "
             data-testid="committee-about-charter-empty"
             >No charter yet</span
           >
