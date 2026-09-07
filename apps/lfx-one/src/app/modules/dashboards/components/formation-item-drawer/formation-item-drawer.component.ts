@@ -11,7 +11,7 @@ import { InputTextComponent } from '@components/input-text/input-text.component'
 import { TagComponent } from '@components/tag/tag.component';
 import { TextareaComponent } from '@components/textarea/textarea.component';
 import { FormationService } from '@services/formation.service';
-import type { FormationDrawerData, FormationItem, FormationItemLink, FormationItemStatus } from '@lfx-one/shared/interfaces';
+import type { FormationDrawerData, FormationItem, FormationItemLink } from '@lfx-one/shared/interfaces';
 import { createEmptyFormationDrawerData, FORMATION_ITEM_STATUS_LABELS, FORMATION_ITEM_STATUS_SEVERITY } from '@lfx-one/shared/constants';
 import { isValidUrl } from '@lfx-one/shared/utils';
 import { MessageService } from 'primeng/api';
@@ -113,13 +113,14 @@ export class FormationItemDrawerComponent {
     const currentItem = this.item();
     return currentItem?.status === 'awaiting_acceptance' && currentItem.can_complete ? 'Accept' : 'Mark complete';
   });
-  /** Sub-item status chip, upgraded from a raw status string — same label/severity maps the parent item's own status chip uses. */
-  protected subItemStatusLabel(status: FormationItemStatus): string {
-    return FORMATION_ITEM_STATUS_LABELS[status];
-  }
-  protected subItemStatusSeverity(status: FormationItemStatus): (typeof FORMATION_ITEM_STATUS_SEVERITY)[FormationItemStatus] {
-    return FORMATION_ITEM_STATUS_SEVERITY[status];
-  }
+  /** Sub-item rows for the template, with status pre-resolved to its chip label/severity — same maps the parent item's own status chip uses. Templates may only read signals/pipes, not call methods. */
+  protected readonly subItemRows = computed(() =>
+    (this.item()?.sub_items ?? []).map((subItem) => ({
+      ...subItem,
+      statusLabel: FORMATION_ITEM_STATUS_LABELS[subItem.status],
+      statusSeverity: FORMATION_ITEM_STATUS_SEVERITY[subItem.status],
+    }))
+  );
 
   protected onClose(): void {
     this.visible.set(false);

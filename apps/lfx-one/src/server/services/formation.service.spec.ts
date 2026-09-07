@@ -319,6 +319,58 @@ describe('FormationService', () => {
     });
   });
 
+  describe('updateFormationItemStatus', () => {
+    it('preserves existing notes when blocking with a reason, filing the reason as activity metadata instead', async () => {
+      const { formation, item } = seedItem({ notes: 'pre-existing note from the drawer' });
+      getProjectById.mockResolvedValue({ writer: true });
+
+      const result = await service.updateFormationItemStatus(buildReq(), item.uid, 'blocked', 'waiting on legal');
+
+      expect(result.notes).toBe('pre-existing note from the drawer');
+      expect(getStoredItem(item.uid)?.notes).toBe('pre-existing note from the drawer');
+      const activity = getActivityForItem(formation.uid, item.uid).find((entry) => entry.type === 'item_reopened');
+      expect(activity?.metadata).toEqual({ note: 'waiting on legal' });
+    });
+
+    it('rejects reopening a gating item off done when canComplete denies', async () => {
+      const { item } = seedItem({ is_gating: true, status: 'done' });
+      getProjectById.mockResolvedValue({ writer: true });
+      canComplete.mockResolvedValue(false);
+
+      await expect(service.updateFormationItemStatus(buildReq(), item.uid, 'not_started')).rejects.toThrow(/gate_writer/i);
+      expect(getStoredItem(item.uid)?.status).toBe('done');
+    });
+
+    it('rejects reopening a gating item off awaiting_acceptance when canComplete denies', async () => {
+      const { item } = seedItem({ is_gating: true, status: 'awaiting_acceptance' });
+      getProjectById.mockResolvedValue({ writer: true });
+      canComplete.mockResolvedValue(false);
+
+      await expect(service.updateFormationItemStatus(buildReq(), item.uid, 'in_progress')).rejects.toThrow(/gate_writer/i);
+      expect(getStoredItem(item.uid)?.status).toBe('awaiting_acceptance');
+    });
+
+    it('allows reopening a gating item off done when canComplete allows', async () => {
+      const { item } = seedItem({ is_gating: true, status: 'done' });
+      getProjectById.mockResolvedValue({ writer: true });
+      canComplete.mockResolvedValue(true);
+
+      const result = await service.updateFormationItemStatus(buildReq(), item.uid, 'not_started');
+
+      expect(result.status).toBe('not_started');
+    });
+
+    it('does not gate a plain (non-gating) item transition on canComplete at all', async () => {
+      const { item } = seedItem({ is_gating: false, status: 'done' });
+      getProjectById.mockResolvedValue({ writer: true });
+      canComplete.mockResolvedValue(false);
+
+      const result = await service.updateFormationItemStatus(buildReq(), item.uid, 'not_started');
+
+      expect(result.status).toBe('not_started');
+    });
+  });
+
   describe('skipFormationItem — reason required', () => {
     it('rejects an empty/whitespace-only reason before even resolving the item', async () => {
       await expect(service.skipFormationItem(buildReq(), 'formation-item:whatever', '   ')).rejects.toThrow(/reason/i);

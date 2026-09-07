@@ -179,9 +179,11 @@ export class FormationService {
    * The three "plain" status transitions a row's status-chip menu can trigger directly
    * (in_progress / blocked+note / not_started) — completion and skip keep their own dedicated
    * endpoints/methods above since their semantics genuinely differ (gate_writer/`awaiting_acceptance`
-   * branching, required skip reason). No `assertCanComplete` gate here by design, matching
+   * branching, required skip reason). No `assertCanComplete` gate for the general case, matching
    * `updateFormationItem`'s existing pattern — these are reversible, non-gating-status-of-record
-   * moves, not a gate decision.
+   * moves, not a gate decision. The one exception: reversing a gating item off `done`/
+   * `awaiting_acceptance` undoes a gate decision, so that specific transition reuses the same
+   * `assertCanComplete` gate as `completeFormationItem`.
    * TODO(#1957): swap the fixture writes below for a real lfx-v2-formation-service mutation call.
    */
   public async updateFormationItemStatus(req: Request, itemUid: string, status: unknown, note?: unknown): Promise<FormationItem> {
@@ -198,16 +200,19 @@ export class FormationService {
 
     const item = await this.getFormationItemOrThrow(req, itemUid);
     await this.assertItemProjectWriteAccess(req, item);
+    if (item.is_gating && (item.status === 'done' || item.status === 'awaiting_acceptance')) {
+      await this.assertCanComplete(req, item, 'update_formation_item_status');
+    }
     const nextStatus = status as FormationItemStatus;
+    const blockNote = nextStatus === 'blocked' && typeof note === 'string' ? note : null;
     const updated: FormationItem = {
       ...item,
       status: nextStatus,
       skip_reason: null,
-      notes: nextStatus === 'blocked' && typeof note === 'string' ? note : item.notes,
       updated_at: new Date().toISOString(),
     };
     putStoredItem(updated);
-    this.recordActivity(req, updated, 'item_reopened', `moved "${updated.title}" to ${nextStatus}`);
+    this.recordActivity(req, updated, 'item_reopened', `moved "${updated.title}" to ${nextStatus}`, blockNote !== null ? { note: blockNote } : null);
     this.refreshFormationReadiness(updated.formation_uid);
 
     logger.info(req, 'update_formation_item_status', 'Formation item status changed', { item_uid: itemUid, status: nextStatus });

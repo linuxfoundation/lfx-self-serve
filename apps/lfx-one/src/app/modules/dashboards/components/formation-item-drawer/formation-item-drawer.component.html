@@ -124,10 +124,10 @@
         <div class="flex flex-col gap-2" data-testid="formation-item-drawer-sub-items">
           <span class="text-xs font-medium text-gray-500 uppercase tracking-wide">Sub-items</span>
           <div class="flex flex-col gap-1">
-            @for (subItem of currentItem.sub_items; track subItem.uid) {
+            @for (subItem of subItemRows(); track subItem.uid) {
               <div class="flex items-center justify-between text-sm">
                 <span class="text-gray-700">{{ subItem.title }}</span>
-                <lfx-tag [value]="subItemStatusLabel(subItem.status)" [severity]="subItemStatusSeverity(subItem.status)" />
+                <lfx-tag [value]="subItem.statusLabel" [severity]="subItem.statusSeverity" />
               </div>
             }
           </div>

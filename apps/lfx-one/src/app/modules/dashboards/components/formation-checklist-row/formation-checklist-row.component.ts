@@ -94,10 +94,18 @@ export class FormationChecklistRowComponent {
 
   private buildStatusMenuItems(): MenuItem[] {
     const item = this.item();
+    // A gating item's `done`/`awaiting_acceptance` status is a gate decision — reversing it
+    // requires the same `can_complete` privilege the server now enforces for that transition.
+    const reversingGateDecision = item.is_gating && (item.status === 'done' || item.status === 'awaiting_acceptance');
     const items: MenuItem[] = [];
 
     if (item.status !== 'in_progress') {
-      items.push({ label: 'Mark in progress', icon: 'fa-light fa-spinner', command: () => this.emitStatusChange('in_progress') });
+      items.push({
+        label: 'Mark in progress',
+        icon: 'fa-light fa-spinner',
+        disabled: reversingGateDecision && !item.can_complete,
+        command: () => this.emitStatusChange('in_progress'),
+      });
     }
     if (item.status !== 'done' && item.status !== 'skipped') {
       items.push({
@@ -111,7 +119,12 @@ export class FormationChecklistRowComponent {
       }
     }
     if (item.status !== 'not_started') {
-      items.push({ label: 'Back to not started', icon: 'fa-light fa-rotate-left', command: () => this.emitStatusChange('not_started') });
+      items.push({
+        label: 'Back to not started',
+        icon: 'fa-light fa-rotate-left',
+        disabled: reversingGateDecision && !item.can_complete,
+        command: () => this.emitStatusChange('not_started'),
+      });
     }
 
     return items;
