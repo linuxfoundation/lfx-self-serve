@@ -15,7 +15,7 @@ import {
   ORG_PROJECTS_SEARCH_PRELOAD_LIMIT,
   VALKEY_CACHE,
 } from '@lfx-one/shared/constants';
-import { classifyHealthScore, normalizeHealthScoreCategoryV2 } from '@lfx-one/shared/utils';
+import { normalizeHealthScoreCategoryV2 } from '@lfx-one/shared/utils';
 import type {
   HealthScore,
   InfluenceBand,
@@ -50,10 +50,9 @@ export class OrgLensProjectsService {
   private readonly microserviceProxy = new MicroserviceProxyService();
 
   public async getProjects(accountId: string, orgName: string, slugs: string[] | null): Promise<OrgLensProjectsResponse> {
-    // `v3` bump: pre-close-out entries lack the `metricsState` discriminator. The frontend now treats a missing
-    // field as full (rolling-deploy safe), but versioning still drops stale cache entries; the validator below
-    // also rejects any entry missing metricsState so we don't keep serving mixed-shape payloads.
-    const cacheKey = `projects:v3:${this.paramSignature([orgName, ...(slugs ?? ['__top__'])])}`;
+    // `v4` bump: hasHealthScore/mapHealthScore no longer fall back to the legacy v1 score when the v2 category
+    // is null (LFXV2-3379) — bumping drops cache entries computed under the old fallback logic (e.g. "Fair").
+    const cacheKey = `projects:v4:${this.paramSignature([orgName, ...(slugs ?? ['__top__'])])}`;
     const key = buildOrgCacheKey(accountId, cacheKey);
     if (key !== null) {
       const cached = await valkeyService.getJson<OrgLensProjectsResponse>(key, OrgLensProjectsService.isProjectsResponse);
@@ -573,14 +572,13 @@ export class OrgLensProjectsService {
     return value === 'up' || value === 'down' || value === 'flat' ? value : 'flat';
   }
 
-  private hasHealthScore(row: Pick<OrgLensProjectRow, 'HEALTH_OVERALL_SCORE_V2'>): boolean {
-    return row.HEALTH_OVERALL_SCORE_V2 != null;
+  private hasHealthScore(row: Pick<OrgLensProjectRow, 'HEALTH_OVERALL_SCORE_V2' | 'HEALTH_SCORE_CATEGORY_V2'>): boolean {
+    return row.HEALTH_OVERALL_SCORE_V2 != null && normalizeHealthScoreCategoryV2(row.HEALTH_SCORE_CATEGORY_V2) != null;
   }
 
-  private mapHealthScore(row: Pick<OrgLensProjectRow, 'HEALTH_OVERALL_SCORE_V2' | 'HEALTH_SCORE_CATEGORY_V2'>): Exclude<HealthScore, 'unavailable'> {
-    // The trailing `?? 0` is an unreachable safety net since callers only invoke this when hasHealthScore()
-    // has confirmed HEALTH_OVERALL_SCORE_V2 is present.
-    return normalizeHealthScoreCategoryV2(row.HEALTH_SCORE_CATEGORY_V2) ?? classifyHealthScore(row.HEALTH_OVERALL_SCORE_V2 ?? 0);
+  private mapHealthScore(row: Pick<OrgLensProjectRow, 'HEALTH_SCORE_CATEGORY_V2'>): Exclude<HealthScore, 'unavailable'> {
+    // Callers only invoke this when hasHealthScore() has confirmed the v2 category resolves to a known value.
+    return normalizeHealthScoreCategoryV2(row.HEALTH_SCORE_CATEGORY_V2)!;
   }
 
   private mapHealthMetrics(row: OrgLensProjectRow): OrgLensProject['healthMetrics'] {

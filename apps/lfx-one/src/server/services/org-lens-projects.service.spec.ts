@@ -83,15 +83,15 @@ describe('OrgLensProjectsService health score mapping', () => {
     execute.mockReset();
   });
 
-  it('classifies via the raw v2 score when no v2 category is present', async () => {
+  it('marks health unavailable when a raw v2 score is present but the v2 category is not (LFXV2-3379)', async () => {
     mockProjectsRow(projectsRow({ HEALTH_OVERALL_SCORE_V2: 90 }));
 
     const response = await service.getProjects(ACCOUNT_ID, ORG_NAME, null);
 
-    expect(response.projects[0]?.health).toBe('excellent');
+    expect(response.projects[0]?.health).toBe('unavailable');
   });
 
-  it('prefers the warehouse v2 category over the raw v2 score when both are present', async () => {
+  it('uses the warehouse v2 category when present', async () => {
     mockProjectsRow(projectsRow({ HEALTH_OVERALL_SCORE_V2: 10, HEALTH_SCORE_CATEGORY_V2: 'Fair' }));
 
     const response = await service.getProjects(ACCOUNT_ID, ORG_NAME, null);
@@ -99,12 +99,12 @@ describe('OrgLensProjectsService health score mapping', () => {
     expect(response.projects[0]?.health).toBe('fair');
   });
 
-  it('falls back to the raw v2 score when the v2 category is unrecognized', async () => {
+  it('marks health unavailable when the v2 category is unrecognized, never falling back to the raw v2 score (LFXV2-3379)', async () => {
     mockProjectsRow(projectsRow({ HEALTH_OVERALL_SCORE_V2: 50, HEALTH_SCORE_CATEGORY_V2: 'Typo' }));
 
     const response = await service.getProjects(ACCOUNT_ID, ORG_NAME, null);
 
-    expect(response.projects[0]?.health).toBe('fair');
+    expect(response.projects[0]?.health).toBe('unavailable');
   });
 
   it('marks health unavailable when no v2 score is present', async () => {

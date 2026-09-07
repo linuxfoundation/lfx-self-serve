@@ -93,8 +93,8 @@ const HEALTH_SCORE_CATEGORIES = new Set<Exclude<HealthScore, 'unavailable'>>(['e
 /**
  * Normalizes the warehouse-computed `health_score_category_v2` column (lf-dbt's `get_health_score_category_v2`
  * macro, e.g. "Excellent"/"Fair"/"Concerning") into the lowercase `HealthScore` band. Returns `null` for
- * unset/unrecognized values so callers can fall back to `classifyHealthScore` on the v1 score for projects
- * the warehouse hasn't backfilled with a v2 category yet.
+ * unset/unrecognized values — callers must treat that as "no score" (`unavailable`), never fall back to
+ * `classifyHealthScore` on the legacy v1 score; the warehouse is the sole source of truth for the label.
  */
 export function normalizeHealthScoreCategoryV2(category: string | null | undefined): Exclude<HealthScore, 'unavailable'> | null {
   if (!category) {
