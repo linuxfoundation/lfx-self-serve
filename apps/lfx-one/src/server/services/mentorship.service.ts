@@ -3,7 +3,6 @@
 
 import {
   EMPTY_MENTORSHIP_PROGRAM_LISTS,
-  MENTORSHIP_CII_BADGE_JSON_BASE,
   MENTORSHIP_LF_PROJECT_PAGE_SIZE,
   MENTORSHIP_PROGRAM_STATUSES,
   MENTORSHIP_PROJECT_OPTIONS,
@@ -28,7 +27,6 @@ import { ConflictError, MicroserviceError, ResourceNotFoundError, ServiceValidat
 
 import { logger } from './logger.service';
 
-const CII_BADGE_ORIGIN = new URL(MENTORSHIP_CII_BADGE_JSON_BASE).origin;
 const DEFAULT_PROGRAM_LIMIT = 50;
 const MAX_LIMIT = 50;
 
@@ -44,17 +42,17 @@ function paginateOffsetLimit<T>(items: readonly T[], offset: number, limit: numb
   return { data: items.slice(start, start + size), total: items.length };
 }
 
-/** Allowlisted CII badge URL: constant origin + digit-only project id. */
-function buildCiiBadgeJsonUrl(projectId: string): URL {
-  const digits = /^(\d+)$/.exec(projectId.trim())?.[1];
-  if (!digits) {
+/**
+ * Allowlisted CII badge URL. `Number()` is the sanitizer CodeQL models for path IDs
+ * (`js/request-forgery`); keep the host as a string literal concatenated with that number.
+ * Must stay aligned with `MENTORSHIP_CII_BADGE_JSON_BASE`.
+ */
+function buildCiiBadgeJsonUrl(projectId: string): string {
+  const numericId = Number(projectId.trim());
+  if (!Number.isInteger(numericId) || numericId < 1) {
     throw ServiceValidationError.forField('projectId', 'CII Project ID must be numeric', { operation: 'mentorship_get_cii_badge' });
   }
-  const url = new URL(`/projects/${digits}/badge.json`, CII_BADGE_ORIGIN);
-  if (url.origin !== CII_BADGE_ORIGIN) {
-    throw ServiceValidationError.forField('projectId', 'CII Project ID must be numeric', { operation: 'mentorship_get_cii_badge' });
-  }
-  return url;
+  return 'https://bestpractices.coreinfrastructure.org/projects/' + numericId + '/badge.json';
 }
 
 export class MentorshipService {
@@ -158,7 +156,7 @@ export class MentorshipService {
       throw new MicroserviceError('CII Best Practices is temporarily unavailable. Please try again later.', 502, 'UPSTREAM_UNREACHABLE', {
         operation: 'mentorship_get_cii_badge',
         service: 'cii_best_practices',
-        path: url.pathname,
+        path: url,
         originalError: error instanceof Error ? error : undefined,
         transportFailure: true,
       });
@@ -168,14 +166,7 @@ export class MentorshipService {
       throw new ResourceNotFoundError('CII project', projectId, { operation: 'mentorship_get_cii_badge' });
     }
     if (!response.ok) {
-      throw MicroserviceError.fromMicroserviceResponse(
-        response.status,
-        response.statusText,
-        {},
-        'cii_best_practices',
-        url.pathname,
-        'mentorship_get_cii_badge'
-      );
+      throw MicroserviceError.fromMicroserviceResponse(response.status, response.statusText, {}, 'cii_best_practices', url, 'mentorship_get_cii_badge');
     }
 
     let payload: unknown;
@@ -185,7 +176,7 @@ export class MentorshipService {
       throw new MicroserviceError('CII Best Practices returned an invalid response.', 502, 'BAD_GATEWAY', {
         operation: 'mentorship_get_cii_badge',
         service: 'cii_best_practices',
-        path: url.pathname,
+        path: url,
         originalError: error instanceof Error ? error : undefined,
       });
     }
@@ -195,7 +186,7 @@ export class MentorshipService {
       throw new MicroserviceError('CII Best Practices returned an invalid response.', 502, 'BAD_GATEWAY', {
         operation: 'mentorship_get_cii_badge',
         service: 'cii_best_practices',
-        path: url.pathname,
+        path: url,
       });
     }
 
