@@ -7,7 +7,7 @@ import { provideRouter } from '@angular/router';
 import { FormationChecklistResponse, FormationItem, ProjectContext } from '@lfx-one/shared/interfaces';
 import { FormationService } from '@services/formation.service';
 import { ProjectContextService } from '@services/project-context.service';
-import { of } from 'rxjs';
+import { of, throwError } from 'rxjs';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 
 import { FormationEntryCardComponent } from './formation-entry-card.component';
@@ -108,5 +108,14 @@ describe('FormationEntryCardComponent', () => {
 
     const link = fixture.nativeElement.querySelector('[data-testid="formation-entry-card-link"]') as HTMLAnchorElement;
     expect(link.getAttribute('href')).toBe('/project/formation?project=test-project');
+  });
+
+  it('shows an error state instead of a misleading "0 of 0 done" when the fetch fails', async () => {
+    getProjectFormation.mockReturnValue(throwError(() => new Error('network error')));
+
+    await render();
+
+    expect(summaryText()).toBeNull();
+    expect(fixture.nativeElement.querySelector('[data-testid="formation-entry-card-error"]')?.textContent).toContain("Couldn't load the checklist status");
   });
 });

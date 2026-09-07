@@ -26,6 +26,7 @@ export class FormationEntryCardComponent {
   private readonly formationService = inject(FormationService);
 
   protected readonly loading = signal(true);
+  protected readonly hasError = signal(false);
 
   private readonly summary: Signal<FormationReadinessSummary | null> = this.initSummary();
   protected readonly doneCount = computed(() => this.summary()?.counts.done ?? 0);
@@ -50,10 +51,12 @@ export class FormationEntryCardComponent {
           }
 
           this.loading.set(true);
+          this.hasError.set(false);
           return this.formationService.getProjectFormation(slug).pipe(
             switchMap((response) => of(deriveFormationReadinessSummary(response.items))),
             catchError((error: unknown) => {
               console.error('[FormationEntryCard] Failed to load formation checklist summary', error);
+              this.hasError.set(true);
               return of(null);
             }),
             finalize(() => this.loading.set(false))
