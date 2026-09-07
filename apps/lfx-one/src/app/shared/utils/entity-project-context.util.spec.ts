@@ -54,6 +54,7 @@ describe('reconcileRouteProjectContext', () => {
   let setFoundation: ReturnType<typeof vi.fn>;
   let setProject: ReturnType<typeof vi.fn>;
   let routeLensKind: ReturnType<typeof signal<'foundation' | 'project' | null>>;
+  let foundationSlot: ReturnType<typeof signal<ProjectContext | null>>;
   let projectContextService: ProjectContextService;
 
   const start = (): void => {
@@ -82,7 +83,7 @@ describe('reconcileRouteProjectContext', () => {
     // to the stale cookie-restored project, exactly what the re-apply must undo.
     routeLensKind = signal<'foundation' | 'project' | null>('project');
     const projectSlot = signal<ProjectContext | null>({ uid: 'other-uid', name: 'Other Project', slug: 'other-project' });
-    const foundationSlot = signal<ProjectContext | null>(null);
+    foundationSlot = signal<ProjectContext | null>(null);
     setRouteLensKind = vi.fn((kind: 'foundation' | 'project' | null) => routeLensKind.set(kind));
     setFoundation = vi.fn((context: ProjectContext) => foundationSlot.set(context));
     setProject = vi.fn((context: ProjectContext) => projectSlot.set(context));
@@ -112,6 +113,21 @@ describe('reconcileRouteProjectContext', () => {
     expect(setRouteLensKind).toHaveBeenCalledWith('foundation');
     expect(setFoundation).toHaveBeenCalledWith(resolvedContext, false);
     expect(setProject).not.toHaveBeenCalled();
+    expect(projectContextService.activeContext()).toEqual(resolvedContext);
+  });
+
+  it('refreshes a matching-kind context carrying the route uid but stale name/slug/logo', async () => {
+    // Cookie-restored contexts can drift from the backend while keeping the right uid. The
+    // activation write only suppresses on a FULL context match (isSameProjectContext) — a
+    // uid-only regression would short-circuit here and leave the stale name/logo in the chrome.
+    routeLensKind.set('foundation');
+    foundationSlot.set({ uid: ROUTE_UID, name: 'Stale Foundation', slug: 'stale-foundation', logoUrl: 'https://stale.example/logo.png' });
+
+    start();
+    await stable();
+
+    expect(getProject).toHaveBeenCalledWith(ROUTE_UID, false);
+    expect(setFoundation).toHaveBeenCalledWith(resolvedContext, false);
     expect(projectContextService.activeContext()).toEqual(resolvedContext);
   });
 
