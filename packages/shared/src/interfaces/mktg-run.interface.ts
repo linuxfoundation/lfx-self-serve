@@ -416,8 +416,17 @@ export interface MktgRunAttempt {
 /** Run-page phase: intake form → staged running → document result. */
 export type MktgRunPhase = 'form' | 'running' | 'result';
 
-/** Progress events emitted while a generation request is in flight. */
-export type MktgGenerateProgress = { type: 'submitted' } | { type: 'document'; run: MktgStoredAgentRun };
+/**
+ * Progress events emitted while a generation request is in flight.
+ *
+ * `persisted` is emitted only by the bounded background persistence retry,
+ * when a late server-side write finally lands. It matters because the SERVER
+ * copy is what dependency gating reads for every browser and user: a document
+ * announced on `document` alone can leave consumers holding the previous
+ * server version until a page reload, and this is the event that says the
+ * shared copy has caught up.
+ */
+export type MktgGenerateProgress = { type: 'submitted' } | { type: 'document'; run: MktgStoredAgentRun } | { type: 'persisted' };
 
 /** Request to generate (or regenerate) an agent document from intake answers. */
 export interface MktgGenerateRequest {

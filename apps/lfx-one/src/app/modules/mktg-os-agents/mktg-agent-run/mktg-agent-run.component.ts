@@ -738,6 +738,14 @@ export class MktgAgentRunComponent {
             this.stage.set(1);
             return;
           }
+          if (progress.type === 'persisted') {
+            // The server copy landed on a retry after the document was already
+            // announced. Dependency resolution prefers the server copy, so
+            // without this second announcement consumers would stay attached
+            // to the PREVIOUS server version until a page reload.
+            this.dependencyService.notifyDocumentsChanged(projectUid);
+            return;
+          }
           this.stage.set(2);
           this.completeRun(progress.run);
         },

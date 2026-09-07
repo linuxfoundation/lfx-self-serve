@@ -20,23 +20,7 @@ import {
   MktgStoredAgentRun,
 } from '@lfx-one/shared/interfaces';
 import { renderMktgIntakeMessage } from '@lfx-one/shared/utils';
-import {
-  catchError,
-  concat,
-  EMPTY,
-  exhaustMap,
-  filter,
-  ignoreElements,
-  map,
-  Observable,
-  of,
-  switchMap,
-  take,
-  takeWhile,
-  throwError,
-  timeout,
-  timer,
-} from 'rxjs';
+import { catchError, concat, EMPTY, exhaustMap, filter, map, Observable, of, switchMap, take, takeWhile, throwError, timeout, timer } from 'rxjs';
 
 import { isTransientHttpError } from '@shared/utils/http-error.utils';
 
@@ -310,14 +294,17 @@ export class MktgAgentRunService {
    * until it exists) — would be lost to a blip no one ever sees.
    *
    * The document is already emitted and rendered by the time this runs, so the
-   * stream deliberately emits NOTHING (`ignoreElements`) and never errors a
-   * run that already succeeded: a failed retry poll is just a spent attempt,
-   * exactly as on the standalone Brand Kit form, and the budget is shared with
-   * it (`MKTG_RUN_PERSIST_RETRY_MAX_ATTEMPTS`). Polling stops the moment a
-   * receipt arrives. No project scope means the BFF never persists at all, so
-   * there is nothing to retry.
+   * stream never errors a run that already succeeded: a failed retry poll is
+   * just a spent attempt, exactly as on the standalone Brand Kit form, and the
+   * budget is shared with it (`MKTG_RUN_PERSIST_RETRY_MAX_ATTEMPTS`). Its ONE
+   * emission is `{ type: 'persisted' }` when a receipt finally arrives, after
+   * which polling stops. That event exists because dependency resolution
+   * prefers the SERVER copy over any browser-stored run: a v2 announced while
+   * the write was still failing would leave consumers attached to the server's
+   * v1 with nothing to tell them it had been superseded. No project scope
+   * means the BFF never persists at all, so there is nothing to retry.
    */
-  private retryPersistence(request: MktgGenerateRequest, session: MktgSessionInfo, result: MktgRunResultResponse): Observable<never> {
+  private retryPersistence(request: MktgGenerateRequest, session: MktgSessionInfo, result: MktgRunResultResponse): Observable<MktgGenerateProgress> {
     if (!request.intake.persistsDocument || result.persistence || !request.projectUid) {
       return EMPTY;
     }
@@ -331,8 +318,16 @@ export class MktgAgentRunService {
           .pipe(catchError(() => of<MktgRunResultResponse>({ status: 'pending' })))
       ),
       take(MKTG_RUN_PERSIST_RETRY_MAX_ATTEMPTS),
-      takeWhile((response) => !response.persistence),
-      ignoreElements()
+      // Announce the moment the SERVER copy exists, then stop. Consumers
+      // resolve dependencies from the server copy in preference to any
+      // browser-stored run, so a document announced at `document` time while
+      // the write was still failing would leave them on the PREVIOUS server
+      // version with nothing to tell them it had been superseded.
+      // `takeWhile` is inclusive here so the receipt-bearing response is the
+      // one that emits, and the stream completes right after it.
+      takeWhile((response) => !response.persistence, true),
+      filter((response) => !!response.persistence),
+      map((): MktgGenerateProgress => ({ type: 'persisted' }))
     );
   }
 

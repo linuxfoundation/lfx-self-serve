@@ -23,7 +23,7 @@ import { ProjectContextService } from '@services/project-context.service';
 import { ProjectService } from '@services/project.service';
 import { UserService } from '@services/user.service';
 import { MessageService } from 'primeng/api';
-import { of } from 'rxjs';
+import { from, of } from 'rxjs';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 
 import { MktgAgentRunComponent } from './mktg-agent-run.component';
@@ -288,6 +288,30 @@ describe('MktgAgentRunComponent', () => {
       expect(fromLfxChip('github_url')).toBeNull();
       expect(priorRunChip('github_url')).toBeNull();
       expect(component['intakeForm'].getRawValue()).toMatchObject({ github_url: '' });
+    });
+
+    it('re-announces the project’s documents when a late persistence retry lands the server copy', async () => {
+      // Dependency resolution prefers the SERVER copy over any browser-stored
+      // run, so a document announced while the write was still failing would
+      // leave consumers on the previous server version until a page reload.
+      dependencyDocs = {};
+      const progress: MktgGenerateProgress[] = [
+        { type: 'submitted' },
+        { type: 'document', run: storedRun('proj-1', '# Kit v2', { project_name: 'TestOrbit' }) },
+        { type: 'persisted' },
+      ];
+      generate.mockImplementation(() => from(progress));
+      activeContext.set(PROJECT_1);
+      await fixture.whenStable();
+      for (const [key, control] of Object.entries(component['intakeForm'].controls)) {
+        control.setValue(key === 'github_url' ? 'https://github.com/example-org/example-repo' : `answer for ${key}`);
+      }
+
+      component['onSubmit']();
+      await fixture.whenStable();
+
+      // Once for the document, once for the server copy catching up.
+      expect(notifyDocumentsChanged.mock.calls.filter(([uid]) => uid === 'proj-1')).toHaveLength(2);
     });
 
     it('records the submitted answers so the NEXT agent can reuse them', async () => {

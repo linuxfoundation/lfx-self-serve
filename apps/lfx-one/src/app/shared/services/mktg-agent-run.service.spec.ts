@@ -477,23 +477,29 @@ describe('MktgAgentRunService', () => {
       // The retry poll is the same owner-token-in-body, project-scoped POST.
       expect(resultCalls()[1][1]).toEqual({ sessionId: 'sess-1', ownerToken: 'token-1', project: 'proj-1' });
 
-      // Receipt in hand: polling stops, and no further document events land.
+      // Receipt in hand: polling stops, and the ONE extra event says the
+      // server copy now exists — dependency resolution prefers it over any
+      // browser-stored run, so consumers have to be told it caught up.
       await vi.advanceTimersByTimeAsync(MKTG_RUN_POLL.intervalMs * 5);
       expect(resultCalls()).toHaveLength(2);
-      expect(events).toHaveLength(2);
+      expect(events).toHaveLength(3);
+      expect(events[2]).toEqual({ type: 'persisted' });
     });
 
     it('bounds the retry — a permanently receipt-less result never polls beyond the shared budget', async () => {
       // The bucket-unconfigured / over-the-size-cap case: no poll will ever
       // produce a receipt, so only the budget can end the loop.
       resultResponses = [READY_NO_RECEIPT];
-      service.generate(generateRequest()).subscribe();
+      const events: MktgGenerateProgress[] = [];
+      service.generate(generateRequest()).subscribe((event) => events.push(event));
 
       await vi.advanceTimersByTimeAsync(MKTG_RUN_POLL.initialDelayMs);
       expect(resultCalls()).toHaveLength(1);
 
       await vi.advanceTimersByTimeAsync(MKTG_RUN_POLL.intervalMs * 10);
       expect(resultCalls()).toHaveLength(1 + MKTG_RUN_PERSIST_RETRY_MAX_ATTEMPTS);
+      // No receipt ever arrived, so nothing claims the server copy exists.
+      expect(events.some((event) => event.type === 'persisted')).toBe(false);
     });
 
     it('never fails a run that already produced its document when a retry poll errors — the attempt is spent, the next one retries', async () => {
@@ -517,7 +523,8 @@ describe('MktgAgentRunService', () => {
       await vi.advanceTimersByTimeAsync(MKTG_RUN_POLL.intervalMs * 5);
       expect(resultCalls()).toHaveLength(3);
       expect(error).toBeUndefined();
-      expect(events).toHaveLength(2);
+      expect(events).toHaveLength(3);
+      expect(events[2]).toEqual({ type: 'persisted' });
     });
 
     it('does not retry a run with no project scope — the BFF never persists without one, so there is nothing to write', async () => {
