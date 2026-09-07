@@ -35,6 +35,8 @@ export interface LensPage {
 export interface TaggedLensPage {
   page: LensPage;
   generation: number;
+  /** The search term this page was fetched for, so consumers can tell what the current items represent. */
+  term: string;
 }
 
 export interface GetLensItemsParams {
@@ -61,6 +63,12 @@ export interface LensItemsQuery {
 /** Internal per-lens reactive state container used by NavigationService. */
 export interface LensState {
   searchTerm: WritableSignal<string>;
+  /**
+   * The term the currently-held `items` were actually fetched for. Trails `searchTerm` by the
+   * search debounce plus request latency, so consumers that need to know what the visible list
+   * represents — rather than what the user has typed — must read this one.
+   */
+  resultsTerm: WritableSignal<string>;
   items: Signal<LensItem[]>;
   loading: WritableSignal<boolean>;
   loaded: WritableSignal<boolean>;

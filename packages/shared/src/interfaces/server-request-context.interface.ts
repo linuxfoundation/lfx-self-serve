@@ -1,7 +1,12 @@
 // Copyright The Linux Foundation and each contributor to LFX.
 // SPDX-License-Identifier: MIT
 
-import { StaticProvider } from '@angular/core';
+// `import type`, deliberately. StaticProvider is used only as a type annotation, but a VALUE
+// import makes `@angular/core` a RUNTIME dependency of this module -- and the interfaces barrel
+// re-exports it, so a server module reaching `@lfx-one/shared/interfaces` (or `/constants`, which
+// re-exports from `../interfaces`) pulls Angular into a plain-Node vitest run. A type-only import
+// is erased at compile time, so the annotation survives and the runtime edge disappears.
+import type { StaticProvider } from '@angular/core';
 
 import { AuthContext } from './auth.interface';
 import { RuntimeConfig } from './runtime-config.interface';

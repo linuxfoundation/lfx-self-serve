@@ -1,0 +1,389 @@
+// Copyright The Linux Foundation and each contributor to LFX.
+// SPDX-License-Identifier: MIT
+
+import type { CampaignServiceHubSpotCampaigns } from '@lfx-one/shared/interfaces';
+import { describe, expect, it } from 'vitest';
+
+import { scoreCampaignName, toUtmCreateResult, toUtmLookupResult } from './campaign-utm-mapper';
+
+// capped defaults to false so existing cases read as complete searches; the capped-specific
+// tests below pass it explicitly.
+const payload = (...campaigns: { id: string; name: string; utm?: string }[]): CampaignServiceHubSpotCampaigns => ({ campaigns, capped: false });
+const cappedPayload = (...campaigns: { id: string; name: string; utm?: string }[]): CampaignServiceHubSpotCampaigns => ({ campaigns, capped: true });
+
+describe('toUtmLookupResult', () => {
+  it('picks the exact-name match as best', () => {
+    const res = toUtmLookupResult(
+      payload({ id: '1', name: 'KubeCon EU 2026 wrap', utm: 'wrap' }, { id: '2', name: 'KubeCon NA 2026', utm: 'kubecon-na-2026' }),
+      'KubeCon NA 2026'
+    );
+
+    expect(res.found).toBe(true);
+    expect(res.campaign_name).toBe('KubeCon NA 2026');
+    expect(res.hs_utm).toBe('kubecon-na-2026');
+  });
+
+  /**
+   * `found` tracks whether anything SCORED, not whether upstream returned rows.
+   *
+   * The upstream search is fuzzy, so it can return campaigns sharing only a stray token with the
+   * query. Reporting those as found would tell a caller a campaign exists for their event when
+   * none does.
+   *
+   * `found: false` alone does NOT license a create, which an earlier version of this said and
+   * which predates both the confidence gate and `inconclusive`. Rows that came back and were
+   * rejected locally set `inconclusive: true`, and the caller suppresses Create on that -- so
+   * this case is "nothing scored confidently", not "nothing is there" (Copilot). Only a complete
+   * search returning nothing is proven absence.
+   */
+  it('reports not-found when no candidate scored CONFIDENTLY', () => {
+    const res = toUtmLookupResult(payload({ id: '1', name: 'Totally Unrelated', utm: 'x' }), 'KubeCon NA 2026');
+
+    expect(res.found).toBe(false);
+    expect(res.hs_utm).toBeNull();
+    expect(res.all_matches).toEqual([]);
+  });
+
+  it('reports not-found for an empty upstream answer', () => {
+    expect(toUtmLookupResult(payload(), 'KubeCon').found).toBe(false);
+  });
+
+  /**
+   * THE DELIBERATE BEHAVIOUR CHANGE. The legacy path fabricated `${id}-${name}` when HubSpot had
+   * no token, so a tokenless campaign looked tokenised — and a link tagged with that invented
+   * value attributes traffic to a campaign HubSpot cannot report on, because HubSpot never knew
+   * the token.
+   *
+   * A missing token is now null, which the UI contract already models.
+   */
+  it('reports a missing token as null rather than fabricating one', () => {
+    // Capability declared: this is the NEW contract, and the tokenless shape is only offered to a
+    // client that can read it (see the capability-gate suite below).
+    const res = toUtmLookupResult(payload({ id: '112233', name: 'KubeCon NA 2026' }), 'KubeCon NA 2026', true);
+
+    expect(res.found).toBe(true);
+    expect(res.campaign_name).toBe('KubeCon NA 2026');
+    expect(res.hs_utm).toBeNull();
+    // Specifically NOT the legacy fabrication.
+    expect(res.hs_utm).not.toBe('112233-KubeCon NA 2026');
+  });
+
+  /**
+   * `all_matches` declares `hs_utm` as a non-nullable string, so a tokenless campaign cannot be
+   * represented there without inventing the value. It is omitted from that list — but the BEST
+   * match still reports its own null token through the top-level `hs_utm`, so a tokenless winner
+   * is visible rather than silently dropped.
+   */
+  it('omits tokenless campaigns from all_matches while keeping the best match visible', () => {
+    // Capability declared: a tokenless WINNER is the new contract's shape.
+    const res = toUtmLookupResult(
+      payload({ id: '1', name: 'KubeCon NA 2026' }, { id: '2', name: 'KubeCon NA 2026 sponsors', utm: 'sponsors' }),
+      'KubeCon NA 2026',
+      true
+    );
+
+    expect(res.campaign_name).toBe('KubeCon NA 2026');
+    expect(res.hs_utm).toBeNull();
+    expect(res.all_matches).toEqual([{ name: 'KubeCon NA 2026 sponsors', hs_utm: 'sponsors' }]);
+  });
+
+  /**
+   * Upstream order is UNSPECIFIED (campaign-service sends no `sorts`), not relevance — the search is token-based
+   * and carries no ranking. Equal scores must still preserve it: re-ordering would invent a
+   * ranking neither layer has, and this layer knows no reason to prefer either row.
+   */
+  it('preserves upstream order within an equal score band', () => {
+    const res = toUtmLookupResult(payload({ id: '1', name: 'KubeCon alpha', utm: 'a' }, { id: '2', name: 'KubeCon beta', utm: 'b' }), 'KubeCon');
+
+    expect(res.all_matches.map((m) => m.hs_utm)).toEqual(['a', 'b']);
+  });
+});
+
+describe('toUtmCreateResult', () => {
+  it('reports the assigned token', () => {
+    expect(toUtmCreateResult({ id: '99', name: 'KubeCon NA 2027', utm: 'assigned' })).toEqual({
+      created: true,
+      hs_utm: 'assigned',
+      campaign_name: 'KubeCon NA 2027',
+    });
+  });
+
+  // HubSpot assigns the token, but not necessarily synchronously. A created campaign with no
+  // token yet is still created — reporting created:false would tell the caller to retry a write
+  // that already happened, into the connected portal's namespace.
+  it('reports created even when no token came back', () => {
+    const res = toUtmCreateResult({ id: '99', name: 'Tokenless' });
+
+    expect(res.created).toBe(true);
+    expect(res.hs_utm).toBeNull();
+  });
+});
+
+describe('toUtmLookupResult capped', () => {
+  it('refuses to auto-apply from a capped search, even on an exact match', () => {
+    // A capped set is incomplete by definition, so an equal-or-better campaign may sit outside
+    // it. The planning tab applies a `found` token immediately and only consults `inconclusive`
+    // on the not-found path, so returning found:true here would silently pick a possibly-worse
+    // match. The candidates still travel; the operator picks. Same rule as the legacy path.
+    const res = toUtmLookupResult(cappedPayload({ id: '1', name: 'KubeCon NA 2026', utm: 'kubecon-na-2026' }), 'KubeCon NA 2026');
+
+    expect(res.found).toBe(false);
+    expect(res.hs_utm).toBeNull();
+    expect(res.capped).toBe(true);
+    expect(res.inconclusive).toBe(true);
+    // The match is still offered for a human to choose.
+    expect(res.all_matches.map((m) => m.hs_utm)).toContain('kubecon-na-2026');
+  });
+
+  it('reports a scored-out but non-empty result as inconclusive WITHOUT claiming truncation', () => {
+    // Upstream's fuzzy search matched these rows; only the LOCAL scoring rejected them. The
+    // caller acts on not-found by creating a campaign in a shared namespace, and one of these
+    // rows may be exactly the campaign that create would duplicate -- so the result is
+    // inconclusive. But HubSpot returned everything it matched, so `capped` must stay false:
+    // the UI would otherwise state that HubSpot truncated a result it did not truncate, and
+    // send the operator to narrow a term when the remedy is to check the name.
+    const res = toUtmLookupResult(payload({ id: '1', name: 'Totally Unrelated Thing' }), 'KubeCon NA 2026');
+
+    expect(res.found).toBe(false);
+    expect(res.inconclusive).toBe(true);
+    expect(res.capped).toBe(false);
+  });
+
+  it('reports a genuinely empty, complete search as conclusive', () => {
+    // The one case where offering the create is legitimate: nothing matched, and nothing hidden.
+    const res = toUtmLookupResult(payload(), 'KubeCon NA 2026');
+
+    expect(res.found).toBe(false);
+    expect(res.capped).toBe(false);
+    expect(res.inconclusive).toBe(false);
+  });
+
+  it('scores a blank name at zero, however it is spelled', () => {
+    // Asserted on the SCORER directly, now that it is shared. Going through toUtmLookupResult
+    // no longer isolates this: the unambiguous-winner check refuses a blank match too, so the
+    // outer assertion passes with the guard removed and proves nothing. Both call sites depend
+    // on this — every string contains '', so an unguarded containment test scores a blank name
+    // 1 and beats a genuinely unrelated campaign at 0.
+    expect(scoreCampaignName('', 'KubeCon NA 2026')).toBe(0);
+    expect(scoreCampaignName('   ', 'KubeCon NA 2026')).toBe(0);
+    // A real name still scores normally.
+    expect(scoreCampaignName('KubeCon NA 2026', 'KubeCon NA 2026')).toBeGreaterThan(0);
+  });
+
+  it('never lets a blank-named campaign win the match', () => {
+    // Every string contains '', so an unguarded `queryLower.includes(nameLower)` scores a
+    // blank name 1 -- ahead of a genuinely unrelated named campaign, which scores 0. The
+    // winner's UTM is applied to this event, so an unnamed row would attribute this event's
+    // paid traffic to a campaign nobody named. The name is legitimately empty on a
+    // campaign-service hit, so this is reachable rather than defensive.
+    const res = toUtmLookupResult(
+      payload({ id: 'blank', name: '', utm: 'wrong-token' }, { id: 'real', name: 'Cloud Native Rejekts', utm: 'rejekts-token' }),
+      'KubeCon NA 2026'
+    );
+
+    // The blank row must not supply the token. Nothing else matches either, so this is
+    // correctly a no-match: found stays false rather than naming the unnamed campaign.
+    expect(res.hs_utm).not.toBe('wrong-token');
+    expect(res.found).toBe(false);
+  });
+
+  it('refuses to auto-apply when two candidates tie', () => {
+    // "KubeCon Europe 2026" and "KubeCon China 2026" both score 1 against "KubeCon NA 2026" —
+    // one shared word each. scored[0] would be decided by HubSpot's UNSPECIFIED row order, which
+    // carries no relevance information, so applying it silently puts another campaign's token
+    // into this event's links. The links work, so the misattribution is invisible.
+    const res = toUtmLookupResult(
+      payload({ id: 'eu', name: 'KubeCon Europe 2026', utm: 'eu-token' }, { id: 'cn', name: 'KubeCon China 2026', utm: 'cn-token' }),
+      'KubeCon NA 2026'
+    );
+
+    expect(res.found).toBe(false);
+    expect(res.hs_utm).toBeNull();
+    // The candidates survive: the operator picks, rather than the sort picking for them.
+    expect(res.all_matches.map((m) => m.hs_utm).sort()).toEqual(['cn-token', 'eu-token']);
+    // Real candidates exist, so a create offer must not read as a clean "nothing matched".
+    expect(res.inconclusive).toBe(true);
+  });
+
+  it('refuses to auto-apply a lone weak match', () => {
+    // One shared word and nothing else is still a guess, even unopposed.
+    const res = toUtmLookupResult(payload({ id: 'eu', name: 'KubeCon Europe 2026', utm: 'eu-token' }), 'KubeCon NA 2026');
+
+    expect(res.found).toBe(false);
+    expect(res.all_matches).toHaveLength(1);
+  });
+
+  it('refuses to auto-apply a generic CONTAINED name, whose two points are one piece of evidence', () => {
+    // "KubeCon" scores 2 against "KubeCon NA 2026" -- one point for containment, one for a shared
+    // word -- and with no runner-up that cleared the old score>=2 gate. But those are the SAME
+    // evidence counted twice: any contained name necessarily shares a word with the string
+    // containing it. So a generic PARENT campaign's token was applied silently to a specific
+    // event's links, and a misattributed token is invisible because the links still work.
+    const res = toUtmLookupResult(payload({ id: 'generic', name: 'KubeCon', utm: 'generic-token' }), 'KubeCon NA 2026');
+
+    expect(res.found, 'a generic contained name was auto-applied').toBe(false);
+    expect(res.hs_utm).toBeNull();
+    // Still OFFERED -- the operator picks it if it really is the right campaign.
+    expect(res.all_matches).toEqual([{ name: 'KubeCon', hs_utm: 'generic-token' }]);
+  });
+
+  it('ranks a whitespace variant as high as the exact spelling it normalises to', () => {
+    // The GATE normalised whitespace but the SCORE did not, so "KubeCon  NA 2026" (double space)
+    // scored 1 while normalising to an exact match -- and because auto-apply requires the winner
+    // to outscore the runner-up, the one candidate confident enough to apply could rank BELOW
+    // weaker ones and be refused. Two functions deciding the same question must agree.
+    expect(scoreCampaignName('KubeCon  NA 2026', 'KubeCon NA 2026')).toBe(scoreCampaignName('KubeCon NA 2026', 'KubeCon NA 2026'));
+  });
+
+  it('auto-applies an exact match despite case and whitespace differences', () => {
+    // Normalised, not literal: an operator pasting a differently-spaced name should not lose the
+    // one-click path, since neither case nor run-length distinguishes two real campaigns.
+    const res = toUtmLookupResult(payload({ id: 'na', name: 'kubecon  na 2026', utm: 'na-token' }), 'KubeCon NA 2026');
+
+    expect(res.found).toBe(true);
+    expect(res.hs_utm).toBe('na-token');
+  });
+
+  it.each([
+    ['a body with no capped flag', { campaigns: [] }],
+    ['a body with no campaigns array', { capped: false }],
+    ['a non-boolean capped', { campaigns: [], capped: 'no' }],
+    ['an empty object', {}],
+  ])('fails CLOSED on %s rather than reporting proven absence', (_label, body) => {
+    // proxyRequest types this body but does not check it. `{campaigns: []}` with no `capped`
+    // produced capped:undefined -> inconclusive:false -> proven absence, which is precisely what
+    // licenses the non-idempotent Create. Contract drift could then authorize a duplicate
+    // portal-wide campaign that cannot be removed from this UI.
+    const res = toUtmLookupResult(body as never, 'KubeCon NA 2026');
+
+    expect(res.found).toBe(false);
+    expect(res.inconclusive, 'a malformed envelope read as proven absence').toBe(true);
+    expect(res.capped).toBe(true);
+  });
+
+  it('refuses two equally exact rivals, even when their raw scores differ', () => {
+    // Two rivals differing only by trailing space are equally exact, and neither may be applied
+    // over the other: the winner would be decided by HubSpot's creation order, the tie-break this
+    // guard exists to stop.
+    //
+    // HONEST NOTE ON WHAT THIS PINS: the OUTCOME, not the mechanism. Two fixes guarantee it
+    // independently -- scoreCampaignName normalises (so these tie on raw score) and the gate asks
+    // isConfidentMatch of every candidate. Reverting EITHER alone still passes; only reverting
+    // both regresses. The gate change is defence in depth, not the sole thing standing between
+    // here and the bug.
+    const res = toUtmLookupResult(
+      payload({ id: 'a', name: 'KubeCon NA 2026', utm: 'a-token' }, { id: 'b', name: 'KubeCon NA 2026 ', utm: 'b-token' }),
+      'KubeCon NA 2026'
+    );
+
+    expect(res.found, 'auto-applied despite an equally exact rival').toBe(false);
+    expect(res.hs_utm).toBeNull();
+    expect(res.all_matches).toHaveLength(2);
+  });
+
+  it('still auto-applies an unambiguous winner', () => {
+    // The common case must stay one click: an exact name beats a same-token rival outright.
+    const res = toUtmLookupResult(
+      payload({ id: 'eu', name: 'KubeCon Europe 2026', utm: 'eu-token' }, { id: 'na', name: 'KubeCon NA 2026', utm: 'na-token' }),
+      'KubeCon NA 2026'
+    );
+
+    expect(res.found).toBe(true);
+    expect(res.hs_utm).toBe('na-token');
+  });
+});
+
+describe('scoreCampaignName — blank query', () => {
+  it('scores ZERO for a whitespace-only query instead of weak-matching everything', () => {
+    // dealako (#2079): the controller accepts an untrimmed `event_name`, so `queryLower` can be
+    // '' after normalisation -- and `nameLower.includes('')` is true for EVERY campaign. Each one
+    // then scored >= 1 on containment, so a blank query weak-matched the entire portal and could
+    // auto-apply an unrelated campaign's UTM into a brief. Mirror of the blank-NAME guard that
+    // was already there.
+    expect(scoreCampaignName('KubeCon NA 2026', '   ')).toBe(0);
+    expect(scoreCampaignName('Anything At All', '')).toBe(0);
+    // And a real query still scores.
+    expect(scoreCampaignName('KubeCon NA 2026', 'KubeCon NA 2026')).toBeGreaterThan(0);
+  });
+});
+
+describe('toUtmLookupResult — malformed ROWS', () => {
+  it.each([
+    ['a null row', [null]],
+    ['a row with no name', [{ id: '1', utm: 'x' }]],
+    ['a row with no id', [{ name: 'KubeCon NA 2026', utm: 'x' }]],
+  ])('refuses %s instead of throwing', (_label, campaigns) => {
+    // dealako (#2079): the envelope guard proves `campaigns` is an ARRAY; it says nothing about
+    // the elements. `[null]` threw in scoreCampaignName -- a 500 after the envelope had already
+    // fail-closed successfully. Same gap the keyword path had one layer down.
+    const res = toUtmLookupResult({ campaigns, capped: false } as never, 'KubeCon NA 2026');
+
+    expect(res.found).toBe(false);
+    // The whole response is refused: a malformed row could be an equally exact rival.
+    expect(res.inconclusive, 'a response carrying rows was reported as proven absence').toBe(true);
+  });
+
+  it('refuses valid rows alongside a malformed one', () => {
+    // A valid exact row cannot be auto-applied while another unreadable row could be an equally
+    // exact rival.
+    const res = toUtmLookupResult(
+      { campaigns: [null, { id: '2', name: 'KubeCon NA 2026', utm: 'kubecon-na-2026' }], capped: false } as never,
+      'KubeCon NA 2026'
+    );
+
+    expect(res.found).toBe(false);
+    expect(res.hs_utm).toBeNull();
+    expect(res.all_matches).toEqual([{ name: 'KubeCon NA 2026', hs_utm: 'kubecon-na-2026' }]);
+    expect(res.inconclusive).toBe(true);
+  });
+});
+
+describe('toUtmLookupResult — the tokenless-found capability gate', () => {
+  // A campaign that EXISTS but carries no UTM token. The new bundle is told the truth
+  // (`found: true`, null token); the previous bundle branches on `found && hs_utm` and reads
+  // anything else as absence, so telling IT the truth offers Create for a campaign that is
+  // already there -- a duplicate in a portal-wide namespace nobody can delete.
+  //
+  // Reachable on any rolling deploy: the chart brings up a new replica set with no session
+  // affinity, so an old bundle routinely calls a new pod. The feature flag selects the BACKEND,
+  // not the client's parser, so it does not close this.
+  const tokenless = { campaigns: [{ id: '1', name: 'KubeCon NA 2026' }], capped: false } as never;
+
+  it('reports a tokenless winner as found to a client that declares the capability', () => {
+    const res = toUtmLookupResult(tokenless, 'KubeCon NA 2026', true);
+
+    expect(res.found).toBe(true);
+    expect(res.hs_utm).toBeNull();
+    expect(res.campaign_name).toBe('KubeCon NA 2026');
+  });
+
+  it('withholds the tokenless shape from a client that does NOT declare it', () => {
+    const res = toUtmLookupResult(tokenless, 'KubeCon NA 2026', false);
+
+    // Downgraded to a not-found the old bundle CAN read...
+    expect(res.found).toBe(false);
+    expect(res.hs_utm).toBeNull();
+    // ...but never as proven absence, which is what would license the create.
+    expect(res.inconclusive, 'an existing campaign was reported as proven absence to an old bundle').toBe(true);
+  });
+
+  it('defaults to withholding when the capability is not stated at all', () => {
+    // Absence is exactly what an old bundle sends, so the default must be the safe direction.
+    const res = toUtmLookupResult(tokenless, 'KubeCon NA 2026');
+
+    expect(res.found).toBe(false);
+    expect(res.inconclusive).toBe(true);
+  });
+
+  it('does not change a TOKENED winner for either client', () => {
+    // `found: true` with a real token has always meant the same thing to every bundle, so the
+    // gate must not touch it -- otherwise it would suppress ordinary successful lookups.
+    const tokened = { campaigns: [{ id: '1', name: 'KubeCon NA 2026', utm: 'kubecon-na-2026' }], capped: false } as never;
+
+    for (const declares of [true, false]) {
+      const res = toUtmLookupResult(tokened, 'KubeCon NA 2026', declares);
+      expect(res.found, `a tokened winner was withheld with capability=${declares}`).toBe(true);
+      expect(res.hs_utm).toBe('kubecon-na-2026');
+    }
+  });
+});

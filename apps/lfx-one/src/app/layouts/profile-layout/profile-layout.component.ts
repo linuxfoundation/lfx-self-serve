@@ -167,8 +167,8 @@ export class ProfileLayoutComponent {
       const errorCode = params['error'];
       if (typeof errorCode === 'string' && Object.hasOwn(PROFILE_AUTH_ERROR_MESSAGES, errorCode)) {
         const authErrorMessage = PROFILE_AUTH_ERROR_MESSAGES[errorCode];
-        // Clear any stash from the redirect that failed — otherwise it outlives this failed
-        // attempt and gets replayed by the next unrelated Flow C success (see handleProfileAuthReturn).
+        // Clear any stash so it can't be replayed by a later unrelated Flow C success. Unconditional
+        // by design: an identity-link failure shares these codes too, and a stash still here is orphaned.
         if (isPlatformBrowser(this.platformId)) {
           sessionStorage.removeItem(ProfileLayoutComponent.formStateKey);
         }
@@ -364,9 +364,12 @@ export class ProfileLayoutComponent {
   // Strip the Flow C query params (success/error) while staying on the current tab.
   // Navigating relative to this.route would resolve to the parent /profile route and
   // bounce the user to the default tab — so re-navigate to the current path sans query.
+  // Keep the fragment (e.g. #password): router.url serializes as path?query#fragment, so a
+  // naive split('?')[0] would drop it too, breaking deep-link scroll on Flow C return.
   private clearAuthQueryParams(): void {
-    const path = this.router.url.split('?')[0];
-    this.router.navigateByUrl(path, { replaceUrl: true });
+    const [pathAndQuery, fragment] = this.router.url.split('#');
+    const path = pathAndQuery.split('?')[0];
+    this.router.navigateByUrl(fragment ? `${path}#${fragment}` : path, { replaceUrl: true });
   }
 
   // Private init functions

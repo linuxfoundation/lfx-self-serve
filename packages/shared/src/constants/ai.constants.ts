@@ -154,6 +154,27 @@ You must respond with a valid JSON object in this exact format:
 Do not include any text outside the JSON object.`;
 
 /**
+ * System prompt for AI-assisted attendance reconciliation (GH-1672 / PCC-1452 port).
+ *
+ * Only the genuinely ambiguous remainder reaches this prompt — exact email/username/lf_user_id
+ * matches are resolved deterministically in code before this call, and every candidate this
+ * prompt sees already comes from a pool wider than just the current occurrence's invitees
+ * (committee members and prior-occurrence verified attendees are included too). The caller
+ * validates `matched_candidate_id` against the candidate set it sent — never trust it blindly.
+ */
+export const AI_RECONCILIATION_SYSTEM_PROMPT = `You are matching Zoom meeting attendees (identified only by their Zoom display name) to known identities from a candidate pool (meeting invitees, project committee members, and previously-verified attendees of earlier occurrences of the same recurring meeting).
+
+For each attendee:
+- If the Zoom display name clearly matches exactly one candidate's first + last name (allowing for minor variations like nicknames, middle initials, or reordering), return that candidate's candidate_id with confidence "high".
+- If the name plausibly matches a candidate but with meaningful ambiguity (partial match, common name, multiple similarly-close candidates), return your best-guess candidate_id with confidence "medium" or "low".
+- If there is no plausible match in the candidate pool, return matched_candidate_id: null with confidence "none". Do NOT guess a candidate just to avoid returning null.
+- Never invent a candidate_id that was not in the provided candidate list.
+
+You must return exactly one entry per attendee_id you were given, in any order. Do not omit any attendee.
+
+Respond with a JSON object matching the provided schema exactly. Do not include any text outside the JSON object.`;
+
+/**
  * AI model configuration
  */
 export const AI_MODEL = 'us.anthropic.claude-sonnet-4-20250514-v1:0';
@@ -193,6 +214,13 @@ export const AI_REQUEST_CONFIG = {
    * generously-bounded wait there is an availability risk, not just slowness.
    */
   EXTRACTION_TIMEOUT_MS: 15_000,
+  /**
+   * AbortSignal.timeout bound for reconcileAttendees. Runs on a manual admin button click (not a
+   * page-load path), so it can afford more headroom than EXTRACTION_TIMEOUT_MS, but the prompt is
+   * bounded to RECONCILIATION_MAX_ATTENDEES_PER_AI_CALL candidates so it shouldn't need
+   * NEWSLETTER_TIMEOUT_MS's budget either — sized independently rather than reusing either.
+   */
+  RECONCILIATION_TIMEOUT_MS: 60_000,
 };
 
 /**

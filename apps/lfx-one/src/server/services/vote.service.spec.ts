@@ -279,6 +279,18 @@ describe('VoteService upstream path encoding', () => {
       expect(result.data[0]).not.toHaveProperty('project_slug');
       expect(result.data[0]).not.toHaveProperty('is_foundation');
     });
+
+    it('skips project enrichment entirely when includeProject is false', async () => {
+      proxyRequest.mockResolvedValue({ resources: [{ data: indexRow }], page_token: undefined });
+
+      const result = await service.getVotes(req, {}, { includeProject: false });
+
+      expect(getProjectsByIds).not.toHaveBeenCalled();
+      expect(computeIsFoundation).not.toHaveBeenCalled();
+      expect(result.data[0]).not.toHaveProperty('project_slug');
+      expect(result.data[0]).not.toHaveProperty('is_foundation');
+      expect(result.data[0]).not.toHaveProperty('parent_project_uid');
+    });
   });
 
   describe('getMyVotes', () => {

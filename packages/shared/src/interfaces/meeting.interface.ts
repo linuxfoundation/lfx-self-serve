@@ -143,8 +143,8 @@ export interface MeetingCommittee {
  * `v1_meeting` projection. Used to display the meeting organizer's name.
  */
 export interface MeetingUserInfo {
-  /** Display name of the user */
-  name: string;
+  /** Display name of the user — omitted when the upstream audit stamper falls back to a degraded profile */
+  name?: string;
   /** LFID username of the user */
   username: string;
   /** Email address of the user */
@@ -976,6 +976,249 @@ export interface EnrichedPastMeetingParticipant extends PastMeetingParticipant {
   committee_voting_status?: string | null;
   /** Committee category (from committee member data) */
   committee_category?: string | null;
+}
+
+/**
+ * Request payload sent to the ITX past-meeting participant create endpoint
+ * @description POST /itx/past_meetings/{past_meeting_id}/participants — creates an invitee
+ *   record (when `is_invited` is true), an attendee record (when `is_attended` is true), or both
+ */
+export interface ITXCreatePastMeetingParticipantRequest {
+  /** Email address */
+  email?: string;
+  /** First name */
+  first_name?: string;
+  /** Last name */
+  last_name?: string;
+  /** LF SSO username */
+  username?: string;
+  /** LF user ID (Salesforce ID) */
+  lf_user_id?: string;
+  /** Organization name */
+  org_name?: string;
+  /** Job title */
+  job_title?: string;
+  /** Whether org has LF membership */
+  org_is_member?: boolean;
+  /** Whether org has project membership */
+  org_is_project_member?: boolean;
+  /** Associated committee UUID */
+  committee_id?: string;
+  /** Role within committee */
+  committee_role?: string;
+  /** Voting status in committee */
+  committee_voting_status?: string;
+  /** URL to profile picture */
+  avatar_url?: string;
+  /** Whether the participant was invited/registered — creates an invitee record if true */
+  is_invited?: boolean;
+  /** Whether the participant attended — creates an attendee record if true */
+  is_attended?: boolean;
+  /** Whether the attendee has been verified (attendee only) */
+  is_verified?: boolean;
+  /** Whether the attendee is marked as unknown (attendee only) */
+  is_unknown?: boolean;
+  /** Whether the attendee record was created via AI reconciliation (attendee only) */
+  is_ai_reconciled?: boolean;
+  /** Whether the attendee name was auto-matched to a registrant's email (attendee only) */
+  is_auto_matched?: boolean;
+  /** Zoom display name of the attendee (attendee only) */
+  zoom_user_name?: string;
+  /** Full name of the invitee the attendee was matched to (attendee only) */
+  mapped_invitee_name?: string;
+  /** Array of session objects with join/leave times (attendee only) */
+  sessions?: ITXParticipantSession[];
+}
+
+/**
+ * Request payload sent to the ITX past-meeting participant update endpoint
+ * @description PUT /itx/past_meetings/{past_meeting_id}/participants/{participant_id} — updates
+ *   invitee and/or attendee records as needed; setting `is_invited`/`is_attended` to false
+ *   deletes the corresponding record
+ */
+export interface ITXUpdatePastMeetingParticipantRequest {
+  /** Optional invitee ID to use directly (avoids ID mapping lookup) */
+  invitee_id?: string;
+  /** Optional attendee ID to use directly (avoids ID mapping lookup) */
+  attendee_id?: string;
+  /** Whether the participant is invited (if false, the invitee record is deleted) */
+  is_invited?: boolean;
+  /** Whether the participant attended (if false, the attendee record is deleted) */
+  is_attended?: boolean;
+  /** Email address (used when creating a missing invitee/attendee record) */
+  email?: string;
+  /** LF SSO username (used when creating a missing invitee/attendee record) */
+  username?: string;
+  /** LF user ID (used when creating a missing invitee/attendee record) */
+  lf_user_id?: string;
+  /** First name (required for invitee updates) */
+  first_name?: string;
+  /** Last name (required for invitee updates) */
+  last_name?: string;
+  /** Organization name */
+  org_name?: string;
+  /** Job title */
+  job_title?: string;
+  /** Role within committee */
+  committee_role?: string;
+  /** Voting status in committee */
+  committee_voting_status?: string;
+  /** Whether the attendee has been verified (attendee only) */
+  is_verified?: boolean;
+  /** Whether the attendee record was updated via AI reconciliation (attendee only) */
+  is_ai_reconciled?: boolean;
+  /** Whether the attendee name was auto-matched to a registrant's email (attendee only) */
+  is_auto_matched?: boolean;
+  /** Zoom display name of the attendee (attendee only) */
+  zoom_user_name?: string;
+  /** Full name of the invitee the attendee was matched to (attendee only) */
+  mapped_invitee_name?: string;
+}
+
+/**
+ * A single Zoom join/leave interval for an attendee, as returned by the ITX past-meeting
+ * participant write endpoints
+ */
+export interface ITXParticipantSession {
+  /** Zoom participant UUID */
+  participant_uuid?: string;
+  /** Session join timestamp (RFC3339) */
+  join_time?: string;
+  /** Session leave timestamp (RFC3339) */
+  leave_time?: string;
+  /** Reason for leaving */
+  leave_reason?: string;
+}
+
+/**
+ * Response shape from the ITX past-meeting participant create/update endpoints
+ * @description Unified invitee/attendee view returned by the write endpoints — distinct from
+ *   {@link PastMeetingParticipant} (the read-model projection indexed by the query service),
+ *   most notably using `id` rather than `uid` as the primary identifier
+ */
+export interface ITXPastMeetingParticipantResult {
+  /** Participant identifier (invitee_id or attendee_id or both) */
+  id: string;
+  /** Invitee record UUID (if is_invited is true) */
+  invitee_id?: string;
+  /** Attendee record UUID (if is_attended is true) */
+  attendee_id?: string;
+  /** Past meeting ID (meeting_id-occurrence_id) */
+  past_meeting_id: string;
+  /** Meeting ID */
+  meeting_id: string;
+  /** Primary email address */
+  email?: string;
+  /** First name */
+  first_name?: string;
+  /** Last name */
+  last_name?: string;
+  /** LF SSO username */
+  username?: string;
+  /** LF user ID (Salesforce ID) */
+  lf_user_id?: string;
+  /** Organization name */
+  org_name?: string;
+  /** Job title */
+  job_title?: string;
+  /** Whether org has LF membership */
+  org_is_member?: boolean;
+  /** Whether org has project membership */
+  org_is_project_member?: boolean;
+  /** URL to profile picture */
+  avatar_url?: string;
+  /** Committee UID (if the participant is a committee member) */
+  committee_id?: string;
+  /** Committee role (e.g. "Member", "Chair") */
+  committee_role?: string;
+  /** Whether the participant is a committee member */
+  is_committee_member?: boolean;
+  /** Committee voting status */
+  committee_voting_status?: string;
+  /** Whether the participant was invited/registered to this past meeting */
+  is_invited?: boolean;
+  /** Whether the participant attended this past meeting */
+  is_attended?: boolean;
+  /** Whether the attendee has been verified (attendee only) */
+  is_verified?: boolean;
+  /** Whether the attendee is marked as unknown (attendee only) */
+  is_unknown?: boolean;
+  /** Whether the attendee record was updated via AI reconciliation (attendee only) */
+  is_ai_reconciled?: boolean;
+  /** Whether the attendee name was auto-matched to a registrant's email (attendee only) */
+  is_auto_matched?: boolean;
+  /** Zoom display name of the attendee (attendee only) */
+  zoom_user_name?: string;
+  /** Full name of the invitee the attendee was matched to (attendee only) */
+  mapped_invitee_name?: string;
+  /** Zoom join/leave sessions for this attendee (attendee only) */
+  sessions?: ITXParticipantSession[];
+  /** Average attendance percentage across the series (attendee only) */
+  average_attendance?: number;
+  /** Creation timestamp (RFC3339) */
+  created_at?: string;
+  /** Creator user info */
+  created_by?: MeetingUserInfo;
+  /** Last modified timestamp (RFC3339) */
+  modified_at?: string;
+  /** Last modifier user info */
+  modified_by?: MeetingUserInfo;
+}
+
+/**
+ * How confidently an attendance-reconciliation match was made.
+ * `high` may be auto-applied; `medium`/`low`/`none` are always queued for admin review —
+ * `none` must never be silently auto-tagged as unknown (see GH-1672, PCC-1452 root cause).
+ */
+export type AttendanceReconciliationConfidence = 'high' | 'medium' | 'low' | 'none';
+
+/** Which layer of the candidate pool a reconciliation candidate came from. */
+export type AttendanceReconciliationCandidateSource = 'invitee' | 'committee_member' | 'prior_attendee';
+
+/**
+ * A known-identity candidate an unverified attendee can be matched against. Assembled from
+ * three sources (occurrence invitees, project committee members, previously-verified attendees
+ * of prior occurrences in the same series) — a single-source pool was PCC's root cause for its
+ * high "unknown" rate (PCC-1452): an attendee who joined without being an invitee on that exact
+ * occurrence had zero candidates and was unmatchable by construction.
+ */
+export interface AttendanceReconciliationCandidate {
+  /** Stable identifier for this candidate within one reconciliation run (not a persisted UID) */
+  candidate_id: string;
+  source: AttendanceReconciliationCandidateSource;
+  email?: string;
+  username?: string;
+  lf_user_id?: string;
+  first_name?: string;
+  last_name?: string;
+  org_name?: string;
+}
+
+/** Outcome of attempting to match one unverified attendee against the candidate pool. */
+export interface AttendanceReconciliationResult {
+  /** The attendee record's `id` (attendee_id) from ITXPastMeetingParticipantResult / participant uid */
+  attendee_id: string;
+  zoom_user_name?: string;
+  confidence: AttendanceReconciliationConfidence;
+  method: 'deterministic' | 'ai';
+  matched_candidate?: AttendanceReconciliationCandidate;
+  /** True when this match was written back via updatePastMeetingParticipant */
+  auto_applied: boolean;
+}
+
+/** Response from POST /api/past-meetings/:uid/reconcile. */
+export interface ReconcilePastMeetingParticipantsResponse {
+  results: AttendanceReconciliationResult[];
+  candidate_pool_size: number;
+  auto_applied_count: number;
+  needs_review_count: number;
+  /**
+   * True when one or more candidate-pool sources (committee members, a prior occurrence's
+   * participants) failed to fetch and were silently dropped rather than included. High-confidence
+   * auto-apply is disabled for a degraded pool — a missing source could hide the true match for a
+   * candidate that would otherwise auto-apply incorrectly, so results are queued for review instead.
+   */
+  pool_degraded: boolean;
 }
 
 /** Attendance filter for the past-meeting participant list. */

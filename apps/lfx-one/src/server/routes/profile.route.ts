@@ -38,6 +38,12 @@ function handlePictureUploadParseError(err: unknown, req: Request, _res: Respons
  * Write and Flow C (Auth0 Management API) routes are guarded by `blockDuringImpersonation`:
  * profile mutations act on the real user's account (via the impersonator's management token), so
  * they must be rejected while impersonating. Profile viewing during impersonation is read-only.
+ *
+ * Flow C has a root-level twin (`/passwordless/callback` in server.ts) that Auth0 actually
+ * redirects to; social-link's callback lives only at `/social/callback` in server.ts, with no
+ * twin in this router. Both are redirect-only handlers outside this router, so they carry the
+ * same guarantee via an in-handler check in ProfileController (`blockCallbackDuringImpersonation`)
+ * rather than this middleware.
  */
 
 // Flow C: Profile auth routes for Auth0 Management API token

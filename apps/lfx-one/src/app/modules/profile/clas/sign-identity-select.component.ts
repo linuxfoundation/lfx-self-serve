@@ -5,12 +5,36 @@ import { ChangeDetectionStrategy, Component, computed, inject, Signal, signal } 
 import { takeUntilDestroyed } from '@angular/core/rxjs-interop';
 import { FormControl, FormGroup, ReactiveFormsModule } from '@angular/forms';
 import { GERRIT_IDENTITY_VALUE, SIGN_IDENTITY_COPY, SIGN_IDENTITY_PLATFORM_LABELS } from '@lfx-one/shared/constants';
-import type { GithubAccountChoice, MyClaAgreement, SignIdentityDialogData, SignIdentitySelectResult } from '@lfx-one/shared/interfaces';
-import { alreadySignedAgreementForIdentity, alreadySignedIdentityTooltip } from '@lfx-one/shared/utils';
+import type {
+  ClaGroupEnablement,
+  ClaKind,
+  GithubAccountChoice,
+  MyClaAgreement,
+  SignIdentityDialogData,
+  SignIdentityRef,
+  SignIdentitySelectResult,
+} from '@lfx-one/shared/interfaces';
+import { alreadySignedAgreementForIdentity, alreadySignedIdentityTooltip, heldClaKindsForIdentity } from '@lfx-one/shared/utils';
 import { DynamicDialogConfig, DynamicDialogRef } from 'primeng/dynamicdialog';
 
 import { ButtonComponent } from '@components/button/button.component';
 import { SelectableCardComponent } from '@components/selectable-card/selectable-card.component';
+
+/**
+ * The agreement that blocks a card, carrying the types to name in the reason.
+ *
+ * The kinds ride along rather than being re-derived at the tooltip, because a card blocked for
+ * holding both types has to name both, and the blocking agreement is one record — reading the
+ * kind off it would leave whichever happened to be newest standing for the pair.
+ *
+ * A local intersection rather than a `@lfx-one/shared` interface: this is the component's own
+ * view model, consumed by nothing else, so it is not part of any contract between the tiers. It
+ * is also the one form both repo rules allow — CLAUDE.md prohibits a local `interface Foo {}`
+ * inside `apps/lfx-one/`, while ESLint's `@typescript-eslint/consistent-type-definitions`
+ * rewrites a plain `type X = { … }` back into an interface on `--fix`. Same standoff as
+ * `PlatformResultRow` in the campaigns implementation tab.
+ */
+type IdentityBlock = MyClaAgreement & { heldKinds: readonly ClaKind[] };
 
 /**
  * "Which identity are you signing as?" step, shown between the CLA-group picker and the Console
@@ -60,10 +84,12 @@ import { SelectableCardComponent } from '@components/selectable-card/selectable-
  *
  * ## Identities that have already signed
  *
- * An identity already on an agreement for this CLA group is grayed out with the reason (#1914).
- * This is the step that refuses, rather than the CLA-group picker before it: a contributor with
- * two linked accounts who signed under one of them can still sign under the other, so refusing
- * the whole group would deny a signature they are entitled to give. The group is only tagged.
+ * An identity that already holds every contract type the CLA group enables is grayed out with
+ * the reason (#1914). This is the step that refuses, rather than the CLA-group picker before
+ * it: a contributor with two linked accounts who signed under one of them can still sign under
+ * the other, and a contributor who holds only an ICLA on a group that also offers an ECLA can
+ * still sign the ECLA under the same identity. Refusing the whole group would deny a signature
+ * they are entitled to give. The group is only tagged.
  *
  * Refusing here is a courtesy, not a guarantee — EasyCLA reuses an existing signature rather
  * than duplicating it, so what this prevents is a contributor being walked through a ceremony
@@ -98,8 +124,8 @@ export class SignIdentitySelectComponent {
   protected readonly copy = SIGN_IDENTITY_COPY[this.config.data?.variant ?? 'github'];
 
   /**
-   * Which of the offered identities already hold a CLA for this group, resolved in one pass
-   * before any copy is written. The refusal message names another identity only when one is
+   * Which of the offered identities have no enabled contract type left to sign, resolved in one
+   * pass before any copy is written. The refusal message names another identity only when one is
    * genuinely selectable, so how many are left has to be known before the tooltips exist — and
    * resolving it once keeps the two cards' verdicts from coming from separate evaluations.
    */
@@ -122,8 +148,8 @@ export class SignIdentitySelectComponent {
   protected readonly gerritLabel = signal<string | null>(this.initGerritLabel());
 
   /**
-   * Why the Gerrit card cannot sign, when the contributor already signed this group under their
-   * LF identity (#1914). Undefined ⇒ selectable.
+   * Why the Gerrit card cannot sign, when the contributor already holds every enabled type for
+   * this group under their LF identity (#1914). Undefined ⇒ selectable.
    */
   protected readonly gerritAlreadySignedTooltip = signal<string | undefined>(this.initGerritAlreadySignedTooltip());
 
@@ -158,7 +184,7 @@ export class SignIdentitySelectComponent {
     this.ref.close({ linkAccounts: true } satisfies SignIdentitySelectResult);
   }
 
-  /** Whether the chosen card is one the contributor has already signed this group with. */
+  /** Whether the chosen card is one with no enabled contract type left to sign. */
   private isAlreadySigned(identityValue: string): boolean {
     if (identityValue === GERRIT_IDENTITY_VALUE) return !!this.gerritAlreadySignedTooltip();
     return this.accounts().some((account) => account.githubId === identityValue && !!account.alreadySignedTooltip);
@@ -169,23 +195,51 @@ export class SignIdentitySelectComponent {
    * offered identity is still selectable. A Gerrit card counts as offered on the same test
    * `initGerritLabel` uses, so the two cannot disagree about whether it is on the step at all.
    */
-  private resolveAlreadySigned(): { byGithubId: Map<string, MyClaAgreement>; gerrit: MyClaAgreement | undefined; anotherSelectable: boolean } {
+  private resolveAlreadySigned(): { byGithubId: Map<string, IdentityBlock>; gerrit: IdentityBlock | undefined; anotherSelectable: boolean } {
     const agreements = this.config.data?.claGroupAgreements ?? [];
     const accounts = this.config.data?.accounts ?? [];
     const gerritOffered = !!this.config.data?.gerritUsername?.trim();
+    const enabled: ClaGroupEnablement = {
+      iclaEnabled: this.config.data?.iclaEnabled === true,
+      cclaEnabled: this.config.data?.cclaEnabled === true,
+    };
 
     // Every handle on the step, so the matcher can tell a recorded account number from a handle
     // that happens to be all digits.
     const offeredHandles = accounts.map((account) => account.githubUsername);
 
-    const byGithubId = new Map<string, MyClaAgreement>();
+    const enabledKinds: readonly ClaKind[] = [...(enabled.iclaEnabled ? (['ICLA'] as const) : []), ...(enabled.cclaEnabled ? (['ECLA'] as const) : [])];
+
+    /**
+     * The gate says whether the card is blocked; these say what to call it.
+     *
+     * Drawn from the gate's own matcher rather than from the enablement flags, so the reason
+     * describes this identity's agreements instead of standing on the gate's rule holding. Then
+     * narrowed to the types the group still offers, because those are the ones the block is owed
+     * to — an identity holding a type the group has since dropped is not blocked by that type,
+     * and naming it would explain the graying with an agreement that has nothing to do with it.
+     *
+     * The narrowing is dropped when the group offers nothing, which is the gate's kind-blind
+     * fallback: there the match itself is the whole reason, and an empty list would leave the
+     * tooltip naming a type by default rather than the one actually held.
+     */
+    const blockFor = (identity: SignIdentityRef): IdentityBlock | undefined => {
+      const agreement = alreadySignedAgreementForIdentity(agreements, identity, offeredHandles, enabled);
+      if (!agreement) return undefined;
+
+      const held = heldClaKindsForIdentity(agreements, identity, offeredHandles);
+      const offered = held.filter((kind) => enabledKinds.includes(kind));
+
+      return { ...agreement, heldKinds: offered.length > 0 ? offered : held };
+    };
+
+    const byGithubId = new Map<string, IdentityBlock>();
     for (const account of accounts) {
-      const identity = { platform: 'github', username: account.githubUsername, githubId: account.githubId } as const;
-      const held = alreadySignedAgreementForIdentity(agreements, identity, offeredHandles);
+      const held = blockFor({ platform: 'github', username: account.githubUsername, githubId: account.githubId });
       if (held) byGithubId.set(account.githubId, held);
     }
 
-    const gerrit = gerritOffered ? alreadySignedAgreementForIdentity(agreements, { platform: 'gerrit' }, offeredHandles) : undefined;
+    const gerrit = gerritOffered ? blockFor({ platform: 'gerrit' }) : undefined;
     const selectable = accounts.filter((account) => !byGithubId.has(account.githubId)).length + (gerritOffered && !gerrit ? 1 : 0);
 
     return { byGithubId, gerrit, anotherSelectable: selectable > 0 };
@@ -198,7 +252,7 @@ export class SignIdentitySelectComponent {
       return {
         ...account,
         label: account.githubUsername ? this.withPlatform(account.githubUsername, SIGN_IDENTITY_PLATFORM_LABELS.github) : `GitHub account ${account.githubId}`,
-        ...(held ? { alreadySignedTooltip: alreadySignedIdentityTooltip(held, this.alreadySigned.anotherSelectable) } : {}),
+        ...(held ? { alreadySignedTooltip: this.identityTooltip(held) } : {}),
       };
     });
   }
@@ -223,7 +277,11 @@ export class SignIdentitySelectComponent {
     if (!this.gerritLabel()) return undefined;
 
     const held = this.alreadySigned.gerrit;
-    return held ? alreadySignedIdentityTooltip(held, this.alreadySigned.anotherSelectable) : undefined;
+    return held ? this.identityTooltip(held) : undefined;
+  }
+
+  private identityTooltip(held: IdentityBlock): string {
+    return alreadySignedIdentityTooltip(held, this.alreadySigned.anotherSelectable, held.heldKinds);
   }
 
   /** Suffixes the platform on a mixed list only; a single-source list needs no disambiguation. */

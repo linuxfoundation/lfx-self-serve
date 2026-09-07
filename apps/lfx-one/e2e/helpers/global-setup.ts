@@ -15,16 +15,54 @@ try {
   }
 }
 
+/**
+ * Write a storageState file with no cookies or origins.
+ *
+ * Playwright accepts this and simply starts every context unauthenticated -- which is exactly
+ * the state the skip guards then detect and report properly.
+ */
+async function writeEmptyStorageState(): Promise<void> {
+  const dir = 'playwright/.auth';
+  await fs.promises.mkdir(dir, { recursive: true });
+  await fs.promises.writeFile(path.join(dir, 'user.json'), JSON.stringify({ cookies: [], origins: [] }), 'utf8');
+}
+
 async function globalSetup(config: FullConfig) {
   const credentials = {
     username: process.env.TEST_USERNAME || '',
     password: process.env.TEST_PASSWORD || '',
   };
 
+  // HALF a credential pair is a FAULT, not a choice to skip.
+  //
+  // The skip path below is reached on `||`, so setting only TEST_USERNAME (a typo'd secret name,
+  // an unset half in CI) took it: every authenticated spec skipped and the run reported green
+  // having authenticated nothing. That is the same outcome the catch arm below refuses for
+  // invalid credentials, and for the same reason -- absent credentials are a deliberate choice,
+  // anything else is a fault, and a fault must not be reportable as a pass (Copilot).
+  //
+  // Checked BEFORE the skip so the partial case cannot fall into it.
+  if (Boolean(credentials.username) !== Boolean(credentials.password)) {
+    const supplied = credentials.username ? 'TEST_USERNAME' : 'TEST_PASSWORD';
+    const missing = credentials.username ? 'TEST_PASSWORD' : 'TEST_USERNAME';
+    throw new Error(
+      `${supplied} is set but ${missing} is not. Set both to authenticate, or neither to skip the ` +
+        'authenticated specs deliberately -- a half-configured pair would otherwise skip them and report a green run.'
+    );
+  }
+
   // Skip authentication if no credentials are provided
   if (!credentials.username || !credentials.password) {
-    console.log('⚠️  No test credentials provided. Tests requiring authentication will be skipped.');
-    console.log('   Set TEST_USERNAME and TEST_PASSWORD environment variables to enable authenticated tests.');
+    console.log('⚠️  No test credentials provided.');
+    console.log('   Authenticated specs will SKIP. Public specs continue to run anonymously.');
+    console.log('   Set TEST_USERNAME and TEST_PASSWORD to authenticate.');
+    // An EMPTY state file is still written. Every project declares
+    // `storageState: 'playwright/.auth/user.json'`, which Playwright reads while constructing
+    // the `page` fixture -- so returning without it fails the fixture BEFORE any test body runs,
+    // and skipWhenAuthMissing() (which needs `page`) can never fire. On a clean checkout the
+    // whole suite ERRORED instead of skipping, naming a missing file rather than the missing
+    // credentials that caused it.
+    await writeEmptyStorageState();
     return;
   }
 
@@ -55,7 +93,25 @@ async function globalSetup(config: FullConfig) {
     console.log('✅ Authentication successful. State saved.');
   } catch (error) {
     console.error('❌ Authentication failed:', error);
-    console.log('   Tests requiring authentication will be skipped.');
+    // NOT "will be skipped": the guards key on the credential ENV VARS being absent, and they
+    // are present here -- authentication is what failed. Those specs will therefore run
+    // unauthenticated and fail on their own assertions, so the message must not imply the run
+    // is clean.
+    console.log('   Credentials were supplied but authentication FAILED. Fix them, or unset');
+    console.log('   TEST_USERNAME / TEST_PASSWORD to skip the authenticated specs deliberately.');
+    // FAIL THE RUN. An earlier version wrote an empty state here and returned, on the reasoning
+    // that the missing-credentials path does the same -- but the two are not the same situation,
+    // and my own comment on this branch said the specs would "RUN and fail". They do not.
+    //
+    // `skipWhenAuthMissing` skips on LANDING AT AUTH0, which is exactly where an empty storage
+    // state puts them. So a broken credential produced a green, fully-skipped suite, under a skip
+    // message blaming credentials that were in fact supplied (Copilot). CI would report success
+    // for a run that authenticated nothing.
+    //
+    // Absent credentials are a deliberate choice to skip; failed credentials are a fault, and a
+    // fault must not be reportable as a pass. Rethrowing fails global setup, which fails the run
+    // with the real cause attached.
+    throw error;
   } finally {
     await browser.close();
   }

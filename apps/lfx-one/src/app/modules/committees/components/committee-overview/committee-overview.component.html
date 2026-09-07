@@ -200,7 +200,7 @@
           }
         </div>
 
-        @if (weeklyBriefEnabled() && canEdit()) {
+        @if (weeklyBriefEnabled() && engagementAccessible()) {
           <lfx-weekly-brief-card
             [committee]="committee()"
             [canEdit]="canEdit()"

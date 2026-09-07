@@ -1,11 +1,17 @@
 // Copyright The Linux Foundation and each contributor to LFX.
 // SPDX-License-Identifier: MIT
 
-import { BrowserContext, Page } from '@playwright/test';
+import { BrowserContext, Page, test } from '@playwright/test';
 
 export interface AuthCredentials {
   username: string;
   password: string;
+}
+
+export function skipWhenAuthMissing(): void {
+  if (!process.env.TEST_USERNAME || !process.env.TEST_PASSWORD) {
+    test.skip(true, 'TEST_USERNAME and TEST_PASSWORD are required');
+  }
 }
 
 export class AuthHelper {

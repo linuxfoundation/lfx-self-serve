@@ -103,6 +103,21 @@ export interface MyClaAgreement {
   signedAs?: string;
   status: ClaStatus;
   statusReason?: ClaStatusReason;
+  /**
+   * Producer `invalidatedAt` — stored invalidation instant. Omitted when the
+   * producer sent none (legacy rows, or never invalidated). Empty after trim is
+   * treated as omitted. Independent of `status`: a revoked ECLA can still carry
+   * this date, because EasyCLA copies it before the sanctions override. The
+   * Invalidated status note is `{Label} · {date}` only when this parses; a
+   * wrong date is worse than none. Revoked notes read `flaggedAt` instead.
+   */
+  invalidatedAt?: string;
+  /**
+   * Producer `flaggedAt` — employer's stored sanctioned_date. Omitted when the
+   * producer sent none. Empty after trim is treated as omitted. Feeds the
+   * Revoked date note the same way `invalidatedAt` feeds Invalidated.
+   */
+  flaggedAt?: string;
   /** Signed document version, when exposed upstream (display only). */
   documentVersion?: string;
   /** True only for ICLA — ECLAs have no signed PDF and never offer download. */
@@ -167,12 +182,15 @@ export interface ClaGroupOrg {
 /**
  * A CLA Group the contributor can choose to sign against (Sign CLA hand-off, #1251).
  *
- * The hand-off needs `claGroupId`, plus `iclaEnabled` / `cclaEnabled` on the Gerrit route, where
- * they decide the contract type and whether the contributor is asked for it (#2066). Every other
- * field is here so the picker can show which group this is and why it matched. Consumers MUST
- * ignore unknown fields rather than validate exhaustively, so the search can keep enriching this
- * without touching the hand-off — but the enablement flags are not that kind of field: dropping
- * them in a mapper reinstates #2066's silent default rather than degrading the display.
+ * The hand-off needs `claGroupId`, `organizations` to pick the GitHub / Gerrit / GitLab route,
+ * plus `iclaEnabled` / `cclaEnabled` on the Gerrit route, where they decide the contract type and
+ * whether the contributor is asked for it (#2066). Every other field is here so the picker can
+ * show which group this is and why it matched. Consumers MUST ignore unknown fields rather than
+ * validate exhaustively, so the search can keep enriching this without touching the hand-off —
+ * but those three are not that kind of field. When both enablement flags are absent, that reads
+ * as both disabled and resolves to `none`, so a mapper that drops them makes every Gerrit
+ * hand-off fail with "Could not start signing" rather than degrading the display. That is the
+ * intended failure: #2066 was a wrong agreement signed silently, and stopping is the safer end.
  *
  * Both display names are optional because the producer omits each independently: `projectName`
  * when the group maps to several projects with no foundation marker, `claGroupName` when the
@@ -199,11 +217,25 @@ export interface ClaGroupOption {
 }
 
 /**
+ * The contract types a CLA group offers, resolved to a definite answer per type.
+ *
+ * `ClaGroupOption` leaves both flags optional because the producer omits them for a group whose
+ * record it could not resolve. Anything reading them to decide something has to settle that
+ * first, so this is the settled form: absent has already been read as disabled.
+ */
+export interface ClaGroupEnablement {
+  iclaEnabled: boolean;
+  cclaEnabled: boolean;
+}
+
+/**
  * Response for `GET /api/me/clas/sign-options?q=` — mirrors the producer's `cla-search-list`
  * (#1250) rather than inventing a third shape.
  *
  * Not a bare array: `truncated` describes the result *set*, so it cannot ride inside one of
- * the results. The hand-off still consumes only the selected option's `claGroupId`.
+ * the results. What the hand-off consumes from the selected option is described on
+ * `ClaGroupOption` — it is no longer `claGroupId` alone, since the Gerrit route also reads the
+ * enablement flags.
  */
 export interface ClaGroupSearchResponse {
   /** Echo of the term actually searched (trimmed). */
@@ -325,11 +357,15 @@ export interface SignIdentityDialogData {
   gerritUsername?: string;
   /**
    * What the contributor already holds for the CLA group they picked, so the step can gray out
-   * the identity that signed it (#1914). This is where the already-signed block lives: one
-   * contributor can hold several identities, so the group itself stays selectable and only the
-   * identity already on an agreement is refused.
+   * an identity that has no enabled contract type left to sign (#1914). This is where the
+   * already-signed block lives: one contributor can hold several identities, so the group itself
+   * stays selectable and only an identity that has already signed every enabled type is refused.
    */
   claGroupAgreements?: MyClaAgreement[];
+  /** Whether the chosen group accepts an ICLA — used with `cclaEnabled` by the already-signed gate. */
+  iclaEnabled?: boolean;
+  /** Whether the chosen group accepts a CCLA — used with `iclaEnabled` by the already-signed gate. */
+  cclaEnabled?: boolean;
 }
 
 /**
@@ -348,10 +384,22 @@ export type SignIdentitySelectResult = { kind: 'github'; githubId: string } | { 
 export type GerritContractType = 'individual' | 'corporate';
 
 /**
- * What the contract-type step closes with, or `null` for a dismissal (#2066).
+ * What the contract-type step is opened with (#2066).
  *
- * The step takes no input data: it opens only for a group with both types enabled, so there is
- * nothing about the group left for it to branch on.
+ * The step opens only for a group with both types enabled, so nothing about the *group* is left
+ * for it to branch on. What it does need is what the identity confirmed a step earlier already
+ * holds, so the type they cannot usefully sign again is offered as held rather than as a choice.
+ */
+export interface SignContractTypeDialogData {
+  /**
+   * Types this identity already holds for the group. At most one in practice: an identity holding
+   * both is grayed at the identity step, so it never reaches here.
+   */
+  heldKinds: readonly ClaKind[];
+}
+
+/**
+ * What the contract-type step closes with, or `null` for a dismissal (#2066).
  */
 export interface SignContractTypeSelectResult {
   contractType: GerritContractType;
@@ -517,4 +565,16 @@ export interface ClaRow {
   menuItems: ClaRowMenuItem[];
   /** False ⇒ render no ⋮ trigger at all, rather than one that opens an empty menu. */
   hasActions: boolean;
+}
+
+/**
+ * Response of `GET /api/orgs/:orgUid/lens/cla-groups` — the Organization Lens EasyCLA list.
+ *
+ * `orgUid` echoes the grant-checked path parameter rather than anything the caller sent in a
+ * body or query, so the client can key a cache on the org the server actually served.
+ * `claGroups` is empty until the BE-1 wiring (#1978) lands.
+ */
+export interface OrgClaGroupList {
+  orgUid: string;
+  claGroups: [];
 }

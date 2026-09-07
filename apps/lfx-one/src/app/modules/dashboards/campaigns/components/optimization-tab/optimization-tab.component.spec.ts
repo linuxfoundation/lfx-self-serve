@@ -1846,3 +1846,477 @@ describe('OptimizationTabComponent — pause/resume (LFXV2-3224)', () => {
     expect(fixture.nativeElement.querySelector('[data-testid="optimization-campaign-toggle-c-2"]').disabled).toBe(true);
   });
 });
+
+/**
+ * The wasted-keyword all-clear, and whether it is entitled to say "all".
+ *
+ * "All keywords with spend are generating conversions" is a claim about EVERY keyword. Upstream
+ * caps the keyword set, so over a truncated response the omitted rows can carry exactly the
+ * waste the banner says is absent — the same class as a capped subtotal rendered as a total,
+ * reached from the other direction.
+ */
+describe('OptimizationTabComponent — wasted-keyword all-clear completeness', () => {
+  let fixture: ComponentFixture<OptimizationTabComponent>;
+
+  /** One created campaign, so the keyword block's `!hasCampaigns()` gate lets it render. */
+  const campaignDoc = (): CampaignIndexDoc =>
+    ({
+      id: 'c-1',
+      project_id: 'tlf',
+      brief_id: 'b-1',
+      platform: 'google-ads',
+      campaign_name: 'KubeCon EU',
+      status: 'created',
+      version: 3,
+      etag: '"3"',
+    }) as CampaignIndexDoc;
+
+  /** No wasted keywords: every row with spend also has a conversion. */
+  const cleanKeywords = [
+    {
+      keyword: 'a',
+      matchType: 'EXACT',
+      qualityScore: 7,
+      status: 'ENABLED',
+      adGroup: 'AG',
+      adGroupId: '1',
+      criterionId: '2',
+      campaign: 'C',
+      campaignId: '555',
+      googleAdsUrl: '',
+      impressions: 1000,
+      clicks: 40,
+      ctr: 4,
+      avgCpc: 0.625,
+      spend: 25,
+      conversions: 12.5,
+    },
+  ];
+
+  beforeEach(async () => {
+    await TestBed.configureTestingModule({
+      imports: [OptimizationTabComponent],
+      providers: [
+        provideNoopAnimations(),
+        { provide: MessageService, useValue: { add: vi.fn() } },
+        {
+          provide: CampaignService,
+          useValue: {
+            updateCampaignStatus: vi.fn(),
+            getMonitorData: vi.fn().mockReturnValue(of(null)),
+            getKeywords: vi.fn().mockReturnValue(of({ keywords: [] })),
+            getLinkedInAccounts: vi.fn().mockReturnValue(of([])),
+            getRedditAccounts: vi.fn().mockReturnValue(of([])),
+            getMetaAccounts: vi.fn().mockReturnValue(of([])),
+            getLinkedInMonitor: vi.fn().mockReturnValue(of(null)),
+            getRedditMonitor: vi.fn().mockReturnValue(of(null)),
+            getMetaMonitor: vi.fn().mockReturnValue(of(null)),
+            executeKeywordActions: vi.fn().mockReturnValue(of({ results: [] })),
+          },
+        },
+      ],
+    }).compileComponents();
+
+    fixture = TestBed.createComponent(OptimizationTabComponent);
+    fixture.componentRef.setInput('projectSlug', 'tlf');
+    fixture.componentRef.setInput('briefId', 'b-1');
+  });
+
+  function renderKeywords(truncated: boolean | undefined): void {
+    // At least one campaign: the keyword block sits inside a `!hasCampaigns()` branch, so an
+    // empty list replaces it with the no-campaigns empty state and every assertion below would
+    // hold against an absent banner rather than a correct one.
+    fixture.componentRef.setInput('briefCampaigns', [campaignDoc()]);
+    fixture.componentRef.setInput('campaignsPossiblyStale', false);
+    fixture.componentRef.setInput('campaignsUnavailable', false);
+    fixture.componentRef.setInput('statusToggleEnabled', true);
+    fixture.detectChanges();
+    // `hasCampaigns()` derives from monitorData, NOT the briefCampaigns input — the keyword
+    // block sits behind it, so without a monitor campaign the whole section is replaced by the
+    // no-campaigns empty state and every assertion below would hold against an absent banner.
+    const instance = fixture.componentInstance as unknown as {
+      keywordsData: { set(v: unknown): void };
+      monitorData: { set(v: unknown): void };
+    };
+    instance.monitorData.set({
+      pulledAt: '2026-08-28T00:00:00.000Z',
+      dateRange: { mode: 'LAST_30_DAYS' },
+      campaigns: [
+        {
+          name: 'C',
+          shortName: 'C',
+          eventName: 'KubeCon',
+          adFormat: 'Search',
+          targeting: 'Global',
+          status: 'enabled',
+          startDate: '2026-08-01',
+          endDate: '2026-09-01',
+          budgetDay: 100,
+          totalBudget: 3000,
+          spend: 25,
+          impressions: 1000,
+          clicks: 40,
+          ctr: 4,
+          avgCpc: 0.625,
+          conversions: 12.5,
+          pacingPct: 50,
+          pacingLabel: 'on-track',
+          campaignId: '555',
+          googleAdsUrl: '',
+        },
+      ],
+      accountTotals: { impressions: 1000, clicks: 40, spend: 25, conversions: 12.5 },
+      actionItems: [],
+    });
+    instance.keywordsData.set({
+      pulledAt: '2026-08-28T00:00:00.000Z',
+      days: 30,
+      totalKeywords: cleanKeywords.length,
+      totals: { impressions: 1000, clicks: 40, spend: 25, conversions: 12.5, avgCtr: 4 },
+      keywords: cleanKeywords,
+      ...(truncated === undefined ? {} : { truncated }),
+    });
+    fixture.detectChanges();
+  }
+
+  const q = (id: string): HTMLElement | null => fixture.nativeElement.querySelector(`[data-testid="${id}"]`);
+
+  it('does not claim ALL keywords are clean when the set was capped', () => {
+    renderKeywords(true);
+
+    // The unqualified banner must be gone AND the qualified one present — a bare negative
+    // assertion would pass if the whole block failed to render.
+    expect(q('wasted-keywords-all-clear')).toBeNull();
+    const partial = q('wasted-keywords-partial-clear');
+    expect(partial).not.toBeNull();
+    expect(partial?.textContent).toContain('top 1');
+  });
+
+  it('claims the full all-clear when the whole keyword set was returned', () => {
+    renderKeywords(false);
+
+    expect(q('wasted-keywords-all-clear')).not.toBeNull();
+    expect(q('wasted-keywords-partial-clear')).toBeNull();
+  });
+
+  /**
+   * Absence means UNKNOWN on the legacy path (a bare LIMIT with no probe). This used to render
+   * the UNQUALIFIED all-clear -- "all keywords with spend are generating conversions" -- which is
+   * a claim about EVERY keyword made over a set nobody established was whole, hiding exactly the
+   * waste it says is absent. Reporting it as truncated would be the opposite false statement, so
+   * unknown gets its own sentence.
+   */
+  it('does not claim a full all-clear when completeness was never established', () => {
+    renderKeywords(undefined);
+
+    expect(q('wasted-keywords-all-clear'), 'an unqualified all-clear over an unverified set').toBeNull();
+    expect(q('wasted-keywords-partial-clear'), 'unknown must not be reported as truncated either').toBeNull();
+    const unverified = q('wasted-keywords-unverified-clear');
+    expect(unverified).not.toBeNull();
+    expect(unverified?.textContent).toContain('could not be established');
+  });
+});
+
+/**
+ * A keyword action has THREE outcomes, and the table used to render two.
+ *
+ * The BFF deliberately surfaces campaign-service's unconfirmed message rather than flattening it,
+ * because that is the one distinction a caller must act on. Rendering every non-success as
+ * "Failed" threw it away at the last step -- and a retried REMOVE is irreversible, so an operator
+ * told "Failed" about a change that may already have applied is being invited to run it twice.
+ */
+describe('OptimizationTabComponent — keyword action outcome states', () => {
+  const keywordMessageAdd = vi.fn();
+  let fixture: ComponentFixture<OptimizationTabComponent>;
+
+  // The exact string the BFF sends (CAMPAIGN_OUTCOME_UNCONFIRMED).
+  const unconfirmedMessage = 'The change was sent but the confirmation did not match the request. Check the campaign in Google Ads before retrying.';
+
+  beforeEach(async () => {
+    keywordMessageAdd.mockClear();
+    await TestBed.configureTestingModule({
+      imports: [OptimizationTabComponent],
+      providers: [
+        provideNoopAnimations(),
+        { provide: MessageService, useValue: { add: keywordMessageAdd } },
+        {
+          provide: CampaignService,
+          useValue: {
+            updateCampaignStatus: vi.fn().mockReturnValue(of(null)),
+            getMonitorData: vi.fn().mockReturnValue(of(null)),
+            getKeywords: vi.fn().mockReturnValue(of({ keywords: [] })),
+            getLinkedInAccounts: vi.fn().mockReturnValue(of([])),
+            getRedditAccounts: vi.fn().mockReturnValue(of([])),
+          },
+        },
+      ],
+    }).compileComponents();
+    fixture = TestBed.createComponent(OptimizationTabComponent);
+  });
+
+  /**
+   * Asserts on the STORED state, which is what the template reads. The classification is derived
+   * once at storage time rather than per render, so this exercises the shipped path.
+   */
+  function isUnconfirmed(result: { success: boolean; message: string }): boolean {
+    const outcome = (
+      fixture.componentInstance as unknown as {
+        toActionOutcome(success: boolean, message: string): { state: string };
+      }
+    ).toActionOutcome(result.success, result.message);
+    return outcome.state === 'unconfirmed';
+  }
+
+  /**
+   * A browser-to-BFF failure carries NO structured result, so the message predicate cannot see it.
+   *
+   * If the connection drops, times out, or the BFF returns a 5xx AFTER it dispatched the
+   * mutation, the change may already have applied. Classifying that as "Failed" tells the
+   * operator nothing happened and invites a retry — and a retried REMOVE is irreversible. Only a
+   * 4xx (other than 408) is a definite refusal: the BFF rejected the request at its boundary
+   * before anything reached the platform.
+   */
+  function transportState(status: number): string {
+    return (
+      fixture.componentInstance as unknown as {
+        toTransportOutcome(err: unknown): { state: string };
+      }
+    ).toTransportOutcome({ status, message: 'Http failure response' }).state;
+  }
+
+  it.each([
+    [0, 'network failure'],
+    [408, 'timeout'],
+    [500, 'BFF 5xx'],
+    [503, 'BFF unavailable'],
+  ])('treats a post-dispatch transport failure (%i, %s) as unconfirmed', (status) => {
+    expect(transportState(status), 'a change that may have applied read as a definite failure').toBe('unconfirmed');
+  });
+
+  it.each([
+    [400, 'bad payload'],
+    [422, 'validation refusal'],
+  ])('treats a boundary refusal (%i, %s) as a definite failure', (status) => {
+    // Refused before dispatch, so nothing reached the platform and a retry is safe to withhold.
+    expect(transportState(status)).toBe('failed');
+  });
+
+  /**
+   * Drives `bulkKeywordAction` rather than the classifier, because the defect was that the BULK
+   * path never called the classifier at all: it passed the raw message to `toActionOutcome`,
+   * which looks for an unconfirmed marker in the MESSAGE. A transport failure carries no such
+   * marker -- the request died before campaign-service could describe its own outcome -- so
+   * every dropped bulk mutation rendered "Failed".
+   *
+   * That is worse in bulk than singly: one dropped response covers the whole selection, so an
+   * operator is invited to re-run an irreversible REMOVE across every keyword at once.
+   */
+  it.each([
+    [0, 'network failure'],
+    [408, 'timeout'],
+    [503, 'BFF unavailable'],
+  ])('classifies a bulk transport failure (%i, %s) as unconfirmed, not failed', (status) => {
+    const campaignService = TestBed.inject(CampaignService) as unknown as {
+      executeKeywordActions: ReturnType<typeof vi.fn>;
+    };
+    campaignService.executeKeywordActions = vi.fn().mockReturnValue(throwError(() => ({ status, message: 'Http failure response' })));
+
+    const keywords = [
+      { campaignId: 'c1', adGroupId: 'ag1', criterionId: 'cr1' },
+      { campaignId: 'c1', adGroupId: 'ag1', criterionId: 'cr2' },
+    ];
+    const component = fixture.componentInstance as unknown as {
+      bulkKeywordAction(keywords: unknown[], action: string): void;
+      actionResults: () => Record<string, { state: string }>;
+    };
+    component.bulkKeywordAction(keywords, 'REMOVE');
+
+    // EVERY key in the selection, not just the first: the failure covers all of them.
+    for (const key of ['ag1-cr1', 'ag1-cr2']) {
+      expect(component.actionResults()[key]?.state, `${key} read as a definite failure after a dropped bulk mutation`).toBe('unconfirmed');
+    }
+  });
+
+  it('reports the number of rows in the WORST state, not the size of the selection', () => {
+    // dealako (#1923): the toast paired `keys.length` -- the whole selection -- with `worst`, the
+    // state of possibly one row. Three keywords with ONE unconfirmed announced "3 keywords",
+    // overstating an irreversible-REMOVE hazard by the size of the selection and sending the
+    // operator to check two rows that are fine.
+    //
+    // Drives the real bulk path so the assertion binds the shipped wiring, not a helper.
+    const campaignService = TestBed.inject(CampaignService) as unknown as {
+      executeKeywordActions: ReturnType<typeof vi.fn>;
+    };
+    campaignService.executeKeywordActions = vi.fn().mockReturnValue(
+      of({
+        results: [
+          { success: true, message: 'ok' },
+          { success: true, message: 'ok' },
+          { success: false, message: unconfirmedMessage },
+        ],
+      })
+    );
+
+    const keywords = [
+      { campaignId: 'c1', adGroupId: 'ag1', criterionId: 'cr1' },
+      { campaignId: 'c1', adGroupId: 'ag1', criterionId: 'cr2' },
+      { campaignId: 'c1', adGroupId: 'ag1', criterionId: 'cr3' },
+    ];
+    (fixture.componentInstance as unknown as { bulkKeywordAction(k: unknown[], a: string): void }).bulkKeywordAction(keywords, 'REMOVE');
+
+    const toast = keywordMessageAdd.mock.calls.at(-1)?.[0] as { detail?: string; summary?: string };
+    const text = `${toast?.summary ?? ''} ${toast?.detail ?? ''}`;
+    // ONE row is unconfirmed, so the toast must not speak for three.
+    expect(text, 'the toast counted the whole selection instead of the rows in the worst state').not.toContain('3 keywords');
+    expect(text, 'the single unconfirmed row was not reported as one').toMatch(/\b1 keyword\b|\bkeyword\b/);
+  });
+
+  it('completes a keyword REMOVE the operator navigated away from, and says so', () => {
+    // Copilot: this component renders inside `@case ('optimization')`, so a tab switch DESTROYS
+    // it. Bound to `takeUntilDestroyed`, the XHR was aborted mid-flight -- an irreversible REMOVE
+    // that may already have applied upstream, with no outcome shown anywhere. The campaign toggle
+    // above already solved this with `take(1)` plus the app-root toast; the keyword paths were
+    // still on component lifetime.
+    const campaignService = TestBed.inject(CampaignService) as unknown as {
+      executeKeywordActions: ReturnType<typeof vi.fn>;
+    };
+    const inFlight = new Subject<{ results: { success: boolean; message: string }[] }>();
+    campaignService.executeKeywordActions = vi.fn().mockReturnValue(inFlight.asObservable());
+
+    const component = fixture.componentInstance as unknown as {
+      executeKeywordAction(kw: unknown, action: string): void;
+    };
+    component.executeKeywordAction({ campaignId: 'c1', adGroupId: 'ag1', criterionId: 'cr1' }, 'REMOVE');
+    fixture.destroy();
+
+    // The response arrives after the operator has left the tab.
+    inFlight.next({ results: [{ success: true, message: 'Keyword removed.' }] });
+    inFlight.complete();
+
+    // The request was NOT aborted -- the handler ran.
+    expect(keywordMessageAdd, 'the mutation was cancelled by the tab switch, or its outcome was dropped').toHaveBeenCalledTimes(1);
+    const toast = keywordMessageAdd.mock.calls[0][0];
+    // Content, not just a call: a generic string would pass a call-count assertion and tell the
+    // operator nothing about what happened.
+    expect(String(toast.summary)).toMatch(/Removed/);
+    expect(toast.severity).toBe('success');
+  });
+
+  it('reports a MIXED batch as unconfirmed, not failed', () => {
+    // Copilot: the summary ordered `failed` above `unconfirmed`, so a batch carrying both was
+    // announced as "Remove failed" -- and a definite failure reads as safe to retry. One of those
+    // rows MAY have applied, and re-running an irreversible REMOVE over it is the duplicate this
+    // whole classification exists to prevent. The error arm twenty lines below states the same
+    // rule in prose; the summary line contradicted it.
+    const campaignService = TestBed.inject(CampaignService) as unknown as {
+      executeKeywordActions: ReturnType<typeof vi.fn>;
+    };
+    const inFlight = new Subject<{ results: ({ success: boolean; message: string } | undefined)[] }>();
+    campaignService.executeKeywordActions = vi.fn().mockReturnValue(inFlight.asObservable());
+
+    const component = fixture.componentInstance as unknown as {
+      bulkKeywordAction(keywords: unknown[], action: string): void;
+    };
+    component.bulkKeywordAction(
+      [
+        { campaignId: 'c1', adGroupId: 'ag1', criterionId: 'cr1' },
+        { campaignId: 'c1', adGroupId: 'ag1', criterionId: 'cr2' },
+      ],
+      'REMOVE'
+    );
+    fixture.destroy();
+
+    // One DEFINITE failure, one row with no result at all -- positional absence is unconfirmed.
+    inFlight.next({ results: [{ success: false, message: 'adGroupId must be numeric' }, undefined] });
+    inFlight.complete();
+
+    expect(keywordMessageAdd).toHaveBeenCalledTimes(1);
+    const toast = keywordMessageAdd.mock.calls[0][0];
+    expect(toast.severity, 'a batch containing an unconfirmed row was reported as a definite failure').toBe('warn');
+    expect(String(toast.summary), 'summary invited a retry over a row that may already have applied').toMatch(/not confirmed/);
+  });
+
+  it('warns stickily when a bulk action the operator left behind does not confirm', () => {
+    // The arm that matters most: a partially-unconfirmed bulk REMOVE, surfaced after the table
+    // that would have shown the per-row detail is gone. Sticky, because a message that times out
+    // on its own is the wrong affordance for an irreversible change that may not have applied.
+    const campaignService = TestBed.inject(CampaignService) as unknown as {
+      executeKeywordActions: ReturnType<typeof vi.fn>;
+    };
+    const inFlight = new Subject<unknown>();
+    campaignService.executeKeywordActions = vi.fn().mockReturnValue(inFlight.asObservable());
+
+    const component = fixture.componentInstance as unknown as {
+      bulkKeywordAction(keywords: unknown[], action: string): void;
+    };
+    component.bulkKeywordAction(
+      [
+        { campaignId: 'c1', adGroupId: 'ag1', criterionId: 'cr1' },
+        { campaignId: 'c1', adGroupId: 'ag1', criterionId: 'cr2' },
+      ],
+      'REMOVE'
+    );
+    fixture.destroy();
+
+    inFlight.error({ status: 503, message: 'Http failure response' });
+
+    expect(keywordMessageAdd, 'a dropped bulk mutation reached the operator nowhere').toHaveBeenCalledTimes(1);
+    const toast = keywordMessageAdd.mock.calls[0][0];
+    expect(toast.sticky, 'an unconfirmed irreversible REMOVE was allowed to time out').toBe(true);
+    expect(toast.severity, 'reported an unconfirmed outcome as a definite failure').toBe('warn');
+  });
+
+  it('reads a SHORT 2xx result array as unconfirmed, not as failure', () => {
+    // The response is positional -- the client zips results[i] onto the list it sent -- so a 2xx
+    // whose array is shorter than the request says nothing about the keywords it omits. `?? false`
+    // rendered those as "Failed", inviting a re-run of an irreversible bulk REMOVE.
+    const campaignService = TestBed.inject(CampaignService) as unknown as {
+      executeKeywordActions: ReturnType<typeof vi.fn>;
+    };
+    // Two keywords sent, ONE result back.
+    campaignService.executeKeywordActions = vi.fn().mockReturnValue(of({ results: [{ success: true, message: 'Paused' }] }));
+
+    const keywords = [
+      { campaignId: 'c1', adGroupId: 'ag1', criterionId: 'cr1' },
+      { campaignId: 'c1', adGroupId: 'ag1', criterionId: 'cr2' },
+    ];
+    const component = fixture.componentInstance as unknown as {
+      bulkKeywordAction(keywords: unknown[], action: string): void;
+      actionResults: () => Record<string, { state: string }>;
+    };
+    component.bulkKeywordAction(keywords, 'REMOVE');
+
+    // The one that came back is reported as it answered.
+    expect(component.actionResults()['ag1-cr1']?.state).toBe('done');
+    // The one that did NOT is unconfirmed -- never 'failed'.
+    expect(component.actionResults()['ag1-cr2']?.state, 'a missing positional result read as a definite failure').toBe('unconfirmed');
+  });
+
+  it('distinguishes an unconfirmed outcome from a definite failure', () => {
+    expect(isUnconfirmed({ success: false, message: unconfirmedMessage }), 'an unconfirmed change read as a definite failure').toBe(true);
+  });
+
+  it("recognises campaign-service's own unconfirmed wording, not just the BFF's", () => {
+    // TWO producers reach this predicate. The BFF writes "confirmation did not match" when the
+    // returned outcomes do not match the request; campaign-service reports its OWN ambiguity in
+    // its own words, and that message passes through verbatim. Recognising only the first left a
+    // genuine upstream ambiguity rendering as "Failed" -- the retry-an-irreversible-REMOVE
+    // hazard this exists to prevent.
+    for (const message of [
+      'google-ads keyword actions UNCONFIRMED (2 operation(s); the changes may have been applied — verify in Google Ads before retrying)',
+      'the keyword actions are unconfirmed — they may or may not have been applied on the ad platform',
+    ]) {
+      expect(isUnconfirmed({ success: false, message }), `not recognised: ${message}`).toBe(true);
+    }
+  });
+
+  it('does not treat an ordinary failure as unconfirmed', () => {
+    // The other direction, so the guard cannot be satisfied by calling everything unconfirmed --
+    // which would suppress the retry prompt on changes that genuinely did not apply.
+    expect(isUnconfirmed({ success: false, message: 'Google Ads rejected the criterion.' })).toBe(false);
+  });
+
+  it('never reports a success as unconfirmed', () => {
+    expect(isUnconfirmed({ success: true, message: '' })).toBe(false);
+  });
+});

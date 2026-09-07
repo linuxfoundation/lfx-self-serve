@@ -120,38 +120,85 @@ export class ApiClientService {
       if (error instanceof Error) {
         if (error.name === 'AbortError' || error.name === 'TimeoutError') {
           throw new MicroserviceError(`Request timeout after ${this.config.timeout}ms`, 408, 'TIMEOUT', {
+            // transportFailure so the response carries `transport: true`: a timeout is
+            // BFF-raised like any other transport failure, and a consumer must not have to
+            // special-case 408. The marker comes from THIS flag, not from originalError --
+            // seven non-transport services set that too.
+            originalError: error,
+            transportFailure: true,
             operation: 'api_client_stream_timeout',
             service: 'api_client_service',
             path: url,
           });
         }
 
+        // 503, not 500. A transport failure here happens AFTER the request went out, so the
+        // upstream may well have processed it — we only lost the answer. campaign-service
+        // reserves 500 for "the service faulted before the request was sent, nothing happened"
+        // and 503 for "the outcome is unconfirmed"; emitting 500 for a lost connection would
+        // tell a caller a non-idempotent write definitely did not happen, and the retry that
+        // invites is how a duplicate campaign gets created.
         const errorWithCause = error as Error & { cause?: { code?: string } };
         if (errorWithCause.cause?.code) {
-          throw new MicroserviceError(`Request failed: ${error.message}`, 500, errorWithCause.cause.code || 'NETWORK_ERROR', {
+          // FIXED public message; the real one survives in `originalError` for logs. These
+          // branches also catch `JSON.parse` failures on a SUCCESSFUL upstream response, and Node
+          // embeds a body EXCERPT in that error's message -- the opening bytes of whatever came
+          // back, typically an internal HTML error page. `MicroserviceError.toResponse()` returns
+          // the message verbatim, so interpolating it handed an authenticated client a fragment of
+          // an internal response (Copilot). Applied to all four throw sites in this file, not the
+          // one reported: same shape, same leak, in both request paths.
+          throw new MicroserviceError('The request could not be completed. Please try again.', 503, errorWithCause.cause.code || 'NETWORK_ERROR', {
             operation: 'api_client_stream_network_error',
             service: 'api_client_service',
             path: url,
             originalError: error,
+            transportFailure: true,
           });
         }
 
         // Fallback for any other Error subclass — keep all transport failures classified.
-        throw new MicroserviceError(`Request failed: ${error.message}`, 500, 'NETWORK_ERROR', {
+        throw new MicroserviceError('The request could not be completed. Please try again.', 503, 'NETWORK_ERROR', {
           operation: 'api_client_stream_network_error',
           service: 'api_client_service',
           path: url,
           originalError: error,
+          transportFailure: true,
         });
       }
       throw error;
     }
 
     if (!response.ok) {
-      // Read body once for error context.
+      // BODY READ and JSON PARSE separated, same as executeRequest. One try around both swallowed
+      // a mid-body connection drop as if it were unparseable JSON, dropping `transport: true` and
+      // letting an unconfirmed write read as an answered refusal. Found in the sibling first and
+      // swept here rather than waiting for it to be reported again (Copilot).
+      let errorText: string;
+      try {
+        errorText = await response.text();
+      } catch (readError: unknown) {
+        if (response.status >= 400 && response.status < 500 && response.status !== 408) {
+          throw new MicroserviceError(response.statusText || 'The upstream request was rejected.', response.status, getHttpErrorCode(response.status), {
+            operation: 'api_client_stream_request',
+            service: 'api_client_service',
+            path: url,
+            originalError: readError instanceof Error ? readError : undefined,
+          });
+        }
+        const timedOut = readError instanceof Error && (readError.name === 'AbortError' || readError.name === 'TimeoutError');
+        throw new MicroserviceError('The request could not be completed. Please try again.', timedOut ? 408 : 503, timedOut ? 'TIMEOUT' : 'NETWORK_ERROR', {
+          operation: 'api_client_stream_error_body_read',
+          service: 'api_client_service',
+          path: url,
+          originalError: readError instanceof Error ? readError : undefined,
+          transportFailure: true,
+        });
+      }
+
+      // Only the PARSE is swallowed: a non-JSON body is still an answer, and we already have
+      // status + statusText.
       let errorBody: any = null;
       try {
-        const errorText = await response.text();
         if (errorText) {
           errorBody = JSON.parse(errorText);
         }
@@ -267,10 +314,43 @@ export class ApiClientService {
       const response = await fetch(url, requestInit);
 
       if (!response.ok) {
-        // Try to parse error response body for additional details
+        // BODY READ and JSON PARSE are separated, because they fail for different reasons and
+        // only one of them is safe to swallow.
+        //
+        // A single try around both swallowed a mid-body connection drop or read timeout as if it
+        // were unparseable JSON: the resulting MicroserviceError carried no `transport: true`,
+        // and the guard in the catch below rethrows an already-classified error untouched -- so
+        // an UNCONFIRMED write left looking like an answered upstream refusal, which is the one
+        // reading that tells a caller retrying is safe (Copilot).
+        let errorText: string;
+        try {
+          errorText = await response.text();
+        } catch (readError: unknown) {
+          if (response.status >= 400 && response.status < 500 && response.status !== 408) {
+            throw new MicroserviceError(response.statusText || 'The upstream request was rejected.', response.status, getHttpErrorCode(response.status), {
+              operation: options.binary ? 'api_client_binary_request' : 'api_client_request',
+              service: 'api_client_service',
+              path: url,
+              originalError: readError instanceof Error ? readError : undefined,
+            });
+          }
+          // The status arrived; the body did not. Nothing here establishes what upstream did with
+          // the request, so it is classified like any other transport failure rather than
+          // reported as this status.
+          const timedOut = readError instanceof Error && (readError.name === 'AbortError' || readError.name === 'TimeoutError');
+          throw new MicroserviceError('The request could not be completed. Please try again.', timedOut ? 408 : 503, timedOut ? 'TIMEOUT' : 'NETWORK_ERROR', {
+            operation: 'api_client_error_body_read',
+            service: 'api_client_service',
+            path: url,
+            originalError: readError instanceof Error ? readError : undefined,
+            transportFailure: true,
+          });
+        }
+
+        // Only the PARSE is swallowed. An unparseable body is still an answer -- upstream replied
+        // with this status, and the basic HTTP error describes it honestly.
         let errorBody: any = null;
         try {
-          const errorText = await response.text();
           if (errorText) {
             errorBody = JSON.parse(errorText);
           }
@@ -309,24 +389,56 @@ export class ApiClientService {
 
       return apiResponse;
     } catch (error: unknown) {
+      // ALREADY CLASSIFIED errors leave untouched. The non-2xx MicroserviceError is thrown inside
+      // this same try (see the !response.ok arm above), so a catch-all fallback re-wraps it: a
+      // genuine 403 would depart as a 503 carrying transport:true, and every consumer's
+      // definite-vs-unconfirmed split would collapse -- an upstream refusal that provably never
+      // dispatched would start reading as "may have happened, do not retry". This guard is what
+      // keeps the fallback below scoped to actual fetch rejections.
+      if (error instanceof MicroserviceError) {
+        throw error;
+      }
       if (error instanceof Error) {
         if (error.name === 'AbortError' || error.name === 'TimeoutError') {
           throw new MicroserviceError(`Request timeout after ${options.timeoutMs ?? this.config.timeout}ms`, 408, 'TIMEOUT', {
+            // transportFailure so the response carries `transport: true`: a timeout is
+            // BFF-raised like any other transport failure, and a consumer must not have to
+            // special-case 408. The marker comes from THIS flag, not from originalError --
+            // seven non-transport services set that too.
+            originalError: error,
+            transportFailure: true,
             operation: options.binary ? 'api_client_binary_timeout' : 'api_client_timeout',
             service: 'api_client_service',
             path: url,
           });
         }
 
+        // 503, not 500 — see the stream path above: a lost connection is an UNCONFIRMED
+        // outcome, not a proof that nothing happened.
         const errorWithCause = error as Error & { cause?: { code?: string } };
         if (errorWithCause.cause?.code) {
-          throw new MicroserviceError(`Request failed: ${error.message}`, 500, errorWithCause.cause.code || 'NETWORK_ERROR', {
+          throw new MicroserviceError('The request could not be completed. Please try again.', 503, errorWithCause.cause.code || 'NETWORK_ERROR', {
             operation: options.binary ? 'api_client_binary_network_error' : 'api_client_network_error',
             service: 'api_client_service',
             path: url,
             originalError: error,
+            transportFailure: true,
           });
         }
+
+        // Fallback, mirroring the stream path above. `cause.code` is not guaranteed: fetch can
+        // reject with an Error whose cause carries none (redirect: 'error' produces exactly that
+        // shape), and those fell through to the bare `throw error` below -- reaching the client
+        // as an unmarked 500 with no originalError, so nothing downstream could tell it from a
+        // deliberate upstream response. That defeats the transport marker every consumer of
+        // `transport: true` now depends on.
+        throw new MicroserviceError('The request could not be completed. Please try again.', 503, 'NETWORK_ERROR', {
+          operation: options.binary ? 'api_client_binary_network_error' : 'api_client_network_error',
+          service: 'api_client_service',
+          path: url,
+          originalError: error,
+          transportFailure: true,
+        });
       }
 
       throw error;
