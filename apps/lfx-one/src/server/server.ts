@@ -60,6 +60,7 @@ import surveysRouter from './routes/surveys.route';
 import trainingRouter from './routes/training.route';
 import crowdfundingRouter from './routes/crowdfunding.route';
 import clasRouter from './routes/clas.route';
+import orgClasRouter from './routes/org-clas.route';
 import transactionRouter from './routes/transaction.route';
 import userRouter from './routes/user.route';
 import userNewslettersRouter from './routes/user-newsletters.route';
@@ -330,6 +331,10 @@ app.use('/api/mailing-lists', mailingListsRouter);
 app.use('/api/meetings', meetingsRouter);
 app.use('/api/meetups', meetupsRouter);
 app.use('/api/organizations', organizationsRouter);
+// Ahead of orgsRouter deliberately: both mount on /api/orgs, and orgsRouter's
+// `/:orgUid/lens` guard matches the CLA path, so mounting second would run the grant
+// lookup before the module's kill switch and answer 403/503 where 409 is promised.
+app.use('/api/orgs', orgClasRouter);
 app.use('/api/orgs', orgsRouter);
 app.use('/api/past-meetings', pastMeetingsRouter);
 app.use('/api/profile', profileRouter);
