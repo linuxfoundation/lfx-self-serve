@@ -75,6 +75,12 @@ async function stubAccountContext(page: Page): Promise<void> {
   });
 
   await page.context().addCookies([{ name: ACCOUNT_COOKIE_KEY, value: JSON.stringify({ uid: MOCK_ACCOUNT_ID }), domain: 'localhost', path: '/' }]);
+
+  // The page fetches its CLA list once an org is selected (GH-1978). Stubbed empty so the flag-on
+  // case still lands on the "signed nothing" state — unstubbed, the request would fail against the
+  // dev backend and the page would render its load-failure state instead, failing this spec for a
+  // reason that has nothing to do with the gate it exists to pin.
+  await fulfillJson(page, '**/api/orgs/*/lens/cla-groups', { orgUid: MOCK_ACCOUNT_ID, claGroups: [] });
 }
 
 /**
