@@ -4,6 +4,7 @@
 import { signal } from '@angular/core';
 import { TestBed } from '@angular/core/testing';
 import {
+  FORMATION_ENABLED_FLAG,
   MENTORSHIP_ENABLED_FLAG,
   MKTG_OS_AGENTS_ENABLED_FLAG,
   MKTG_OS_AGENTS_LABEL,
@@ -31,6 +32,8 @@ describe('SidebarNavService', () => {
   const orgEasyclaEnabled = signal(false);
   const orgRoiEnabled = signal(false);
   const mentorshipEnabled = signal(false);
+  const formationEnabled = signal(false);
+  const activeProjectStage = signal<string | null>(null);
   const hasFullFoundationAccess = signal(true);
   const currentPersona = signal('executive-director');
 
@@ -48,6 +51,8 @@ describe('SidebarNavService', () => {
     orgEasyclaEnabled.set(false);
     orgRoiEnabled.set(false);
     mentorshipEnabled.set(false);
+    formationEnabled.set(false);
+    activeProjectStage.set(null);
     hasFullFoundationAccess.set(true);
     currentPersona.set('executive-director');
 
@@ -63,6 +68,7 @@ describe('SidebarNavService', () => {
               if (key === ORG_LENS_CLA_M3_ENABLED_FLAG) return orgEasyclaEnabled;
               if (key === ORG_LENS_ROI_ENABLED_FLAG) return orgRoiEnabled;
               if (key === MENTORSHIP_ENABLED_FLAG) return mentorshipEnabled;
+              if (key === FORMATION_ENABLED_FLAG) return formationEnabled;
               return signal(false);
             }),
           },
@@ -89,6 +95,7 @@ describe('SidebarNavService', () => {
             selectedFoundation: signal(null),
             selectedProject: signal(null),
             canWrite: signal(false),
+            activeProjectStage,
           },
         },
         { provide: UserService, useValue: { authenticated: signal(false) } },
@@ -167,6 +174,67 @@ describe('SidebarNavService', () => {
     expect(itemLabels.indexOf('Governance')).toBe(itemLabels.indexOf(MKTG_OS_AGENTS_LABEL.nav) + 1);
   });
 
+  it('hides Formation on project lens when the flag is off, even for a Formation-stage project', () => {
+    activeLens.set('project');
+    formationEnabled.set(false);
+    activeProjectStage.set('Formation - Exploratory');
+
+    const items = TestBed.inject(SidebarNavService).sidebarItems();
+
+    expect(findByLink(items, '/project/formation')).toBeUndefined();
+  });
+
+  it('hides Formation on project lens when the flag is on but the project is not in a Formation stage', () => {
+    activeLens.set('project');
+    formationEnabled.set(true);
+    activeProjectStage.set('Active');
+
+    const items = TestBed.inject(SidebarNavService).sidebarItems();
+
+    expect(findByLink(items, '/project/formation')).toBeUndefined();
+  });
+
+  it('inserts Formation directly under Dashboard on project lens when the flag is on and the project is in a Formation stage', () => {
+    activeLens.set('project');
+    formationEnabled.set(true);
+    activeProjectStage.set('Formation - Exploratory');
+
+    const items = TestBed.inject(SidebarNavService).sidebarItems();
+    const itemLabels = labels(items);
+
+    expect(findByLink(items, '/project/formation')).toEqual(
+      expect.objectContaining({
+        label: 'Formation',
+        routerLink: '/project/formation',
+        testId: 'sidebar-project-formation',
+      })
+    );
+    expect(itemLabels.indexOf('Formation')).toBe(itemLabels.indexOf('Dashboard') + 1);
+    expect(itemLabels.indexOf('Meetings')).toBe(itemLabels.indexOf('Formation') + 1);
+  });
+
+  it('hides the Mentorship section from the Me lens while its flag is off', () => {
+    activeLens.set('me');
+
+    const items = TestBed.inject(SidebarNavService).sidebarItems();
+
+    expect(labels(items)).not.toContain('Mentorship');
+    expect(findByLink(sectionItems(items, 'Mentorship'), '/mentorship/admin')).toBeUndefined();
+  });
+
+  it('shows the Mentorship section on the Me lens when its flag is on', () => {
+    activeLens.set('me');
+    mentorshipEnabled.set(true);
+
+    const items = TestBed.inject(SidebarNavService).sidebarItems();
+
+    // Akrites stays off here: the two dark-launch gates on this lens must filter independently.
+    expect(labels(items)).not.toContain('Security');
+    expect(findByLink(sectionItems(items, 'Mentorship'), '/mentorship/admin')).toEqual(
+      expect.objectContaining({ label: 'Admin', routerLink: '/mentorship/admin' })
+    );
+  });
+
   it('hides EasyCLA from the org lens while the M3 flag is off', () => {
     activeLens.set('org');
     orgLensEnabled.set(true);
@@ -193,28 +261,6 @@ describe('SidebarNavService', () => {
     );
     expect(engagementLabels.indexOf('EasyCLA')).toBe(engagementLabels.indexOf('Code Contributions') + 1);
     expect(engagementLabels.indexOf('Events')).toBe(engagementLabels.indexOf('EasyCLA') + 1);
-  });
-
-  it('hides the Mentorship section from the Me lens while its flag is off', () => {
-    activeLens.set('me');
-
-    const items = TestBed.inject(SidebarNavService).sidebarItems();
-
-    expect(labels(items)).not.toContain('Mentorship');
-    expect(findByLink(sectionItems(items, 'Mentorship'), '/mentorship/admin')).toBeUndefined();
-  });
-
-  it('shows the Mentorship section on the Me lens when its flag is on', () => {
-    activeLens.set('me');
-    mentorshipEnabled.set(true);
-
-    const items = TestBed.inject(SidebarNavService).sidebarItems();
-
-    // Akrites stays off here: the two dark-launch gates on this lens must filter independently.
-    expect(labels(items)).not.toContain('Security');
-    expect(findByLink(sectionItems(items, 'Mentorship'), '/mentorship/admin')).toEqual(
-      expect.objectContaining({ label: 'Admin', routerLink: '/mentorship/admin' })
-    );
   });
 
   it('keeps ROI after Projects while EasyCLA stays in the section when both flags are on', () => {

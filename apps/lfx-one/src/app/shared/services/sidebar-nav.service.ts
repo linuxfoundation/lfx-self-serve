@@ -7,6 +7,7 @@ import {
   AKRITES_ENABLED_FLAG,
   COMMITTEE_LABEL,
   DOCUMENT_LABEL,
+  FORMATION_ENABLED_FLAG,
   MAILING_LIST_LABEL,
   MARKETING_OPS_FGA_ENABLED_FLAG,
   MENTORSHIP_ENABLED_FLAG,
@@ -19,6 +20,7 @@ import {
   VOTE_LABEL,
 } from '@lfx-one/shared/constants';
 import { SidebarMenuItem } from '@lfx-one/shared/interfaces';
+import { isFormationStage } from '@lfx-one/shared/utils';
 import { AnalyticsService } from '@services/analytics.service';
 import { FeatureFlagService } from '@services/feature-flag.service';
 import { LensService } from '@services/lens.service';
@@ -62,6 +64,8 @@ export class SidebarNavService {
   private readonly isOrgLensClaM3Enabled = this.featureFlagService.getBooleanFlag(ORG_LENS_CLA_M3_ENABLED_FLAG, false);
   /** Dual-gated with `ServerFeatureFlag.MarketingOpsFga` — unlocks Marketing nav for marketing_auditor/campaign_manager grants (LFXV2-2235/LFXV2-2236). */
   private readonly isMarketingOpsFgaEnabled = this.featureFlagService.getBooleanFlag(MARKETING_OPS_FGA_ENABLED_FLAG, false);
+  /** Dark-launch gate for the formation checklist route (GH-1958); hides the nav item when off. */
+  private readonly isFormationEnabled = this.featureFlagService.getBooleanFlag(FORMATION_ENABLED_FLAG, false);
 
   /**
    * True when the user has non-marketing foundation access (board role, root-writer, LF-staff, or
@@ -95,9 +99,14 @@ export class SidebarNavService {
         // edit role, remove, etc.) is enforced server-side and by per-page UI gating where
         // implemented; pre-existing gaps in those gates are tracked separately.
         // Mktg OS agents is dark-launched: when its flag is on, the entry is inserted between
-        // Documents (last of projectLensItems) and the Governance section in the project sidebar.
+        // Documents (last of projectLensItemsTail) and the Governance section in the project sidebar.
         const mktgOsItems = this.isMktgOsAgentsEnabled() ? [this.mktgOsAgentsNavItem] : [];
-        const base = [...this.projectLensItems, ...mktgOsItems, this.projectGovernanceSection];
+        // Formation (GH-1958) is dark-launched behind its own flag plus a Formation sub-stage check on
+        // the active project — inserted directly under Dashboard, ahead of Meetings, hence the
+        // head/tail split of projectLensItems rather than an append like mktgOsItems above.
+        const showFormationNav = this.isFormationEnabled() && isFormationStage(this.projectContextService.activeProjectStage());
+        const formationItems = showFormationNav ? [this.formationNavItem] : [];
+        const base = [...this.projectLensItemsHead, ...formationItems, ...this.projectLensItemsTail, ...mktgOsItems, this.projectGovernanceSection];
         const withComms = this.canSeeNewsletters() ? [...base, this.projectCommunicationsSection] : base;
         // Marketing-only FGA users who are also hybrid personas (e.g. a project role plus a
         // marketing_auditor/campaign_manager grant) land here via getAllowedLensIds()/isHybridPersona
@@ -520,27 +529,16 @@ export class SidebarNavService {
     };
   });
 
-  // --- Project Lens Items (base) ---
-  // GH-1955: a separate "Formation" nav item was tried here and removed on review — pointing it at
-  // the same '/project/overview' route as Dashboard means both entries render highlighted-active
-  // simultaneously (sidebar.component.html's routerLinkActive ignores fragment and queryParams, so
-  // neither can disambiguate two entries sharing one path). The Formation badge/subtitle and sidebar
-  // card already surface "you are in Formation" on that page; a real destination (a distinct route)
-  // is needed before a dedicated nav item can ship — flagged for product/design.
-  //
-  // Also GH-1955: Insights, EasyCLA, Crowdfunding, and "public stats" have no project-scoped nav
-  // surface today to gate on `isActiveProjectInFormation` — Insights is an external link built by
-  // buildInsightsUrl() and rendered unconditionally in lens-switcher.component.html, EasyCLA is a
-  // personal Me-lens tab (my-clas-enabled.guard.ts), Crowdfunding is a static Me-lens section (see
-  // meLensItems above), and no "public stats" component/route exists anywhere in the app. Nothing is
-  // gated here for any of the four; flagged in the PR description for product/design rather than
-  // inventing a surface to hide.
-  private readonly projectLensItems: SidebarMenuItem[] = [
+  // --- Project Lens Items (base), split so Formation (GH-1958) can be spliced in directly under Dashboard ---
+  private readonly projectLensItemsHead: SidebarMenuItem[] = [
     {
       label: 'Dashboard',
       icon: 'fa-light fa-grid-2',
       routerLink: '/project/overview',
     },
+  ];
+
+  private readonly projectLensItemsTail: SidebarMenuItem[] = [
     {
       label: 'Meetings',
       icon: 'fa-light fa-calendar',
@@ -562,6 +560,14 @@ export class SidebarNavService {
       routerLink: '/project/documents',
     },
   ];
+
+  // --- Project — Formation checklist (GH-1958; dark-launched, inserted directly under Dashboard) ---
+  private readonly formationNavItem: SidebarMenuItem = {
+    label: 'Formation',
+    icon: 'fa-light fa-list-check',
+    routerLink: '/project/formation',
+    testId: 'sidebar-project-formation',
+  };
 
   // --- Project / Foundation — Mktg OS agents (dark-launched; inserted directly under Documents) ---
   private readonly mktgOsAgentsNavItem: SidebarMenuItem = {

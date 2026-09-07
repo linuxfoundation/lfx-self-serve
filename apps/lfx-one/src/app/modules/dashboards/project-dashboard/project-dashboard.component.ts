@@ -15,10 +15,10 @@ import { BehaviorSubject, combineLatest, of, switchMap } from 'rxjs';
 
 import { DashboardCastDrawerHostComponent } from '../components/dashboard-cast-drawer-host/dashboard-cast-drawer-host.component';
 import { DashboardSidebarComponent } from '../components/dashboard-sidebar/dashboard-sidebar.component';
+import { FormationEntryCardComponent } from '../components/formation-entry-card/formation-entry-card.component';
 import { MyMeetingsComponent } from '../components/my-meetings/my-meetings.component';
 import { PendingActionsComponent } from '../components/pending-actions/pending-actions.component';
 import { RecentProgressComponent } from '../components/recent-progress/recent-progress.component';
-import { FormationChecklistSectionComponent } from '../components/formation-checklist-section/formation-checklist-section.component';
 
 @Component({
   selector: 'lfx-project-dashboard',
@@ -30,7 +30,7 @@ import { FormationChecklistSectionComponent } from '../components/formation-chec
     DashboardSidebarComponent,
     DashboardCastDrawerHostComponent,
     TagComponent,
-    FormationChecklistSectionComponent,
+    FormationEntryCardComponent,
   ],
   templateUrl: './project-dashboard.component.html',
   styleUrl: './project-dashboard.component.scss',
@@ -44,8 +44,8 @@ export class ProjectDashboardComponent {
 
   public readonly selectedProject = computed(() => this.projectContextService.activeContext());
   private readonly formationEnabled = this.featureFlagService.getBooleanFlag(FORMATION_ENABLED_FLAG, false);
-  /** GH-1958: the checklist section only renders for a project in a "Formation - *" stage, dark-launched behind `formation-enabled`. */
-  protected readonly isFormationStageProject = computed(() => this.formationEnabled() && isFormationStage(this.projectService.project()?.stage));
+  /** GH-1958: the entry card only renders for a project in a "Formation - *" stage, dark-launched behind `formation-enabled`. */
+  protected readonly showFormationEntryCard = computed(() => this.formationEnabled() && isFormationStage(this.projectContextService.activeProjectStage()));
   protected readonly staffHeading = 'Project Staff';
 
   /** GH-1955 — see `FORMATION_ENABLED_FLAG`'s doc comment for what this does and doesn't gate. */

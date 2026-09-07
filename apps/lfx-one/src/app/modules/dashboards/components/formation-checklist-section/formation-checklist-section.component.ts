@@ -43,9 +43,10 @@ export class FormationChecklistSectionComponent {
 
   private readonly refresh$ = new BehaviorSubject<void>(undefined);
   private readonly loadFailed = signal(false);
-  // Starts true — the parent only renders this component once it already knows the project is in
-  // a Formation stage, so a real project context is expected on the very first combineLatest
-  // emission; starting false would flash the "Choose a template" empty state for one frame first.
+  // Starts true — `formationProjectEnabledGuard` (CanMatch on `/project/formation`) already confirmed
+  // the project is in a Formation stage before this route resolved, so a real project context is
+  // expected on the very first combineLatest emission; starting false would flash the "Choose a
+  // template" empty state for one frame first.
   protected readonly loading = signal(true);
 
   public readonly drawerVisible = signal(false);
@@ -287,9 +288,9 @@ export class FormationChecklistSectionComponent {
       combineLatest([this.refresh$, slug$]).pipe(
         switchMap(([, slug]) => {
           if (!slug) {
-            // Unreachable in the real flow — the parent only renders this component once
-            // ProjectService.project()?.stage already confirmed a Formation-stage project, which
-            // requires a resolved context. Still resolved defensively rather than left loading forever.
+            // Unreachable in the real flow — `formationProjectEnabledGuard` already confirmed a
+            // Formation-stage project before this route resolved, which requires a resolved context.
+            // Still resolved defensively rather than left loading forever.
             // lastSlug is reset too — otherwise an A -> null -> A round trip would misclassify the
             // return to A as "same slug" and skip the loading state a genuine reload needs.
             lastSlug = null;
