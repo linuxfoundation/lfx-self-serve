@@ -55,10 +55,34 @@
             </p>
           }
 
+          <!--
+            OUTSIDE the @if below, deliberately. Same stable-live-region pattern as the
+            saved-brief announcement above, and for the same reason — but the gate itself is the
+            trap here: it tests hsStatus(), so a region placed inside it would be created in the
+            very change that populates it, and a live region inserted with its text already
+            present is not reliably announced.
+            It matters more here than elsewhere on this panel: hsStatus carries the OUTCOME of a
+            non-idempotent create, including "may or may not have been created", and the button
+            that started it can disappear from under the focus that triggered it.
+          -->
+          <div role="status" aria-live="polite" class="sr-only" data-testid="planning-hubspot-status-live">{{ hsStatus() }}</div>
+
           <!-- HubSpot UTM Token -->
           @if (hsUtm() || hsSearching() || hsCreating() || hsStatus() || hsNotFound()) {
             <div class="flex flex-col gap-2" data-testid="planning-hubspot-section">
-              <label class="text-xs font-medium text-gray-700">
+              <!--
+                `for`/`id`, not aria-label. The visible text is already the right name, and
+                duplicating it in an attribute lets the two drift -- the label would then say one
+                thing on screen and another to a screen reader. The status spans inside it are
+                deliberately part of the name: "HubSpot UTM token Looking up..." is what a sighted
+                user reads, so it is what should be announced (Copilot).
+
+                The input carried an `aria-label` alongside this, which is the very duplication
+                the paragraph above argues against -- and it WINS over the label element, so the
+                status spans this comment calls deliberate were dropped from the announced name
+                (dealako, round 8). The rationale and the markup now agree.
+              -->
+              <label [attr.for]="hsUtm() ? utmFieldId() : null" class="text-xs font-medium text-gray-700">
                 HubSpot UTM token
                 @if (hsSearching()) {
                   <span class="ml-2 font-normal text-gray-400">Looking up...</span>
@@ -70,6 +94,7 @@
 
               @if (hsUtm()) {
                 <input
+                  [id]="utmFieldId()"
                   type="text"
                   [value]="hsUtm()"
                   readonly
@@ -77,28 +102,95 @@
                   data-testid="planning-hubspot-utm-value" />
               }
 
-              @if (hsNotFound() && !hsUtm()) {
-                <div class="flex items-center gap-3 rounded-lg border border-amber-200 bg-amber-50 p-3">
-                  <span class="flex-1 text-sm text-amber-700">No campaign found for "{{ lastLookedUpEvent }}"</span>
-                  <button
-                    type="button"
-                    (click)="createInHubSpot()"
-                    [disabled]="hsCreating()"
-                    class="whitespace-nowrap rounded-md bg-blue-600 px-3 py-1.5 text-xs font-medium text-white hover:bg-blue-700 disabled:opacity-50"
-                    data-testid="planning-hubspot-create-btn">
-                    {{ hsCreating() ? 'Creating...' : 'Create in HubSpot' }}
-                  </button>
+              <!--
+                A CAPPED search did not prove the campaign is absent, so it gets a different
+                answer entirely: no create button. Offering one here duplicates a campaign in a
+                namespace every project on that portal shares, and the duplicate cannot be removed from
+                this UI.
+              -->
+              @if (hsNotFound() && !hsUtm() && hsCreateSuppressed()) {
+                <div class="rounded-lg border border-amber-200 bg-amber-50 p-3" data-testid="planning-hubspot-capped">
+                  <!--
+                    Both branches suppress the create; only the first may claim TRUNCATION, and
+                    they point at different remedies — narrow the term vs check the name.
+                  -->
+                  @if (hsCompletenessUnproven()) {
+                    <p class="text-sm text-amber-700">
+                      No match for "{{ lastLookedUpEvent }}" among the campaigns HubSpot returned — and HubSpot did not confirm that search was complete, so the
+                      campaign may still exist. Check HubSpot directly, or search a narrower term, before creating one.
+                    </p>
+                  } @else {
+                    <p class="text-sm text-amber-700">
+                      No close match for "{{ lastLookedUpEvent }}" among the campaigns HubSpot returned, though it did return some. One of them may be this
+                      event under a different name — check HubSpot directly before creating one.
+                    </p>
+                  }
+                </div>
+              }
+
+              @if (hsNotFound() && !hsUtm() && !hsCreateSuppressed()) {
+                <!--
+                  The exposure warning is REQUIRED by the upstream contract, not decoration.
+                  HubSpot's campaign namespace is the whole LF portal, so a campaign created here
+                  is visible to every other foundation's campaign managers — and the name is
+                  whatever event text the operator typed. Without this they cannot know that
+                  before clicking.
+                -->
+                <div class="flex flex-col gap-2 rounded-lg border border-amber-200 bg-amber-50 p-3" data-testid="planning-hubspot-create-block">
+                  <p class="text-sm text-amber-700">No campaign found for "{{ lastLookedUpEvent }}"</p>
+                  <p class="text-xs text-amber-800" data-testid="planning-hubspot-global-warning">
+                    Creating one adds it to the shared HubSpot account this project is connected to, where everyone working in that account can see the name. Do
+                    not include anything project-sensitive.
+                  </p>
+                  <div class="flex items-center gap-3">
+                    <span class="flex-1"></span>
+                    <button
+                      type="button"
+                      (click)="createInHubSpot()"
+                      [disabled]="hsCreateBlocked()"
+                      class="whitespace-nowrap rounded-md bg-blue-600 px-3 py-1.5 text-xs font-medium text-white hover:bg-blue-700 disabled:opacity-50"
+                      data-testid="planning-hubspot-create-btn">
+                      {{ hsCreating() ? 'Creating...' : 'Create in HubSpot' }}
+                    </button>
+                  </div>
                 </div>
               }
 
               @if (hsStatus()) {
-                <p [class]="'text-xs ' + (hsUtm() ? 'text-green-600' : 'text-amber-600')" data-testid="planning-hubspot-status">{{ hsStatus() }}</p>
+                <p aria-hidden="true" [class]="'text-xs ' + (hsUtm() ? 'text-green-600' : 'text-amber-600')" data-testid="planning-hubspot-status">
+                  {{ hsStatus() }}
+                </p>
               }
 
-              @if (hsMatches().length > 1) {
-                <div class="flex flex-col gap-1">
-                  <p class="text-xs text-gray-500">Multiple matches — click to select:</p>
-                  @for (m of hsMatches(); track m.hs_utm) {
+              <!--
+                Only shown while the create outcome is UNKNOWN. The create offer is deliberately
+                withdrawn there — the campaign may already exist — so a re-check is the only
+                action that can establish what happened, and retyping the same url cannot start
+                one.
+              -->
+              @if (hsUnconfirmed()) {
+                <button
+                  type="button"
+                  (click)="recheckHubSpot()"
+                  [disabled]="hsSearching() || hsCreating()"
+                  class="self-start rounded-md border border-gray-300 px-3 py-1.5 text-xs font-medium text-gray-700 hover:border-gray-400 disabled:opacity-50"
+                  data-testid="planning-hubspot-recheck-btn">
+                  {{ hsSearching() ? 'Checking...' : 'Check HubSpot again' }}
+                </button>
+              }
+
+              @if (hsHasAlternatives()) {
+                <div class="flex flex-col gap-1" data-testid="planning-hubspot-matches">
+                  <p class="text-xs text-gray-500">
+                    {{ hsUtm() ? 'Other matches — click to select:' : 'Similar campaigns — pick the right one, or check HubSpot:' }}
+                  </p>
+                  <!--
+                    Tracked by INDEX, not by hs_utm. The token is not unique -- the mapper
+                    forwards every scored campaign without deduplicating -- so two candidates
+                    sharing one produce duplicate Angular keys and can reuse the wrong DOM row.
+                    The list is static for a given lookup, so the index is a stable identity.
+                  -->
+                  @for (m of hsMatches(); track $index) {
                     <button
                       type="button"
                       (click)="selectHsMatch(m.hs_utm, m.name)"
@@ -346,8 +438,8 @@
           </button>
         }
       </div>
-      @if (eventDetails(); as details) {
-        <div class="mt-2 flex flex-wrap items-center gap-3 pl-7 text-xs text-gray-600">
+      @if (!isEmail() && eventDetails(); as details) {
+        <div class="mt-2 flex flex-wrap items-center gap-3 pl-7 text-xs text-gray-600" data-testid="planning-event-strip">
           <span class="font-medium text-gray-900">{{ details.name }}</span>
           <span class="flex items-center gap-1">
             <i class="fa-light fa-calendar" aria-hidden="true"></i>
@@ -366,6 +458,95 @@
         </div>
       }
     </div>
+
+    <!--
+      The email brief itself (LFXV2-2770). An email brief returns event details and a UTM token
+      and no `structuredCopy`, so the paid editor above is hidden for it — but the SCRAPE is what
+      gets things wrong, and these are the fields the content generator is instructed to use
+      verbatim. Without this the only remedy for a wrong date is to fix the event page and
+      re-scrape.
+    -->
+    @if (isEmail() && eventDetails(); as details) {
+      <div class="flex flex-col gap-3 rounded-lg border border-gray-200 bg-white p-4" data-testid="planning-email-brief">
+        <div class="flex items-center justify-between">
+          <h3 class="text-sm font-semibold text-gray-900">Event details</h3>
+          @if (!isEditingEmailBrief()) {
+            <button
+              type="button"
+              (click)="enterEmailEditMode()"
+              class="flex items-center gap-1.5 rounded-md border border-gray-300 bg-white px-3 py-1.5 text-xs font-medium text-gray-700 hover:bg-gray-50"
+              data-testid="planning-email-edit-btn">
+              <i class="fa-light fa-pen-to-square" aria-hidden="true"></i>
+              Edit Brief
+            </button>
+          }
+        </div>
+
+        @if (isEditingEmailBrief()) {
+          <div class="flex flex-col gap-3" data-testid="planning-email-brief-edit">
+            <div class="flex flex-col gap-1">
+              <label for="eb-name" class="font-mono text-xs uppercase tracking-wide text-gray-400">Event name</label>
+              <lfx-input-text [form]="emailEditForm" control="name" id="eb-name" type="text" dataTest="planning-email-edit-name" />
+            </div>
+            <div class="flex flex-col gap-1">
+              <label for="eb-dates" class="font-mono text-xs uppercase tracking-wide text-gray-400">Dates</label>
+              <lfx-input-text [form]="emailEditForm" control="dates" id="eb-dates" type="text" dataTest="planning-email-edit-dates" />
+            </div>
+            <div class="flex flex-col gap-1">
+              <label for="eb-city" class="font-mono text-xs uppercase tracking-wide text-gray-400">Location</label>
+              <lfx-input-text [form]="emailEditForm" control="city" id="eb-city" type="text" dataTest="planning-email-edit-city" />
+            </div>
+            <div class="flex flex-col gap-1">
+              <label for="eb-country" class="font-mono text-xs uppercase tracking-wide text-gray-400">Country code</label>
+              <!--
+              Editable because the AUDIENCE build depends on it. A failed extraction leaves this
+              empty rather than guessing 'US', which is the honest answer -- but without a field to
+              correct it an operator could not build a country-scoped audience at all.
+            -->
+              <lfx-input-text [form]="emailEditForm" control="countryCode" id="eb-country" type="text" dataTest="planning-email-edit-country" />
+            </div>
+            <div class="flex flex-col gap-1">
+              <label for="eb-aud" class="font-mono text-xs uppercase tracking-wide text-gray-400">Audience</label>
+              <lfx-input-text [form]="emailEditForm" control="audience" id="eb-aud" type="text" dataTest="planning-email-edit-audience" />
+            </div>
+            <div class="flex flex-col gap-1">
+              <label for="eb-url" class="font-mono text-xs uppercase tracking-wide text-gray-400">Registration URL</label>
+              <lfx-input-text [form]="emailEditForm" control="registrationUrl" id="eb-url" type="text" dataTest="planning-email-edit-url" />
+            </div>
+            <div class="flex items-center gap-2">
+              <lfx-button
+                label="Save changes"
+                icon="fa-light fa-floppy-disk"
+                severity="secondary"
+                [outlined]="true"
+                (onClick)="saveEmailEdit()"
+                ariaLabel="Save the event details"
+                data-testid="planning-email-save-btn" />
+              <lfx-button
+                label="Cancel"
+                severity="secondary"
+                [outlined]="true"
+                (onClick)="cancelEmailEdit()"
+                ariaLabel="Cancel editing the event details"
+                data-testid="planning-email-cancel-btn" />
+            </div>
+          </div>
+        } @else {
+          <dl class="grid grid-cols-[8rem_1fr] gap-x-4 gap-y-2 text-sm" data-testid="planning-email-brief-view">
+            <dt class="font-mono text-xs uppercase tracking-wide text-gray-400">Event</dt>
+            <dd class="text-gray-900" data-testid="planning-email-brief-name">{{ details.name || '—' }}</dd>
+            <dt class="font-mono text-xs uppercase tracking-wide text-gray-400">Dates</dt>
+            <dd class="text-gray-700">{{ details.dates || '—' }}</dd>
+            <dt class="font-mono text-xs uppercase tracking-wide text-gray-400">Location</dt>
+            <dd class="text-gray-700">{{ details.city || '—' }}</dd>
+            <dt class="font-mono text-xs uppercase tracking-wide text-gray-400">Audience</dt>
+            <dd class="text-gray-700">{{ details.audience || '—' }}</dd>
+            <dt class="font-mono text-xs uppercase tracking-wide text-gray-400">Register</dt>
+            <dd class="break-all text-gray-700">{{ details.registrationUrl || '—' }}</dd>
+          </dl>
+        }
+      </div>
+    }
 
     <!-- HubSpot UTM -->
     @if (hsUtm()) {
@@ -971,6 +1152,15 @@
             Copy All — copies the empty copy buffer, silently putting nothing on the clipboard.
 
           Proceed and New Brief stay: both are delivery-agnostic.
+
+          Copy All carries a SECOND guard on `copyBuffer()`, because email is not the only brief
+          that reaches here with nothing to copy. A Microsoft-ONLY paid brief skips the ad-copy
+          stage too — Microsoft contributes no copy keys, so `campaign-proxy` emits an empty
+          `copy_structured` and never streams a copy token (see `someContributesCopy` there).
+          That brief is NOT email, so `!isEmail()` admits it and the button wrote an empty
+          clipboard with no feedback. Guarding on the buffer the button actually copies covers
+          that case and any future copy-less platform, rather than naming Microsoft here and
+          needing the same fix again for the next one.
         -->
         @if (!isEmail()) {
           <lfx-button
@@ -989,14 +1179,16 @@
             (onClick)="enterEditMode()"
             ariaLabel="Edit the generated brief"
             data-testid="planning-edit-brief-btn" />
-          <lfx-button
-            label="Copy All"
-            icon="fa-light fa-clipboard"
-            severity="secondary"
-            [outlined]="true"
-            (onClick)="copyToClipboard()"
-            ariaLabel="Copy all ad copy to clipboard"
-            data-testid="planning-copy-all-btn" />
+          @if (copyBuffer()) {
+            <lfx-button
+              label="Copy All"
+              icon="fa-light fa-clipboard"
+              severity="secondary"
+              [outlined]="true"
+              (onClick)="copyToClipboard()"
+              ariaLabel="Copy all ad copy to clipboard"
+              data-testid="planning-copy-all-btn" />
+          }
         }
         <lfx-button
           label="New Brief"

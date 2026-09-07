@@ -11,37 +11,47 @@ import { ComponentFixture, TestBed } from '@angular/core/testing';
 import { By } from '@angular/platform-browser';
 import { provideNoopAnimations } from '@angular/platform-browser/animations';
 import { provideRouter, Router, RouterLink } from '@angular/router';
-import { MY_CLAS_M2_ENABLED_FLAG } from '@lfx-one/shared/constants';
+import { GITLAB_UNSUPPORTED_HEADER, MY_CLAS_M2_ENABLED_FLAG } from '@lfx-one/shared/constants';
 import type {
   ClaGroupOption,
+  ClaGroupOrg,
   ClaGroupSearchResponse,
+  ClaGroupSelectDialogData,
   ClaManagerList,
   GithubAccountOptions,
   MyClaAgreement,
   MyClasResponse,
   PrepareSignResponse,
+  SignIdentityDialogData,
+  SignIdentitySelectResult,
+  SignContractTypeDialogData,
+  SignContractTypeSelectResult,
 } from '@lfx-one/shared/interfaces';
+import { BadgeComponent } from '@components/badge/badge.component';
 import { ButtonComponent } from '@components/button/button.component';
 import { MenuComponent } from '@components/menu/menu.component';
 import { TagComponent } from '@components/tag/tag.component';
+import { environment } from '@environments/environment';
 import { FeatureFlagService } from '@services/feature-flag.service';
 import { MyClasService } from '@services/my-clas.service';
 import { UserService } from '@services/user.service';
 import { MenuItem, MessageService } from 'primeng/api';
 import { DialogService } from 'primeng/dynamicdialog';
-import { EMPTY, Observable, of, Subject, throwError } from 'rxjs';
+import { EMPTY, NEVER, Observable, of, Subject, throwError } from 'rxjs';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 
 import { ClaGroupSelectComponent } from './cla-group-select.component';
-import { GithubAccountSelectComponent } from './github-account-select.component';
+import { GitlabUnsupportedComponent } from './gitlab-unsupported.component';
 import { ProfileClasComponent } from './profile-clas.component';
+import { SignContractTypeSelectComponent } from './sign-contract-type-select.component';
+import { SignIdentitySelectComponent } from './sign-identity-select.component';
 
 describe('ProfileClasComponent', () => {
   const agreement = (overrides: Partial<MyClaAgreement> = {}): MyClaAgreement => ({
     id: 's1',
     kind: 'ICLA',
     claGroupName: 'Project One',
-    signedOn: '2022-01-01',
+    signedOn: '2022-01-01T18:40:42Z',
     status: 'valid',
     pdfAvailable: true,
     ...overrides,
@@ -51,7 +61,7 @@ describe('ProfileClasComponent', () => {
   /** The list's own manager flags come from the row, so this stays uncalled unless the dialog opens. */
   let getClaManagersSpy: ReturnType<typeof vi.fn>;
 
-  async function render(agreements: MyClaAgreement[], options: { m2Enabled?: boolean } = {}): Promise<void> {
+  async function render(agreements: MyClaAgreement[], options: { m2Enabled?: boolean; impersonating?: boolean } = {}): Promise<void> {
     const response: MyClasResponse = {
       agreements,
       identity: { matchedUserIds: agreements.length > 0 ? 1 : 0, unmatched: agreements.length === 0, githubLinked: true },
@@ -68,7 +78,7 @@ describe('ProfileClasComponent', () => {
         { provide: MyClasService, useValue: { getMyClas: () => of(response), getPdfUrl: vi.fn(), getClaManagers } },
         // Stubbed rather than real: the Sign CLA action reads impersonating(), and the real
         // service would drag HttpClient into a TestBed that has no reason to make requests.
-        { provide: UserService, useValue: { impersonating: signal(false) } },
+        { provide: UserService, useValue: { impersonating: signal(options.impersonating ?? false) } },
         // Existing tests document M2 overlay behaviour; pin the flag on unless a case opts out.
         {
           provide: FeatureFlagService,
@@ -175,6 +185,35 @@ describe('ProfileClasComponent', () => {
     expect(note?.textContent?.trim()).toBe('No longer matches the approval criteria.');
   });
 
+  it('shows Invalidated · date and Revoked · date under the pill when recorded', async () => {
+    await render([
+      agreement({ id: 's-inv', kind: 'ICLA', status: 'invalidated', pdfAvailable: false, invalidatedAt: '2026-06-03' }),
+      agreement({ id: 's-rev', kind: 'ECLA', status: 'revoked', pdfAvailable: false, companyName: 'Acme', flaggedAt: '2026-08-01' }),
+    ]);
+
+    expect(statusTag('s-inv').value()).toBe('Invalidated');
+    expect(fixture.nativeElement.querySelector('[data-testid="agreement-status-note-s-inv"]')?.textContent?.trim()).toBe('Invalidated · Jun 3, 2026');
+    expect(statusTag('s-rev').value()).toBe('Revoked');
+    expect(fixture.nativeElement.querySelector('[data-testid="agreement-status-note-s-rev"]')?.textContent?.trim()).toBe('Revoked · Aug 1, 2026');
+  });
+
+  it('leaves Invalidated and Revoked undated when the producer sent no date', async () => {
+    await render([
+      agreement({ id: 's-inv', status: 'invalidated', pdfAvailable: false }),
+      agreement({ id: 's-rev', kind: 'ECLA', status: 'revoked', pdfAvailable: false, companyName: 'Acme' }),
+    ]);
+
+    expect(fixture.nativeElement.querySelector('[data-testid="agreement-status-note-s-inv"]')).toBeNull();
+    expect(fixture.nativeElement.querySelector('[data-testid="agreement-status-note-s-rev"]')).toBeNull();
+  });
+
+  it('does not invent an Invalidated date from signedOn', async () => {
+    await render([agreement({ id: 's-inv', status: 'invalidated', pdfAvailable: false, signedOn: '2022-01-01T18:40:42Z', invalidatedAt: 'not-a-date' })]);
+
+    expect(statusTag('s-inv').value()).toBe('Invalidated');
+    expect(fixture.nativeElement.querySelector('[data-testid="agreement-status-note-s-inv"]')).toBeNull();
+  });
+
   it('renders unknown as plain-text em dash, not a tag and not the list-miss sentence', async () => {
     await render([
       agreement({ id: 's-unknown', kind: 'ECLA', status: 'unknown', statusReason: 'unknown', pdfAvailable: false, companyName: 'Acme' }),
@@ -214,6 +253,18 @@ describe('ProfileClasComponent', () => {
     expect(fixture.nativeElement.textContent).not.toContain('Document');
   });
 
+  it('lets a long ECLA company name wrap inside a height-auto type pill', async () => {
+    const longCompanyName = 'Example Employer With A Very Long Legal Name Corp.';
+    await render([agreement({ id: 's-long', kind: 'ECLA', companyName: longCompanyName, pdfAvailable: false })]);
+
+    const badge = fixture.debugElement.query(By.css('[data-testid="agreement-type-s-long"]'));
+    expect(badge).toBeTruthy();
+    expect(badge.componentInstance).toBeInstanceOf(BadgeComponent);
+    expect(badge.componentInstance.value()).toBe(`ECLA · ${longCompanyName}`);
+    expect(badge.componentInstance.styleClass()).toContain('!h-auto');
+    expect(badge.componentInstance.styleClass()).toContain('!whitespace-normal');
+  });
+
   it('offers an enabled Download PDF item on an ICLA row with a document', async () => {
     await render([agreement({ id: 's-icla', kind: 'ICLA', pdfAvailable: true })]);
 
@@ -226,7 +277,7 @@ describe('ProfileClasComponent', () => {
   it('shows a disabled Download PDF item with a Covered by Corporate CLA line on an ECLA row', async () => {
     await render([agreement({ id: 's-ecla', kind: 'ECLA', pdfAvailable: false, companyName: 'Acme' })]);
 
-    expect(menuItems('s-ecla').map((item) => item.label)).toEqual([eclaDownloadLabel, 'Request Removal']);
+    expect(menuItems('s-ecla').map((item) => item.label)).toEqual([eclaDownloadLabel, 'Request Removal', 'Contact CLA Manager']);
     expect(menuItems('s-ecla')[0]).toMatchObject({ disabled: true, escape: false });
   });
 
@@ -259,7 +310,7 @@ describe('ProfileClasComponent', () => {
     ]);
 
     const items = menuItems('s-ecla');
-    expect(items.map((item) => item.label)).toEqual([eclaDownloadLabel, 'Request Removal', 'Manage in CCLA Console']);
+    expect(items.map((item) => item.label)).toEqual([eclaDownloadLabel, 'Request Removal', 'Contact CLA Manager', 'Manage in CCLA Console']);
 
     // PrimeNG's menu renders no `rel`, so the item opens through `command` to keep noopener/noreferrer.
     const open = vi.spyOn(window, 'open').mockReturnValue(null);
@@ -273,10 +324,46 @@ describe('ProfileClasComponent', () => {
     expect(menuItems('s-icla').map((item) => item.label)).toEqual(['Download PDF']);
 
     await render([agreement({ id: 's-ecla', kind: 'ECLA', pdfAvailable: false, companyName: 'Acme', claManager: true })]);
-    expect(menuItems('s-ecla').map((item) => item.label)).toEqual([eclaDownloadLabel, 'Request Removal']);
+    expect(menuItems('s-ecla').map((item) => item.label)).toEqual([eclaDownloadLabel, 'Request Removal', 'Contact CLA Manager']);
 
     await render([agreement({ id: 's-ecla', kind: 'ECLA', pdfAvailable: false, companyName: 'Acme', claGroupId: 'g-anuket-005', claManager: false })]);
-    expect(menuItems('s-ecla').map((item) => item.label)).toEqual([eclaDownloadLabel, 'Request Removal']);
+    expect(menuItems('s-ecla').map((item) => item.label)).toEqual([eclaDownloadLabel, 'Request Removal', 'Contact CLA Manager']);
+  });
+
+  it('disables every row action except Download PDF while impersonating (#1894)', async () => {
+    const attnEcla = agreement({
+      id: 's-attn',
+      kind: 'ECLA',
+      pdfAvailable: false,
+      status: 'needs_attention',
+      statusReason: 'not_on_approval_list',
+      companyName: 'Acme',
+      claGroupId: 'g-anuket-005',
+      claManager: true,
+      foundationSfid: 'a09P000000DsCE5IAN',
+    });
+
+    await render([attnEcla], { impersonating: true });
+
+    // Nothing is withheld — the same items a normal session gets, greyed out, so the
+    // administrator can see the action exists and that it is unavailable.
+    expect(menuItems('s-attn').map((item) => item.label)).toEqual([
+      eclaDownloadLabel,
+      'Request approval',
+      'Request Removal',
+      'Contact CLA Manager',
+      'Manage in CCLA Console',
+    ]);
+    expect(menuItems('s-attn').every((item) => item.disabled)).toBe(true);
+    expect(actionsTrigger('s-attn')).not.toBeNull();
+  });
+
+  it('keeps Download PDF enabled while impersonating — retrieving the document is a read (#1894)', async () => {
+    await render([agreement({ id: 's-icla', kind: 'ICLA', pdfAvailable: true })], { impersonating: true });
+
+    const items = menuItems('s-icla');
+    expect(items.map((item) => item.label)).toEqual(['Download PDF']);
+    expect(items[0].disabled).toBeFalsy();
   });
 
   it('reads manager status off the row rather than spending a managers GET per ECLA', async () => {
@@ -372,7 +459,11 @@ describe('ProfileClasComponent', () => {
     return fixture.nativeElement.querySelector(`[data-testid="agreement-signed-as-${id}"]`);
   }
 
-  it('renders Signed as {identity} (GitHub) / (GitLab) / no suffix under the date', async () => {
+  function signedOn(id: string): HTMLElement | null {
+    return fixture.nativeElement.querySelector(`[data-testid="agreement-signed-on-${id}"]`);
+  }
+
+  it('renders Signed as {identity} (GitHub) / (GitLab) / (Gerrit) under the date', async () => {
     await render([
       agreement({ id: 's-gh', signedVia: 'github', signedAs: 'jellis' }),
       agreement({ id: 's-gl', signedVia: 'gitlab', signedAs: 'jellis' }),
@@ -381,7 +472,7 @@ describe('ProfileClasComponent', () => {
 
     expect(signedAs('s-gh')?.textContent?.trim()).toBe('Signed as jellis (GitHub)');
     expect(signedAs('s-gl')?.textContent?.trim()).toBe('Signed as jellis (GitLab)');
-    expect(signedAs('s-email')?.textContent?.trim()).toBe('Signed as jellis@acme-motors.example');
+    expect(signedAs('s-email')?.textContent?.trim()).toBe('Signed as jellis@acme-motors.example (Gerrit)');
     expect(headers()).toEqual(['Project', 'Type', 'Status', 'Signed', 'Actions']);
   });
 
@@ -420,12 +511,19 @@ describe('ProfileClasComponent', () => {
     expect(signedAs('s-as-only')?.tagName.toLowerCase()).not.toBe('a');
   });
 
+  it('renders an em dash when signedOn is empty or unparseable', async () => {
+    await render([agreement({ id: 's-empty', signedOn: '' }), agreement({ id: 's-bad', signedOn: 'not-a-date' })]);
+
+    expect(signedOn('s-empty')?.textContent?.trim()).toBe('—');
+    expect(signedOn('s-bad')?.textContent?.trim()).toBe('—');
+  });
+
   it('hides Sign CLA, Status, kebab, and Signed as when my-clas-m2-enabled is off', async () => {
     await render(
       [
         agreement({
           id: 's-m1',
-          signedOn: '2022-01-01',
+          signedOn: '2022-01-01T18:40:42Z',
           signedVia: 'github',
           signedAs: 'jellis',
           pdfAvailable: true,
@@ -465,21 +563,23 @@ describe('ProfileClasComponent', () => {
 });
 
 /**
- * Covers the Sign CLA hand-off entry point (#1251) and the GitHub account step that now sits
- * inside it (#1252).
+ * Covers the Sign CLA hand-off entry point (#1251), the identity step that now sits inside it
+ * (#1252), and the routing of both by the selected CLA group's source (#2002).
  *
  * Each picker is a dynamic dialog with its own spec; what matters here is the orchestration —
- * that the action is offered only when it can succeed, that the number of linked accounts
- * decides whether a choice is even presented, that the address navigated to is the one the CLA
- * backend returned rather than one assembled here, and that a refusal ends the flow rather than
- * quietly picking another account. The template is rendered rather than overridden, because
- * whether the action is offered at all is a template condition.
+ * that the action is offered only when it can succeed, that every list reaches the step
+ * whatever its length, that the step is reached for every source, that the address navigated to
+ * is the one the CLA backend returned rather than one assembled here, and that a refusal ends
+ * the flow rather than quietly picking another identity. The template is rendered rather than
+ * overridden, because whether the action is offered at all is a template condition.
  */
-describe('ProfileClasComponent — Sign CLA hand-off and account selection (#1251, #1252)', () => {
+describe('ProfileClasComponent — Sign CLA hand-off and identity selection (#1251, #1252, #2002)', () => {
   const CLA_GROUP: ClaGroupOption = { claGroupId: 'cg-1', projectName: 'Venus test', matchTypes: ['project'], organizations: [] };
   const SEARCH_RESULTS: ClaGroupSearchResponse = { searchTerm: 'venus', resultCount: 1, truncated: false, results: [CLA_GROUP] };
+  const VIEWER_USERNAME = 'jdoe';
   const EMPTY_CLAS: MyClasResponse = { agreements: [], identity: { matchedUserIds: 1, unmatched: false, githubLinked: true } };
   const HOME = 'https://app.dev.lfx.dev/profile/clas';
+  const ORIGIN = 'https://app.dev.lfx.dev';
   /** Composed by the CLA backend and returned on the prepare, never assembled in this app. */
   const SIGN_URL = 'https://easycla.dev.communitybridge.org/#/cla/project/cg-1/user/u-1?redirect=enc';
   /** The CLA backend's own 403 prose — the single string a refusal is explained with (FR-007). */
@@ -494,7 +594,7 @@ describe('ProfileClasComponent — Sign CLA hand-off and account selection (#125
   };
   const PREPARED: PrepareSignResponse = { userId: 'u-1', signUrl: SIGN_URL, githubId: '12345', githubUsername: 'octocat', skippedIdentities: [] };
 
-  let location: { href: string };
+  let location: { href: string; origin: string };
   let messageAdd: ReturnType<typeof vi.fn>;
   let getGithubAccounts: ReturnType<typeof vi.fn>;
   let prepareSign: ReturnType<typeof vi.fn>;
@@ -504,6 +604,20 @@ describe('ProfileClasComponent — Sign CLA hand-off and account selection (#125
 
   /** Records dialog opens in order, so "which dialog, and was it opened at all" is assertable. */
   let opened: unknown[];
+  /** Records what each dialog was opened with, so the identity step's inputs are assertable. */
+  let openedWith: {
+    component: unknown;
+    config: { header?: string; data?: SignIdentityDialogData | ClaGroupSelectDialogData | SignContractTypeDialogData };
+  }[];
+  /**
+   * Manual control of the identity step's teardown, under `stepIdentityTeardown`.
+   *
+   * `onClose` and `onDestroy` are one event apart in PrimeNG but a whole leave animation apart in
+   * time, and the scroll lock is dropped at the end of it. Emitting both from `of()` collapses
+   * that distance, so a step reopened from `onClose` — the bug — passes as readily as one that
+   * waits. Separate subjects keep them tellable apart.
+   */
+  let identitySteps: { close: Subject<unknown>; destroy: Subject<unknown> };
 
   async function setup(
     options: {
@@ -512,26 +626,69 @@ describe('ProfileClasComponent — Sign CLA hand-off and account selection (#125
       accounts?: () => Observable<GithubAccountOptions>;
       prepare?: () => Observable<PrepareSignResponse>;
       closesWith?: ClaGroupOption | null;
-      accountClosesWith?: string | null;
+      accountClosesWith?: SignIdentitySelectResult | null;
       dismissGroup?: 'close' | 'destroy' | 'hold';
       dismissAccount?: 'close' | 'destroy' | 'hold';
+      /**
+       * Drives the identity step's `onClose` and `onDestroy` from `identitySteps` instead of
+       * emitting both at once, so which of the two a follow-on step waits for is assertable.
+       */
+      stepIdentityTeardown?: boolean;
+      /** Linked organizations on the selected group — the sole input to the routing decision. */
+      organizations?: ClaGroupOrg[];
+      iclaEnabled?: boolean;
+      cclaEnabled?: boolean;
+      viewerUsername?: string | null;
+      contractTypeClosesWith?: SignContractTypeSelectResult | null;
+      dismissContractType?: 'close' | 'destroy' | 'hold';
+      /** Loaded My CLAs list handed to the group picker (#1914). */
+      agreements?: MyClaAgreement[];
+      /** Leaves the My CLAs request unresolved, so the loading state is assertable (#1914). */
+      pending?: boolean;
+      /** Fails the My CLAs request, so the load-failure state is assertable (#1914). */
+      failed?: boolean;
     } = {}
   ): Promise<ComponentFixture<ProfileClasComponent>> {
-    location = { href: HOME };
+    location = { href: HOME, origin: ORIGIN };
     messageAdd = vi.fn();
     opened = [];
+    openedWith = [];
+    identitySteps = { close: new Subject<unknown>(), destroy: new Subject<unknown>() };
     getGithubAccounts = vi.fn(options.accounts ?? (() => of(TWO_ACCOUNTS)));
     prepareSign = vi.fn(options.prepare ?? (() => of(PREPARED)));
     // Kept on the stub purely so a regression to client-side URL construction is assertable
     // rather than a bare TypeError. Production must never reach it (FR-004).
     buildSignUrlFor = vi.fn(() => SIGN_URL);
 
-    open = vi.fn((component: unknown) => {
+    const selectedGroup: ClaGroupOption = {
+      ...CLA_GROUP,
+      organizations: options.organizations ?? [],
+      iclaEnabled: options.iclaEnabled ?? true,
+      cclaEnabled: options.cclaEnabled ?? false,
+    };
+
+    open = vi.fn((component: unknown, config?: { header?: string; data?: SignIdentityDialogData | ClaGroupSelectDialogData | SignContractTypeDialogData }) => {
       opened.push(component);
-      if (component === GithubAccountSelectComponent) {
-        return dialogEvents('accountClosesWith' in options ? options.accountClosesWith : '12345', options.dismissAccount ?? 'close');
+      openedWith.push({ component, config: config ?? {} });
+      if (component === SignIdentitySelectComponent) {
+        if (options.stepIdentityTeardown) {
+          return { onClose: identitySteps.close.asObservable(), onDestroy: identitySteps.destroy.asObservable() };
+        }
+        return dialogEvents(
+          'accountClosesWith' in options ? options.accountClosesWith : { kind: 'github', githubId: '12345' },
+          options.dismissAccount ?? 'close'
+        );
       }
-      return dialogEvents('closesWith' in options ? options.closesWith : CLA_GROUP, options.dismissGroup ?? 'close');
+      if (component === SignContractTypeSelectComponent) {
+        return dialogEvents(
+          'contractTypeClosesWith' in options ? options.contractTypeClosesWith : { contractType: 'individual' },
+          options.dismissContractType ?? 'close'
+        );
+      }
+      if (component === GitlabUnsupportedComponent) {
+        return dialogEvents(null, 'close');
+      }
+      return dialogEvents('closesWith' in options ? options.closesWith : selectedGroup, options.dismissGroup ?? 'close');
     });
 
     TestBed.configureTestingModule({
@@ -555,7 +712,13 @@ describe('ProfileClasComponent — Sign CLA hand-off and account selection (#125
               },
             }),
         },
-        { provide: UserService, useValue: { impersonating: signal(options.impersonating ?? false) } },
+        {
+          provide: UserService,
+          useValue: {
+            impersonating: signal(options.impersonating ?? false),
+            viewerUsername: signal('viewerUsername' in options ? options.viewerUsername : VIEWER_USERNAME),
+          },
+        },
         {
           provide: FeatureFlagService,
           useValue: {
@@ -565,9 +728,13 @@ describe('ProfileClasComponent — Sign CLA hand-off and account selection (#125
         {
           provide: MyClasService,
           useValue: {
-            getMyClas: vi.fn(() => of(EMPTY_CLAS)),
+            getMyClas: vi.fn(() => {
+              if (options.pending) return NEVER;
+              if (options.failed) return throwError(() => new Error('my CLAs unavailable'));
+              return of(options.agreements ? { ...EMPTY_CLAS, agreements: options.agreements } : EMPTY_CLAS);
+            }),
             getPdfUrl: vi.fn(),
-            getClaGroupOptions: vi.fn(() => of(SEARCH_RESULTS)),
+            getClaGroupOptions: vi.fn(() => of({ ...SEARCH_RESULTS, results: [selectedGroup] })),
             getGithubAccounts,
             prepareSign,
             buildSignUrlFor,
@@ -589,6 +756,11 @@ describe('ProfileClasComponent — Sign CLA hand-off and account selection (#125
 
   function query(fixture: ComponentFixture<ProfileClasComponent>, testId: string): HTMLElement | null {
     return fixture.nativeElement.querySelector(`[data-testid="${testId}"]`);
+  }
+
+  /** The real `<button>` inside `<lfx-button>` — where `disabled` and `aria-label` land. */
+  function signButton(fixture: ComponentFixture<ProfileClasComponent>): HTMLButtonElement | null {
+    return query(fixture, 'sign-cla-action')?.querySelector<HTMLButtonElement>('button') ?? null;
   }
 
   /** Runs the whole flow from the entry point, as a click would. */
@@ -624,12 +796,33 @@ describe('ProfileClasComponent — Sign CLA hand-off and account selection (#125
     const fixture = await setup();
 
     expect(query(fixture, 'sign-cla-action')).not.toBeNull();
+    expect(signButton(fixture)?.disabled).toBe(false);
+    expect(signButton(fixture)?.getAttribute('aria-label')).toBeNull();
   });
 
-  it('withholds the action while impersonating, since the server refuses the write', async () => {
+  it('renders Sign CLA disabled, not hidden, while impersonating (#1894)', async () => {
     const fixture = await setup({ impersonating: true });
 
-    expect(query(fixture, 'sign-cla-action')).toBeNull();
+    // Visible and greyed rather than absent, so the administrator can see the action exists and
+    // read why it is unavailable — the same treatment as every other impersonation-blocked
+    // control on the profile. The server is still the guard.
+    expect(query(fixture, 'sign-cla-action')).not.toBeNull();
+    expect(signButton(fixture)?.disabled).toBe(true);
+    expect(signButton(fixture)?.getAttribute('aria-label')).toBe('Sign CLA — unavailable while impersonating another user');
+  });
+
+  it('opens no picker when Sign CLA is reached while impersonating', async () => {
+    const fixture = await setup({ impersonating: true });
+
+    signButton(fixture)?.click();
+    await fixture.whenStable();
+    expect(opened).toEqual([]);
+
+    // Guarded in the method too, not only on the button: now that the button is rendered, a
+    // keyboard or programmatic activation can reach `openSignDialog` directly.
+    await sign(fixture);
+    expect(opened).toEqual([]);
+    expect(prepareSign).not.toHaveBeenCalled();
   });
 
   it('withholds Sign CLA when my-clas-m2-enabled is off', async () => {
@@ -652,6 +845,83 @@ describe('ProfileClasComponent — Sign CLA hand-off and account selection (#125
     expect(open).toHaveBeenCalled();
     expect(opened[0]).toBe(ClaGroupSelectComponent);
     expect(fixture.nativeElement.querySelector('p-dialog')).toBeNull();
+  });
+
+  it('hands the loaded agreements to the picker so it can tag already-signed groups', async () => {
+    const alreadyHeld: MyClaAgreement = {
+      id: 's1',
+      kind: 'ICLA',
+      claGroupName: 'Venus',
+      claGroupId: 'cg-1',
+      signedOn: '2022-01-01',
+      status: 'valid',
+      pdfAvailable: true,
+    };
+    const fixture = await setup({ agreements: [alreadyHeld], dismissGroup: 'hold' });
+
+    await sign(fixture);
+
+    const groupOpen = openedWith.find((entry) => entry.component === ClaGroupSelectComponent);
+    expect(groupOpen?.config.data).toEqual({ agreements: [alreadyHeld] });
+  });
+
+  it('carries what they already hold for the chosen group into the identity step (#1914)', async () => {
+    const alreadyHeld: MyClaAgreement = {
+      id: 's1',
+      kind: 'ICLA',
+      claGroupName: 'Venus',
+      claGroupId: CLA_GROUP.claGroupId,
+      signedOn: '2022-01-01',
+      status: 'valid',
+      pdfAvailable: true,
+      signedVia: 'github',
+      signedAs: 'jellis',
+    };
+    const otherGroup: MyClaAgreement = { ...alreadyHeld, id: 's2', claGroupId: 'cg-other' };
+    const fixture = await setup({ agreements: [alreadyHeld, otherGroup] });
+
+    await sign(fixture);
+
+    // The group they picked, not their whole list: the step grays out identities, and an
+    // agreement on a different CLA group says nothing about this one.
+    expect(identityStepData()?.claGroupAgreements).toEqual([alreadyHeld]);
+    expect(identityStepData()?.iclaEnabled).toBe(true);
+    expect(identityStepData()?.cclaEnabled).toBe(false);
+  });
+
+  it('forwards the chosen group enablement flags into the identity step', async () => {
+    const fixture = await setup({ iclaEnabled: true, cclaEnabled: true });
+
+    await sign(fixture);
+
+    expect(identityStepData()?.iclaEnabled).toBe(true);
+    expect(identityStepData()?.cclaEnabled).toBe(true);
+  });
+
+  it('leaves the identity step nothing to gray out when the group is new to them', async () => {
+    const fixture = await setup({ agreements: [] });
+
+    await sign(fixture);
+
+    expect(identityStepData()?.claGroupAgreements).toBeUndefined();
+  });
+
+  it('does not open the picker until the CLA list has loaded', async () => {
+    const fixture = await setup({ pending: true });
+
+    await sign(fixture);
+
+    expect(open).not.toHaveBeenCalled();
+  });
+
+  it('does not open the picker when the CLA list failed to load', async () => {
+    // A failed load and having signed nothing both present as an empty list, so opening here
+    // would tag no group and gray out no identity — the duplicate signing this change prevents.
+    const fixture = await setup({ failed: true });
+
+    await sign(fixture);
+
+    expect(open).not.toHaveBeenCalled();
   });
 
   it('does nothing when the contributor backs out of the project picker', async () => {
@@ -692,14 +962,14 @@ describe('ProfileClasComponent — Sign CLA hand-off and account selection (#125
     expect(opened.filter((component) => component === ClaGroupSelectComponent)).toHaveLength(1);
   });
 
-  // --- Cardinality (FR-002) -------------------------------------------------
+  // --- Cardinality ----------------------------------------------------------
 
   it('asks which account to sign as when several are linked', async () => {
     const fixture = await setup({ accounts: () => of(TWO_ACCOUNTS) });
 
     await sign(fixture);
 
-    expect(opened).toContain(GithubAccountSelectComponent);
+    expect(opened).toContain(SignIdentitySelectComponent);
     expect(open.mock.calls.at(-1)?.[1]).toMatchObject({ data: { accounts: TWO_ACCOUNTS.accounts } });
     // The account number and the confirmed group, and nothing else. The handle and the return
     // address are the server's to supply, so sending either from here could only contradict it.
@@ -707,7 +977,7 @@ describe('ProfileClasComponent — Sign CLA hand-off and account selection (#125
   });
 
   it('submits the account chosen, not the first one listed', async () => {
-    const fixture = await setup({ accounts: () => of(TWO_ACCOUNTS), accountClosesWith: '67890' });
+    const fixture = await setup({ accounts: () => of(TWO_ACCOUNTS), accountClosesWith: { kind: 'github', githubId: '67890' } });
 
     await sign(fixture);
 
@@ -715,7 +985,7 @@ describe('ProfileClasComponent — Sign CLA hand-off and account selection (#125
   });
 
   it('does not submit an account that is not in the served list', async () => {
-    const fixture = await setup({ accounts: () => of(TWO_ACCOUNTS), accountClosesWith: '99999' });
+    const fixture = await setup({ accounts: () => of(TWO_ACCOUNTS), accountClosesWith: { kind: 'github', githubId: '99999' } });
 
     await sign(fixture);
 
@@ -725,26 +995,65 @@ describe('ProfileClasComponent — Sign CLA hand-off and account selection (#125
     expect(location.href).toBe(HOME);
   });
 
-  it('skips the choice but still prepares when exactly one account is linked', async () => {
+  it('asks which account to sign as when exactly one is linked', async () => {
     const fixture = await setup({ accounts: () => of(ONE_ACCOUNT) });
 
     await sign(fixture);
 
-    // "No picker" must not become "no prepare" — dropping the call here would leave the
-    // single-account contributor with no signing session and no verified identity.
-    expect(opened).not.toContain(GithubAccountSelectComponent);
+    // A list of one still names the identity the signature will be recorded against, which is
+    // what the step is for — so it is served the account rather than the account being assumed.
+    expect(opened).toContain(SignIdentitySelectComponent);
+    expect(open.mock.calls.at(-1)?.[1]).toMatchObject({ data: { accounts: ONE_ACCOUNT.accounts } });
     expect(prepareSign).toHaveBeenCalledWith({ githubId: '12345', claGroupId: 'cg-1' });
     expect(location.href).toBe(SIGN_URL);
   });
 
-  it('routes to account linking rather than showing an empty picker when none are linked', async () => {
-    const fixture = await setup({ accounts: () => of({ accounts: [] }) });
+  it('prepares nothing when the sole linked account is not confirmed', async () => {
+    const fixture = await setup({ accounts: () => of(ONE_ACCOUNT), accountClosesWith: null });
 
     await sign(fixture);
 
-    expect(opened).not.toContain(GithubAccountSelectComponent);
+    // Showing the step and ignoring its outcome would satisfy "a picker appears" while still
+    // signing as an account nobody confirmed. The confirmation, not the render, is the gate.
     expect(prepareSign).not.toHaveBeenCalled();
+    expect(location.href).toBe(HOME);
+    expect(isStarting(fixture)).toBe(false);
+  });
+
+  it('opens the picker on its empty state when no account is linked (#1917)', async () => {
+    const fixture = await setup({ accounts: () => of({ accounts: [] }), accountClosesWith: null });
+
+    await sign(fixture);
+
+    // The picker is opened and served the empty list rather than being skipped for a redirect.
+    // Stopping the contributor where they are is what keeps the CLA group they already chose.
+    expect(opened).toContain(SignIdentitySelectComponent);
+    expect(open.mock.calls.at(-1)?.[1]).toMatchObject({ data: { accounts: [] } });
+    expect(prepareSign).not.toHaveBeenCalled();
+    expect(location.href).toBe(HOME);
+    expect(isStarting(fixture)).toBe(false);
+  });
+
+  it('goes to Identities when the empty state asks for it', async () => {
+    const fixture = await setup({ accounts: () => of({ accounts: [] }), accountClosesWith: { linkAccounts: true } });
+
+    await sign(fixture);
+
     expect(navigate).toHaveBeenCalledWith(['/profile/identities']);
+    expect(prepareSign).not.toHaveBeenCalled();
+    // No toast on the way out: the empty state they acted on already said this, and repeating it
+    // on arrival reads as an error report for something that went right.
+    expect(messageAdd).not.toHaveBeenCalled();
+  });
+
+  it('stays put when the empty state is dismissed rather than acted on', async () => {
+    const fixture = await setup({ accounts: () => of({ accounts: [] }), accountClosesWith: null });
+
+    await sign(fixture);
+
+    // Dismissing and asking to link both leave the picker with no account chosen. Navigating on
+    // either would move a contributor who only wanted to close the dialog.
+    expect(navigate).not.toHaveBeenCalled();
     expect(location.href).toBe(HOME);
   });
 
@@ -753,8 +1062,9 @@ describe('ProfileClasComponent — Sign CLA hand-off and account selection (#125
 
     await sign(fixture);
 
-    // Routing this into account linking would tell a contributor who has a linked account to
-    // go connect one — sending them to fix something that is not broken.
+    // Treating this as zero accounts would put the contributor in front of the empty state,
+    // telling someone who does have a linked account to go connect one — asking them to fix
+    // something that is not broken.
     expect(navigate).not.toHaveBeenCalled();
     expect(messageAdd).toHaveBeenCalledWith(expect.objectContaining({ severity: 'error' }));
     expect(location.href).toBe(HOME);
@@ -790,7 +1100,7 @@ describe('ProfileClasComponent — Sign CLA hand-off and account selection (#125
 
     await sign(fixture);
 
-    expect(opened).toContain(GithubAccountSelectComponent);
+    expect(opened).toContain(SignIdentitySelectComponent);
     expect(isStarting(fixture)).toBe(false);
     expect(prepareSign).not.toHaveBeenCalled();
 
@@ -832,7 +1142,7 @@ describe('ProfileClasComponent — Sign CLA hand-off and account selection (#125
     // nothing below this layer can notice. Only comparing what came back against what went in
     // catches a signature about to be attributed to an account nobody chose.
     const fixture = await setup({
-      accountClosesWith: '12345',
+      accountClosesWith: { kind: 'github', githubId: '12345' },
       prepare: () => of({ ...PREPARED, githubId: '67890', githubUsername: 'hubot' }),
     });
 
@@ -843,7 +1153,10 @@ describe('ProfileClasComponent — Sign CLA hand-off and account selection (#125
   });
 
   it('proceeds when the verified account matches, so the check is not merely blocking everything', async () => {
-    const fixture = await setup({ accountClosesWith: '67890', prepare: () => of({ ...PREPARED, githubId: '67890', githubUsername: 'hubot' }) });
+    const fixture = await setup({
+      accountClosesWith: { kind: 'github', githubId: '67890' },
+      prepare: () => of({ ...PREPARED, githubId: '67890', githubUsername: 'hubot' }),
+    });
 
     await sign(fixture);
 
@@ -855,7 +1168,7 @@ describe('ProfileClasComponent — Sign CLA hand-off and account selection (#125
     // The server refuses this too; the second guard is here because this is the only layer that
     // saw the picker.
     const fixture = await setup({
-      accountClosesWith: '12345',
+      accountClosesWith: { kind: 'github', githubId: '12345' },
       prepare: () => of({ ...PREPARED, githubId: '67890', githubUsername: 'hubot', skippedIdentities: ['github-id:12345'] }),
     });
 
@@ -866,7 +1179,7 @@ describe('ProfileClasComponent — Sign CLA hand-off and account selection (#125
   });
 
   it('reports a mismatch as a mismatch, not as a failure to open the page', async () => {
-    const fixture = await setup({ accountClosesWith: '12345', prepare: () => of({ ...PREPARED, githubId: '67890' }) });
+    const fixture = await setup({ accountClosesWith: { kind: 'github', githubId: '12345' }, prepare: () => of({ ...PREPARED, githubId: '67890' }) });
 
     await sign(fixture);
 
@@ -937,9 +1250,10 @@ describe('ProfileClasComponent — Sign CLA hand-off and account selection (#125
   });
 
   it('does not route a refusal into account linking', async () => {
-    // Account linking is reached only from an empty account list, which is a fact about this
-    // session rather than an upstream answer. Routing a refusal there would send someone who
-    // does have a linked account to fix something that is not broken.
+    // Account linking is reached only when the contributor asks for it from the picker's empty
+    // state, which is a fact about this session rather than an upstream answer. Routing a
+    // refusal there would send someone who does have a linked account to fix something that is
+    // not broken.
     const fixture = await setup({ prepare: refusedWith(403, OWNERSHIP_REFUSAL) });
 
     await sign(fixture);
@@ -956,5 +1270,425 @@ describe('ProfileClasComponent — Sign CLA hand-off and account selection (#125
     // ID" screen, which reads as a broken product rather than a failed call.
     expect(location.href).toBe(HOME);
     expect(messageAdd).toHaveBeenCalledWith(expect.objectContaining({ severity: 'error' }));
+  });
+
+  // --- Routing by CLA group source (#2002) ----------------------------------
+
+  function org(source: ClaGroupOrg['source'], name = 'an-org'): ClaGroupOrg {
+    return { name, source };
+  }
+
+  /** What the identity step was actually served on the last open. */
+  function identityStepData(): SignIdentityDialogData | undefined {
+    const data = openedWith.filter((entry) => entry.component === SignIdentitySelectComponent).at(-1)?.config.data;
+    return data && 'variant' in data ? data : undefined;
+  }
+
+  /** What the contract-type step was actually served on the last open. */
+  function contractTypeStepData(): SignContractTypeDialogData | undefined {
+    const data = openedWith.filter((entry) => entry.component === SignContractTypeSelectComponent).at(-1)?.config.data;
+    return data && 'heldKinds' in data ? data : undefined;
+  }
+
+  it('keeps a group with no linked organization on the GitHub path', async () => {
+    // The regression this whole change is at risk of. An empty organization list means nothing
+    // is linked or nothing resolved, not "not GitHub" — and these groups are signable today, so
+    // anything inferred from that emptiness breaks something that currently works.
+    const fixture = await setup({ organizations: [] });
+
+    await sign(fixture);
+
+    expect(identityStepData()?.variant).toBe('github');
+    expect(prepareSign).toHaveBeenCalledWith({ githubId: '12345', claGroupId: 'cg-1' });
+    expect(location.href).toBe(SIGN_URL);
+  });
+
+  it('leaves a GitHub-linked group exactly as it was', async () => {
+    const fixture = await setup({ organizations: [org('github', 'cncf')] });
+
+    await sign(fixture);
+
+    expect(identityStepData()?.variant).toBe('github');
+    expect(identityStepData()?.gerritUsername).toBeUndefined();
+    expect(prepareSign).toHaveBeenCalledWith({ githubId: '12345', claGroupId: 'cg-1' });
+  });
+
+  it('still shows the identity step for a Gerrit-only group', async () => {
+    const fixture = await setup({ organizations: [org('gerrit')], accountClosesWith: { kind: 'gerrit' } });
+
+    await sign(fixture);
+
+    // The step is never skipped. A contributor signing under their LF identity is entitled to
+    // see that is what is happening before it happens, which a silent redirect would not show.
+    expect(opened).toContain(SignIdentitySelectComponent);
+    expect(identityStepData()).toMatchObject({ variant: 'gerrit', gerritUsername: VIEWER_USERNAME });
+  });
+
+  it('offers the Gerrit identity without asking the server for GitHub accounts', async () => {
+    const fixture = await setup({ organizations: [org('gerrit')], accountClosesWith: { kind: 'gerrit' } });
+
+    await sign(fixture);
+
+    // Nothing on this path consults a GitHub account, so fetching them would let a failure to
+    // read them block a signature that never needed one.
+    expect(getGithubAccounts).not.toHaveBeenCalled();
+    expect(identityStepData()?.accounts).toEqual([]);
+  });
+
+  it('hands a Gerrit choice to the Console without preparing a signing session', async () => {
+    const fixture = await setup({ organizations: [org('gerrit')], accountClosesWith: { kind: 'gerrit' } });
+
+    await sign(fixture);
+
+    // No prepare: that endpoint opens a session keyed on a GitHub account, and the Console's
+    // Gerrit route reads neither — it resolves the signer from the LF SSO token instead.
+    expect(prepareSign).not.toHaveBeenCalled();
+    expect(location.href).toContain('/#/cla/gerrit/project/cg-1/individual');
+  });
+
+  it('releases Sign CLA before leaving for the Console', async () => {
+    const fixture = await setup({ organizations: [org('gerrit')], accountClosesWith: { kind: 'gerrit' } });
+
+    await sign(fixture);
+
+    // Invisible on the return trip, which is a fresh navigation — but a Back out of the Console
+    // can restore this page from bfcache, and a button left spinning ignores clicks until reload.
+    expect(location.href).toContain('/#/cla/gerrit/project/cg-1/individual');
+    expect(isStarting(fixture)).toBe(false);
+  });
+
+  it('gives the Console a return address back to this page', async () => {
+    const fixture = await setup({ organizations: [org('gerrit')], accountClosesWith: { kind: 'gerrit' } });
+
+    await sign(fixture);
+
+    // Composed from our own origin rather than taken from a header, and encoded so its own
+    // query string cannot merge into the Console's.
+    expect(location.href).toContain(`redirect=${encodeURIComponent(HOME)}`);
+  });
+
+  it('shows the contract-type step when both ICLA and CCLA are enabled', async () => {
+    const fixture = await setup({
+      organizations: [org('gerrit')],
+      iclaEnabled: true,
+      cclaEnabled: true,
+      accountClosesWith: { kind: 'gerrit' },
+    });
+
+    await sign(fixture);
+
+    expect(opened).toContain(SignContractTypeSelectComponent);
+    expect(location.href).toContain('/#/cla/gerrit/project/cg-1/individual');
+  });
+
+  it('tells the contract-type step which type the Gerrit identity already holds', async () => {
+    // The step is only reached because one type is still unsigned. Without this it offers the
+    // type they hold as freely as the one they need, which is the re-sign the gate prevents —
+    // and dropping the wiring would otherwise leave every test on both sides of it green.
+    const gerritIcla: MyClaAgreement = {
+      id: 's1',
+      kind: 'ICLA',
+      claGroupName: 'Venus',
+      claGroupId: CLA_GROUP.claGroupId,
+      signedOn: '2022-01-01',
+      status: 'valid',
+      pdfAvailable: true,
+      signedVia: 'gerrit',
+      signedAs: 'jellis-lf',
+    };
+    // A different group, and a GitHub agreement on this one: neither says anything about what
+    // this Gerrit identity holds here, so a matcher pointed at the wrong thing fails here.
+    const otherGroup: MyClaAgreement = { ...gerritIcla, id: 's2', kind: 'ECLA', claGroupId: 'cg-other', pdfAvailable: false };
+    const viaGithub: MyClaAgreement = { ...gerritIcla, id: 's3', kind: 'ECLA', signedVia: 'github', signedAs: 'jellis', pdfAvailable: false };
+
+    const fixture = await setup({
+      organizations: [org('gerrit')],
+      iclaEnabled: true,
+      cclaEnabled: true,
+      accountClosesWith: { kind: 'gerrit' },
+      contractTypeClosesWith: { contractType: 'corporate' },
+      agreements: [gerritIcla, otherGroup, viaGithub],
+    });
+
+    await sign(fixture);
+
+    expect(contractTypeStepData()?.heldKinds).toEqual(['ICLA']);
+    expect(location.href).toContain('/#/cla/gerrit/project/cg-1/corporate');
+  });
+
+  it('leaves the contract-type step nothing to disable when the identity holds nothing', async () => {
+    const fixture = await setup({
+      organizations: [org('gerrit')],
+      iclaEnabled: true,
+      cclaEnabled: true,
+      accountClosesWith: { kind: 'gerrit' },
+      agreements: [],
+    });
+
+    await sign(fixture);
+
+    expect(contractTypeStepData()?.heldKinds).toEqual([]);
+  });
+
+  it('hands off at corporate when only CCLA is enabled', async () => {
+    const fixture = await setup({
+      organizations: [org('gerrit')],
+      iclaEnabled: false,
+      cclaEnabled: true,
+      accountClosesWith: { kind: 'gerrit' },
+    });
+
+    await sign(fixture);
+
+    expect(opened).not.toContain(SignContractTypeSelectComponent);
+    expect(location.href).toContain('/#/cla/gerrit/project/cg-1/corporate');
+  });
+
+  it('navigates at corporate when the contributor picks Corporate Contributor', async () => {
+    const fixture = await setup({
+      organizations: [org('gerrit')],
+      iclaEnabled: true,
+      cclaEnabled: true,
+      accountClosesWith: { kind: 'gerrit' },
+      contractTypeClosesWith: { contractType: 'corporate' },
+    });
+
+    await sign(fixture);
+
+    expect(location.href).toContain('/#/cla/gerrit/project/cg-1/corporate');
+  });
+
+  it('navigates nowhere and releases Sign CLA when the contract-type step is dismissed', async () => {
+    const fixture = await setup({
+      organizations: [org('gerrit')],
+      iclaEnabled: true,
+      cclaEnabled: true,
+      accountClosesWith: { kind: 'gerrit' },
+      contractTypeClosesWith: null,
+    });
+
+    await sign(fixture);
+
+    // The identity was confirmed but the agreement type was not. Falling through to `individual`
+    // here would sign an agreement the contributor withdrew from choosing, which is #2066 again.
+    expect(location.href).toBe(HOME);
+    expect(isStarting(fixture)).toBe(false);
+  });
+
+  it('releases Sign CLA when the contract-type step is destroyed without onClose (header X)', async () => {
+    const fixture = await setup({
+      organizations: [org('gerrit')],
+      iclaEnabled: true,
+      cclaEnabled: true,
+      accountClosesWith: { kind: 'gerrit' },
+      dismissContractType: 'destroy',
+    });
+
+    await sign(fixture);
+    await Promise.resolve();
+
+    expect(location.href).toBe(HOME);
+    expect(isStarting(fixture)).toBe(false);
+  });
+
+  it('waits for the identity step to be torn down before opening the contract-type step', async () => {
+    const fixture = await setup({
+      organizations: [org('gerrit')],
+      iclaEnabled: true,
+      cclaEnabled: true,
+      stepIdentityTeardown: true,
+    });
+
+    await sign(fixture);
+    identitySteps.close.next({ kind: 'gerrit' });
+    await fixture.whenStable();
+
+    // Closed is not gone. PrimeNG starts the leave animation from this same emission, and its end
+    // is what drops `p-overflow-hidden` — so a step opened here has its own scroll lock stripped a
+    // moment after it appears, and the page scrolls behind it.
+    expect(opened).not.toContain(SignContractTypeSelectComponent);
+
+    // Re-entry stays refused across that gap, asserted through the action rather than the signal
+    // behind it: a second Sign CLA here is what would start a parallel hand-off.
+    const openedBefore = opened.length;
+    (fixture.componentInstance as any).openSignDialog();
+    await fixture.whenStable();
+
+    expect(opened).toHaveLength(openedBefore);
+
+    identitySteps.destroy.next(undefined);
+    await fixture.whenStable();
+
+    expect(opened).toContain(SignContractTypeSelectComponent);
+  });
+
+  it('stops rather than navigating when neither contract type is enabled', async () => {
+    const fixture = await setup({
+      organizations: [org('gerrit')],
+      iclaEnabled: false,
+      cclaEnabled: false,
+      accountClosesWith: { kind: 'gerrit' },
+    });
+
+    await sign(fixture);
+
+    expect(opened).not.toContain(SignContractTypeSelectComponent);
+    expect(location.href).toBe(HOME);
+    // Asserted word for word. The contributor is being turned away at the last step before a
+    // signature, so the message has to say the group is misconfigured and who can fix it —
+    // a generic failure would read as a transient glitch worth retrying forever.
+    expect(messageAdd).toHaveBeenCalledWith({
+      severity: 'error',
+      summary: 'Could not start signing',
+      detail: 'This CLA group is not configured for individual or corporate signing from here. Contact the project CLA manager.',
+    });
+  });
+
+  // Blank and absent are one case, not two: the dialog trims before it builds the card, so a
+  // username this step accepted but the dialog discards would render a Gerrit header over the
+  // GitHub-worded empty state — the wrong-platform copy this flow exists to prevent.
+  it.each([
+    ['absent', null],
+    ['whitespace-only', '   '],
+  ])('stops rather than navigating when the Gerrit identity is %s', async (_label, viewerUsername) => {
+    const fixture = await setup({ organizations: [org('gerrit')], viewerUsername });
+
+    await sign(fixture);
+
+    // A card with no name on it would be a confirmation of nothing. Only reachable if the
+    // session lost the identity it was resolved from, so it is reported rather than rendered.
+    expect(opened).not.toContain(SignIdentitySelectComponent);
+    expect(location.href).toBe(HOME);
+    expect(messageAdd).toHaveBeenCalledWith(expect.objectContaining({ severity: 'error' }));
+    expect(isStarting(fixture)).toBe(false);
+  });
+
+  it('offers both identities in one step for a group linked to GitHub and Gerrit', async () => {
+    const fixture = await setup({ organizations: [org('github', 'cncf'), org('gerrit')] });
+
+    await sign(fixture);
+
+    // One step, not two: a source picker followed by an account picker would ask the
+    // contributor to make the same decision twice.
+    expect(opened.filter((component) => component === SignIdentitySelectComponent)).toHaveLength(1);
+    expect(identityStepData()).toMatchObject({
+      variant: 'github-or-gerrit',
+      accounts: TWO_ACCOUNTS.accounts,
+      gerritUsername: VIEWER_USERNAME,
+    });
+  });
+
+  it('takes the GitHub route when the GitHub card is chosen on a mixed group', async () => {
+    const fixture = await setup({ organizations: [org('github'), org('gerrit')] });
+
+    await sign(fixture);
+
+    // The card decides, not the group. Both routes are open here, so anything that read the
+    // group instead would send half the contributors somewhere they did not choose.
+    expect(prepareSign).toHaveBeenCalledWith({ githubId: '12345', claGroupId: 'cg-1' });
+    expect(location.href).toBe(SIGN_URL);
+  });
+
+  it('takes the Gerrit route when the Gerrit card is chosen on the same group', async () => {
+    const fixture = await setup({ organizations: [org('github'), org('gerrit')], accountClosesWith: { kind: 'gerrit' } });
+
+    await sign(fixture);
+
+    expect(prepareSign).not.toHaveBeenCalled();
+    expect(location.href).toContain('/#/cla/gerrit/project/cg-1/individual');
+  });
+
+  it('offers Gerrit rather than the block when a mixed group has no linked GitHub account', async () => {
+    const fixture = await setup({
+      organizations: [org('github'), org('gerrit')],
+      accounts: () => of({ accounts: [] }),
+      accountClosesWith: { kind: 'gerrit' },
+    });
+
+    await sign(fixture);
+
+    // The sharpest regression in this change. The empty-account block was written when a GitHub
+    // account was the only identity there was; left unscoped it would stop a contributor who
+    // has a perfectly usable identity for the group they picked.
+    expect(identityStepData()).toMatchObject({ variant: 'github-or-gerrit', accounts: [], gerritUsername: VIEWER_USERNAME });
+    expect(location.href).toContain('/#/cla/gerrit/project/cg-1/individual');
+  });
+
+  it.each([
+    ['absent', null],
+    ['whitespace-only', '   '],
+  ])("falls back to the GitHub step when a mixed group's Gerrit identity is %s", async (_label, viewerUsername) => {
+    const fixture = await setup({ organizations: [org('github'), org('gerrit')], viewerUsername });
+
+    await sign(fixture);
+
+    // Still signable through GitHub, so it degrades to that step — copy included — rather than
+    // offering a blank card or failing a flow that has a working path through it.
+    expect(identityStepData()?.variant).toBe('github');
+    expect(identityStepData()?.gerritUsername).toBeUndefined();
+    expect(prepareSign).toHaveBeenCalledWith({ githubId: '12345', claGroupId: 'cg-1' });
+  });
+
+  it('does not offer GitLab as an identity on a group that also has Gerrit', async () => {
+    const fixture = await setup({ organizations: [org('gitlab'), org('gerrit')], accountClosesWith: { kind: 'gerrit' } });
+
+    await sign(fixture);
+
+    expect(opened).not.toContain(GitlabUnsupportedComponent);
+    expect(identityStepData()?.variant).toBe('gerrit');
+  });
+
+  it('blocks a GitLab-only group with a reason instead of a step it cannot complete', async () => {
+    const fixture = await setup({ organizations: [org('gitlab')] });
+
+    await sign(fixture);
+
+    // Not hidden from search and not silently failed: the contributor is stopped at the point
+    // they tried, so the group they chose is still chosen and the reason is on screen.
+    expect(opened).toContain(GitlabUnsupportedComponent);
+    expect(opened).not.toContain(SignIdentitySelectComponent);
+    expect(getGithubAccounts).not.toHaveBeenCalled();
+    expect(prepareSign).not.toHaveBeenCalled();
+    expect(location.href).toBe(HOME);
+  });
+
+  it('names GitLab in the block\u2019s header, not just its body', async () => {
+    const fixture = await setup({ organizations: [org('gitlab')] });
+
+    await sign(fixture);
+
+    // Asked for in review: every dialog in this flow is titled for what it is about, and this
+    // is the one that is entirely about a source. A generic title would leave the platform to
+    // the body alone.
+    expect(openedWith.filter((entry) => entry.component === GitlabUnsupportedComponent).at(-1)?.config.header).toBe(GITLAB_UNSUPPORTED_HEADER);
+    expect(GITLAB_UNSUPPORTED_HEADER).toContain('GitLab');
+  });
+
+  it('releases Sign CLA after the GitLab block is dismissed', async () => {
+    const fixture = await setup({ organizations: [org('gitlab')] });
+
+    await sign(fixture);
+
+    // Nothing here can succeed, but the contributor can still pick another group — so the
+    // action has to come back rather than stay spinning on a dead end.
+    expect(isStarting(fixture)).toBe(false);
+  });
+
+  it('fails a Gerrit hand-off visibly when the Console address is unusable', async () => {
+    const fixture = await setup({ organizations: [org('gerrit')], accountClosesWith: { kind: 'gerrit' } });
+    const configured = environment.urls.contributorConsole;
+    environment.urls.contributorConsole = '';
+
+    try {
+      await sign(fixture);
+    } finally {
+      environment.urls.contributorConsole = configured;
+    }
+
+    // A malformed address resolves against our own origin, taking the contributor to a page
+    // that can neither sign anything nor bring them back.
+    expect(location.href).toBe(HOME);
+    expect(messageAdd).toHaveBeenCalledWith(expect.objectContaining({ severity: 'error' }));
+    expect(isStarting(fixture)).toBe(false);
   });
 });

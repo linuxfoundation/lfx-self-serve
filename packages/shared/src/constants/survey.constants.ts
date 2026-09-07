@@ -2,7 +2,7 @@
 // SPDX-License-Identifier: MIT
 
 import { SurveyResponseStatus, SurveyStatus } from '../enums/survey.enum';
-import { TagSeverity } from '../interfaces/components.interface';
+import type { TagSeverity } from '../interfaces/components.interface';
 import type { CombinedSurveyStatus } from '../interfaces/survey.interface';
 
 /**
@@ -307,3 +307,9 @@ export const SURVEY_TEMPLATE_OPTIONS = [
   { label: 'General Survey', value: '521721013' },
   { label: 'Board Survey (May 2024)', value: '514467737' },
 ] as const;
+
+/**
+ * Short TTL so the writerGuard probe and the manage-page edit fetch share one request; entries
+ * evict on error and on delete. Mirrors MEETING_DETAIL_CACHE_TTL_MS.
+ */
+export const SURVEY_DETAIL_CACHE_TTL_MS = 10 * 1000;

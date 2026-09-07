@@ -18,6 +18,8 @@ router.get('/pending-action-surveys', (req, res, next) => projectController.getP
 
 router.get('/writer-summary', (req, res, next) => projectController.getWriterSummary(req, res, next));
 
+router.get('/slugs', (req, res, next) => projectController.getProjectSlugs(req, res, next));
+
 router.get('/:slug', (req, res, next) => projectController.getProjectBySlug(req, res, next));
 
 router.get('/:uid/permissions', (req, res, next) => projectController.getProjectPermissions(req, res, next));

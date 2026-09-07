@@ -1,7 +1,7 @@
 // Copyright The Linux Foundation and each contributor to LFX.
 // SPDX-License-Identifier: MIT
 
-import { CHAIR_ROLES, UUID_REGEX } from '@lfx-one/shared/constants';
+import { CHAIR_ROLES } from '@lfx-one/shared/constants';
 import { CommitteeMemberVisibility, MeetingVisibility } from '@lfx-one/shared/enums';
 import {
   Committee,
@@ -50,23 +50,12 @@ export class PublicGroupsController {
       const m2mToken = await generateM2MToken(req);
       req.bearerToken = m2mToken;
 
-      let committeeUid = id;
-      if (!UUID_REGEX.test(id)) {
-        const { resources } = await this.microserviceProxy.proxyRequest<QueryServiceResponse<Committee>>(req, 'LFX_V2_SERVICE', '/query/resources', 'GET', {
-          type: 'committee',
-          tags: `sso_group_name:${id.toLowerCase()}`,
-          page_size: 1,
-        });
-        if (resources.length === 0) {
-          throw new ResourceNotFoundError('Group', id, {
-            operation: 'get_public_group_by_id',
-            service: 'public_groups_controller',
-            path: `/groups/${id}`,
-          });
-        }
-        committeeUid = resources[0].data.uid;
-        logger.debug(req, 'get_public_group_by_id', 'Resolved group slug to UID', { slug: id, group_uid: committeeUid });
-      }
+      const committeeUid = await this.committeeService.resolveCommitteeUid(req, id, {
+        operation: 'get_public_group_by_id',
+        service: 'public_groups_controller',
+        path: `/groups/${id}`,
+        resourceType: 'Group',
+      });
 
       const committee = await this.committeeService.getCommitteeById(req, committeeUid);
 

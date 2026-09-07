@@ -2,17 +2,17 @@
 name: preflight
 description: >
   Mechanical pre-PR pipeline, license headers, format, lint, build, protected
-  file check, commit verification, and PR change summary. Run after the
-  post-commit reviewer trio has been drained and `/lfx-self-serve-pr-readiness`
-  has passed. Pattern/convention auditing is owned by the central reviewer
-  trio (see `.claude/rules/skill-guidance.md` for canonical post-commit
-  reviewer-trio launch instructions), not by this skill.
+  file check, commit verification, and PR change summary. Run as the final
+  deterministic check inside Mode 2 of `CLAUDE.md`'s **Pre-PR review**
+  section, after the preceding review, fix, documentation-currency, and
+  commit work and after `/lfx-self-serve-pr-readiness`. Review protocol and
+  pattern/convention auditing are not owned by this skill.
 allowed-tools: Bash, Read, Glob, Grep, AskUserQuestion
 ---
 
 # Pre-Submission Preflight Check
 
-You are running the mechanical pre-PR pipeline before the contributor submits a pull request. Every check here is shell-driven or hook-driven, no judgment calls. Convention and pattern audits live in `docs/reviews/frontend-checklist.md` (sections 1-14) and run via the post-commit reviewer trio (see `.claude/rules/skill-guidance.md` for canonical post-commit reviewer-trio launch instructions).
+You are running the mechanical pre-PR pipeline before the contributor submits a pull request. Every check here is shell-driven or hook-driven, no judgment calls. `CLAUDE.md`'s **Pre-PR review** section owns the review protocol; this skill is the final deterministic check inside its Mode 2 and owns only the checks below. Before running it, the preceding Mode 2 work — the whole-branch review, its required fixes, the documentation-currency updates, the resulting signed/DCO commit — and `/lfx-self-serve-pr-readiness` must be complete.
 
 Run each check in order, report results clearly, and help fix any issues found.
 
@@ -30,7 +30,7 @@ git log --format="%h %s%n%b" origin/main...HEAD
 
 - **Uncommitted changes?** — Ask the contributor: commit now or stash?
 - **No commits ahead of main?** — The branch has nothing to validate. Ask if they're on the right branch.
-- **Commit messages missing a ticket reference?** — Flag commits that don't include `LFXV2-XXX` (JIRA), `GH-XXX` (GitHub Issue), or the fully-qualified `org/repo#XXX` form (e.g. `linuxfoundation/lfx-self-serve#1331`) in subject or body. See `.claude/rules/commit-workflow.md` § Ticket Tracking.
+- **Commit messages missing a ticket reference?** — Flag commits that don't include `LFXV2-XXX` (JIRA), `#XXX` (GitHub Issue), or the fully-qualified `org/repo#XXX` form (e.g. `linuxfoundation/lfx-self-serve#1331`) in subject or body. See `.claude/rules/commit-workflow.md` § Ticket Tracking.
 - **Commits missing `--signoff`?** — Flag any commits without `Signed-off-by:` lines (visible in the full commit body above).
 
 Resolve any issues before proceeding to the checks below.
@@ -123,7 +123,7 @@ git log --format="%h %s%n%b" origin/main...HEAD
 - **All changes committed?** — If not, remind the contributor to commit remaining changes.
 - **Commit messages follow conventions?** — `type(scope): description` format per `commit-workflow.md`.
 - **`--signoff` on all commits?** — Every commit must have `Signed-off-by:` (check in the full body output above).
-- **Ticket referenced?** — Commit messages should include `LFXV2-XXX` (JIRA), `GH-XXX` (GitHub Issue), or the fully-qualified `org/repo#XXX` form (e.g. `linuxfoundation/lfx-self-serve#1331`).
+- **Ticket referenced?** — Commit messages should include `LFXV2-XXX` (JIRA), `#XXX` (GitHub Issue), or the fully-qualified `org/repo#XXX` form (e.g. `linuxfoundation/lfx-self-serve#1331`).
 
 ## Check 7: Change Summary
 

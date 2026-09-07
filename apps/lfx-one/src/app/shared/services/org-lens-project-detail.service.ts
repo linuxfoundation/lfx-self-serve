@@ -4,6 +4,8 @@
 import { HttpClient, HttpErrorResponse } from '@angular/common/http';
 import { inject, Injectable } from '@angular/core';
 import type {
+  LeaderboardDimension,
+  OrgLeaderboardDetailBreakdown,
   OrgLensCardDetailSection,
   OrgLensCardRosterPage,
   OrgLensHeroBlock,
@@ -93,6 +95,22 @@ export class OrgLensProjectDetailService {
       `${this.baseUrl(orgUid, projectSlug)}/leaderboard/ecosystem`,
       this.boardParams(orgName, range, metric, page, pageSize, search)
     );
+  }
+
+  /**
+   * The clicked leaderboard row's score breakdown for one dimension. Keyed by the row's organization
+   * rather than its display name, which is not unique within a project. A null result means the row
+   * has no breakdown at the board's grain, which the drawer renders as its empty state.
+   */
+  public getLeaderboardBreakdown(
+    orgUid: string,
+    projectSlug: string,
+    dimension: LeaderboardDimension,
+    organizationId: string,
+    range: OrgLensLeaderboardTimeRange
+  ): Observable<OrgLeaderboardDetailBreakdown | null> {
+    const url = `${this.baseUrl(orgUid, projectSlug)}/leaderboard/${dimension}/organizations/${encodeURIComponent(organizationId)}`;
+    return this.blockGet<OrgLeaderboardDetailBreakdown>(url, { range });
   }
 
   /** B5 — Card detail drawer definition (+ column headers) for one card; the roster rows come from getCardRoster. */

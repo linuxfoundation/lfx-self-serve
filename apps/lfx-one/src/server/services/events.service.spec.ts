@@ -168,6 +168,26 @@ describe('EventsService.getMyEvents past-event SQL', () => {
     expect(sql).toContain('e.EVENT_SOURCE,');
   });
 
+  it('scopes the combined-CTE dedup to the whole union, not just the last branch', async () => {
+    // QUALIFY binds to a single SELECT block, so the union has to be wrapped: written directly
+    // after UNION ALL it only dedups affiliated_upcoming and duplicates cross-branch events.
+    const sql = await sqlFor({ isPast: false, affiliatedProjectSlugs: ['example'] });
+    const combined = sql.slice(sql.indexOf('combined AS ('));
+    const wrapperOpen = combined.indexOf('SELECT * FROM (');
+    // Each branch landmark pins its priority literal to its source; the QUALIFY landmark spans the
+    // ORDER BY through "= 1", so a DESC flip or a changed row-number predicate stops matching too.
+    const firstBranch = combined.indexOf('SELECT *, 1 AS SOURCE_PRIORITY FROM registered_events');
+    const lastBranch = combined.indexOf('SELECT *, 2 AS SOURCE_PRIORITY FROM affiliated_upcoming');
+    const qualify = combined.indexOf('QUALIFY ROW_NUMBER() OVER (PARTITION BY EVENT_ID ORDER BY SOURCE_PRIORITY) = 1');
+
+    // Ordering alone passes on a missing landmark (indexOf returns -1), so require each to exist.
+    for (const landmark of [wrapperOpen, firstBranch, lastBranch, qualify]) {
+      expect(landmark).toBeGreaterThanOrEqual(0);
+    }
+    expect(wrapperOpen).toBeLessThan(firstBranch);
+    expect(combined.slice(lastBranch, qualify)).toContain(')');
+  });
+
   it('selects EVENT_SOURCE in the past branch', async () => {
     const sql = await sqlFor({ isPast: true });
 

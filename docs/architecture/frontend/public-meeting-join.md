@@ -133,15 +133,18 @@ Past meeting IDs are either a plain numeric ID (fallback after upcoming returns 
 
 Key signals and their gating:
 
-| Signal           | Type                            | Gate                                                                                           |
-| ---------------- | ------------------------------- | ---------------------------------------------------------------------------------------------- |
-| `meeting`        | `Signal<Meeting & { project }>` | `toSignal` of `getPublicMeeting` / `getPublicPastMeeting` fallback chain                       |
-| `authenticated`  | `WritableSignal<boolean>`       | set from `UserService`                                                                         |
-| `password`       | `WritableSignal<string\|null>`  | set from URL `?password` query param                                                           |
-| `attachments`    | `Signal<MeetingAttachment[]>`   | `initializeAttachments` — only fetches when `authenticated()`                                  |
-| `materialFiles`  | `Signal<MeetingAttachment[]>`   | filtered from `attachments`                                                                    |
-| `registrants`    | `Signal<MeetingRegistrant[]>`   | `initializeRegistrants` — requires `authenticated && (organizer\|\|invited) && !isPastMeeting` |
-| `fetchedJoinUrl` | `Signal<string\|undefined>`     | `initializeFetchedJoinUrl` — triggers on guest form submission                                 |
+| Signal               | Type                            | Gate                                                                                                                                                                              |
+| -------------------- | ------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `meeting`            | `Signal<Meeting & { project }>` | `toSignal` of `getPublicMeeting` / `getPublicPastMeeting` fallback chain                                                                                                          |
+| `authenticated`      | `WritableSignal<boolean>`       | set from `UserService`                                                                                                                                                            |
+| `password`           | `WritableSignal<string\|null>`  | set from URL `?password` query param                                                                                                                                              |
+| `attachments`        | `Signal<MeetingAttachment[]>`   | `initializeAttachments` — only fetches when `authenticated()`                                                                                                                     |
+| `materialFiles`      | `Signal<MeetingAttachment[]>`   | filtered from `attachments`                                                                                                                                                       |
+| `registrants`        | `Signal<MeetingRegistrant[]>`   | `initializeRegistrants` — requires `authenticated && (organizer\|\|invited\|\|optimisticInvited) && !isPastMeeting`; empty `[]` on any other branch                               |
+| `registrantsLoading` | `WritableSignal<boolean>`       | starts `true`; set by `initializeRegistrants` around the roster fetch, cleared via `finalize` (or immediately on the no-fetch branch) so the RSVP card doesn't hang on a skeleton |
+| `fetchedJoinUrl`     | `Signal<string\|undefined>`     | `initializeFetchedJoinUrl` — triggers on guest form submission                                                                                                                    |
+
+**Registrant counts are not read from the meeting object.** `getMeetingById` / `getPublicMeeting` no longer populate `individual_registrants_count` or `committee_members_count` — those fields are omitted from the response entirely (see [GH-1731](https://github.com/linuxfoundation/lfx-self-serve/issues/1731)). The join page derives its own counts from the `registrants` roster it fetches (`totalInvitees`, `additionalRegistrantsCount`), with `reconcileOptimisticPad` reconciling an optimistic guest-add pad against the roster length once a refetch lands. See `packages/shared/src/utils/meeting.utils.ts` for the reconciliation logic and its documented count-delta heuristic limitations.
 
 **Template structure:**
 

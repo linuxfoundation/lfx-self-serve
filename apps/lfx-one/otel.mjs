@@ -256,3 +256,8 @@ if (!otlpEndpoint) {
   process.on('SIGTERM', shutdown);
   process.on('SIGINT', shutdown);
 }
+
+// Cold-start boot marker (see #1378) — fires on both the OTEL-enabled and
+// OTEL-disabled paths above, since --import completes before server.mjs loads
+// and this is otherwise the only place the otel import cost is observable.
+otelLog.info('[otel] import complete', { elapsed_ms: Math.round(performance.now()) });

@@ -210,20 +210,29 @@ export type RegistrantAttendanceStatus = 'accepted' | 'declined' | 'maybe' | 'pe
  * - An explicit RSVP `response_type` (accepted / declined / maybe) is authoritative.
  * - When there is no RSVP response — either the registrant has no RSVP at all,
  *   or none of their RSVPs are applicable to the target occurrence — fall back
- *   to `invite_accepted` (the series-level Google Calendar / Zoom invite state).
+ *   to `invite_accepted` (the series-level Google Calendar / Zoom invite state)
+ *   unless `options.inviteResponsesEnabled` is `false` (pre-feature meetings
+ *   never collected LFX RSVPs; GH-1951).
  * - Otherwise pending.
  *
  * The caller is responsible for pre-resolving the passed-in `rsvp` (typically
  * via {@link selectApplicableRsvp} against the target occurrence) — this helper
  * doesn't know about scopes.
  */
-export function getRegistrantAttendanceStatus(registrant: {
-  rsvp?: { response_type?: string | null } | null;
-  invite_accepted?: boolean | null;
-}): RegistrantAttendanceStatus {
+export function getRegistrantAttendanceStatus(
+  registrant: {
+    rsvp?: { response_type?: string | null } | null;
+    invite_accepted?: boolean | null;
+  },
+  options?: { inviteResponsesEnabled?: boolean }
+): RegistrantAttendanceStatus {
   const rsvpResponse = registrant.rsvp?.response_type;
   if (rsvpResponse === 'accepted' || rsvpResponse === 'declined' || rsvpResponse === 'maybe') {
     return rsvpResponse;
+  }
+  // Pre-feature meetings never collected LFX RSVPs; calendar invite state is not an RSVP (GH-1951).
+  if (options?.inviteResponsesEnabled === false) {
+    return 'pending';
   }
   if (registrant.invite_accepted === true) return 'accepted';
   if (registrant.invite_accepted === false) return 'declined';
@@ -246,11 +255,12 @@ export function getRegistrantAttendanceStatus(registrant: {
  * the denominator matches the meeting's invited count.
  */
 export function countRegistrantAttendance(
-  registrants: ReadonlyArray<{ rsvp?: { response_type?: string | null } | null; invite_accepted?: boolean | null }>
+  registrants: ReadonlyArray<{ rsvp?: { response_type?: string | null } | null; invite_accepted?: boolean | null }>,
+  options?: { inviteResponsesEnabled?: boolean }
 ): RsvpCounts {
   const counts: RsvpCounts = { accepted: 0, declined: 0, maybe: 0, total: registrants.length };
   for (const r of registrants) {
-    const status = getRegistrantAttendanceStatus(r);
+    const status = getRegistrantAttendanceStatus(r, options);
     if (status === 'accepted') counts.accepted++;
     else if (status === 'declined') counts.declined++;
     else if (status === 'maybe') counts.maybe++;

@@ -70,6 +70,16 @@ export interface PersonaApiResponse extends PersonaDetections {
   isMarketingAuditor: boolean;
   /** Root- or project-scoped `campaign_manager` FGA grant. Same flag/caching caveats as {@link isMarketingAuditor}. */
   isCampaignManager: boolean;
+  /**
+   * True when {@link isMarketingAuditor} was satisfied by the ROOT-scoped check rather than the
+   * project-scoped one — lets a caller distinguish a grant that cascades to every foundation from
+   * one that only answers for the requested `?project=` slug (Copilot finding, PR #1835: without
+   * this, the frontend has no way to tell the two apart and mis-scopes a ROOT grant to a single
+   * foundation). `false` (not `undefined`) whenever {@link isMarketingAuditor} is `false`.
+   */
+  isMarketingAuditorRootGrant: boolean;
+  /** Same distinction as {@link isMarketingAuditorRootGrant}, for {@link isCampaignManager}. */
+  isCampaignManagerRootGrant: boolean;
 }
 
 export interface SsrPersonaResult {

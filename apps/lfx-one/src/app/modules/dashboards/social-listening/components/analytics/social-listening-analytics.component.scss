@@ -1,0 +1,26 @@
+// Copyright The Linux Foundation and each contributor to LFX.
+// SPDX-License-Identifier: MIT
+
+// Panel chrome — every analytics panel is a card with a small-caps section title.
+.analytics-panel {
+  @apply flex flex-col gap-4;
+}
+
+.panel-title {
+  @apply m-0 text-xs font-bold tracking-wider text-gray-500 uppercase;
+}
+
+// Summary rail pins beside the scrolling chart column; the offset clears the page header plus the filter row.
+.analytics-rail {
+  @apply lg:sticky lg:top-[150px];
+}
+
+// html-to-image rasterizes at the current scroll offset, so a pinned rail would land mid-column in the PNG.
+.analytics--exporting .analytics-rail {
+  @apply static;
+}
+
+// Mentions by Project rank badges.
+.project-rank {
+  @apply bg-blue-500 flex h-6 w-6 shrink-0 items-center justify-center rounded-full text-[11px] font-bold text-white;
+}

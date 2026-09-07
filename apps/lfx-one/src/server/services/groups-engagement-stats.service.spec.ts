@@ -433,7 +433,64 @@ describe('GroupsEngagementStatsService', () => {
       expect(result.active_members).toBe(0);
     });
 
-    it('does NOT exclude an LF Staff + Voting Rep member from active_members — only Observer-status staff seats are excluded (LFXV2-3101 follow-up)', async () => {
+    it('excludes an LF Staff member with a literal None voting status from active_members, same as Observer (GH-1848)', async () => {
+      getMyCommitteeUids.mockResolvedValue(new Set(['committee-1']));
+      execute.mockResolvedValueOnce({
+        rows: [
+          activeMemberRow({
+            COMMITTEE_ID: 'committee-1',
+            MEMBER_USER_ID: 'm1',
+            ATTENDED_COUNT_30D: 10,
+            MEMBER_ROLE: 'LF Staff',
+            MEMBER_VOTING_STATUS: 'None',
+          }),
+        ],
+      });
+
+      const result = await service.getEngagementStats(buildReq());
+
+      expect(result.active_members).toBe(0);
+    });
+
+    it('excludes an LF Staff member with a blank warehouse voting status — normalized to None the same way the detail page falls back (GH-1848)', async () => {
+      getMyCommitteeUids.mockResolvedValue(new Set(['committee-1']));
+      execute.mockResolvedValueOnce({
+        rows: [
+          activeMemberRow({
+            COMMITTEE_ID: 'committee-1',
+            MEMBER_USER_ID: 'm1',
+            ATTENDED_COUNT_30D: 10,
+            MEMBER_ROLE: 'LF Staff',
+            MEMBER_VOTING_STATUS: '',
+          }),
+        ],
+      });
+
+      const result = await service.getEngagementStats(buildReq());
+
+      expect(result.active_members).toBe(0);
+    });
+
+    it('still counts a non-staff member with a blank warehouse voting status — the None normalization is not itself an exclusion (GH-1848)', async () => {
+      getMyCommitteeUids.mockResolvedValue(new Set(['committee-1']));
+      execute.mockResolvedValueOnce({
+        rows: [
+          activeMemberRow({
+            COMMITTEE_ID: 'committee-1',
+            MEMBER_USER_ID: 'm1',
+            ATTENDED_COUNT_30D: 10,
+            MEMBER_ROLE: 'None',
+            MEMBER_VOTING_STATUS: '',
+          }),
+        ],
+      });
+
+      const result = await service.getEngagementStats(buildReq());
+
+      expect(result.active_members).toBe(1);
+    });
+
+    it('does NOT exclude an LF Staff + Voting Rep member from active_members — only non-voting staff seats are excluded (LFXV2-3101 follow-up)', async () => {
       getMyCommitteeUids.mockResolvedValue(new Set(['committee-1']));
       execute.mockResolvedValueOnce({
         // MEMBER_VOTING_STATUS defaults to 'Voting Rep' — deliberately left unset here.

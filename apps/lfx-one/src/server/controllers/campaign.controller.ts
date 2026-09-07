@@ -10,14 +10,33 @@ import type {
   CampaignBriefRefineRequest,
   CampaignBriefRequest,
   CampaignCreateRequest,
+  CampaignMetricsWindow,
   CampaignPlatform,
   CampaignSSEEventType,
   CampaignStatusUpdateRequest,
   CampaignStatusUpdateResult,
   CampaignToggleStatus,
   FlushableResponse,
+  MicrosoftCampaignCreateRequest,
+  MicrosoftKeyword,
 } from '@lfx-one/shared/interfaces';
-import { CAMPAIGN_DELIVERY_TYPES, CAMPAIGN_PLATFORMS, VALID_CAMPAIGN_TOGGLE_STATUSES } from '@lfx-one/shared/constants';
+import {
+  CAMPAIGN_DELIVERY_TYPES,
+  CAMPAIGN_METRICS_WINDOWS,
+  CAMPAIGN_PLATFORMS,
+  META_GEO_CODE_PATTERN,
+  isMicrosoftMatchType,
+  MICROSOFT_CONTROL_CHAR_RE,
+  MICROSOFT_MAX_BUDGET,
+  MICROSOFT_MAX_CPC_BID,
+  isCanonicalGoogleAdsResourceId,
+  MICROSOFT_MAX_GEO_TARGETS,
+  MAX_BULK_KEYWORD_ACTIONS,
+  MICROSOFT_MAX_KEYWORDS,
+  MICROSOFT_MAX_KEYWORD_TEXT_LENGTH,
+  MICROSOFT_MIN_CPC_BID,
+  VALID_CAMPAIGN_TOGGLE_STATUSES,
+} from '@lfx-one/shared/constants';
 
 import { META_ACCOUNTS, REDDIT_ACCOUNTS } from '../constants';
 import { ServiceValidationError } from '../errors';
@@ -26,6 +45,9 @@ import { validateScrapeUrl } from '../helpers/url-validation';
 import { isServerFeatureEnabled, ServerFeatureFlag } from '../helpers/server-feature-flag.helper';
 import { getLinkedInConfig } from '../services/linkedin-ads.service';
 import { CampaignProxyService } from '../services/campaign-proxy.service';
+import { toAudienceDemographics, toKeywordMetricsResponse, windowForDays } from '../services/campaign-insights-mapper';
+import { applyKeywordActionsViaCampaignService } from '../services/campaign-keyword-actions';
+import { toUtmCreateResult, toUtmLookupResult } from '../services/campaign-utm-mapper';
 import { CampaignServiceClient, deriveEventSlug, isCampaignServiceJobId } from '../services/campaign-service.service';
 import { logger } from '../services/logger.service';
 import { addShutdownHook, isShuttingDown } from '../utils/shutdown';
@@ -41,7 +63,8 @@ const SUPPORTED_STATUS_PLATFORMS: ReadonlySet<CampaignPlatform> = new Set<Campai
  * for it with nothing failing. Every paid platform in that constant has a `ToggleStatus`
  * dispatcher upstream, so the shared list IS the correct source.
  *
- * `disabled: true` entries (currently Microsoft and X) are excluded deliberately. Their
+ * `disabled: true` entries (currently X only — LFXV2-3312 enabled Microsoft) are excluded
+ * deliberately. Their
  * dispatchers exist upstream, but disabling a platform means this app does not offer it, and
  * accepting a toggle for a campaign the UI cannot create is a route to nowhere. They join by
  * flipping the flag in the shared constant — one edit, not two.
@@ -432,7 +455,8 @@ export class CampaignController {
     // The client therefore sees one `CampaignJobStatus` either way, with `result` set on the
     // in-process path and `platformResults` on the campaign-service path.
     //
-    // The flag is necessary but NOT sufficient to route. With CREATE off — still the default —
+    // The flag is necessary but NOT sufficient to route. With CREATE off — an ordinary
+    // deployment state, whether from a staged rollout override or a pod that has not rolled yet —
     // `createCampaign` above mints `job_<epoch>_<rand>` into the in-process map, and
     // campaign-service's `get-job` declares `Format(FormatUUID)` on `job_id`, so it would answer
     // 400 for every one of them. Flag-only routing would therefore break all polling the moment
@@ -484,6 +508,77 @@ export class CampaignController {
   }
 
   /**
+   * Build the brief's send audience — the prerequisite the email channel cannot dispatch without.
+   *
+   * `project` and `brief_id` travel as query params: both are PATH segments upstream.
+   */
+  public async buildAudience(req: Request, res: Response, next: NextFunction): Promise<void> {
+    const projectSlug = typeof req.query['project'] === 'string' ? req.query['project'].trim() : '';
+    const briefId = typeof req.query['brief_id'] === 'string' ? req.query['brief_id'].trim() : '';
+
+    if (projectSlug === '' || briefId === '') {
+      next(
+        ServiceValidationError.forField('project', 'project and brief_id are required', {
+          operation: 'build_audience',
+          service: 'campaign_controller',
+        })
+      );
+      return;
+    }
+
+    const startTime = logger.startOperation(req, 'build_audience', { projectSlug });
+
+    try {
+      const result = await this.campaignServiceClient.buildAudience(req, projectSlug, briefId);
+      logger.success(req, 'build_audience', startTime, { enabled: result.enabled });
+      res.json(result);
+    } catch (error) {
+      next(error);
+    }
+  }
+
+  /**
+   * Generate email copy for a brief.
+   *
+   * A thin proxy to campaign-service, which owns generation (LFXV2-2775). `project` and
+   * `brief_id` travel as query params because both are PATH segments upstream.
+   */
+  public async generateEmailCopy(req: Request, res: Response, next: NextFunction): Promise<void> {
+    const projectSlug = typeof req.query['project'] === 'string' ? req.query['project'].trim() : '';
+    const briefId = typeof req.query['brief_id'] === 'string' ? req.query['brief_id'].trim() : '';
+
+    if (projectSlug === '' || briefId === '') {
+      next(
+        ServiceValidationError.forField('project', 'project and brief_id are required', {
+          operation: 'generate_email_copy',
+          service: 'campaign_controller',
+        })
+      );
+      return;
+    }
+
+    const startTime = logger.startOperation(req, 'generate_email_copy', { projectSlug });
+
+    try {
+      // Forwarded, NOT validated here. Duplicating the stage's valid set in this layer would give
+      // two sources of truth that drift -- the BFF is a thin proxy.
+      //
+      // An unknown stage is NOT rejected: LFXV2-1940 specifies a fallback, and the Goa enum that
+      // would have refused a typo was removed for it, so campaign-service resolves an
+      // unrecognised value to Registration Push and answers 200. This comment previously said it
+      // "comes back as upstream's 400 naming the valid values", which contradicted the frontend's
+      // comment on the same path and is no longer true of the contract.
+      const rawStage = (req.body as { stage?: unknown } | undefined)?.stage;
+      const stage = typeof rawStage === 'string' && rawStage.trim() !== '' ? rawStage.trim() : undefined;
+      const result = await this.campaignServiceClient.generateEmailCopy(req, projectSlug, briefId, stage);
+      logger.success(req, 'generate_email_copy', startTime, { enabled: result.enabled });
+      res.json(result);
+    } catch (error) {
+      next(error);
+    }
+  }
+
+  /**
    * Persist the generated brief so it outlives the browser tab.
    *
    * Today the approved brief lives only in a `CampaignsComponent` signal: a reload loses it and
@@ -492,8 +587,8 @@ export class CampaignController {
    * `/briefs/{brief_id}` and cannot be cut over until a persisted brief id exists.
    *
    * With the flag off this answers `{ enabled: false }` at 200 rather than 404 or 501. It is not
-   * an error for the cutover to be dark — that is the default in every environment until it is
-   * switched on — and a non-2xx would make the client's error arm fire on the normal case,
+   * an error for the cutover to be dark — an ordinary deployment state, not a fault — and a
+   * non-2xx would make the client's error arm fire on that case,
    * training whoever sees it to ignore the one signal that matters.
    *
    * A FAILURE, by contrast, is reported as one. The temptation is to swallow it, because the
@@ -601,8 +696,9 @@ export class CampaignController {
       // Paired with brief_id: an ETag without the id it belongs to cannot be checked against
       // anything, and the id without the ETag is the ceremonial-header case this fixes.
       const knownEtag = typeof req.query['etag'] === 'string' && req.query['etag'].trim() !== '' ? req.query['etag'] : null;
-      // Only meaningful without an etag: it says the absence is deliberate (the user was shown a
-      // stale-brief warning and proceeded) rather than "the write returned no validator".
+      // Only meaningful without an etag: it says the absence is DELIBERATE — the user proceeded
+      // past a stale-brief warning, or restored a brief whose read carried no validator — rather
+      // than "the write returned no validator", where nothing was shown and nothing was chosen.
       const allowEtagFallback = req.query['etag_fallback'] === '1';
       const result = await this.campaignServiceClient.saveBrief(req, brief, eventSlug, projectSlug, knownBriefId, knownEtag, allowEtagFallback);
       logger.success(req, 'campaign_persist_brief', startTime, {
@@ -635,7 +731,7 @@ export class CampaignController {
       // `approved: false` is not a claim about any stored row -- with the flag off nothing was
       // read. It is the safe default the field documents: never assert approval that was not
       // observed.
-      res.json({ status: 'off', briefId: null, brief: null, approved: false } satisfies CampaignBriefLoadResult);
+      res.json({ status: 'off', briefId: null, brief: null, etag: null, approved: false } satisfies CampaignBriefLoadResult);
       return;
     }
 
@@ -685,6 +781,117 @@ export class CampaignController {
     }
   }
 
+  /**
+   * Read campaign-service's own metrics and action items for one brief.
+   *
+   * Distinct from `getMonitorData` and its three per-platform siblings below, which query the ad
+   * platforms directly and derive action items from FOUR rule engines in this BFF. Those engines
+   * disagree with each other and with campaign-service on the low-CTR threshold, the impression
+   * floor beneath which CTR is judged at all, and whether a paused campaign raises anything. This
+   * route exposes the single-source version; nothing is cut over to it yet.
+   *
+   * The two are NOT interchangeable. The monitor routes are ACCOUNT-scoped — every campaign in
+   * the ad account — while this is BRIEF-scoped. A consumer swapping one for the other narrows
+   * what an operator sees, which is why `brief` is required rather than defaulted.
+   *
+   * `window` is optional and is NOT defaulted here, so campaign-service can resolve the default
+   * PER ROW, PER PLATFORM: `defaultMetricsWindowFor` (`internal/service/brief.go`) runs inside
+   * the fan-out and yields `last_7_days` for X Ads — whose stats endpoint caps a query at 7 days
+   * — and `last_30_days` for everything else. An explicit window overrides that for EVERY row.
+   *
+   * So sending `last_30_days` on the caller's behalf would not fail the request; it would
+   * DISCARD the per-platform fallback and turn a servable X row into an `unsupported` one, while
+   * the other rows carried on unchanged. Losing a row quietly is the cost, not an error.
+   *
+   * An unrecognised value is refused rather than dropped: dropping it would silently serve a
+   * different window than the caller asked for, and a caller cannot detect that from the
+   * response, whose `window` field would report the default as though it had been requested.
+   */
+  public async getBriefMetrics(req: Request, res: Response, next: NextFunction): Promise<void> {
+    // `brief_id`, matching `listBriefCampaigns`, `createCampaign` and `persistBrief` — and matching
+    // what `campaign.service.ts` already sends for `/api/campaigns/list`. A lone `brief` here would
+    // give the first UI integration a spurious 400 for copying the established param pair.
+    const briefId = typeof req.query['brief_id'] === 'string' ? req.query['brief_id'].trim() : '';
+    if (briefId.length === 0) {
+      next(
+        ServiceValidationError.forField('brief_id', 'a brief is required to read its campaign metrics', {
+          operation: 'campaign_brief_metrics',
+          service: 'campaign_controller',
+        })
+      );
+      return;
+    }
+
+    // Refused, not defaulted, for the reason `loadBrief` refuses: `/foundation/campaigns` is
+    // reachable by an ED of any foundation, and a constant here would read another foundation's
+    // brief on their behalf.
+    const projectSlug = typeof req.query['project'] === 'string' ? req.query['project'].trim() : '';
+    if (projectSlug.length === 0) {
+      next(
+        ServiceValidationError.forField('project', 'no foundation is selected; reload the campaigns page from the sidebar', {
+          operation: 'campaign_brief_metrics',
+          service: 'campaign_controller',
+        })
+      );
+      return;
+    }
+
+    // ABSENT and MALFORMED are separated before the enum check, because collapsing them makes the
+    // malformed case fail OPEN. A repeated `?window=a&window=b` arrives as an ARRAY, and a
+    // `typeof === 'string'` test alone turns that into `''` — indistinguishable from "no window
+    // given", so the enum check is skipped and the read proceeds on the per-platform default.
+    // That is the substitution this method refuses by design: the response's own `window` field
+    // would then report a period the caller never asked for, as though it had. `project` and
+    // `brief` are safe from the same shape only because an array collapses to `''` and THEIR
+    // guard refuses empty; `window` is legitimately optional, so it has no such backstop.
+    // Matches the repeated-param handling `persistBrief`, `loadBrief` and `searchHubSpotEmails`
+    // already carry.
+    const windowParam = req.query['window'];
+    if (windowParam !== undefined && typeof windowParam !== 'string') {
+      next(
+        ServiceValidationError.forField('window', 'window must be given at most once', {
+          operation: 'campaign_brief_metrics',
+          service: 'campaign_controller',
+        })
+      );
+      return;
+    }
+    // PRESENT-BUT-EMPTY is malformed, not absent. `?window=` and `?window=%20` arrive as a string,
+    // and treating them as "no window given" would skip the enum check and serve the default —
+    // the same fail-open shape as the array case above, one layer in. Only an OMITTED parameter
+    // may default; every supplied value must be in the enum.
+    const rawWindow = windowParam === undefined ? undefined : windowParam.trim();
+    if (rawWindow !== undefined && !CAMPAIGN_METRICS_WINDOWS.includes(rawWindow as CampaignMetricsWindow)) {
+      next(
+        ServiceValidationError.forField('window', `window must be one of: ${CAMPAIGN_METRICS_WINDOWS.join(', ')}`, {
+          operation: 'campaign_brief_metrics',
+          service: 'campaign_controller',
+        })
+      );
+      return;
+    }
+    const window = rawWindow as CampaignMetricsWindow | undefined;
+
+    const startTime = logger.startOperation(req, 'campaign_brief_metrics', { briefId, projectSlug, window });
+
+    try {
+      const result = await this.campaignServiceClient.getBriefMetrics(req, projectSlug, briefId, window);
+      // `okCount` beside `rowCount` deliberately: they are the pair that says whether an empty
+      // `action_items` is an all-clear or a blind spot, and a log carrying only the row count
+      // would answer the easier question.
+      logger.success(req, 'campaign_brief_metrics', startTime, {
+        briefId,
+        projectSlug,
+        rowCount: result.rows.length,
+        okCount: result.ok_count,
+        actionItemCount: result.action_items.length,
+      });
+      res.json(result);
+    } catch (error) {
+      next(error);
+    }
+  }
+
   public async getMonitorData(req: Request, res: Response, next: NextFunction): Promise<void> {
     const days = Number(req.query['days']) || 14;
     const startTime = logger.startOperation(req, 'campaign_monitor', { days });
@@ -698,13 +905,64 @@ export class CampaignController {
     }
   }
 
+  /**
+   * Keyword performance for the campaigns table.
+   *
+   * Behind `CampaignServiceInsights` this reads from campaign-service, scoped to the
+   * project's OWN campaigns; with the flag off it keeps the legacy account-wide Google Ads
+   * query. The cutover therefore makes the table SMALLER on a shared ad account, because the
+   * rows it drops belong to other foundations — see the flag's own docs.
+   *
+   * The project is REQUIRED on the campaign-service arm and not defaulted: campaign-service
+   * scopes by project, and `/foundation/campaigns` is reachable by an ED of any foundation,
+   * so a fallback constant would report one foundation's keywords to another. The legacy arm
+   * ignores the project entirely, which is precisely the leak being closed.
+   */
   public async getKeywords(req: Request, res: Response, next: NextFunction): Promise<void> {
     const days = Number(req.query['days']) || 14;
-    const startTime = logger.startOperation(req, 'campaign_keywords', { days });
+    const viaCampaignService = isServerFeatureEnabled(ServerFeatureFlag.CampaignServiceInsights);
+    const startTime = logger.startOperation(req, 'campaign_keywords', { days, viaCampaignService });
 
     try {
+      if (viaCampaignService) {
+        const projectSlug = typeof req.query['project'] === 'string' ? req.query['project'].trim() : '';
+        if (projectSlug === '') {
+          next(
+            ServiceValidationError.forField('project', 'A project is required to read keywords', {
+              operation: 'campaign_keywords',
+              service: 'campaign_controller',
+              path: req.path,
+            })
+          );
+          return;
+        }
+
+        // The window is what campaign-service actually applies; effectiveDays is what the
+        // response reports. They must come from the same call — deriving the label separately
+        // is how a 30-day figure ends up labelled as 20 days.
+        const { window, effectiveDays } = windowForDays(days);
+        const payload = await this.campaignServiceClient.getGoogleAdsKeywords(req, projectSlug, window);
+        const data = toKeywordMetricsResponse(payload, effectiveDays, new Date().toISOString());
+
+        // `truncated` reaches the client through the response as well as this log line — the
+        // totals are a subtotal over the capped slice, and both keyword consumers qualify what
+        // they claim when it is set. It is logged too because the log is where a capped result
+        // is visible to whoever is investigating a number, not just to whoever is looking at it.
+        logger.success(req, 'campaign_keywords', startTime, {
+          viaCampaignService: true,
+          keywords: data.totalKeywords,
+          // Upstream's own count alongside the converted one. They should agree; logging both
+          // means a conversion that silently drops rows shows up as a disagreement here rather
+          // than as a quietly shorter table.
+          rowCount: payload.row_count,
+          truncated: payload.truncated,
+        });
+        res.json(data);
+        return;
+      }
+
       const data = await this.metricsService.getKeywords(req, days);
-      logger.success(req, 'campaign_keywords', startTime, {});
+      logger.success(req, 'campaign_keywords', startTime, { viaCampaignService: false });
       res.json(data);
     } catch (error) {
       next(error);
@@ -803,11 +1061,53 @@ export class CampaignController {
       return;
     }
 
-    const startTime = logger.startOperation(req, 'hubspot_utm_lookup', { eventName });
+    const viaCampaignService = isServerFeatureEnabled(ServerFeatureFlag.CampaignServiceHubSpotUtm);
+    // Read ONCE, above the branch, because BOTH producers emit the tokenless `found: true` shape
+    // and both must gate it identically -- otherwise flipping the feature flag would change
+    // whether an old bundle can be told a campaign is absent when it is not.
+    const clientUnderstandsTokenlessFound = req.query['tokenless_found'] === '1';
+    const startTime = logger.startOperation(req, 'hubspot_utm_lookup', { eventName, viaCampaignService });
 
     try {
-      const result = await this.proxyService.lookupHubSpotUtm(req, eventName);
-      logger.success(req, 'hubspot_utm_lookup', startTime, { found: result.found });
+      if (viaCampaignService) {
+        const projectSlug = typeof req.query['project'] === 'string' ? req.query['project'].trim() : '';
+        if (projectSlug === '') {
+          next(
+            ServiceValidationError.forField('project', 'A project is required for HubSpot campaign lookup', {
+              operation: 'hubspot_utm_lookup',
+              service: 'campaign_controller',
+              path: req.path,
+            })
+          );
+          return;
+        }
+
+        const payload = await this.campaignServiceClient.searchHubSpotCampaigns(req, projectSlug, eventName);
+        const result = toUtmLookupResult(payload, eventName, clientUnderstandsTokenlessFound);
+        // `matches` is upstream's raw fuzzy count; `found` is whether one candidate was
+        // CONFIDENT enough to auto-apply -- an exact normalised match, alone in that, from a
+        // result set proven complete.
+        //
+        // Both are logged because the gap is diagnostic, but NOT as "noise" -- an earlier version
+        // of this comment said that, and it predates the confidence gate. A large gap is the
+        // normal shape for a weak, tied or capped search: candidates scored, none earned an
+        // unattended apply. Reading it as noise would send someone tuning the scorer when the
+        // right answer is that the operator picks (Copilot).
+        logger.success(req, 'hubspot_utm_lookup', startTime, {
+          viaCampaignService: true,
+          // Guarded: `toUtmLookupResult` fail-closes on a malformed envelope (`{}` or a body with
+          // no `campaigns` array) and returns `inconclusive: true` -- a TESTED safe path. Reading
+          // `.length` off it unguarded threw a TypeError before `res.json(result)`, converting
+          // that deliberate safe answer into a 500 (dealako, blocking).
+          matches: Array.isArray(payload?.campaigns) ? payload.campaigns.length : null,
+          found: result.found,
+        });
+        res.json(result);
+        return;
+      }
+
+      const result = await this.proxyService.lookupHubSpotUtm(req, eventName, clientUnderstandsTokenlessFound);
+      logger.success(req, 'hubspot_utm_lookup', startTime, { viaCampaignService: false, found: result.found });
       res.json(result);
     } catch (error) {
       next(error);
@@ -822,11 +1122,33 @@ export class CampaignController {
       return;
     }
 
-    const startTime = logger.startOperation(req, 'hubspot_utm_create', { eventName });
+    const viaCampaignService = isServerFeatureEnabled(ServerFeatureFlag.CampaignServiceHubSpotUtm);
+    const startTime = logger.startOperation(req, 'hubspot_utm_create', { eventName, viaCampaignService });
 
     try {
+      if (viaCampaignService) {
+        const projectSlug = typeof req.query['project'] === 'string' ? req.query['project'].trim() : '';
+        if (projectSlug === '') {
+          next(
+            ServiceValidationError.forField('project', 'A project is required to create a HubSpot campaign', {
+              operation: 'hubspot_utm_create',
+              service: 'campaign_controller',
+              path: req.path,
+            })
+          );
+          return;
+        }
+
+        // ALWAYS creates: upstream performs no duplicate check, deliberately, because a
+        // search-then-create still races a concurrent caller. The UI searches and warns first.
+        const created = await this.campaignServiceClient.createHubSpotCampaign(req, projectSlug, eventName);
+        logger.success(req, 'hubspot_utm_create', startTime, { viaCampaignService: true, campaignId: created.id });
+        res.json(toUtmCreateResult(created));
+        return;
+      }
+
       const result = await this.proxyService.createHubSpotUtm(req, eventName);
-      logger.success(req, 'hubspot_utm_create', startTime, { created: result.created });
+      logger.success(req, 'hubspot_utm_create', startTime, { viaCampaignService: false, created: result.created });
       res.json(result);
     } catch (error) {
       next(error);
@@ -873,13 +1195,48 @@ export class CampaignController {
     }
   }
 
+  /**
+   * Age/gender/device breakdowns for the campaigns table.
+   *
+   * Same flag, same project requirement and same narrowing as `getKeywords` above.
+   *
+   * Campaign-service fails the whole read if any one breakdown fails rather than returning
+   * the two that loaded, so there is no partial-success arm to handle here: an error is an
+   * error, and a rendered pair of breakdowns is never a silently-missing third.
+   */
   public async getAudience(req: Request, res: Response, next: NextFunction): Promise<void> {
     const days = Number(req.query['days']) || 14;
-    const startTime = logger.startOperation(req, 'campaign_audience', { days });
+    const viaCampaignService = isServerFeatureEnabled(ServerFeatureFlag.CampaignServiceInsights);
+    const startTime = logger.startOperation(req, 'campaign_audience', { days, viaCampaignService });
 
     try {
+      if (viaCampaignService) {
+        const projectSlug = typeof req.query['project'] === 'string' ? req.query['project'].trim() : '';
+        if (projectSlug === '') {
+          next(
+            ServiceValidationError.forField('project', 'A project is required to read audience demographics', {
+              operation: 'campaign_audience',
+              service: 'campaign_controller',
+              path: req.path,
+            })
+          );
+          return;
+        }
+
+        const { window, effectiveDays } = windowForDays(days);
+        const payload = await this.campaignServiceClient.getGoogleAdsAudience(req, projectSlug, window);
+        const data = toAudienceDemographics(payload, effectiveDays, new Date().toISOString());
+
+        logger.success(req, 'campaign_audience', startTime, {
+          viaCampaignService: true,
+          buckets: payload.bucket_count,
+        });
+        res.json(data);
+        return;
+      }
+
       const data = await this.metricsService.getAudience(req, days);
-      logger.success(req, 'campaign_audience', startTime, {});
+      logger.success(req, 'campaign_audience', startTime, { viaCampaignService: false });
       res.json(data);
     } catch (error) {
       next(error);
@@ -891,6 +1248,22 @@ export class CampaignController {
 
     if (!body.keywords || !Array.isArray(body.keywords) || body.keywords.length === 0) {
       next(ServiceValidationError.forField('keywords', 'keywords array is required', { operation: 'keyword_actions', service: 'campaign_controller' }));
+      return;
+    }
+
+    // Bounded before grouping, because the cost is per CAMPAIGN in the body: each one is a
+    // resolver call and then a mutation call, made sequentially while the request is held open.
+    // Only a non-empty array was required here, so one authenticated request could amplify into
+    // thousands of upstream calls against a live ad account and trip rate limiting that fails
+    // campaigns for reasons unrelated to the request. The cap is above anything this UI can
+    // produce, so it bounds abuse rather than the product.
+    if (body.keywords.length > MAX_BULK_KEYWORD_ACTIONS) {
+      next(
+        ServiceValidationError.forField('keywords', `keywords array must contain at most ${MAX_BULK_KEYWORD_ACTIONS} rows`, {
+          operation: 'keyword_actions',
+          service: 'campaign_controller',
+        })
+      );
       return;
     }
 
@@ -909,13 +1282,54 @@ export class CampaignController {
         );
         return;
       }
+      // FORMAT too, not just presence. Campaign-service declares these ids as `^[0-9]+$`, so a
+      // malformed one was refused upstream instead — and by then the rows AHEAD of it in the same
+      // request have already been mutated, because the fan-out below is sequential. A keyword
+      // REMOVE is irreversible, so a half-applied batch is not recoverable by retrying.
+      //
+      // Refusing the whole request here is what keeps it all-or-nothing, and matches the
+      // reject-all rule the Microsoft keyword path already states: a partial application that
+      // reports success is worse than a refusal the operator can act on.
+      if (!isCanonicalGoogleAdsResourceId(kw.campaignId) || !isCanonicalGoogleAdsResourceId(kw.adGroupId) || !isCanonicalGoogleAdsResourceId(kw.criterionId)) {
+        next(
+          ServiceValidationError.forField('keywords', 'campaignId, adGroupId, and criterionId must each be a positive integer id', {
+            operation: 'keyword_actions',
+            service: 'campaign_controller',
+          })
+        );
+        return;
+      }
     }
 
-    const startTime = logger.startOperation(req, 'keyword_actions', { action: body.action, count: body.keywords.length });
+    const viaCampaignService = isServerFeatureEnabled(ServerFeatureFlag.CampaignServiceKeywordActions);
+    const startTime = logger.startOperation(req, 'keyword_actions', { action: body.action, count: body.keywords.length, viaCampaignService });
 
     try {
+      if (viaCampaignService) {
+        const projectSlug = typeof req.query['project'] === 'string' ? req.query['project'].trim() : '';
+        if (projectSlug === '') {
+          next(
+            ServiceValidationError.forField('project', 'A project is required to change keywords', {
+              operation: 'keyword_actions',
+              service: 'campaign_controller',
+              path: req.path,
+            })
+          );
+          return;
+        }
+
+        const result = await applyKeywordActionsViaCampaignService(req, this.campaignServiceClient, projectSlug, body);
+        logger.success(req, 'keyword_actions', startTime, {
+          viaCampaignService: true,
+          succeeded: result.succeeded,
+          failed: result.failed,
+        });
+        res.json(result);
+        return;
+      }
+
       const result = await this.proxyService.executeKeywordActions(req, body);
-      logger.success(req, 'keyword_actions', startTime, { succeeded: result.succeeded, failed: result.failed });
+      logger.success(req, 'keyword_actions', startTime, { viaCampaignService: false, succeeded: result.succeeded, failed: result.failed });
       res.json(result);
     } catch (error) {
       next(error);
@@ -1052,9 +1466,11 @@ export class CampaignController {
     // wrong in both directions. The legacy path is a switch over meta/reddit whose default arm
     // throws, so widening it would turn a clear refusal into a confusing platform error;
     // keeping the campaign-service set at two would refuse Google Ads and LinkedIn, which this app
-    // does offer. Note these are two different counts and must not be conflated: campaign-service
-    // implements SIX toggle dispatchers upstream, while this set is the FOUR non-disabled entries
-    // of CAMPAIGN_PLATFORMS — Microsoft and X are dispatchable but not offered here. HubSpot is in
+    // does offer. Note these are two different sets and must not be conflated: campaign-service
+    // implements a toggle dispatcher for every paid platform upstream, while this set is only the
+    // NON-DISABLED entries of CAMPAIGN_PLATFORMS — a platform can be dispatchable upstream and
+    // still not offered here (X is, today). Deliberately not stated as a count: the roster changes
+    // whenever a `disabled` flag flips, and a number here goes stale silently. HubSpot is in
     // NEITHER set — an email send has no run state to pause.
     //
     // On the campaign-service path this check is a FAST REJECT, not the policy boundary, and the
@@ -1284,6 +1700,9 @@ export class CampaignController {
     const metaConfig = this.buildMetaConfig(body);
     if (metaConfig) envelope['metaConfig'] = metaConfig;
 
+    const microsoftConfig = this.buildMicrosoftConfig(body);
+    if (microsoftConfig) envelope['microsoftConfig'] = microsoftConfig;
+
     const hubspotConfig = this.buildHubSpotConfig(body);
     if (hubspotConfig) envelope['hubspotConfig'] = hubspotConfig;
 
@@ -1455,6 +1874,141 @@ export class CampaignController {
   }
 
   /**
+   * Microsoft's config, translated from `microsoftConfig` on the legacy request.
+   *
+   * Like Meta, the budget key is renamed — the request says `budgetUsd`, the dispatcher reads
+   * `budget` — and the SAME known gap applies (LFXV2-3251): the rename does not convert the
+   * denomination, and `microsoft.go` states the budget is "whole units of the ad ACCOUNT's
+   * currency (NOT USD — the client does NO FX conversion)", applied as the DAILY budget.
+   *
+   * Unlike Meta, this builder REFUSES rather than merely translating, because Microsoft has two
+   * inputs whose absence upstream is silent rather than an error. Returning null marks the
+   * platform UNCONFIGURED and `hasPlatformConfig` refuses the whole create with a named reason,
+   * which is the difference between an operator learning now and learning at launch:
+   *
+   * - A non-finite or non-positive `budget` is rejected by the client DURING dispatch. Because
+   *   `CreateCampaigns` is asynchronous that surfaces as a pre-create job failure — a job the
+   *   user must go and read — rather than as a refusal of the request they just made.
+   * - Zero keywords creates a campaign that "can NEVER SERVE", and `ToggleStatus` then refuses to
+   *   activate it locally with `ErrCampaignNotProvisioned`, without ever calling Microsoft.
+   * - Zero geo targets creates a campaign Microsoft serves EVERYWHERE once enabled.
+   *
+   * The UI blocks all three before submit (see `canSubmit`); this is the second gate, and it is
+   * not redundant. The UI guard protects the operator using the form, this one protects the
+   * endpoint — the request is reachable without the form, and `unmarshalPlatformConfig` upstream
+   * reads an absent config key as a ZERO VALUE rather than an error.
+   *
+   * `cpcBid` and `timeZone` are forwarded only when they carry meaning. An omitted or zero
+   * `cpcBid` means unset, and Microsoft then applies the account-currency minimum — a documented,
+   * serve-capable floor — so sending an explicit 0 would claim a bid the account does not have.
+   *
+   * A bid OUTSIDE `[MICROSOFT_MIN_CPC_BID, MICROSOFT_MAX_CPC_BID]` is dropped rather than
+   * forwarded, because the client refuses it (`targeting.go:263-268`) and that refusal would
+   * arrive as a failed job rather than as an error on this request. Dropping is the right answer
+   * HERE specifically: unlike the budget/keywords/geo arms this does not refuse the whole create,
+   * since unset is a valid serve-capable state and an out-of-range bid is the one input whose
+   * absence still produces a working campaign. The UI blocks it before this point with a message
+   * naming the range (`microsoftCpcBidValid`), so an operator using the form is told; this arm
+   * protects the endpoint from a caller that is not the form.
+   * A blank `timeZone` is the same non-answer as an absent one: the client substitutes its
+   * default, so the key is dropped rather than sent empty. Type-checked with `typeof` rather than
+   * optional chaining, which guards a NULLISH receiver but not a wrong-TYPED one — `timeZone: 123`
+   * from a direct caller would reach `.trim()` and answer a malformed body with a 500 instead of
+   * the controlled refusal, exactly as the keyword and geo fields above already prevent.
+   */
+  private buildMicrosoftConfig(body: CampaignCreateRequest): Record<string, unknown> | null {
+    if (!body?.microsoftConfig) return null;
+
+    const { budgetUsd, cpcBid, timeZone, keywords, geoTargets, startDate, endDate, ...rest } = body.microsoftConfig as MicrosoftCampaignCreateRequest & {
+      startDate?: string;
+      endDate?: string;
+    };
+    // Dropped, not forwarded. `microsoftConfig` declares NO scheduling fields (unlike `metaConfig`),
+    // so `unmarshalPlatformConfig` would silently discard these — putting keys on the wire that
+    // imply a flight the campaign never gets. Named here rather than left to `...rest` because a
+    // direct caller can still send them: the legacy request shape carries dates for every other
+    // platform, so they arrive by habit.
+    void startDate;
+    void endDate;
+
+    // Finite AND positive. `Number.isFinite` rejects NaN and both infinities; the client applies
+    // the same test during dispatch, so failing here reports it as a refusal instead of a job
+    // failure the user has to go looking for.
+    if (!Number.isFinite(budgetUsd) || budgetUsd <= 0 || budgetUsd > MICROSOFT_MAX_BUDGET) return null;
+
+    // Non-empty AFTER trimming: a whitespace-only term is not a keyword Microsoft can match a
+    // query against, so counting it would let a blank row satisfy the "at least one" rule and
+    // produce the unservable campaign this guard exists to prevent.
+    // Type-checked at RUNTIME, not just by the `CampaignCreateRequest` cast — the same reasoning
+    // as `buildHubSpotConfig`, and for the same reason: this route has no body validator, so
+    // `req.body` is asserted rather than parsed. Without these checks `keywords: {}` reaches
+    // `.filter` and `geoTargets: [123]` reaches `.trim`, answering a malformed request with a 500
+    // instead of the controlled "unconfigured" refusal. A wrong TYPE is the same non-answer as a
+    // missing value and takes the same exit.
+    if (!Array.isArray(keywords)) return null;
+    // REJECT-ALL, not filter-and-continue. Upstream `validateKeywords` returns an error on the
+    // first bad entry rather than dropping it, and matching that is a correctness requirement
+    // rather than tidiness: filtering here meant a request carrying one good keyword and one
+    // `Fuzzy` keyword dispatched a campaign targeting HALF what the operator asked for, and
+    // reported success. `resolveGeoTargets` states the same rule for geo — "returning the partial
+    // set would create a campaign targeted at some-but-not-all of the requested countries while
+    // reporting success, and a caller cannot tell that from a full result."
+    //
+    // Control characters are ALSO refused upstream (any `unicode.IsControl` rune, checked
+    // pre-trim) and would otherwise reach POST /Keywords verbatim, to be rejected only after the
+    // campaign, ad group and ad exist. Checked pre-trim here for the same reason.
+    const keywordsValid = keywords.every(
+      (k) =>
+        typeof k?.text === 'string' &&
+        k.text.trim() !== '' &&
+        [...k.text.trim()].length <= MICROSOFT_MAX_KEYWORD_TEXT_LENGTH &&
+        !MICROSOFT_CONTROL_CHAR_RE.test(k.text) &&
+        isMicrosoftMatchType(k.matchType)
+    );
+    if (!keywordsValid) return null;
+    const cleanKeywords = keywords as MicrosoftKeyword[];
+    if (cleanKeywords.length === 0) return null;
+    // The count cap is a refusal, not a truncation — dropping the 61st keyword would dispatch a
+    // campaign targeting less than the operator asked for, the same harm as the filtering above.
+    // Per-keyword LENGTH is checked in the `every` above, in RUNES via the spread, matching the
+    // client's `utf8.RuneCountInString`; `.length` counts UTF-16 units and would count an emoji
+    // double, rejecting a keyword the client accepts.
+    if (cleanKeywords.length > MICROSOFT_MAX_KEYWORDS) return null;
+
+    // Same REJECT-ALL rule as the keywords above, and upstream says why in `resolveGeoTargets`:
+    // it "FAILS CLOSED. Every code must resolve; the first that does not aborts". Filtering here
+    // turned `['US', 'USA']` into a US-only campaign that reported success — less targeting than
+    // the operator asked for, with nothing saying so.
+    //
+    // SHAPE ONLY, deliberately. Whether a well-formed code is one Microsoft targets stays the
+    // client's call: it validates against Microsoft's own country table and REFUSES THE CREATE
+    // before anything is created, so an unknown code costs a clear upstream error rather than a
+    // half-built campaign.
+    //
+    // Not tightened to this app's `ASSIGNED_COUNTRY_CODES`, and the reason is measured rather than
+    // assumed: that list and Microsoft's genuinely diverge — `AN` is in Microsoft's table and not
+    // in ours, and 23 codes (`CU`, `IR`, `KP`, `SY`, ...) are in ours and not Microsoft's. Gating
+    // here on our list would SILENTLY DROP a code Microsoft accepts, which is the same
+    // wrong-market defect `normalizeMicrosoftGeoTargets` exists to prevent. The cost of shape-only
+    // is that a syntactically valid but unsupported code (`ZZ`) reaches upstream and fails the job
+    // by name; the cost of the alternative is a campaign quietly targeting somewhere else.
+    if (!Array.isArray(geoTargets)) return null;
+    const cleanGeoTargets = geoTargets.map((g) => (typeof g === 'string' ? g.trim().toUpperCase() : ''));
+    if (!cleanGeoTargets.every((g) => META_GEO_CODE_PATTERN.test(g))) return null;
+    if (cleanGeoTargets.length === 0) return null;
+    if (cleanGeoTargets.length > MICROSOFT_MAX_GEO_TARGETS) return null;
+
+    return {
+      ...rest,
+      budget: budgetUsd,
+      keywords: cleanKeywords.map((k) => ({ text: k.text.trim(), matchType: k.matchType })),
+      geoTargets: cleanGeoTargets,
+      ...(Number.isFinite(cpcBid) && (cpcBid as number) >= MICROSOFT_MIN_CPC_BID && (cpcBid as number) <= MICROSOFT_MAX_CPC_BID ? { cpcBid } : {}),
+      ...(typeof timeZone === 'string' && timeZone.trim() ? { timeZone: timeZone.trim() } : {}),
+    };
+  }
+
+  /**
    * The email channel's config.
    *
    * A BLANK `sourceEmailId` returns null — i.e. UNCONFIGURED — rather than an object carrying an
@@ -1491,6 +2045,28 @@ export class CampaignController {
 
     const rawUtm = body.hubspotConfig?.utmCampaign;
     const utmCampaign = typeof rawUtm === 'string' ? rawUtm.trim() : '';
-    return utmCampaign ? { sourceEmailId, utmCampaign } : { sourceEmailId };
+
+    // The generated copy, forwarded rather than dropped. This mapper is an ALLOW-LIST -- anything
+    // it does not name never reaches campaign-service -- and it named only the two original
+    // fields, so a staged draft silently kept the cloned template's own subject and body while
+    // the UI showed the generated ones. Observed live: draft 220597885197 went out with the
+    // template's "Reminder: Complete your OpenSearch Ambassador application".
+    //
+    // Same runtime type check as `sourceEmailId` above, for the same reason: this route has no
+    // body validator, so a non-string must take the "absent" exit rather than throw.
+    const rawSubject = body.hubspotConfig?.subject;
+    const subject = typeof rawSubject === 'string' ? rawSubject.trim() : '';
+    const rawBody = body.hubspotConfig?.bodyHtml;
+    const bodyHtml = typeof rawBody === 'string' ? rawBody.trim() : '';
+
+    // Each field is included only when set. Upstream treats both as OPTIONAL and leaves the
+    // template's own value in place when a field is absent, so sending "" would be a request to
+    // blank the draft's subject rather than to leave it alone.
+    return {
+      sourceEmailId,
+      ...(utmCampaign ? { utmCampaign } : {}),
+      ...(subject ? { subject } : {}),
+      ...(bodyHtml ? { bodyHtml } : {}),
+    };
   }
 }

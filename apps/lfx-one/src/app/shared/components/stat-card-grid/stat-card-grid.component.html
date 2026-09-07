@@ -19,7 +19,9 @@
             <p class="text-xs text-gray-400">{{ card.subLine }}</p>
           }
           @if (card.delta && !loading()) {
-            <p class="flex items-center gap-1 text-xs font-medium" [class]="deltaTextClass[card.delta.direction]">
+            <p
+              class="flex items-center gap-1 text-xs font-medium"
+              [class]="(card.delta.inverted ? invertedDeltaTextClass : deltaTextClass)[card.delta.direction]">
               <i [class]="deltaIcon[card.delta.direction]" aria-hidden="true"></i>
               {{ card.delta.label }}
             </p>

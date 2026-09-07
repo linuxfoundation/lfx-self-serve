@@ -101,9 +101,10 @@ export class CommitteeOverviewComponent {
 
   // Reactive handle on the child card's own `brief` signal (LFXV2-3043, Cursor Bugbot review) —
   // initBriefActionItems needs to know when a generate/regenerate/save lands a new revision on
-  // the SAME page visit, not just when the committee or the enabled gate changes. The card only
-  // renders when weeklyBriefEnabled() && canEdit(), same precondition initBriefActionItems
-  // already gates on, so this is undefined exactly when the fetch is disabled anyway.
+  // the SAME page visit, not just when the committee or the enabled gate changes. The card now
+  // renders for engagementAccessible() users (GH-2031), which is broader than canEdit(), so this
+  // may be non-null for read-only auditors too — but initBriefActionItems' own `enabled` gate
+  // (weeklyBriefEnabled() && canEdit()) still prevents a non-writer from triggering the fetch.
   private readonly weeklyBriefCardRef = viewChild(WeeklyBriefCardComponent);
 
   // Inputs
@@ -740,9 +741,10 @@ export class CommitteeOverviewComponent {
       // committee-read-access.helper.ts's doc comment). Without this, every non-writer viewing
       // Overview with the flag on would fire a guaranteed 401/403 on every page load — dead
       // weight, degrading silently to an empty list, but a real authorization mismatch between
-      // what this fetch attempts and what the backend permits. Matches the sibling
-      // weekly-brief-card gate one section up: `weeklyBriefEnabled() && canEdit()` (PR #1362
-      // review — Copilot + @dealako).
+      // what this fetch attempts and what the backend permits. The sibling
+      // weekly-brief-card gate (weeklyBriefEnabled() && engagementAccessible()) now shows the
+      // card to read-only auditors too (GH-2031), but action items remain writer-only: they
+      // describe tasks for the ED/chair to act on, not read-only overview for board members.
       toObservable(computed(() => ({ uid: this.committee()?.uid, enabled: this.weeklyBriefEnabled() && this.canEdit() }))).pipe(
         filter((state): state is { uid: string; enabled: boolean } => !!state.uid),
         distinctUntilChanged((a, b) => a.uid === b.uid && a.enabled === b.enabled),

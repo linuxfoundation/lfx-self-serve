@@ -3,7 +3,7 @@
 
 import { HttpClient, HttpErrorResponse, HttpParams } from '@angular/common/http';
 import { inject, Injectable, signal, WritableSignal } from '@angular/core';
-import { INVITATION_NOT_FOUND } from '@lfx-one/shared/constants';
+import { INVITATION_NOT_FOUND, VOTE_DETAIL_CACHE_TTL_MS } from '@lfx-one/shared/constants';
 import {
   CommentResponseInput,
   CreateVoteRequest,
@@ -16,7 +16,7 @@ import {
   VoteAnswerInput,
   VoteResultsResponse,
 } from '@lfx-one/shared/interfaces';
-import { catchError, map, Observable, of, switchMap, take, tap, throwError } from 'rxjs';
+import { catchError, map, Observable, of, shareReplay, switchMap, take, tap, throwError } from 'rxjs';
 
 @Injectable({
   providedIn: 'root',
@@ -25,6 +25,7 @@ export class VoteService {
   public vote: WritableSignal<Vote | null> = signal(null);
 
   private readonly http = inject(HttpClient);
+  private readonly voteDetailCache = new Map<string, { observable: Observable<Vote>; cachedAt: number }>();
 
   public getVotes(params?: HttpParams): Observable<PaginatedResponse<Vote>> {
     return this.http.get<PaginatedResponse<Vote>>('/api/votes', { params }).pipe(
@@ -116,7 +117,32 @@ export class VoteService {
   }
 
   public getVote(voteUid: string): Observable<Vote> {
-    return this.http.get<Vote>(`/api/votes/${voteUid}`).pipe(tap((vote) => this.vote.set(vote)));
+    return this.getVoteDetail(voteUid).pipe(tap((vote) => this.vote.set(vote)));
+  }
+
+  /** Tap-free vote fetch for writerGuard's entity probe and vote-manage's context fallback (getVote's signal write would leak state). */
+  public fetchVote(voteUid: string, options?: { skipCache?: boolean }): Observable<Vote> {
+    return this.getVoteDetail(voteUid, options);
+  }
+
+  /**
+   * Short-TTL cached vote detail shared by the writerGuard probe and manage-page init — one request per edit navigation
+   * instead of two (the detail endpoint's project enrichment included). Evicts on error and on write; `skipCache` forces a fresh read.
+   */
+  public getVoteDetail(voteUid: string, options?: { skipCache?: boolean }): Observable<Vote> {
+    const cached = this.voteDetailCache.get(voteUid);
+    if (!options?.skipCache && cached && Date.now() - cached.cachedAt < VOTE_DETAIL_CACHE_TTL_MS) {
+      return cached.observable;
+    }
+    if (cached) {
+      this.voteDetailCache.delete(voteUid);
+    }
+    const request$ = this.http
+      .get<Vote>(`/api/votes/${encodeURIComponent(voteUid)}`)
+      .pipe(tap({ error: () => this.voteDetailCache.delete(voteUid) }), shareReplay(1));
+    this.pruneExpiredVoteDetailCache();
+    this.voteDetailCache.set(voteUid, { observable: request$, cachedAt: Date.now() });
+    return request$;
   }
 
   public createVote(voteData: CreateVoteRequest): Observable<Vote> {
@@ -124,19 +150,28 @@ export class VoteService {
   }
 
   public updateVote(voteUid: string, voteData: UpdateVoteRequest): Observable<Vote> {
-    return this.http.put<Vote>(`/api/votes/${voteUid}`, voteData).pipe(take(1));
+    return this.http.put<Vote>(`/api/votes/${encodeURIComponent(voteUid)}`, voteData).pipe(
+      take(1),
+      tap(() => this.voteDetailCache.delete(voteUid))
+    );
   }
 
   public deleteVote(voteUid: string): Observable<void> {
-    return this.http.delete<void>(`/api/votes/${voteUid}`).pipe(take(1));
+    return this.http.delete<void>(`/api/votes/${encodeURIComponent(voteUid)}`).pipe(
+      take(1),
+      tap(() => this.voteDetailCache.delete(voteUid))
+    );
   }
 
   public getVoteResults(voteUid: string): Observable<VoteResultsResponse> {
-    return this.http.get<VoteResultsResponse>(`/api/votes/${voteUid}/results`);
+    return this.http.get<VoteResultsResponse>(`/api/votes/${encodeURIComponent(voteUid)}/results`);
   }
 
   public enableVote(voteUid: string): Observable<Vote> {
-    return this.http.put<Vote>(`/api/votes/${voteUid}/enable`, {}).pipe(take(1));
+    return this.http.put<Vote>(`/api/votes/${encodeURIComponent(voteUid)}/enable`, {}).pipe(
+      take(1),
+      tap(() => this.voteDetailCache.delete(voteUid))
+    );
   }
 
   public createVoteResponse(payload: CreateVoteResponseRequest): Observable<void> {
@@ -165,7 +200,7 @@ export class VoteService {
   }
 
   public getMyVoteResponse(voteUid: string): Observable<MyVoteResponse | null> {
-    return this.http.get<MyVoteResponse | null>(`/api/votes/${voteUid}/my-response`).pipe(
+    return this.http.get<MyVoteResponse | null>(`/api/votes/${encodeURIComponent(voteUid)}/my-response`).pipe(
       catchError((err: HttpErrorResponse) => {
         // 404 = the user genuinely has no invitation row for this vote — return null so
         // callers can surface the "no invitation" UX. Any other error (500, network, etc.)
@@ -176,5 +211,14 @@ export class VoteService {
         return throwError(() => err);
       })
     );
+  }
+
+  private pruneExpiredVoteDetailCache(): void {
+    const now = Date.now();
+    for (const [key, entry] of this.voteDetailCache) {
+      if (now - entry.cachedAt >= VOTE_DETAIL_CACHE_TTL_MS) {
+        this.voteDetailCache.delete(key);
+      }
+    }
   }
 }

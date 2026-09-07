@@ -11,6 +11,7 @@ import { OrgLensRoiService } from '@services/org-lens-roi.service';
 import { OrgNavigationService } from '@services/org-navigation.service';
 import { OrgRoleGrantsService } from '@services/org-role-grants.service';
 import { PersonaService } from '@services/persona.service';
+import { OpenIntercomDirective } from '@shared/directives/open-intercom.directive';
 import { SkeletonModule } from 'primeng/skeleton';
 import { catchError, combineLatest, filter, map, of, switchMap, tap } from 'rxjs';
 
@@ -54,6 +55,7 @@ const EMPTY_COVERAGE: OrgLensRoiCoverage = { orgUid: '', hasData: false, coverag
     OrgRoiAssumptionsDrawerComponent,
     OrgRoiEmptyStateComponent,
     EmptyStateComponent,
+    OpenIntercomDirective,
     SkeletonModule,
   ],
   templateUrl: './org-roi.component.html',

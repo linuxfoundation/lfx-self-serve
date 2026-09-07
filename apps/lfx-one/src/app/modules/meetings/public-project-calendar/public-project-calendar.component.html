@@ -1,0 +1,130 @@
+<!-- Copyright The Linux Foundation and each contributor to LFX. -->
+<!-- SPDX-License-Identifier: MIT -->
+
+<div class="min-h-screen bg-gray-50">
+  <lfx-header />
+
+  <main class="container mx-auto flex flex-col gap-6 px-4 py-8 sm:px-6 lg:px-8" data-testid="public-project-calendar-page">
+    <!-- Page header -->
+    <header class="flex flex-col gap-1" data-testid="public-project-calendar-header">
+      @if (loading()) {
+        <p-skeleton width="12rem" height="2rem" />
+        <p-skeleton width="20rem" height="1rem" class="mt-1" />
+      } @else {
+        <h1 class="font-display font-light text-2xl text-gray-900" data-testid="public-project-calendar-title">
+          @if (projectName()) {
+            {{ projectName() }} — Calendar
+          } @else {
+            Calendar
+          }
+        </h1>
+        <p class="text-sm text-gray-500" data-testid="public-project-calendar-subtitle">
+          {{ total() }} {{ total() === 1 ? 'meeting' : 'meetings' }}
+          <!-- The count is filtered whenever the URL carries a group, so it must be labelled as such even
+               when the directory is unavailable to name that group — an unqualified count reads as the
+               project's whole calendar. -->
+          @if (activeCommittee(); as committee) {
+            in {{ committee.name }}
+          } @else if (activeCommitteeUid()) {
+            in the selected group
+          }
+        </p>
+      }
+    </header>
+
+    <!-- Filter needs the public group directory; the legend only needs rendered events, so they gate apart.
+         An applied filter also opens this row on its own, so the escape hatch below stays reachable when
+         the directory is unavailable and the dropdown cannot render. -->
+    @if (committeeOptions().length > 1 || activeCommitteeUid() || legendItems().length) {
+      <div class="flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between" data-testid="public-project-calendar-filters">
+        @if (committeeOptions().length > 1) {
+          <div class="flex items-center gap-2">
+            <!-- A span, not a label: PrimeNG renders the non-editable select as role="combobox" on a
+                 span, which `for` cannot target — the association has to go through aria-labelledby. -->
+            <span id="public-calendar-committee-filter-label" class="text-sm text-gray-700">Group</span>
+            <lfx-select
+              ariaLabelledBy="public-calendar-committee-filter-label"
+              [form]="committeeForm"
+              control="committee"
+              [options]="committeeOptions()"
+              placeholder="All groups"
+              styleClass="w-full sm:w-64"
+              (onChange)="onCommitteeChange($event)"
+              data-testid="public-project-calendar-committee-filter" />
+          </div>
+        } @else if (activeCommitteeUid()) {
+          <!-- Filtered, but the directory that populates the dropdown is unavailable. Without this the
+               reader is stuck on a filtered calendar with no control that clears it. -->
+          <lfx-button
+            icon="fa-light fa-calendar"
+            severity="secondary"
+            [outlined]="true"
+            label="View all meetings"
+            size="small"
+            (click)="clearCommitteeFilter()"
+            data-testid="public-project-calendar-clear-filter" />
+        }
+
+        <!-- Names every colour on the canvas, including the past and cancelled treatments that override
+             a group's own colour, so hue is never the only carrier of meaning -->
+        @if (legendItems().length) {
+          <ul class="flex flex-wrap items-center gap-x-4 gap-y-2" data-testid="public-project-calendar-legend">
+            @for (item of legendItems(); track item.label) {
+              <li class="flex items-center gap-1.5 text-xs text-gray-600">
+                <span class="h-2.5 w-2.5 rounded-sm" [style.background-color]="item.color" aria-hidden="true"></span>
+                {{ item.label }}
+              </li>
+            }
+          </ul>
+        }
+      </div>
+    }
+
+    <!-- Error state -->
+    @if (fetchError()) {
+      <lfx-empty-state
+        icon="fa-light fa-circle-exclamation"
+        title="Unable to load calendar"
+        subtitle="Something went wrong while fetching meeting data. Please try refreshing the page."
+        data-testid="public-project-calendar-error" />
+    } @else if (loading()) {
+      <!-- Loading skeleton -->
+      <div class="flex flex-col gap-3 rounded-lg border border-gray-200 bg-white p-4" data-testid="public-project-calendar-skeleton">
+        <p-skeleton width="100%" height="24rem" />
+      </div>
+    } @else if (unknownCommittee()) {
+      <lfx-empty-state
+        icon="fa-light fa-users-slash"
+        title="Group not found"
+        subtitle="This link points to a group that is not part of this project's public directory. It may have been renamed, made private, or removed."
+        ctaLabel="View all meetings"
+        ctaIcon="fa-light fa-calendar"
+        (ctaClick)="clearCommitteeFilter()"
+        data-testid="public-project-calendar-unknown-committee" />
+    } @else if (total() === 0) {
+      <!-- Keyed on the raw UID, not the resolved group: the filter is applied whether or not the
+           directory could name it, and claiming the project has no meetings would be false. -->
+      <lfx-empty-state
+        icon="fa-light fa-calendar-xmark"
+        title="No public meetings"
+        [subtitle]="
+          activeCommitteeUid()
+            ? 'No public meetings on the calendar for the selected group yet.'
+            : 'This project has no public meetings on the calendar yet. Check back soon.'
+        "
+        [ctaLabel]="activeCommitteeUid() ? 'View all meetings' : undefined"
+        ctaIcon="fa-light fa-calendar"
+        (ctaClick)="clearCommitteeFilter()"
+        data-testid="public-project-calendar-empty" />
+    } @else {
+      <div class="rounded-lg border border-gray-200 bg-white p-4" data-testid="public-project-calendar-container">
+        <lfx-fullcalendar
+          [events]="calendarEvents()"
+          [initialView]="initialView()"
+          height="auto"
+          (eventClick)="onCalendarEventClick($event)"
+          data-testid="public-project-calendar-fullcalendar" />
+      </div>
+    }
+  </main>
+</div>

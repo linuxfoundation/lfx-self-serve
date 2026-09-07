@@ -14,7 +14,8 @@ import { SelectComponent } from '@components/select/select.component';
 import { TableComponent } from '@components/table/table.component';
 import { TagComponent } from '@components/tag/tag.component';
 import { COMMITTEE_LABEL, MAILING_LIST_LABEL, MAILING_LIST_MAX_VISIBLE_GROUPS } from '@lfx-one/shared';
-import { FilterOption, GroupsIOMailingList } from '@lfx-one/shared/interfaces';
+import { FilterOption, GroupsIOMailingList, MailingListTableRowVm } from '@lfx-one/shared/interfaces';
+import { getMailingListCommands, getMailingListLinkQueryParams } from '@lfx-one/shared/utils';
 import { GroupEmailPipe } from '@pipes/group-email.pipe';
 import { MailingListTypeLabelPipe } from '@pipes/mailing-list-type-label.pipe';
 import { RemainingGroupsTooltipPipe } from '@pipes/remaining-groups-tooltip.pipe';
@@ -68,7 +69,7 @@ export class MailingListTableComponent {
 
   // Outputs
   public readonly refresh = output<void>();
-  public readonly rowClick = output<GroupsIOMailingList>();
+  public readonly rowClick = output<MailingListTableRowVm>();
   public readonly foundationFilterChange = output<string | null>();
   public readonly projectFilterChange = output<string | null>();
 
@@ -86,8 +87,11 @@ export class MailingListTableComponent {
 
   protected readonly rppOptions = computed<number[] | undefined>(() => (this.mailingLists().length > 10 ? [10, 25, 50] : undefined));
 
+  /** Rows decorated with canonical view-link state (GH-1567) — pre-computed once per input change (angular-reactive-data §3.5). */
+  protected readonly tableRows: Signal<MailingListTableRowVm[]> = this.initTableRows();
+
   // Event Handlers
-  protected onRowSelect(event: { data: GroupsIOMailingList }): void {
+  protected onRowSelect(event: { data: MailingListTableRowVm }): void {
     this.rowClick.emit(event.data);
   }
 
@@ -95,5 +99,15 @@ export class MailingListTableComponent {
     this.searchForm().patchValue({ search: '', committee: null, status: null, foundationFilter: null, projectFilter: null });
     this.foundationFilterChange.emit(null);
     this.projectFilterChange.emit(null);
+  }
+
+  private initTableRows(): Signal<MailingListTableRowVm[]> {
+    return computed(() =>
+      this.mailingLists().map((mailingList) => ({
+        ...mailingList,
+        viewCommands: getMailingListCommands(mailingList),
+        linkQueryParams: getMailingListLinkQueryParams(mailingList),
+      }))
+    );
   }
 }

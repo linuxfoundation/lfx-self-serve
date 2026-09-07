@@ -22,6 +22,8 @@ import type {
   UpdateVoteRequest,
   Vote,
   VoteFormValue,
+  VoteParticipationStats,
+  VoteResultsResponse,
 } from '../interfaces/poll.interface';
 
 /**
@@ -120,9 +122,32 @@ export function mapVoteToFormValue(vote: Vote): VoteFormValue {
     committee,
     eligible_participants: mapFiltersToEligibility(vote.committee_filters),
     close_date: vote.end_time ? new Date(vote.end_time) : null,
+    allow_abstain: vote.allow_abstain ?? false,
     questions: (vote.poll_questions?.filter((question) => !isDraftPlaceholderPollQuestion(question)) ?? []).map(mapApiQuestionToFormValue),
     commentPrompts: (vote.poll_comment_prompts ?? []).map(mapApiCommentPromptToFormValue),
   };
+}
+
+/**
+ * Computes participation stats for the results drawer from the results API payload
+ * @description Upstream (itx-service-voting) counts abstentions in `num_votes_cast` but excludes them from
+ * per-choice tallies, so `abstainedVoters` is a subset of `totalResponses`; `abstainedRate` is their share of all
+ * responses cast — the same `num_votes_cast` base upstream uses for per-choice percentages, so the two always agree.
+ * @param results - VoteResultsResponse from the results API, or null when not yet loaded
+ * @returns VoteParticipationStats for the participation card and abstain row
+ */
+export function computeVoteParticipationStats(results: VoteResultsResponse | null): VoteParticipationStats {
+  if (!results) {
+    return { eligibleVoters: 0, totalResponses: 0, participationRate: 0, abstainedVoters: 0, abstainedRate: 0 };
+  }
+
+  const eligibleVoters = results.num_recipients || 0;
+  const totalResponses = results.num_votes_cast || 0;
+  const abstainedVoters = results.num_abstained || 0;
+  const participationRate = eligibleVoters > 0 ? Math.round((totalResponses / eligibleVoters) * 100) : 0;
+  const abstainedRate = totalResponses > 0 ? Math.round((abstainedVoters / totalResponses) * 100) : 0;
+
+  return { eligibleVoters, totalResponses, participationRate, abstainedVoters, abstainedRate };
 }
 
 /**
@@ -239,6 +264,7 @@ export function buildCreateVoteRequest(formValue: VoteFormValue, projectUid: str
     project_uid: projectUid,
     committee_uid: formValue.committee?.uid || '',
     committee_filters: mapEligibilityToFilters(formValue.eligible_participants),
+    allow_abstain: formValue.allow_abstain,
     poll_questions: formValue.questions.map(mapQuestionToApiFormat),
     poll_comment_prompts: mapCommentPromptsToApiFormat(formValue.commentPrompts),
   };
@@ -256,6 +282,7 @@ export function buildDraftVoteRequest(formValue: VoteFormValue, projectUid: stri
     project_uid: projectUid,
     committee_uid: formValue.committee?.uid || '',
     committee_filters: mapEligibilityToFilters(formValue.eligible_participants),
+    allow_abstain: formValue.allow_abstain,
     poll_questions,
     poll_comment_prompts: mapCommentPromptsToApiFormat(formValue.commentPrompts),
   };
@@ -275,6 +302,7 @@ export function buildUpdateVoteRequest(formValue: VoteFormValue, projectUid: str
     project_uid: projectUid,
     committee_uid: formValue.committee?.uid || '',
     committee_filters: mapEligibilityToFilters(formValue.eligible_participants),
+    allow_abstain: formValue.allow_abstain,
     poll_questions: formValue.questions.map(mapQuestionToApiFormat),
     poll_comment_prompts: mapCommentPromptsToApiFormat(formValue.commentPrompts),
   };
@@ -292,6 +320,7 @@ export function buildDraftUpdateVoteRequest(formValue: VoteFormValue, projectUid
     project_uid: projectUid,
     committee_uid: formValue.committee?.uid || '',
     committee_filters: mapEligibilityToFilters(formValue.eligible_participants),
+    allow_abstain: formValue.allow_abstain,
     poll_questions,
     poll_comment_prompts: mapCommentPromptsToApiFormat(formValue.commentPrompts),
   };

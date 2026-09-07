@@ -5,6 +5,7 @@ import { computed, Component, DestroyRef, inject, output, Signal } from '@angula
 import { takeUntilDestroyed } from '@angular/core/rxjs-interop';
 import { ButtonComponent } from '@components/button/button.component';
 import { TagComponent } from '@components/tag/tag.component';
+import { ToastMessageComponent } from '@components/toast-message/toast-message.component';
 import { PendingInvitation, PendingInvitationRowVm } from '@lfx-one/shared/interfaces';
 import { RouterLink } from '@angular/router';
 import { InvitationSubtextPipe } from '@pipes/invitation-subtext.pipe';
@@ -31,7 +32,7 @@ const TOAST_KEY = 'committee-invitations';
  */
 @Component({
   selector: 'lfx-committee-invitations',
-  imports: [ButtonComponent, TagComponent, ToastModule, InvitationSubtextPipe, RouterLink],
+  imports: [ButtonComponent, TagComponent, ToastMessageComponent, ToastModule, InvitationSubtextPipe, RouterLink],
   templateUrl: './committee-invitations.component.html',
   styleUrl: './committee-invitations.component.scss',
 })

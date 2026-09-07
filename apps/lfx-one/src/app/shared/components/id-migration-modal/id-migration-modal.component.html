@@ -1,0 +1,80 @@
+<!-- Copyright The Linux Foundation and each contributor to LFX. -->
+<!-- SPDX-License-Identifier: MIT -->
+
+<div class="flex flex-col gap-4" data-testid="id-migration-modal">
+  <!-- Header: body renders its own headline + subhead (dialog opened with showHeader:false) -->
+  <div class="flex flex-col">
+    <h2 id="id-migration-heading" class="text-lg font-semibold text-gray-900">We're retiring Individual Dashboard</h2>
+    <p class="text-xs text-gray-500">What's missing in LFX that's sending you back?</p>
+  </div>
+
+  <!-- Reason is required (Continue is disabled until one is picked); the comment is optional. -->
+  <form [formGroup]="form" class="flex flex-col gap-3">
+    <div class="flex flex-col gap-1">
+      <!-- aria-hidden on the asterisk: [required] below emits aria-required, so SRs would hear it twice. -->
+      <label for="id-migration-reason" class="text-sm font-medium text-gray-700">Reason <span class="text-red-500" aria-hidden="true">*</span></label>
+      <lfx-select
+        [form]="form"
+        control="reason"
+        inputId="id-migration-reason"
+        [required]="true"
+        [options]="reasons"
+        optionLabel="label"
+        optionValue="value"
+        placeholder="Select a reason"
+        size="small"
+        styleClass="w-full"
+        dataTest="id-migration-reason" />
+    </div>
+    <div class="flex flex-col gap-1">
+      <label for="id-migration-comment" class="text-sm font-medium text-gray-700">Anything else? (optional)</label>
+      <!-- [id] bound, not static: a static id= lands on the host too, so label[for] would resolve
+           to the non-labelable <lfx-textarea>. mask: replay records input verbatim at this app's
+           defaultPrivacyLevel 'allow', so abandoned drafts would leak; addAction still sends it. -->
+      <lfx-textarea
+        [form]="form"
+        control="comment"
+        [id]="'id-migration-comment'"
+        placeholder="Tell us more…"
+        [rows]="3"
+        styleClass="w-full"
+        data-dd-privacy="mask"
+        dataTest="id-migration-comment" />
+    </div>
+  </form>
+
+  <!-- Popup blocker refused the new tab, so no CONTINUE was logged and the dialog stayed open.
+       A real anchor click is not subject to the popup blocker, so this link always works. -->
+  @if (popupBlocked()) {
+    <p class="text-xs text-red-600" role="alert" data-testid="id-migration-popup-blocked">
+      Your browser blocked the new tab.
+      <a [href]="individualDashboardUrl" target="_blank" rel="noopener noreferrer" class="underline" data-testid="id-migration-popup-blocked-link"
+        >Open Individual Dashboard</a
+      >
+      instead.
+    </p>
+  }
+
+  <!-- Actions: "Stay here" dismisses silently; "Continue" opens ID in a new tab then logs the reason -->
+  <div class="flex justify-end gap-3">
+    <lfx-button
+      label="Stay here"
+      severity="secondary"
+      [outlined]="true"
+      size="small"
+      type="button"
+      (onClick)="stayHere()"
+      data-testid="id-migration-stay-button" />
+    <!-- ariaLabel announces the new browsing context; the visible label stays short. -->
+    <lfx-button
+      label="Continue to Individual Dashboard"
+      ariaLabel="Continue to Individual Dashboard (opens in a new tab)"
+      [disabled]="form.invalid"
+      icon="fa-light fa-arrow-up-right"
+      iconPos="right"
+      size="small"
+      type="button"
+      (onClick)="continueToIndividualDashboard()"
+      data-testid="id-migration-continue-button" />
+  </div>
+</div>

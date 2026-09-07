@@ -18,3 +18,8 @@ export const VOTE_COMMENT_RESULTS_ROWS_PER_PAGE_OPTIONS = [5, 10, 25];
  * realistic committee electorate; true cursor pagination is an upstream contract follow-up.
  */
 export const VOTE_COMMENT_RESULTS_MAX_RESPONSES_PER_PROMPT = 200;
+
+/**
+ * Short TTL for the vote-detail cache — lets the writerGuard probe and VoteManageComponent's refetch share one request. Mirrors COMMITTEE_DETAIL_CACHE_TTL_MS.
+ */
+export const VOTE_DETAIL_CACHE_TTL_MS = 10 * 1000;

@@ -12,6 +12,7 @@ import { lensRedirectGuard } from './shared/guards/lens-redirect.guard';
 import { marketingImpactAccessGuard } from './shared/guards/marketing-impact-access.guard';
 import { newsletterAccessGuard } from './shared/guards/newsletter-access.guard';
 import { orgLensEnabledGuard } from './shared/guards/org-lens-enabled.guard';
+import { orgLensClaM3EnabledGuard } from './shared/guards/org-lens-cla-m3-enabled.guard';
 import { orgLensRoiEnabledGuard } from './shared/guards/org-lens-roi-enabled.guard';
 import { akritesEnabledGuard } from './shared/guards/akrites-enabled.guard';
 import { mktgOsAgentsEnabledGuard } from './shared/guards/mktg-os-agents-enabled.guard';
@@ -60,6 +61,13 @@ export const routes: Routes = [
         data: { lens: 'foundation' },
         canActivate: [campaignAccessGuard, projectQueryParamGuard],
         loadComponent: () => import('./modules/dashboards/campaigns/campaigns.component').then((m) => m.CampaignsComponent),
+      },
+      // Foundation Lens — Social Listening page (ED + LF Staff)
+      {
+        path: 'foundation/social-listening',
+        data: { lens: 'foundation' },
+        canActivate: [dashboardAccessGuard, projectQueryParamGuard],
+        loadComponent: () => import('./modules/dashboards/social-listening/social-listening.component').then((m) => m.SocialListeningComponent),
       },
       // Foundation Lens — Projects page
       {
@@ -127,6 +135,25 @@ export const routes: Routes = [
               icon: 'fa-light fa-folder',
             },
             loadComponent: () => import('./modules/dashboards/org/org-project-detail/org-project-detail.component').then((m) => m.OrgProjectDetailComponent),
+          },
+          {
+            // Componentless parent, so the dark-launch guard is declared once and later M3
+            // children (list, sign, managers, …) inherit it. A looser copy would be a way
+            // into the unfinished feature while `org-lens-cla-m3-enabled` is off.
+            path: 'easycla',
+            canMatch: [orgLensClaM3EnabledGuard],
+            data: {
+              lens: 'org',
+              title: 'EasyCLA',
+              description: 'Corporate CLAs your organization has signed.',
+              icon: 'fa-light fa-file-signature',
+            },
+            children: [
+              {
+                path: '',
+                loadComponent: () => import('./modules/dashboards/org/org-easycla/org-easycla.component').then((m) => m.OrgEasyclaComponent),
+              },
+            ],
           },
           {
             // Componentless parent, so the dark-launch guard is declared once and the project
@@ -499,6 +526,12 @@ export const routes: Routes = [
   {
     path: 'projects/:projectSlug/groups',
     loadComponent: () => import('./modules/groups/public-project-groups/public-project-groups.component').then((m) => m.PublicProjectGroupsComponent),
+  },
+  // Public project calendar — month/week calendar of a project's public meetings, optionally scoped
+  // to a single committee via ?committee=<uid> (no auth required).
+  {
+    path: 'projects/:projectSlug/calendar',
+    loadComponent: () => import('./modules/meetings/public-project-calendar/public-project-calendar.component').then((m) => m.PublicProjectCalendarComponent),
   },
   // Invite acceptance — authGuard preserves ?token= through the Auth0 login redirect.
   {

@@ -7,7 +7,9 @@
 // EasyCLA re-verifies each key belongs to the caller and owns the signature, so the
 // upstream endpoint — not this controller — is the ownership authorization boundary.
 
-import { CLA_GROUP_SEARCH_MIN_CHARS } from '@lfx-one/shared/constants';
+import { CLA_GROUP_SEARCH_MIN_CHARS, CLA_MANAGER_MESSAGE_MAX_LENGTH, CLA_MANAGER_REQUEST_TYPES } from '@lfx-one/shared/constants';
+import type { ClaManagerRequestType } from '@lfx-one/shared/interfaces';
+import { codePointLength, sanitizePlainText } from '@lfx-one/shared/utils';
 import { NextFunction, Request, Response } from 'express';
 
 import { AuthenticationError } from '../errors';
@@ -42,6 +44,10 @@ function parseManagerRecipients(raw: unknown): string[] | null {
     recipients.push(trimmed);
   }
   return recipients;
+}
+
+function isClaManagerRequestType(value: string): value is ClaManagerRequestType {
+  return CLA_MANAGER_REQUEST_TYPES.some((requestType) => requestType === value);
 }
 
 export class ClasController {
@@ -231,8 +237,8 @@ export class ClasController {
   }
 
   // POST /api/me/clas/:signatureId/cla-manager-requests
-  // Approval or removal notice to selected CLA managers. Blocked during impersonation at the
-  // route. Contact mode never reaches this handler — the client does not call it.
+  // Approval, removal, or contact notice to selected CLA managers. Blocked during impersonation
+  // at the route.
   public async createClaManagerRequest(req: Request, res: Response, next: NextFunction): Promise<void> {
     const startTime = logger.startOperation(req, 'create_cla_manager_request');
 
@@ -249,8 +255,8 @@ export class ClasController {
 
       const body = req.body as { requestType?: unknown; recipients?: unknown; message?: unknown } | undefined;
       const requestType = String(body?.requestType ?? '').trim();
-      if (requestType !== 'approval' && requestType !== 'removal') {
-        res.status(400).json({ message: 'A request type of approval or removal is required' });
+      if (!isClaManagerRequestType(requestType)) {
+        res.status(400).json({ message: 'A request type of approval, removal, or contact is required' });
         return;
       }
 
@@ -260,9 +266,29 @@ export class ClasController {
         return;
       }
 
-      const trimmedMessage = String(body?.message ?? '').trim();
-      if (trimmedMessage.length > 4096) {
+      // Do not `String(message)`: an object body becomes "[object Object]" and would pass the
+      // contact blank check, then fail the producer's `type: string` schema after the round trip.
+      const rawMessage = body?.message;
+      if (rawMessage !== undefined && rawMessage !== null && typeof rawMessage !== 'string') {
+        res.status(400).json({ message: 'Message must be a string' });
+        return;
+      }
+
+      // Sanitized, because the producer validates and stores the sanitized text: control
+      // characters other than newline and tab never reach it, so they must not count here.
+      const trimmedMessage = sanitizePlainText(rawMessage ?? '');
+      // Code points, not UTF-16 units, to match the producer's go-swagger rune cap — see
+      // CLA_MANAGER_MESSAGE_MAX_LENGTH.
+      if (codePointLength(trimmedMessage) > CLA_MANAGER_MESSAGE_MAX_LENGTH) {
         res.status(400).json({ message: 'Message is too long' });
+        return;
+      }
+
+      // A contact request asks for no change, so the message is the whole of it. The producer
+      // refuses a blank one; answering here keeps that a 400 with usable copy rather than an
+      // opaque upstream rejection after a gateway round trip.
+      if (requestType === 'contact' && !trimmedMessage) {
+        res.status(400).json({ message: 'A message is required to contact the CLA manager(s)' });
         return;
       }
 

@@ -385,6 +385,7 @@ test.describe('Org Lens ROI Metrics — portfolio summary', () => {
     await gotoOrgRoiPage(page);
 
     await expect(page.getByTestId('org-roi-no-access-state')).toBeVisible();
+    await expect(page.getByTestId('org-roi-no-access-contact-support')).toBeVisible();
     await expect(page.getByTestId('org-roi-kpi-cards')).toHaveCount(0);
     await expect(page.getByTestId('org-roi-no-company-empty-state')).toHaveCount(0);
   });

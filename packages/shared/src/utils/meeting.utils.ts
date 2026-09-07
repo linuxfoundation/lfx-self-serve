@@ -999,6 +999,43 @@ export function parseTranscriptVtt(vtt: string | null | undefined): TranscriptCu
 }
 
 /**
+ * Maps the indexed `v1_meeting` flag `use_new_invite_email_address` onto
+ * `is_invite_responses_enabled` when the ITX field is absent.
+ *
+ * PCC gates RSVP UI on ITX `is_invite_responses_enabled`, which is mapped 1:1 from
+ * DynamoDB `use_new_invite_email_address` (set true only for meetings created after
+ * the January 2024 invite-responses release). The indexer stores that same DynamoDB
+ * attribute as `use_new_invite_email_address`; ITX GET exposes it as
+ * `is_invite_responses_enabled` and omits the field when false (Go `omitempty`).
+ * Explicit `is_invite_responses_enabled` wins. Missing both layers becomes `false`
+ * so Self Serve can hide RSVP UI for pre-feature meetings (GH-1951 / InterUSS
+ * `91098305796`).
+ */
+export function normalizeIndexedMeetingInviteResponses<
+  T extends {
+    is_invite_responses_enabled?: boolean;
+    use_new_invite_email_address?: boolean;
+  },
+>(meeting: T): T {
+  if (meeting.is_invite_responses_enabled !== undefined) {
+    return meeting;
+  }
+
+  return {
+    ...meeting,
+    is_invite_responses_enabled: meeting.use_new_invite_email_address === true,
+  };
+}
+
+/**
+ * True only when LFX invite-response (RSVP) tracking is enabled for the meeting.
+ * Missing/undefined is treated as false to match PCC's `*ngIf="meeting.is_invite_responses_enabled"`.
+ */
+export function isMeetingInviteResponsesEnabled(meeting: Pick<Meeting, 'is_invite_responses_enabled'> | null | undefined): boolean {
+  return meeting?.is_invite_responses_enabled === true;
+}
+
+/**
  * Derives top-level AI-summary fields from indexed `zoom_config` when the query-service projection omits them.
  * Explicit top-level values win (`??`); returns the input unchanged when `zoom_config` is absent.
  */
@@ -1403,4 +1440,45 @@ export function fromMeetingApiVotingStatuses(statuses: ReadonlyArray<string | nu
 /** Canonicalizes a stored status list to the deduped meeting-API vocabulary, mapping pre-migration display values. */
 export function normalizeMeetingApiVotingStatuses(statuses: ReadonlyArray<string | null | undefined> | null | undefined): MeetingAllowedVotingStatus[] {
   return toMeetingApiVotingStatuses(fromMeetingApiVotingStatuses(statuses));
+}
+
+/**
+ * Reconciles an optimistic "additional registrants" pad against a freshly-refetched roster.
+ *
+ * The join page bumps `pad` immediately when a guest is added (before query-service indexing has
+ * caught up) and snapshots the pre-add roster length as `before`. Once the roster refetch lands,
+ * only the rows it has actually absorbed (`current - before`) should come off the pad — clearing
+ * the whole pad whenever *any* growth is observed double-counts rows the refetch hasn't indexed
+ * yet (GH-1731). `before` is rebased to `current` so a still-pending remainder converges on the
+ * next refetch instead of comparing against a stale snapshot.
+ *
+ * `before === null` means the pad was added without a confirmed roster baseline (e.g. no
+ * successful fetch had landed yet for this meeting) — the caller couldn't tell how many of the
+ * added rows this fetch already reflects, so treat this fetch as establishing the baseline rather
+ * than as absorption. Comparing against an unconfirmed baseline (like 0) would otherwise credit an
+ * unrelated roster size to "absorbed" and zero out the pad before the added guests are indexed.
+ *
+ * Known limitation, both directions: this is a bare count-delta heuristic with no visibility into
+ * *which* rows a refetch actually contains, so the null-baseline path can misfire either way once
+ * this establishing fetch lands. If it already reflects the just-added guests, they get credited a
+ * second time and the pad never comes off (permanent overcount) until an unrelated roster change
+ * happens to absorb it. If it doesn't yet reflect them, nothing here schedules a follow-up refetch
+ * on its own — the pad only converges when some other user action (another add, a registration)
+ * re-triggers `registrantsRefresh$`. Fully resolving either requires reconciling against the
+ * identity of the specific rows this client added (e.g. by email/uid) rather than a count, which is
+ * a materially larger change to the add-guest event contract and out of scope here — the same
+ * trade-off already accepted for the confirmed-baseline path (see PR #1748 review thread on
+ * concurrent roster growth).
+ */
+export function reconcileOptimisticPad(state: { pad: number; before: number | null; current: number }): {
+  pad: number;
+  before: number | null;
+} {
+  if (state.before === null) {
+    return { pad: state.pad, before: state.pad > 0 ? state.current : null };
+  }
+
+  const absorbed = Math.max(0, state.current - state.before);
+  const pad = Math.max(0, state.pad - absorbed);
+  return { pad, before: pad === 0 ? null : state.current };
 }

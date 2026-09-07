@@ -104,9 +104,17 @@ export function meetingsToVEvents(meetings: Meeting[]): string[] {
 
 /**
  * Wraps VEVENT strings in a VCALENDAR envelope and returns the complete ICS string.
+ * X-WR-CALNAME is a de facto standard (not in RFC 5545) that Google Calendar and Apple
+ * Calendar read for the subscribed calendar's display name; omitting it shows an unnamed feed.
  */
-export function buildVCalendar(events: string[], prodId = '-//LFX//Calendar//EN'): string {
-  return [`BEGIN:VCALENDAR`, `VERSION:2.0`, `PRODID:${prodId}`, `CALSCALE:GREGORIAN`, `METHOD:PUBLISH`, ...events, `END:VCALENDAR`].join('\r\n');
+export function buildVCalendar(events: string[], prodId = '-//LFX//Calendar//EN', calname?: string): string {
+  const lines = [`BEGIN:VCALENDAR`, `VERSION:2.0`, `PRODID:${prodId}`, `CALSCALE:GREGORIAN`, `METHOD:PUBLISH`];
+
+  if (calname) {
+    lines.push(foldLine(`X-WR-CALNAME:${escapeICSText(calname)}`));
+  }
+
+  return [...lines, ...events, `END:VCALENDAR`].join('\r\n');
 }
 
 const MAX_PAGES = 50;

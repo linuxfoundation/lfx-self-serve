@@ -11,7 +11,7 @@ import { DataDogRumService } from './datadog-rum.service';
   providedIn: 'root',
 })
 export class IntercomService {
-  // Read by OpenIntercomDirective to decide whether to open Intercom or fall back to JIRA.
+  // Read by openMessenger() to decide whether an on-demand anonymous boot is needed first.
   // Set synchronously when boot() is called; the stub queue absorbs commands until the script loads.
   public isBootRequested = false;
 
@@ -20,6 +20,10 @@ export class IntercomService {
   private isLoaded = false;
 
   private scriptElement: HTMLScriptElement | null = null;
+
+  // Invoked from the widget script's onerror when set by a click-triggered openMessenger() —
+  // lets support CTAs surface a toast on load failure while startup boot stays silent.
+  private onLoadError?: () => void;
 
   // Fire-and-forget: stub queue absorbs calls before the script loads and replays them on load.
   public boot(options: IntercomBootOptions): void {
@@ -46,6 +50,22 @@ export class IntercomService {
       return;
     }
     window.Intercom('show');
+  }
+
+  // Entry point for support CTAs: boots Intercom anonymously on demand when startup boot was
+  // skipped (impersonation, public pages, missing JWT claim), then shows the messenger.
+  // Fire-and-forget — a fresh boot queues behind the stub and replays before show on script load.
+  // onLoadError fires if the widget script fails to load (e.g. ad-blockers) — including a click
+  // landing while a startup boot is still in flight. It is never registered by page-load boots
+  // and is cleared once the script loads, so ad-blocked users are only toasted after a click.
+  public openMessenger(appId: string, onLoadError?: () => void): void {
+    if (!this.isBootRequested) {
+      this.boot({ app_id: appId });
+    }
+    if (!this.isLoaded) {
+      this.onLoadError = onLoadError;
+    }
+    this.show();
   }
 
   // Call before re-booting with a different user (impersonation identity reset).
@@ -84,6 +104,7 @@ export class IntercomService {
 
     script.onload = () => {
       this.isLoaded = true;
+      this.onLoadError = undefined;
       console.info('Intercom: widget script loaded');
     };
 
@@ -91,9 +112,16 @@ export class IntercomService {
       this.isBootRequested = false;
       script.remove();
       this.scriptElement = null;
+      // Drop the stub and settings so a retry boots from a genuinely fresh queue — otherwise the
+      // failed attempt's boot/show commands replay alongside the retry's (the queue is unreachable
+      // anyway once the only script that would drain it has failed).
+      delete window.Intercom;
+      delete window.intercomSettings;
       console.error('Intercom: failed to load widget script', error);
-      // Surface to RUM so "users stuck in Jira fallback" is dashboardable.
+      // Surface to RUM so sessions where the Fin messenger cannot open are dashboardable.
       this.dataDogRumService.addError(new Error('Intercom script failed to load'), { context: 'intercom_load' });
+      this.onLoadError?.();
+      this.onLoadError = undefined;
     };
 
     const firstScript = document.getElementsByTagName('script')[0];

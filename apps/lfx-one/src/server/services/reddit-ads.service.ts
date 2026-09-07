@@ -13,7 +13,7 @@ import type {
   RedditPacingLabel,
 } from '@lfx-one/shared/interfaces';
 
-import { REDDIT_OBJECTIVE_LABELS, REDDIT_OBJECTIVE_PARAMS } from '@lfx-one/shared/constants';
+import { CAMPAIGN_ALERT_THRESHOLDS, REDDIT_OBJECTIVE_LABELS, REDDIT_OBJECTIVE_PARAMS } from '@lfx-one/shared/constants';
 import type { Request } from 'express';
 
 import { REDDIT_ACCOUNTS, REDDIT_REQUEST_TIMEOUT_MS, REDDIT_TOKEN_EXPIRY_BUFFER_SECONDS } from '../constants';
@@ -393,16 +393,29 @@ function buildRedditCampaignName(config: RedditCampaignCreateRequest): string {
   return `Events | ${event} | ${region} | ${objective} | Intent | Social | ${project} | ToFU`;
 }
 
-function buildRedditUtmUrl(config: RedditCampaignCreateRequest, variantIndex: number): string {
+// EXPORTED so the utm_campaign omission can be pinned directly, as `buildFinalUrl` is on
+// the Google path. The behaviour is one conditional inside a URL builder, and asserting it
+// through a full campaign create would test the dispatch plumbing instead of the rule.
+export function buildRedditUtmUrl(config: RedditCampaignCreateRequest, variantIndex: number): string {
   const base = config.registrationUrl.replace(/\/$/, '');
-  const slug = config.eventSlug || config.eventName.toLowerCase().replace(/\s+/g, '-');
   const params = new URLSearchParams({
     utm_source: 'reddit',
     utm_medium: 'paid-social',
-    utm_campaign: config.hsToken || slug,
     utm_term: config.eventName.replace(/\s+/g, '-').toLowerCase(),
     utm_content: `variant-${variantIndex + 1}`,
   });
+  // utm_campaign is OMITTED when HubSpot issued no token, matching the Google Ads builder
+  // (`campaign-proxy.service.ts`). `hsToken || slug` fabricated a plausible-looking token HubSpot
+  // never minted: indistinguishable from a real one downstream, and it attributes traffic to a
+  // campaign HubSpot cannot report on. An ABSENT parameter is visibly absent, and analytics tools
+  // treat it as untagged rather than mis-tagged.
+  //
+  // Applied here because attribution must not vary by platform -- the fix landed on Google Ads
+  // alone, so the same tokenless campaign was honestly untagged on one platform and falsely
+  // tagged on the other two (Copilot).
+  if (config.hsToken) {
+    params.set('utm_campaign', config.hsToken);
+  }
   const sep = base.includes('?') ? '&' : '?';
   return `${base}${sep}${params.toString()}`;
 }
@@ -673,7 +686,11 @@ function buildRedditActionItems(campaigns: RedditCampaignMetrics[]): RedditActio
       });
     }
 
-    if (c.impressions > 1000 && c.ctr < 0.3 && c.status === 'ACTIVE') {
+    if (
+      c.impressions > CAMPAIGN_ALERT_THRESHOLDS['reddit-ads'].minImpressions &&
+      c.ctr < CAMPAIGN_ALERT_THRESHOLDS['reddit-ads'].lowCtrPct &&
+      c.status === 'ACTIVE'
+    ) {
       items.push({
         priority: 'MED',
         campaignName: c.campaignName,
@@ -682,7 +699,7 @@ function buildRedditActionItems(campaigns: RedditCampaignMetrics[]): RedditActio
       });
     }
 
-    if (c.clicks > 100 && c.conversions === 0) {
+    if (c.clicks > CAMPAIGN_ALERT_THRESHOLDS['reddit-ads'].clicksWithoutConversions && c.conversions === 0) {
       items.push({
         priority: 'MED',
         campaignName: c.campaignName,

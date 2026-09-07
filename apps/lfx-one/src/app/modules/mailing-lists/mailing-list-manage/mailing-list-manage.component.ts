@@ -1,7 +1,7 @@
 // Copyright The Linux Foundation and each contributor to LFX.
 // SPDX-License-Identifier: MIT
 
-import { Component, computed, inject, Signal, signal } from '@angular/core';
+import { Component, computed, DestroyRef, inject, Signal, signal } from '@angular/core';
 import { takeUntilDestroyed, toObservable, toSignal } from '@angular/core/rxjs-interop';
 import { FormControl, FormGroup, ReactiveFormsModule, Validators } from '@angular/forms';
 import { ActivatedRoute, Router, RouterLink } from '@angular/router';
@@ -10,7 +10,14 @@ import { ButtonComponent } from '@components/button/button.component';
 import { CommitteeSelectorComponent } from '@components/committee-selector/committee-selector.component';
 import { COMMITTEE_LABEL, MAILING_LIST_TOTAL_STEPS } from '@lfx-one/shared/constants';
 import { GroupsIOServiceType, MailingListAudienceAccess, MailingListType } from '@lfx-one/shared/enums';
-import { CommitteeReference, CreateGroupsIOServiceRequest, CreateMailingListRequest, GroupsIOMailingList, GroupsIOService } from '@lfx-one/shared/interfaces';
+import {
+  CommitteeReference,
+  CreateGroupsIOServiceRequest,
+  CreateMailingListRequest,
+  EntityWithProject,
+  GroupsIOMailingList,
+  GroupsIOService,
+} from '@lfx-one/shared/interfaces';
 import { markFormControlsAsTouched } from '@lfx-one/shared/utils';
 import { announcementVisibilityValidator, htmlMaxLengthValidator, htmlMinLengthValidator, htmlRequiredValidator } from '@lfx-one/shared/validators';
 import { MailingListService } from '@services/mailing-list.service';
@@ -22,6 +29,7 @@ import { catchError, filter, Observable, of, switchMap, tap, throwError } from '
 
 import { MailingListBasicInfoComponent } from '../components/mailing-list-basic-info/mailing-list-basic-info.component';
 import { MailingListSettingsComponent } from '../components/mailing-list-settings/mailing-list-settings.component';
+import { syncEntityProjectContext, syncEntityProjectContextFallback } from '@shared/utils/entity-project-context.util';
 import { evictOnWriteAccessLoss } from '@shared/utils/evict-on-write-access-loss.util';
 
 @Component({
@@ -46,6 +54,7 @@ export class MailingListManageComponent {
   private readonly messageService = inject(MessageService);
   private readonly projectContextService = inject(ProjectContextService);
   private readonly projectService = inject(ProjectService);
+  private readonly destroyRef = inject(DestroyRef);
 
   // Protected constants
   public readonly totalSteps = MAILING_LIST_TOTAL_STEPS;
@@ -67,6 +76,9 @@ export class MailingListManageComponent {
   // Complex computed/toSignal signals
   public readonly isEditMode: Signal<boolean> = this.initIsEditMode();
   public readonly mailingList: Signal<GroupsIOMailingList | null> = this.initMailingList();
+  // Mailing list → EntityWithProject adapter so the active project/foundation context syncs
+  // from the loaded entity, not the URL's lens prefix or a stale cookie-restored context (GH-1567).
+  private readonly mailingListEntityContext: Signal<EntityWithProject | null> = this.initMailingListEntityContext();
   public readonly project: Signal<ReturnType<typeof this.projectContextService.selectedProject>> = this.initProject();
   public readonly availableServices: Signal<GroupsIOService[]> = this.initServices();
   public readonly selectedService: Signal<GroupsIOService | null> = this.initSelectedService();
@@ -84,6 +96,16 @@ export class MailingListManageComponent {
 
   public constructor() {
     evictOnWriteAccessLoss();
+    // Sync context from the loaded list itself — an edit deep link can arrive under the wrong tier
+    // or with no `?project=` (GH-1567); canonicalizeRoute then rewrites the URL to the owning tier.
+    syncEntityProjectContext(this.mailingListEntityContext, this.projectContextService, this.router, this.destroyRef, {
+      preferEntityKind: true,
+      canonicalizeRoute: true,
+    });
+    syncEntityProjectContextFallback(this.mailingListEntityContext, this.projectService, this.projectContextService, this.router, this.destroyRef, {
+      entityKind: 'mailing list',
+      canonicalizeRoute: true,
+    });
     this.form()
       .get('group_name')
       ?.valueChanges.pipe(takeUntilDestroyed())
@@ -94,7 +116,8 @@ export class MailingListManageComponent {
     const next = this.currentStep() + 1;
     if (next <= this.totalSteps && this.canNavigateToStep(next)) {
       if (this.isEditMode()) {
-        this.router.navigate([], { queryParams: { step: next } });
+        // Merge so the entity's `?project=` (context sync key) survives step changes (GH-1567).
+        this.router.navigate([], { queryParams: { step: next }, queryParamsHandling: 'merge' });
       } else {
         this.internalStep.set(next);
       }
@@ -105,7 +128,7 @@ export class MailingListManageComponent {
     const previous = this.currentStep() - 1;
     if (previous >= 1) {
       if (this.isEditMode()) {
-        this.router.navigate([], { queryParams: { step: previous } });
+        this.router.navigate([], { queryParams: { step: previous }, queryParamsHandling: 'merge' });
       } else {
         this.internalStep.set(previous);
       }
@@ -116,7 +139,7 @@ export class MailingListManageComponent {
     if (step !== undefined && step >= 1 && step <= this.totalSteps) {
       if (this.isEditMode()) {
         // In edit mode, allow navigation to any step via query params
-        this.router.navigate([], { queryParams: { step } });
+        this.router.navigate([], { queryParams: { step }, queryParamsHandling: 'merge' });
       } else if (step <= this.currentStep()) {
         // In create mode, only allow going back to previous steps
         this.internalStep.set(step);
@@ -227,6 +250,26 @@ export class MailingListManageComponent {
 
   private initIsEditMode(): Signal<boolean> {
     return computed(() => this.mode() === 'edit');
+  }
+
+  /**
+   * Adapts the loaded list to {@link EntityWithProject}; a falsy `project_slug` (absent or the
+   * v1-sync empty string) reads as "unenriched" to both consumers.
+   */
+  private initMailingListEntityContext(): Signal<EntityWithProject | null> {
+    return computed(() => {
+      const list = this.mailingList();
+      if (!list) {
+        return null;
+      }
+      return {
+        uid: list.uid,
+        project_uid: list.project_uid,
+        project_slug: list.project_slug,
+        project_name: list.project_name,
+        is_foundation: list.is_foundation ?? null,
+      };
+    });
   }
 
   private initMailingList(): Signal<GroupsIOMailingList | null> {

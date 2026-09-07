@@ -134,6 +134,11 @@ export interface OrgLensCardRosterPage {
  * ranked set (see `warehouseRank`); the influence bands are precomputed in the warehouse and carried on the wire.
  */
 export interface OrgLensProjectLeaderboardRow {
+  /**
+   * The row's crowd.dev organization — the board's grain, and the key the score-breakdown drawer is
+   * fetched by. Display names are not unique within a project, so they cannot identify a row.
+   */
+  organizationId: string;
   orgName: string;
   /** Org logo URL; empty string falls back to initials. */
   orgLogoUrl: string;
@@ -263,6 +268,8 @@ export interface BoardDisplayRow {
    * unknown marker rather than fabricating a position from the current page offset.
    */
   rank: number | null;
+  /** The row's crowd.dev organization, used to fetch its score breakdown when the row is clicked. */
+  organizationId: string;
   orgName: string;
   orgLogoUrl: string;
   initials: string;

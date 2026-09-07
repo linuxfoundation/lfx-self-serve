@@ -15,6 +15,7 @@ const { getEffectiveEmailMock, committeeSvc } = vi.hoisted(() => ({
     // Stub remaining methods so the constructor doesn't fail.
     getCommittees: vi.fn(),
     getCommitteeById: vi.fn(),
+    resolveCommitteeUid: vi.fn((_req: unknown, id: string) => Promise.resolve(id)),
     getCommitteeSettings: vi.fn(),
     getPendingCommitteeInvites: vi.fn(),
     acceptPendingCommitteeInvitesAfterLfidAccept: vi.fn(),
@@ -63,13 +64,15 @@ vi.mock('../helpers/ics.helper', () => ({
 vi.mock('../helpers/validation.helper', () => ({ getStringQueryParam: vi.fn() }));
 
 import { CommitteeController } from './committee.controller';
+import { buildVCalendar, fetchAllMeetingPages, meetingsToVEvents } from '../helpers/ics.helper';
+import { generateM2MToken } from '../utils/m2m-token.util';
 
 function buildReq(body: Record<string, unknown> = {}): any {
   return { params: { id: COMMITTEE_ID, inviteId: INVITE_ID }, body, path: '/test', log: {} };
 }
 
 function buildRes(): any {
-  return { status: vi.fn().mockReturnThis(), send: vi.fn() };
+  return { status: vi.fn().mockReturnThis(), send: vi.fn(), setHeader: vi.fn() };
 }
 
 describe('CommitteeController.acceptCommitteeInvite — from_lfid_invite flag', () => {
@@ -169,5 +172,110 @@ describe('CommitteeController.acceptCommitteeInvite — from_lfid_invite flag', 
       );
       expect(committeeSvc.acceptCommitteeInvite).not.toHaveBeenCalled();
     });
+  });
+});
+
+describe('CommitteeController.getCommitteeCalendar', () => {
+  let controller: CommitteeController;
+
+  function buildCalendarReq(id: string = COMMITTEE_ID): any {
+    return { params: { id }, headers: {}, bearerToken: undefined, path: `/public/api/committees/${id}/calendar.ics` };
+  }
+
+  beforeEach(() => {
+    vi.clearAllMocks();
+    controller = new CommitteeController();
+    (generateM2MToken as any).mockResolvedValue('m2m-token');
+    (fetchAllMeetingPages as any).mockResolvedValue([]);
+    (meetingsToVEvents as any).mockReturnValue([]);
+    (buildVCalendar as any).mockReturnValue('BEGIN:VCALENDAR\r\nEND:VCALENDAR');
+  });
+
+  it('passes the resolved committee name through to buildVCalendar as calname', async () => {
+    committeeSvc.getCommitteeById.mockResolvedValue({ uid: COMMITTEE_ID, name: 'Technical Steering Committee', public: true });
+    const req = buildCalendarReq();
+    const res = buildRes();
+    const next = vi.fn();
+
+    await controller.getCommitteeCalendar(req, res, next);
+
+    expect(next).not.toHaveBeenCalled();
+    expect(buildVCalendar).toHaveBeenCalledWith(expect.anything(), expect.any(String), 'Technical Steering Committee');
+    expect(res.send).toHaveBeenCalled();
+  });
+
+  // A committee UID is obtainable anonymously from the public meetings feed, so this endpoint must not
+  // become a lookup that turns a UID the public group directory withholds into that group's name.
+  it('withholds the calname for a committee the public group directory does not list', async () => {
+    committeeSvc.getCommitteeById.mockResolvedValue({ uid: COMMITTEE_ID, name: 'Private Security Committee', public: false });
+    const req = buildCalendarReq();
+    const res = buildRes();
+    const next = vi.fn();
+
+    await controller.getCommitteeCalendar(req, res, next);
+
+    expect(next).not.toHaveBeenCalled();
+    expect(buildVCalendar).toHaveBeenCalledWith(expect.anything(), expect.any(String), undefined);
+    expect(JSON.stringify((buildVCalendar as any).mock.calls)).not.toContain('Private Security Committee');
+    // The feed itself is still served — its PUBLIC meetings are already discoverable elsewhere.
+    expect(res.send).toHaveBeenCalled();
+  });
+
+  it('withholds the calname when the committee omits the public flag entirely', async () => {
+    committeeSvc.getCommitteeById.mockResolvedValue({ uid: COMMITTEE_ID, name: 'Ambiguous Committee' });
+    const req = buildCalendarReq();
+    const res = buildRes();
+    const next = vi.fn();
+
+    await controller.getCommitteeCalendar(req, res, next);
+
+    expect(buildVCalendar).toHaveBeenCalledWith(expect.anything(), expect.any(String), undefined);
+  });
+
+  it('falls back to an undefined calname (still 200) when the committee name lookup fails', async () => {
+    committeeSvc.getCommitteeById.mockRejectedValue(new Error('upstream 503'));
+    const req = buildCalendarReq();
+    const res = buildRes();
+    const next = vi.fn();
+
+    await controller.getCommitteeCalendar(req, res, next);
+
+    expect(next).not.toHaveBeenCalled();
+    expect(buildVCalendar).toHaveBeenCalledWith(expect.anything(), expect.any(String), undefined);
+    expect(res.send).toHaveBeenCalled();
+  });
+});
+
+describe('CommitteeController.getCommitteeById — vanity slug resolution (GH-2072)', () => {
+  let controller: CommitteeController;
+
+  beforeEach(() => {
+    vi.clearAllMocks();
+    controller = new CommitteeController();
+    committeeSvc.resolveCommitteeUid.mockImplementation((_req: unknown, id: string) => Promise.resolve(id));
+    committeeSvc.getCommitteeById.mockResolvedValue({ uid: COMMITTEE_ID, category: 'Working Group' });
+  });
+
+  it('resolves the route param to a UID before fetching the committee', async () => {
+    committeeSvc.resolveCommitteeUid.mockResolvedValueOnce(COMMITTEE_ID);
+    const req = buildReq();
+    req.params.id = 'cncf-toc';
+    const res = { json: vi.fn() };
+    const next = vi.fn();
+
+    await controller.getCommitteeById(req, res as any, next);
+
+    expect(committeeSvc.resolveCommitteeUid).toHaveBeenCalledWith(
+      req,
+      'cncf-toc',
+      expect.objectContaining({ operation: 'get_committee_by_id', service: 'committee_controller' })
+    );
+    expect(committeeSvc.getCommitteeById).toHaveBeenCalledWith(
+      req,
+      COMMITTEE_ID,
+      expect.objectContaining({ includeMembership: true, includeProjectMetadata: true })
+    );
+    expect(res.json).toHaveBeenCalledWith({ uid: COMMITTEE_ID, category: 'Working Group' });
+    expect(next).not.toHaveBeenCalled();
   });
 });

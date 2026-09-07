@@ -1,0 +1,12 @@
+<!--
+Copyright The Linux Foundation and each contributor to LFX.
+SPDX-License-Identifier: MIT
+-->
+
+<div class="flex flex-col" data-testid="gitlab-unsupported-dialog">
+  <div class="px-2 py-6 text-center">
+    <i class="fa-brands fa-gitlab mb-2.5 block text-2xl text-slate-400" aria-hidden="true"></i>
+    <p class="mb-4 text-sm leading-relaxed text-slate-600" data-testid="gitlab-unsupported-message">{{ message }}</p>
+    <lfx-button label="Close" [outlined]="true" (onClick)="onClose()" data-testid="gitlab-unsupported-close" />
+  </div>
+</div>

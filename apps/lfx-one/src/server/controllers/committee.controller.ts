@@ -172,6 +172,15 @@ export class CommitteeController {
         return;
       }
 
+      // Vanity `/groups/<sso_group_name>` URLs land here with a slug, not a UID. Resolve first so
+      // Heimdall's `committee:{uid}#viewer` check hits the object that actually has tuples
+      // (GH-2072). UUIDs pass through unchanged.
+      const committeeUid = await this.committeeService.resolveCommitteeUid(req, id, {
+        operation: 'get_committee_by_id',
+        service: 'committee_controller',
+        path: req.path,
+      });
+
       // Get the committee by ID — include caller membership so the UI can render
       // visitor / member / chair states without a second round-trip, enrich with
       // project metadata so the detail page's Parent Project link can resolve project_uid
@@ -179,7 +188,7 @@ export class CommitteeController {
       // so the members roster can label foundation-level managers correctly (LFXV2-2059),
       // and include mailing-list status (upstream does not reliably populate
       // has_mailing_list on this endpoint — LFXV2-2914).
-      const committee = await this.committeeService.getCommitteeById(req, id, {
+      const committee = await this.committeeService.getCommitteeById(req, committeeUid, {
         includeMembership: true,
         includeProjectMetadata: true,
         includeInheritedPermissions: true,
@@ -188,7 +197,7 @@ export class CommitteeController {
 
       // Log the success
       logger.success(req, 'get_committee_by_id', startTime, {
-        committee_id: id,
+        committee_id: committeeUid,
         committee_category: committee.category,
       });
 
@@ -1505,9 +1514,9 @@ export class CommitteeController {
     }
 
     try {
-      // When called from the public route there is no OIDC session, so use an
-      // M2M token. When called from the authenticated route the user's bearer
-      // token is already on req and no replacement is needed.
+      // This endpoint is mounted only under /public/api, so there is no OIDC session and no caller-
+      // supplied bearer token to reuse — hence M2M. The guard stays defensive in case it is ever
+      // additionally mounted behind auth.
       if (!req.bearerToken) {
         req.bearerToken = await generateM2MToken(req);
       }
@@ -1516,16 +1525,28 @@ export class CommitteeController {
 
       // Paginate both upcoming and past meetings — first page only would silently
       // drop meetings once a committee exceeds the default page size.
-      const [upcoming, past] = await Promise.all([
+      const [upcoming, past, calname] = await Promise.all([
         fetchAllMeetingPages((token) => this.meetingService.getMeetings(req, token ? { ...query, page_token: token } : query, 'v1_meeting', false)),
         fetchAllMeetingPages((token) => this.meetingService.getMeetings(req, token ? { ...query, page_token: token } : query, 'v1_past_meeting', false)),
+        this.committeeService
+          .getCommitteeById(req, id)
+          // Anonymous endpoint, and a committee UID is obtainable anonymously from the public meetings
+          // feed — including for committees the public group directory withholds. Publishing the name in
+          // X-WR-CALNAME would hand back exactly the label that directory refuses to list, so gate it on
+          // the same `public` flag `getPublicGroupById` enforces. The committee's PUBLIC meetings stay
+          // listed either way; they are already discoverable through the project's public feed.
+          .then((committee) => (committee.public ? committee.name : undefined))
+          .catch((error) => {
+            logger.warning(req, 'get_committee_calendar', 'Failed to resolve committee name for X-WR-CALNAME', { committee_id: id, err: error });
+            return undefined;
+          }),
       ]);
 
       // Filter PRIVATE meetings from the public feed. Restricted (invited-guests-only) public meetings are
       // still listed so their existence is discoverable; join authorization is enforced separately at join time.
       const allMeetings = [...upcoming, ...past].filter((m) => m.visibility === MeetingVisibility.PUBLIC);
       const events = meetingsToVEvents(allMeetings);
-      const ics = buildVCalendar(events, '-//LFX//Committee Calendar//EN');
+      const ics = buildVCalendar(events, '-//LFX//Committee Calendar//EN', calname);
 
       logger.success(req, 'get_committee_calendar', startTime, {
         committee_id: id,

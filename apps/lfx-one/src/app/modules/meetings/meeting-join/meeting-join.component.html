@@ -430,6 +430,8 @@
                       [pastMeeting]="isPastMeeting()"
                       [showAddButton]="!!meeting().organizer && !isPastMeeting()"
                       [additionalRegistrantsCount]="additionalRegistrantsCount()"
+                      [initialRegistrants]="registrants()"
+                      [initialRegistrantsLoading]="registrantsLoading()"
                       backgroundColor="bg-gray-50"
                       borderColor="border-gray-200"
                       (addClicked)="showRegistrants.set(true)">
@@ -462,7 +464,7 @@
               } @else if (authenticated() && !isPastMeeting()) {
                 <!-- RSVP Container - Future Meeting (Authenticated Non-Organizers) -->
                 <div class="w-full md:w-[296px]">
-                  @if (effectivelyInvited()) {
+                  @if (effectivelyInvited() && inviteResponsesEnabled()) {
                     @defer (when meeting()) {
                       <lfx-rsvp-button-group [meeting]="meeting()" [occurrenceId]="currentOccurrence()?.occurrence_id"> </lfx-rsvp-button-group>
                     }

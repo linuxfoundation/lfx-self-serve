@@ -47,7 +47,7 @@ Acceptable `%G?` codes: `G` (good signature) or `U` (good signature, signing key
 
 - Branch names follow commit types followed by the ticket reference — either a JIRA ticket or a GitHub Issue number
 - JIRA format: `feat/LFXV2-123` or `ci/LFXV2-456`
-- GitHub Issue format: `feat/GH-123` or `ci/GH-456` (the bare issue number from `linuxfoundation/lfx-self-serve`, no repo prefix)
+- GitHub Issue format: `feat/issue-123` or `ci/issue-456` (the bare issue number from `linuxfoundation/lfx-self-serve`, no repo prefix)
 - Use whichever tracker the work is actually filed in — don't create a JIRA ticket just to satisfy branch naming when a GitHub Issue already tracks the work, and vice versa
 
 ## PR Titles
@@ -77,5 +77,5 @@ Before starting any work or commits:
 
 1. **Check if there is a tracking ticket** — always track work, in either the `LFXV2` JIRA project or a GitHub Issue on `linuxfoundation/lfx-self-serve`. Do not use discarded or resolved tickets/issues.
 2. **Create a ticket if needed** for untracked work — JIRA for most work; GitHub Issues for issues filed directly on GitHub (e.g. bug reports, epics tracked on the [Kanban board](https://github.com/orgs/linuxfoundation/projects/17)) where a JIRA ticket doesn't already exist. Don't create both for the same piece of work.
-3. **Include the ticket reference in the commit message** — `LFXV2-XXX` for JIRA, or for a GitHub Issue either `GH-XXX` (bare issue number, e.g. `GH-1331`) or the fully-qualified `org/repo#XXX` path (e.g. `linuxfoundation/lfx-self-serve#1331`) — prefer the fully-qualified path when the ticket isn't in this repo
+3. **Include the ticket reference in the commit message** — `LFXV2-XXX` for JIRA, or for a GitHub Issue either `#XXX` (bare issue number, e.g. `#1331`) or the fully-qualified `org/repo#XXX` path (e.g. `linuxfoundation/lfx-self-serve#1331`) — prefer the fully-qualified path when the ticket isn't in this repo. Both `#XXX` and `org/repo#XXX` auto-link to the issue on GitHub; `GH-XXX` does not
 4. **Link the PR to the ticket** — JIRA ticket link, or `Closes #XXX` / `Refs #XXX` (or the fully-qualified `org/repo#XXX` form for a ticket in another repo) for a GitHub Issue, in the PR body

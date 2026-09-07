@@ -3,14 +3,17 @@
 
 import { ComponentFixture, TestBed } from '@angular/core/testing';
 import { By } from '@angular/platform-browser';
+import { provideNoopAnimations } from '@angular/platform-browser/animations';
 import { ActivatedRoute, convertToParamMap, provideRouter, Router } from '@angular/router';
 import { BEHAVIORAL_CLASS_CONFIG, COMMITTEE_LABEL } from '@lfx-one/shared/constants';
 import type { Account, OrgDropdownOption, OrgLensGroupSummary, OrgLensGroupsResponse } from '@lfx-one/shared/interfaces';
+import { CommitteeMembersService } from '@modules/dashboards/org/org-people/services/committee-members.service';
 import { AccountContextService } from '@services/account-context.service';
 import { OrgLensGroupsService } from '@services/org-lens-groups.service';
 import { OrgNavigationService } from '@services/org-navigation.service';
 import { OrgRoleGrantsService } from '@services/org-role-grants.service';
 import { PersonaService } from '@services/persona.service';
+import { PersonDetailDrawerService } from '@services/person-detail-drawer.service';
 import { Tooltip } from 'primeng/tooltip';
 import { NEVER, Observable, of, Subject, throwError } from 'rxjs';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
@@ -31,6 +34,31 @@ interface Rendered {
   selectedAccount: WritableSignal<Account>;
 }
 
+// <lfx-person-detail-drawer /> (GH-1780 follow-up — stacked on the seat-holders drawer) is
+// unconditionally mounted, so its injected PersonDetailDrawerService needs the full signal surface
+// it reads, not just `open` (see person-detail-drawer.component.ts/.html) — a bare `{ open: vi.fn() }`
+// stub, sufficient for group-seat-holders-drawer.component.spec.ts's own tests of the click-to-open
+// call, would leave every other read undefined and throw at render. Kept closed throughout (isOpen
+// false, activeContext null) — neither testing module in this file clicks a seat-holder row deep
+// enough to open it; that behavior is covered by group-seat-holders-drawer.component.spec.ts itself.
+// A shared factory, not one literal reused by reference, so each test module gets its own vi.fn()
+// spies instead of accumulating call history across tests.
+function personDrawerStub() {
+  return {
+    isOpen: signal(false),
+    activeContext: signal(null),
+    activeTab: signal('events'),
+    loading: signal(false),
+    error: signal(false),
+    emailError: signal(false),
+    detail: signal(null),
+    companyEmails: signal([]),
+    open: vi.fn(),
+    close: vi.fn(),
+    setTab: vi.fn(),
+  };
+}
+
 async function render(options: RenderOptions = {}): Promise<Rendered> {
   const { accountName = 'Acme Motors, Inc.', orgNavigationLoaded = true, getGroups = () => of(emptyGroupsResponse()), queryParams = {} } = options;
 
@@ -48,6 +76,15 @@ async function render(options: RenderOptions = {}): Promise<Rendered> {
       { provide: OrgRoleGrantsService, useValue: { loaded: signal(true) } },
       { provide: PersonaService, useValue: { personaLoaded: signal(true) } },
       { provide: OrgLensGroupsService, useValue: { getGroups } },
+      // The seat-holders drawer (GH-1780) is unconditionally mounted, so its injected
+      // CommitteeMembersService needs a stub too — otherwise DI resolves the real service, which
+      // needs a real HttpClient this testing module never provides.
+      { provide: CommitteeMembersService, useValue: { getCommitteeMembers: () => NEVER } },
+      { provide: PersonDetailDrawerService, useValue: personDrawerStub() },
+      // p-drawer's synthetic `@panelState` animation throws NG05105 without this — mirrors
+      // event-detail-drawer.component.spec.ts. Needed once a test actually opens the seat-holders
+      // drawer (setting seatHoldersDrawerVisible true), not for tests that never do.
+      provideNoopAnimations(),
       // Real Router (via provideRouter) so the rendered group rows' [routerLink] (createUrlTree, etc.)
       // keeps working; only `navigate` — the method the URL-sync subscription actually calls — is spied on.
       provideRouter([]),
@@ -133,6 +170,24 @@ function typeOptions(fixture: ComponentFixture<OrgGroupsComponent>): OrgDropdown
 
 function foundationOptions(fixture: ComponentFixture<OrgGroupsComponent>): OrgDropdownOption[] {
   return (fixture.componentInstance as unknown as { foundationOptions: () => OrgDropdownOption[] }).foundationOptions();
+}
+
+/** seatHoldersDrawerVisible/selectedGroup are `protected` — same cast convention as filterForm above. */
+function seatHoldersDrawerState(fixture: ComponentFixture<OrgGroupsComponent>): { visible: boolean; selectedGroupUid: string | null } {
+  const instance = fixture.componentInstance as unknown as {
+    seatHoldersDrawerVisible: () => boolean;
+    selectedGroup: () => { uid: string } | null;
+  };
+  return { visible: instance.seatHoldersDrawerVisible(), selectedGroupUid: instance.selectedGroup()?.uid ?? null };
+}
+
+/** Row seat-count testid doubles as the drawer trigger — see org-groups.component.html. */
+async function clickSeatHoldersTrigger(fixture: ComponentFixture<OrgGroupsComponent>, uid: string): Promise<void> {
+  const el = fixture.nativeElement.querySelector(`[data-testid="org-groups-item-seats-${uid}"]`) as HTMLButtonElement | null;
+  if (!el) throw new Error(`no seat-holders trigger rendered for ${uid}`);
+  el.click();
+  await fixture.whenStable();
+  fixture.detectChanges();
 }
 
 /** Lets the real `debounceTime(150)` on the filter form settle, then flushes change detection. */
@@ -445,6 +500,39 @@ describe('OrgGroupsComponent', () => {
     await flushFilterChange(fixture);
 
     expect(renderedItemUids(fixture)).toEqual(['g1', 'g2', 'g3', 'g4']);
+  });
+
+  // OrgGroupsComponent isn't destroyed on an in-place org switch, so a seat-holders drawer left
+  // open (or its selected group left set) would otherwise mismatch the new org — see the drawer's
+  // own orgUid-keyed cache and group-seat-holders-drawer.component.ts for the other half of this.
+  it('closes the seat-holders drawer and clears the selected group when the selected org switches', async () => {
+    const { fixture, selectedAccount } = await render({ getGroups: () => of(groupsResponse(buildGroups())) });
+
+    await clickSeatHoldersTrigger(fixture, 'g1');
+    expect(seatHoldersDrawerState(fixture)).toEqual({ visible: true, selectedGroupUid: 'g1' });
+
+    selectedAccount.set({ accountId: 'acc-2', accountName: 'Vendor Corp', accountSlug: 'vendor-corp', membershipTier: '', uid: 'org-uid-2' });
+    await flushFilterChange(fixture);
+
+    expect(seatHoldersDrawerState(fixture)).toEqual({ visible: false, selectedGroupUid: null });
+  });
+
+  // WCAG 2.5.3 Label in Name: the trigger's only visible text is the seat count, so its accessible
+  // name must include that number, not just the group name — otherwise a screen-reader user loses
+  // the count entirely and a voice-control user can't target the button by its visible label.
+  it('includes the seat count in the seat-holders trigger aria-label, not just the group name', async () => {
+    const { fixture } = await render({ getGroups: () => of(groupsResponse(buildGroups())) });
+
+    const trigger = fixture.nativeElement.querySelector('[data-testid="org-groups-item-seats-g1"]');
+    expect(trigger?.getAttribute('aria-label')).toBe('View 10 seat holders for Committee Steering TAG');
+  });
+
+  it('uses the singular "seat holder" in the trigger aria-label for a single-seat group', async () => {
+    const { fixture } = await render({ getGroups: () => of(groupsResponse(buildGroups())) });
+
+    // g4 (Committee Newsletter) has org_seat_count: 1 in buildGroups().
+    const trigger = fixture.nativeElement.querySelector('[data-testid="org-groups-item-seats-g4"]');
+    expect(trigger?.getAttribute('aria-label')).toBe('View 1 seat holder for Committee Newsletter');
   });
 
   it('clearing filters restores the full list in the original (seat-desc, name-asc) order', async () => {
@@ -844,6 +932,8 @@ describe('OrgGroupsComponent stat strip', () => {
         { provide: OrgRoleGrantsService, useValue: { loaded: signal(orgLoaded) } },
         { provide: PersonaService, useValue: { personaLoaded: signal(orgLoaded) } },
         { provide: OrgLensGroupsService, useValue: { getGroups: vi.fn(getGroups) } },
+        { provide: CommitteeMembersService, useValue: { getCommitteeMembers: () => NEVER } },
+        { provide: PersonDetailDrawerService, useValue: personDrawerStub() },
       ],
     }).compileComponents();
 

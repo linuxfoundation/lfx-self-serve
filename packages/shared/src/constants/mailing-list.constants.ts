@@ -79,3 +79,9 @@ export const MAILING_LIST_STEP_TITLES = ['Basic Information', 'Settings', 'Peopl
  * Total number of steps in the mailing list wizard
  */
 export const MAILING_LIST_TOTAL_STEPS = MAILING_LIST_STEP_TITLES.length;
+
+/**
+ * Short TTL so the writerGuard probe and manage-page refetch share one request; writes evict
+ * explicitly. Mirrors MEETING_DETAIL_CACHE_TTL_MS.
+ */
+export const MAILING_LIST_DETAIL_CACHE_TTL_MS = 10 * 1000;

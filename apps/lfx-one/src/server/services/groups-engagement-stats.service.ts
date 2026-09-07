@@ -2,6 +2,7 @@
 // SPDX-License-Identifier: MIT
 
 import { GROUPS_ENGAGEMENT_CHUNK_CONCURRENCY, VALKEY_CACHE } from '@lfx-one/shared/constants';
+import { CommitteeMemberVotingStatus } from '@lfx-one/shared/enums';
 import { CommitteeEngagementWarehouseRow, GroupsEngagementStats } from '@lfx-one/shared/interfaces';
 import { isCommitteeMemberActive, isJoinedWithinWindow } from '@lfx-one/shared/utils';
 import { Request } from 'express';
@@ -73,20 +74,32 @@ function resolveBackend(): 'mock' | 'live' {
  * surfaces can't disagree on *that* logic — but this rollup is warehouse-row-anchored only (no live
  * roster join per visible committee, which would reintroduce the N+1 fetch this endpoint exists to
  * avoid), so it can still diverge from the per-committee detail page for: a roster member the model
- * hasn't picked up yet (a very recent join); a blank `MEMBER_VOTING_STATUS` the detail page would
- * otherwise resolve via the roster's own `voting.status`; or a blank/unparseable `MEMBER_JOINED_AT`
- * the detail page would still resolve via the roster's own `created_at` (`buildResponse` ORs both
- * sources when the roster join has at least one match for that committee; this rollup only has the
- * warehouse row, never a roster fallback); or an `LF Staff` seat whose role changed on the live
- * roster more recently than the dbt model's last refresh (LFXV2-3101) — `MEMBER_ROLE` (unlike the
- * roster fallbacks above) IS a column on this same `platinum_lfx_one_committee_meeting_attendance`
- * table `ActiveMemberRow` already reads, so selecting it and passing `role: row.MEMBER_ROLE` into
- * `classificationInput` costs nothing extra (no roster join, no N+1) and closes the gap for the
- * common case — but this rollup has no live roster at all to prefer, unlike the detail page's
- * roster-first precedence (`committee-engagement.service.ts`'s `role` resolution, LFXV2-3101 review
- * fix: `member.role?.name || row?.MEMBER_ROLE`). So a role promoted onto (or demoted off) the live
+ * hasn't picked up yet (a very recent join); a blank `MEMBER_VOTING_STATUS`, normalized to
+ * `CommitteeMemberVotingStatus.NONE` here since there's no roster join to prefer instead (see
+ * below); a blank/unparseable `MEMBER_JOINED_AT` the detail page would still resolve via the
+ * roster's own `created_at` (`buildResponse` ORs both sources when the roster join has at least one
+ * match for that committee; this rollup only has the warehouse row, never a roster fallback); or an
+ * `LF Staff` seat whose role changed on the live roster more recently than the dbt model's last
+ * refresh — `MEMBER_ROLE` (unlike the roster fallbacks above) IS a column on this same
+ * `platinum_lfx_one_committee_meeting_attendance` table `ActiveMemberRow` already reads, so
+ * selecting it and passing `role: row.MEMBER_ROLE` into `classificationInput` costs nothing extra
+ * (no roster join, no N+1) and closes the gap for the common case — but this rollup has no live
+ * roster at all to prefer, unlike the detail page's roster-first precedence
+ * (`committee-engagement.service.ts`'s `role` resolution:
+ * `member.role?.name || row?.MEMBER_ROLE`). So a role promoted onto (or demoted off) the live
  * roster lands on the detail page immediately but only reaches this rollup at the model's next
  * refresh — a real, if narrow, divergence window, same family as the other three above.
+ *
+ * On the blank-`MEMBER_VOTING_STATUS` case specifically: this rollup applies the same last-resort
+ * `|| CommitteeMemberVotingStatus.NONE` fallback `buildResponse` falls back to only after its own
+ * roster/warehouse precedence is exhausted (without this, a blank warehouse value would match
+ * neither `Observer` nor `None` and silently escape `isCommitteeMemberActive`'s LF Staff
+ * exclusion here). This closes one divergence but can open a narrow one in the opposite direction:
+ * an LF Staff seat whose warehouse `MEMBER_VOTING_STATUS` is blank but whose live roster
+ * `voting.status` is a real `Voting Rep`/`Alternate Voting Rep` is excluded here (no roster join to
+ * prefer the real value, same reasoning as the `MEMBER_ROLE` gap above) while the detail page
+ * includes them — the right trade given this rollup's no-roster-join constraint, not a regression
+ * to fix.
  *
  * A larger case in the same family, deliberately NOT wired the same way: this rollup dedupes purely
  * on the warehouse's own `MEMBER_USER_ID` with no roster join at all, so a committee whose
@@ -158,8 +171,9 @@ export class GroupsEngagementStatsService {
 
   /**
    * Counts distinct active members (attended >=1 meeting in the trailing 30 days, or joined within
-   * it, excluding Emeritus and LF Staff+Observer seats — `isCommitteeMemberActive`, the same
-   * function LFXV2-1705/LFXV2-3101 use) across the *covered* subset of committees the caller can see
+   * it, excluding Emeritus and LF Staff+non-voting (Observer or `None`) seats —
+   * `isCommitteeMemberActive`, the same function the detail page uses) across the
+   * *covered* subset of committees the caller can see
    * (`getMyCommitteeUids` — "mine" semantics, no scope param, per LFXV2-1711). A member is counted
    * once even if active on multiple covered
    * committees — the model's grain is one row per `(committee_id, member_user_id)`, so a member on
@@ -252,7 +266,13 @@ export class GroupsEngagementStatsService {
           const classificationInput = {
             attended: Math.min(Math.max(row.ATTENDED_COUNT_30D, 0), invited),
             invited, // unused by isCommitteeMemberActive; kept only for the clamp above
-            votingStatus: row.MEMBER_VOTING_STATUS,
+            // `|| NONE`, matching committee-engagement.service.ts's `buildResponse` fallback: a
+            // blank warehouse `MEMBER_VOTING_STATUS` (no roster join here to resolve it another
+            // way) must normalize to the same `'None'` sentinel the detail page falls back to, or
+            // an LF Staff seat with no voting status recorded would silently escape the
+            // isCommitteeMemberActive exclusion this rollup and the detail page are meant to agree
+            // on (GH-1848).
+            votingStatus: row.MEMBER_VOTING_STATUS || CommitteeMemberVotingStatus.NONE,
             role: row.MEMBER_ROLE,
             joinedWithinWindow: isJoinedWithinWindow(row.MEMBER_JOINED_AT, windowStart),
           };

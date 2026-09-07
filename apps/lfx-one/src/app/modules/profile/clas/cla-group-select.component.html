@@ -62,17 +62,31 @@ SPDX-License-Identifier: MIT
               Searching…
             </div>
           }
+          @let alreadySignedNotes = alreadySignedByGroupId();
           @for (option of options(); track option.claGroupId; let index = $index) {
+            @let alreadySigned = alreadySignedNotes.get(option.claGroupId);
             <div class="border-b border-slate-100 last:border-b-0">
               <div
                 role="option"
                 [id]="'cla-group-option-' + option.claGroupId"
                 [attr.aria-selected]="selected()?.claGroupId === option.claGroupId"
+                [attr.aria-describedby]="alreadySigned ? 'cla-group-already-signed-' + option.claGroupId : null"
+                [pTooltip]="alreadySigned?.tooltip"
+                tooltipPosition="top"
                 class="cursor-pointer px-4 py-2.5 text-left hover:bg-slate-50"
                 [class.bg-slate-50]="highlightedIndex() === index"
                 [attr.data-testid]="'cla-group-select-' + option.claGroupId"
                 (click)="onSelect(option)">
-                <span class="block truncate text-sm font-medium text-slate-900">{{ option.primaryName }}</span>
+                <span class="flex items-center gap-2">
+                  <span class="block min-w-0 truncate text-sm font-medium text-slate-900">{{ option.primaryName }}</span>
+                  @if (alreadySigned) {
+                    <span
+                      class="max-w-48 shrink-0 truncate rounded bg-slate-100 px-1.5 py-0.5 text-[0.65rem] font-medium text-slate-500"
+                      [attr.data-testid]="'cla-group-select-already-signed-' + option.claGroupId">
+                      {{ alreadySigned.chip }}
+                    </span>
+                  }
+                </span>
                 @if (option.secondaryName; as secondary) {
                   <span class="block truncate text-xs text-slate-500">{{ secondary }}</span>
                 }
@@ -101,6 +115,21 @@ SPDX-License-Identifier: MIT
                   </span>
                 }
               </div>
+
+              @if (alreadySigned) {
+                <!--
+                  Which agreement they already hold — and, where the route has one to offer, that
+                  another identity can still sign it — lives only in a hover tooltip, which assistive
+                  tech never reaches. It is carried as an `aria-describedby` target so the option
+                  still announces its project name first and the note after it, rather than as an
+                  `aria-label` that would replace the name.
+
+                  It sits outside the option rather than inside it: an option's accessible name is
+                  built from its contents, so a hidden child would put this same sentence in the
+                  name as well as the description and a screen reader would read it twice.
+                -->
+                <span class="sr-only" [id]="'cla-group-already-signed-' + option.claGroupId">{{ alreadySigned.tooltip }}</span>
+              }
 
               @if (option.orgViews.length > 1) {
                 <button

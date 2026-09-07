@@ -25,6 +25,7 @@ import {
   filterPastMeetingParticipants,
   getRegistrantAttendanceStatus,
   getPastMeetingResourceId,
+  isMeetingInviteResponsesEnabled,
   markFormControlsAsTouched,
   resolveMeetingBaseCount,
   resolveRsvpOccurrenceId,
@@ -73,6 +74,7 @@ export class MeetingRegistrantsDisplayComponent {
   private readonly internalRegistrants: Signal<MeetingRegistrant[]> = this.initRegistrantsList();
   public readonly pastMeetingParticipants: Signal<EnrichedPastMeetingParticipant[]> = this.initPastMeetingParticipantsList();
   public readonly registrants: Signal<MeetingRegistrant[]> = this.initRegistrants();
+  public readonly inviteResponsesEnabled: Signal<boolean> = computed(() => !this.pastMeeting() && isMeetingInviteResponsesEnabled(this.meeting()));
   public readonly registrantsLoading: Signal<boolean> = computed(() => {
     if (this.externallyManaged() && !this.pastMeeting()) {
       return this.initialRegistrantsLoading();
@@ -172,6 +174,14 @@ export class MeetingRegistrantsDisplayComponent {
     toObservable(this.resolvedHosts)
       .pipe(takeUntilDestroyed(this.destroyRef))
       .subscribe((hosts) => this.resolvedHostsChange.emit(hosts));
+
+    toObservable(this.inviteResponsesEnabled)
+      .pipe(takeUntilDestroyed(this.destroyRef))
+      .subscribe((enabled) => {
+        if (!enabled && this.rsvpFilterControl.value !== 'all') {
+          this.rsvpFilterControl.setValue('all');
+        }
+      });
 
     effect(() => {
       if (!this.visible()) return;
@@ -307,9 +317,10 @@ export class MeetingRegistrantsDisplayComponent {
               const meeting = this.meeting() as Meeting;
               const occurrenceId = resolveRsvpOccurrenceId(meeting);
               // Use access-controlled endpoint for meeting join page, regular endpoint for organizer views
+              const includeRsvp = this.inviteResponsesEnabled();
               const registrantsObservable = useMyEndpoint
-                ? this.meetingService.getMyMeetingRegistrants(meeting.id, true, occurrenceId)
-                : this.meetingService.getMeetingRegistrants(meeting.id, true, occurrenceId);
+                ? this.meetingService.getMyMeetingRegistrants(meeting.id, includeRsvp, occurrenceId)
+                : this.meetingService.getMeetingRegistrants(meeting.id, includeRsvp, occurrenceId);
 
               return registrantsObservable.pipe(
                 catchError(() => of([])),
@@ -446,7 +457,9 @@ export class MeetingRegistrantsDisplayComponent {
       return registrants
         .map((registrant) => ({
           ...registrant,
-          attendanceStatus: getRegistrantAttendanceStatus(registrant),
+          attendanceStatus: getRegistrantAttendanceStatus(registrant, {
+            inviteResponsesEnabled: this.inviteResponsesEnabled(),
+          }),
         }))
         .filter((registrant) => {
           // Search filter
@@ -457,9 +470,11 @@ export class MeetingRegistrantsDisplayComponent {
             registrant.email?.toLowerCase().includes(query) ||
             registrant.org_name?.toLowerCase().includes(query);
 
-          // RSVP filter — must match chip rendering via attendanceStatus
+          // RSVP filter — must match chip rendering via attendanceStatus.
+          // Skip when tracking is off: the selector is hidden, but a reused join-page
+          // instance can still hold "Accepted" from the previous meeting (GH-1951).
           let matchesRsvp = true;
-          if (rsvp !== 'all') {
+          if (this.inviteResponsesEnabled() && rsvp !== 'all') {
             const status = registrant.attendanceStatus;
             if (rsvp === 'yes') {
               matchesRsvp = status === 'accepted';

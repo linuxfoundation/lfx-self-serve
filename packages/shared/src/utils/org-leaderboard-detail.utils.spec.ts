@@ -3,73 +3,112 @@
 
 import { describe, expect, it } from 'vitest';
 
-import { orgLeaderboardDetailCategoryRows, orgLeaderboardDetailLevelFor } from './org-leaderboard-detail.utils';
+import {
+  ORG_LEADERBOARD_DETAIL_ECOSYSTEM_CATEGORIES,
+  ORG_LEADERBOARD_DETAIL_SCORED_COMPONENT_COUNTS,
+  ORG_LEADERBOARD_DETAIL_TECHNICAL_CATEGORIES,
+  ORG_LEADERBOARD_DETAIL_WITHHELD_CATEGORY_TOOLTIP_FALLBACK,
+} from '../constants/org-leaderboard-detail-drawer.constants';
+import type { OrgLeaderboardDetailBreakdown, OrgLeaderboardDetailCategoryFigure } from '../interfaces/org-leaderboard-detail-drawer.interface';
+import { orgLeaderboardDetailCategoryRows } from './org-leaderboard-detail.utils';
 
-describe('orgLeaderboardDetailLevelFor', () => {
-  it('maps technical scores to the technical thresholds', () => {
-    expect(orgLeaderboardDetailLevelFor('technical', 0)).toBe('Silent');
-    expect(orgLeaderboardDetailLevelFor('technical', 1)).toBe('Participating');
-    expect(orgLeaderboardDetailLevelFor('technical', 4)).toBe('Participating');
-    expect(orgLeaderboardDetailLevelFor('technical', 5)).toBe('Contributing');
-    expect(orgLeaderboardDetailLevelFor('technical', 14)).toBe('Contributing');
-    expect(orgLeaderboardDetailLevelFor('technical', 15)).toBe('Leading');
+const categories = [
+  { key: 'a', name: 'A' },
+  { key: 'b', name: 'B' },
+  { key: 'c', name: 'C' },
+];
+
+function breakdown(figures: OrgLeaderboardDetailCategoryFigure[], totalScore: number, withheldCategories: string[] = []): OrgLeaderboardDetailBreakdown {
+  return {
+    organizationId: 'org-1',
+    organizationName: 'Example Org',
+    dimension: 'ecosystem',
+    range: 'all',
+    totalScore,
+    level: 'Contributing',
+    rank: 3,
+    totalOrganizations: 41,
+    categories: figures,
+    withheldCategories,
+  };
+}
+
+describe('orgLeaderboardDetailCategoryRows', () => {
+  it('computes pct as a share of the total score and sorts descending by points', () => {
+    const rows = orgLeaderboardDetailCategoryRows(
+      categories,
+      breakdown(
+        [
+          { key: 'a', points: 10, count: 1 },
+          { key: 'b', points: 40, count: 2 },
+          { key: 'c', points: 50, count: 3 },
+        ],
+        100
+      )
+    );
+    expect(rows.map((row) => row.key)).toEqual(['c', 'b', 'a']);
+    expect(rows.map((row) => row.pct)).toEqual([50, 40, 10]);
+    expect(rows.every((row) => !row.withheld)).toBe(true);
   });
 
-  it('maps ecosystem scores to the (different) ecosystem thresholds', () => {
-    expect(orgLeaderboardDetailLevelFor('ecosystem', 2)).toBe('Silent');
-    expect(orgLeaderboardDetailLevelFor('ecosystem', 3)).toBe('Participating');
-    expect(orgLeaderboardDetailLevelFor('ecosystem', 10)).toBe('Participating');
-    expect(orgLeaderboardDetailLevelFor('ecosystem', 11)).toBe('Contributing');
-    expect(orgLeaderboardDetailLevelFor('ecosystem', 19)).toBe('Contributing');
-    expect(orgLeaderboardDetailLevelFor('ecosystem', 20)).toBe('Leading');
+  it('renders a zero-scoring category rather than dropping it, so the list accounts for every category', () => {
+    const rows = orgLeaderboardDetailCategoryRows(categories, breakdown([{ key: 'a', points: 10, count: 1 }], 10));
+    expect(rows).toHaveLength(3);
+    expect(rows.find((row) => row.key === 'b')).toMatchObject({ points: 0, pct: 0, count: null });
+  });
+
+  it('yields zero-width bars instead of dividing by zero when the organization scored nothing', () => {
+    const rows = orgLeaderboardDetailCategoryRows(categories, breakdown([{ key: 'a', points: 0, count: 0 }], 0));
+    expect(rows.map((row) => row.pct)).toEqual([0, 0, 0]);
+  });
+
+  it('groups withheld rows at the end and carries no figures for them', () => {
+    const rows = orgLeaderboardDetailCategoryRows(
+      categories,
+      breakdown(
+        [
+          { key: 'a', points: 10, count: 1 },
+          { key: 'c', points: 5, count: 1 },
+        ],
+        105,
+        ['b']
+      )
+    );
+    expect(rows.map((row) => row.key)).toEqual(['a', 'c', 'b']);
+    expect(rows.find((row) => row.key === 'b')).toMatchObject({ withheld: true, points: 0, pct: 0, count: null, projectTotal: null });
+  });
+
+  it('keeps withheld rows in their declared order instead of ranking them, which would leak their sizes', () => {
+    const rows = orgLeaderboardDetailCategoryRows(categories, breakdown([{ key: 'a', points: 100, count: 1 }], 107, ['b', 'c']));
+    expect(rows.map((row) => row.key)).toEqual(['a', 'b', 'c']);
+  });
+
+  it('resolves a withheld row to the fallback explanation rather than an inherited Object member', () => {
+    const rows = orgLeaderboardDetailCategoryRows([{ key: 'constructor', name: 'Constructor' }], breakdown([], 0, ['constructor']));
+    expect(rows[0].tooltip).toBe(ORG_LEADERBOARD_DETAIL_WITHHELD_CATEGORY_TOOLTIP_FALLBACK);
+  });
+
+  it('flags a category the project never runs, so it renders differently from a zero count', () => {
+    const rows = orgLeaderboardDetailCategoryRows(
+      categories,
+      breakdown(
+        [
+          { key: 'a', points: 0, count: 0, projectTotal: 0, projectAllTimeTotal: 0 },
+          { key: 'b', points: 0, count: 0, projectTotal: 0, projectAllTimeTotal: 120 },
+        ],
+        0
+      )
+    );
+    expect(rows.find((row) => row.key === 'a')?.notTrackedForProject).toBe(true);
+    expect(rows.find((row) => row.key === 'b')?.notTrackedForProject).toBe(false);
   });
 });
 
-describe('orgLeaderboardDetailCategoryRows', () => {
-  const categories = [
-    { key: 'a', name: 'A' },
-    { key: 'b', name: 'B' },
-    { key: 'c', name: 'C' },
-  ];
-
-  it('returns an empty array when score is 0 to avoid a divide-by-zero', () => {
-    expect(orgLeaderboardDetailCategoryRows(categories, {}, {}, 0)).toEqual([]);
-  });
-
-  it('computes pct as a share of score and sorts descending by points when nothing is masked', () => {
-    const rows = orgLeaderboardDetailCategoryRows(categories, { a: 10, b: 40, c: 50 }, { a: 1, b: 2, c: 3 }, 100);
-    expect(rows.map((r) => r.key)).toEqual(['c', 'b', 'a']);
-    expect(rows.map((r) => r.pct)).toEqual([50, 40, 10]);
-    expect(rows.every((r) => !r.masked)).toBe(true);
-  });
-
-  it('defaults missing points/counts for a category to 0', () => {
-    const rows = orgLeaderboardDetailCategoryRows(categories, { a: 10 }, { a: 1 }, 10);
-    const b = rows.find((r) => r.key === 'b');
-    expect(b).toMatchObject({ points: 0, count: 0, pct: 0 });
-  });
-
-  it('groups masked rows at the bottom regardless of their points', () => {
-    const rows = orgLeaderboardDetailCategoryRows(categories, { a: 10, b: 90, c: 5 }, { a: 1, b: 9, c: 1 }, 105, ['b']);
-    expect(rows.map((r) => r.key)).toEqual(['a', 'c', 'b']);
-  });
-
-  it('zeroes out count, points, and pct for masked rows so the values never reach the rendered payload', () => {
-    const rows = orgLeaderboardDetailCategoryRows(categories, { a: 10, b: 90, c: 5 }, { a: 1, b: 9, c: 1 }, 105, ['b']);
-    const masked = rows.find((r) => r.key === 'b');
-    expect(masked).toMatchObject({ masked: true, count: 0, points: 0, pct: 0 });
-  });
-
-  it('leaves unmasked rows fully populated when a different category is masked', () => {
-    const rows = orgLeaderboardDetailCategoryRows(categories, { a: 10, b: 90, c: 5 }, { a: 1, b: 9, c: 1 }, 105, ['b']);
-    const unmasked = rows.find((r) => r.key === 'a');
-    expect(unmasked).toMatchObject({ masked: false, count: 1, points: 10 });
-  });
-
-  it('preserves original category order among masked rows instead of sorting by their withheld points', () => {
-    // c (5 pts) would sort ahead of b (2 pts) if masked rows were still ranked by points — that
-    // would leak the relative ranking the masking contract is supposed to withhold.
-    const rows = orgLeaderboardDetailCategoryRows(categories, { a: 100, b: 2, c: 5 }, { a: 1, b: 1, c: 1 }, 107, ['b', 'c']);
-    expect(rows.map((r) => r.key)).toEqual(['a', 'b', 'c']);
+describe('drawer category lists', () => {
+  // A component added to a dimension's total upstream, without a row here to explain it, would leave
+  // part of every score silently unaccounted for — which is the defect this feature exists to fix.
+  it('lists exactly as many categories as the warehouse sums into each dimension total', () => {
+    expect(ORG_LEADERBOARD_DETAIL_TECHNICAL_CATEGORIES).toHaveLength(ORG_LEADERBOARD_DETAIL_SCORED_COMPONENT_COUNTS.technical);
+    expect(ORG_LEADERBOARD_DETAIL_ECOSYSTEM_CATEGORIES).toHaveLength(ORG_LEADERBOARD_DETAIL_SCORED_COMPONENT_COUNTS.ecosystem);
   });
 });

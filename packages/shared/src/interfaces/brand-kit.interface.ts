@@ -6,7 +6,7 @@
 // from marketing-os-agents docs/contracts/brand-kit-output.schema.json — the
 // JSON Schema file is normative; this must stay in sync (reviewed at PR).
 
-import { MktgRunGenerateBody, MktgRunPersistReceipt, MktgRunResultBody, MktgRunResultResponse, MktgRunSessionResponse } from './mktg-run.interface';
+import type { MktgRunGenerateBody, MktgRunPersistReceipt, MktgRunResultBody, MktgRunResultResponse, MktgRunSessionResponse } from './mktg-run.interface';
 
 /** One verbatim intake Q/A pair (Paul's fixed 7-question order). */
 export interface BrandKitIntakeAnswer {

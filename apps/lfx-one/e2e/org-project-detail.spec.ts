@@ -21,6 +21,9 @@
  */
 
 import { expect, test } from '@playwright/test';
+import { skipWhenAuthMissing } from './helpers/auth.helper';
+
+test.beforeEach(() => skipWhenAuthMissing());
 
 const DETAIL_URL = '/org/projects/k8s';
 const DETAIL_URL_BOGUS = '/org/projects/totally-bogus-project';
@@ -318,10 +321,9 @@ test.describe('Org Project Detail — leaderboard row score-breakdown drawer', (
     await expect(page.getByTestId('project-detail-leaderboard-ecosystem-table')).toBeVisible({ timeout: DATA_LOAD_TIMEOUT });
   });
 
-  // Category/points data behind this drawer is DEMO data pending a real Snowflake-backed source
-  // (LFXV2-2934), so a live k8s row's org may or may not be in the demo lookup — assert the drawer
-  // opens with the clicked org's name and renders EITHER the breakdown content OR the graceful empty
-  // state, never a crash either way.
+  // A live k8s row's organization may legitimately have no breakdown row (an org with a leaderboard
+  // rank but no scored components), so assert the drawer opens with the clicked org's name and
+  // renders EITHER the breakdown content OR the graceful empty state, never a crash either way.
   test('clicking a technical leaderboard row opens the drawer for that org', async ({ page }) => {
     const firstRow = page.locator('[data-testid="project-detail-leaderboard-technical"] tbody tr').first();
     const orgName = (await firstRow.locator('td').nth(1).locator('span.text-gray-900').innerText()).trim();

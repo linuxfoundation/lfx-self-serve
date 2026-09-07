@@ -94,10 +94,15 @@ export enum ServerFeatureFlag {
    * "id-shape backstop" here, which is what an earlier version of this doc called it — for CREATE
    * it is a hard prerequisite.
    *
-   * That id-shape distinction is what makes an OVERLAPPING rollout safe: campaign-service mints
-   * UUID job ids and the legacy path mints `job_...`, so a poll is answered by whichever system
-   * actually owns that job regardless of which pod serves it. A CREATE-flag-on pod creating and a
-   * CREATE-flag-off pod polling still works.
+   * That id-shape distinction is what makes an overlapping rollout safe FOR JOB POLLING, and only
+   * for that: campaign-service mints UUID job ids and the legacy path mints `job_...`, so a poll
+   * is answered by whichever system actually owns that job regardless of which pod serves it. A
+   * CREATE-flag-on pod creating and a CREATE-flag-off pod polling still works.
+   *
+   * It says NOTHING about the rest of a campaign's life. The same overlap mints a UUID campaign
+   * that a pod without `CampaignServiceStatusToggle` refuses to pause — see that flag's doc below.
+   * Do not read this paragraph as "an overlapping CREATE rollout is safe"; it covers the poll and
+   * nothing else.
    *
    * That safety holds only while JOBS is on everywhere, and it is an ORDERING requirement, not
    * just a set of prerequisites: a pod with JOBS off does not apply the id-shape check at all and
@@ -170,13 +175,15 @@ export enum ServerFeatureFlag {
    * flag-off deployment renders the rows with a stated reason instead of a doomed button.
    * Said here as well as in the chart because this doc is what a reader reaches from the code.
    *
-   * Two counts live here and conflating them invites deleting a guard that is doing its job:
-   * campaign-service implements SIX toggle dispatchers upstream, but what this flag exposes is
-   * the non-disabled entries of `CAMPAIGN_PLATFORMS` — four today, because Microsoft and X are
-   * dispatchable upstream and simply not offered by this app. See
+   * Two SETS live here and conflating them invites deleting a guard that is doing its job:
+   * campaign-service implements a toggle dispatcher for every paid platform upstream, but what
+   * this flag exposes is only the non-disabled entries of `CAMPAIGN_PLATFORMS` — a platform can be
+   * dispatchable upstream and simply not offered by this app (X is, today). Deliberately not
+   * stated as a count: the roster changes whenever a `disabled` flag flips — LFXV2-3312 enabled
+   * Microsoft — and a number here goes stale silently. See
    * `CAMPAIGN_SERVICE_STATUS_PLATFORMS` for why the narrowing is deliberate.
    *
-   * ROLLOUT OVERLAP IS SAFE HERE, unlike `CampaignServiceJobs`, and the reason is worth stating
+   * MISROUTING IS IMPOSSIBLE HERE, unlike `CampaignServiceJobs`, and the reason is worth stating
    * because that flag's hazard looks identical. Routing depends on the campaign id's SHAPE as
    * well as the flag, and the two id spaces are disjoint: campaign-service keys campaigns by
    * UUID, while the legacy path's ids are the ad platform's own numeric ids (`NUMERIC_ID_RE`).
@@ -186,11 +193,140 @@ export enum ServerFeatureFlag {
    * refuses with a clear error instead of dispatching to the wrong backend; it does not answer
    * a confident falsehood the way an off-pod job poll did.
    *
-   * The dependency that IS real: a campaign only has a UUID if it was created through
-   * campaign-service, so this is only useful once `CampaignServiceCreate` has been on long
-   * enough to produce rows. Enabling it earlier is harmless but inert.
+   * That is NARROWER than "an overlapping rollout is safe", which an earlier revision of this
+   * comment claimed. A refusal is well-formed and still a failure: the pod returns 400 from
+   * `campaign.controller.ts`, and pause is the primary cost-control lever on a spending
+   * campaign. So this flag must not share a rollout with `CampaignServiceCreate`.
+   *
+   * The dependency that makes the ordering free: a campaign only has a UUID if it was created
+   * through campaign-service, so this flag is INERT until `CampaignServiceCreate` has produced
+   * rows. Enabling it first therefore changes nothing observable, which is exactly why it ships
+   * first — and why the reverse order is the one that costs.
+   *
+   * IT DOES NOT COME BACK OFF. Once UUID campaigns exist the inertness above is spent: a UUID is
+   * permanent, and `campaign.controller.ts` refuses a pause for any UUID while this flag is off.
+   * Disabling CREATE stops NEW campaign-service campaigns but does nothing about the existing
+   * ones, so unlike `CampaignServiceJobs` there is no drain condition to wait out — turning this
+   * off removes the primary cost-control lever from campaigns that may still be spending.
    */
   CampaignServiceStatusToggle = 'LFX_CUTOVER_CAMPAIGN_SERVICE_STATUS_TOGGLE',
+
+  /**
+   * Gates the Google Ads keyword and audience READS (`getKeywords`, `getAudience` in
+   * `campaign.controller.ts`) on campaign-service instead of this BFF's own Google Ads calls.
+   *
+   * Unlike every other cutover flag, this one changes the NUMBERS rather than only the backend.
+   * The legacy queries in `campaign-metrics.service.ts` carry no campaign filter at all, so they
+   * report the whole shared Google Ads customer — every foundation's keywords and demographics,
+   * to whichever project happens to be on screen. Campaign-service scopes the identical reads to
+   * the project's own campaigns (`campaignScopePredicate`). Turning this on therefore makes the
+   * tables SMALLER, and that is the fix, not a regression: the larger figures were other
+   * foundations' spend. Say so when enabling it, because a reader who is not told will file the
+   * drop as a bug.
+   *
+   * A project with no campaign-service campaigns reads EMPTY rather than falling back, and that
+   * is deliberate. The fallback would be the account-wide read, which is the cross-tenant leak
+   * this flag exists to close — so an empty table is the honest answer for a project whose
+   * campaigns were never created through campaign-service.
+   *
+   * NOTHING IS STRANDED BY TURNING THIS OFF. Both routes are reads with no persisted state and
+   * no UUID-shaped id space, so flipping back strands no work — the opposite of
+   * `CampaignServiceStatusToggle`, where only one backend can address the id space.
+   *
+   * That is not the same as "off works". Where the `GADS_*` variables were deactivated, the
+   * legacy arm calls `getGadsClient()`, which throws before any read. In those environments
+   * flipping back does not restore the previous behaviour; it breaks the keywords and audience
+   * reads outright.
+   *
+   * This is a property of the GADS_* credentials, not of this flag — every legacy path that
+   * reaches `getGadsClient()` shares it. Do not read any flag's note as a promise that the
+   * others roll back cleanly; check the mechanism each one names.
+   *
+   * Does NOT gate `executeKeywordActions`. That route MUTATES live keywords, so it has its own
+   * flag — `CampaignServiceKeywordActions`, defined just below — because a write needs a
+   * rollback story a read does not. The two are independent: enabling this one leaves keyword
+   * actions wherever their own flag puts them.
+   */
+  CampaignServiceInsights = 'LFX_CUTOVER_CAMPAIGN_SERVICE_INSIGHTS',
+
+  /**
+   * Routes keyword pause/remove through campaign-service instead of this BFF's own Google Ads
+   * mutate calls.
+   *
+   * SEPARATE from `CampaignServiceInsights`, which covers the two keyword/audience READS, and
+   * the split is deliberate: this one MUTATES live paid campaigns, so it needs a rollback story
+   * a read does not. Flipping the reads back STRANDS nothing -- they persist no state, so there
+   * is nothing left behind either way (whether the legacy read still functions is a separate
+   * question, answered on `CampaignServiceInsights` itself). A REMOVE cannot be undone: Google
+   * cannot re-enable a removed criterion, only create a new one with a new id.
+   *
+   * THE GRANULARITY OF FAILURE CHANGES. The legacy path issues one Google call per keyword, so
+   * each succeeds or fails alone. campaign-service takes one atomic batch per campaign, so a
+   * request spanning several campaigns becomes atomic PER CAMPAIGN and not overall: one
+   * campaign's keywords can pause while another's do not. The response still reports every
+   * keyword individually, and a campaign-level failure marks all of that campaign's keywords
+   * failed rather than leaving anyone to guess which half applied.
+   *
+   * The fan-out lives in the BFF because `api-catalog.md` rule 5 forbids a bulk cross-campaign
+   * mutation endpoint upstream — each call the BFF makes is one permission-evaluated target.
+   *
+   * The legacy path is ALREADY BROKEN in every environment where the `GADS_*` variables were
+   * deactivated: `getGadsClient()` throws before any mutate is attempted. So "off" is not a
+   * working fallback here — it is the state in which keyword actions do not work at all. Nor is
+   * it one for the INSIGHTS reads, whose legacy arm calls the same `getGadsClient()`; the
+   * difference is when the breakage SURFACES: a read fails as soon as the tab is opened, while a
+   * write fails only once an operator attempts an action -- at which point it is announced, not
+   * silent (`announceKeywordOutcome` on both error arms). Same accepted values as the flags above.
+   */
+  CampaignServiceKeywordActions = 'LFX_CUTOVER_CAMPAIGN_SERVICE_KEYWORD_ACTIONS',
+
+  /**
+   * Routes the HubSpot campaign UTM lookup and create through campaign-service instead of this
+   * BFF's own HubSpot calls.
+   *
+   * FOUR BEHAVIOURS CHANGE ON BOTH PATHS, INCLUDING WITH THIS FLAG OFF. This flag switches the
+   * BACKEND; it does not gate either of them.
+   *
+   * 1. The legacy path fabricated a utm token (`id-name`) whenever HubSpot had none, so a
+   *    campaign with no configured token still appeared tokenised — and links tagged with that
+   *    invented value attribute traffic to a campaign HubSpot cannot report on. BOTH paths now
+   *    report a missing token as missing, which the UI already models (`hs_utm` is
+   *    `string | null`). Expect fewer apparent tokens, and expect that to be the correct answer.
+   *    Deliberately not gated: holding it behind a default-off flag keeps a known-wrong value
+   *    in production.
+   * 2. The legacy search limit rose from 10 to HubSpot's per-request maximum, and both paths
+   *    report whether a match may be hidden. The two go together — that signal is what
+   *    suppresses the create offer, and at a limit of 10 nearly every search on a busy portal
+   *    would report inconclusive, leaving an operator unable to create anything.
+   * 3. Neither path auto-applies a token when the top two candidates SCORE THE SAME. This became
+   *    reachable in this PR: the shared scorer now compares normalised names, so campaigns
+   *    differing only by case or whitespace tie where one previously won outright, and `sort` is
+   *    stable — so the winner would have been whichever row HubSpot returned first. Also not
+   *    gated, and for the same reason as (1): a default-off flag would leave a coin-flip
+   *    deciding which campaign's UTM goes into an event's links.
+   * 4. Neither path auto-applies a LONE WEAK match any more. A single candidate sharing one
+   *    long word with the event name used to win by default; an exact NORMALISED name match is
+   *    now required before either path reports `found`. Ungated for the same reason as (1) and
+   *    (3): auto-applying a weak match writes the wrong campaign's UTM into an event's links,
+   *    and holding the correction behind a default-off flag keeps the wrong answer shipping.
+   *
+   * The create path writes into a PORTAL-WIDE namespace — visible to everyone working in the
+   * HubSpot account the project is connected to, which is not necessarily the LF's own, since
+   * connections are per project with their own token and portal_id — and performs no duplicate
+   * check, which is why the UI warns before offering it.
+   *
+   * NOT SAFE TO TURN OFF, which an earlier version of this line got backwards. "Off" selects the
+   * legacy backend, and that path calls `hsHeaders()` — which throws whenever
+   * `HUBSPOT_ACCESS_TOKEN` is absent, and it is absent by design, since the credential moved into
+   * campaign-service's encrypted connection store. Flipping this off therefore does not roll back
+   * to working behaviour: it breaks BOTH UTM routes outright. An operator reaching for it during
+   * an incident would disable the lookup and the create rather than restore them (Copilot).
+   *
+   * It is also not a full rollback even where the legacy path can run: flipping back restores the
+   * previous BACKEND, not the previous BEHAVIOUR. Fabricated tokens, the old search limit, the
+   * tie refusal and the weak-match refusal all changed on both paths and are ungated.
+   */
+  CampaignServiceHubSpotUtm = 'LFX_CUTOVER_CAMPAIGN_SERVICE_HUBSPOT_UTM',
 
   /**
    * Gates `committee.service.ts`'s `updateCommittee` (the `chat_webhook_url` write) and
@@ -233,6 +369,26 @@ export enum ServerFeatureFlag {
    * flag exists so a bad rollout can be reverted with an env var, not a revert PR.
    */
   MarketingOpsFga = 'LFX_MARKETING_OPS_FGA_ENABLED',
+
+  /**
+   * Serves the M3 Organization Lens EasyCLA routes (`org-clas.route.ts`). OFF answers every
+   * route under the module with 409 `FEATURE_DISABLED` before any handler runs.
+   *
+   * Deliberately paired with, and independent of, the client-side `org-lens-cla-m3-enabled`
+   * OpenFeature flag. The Web SDK never runs server-side, so the client flag hides the route
+   * and nav but leaves the BFF reachable by direct call — this flag is what makes the dark
+   * launch a real kill switch rather than a UI convention. Both must be on for the module to
+   * work, which is #1982's acceptance criterion.
+   *
+   * Overlap during a rolling update is harmless while the module is read-only: a caller either
+   * gets the list or a 409, never a partial write. Re-read that once the M3 write paths (sign,
+   * managers, approval list) land behind this same flag.
+   *
+   * Rollout order mirrors `LFX_MARKETING_OPS_FGA_ENABLED`: enable this and let the rollout
+   * converge BEFORE turning the client flag on, or the UI advertises a page that a
+   * not-yet-converged pod still 409s. Reverse to roll back.
+   */
+  OrgLensClaM3 = 'LFX_ORG_LENS_CLA_M3_ENABLED',
 }
 
 /**

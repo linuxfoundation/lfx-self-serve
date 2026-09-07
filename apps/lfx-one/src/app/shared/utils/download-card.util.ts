@@ -3,12 +3,20 @@
 
 import { toPng } from 'html-to-image';
 
+import type { DownloadCardOptions } from '@lfx-one/shared/interfaces';
+
 const IGNORE_CLASS = 'ignore-download';
 
-export async function downloadCardAsImage(element: HTMLElement, filename: string): Promise<void> {
+/** Exports the element as a PNG download; resolves false (and warns) when capture fails so callers can surface it. */
+export async function downloadCardAsImage(element: HTMLElement, filename: string, options?: DownloadCardOptions): Promise<boolean> {
   try {
+    // Wait for webfonts so icon-font glyphs (Font Awesome) render in the capture. `document.fonts`
+    // is absent in older WebViews / jsdom — the capture still works there, just without the wait.
+    if (document.fonts?.ready) await document.fonts.ready;
+
     const dataUrl = await toPng(element, {
       pixelRatio: 2,
+      backgroundColor: options?.backgroundColor,
       filter: (node: HTMLElement) => !node.classList?.contains(IGNORE_CLASS),
     });
 
@@ -16,7 +24,9 @@ export async function downloadCardAsImage(element: HTMLElement, filename: string
     link.download = `${filename}.png`;
     link.href = dataUrl;
     link.click();
+    return true;
   } catch (error) {
     console.warn(`[downloadCardAsImage] Failed to export "${filename}":`, error);
+    return false;
   }
 }

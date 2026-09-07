@@ -1,0 +1,53 @@
+// Copyright The Linux Foundation and each contributor to LFX.
+// SPDX-License-Identifier: MIT
+
+:host {
+  @apply block;
+}
+
+// PrimeNG appends this overlay to <body> and left-aligns it under the ~15.5rem trigger
+// (panel w-72 minus p-5). Widen it for long author names, cap to the viewport, and shift
+// left by (trigger − effective width) so its right edge stays aligned with the trigger.
+// ::ng-deep is required because the overlay lives outside this component's view (ported
+// from PCC's author-multiselect-panel rules).
+::ng-deep .sl-author-multiselect-panel {
+  min-width: 32rem !important;
+  max-width: calc(100vw - 2rem);
+  transform: translateX(calc(15.5rem - min(32rem, 100vw - 2rem)));
+}
+
+.filters-panel {
+  @apply absolute right-0 top-full z-20 mt-1 max-h-[calc(100vh-8rem)] w-72 overflow-y-auto rounded-lg border border-gray-200 bg-white p-5 shadow-lg outline-none;
+}
+
+.save-view-btn {
+  @apply flex cursor-pointer items-center gap-1.5 border-0 bg-transparent p-0 text-xs font-medium text-blue-600;
+
+  &:hover:not(:disabled) {
+    @apply text-blue-700 underline;
+  }
+
+  &:disabled {
+    @apply cursor-not-allowed text-gray-300;
+  }
+}
+
+.clear-btn {
+  @apply cursor-pointer border-0 bg-transparent p-0 text-xs font-medium text-blue-600;
+
+  &:hover {
+    @apply text-blue-700 underline;
+  }
+}
+
+.filter-group {
+  @apply mb-4;
+
+  &:last-child {
+    @apply mb-0;
+  }
+}
+
+.filter-label {
+  @apply mb-1 block text-[0.813rem] font-medium text-gray-700;
+}

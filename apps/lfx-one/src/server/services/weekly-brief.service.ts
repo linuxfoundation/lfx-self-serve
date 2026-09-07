@@ -2,15 +2,19 @@
 // SPDX-License-Identifier: MIT
 
 import {
+  ACTIVITY_FEED_MAX_PAGE_SIZE,
   NEWSLETTER_BODY_MAX_LENGTH,
   NEWSLETTER_SUBJECT_MAX_LENGTH,
   VALKEY_CACHE,
   WEEKLY_BRIEF_ACTION_ITEMS_MAX,
+  WEEKLY_BRIEF_CURRENT_ACTIVITY_BUDGET_MS,
   WEEKLY_BRIEF_DEFAULT_THROTTLE,
   WEEKLY_BRIEF_ERROR_REASON,
   WEEKLY_BRIEF_SHAREABLE_STATES,
+  WEEKLY_BRIEF_STALENESS_EVENT_TYPES,
 } from '@lfx-one/shared/constants';
 import {
+  ActivityEvent,
   Committee,
   GenerateWeeklyBriefRequest,
   GenerateWeeklyBriefResponse,
@@ -25,19 +29,23 @@ import {
   ShareWeeklyBriefToSlackResult,
   WeeklyBrief,
   WeeklyBriefActionItem,
+  WeeklyBriefCurrentActivity,
   WeeklyBriefCurrentResponse,
   WeeklyBriefRating,
+  WeeklyBriefSourceRef,
+  WeeklyBriefStaleness,
 } from '@lfx-one/shared/interfaces';
-import { formatUtcDateRangeLabel } from '@lfx-one/shared/utils';
+import { formatUtcDateRangeLabel, isGoverningBoard } from '@lfx-one/shared/utils';
 import { Request } from 'express';
 
-import { WEEKLY_BRIEF_MOCK_QUIET_WEEK_COMMITTEE_UID } from '../constants';
+import { WEEKLY_BRIEF_MOCK_QUIET_WEEK_COMMITTEE_UID, WEEKLY_BRIEF_STALENESS_FETCH_TIMEOUT_MS } from '../constants';
 import { AuthenticationError, AuthorizationError, ConflictError, MicroserviceError, ResourceNotFoundError, ServiceValidationError } from '../errors';
 import { isServerFeatureEnabled, ServerFeatureFlag } from '../helpers/server-feature-flag.helper';
 import { getEffectiveSub, getEffectiveUsername, getRealEmail, resolveRealAccessToken } from '../utils/auth-helper';
 
 import { AccessCheckService } from './access-check.service';
 import { AiService } from './ai.service';
+import { CommitteeActivityService } from './committee-activity.service';
 import { CommitteeService } from './committee.service';
 import { logger } from './logger.service';
 import { MicroserviceProxyService } from './microservice-proxy.service';
@@ -97,6 +105,100 @@ export function briefWindow(): { window_start: string; window_end: string } {
     window_start: sunday.toISOString(),
     window_end: saturday.toISOString(),
   };
+}
+
+/**
+ * Returns [this week's Sunday 00:00 UTC, now] — the in-progress-week semantics "this week so
+ * far" needs, as opposed to `briefWindow()`'s last-*completed*-week semantics (GH-1922). No
+ * Saturday-rollover branch: unlike `briefWindow()`, this always looks at the current week,
+ * every day of the week, including the still-open Sun–Fri span `briefWindow()` deliberately
+ * skips past.
+ */
+export function currentWeekInProgressWindow(): { window_start: string; window_end: string } {
+  const now = new Date();
+  const day = now.getUTCDay(); // 0 = Sunday
+  const sunday = new Date(Date.UTC(now.getUTCFullYear(), now.getUTCMonth(), now.getUTCDate() - day, 0, 0, 0, 0));
+  return { window_start: sunday.toISOString(), window_end: now.toISOString() };
+}
+
+/**
+ * Maps a `CommitteeActivityService` event to the weekly-brief tally's `WeeklyBriefSourceRef`
+ * shape (GH-1922 rework — this tally is sourced from the same live meeting/vote/document
+ * aggregation that already powers the committee "Recent Activity" feed, not a weekly-brief-
+ * specific upstream call).
+ *
+ * `vote_opened` folds into kind `other`, not the `vote` kind `vote_closed` uses — the tally's
+ * only vote phrase is literally "vote closed" (`WEEKLY_BRIEF_CURRENT_ACTIVITY_PHRASES` has no
+ * "vote opened" entry), and an in-progress, not-yet-closed vote isn't that yet. It still can't be
+ * dropped outright (the `null` this file used to return here): the "Recent Activity" feed on the
+ * same committee-overview page renders `vote_opened` directly for any voting-enabled committee, so
+ * a week that opened but hasn't yet closed a vote must not report itself as "no activity yet" while
+ * the feed right below it proves otherwise. `document_uploaded` and `notes_added` both collapse to
+ * kind `doc` — both are "a document-like artifact was added this week," and the tally doesn't need
+ * to distinguish committee-document files/folders/links from meeting-attachment notes — but their
+ * ids DO carry the same namespace discriminants `committee-activity.service.ts`'s own `eventKey()`
+ * uses (`document_type` / `meeting_scope`), not just a `document_uid`, since — per `ActivityEvent`'s
+ * own doc comments — those are two distinct upstream uid namespaces that could otherwise collide
+ * (e.g. a folder and a meeting-attachment note coincidentally sharing a uid), and a collision here
+ * would produce two refs with the same `id` in the same rendered `doc` section (an Angular
+ * duplicate-`@for`-track-key error, not a silent dedupe). `vote` does NOT carry this same
+ * kind-prefix, deliberately — `weekly-brief.utils.ts`'s `resolveSourceRefAction` passes a `vote`
+ * ref's raw `id` straight through as `voteUid`, already unique on its own upstream uid (one uid
+ * namespace, unlike doc's two), and a `vote:` prefix would reach that click-through action as a
+ * corrupted id instead of a real one.
+ *
+ * `meeting` is unprefixed for the same collision-avoidance reason, but its `id` is deliberately
+ * `meeting_occurrence_id`, NOT the `meeting_id` `resolveSourceRefAction`'s `meetingId` actually
+ * needs (see `MeetingHeldActivityEvent`'s own doc comment: a recurring meeting's occurrences
+ * share one `meeting_id` but need distinct `@for` tracking keys, which is exactly what this
+ * `id` doubles as via `weekly-brief-card.component.html`'s `track ref.id`). Known v1 residual:
+ * wiring `current_activity.source_refs` into `mapWeeklyBriefSourceRefsToChips` (nothing does
+ * today) would click through to the wrong meeting for a recurring series — closing this needs
+ * `WeeklyBriefSourceRef` to carry the navigation id separately from the tracking id, not done
+ * here since nothing consumes this mapper's meeting refs as click targets yet.
+ *
+ * `survey_published`/`survey_closed` (and `vote_opened`, above) map to kind `other` — not one of
+ * `WEEKLY_BRIEF_SOURCE_SECTIONS`' five kinds, but real governance activity the client's existing
+ * "other" catch-all already surfaces rather than silently dropping; `other` has no
+ * `resolveSourceRefAction` case (falls to its `default: return null`), so it carries no id
+ * contract to protect the way `vote`'s or `meeting`'s does — but unlike those two, `other` mixes
+ * TWO upstream uid namespaces (`vote_uid` and `survey_uid`) in one rendered section, the same
+ * shape `doc`'s `document_type`/`meeting_scope` prefixing above already exists to guard, so both
+ * get the `vote:`/`survey:` prefix for the same reason, not left raw the way a single-namespace
+ * kind can be.
+ *
+ * `member_joined`/`member_left`/other deferred types are the only ones that actually reach the
+ * `default: return null` branch below in practice: `CommitteeActivityService` never constructs
+ * those today (see `DeferredActivityEvent`'s own doc comment). It exists to stay exhaustive
+ * against `ActivityEvent`'s full union, not because any currently-constructed event type needs it.
+ */
+function mapActivityEventToCurrentActivityRef(event: ActivityEvent): WeeklyBriefSourceRef | null {
+  switch (event.type) {
+    case 'meeting_held':
+      return { id: event.payload.meeting_occurrence_id, kind: 'meeting', title: event.payload.title };
+    case 'vote_closed':
+      return { id: event.payload.vote_uid, kind: 'vote', title: event.payload.name };
+    // Folds into `other`, not dropped: an open-but-not-yet-closed vote isn't "vote closed" (the
+    // tally's only vote phrase), but dropping it produced a same-page contradiction — the
+    // "Recent Activity" feed (mapActivityEventsToFeedItems, activity-feed.utils.ts) already
+    // renders vote_opened for any committee with voting enabled, so a week whose only activity was
+    // opening a vote would have shown "no activity yet" directly beneath a feed proving otherwise.
+    // Prefixed, unlike `vote_closed` above: `other` now holds two upstream uid namespaces
+    // (vote_uid here, survey_uid below), the same two-namespace situation `doc`'s prefixing
+    // already exists to guard against, not the single-namespace case the unprefixed `vote` kind's
+    // own doc comment describes.
+    case 'vote_opened':
+      return { id: `vote:${event.payload.vote_uid}`, kind: 'other', title: event.payload.name };
+    case 'document_uploaded':
+      return { id: `document:${event.payload.document_type}:${event.payload.document_uid}`, kind: 'doc', title: event.payload.name };
+    case 'notes_added':
+      return { id: `note:${event.payload.meeting_scope}:${event.payload.document_uid}`, kind: 'doc', title: event.payload.name };
+    case 'survey_published':
+    case 'survey_closed':
+      return { id: `survey:${event.payload.survey_uid}`, kind: 'other', title: event.payload.title };
+    default:
+      return null;
+  }
 }
 
 /**
@@ -212,41 +314,68 @@ function buildMockBrief(committeeId: string, overrides: Partial<WeeklyBrief> = {
 export class WeeklyBriefService {
   private microserviceProxy: MicroserviceProxyService = new MicroserviceProxyService();
   private committeeService: CommitteeService = new CommitteeService();
+  private committeeActivityService: CommitteeActivityService = new CommitteeActivityService();
   private newsletterService: NewsletterService = new NewsletterService();
   private accessCheckService: AccessCheckService = new AccessCheckService();
   private aiService: AiService = new AiService();
 
   /**
-   * GET /committees/:committeeId/weekly-briefs/current
+   * GET /committees/:committeeId/weekly-briefs/current — see `fetchCurrentBrief` for the
+   * mock/live `brief`/`throttle` contract this builds on.
    *
    * Upstream's own contract is 200-with-null-brief-and-throttle when no draft
    * exists yet for the window — a 404 here means "committee not found", a
    * real error the caller needs to see, not an empty-brief state to paper
    * over.
+   *
+   * This is the controller's read path — it carries `caller_rating`, `staleness` (GH-1966), AND
+   * `current_activity` (GH-1922). Internal callers that only need `brief`/`throttle`
+   * (`getActionItems`, `shareBrief`, `shareToSlack`) call `fetchCurrentBrief` directly instead:
+   * both `withStaleness`'s and `buildCurrentActivityWithBudget`'s committee-activity fan-outs are
+   * real upstream cost that only the card's own read needs, and paying them on every action-item
+   * extraction, share, and rating write for fields those paths immediately discard would multiply
+   * that cost for nothing.
+   *
+   * `includeCurrentActivity` (default true) lets a caller opt out of the current_activity
+   * (GH-1922) fan-out specifically, independent of the other two enrichments — worth having
+   * because `getCommitteeActivity`'s own multi-call aggregation isn't free, and this week's
+   * activity can't change within one poll cycle, so re-running it on every tick would multiply a
+   * real upstream cost for a value that's already correct from the first tick. Two independent
+   * client callers opt out, each on its own signal — see `WeeklyBriefService#getWeeklyBrief` (the
+   * Angular client, `app/shared/services/`) for which callers, when, and why — and see
+   * `WeeklyBriefCurrentResponse.current_activity`'s doc comment (`@lfx-one/shared/interfaces`) for
+   * the absent/null/present contract this option interacts with. Not re-derived here to avoid yet
+   * another copy of that contract drifting out of sync with the other places that reference it.
    */
-  public async getCurrentBrief(req: Request, committeeId: string): Promise<WeeklyBriefCurrentResponse> {
-    let response: WeeklyBriefCurrentResponse;
-    if (!this.isLive(req)) {
-      const brief = currentMockBrief(committeeId);
-      response = {
-        brief,
-        throttle: {
-          ...WEEKLY_BRIEF_DEFAULT_THROTTLE,
-          generates_used: 1,
-          regenerations_used: brief.regeneration_count,
-          window_resets_at: nextSundayIso(),
-        },
-      };
-    } else {
-      logger.debug(req, 'get_weekly_brief_current', 'Proxying to committee-service', { committee_id: committeeId });
-      response = await this.microserviceProxy.proxyRequest<WeeklyBriefCurrentResponse>(
-        req,
-        'LFX_V2_SERVICE',
-        `/committees/${encodeURIComponent(committeeId)}/weekly-briefs/current`,
-        'GET'
-      );
-    }
-    return this.withCallerRating(req, committeeId, response);
+  public async getCurrentBrief(req: Request, committeeId: string, options: { includeCurrentActivity?: boolean } = {}): Promise<WeeklyBriefCurrentResponse> {
+    const includeCurrentActivity = options.includeCurrentActivity ?? true;
+    const { response, live } = await this.fetchCurrentBrief(req, committeeId);
+    // All three enrichments read only `response.brief`, which none of them mutate — run them
+    // concurrently rather than serially chaining, since withStaleness's and
+    // buildCurrentActivityWithBudget's committee-activity fetches are the endpoint's most
+    // expensive steps. The no-brief passthrough case is asserted by `toBe` against the raw
+    // upstream object in the existing "getCurrentBrief proxies straight through and does not
+    // swallow a 404" spec — falling back to the original `response` reference when nothing was
+    // added keeps that pre-existing contract intact rather than spreading into a fresh object
+    // unconditionally.
+    const [withRating, withStale, currentActivity] = await Promise.all([
+      this.withCallerRating(req, committeeId, response),
+      this.withStaleness(req, committeeId, response, live),
+      includeCurrentActivity ? this.buildCurrentActivityWithBudget(req, committeeId) : Promise.resolve(undefined),
+    ]);
+    // Composed explicitly over `response` (not a blind spread of all three results) so no
+    // enrichment's key can be silently dropped if another's return shape ever changes — each
+    // helper's own object/value is only a source of its own field. `currentActivity`'s check is
+    // `!== undefined`, not truthiness — it can be `null` (a settled "doesn't apply" answer, see
+    // buildCurrentActivity's doc comment), which is a real value the client needs to see, not an
+    // absence to fall through on.
+    if (withRating === response && withStale === response && currentActivity === undefined) return response;
+    return {
+      ...response,
+      ...(withRating !== response && { caller_rating: withRating.caller_rating }),
+      ...(withStale !== response && { staleness: withStale.staleness }),
+      ...(currentActivity !== undefined && { current_activity: currentActivity }),
+    };
   }
 
   /**
@@ -429,7 +558,7 @@ export class WeeklyBriefService {
    * (a miss, same as an actual cache miss) — that narrower case isn't covered here.
    */
   public async getActionItems(req: Request, committeeId: string): Promise<GetWeeklyBriefActionItemsResponse> {
-    const { brief } = await this.getCurrentBrief(req, committeeId);
+    const { brief } = (await this.fetchCurrentBrief(req, committeeId)).response;
     if (!brief || !WEEKLY_BRIEF_SHAREABLE_STATES.includes(brief.state) || !brief.brief_text?.trim()) {
       return { items: [] };
     }
@@ -664,7 +793,7 @@ export class WeeklyBriefService {
    * this service — impersonation still shows staff what the target sees.
    */
   public async shareBrief(req: Request, committeeId: string, expectedRevision: number): Promise<ShareWeeklyBriefResult> {
-    const { brief } = await this.getCurrentBrief(req, committeeId);
+    const { brief } = (await this.fetchCurrentBrief(req, committeeId)).response;
     if (!brief || !WEEKLY_BRIEF_SHAREABLE_STATES.includes(brief.state)) {
       throw new ResourceNotFoundError('Weekly brief', committeeId, {
         operation: 'share_weekly_brief',
@@ -902,7 +1031,7 @@ export class WeeklyBriefService {
       });
     }
 
-    const { brief } = await this.getCurrentBrief(req, committeeId);
+    const { brief } = (await this.fetchCurrentBrief(req, committeeId)).response;
     if (!brief || !WEEKLY_BRIEF_SHAREABLE_STATES.includes(brief.state)) {
       throw new ResourceNotFoundError('Weekly brief', committeeId, {
         operation: 'share_weekly_brief_slack',
@@ -1041,6 +1170,33 @@ export class WeeklyBriefService {
     return {};
   }
 
+  /** Fetches the current brief/throttle with no BFF-side enrichment — the shared collaborator for `getCurrentBrief` and the internal callers that don't need `caller_rating`/`staleness`. */
+  private async fetchCurrentBrief(req: Request, committeeId: string): Promise<{ response: WeeklyBriefCurrentResponse; live: boolean }> {
+    const live = this.isLive(req);
+    let response: WeeklyBriefCurrentResponse;
+    if (!live) {
+      const brief = currentMockBrief(committeeId);
+      response = {
+        brief,
+        throttle: {
+          ...WEEKLY_BRIEF_DEFAULT_THROTTLE,
+          generates_used: 1,
+          regenerations_used: brief.regeneration_count,
+          window_resets_at: nextSundayIso(),
+        },
+      };
+    } else {
+      logger.debug(req, 'get_weekly_brief_current', 'Proxying to committee-service', { committee_id: committeeId });
+      response = await this.microserviceProxy.proxyRequest<WeeklyBriefCurrentResponse>(
+        req,
+        'LFX_V2_SERVICE',
+        `/committees/${encodeURIComponent(committeeId)}/weekly-briefs/current`,
+        'GET'
+      );
+    }
+    return { response, live };
+  }
+
   /**
    * Refuses mock mode outright in production instead of silently serving
    * fabricated brief content. `assertCommitteeRead`/`assertCommitteeWrite` gate
@@ -1072,9 +1228,297 @@ export class WeeklyBriefService {
   }
 
   /**
-   * Enriches a `getCurrentBrief` result with the caller's own rating on that exact brief
-   * revision (LFXV2-3042). Fails soft on every edge: no brief, no resolvable username, or a
-   * cache miss/fault all resolve to `caller_rating: null` rather than throwing — this is a
+  /**
+   * Races `buildCurrentActivity` against `WEEKLY_BRIEF_CURRENT_ACTIVITY_BUDGET_MS` — see that
+   * constant's own doc comment for why this exists (a slow, not just an erroring, upstream must
+   * not hold the whole `GET /current` response hostage). Resolving to `undefined` on a lost race,
+   * not rejecting, is deliberate: it's the same value `buildCurrentActivity` itself already
+   * produces for any other transient failure, so `getCurrentBrief`'s caller — and the client's
+   * poll self-heal — can't tell a timeout apart from any other degrade, and don't need to. Still
+   * warns when the budget is the one that wins, matching this method's every sibling exit
+   * (`buildCurrentActivity` itself warns on each of its own omit-the-tally paths) — otherwise a
+   * budget that starts firing regularly in production would be invisible in CloudWatch. A
+   * dedicated sentinel (not plain `undefined`) distinguishes "the budget elapsed" from
+   * "`buildCurrentActivity` itself resolved to `undefined` well within budget", which needs no
+   * warning of its own (it already logs its own reason for degrading). The loser of the race is
+   * not cancelled (`buildCurrentActivity` has no cancellation hook — its underlying upstream
+   * calls keep running until they settle or their own timeout fires).
+   *
+   * The `catch` below is this method's OWN fail-soft guarantee, not defense-in-depth borrowed
+   * from `buildCurrentActivity`'s: `Promise.race` rejects if whichever promise wins the race
+   * rejects, and a `try/finally` with no `catch` re-throws, which would fail this method — and
+   * therefore `getCurrentBrief`'s whole `Promise.all` (the brief itself, not just the tally) —
+   * even though `buildCurrentActivity`'s own try/catch means that path isn't reachable as written
+   * today. This method doesn't lean on that distant invariant staying true; it degrades to
+   * `undefined` and warns on any rejection it sees directly, the same way it already does for a
+   * lost race.
+   */
+  private async buildCurrentActivityWithBudget(req: Request, committeeId: string): Promise<WeeklyBriefCurrentActivity | null | undefined> {
+    const BUDGET_ELAPSED = Symbol('current_activity_budget_elapsed');
+    let timer: NodeJS.Timeout;
+    const timeout = new Promise<typeof BUDGET_ELAPSED>((resolve) => {
+      timer = setTimeout(() => resolve(BUDGET_ELAPSED), WEEKLY_BRIEF_CURRENT_ACTIVITY_BUDGET_MS);
+    });
+    const result = this.buildCurrentActivity(req, committeeId);
+    result.catch(() => undefined);
+    try {
+      const winner = await Promise.race([result, timeout]);
+      if (winner === BUDGET_ELAPSED) {
+        logger.warning(req, 'get_weekly_brief_current_activity', 'Current-activity budget elapsed, omitting the tally', {
+          committee_id: committeeId,
+          budget_ms: WEEKLY_BRIEF_CURRENT_ACTIVITY_BUDGET_MS,
+        });
+        return undefined;
+      }
+      return winner;
+    } catch (err) {
+      logger.warning(req, 'get_weekly_brief_current_activity', 'Current-activity fan-out rejected unexpectedly, omitting the tally', {
+        committee_id: committeeId,
+        err,
+      });
+      return undefined;
+    } finally {
+      clearTimeout(timer!);
+    }
+  }
+
+  /**
+   * Builds `WeeklyBriefCurrentResponse.current_activity` (GH-1922) from
+   * `CommitteeActivityService.getCommitteeActivity` — the same live meeting/vote/document
+   * aggregation that powers the committee "Recent Activity" feed, filtered to the current,
+   * not-yet-closed week. Gated to governance (Board/Government Advisory Council) committees only
+   * — the only ones the client renders the tally for — so a non-Board committee's weekly-brief
+   * load never pays for `getCommitteeActivity`'s own 9-call upstream fan-out. The gating read
+   * itself is `getCommitteeBase` (a single plain GET), not `getCommitteeById` — this needs the
+   * base record alone, and `getCommitteeById`'s default options cost three upstream calls
+   * (base GET, settings, an access-check) for data this call would only discard. The resolved
+   * committee is then passed into `getCommitteeActivity` below as its `knownCommittee` — that
+   * method's own `fetchCommittee` leg needs the same record (for `enable_voting`), and without
+   * passing it down explicitly a governance committee's weekly-brief load would pay for the
+   * identical `GET /committees/:id` twice. `getCommitteeBase` performs no access check of its
+   * own — safe here only because this method's one caller, `getCurrentBrief`, is reachable
+   * exclusively through the controller's `assertCommitteeRead` gate; a new caller of
+   * `getCommitteeBase` would need its own. Fails soft to `undefined` (never an empty array) on a
+   * genuine error — see `WeeklyBriefCurrentResponse.current_activity`'s doc comment
+   * (`@lfx-one/shared/interfaces`) for the full absent/null/present contract that puts `undefined`
+   * here in context; not re-derived in this method. `undefined`'s three actual causes, specific
+   * to this method and not part of that shared contract: `getCommitteeBase` resolves with no
+   * body at all; it resolves with a committee that carries no usable `category`; or any other
+   * error thrown while building the tally, caught below.
+   *
+   * `limit: ACTIVITY_FEED_MAX_PAGE_SIZE` is a single, unfollowed page — `getCommitteeActivity`
+   * hard-rejects any larger `limit`, so that's the ceiling one call can ever return. Deliberately
+   * NOT gated on the returned `page_token`/its underlying `anyLegSaturated` flag: two of the five
+   * legs (`fetchNotesAddedEvents`, `fetchSurveyEvents`) never push `since` upstream at all (see
+   * their own doc comments in `committee-activity.service.ts` for why), so they fetch each
+   * committee's newest `fetchSize` rows by `updated_desc` and filter to the window in memory —
+   * their own `saturated` flag reflects whether the committee has more than `fetchSize` *lifetime*
+   * notes/surveys, not whether THIS WEEK's activity was truncated. Gating on that would show a
+   * near-permanent, usually-wrong `truncated: true` note on exactly the long-lived, active
+   * committees it exists to help.
+   *
+   * Gate on the raw, unfiltered `data.length` hitting `limit` (Copilot review), NOT on
+   * `sourceRefs.length + unmappedInWindow` as this method originally did. That original gate
+   * assumed a page saturated with administratively-closed, future-stamped votes was always safe
+   * to treat as "not truncated", since those rows get dropped by the window_end filter below
+   * anyway. That assumption doesn't hold: `committee-activity.service.ts` sorts its merged pool
+   * *descending* by `occurred_at` before capping to `limit`, so future-stamped rows — having the
+   * largest timestamps — sort ABOVE real in-window rows and can occupy page slots a real event
+   * would otherwise have filled. A page full of nothing but soon-to-be-dropped future noise can
+   * therefore mean real in-window activity was pushed off the page entirely, before this method
+   * ever saw it — silently undercounting behind a gate that only looked at what survived the
+   * window_end filter. Gating on `data.length >= limit` instead catches that: a full raw page is
+   * treated as "possibly truncated" regardless of composition. The cost is the mirror-image false
+   * positive — a committee whose only this-week activity actually is `limit`-many future-stamped
+   * votes gets `truncated: true` alongside its (already-honest) small `sourceRefs`, since this
+   * method can't tell the two cases apart with the signal `getCommitteeActivity` exposes today.
+   * Consistent with this method's own bias (see `WeeklyBriefCurrentResponse.current_activity`'s
+   * doc comment): an unnecessary `truncated: true` is a safe, if slightly annoying, degradation
+   * that still surfaces the real `sourceRefs` it has; a false-complete count is not.
+   *
+   * Known v1 residual (accepted, not solved): `data.length < limit` is a heuristic, not a
+   * proof of completeness. `committee-activity.service.ts` documents — in its own "Filter
+   * dimension" (its exact label), sort-dimension ("Votes, surveys, files, and notes are all in a
+   * different, genuinely-approximate bucket"), and FGA-post-filter comments — several ways an
+   * individual leg's single upstream page can under-report while the merged, capped `data.length`
+   * still lands under `limit`. Deliberately not re-derived here leg-by-leg — a summary of which mechanism hits which
+   * leg is exactly the kind of detail that silently drifts out of sync with its source as that
+   * source evolves. This residual is narrower than it was when first written: `any_leg_failed`
+   * (GH-1967's addition to `CommitteeActivityResponse`) closes the outright-leg-error half of this
+   * gap — handled explicitly above, independent of this gate — leaving only the harder-to-signal
+   * half: a leg that fetched successfully but under-reported for a reason that isn't "erred" or
+   * "this specific committee's own upstream page saturated" (e.g. an FGA-filtered-empty page, or
+   * a sort-order mismatch against `occurred_at` — see committee-activity.service.ts's own
+   * comments). Nothing crosses the `getCommitteeActivity` boundary as a signal this caller could
+   * gate on for that narrower remainder today. `any_leg_saturated` deliberately still isn't part
+   * of this gate, unlike `any_leg_failed` above — see this method's own comment on why two of the
+   * five legs' saturation reflects lifetime volume, not this week's, and would falsely show a
+   * near-permanent incompleteness note for exactly the long-lived committees it exists to help.
+   */
+  private async buildCurrentActivity(req: Request, committeeId: string): Promise<WeeklyBriefCurrentActivity | null | undefined> {
+    try {
+      logger.debug(req, 'get_weekly_brief_current_activity', 'Building current-week activity tally', { committee_id: committeeId });
+      const committee = await this.committeeService.getCommitteeBase(req, committeeId);
+      if (committee === undefined) {
+        logger.warning(req, 'get_weekly_brief_current_activity', 'Committee lookup returned nothing, omitting the tally', { committee_id: committeeId });
+        return undefined;
+      }
+      // Falsy, not just `=== undefined` — a resolved committee with no `category` (its type
+      // declares `category` required — committee.interface.ts — but that's a contract on
+      // well-formed upstream data, not a runtime guarantee against a malformed body) is
+      // unclassifiable the same way `getGroupBehavioralClass` itself already treats `undefined`,
+      // `null`, and `''` identically (`if (!category) return 'other'` — committee.utils.ts). A
+      // genuine 404/upstream error throws instead and is caught below, same as any other failure
+      // in this method. Either way this is an anomaly, not a governance verdict, so it falls
+      // through to undefined rather than being asserted as "not governance" —
+      // isGoverningBoard('')/isGoverningBoard(undefined) both return false, which would settle
+      // this to `null` (permanent) for what might just be a transient partial response, worth
+      // asking again on the next poll tick.
+      if (!committee.category) {
+        logger.warning(req, 'get_weekly_brief_current_activity', 'Committee resolved with no usable category, omitting the tally', {
+          committee_id: committeeId,
+        });
+        return undefined;
+      }
+      // null, not undefined — see WeeklyBriefCurrentResponse.current_activity's doc comment.
+      // This committee will never become governance-classified mid-poll, so a caller (the
+      // client's pollUntilTerminal) can treat this as a settled answer and stop asking.
+      if (!isGoverningBoard(committee.category)) return null;
+
+      const { window_start, window_end } = currentWeekInProgressWindow();
+      // Passing `committee` (already resolved above) as getCommitteeActivity's knownCommittee —
+      // see this method's own doc comment for why. `quietAggregationLog: true` separately, since
+      // this is a per-poll-tick call, not the controller-driven feed read that method's own
+      // INFO-logging rationale is written for — see that call site's own comment.
+      const { data, any_leg_failed } = await this.committeeActivityService.getCommitteeActivity(
+        req,
+        committeeId,
+        {
+          since: window_start,
+          limit: ACTIVITY_FEED_MAX_PAGE_SIZE,
+        },
+        { knownCommittee: committee, quietAggregationLog: true }
+      );
+      logger.debug(req, 'get_weekly_brief_current_activity', 'Fetched current-week activity', { committee_id: committeeId, event_count: data.length });
+      // `any_leg_failed` (GH-1967's addition to CommitteeActivityResponse, not available when
+      // this method was first written): unlike `any_leg_saturated` below, a leg failure isn't
+      // proportional to a committee's lifetime volume, so it carries none of the false-positive
+      // risk that rules out gating on saturation — a leg either errored on this call or it
+      // didn't. And unlike the page-fill gate below, this can under-report at ANY count,
+      // including a comfortably-under-cap or even zero one: a failed vote/meeting/document leg
+      // degrades to `{ events: [], saturated: false }` in committee-activity.service.ts,
+      // indistinguishable from a leg that genuinely had nothing this week. `undefined`, not
+      // `null` — a leg failure is transient (the same upstream call can succeed on the next poll
+      // tick), unlike the page-fill gate's `truncated: true`, which this method's own doc comment
+      // already establishes is provably permanent within a poll cycle.
+      if (any_leg_failed) {
+        logger.warning(req, 'get_weekly_brief_current_activity', 'One or more activity legs failed, omitting the tally rather than publishing an undercount', {
+          committee_id: committeeId,
+        });
+        return undefined;
+      }
+
+      // Filtered to occurred_at <= window_end, not just >= window_start (the `since` param
+      // above already narrows that half) — getCommitteeActivity has no `before`/upper-bound
+      // param of its own, and the vote leg can report an occurred_at arbitrarily far ahead of
+      // "now": a vote administratively ended (status ENDED) with its own end_time still in the
+      // future stamps occurred_at from that future end_time (see mapVoteToEvent). The survey
+      // leg's cutoff-driven occurred_at can NOT do the same — isCutoffDrivenClosure
+      // (committee-activity.service.ts) only adopts a cutoff once it's already passed, so the
+      // most it can exceed window_end by is this request's own in-flight latency between
+      // snapshotting window_end (above) and evaluating the cutoff, not an arbitrary future value.
+      // Without this filter, window_end would advertise a bound the response doesn't actually
+      // honor. Numeric (Date.parse), not string, comparison —
+      // matches committee-activity.service.ts's own timestampValue convention rather than
+      // assuming every occurred_at is byte-identically formatted to window_end's toISOString()
+      // output. An unparseable occurred_at (NaN) is let through rather than dropped — unreachable
+      // through getCommitteeActivity today (its own merge pass already drops unparseable
+      // timestamps via timestampValue !== -Infinity), kept so this filter stays correct on its
+      // own terms if that ever changes, same rationale as mapActivityEventToCurrentActivityRef's
+      // own "unreached in practice, not dead by construction" default branch.
+      //
+      // `unmappedInWindow` (events that pass the window_end filter but that
+      // mapActivityEventToCurrentActivityRef's `default: return null` branch doesn't recognize —
+      // unreached today, since CommitteeActivityService never constructs a DeferredActivityEvent,
+      // but type-legal) and `droppedAfterWindowEnd` are tracked for the debug log below only — the
+      // truncation gate a few lines down no longer depends on either. See this method's own doc
+      // comment for why: it gates on the raw `data.length` instead, since a full raw page can mean
+      // real in-window events were pushed off before this loop ever saw them.
+      const windowEndMs = Date.parse(window_end);
+      let droppedAfterWindowEnd = 0;
+      let unmappedInWindow = 0;
+      const sourceRefs = data.reduce<WeeklyBriefSourceRef[]>((refs, event) => {
+        const eventMs = Date.parse(event.occurred_at);
+        if (!Number.isNaN(eventMs) && eventMs > windowEndMs) {
+          droppedAfterWindowEnd += 1;
+          return refs;
+        }
+        const ref = mapActivityEventToCurrentActivityRef(event);
+        if (ref) {
+          refs.push(ref);
+        } else {
+          unmappedInWindow += 1;
+        }
+        return refs;
+      }, []);
+      // DEBUG, not WARN — the vote leg's occurred_at-ahead-of-"now" case (see the filter's own
+      // comment above) is a mapVoteToEvent-modeled, expected shape, not an anomaly: an
+      // administratively-ENDED vote with no early_end_time stamps occurred_at from its still-future
+      // end_time deliberately, and stays that way for the rest of that vote's scheduled term — so a
+      // WARN here would repeat on every GET /current for that committee for a case the system
+      // already knows about and models on purpose, not a genuine data-quality problem worth an
+      // operator's attention. Still logged (not silent) since a drop is still worth being able to
+      // find while debugging a tally that looks short.
+      if (droppedAfterWindowEnd > 0 || unmappedInWindow > 0) {
+        logger.debug(req, 'get_weekly_brief_current_activity', 'Dropped or skipped one or more events while building source_refs', {
+          committee_id: committeeId,
+          dropped_after_window_end: droppedAfterWindowEnd,
+          unmapped_in_window: unmappedInWindow,
+          window_end,
+        });
+      }
+
+      if (data.length >= ACTIVITY_FEED_MAX_PAGE_SIZE) {
+        // WARN, not DEBUG — unlike the vote-leg drop above (a modeled, expected shape for one
+        // committee on one vote), a full page is graceful degradation of the tally itself: every
+        // consumer of this response is now getting a lower bound, not proof of partiality (see
+        // WeeklyBriefCurrentActivity.truncated's own doc comment), repeating on every GET /current
+        // until the committee's volume drops. That's exactly the
+        // "error conditions with graceful degradation (returning null/empty arrays)" WARN
+        // criterion in .claude/rules/logging-patterns.md, and worth an operator noticing if
+        // ACTIVITY_FEED_MAX_PAGE_SIZE needs raising for this committee.
+        logger.warning(
+          req,
+          'get_weekly_brief_current_activity',
+          'Current-week activity fills a full page — publishing source_refs as a lower bound via truncated: true, not proof of partiality',
+          {
+            committee_id: committeeId,
+          }
+        );
+        // truncated: true, not null — more in-window activity only ever accumulates within a
+        // poll cycle, never un-fills a full page, so this can't resolve differently on a later
+        // tick within the same cycle either, but the already-mapped source_refs are still a real
+        // (if partial) count worth showing rather than discarding.
+        return { window_start, window_end, source_refs: sourceRefs, truncated: true };
+      }
+
+      return { window_start, window_end, source_refs: sourceRefs };
+    } catch (err) {
+      logger.warning(req, 'get_weekly_brief_current_activity', 'Failed to build current-week activity tally, omitting it', {
+        committee_id: committeeId,
+        err,
+      });
+      // undefined, not null — this failure is transient (a lookup/fetch error), unlike the settled
+      // null case above (non-governance), so a caller is right to ask again.
+      return undefined;
+    }
+  }
+
+  /**
+   * Enriches a current-brief response (from `getCurrentBrief` or `resolveRatableBrief`) with
+   * the caller's own rating on that exact brief revision (LFXV2-3042). No state check of its
+   * own: no brief, no resolvable username, or an unbuildable rating key leave `caller_rating`
+   * absent entirely (never throwing); only a cache miss/fault resolves it to `null`. This is a
    * convenience read for the UI's pre-lit thumb state, not a precondition for anything.
    */
   private async withCallerRating(req: Request, committeeId: string, response: WeeklyBriefCurrentResponse): Promise<WeeklyBriefCurrentResponse> {
@@ -1085,6 +1529,229 @@ export class WeeklyBriefService {
     if (!key) return response;
     const stored = await valkeyService.getJson<RateWeeklyBriefResponse>(key, isStoredRating);
     return { ...response, caller_rating: stored?.rating ?? null };
+  }
+
+  /**
+   * Enriches `getCurrentBrief`'s result with a staleness signal (GH-1966): whether real
+   * committee activity has occurred, inside this brief's own window and after its text was last
+   * generated/edited, up to the earlier of "now" or the window's own close. No brief or a
+   * non-shareable state leave `staleness` absent entirely. Mock mode, an unparseable
+   * `updated_at`/`window_end`, an inconclusive fetch (see below), or a fetch fault all resolve
+   * to `staleness: null` rather than throwing. A brief (re)generated after its own window had
+   * already closed confidently reports `stale: false` — see the inline comment below for the
+   * reasoning, and its caveat: this assumes `updated_at` only ever advances when the brief's
+   * text actually changes. Upstream documents `updated_at` as a generic record-write stamp (not
+   * scoped to text-producing writes), with a separate `last_edited_at` for chair edits only —
+   * `last_edited_at` isn't a safe substitute either, since a regenerate doesn't set it. Using
+   * `updated_at` is still the best available signal; a non-text upstream write landing after
+   * window close, if one exists, could in principle move this short-circuit early. This is an
+   * honest best-effort indicator, never a precondition for anything, and must never consume
+   * generate/regenerate quota.
+   *
+   * Mock mode: `CommitteeActivityService` always calls live upstream (committee/meeting/vote/
+   * query-service) — it has no mock-data branch of its own. Comparing that live activity
+   * against a synthetic in-memory mock brief would produce a meaningless signal (or simply
+   * fail against an unreachable local stack), so staleness is unconditionally `null` in mock
+   * mode rather than faked. Known gap, not silently papered over — see PR description.
+   */
+  private async withStaleness(req: Request, committeeId: string, response: WeeklyBriefCurrentResponse, live: boolean): Promise<WeeklyBriefCurrentResponse> {
+    const brief = response.brief;
+    if (!brief || !WEEKLY_BRIEF_SHAREABLE_STATES.includes(brief.state)) return response;
+    if (!live) return { ...response, staleness: null };
+    // Upstream marks NONE of these fields Required (confirmed against committee-service's Goa
+    // design — none carries a `dsl.Required` entry), even though `WeeklyBrief` declares all three
+    // as non-optional `string` here — this guard is deliberately stricter than the declared type,
+    // not redundant with it. An absent `updated_at` would otherwise reach `getCommitteeActivity`
+    // as `since: undefined`, silently dropping the lower bound and returning the most recent
+    // activity of ANY age as if it were "since generated"; an absent window bound would silently
+    // disable the per-source window alignment in isNewBriefSourceActivity below.
+    const sinceMs = Date.parse(brief.updated_at ?? '');
+    const windowStartMs = Date.parse(brief.window_start ?? '');
+    const windowEndMs = Date.parse(brief.window_end ?? '');
+    if (Number.isNaN(sinceMs) || Number.isNaN(windowStartMs) || Number.isNaN(windowEndMs)) {
+      logger.warning(req, 'weekly_brief_staleness', 'Brief has an unparseable or missing updated_at/window_start/window_end, degrading staleness to null', {
+        committee_id: committeeId,
+        brief_uid: brief.uid,
+        updated_at: brief.updated_at ?? null,
+        window_start: brief.window_start ?? null,
+        window_end: brief.window_end ?? null,
+      });
+      return { ...response, staleness: null };
+    }
+    // `briefWindow()`'s own selection (and upstream's identical `WeeklyWindow`, confirmed
+    // against committee-service's Go source) is a Sun 00:00 → Sat 23:59:59.999 window, but keeps
+    // ONE window "current" — retrievable via GET /current — from the Saturday it CLOSES (the day
+    // it first becomes selectable) through the following Friday, rolling over only on the next
+    // Saturday. A brief first generated any day other than that anchor Saturday is
+    // therefore always generated AFTER its own window already closed (`updated_at > window_end`)
+    // — and since the generator had the complete, already-closed window available at that exact
+    // moment, nothing can have been missed: `stale: false` here is provable — modulo the
+    // `updated_at` assumption this method's own doc comment caveats above — not a guess, and
+    // skipping the fetch entirely avoids paying committee-activity's fan-out for a brief that
+    // can never be stale. A brief generated on the anchor Saturday itself remains checkable for
+    // the rest of that week, since `updated_at` stays before `window_end` regardless of how much
+    // later "now" is — gating on "is the window closed right now" instead would wrongly suppress
+    // that case.
+    //
+    // `>=`, not `>` (GH-1967 review): the relevant-events filter below requires a strict
+    // `occurred_at > sinceMs` lower bound and an `occurred_at <= ceilingMs <= windowEndMs` upper
+    // bound — when `sinceMs === windowEndMs` exactly, that interval is provably empty (nothing can
+    // be both strictly greater than and at-most-equal-to the same instant), so `stale: false` is
+    // just as provable here as the strictly-greater case, and skipping the fetch avoids degrading
+    // an already-known-false result to `null` on a timeout/failure/saturation that can't change it.
+    if (sinceMs >= windowEndMs) {
+      return { ...response, staleness: { stale: false, event_count: 0, event_count_is_floor: false } };
+    }
+    // The upper bound is whichever is earlier: the window's own close (activity after it belongs
+    // to a later week this brief can never cover) or "now" (an event can't have "already
+    // happened" before it has) — the feed can return future-dated events (e.g. a vote already
+    // ENDED but stamped with a still-future `end_time`), so this also guards against those.
+    const ceilingMs = Math.min(Date.now(), windowEndMs);
+    try {
+      const { data, page_token, any_leg_saturated, any_leg_failed } = await this.withStalenessFetchTimeout(
+        this.committeeActivityService.getCommitteeActivity(req, committeeId, {
+          since: brief.updated_at,
+          limit: ACTIVITY_FEED_MAX_PAGE_SIZE,
+        })
+      );
+      // WEEKLY_BRIEF_STALENESS_EVENT_TYPES narrows the feed's full event vocabulary down to the
+      // types that actually map onto a brief source kind (see that constant's own doc comment for
+      // the full reasoning, including the mailing-list/membership blind spot it does NOT solve);
+      // isNewBriefSourceActivity then additionally applies each source's OWN upstream window rule
+      // (meeting start, vote end_time, survey cutoff-date-and-already-passed — GH-1967 Copilot
+      // review) so activity a regeneration could never consume can't flag this brief stale.
+      const relevant = data.filter((event) => this.isNewBriefSourceActivity(event, { sinceMs, ceilingMs, windowStartMs, windowEndMs }));
+      // getCommitteeActivity sorts descending by occurred_at, so events past the ceiling sort
+      // ahead of relevant ones. If `page_token`/`any_leg_saturated`/`any_leg_failed` are all unset,
+      // everything that exists was returned and known-complete, so an all-irrelevant result here is
+      // a confident `false`, not a degrade — see below for why none of the three, alone, is a
+      // reliable "nothing was truncated" signal on its own (`page_token` in particular needs a real
+      // `lastPageItem` to anchor a cursor on, so it can be absent even when a leg's own upstream
+      // page was genuinely saturated).
+      //
+      // `page_token` alone under-detects truncation for this purpose: it requires a real
+      // `lastPageItem` to anchor a cursor on, so if the in-memory since/cursor/timestamp pass
+      // filters every fetched row out of the merged pool (a FGA-filtered-empty upstream page, or a
+      // leg like surveys whose upstream sort doesn't match its own occurred_at — see
+      // committee-activity.service.ts's own comment on this), `page_token` comes back unset even
+      // though a leg's own upstream page was genuinely saturated. `any_leg_saturated` (GH-1967
+      // review) is read directly off each leg's own saturation, independent of whether anything
+      // from that leg survived into `data` — closing that gap for this caller.
+      //
+      // `any_leg_failed` (GH-1967 review) covers a different gap: each of `getCommitteeActivity`'s
+      // 5 legs independently degrades a fetch failure into `{events: [], saturated: false}`
+      // (committee-activity.service.ts), indistinguishable from a leg that genuinely fetched
+      // nothing. A leg failure can only hide a real positive (relevant activity this fetch missed),
+      // never manufacture a false one — so it's only a reason to distrust a `relevant.length === 0`
+      // result, same as the truncation signals above.
+      if (relevant.length === 0 && (page_token || any_leg_saturated || any_leg_failed)) {
+        logger.warning(req, 'weekly_brief_staleness', 'Activity fetch was truncated or partially failed with no in-range events, degrading staleness to null', {
+          committee_id: committeeId,
+          brief_uid: brief.uid,
+          fetched: data.length,
+          saturated: !!page_token,
+          any_leg_saturated,
+          any_leg_failed,
+        });
+        return { ...response, staleness: null };
+      }
+      const staleness: WeeklyBriefStaleness = {
+        stale: relevant.length > 0,
+        event_count: relevant.length,
+        event_count_is_floor: !!page_token,
+      };
+      return { ...response, staleness };
+    } catch (error) {
+      logger.warning(req, 'weekly_brief_staleness', 'Failed to compute weekly-brief staleness, degrading to null', {
+        committee_id: committeeId,
+        brief_uid: brief.uid,
+        error: error instanceof Error ? error.message : 'Unknown error',
+      });
+      return { ...response, staleness: null };
+    }
+  }
+
+  /**
+   * Whether one activity-feed event is BOTH new (after the brief's `updated_at`, at or before the
+   * ceiling) AND something a regeneration of this brief could actually consume — aligned with
+   * upstream's per-source window rules (GH-1967 Copilot review), verified against
+   * committee-service's Go sources:
+   *
+   * - `MeetingSource` windows on the meeting's `start_time` (`start_time[gte/lte]`,
+   *   meeting_source.go) — which IS `meeting_held`'s occurred_at, so the in-range occurrence check
+   *   alone is already fully aligned.
+   * - `VoteSource` qualifies a vote SOLELY on `end_time` ∈ [window_start, window_end]
+   *   (`date_field=end_time`, vote_source.go — "we want votes that closed within the window"; no
+   *   already-passed guard) — an open moment alone never qualifies, and even an in-window EARLY
+   *   close doesn't when the scheduled end_time falls outside the window. payload.end_time
+   *   (absent only when the row has no parseable end_time, which upstream's end_time filter treats
+   *   as unselectable too) is what makes that rule checkable here.
+   * - `SurveySource` windows on `survey_cutoff_date` the same way AND drops cutoffs still in the
+   *   future (`cutoff.After(time.Now())`, survey_source.go — "excluding surveys still collecting
+   *   responses"), skipping rows with unparseable cutoffs entirely — so a survey_published event
+   *   (a publish moment) can never qualify on its own. `cutoffMs <= ceilingMs` IS upstream's
+   *   `cutoff <= now` here because the ceiling is min(now, window_end).
+   *
+   * Without the payload gates this predicate was broader than what regeneration consumes: a vote
+   * opened after generation but ending outside the window (or a survey published while still
+   * collecting responses) flagged the brief stale even though regenerating could never pull it
+   * in — a false positive that burns one of the week's regenerations for no new content.
+   *
+   * Newness: strict `> sinceMs` / `<= ceilingMs` on occurred_at — `getCommitteeActivity`'s own
+   * `since` filter (isAtOrAfterSince) is inclusive (`ms >= since`), so the strict lower bound is
+   * what actually enforces "happened after the brief was generated" (GH-1967 review). The
+   * payload.opened_at fallback covers the collapsed lifecycle (GH-1967 review): the feed collapses
+   * each vote/survey to one event reflecting only its CURRENT state, so one that opened in-window
+   * but has since closed shows up only as vote_closed/survey_closed at its (now out-of-window)
+   * close moment, otherwise invisible here. For vote_opened/survey_published the fallback is
+   * provably identical to the occurred_at check (both read the same creation/publish moment) —
+   * applied uniformly anyway so the newness rule lives in exactly one place.
+   */
+  private isNewBriefSourceActivity(event: ActivityEvent, bounds: { sinceMs: number; ceilingMs: number; windowStartMs: number; windowEndMs: number }): boolean {
+    if (!(WEEKLY_BRIEF_STALENESS_EVENT_TYPES as readonly string[]).includes(event.type)) return false;
+    const occurredMs = Date.parse(event.occurred_at);
+    const occurredInRange = !Number.isNaN(occurredMs) && occurredMs > bounds.sinceMs && occurredMs <= bounds.ceilingMs;
+    switch (event.type) {
+      case 'meeting_held':
+        return occurredInRange;
+      case 'vote_opened':
+      case 'vote_closed': {
+        const endMs = Date.parse(event.payload.end_time ?? '');
+        if (Number.isNaN(endMs) || endMs < bounds.windowStartMs || endMs > bounds.windowEndMs) return false;
+        const openedMs = Date.parse(event.payload.opened_at ?? '');
+        return occurredInRange || (!Number.isNaN(openedMs) && openedMs > bounds.sinceMs && openedMs <= bounds.ceilingMs);
+      }
+      case 'survey_published':
+      case 'survey_closed': {
+        const cutoffMs = Date.parse(event.payload.cutoff_date ?? '');
+        if (Number.isNaN(cutoffMs) || cutoffMs < bounds.windowStartMs || cutoffMs > bounds.ceilingMs) return false;
+        const openedMs = Date.parse(event.payload.opened_at ?? '');
+        return occurredInRange || (!Number.isNaN(openedMs) && openedMs > bounds.sinceMs && openedMs <= bounds.ceilingMs);
+      }
+      default:
+        return false;
+    }
+  }
+
+  /**
+   * Races the staleness enrichment's committee-activity fetch against
+   * `WEEKLY_BRIEF_STALENESS_FETCH_TIMEOUT_MS` — see that constant's doc comment for why this
+   * tightens, rather than introduces, a deadline on this call. A lost race rejects;
+   * `withStaleness`'s own catch handles it the same as any other fetch fault. Mirrors
+   * `ValkeyService#withTimeout`'s pattern: the abandoned op's eventual settlement is swallowed
+   * so a late rejection never surfaces as an unhandled rejection.
+   */
+  private async withStalenessFetchTimeout<T>(op: Promise<T>): Promise<T> {
+    let timer: NodeJS.Timeout;
+    const timeout = new Promise<never>((_, reject) => {
+      timer = setTimeout(() => reject(new Error('weekly_brief_staleness_fetch_timeout')), WEEKLY_BRIEF_STALENESS_FETCH_TIMEOUT_MS);
+    });
+    op.catch(() => undefined);
+    try {
+      return await Promise.race([op, timeout]);
+    } finally {
+      clearTimeout(timer!);
+    }
   }
 
   /**
@@ -1108,10 +1775,11 @@ export class WeeklyBriefService {
    * the thumb against content the rater never actually reviewed (PR #1361 review). Matches the
    * optimistic-concurrency contract `saveBrief`/`shareBrief` already enforce for their own writes.
    *
-   * Also returns the brief's `caller_rating` (already resolved by `getCurrentBrief` →
-   * `withCallerRating` for this exact key) as `callerRating`, so `rateBrief`/`clearBriefRating`
-   * can use it as `previous_rating` in their log line without a second, identical Valkey read for
-   * a key this call already read.
+   * Also returns the brief's `caller_rating` (already resolved by this method's own
+   * `withCallerRating` call for this exact key — via `fetchCurrentBrief`, not the full
+   * `getCurrentBrief`, since this call has no need for `staleness` (GH-1966) or `current_activity`
+   * (GH-1922)) as `callerRating`, so `rateBrief`/`clearBriefRating` can use it as `previous_rating`
+   * in their log line without a second, identical Valkey read for a key this call already read.
    */
   private async resolveRatableBrief(
     req: Request,
@@ -1120,7 +1788,8 @@ export class WeeklyBriefService {
     expectedRevision: number,
     operation: string
   ): Promise<{ brief: WeeklyBrief; callerRating: WeeklyBriefRating | null }> {
-    const response = await this.getCurrentBrief(req, committeeId);
+    const { response: fetched } = await this.fetchCurrentBrief(req, committeeId);
+    const response = await this.withCallerRating(req, committeeId, fetched);
     const { brief } = response;
     if (!brief || brief.uid !== briefUid || !WEEKLY_BRIEF_SHAREABLE_STATES.includes(brief.state)) {
       throw new ResourceNotFoundError('Weekly brief', briefUid, { operation, service: 'weekly_brief_service' });

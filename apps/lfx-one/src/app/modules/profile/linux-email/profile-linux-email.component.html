@@ -168,49 +168,86 @@
 
             <!-- Forward to form -->
             <form [formGroup]="editForm" (ngSubmit)="updateForward()" class="flex flex-col gap-3 pt-5" data-testid="linux-email-forward-form">
-              <div class="flex flex-col gap-0.5">
-                <span class="text-sm font-medium text-gray-700">Forward to</span>
-                @if (forwardOptions().length) {
-                  <p class="text-xs text-gray-500">
-                    @if (hasForwardOptions()) {
-                      Choose one of your verified email addresses.
-                    } @else {
-                      Add another verified email to change this.
-                    }
-                  </p>
-                }
-              </div>
-              @if (forwardOptions().length) {
-                <lfx-select
-                  [form]="editForm"
-                  control="forwardTo"
-                  [options]="forwardOptions()"
-                  placeholder="Select a verified email"
-                  size="small"
-                  styleClass="w-full"
-                  appendTo="body"
-                  data-testid="linux-email-forward-select"></lfx-select>
-                @if (editForm.controls.forwardTo.touched && editForm.controls.forwardTo.invalid) {
-                  <div class="text-red-600 text-xs" data-testid="linux-email-forward-error">Please choose a forwarding address.</div>
-                }
+              @if (forwardReauthRequired()) {
+                <lfx-message severity="warn" styleClass="!p-3" data-testid="linux-email-forward-reauth">
+                  <ng-template #content>
+                    <div class="flex flex-col gap-3 items-start">
+                      <div class="flex items-center gap-2">
+                        <i class="fa-light fa-triangle-exclamation shrink-0"></i>
+                        <span class="text-sm font-semibold">Forwarding address unavailable</span>
+                      </div>
+                      <p class="text-sm font-normal text-gray-900" data-testid="linux-email-forward-reauth-copy">
+                        @if (forwardAuthorizeUrl()) {
+                          We couldn't read your current forwarding address. Re-authorize to view and change it.
+                        } @else {
+                          <!-- Reached when Flow C itself is unconfigured — the BFF omits authorizeUrl, so there's nowhere to send the user. -->
+                          We couldn't read your current forwarding address, and re-authorization isn't available right now. Please try again later.
+                        }
+                      </p>
+                      @if (forwardAuthorizeUrl()) {
+                        <lfx-button
+                          size="small"
+                          label="Re-authorize"
+                          icon="fa-light fa-rotate-right"
+                          severity="secondary"
+                          variant="outlined"
+                          [disabled]="impersonating()"
+                          [ariaLabel]="impersonating() ? 'This action is unavailable while impersonating another user' : undefined"
+                          (onClick)="reauthorizeForward()"
+                          data-testid="linux-email-forward-reauth-button"></lfx-button>
+                      }
+                    </div>
+                  </ng-template>
+                </lfx-message>
               } @else {
-                <lfx-message
-                  severity="warn"
-                  text="You don't have a verified email address to forward to yet. Add and verify an email address first, then return here to set up forwarding."
-                  styleClass="!p-3"
-                  data-testid="linux-email-forward-empty"></lfx-message>
-              }
-              @if (forwardDirty()) {
-                <lfx-button
-                  type="submit"
-                  label="Save"
-                  icon="fa-light fa-check"
-                  severity="info"
-                  size="small"
-                  [disabled]="editForm.invalid || savingForward() || impersonating()"
-                  [ariaLabel]="impersonating() ? 'This action is unavailable while impersonating another user' : undefined"
-                  [loading]="savingForward()"
-                  data-testid="linux-email-forward-save-button"></lfx-button>
+                <div class="flex flex-col gap-0.5">
+                  <span class="text-sm font-medium text-gray-700">Forward to</span>
+                  @if (impersonating() || forwardOptions().length) {
+                    <p class="text-xs text-gray-500">
+                      @if (impersonating()) {
+                        Forwarding details aren't available while impersonating.
+                      } @else if (forwardNotSet()) {
+                        Forwarding isn't set yet — choose an address.
+                      } @else if (hasForwardOptions()) {
+                        Choose one of your verified email addresses.
+                      } @else {
+                        Add another verified email to change this.
+                      }
+                    </p>
+                  }
+                </div>
+                @if (forwardOptions().length) {
+                  <lfx-select
+                    [form]="editForm"
+                    control="forwardTo"
+                    [options]="forwardOptions()"
+                    placeholder="Select a verified email"
+                    size="small"
+                    styleClass="w-full"
+                    appendTo="body"
+                    data-testid="linux-email-forward-select"></lfx-select>
+                  @if (editForm.controls.forwardTo.touched && editForm.controls.forwardTo.invalid) {
+                    <div class="text-red-600 text-xs" data-testid="linux-email-forward-error">Please choose a forwarding address.</div>
+                  }
+                } @else {
+                  <lfx-message
+                    severity="warn"
+                    text="You don't have a verified email address to forward to yet. Add and verify an email address first, then return here to set up forwarding."
+                    styleClass="!p-3"
+                    data-testid="linux-email-forward-empty"></lfx-message>
+                }
+                @if (forwardDirty()) {
+                  <lfx-button
+                    type="submit"
+                    label="Save"
+                    icon="fa-light fa-check"
+                    severity="info"
+                    size="small"
+                    [disabled]="editForm.invalid || savingForward() || impersonating()"
+                    [ariaLabel]="impersonating() ? 'This action is unavailable while impersonating another user' : undefined"
+                    [loading]="savingForward()"
+                    data-testid="linux-email-forward-save-button"></lfx-button>
+                }
               }
             </form>
           </div>

@@ -9,13 +9,11 @@ export const PROJECT_HEALTH_SCORES_DRAWER_ITEMS_PER_PAGE = 10;
 // Zeroed distribution used as the loading/empty fallback so the drawer chart and
 // the foundation-health card never render a previous foundation's buckets while
 // the new foundation's request is in flight.
-// Note: API response still uses v1 band names (stable/unsteady); those are mapped to v2
-// (fair/concerning) at deserialization time via mapV1DistributionToV2().
 export const DEFAULT_FOUNDATION_HEALTH_SCORE_DISTRIBUTION: FoundationHealthScoreDistributionResponse = {
   excellent: 0,
   healthy: 0,
-  stable: 0,
-  unsteady: 0,
+  fair: 0,
+  concerning: 0,
   critical: 0,
   unscored: 0,
 };

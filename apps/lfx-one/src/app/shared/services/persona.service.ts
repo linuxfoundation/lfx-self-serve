@@ -61,16 +61,91 @@ export class PersonaService {
    * reliably identifies the verified project).
    */
   public readonly marketingGrantSlug: WritableSignal<string | null> = signal<string | null>(null);
+  /**
+   * Per-scope grant results keyed by the resolved grant scope — `null` for a confirmed ROOT-scoped
+   * grant (either because the probe had no `projectSlug`, or because `isMarketingAuditorRootGrant`/
+   * `isCampaignManagerRootGrant` confirmed root cascade), or the `projectSlug` string for a
+   * project-scoped result. Written by every successful {@link applyPersonaResponse} write-through
+   * and every {@link confirmActiveGrant} force-apply, so scope A's result is never overwritten by a
+   * later cross-scope probe for scope B — B's write goes into key B, not key A (Copilot finding,
+   * PR #1835: confirmActiveGrant force-write is overwritten by a later cross-scope probe).
+   * Components should check their own foundation slug first, then fall back to the ROOT key.
+   */
+  private readonly _grantsByScope = signal<ReadonlyMap<string | null, { isCampaignManager: boolean; isMarketingAuditor: boolean }>>(new Map());
+  /** @see {@link _grantsByScope} */
+  public readonly grantsByScope = this._grantsByScope.asReadonly();
   /** True for EDs and LF Staff — the audience for Foundation Health, Marketing Overview, and Social Listening */
   public readonly canViewExecutiveDashboards: Signal<boolean>;
   /**
-   * Monotonic counter guarding {@link refreshEnrichedPersonas} against out-of-order responses.
+   * Monotonic counter tracking each {@link refreshEnrichedPersonas} call's *issuance* order.
    * Concurrent probes (route guard + sidebar-nav, or a rapid foundation switch) can resolve in a
-   * different order than they were issued — only the response from the most recently *issued*
-   * call is allowed to write the marketing grant signals, so a slow reply for a stale foundation
-   * can't overwrite the grant for the foundation currently on screen.
+   * different order than they were issued. This counter alone does not decide who may write the
+   * shared grant signals — that guarantee lives on {@link latestAppliedGrantProbeId}, the applied
+   * high-water mark: a response may write as long as its probeId is at least as new as the last
+   * probe that actually *applied*, which lets an earlier-issued-but-still-in-flight probe write
+   * even if a later probe was issued after it, so long as that later probe hasn't applied yet.
+   *
+   * This is deliberately global, not per-scope: an earlier per-scope version of this guard (see
+   * git history) let an unrelated, differently-scoped probe's late-arriving response overwrite
+   * `isMarketingAuditor`/`isCampaignManager` *after* a newer probe for the active foundation had
+   * already written the correct value (Cursor Bugbot finding, PR #1835) — the per-scope check
+   * only ever compared a response against other responses for its *own* scope, so it had no way
+   * to detect that a different, more-recently-issued scope had already superseded it. Global
+   * ordering fixes that, and is safe for the *signals* specifically because
+   * `marketing-impact-access.guard.ts` / `campaign-access.guard.ts` never read these signals for
+   * their own admit/deny decision — they decide from each call's own `response`, so a discarded
+   * write here never causes a false denial (see those guards' spec files).
    */
   private latestGrantProbeId = 0;
+  /**
+   * High-water mark of the last probeId that actually **wrote** `isMarketingAuditor`/
+   * `isCampaignManager`/`marketingGrantSlug` — distinct from {@link latestGrantProbeId}, which
+   * marks probe *issuance*. Gating writes on `probeId >= latestAppliedGrantProbeId` instead of
+   * exact equality against the issuance counter means a later-issued probe that never itself
+   * writes anything (it errors, or its response is empty) can't permanently lock out an earlier,
+   * still-in-flight probe's legitimate write just by having been issued — only a probe that goes
+   * on to actually apply moves this mark forward (Cursor Bugbot finding, PR #1835: "Global probe
+   * gate drops grant slug").
+   */
+  private latestAppliedGrantProbeId = 0;
+  /**
+   * Last probeId that actually **applied** (wrote the signals for) a given scope (`projectSlug`, or
+   * `undefined` for root) — used only by {@link confirmActiveGrant} to tell a genuine cross-scope
+   * race (safe to override) apart from a same-scope race (not safe to override).
+   * `latestGrantProbeId`/`latestAppliedGrantProbeId` are global by design so an unrelated scope's
+   * newer probe can never block this scope's write, but that same bypass let a guard force-apply
+   * its own response even after a *later-issued probe for its own scope* had already applied a more
+   * current, different answer — reintroducing the exact clobber the recency gate exists to prevent,
+   * just via a different door (Copilot finding, PR #1835).
+   *
+   * This tracks *applied* probes, not merely *issued* ones — an earlier version keyed off issuance
+   * alone, which meant a later-issued same-scope probe that errored or otherwise never wrote
+   * anything could still permanently block an earlier, still-in-flight probe's legitimate
+   * force-apply, since its mere issuance already looked like a supersession (Cursor Bugbot + Copilot
+   * findings, PR #1835). Only a probe that actually goes on to write moves this forward, matching
+   * {@link latestAppliedGrantProbeId}'s same rationale one level down, per scope.
+   */
+  private readonly latestAppliedGrantProbeIdByScope = new Map<string | undefined, number>();
+  /**
+   * Last probeId that actually wrote a given **resolved** map key (`null` for ROOT, or the exact
+   * `projectSlug` string) in {@link _grantsByScope} — distinct from
+   * {@link latestAppliedGrantProbeIdByScope}, which is keyed by the *queried* `projectSlug` and
+   * only gates {@link confirmActiveGrant}'s global-signal writes. Two probes queried for different
+   * foundations can both resolve to the same ROOT (`null`) map key; gating solely on the queried
+   * slug never sees that overlap, so a slower probe for foundation A could still overwrite `null`
+   * after a newer probe for foundation B had already won that race (Cursor Bugbot finding,
+   * PR #1835: "Stale ROOT grant race"). {@link writeGrantForScope} gates each write against this
+   * map using the resolved key it is actually about to touch, closing that gap.
+   *
+   * Keyed by `${relation}:${resolvedKey}` (not just the resolved key) — `isMarketingAuditor` and
+   * `isCampaignManager` resolve independently and a denial writes to both the queried slug and the
+   * `null` key, so tracking a single shared entry per resolved key let one relation's denial write
+   * (e.g. an implicit `isMarketingAuditor: false` touching `null`) poison the gate for the other
+   * relation's unrelated grant write at that same key.
+   */
+  private readonly latestAppliedGrantProbeIdByResolvedKey = new Map<string, number>();
+  /** Correlates a resolved {@link PersonaApiResponse} back to the probeId that produced it, so {@link confirmActiveGrant} can look up same-scope recency without changing `refreshEnrichedPersonas`'s public `Observable<PersonaApiResponse | null>` contract. */
+  private readonly grantProbeIdByResponse = new WeakMap<object, number>();
 
   public constructor() {
     const stored = this.loadFromCookie();
@@ -125,18 +200,207 @@ export class PersonaService {
       take(1),
       catchError(() => of(null)),
       tap((response) => {
-        this.applyPersonaResponse(response, probeId);
+        this.applyPersonaResponse(response, probeId, projectSlug);
         if (response && !response.error) {
+          this.grantProbeIdByResponse.set(response, probeId);
           this.enrichedPersonasLoaded.set(true);
-          // Record which project this specific probe verified the grant against. A root-scoped
-          // call (no projectSlug) leaves this untouched — a ROOT grant isn't tied to one project.
-          // Guarded by probeId for the same reason as the grant signals themselves — see applyPersonaResponse.
-          if (projectSlug && (response.isMarketingAuditor || response.isCampaignManager) && probeId === this.latestGrantProbeId) {
-            this.marketingGrantSlug.set(projectSlug);
+          // Record which project this specific probe verified the grant against. Gated on the
+          // same global probe-recency check as the grant booleans below, so this and
+          // `isMarketingAuditor`/`isCampaignManager` always move together off the same
+          // most-recently-issued response — a root-scoped call (no `projectSlug`) leaves this
+          // untouched, since a ROOT grant isn't tied to one project.
+          if (projectSlug && (response.isMarketingAuditor || response.isCampaignManager) && probeId >= this.latestAppliedGrantProbeId) {
+            this.marketingGrantSlug.set(this.resolveGrantSlug(response, projectSlug));
           }
         }
       })
     );
+  }
+
+  /**
+   * Force-applies a grant that a route guard has already decided admission from, bypassing the
+   * probe-recency gate above.
+   *
+   * `campaign-access.guard.ts`/`marketing-impact-access.guard.ts` intentionally decide admit/deny
+   * from each call's own `response` rather than `isMarketingAuditor`/`isCampaignManager` directly
+   * — see `latestGrantProbeId`'s doc comment — so a discarded write from a differently-scoped,
+   * more-recently-*issued* background probe (e.g. sidebar-nav) never causes a false denial. But
+   * components downstream of a successful navigation (`MarketingImpactComponent`,
+   * `CampaignsComponent`) read these same signals directly, with no probe of their own, so a
+   * guard admitting from its own response while the signal lost the recency race left the very
+   * page it just admitted to rendering its own no-access state (Copilot findings, PR #1835). A
+   * guard resolving for the route about to be on screen is the most authoritative source for
+   * what's true right now, so it must win outright instead of competing with the *global* recency
+   * gate — but only when the race it's overriding is cross-scope. If a *later probe for this exact
+   * scope has already applied* a different answer (tracked via
+   * {@link latestAppliedGrantProbeIdByScope}), this response is genuinely stale, not just a victim
+   * of the global/cross-scope gate, and force-applying it would restore exactly the clobber the
+   * recency gate exists to prevent (Copilot finding, PR #1835). This deliberately checks the last
+   * probe that *applied* for the scope, not merely the last one *issued* — an issuance-only check
+   * let a later same-scope probe that errored or otherwise never wrote anything still block this
+   * force-apply just by having been issued (Cursor Bugbot + Copilot findings, PR #1835). Callers
+   * must only invoke this with an authoritative, non-errored response.
+   */
+  public confirmActiveGrant(
+    response: Pick<PersonaApiResponse, 'isMarketingAuditor' | 'isCampaignManager' | 'isMarketingAuditorRootGrant' | 'isCampaignManagerRootGrant'>,
+    projectSlug?: string
+  ): void {
+    const probeId = this.grantProbeIdByResponse.get(response);
+    const latestAppliedForScope = this.latestAppliedGrantProbeIdByScope.get(projectSlug);
+    if (probeId !== undefined && latestAppliedForScope !== undefined && probeId < latestAppliedForScope) {
+      return;
+    }
+    this.isMarketingAuditor.set(response.isMarketingAuditor ?? false);
+    this.isCampaignManager.set(response.isCampaignManager ?? false);
+    if (projectSlug && (response.isMarketingAuditor || response.isCampaignManager)) {
+      this.marketingGrantSlug.set(this.resolveGrantSlug(response, projectSlug));
+    }
+    // Also write to per-scope map — same rationale as the write in applyPersonaResponse.
+    // After this point the component reads from the map (not the global signals), so a later
+    // cross-scope probe that passes the global recency gate cannot clobber this scope's result
+    // (Copilot finding, PR #1835: confirmActiveGrant force-write overwritten by later probe).
+    // Gating against the resolved map key (not this queried `projectSlug`) is handled inside
+    // writeGrantForScope itself — see latestAppliedGrantProbeIdByResolvedKey.
+    this.writeGrantForScope(response, projectSlug, probeId);
+    if (probeId !== undefined && probeId > (latestAppliedForScope ?? -Infinity)) {
+      this.latestAppliedGrantProbeIdByScope.set(projectSlug, probeId);
+    }
+  }
+
+  /**
+   * `isMarketingAuditor`/`isCampaignManager` alone can't tell a ROOT-cascading grant apart from one
+   * scoped only to `projectSlug` — the backend collapses "ROOT grant OR project-scoped grant" into a
+   * single boolean (Copilot finding, PR #1835). `isMarketingAuditorRootGrant`/`isCampaignManagerRootGrant`
+   * disambiguate: when the grant actually came from the ROOT check, `marketingGrantSlug` must stay
+   * `null` (the documented ROOT sentinel, see its field comment) instead of being pinned to this one
+   * project — otherwise switching to a different foundation would spuriously read as a scope mismatch
+   * and deny a grant that legitimately cascades everywhere.
+   *
+   * `marketingGrantSlug` is a single scalar covering both relations, so when one relation is
+   * ROOT-scoped and the other is project-scoped on the same response, this can't report both
+   * answers at once — it deliberately resolves to `projectSlug` (not `null`) whenever *either*
+   * active relation is project-scoped. Reporting `null` (ROOT) here would let the project-scoped
+   * relation's grant appear to cascade to every foundation, which is the unsafe direction; pinning
+   * to `projectSlug` only under-scopes the ROOT-cascading relation for this one legacy fallback
+   * signal, which the caller-side slug-mismatch check merely treats as "recheck this foundation"
+   * (Copilot finding, PR #1835: OR'd root flags collapsed two independently-scoped relations into
+   * one answer). {@link writeGrantForScope} does not have this ambiguity — it resolves each
+   * relation's scope independently — so this conflation only affects the legacy fallback path.
+   */
+  private resolveGrantSlug(
+    response: Pick<PersonaApiResponse, 'isMarketingAuditor' | 'isCampaignManager' | 'isMarketingAuditorRootGrant' | 'isCampaignManagerRootGrant'>,
+    projectSlug: string
+  ): string | null {
+    const marketingIsRoot = response.isMarketingAuditor ? !!response.isMarketingAuditorRootGrant : undefined;
+    const campaignIsRoot = response.isCampaignManager ? !!response.isCampaignManagerRootGrant : undefined;
+    if (marketingIsRoot === false || campaignIsRoot === false) {
+      return projectSlug;
+    }
+    if (marketingIsRoot === true || campaignIsRoot === true) {
+      return null;
+    }
+    return projectSlug;
+  }
+
+  /**
+   * Writes a grant result into {@link _grantsByScope}. Each relation (`isMarketingAuditor`,
+   * `isCampaignManager`) is resolved to its own scope key independently:
+   *
+   * - **Granted**: written to the scope-appropriate key — `null` for ROOT, `projectSlug` for
+   *   project-scoped. This prevents a ROOT grant from clobbering a separately-cached project entry
+   *   and vice versa (Cursor Bugbot finding, PR #1835: "ROOT map key polluted"). The response also
+   *   resolves the *other* key to `false` — a grant response reflects both the ROOT and
+   *   project-scoped checks the server ran to decide which key is true, so the non-target key is
+   *   known-false, not merely stale-unknown; leaving it untouched let a previously-cached `true` at
+   *   that key survive a grant that has since narrowed to the other scope (Copilot finding, PR
+   *   #1835: "positive grant doesn't clear stale opposite-key true").
+   * - **Denied**: written to *both* the queried project key and the `null` (ROOT) key. The server
+   *   checks both ROOT and project-scoped access before returning `false`, so a denial is
+   *   authoritative for all scope paths — it must clear any stale cached entry regardless of where
+   *   the prior grant was stored (Copilot finding, PR #1835: "revocations must invalidate every key").
+   *
+   * Centralises the update pattern shared by {@link applyPersonaResponse} and
+   * {@link confirmActiveGrant} so the two write sites cannot silently diverge.
+   *
+   * When `probeId` is provided, each individual write is additionally gated against
+   * {@link latestAppliedGrantProbeIdByResolvedKey} for the exact key it targets — not the queried
+   * `projectSlug` — so two probes for different foundations that both resolve to the same ROOT
+   * (`null`) key correctly race against each other instead of each seeing an untouched gate for
+   * their own queried slug (Cursor Bugbot finding, PR #1835: "Stale ROOT grant race").
+   */
+  private writeGrantForScope(
+    response: Pick<PersonaApiResponse, 'isMarketingAuditor' | 'isCampaignManager' | 'isMarketingAuditorRootGrant' | 'isCampaignManagerRootGrant'>,
+    projectSlug?: string,
+    probeId?: number
+  ): void {
+    const marketingGranted = response.isMarketingAuditor ?? false;
+    const campaignGranted = response.isCampaignManager ?? false;
+    const marketingIsRoot = marketingGranted && !!response.isMarketingAuditorRootGrant;
+    const campaignIsRoot = campaignGranted && !!response.isCampaignManagerRootGrant;
+
+    const marketingGrantedKey = marketingIsRoot ? null : (projectSlug ?? null);
+    const campaignGrantedKey = campaignIsRoot ? null : (projectSlug ?? null);
+    // Denial is authoritative for both ROOT (null) and project scope: clear all paths.
+    const denialKeys: (string | null)[] = [projectSlug ?? null, null].filter(
+      (k, i, a) => a.indexOf(k) === i // deduplicate
+    );
+
+    // Composite key: same resolved key (e.g. `null`) is gated independently per relation, so a
+    // marketing write/denial can never block an unrelated campaign write at that same key.
+    const gateKey = (relation: 'marketing' | 'campaign', key: string | null): string => `${relation}:${key ?? '__root__'}`;
+    const canWrite = (relation: 'marketing' | 'campaign', key: string | null): boolean => {
+      if (probeId === undefined) return true;
+      const latest = this.latestAppliedGrantProbeIdByResolvedKey.get(gateKey(relation, key));
+      return latest === undefined || probeId >= latest;
+    };
+    const markWritten = (relation: 'marketing' | 'campaign', key: string | null): void => {
+      if (probeId === undefined) return;
+      const composite = gateKey(relation, key);
+      const latest = this.latestAppliedGrantProbeIdByResolvedKey.get(composite);
+      if (latest === undefined || probeId > latest) {
+        this.latestAppliedGrantProbeIdByResolvedKey.set(composite, probeId);
+      }
+    };
+
+    const marketingWriteKey = marketingGranted && canWrite('marketing', marketingGrantedKey) ? marketingGrantedKey : undefined;
+    // A granted response also resolves the other key to known-false; a fully-denied response
+    // clears both keys — either way the untargeted key(s) get an explicit false write.
+    const marketingClearKeys = (marketingGranted ? denialKeys.filter((key) => key !== marketingGrantedKey) : denialKeys).filter((key) =>
+      canWrite('marketing', key)
+    );
+    const campaignWriteKey = campaignGranted && canWrite('campaign', campaignGrantedKey) ? campaignGrantedKey : undefined;
+    const campaignClearKeys = (campaignGranted ? denialKeys.filter((key) => key !== campaignGrantedKey) : denialKeys).filter((key) =>
+      canWrite('campaign', key)
+    );
+
+    if (marketingWriteKey !== undefined) markWritten('marketing', marketingWriteKey);
+    marketingClearKeys.forEach((key) => markWritten('marketing', key));
+    if (campaignWriteKey !== undefined) markWritten('campaign', campaignWriteKey);
+    campaignClearKeys.forEach((key) => markWritten('campaign', key));
+
+    this._grantsByScope.update((m) => {
+      const next = new Map(m);
+      const mergeInto = (key: string | null, patch: Partial<{ isCampaignManager: boolean; isMarketingAuditor: boolean }>): void => {
+        const existing = next.get(key) ?? { isCampaignManager: false, isMarketingAuditor: false };
+        next.set(key, { ...existing, ...patch });
+      };
+
+      if (marketingWriteKey !== undefined) {
+        mergeInto(marketingWriteKey, { isMarketingAuditor: true });
+      }
+      for (const key of marketingClearKeys) {
+        mergeInto(key, { isMarketingAuditor: false });
+      }
+
+      if (campaignWriteKey !== undefined) {
+        mergeInto(campaignWriteKey, { isCampaignManager: true });
+      }
+      for (const key of campaignClearKeys) {
+        mergeInto(key, { isCampaignManager: false });
+      }
+
+      return next;
+    });
   }
 
   private refreshFromApi(): void {
@@ -150,20 +414,31 @@ export class PersonaService {
         // If enriched resolved first, preserve its project metadata and FGA grants instead of
         // clobbering them with the sparse bootstrap payload (which never carries these fields).
         if (this.enrichedPersonasLoaded() && response && !response.error) {
-          this.applyPersonaResponse({
-            ...response,
-            projects: this.detectedProjects(),
-            personaProjects: this.personaProjects(),
-            isMarketingAuditor: this.isMarketingAuditor(),
-            isCampaignManager: this.isCampaignManager(),
-          });
+          this.applyPersonaResponse(
+            {
+              ...response,
+              projects: this.detectedProjects(),
+              personaProjects: this.personaProjects(),
+              isMarketingAuditor: this.isMarketingAuditor(),
+              isCampaignManager: this.isCampaignManager(),
+            },
+            undefined,
+            undefined,
+            // The merged response's `*RootGrant` fields are stale (carried over from the sparse,
+            // no-`?project=` bootstrap payload) while `isMarketingAuditor`/`isCampaignManager` above
+            // were just patched in from the live, possibly project-scoped signals — re-deriving a
+            // scope key from that mismatched pair would poison the ROOT map entry with a
+            // project-only grant (David Deal finding, PR #1835). The map is already correct from
+            // whichever call originally set these signals, so skip re-writing it here.
+            true
+          );
           return;
         }
         this.applyPersonaResponse(response);
       });
   }
 
-  private applyPersonaResponse(response: PersonaApiResponse | null, probeId?: number): void {
+  private applyPersonaResponse(response: PersonaApiResponse | null, probeId?: number, projectSlug?: string, skipGrantScopeWrite?: boolean): void {
     if (!response || response.error) {
       // Preserve last-known-good grants on a failed/errored refetch — a transient network or
       // upstream failure must not silently revoke access that was already confirmed.
@@ -181,12 +456,40 @@ export class PersonaService {
     this.detectedProjects.set(response.projects);
     this.isRootWriter.set(response.isRootWriter ?? false);
     this.isLFStaff.set(response.isLFStaff ?? false);
-    // Only apply grant fields from the most recently *issued* refreshEnrichedPersonas call — a
-    // slower response for a foundation the user has already navigated away from must not clobber
-    // the grant a newer, faster-resolving probe already wrote for the current foundation.
-    if (probeId === undefined || probeId === this.latestGrantProbeId) {
+    // Only apply grant fields from a probe that is at least as new as the last one that actually
+    // wrote these signals — a slower response for a foundation the user has already navigated
+    // away from must not clobber the grant a newer, faster-resolving probe already wrote for the
+    // current foundation (LFXV2-2235). Gating on the applied high-water mark rather than the
+    // issuance counter also means a later-issued probe that itself never writes (error/empty
+    // response) can't block this one just by having been issued — see `latestAppliedGrantProbeId`.
+    if (probeId === undefined || probeId >= this.latestAppliedGrantProbeId) {
       this.isMarketingAuditor.set(response.isMarketingAuditor ?? false);
       this.isCampaignManager.set(response.isCampaignManager ?? false);
+      if (probeId !== undefined) {
+        this.latestAppliedGrantProbeId = probeId;
+      }
+    }
+    // The per-scope map write must not share the global gate above — nesting it there meant a
+    // probe for scope A could be dropped entirely (including its per-scope write) just because an
+    // unrelated scope B's probe applied more recently, leaving scope A's map entry stale or
+    // missing indefinitely (Cursor Bugbot finding, PR #1835: "stale ROOT grant persists").
+    // writeGrantForScope gates each write itself against the *resolved* map key it targets (not
+    // this queried `projectSlug`), so two differently-queried probes that both resolve to the same
+    // ROOT key correctly race against each other (Cursor Bugbot finding, PR #1835: "Stale ROOT
+    // grant race").
+    if (!skipGrantScopeWrite) {
+      this.writeGrantForScope(response, projectSlug, probeId);
+    }
+    // Record that this queried scope was applied here, independent of the write gating above —
+    // confirmActiveGrant's own same-queried-scope recency check reads this same map, and it must
+    // see every probe that applied via this method (not only ones that applied via
+    // confirmActiveGrant itself), or it can no longer detect a same-scope probe that has already
+    // superseded it.
+    if (probeId !== undefined) {
+      const latestForScope = this.latestAppliedGrantProbeIdByScope.get(projectSlug);
+      if (latestForScope === undefined || probeId > latestForScope) {
+        this.latestAppliedGrantProbeIdByScope.set(projectSlug, probeId);
+      }
     }
 
     if (response.personas.length > 0) {

@@ -1,8 +1,10 @@
 // Copyright The Linux Foundation and each contributor to LFX.
 // SPDX-License-Identifier: MIT
 
-// Spec 027 — client-only view-model types for the People → Committee tab. Derived from the wire
-// `CommitteeMemberAssignment[]` on render; NOT part of the BFF envelope.
+// Spec 027 — client-only view-model types derived from the wire `CommitteeMemberAssignment[]` on
+// render; NOT part of the BFF envelope. Originally scoped to the People → Committee tab; GH-1780
+// added CommitteeMemberSeatHolderVm for the Groups list's seat-holders drawer, which reuses the
+// same wire type.
 
 import type { CommitteeMemberAssignment } from './org-people-committee-members.interface';
 
@@ -37,6 +39,11 @@ export interface CommitteeMemberAssignmentVm extends CommitteeMemberAssignment {
   showFoundationLabel: boolean;
   /** Precomputed tooltip for the sub-row Edit pencil — encodes (canEdit × isOrgEditable × reason) so the template stays a flat binding (no nested ternary). */
   editTooltip: string;
+}
+
+/** A `CommitteeMemberAssignment` decorated for a read-only display list (the Groups seat-holders drawer, GH-1780) — adds the voting-status pill class so the template stays a flat binding instead of calling a function on every change-detection pass. Deliberately its own (lean) type rather than reusing `CommitteeMemberAssignmentVm`: that one's extra fields (`showFoundationLabel`, `editTooltip`) are specific to the expanded People-tab sub-row and have no meaning in the drawer's flat list. */
+export interface CommitteeMemberSeatHolderVm extends CommitteeMemberAssignment {
+  votingStatusPillClass: string;
 }
 
 /** A person group with its sub-rows pre-sorted (foundation A→Z, then committee A→Z) + decorated. */

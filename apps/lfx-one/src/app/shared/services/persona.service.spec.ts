@@ -1,0 +1,356 @@
+// Copyright The Linux Foundation and each contributor to LFX.
+// SPDX-License-Identifier: MIT
+
+import { provideHttpClient } from '@angular/common/http';
+import { HttpTestingController, provideHttpClientTesting } from '@angular/common/http/testing';
+import { TestBed } from '@angular/core/testing';
+import type { PersonaApiResponse } from '@lfx-one/shared/interfaces';
+import { afterEach, beforeEach, describe, expect, it } from 'vitest';
+
+import { PersonaService } from './persona.service';
+
+const mockResponse = (overrides: Partial<PersonaApiResponse>): PersonaApiResponse => ({
+  personas: [],
+  personaProjects: {},
+  projects: [],
+  organizations: [],
+  error: null,
+  isRootWriter: false,
+  isLFStaff: false,
+  isMarketingAuditor: false,
+  isCampaignManager: false,
+  isMarketingAuditorRootGrant: false,
+  isCampaignManagerRootGrant: false,
+  ...overrides,
+});
+
+/**
+ * LFXV2-2235 follow-up (PR #1835 review): `refreshEnrichedPersonas` guards `isMarketingAuditor`,
+ * `isCampaignManager`, and `marketingGrantSlug` against out-of-order responses using a single
+ * global "most recently issued call wins" counter. A response only writes these signals if its
+ * probe is the latest one issued across every scope — a slower response for a foundation the
+ * user has already navigated away from can never clobber a newer, faster-resolving probe's
+ * write for the current foundation.
+ *
+ * An earlier version of this guard scoped the check per project slug instead of globally, on the
+ * theory that a route guard's own response should never be blocked by an unrelated probe for a
+ * different foundation (e.g. a sidebar-nav pre-check). That theory doesn't hold: the guards
+ * (`campaign-access.guard.ts`, `marketing-impact-access.guard.ts`) decide access from each call's
+ * own `response`, not from these shared signals — see those guards' spec files for the tests
+ * proving a discarded signal write never causes a false denial. Per-scope scoping only reopened a
+ * different, worse bug: a stale, differently-scoped response could resolve *after* a newer probe
+ * for the active foundation and overwrite its correct value, because the per-scope check only
+ * compares a response against others in its own scope and has no way to see that a different
+ * scope was issued more recently (Cursor Bugbot finding, PR #1835). Global ordering closes that.
+ */
+describe('PersonaService — grant probe recency ordering', () => {
+  let service: PersonaService;
+  let http: HttpTestingController;
+
+  beforeEach(() => {
+    TestBed.configureTestingModule({
+      providers: [PersonaService, provideHttpClient(), provideHttpClientTesting()],
+    });
+    service = TestBed.inject(PersonaService);
+    http = TestBed.inject(HttpTestingController);
+  });
+
+  afterEach(() => {
+    http.verify();
+  });
+
+  it('does not let a stale, already-superseded probe for foundation A overwrite isCampaignManager/isMarketingAuditor after a newer probe for foundation B has already resolved (Cursor Bugbot finding, PR #1835)', () => {
+    // A's probe is issued first, B's second; B resolves first (legitimately, over the network),
+    // then A's stale response resolves after — it must not clobber the values B already wrote,
+    // even though A's own write would otherwise look valid in isolation.
+    service.refreshEnrichedPersonas(true, 'foundation-a').subscribe();
+    service.refreshEnrichedPersonas(true, 'foundation-b').subscribe();
+
+    http.expectOne((req) => req.url.includes('project=foundation-b')).flush(mockResponse({ isCampaignManager: true, isMarketingAuditor: true }));
+    http.expectOne((req) => req.url.includes('project=foundation-a')).flush(mockResponse({ isCampaignManager: false, isMarketingAuditor: false }));
+
+    expect(service.isCampaignManager()).toBe(true);
+    expect(service.isMarketingAuditor()).toBe(true);
+  });
+
+  it('still lets a later-issued probe for the SAME foundation supersede an earlier one for that foundation', () => {
+    service.refreshEnrichedPersonas(true, 'foundation-a').subscribe();
+    service.refreshEnrichedPersonas(true, 'foundation-a').subscribe();
+
+    const [first, second] = http.match((req) => req.url.includes('project=foundation-a'));
+    // The earlier-issued call for the SAME scope resolves last but must not win.
+    second.flush(mockResponse({ isCampaignManager: false }));
+    first.flush(mockResponse({ isCampaignManager: true }));
+
+    expect(service.isCampaignManager()).toBe(false);
+  });
+
+  it('does not let an older, already-superseded probe for foundation A overwrite marketingGrantSlug after a newer probe for foundation B has already resolved (Copilot finding, PR #1835)', () => {
+    // ProjectContextService treats marketingGrantSlug as the single most recently *verified*
+    // foundation — the same global-recency guard as the booleans above, so all three signals
+    // always move together off the same most-recently-issued response.
+    service.refreshEnrichedPersonas(true, 'foundation-a').subscribe();
+    service.refreshEnrichedPersonas(true, 'foundation-b').subscribe();
+
+    http.expectOne((req) => req.url.includes('project=foundation-b')).flush(mockResponse({ isCampaignManager: true }));
+    http.expectOne((req) => req.url.includes('project=foundation-a')).flush(mockResponse({ isCampaignManager: true }));
+
+    expect(service.marketingGrantSlug()).toBe('foundation-b');
+  });
+
+  it('does not let a later-issued probe that never itself writes (errors out) block an earlier, still-in-flight probe from applying its legitimate response (Cursor Bugbot finding, PR #1835: "Global probe gate drops grant slug")', () => {
+    // foundation-a's probe is issued first; a second, unrelated probe (e.g. a background
+    // sidebar-nav pre-check for foundation-b) is issued after it but errors before resolving.
+    // The mere issuance of that second probe must not permanently prevent foundation-a's
+    // still-in-flight, legitimately successful response from ever writing.
+    service.refreshEnrichedPersonas(true, 'foundation-a').subscribe();
+    service.refreshEnrichedPersonas(true, 'foundation-b').subscribe();
+
+    http.expectOne((req) => req.url.includes('project=foundation-b')).error(new ProgressEvent('network error'));
+    http.expectOne((req) => req.url.includes('project=foundation-a')).flush(mockResponse({ isCampaignManager: true, isMarketingAuditor: true }));
+
+    expect(service.isCampaignManager()).toBe(true);
+    expect(service.isMarketingAuditor()).toBe(true);
+    expect(service.marketingGrantSlug()).toBe('foundation-a');
+  });
+
+  /**
+   * LFXV2-2235 follow-up (PR #1835, Copilot finding on `confirmActiveGrant`): a guard force-applies
+   * its own response so it can never be denied by a *cross-scope* probe winning the global recency
+   * race (see the suite above). But that same bypass previously had no way to tell a cross-scope
+   * race apart from a genuine *same-scope* race — a case where a newer probe for the guard's own
+   * scope had already resolved and applied a more current, different answer. Force-applying the
+   * older response in that case reintroduced the exact clobber the recency gate exists to prevent,
+   * just through `confirmActiveGrant`'s door instead of `applyPersonaResponse`'s.
+   */
+  describe('confirmActiveGrant — same-scope vs cross-scope recency', () => {
+    it('does not let a guard force-apply its own response once a later-issued probe for the SAME scope has already applied a different answer', () => {
+      const first$ = service.refreshEnrichedPersonas(true, 'foundation-a');
+      let firstResponse: PersonaApiResponse | null = null;
+      first$.subscribe((response) => (firstResponse = response));
+
+      // A second probe for the SAME scope is issued after the first.
+      service.refreshEnrichedPersonas(true, 'foundation-a').subscribe();
+
+      const [firstReq, secondReq] = http.match((req) => req.url.includes('project=foundation-a'));
+      // The newer, same-scope probe resolves first and legitimately applies `false`.
+      secondReq.flush(mockResponse({ isCampaignManager: false }));
+      // The older probe resolves after — its own response is genuinely stale now, not just a
+      // victim of the global/cross-scope gate.
+      firstReq.flush(mockResponse({ isCampaignManager: true }));
+
+      expect(service.isCampaignManager()).toBe(false);
+
+      // The guard that issued the first probe still calls confirmActiveGrant with its own
+      // (stale) response — it must be a no-op, not a force-restore of the stale `true`.
+      service.confirmActiveGrant(firstResponse!, 'foundation-a');
+
+      expect(service.isCampaignManager()).toBe(false);
+    });
+
+    it('still lets a guard force-apply its own response when a differently-scoped probe won the global recency race, even though a same-scope check alone would have to allow it', () => {
+      const a$ = service.refreshEnrichedPersonas(true, 'foundation-a');
+      let aResponse: PersonaApiResponse | null = null;
+      a$.subscribe((response) => (aResponse = response));
+
+      // A probe for a DIFFERENT scope is issued after foundation-a's and resolves first,
+      // winning the global recency race and blocking foundation-a's write.
+      service.refreshEnrichedPersonas(true, 'foundation-b').subscribe();
+
+      http.expectOne((req) => req.url.includes('project=foundation-b')).flush(mockResponse({ isCampaignManager: true }));
+      http.expectOne((req) => req.url.includes('project=foundation-a')).flush(mockResponse({ isCampaignManager: false }));
+
+      // foundation-b's probe wins the global race and writes `true` — proves the signal really
+      // starts at the cross-scope winner's value, not foundation-a's, so the assertion below can't
+      // pass by coincidence if `confirmActiveGrant` were a no-op (Copilot finding, PR #1835).
+      expect(service.isCampaignManager()).toBe(true);
+
+      // foundation-a's guard still has its own authoritative response — no newer probe was
+      // issued for foundation-a's own scope, so this must force-apply, not defer.
+      service.confirmActiveGrant(aResponse!, 'foundation-a');
+
+      expect(service.isCampaignManager()).toBe(false);
+    });
+
+    it('does not let a later-issued, same-scope probe that never applies (errors out) block an earlier probe from force-applying via confirmActiveGrant (Cursor Bugbot + Copilot findings, PR #1835)', () => {
+      const a$ = service.refreshEnrichedPersonas(true, 'foundation-a');
+      let aResponse: PersonaApiResponse | null = null;
+      a$.subscribe((response) => (aResponse = response));
+
+      // A cross-scope probe is issued after A's and resolves first, winning the global race and
+      // writing `true` — this is what A's own `applyPersonaResponse` write is blocked by, which is
+      // exactly why its guard needs `confirmActiveGrant` to force its own answer through.
+      service.refreshEnrichedPersonas(true, 'foundation-b').subscribe();
+      // A THIRD probe, for A's own scope, is issued after A's first probe but errors — it must not
+      // count as a same-scope supersession just because it was issued; it never applied anything.
+      const thirdA$ = service.refreshEnrichedPersonas(true, 'foundation-a');
+      thirdA$.subscribe();
+
+      http.expectOne((req) => req.url.includes('project=foundation-b')).flush(mockResponse({ isCampaignManager: true }));
+      const [firstAReq, thirdAReq] = http.match((req) => req.url.includes('project=foundation-a'));
+      thirdAReq.error(new ProgressEvent('network error'));
+      firstAReq.flush(mockResponse({ isCampaignManager: false }));
+
+      // Blocked globally by foundation-b's win, not by the errored third probe.
+      expect(service.isCampaignManager()).toBe(true);
+
+      // A's guard force-applies its own (legitimate, non-errored) response. The errored third probe
+      // for A's own scope must not block this — it never itself applied.
+      service.confirmActiveGrant(aResponse!, 'foundation-a');
+
+      expect(service.isCampaignManager()).toBe(false);
+    });
+  });
+
+  /**
+   * LFXV2-2235 follow-up (PR #1835, Copilot finding on `confirmActiveGrant`): the force-write
+   * only repairs the global signals at the instant the guard resolves — a newer cross-scope probe
+   * that resolves *after* the guard still passes the global recency check and would overwrite the
+   * global signals with the wrong scope's answer. `grantsByScope` fixes this: each scope's write
+   * goes into its own key so a later cross-scope probe cannot touch another scope's entry.
+   */
+  describe('grantsByScope — per-scope isolation', () => {
+    it('stores per-scope results independently so a later cross-scope probe cannot clobber an earlier confirmed grant', () => {
+      const a$ = service.refreshEnrichedPersonas(true, 'foundation-a');
+      let aResponse: PersonaApiResponse | null = null;
+      a$.subscribe((response) => (aResponse = response));
+
+      // B is issued after A.
+      service.refreshEnrichedPersonas(true, 'foundation-b').subscribe();
+
+      // A resolves first with a grant; B resolves after without one.
+      http.expectOne((req) => req.url.includes('project=foundation-a')).flush(mockResponse({ isCampaignManager: true }));
+      http.expectOne((req) => req.url.includes('project=foundation-b')).flush(mockResponse({ isCampaignManager: false }));
+
+      // Guard force-applies A's own response.
+      service.confirmActiveGrant(aResponse!, 'foundation-a');
+
+      // A's per-scope entry must survive B's write and still report the confirmed grant.
+      expect(service.grantsByScope().get('foundation-a')?.isCampaignManager).toBe(true);
+      // B's entry is independently correct.
+      expect(service.grantsByScope().get('foundation-b')?.isCampaignManager).toBe(false);
+    });
+
+    it('writes to grantsByScope from applyPersonaResponse so the per-scope result is available before confirmActiveGrant is called', () => {
+      service.refreshEnrichedPersonas(true, 'foundation-a').subscribe();
+      http.expectOne((req) => req.url.includes('project=foundation-a')).flush(mockResponse({ isCampaignManager: true, isMarketingAuditor: true }));
+
+      expect(service.grantsByScope().get('foundation-a')).toEqual({ isCampaignManager: true, isMarketingAuditor: true });
+    });
+
+    it('stores a ROOT-cascading grant under the null key regardless of the queried projectSlug', () => {
+      service.refreshEnrichedPersonas(true, 'foundation-a').subscribe();
+      http.expectOne((req) => req.url.includes('project=foundation-a')).flush(mockResponse({ isCampaignManager: true, isCampaignManagerRootGrant: true }));
+
+      // ROOT-confirmed campaign grant goes under null.
+      expect(service.grantsByScope().get(null)?.isCampaignManager).toBe(true);
+      // The campaign grant is NOT filed under the project key — the null entry is the authoritative
+      // source for ROOT access. The project key still receives a denial record for the marketing
+      // relation (authoritative for the queried scope), but campaign is absent from it.
+      expect(service.grantsByScope().get('foundation-a')?.isCampaignManager).toBe(false);
+    });
+
+    it('writes isMarketingAuditor and isCampaignManager into their own independently-resolved scope keys when they diverge on the same response (Cursor Bugbot finding, PR #1835: "ROOT map key polluted")', () => {
+      service.refreshEnrichedPersonas(true, 'foundation-a').subscribe();
+      http
+        .expectOne((req) => req.url.includes('project=foundation-a'))
+        .flush(mockResponse({ isMarketingAuditor: true, isCampaignManager: true, isCampaignManagerRootGrant: true }));
+
+      // isMarketingAuditor is project-scoped — it must land under 'foundation-a', not be swept into
+      // the ROOT key just because isCampaignManager on the same response happened to be ROOT-scoped.
+      expect(service.grantsByScope().get('foundation-a')).toEqual({ isCampaignManager: false, isMarketingAuditor: true });
+      // isCampaignManager is ROOT-scoped — it lands under the null key independently.
+      expect(service.grantsByScope().get(null)).toEqual({ isCampaignManager: true, isMarketingAuditor: false });
+    });
+
+    it('writes a scope\'s grantsByScope entry even when a later cross-scope probe wins the global recency race and blocks that scope\'s global-signal write (Cursor Bugbot finding, PR #1835: "stale ROOT grant persists")', () => {
+      service.refreshEnrichedPersonas(true, 'foundation-a').subscribe();
+      service.refreshEnrichedPersonas(true, 'foundation-b').subscribe();
+
+      // B is issued after A and resolves first, winning the global recency race. Both grants are
+      // project-scoped (non-root), so each writes to its OWN key ('foundation-a' / 'foundation-b')
+      // — neither contests the other's key. (Each also clears the null/ROOT key as a side effect
+      // per the opposite-key-clear rule, but that's exercised by its own dedicated test above and
+      // doesn't affect the keys asserted on here.)
+      http.expectOne((req) => req.url.includes('project=foundation-b')).flush(mockResponse({ isCampaignManager: true }));
+      // A resolves after — its global-signal write is blocked by B's win, but its own per-scope
+      // write must not be, since that write is gated on A's own resolved key, not the global counter.
+      http.expectOne((req) => req.url.includes('project=foundation-a')).flush(mockResponse({ isCampaignManager: true }));
+
+      // B won the global race — the legacy global signal reflects B's answer.
+      expect(service.isCampaignManager()).toBe(true);
+      // A's per-scope entry must still land under its own key. Before the fix, this write was
+      // nested under the same global gate that just blocked A's global-signal write above, so it
+      // was silently dropped and the per-scope entry stayed stale or missing indefinitely.
+      expect(service.grantsByScope().get('foundation-a')?.isCampaignManager).toBe(true);
+      expect(service.grantsByScope().get('foundation-b')?.isCampaignManager).toBe(true);
+    });
+
+    it('clears a stale per-scope entry when a fresh probe reports that relation as denied (Copilot finding, PR #1835: revocations must invalidate every key)', () => {
+      // Seed a cached marketing grant for 'foundation-a' (project-scoped, not ROOT).
+      service.refreshEnrichedPersonas(true, 'foundation-a').subscribe();
+      http.expectOne((req) => req.url.includes('project=foundation-a')).flush(mockResponse({ isMarketingAuditor: true }));
+      expect(service.grantsByScope().get('foundation-a')?.isMarketingAuditor).toBe(true);
+
+      // A subsequent probe for the same scope: marketing denied, but campaign is ROOT-granted.
+      // Old code would collapse to scopeKey=null (for the ROOT campaign) and never write the
+      // marketing denial to 'foundation-a', leaving the stale 'true' behind.
+      service.refreshEnrichedPersonas(true, 'foundation-a').subscribe();
+      http
+        .expectOne((req) => req.url.includes('project=foundation-a'))
+        .flush(mockResponse({ isCampaignManager: true, isCampaignManagerRootGrant: true, isMarketingAuditor: false }));
+
+      // Marketing denial must be written to the 'foundation-a' key, clearing the stale grant.
+      expect(service.grantsByScope().get('foundation-a')?.isMarketingAuditor).toBe(false);
+      // The ROOT campaign grant lands under the null key.
+      expect(service.grantsByScope().get(null)?.isCampaignManager).toBe(true);
+    });
+
+    it('clears a stale per-scope null-key entry when a project-scoped probe denies the grant — denial must also clear the ROOT key since the server checks all access paths (Copilot finding, PR #1835: revocations must invalidate every key)', () => {
+      // Seed a ROOT campaign grant (null key).
+      service.refreshEnrichedPersonas(true, 'foundation-a').subscribe();
+      http.expectOne((req) => req.url.includes('project=foundation-a')).flush(mockResponse({ isCampaignManager: true, isCampaignManagerRootGrant: true }));
+      expect(service.grantsByScope().get(null)?.isCampaignManager).toBe(true);
+
+      // A subsequent ROOT probe denies campaign — must overwrite the stale null-key grant.
+      service.refreshEnrichedPersonas(true, 'foundation-a').subscribe();
+      http.expectOne((req) => req.url.includes('project=foundation-a')).flush(mockResponse({ isCampaignManager: false }));
+
+      // The null-key entry must now reflect the denial.
+      expect(service.grantsByScope().get(null)?.isCampaignManager).toBe(false);
+    });
+
+    it("clears a stale ROOT true when a fresh probe reports a project-scoped-only grant (Copilot finding, PR #1835: positive grant doesn't clear stale opposite-key true)", () => {
+      // Seed a ROOT campaign grant (null key).
+      service.refreshEnrichedPersonas(true, 'foundation-a').subscribe();
+      http.expectOne((req) => req.url.includes('project=foundation-a')).flush(mockResponse({ isCampaignManager: true, isCampaignManagerRootGrant: true }));
+      expect(service.grantsByScope().get(null)?.isCampaignManager).toBe(true);
+
+      // A subsequent probe for the same scope resolves to a project-scoped-only grant (not ROOT)
+      // — the server explicitly checked ROOT this time and found it false.
+      service.refreshEnrichedPersonas(true, 'foundation-a').subscribe();
+      http.expectOne((req) => req.url.includes('project=foundation-a')).flush(mockResponse({ isCampaignManager: true, isCampaignManagerRootGrant: false }));
+
+      // The project key now holds the grant.
+      expect(service.grantsByScope().get('foundation-a')?.isCampaignManager).toBe(true);
+      // The stale ROOT true must be cleared, not left behind.
+      expect(service.grantsByScope().get(null)?.isCampaignManager).toBe(false);
+    });
+
+    it('gates the ROOT (null) map key by resolved key, not by the queried foundation slug — two probes for different foundations that both resolve to ROOT must race against each other (David Deal finding, PR #1835)', () => {
+      service.refreshEnrichedPersonas(true, 'foundation-x').subscribe();
+      service.refreshEnrichedPersonas(true, 'foundation-y').subscribe();
+
+      // foundation-y's probe (issued second) resolves first with a ROOT-cascading grant.
+      http.expectOne((req) => req.url.includes('project=foundation-y')).flush(mockResponse({ isCampaignManager: true, isCampaignManagerRootGrant: true }));
+      // foundation-x's probe (issued first) resolves after with a denial. foundation-x's own
+      // queried scope never saw a probe apply yet, so a queried-slug gate would wrongly let this
+      // stale denial through to the null key. The composite resolved-key gate must block it
+      // instead, since a probe for the SAME resolved key (null) already applied with a higher
+      // probeId.
+      http.expectOne((req) => req.url.includes('project=foundation-x')).flush(mockResponse({ isCampaignManager: false }));
+
+      expect(service.grantsByScope().get(null)?.isCampaignManager).toBe(true);
+    });
+  });
+});

@@ -1,7 +1,7 @@
 // Copyright The Linux Foundation and each contributor to LFX.
 // SPDX-License-Identifier: MIT
 
-import { CHAT_WEBHOOK_URL_MAX_LENGTH, SLACK_INCOMING_WEBHOOK_URL_PATTERN } from '@lfx-one/shared/constants';
+import { CHAT_WEBHOOK_URL_MAX_LENGTH, SLACK_INCOMING_WEBHOOK_URL_PATTERN, UUID_REGEX } from '@lfx-one/shared/constants';
 import { CommitteeMemberRole } from '@lfx-one/shared/enums';
 import {
   AcceptCommitteeInviteRequest,
@@ -39,7 +39,7 @@ import FormData from 'form-data';
 import { AuthorizationError, ConflictError, MicroserviceError, ResourceNotFoundError, ServiceValidationError } from '../errors';
 import { isServerFeatureEnabled, ServerFeatureFlag } from '../helpers/server-feature-flag.helper';
 import { pollEndpoint } from '../helpers/poll-endpoint.helper';
-import { fetchAllQueryResources } from '../helpers/query-service.helper';
+import { fetchAllQueryResources, FetchAllQueryResourcesOptions } from '../helpers/query-service.helper';
 import { logger } from '../services/logger.service';
 import { resolveAuditUserDisplayName, getUsernameFromAuth, isImpersonating } from '../utils/auth-helper';
 import { AccessCheckService } from './access-check.service';
@@ -319,6 +319,55 @@ export class CommitteeService {
   }
 
   /**
+   * Resolves a committee route param to a UID. UUIDs pass through; anything else is treated as an
+   * `sso_group_name` vanity slug and looked up via query-service (same tag the public group page
+   * uses — GH-2072 / LFXV2-2012).
+   *
+   * Authorization depends on the caller's `req.bearerToken`:
+   * - Authenticated `GET /api/committees/:id` keeps the user token, so query-service FGA filtering
+   *   applies. A project admin who is not a group member still sees committees they can view; a
+   *   private group they cannot view resolves as not found rather than leaking existence.
+   * - Public `GET /public/api/groups/:id` swaps in an M2M token before calling this; privacy is
+   *   enforced afterwards by rejecting `!committee.public`.
+   *
+   * Must run before proxying `GET /committees/{uid}` — Heimdall authorizes `committee:{id}#viewer`
+   * using the path capture, and every FGA tuple is keyed by UID, not slug.
+   *
+   * @param options.operation Logger / error operation name (defaults to `resolve_committee_uid`)
+   * @param options.service Error `service` field (defaults to `committee_service`)
+   * @param options.path Error `path` field (defaults to `/committees/${id}`)
+   * @param options.resourceType Not-found resource label (defaults to `Committee`; public groups pass `Group`)
+   */
+  public async resolveCommitteeUid(
+    req: Request,
+    id: string,
+    options: { operation?: string; service?: string; path?: string; resourceType?: string } = {}
+  ): Promise<string> {
+    const operation = options.operation ?? 'resolve_committee_uid';
+    const service = options.service ?? 'committee_service';
+    const resourceType = options.resourceType ?? 'Committee';
+    const path = options.path ?? `/committees/${id}`;
+
+    if (UUID_REGEX.test(id)) {
+      return id;
+    }
+
+    const { resources } = await this.microserviceProxy.proxyRequest<QueryServiceResponse<Committee>>(req, 'LFX_V2_SERVICE', '/query/resources', 'GET', {
+      type: 'committee',
+      tags: `sso_group_name:${id.toLowerCase()}`,
+      page_size: 1,
+    });
+
+    const committeeUid = resources[0]?.data?.uid;
+    if (!committeeUid) {
+      throw new ResourceNotFoundError(resourceType, id, { operation, service, path });
+    }
+
+    logger.debug(req, operation, 'Resolved slug to UID', { slug: id, committee_uid: committeeUid });
+    return committeeUid;
+  }
+
+  /**
    * Fetches a single committee by ID.
    *
    * @param options.includeMembership When true, enriches the response with the caller's
@@ -419,6 +468,38 @@ export class CommitteeService {
     // Enrich with project metadata so the UI can resolve project_uid -> project_slug for navigation.
     const [enriched] = await this.projectService.enrichWithProjectData(req, [merged]);
     return this.stripChatWebhookUrl(enriched);
+  }
+
+  /**
+   * A single plain GET, not a `getCommitteeById` call with the rest discarded: a caller reaching
+   * only for the base record (e.g. weekly-brief.service.ts's `buildCurrentActivity`, which reads
+   * `category` for its governance gate and then passes this same resolved committee into
+   * `CommitteeActivityService.getCommitteeActivity` so that method doesn't pay an identical second
+   * fetch for a committee the caller already has) shouldn't pay `getCommitteeById`'s default-options
+   * cost of three upstream calls — base GET, settings, and an access-check — for data it throws
+   * away. `undefined` here means upstream resolved with no body at all — an empty body (which
+   * `ApiClientService.executeRequest` parses to `null` via `text ? JSON.parse(text) : null`) — NOT
+   * "committee not found": a genuine 404 or other upstream error status throws a `MicroserviceError`
+   * out of `proxyRequest` before this method ever gets a value to return, same as `getCommitteeById`'s
+   * own upstream call. Deliberately doesn't catch that throw and normalize it to `undefined` —
+   * existing callers of `getCommitteeById` already have their own not-found handling for the
+   * write/detail paths that need it; a caller reaching only for the base record has nothing to write
+   * to and no detail page to 404, so leaving the throw uncaught keeps that decision (log and degrade,
+   * or propagate) with the caller instead of forcing one.
+   *
+   * Still runs the result through `stripChatWebhookUrl` — this is a public read path returning a raw
+   * upstream fetch, exactly the shape that helper's own doc comment says must be enrolled so
+   * `Committee.has_slack_webhook`'s "never returned by any read" invariant holds everywhere, not just
+   * the two hand-audited call sites its docblock predates this method by.
+   */
+  public async getCommitteeBase(req: Request, committeeId: string): Promise<Committee | undefined> {
+    const committee = await this.microserviceProxy.proxyRequest<Committee | null>(
+      req,
+      'LFX_V2_SERVICE',
+      `/committees/${encodeURIComponent(committeeId)}`,
+      'GET'
+    );
+    return committee ? this.stripChatWebhookUrl(committee) : undefined;
   }
 
   /**
@@ -753,7 +834,12 @@ export class CommitteeService {
   /**
    * Fetches all members for a specific committee
    */
-  public async getCommitteeMembers(req: Request, committeeId: string, query: Record<string, any> = {}): Promise<CommitteeMember[]> {
+  public async getCommitteeMembers(
+    req: Request,
+    committeeId: string,
+    query: Record<string, any> = {},
+    fetchOptions: FetchAllQueryResourcesOptions = {}
+  ): Promise<CommitteeMember[]> {
     const queryFilters = { ...query };
     delete queryFilters['page_token'];
     delete queryFilters['page_size'];
@@ -764,11 +850,14 @@ export class CommitteeService {
       tags: `committee_uid:${committeeId}`,
     };
 
-    return fetchAllQueryResources<CommitteeMember>(req, (pageToken) =>
-      this.microserviceProxy.proxyRequest<QueryServiceResponse<CommitteeMember>>(req, 'LFX_V2_SERVICE', '/query/resources', 'GET', {
-        ...params,
-        ...(pageToken && { page_token: pageToken }),
-      })
+    return fetchAllQueryResources<CommitteeMember>(
+      req,
+      (pageToken) =>
+        this.microserviceProxy.proxyRequest<QueryServiceResponse<CommitteeMember>>(req, 'LFX_V2_SERVICE', '/query/resources', 'GET', {
+          ...params,
+          ...(pageToken && { page_token: pageToken }),
+        }),
+      fetchOptions
     );
   }
 
@@ -996,6 +1085,7 @@ export class CommitteeService {
         project_name?: string | null;
         project_slug?: string | null;
         is_foundation?: boolean | null;
+        sso_group_name?: string | null;
       }
     >();
 
@@ -1016,6 +1106,7 @@ export class CommitteeService {
             // consumers treat it as "no slug", never as an empty-string slug.
             project_slug: enrichedCommittee?.project_slug || null,
             is_foundation: enrichedCommittee?.is_foundation ?? null,
+            sso_group_name: committee.sso_group_name || null,
           });
         }
       }
@@ -1038,6 +1129,7 @@ export class CommitteeService {
         project_name: context?.project_name ?? null,
         project_slug: context?.project_slug ?? null,
         is_foundation: context?.is_foundation ?? null,
+        sso_group_name: context?.sso_group_name ?? null,
         category: context?.category ?? null,
         role: invite.role ?? null,
         invitee_email: invite.invitee_email,
@@ -1869,7 +1961,7 @@ export class CommitteeService {
    * service via any HTTP response. Applied at every method that returns a `Committee`/`Committee[]`
    * built from a raw upstream fetch — `getCommittees`, `getDirectGrantCommittees`,
    * `searchCreatableCommittees`, `createCommittee`, `updateCommittee`, `getCommitteesByIds`
-   * (covers `getMyCommittees`) — so the "never returned by any read" invariant on
+   * (covers `getMyCommittees`), `getCommitteeBase` (GH-1922) — so the "never returned by any read" invariant on
    * {@link Committee.has_slack_webhook}'s doc comment holds everywhere, not just the two
    * hand-audited call sites. {@link getCommitteeById} calls this too, on top of (not instead of)
    * its own inline destructure of the base resource — the inline strip keeps the credential out

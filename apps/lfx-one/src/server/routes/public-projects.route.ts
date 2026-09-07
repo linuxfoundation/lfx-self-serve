@@ -16,6 +16,12 @@ const publicGroupsController = new PublicGroupsController();
 // (Google Calendar, Outlook, Apple Calendar) can subscribe by URL.
 router.get('/:id/calendar.ics', (req, res, next) => projectController.getProjectCalendar(req, res, next));
 
+// GET /public/api/projects/:id/meetings
+// Returns public meetings for a project (by UID or slug) as JSON, for the public calendar page.
+// Optional `committee` query param scopes the feed to a single committee within the project.
+// Public access — no authentication required; M2M token used for upstream calls.
+router.get('/:id/meetings', (req, res, next) => projectController.getProjectMeetings(req, res, next));
+
 // GET /public/api/projects/:slug/lens-redirect/:resource
 // 302-redirects to the lens-prefixed resource page for email deep links (votes, meetings, …).
 // The lens is derived from the project's own attributes (computeIsFoundation), not the

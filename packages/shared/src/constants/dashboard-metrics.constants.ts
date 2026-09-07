@@ -115,6 +115,8 @@ export const HEALTH_METRICS_SUMMARY_CARDS: readonly HealthMetricsSummaryCard[] =
   },
 ];
 
+// 'flywheel-conversion' is excluded while its card is hidden (#2167) so the
+// Status Overview strip only counts sections the user can actually see.
 export const HEALTH_METRICS_BODY_BLOCK_KEYS = [
   'participating-orgs',
   'nps',
@@ -123,7 +125,6 @@ export const HEALTH_METRICS_BODY_BLOCK_KEYS = [
   'events',
   'training-certification',
   'code-contribution',
-  'flywheel-conversion',
   'board-meeting',
 ] as const;
 

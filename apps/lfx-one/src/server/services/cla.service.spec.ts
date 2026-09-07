@@ -65,7 +65,7 @@ function icla(overrides: Partial<EasyClaMyCla> = {}): EasyClaMyCla {
     status: 'valid',
     pdfAvailable: true,
     claGroupID: 'cg-1',
-    signedOn: '2022-01-01',
+    signedOn: '2022-01-01T18:40:42Z',
     ...overrides,
   };
 }
@@ -80,7 +80,7 @@ function ecla(overrides: Partial<EasyClaMyCla> = {}): EasyClaMyCla {
     status: 'valid',
     companyName: 'Acme',
     claGroupID: 'cg-2',
-    signedOn: '2022-02-02',
+    signedOn: '2022-02-02T18:40:42Z',
     ...overrides,
   };
 }
@@ -271,6 +271,31 @@ describe('toMyClaAgreement', () => {
     const revoked = toMyClaAgreement(ecla({ status: 'revoked', approved: true, valid: false }));
 
     expect(revoked.status).toBe('revoked');
+  });
+
+  // A sanctioned ECLA that was also invalidated still carries both dates: the
+  // producer copies invalidatedAt before the sanctions override to revoked.
+  it('copies invalidatedAt and flaggedAt from the producer and omits blanks', () => {
+    const dated = toMyClaAgreement(
+      ecla({ status: 'revoked', approved: true, valid: false, flaggedAt: '2026-08-01T12:00:00Z', invalidatedAt: '  2026-06-03T12:00:00Z  ' })
+    );
+    expect(dated.flaggedAt).toBe('2026-08-01T12:00:00Z');
+    expect(dated.invalidatedAt).toBe('2026-06-03T12:00:00Z');
+
+    const omitted = toMyClaAgreement(ecla({ status: 'invalidated', approved: false, valid: false }));
+    expect(omitted.invalidatedAt).toBeUndefined();
+    expect(omitted.flaggedAt).toBeUndefined();
+
+    const blank = toMyClaAgreement(ecla({ status: 'invalidated', approved: false, valid: false, invalidatedAt: '   ', flaggedAt: '' }));
+    expect(blank.invalidatedAt).toBeUndefined();
+    expect(blank.flaggedAt).toBeUndefined();
+  });
+
+  it('does not invent an Invalidated or Revoked date from signedOn', () => {
+    const row = toMyClaAgreement(ecla({ status: 'invalidated', approved: false, valid: false, signedOn: '2022-01-01T18:40:42Z' }));
+    expect(row.signedOn).toBe('2022-01-01T18:40:42Z');
+    expect(row.invalidatedAt).toBeUndefined();
+    expect(row.flaggedAt).toBeUndefined();
   });
 
   it('pins claGroupId from the producer and omits a blank value', () => {
@@ -476,7 +501,7 @@ describe('toClaGroupSearchResponse', () => {
     expect(mapped.results[0]).toMatchObject({ matchedRepositoryName: 'cncf/foo', matchedRepositoryURL: 'https://github.com/cncf/foo' });
   });
 
-  it('drops the producer fields the modal has no use for', () => {
+  it('forwards ICLA/CCLA enablement flags for Gerrit contract-type routing (#2066)', () => {
     const mapped = toClaGroupSearchResponse({
       searchTerm: 'cncf',
       resultCount: 1,
@@ -484,11 +509,8 @@ describe('toClaGroupSearchResponse', () => {
       results: [result({ projectSFID: 'a09', foundationSFID: 'a09f', projectExternalID: 'ext', iclaEnabled: true, cclaEnabled: false })],
     });
 
-    // Passing these on would invite a later consumer to branch on signing configuration the
-    // picker never asked for and cannot honour.
     expect(mapped.results[0]).not.toHaveProperty('projectSFID');
-    expect(mapped.results[0]).not.toHaveProperty('iclaEnabled');
-    expect(mapped.results[0]).not.toHaveProperty('cclaEnabled');
+    expect(mapped.results[0]).toMatchObject({ iclaEnabled: true, cclaEnabled: false });
   });
 
   it('answers an absent upstream body with an empty, non-truncated set for the term', () => {
@@ -1296,6 +1318,63 @@ describe('ClaService.createClaManagerRequest', () => {
 
     const [, , opts] = gatewayFetch.mock.calls[0] as [unknown, string, { body?: Record<string, unknown> }];
     expect(opts.body).toEqual({ requestType: 'approval', recipients: ['jdoe'] });
+  });
+
+  it('posts contact with its message and returns the contact receipt', async () => {
+    gatewayFetch.mockResolvedValueOnce({
+      requestID: 'r-2',
+      signatureID: MANAGER_SIG,
+      requestType: 'contact',
+      status: 'sent',
+      recipients: ['jdoe'],
+    });
+
+    const result = await new ClaService().createClaManagerRequest(req, MANAGER_SIG, identity, {
+      requestType: 'contact',
+      recipients: ['jdoe'],
+      message: 'who owns our approved list?',
+    });
+
+    expect(result).toEqual({
+      requestId: 'r-2',
+      signatureId: MANAGER_SIG,
+      requestType: 'contact',
+      status: 'sent',
+      recipients: ['jdoe'],
+    });
+    const [, , opts] = gatewayFetch.mock.calls[0] as [unknown, string, { body?: Record<string, unknown>; bearerToken?: string }];
+    expect(opts.body).toEqual({ requestType: 'contact', recipients: ['jdoe'], message: 'who owns our approved list?' });
+    expect(opts.bearerToken).toBeUndefined();
+  });
+
+  it('refuses a receipt naming a request type outside the producer enum', async () => {
+    gatewayFetch.mockResolvedValueOnce({
+      requestID: 'r-3',
+      signatureID: MANAGER_SIG,
+      requestType: 'nudge',
+      status: 'sent',
+      recipients: ['jdoe'],
+    });
+
+    await expect(
+      new ClaService().createClaManagerRequest(req, MANAGER_SIG, identity, { requestType: 'contact', recipients: ['jdoe'], message: 'hi' })
+    ).rejects.toThrow('Upstream recorded no usable CLA manager request');
+  });
+
+  it('refuses a receipt for a different request type than the one sent', async () => {
+    gatewayFetch.mockResolvedValueOnce({
+      requestID: 'r-4',
+      signatureID: MANAGER_SIG,
+      requestType: 'approval',
+      status: 'sent',
+      recipients: ['jdoe'],
+    });
+
+    // An approval receipt for a contact request would otherwise be forwarded as success, and the
+    // modal picks its copy from the mode it asked for, hiding the mismatch from the contributor.
+    await expect(
+      new ClaService().createClaManagerRequest(req, MANAGER_SIG, identity, { requestType: 'contact', recipients: ['jdoe'], message: 'hi' })
+    ).rejects.toThrow('Upstream recorded no usable CLA manager request');
   });
 
   it('returns null on a 404', async () => {

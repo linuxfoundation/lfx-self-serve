@@ -9,31 +9,46 @@ import {
   RewardPromotionGroups,
   RewardPromotionRaw,
   RewardPromotionsPage,
+  RewardUserProfileRaw,
+  RewardsProfileProjection,
+  RewardsSubject,
   RewardsSummaryResponse,
 } from '@lfx-one/shared/interfaces';
 import { Request } from 'express';
 
-import { API_GW_TIMEOUT_MS, NEVER_EXPIRES_YEAR_PREFIX, REWARDS_SERVICE_NAME, UPSTREAM_ERROR_BODY_LIMIT } from '../constants';
-import { MicroserviceError } from '../errors';
+import { NEVER_EXPIRES_YEAR_PREFIX, REWARDS_SERVICE_NAME, REWARD_PROMOTIONS_PAGE_SIZE } from '../constants';
+import { AuthorizationError, MicroserviceError } from '../errors';
 import { getUserServiceBaseUrl } from '../helpers/api-gateway.helper';
+import { gatewayFetch } from '../helpers/gateway-fetch.helper';
+import { isImpersonating } from '../utils/auth-helper';
+import { resolveRewardsSubject } from '../utils/rewards-subject';
 import { logger } from './logger.service';
 
 export class RewardsService {
   public async getSummary(req: Request): Promise<RewardsSummaryResponse> {
-    logger.debug(req, 'get_rewards_summary', 'Fetching rewards profile and promotions');
+    const subject = await resolveRewardsSubject(req);
+    logger.debug(req, 'get_rewards_summary', 'Fetching rewards profile and promotions', { subject_mode: subject.mode });
 
-    const [userProfile, promotions] = await Promise.all([this.fetchUserProfile(req), this.fetchPromotions(req)]);
-    const groupedPromotions = this.groupPromotions(promotions);
-    const points = this.parsePoints(userProfile.TuxRewards);
-    const nextRewardPoints = this.calculateNextThreshold(points);
+    const [profileResult, promotionsResult] = await Promise.allSettled([
+      this.fetchUserProfile(req, subject),
+      this.fetchPromotions(req, subject).then((promotions) => this.groupPromotions(promotions)),
+    ]);
+    const profile = this.unwrapSource(req, 'profile', profileResult);
+    const promotionGroups = this.unwrapSource(req, 'promotions', promotionsResult);
+    const groupedPromotions = promotionGroups ?? this.groupPromotions([]);
 
     return {
-      points,
-      nextRewardPoints,
-      pointsToNextReward: Math.max(0, nextRewardPoints - points),
-      progressPercentage: nextRewardPoints > 0 ? Math.min(100, Math.round((points / nextRewardPoints) * 100)) : 0,
-      programStartDate: userProfile.TuxProgramStartDate ?? null,
-      programExpiryDate: this.calculateProgramExpiry(userProfile.TuxProgramStartDate),
+      availability: {
+        profile: profile ? 'available' : 'unavailable',
+        promotions: promotionGroups ? 'available' : 'unavailable',
+      },
+      readOnly: subject.readOnly,
+      points: profile?.points ?? null,
+      nextRewardPoints: profile?.nextRewardPoints ?? null,
+      pointsToNextReward: profile?.pointsToNextReward ?? null,
+      progressPercentage: profile?.progressPercentage ?? null,
+      programStartDate: profile?.programStartDate ?? null,
+      programExpiryDate: profile?.programExpiryDate ?? null,
       groupedPromotions,
       availableIncentives: this.flattenPromotions(groupedPromotions, 'earned'),
       coupons: this.flattenPromotions(groupedPromotions, 'redeemable'),
@@ -43,190 +58,171 @@ export class RewardsService {
   public async redeemPromotion(req: Request, promotionId: string): Promise<RewardCouponGenerationResponse> {
     logger.debug(req, 'redeem_promotion', 'Generating coupon for promotion', { promotion_id: promotionId });
 
-    return this.gatewayFetch<RewardCouponGenerationResponse>(req, `/me/promotions/${encodeURIComponent(promotionId)}/generateCoupon`, {
+    if (isImpersonating(req)) {
+      throw new AuthorizationError('This action is not available while impersonating a user', {
+        operation: 'impersonation_readonly',
+        service: REWARDS_SERVICE_NAME,
+        path: req.path,
+        code: 'IMPERSONATION_READ_ONLY',
+      });
+    }
+
+    const baseUrl = getUserServiceBaseUrl('redeem_promotion', REWARDS_SERVICE_NAME);
+    const result = await gatewayFetch<RewardCouponGenerationResponse>(req, `${baseUrl}/me/promotions/${encodeURIComponent(promotionId)}/generateCoupon`, {
       operation: 'redeem_promotion',
+      service: REWARDS_SERVICE_NAME,
       errorMessage: 'Coupon generation failed',
       errorCode: 'COUPON_GENERATION_FAILED',
       method: 'POST',
+      redactResponseBody: true,
     });
+
+    if (!result) {
+      throw new MicroserviceError('Coupon generation failed: empty response from upstream', 502, 'UPSTREAM_INVALID_RESPONSE', {
+        operation: 'redeem_promotion',
+        service: REWARDS_SERVICE_NAME,
+      });
+    }
+
+    return result;
   }
 
-  private async fetchUserProfile(req: Request): Promise<{ TuxRewards: number; TuxProgramStartDate: string | null }> {
+  private async fetchUserProfile(req: Request, subject: RewardsSubject): Promise<RewardsProfileProjection> {
     logger.debug(req, 'fetch_user_profile', 'Fetching user profile for rewards data');
 
-    const profile = await this.gatewayFetch<Record<string, unknown>>(req, '/me', {
+    const baseUrl = getUserServiceBaseUrl('fetch_user_profile', REWARDS_SERVICE_NAME);
+    const path = subject.mode === 'self' ? '/me' : `/users/${encodeURIComponent(subject.salesforceId)}`;
+    const profile = await gatewayFetch<RewardUserProfileRaw>(req, `${baseUrl}${path}`, {
       operation: 'fetch_user_profile',
+      service: REWARDS_SERVICE_NAME,
       errorMessage: 'User profile fetch failed',
       errorCode: 'USER_PROFILE_FETCH_FAILED',
+      redactResponseBody: true,
     });
 
-    return {
-      TuxRewards: Number(profile?.['TuxRewards']) || 0,
-      TuxProgramStartDate: (profile?.['TuxProgramStartDate'] as string) ?? null,
-    };
+    if (!profile) {
+      throw this.invalidResponse('fetch_user_profile', 'User profile response was empty');
+    }
+    if (subject.mode === 'impersonated' && !this.profileMatchesSubject(profile, subject.username)) {
+      throw new MicroserviceError('User profile identity did not match the rewards subject', 502, 'REWARDS_SUBJECT_MISMATCH', {
+        operation: 'fetch_user_profile',
+        service: REWARDS_SERVICE_NAME,
+      });
+    }
+
+    return this.projectProfile(profile);
   }
 
-  private async fetchPromotions(req: Request): Promise<RewardPromotionRaw[]> {
+  private async fetchPromotions(req: Request, subject: RewardsSubject): Promise<RewardPromotionRaw[]> {
     logger.debug(req, 'fetch_promotions', 'Fetching user promotions');
 
-    // Upstream `/me/promotions` is paginated as `{ Data, Metadata: { Offset, PageSize, TotalSize } }`.
-    // Iterate until we have collected `TotalSize` items (or the page comes back short)
-    // so the UI never silently drops incentives/coupons that fall past the first page.
+    const baseUrl = getUserServiceBaseUrl('fetch_promotions', REWARDS_SERVICE_NAME);
+    const subjectPath = subject.mode === 'self' ? '/me' : `/users/${encodeURIComponent(subject.salesforceId)}`;
     const promotions: RewardPromotionRaw[] = [];
     let offset = 0;
 
     while (true) {
-      const response = await this.gatewayFetch<RewardPromotionsPage>(req, `/me/promotions?Offset=${offset}&PageSize=${REWARD_STEP_SIZE}`, {
-        operation: 'fetch_promotions',
-        errorMessage: 'Promotions fetch failed',
-        errorCode: 'PROMOTIONS_FETCH_FAILED',
-      });
+      const response = await gatewayFetch<RewardPromotionsPage>(
+        req,
+        `${baseUrl}${subjectPath}/promotions?offset=${offset}&pageSize=${REWARD_PROMOTIONS_PAGE_SIZE}`,
+        {
+          operation: 'fetch_promotions',
+          service: REWARDS_SERVICE_NAME,
+          errorMessage: 'Promotions fetch failed',
+          errorCode: 'PROMOTIONS_FETCH_FAILED',
+          redactResponseBody: true,
+        }
+      );
+      const { data, nextOffset, totalSize } = this.validatePromotionPage(response, offset);
+      promotions.push(...data);
 
-      const data = response?.Data;
-
-      if (!Array.isArray(data)) {
-        logger.warning(req, 'fetch_promotions', 'Promotions response missing Data array', {
-          response_type: typeof response,
-          has_data: response?.Data !== undefined,
-          offset,
-        });
-        return promotions;
-      }
-
-      const validPromotions = data.filter((item): item is RewardPromotionRaw => Boolean(item) && typeof item === 'object');
-      promotions.push(...validPromotions);
-
-      const metadata = response?.Metadata;
-      const metadataOffset = typeof metadata?.Offset === 'number' ? metadata.Offset : offset;
-      const totalSize = typeof metadata?.TotalSize === 'number' ? metadata.TotalSize : undefined;
-      const nextOffset = metadataOffset + data.length;
-
-      if (typeof totalSize === 'number' && nextOffset >= totalSize) {
-        break;
-      }
-
-      if (data.length === 0 || data.length < REWARD_STEP_SIZE) {
-        break;
-      }
-
-      // Defensive guard: if upstream metadata never advances, bail out instead of looping forever.
-      if (nextOffset <= offset) {
-        logger.warning(req, 'fetch_promotions', 'Promotions pagination did not advance offset', {
-          offset,
-          metadata_offset: metadata?.Offset,
-          page_size: data.length,
-          total_size: metadata?.TotalSize,
-        });
-        break;
-      }
-
+      if (nextOffset === totalSize) return promotions;
       offset = nextOffset;
     }
-
-    return promotions;
   }
 
-  private async gatewayFetch<T>(
-    req: Request,
-    path: string,
-    options: { operation: string; errorMessage: string; errorCode: string; method?: 'GET' | 'POST' }
-  ): Promise<T> {
-    const baseUrl = getUserServiceBaseUrl(options.operation, REWARDS_SERVICE_NAME);
-    this.assertApiGatewayToken(req, options.operation);
+  private validatePromotionPage(response: RewardPromotionsPage | null, requestedOffset: number) {
+    const data = response?.Data;
+    const metadata = response?.Metadata;
 
-    let upstream: Response;
-    try {
-      upstream = await fetch(`${baseUrl}${path}`, {
-        method: options.method ?? 'GET',
-        headers: { Authorization: `Bearer ${req.apiGatewayToken}` },
-        signal: AbortSignal.timeout(API_GW_TIMEOUT_MS),
-      });
-    } catch (error: unknown) {
-      if (error instanceof Error && (error.name === 'AbortError' || error.name === 'TimeoutError')) {
-        logger.warning(req, options.operation, 'Upstream request timed out', {
-          timeout_ms: API_GW_TIMEOUT_MS,
-        });
-        throw new MicroserviceError(`${options.errorMessage}: request timed out after ${API_GW_TIMEOUT_MS}ms`, 504, 'UPSTREAM_TIMEOUT', {
-          operation: options.operation,
-        });
-      }
-
-      const cause = (error as (Error & { cause?: { code?: string } }) | undefined)?.cause;
-      const networkCode = cause?.code ?? 'UPSTREAM_UNREACHABLE';
-      const message = error instanceof Error ? error.message : String(error);
-
-      logger.warning(req, options.operation, 'Upstream request failed before response', {
-        error_code: networkCode,
-        error_message: message,
-      });
-
-      throw new MicroserviceError(`${options.errorMessage}: ${message}`, 502, networkCode, {
-        operation: options.operation,
-      });
+    if (
+      !metadata ||
+      !isNonNegativeInteger(metadata.Offset) ||
+      metadata.Offset !== requestedOffset ||
+      !isNonNegativeInteger(metadata.PageSize) ||
+      // User-service echoes the requested page size. Exact equality verifies the
+      // query contract before trusting collection completeness.
+      metadata.PageSize !== REWARD_PROMOTIONS_PAGE_SIZE ||
+      !isNonNegativeInteger(metadata.TotalSize) ||
+      !Array.isArray(data) ||
+      !data.every(isValidPromotion)
+    ) {
+      throw this.invalidResponse('fetch_promotions', 'Promotions response was malformed');
     }
 
-    if (!upstream.ok) {
-      // Capture the upstream body (truncated) so production logs preserve the
-      // root cause — user-service typically explains *why* in the body, not
-      // just the status line.
-      const body = (await upstream.text().catch(() => '')).slice(0, UPSTREAM_ERROR_BODY_LIMIT);
-
-      logger.warning(req, options.operation, 'Upstream returned non-OK response', {
-        status: upstream.status,
-        status_text: upstream.statusText,
-        body,
-      });
-
-      throw new MicroserviceError(`${options.errorMessage}: ${upstream.status} ${upstream.statusText}`, upstream.status, options.errorCode, {
-        operation: options.operation,
-        errorBody: body,
-      });
+    const nextOffset = requestedOffset + data.length;
+    const totalSize = metadata.TotalSize;
+    const incomplete = nextOffset > totalSize || (nextOffset < totalSize && data.length < REWARD_PROMOTIONS_PAGE_SIZE);
+    if (incomplete) {
+      throw this.invalidResponse('fetch_promotions', 'Promotions pagination was incomplete');
     }
 
-    // Parse defensively — empty bodies and malformed JSON should surface as a
-    // MicroserviceError, not an opaque SyntaxError from `await upstream.json()`
-    // and not silently coerce to `null` (which would mask upstream failures
-    // as degraded-but-successful responses).
-    const rawBody = await upstream.text();
-
-    if (!rawBody.trim()) {
-      logger.warning(req, options.operation, 'Upstream returned empty response body', {
-        status: upstream.status,
-        status_text: upstream.statusText,
-      });
-
-      throw new MicroserviceError(`${options.errorMessage}: empty response from upstream`, 502, 'UPSTREAM_INVALID_RESPONSE', {
-        operation: options.operation,
-      });
-    }
-
-    try {
-      return JSON.parse(rawBody) as T;
-    } catch (error: unknown) {
-      const truncatedBody = rawBody.slice(0, UPSTREAM_ERROR_BODY_LIMIT);
-      const message = error instanceof Error ? error.message : String(error);
-
-      logger.warning(req, options.operation, 'Upstream returned invalid JSON response', {
-        status: upstream.status,
-        status_text: upstream.statusText,
-        body: truncatedBody,
-        error: message,
-      });
-
-      throw new MicroserviceError(`${options.errorMessage}: invalid JSON response from upstream`, 502, 'UPSTREAM_INVALID_RESPONSE', {
-        operation: options.operation,
-        errorBody: truncatedBody,
-      });
-    }
+    return { data, nextOffset, totalSize };
   }
 
-  private assertApiGatewayToken(req: Request, operation: string): void {
-    if (!req.apiGatewayToken) {
-      throw new MicroserviceError('API Gateway token not available — check API_GW_AUDIENCE env var and auth logs', 503, 'API_GATEWAY_UNAVAILABLE', {
-        service: REWARDS_SERVICE_NAME,
-        operation,
-      });
+  private projectProfile(profile: RewardUserProfileRaw): RewardsProfileProjection {
+    const rawPoints = profile.TuxRewards;
+    if (typeof rawPoints !== 'number' || !Number.isFinite(rawPoints) || rawPoints < 0) {
+      throw this.invalidResponse('fetch_user_profile', 'User profile reward points were malformed');
     }
+
+    const points = Math.floor(rawPoints);
+    const nextRewardPoints = this.calculateNextThreshold(points);
+    const programStartDate = this.normalizeProgramStartDate(profile.TuxProgramStartDate);
+    return {
+      points,
+      nextRewardPoints,
+      pointsToNextReward: Math.max(0, nextRewardPoints - points),
+      progressPercentage: Math.min(100, Math.round((points / nextRewardPoints) * 100)),
+      programStartDate,
+      programExpiryDate: this.calculateProgramExpiry(programStartDate),
+    };
+  }
+
+  private profileMatchesSubject(profile: RewardUserProfileRaw, username: string): boolean {
+    const returnedUsername = profile.Username;
+    return typeof returnedUsername === 'string' && username === returnedUsername.trim();
+  }
+
+  private normalizeProgramStartDate(value: unknown): string | null {
+    return typeof value === 'string' && !Number.isNaN(Date.parse(value)) ? value : null;
+  }
+
+  private invalidResponse(operation: string, message: string): MicroserviceError {
+    return new MicroserviceError(message, 502, 'UPSTREAM_INVALID_RESPONSE', {
+      operation,
+      service: REWARDS_SERVICE_NAME,
+    });
+  }
+
+  private isCriticalSourceFailure(reason: unknown): boolean {
+    const statusCode = (reason as { statusCode?: unknown } | null)?.statusCode;
+    if (statusCode === 401 || statusCode === 403) return true;
+
+    const code = (reason as { code?: unknown } | null)?.code;
+    return code === 'API_GATEWAY_UNAVAILABLE' || code === 'API_GATEWAY_MISCONFIGURED' || code === 'REWARDS_SUBJECT_MISMATCH';
+  }
+
+  private unwrapSource<T>(req: Request, source: 'profile' | 'promotions', result: PromiseSettledResult<T>): T | null {
+    if (result.status === 'fulfilled') return result.value;
+    if (this.isCriticalSourceFailure(result.reason)) throw result.reason;
+
+    const code = result.reason instanceof MicroserviceError ? result.reason.code : 'UNKNOWN';
+    logger.warning(req, 'get_rewards_summary', 'Rewards source unavailable', {
+      source,
+      error_code: code,
+    });
+    return null;
   }
 
   private groupPromotions(promotions: RewardPromotionRaw[]): RewardPromotionGroups {
@@ -345,14 +341,6 @@ export class RewardsService {
     return REWARD_CATEGORIES.flatMap((cat) => groups[cat][type]);
   }
 
-  private parsePoints(value: unknown): number {
-    // Negative values from upstream are treated as 0 (defensive — TuxRewards
-    // is always >= 0 in practice, but a malformed payload should not surface
-    // a negative point balance to the UI).
-    const points = Number(value);
-    return Number.isFinite(points) && points >= 0 ? Math.floor(points) : 0;
-  }
-
   private calculateNextThreshold(points: number): number {
     return Math.floor(points / REWARD_STEP_SIZE) * REWARD_STEP_SIZE + REWARD_STEP_SIZE;
   }
@@ -370,4 +358,47 @@ export class RewardsService {
     date.setUTCFullYear(date.getUTCFullYear() + 1);
     return date.toISOString();
   }
+}
+
+function isNonNegativeInteger(value: unknown): value is number {
+  return typeof value === 'number' && Number.isInteger(value) && value >= 0;
+}
+
+function isValidPromotion(value: unknown): value is RewardPromotionRaw {
+  if (!value || typeof value !== 'object' || Array.isArray(value)) return false;
+
+  const promotion = value as Record<string, unknown>;
+  const category = promotion['Category'];
+  const products = promotion['Products'];
+  const contentTypes = promotion['TIContentTypes'];
+  return (
+    typeof promotion['PromotionID'] === 'string' &&
+    Boolean(promotion['PromotionID'].trim()) &&
+    typeof category === 'string' &&
+    REWARD_CATEGORIES.some((candidate) => candidate.toLowerCase() === category.toLowerCase()) &&
+    ['Description', 'DiscountType', 'ExpiresAT', 'Coupon', 'EligiblityComment', 'LogoURL'].every((field) => isOptionalString(promotion[field])) &&
+    ['Discount', 'RequiredRewards', 'RelativeExpiryInterval'].every((field) => isOptionalNonNegativeNumber(promotion[field])) &&
+    ['Eligible', 'Redeemed'].every((field) => isOptionalBoolean(promotion[field])) &&
+    (products == null || (Array.isArray(products) && products.every(isValidPromotionProduct))) &&
+    (contentTypes == null || (Array.isArray(contentTypes) && contentTypes.every((item) => typeof item === 'string')))
+  );
+}
+
+function isOptionalString(value: unknown): boolean {
+  return value == null || typeof value === 'string';
+}
+
+function isOptionalNonNegativeNumber(value: unknown): boolean {
+  return value == null || (typeof value === 'number' && Number.isFinite(value) && value >= 0);
+}
+
+function isOptionalBoolean(value: unknown): boolean {
+  return value == null || typeof value === 'boolean';
+}
+
+function isValidPromotionProduct(value: unknown): boolean {
+  if (!value || typeof value !== 'object' || Array.isArray(value)) return false;
+
+  const product = value as Record<string, unknown>;
+  return ['ID', 'Name', 'LogoURL'].every((field) => isOptionalString(product[field]));
 }

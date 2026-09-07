@@ -21,6 +21,17 @@ export const VALKEY_CACHE = {
   /** Domain + schema-version segment for the per-user org seats cache. */
   ORG_SEATS_NAMESPACE: 'org-seats:v1',
 
+  /**
+   * Domain + schema-version segment for the per-org Org Lens Groups aggregate (GH-1809), shared
+   * across callers rather than per-user. What is stored is the *aggregate the page renders* —
+   * committee name, category, foundation, count — not the seat roster it derives from. For larger
+   * orgs the roster exceeds `MAX_VALUE_BYTES`, so its writes are refused for size and it is never
+   * retained; the aggregate stays well under the ceiling. Storing the aggregate is what makes this
+   * page cacheable. The value carries no PII, and it is served only to callers holding a resolved
+   * per-org grant — see `assertOrgLensRead`'s returned qualification.
+   */
+  ORG_LENS_GROUPS_NAMESPACE: 'org-lens-groups:v1',
+
   /** Domain + schema-version segment for the per-user org People key-contacts cache. */
   ORG_PEOPLE_KC_NAMESPACE: 'org-people-kc:v1',
 
@@ -55,6 +66,9 @@ export const VALKEY_CACHE = {
   /** Domain + schema-version segment for the per-brief-revision AI-extracted weekly-brief action-items cache (LFXV2-3043). Keyed by brief uid + revision, so a regenerated/re-edited brief naturally misses and re-extracts — no explicit invalidation needed. */
   WEEKLY_BRIEF_ACTION_ITEMS_NAMESPACE: 'weekly-brief-action-items:v1',
 
+  /** Domain + schema-version segment for the per-foundation Snowflake-backed Social Listening cache (filter options + analytics; shared across callers, since the data is foundation-scoped rather than per-user). `v2`: tag options folded to lowercase, author options guarded + newly cached, mentions-count resource added — stale `v1` entries must never be served as the new shapes. */
+  SOCIAL_LISTENING_NAMESPACE: 'social-listening-sf:v2',
+
   /** Default freshness window for membership entries (carried over from the prior 30_000 ms memo). */
   ORG_MEMBERSHIP_TTL_SECONDS: 30,
 
@@ -70,6 +84,16 @@ export const VALKEY_CACHE = {
   /** Freshness window for the per-user Org Lens caches (seats, key-contacts, access-list, people directory). */
   ORG_LENS_PERUSER_TTL_SECONDS: 30,
 
+  /**
+   * Freshness window for the Org Lens Groups aggregate (15 minutes). Deliberately shorter than the
+   * 1-hour `ORG_LENS_SNOWFLAKE_TTL_SECONDS` the rest of Org Lens uses: this window bounds *upstream*
+   * drift only, and a change the admin makes themselves must not hide behind it — a seat reassign
+   * discards the entry outright. Deliberately far longer than the ~34s worst-case time to produce
+   * the value, so a stored result is always usable well before it expires (the prior 30s per-user
+   * window expired at or before the moment it became useful).
+   */
+  ORG_LENS_GROUPS_TTL_SECONDS: 900,
+
   /** Freshness window for the Groups dashboard engagement-stats cache — absorbs repeated dashboard refreshes. */
   GROUPS_ENGAGEMENT_TTL_SECONDS: 60,
 
@@ -81,6 +105,9 @@ export const VALKEY_CACHE = {
 
   /** Freshness window for the per-brief-revision weekly-brief action-items cache — one brief window's worth (7 days), matching the brief's own weekly cadence. */
   WEEKLY_BRIEF_ACTION_ITEMS_TTL_SECONDS: 7 * 24 * 60 * 60,
+
+  /** Freshness window for the Social Listening filter-option and analytics caches (30 minutes). The `platinum_social_listening_feed` dbt model rebuilds hourly, so a half-hour TTL can never serve a value that predates the last rebuild by more than one cycle. */
+  SOCIAL_LISTENING_TTL_SECONDS: 1800,
 
   /** Fallback session TTL when express-openid-connect doesn't supply a per-session expiry (matches its `session.absoluteDuration` default of 7 days). Normally the store derives the actual TTL from the session's own `cookie.maxAge` instead. */
   SESSION_FALLBACK_TTL_SECONDS: 7 * 24 * 60 * 60,

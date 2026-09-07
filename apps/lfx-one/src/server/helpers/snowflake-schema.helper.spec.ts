@@ -18,7 +18,7 @@ vi.mock('@lfx-one/shared/constants', async () => {
   return { DEFAULT_LFX_ONE_PLATINUM_SCHEMA: actual.DEFAULT_LFX_ONE_PLATINUM_SCHEMA };
 });
 
-import { resolveLfxOnePlatinumSchema } from './snowflake-schema.helper';
+import { resolveLfxOnePlatinumSchema, socialListeningFeedTable } from './snowflake-schema.helper';
 
 const ENV_KEY = 'LFX_ONE_PLATINUM_SCHEMA';
 const originalValue = process.env[ENV_KEY];
@@ -70,5 +70,53 @@ describe('resolveLfxOnePlatinumSchema', () => {
   it('rejects an empty/whitespace-only value and falls back to the default', () => {
     process.env[ENV_KEY] = '   ';
     expect(resolveLfxOnePlatinumSchema()).toBe('ANALYTICS.PLATINUM_LFX_ONE');
+  });
+});
+
+const FEED_ENV_KEY = 'LFX_ONE_SOCIAL_LISTENING_FEED_TABLE';
+const originalFeedValue = process.env[FEED_ENV_KEY];
+
+describe('socialListeningFeedTable', () => {
+  beforeEach(() => {
+    delete process.env[FEED_ENV_KEY];
+  });
+
+  afterEach(() => {
+    if (originalFeedValue === undefined) delete process.env[FEED_ENV_KEY];
+    else process.env[FEED_ENV_KEY] = originalFeedValue;
+  });
+
+  it('falls back to the default feed table when the env var is unset', () => {
+    expect(socialListeningFeedTable()).toBe('ANALYTICS.PLATINUM.SOCIAL_LISTENING_FEED');
+  });
+
+  it('accepts a well-formed three-segment override, normalized to uppercase', () => {
+    process.env[FEED_ENV_KEY] = 'analytics.custom_schema.custom_feed';
+    expect(socialListeningFeedTable()).toBe('ANALYTICS.CUSTOM_SCHEMA.CUSTOM_FEED');
+  });
+
+  it('rejects a two-segment override — the value must be a fully qualified table, not a schema', () => {
+    process.env[FEED_ENV_KEY] = 'ANALYTICS.PLATINUM';
+    expect(socialListeningFeedTable()).toBe('ANALYTICS.PLATINUM.SOCIAL_LISTENING_FEED');
+  });
+
+  it('rejects a four-segment override and falls back to the default', () => {
+    process.env[FEED_ENV_KEY] = 'A.B.C.D';
+    expect(socialListeningFeedTable()).toBe('ANALYTICS.PLATINUM.SOCIAL_LISTENING_FEED');
+  });
+
+  it('rejects a value with a stray quote and falls back to the default', () => {
+    process.env[FEED_ENV_KEY] = 'ANALYTICS.PLATINUM.FEED"; DROP TABLE X; --';
+    expect(socialListeningFeedTable()).toBe('ANALYTICS.PLATINUM.SOCIAL_LISTENING_FEED');
+  });
+
+  it('rejects a value with a space and falls back to the default', () => {
+    process.env[FEED_ENV_KEY] = 'A B.C.D';
+    expect(socialListeningFeedTable()).toBe('ANALYTICS.PLATINUM.SOCIAL_LISTENING_FEED');
+  });
+
+  it('rejects an empty/whitespace-only value and falls back to the default', () => {
+    process.env[FEED_ENV_KEY] = '   ';
+    expect(socialListeningFeedTable()).toBe('ANALYTICS.PLATINUM.SOCIAL_LISTENING_FEED');
   });
 });

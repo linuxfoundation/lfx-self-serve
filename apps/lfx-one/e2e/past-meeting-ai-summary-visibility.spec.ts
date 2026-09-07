@@ -29,6 +29,11 @@
 import { isPastMeetingSummaryAwaitingApproval, isPastMeetingSummaryVisible, type SummaryApprovalFlags } from '@lfx-one/shared/utils/past-meeting-summary.utils';
 import { expect, test } from '@playwright/test';
 
+// No auth guard, deliberately. Every test here calls the pure helpers on a literal
+// `SummaryApprovalFlags` -- no page is opened and no session is held -- so
+// `skipWhenAuthMissing()` only silenced real logic coverage on any run without credentials
+// (dealako + cursor, #1923).
+
 const summary = (approved: boolean, requires_approval: boolean): SummaryApprovalFlags => ({ approved, requires_approval });
 
 test.describe('past-meeting AI summary visibility (LFXV2-2052)', () => {

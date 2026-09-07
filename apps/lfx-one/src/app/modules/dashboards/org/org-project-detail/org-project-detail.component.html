@@ -753,9 +753,12 @@
 <!-- Leaderboard row score-breakdown drawer (LFXV2-2934) -->
 <lfx-org-leaderboard-detail-drawer
   [dimension]="leaderboardDetailDimension()"
+  [organizationId]="leaderboardDetailOrganizationId()"
   [orgName]="leaderboardDetailOrgName()"
-  [isViewingOrg]="leaderboardDetailIsViewingOrg()"
   [projectName]="hero()?.projectName ?? ''"
+  [projectSlug]="projectSlug() ?? ''"
+  [orgUid]="orgUid()"
+  [range]="timeRange()"
   [(visible)]="leaderboardDetailOpen" />
 
 <lfx-person-detail-drawer />

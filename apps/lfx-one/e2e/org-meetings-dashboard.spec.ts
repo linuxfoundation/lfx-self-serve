@@ -374,6 +374,7 @@ test.describe('Org Meetings insights (6a redesign)', () => {
     await gotoOrgMeetingsPage(page);
 
     await expect(page.getByTestId('org-meetings-no-access-state')).toBeVisible();
+    await expect(page.getByTestId('org-meetings-no-access-contact-support')).toBeVisible();
     await expect(page.getByTestId('org-meetings-kpi-cards')).toHaveCount(0);
     await expect(page.getByTestId('org-meetings-no-company-empty-state')).toHaveCount(0);
   });

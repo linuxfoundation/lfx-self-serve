@@ -12,12 +12,14 @@ import {
   isCommitteeMemberAtRisk,
   isCommitteeMemberRateEligible,
   isJoinedWithinWindow,
+  isLfStaffNonVotingSeat,
 } from './committee-engagement-classifier.utils';
 
 const VOTING_REP = CommitteeMemberVotingStatus.VOTING_REP;
 const ALTERNATE_VOTING_REP = CommitteeMemberVotingStatus.ALTERNATE_VOTING_REP;
 const OBSERVER = CommitteeMemberVotingStatus.OBSERVER;
 const EMERITUS = CommitteeMemberVotingStatus.EMERITUS;
+const NONE = CommitteeMemberVotingStatus.NONE;
 const CHAIR = CommitteeMemberRole.CHAIR;
 const LF_STAFF = CommitteeMemberRole.LF_STAFF;
 
@@ -53,7 +55,8 @@ describe('classifyCommitteeEngagement — decision table', () => {
     expect(classifyCommitteeEngagement({ attended: 10, invited: 10, votingStatus: EMERITUS, joinedWithinWindow: false })).toBe('Emeritus');
   });
 
-  // Row 2 (LFXV2-3101): LF Staff + Observer wins too, regardless of real numbers.
+  // Row 2 (LFXV2-3101, broadened GH-1848): LF Staff + no real voting seat (Observer, or no voting
+  // status at all) wins too, regardless of real numbers.
   it('classifies LF Staff regardless of a low real attendance rate (0/0), when voting status is Observer', () => {
     expect(classifyCommitteeEngagement({ attended: 0, invited: 0, votingStatus: OBSERVER, role: LF_STAFF, joinedWithinWindow: false })).toBe('LF Staff');
   });
@@ -62,18 +65,35 @@ describe('classifyCommitteeEngagement — decision table', () => {
     expect(classifyCommitteeEngagement({ attended: 5, invited: 5, votingStatus: OBSERVER, role: LF_STAFF, joinedWithinWindow: false })).toBe('LF Staff');
   });
 
+  // GH-1848: on a committee with no voting, staff seats never get assigned a voting status and
+  // resolve to the 'None' sentinel — previously this fell through the Observer-only carve-out and
+  // tenure-graced a literal 0/0 seat to 'High'; that was the exact reported bug.
+  it('classifies LF Staff (not the tenure-grace High) for a 0/0 staff seat with no voting status, even joined within the window', () => {
+    expect(classifyCommitteeEngagement({ attended: 0, invited: 0, votingStatus: NONE, role: LF_STAFF, joinedWithinWindow: true })).toBe('LF Staff');
+  });
+
+  it('classifies LF Staff for real attendance too, when voting status is None', () => {
+    expect(classifyCommitteeEngagement({ attended: 3, invited: 5, votingStatus: NONE, role: LF_STAFF, joinedWithinWindow: false })).toBe('LF Staff');
+  });
+
   it('does not broaden the LF Staff carve-out to non-staff Observers', () => {
     expect(classifyCommitteeEngagement({ attended: 2, invited: 10, votingStatus: OBSERVER, joinedWithinWindow: false })).toBe('Low');
+  });
+
+  it('does not broaden the None carve-out beyond staff — a non-staff member with no voting status still classifies on attendance/tenure normally', () => {
+    expect(classifyCommitteeEngagement({ attended: 0, invited: 0, votingStatus: NONE, joinedWithinWindow: true })).toBe('High');
+    expect(classifyCommitteeEngagement({ attended: 0, invited: 3, votingStatus: NONE, joinedWithinWindow: false })).toBe('Inactive');
   });
 
   it('does not broaden the LF Staff carve-out to a real Chair with zero attendance', () => {
     expect(classifyCommitteeEngagement({ attended: 0, invited: 3, votingStatus: VOTING_REP, role: CHAIR, joinedWithinWindow: false })).toBe('Inactive');
   });
 
-  // LFXV2-3101 follow-up (Jordan Evans review): an LF Staff member who is also a real Voting Rep
-  // or Alternate Voting Rep (an ED or staff member serving as a board/committee representative)
-  // is a genuine participant and must classify/count normally — only the Observer-status staff
-  // seat is excluded, not every LF Staff member regardless of their real voting role.
+  // LFXV2-3101 follow-up (Jordan Evans review), broadened GH-1848: an LF Staff member who is also
+  // a real Voting Rep or Alternate Voting Rep (an ED or staff member serving as a board/committee
+  // representative) is a genuine participant and must classify/count normally — only a staff seat
+  // with no real voting role (Observer or None) is excluded, not every LF Staff member regardless
+  // of their real voting role.
   it('does NOT classify LF Staff for a real Voting Rep who happens to be LF Staff — classifies on real attendance instead', () => {
     expect(classifyCommitteeEngagement({ attended: 5, invited: 5, votingStatus: VOTING_REP, role: LF_STAFF, joinedWithinWindow: false })).toBe('High');
   });
@@ -82,6 +102,12 @@ describe('classifyCommitteeEngagement — decision table', () => {
     expect(classifyCommitteeEngagement({ attended: 0, invited: 5, votingStatus: ALTERNATE_VOTING_REP, role: LF_STAFF, joinedWithinWindow: false })).toBe(
       'Inactive'
     );
+  });
+
+  // Staff + Emeritus: Emeritus wins first in the decision order regardless of role, and this
+  // behavior is unchanged by the GH-1848 broadening (Emeritus is neither Observer nor None).
+  it('classifies Emeritus (not LF Staff) for a staff member with Emeritus voting status', () => {
+    expect(classifyCommitteeEngagement({ attended: 1, invited: 20, votingStatus: EMERITUS, role: LF_STAFF, joinedWithinWindow: false })).toBe('Emeritus');
   });
 
   // Row 3: no invites yet, joined within window — "the Orlin case", but the invited=0 variant.
@@ -167,6 +193,10 @@ describe('isCommitteeMemberAtRisk', () => {
     expect(isCommitteeMemberAtRisk({ attended: 0, invited: 20, votingStatus: OBSERVER, role: LF_STAFF, joinedWithinWindow: false })).toBe(false);
   });
 
+  it('is never true for an LF Staff member with no voting status, same as Observer (GH-1848)', () => {
+    expect(isCommitteeMemberAtRisk({ attended: 0, invited: 20, votingStatus: NONE, role: LF_STAFF, joinedWithinWindow: false })).toBe(false);
+  });
+
   it('is still true for a non-staff Observer with a low real rate (the carve-out is role-based, not voting-status-based)', () => {
     expect(isCommitteeMemberAtRisk({ attended: 10, invited: 100, votingStatus: OBSERVER, joinedWithinWindow: false })).toBe(true);
   });
@@ -199,7 +229,11 @@ describe('isCommitteeMemberActive', () => {
     expect(isCommitteeMemberActive({ attended: 5, invited: 5, votingStatus: OBSERVER, role: LF_STAFF, joinedWithinWindow: true })).toBe(false);
   });
 
-  it('is true for a real Voting Rep who happens to be LF Staff — only Observer-status staff seats are excluded (LFXV2-3101 follow-up)', () => {
+  it('is always false for LF Staff + no voting status, same as Observer (GH-1848)', () => {
+    expect(isCommitteeMemberActive({ attended: 5, invited: 5, votingStatus: NONE, role: LF_STAFF, joinedWithinWindow: true })).toBe(false);
+  });
+
+  it('is true for a real Voting Rep who happens to be LF Staff — only non-voting staff seats are excluded (LFXV2-3101 follow-up)', () => {
     expect(isCommitteeMemberActive({ attended: 5, invited: 5, votingStatus: VOTING_REP, role: LF_STAFF, joinedWithinWindow: false })).toBe(true);
   });
 });
@@ -211,6 +245,10 @@ describe('isCommitteeMemberActiveEligible (LFXV2-3101 review fix — the active_
 
   it('is false for LF Staff, for the same reason', () => {
     expect(isCommitteeMemberActiveEligible({ votingStatus: OBSERVER, role: LF_STAFF })).toBe(false);
+  });
+
+  it('is false for LF Staff with no voting status, same as Observer (GH-1848)', () => {
+    expect(isCommitteeMemberActiveEligible({ votingStatus: NONE, role: LF_STAFF })).toBe(false);
   });
 
   it('is true for a real member regardless of attendance — eligibility is attendance-independent, unlike isCommitteeMemberActive', () => {
@@ -225,31 +263,36 @@ describe('isCommitteeMemberActiveEligible (LFXV2-3101 review fix — the active_
 
 describe('isCommitteeMemberRateEligible (LFXV2-3101)', () => {
   it('is false for LF Staff + Observer, regardless of real attendance', () => {
-    expect(isCommitteeMemberRateEligible({ attended: 8, invited: 8, votingStatus: OBSERVER, role: LF_STAFF, joinedWithinWindow: false })).toBe(false);
+    expect(isCommitteeMemberRateEligible({ votingStatus: OBSERVER, role: LF_STAFF })).toBe(false);
   });
 
-  it('is true for a real Voting Rep who happens to be LF Staff — only Observer-status staff seats are excluded (LFXV2-3101 follow-up)', () => {
-    expect(isCommitteeMemberRateEligible({ attended: 8, invited: 8, votingStatus: VOTING_REP, role: LF_STAFF, joinedWithinWindow: false })).toBe(true);
+  it('is false for LF Staff with no voting status, same as Observer (GH-1848)', () => {
+    expect(isCommitteeMemberRateEligible({ votingStatus: NONE, role: LF_STAFF })).toBe(false);
+  });
+
+  it('is true for a real Voting Rep who happens to be LF Staff — only non-voting staff seats are excluded (LFXV2-3101 follow-up)', () => {
+    expect(isCommitteeMemberRateEligible({ votingStatus: VOTING_REP, role: LF_STAFF })).toBe(true);
   });
 
   it('is true for Emeritus — unlike every other rule in this file, Emeritus is NOT rate-excluded', () => {
-    expect(isCommitteeMemberRateEligible({ attended: 1, invited: 20, votingStatus: EMERITUS, joinedWithinWindow: false })).toBe(true);
+    expect(isCommitteeMemberRateEligible({ votingStatus: EMERITUS, role: undefined })).toBe(true);
   });
 
-  it('is true for a real Chair with zero attendance (the carve-out is role-based, not a broad exclusion)', () => {
-    expect(isCommitteeMemberRateEligible({ attended: 0, invited: 3, votingStatus: VOTING_REP, role: CHAIR, joinedWithinWindow: false })).toBe(true);
+  it('is true for a real Chair regardless of attendance — the carve-out is role-based, not a broad exclusion, and this predicate is attendance-independent', () => {
+    expect(isCommitteeMemberRateEligible({ votingStatus: VOTING_REP, role: CHAIR })).toBe(true);
   });
 
   it('is true for a member with no role set at all (undefined, not LF Staff)', () => {
-    expect(isCommitteeMemberRateEligible({ attended: 5, invited: 10, votingStatus: VOTING_REP, joinedWithinWindow: false })).toBe(true);
+    expect(isCommitteeMemberRateEligible({ votingStatus: VOTING_REP, role: undefined })).toBe(true);
   });
 
-  it('is true for a member who is BOTH Emeritus and LF Staff — the LF Staff rate exclusion is scoped to Observer voting status specifically, and Emeritus is never voting-status Observer', () => {
-    // LFXV2-3101 follow-up: the LF Staff exclusion only fires for role === LF_STAFF &&
-    // votingStatus === Observer. An Emeritus+LF-Staff member's votingStatus is Emeritus, not
-    // Observer, so isLfStaffObserverSeat is false here — they classify Emeritus (voting status
-    // wins first in the classifier) and are rate-eligible via the ordinary Emeritus-inclusion rule,
-    // not excluded a second way by role.
+  it('is true for a member who is BOTH Emeritus and LF Staff — the LF Staff rate exclusion is scoped to non-voting status (Observer or None) specifically, and Emeritus is neither', () => {
+    // LFXV2-3101 follow-up, broadened GH-1848: the LF Staff exclusion only fires for
+    // role === LF_STAFF && (votingStatus === Observer || votingStatus === None). An
+    // Emeritus+LF-Staff member's votingStatus is Emeritus, not Observer or None, so
+    // isLfStaffNonVotingSeat is false here — they classify Emeritus (voting status wins first in
+    // the classifier) and are rate-eligible via the ordinary Emeritus-inclusion rule, not excluded
+    // a second way by role.
     const input = { attended: 1, invited: 20, votingStatus: EMERITUS, role: LF_STAFF, joinedWithinWindow: false };
     expect(classifyCommitteeEngagement(input)).toBe('Emeritus');
     expect(isCommitteeMemberRateEligible(input)).toBe(true);
@@ -285,5 +328,32 @@ describe('isJoinedWithinWindow', () => {
 
   it('accepts a Date instance directly, not just a string', () => {
     expect(isJoinedWithinWindow(new Date('2024-06-15T00:00:00.000Z'), windowStart)).toBe(true);
+  });
+});
+
+describe('isLfStaffNonVotingSeat (LFXV2-3101, broadened GH-1848)', () => {
+  it('is true for LF Staff + Observer', () => {
+    expect(isLfStaffNonVotingSeat({ role: LF_STAFF, votingStatus: OBSERVER })).toBe(true);
+  });
+
+  it('is true for LF Staff + None', () => {
+    expect(isLfStaffNonVotingSeat({ role: LF_STAFF, votingStatus: NONE })).toBe(true);
+  });
+
+  it('is false for LF Staff + a real voting seat', () => {
+    expect(isLfStaffNonVotingSeat({ role: LF_STAFF, votingStatus: VOTING_REP })).toBe(false);
+    expect(isLfStaffNonVotingSeat({ role: LF_STAFF, votingStatus: ALTERNATE_VOTING_REP })).toBe(false);
+  });
+
+  it('is false for LF Staff + Emeritus (Emeritus wins first in the classifier, not this predicate)', () => {
+    expect(isLfStaffNonVotingSeat({ role: LF_STAFF, votingStatus: EMERITUS })).toBe(false);
+  });
+
+  it('is false for a non-staff Observer — the carve-out is role-based, not voting-status-based', () => {
+    expect(isLfStaffNonVotingSeat({ role: CHAIR, votingStatus: OBSERVER })).toBe(false);
+  });
+
+  it('is false for a non-staff member with no voting status', () => {
+    expect(isLfStaffNonVotingSeat({ role: undefined, votingStatus: NONE })).toBe(false);
   });
 });

@@ -1,7 +1,7 @@
 // Copyright The Linux Foundation and each contributor to LFX.
 // SPDX-License-Identifier: MIT
 
-import { GithubRepoUrlErrorReason, MktgAgentIntake, MktgIntakeField, MktgIntakeFieldFormat, MktgReadmeSkipReason } from '../interfaces';
+import type { GithubRepoUrlErrorReason, MktgAgentIntake, MktgIntakeField, MktgIntakeFieldFormat, MktgReadmeSkipReason } from '../interfaces';
 import { BRAND_KIT_FORM_PREAMBLE_LINES, BRAND_KIT_INTAKE_QUESTIONS } from './brand-kit.constants';
 import {
   FOUNDATION_MESSAGE_DERIVATIVE_CHIPS,

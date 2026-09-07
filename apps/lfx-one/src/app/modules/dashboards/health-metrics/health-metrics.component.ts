@@ -70,6 +70,9 @@ export class HealthMetricsComponent {
 
   protected readonly hasFoundation = computed(() => !!this.projectContextService.selectedFoundation());
 
+  // 'flywheel' is excluded while its card is hidden (#2167): the empty-state gate below must
+  // resolve from visible cards only. The hidden card still emits hasDataChange, but writes for
+  // keys outside this list are ignored by allCardsEmpty().
   private readonly cardNames: readonly HealthMetricCardName[] = [
     'events',
     'nps',
@@ -78,14 +81,15 @@ export class HealthMetricsComponent {
     'participating-orgs',
     'training',
     'code-contribution',
-    'flywheel',
     'board-meeting',
   ];
 
   protected readonly allCardsEmpty = computed(() => {
     if (this.loading()) return false;
 
-    // Filter-independent totals: show cards even if the current period is empty.
+    // Filter-independent totals act as a data-availability probe: a foundation with any totals
+    // keeps the card layout even if the current period is empty. The tiles rendering these
+    // totals are hidden (#2167), but the probe intentionally still gates the empty state.
     const data = this.metricsData();
     const hasFoundationTotals =
       (data.totalValue?.totalValue ?? 0) > 0 || (data.totalProjects?.totalProjects ?? 0) > 0 || (data.totalMembers?.totalMembers ?? 0) > 0;
@@ -171,7 +175,7 @@ export class HealthMetricsComponent {
             totalValue: this.analyticsService.getFoundationValueConcentration(slug).pipe(catchError(() => of(null))),
             totalProjects: this.analyticsService.getFoundationTotalProjects(slug).pipe(catchError(() => of(null))),
             totalMembers: this.analyticsService.getFoundationTotalMembers(slug).pipe(catchError(() => of(null))),
-            flywheel: this.analyticsService.getFlywheelConversion(slug),
+            flywheel: this.analyticsService.getFlywheelConversion(slug).pipe(catchError(() => of(null))),
           })
         ),
         takeUntilDestroyed(this.destroyRef)

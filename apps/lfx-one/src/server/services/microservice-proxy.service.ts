@@ -26,7 +26,10 @@ export class MicroserviceProxyService {
     try {
       const baseUrl = this.resolveBaseUrl(service);
       const endpoint = `${baseUrl}${path}`;
-      const token = req.bearerToken;
+      // options.bearerToken lets callers fan out parallel requests with different identities
+      // (e.g. user token for FGA checks alongside M2M for public data) without mutating the
+      // shared req.bearerToken field — which would race across the parallel calls.
+      const token = options?.bearerToken ?? req.bearerToken;
 
       // Merge query parameters with defaults taking precedence
       // This ensures that default params cannot be overridden by the caller
@@ -52,20 +55,22 @@ export class MicroserviceProxyService {
     method: 'GET' | 'POST' | 'PUT' | 'PATCH' | 'DELETE' = 'GET',
     query?: Record<string, any>,
     data?: any,
-    customHeaders?: Record<string, string>
+    customHeaders?: Record<string, string>,
+    options?: ApiRequestOptions
   ): Promise<ApiResponse<T>> {
     const operation = `${method.toLowerCase()}_${path.replace(/\//g, '_')}`;
 
     try {
       const baseUrl = this.resolveBaseUrl(service);
       const endpoint = `${baseUrl}${path}`;
-      const token = req.bearerToken;
+      // See proxyRequest above — options.bearerToken opts out of req.bearerToken for parallel-safe calls.
+      const token = options?.bearerToken ?? req.bearerToken;
 
       // Merge query parameters with defaults taking precedence
       // This ensures that default params cannot be overridden by the caller
       const mergedQuery = { ...query, ...DEFAULT_QUERY_PARAMS };
 
-      const response = await this.apiClient.request<T>(method, endpoint, token, mergedQuery, data, customHeaders);
+      const response = await this.apiClient.request<T>(method, endpoint, token, mergedQuery, data, customHeaders, options);
       return response;
     } catch (error: any) {
       // Transform HTTP errors from API client into MicroserviceError

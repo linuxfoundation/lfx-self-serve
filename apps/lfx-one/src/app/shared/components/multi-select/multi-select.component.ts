@@ -1,14 +1,14 @@
 // Copyright The Linux Foundation and each contributor to LFX.
 // SPDX-License-Identifier: MIT
 
-import { isPlatformBrowser } from '@angular/common';
-import { Component, ElementRef, inject, input, output, PLATFORM_ID } from '@angular/core';
+import { isPlatformBrowser, NgTemplateOutlet } from '@angular/common';
+import { Component, contentChild, ElementRef, inject, input, output, PLATFORM_ID, TemplateRef } from '@angular/core';
 import { FormGroup, ReactiveFormsModule } from '@angular/forms';
 import { MultiSelectModule } from 'primeng/multiselect';
 
 @Component({
   selector: 'lfx-multi-select',
-  imports: [MultiSelectModule, ReactiveFormsModule],
+  imports: [MultiSelectModule, ReactiveFormsModule, NgTemplateOutlet],
   templateUrl: './multi-select.component.html',
   styleUrl: './multi-select.component.scss',
 })
@@ -25,6 +25,8 @@ export class MultiSelectComponent {
   public readonly optionImage = input<string | undefined>(undefined);
   public readonly placeholder = input<string>('Select');
   public readonly showToggleAll = input<boolean>(true);
+  /** Max simultaneous selections (PrimeNG `selectionLimit`) — undefined = unbounded. */
+  public readonly selectionLimit = input<number | undefined>(undefined);
   public readonly appendTo = input<any>('body');
   public readonly filter = input<boolean>(true);
   /** Focus the in-panel filter input as soon as the overlay opens (PrimeNG defaults this to false). */
@@ -55,7 +57,14 @@ export class MultiSelectComponent {
    * overlay to its trigger (long labels/CSS floors mis-size it), so when true it's measured against the trigger and matched on each open.
    */
   public readonly matchTriggerWidth = input<boolean>(false);
+  /** Accessible label forwarded to the focusable input (PrimeNG `ariaLabel`). */
+  public readonly ariaLabel = input<string | undefined>(undefined);
+  /** Id applied to the focusable input — pair with an external `<label for>` (PrimeNG `inputId`). */
+  public readonly inputId = input<string | undefined>(undefined);
   public readonly filterChange = output<string>();
+
+  /** Optional custom option template (mirrors `lfx-select`'s `itemTemplate`) for richer rows — project as `<ng-template let-option #item>`; takes precedence over the built-in layout. */
+  public readonly itemTemplate = contentChild<TemplateRef<unknown>>('item');
 
   /** On panel open, match the body-appended overlay's width to the trigger (opt-in). Browser-only (touches document/rAF). */
   protected onPanelShow(): void {

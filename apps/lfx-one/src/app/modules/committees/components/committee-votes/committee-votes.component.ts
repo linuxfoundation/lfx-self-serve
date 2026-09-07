@@ -48,6 +48,8 @@ export class CommitteeVotesComponent {
   // Data
   public votes: Signal<Vote[]> = this.initVotes();
   public createVoteQueryParams: Signal<Record<string, string>> = this.initCreateVoteQueryParams();
+  // Edit-link fallback: every row here belongs to this committee, so its committee_uid admits
+  // committee writers through writerGuard even when the indexed row omits the field (GH-1568).
   public editVoteQueryParams: Signal<Record<string, string>> = this.createVoteQueryParams;
 
   public viewVoteResults(voteUid: string): void {

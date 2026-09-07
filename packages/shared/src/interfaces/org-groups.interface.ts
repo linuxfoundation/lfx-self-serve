@@ -38,6 +38,9 @@ export interface OrgLensGroupVm extends OrgLensGroupSummary {
    *  set) — distinguishes it from the row's own aria-label so screen-reader users can tell the
    *  two link targets apart. Empty string when projectLabel is empty. */
   projectAriaLabel: string;
+  /** Pre-computed accessible name for the seat-holders drawer trigger — includes the count itself
+   *  (WCAG 2.5.3 Label in Name: the trigger's only visible text is the number), pluralized. */
+  seatHoldersTriggerAriaLabel: string;
 }
 
 /** One non-zero behavioral-class tile rendered in the org-groups stat strip. */

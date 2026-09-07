@@ -16,11 +16,11 @@ import { PDFTemplateDetails, CertificateData, CertificateEventRow } from '@lfx-o
 import {
   DEFAULT_LOGO_WIDTH,
   DEFAULT_TEMPLATE,
-  LF_OPEN_SOURCE_LOGO,
-  LF_OPEN_SOURCE_LOGO_MATCH,
-  LF_OPEN_SOURCE_LOGO_WIDTH,
+  LF_OPEN_SOURCE_OVERRIDE,
+  LF_OPEN_SOURCE_OVERRIDE_MATCH,
   PROJECT_TEMPLATES,
 } from '@lfx-one/shared/constants/pdf.constants';
+import { isBackfillEventSource } from '@lfx-one/shared/utils';
 
 // In production, import.meta.url points to the server bundle (dist/lfx-one/server/server.mjs)
 // and pdf-templates are copied there by the build script.
@@ -64,13 +64,13 @@ export class CertificateService {
 
     const baseTemplate = PROJECT_TEMPLATES[eventRow.PROJECT_ID] ?? DEFAULT_TEMPLATE;
 
-    // Legal requires the LF Open Source mark for China backfill events, whichever project owns
-    // them. Logo only — name, address, body copy and signature stay with the base template.
-    const isLfOpenSourceOverride = this.requiresLfOpenSourceLogo(eventRow);
-    const template = isLfOpenSourceOverride ? { ...baseTemplate, logo: LF_OPEN_SOURCE_LOGO, logoWidth: LF_OPEN_SOURCE_LOGO_WIDTH } : baseTemplate;
+    // Legal requires the full LF Open Source identity for China backfill events, whichever
+    // project owns them. Address and signature stay with the base template.
+    const isLfOpenSourceOverride = this.requiresLfOpenSourceOverride(eventRow);
+    const template = isLfOpenSourceOverride ? { ...baseTemplate, ...LF_OPEN_SOURCE_OVERRIDE } : baseTemplate;
 
     if (isLfOpenSourceOverride) {
-      logger.debug(req, 'generate_certificate', 'Applying LF Open Source logo override', {
+      logger.debug(req, 'generate_certificate', 'Applying LF Open Source identity override', {
         event_id: data.eventId,
         event_source: eventRow.EVENT_SOURCE,
         event_country: eventRow.EVENT_COUNTRY,
@@ -86,14 +86,16 @@ export class CertificateService {
   }
 
   /**
-   * Trimmed and lowercased so casing drift in imported CSV data doesn't skip the override, and
-   * whole-string so 'Hong Kong (SAR China)' doesn't match. Unmatched values keep the base logo.
+   * Country trimmed/lowercased against casing drift in imported CSV data, and whole-string so
+   * 'Hong Kong (SAR China)' doesn't match.
+   * Source half defers to isBackfillEventSource() for one source of truth, pre-trimmed here since
+   * its ' \t\n\r' strip (kept narrow for Snowflake SQL parity, see event.utils.ts) is too narrow
+   * for this JS-only comparison. Unmatched values keep the base template.
    */
-  private requiresLfOpenSourceLogo(event: CertificateEventRow): boolean {
-    const source = event.EVENT_SOURCE?.trim().toLowerCase();
+  private requiresLfOpenSourceOverride(event: CertificateEventRow): boolean {
     const country = event.EVENT_COUNTRY?.trim().toLowerCase();
 
-    return source === LF_OPEN_SOURCE_LOGO_MATCH.EVENT_SOURCE.toLowerCase() && country === LF_OPEN_SOURCE_LOGO_MATCH.EVENT_COUNTRY.toLowerCase();
+    return isBackfillEventSource(event.EVENT_SOURCE?.trim()) && country === LF_OPEN_SOURCE_OVERRIDE_MATCH.EVENT_COUNTRY.toLowerCase();
   }
 
   private async getEventRow(req: Request, eventId: string, userEmail: string): Promise<CertificateEventRow> {

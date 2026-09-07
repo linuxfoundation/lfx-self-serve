@@ -16,8 +16,13 @@ import { environment } from '@environments/environment';
  *
  * Opens via `command` rather than `url` + `target`: PrimeNG's menu renders no `rel`
  * attribute, so an anchor here could not carry `noopener noreferrer`.
+ *
+ * Disabled while impersonating even though the item is a read plus a navigation. The Console
+ * authenticates the browser's own user, so following it from an impersonation session lands the
+ * administrator in the Console as themselves on someone else's project — an offer that does not
+ * do what the row implies. Row actions grey out together (#1894); only Download PDF stays.
  */
-export function buildManageInCclaConsoleMenuItems(agreement: MyClaAgreement): MenuItem[] {
+export function buildManageInCclaConsoleMenuItems(agreement: MyClaAgreement, impersonating: boolean): MenuItem[] {
   if (!canManageInCclaConsole(agreement)) {
     return [];
   }
@@ -26,6 +31,7 @@ export function buildManageInCclaConsoleMenuItems(agreement: MyClaAgreement): Me
     {
       label: 'Manage in CCLA Console',
       icon: 'fa-light fa-arrow-up-right-from-square',
+      disabled: impersonating,
       command: () => {
         if (typeof window !== 'undefined') {
           window.open(url, '_blank', 'noopener,noreferrer');

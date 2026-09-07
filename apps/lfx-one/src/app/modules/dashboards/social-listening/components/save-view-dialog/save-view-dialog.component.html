@@ -1,0 +1,32 @@
+<!-- Copyright The Linux Foundation and each contributor to LFX. -->
+<!-- SPDX-License-Identifier: MIT -->
+
+<div class="flex flex-col gap-2 pt-2">
+  <label for="view-name" class="text-sm font-medium text-gray-700">View name</label>
+  <input
+    #viewNameInput
+    id="view-name"
+    pInputText
+    [ngModel]="viewName()"
+    (ngModelChange)="viewName.set($event)"
+    (keydown.enter)="onSave()"
+    placeholder="e.g. Crisis alerts – Kubernetes"
+    [maxlength]="maxLength"
+    class="w-full"
+    [attr.aria-invalid]="isDuplicateName() || null"
+    [attr.aria-describedby]="isDuplicateName() ? 'view-name-error' : null"
+    [class.ng-invalid]="isDuplicateName()"
+    [class.ng-dirty]="isDuplicateName()"
+    data-testid="save-view-dialog-name-input" />
+  @if (isDuplicateName()) {
+    <span id="view-name-error" class="text-xs text-red-500" data-testid="save-view-dialog-duplicate-error"
+      >A view named "{{ trimmedName() }}" already exists. Try a different name.</span
+    >
+  } @else {
+    <span class="text-xs text-gray-400 text-right" data-testid="save-view-dialog-counter">{{ viewName().length }}/{{ maxLength }}</span>
+  }
+</div>
+<div class="flex justify-end gap-2 pt-4">
+  <lfx-button label="Cancel" [text]="true" size="small" (onClick)="onCancel()" data-testid="save-view-dialog-cancel" />
+  <lfx-button label="Save" size="small" [disabled]="!isValid()" (onClick)="onSave()" data-testid="save-view-dialog-save" />
+</div>

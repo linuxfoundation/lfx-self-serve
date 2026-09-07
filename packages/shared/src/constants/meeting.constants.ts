@@ -682,6 +682,43 @@ export const PAST_MEETING_SORT = {
   UPDATED_ASC: 'updated_asc',
 } as const;
 
+// ============================================================================
+// Attendance Reconciliation (GH-1672 / PCC-1452 port)
+// ============================================================================
+
+/**
+ * Max prior occurrences of a meeting series scanned when assembling the candidate pool's
+ * "previously-verified attendee" source. Unbounded series history would mean an unbounded
+ * number of per-occurrence participant fetches for a single reconcile call; recent occurrences
+ * carry the most relevant identity signal anyway (attendance patterns and org affiliation
+ * change over time), so older ones aren't worth the extra roundtrips.
+ */
+export const RECONCILIATION_MAX_PRIOR_OCCURRENCES = 10;
+
+/**
+ * Max ambiguous attendees sent to the LLM in a single reconcileAttendees call. Bounds prompt
+ * size and keeps each call within AI_REQUEST_CONFIG's reconciliation timeout; a meeting with more
+ * ambiguous attendees than this is chunked into multiple calls dispatched concurrently (not one
+ * unbounded prompt), with each chunk independently degrading to `confidence: 'none'` on failure.
+ */
+export const RECONCILIATION_MAX_ATTENDEES_PER_AI_CALL = 30;
+
+/**
+ * Max chunk-dispatch calls to the AI service run concurrently for one reconcile request. Without
+ * a cap, a very large occurrence (many chunks) would fire all of them at once against the shared
+ * LiteLLM proxy, which is exactly the kind of unbounded burst PCC's own reconciliation feature
+ * never guarded against.
+ */
+export const RECONCILIATION_MAX_CONCURRENT_AI_CALLS = 3;
+
+/**
+ * Max candidates sent per AI chunk. The full pool (invitees + committee members + prior
+ * occurrences) can be large; sending all of it in every chunk's prompt scales prompt size with
+ * pool size on top of attendee count. Candidates are ranked by relevance (deterministic-pass
+ * near-misses first) and truncated to this count per chunk.
+ */
+export const RECONCILIATION_MAX_CANDIDATES_PER_AI_CALL = 50;
+
 /**
  * The `AttachmentCategory` (`meeting-attachment.interface.ts`) value CommitteeActivityService's
  * notes_added leg treats as a note. A single source of truth for both the upstream `filters_all`

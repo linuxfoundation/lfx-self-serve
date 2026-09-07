@@ -394,9 +394,10 @@ alias without leaving the same application.
   it under a `membership/` module alongside the Individual Supporter feature).
 - **Auth middleware** — the ITX service uses an Auth0 M2M token; the same pattern used
   by other server-side service calls in LFX One applies.
-- **Profile email page as a model** — `apps/lfx-one/src/app/modules/profile/email/`
-  already handles profile email management (though backed by Supabase, not ITX). The
-  form pattern and layout can be adapted.
+- **Profile settings page as a model** — the email section of
+  `apps/lfx-one/src/app/modules/settings/account-settings/` already handles profile
+  email management (though backed by auth-service over NATS, not ITX). The form pattern and layout
+  can be adapted.
 
 ### What needs to be built
 
@@ -414,8 +415,8 @@ alias without leaving the same application.
    directly from LFX One, or does it need to be proxied through the LFX v2 service?
 2. **Alias management in LFX One profile flow** — Should the `@linux.com` alias be
    treated as a special case of the existing profile email management
-   (`modules/profile/email/`), or as a separate "Linux.com Email" feature under
-   `modules/membership/`?
+   (`modules/settings/account-settings/`), or as a separate "Linux.com Email" feature
+   under `modules/membership/`?
 3. **Purchase UI location** — Should the linux add-on purchase live in the same checkout
    wizard as Individual Supporter (a step or upsell after confirming membership), or
    remain a separate product flow?

@@ -14,29 +14,24 @@ export type CommitteeEngagementDataSource = 'mock' | 'live';
  * Engagement tier derived in the BFF from the member's personal attendance rate.
  * `Emeritus` and `LF Staff` are both seat-type overrides, not rate tiers — neither ever classifies
  * `Inactive`/`Low` regardless of real attendance: `Emeritus` members are on the roster for
- * legacy/honorific reasons, and an LF Staff member with Observer voting status (LFXV2-3101) carries
- * no real attendance expectation, so treating either as disengaged would be noise, not signal. An
- * LF Staff member who is a real Voting Rep or Alternate Voting Rep is NOT covered by this
- * override — see `isLfStaffObserverSeat` in `committee-engagement-classifier.utils.ts`.
+ * legacy/honorific reasons, and an LF Staff member with Observer voting status, or no voting status
+ * at all, carries no real attendance expectation. An LF Staff member who is a real Voting Rep or
+ * Alternate Voting Rep is NOT covered by this override — see `isLfStaffNonVotingSeat` in
+ * `committee-engagement-classifier.utils.ts`.
  */
 export type CommitteeEngagementClassification = 'High' | 'Medium' | 'Low' | 'Inactive' | 'Emeritus' | 'LF Staff';
 
 /**
- * Classification inputs beyond the raw counts, per LFXV2-1705's finalized model semantics
- * (`platinum_lfx_one_committee_meeting_attendance`, `lf-dbt#2694`): `votingStatus` (`'Emeritus'`
- * short-circuits to a neutral tier), `role`+`votingStatus` together (LF Staff + Observer
- * short-circuits to a neutral tier, LFXV2-3101 — see `isLfStaffObserverSeat`'s doc for why this is
- * a two-part condition, not `role` alone), and `joinedWithinWindow` (whether `member_joined_at`
- * falls after the requested window's start — tenure clipping, so a brand-new member's zero invites
- * doesn't read as disengagement). Consumed by `committee-engagement-classifier.utils.ts`. `role`'s
- * key is required (value may be `undefined`), not optional — a construction site that forgets it
- * should get a compile error, not silently reintroduce the bug this ticket fixes (an unmeasured LF
- * Staff+Observer seat counting toward the rate/active sums again). Both current consumers populate
- * it today:
- * `committee-engagement.service.ts` resolves it roster-first, warehouse `MEMBER_ROLE` as a fallback
- * (LFXV2-3101 review fix — see that call site's own comment for why); `groups-engagement-stats.
- * service.ts` has no live roster to prefer, so it passes warehouse `MEMBER_ROLE` directly (see that
- * class's own doc for the resulting freshness lag versus the roster-first detail page).
+ * Classification inputs beyond the raw counts: `votingStatus` (`'Emeritus'` short-circuits to a
+ * neutral tier), `role`+`votingStatus` together (LF Staff + no real voting seat short-circuits to
+ * a neutral tier — see `isLfStaffNonVotingSeat`'s doc for why this is a two-part condition, not
+ * `role` alone), and `joinedWithinWindow` (whether `member_joined_at` falls after the requested
+ * window's start — tenure clipping, so a brand-new member's zero invites doesn't read as
+ * disengagement). Consumed by `committee-engagement-classifier.utils.ts`. `role`'s key is required
+ * (value may be `undefined`), not optional — a construction site that forgets it should get a
+ * compile error, not silently drop the LF Staff exclusion. `committee-engagement.service.ts`
+ * resolves it roster-first with warehouse `MEMBER_ROLE` as a fallback; `groups-engagement-stats.
+ * service.ts` has no live roster to prefer, so it passes warehouse `MEMBER_ROLE` directly.
  */
 export interface CommitteeEngagementClassificationInput {
   attended: number;
@@ -57,9 +52,9 @@ export interface CommitteeMemberEngagement {
   /** `attended / invited`, 0 when `invited` is 0, rounded to 2 decimal places. */
   rate: number;
   classification: CommitteeEngagementClassification;
-  /** e.g. `'Chair'`, `'Vice Chair'`, `'None'` — passthrough for the UI to call out distinctly; also drives the `LF Staff` classification (LFXV2-3101, together with `voting_status === 'Observer'` — see `isLfStaffObserverSeat`) and its `attendance_rate`/`active_count` exclusion. */
+  /** e.g. `'Chair'`, `'Vice Chair'`, `'None'` — passthrough for the UI to call out distinctly; also drives the `LF Staff` classification (together with `voting_status` — see `isLfStaffNonVotingSeat`) and its `attendance_rate`/`active_count` exclusion. */
   role: string;
-  /** e.g. `'Voting Rep'`, `'Observer'`, `'Emeritus'` — passthrough, drives the `Emeritus` classification. */
+  /** e.g. `'Voting Rep'`, `'Observer'`, `'Emeritus'`, `'None'` — drives the `Emeritus` classification directly, and (together with `role`) feeds the `LF Staff` exclusion via `isLfStaffNonVotingSeat` — not just a display passthrough. */
   voting_status: string;
   /** Committee-wide meeting count for the window, regardless of who was invited — an informational "invitation rate" signal (`invited / committee_meetings`), never the rate denominator. */
   committee_meetings: number;
@@ -68,45 +63,47 @@ export interface CommitteeMemberEngagement {
 /** Aggregate stats for `GET /api/committees/:uid/engagement`. */
 export interface CommitteeEngagementSummary {
   /**
-   * `sum(attended) / sum(invited)` across the full committee roster, excluding LF Staff+Observer
-   * seats (LFXV2-3101 — a staff seat with no real participation expectation shouldn't depress a
-   * committee's rate; an LF Staff member who is a real Voting Rep or Alternate Voting Rep is NOT
-   * excluded — see `isLfStaffObserverSeat`), but NOT Emeritus-excluded — a committee with an
-   * Emeritus member (high invitation rate, low real attendance, by design) can still show a
-   * depressed rate here alongside an `active_count` that ignores that same member. A UI surfacing
-   * both side-by-side should call this out rather than let them appear to contradict. Known,
-   * accepted edge case: a roster made up entirely of LF Staff+Observer seats (no non-excluded
-   * member ever invited) reports `0` here via the same `invited <= 0` sentinel an empty/
-   * never-invited roster already reports — indistinguishable from "no data yet" at this field
-   * alone. Not disambiguated by a separate value, consistent with how this field already overloads
-   * `0` for "nobody was invited" before this ticket.
+   * `sum(attended) / sum(invited)` across the full committee roster, excluding LF Staff+non-voting
+   * seats (a staff seat with no real participation expectation shouldn't depress a committee's
+   * rate; a real Voting Rep or Alternate Voting Rep is NOT excluded — see `isLfStaffNonVotingSeat`),
+   * but NOT Emeritus-excluded — a committee with an Emeritus member (high invitation rate, low real
+   * attendance, by design) can still show a depressed rate here alongside an `active_count` that
+   * ignores that same member. A UI surfacing both side-by-side should call this out.
+   * Edge case: a roster made up entirely of LF Staff+non-voting seats reports `0` here via the same
+   * `invited <= 0` sentinel an empty/never-invited roster reports — indistinguishable from "no data
+   * yet" at this field alone. The UI-facing consumer
+   * (`CommitteeEngagementSummaryComponent.attendanceRateLabel`) re-derives the rate-eligible
+   * population from `members[]` via `isCommitteeMemberRateEligible` and renders `'—'` instead of a
+   * literal `0%` when no rate-eligible member has any invites this window, mirroring
+   * `eligible_count`'s `activeMembersLabel` guard below. A future change that filters or truncates
+   * `members[]` would silently defeat that gate.
    */
   attendance_rate: number;
   /**
-   * Count of non-Emeritus, non-LF-Staff+Observer members with real attendance this window, or who
+   * Count of non-Emeritus, non-LF-Staff+non-voting members with real attendance this window, or who
    * joined within it (active by definition of being newly on the roster) — broader than "classified
    * High/Medium": a Low-classified member with some real attendance still counts here. See
-   * `committee-engagement-classifier.utils.ts`'s `isCommitteeMemberActive`. The "joined within it"
-   * clause only applies when `data_available` is `true` — on a zero-row committee, or one whose
-   * rows exist but don't join to any roster member, tenure alone can't imply active (see
-   * `data_available`'s doc), so this is `0` there regardless of roster join dates. Display this as
-   * a ratio against `eligible_count`, NOT `total_count` — see `eligible_count`'s doc for why.
+   * `isCommitteeMemberActive`. The "joined within it" clause only applies when `data_available` is
+   * `true` (see that field's doc). Display as a ratio against `eligible_count`, NOT `total_count`.
    */
   active_count: number;
   /**
    * Roster members NOT excluded from `active_count`'s population — i.e. not Emeritus, not LF
-   * Staff+Observer (`isCommitteeMemberActiveEligible`, LFXV2-3101 review fix). The correct
-   * denominator for displaying `active_count` as a ratio: `total_count` includes Emeritus/LF
-   * Staff+Observer seats that `active_count`'s numerator always excludes, so `active_count /
-   * total_count` can never reach 100% for a committee that seats either, regardless of real
-   * participation — the same shape of bug this ticket fixed for the At-Risk filter, just showing up
-   * in the ratio instead. Attendance-independent, so — unlike `active_count`/`at_risk_count`/
-   * `attendance_rate` — this does NOT zero out when `data_available` is `false`: `role`/
-   * `voting_status` are roster passthroughs that stay populated regardless (see `data_available`'s
-   * doc), so this is roster-known the same way `total_count` is.
+   * Staff+non-voting (`isCommitteeMemberActiveEligible`). The correct denominator for displaying
+   * `active_count` as a ratio: `total_count` includes Emeritus/LF Staff+non-voting seats that
+   * `active_count`'s numerator always excludes, so `active_count / total_count` can never reach
+   * 100% for a committee that seats either, regardless of real participation.
+   * Attendance-independent, so — unlike `active_count`/`at_risk_count`/`attendance_rate` — this
+   * does NOT zero out when `data_available` is `false`: `role`/`voting_status` are roster
+   * passthroughs that stay populated regardless. Reaches `0` for a roster made up entirely of
+   * Emeritus and/or non-voting-LF-Staff seats — a different population than `attendance_rate`
+   * sums over (Emeritus is excluded here but feeds `attendance_rate`'s sum), so the two fields' `0`
+   * cases don't imply each other either direction. The UI-facing consumer
+   * (`CommitteeEngagementSummaryComponent.activeMembersLabel`) renders `'—'` rather than the
+   * literal `active_count/eligible_count` ratio when this is `0`.
    */
   eligible_count: number;
-  /** Full committee roster size (including members with no engagement data, and including Emeritus/LF Staff+Observer seats — use `eligible_count`, not this field, as the `active_count` ratio's denominator). */
+  /** Full committee roster size (including members with no engagement data, and including Emeritus/LF Staff+non-voting seats — use `eligible_count`, not this field, as the `active_count` ratio's denominator). */
   total_count: number;
   /** Members classified Low, plus members invited within the window who attended nothing (badge reads Inactive, but there is signal to act on — unlike a member never invited). */
   at_risk_count: number;
@@ -124,44 +121,28 @@ export interface CommitteeEngagementResponse {
   computed_at: string | null;
   /**
    * `false`: the live read couldn't produce *usable*, roster-joined rows — either the query itself
-   * errored (the model isn't synced yet for this committee, or the role isn't granted on it), it ran
-   * and returned zero rows for this `committee_uid` (the model is roster-anchored and retains
-   * zero-activity members, so a real, currently-populated committee should always yield >=1 row;
-   * zero rows most likely means this committee isn't covered by the model yet, not that engagement
-   * is genuinely zero for everyone), or it returned rows but none of them key to any roster member at
-   * all (a total join-key mismatch — the warehouse's `MEMBER_USER_ID` values don't correspond to any
-   * `CommitteeMember.uid` for this committee). All three degrade identically from the caller's point
-   * of view. Every member then shows zeroed counts and classifies `Inactive` — except a roster
-   * member with a real `Emeritus` voting status, which still classifies `Emeritus`, or a roster
-   * member with `role: 'LF Staff'` AND `voting_status: 'Observer'` (LFXV2-3101, both fields — see
-   * `isLfStaffObserverSeat`), which still classifies `LF Staff` — both are seat-type facts
-   * independent of whether any engagement data exists. The tenure-grace `High`
-   * exception (a member who genuinely joined within the requested window, classified `High` instead
-   * of `Inactive` off zero invites) does NOT apply when `data_available` is `false` — with no usable
-   * data for the whole committee, there is no engagement data to correlate tenure against, so every
-   * non-Emeritus, non-LF-Staff member classifies `Inactive` and `summary`'s computed fields (`attendance_rate`,
-   * `active_count`, `at_risk_count`) are all `0` — `total_count` and `eligible_count` still reflect
-   * the roster regardless, since both are roster-known independent of engagement data. Asserting `High` (or a
-   * nonzero `active_count`) on literal 0/0 counts would contradict `data_available: false` and
-   * `attendance_rate: 0` in the same payload. The tenure-grace exception only fires when
-   * `data_available` is `true` — i.e. the committee has rows AND at least one roster member matched
-   * one — and this *specific* member's row is individually missing (e.g. a roster member added since
-   * the model's last daily refresh): the committee has real, roster-joinable data, just not yet for
-   * this member. `role`/`voting_status` are roster passthroughs and stay populated regardless of
-   * whether a warehouse row matched, in both cases.
+   * errored, it ran and returned zero rows for this `committee_uid` (the model is roster-anchored,
+   * so a real, currently-populated committee should always yield >=1 row — zero rows most likely
+   * means this committee isn't covered by the model yet), or it returned rows but none of them key
+   * to any roster member at all. All three degrade identically. Every member then shows zeroed
+   * counts and classifies `Inactive` — except a roster member with a real `Emeritus` voting status
+   * (still classifies `Emeritus`) or `role: 'LF Staff'` + non-voting `voting_status` (still
+   * classifies `LF Staff`) — both are seat-type facts independent of whether any engagement data
+   * exists. The tenure-grace `High` exception does NOT apply when `data_available` is `false`: with
+   * no usable data for the whole committee, there's no engagement data to correlate tenure against,
+   * so `summary`'s computed fields (`attendance_rate`, `active_count`, `at_risk_count`) are all `0`
+   * — `total_count`/`eligible_count` still reflect the roster, since both are roster-known
+   * independent of engagement data. The tenure-grace exception only fires when `data_available` is
+   * `true` and this *specific* member's row is individually missing (e.g. added since the model's
+   * last daily refresh).
    *
-   * `true`: a mock-backend response for a non-empty roster (`ENGAGEMENT_BACKEND=mock`, explicit
-   * opt-in and blocked in production — a mock response for a committee with zero roster members is
-   * the one degenerate case that still reports `false`, since there's trivially no member to match);
-   * or a live query — fresh or a cache hit (the row cache is keyed on the committee uid; the cached
-   * array's length picks the TTL and derives this flag on a hit, so a hit never assumes `true` — but
-   * the roster join itself always re-runs against a freshly-fetched roster on every request, cached
-   * rows included) — that returned >=1 row matching at least one roster member by uid.
+   * `true`: a mock-backend response for a non-empty roster (a mock response for a committee with
+   * zero roster members is the one degenerate case that still reports `false`); or a live query —
+   * fresh or a cache hit — that returned >=1 row matching at least one roster member by uid.
    *
    * The UI should key its "no data available" placeholder state off this flag rather than inferring
    * it from all-zero numbers — `members[]` is roster-complete either way, with `role`/`voting_status`
-   * always populated and counts zeroed on `false` (see above for the roster-Emeritus and roster-LF-
-   * Staff exceptions, and the tenure-grace exception's `data_available:true`-only condition).
+   * always populated and counts zeroed on `false`.
    */
   data_available: boolean;
   /**

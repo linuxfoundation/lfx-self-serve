@@ -1,10 +1,11 @@
 // Copyright The Linux Foundation and each contributor to LFX.
 // SPDX-License-Identifier: MIT
 
+import { HttpErrorResponse } from '@angular/common/http';
 import { Component, computed, DestroyRef, effect, inject, Signal, signal } from '@angular/core';
 import { takeUntilDestroyed, toObservable, toSignal } from '@angular/core/rxjs-interop';
 import { FormArray, FormControl, FormGroup, ReactiveFormsModule, Validators } from '@angular/forms';
-import { ActivatedRoute, NavigationEnd, Router, RouterLink } from '@angular/router';
+import { ActivatedRoute, Router, RouterLink } from '@angular/router';
 import { ButtonComponent } from '@components/button/button.component';
 import { MessageComponent } from '@components/message/message.component';
 import {
@@ -26,7 +27,7 @@ import {
   YOUTUBE_MAX_MEETING_TITLE_LENGTH,
 } from '@lfx-one/shared/constants';
 import { CancelOnCommitteeRemoval, MeetingType, MeetingVisibility } from '@lfx-one/shared/enums';
-import { EntityWithProject, ProjectContext } from '@lfx-one/shared/interfaces';
+import { EntityWithProject } from '@lfx-one/shared/interfaces';
 import {
   BatchRegistrantOperationResponse,
   CreateMeetingRequest,
@@ -45,7 +46,6 @@ import {
 import { CommitteeService } from '@services/committee.service';
 import {
   combineDateTime,
-  computeIsFoundation,
   formatTo12HourInTimezone,
   generateRecurrenceObject,
   getDefaultStartDateTime,
@@ -69,6 +69,7 @@ import { StepperModule } from 'primeng/stepper';
 import {
   BehaviorSubject,
   catchError,
+  combineLatest,
   concat,
   distinctUntilChanged,
   filter,
@@ -76,12 +77,12 @@ import {
   forkJoin,
   from,
   map,
-  merge,
   mergeMap,
   Observable,
   of,
   pairwise,
   startWith,
+  Subject,
   switchMap,
   take,
   toArray,
@@ -93,7 +94,7 @@ import { MeetingRegistrantsManagerComponent } from '../components/meeting-regist
 import { MeetingResourcesSummaryComponent } from '../components/meeting-resources-summary/meeting-resources-summary.component';
 import { MeetingTypeSelectionComponent } from '../components/meeting-type-selection/meeting-type-selection.component';
 import { evictOnWriteAccessLoss } from '@shared/utils/evict-on-write-access-loss.util';
-import { applyEntityProjectContext, syncEntityProjectContext } from '@shared/utils/entity-project-context.util';
+import { syncEntityProjectContext, syncEntityProjectContextFallback } from '@shared/utils/entity-project-context.util';
 import { hasMeetingWriteAccess, resolveEntityWriteSlug } from '@shared/utils/write-access.util';
 
 @Component({
@@ -130,9 +131,6 @@ export class MeetingManageComponent {
   // Committee context — when navigated from a committee tab with ?committee_uid=
   public readonly committeeContext = signal<Committee | null>(null);
   private readonly committeeUidFromUrl = this.route.snapshot.queryParamMap.get('committee_uid');
-  // Meetings whose context fallback already retried the ungated detail fetch — the NavigationEnd
-  // re-apply would otherwise repeat the uncached request on every step navigation.
-  private readonly contextFallbackRetried = new Set<string>();
 
   // Mode and state signals
   public mode = signal<'create' | 'edit'>('create');
@@ -150,9 +148,16 @@ export class MeetingManageComponent {
     toUpdate: [],
     toDelete: [],
   });
+  // True only when the edit-mode detail fetch failed with a retryable error — anything other
+  // than a 404/403 eject (GH-2037). The template swaps the skeleton for an inline error + Retry
+  // instead of ejecting the user.
+  public meetingLoadError = signal(false);
+  // Retry trigger folded into the initializeMeeting pipeline — each next() re-invokes the fetch.
+  // Declared before `meeting`: initializeMeeting() reads it during field initialization.
+  private readonly retryMeetingLoad$ = new Subject<void>();
   // Initialize meeting data using toSignal
   public meeting = this.initializeMeeting();
-  public meetingLoading = computed(() => this.isEditMode() && this.meeting() === null);
+  public meetingLoading = computed(() => this.isEditMode() && this.meeting() === null && !this.meetingLoadError());
   // Meeting → EntityWithProject adapter so the active project context syncs from the loaded
   // meeting rather than the cookie-restored last-visited project.
   private readonly meetingEntityContext: Signal<EntityWithProject | null> = this.initializeMeetingEntityContext();
@@ -205,7 +210,10 @@ export class MeetingManageComponent {
     // lens kind. Opt-in — the other syncEntityProjectContext callers keep URL-prefix
     // behavior (see the util's doc).
     syncEntityProjectContext(this.meetingEntityContext, this.projectContextService, this.router, this.destroyRef, { preferEntityKind: true });
-    this.initMeetingContextFallback();
+    syncEntityProjectContextFallback(this.meetingEntityContext, this.projectService, this.projectContextService, this.router, this.destroyRef, {
+      entityKind: 'meeting',
+      freshFetch: (uid) => this.meetingService.getMeetingDetail(uid, { skipCache: true }),
+    });
 
     // Initialize step based on mode
     // In edit mode, read from query parameters
@@ -339,6 +347,22 @@ export class MeetingManageComponent {
 
   public onCancel(): void {
     this.navigateBack();
+  }
+
+  /** Re-runs the edit-mode detail fetch after a retryable load failure — anything other than a 404/403 eject (GH-2037). */
+  public retryMeetingLoad(): void {
+    this.meetingLoadError.set(false);
+    this.retryMeetingLoad$.next();
+  }
+
+  /** Navigates back to the committee meetings tab or the main meetings page. */
+  public navigateBack(): void {
+    const uid = this.committeeContext()?.uid ?? this.committeeUidFromUrl;
+    if (uid) {
+      this.router.navigate(['/groups', uid], { queryParams: { tab: 'meetings' } });
+    } else {
+      this.router.navigate(['/', 'meetings']);
+    }
   }
 
   public onSubmit(): void {
@@ -955,108 +979,33 @@ export class MeetingManageComponent {
     });
   }
 
-  /**
-   * Fallback context sync for when the BFF project enrichment failed (the detail payload has
-   * `project_uid` but no `project_slug`): resolve the project by uid and set context from it.
-   * `getProject(uid, false)` — `current: false` so the fetch doesn't clobber
-   * ProjectService's shared `project` state — already resolves to null on failure, so a failed
-   * fallback leaves the (stale) context untouched rather than erroring the page.
-   *
-   * Runs whenever the payload lacks `project_slug`, even when the uid already matches the active
-   * context: the lookup is also what corrects the lens *kind* via `computeIsFoundation` — e.g.
-   * `/project/meetings/:id/edit?project=<foundation>` seeds the foundation into the project slot
-   * under the route's declared `project` kind, and only the resolved project record reveals the
-   * mismatch. As in syncEntityProjectContext, NavigationEnd re-applies the correction: query-param
-   * step navigations re-assert the route's declared kind via syncLensFromRoute without re-running
-   * guards. The re-apply hits the shareReplay-cached getProject, so it costs no extra request.
-   *
-   * When the uid lookup resolves null — the project GET is relation-gated, so an organizer without
-   * a direct viewer relation gets nothing back — the meeting detail is re-fetched uncached: its
-   * enrichment is query-service backed and not relation-gated, so a fresh payload can carry the
-   * `project_slug` the cached one lacked. Only if that also comes back unenriched is the context
-   * left alone (it self-corrects on the next navigation).
-   */
-  private initMeetingContextFallback(): void {
-    const unresolvedEntity$ = toObservable(this.meetingEntityContext).pipe(
-      distinctUntilChanged((a, b) => a?.uid === b?.uid && a?.project_uid === b?.project_uid)
-    );
-    const navigationReapply$ = this.router.events.pipe(
-      filter((event) => event instanceof NavigationEnd),
-      map(() => this.meetingEntityContext())
-    );
-    merge(unresolvedEntity$, navigationReapply$)
-      .pipe(
-        filter((entity): entity is EntityWithProject => !!entity?.project_uid && !entity.project_slug),
-        switchMap((entity) =>
-          this.projectService.getProject(entity.project_uid, false).pipe(
-            switchMap((project) => {
-              if (!project) {
-                return this.resolveContextFromFreshMeeting(entity);
-              }
-              const context: ProjectContext = { uid: project.uid, name: project.name, slug: project.slug };
-              return of({ context, isFoundation: computeIsFoundation(project) });
-            })
-          )
-        ),
-        takeUntilDestroyed(this.destroyRef)
-      )
-      .subscribe((resolved) => {
-        if (!resolved) {
-          return;
-        }
-        // Mirror syncEntityProjectContext: only write ?project= to the URL when already present.
-        const syncUrl = 'project' in this.router.parseUrl(this.router.url).queryParams;
-        applyEntityProjectContext(this.projectContextService, resolved.context, resolved.isFoundation, syncUrl);
-      });
-  }
-
-  // Last resort for initMeetingContextFallback: the ungated detail enrichment can supply the
-  // project the relation-gated lookup withheld. Emits null when it can't, leaving context untouched.
-  private resolveContextFromFreshMeeting(entity: EntityWithProject): Observable<{ context: ProjectContext; isFoundation: boolean } | null> {
-    if (this.contextFallbackRetried.has(entity.uid)) {
-      return of(null);
-    }
-    this.contextFallbackRetried.add(entity.uid);
-    return this.meetingService.getMeetingDetail(entity.uid, { skipCache: true }).pipe(
-      map((meeting) => {
-        if (!meeting?.project_slug) {
-          console.warn(`Unable to resolve project context for meeting ${entity.uid}: detail payload carries no project_slug`);
-          return null;
-        }
-        const context: ProjectContext = {
-          uid: meeting.project_uid,
-          name: meeting.project_name || meeting.project_slug,
-          slug: meeting.project_slug,
-        };
-        return { context, isFoundation: meeting.is_foundation === true };
-      }),
-      catchError((error) => {
-        // Transient failures (network, 5xx) shouldn't burn the retry — release the uid so a later
-        // NavigationEnd re-apply can attempt the fresh fetch again.
-        this.contextFallbackRetried.delete(entity.uid);
-        console.warn(`Unable to resolve project context for meeting ${entity.uid}:`, error);
-        return of(null);
-      })
-    );
-  }
-
   private initializeMeeting() {
     return toSignal(
-      this.route.paramMap.pipe(
-        switchMap((params) => {
+      combineLatest([this.route.paramMap, this.retryMeetingLoad$.pipe(startWith(undefined))]).pipe(
+        switchMap(([params]) => {
           const meetingId = params.get('id');
           if (meetingId) {
             this.mode.set('edit');
             this.meetingId.set(meetingId);
+            this.meetingLoadError.set(false);
             return this.meetingService.getMeeting(meetingId).pipe(
               catchError((error) => {
                 console.error('Error getting meeting:', error);
-                this.messageService.add({
-                  severity: 'error',
-                  summary: 'Error',
-                  detail: 'Meeting not found or you do not have permission to access it',
-                });
-                this.navigateBack();
+                // Only a 404/403 ejects (GH-2037) — this fetch is load-bearing (it pre-populates
+                // the form), so a transient 5xx/network blip stays mounted with an inline error
+                // state + manual Retry rather than mislabeling a server error as "not found".
+                // 403 joins the eject path because write access is guard-owned — a forbidden
+                // response here means access was lost mid-session, and Retry cannot restore it.
+                if (error instanceof HttpErrorResponse && (error.status === 404 || error.status === 403)) {
+                  this.messageService.add({
+                    severity: 'error',
+                    summary: 'Error',
+                    detail: 'Meeting not found or you do not have permission to access it',
+                  });
+                  this.navigateBack();
+                } else {
+                  this.meetingLoadError.set(true);
+                }
                 return of(null);
               })
             );
@@ -1688,16 +1637,6 @@ export class MeetingManageComponent {
 
     // Update form validity
     currentForm.updateValueAndValidity();
-  }
-
-  /** Navigates back to the committee meetings tab or the main meetings page. */
-  private navigateBack(): void {
-    const uid = this.committeeContext()?.uid ?? this.committeeUidFromUrl;
-    if (uid) {
-      this.router.navigate(['/groups', uid], { queryParams: { tab: 'meetings' } });
-    } else {
-      this.router.navigate(['/', 'meetings']);
-    }
   }
 
   /** Reads committee_uid from queryParams and pre-populates the committees field (locked). */

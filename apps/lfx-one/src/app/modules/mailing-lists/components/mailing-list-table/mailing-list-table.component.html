@@ -75,7 +75,7 @@
   </div>
 
   <lfx-table
-    [value]="mailingLists()"
+    [value]="tableRows()"
     [loading]="loading()"
     [paginator]="mailingLists().length > 0"
     [rows]="10"
@@ -127,7 +127,8 @@
               </span>
             } @else {
               <a
-                [routerLink]="['/mailing-lists', mailingList.uid]"
+                [routerLink]="mailingList.viewCommands"
+                [queryParams]="mailingList.linkQueryParams"
                 class="lfx-table-name-link text-sm"
                 [attr.data-testid]="'mailing-list-title-' + mailingList.uid">
                 {{ mailingList.title || mailingList.group_name || '-' }}
@@ -205,7 +206,7 @@
                   {{ mailingList.title || mailingList.group_name || '-' }}
                 </span>
               } @else {
-                <a [routerLink]="['/mailing-lists', mailingList.uid]" class="lfx-table-name-link text-sm">
+                <a [routerLink]="mailingList.viewCommands" [queryParams]="mailingList.linkQueryParams" class="lfx-table-name-link text-sm">
                   {{ mailingList.title || mailingList.group_name || '-' }}
                 </a>
               }

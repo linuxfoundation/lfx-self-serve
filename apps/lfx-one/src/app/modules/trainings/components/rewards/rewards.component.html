@@ -106,27 +106,46 @@
       <p class="text-xs text-[#5f6672]">Incentives and rewards earned through training and certification programs.</p>
     </section>
 
-    <section class="rounded-xl border bg-white px-5 py-5 flex flex-col gap-4 shadow-[0_1px_1px_rgba(9,30,66,.1)]" data-testid="rewards-summary">
-      <div class="grid grid-cols-1 lg:grid-cols-[1fr_1.2fr] gap-6">
-        <div class="flex flex-col gap-2">
-          <p class="text-[10px] uppercase tracking-wide text-[#8a93a2] font-semibold">Total Reward Points</p>
-          <div class="flex items-end gap-1">
-            <h3 class="text-[36px] font-semibold text-[#121821] leading-none">{{ formattedPoints() }}</h3>
-            <span class="text-base text-[#5f6672] leading-none pb-1">pts</span>
-          </div>
-          <p class="text-xs text-[#6b7380]">Earn points by completing training modules and passing certification exams.</p>
-        </div>
-
-        <div class="w-full flex flex-col gap-2 pt-1">
-          <div class="flex items-center justify-between text-xs text-[#586272]">
-            <span>Next reward at {{ formattedNextRewardPoints() }} pts</span>
-            <span class="font-semibold text-[#4f5968]">{{ progressPercentage() }}%</span>
-          </div>
-          <div class="h-2 rounded-full bg-[#e7ebf0] overflow-hidden">
-            <div class="h-full rounded-full bg-[#1a2743] transition-all duration-300" [style.width.%]="progressPercentage()"></div>
-          </div>
-        </div>
+    @if (readOnly()) {
+      <div class="rounded-md border border-blue-200 bg-blue-50 p-3 flex items-start gap-2" data-testid="rewards-read-only-notice">
+        <i class="fa-light fa-eye text-blue-700 mt-[2px]" aria-hidden="true"></i>
+        <p class="text-sm text-blue-800">
+          Rewards are read-only while impersonating. Existing coupon codes may be copied, but Claim and Redeem are unavailable.
+        </p>
       </div>
+    }
+
+    <section class="rounded-xl border bg-white px-5 py-5 flex flex-col gap-4 shadow-[0_1px_1px_rgba(9,30,66,.1)]" data-testid="rewards-summary">
+      @if (profileAvailability() === 'available') {
+        <div class="grid grid-cols-1 lg:grid-cols-[1fr_1.2fr] gap-6">
+          <div class="flex flex-col gap-2">
+            <p class="text-[10px] uppercase tracking-wide text-[#8a93a2] font-semibold">Total Reward Points</p>
+            <div class="flex items-end gap-1">
+              <h3 class="text-[36px] font-semibold text-[#121821] leading-none" data-testid="rewards-points">{{ formattedPoints() }}</h3>
+              <span class="text-base text-[#5f6672] leading-none pb-1">pts</span>
+            </div>
+            <p class="text-xs text-[#6b7380]">Earn points by completing training modules and passing certification exams.</p>
+          </div>
+
+          <div class="w-full flex flex-col gap-2 pt-1">
+            <div class="flex items-center justify-between text-xs text-[#586272]">
+              <span>Next reward at {{ formattedNextRewardPoints() }} pts</span>
+              <span class="font-semibold text-[#4f5968]">{{ progressPercentage() }}%</span>
+            </div>
+            <div class="h-2 rounded-full bg-[#e7ebf0] overflow-hidden">
+              <div class="h-full rounded-full bg-[#1a2743] transition-all duration-300" [style.width.%]="progressPercentage()"></div>
+            </div>
+          </div>
+        </div>
+      } @else {
+        <div class="rounded-md border border-amber-200 bg-amber-50 p-4 flex items-start gap-2" data-testid="rewards-profile-unavailable">
+          <i class="fa-light fa-triangle-exclamation text-amber-700 mt-[2px]" aria-hidden="true"></i>
+          <div class="flex flex-col gap-1">
+            <p class="text-sm font-semibold text-amber-900">Reward points are unavailable</p>
+            <p class="text-xs text-amber-800">Points, progress, and program dates could not be verified for this user.</p>
+          </div>
+        </div>
+      }
 
       <div class="rounded-md border border-[#e2eaf6] bg-[#f5f9ff] p-3 flex items-start gap-2.5" data-testid="rewards-usage-message">
         <i class="fa-light fa-circle-info text-xs text-[#6d9bd3] mt-[2px]"></i>
@@ -157,6 +176,8 @@
         [incentives]="availableIncentives()"
         [programStartDate]="programStartDate()"
         [redeemingUids]="redeemingUids()"
+        [availability]="promotionsAvailability()"
+        [readOnly]="readOnly()"
         (copy)="onCopyCoupon($event)"
         (claim)="onClaimIncentive($event)" />
 
@@ -165,6 +186,8 @@
         [rewardPoints]="points()"
         [programStartDate]="programStartDate()"
         [redeemingUids]="redeemingUids()"
+        [availability]="promotionsAvailability()"
+        [readOnly]="readOnly()"
         (copy)="onCopyCoupon($event)"
         (redeem)="onRedeemCoupon($event)" />
     </div>

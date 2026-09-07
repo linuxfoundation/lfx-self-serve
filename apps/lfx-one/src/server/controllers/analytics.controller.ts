@@ -1136,8 +1136,8 @@ export class AnalyticsController {
         total_projects: totalProjects,
         excellent: response.excellent,
         healthy: response.healthy,
-        stable: response.stable,
-        unsteady: response.unsteady,
+        fair: response.fair,
+        concerning: response.concerning,
         critical: response.critical,
       });
 

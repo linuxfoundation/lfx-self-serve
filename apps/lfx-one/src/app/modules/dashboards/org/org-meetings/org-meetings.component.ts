@@ -9,6 +9,7 @@ import { AccountContextService } from '@services/account-context.service';
 import { OrgNavigationService } from '@services/org-navigation.service';
 import { OrgRoleGrantsService } from '@services/org-role-grants.service';
 import { PersonaService } from '@services/persona.service';
+import { OpenIntercomDirective } from '@shared/directives/open-intercom.directive';
 import { SkeletonModule } from 'primeng/skeleton';
 
 import { EmptyStateComponent } from '@components/empty-state/empty-state.component';
@@ -34,6 +35,7 @@ import { OrgMeetingsTimeRangeComponent } from './components/org-meetings-time-ra
     OrgMeetingsSpendBreakdownComponent,
     OrgMeetingsInfluenceComponent,
     EmptyStateComponent,
+    OpenIntercomDirective,
     SkeletonModule,
   ],
   templateUrl: './org-meetings.component.html',

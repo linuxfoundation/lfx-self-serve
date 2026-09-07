@@ -36,6 +36,7 @@ const DOCS_TAXONOMY_ORDER = [
   'profile',
   'account',
   'crowdfunding',
+  'social-listening',
 ];
 
 /**
@@ -443,9 +444,7 @@ function htmlToPlainText(html) {
   // pattern matches closing tags only (`</...>`) — a literal `<` cannot
   // match here, so it is not the kind of regex CodeQL flags as incomplete
   // sanitization (the flagged class is `<[^>]+>`-style strippers).
-  const withNewlines = html
-    .replace(/<\/(?:p|h[1-6]|li|tr|blockquote|figure|figcaption|hr)>/gi, '$&\n')
-    .replace(/<br\s*\/?>/gi, '\n');
+  const withNewlines = html.replace(/<\/(?:p|h[1-6]|li|tr|blockquote|figure|figcaption|hr)>/gi, '$&\n').replace(/<br\s*\/?>/gi, '\n');
   // sanitize-html parses the HTML with a real parser, strips every tag,
   // and decodes named entities (`&amp;`, `&lt;`, `&gt;`, `&quot;`,
   // numeric refs) safely — no manual unescape chain that could be
@@ -469,7 +468,11 @@ function htmlToPlainText(html) {
  */
 function derivedDescription(bodyText) {
   if (!bodyText) return '';
-  const firstPara = bodyText.split(/\n{2,}/)[0]?.replace(/\n/g, ' ').trim() ?? '';
+  const firstPara =
+    bodyText
+      .split(/\n{2,}/)[0]
+      ?.replace(/\n/g, ' ')
+      .trim() ?? '';
   if (firstPara.length <= 160) return firstPara;
   const truncated = firstPara.slice(0, 160);
   const lastSpace = truncated.lastIndexOf(' ');

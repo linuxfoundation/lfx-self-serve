@@ -2,7 +2,7 @@
 // SPDX-License-Identifier: MIT
 
 import { ApplicationRef, signal } from '@angular/core';
-import { HttpClient } from '@angular/common/http';
+import { HttpClient, HttpErrorResponse } from '@angular/common/http';
 import { TestBed } from '@angular/core/testing';
 import { provideNoopAnimations } from '@angular/platform-browser/animations';
 import { ActivatedRoute, convertToParamMap, NavigationEnd, Router } from '@angular/router';
@@ -31,6 +31,8 @@ describe('MeetingManageComponent', () => {
 
   let getMeetingDetail: ReturnType<typeof vi.fn>;
   let getProject: ReturnType<typeof vi.fn>;
+  let messageAdd: ReturnType<typeof vi.fn>;
+  let navigate: ReturnType<typeof vi.fn>;
   let routerEvents$: BehaviorSubject<NavigationEnd>;
   let setProject: ReturnType<typeof vi.fn>;
 
@@ -71,6 +73,8 @@ describe('MeetingManageComponent', () => {
   beforeEach(() => {
     getMeetingDetail = vi.fn();
     getProject = vi.fn();
+    messageAdd = vi.fn();
+    navigate = vi.fn();
     setProject = vi.fn();
     routerEvents$ = new BehaviorSubject<NavigationEnd>(new NavigationEnd(0, '/project/meetings/x/edit', '/project/meetings/x/edit'));
 
@@ -83,7 +87,10 @@ describe('MeetingManageComponent', () => {
             url: '/project/meetings/x/edit',
             parseUrl: vi.fn().mockReturnValue({ queryParams: {} }),
             serializeUrl: vi.fn().mockReturnValue('/project/meetings/x/edit'),
-            navigate: vi.fn(),
+            navigate,
+            // evictOnWriteAccessLoss navigates via navigateByUrl when the loaded meeting's
+            // project resolves without write access (getProject → null in these tests).
+            navigateByUrl: vi.fn(),
             createUrlTree: vi.fn(),
           },
         },
@@ -123,7 +130,7 @@ describe('MeetingManageComponent', () => {
         // PrimeNG stepper binds @content.start animation listeners when the template is compiled —
         // required even without detectChanges(), since compilation alone wires the listener.
         provideNoopAnimations(),
-        { provide: MessageService, useValue: { add: vi.fn() } },
+        { provide: MessageService, useValue: { add: messageAdd } },
       ],
     });
   });
@@ -177,6 +184,73 @@ describe('MeetingManageComponent', () => {
     await emitNavigationEnd();
     expect(skipCacheCalls().length).toBeGreaterThan(failedAttempts);
     expect(setProject).toHaveBeenCalledWith({ uid: PROJECT_UID, name: 'Test Project', slug: PROJECT_SLUG }, false);
+  });
+
+  // GH-2037: the edit-mode detail fetch is load-bearing (it pre-populates the form) — a
+  // transient failure stays mounted with the inline error + Retry; only a 404/403 ejects.
+  describe('edit-mode load failure (GH-2037)', () => {
+    const httpError = (status: number) => new HttpErrorResponse({ status });
+
+    it('stays mounted with the inline error state on a transient failure', async () => {
+      getMeetingDetail.mockReturnValue(throwError(() => httpError(500)));
+      getProject.mockReturnValue(of(null));
+      const fixture = await createComponent();
+      const component = fixture.componentInstance;
+
+      expect(component.meetingLoadError()).toBe(true);
+      // The error state is not "loading": the template's @if ordering already kept the skeleton
+      // hidden, and the computed now excludes the error state outright.
+      expect(component.meetingLoading()).toBe(false);
+      expect(navigate).not.toHaveBeenCalled();
+      expect(messageAdd).not.toHaveBeenCalled();
+    });
+
+    it('re-fetches the meeting and clears the error state on retryMeetingLoad', async () => {
+      let fail = true;
+      getMeetingDetail.mockImplementation(() => (fail ? throwError(() => httpError(500)) : of(enrichedMeeting())));
+      getProject.mockReturnValue(of(null));
+      const fixture = await createComponent();
+      const component = fixture.componentInstance;
+      expect(component.meetingLoadError()).toBe(true);
+      const callsBefore = getMeetingDetail.mock.calls.length;
+
+      fail = false;
+      component.retryMeetingLoad();
+      await TestBed.inject(ApplicationRef).whenStable();
+
+      expect(getMeetingDetail.mock.calls.length).toBeGreaterThan(callsBefore);
+      expect(component.meetingLoadError()).toBe(false);
+      expect(component.meeting()?.id).toBe(MEETING_UID);
+      expect(navigate).not.toHaveBeenCalled();
+    });
+
+    it('ejects with the not-found toast on a real 404', async () => {
+      getMeetingDetail.mockReturnValue(throwError(() => httpError(404)));
+      getProject.mockReturnValue(of(null));
+      const fixture = await createComponent();
+
+      expect(fixture.componentInstance.meetingLoadError()).toBe(false);
+      expect(messageAdd).toHaveBeenCalledWith({
+        severity: 'error',
+        summary: 'Error',
+        detail: 'Meeting not found or you do not have permission to access it',
+      });
+      expect(navigate).toHaveBeenCalledWith(['/', 'meetings']);
+    });
+
+    it('ejects with the permission toast on a 403 — Retry cannot restore guard-owned access', async () => {
+      getMeetingDetail.mockReturnValue(throwError(() => httpError(403)));
+      getProject.mockReturnValue(of(null));
+      const fixture = await createComponent();
+
+      expect(fixture.componentInstance.meetingLoadError()).toBe(false);
+      expect(messageAdd).toHaveBeenCalledWith({
+        severity: 'error',
+        summary: 'Error',
+        detail: 'Meeting not found or you do not have permission to access it',
+      });
+      expect(navigate).toHaveBeenCalledWith(['/', 'meetings']);
+    });
   });
 
   // GH-1673: prepareOwnerData / syncHydratedOwnerFromForm are private but carry the owner

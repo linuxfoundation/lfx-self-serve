@@ -15,7 +15,7 @@ import { TableComponent } from '@components/table/table.component';
 import { TagComponent } from '@components/tag/tag.component';
 import { PollStatus, VOTE_LABEL, VoteResponseStatus } from '@lfx-one/shared';
 import { FilterPillOption, Vote, VoteFilterState, VoteTableRow } from '@lfx-one/shared/interfaces';
-import { getVoteEndedEarlyDetailTooltip, isVoteEndedEarly } from '@lfx-one/shared/utils';
+import { getEntityCommands, getVoteEndedEarlyDetailTooltip, isVoteEndedEarly } from '@lfx-one/shared/utils';
 import { DueDateLabelColorPipe } from '@pipes/due-date-label-color.pipe';
 import { DueDateLabelPipe } from '@pipes/due-date-label.pipe';
 import { PollStatusLabelPipe } from '@pipes/poll-status-label.pipe';
@@ -76,7 +76,9 @@ export class VotesTableComponent {
   public readonly showProjectFilter = input<boolean>(false);
   // Draft tab is only meaningful in management contexts (project/committee lens); hide it in the Me lens.
   public readonly showDraftTab = input<boolean>(true);
-  public readonly editQueryParams = input<Record<string, string>>({});
+  // Merged UNDER each row's own derived params — the committee tab passes its committee_uid here so a
+  // row missing the field still admits committee writers; per-row values always win (dashboard spans projects).
+  public readonly editQueryParamsFallback = input<Record<string, string>>({});
 
   // === Outputs ===
   public readonly viewVote = output<string>();
@@ -276,9 +278,21 @@ export class VotesTableComponent {
       endedEarlyTooltip = getVoteEndedEarlyDetailTooltip(formattedEarlyClose);
     }
 
+    // Canonical edit URL derives from the VOTE's own project tier (is_foundation), not the viewer's
+    // active lens; falls back to the flat path (lensRedirectGuard) when the tier is unenriched.
+    const editCommands = getEntityCommands('votes', vote.uid, vote.is_foundation, 'edit') ?? ['/votes', vote.uid, 'edit'];
+
+    // Per-row query params: rows can span projects (dashboard), so no table-level record can
+    // express them — derive `project`/`committee_uid` from each row itself, over the fallback.
+    const editQueryParams: Record<string, string> = { ...this.editQueryParamsFallback() };
+    if (vote.project_slug) editQueryParams['project'] = vote.project_slug;
+    if (vote.committee_uid) editQueryParams['committee_uid'] = vote.committee_uid;
+
     return {
       ...vote,
       endedEarlyTooltip,
+      editCommands,
+      editQueryParams,
     };
   }
 }

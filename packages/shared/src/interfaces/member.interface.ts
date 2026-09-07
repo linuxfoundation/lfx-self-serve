@@ -1,8 +1,8 @@
 // Copyright The Linux Foundation and each contributor to LFX.
 // SPDX-License-Identifier: MIT
 
-import { CommitteeMemberAppointedBy, CommitteeMemberRole, CommitteeMemberStatus, CommitteeMemberVotingStatus } from '../enums';
-import { CommitteeInvite, CommitteePermissionLevel, CreateCommitteeInviteRequest } from './committee.interface';
+import type { CommitteeMemberAppointedBy, CommitteeMemberRole, CommitteeMemberStatus, CommitteeMemberVotingStatus } from '../enums';
+import type { CommitteeInvite, CommitteePermissionLevel, CreateCommitteeInviteRequest } from './committee.interface';
 
 /**
  * Committee member entity with complete profile and role information

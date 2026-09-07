@@ -40,6 +40,7 @@ import {
   PublicMeetingOccurrencesResponse,
   PublicMeetingProject,
   PublicPastMeetingResponse,
+  PublicProjectMeetingsResponse,
   QueryServiceCountResponse,
   UpdateMeetingAttachmentRequest,
   UpdateMeetingRegistrantRequest,
@@ -260,6 +261,21 @@ export class MeetingService {
       .pipe(catchError(() => of({ past: [], future: [] } as PublicMeetingOccurrencesResponse)));
   }
 
+  /** Public project calendar page — meetings for a project (by UID or slug), optionally scoped to a single committee. */
+  public getPublicProjectMeetings(identifier: string, committeeUid?: string): Observable<PublicProjectMeetingsResponse> {
+    let params = new HttpParams();
+    if (committeeUid) {
+      params = params.set('committee', committeeUid);
+    }
+
+    return this.http.get<PublicProjectMeetingsResponse>(`/public/api/projects/${encodeURIComponent(identifier)}/meetings`, { params }).pipe(
+      catchError((error) => {
+        console.error(`Failed to load public meetings for project ${identifier}:`, error);
+        return throwError(() => error);
+      })
+    );
+  }
+
   public getPublicMeetingJoinUrl(
     id: string,
     password: string | null,
@@ -423,17 +439,14 @@ export class MeetingService {
     return this.http.get<MeetingRegistrant[]>(`/api/meetings/${meetingUid}/registrants`, { params });
   }
 
+  // Callers decide how to handle failures — the join page must distinguish a failed refetch from a
+  // genuinely empty roster (see reconcileOptimisticPad), so this does not swallow errors to `[]`.
   public getMyMeetingRegistrants(meetingUid: string, includeRsvp: boolean = false, occurrenceId?: string): Observable<MeetingRegistrant[]> {
     let params = new HttpParams().set('include_rsvp', includeRsvp.toString());
     if (occurrenceId) {
       params = params.set('occurrence_id', occurrenceId);
     }
-    return this.http.get<MeetingRegistrant[]>(`/api/meetings/${meetingUid}/my-meeting-registrants`, { params }).pipe(
-      catchError((error) => {
-        console.error(`Failed to load my registrants for meeting ${meetingUid}:`, error);
-        return of([]);
-      })
-    );
+    return this.http.get<MeetingRegistrant[]>(`/api/meetings/${meetingUid}/my-meeting-registrants`, { params });
   }
 
   public getPublicPastMeeting(id: string): Observable<PublicPastMeetingResponse> {

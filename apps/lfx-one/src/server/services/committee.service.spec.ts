@@ -40,10 +40,16 @@ vi.mock('@lfx-one/shared/enums', () => ({
   CommitteeMemberVisibility: { HIDDEN: 'hidden', BASIC_PROFILE: 'basic_profile' },
 }));
 vi.mock('@lfx-one/shared/utils', () => ({ invitationRequiresOrganization: vi.fn() }));
-vi.mock('@lfx-one/shared/constants', () => ({
-  SLACK_INCOMING_WEBHOOK_URL_PATTERN: /^https:\/\/hooks\.slack\.com\/services\/T[A-Za-z0-9]+\/B[A-Za-z0-9]+\/[A-Za-z0-9]+$/,
-  CHAT_WEBHOOK_URL_MAX_LENGTH: 500,
-}));
+vi.mock('@lfx-one/shared/constants', async () => {
+  const regex = await vi.importActual<typeof import('../../../../../packages/shared/src/constants/regex.constants')>(
+    '../../../../../packages/shared/src/constants/regex.constants'
+  );
+  return {
+    SLACK_INCOMING_WEBHOOK_URL_PATTERN: /^https:\/\/hooks\.slack\.com\/services\/T[A-Za-z0-9]+\/B[A-Za-z0-9]+\/[A-Za-z0-9]+$/,
+    CHAT_WEBHOOK_URL_MAX_LENGTH: 500,
+    UUID_REGEX: regex.UUID_REGEX,
+  };
+});
 vi.mock('./microservice-proxy.service', () => ({
   MicroserviceProxyService: class {
     public proxyRequest = proxyRequest;
@@ -80,6 +86,7 @@ vi.mock('../services/logger.service', () => ({
 
 import type { Request } from 'express';
 
+import { MicroserviceError } from '../errors';
 import { fetchAllQueryResources } from '../helpers/query-service.helper';
 import { ServerFeatureFlag } from '../helpers/server-feature-flag.helper';
 import { logger } from '../services/logger.service';
@@ -407,6 +414,64 @@ describe('CommitteeService — chat_webhook_url (LFXV2-3080)', () => {
 
       expect('chat_webhook_url' in result).toBe(false);
       expect(result.project_slug).toBe('test-project');
+    });
+  });
+
+  describe('resolveCommitteeUid', () => {
+    const COMMITTEE_UUID = '7cad5a8d-19d0-41a4-81a6-043453daf9ee';
+
+    it('returns a UUID unchanged without querying', async () => {
+      const result = await service.resolveCommitteeUid(req, COMMITTEE_UUID);
+
+      expect(result).toBe(COMMITTEE_UUID);
+      expect(proxyRequest).not.toHaveBeenCalled();
+    });
+
+    it('resolves a vanity slug via sso_group_name tag lookup and lowercases the slug', async () => {
+      vi.mocked(logger.debug).mockClear();
+      proxyRequest.mockResolvedValueOnce(pageOf([{ uid: COMMITTEE_UUID }]));
+
+      const result = await service.resolveCommitteeUid(req, 'My-Group-Slug');
+
+      expect(result).toBe(COMMITTEE_UUID);
+      expect(proxyRequest).toHaveBeenCalledOnce();
+      expect(proxyRequest.mock.calls[0][2]).toBe('/query/resources');
+      expect(proxyRequest.mock.calls[0][4]).toMatchObject({
+        type: 'committee',
+        tags: 'sso_group_name:my-group-slug',
+        page_size: 1,
+      });
+      expect(logger.debug).toHaveBeenCalledWith(
+        req,
+        'resolve_committee_uid',
+        'Resolved slug to UID',
+        expect.objectContaining({ slug: 'My-Group-Slug', committee_uid: COMMITTEE_UUID })
+      );
+    });
+
+    it('throws ResourceNotFoundError when the slug matches no committee the caller can see', async () => {
+      proxyRequest.mockResolvedValueOnce(pageOf([]));
+
+      await expect(service.resolveCommitteeUid(req, 'missing-group')).rejects.toMatchObject({
+        statusCode: 404,
+        message: "Committee with ID 'missing-group' not found",
+      });
+    });
+
+    it('uses resourceType Group when the public group path asks for it', async () => {
+      proxyRequest.mockResolvedValueOnce(pageOf([]));
+
+      await expect(
+        service.resolveCommitteeUid(req, 'missing-group', {
+          operation: 'get_public_group_by_id',
+          service: 'public_groups_controller',
+          path: '/groups/missing-group',
+          resourceType: 'Group',
+        })
+      ).rejects.toMatchObject({
+        statusCode: 404,
+        message: "Group with ID 'missing-group' not found",
+      });
     });
   });
 
@@ -866,5 +931,60 @@ describe('CommitteeService.getCommitteesByIds', () => {
 
     await expect(service.getCommitteesByIds(req, [...firstBatch, ...secondBatch])).rejects.toThrow('boom');
     expect(logger.warning).toHaveBeenCalledWith(req, 'get_committees_by_ids', expect.any(String), expect.objectContaining({ batch_size: secondBatch.length }));
+  });
+});
+
+describe('CommitteeService.getCommitteeBase', () => {
+  let service: CommitteeService;
+  const COMMITTEE_UID = 'committee-1';
+
+  beforeEach(() => {
+    proxyRequest.mockReset();
+    service = new CommitteeService();
+  });
+
+  it("returns the base committee from a single plain GET, not getCommitteeById's enriched fan-out", async () => {
+    proxyRequest.mockResolvedValueOnce({ uid: COMMITTEE_UID, name: 'Test', project_uid: 'project-1', category: 'Board' });
+
+    const result = await service.getCommitteeBase(req, COMMITTEE_UID);
+
+    expect(result).toMatchObject({ uid: COMMITTEE_UID, category: 'Board' });
+    // Exactly one upstream call — no settings, no access-check, unlike getCommitteeById.
+    expect(proxyRequest).toHaveBeenCalledOnce();
+    expect(proxyRequest).toHaveBeenCalledWith(req, 'LFX_V2_SERVICE', `/committees/${COMMITTEE_UID}`, 'GET');
+  });
+
+  it('returns undefined when upstream resolves with no committee body (the empty-body-parses-to-null case, not a 404)', async () => {
+    proxyRequest.mockResolvedValueOnce(null);
+
+    const result = await service.getCommitteeBase(req, COMMITTEE_UID);
+
+    expect(result).toBeUndefined();
+  });
+
+  it('strips chat_webhook_url before returning — this is a raw-upstream-fetch read path, same invariant as every other Committee-returning method', async () => {
+    proxyRequest.mockResolvedValueOnce({ uid: COMMITTEE_UID, category: 'Board', chat_webhook_url: 'https://hooks.slack.com/services/T1/B1/secret' });
+
+    const result = await service.getCommitteeBase(req, COMMITTEE_UID);
+
+    expect(result).not.toHaveProperty('chat_webhook_url');
+    expect(result).toMatchObject({ uid: COMMITTEE_UID, category: 'Board' });
+  });
+
+  it('propagates a genuine upstream error (e.g. 404) rather than normalizing it to undefined', async () => {
+    const upstreamError = MicroserviceError.fromMicroserviceResponse(
+      404,
+      'Not Found',
+      undefined,
+      'LFX_V2_SERVICE',
+      `/committees/${COMMITTEE_UID}`,
+      'get_committee'
+    );
+    proxyRequest.mockRejectedValueOnce(upstreamError);
+
+    // Identity, not just type/status — proves the exact upstream error propagates rather than
+    // getting caught and re-thrown as a freshly constructed lookalike (which a type/status-only
+    // assertion couldn't tell apart from this).
+    await expect(service.getCommitteeBase(req, COMMITTEE_UID)).rejects.toBe(upstreamError);
   });
 });

@@ -18,7 +18,7 @@ import {
   PRIMARY_FOUNDATION_HEALTH_METRICS,
 } from '@lfx-one/shared/constants';
 import { DashboardDrawerType, FilterPillOption, ZeroStubBarDataset } from '@lfx-one/shared/interfaces';
-import { hexToRgba, computePeriodChange, computeHealthyOrBetterPct, computeScoredCount, mapV1DistributionToV2 } from '@lfx-one/shared/utils';
+import { hexToRgba, computePeriodChange, computeHealthyOrBetterPct, computeScoredCount } from '@lfx-one/shared/utils';
 import { AnalyticsService } from '@services/analytics.service';
 import { ProjectContextService } from '@services/project-context.service';
 import { ScrollShadowDirective } from '@shared/directives/scroll-shadow.directive';
@@ -557,7 +557,7 @@ export class FoundationHealthComponent {
   }
 
   private transformProjectHealthScores(metric: DashboardMetricCard): DashboardMetricCard {
-    const data = mapV1DistributionToV2(this.healthScoresData());
+    const data = this.healthScoresData();
     const scored = computeScoredCount(data);
 
     // "Healthy or better" is the card's health KPI; the distribution chart is the visualization,
@@ -756,8 +756,8 @@ export class FoundationHealthComponent {
     const defaultValue: FoundationHealthScoreDistributionResponse = {
       excellent: 0,
       healthy: 0,
-      stable: 0,
-      unsteady: 0,
+      fair: 0,
+      concerning: 0,
       critical: 0,
       unscored: 0,
     };

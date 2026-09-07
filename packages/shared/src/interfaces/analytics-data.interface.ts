@@ -1022,9 +1022,9 @@ export interface FoundationHealthScoreDistributionRow {
   FOUNDATION_SLUG: string;
 
   /**
-   * Health score category (Excellent, Healthy, Stable, Unsteady, Critical)
+   * Health score category v2 (Excellent, Healthy, Fair, Concerning, Critical)
    */
-  HEALTH_SCORE_CATEGORY: string;
+  HEALTH_SCORE_CATEGORY_V2: string;
 
   /**
    * Number of projects in this category
@@ -1048,14 +1048,14 @@ export interface FoundationHealthScoreDistributionResponse {
   healthy: number;
 
   /**
-   * Number of projects with stable status
+   * Number of projects with fair status
    */
-  stable: number;
+  fair: number;
 
   /**
-   * Number of projects with unsteady status
+   * Number of projects with concerning status
    */
-  unsteady: number;
+  concerning: number;
 
   /**
    * Number of projects with critical status
@@ -1171,14 +1171,14 @@ export interface ProjectHealthMetricsDailyRow {
   METRIC_DATE: string;
 
   /**
-   * Health score for this project
+   * Health score v2 for this project
    */
-  HEALTH_SCORE: number;
+  HEALTH_SCORE_V2: number;
 
   /**
-   * Health score category (Excellent, Healthy, Stable, Unsteady, Critical)
+   * Health score category v2 (Excellent, Healthy, Fair, Concerning, Critical)
    */
-  HEALTH_SCORE_CATEGORY: string;
+  HEALTH_SCORE_CATEGORY_V2: string;
 
   /**
    * Software value in dollars
@@ -1227,7 +1227,7 @@ export interface HealthMetricsAggregatedRow {
   METRIC_DATE: string;
 
   /**
-   * Average health score across all projects in foundation for this date
+   * Average health score v2 across all projects in foundation for this date
    */
   AVG_HEALTH_SCORE: number;
 }
@@ -2255,7 +2255,7 @@ export interface FoundationProjectsDetailRow {
   STARS_12M_COUNT: number;
   LAST_UPDATED_TS: Date | string | null;
   // Joined from PROJECT_HEALTH_METRICS_LATEST (newest score per project); null when unscored.
-  HEALTH_SCORE_CATEGORY: string | null;
+  HEALTH_SCORE_CATEGORY_V2: string | null;
 }
 
 /**

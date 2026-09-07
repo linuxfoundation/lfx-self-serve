@@ -41,3 +41,13 @@ export const MIN_ORG_LOGO_DIMENSION_PX = 128;
 
 /** Above this width/height (px), member-service downscales the logo server-side, preserving aspect ratio (`MaxLogoDimensionPx` in `pkg/constants/logo.go`). Warned about client-side so the user knows it'll happen; non-blocking, and not checked for SVG (vector, never resized). */
 export const MAX_ORG_LOGO_DIMENSION_PX = 1024;
+
+/**
+ * Upload statuses that mean the file itself is unusable, so the user must supply a different one
+ * rather than retry. 400 carries member-service's sanitizer rejection (an SVG whose CSS it cannot
+ * reproduce faithfully); 415 and 422 mean the same thing for content type and shape.
+ *
+ * Deliberately narrow: the BFF also returns 404 for a missing org and 409 for an If-Match miss
+ * (`org-identity.controller.ts`), and neither is a problem with the image.
+ */
+export const LOGO_REJECTION_STATUSES: readonly number[] = [400, 415, 422];

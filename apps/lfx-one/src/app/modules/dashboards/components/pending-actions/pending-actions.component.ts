@@ -9,6 +9,7 @@ import { RsvpButtonGroupComponent } from '@app/modules/meetings/components/rsvp-
 import { VoteBallotInlineComponent } from '@app/modules/votes/components/vote-ballot-inline/vote-ballot-inline.component';
 import { ButtonComponent } from '@components/button/button.component';
 import { TagComponent } from '@components/tag/tag.component';
+import { ToastMessageComponent } from '@components/toast-message/toast-message.component';
 import {
   PENDING_ACTION_BUTTON_ICON,
   PENDING_ACTION_EMPTY_GRACE_MS,
@@ -43,6 +44,7 @@ const INVITE_UNDO_TOAST_KEY = 'pending-actions-undo';
   imports: [
     ButtonComponent,
     TagComponent,
+    ToastMessageComponent,
     RsvpButtonGroupComponent,
     VoteBallotInlineComponent,
     PendingActionsDrawerComponent,

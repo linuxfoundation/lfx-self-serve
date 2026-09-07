@@ -1,6 +1,8 @@
 // Copyright The Linux Foundation and each contributor to LFX.
 // SPDX-License-Identifier: MIT
 
+import type { CAMPAIGN_METRICS_WINDOWS } from '../constants/campaign.constants';
+
 // ---------------------------------------------------------------------------
 // Platform & Phase
 // ---------------------------------------------------------------------------
@@ -14,7 +16,7 @@ export type CampaignPlatform = 'google-ads' | 'microsoft-ads' | 'linkedin-ads' |
  * interchangeable (`docs/api-catalog.md` records the platform enum as `"hubspot"`, and `campaigns`
  * is unique on `(brief_id, platform)`), but here they are not: `CampaignPlatform`'s members are
  * enumerated by `CAMPAIGN_PLATFORMS`, which renders the paid Ad Channels picker
- * (`planning-tab.component.ts:96`). Widening that union would offer HubSpot as an ad channel a
+ * (`planning-tab.component.ts`). Widening that union would offer HubSpot as an ad channel a
  * paid brief could select — email is not an ad channel, it is a different delivery type that
  * happens to dispatch through one.
  */
@@ -150,6 +152,31 @@ export interface CampaignBriefRequest {
   previousCopy?: Record<string, unknown>;
 }
 
+/**
+ * The event's terms, split by how much authority each kind carries when suggesting a template.
+ *
+ * Three kinds rather than one list, because they answer different questions and conflating them
+ * produced two real false positives:
+ *
+ * - `decisive` (event name and slug) is the ONLY kind that may push a template over the
+ *   suggestion threshold. These identify the event itself.
+ * - `ranking` (city) orders results but can never justify a suggestion on its own. Operators do
+ *   name templates by city, so the terms are worth sorting by -- but "Salt Lake City visitor
+ *   guide" matched `salt`, `lake` and `city` for a KubeCon brief and cleared the threshold with
+ *   no event term at all.
+ * - `year` breaks ties and nothing more. Dropping it made annual editions score identically, so
+ *   the server's order chose between "KubeCon NA 2025" and "KubeCon NA 2026"; counting it toward
+ *   the threshold would let "Open newsletter 2028" match an "Open Source Summit 2028" brief.
+ */
+export interface EventTemplateTerms {
+  /** Name and slug tokens. The only kind that can reach the suggestion threshold. */
+  decisive: string[];
+  /** City tokens. Improve ordering; never sufficient for a suggestion. */
+  ranking: string[];
+  /** The event's year, if it names one. A tie-break between otherwise-equal templates. */
+  year: string;
+}
+
 export interface CampaignEventDetails {
   name: string;
   dates: string;
@@ -189,8 +216,8 @@ export interface CampaignBriefOutput {
  * What `POST /api/campaigns/brief/persist` reports back.
  *
  * `enabled: false` is a first-class outcome, not a failure: it is what the endpoint returns
- * when `LFX_CUTOVER_CAMPAIGN_SERVICE_BRIEFS` is off, which is the default everywhere until the
- * cutover is turned on per environment. The client must distinguish it from a failure, because
+ * when `LFX_CUTOVER_CAMPAIGN_SERVICE_BRIEFS` is off. The chart enables it since #1881, but the
+ * flag is read per request, so any override or un-rolled deployment still answers this way. The client must distinguish it from a failure, because
  * the two want opposite treatment — a disabled flag is the expected steady state and warrants
  * no UI at all, while a failure means the user's brief is NOT durable and they should be told
  * before they spend an afternoon on it.
@@ -485,6 +512,42 @@ export interface CampaignImplementationDraft {
    * new binding rather than one that writes the signal and calls `emitDraft` by hand.
    */
   redditBudgetUsd?: number;
+  /**
+   * Microsoft's four editable controls (LFXV2-3312): budget, the geo chip list, the keyword list
+   * and the optional CPC bid.
+   *
+   * `microsoftKeywords` and `microsoftGeoTargets` are ARRAYS carried here, which is the exception
+   * to the "brief-derived arrays are deliberately absent" rule stated above — and the exception is
+   * principled rather than convenient. That rule rests on those arrays having a SINGLE writer
+   * (`populateFromBrief`), so a draft could only ever replay the brief's own seed back over
+   * itself. These two have a real editor: the template binds add/remove handlers for both, so an
+   * operator genuinely mutates them and the value exists nowhere but this component.
+   *
+   * That editability is also why losing them is not merely untidy. Microsoft is the platform
+   * where an empty list is a SILENT failure rather than a validation error upstream: with no
+   * keywords the campaign can never serve and cannot be activated, and with no geo targets
+   * Microsoft serves it everywhere. A tab switch that reverted either would hand the operator a
+   * campaign that looks configured and is not.
+   *
+   * OPTIONAL for the same reason as the Meta block: a draft persisted before this shipped has
+   * none of them, and absent means "keep the seeded values" — never "the user cleared them". A
+   * present-but-empty array records a deliberate clear, and `applyDraft` replays it verbatim
+   * rather than refilling from the brief.
+   *
+   * The two arrays then DIVERGE on what an empty list means at submit time, which is worth stating
+   * because they look symmetric:
+   *
+   * - `microsoftKeywords` empty BLOCKS the submit. There is no fallback — a campaign with no
+   *   keywords can never serve.
+   * - `microsoftGeoTargets` empty does NOT block on its own: `microsoftEffectiveGeoTargets` falls
+   *   back to the form's country code, and the section renders that fallback explicitly. Submit is
+   *   blocked only when that fallback is empty too, i.e. nothing usable was supplied anywhere.
+   */
+  microsoftBudgetUsd?: number;
+  microsoftGeoTargets?: string[];
+  microsoftKeywords?: MicrosoftKeyword[];
+  /** Empty string records "unset", which is the serve-capable default — see `cpcBid`. */
+  microsoftCpcBid?: string;
 }
 
 /**
@@ -494,8 +557,8 @@ export interface CampaignImplementationDraft {
  * `CampaignBriefPersistResult` uses, because there are FOUR outcomes here and only two of them
  * are "no brief". Collapsing them loses the distinction that matters:
  *
- * - `off` — the cutover flag is not set. Nothing was looked up. This is the default in every
- *   environment and warrants no UI.
+ * - `off` — the cutover flag is not set. Nothing was looked up. An ordinary deployment state,
+ *   not a fault, and warrants no UI.
  * - `none` — campaign-service was asked and has no brief for this event slug. The ordinary
  *   first-time case; the user generates one.
  * - `loaded` — a brief was found and reconstructed. `brief` is non-null.
@@ -512,6 +575,24 @@ export interface CampaignBriefLoadResult {
   status: 'off' | 'none' | 'loaded' | 'unreadable';
   briefId: string | null;
   brief: CampaignBriefOutput | null;
+  /**
+   * The ETag of the row this read observed, carried so a save can send it as `If-Match`.
+   *
+   * This is the LAST-SEEN validator, and carrying it is the whole point: `replaceBrief` prefers
+   * a caller-supplied ETag over the one its own find reads, so a validator from here produces a
+   * 412 when another writer moved the row since this page loaded it. Re-reading at save time
+   * cannot do that -- the find runs inside the save, so its validator always matches.
+   *
+   * Guaranteed `null` on `off` and `none` — nothing was read, so there is no validator to
+   * report. `loaded` and `unreadable` both carry whatever the read observed, which may itself
+   * be `null` when the response had no ETag header. `unreadable` carries one deliberately: the
+   * row exists and was observed, it simply could not be mapped back, so its validator is as
+   * real as a loaded one.
+   *
+   * Null is NOT permission to overwrite: it is an absent validator, and what a caller may do
+   * without one is decided by the `absence` it records alongside, never by the null itself.
+   */
+  etag: string | null;
   /**
    * Whether the STORED row is already approved.
    *
@@ -557,6 +638,76 @@ export interface LinkedInTargetingStrategy {
   };
   audienceEstimate: string;
   campaignStructureNotes: string;
+}
+
+/**
+ * The audience build's lifecycle, closed because upstream declares it closed:
+ * `Enum("building", "built", "failed")` in campaign-service's `design/audience.go`.
+ *
+ * A union rather than `string` because six sites branch on these literals across two files, and
+ * `canStageEmail` admits ONLY `built` -- a typo in any branch would silently mean "not built" and
+ * disable staging with no error.
+ */
+export type CampaignAudienceStatus = 'building' | 'built' | 'failed';
+
+/**
+ * A brief's built send audience, as campaign-service returns it.
+ *
+ * The email channel CANNOT dispatch until this exists: `HubSpotDispatcher` resolves the brief's
+ * built audience by `brief.ID` (`hubspot.go:293`) rather than reading anything off the create
+ * request. That is why the audience is not part of `hubspotConfig`.
+ *
+ * `inclusionSummary` is human-readable provenance ("how this audience was built") — what an
+ * operator checks before sending to a list they did not assemble by hand.
+ */
+export interface CampaignAudience {
+  id: string;
+  projectId: string;
+  briefId: string;
+  platform: string;
+  platformMasterListId?: string;
+  suppressionListIds?: string[];
+  inclusionSummary?: string;
+  status: CampaignAudienceStatus;
+  version: number;
+  etag?: string;
+}
+
+/** Result of asking campaign-service to build a brief's audience. */
+export interface BuildAudienceResult {
+  enabled: boolean;
+  audience?: CampaignAudience;
+  error?: string;
+}
+
+/**
+ * AI-generated email copy for a brief, as campaign-service returns it.
+ *
+ * Mirrors the upstream `email-copy` type exactly (subject / preheader / body / cta) rather than
+ * reshaping it here: the BFF is a thin proxy, and a divergent local shape would have to be kept
+ * in step with a contract this layer does not own.
+ *
+ * `body` is a single HTML string, not a section list — upstream generates it that way. The UI
+ * renders it as one block.
+ */
+export interface EmailBriefCopy {
+  subject: string;
+  preheader: string;
+  body: string;
+  cta: string;
+}
+
+/**
+ * Result of asking campaign-service to generate email copy.
+ *
+ * `enabled: false` mirrors the other campaign-service reads: the cutover flag being off is a
+ * steady state, not a failure. `error` carries the upstream refusal — notably the 503 when no AI
+ * model is configured, which is a deployment state rather than a bug.
+ */
+export interface GenerateEmailCopyResult {
+  enabled: boolean;
+  copy?: EmailBriefCopy;
+  error?: string;
 }
 
 export interface LinkedInBriefCopy {
@@ -755,6 +906,82 @@ export interface MetaCampaignCreateResult {
 }
 
 // ---------------------------------------------------------------------------
+// Microsoft Ads — Campaign Creation
+// ---------------------------------------------------------------------------
+
+/**
+ * One positive Search keyword attached to the created ad group.
+ *
+ * `matchType` reuses the SAME PascalCase vocabulary as `CampaignKeyword.matchType`
+ * ('Exact' | 'Phrase' | 'Broad') rather than Google's SCREAMING_CASE, matching
+ * `microsoftKeywordConfig` upstream (`internal/dispatch/microsoft.go`). That is what lets the
+ * brief's generated keywords feed this config without a translation step.
+ */
+export interface MicrosoftKeyword {
+  text: string;
+  matchType: CampaignKeyword['matchType'];
+}
+
+/**
+ * Microsoft's per-platform config, typed to the FIVE fields `microsoftConfig` actually reads
+ * (`internal/dispatch/microsoft.go:57-83`).
+ *
+ * Two of the five are load-bearing in the dispatcher's own words, and both failures are silent
+ * at create time — which is why the UI blocks the submit rather than letting the campaign be
+ * created and discovered broken later:
+ *
+ * - `keywords` — "Left empty, the campaign is created but can NEVER SERVE, and ToggleStatus
+ *   refuses to activate it". Activation returns `ErrCampaignNotProvisioned` LOCALLY, without
+ *   calling Microsoft, so the operator only finds out at launch.
+ * - `geoTargets` — "Left EMPTY … Microsoft serves it EVERYWHERE once enabled". Uncontrolled
+ *   spend, the same hazard Meta's section already guards.
+ *
+ * `budgetUsd` carries the legacy request's name here and is renamed to the `budget` key the
+ * dispatcher reads by `buildMicrosoftConfig` — the same translation `buildMetaConfig` performs,
+ * and for the same reason: passing it through unchanged leaves `budget` at its zero value, which
+ * the client rejects during dispatch.
+ *
+ * KNOWN GAP (LFXV2-3251, shared with Google Ads and Meta): the budget is whole units of the ad
+ * ACCOUNT's currency with no FX conversion, and it is a DAILY budget with no lifetime
+ * alternative — unlike Meta and LinkedIn, which is why there is no `lifetimeBudget` here.
+ */
+export interface MicrosoftCampaignCreateRequest {
+  eventName: string;
+  eventSlug: string;
+  registrationUrl: string;
+  hsToken?: string;
+  /** Daily budget, whole units of the account currency. Must be finite and > 0. */
+  budgetUsd: number;
+  // NO `startDate` / `endDate`, and their absence is deliberate rather than an oversight.
+  //
+  // `microsoftConfig` (`internal/dispatch/microsoft.go:57-83`) declares no scheduling fields, and
+  // neither does the client's `CampaignInput` — unlike `metaConfig`, which carries and applies
+  // both. A Microsoft campaign is therefore created with NO flight, and sending dates here would
+  // put fields on the wire that `unmarshalPlatformConfig` silently discards, implying a schedule
+  // the operator never gets.
+  //
+  // The campaign is created PAUSED, so nothing spends until a human enables it — but there is no
+  // automatic stop, which is why the UI states this rather than hiding it. Upstream scheduling is
+  // the fix; see the note on the implementation tab's Microsoft section.
+  /** ISO 3166-1 alpha-2 codes. REQUIRED, >= 1 — see the interface note on uncontrolled spend. */
+  geoTargets: string[];
+  /** REQUIRED, >= 1 — see the interface note on unservable campaigns. */
+  keywords: MicrosoftKeyword[];
+  project?: string;
+  /**
+   * OPTIONAL ad-group max cost-per-click, whole units of the account currency. Omitted or zero
+   * means unset, and Microsoft then applies the account-currency minimum — a documented,
+   * serve-capable floor, so omitting it is safe.
+   */
+  cpcBid?: number;
+  /**
+   * OPTIONAL Microsoft `Campaign.TimeZone` enum value. Microsoft marks it deprecated but still
+   * requires it on Add; the client supplies its default when empty.
+   */
+  timeZone?: string;
+}
+
+// ---------------------------------------------------------------------------
 // Meta Ads Monitoring
 // ---------------------------------------------------------------------------
 
@@ -828,10 +1055,9 @@ export interface CampaignBriefRefineRequest {
  * actually reads (`internal/dispatch/hubspot.go:47-56`) rather than to the legacy request shape
  * the ad platforms carry.
  *
- * Deliberately just these two fields. The rest of what the HubSpot dispatcher needs — the send
- * list, its suppressions — is NOT config: it resolves the brief's BUILT audience by `brief.ID`
- * (`hubspot.go:293`), so passing an audience here would be a second, divergent source of truth
- * for something the service already owns.
+ * The send list is deliberately NOT here: the dispatcher resolves the brief's BUILT audience by
+ * `brief.ID` (`hubspot.go:293`), so passing one would be a second, divergent source of truth for
+ * something the service already owns.
  */
 export interface HubSpotCampaignCreateRequest {
   /**
@@ -846,6 +1072,23 @@ export interface HubSpotCampaignCreateRequest {
    * only to roll several briefs' emails up to one campaign in reporting.
    */
   utmCampaign?: string;
+  /**
+   * Generated subject line to write onto the cloned draft (LFXV2-2775). Unset leaves the
+   * template's own subject, which is what every campaign did before that shipped.
+   */
+  subject?: string;
+  /**
+   * Generated body HTML to write onto the cloned draft (LFXV2-2775).
+   *
+   * Applied upstream ONLY when the draft has exactly one rich-text widget — a template with
+   * several (header blurb, body, footer note) is left alone rather than guessed at, because
+   * writing the wrong widget destroys content the operator did not choose to replace. So sending
+   * this is a request, not a guarantee; the dispatcher logs and moves on either way.
+   *
+   * There is no preheader counterpart: Marketing Emails v3 exposes no preheader property, so a
+   * field here would report success while HubSpot ignored it.
+   */
+  bodyHtml?: string;
 }
 
 export interface CampaignCreateRequest {
@@ -879,6 +1122,7 @@ export interface CampaignCreateRequest {
   linkedInConfig?: LinkedInCampaignCreateRequest;
   redditConfig?: RedditCampaignCreateRequest;
   metaConfig?: MetaCampaignCreateRequest;
+  microsoftConfig?: MicrosoftCampaignCreateRequest;
   hubspotConfig?: HubSpotCampaignCreateRequest;
 }
 
@@ -1077,6 +1321,16 @@ export interface KeywordMetricsResponse {
   pulledAt: string;
   days: number;
   totalKeywords: number;
+  /**
+   * True when the project has MORE keywords than `keywords` carries.
+   *
+   * The rows are the top N by impressions, so when this is set `totals` is a subtotal over that
+   * slice and not the project's figures. A consumer must say so rather than render the numbers
+   * flat — "Spend: $412" for a project whose real spend is higher is a wrong number, not merely
+   * an incomplete one. Optional because the legacy Google Ads path cannot know: it issues a bare
+   * `LIMIT 50` with no probe for a further row, so absence means "unknown", not "complete".
+   */
+  truncated?: boolean;
   totals: KeywordTotals;
   keywords: KeywordMetrics[];
 }
@@ -1100,6 +1354,150 @@ export interface AudienceDemographics {
   age: AudienceBucket[];
   gender: AudienceBucket[];
   device: AudienceBucket[];
+}
+
+// ---------------------------------------------------------------------------
+// Campaign-service insight reads (wire shapes)
+//
+// These mirror campaign-service's `google-ads-keywords` and `google-ads-audience` types
+// exactly, in ITS vocabulary rather than the UI's: snake_case keys, `cost_micros` instead of
+// a currency amount, a `window` token instead of a day count, and CTR as a FRACTION rather
+// than a percentage. They exist so the conversion into `KeywordMetricsResponse` /
+// `AudienceDemographics` is one explicit, testable step instead of an inline cast.
+//
+// Do not widen these toward the UI shapes. The gap between the two is exactly where the unit
+// conversions live, and collapsing them would let a micro-unit or a fraction reach a template
+// that formats it as a currency amount or a percentage — a wrong number that renders
+// perfectly.
+// ---------------------------------------------------------------------------
+
+export interface CampaignServiceKeywordRow {
+  criterion_id: string;
+  ad_group_id: string;
+  campaign_id: string;
+  ad_group_name: string;
+  campaign_name: string;
+  text: string;
+  match_type: string;
+  status: string;
+  impressions: number;
+  clicks: number;
+  /** Micro-units of the account's native currency: divide by 1e6 for a currency amount. */
+  cost_micros: number;
+  /** A FRACTION (0.045), not a percentage. */
+  ctr: number;
+  conversions: number;
+  /**
+   * ABSENT when Google has not rated the keyword yet — normal for one with few impressions.
+   * Optional rather than nullable because campaign-service omits the key entirely, and 0 is
+   * off the 1-10 scale, so a caller must render absence as unknown and never as a low score.
+   */
+  quality_score?: number;
+}
+
+export interface CampaignServiceKeywords {
+  window: CampaignMetricsWindow;
+  rows: CampaignServiceKeywordRow[];
+  row_count: number;
+  /**
+   * True when the project has more keywords than were returned. The rows are the TOP ones by
+   * impressions, so totalling them does not give the project's whole spend.
+   */
+  truncated: boolean;
+}
+
+export interface CampaignServiceAudienceBucket {
+  dimension: 'age' | 'gender' | 'device';
+  /** Google's own enum literal, e.g. `AGE_RANGE_25_34`. */
+  value: string;
+  impressions: number;
+  clicks: number;
+  cost_micros: number;
+  /** A FRACTION (0.045), not a percentage. */
+  ctr: number;
+  conversions: number;
+}
+
+export interface CampaignServiceCampaignRef {
+  campaign_id: string;
+  brief_id: string;
+}
+
+/**
+ * The answer to "which of my campaigns is this platform id?".
+ *
+ * An EMPTY array is a 200, not an error: the project genuinely owns no campaign with that id,
+ * which is an answer a caller acts on by refusing rather than retrying.
+ *
+ * `matches` is an array, but on the ONE platform that has a resolver today it should never hold
+ * more than one. campaign-service migration 000020 puts a unique index on
+ * `(platform, platform_campaign_id)` scoped `WHERE platform = 'google-ads'`, because Google Ads
+ * is a single shared customer id across every foundation — two bindings would fight over the
+ * same paid campaign. So a second google-ads match is an INVARIANT VIOLATION, not a normal
+ * state, and callers refuse it rather than designing around it.
+ *
+ * The array shape is still right, for two reasons. It makes that violation representable and
+ * therefore refusable instead of silently taking the first row. And the constraint is
+ * deliberately NOT global: Microsoft campaign ids are account-scoped and legitimately collide
+ * across per-project connections, so when a second platform gets a resolver, multiplicity there
+ * is real rather than a defect.
+ */
+export interface CampaignServiceCampaignResolution {
+  platform_campaign_id: string;
+  matches: CampaignServiceCampaignRef[];
+  match_count: number;
+}
+
+/**
+ * One outcome together with the request entry it belongs to.
+ *
+ * The pairing is what makes a keyword-action response re-orderable: the BFF groups the request
+ * by campaign before dispatching, so the grouped sequence is not the request sequence — and the
+ * client reads `results` POSITIONALLY against the list it sent.
+ */
+export interface OrderedKeywordResult {
+  source: KeywordActionRequest;
+  response: KeywordActionResponse;
+}
+
+/** One campaign's worth of a keyword-action request, keyed by the platform campaign id. */
+export interface KeywordActionGroup {
+  platformCampaignId: string;
+  keywords: KeywordActionRequest[];
+}
+
+export interface CampaignServiceKeywordActionInput {
+  ad_group_id: string;
+  criterion_id: string;
+  /** UPPERCASE upstream, unlike the UI's lowercase `KeywordActionType`. */
+  action: 'PAUSE' | 'REMOVE';
+}
+
+export interface CampaignServiceKeywordActionResult {
+  ad_group_id: string;
+  criterion_id: string;
+  action: 'PAUSE' | 'REMOVE';
+  resource_name: string;
+}
+
+/**
+ * The outcome of one campaign's keyword batch.
+ *
+ * There is NO partial success within a batch: upstream sends it as a single atomic mutate with
+ * partial failure disabled, so `applied_count` always equals the number requested or the whole
+ * request failed. A caller must not read it as "how many of my actions worked".
+ */
+export interface CampaignServiceKeywordActions {
+  campaign_id: string;
+  results: CampaignServiceKeywordActionResult[];
+  applied_count: number;
+}
+
+export interface CampaignServiceAudience {
+  window: CampaignMetricsWindow;
+  /** Every bucket across all three breakdowns, discriminated by `dimension`. */
+  buckets: CampaignServiceAudienceBucket[];
+  bucket_count: number;
 }
 
 // ---------------------------------------------------------------------------
@@ -1417,14 +1815,91 @@ export interface HubSpotEmailSearchResult {
 }
 
 // ---------------------------------------------------------------------------
+// Keyword actions
+// ---------------------------------------------------------------------------
+
+/**
+ * One keyword action's outcome as the UI stores it.
+ *
+ * `state` is derived ONCE when the result is recorded, not in the template: a keyword action has
+ * THREE outcomes and `success` can only express two. An UNCONFIRMED action may already have
+ * applied, and a retried REMOVE is irreversible — so rendering it as "failed" invites exactly
+ * the retry that must not happen.
+ */
+export interface KeywordActionOutcome {
+  success: boolean;
+  message: string;
+  state: 'done' | 'unconfirmed' | 'failed';
+}
+
+// ---------------------------------------------------------------------------
 // HubSpot UTM
 // ---------------------------------------------------------------------------
+
+/**
+ * One campaign as campaign-service returns it.
+ *
+ * `utm` is OPTIONAL because a campaign can exist with no token configured — a real state, not a
+ * missing answer. The legacy BFF path fabricated a token from the id and name when HubSpot had
+ * none; upstream does not, and neither does the conversion, because a fabricated token attributes
+ * traffic to a campaign HubSpot cannot report on.
+ */
+export interface CampaignServiceHubSpotCampaign {
+  id: string;
+  name: string;
+  utm?: string;
+  start_date?: string;
+}
+
+export interface CampaignServiceHubSpotCampaigns {
+  campaigns: CampaignServiceHubSpotCampaign[];
+  /**
+   * Mirrors campaign-service's `capped` on `GET /projects/{id}/connection-hubspot/campaigns`.
+   *
+   * True when the search could NOT be shown to be COMPLETE — which is broader than "truncated".
+   * It covers HubSpot reporting more matches than it returned, and equally the cases where
+   * completeness is simply unknown: an absent `total`, or one that contradicts the rows (negative,
+   * or fewer than were returned). All of them fail CLOSED, because "we cannot tell" must not be
+   * reported as the proven absence a caller acts on.
+   *
+   * While it is true, absence from `campaigns` is NOT proof the campaign does not exist, and the
+   * UI must not offer an unqualified create — that would duplicate a campaign in a namespace
+   * shared by everyone on the portal.
+   */
+  capped: boolean;
+}
 
 export interface HubSpotUtmLookupResult {
   found: boolean;
   hs_utm: string | null;
   campaign_name: string;
   all_matches: { name: string; hs_utm: string }[];
+  /**
+   * True when the search cannot be PROVEN complete.
+   *
+   * Not strictly truncation, which is what an earlier version of this comment claimed. Both
+   * producers set it more broadly: campaign-service reports it when HubSpot's `total` is absent
+   * or contradicts the returned count (`resp.Total == nil || *resp.Total != len(out)`), and the
+   * legacy path did the same for an omitted or unusable total. A response that cannot describe
+   * its own completeness must not resolve to the proven absence that licenses a create.
+   *
+   * So a consumer may use this to SUPPRESS a create, but must not tell the operator that HubSpot
+   * matched more than it returned — that is only one of the reasons this is set, and stating it
+   * for an absent total sends them to narrow a term when the real remedy is to check the name.
+   */
+  capped: boolean;
+
+  /**
+   * True when a match may exist that this result does not show — for ANY reason.
+   *
+   * The union of `capped` and "upstream returned rows that local scoring rejected". Both mean
+   * absence is not proof of non-existence, which is what the UI acts on: it offers the create
+   * only when this is false, because creating on an inconclusive search duplicates a campaign
+   * in a shared namespace. Kept separate from `capped` so the UI never claims HubSpot truncated
+   * a result it did not truncate — the two answers differ in what the operator should DO
+   * (narrow the term vs check the name), and one flag could not say both.
+   */
+  inconclusive: boolean;
 }
 
 export interface HubSpotUtmCreateResult {
@@ -1565,15 +2040,48 @@ export interface CampaignListResult {
    *
    * Returned with the list because the two routes are gated differently and the client cannot
    * infer it: `/list` is ungated (it reads the Query Service index), while the toggle route
-   * refuses every UUID unless `LFX_CUTOVER_CAMPAIGN_SERVICE_STATUS_TOGGLE` is on — and the chart
-   * leaves that flag unset by default. Without this field a default deployment renders a row of
-   * buttons whose every click fails, which reads to an operator as the campaign refusing to stop
-   * rather than as a capability that was never switched on.
+   * refuses every UUID unless `LFX_CUTOVER_CAMPAIGN_SERVICE_STATUS_TOGGLE` is on. The chart now
+   * ships that flag `"true"`, but the field is not therefore redundant: the flag is read per
+   * request from the environment, so any deployment that overrides it — a values override, a
+   * chart that has not rolled yet, local dev — still turns the toggle off underneath a client
+   * that cannot see the change. Without this field such a deployment renders a row of buttons
+   * whose every click fails, which reads to an operator as the campaign refusing to stop rather
+   * than as a capability that was never switched on.
    *
    * A server fact, so it is reported by the server rather than mirrored into a client-side flag
    * that would drift from the deployment it describes.
    */
   statusToggleEnabled: boolean;
+  /**
+   * Whether THIS deployment can actually create a Demand Gen Google campaign.
+   *
+   * Same reasoning as `statusToggleEnabled`, for a different capability. Nothing in the create
+   * request tells the client in advance, so without this field the Implementation tab offers a
+   * Demand Gen checkbox whose every submission is refused.
+   *
+   * NOT the `LFX_CUTOVER_CAMPAIGN_SERVICE_DEMAND_GEN` flag, and the difference matters. That flag
+   * gates the campaign-service create path only; while the CREATE/BRIEFS/JOBS cutover is dark the
+   * legacy creator owns creation and makes Demand Gen campaigns regardless of it. So this is
+   * `true` across the whole staged CREATE-off rollout, and `false` only in the narrow window
+   * where campaign-service owns creation and has not been told it understands
+   * `googleAdsConfig.channel`. See `canCreateDemandGen` in `campaign-service.service.ts`, which
+   * is the authoritative computation — simplifying this back to the raw flag would hide a
+   * working legacy option for the entire rollout.
+   *
+   * Worse than a plain dead end, because the two refusals disagree: selecting Search AND Demand
+   * Gen is refused with "deselect one and create it", and following that advice lands on the
+   * capability refusal saying Demand Gen is not available at all. The first message walks the
+   * user into the second.
+   *
+   * Always present on a successful read, and never a fallback: an error produces no
+   * `CampaignListResult` at all, so there is no arm of this type that means "we could not tell".
+   * The client models that separately — it holds the capability as `boolean | null` and uses
+   * `null` for unanswered or failed, because a false negative there would clear a user's saved
+   * Demand Gen selection rather than merely withhold a control. Do not read this field's type as
+   * licence to treat `false` as a safe default for "unknown"; `false` is a server statement that
+   * the capability is off.
+   */
+  demandGenEnabled: boolean;
 }
 
 // ---------------------------------------------------------------------------
@@ -1677,4 +2185,215 @@ export interface CampaignStatusUpdateResult {
    * "what was asked for". Absent on the legacy path, whose SDK calls return no row.
    */
   serviceStatus?: string;
+}
+
+/**
+ * The reporting windows campaign-service accepts. Mirrors `metricsWindowEnum` in
+ * `design/brief.go` — the seven values of `model.MetricsWindow`.
+ *
+ * An explicit window always wins, for EVERY row. Omit it and campaign-service picks the default
+ * per row, per platform — `last_7_days` for X Ads, whose stats endpoint caps a query at 7 days,
+ * and `last_30_days` for everything else.
+ *
+ * That fallback applies ONLY to an omitted window. An explicit window a platform cannot serve is
+ * not silently narrowed: on the single-campaign read it is a 400, and on the brief-wide read it
+ * comes back as that row's `status: 'unsupported'` while the other rows still report.
+ */
+export type CampaignMetricsWindow = (typeof CAMPAIGN_METRICS_WINDOWS)[number];
+
+/**
+ * Whether a row in a brief-wide metrics read carries a measurement. ONLY `ok` does.
+ *
+ * Mirrors `briefMetricsRowStatusEnum`. The values are the failure modes the single-campaign
+ * endpoint expresses as distinct HTTP responses, which an aggregate cannot do — one campaign's
+ * 409 must not fail the other five:
+ *
+ * - `ok` — the read succeeded.
+ * - `unsupported` — no metrics dispatcher for the platform, or the window is unservable there.
+ *   Retrying is pointless; a narrower window may help.
+ * - `not_ready` — no platform campaign id yet, or no data for the window. Common and benign: a
+ *   staged email draft reads this way until a human sends it. NOT a failure to surface as one.
+ * - `connection_problem` — the connection cannot serve this campaign. An operator repairs it;
+ *   retrying never helps.
+ * - `failed` — the platform read itself failed. Transient; retrying may succeed.
+ */
+export type BriefMetricsRowStatus = 'ok' | 'unsupported' | 'not_ready' | 'connection_problem' | 'failed';
+
+/**
+ * The pacing band `pct` falls into. `unknown` means no pacing could be derived — NOT "on plan".
+ *
+ * `CampaignService*` prefixed, matching its siblings here, because it is the ONLY five-member
+ * variant: `PacingLabel`, `MetaPacingLabel`, `LinkedInPacingLabel` and `RedditPacingLabel` are
+ * all four-member BFF types with no `unknown`. Under the generic `Campaign` name this is the one
+ * a reader grabs by mistake, and `unknown` is precisely the member whose absence causes a
+ * non-computable pacing to be rendered as a number.
+ */
+export type CampaignServicePacingLabel = 'underspending' | 'normal' | 'constrained' | 'overspending' | 'unknown';
+
+/** Email-channel counters. Present only for the email channel (HubSpot); absent for ad platforms. */
+export interface CampaignServiceEmailMetrics {
+  sent: number;
+  delivered: number;
+  opens: number;
+  clicks: number;
+  bounces: number;
+  unsubscribes: number;
+}
+
+/** One campaign's measurement, as campaign-service reports it. */
+export interface CampaignServiceCampaignMetrics {
+  campaign_id: string;
+  platform_campaign_id: string;
+  window: CampaignMetricsWindow;
+  /** Impressions over the window on an ad platform; opens to date on the email channel. */
+  impressions: number;
+  clicks: number;
+  /**
+   * Cost in MICRO-UNITS of the platform's OWN native currency — USD for LinkedIn/Reddit, X's
+   * billing unit for Twitter. campaign-service performs no FX conversion, so these must never be
+   * summed across platforms: the result would carry no currency and no meaning. Always 0 on the
+   * email channel, which bills no per-send cost; do not blend that 0 into a cross-channel CPA.
+   */
+  cost_micros: number;
+  /** Clicks/Impressions, 0 when impressions is 0. */
+  ctr: number;
+  /**
+   * Conversions attributed to this campaign over the window.
+   *
+   * FRACTIONAL, and deliberately not an integer: Google Ads and Microsoft both type this as a
+   * double and credit PARTIAL conversions under data-driven, position-based and offline
+   * attribution, so 0.4 of a conversion is a real value. Do not round it, and in particular do
+   * not treat a value below 1 as zero.
+   *
+   * ABSENT means "not measured here", which is NOT a measured 0. Meta, X, Reddit and the email
+   * channel never report a campaign-level conversion count, and Microsoft omits it whenever the
+   * ConversionsQualified column is missing or any row's cell is blank — that column is only
+   * populated for accounts wired for Universal Event Tracking, and a partial column summed as
+   * though it were complete would understate the campaign. So a consumer must not render an
+   * absent value as zero or fold it into a conversion total.
+   */
+  conversions?: number;
+  email?: CampaignServiceEmailMetrics;
+}
+
+/** Spend against the flight-prorated plan, for ONE campaign. Never total or average across rows. */
+export interface CampaignServicePacing {
+  /**
+   * Spend as a percentage of what this campaign should have spent BY NOW.
+   *
+   * ABSENT when pacing is not computable — never zero-filled, because 0% is a claim about spend.
+   * Read `label === 'unknown'` for that case rather than defaulting this to 0.
+   */
+  pct?: number;
+  label: CampaignServicePacingLabel;
+}
+
+/**
+ * One campaign's slot in a brief-wide metrics read.
+ *
+ * Every campaign on the brief gets a row, INCLUDING ones that could not be read — that is the
+ * point of the type. `metrics` is present if and only if `status === 'ok'`, and absent otherwise
+ * rather than zero-filled, so a consumer can tell "measured zero" from "could not measure". A
+ * zero-filled row is the exact substitution that turns a failed read into a performance result.
+ */
+export interface BriefMetricsRow {
+  campaign_id: string;
+  /**
+   * `string`, not `CampaignPlatform`: upstream's platform enum includes `hubspot` (the email
+   * channel) alongside the six ad channels, and `CampaignPlatform` has no member for it. The
+   * union would be wrong here rather than merely loose.
+   */
+  platform: string;
+  status: BriefMetricsRowStatus;
+  /** Present if and ONLY if `status` is `ok`. Never zero-filled — a zero is a claim. */
+  metrics?: CampaignServiceCampaignMetrics;
+  /** Why this row carries no measurement, in consumer-safe wording. Absent when `status` is `ok`. */
+  reason?: string;
+  /** Absent unless `status` is `ok`. On an `ok` row it is always present. */
+  pacing?: CampaignServicePacing;
+}
+
+/**
+ * How urgently an action item wants attention.
+ *
+ * Deliberately TWO members where the four BFF siblings (`ActionPriority`, `MetaActionPriority`,
+ * `LinkedInActionPriority`, `RedditActionPriority`) carry three: campaign-service emits only
+ * HIGH and MED, so a `'LOW'` here would declare a value the endpoint cannot return. Named rather
+ * than inlined so the narrowing reads as intentional instead of as an omission.
+ */
+export type BriefMetricsActionPriority = 'HIGH' | 'MED';
+
+/**
+ * One thing an operator should look at, derived by campaign-service from the readable rows.
+ *
+ * `rule` is a STABLE TOKEN — group, filter or link on it. `issue` and `action` are for humans and
+ * may be reworded, so keying on that prose would break silently when it is.
+ *
+ * Distinct from the BFF's own `CampaignActionItem`, which four platform services derive
+ * independently and which disagree with each other and with this one on CTR thresholds,
+ * impression floors and how paused campaigns are treated. This is the single-source version.
+ */
+export interface BriefMetricsActionItem {
+  rule: 'zero_delivery' | 'underspending' | 'budget_constrained' | 'low_ctr' | 'no_conversions';
+  priority: BriefMetricsActionPriority;
+  campaign_id: string;
+  /** `string` for the same reason as `BriefMetricsRow.platform` — `hubspot` is in scope. */
+  platform: string;
+  issue: string;
+  action: string;
+}
+
+/**
+ * A brief-wide metrics read: `GET /projects/{projectId}/briefs/{briefId}/metrics`.
+ *
+ * There is deliberately NO cross-channel cost total — see `cost_micros`. Impressions and clicks
+ * are unitless and could be summed, but campaign-service leaves that to the consumer alongside
+ * `ok_count` rather than presenting a whole-brief figure the row set may not support.
+ */
+export interface BriefMetrics {
+  brief_id: string;
+  /**
+   * The window REQUESTED for this read. Per-platform defaults still apply when it is omitted, so
+   * an individual row may cover a NARROWER window than this — each row's own `metrics.window`
+   * records what that row actually covers.
+   */
+  window: CampaignMetricsWindow;
+  /** One row per campaign on the brief, in a stable order. Includes rows that could not be read. */
+  rows: BriefMetricsRow[];
+  /**
+   * How many rows carry a measurement. Compare against `rows.length` before presenting ANY
+   * cross-campaign total — a total over 2 of 6 campaigns is not the brief's performance.
+   */
+  ok_count: number;
+  /**
+   * What an operator should look at, derived from the READABLE rows.
+   *
+   * Empty means nothing was flagged among those rows. It is NOT a claim that every row was
+   * readable — unreadable rows raise no items — so check `ok_count` against `rows.length` before
+   * rendering an empty list as an all-clear.
+   */
+  action_items: BriefMetricsActionItem[];
+}
+
+/**
+ * The event-lifecycle stage an email belongs to, as campaign-service enumerates it.
+ *
+ * Closed because upstream's `generate-email-copy` declares it closed: an unrecognised value is
+ * refused with a 400 naming the valid ones, so a typo cannot quietly become registration copy.
+ */
+export type CampaignEmailStage = 'CFP Launch' | 'Schedule Announcement' | 'Registration Push' | 'Discount Offer' | 'Final Countdown' | 'Post-Event';
+
+/**
+ * One selectable email type.
+ *
+ * The TYPE is what an operator recognises ("Thank You + Survey"); the STAGE is what
+ * campaign-service generates from. Several types map to one stage -- a CFP launch and a
+ * co-located CFP reminder are both CFP Launch -- which is why these are two fields rather than
+ * one. `keywords` rank clone templates (#1942); they live here so the taxonomy has a single home.
+ */
+export interface CampaignEmailTypeOption {
+  id: string;
+  label: string;
+  stage: CampaignEmailStage;
+  keywords: readonly string[];
 }

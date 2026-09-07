@@ -18,7 +18,7 @@ import type {
   LinkedInTargetingProfileConfig,
 } from '@lfx-one/shared/interfaces';
 
-import { CAMPAIGN_PACING_THRESHOLDS, LINKEDIN_API_VERSION, LINKEDIN_GEO_RESOLVE_MAP } from '@lfx-one/shared/constants';
+import { CAMPAIGN_ALERT_THRESHOLDS, CAMPAIGN_PACING_THRESHOLDS, LINKEDIN_API_VERSION, LINKEDIN_GEO_RESOLVE_MAP } from '@lfx-one/shared/constants';
 
 import type { Request } from 'express';
 
@@ -1077,7 +1077,7 @@ export async function getLinkedInAnalytics(req: Request | undefined, accountId: 
         action: 'Consider increasing budget if event is in peak registration period',
       });
     }
-    if (c.ctr > 0 && c.ctr < 0.3) {
+    if (c.ctr > 0 && c.ctr < CAMPAIGN_ALERT_THRESHOLDS['linkedin-ads'].lowCtrPct) {
       actionItems.push({
         priority: 'MED',
         campaignName: c.campaignName,
@@ -1085,7 +1085,7 @@ export async function getLinkedInAnalytics(req: Request | undefined, accountId: 
         action: 'Refresh ad copy or images; review audience targeting',
       });
     }
-    if (c.clicks > 50 && c.conversions === 0) {
+    if (c.clicks > CAMPAIGN_ALERT_THRESHOLDS['linkedin-ads'].clicksWithoutConversions && c.conversions === 0) {
       actionItems.push({
         priority: 'MED',
         campaignName: c.campaignName,

@@ -14,9 +14,9 @@ import type {
   CommitteeActivityLink,
   CommitteeActivityNoteAttachment,
   CommitteeActivityQuery,
+  CommitteeActivityResponse,
   DocumentUploadedActivityEvent,
   NotesAddedActivityEvent,
-  PaginatedResponse,
   PastMeeting,
   QueryServiceResponse,
   Survey,
@@ -188,7 +188,51 @@ export class CommitteeActivityService {
     this.voteService = new VoteService();
   }
 
-  public async getCommitteeActivity(req: Request, committeeUid: string, options: CommitteeActivityQuery): Promise<PaginatedResponse<ActivityEvent>> {
+  /**
+   * `knownCommittee` (optional): a caller that already fetched this committee for its own reasons
+   * (e.g. weekly-brief.service.ts's `buildCurrentActivity`, which must read `category` before it
+   * can even decide whether to call this method) can pass it here to skip this method's own
+   * `fetchCommittee` — otherwise every caller pays that GET twice for a committee it already had in
+   * hand. Only an optimization: omitting it costs one extra upstream call, not a correctness
+   * difference — this method still trusts a caller-supplied committee exactly as it would trust its
+   * own fetch, with the same fail-closed contract (see fetchCommittee's doc comment) resting on the
+   * caller instead when this parameter is used. Not inert data, so a mismatched `uid` is rejected
+   * rather than silently trusted: `committee.enable_voting` (read below) decides whether the
+   * entire vote leg is surfaced, so passing the wrong committee here would otherwise silently add
+   * or hide a committee's votes. This rejection is loud to a direct caller (throws
+   * `ServiceValidationError`) — this method's other production caller, `committee-activity.controller.ts`'s
+   * "Recent Activity" feed endpoint, never passes `knownCommittee` at all, so the guard is
+   * unreachable on that path — but the one caller that DOES pass it, `weekly-brief.service.ts`'s
+   * `buildCurrentActivity`, wraps the whole call in a try/catch that degrades ANY thrown error the
+   * same way (log a warning, omit the tally, let the poll retry), so in production this specific
+   * bug wouldn't surface there as a distinguishable failure either — the guard's real value is as
+   * a tripwire for a caller reachable directly (tests, or a future `knownCommittee` caller that
+   * doesn't degrade the way `buildCurrentActivity` does), and as a precondition the type signature
+   * alone can't express.
+   *
+   * `quietAggregationLog` (optional, default `false`): deliberately independent of `knownCommittee`
+   * — passing a known committee only skips a redundant fetch and implies nothing about how often
+   * this method is called, so it must not double as a logging-verbosity switch. Set `true` for a
+   * caller invoked at higher-than-once-per-request frequency (currently only
+   * `weekly-brief.service.ts`'s per-poll-tick tally) to log the aggregation start/completion at
+   * DEBUG instead of INFO — see those two log call sites' own comments for the full rationale.
+   *
+   * Both of the above live in `callerOptions`, a bag kept deliberately separate from
+   * `options: CommitteeActivityQuery` — that type is also the parsed, validated shape of
+   * `GET /api/committees/:uid/activity`'s query string (see its own doc comment), and neither
+   * `knownCommittee` nor `quietAggregationLog` is ever HTTP-parsed; mixing an internal
+   * caller-intent flag into a wire-query type would blur that boundary for no benefit.
+   */
+  public async getCommitteeActivity(
+    req: Request,
+    committeeUid: string,
+    options: CommitteeActivityQuery,
+    callerOptions: { knownCommittee?: Committee; quietAggregationLog?: boolean } = {}
+  ): Promise<CommitteeActivityResponse> {
+    const { knownCommittee, quietAggregationLog = false } = callerOptions;
+    if (knownCommittee && knownCommittee.uid !== committeeUid) {
+      throw ServiceValidationError.forField('knownCommittee', 'knownCommittee.uid must match committeeUid', { operation: 'get_committee_activity' });
+    }
     const { since: rawSince, cursor, limit } = options;
     // Same reject-not-degrade policy as the cursor/since checks below, for the same reason:
     // parseCommitteeActivityQuery already bounds page_size on the HTTP path, but this method is
@@ -248,15 +292,19 @@ export class CommitteeActivityService {
     // (filter-dimension) caveats discussed next, just in the sort dimension
     // instead.
     //
-    // Filter dimension: votes/files each filter on a single upstream `date_field` that only
-    // approximates their own multi-field occurred_at derivation (see each leg's own comment for
-    // which field and why) — sending that imperfect narrowing upstream still beats sending none at
-    // all, which was tried and reverted earlier in this file's history: it traded the rare
-    // filter-mismatch miss for hard truncation at `fetchSize` on every page instead, a strictly worse
-    // failure mode. The in-memory since/cursor pass in getCommitteeActivity is the correctness
-    // backstop against over-inclusion for both legs, not under-inclusion — an imperfectly-narrowed
-    // leg can still exclude a real in-window row upstream before that pass ever sees it. Surveys
-    // send no `date_field` at all for a `date_from` reason: unlike votes/files, a survey's
+    // Filter dimension: files filters on a single upstream `date_field` that only approximates its
+    // own multi-field occurred_at derivation (see fetchDocumentEvents's own comment for which field
+    // and why) — sending that imperfect narrowing upstream still beats sending none at all, which
+    // was tried and reverted earlier in this file's history: it traded the rare filter-mismatch
+    // miss for hard truncation at `fetchSize` on every page instead, a strictly worse failure mode.
+    // The in-memory since/cursor pass in getCommitteeActivity is the correctness backstop against
+    // over-inclusion for files, not under-inclusion — an imperfectly-narrowed leg can still exclude
+    // a real in-window row upstream before that pass ever sees it. Votes (GH-1967 review) moved out
+    // of this bucket into the notes/surveys one below: a deadline-driven `vote_closed` can occur
+    // with no write to `last_modified_time` at all, so a `date_from` there wasn't a rare
+    // filter-mismatch miss the way files' is — it was systematic, the same failure class surveys
+    // documents next, so votes now only sends `date_to` (see fetchVoteEvents's own comment).
+    // Surveys send no `date_field` at all for a `date_from` reason: unlike files, a survey's
     // cutoff-driven occurred_at isn't bounded below by any field the row gets written to, so
     // date_field narrowing there would systematically (not rarely) exclude exactly the rows `since`
     // is meant to include — see fetchSurveyEvents. That reasoning only covers `date_from`, though;
@@ -346,35 +394,71 @@ export class CommitteeActivityService {
     // (the closest precedent in this repo: a comparable multi-source read aggregation), not the
     // single-source enrichment services that stay at DEBUG throughout. A merge across 5
     // independently-paginated upstream sources with cursor/saturation logic is exactly the
-    // "complex multi-step orchestration" case logging-patterns.md reserves INFO for.
-    logger.info(req, 'get_committee_activity', 'Starting committee activity aggregation', { committee_uid: committeeUid, fetch_size: fetchSize });
+    // "complex multi-step orchestration" case logging-patterns.md reserves INFO for — but only for
+    // a call at that frequency. `quietAggregationLog` (an explicit intent flag, deliberately NOT
+    // inferred from `knownCommittee` — that param exists only to skip a redundant committee fetch
+    // and says nothing about call frequency, so a future caller passing it purely for that saving
+    // must not silently lose its INFO logs) is set by `weekly-brief.service.ts#buildCurrentActivity`
+    // (GH-1922): a per-poll-tick tally fan-out that can run up to
+    // `WEEKLY_BRIEF_CURRENT_ACTIVITY_MAX_ASK_ATTEMPTS` times per generate cycle, well past
+    // "significant business operation" frequency — DEBUG there instead, same call, same shape.
+    const aggregationLogLevel = quietAggregationLog ? 'debug' : 'info';
+    logger[aggregationLogLevel](req, 'get_committee_activity', 'Starting committee activity aggregation', {
+      committee_uid: committeeUid,
+      fetch_size: fetchSize,
+    });
+
+    // Tracked via closure side-effect (not folded into each leg's own resolved shape) so a failed
+    // leg's `{events: [], saturated: false}` return keeps the exact type each fetch* method already
+    // declares — adding a `failed` field there would turn every leg's resolved type into a
+    // success/failure union and force a runtime type-guard at every one of their many read sites
+    // below, for a value only this one aggregate ever needs.
+    let pastMeetingFailed = false;
+    let voteFailed = false;
+    let surveyFailed = false;
+    let documentFailed = false;
+    let notesFailed = false;
 
     const [committee, pastMeetingResult, voteResult, surveyResult, documentResult, notesResult] = await Promise.all([
-      this.fetchCommittee(req, committeeUid),
+      knownCommittee ? Promise.resolve(knownCommittee) : this.fetchCommittee(req, committeeUid),
       this.fetchPastMeetingEvents(req, committeeUid, since, before, fetchSize).catch((err) => {
         logger.warning(req, 'get_committee_activity', 'Failed to fetch past-meeting activity, continuing without it', { committee_uid: committeeUid, err });
+        pastMeetingFailed = true;
         return { events: [], saturated: false };
       }),
       this.fetchVoteEvents(req, committeeUid, since, before, fetchSize).catch((err) => {
         logger.warning(req, 'get_committee_activity', 'Failed to fetch vote activity, continuing without it', { committee_uid: committeeUid, err });
+        voteFailed = true;
         return { events: [], saturated: false };
       }),
       this.fetchSurveyEvents(req, committeeUid, since, before, fetchSize).catch((err) => {
         logger.warning(req, 'get_committee_activity', 'Failed to fetch survey activity, continuing without it', { committee_uid: committeeUid, err });
+        surveyFailed = true;
         return { events: [], saturated: false };
       }),
       this.fetchDocumentEvents(req, committeeUid, since, before, fetchSize, cursor).catch((err) => {
         logger.warning(req, 'get_committee_activity', 'Failed to fetch document activity, continuing without it', { committee_uid: committeeUid, err });
+        documentFailed = true;
         return { events: [], saturated: false };
       }),
       this.fetchNotesAddedEvents(req, committeeUid, since, before, fetchSize).catch((err) => {
         logger.warning(req, 'get_committee_activity', 'Failed to fetch notes activity, continuing without it', { committee_uid: committeeUid, err });
+        notesFailed = true;
         return { events: [], saturated: false };
       }),
     ]);
 
+    // Only meetings/votes/surveys count toward staleness (WEEKLY_BRIEF_STALENESS_EVENT_TYPES,
+    // GH-1966/#1967) — documents/notes are included too rather than narrowed to just those three,
+    // since this flag is generic to the endpoint (also read by the Recent Activity feed, which has
+    // no such narrowing) and a caller-specific leg subset would need to be threaded through
+    // CommitteeActivityQuery to compute correctly here.
+    const anyLegFailed = pastMeetingFailed || voteFailed || surveyFailed || documentFailed || notesFailed;
+
     // A committee-lookup failure already rejected the whole Promise.all above (see fetchCommittee's
-    // doc comment) — by this line `committee` is always a resolved Committee.
+    // doc comment), or `committee` came from a caller-supplied `knownCommittee` — validated against
+    // `committeeUid` above and carrying the same fail-closed contract per this method's own doc
+    // comment. Either way, by this line `committee` is always a resolved, trustworthy Committee.
     const votingEnabled = committee.enable_voting;
     const sources: ActivityEvent[][] = [
       pastMeetingResult.events,
@@ -439,20 +523,25 @@ export class CommitteeActivityService {
     // is still present. `anyLegSaturated` (above) already correctly reflects this via each leg's
     // real `page_token` (not row count) — but if EVERY leg's single page happens to filter down to
     // zero visible rows, `windowed`/`page` end up empty too, `lastPageItem` is undefined, and
-    // `hasMore` forces `false` regardless of `anyLegSaturated`: this response looks terminal even
-    // though a later upstream page (of any saturated leg) could contain rows this caller is
-    // authorized to see. Closing this for real means looping a leg's own upstream call until a
-    // visible candidate or exhaustion — ruled out for v1 by the ticket's "bounded calls, no
-    // per-event follow-ups" requirement (same constraint documented at the top of this method).
-    // Accepted as a known residual (per-request, not per-response — a follow-up request with the
-    // same `since`/no cursor would simply re-run this same fetch and could still surface nothing
-    // new if the access-filtering pattern hasn't changed), not solved by a second round-trip within
-    // this call.
+    // `hasMore`/`pageToken` force to a terminal-looking `false`/`undefined` regardless of
+    // `anyLegSaturated`, even though a later upstream page (of any saturated leg) could contain rows
+    // this caller is authorized to see. A second round-trip within this call would close it for
+    // real (looping a leg's own upstream call until a visible candidate or exhaustion) — ruled out
+    // for v1 by the ticket's "bounded calls, no per-event follow-ups" requirement (same constraint
+    // documented at the top of this method) — so instead `any_leg_saturated` (GH-1967 review) is
+    // returned on the response directly, independent of whether `pageToken` survived the
+    // `lastPageItem` computation, letting a completeness-sensitive caller (e.g.
+    // `WeeklyBriefService#withStaleness`) distrust an empty-looking result without needing a second
+    // request. Same fix closes an unrelated but structurally identical gap: `fetchSurveyEvents`'
+    // page, sorted by `updated_desc` rather than `occurred_at`, can be entirely filtered out of
+    // `windowed` by a cutoff-driven closure whose `occurred_at` doesn't match its sort position,
+    // even though the survey leg's own upstream page was genuinely saturated.
     const lastPageItem = page.at(-1);
     const hasMore = (windowed.length > limit || anyLegSaturated) && !!lastPageItem;
     const pageToken = hasMore && lastPageItem ? encodeActivityPageToken({ before: lastPageItem.event.occurred_at, key: lastPageItem.key }) : undefined;
 
-    logger.info(req, 'get_committee_activity', 'Completed committee activity aggregation', {
+    // Same quietAggregationLog-gated level as the "Starting" log above — see that call's comment.
+    logger[aggregationLogLevel](req, 'get_committee_activity', 'Completed committee activity aggregation', {
       committee_uid: committeeUid,
       meeting_count: pastMeetingResult.events.length,
       vote_count: voteResult.events.length,
@@ -466,10 +555,11 @@ export class CommitteeActivityService {
       // log alone — has_more can now be true without windowed.length exceeding limit, and a leg
       // count only signals saturation when compared against fetch_size (also not logged elsewhere).
       any_leg_saturated: anyLegSaturated,
+      any_leg_failed: anyLegFailed,
       fetch_size: fetchSize,
     });
 
-    return { data, page_token: pageToken };
+    return { data, page_token: pageToken, any_leg_saturated: anyLegSaturated, any_leg_failed: anyLegFailed };
   }
 
   // ─── Committee (for enable_voting) ─────────────────────────────────────────
@@ -627,24 +717,28 @@ export class CommitteeActivityService {
     before: string | undefined,
     fetchSize: number
   ): Promise<{ events: (VoteOpenedActivityEvent | VoteClosedActivityEvent)[]; saturated: boolean }> {
-    // date_field: 'last_modified_time' is best-effort narrowing (see the filter-dimension paragraph
-    // in getCommitteeActivity's fetchSize comment for why narrowing imperfectly still beats not
-    // narrowing at all) — a vote's occurred_at is actually
-    // end_time/early_end_time/last_modified_time/creation_time depending on status, not always
-    // last_modified_time.
-    const hasWindow = !!since || !!before;
+    // date_to only, never date_from (GH-1967 review) — same asymmetry as fetchNotesAddedEvents,
+    // same reason as fetchSurveyEvents' own no-narrowing-at-all: a vote's occurred_at is actually
+    // end_time/early_end_time/last_modified_time/creation_time depending on status, and a
+    // deadline-driven vote_closed (isVoteDeadlinePast in mapVoteToEvent, below) can fire with no
+    // corresponding write to last_modified_time at all — a date_from on last_modified_time would
+    // then systematically exclude exactly the votes `since` is meant to include, not just
+    // best-effort-miss them (Copilot caught this once the staleness signal started depending on
+    // this leg's completeness). date_to has no equivalent failure — over-inclusion on the upper
+    // bound is always safe, trimmed by the in-memory since/cursor pass in getCommitteeActivity —
+    // and is still needed for Recent Activity's own cursor pagination to reach older votes.
     const query: Record<string, unknown> = {
       tags: `committee_uid:${committeeUid}`,
       page_size: fetchSize,
       sort: 'updated_desc',
-      ...(hasWindow && { date_field: 'last_modified_time' }),
-      ...(since && { date_from: since }),
-      ...(before && { date_to: before }),
+      ...(before && { date_field: 'last_modified_time', date_to: before }),
     };
 
+    // includeProject: false — mapVoteToEvent discards the project enrichment, so the extra
+    // /query/resources round trip would be thrown away.
     // page_token — see the saturation comment in getCommitteeActivity for why this is preferred
     // over comparing `votes.length` to `fetchSize`.
-    const { data: votes, page_token: pageToken } = await this.voteService.getVotes(req, query);
+    const { data: votes, page_token: pageToken } = await this.voteService.getVotes(req, query, { includeProject: false });
     return { events: votes.map((vote) => this.mapVoteToEvent(vote, committeeUid)), saturated: !!pageToken };
   }
 
@@ -679,7 +773,20 @@ export class CommitteeActivityService {
       type: isClosed ? 'vote_closed' : 'vote_opened',
       occurred_at: occurredAt,
       committee_uid: committeeUid,
-      payload: { vote_uid: vote.uid, name: vote.name, status: vote.status },
+      // opened_at (GH-1967 review) — always the vote's own creation_time, independent of isClosed,
+      // so a closed vote's collapsed occurred_at (its close moment) doesn't hide the fact that it
+      // opened at a different, potentially independently-relevant time. See
+      // VoteActivityEventPayload's own doc comment for why. end_time (GH-1967 Copilot review) is
+      // carried for the same caller: upstream's weekly-brief VoteSource windows on end_time alone
+      // (NOT early_end_time — vote_source.go's date_field=end_time), so an in-window early close of
+      // a vote whose scheduled end_time falls outside the window is still not brief-relevant.
+      payload: {
+        vote_uid: vote.uid,
+        name: vote.name,
+        status: vote.status,
+        opened_at: firstValidTimestamp(vote.creation_time) || undefined,
+        end_time: firstValidTimestamp(vote.end_time) || undefined,
+      },
     };
   }
 
@@ -692,16 +799,17 @@ export class CommitteeActivityService {
     before: string | undefined,
     fetchSize: number
   ): Promise<{ events: (SurveyPublishedActivityEvent | SurveyClosedActivityEvent)[]; saturated: boolean }> {
-    // No date_field/date_from/date_to on this leg — unlike votes/files, surveys have a mode of
+    // No date_field/date_from/date_to on this leg — unlike files, surveys have a mode of
     // occurred_at (a cutoff-driven closure, see isCutoffDrivenClosure/mapSurveyToEvent below) that
     // is NOT bounded below by last_modified_at: a SENT survey can sit with an old last_modified_at
     // while its real occurred_at (survey_cutoff_date) is still in the future relative to that
     // write, with no upstream write ever marking the transition. Narrowing on
     // date_field: 'last_modified_at' (the previous approach) would upstream-exclude exactly that
     // row whenever `since` falls between its last_modified_at and its cutoff-driven occurred_at —
-    // not a rare-edge best-effort miss like the votes/files legs' narrowing, but a systematic one
-    // for every cutoff-driven closure `since` is meant to include (Copilot caught this on this
-    // leg's initial cutoff fix). Dropping upstream date narrowing here entirely closes that: this
+    // not a rare-edge best-effort miss like the files leg's narrowing, but a systematic one for
+    // every cutoff-driven closure `since` is meant to include (Copilot caught this on this leg's
+    // initial cutoff fix; votes had the same systematic gap for deadline-driven closures, fixed the
+    // same way — see fetchVoteEvents). Dropping upstream date narrowing here entirely closes that: this
     // leg falls back to the same "Known v1 limitation" already documented at the top of
     // getCommitteeActivity for every page_size-bounded leg (a survey outside the top-fetchSize
     // slice by `sort: updated_desc` can still be missed), which is an honest, pre-existing
@@ -747,7 +855,25 @@ export class CommitteeActivityService {
       type: displayStatus === SurveyStatus.CLOSED ? 'survey_closed' : 'survey_published',
       occurred_at: occurredAt,
       committee_uid: committeeUid,
-      payload: { survey_uid: survey.uid, title: survey.survey_title, status: displayStatus },
+      // opened_at (GH-1967 review) — the survey's PUBLISH moment, independent of displayStatus, so
+      // a closed survey's collapsed occurred_at (its cutoff-driven closure) doesn't hide the fact
+      // that it opened at a different, potentially independently-relevant time. The publish moment
+      // is survey_send_date, NOT created_at: ITX's survey API is a schedule API (POST
+      // /v2/surveys/schedule requires survey_send_date in the future), so a scheduled survey is
+      // created well before it actually goes out — keying on created_at would misdate it (GH-1967
+      // Copilot review: a survey created before a weekly brief but sent after it would be missed by
+      // withStaleness's opened_at fallback). created_at stays as the fallback for rows with no send
+      // date. See SurveyActivityEventPayload's own doc comment for why opened_at exists at all.
+      // cutoff_date (GH-1967 Copilot review) — upstream's weekly-brief SurveySource windows on
+      // survey_cutoff_date and requires it to have already passed, so publication alone is never
+      // brief-relevant; carried so the staleness signal can apply the same rule.
+      payload: {
+        survey_uid: survey.uid,
+        title: survey.survey_title,
+        status: displayStatus,
+        opened_at: firstValidTimestamp(survey.survey_send_date ?? undefined, survey.created_at) || undefined,
+        cutoff_date: firstValidTimestamp(survey.survey_cutoff_date ?? undefined) || undefined,
+      },
     };
   }
 

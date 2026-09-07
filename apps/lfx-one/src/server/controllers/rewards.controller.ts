@@ -30,7 +30,9 @@ export class RewardsController {
       const summary = await this.rewardsService.getSummary(req);
 
       logger.success(req, 'get_rewards_summary', startTime, {
-        points: summary.points,
+        subject_mode: summary.readOnly ? 'impersonated' : 'self',
+        profile_availability: summary.availability.profile,
+        promotions_availability: summary.availability.promotions,
         incentives_count: summary.availableIncentives.length,
         coupons_count: summary.coupons.length,
       });

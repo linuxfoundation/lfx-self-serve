@@ -83,8 +83,9 @@ export class MyClasService {
   }
 
   /**
-   * Asks the CLA backend to email the selected managers for an approval or removal request.
-   * Does not invalidate or re-approve the signature. Contact mode must not call this.
+   * Asks the CLA backend to email the selected managers for an approval, removal, or contact
+   * request. Does not invalidate or re-approve the signature. A contact request must carry a
+   * non-blank `message` — it asks for no change, so the message is the whole of it.
    */
   public createClaManagerRequest(signatureId: string, body: ClaManagerRequest): Observable<ClaManagerRequestResult> {
     return this.http.post<ClaManagerRequestResult>(`/api/me/clas/${encodeURIComponent(signatureId)}/cla-manager-requests`, body).pipe(take(1));

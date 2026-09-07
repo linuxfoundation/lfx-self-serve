@@ -1,9 +1,21 @@
 /* Copyright The Linux Foundation and each contributor to LFX. */
 /* SPDX-License-Identifier: MIT */
 
-::ng-deep {
+:host ::ng-deep {
   .p-button-icon-only::after {
     display: none;
+  }
+
+  /* Icon-only buttons are sized and clipped for a single icon; a badge child gets cut off. Overlay it on the corner instead. */
+  .p-button-icon-only:has(.p-badge) {
+    overflow: visible;
+
+    .p-badge {
+      position: absolute;
+      top: -0.375rem;
+      right: -0.375rem;
+      margin: 0;
+    }
   }
 
   /* Button Styling - Secondary variant for card actions */

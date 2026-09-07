@@ -4,6 +4,9 @@
 // Generated with [Claude Code](https://claude.ai/code)
 
 import { expect, Page, test } from '@playwright/test';
+import { skipWhenAuthMissing } from './helpers/auth.helper';
+
+test.beforeEach(() => skipWhenAuthMissing());
 
 const ENROLLMENT_URL = '/profile/individual-enrollment';
 const DATA_LOAD_TIMEOUT = 15_000;

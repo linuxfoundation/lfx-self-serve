@@ -48,8 +48,25 @@ export const campaignAccessGuard: CanActivateFn = (route: ActivatedRouteSnapshot
     }
     // Override says flag is on; continue to FGA check below.
     return personaService.refreshEnrichedPersonas(!personaService.isCampaignManager(), projectSlug).pipe(
-      map(() => {
-        if (personaService.currentPersona() === 'executive-director' || personaService.isCampaignManager()) {
+      map((response) => {
+        // Decide from this call's own response, not the shared signal — a newer probe issued
+        // elsewhere (e.g. sidebar-nav) can win the "latest" race and block this response from
+        // being written to the signal, even though it's the answer this guard needs (LFXV2-2235
+        // Cursor finding: probe race can deny valid grants). An errored-but-non-null response
+        // (HTTP 200 with `response.error` set) isn't authoritative either — applyPersonaResponse
+        // preserves the last-known-good grant in that case, so the guard must fall back too.
+        const isCampaignManager = response && !response.error ? (response.isCampaignManager ?? false) : personaService.isCampaignManager();
+        // This guard's own response is the most authoritative source for the route it's about to
+        // admit — force-apply it so downstream signal readers (`CampaignsComponent`) agree with
+        // the decision made here, even if a differently-scoped background probe won the recency
+        // race and would otherwise have left the shared signal stale (Copilot finding, PR #1835).
+        // Only force-apply on an actual grant — a deny response has no scope of its own to defend
+        // and would otherwise clobber a genuinely newer, differently-scoped grant that already won
+        // the recency race legitimately (Cursor finding, PR #1835).
+        if (response && !response.error && isCampaignManager) {
+          personaService.confirmActiveGrant(response, projectSlug);
+        }
+        if (personaService.currentPersona() === 'executive-director' || isCampaignManager) {
           return true;
         }
         return router.createUrlTree(['/foundation/overview'], { queryParams: { project: route.queryParamMap.get('project') } });
@@ -74,10 +91,19 @@ export const campaignAccessGuard: CanActivateFn = (route: ActivatedRouteSnapshot
       // Force a refetch unless we already know the caller is a campaign manager — the "already
       // loaded" cache would otherwise stale-deny someone who gained the grant mid-session.
       return personaService.refreshEnrichedPersonas(!personaService.isCampaignManager(), projectSlug).pipe(
-        map(() => {
+        map((response) => {
+          // Decide from this call's own response, not the shared signal — see the override branch
+          // above for why (LFXV2-2235 Cursor finding: probe race can deny valid grants), and for
+          // why an errored-but-non-null response also falls back to the shared signal.
+          const isCampaignManager = response && !response.error ? (response.isCampaignManager ?? false) : personaService.isCampaignManager();
+          // Force-apply this call's own response — see the override branch above for why. Only on
+          // an actual grant — see the override branch above for why a deny must not force-apply.
+          if (response && !response.error && isCampaignManager) {
+            personaService.confirmActiveGrant(response, projectSlug);
+          }
           // Re-check ED too — applyPersonaResponse can promote currentPersona as a side effect of
           // this refetch, and an ED without an explicit campaign_manager grant must still pass.
-          if (personaService.currentPersona() === 'executive-director' || personaService.isCampaignManager()) {
+          if (personaService.currentPersona() === 'executive-director' || isCampaignManager) {
             return true;
           }
           return router.createUrlTree(['/foundation/overview'], { queryParams: { project: route.queryParamMap.get('project') } });

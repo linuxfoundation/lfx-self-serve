@@ -5,7 +5,7 @@ import { isPlatformBrowser, NgClass } from '@angular/common';
 import { ChangeDetectionStrategy, Component, computed, inject, PLATFORM_ID, Signal, signal } from '@angular/core';
 import { takeUntilDestroyed, toObservable, toSignal } from '@angular/core/rxjs-interop';
 import { ActivatedRoute, Router, RouterLink, RouterLinkActive, RouterOutlet } from '@angular/router';
-import { MY_CLAS_ENABLED_FLAG, normalizeTShirtSize, PENDING_PROFILE_SAVE_KEY, TSHIRT_SIZES } from '@lfx-one/shared/constants';
+import { MY_CLAS_ENABLED_FLAG, normalizeTShirtSize, PENDING_PROFILE_SAVE_KEY, PROFILE_AUTH_ERROR_MESSAGES, TSHIRT_SIZES } from '@lfx-one/shared/constants';
 import { CombinedProfile, EnrichedIdentity, ProfileHeaderData, ProfileTab, ProfileUpdateRequest, UserMetadata } from '@lfx-one/shared/interfaces';
 import { buildProfileTabs } from '@lfx-one/shared/utils';
 import { FeatureFlagService } from '@services/feature-flag.service';
@@ -19,16 +19,6 @@ import { ProfileEditDrawerService } from '../../modules/profile/components/profi
 import { ProfileVisibilityDrawerComponent } from '../../modules/profile/components/profile-visibility-drawer/profile-visibility-drawer.component';
 import { ProfileVisibilityDrawerService } from '../../modules/profile/components/profile-visibility-drawer/profile-visibility-drawer.service';
 import { ProfilePanelComponent } from './profile-panel/profile-panel.component';
-
-// Error codes that originate from the Flow C profile-auth (/passwordless/callback) flow.
-// Child routes (e.g. identities) handle their own error codes — do not swallow them here.
-const PROFILE_AUTH_ERROR_CODES = new Set([
-  'profile_auth_not_configured',
-  'profile_auth_failed',
-  'token_exchange_failed',
-  'login_session_invalid',
-  'user_mismatch',
-]);
 
 /**
  * ProfileLayoutComponent is the shell for the Profile & Account hub. It provides:
@@ -172,16 +162,20 @@ export class ProfileLayoutComponent {
         this.clearAuthQueryParams();
       }
 
-      if (PROFILE_AUTH_ERROR_CODES.has(params['error'])) {
-        // Clear any stash from the redirect that failed — otherwise it outlives this failed
-        // attempt and gets replayed by the next unrelated Flow C success (see handleProfileAuthReturn).
+      // hasOwn guard: params['error'] is unvalidated user input — an inherited Object.prototype
+      // key (e.g. 'toString') would otherwise resolve as a truthy, non-string "message".
+      const errorCode = params['error'];
+      if (typeof errorCode === 'string' && Object.hasOwn(PROFILE_AUTH_ERROR_MESSAGES, errorCode)) {
+        const authErrorMessage = PROFILE_AUTH_ERROR_MESSAGES[errorCode];
+        // Clear any stash so it can't be replayed by a later unrelated Flow C success. Unconditional
+        // by design: an identity-link failure shares these codes too, and a stash still here is orphaned.
         if (isPlatformBrowser(this.platformId)) {
           sessionStorage.removeItem(ProfileLayoutComponent.formStateKey);
         }
         this.messageService.add({
           severity: 'error',
           summary: 'Authorization Error',
-          detail: 'Authorization failed. Please try again.',
+          detail: authErrorMessage,
         });
         this.clearAuthQueryParams();
       }
@@ -370,9 +364,12 @@ export class ProfileLayoutComponent {
   // Strip the Flow C query params (success/error) while staying on the current tab.
   // Navigating relative to this.route would resolve to the parent /profile route and
   // bounce the user to the default tab — so re-navigate to the current path sans query.
+  // Keep the fragment (e.g. #password): router.url serializes as path?query#fragment, so a
+  // naive split('?')[0] would drop it too, breaking deep-link scroll on Flow C return.
   private clearAuthQueryParams(): void {
-    const path = this.router.url.split('?')[0];
-    this.router.navigateByUrl(path, { replaceUrl: true });
+    const [pathAndQuery, fragment] = this.router.url.split('#');
+    const path = pathAndQuery.split('?')[0];
+    this.router.navigateByUrl(fragment ? `${path}#${fragment}` : path, { replaceUrl: true });
   }
 
   // Private init functions

@@ -10,6 +10,7 @@ import {
   PD_MAX_SEARCH_LENGTH,
   PD_VALID_METRICS,
   PD_VALID_TIME_RANGES,
+  UUID_REGEX,
 } from '@lfx-one/shared/constants';
 import type { OrgLensLeaderboardMetric, OrgLensLeaderboardTimeRange } from '@lfx-one/shared/interfaces';
 
@@ -108,6 +109,16 @@ export class OrgLensProjectDetailController {
     }
   }
 
+  /** GET /api/orgs/:orgUid/lens/projects/:projectSlug/leaderboard/technical/organizations/:organizationId?range= */
+  public async getTechnicalBreakdown(req: Request, res: Response, next: NextFunction): Promise<void> {
+    await this.sendBreakdown(req, res, next, 'technical');
+  }
+
+  /** GET /api/orgs/:orgUid/lens/projects/:projectSlug/leaderboard/ecosystem/organizations/:organizationId?range= */
+  public async getEcosystemBreakdown(req: Request, res: Response, next: NextFunction): Promise<void> {
+    await this.sendBreakdown(req, res, next, 'ecosystem');
+  }
+
   public async getCardDrawer(req: Request, res: Response, next: NextFunction): Promise<void> {
     const { orgUid, projectSlug, range } = this.context(req);
     const cardKey = req.params['cardKey'];
@@ -159,6 +170,35 @@ export class OrgLensProjectDetailController {
     }
   }
 
+  /**
+   * Serves one dimension's score breakdown for the clicked leaderboard row. `orgUid` is the caller's
+   * own organization and drives what may be withheld; `organizationId` is whose breakdown this is.
+   * The two are different kinds of identifier and must not be swapped.
+   *
+   * A 404 here means a rendered leaderboard row has no breakdown row at the same grain, which is an
+   * inconsistency rather than an ordinary empty result — hence logged as a miss, not as an error.
+   */
+  private async sendBreakdown(req: Request, res: Response, next: NextFunction, dimension: 'technical' | 'ecosystem'): Promise<void> {
+    const { orgUid, projectSlug, range } = this.context(req);
+    const organizationId = req.params['organizationId'];
+    const operation = `get_org_lens_project_detail_breakdown_${dimension}`;
+    const startTime = logger.startOperation(req, operation, {
+      org_uid: orgUid,
+      project_slug: projectSlug,
+      organization_id: organizationId,
+      range,
+    });
+    try {
+      assertOrgUid(orgUid, operation);
+      this.assertProjectSlug(projectSlug, operation);
+      this.assertOrganizationId(organizationId, operation);
+      const breakdown = await this.service.getLeaderboardBreakdown(orgUid, projectSlug, dimension, organizationId, range);
+      this.sendBlock(req, res, operation, startTime, orgUid, projectSlug, breakdown);
+    } catch (error) {
+      next(error);
+    }
+  }
+
   // FOUNDATION_ID_PATTERN is the general SSR path-param validator (`[A-Za-z0-9-]{1,64}`); it also
   // covers the project slug shape, so it is reused here for the slug-keyed detail route.
   private assertProjectSlug(projectSlug: string | undefined, operation: string): asserts projectSlug is string {
@@ -177,6 +217,18 @@ export class OrgLensProjectDetailController {
     }
     if (!FOUNDATION_ID_PATTERN.test(cardKey)) {
       throw ServiceValidationError.forField('cardKey', 'Invalid cardKey format', { operation });
+    }
+  }
+
+  // crowd.dev organization ids are UUIDs, so validate the actual shape rather than the looser
+  // path-param one: anything else can only miss in the warehouse, and a 400 says that far more
+  // usefully than the 404 a doomed lookup would return.
+  private assertOrganizationId(organizationId: string | undefined, operation: string): asserts organizationId is string {
+    if (!organizationId || typeof organizationId !== 'string') {
+      throw ServiceValidationError.forField('organizationId', 'organizationId path parameter is required', { operation });
+    }
+    if (!UUID_REGEX.test(organizationId)) {
+      throw ServiceValidationError.forField('organizationId', 'Invalid organizationId format', { operation });
     }
   }
 

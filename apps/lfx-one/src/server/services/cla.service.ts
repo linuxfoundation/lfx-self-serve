@@ -10,6 +10,7 @@
 // authenticated user before searching and reports unverifiable keys in
 // `skippedIdentities` — SS surfaces that as identity-gap telemetry.
 
+import { MY_CLAS_PATH } from '@lfx-one/shared/constants';
 import {
   Auth0Identity,
   ClaGroupOption,
@@ -60,10 +61,6 @@ const SERVICE = 'cla_service';
 // (many verified + linked-identity emails) break the page instead of degrading.
 const MAX_CLA_EMAILS = 100;
 
-// Where the Contributor Console returns a contributor after signing (#1251). Mirrors the
-// `clas` child route under /profile in profile.routes.ts.
-const MY_CLAS_PATH = '/profile/clas';
-
 // ---------------------------------------------------------------------------
 // Pure helpers (unit-tested in isolation). No I/O.
 // ---------------------------------------------------------------------------
@@ -108,6 +105,8 @@ function toClaGroupOption(result: EasyClaSearchResult): ClaGroupOption {
       .filter((org) => !!org.name),
     ...(result.matchedRepositoryName ? { matchedRepositoryName: result.matchedRepositoryName } : {}),
     ...(result.matchedRepositoryURL ? { matchedRepositoryURL: result.matchedRepositoryURL } : {}),
+    iclaEnabled: result.iclaEnabled === true,
+    cclaEnabled: result.cclaEnabled === true,
   };
 }
 
@@ -117,9 +116,8 @@ function toClaGroupOption(result: EasyClaSearchResult): ClaGroupOption {
  * The envelope is mirrored rather than flattened to an array because `truncated` describes the
  * result *set* — a cap cannot ride inside one of the results. The one field renamed is the
  * identifier (`claGroupID` → `claGroupId`), so Angular is not made to carry two spellings of the
- * same UUID. Salesforce ids and the ICLA/CCLA enablement flags are deliberately not carried
- * across: the modal does not use them, and forwarding them invites a consumer to branch on
- * signing configuration this route never promised to keep current.
+ * same UUID. Salesforce ids are deliberately not carried across. ICLA/CCLA enablement flags are
+ * forwarded for Gerrit contract-type routing (#2066); the GitHub prepare-sign path does not branch on them.
  *
  * `searchTerm` falls back to the term the BFF actually sent, so the client can always tell which
  * query a set belongs to even if the producer echoes nothing.
@@ -355,6 +353,8 @@ export function toMyClaAgreement(cla: EasyClaMyCla): MyClaAgreement {
     signedAs: cla.signedAs?.trim() || undefined,
     status,
     statusReason,
+    invalidatedAt: cla.invalidatedAt?.trim() || undefined,
+    flaggedAt: cla.flaggedAt?.trim() || undefined,
     documentVersion,
     pdfAvailable: isIcla && cla.pdfAvailable === true,
   };
@@ -758,9 +758,13 @@ export class ClaService {
   }
 
   /**
-   * Records an approval or removal request and emails the selected CLA managers
+   * Records an approval, removal, or contact request and emails the selected CLA managers
    * (`POST /v4/my-clas/{id}/cla-manager-requests`). Does not change signature state.
    * 404 (unknown / not-owned / ICLA) becomes null, matching getClaManagers.
+   *
+   * The message is passed through as given. A contact request needs a non-blank one — the
+   * producer rejects an empty message for that type — and the controller enforces it, so a
+   * blank one is not quietly dropped here into a request the producer will refuse.
    *
    * No bearerToken override: this is a write, blocked at the route during impersonation,
    * so the default gateway token is the caller EasyCLA should attribute.
@@ -805,7 +809,7 @@ export class ClaService {
     const requestId = result?.requestID?.trim();
     const requestType = result?.requestType;
     const status = result?.status;
-    if (!requestId || (requestType !== 'approval' && requestType !== 'removal') || (status !== 'sent' && status !== 'recorded')) {
+    if (!requestId || requestType !== request.requestType || (status !== 'sent' && status !== 'recorded')) {
       throw new MicroserviceError('Upstream recorded no usable CLA manager request', 502, 'UPSTREAM_ERROR', { service: SERVICE });
     }
 

@@ -42,3 +42,10 @@ export function resolveLfxOnePlatinumSchema(): string {
 export function committeeEngagementTable(): string {
   return `${resolveLfxOnePlatinumSchema()}.COMMITTEE_MEETING_ATTENDANCE`;
 }
+
+/** The Social Listening feed lives in PCC's `ANALYTICS.PLATINUM` schema, not `PLATINUM_LFX_ONE`, so it gets its own guarded three-segment override (`LFX_ONE_SOCIAL_LISTENING_FEED_TABLE`). */
+export function socialListeningFeedTable(): string {
+  const override = process.env['LFX_ONE_SOCIAL_LISTENING_FEED_TABLE']?.trim();
+  const qualified = override && /^[A-Z0-9_]+\.[A-Z0-9_]+\.[A-Z0-9_]+$/i.test(override) ? override.toUpperCase() : null;
+  return qualified ?? 'ANALYTICS.PLATINUM.SOCIAL_LISTENING_FEED';
+}

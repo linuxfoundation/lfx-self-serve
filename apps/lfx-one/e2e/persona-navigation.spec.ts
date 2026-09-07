@@ -16,8 +16,8 @@
  *   S4  Foundation lens — board-member without canWrite hides Newsletters
  *   S5  Project lens — contributor without canWrite hides Newsletters
  *   S6  Project lens — contributor with canWrite sees Newsletters
- *   S7  Route guard — dashboardAccessGuard/marketingImpactAccessGuard/campaignAccessGuard redirect non-ED to /foundation/overview
- *   S8  Route guard — dashboardAccessGuard/marketingImpactAccessGuard/campaignAccessGuard pass for ED persona
+ *   S7  Route guard — dashboardAccessGuard/marketingImpactAccessGuard/campaignAccessGuard redirect non-ED to /foundation/overview (incl. /foundation/social-listening)
+ *   S8  Route guard — dashboardAccessGuard/marketingImpactAccessGuard/campaignAccessGuard pass for ED persona (incl. /foundation/social-listening page content)
  *   S9  Route guard — writerGuard redirects contributor without write access
  *   S10 Route guard — writerGuard passes for ED via synchronous fast path
  *   S11 Settings page — view-only banner shown to non-writer
@@ -118,10 +118,11 @@ const SIDEBAR = {
   communicationsSection: 'sidebar-item-communications',
   foundationNewsletters: 'sidebar-foundation-newsletters', // explicit
   projectNewsletters: 'sidebar-project-newsletters', // explicit
-  // Metrics section — executive-director only
+  // Metrics section — executive-director or LF Staff
   metricsSection: 'sidebar-item-metrics',
   healthMetrics: 'sidebar-metrics-health-metrics', // explicit
-  // Marketing section — executive-director only
+  socialListening: 'sidebar-metrics-social-listening', // explicit
+  // Marketing section — executive-director or LF Staff (Campaigns stays ED-only)
   marketingSection: 'sidebar-item-marketing',
   marketingImpact: 'sidebar-marketing-impact', // explicit
   campaigns: 'sidebar-marketing-campaigns', // explicit
@@ -151,10 +152,9 @@ async function stubNavLensItems(page: Page, lens: 'foundation' | 'project', item
   await page.route('**/api/nav/lens-items*', (route) => {
     const url = route.request().url();
     if (!url.includes(`lens=${lens}`)) {
-      // Fulfill non-matching lens requests with empty items to keep the suite fully hermetic.
       // Echo the requested lens param back so NavigationService routing logic stays correct for
       // any lens value the app may prefetch (e.g. 'org', 'me'), not just 'foundation'/'project'.
-      const requestedLens = new URL(url).searchParams.get('lens') ?? lens;
+      const requestedLens = new URLSearchParams(url.split('?')[1] ?? '').get('lens') ?? lens;
       return route.fulfill({
         status: 200,
         contentType: 'application/json',
@@ -188,6 +188,43 @@ async function stubProjectApi(page: Page, slug: string, writer: boolean): Promis
       body: JSON.stringify({ sfid: null }),
     })
   );
+}
+
+/**
+ * The social-listening endpoints are Snowflake-backed, so the page is stubbed empty — the assertions
+ * are about the guard, not feed content. Bodies must match the wire contract: option/analytics-list
+ * endpoints return arrays (the page calls .map() on them); feed/count/overview return objects.
+ */
+async function stubSocialListeningApi(page: Page): Promise<void> {
+  await page.route('**/api/social-listening/**', (route) => {
+    // Path suffixes only — the query string is stripped rather than parsed (no throwing URL ctor).
+    const path = route.request().url().split('?')[0];
+    let body: unknown;
+    if (path.endsWith('/mentions-feed')) {
+      body = { mentions: [], computedAt: null };
+    } else if (path.endsWith('/mentions-count')) {
+      body = { total: 0 };
+    } else if (path.endsWith('/analytics-overview')) {
+      body = {
+        TOTAL_MENTIONS: 0,
+        TOTAL_MENTIONS_CHANGE_PCT: null,
+        CHILD_PROJECTS_COUNT: 0,
+        POSITIVE_SENTIMENT_PERCENT: 0,
+        NEGATIVE_SENTIMENT_PERCENT: 0,
+        POSITIVE_SENTIMENT_CHANGE_PCT: null,
+        NEGATIVE_SENTIMENT_CHANGE_PCT: null,
+      };
+    } else {
+      // mentions-projects/-platforms/-languages/-keywords/-tags/-authors plus the analytics
+      // list endpoints (over-time, platform/sentiment distribution, top-projects) — all arrays.
+      body = [];
+    }
+    return route.fulfill({
+      status: 200,
+      contentType: 'application/json',
+      body: JSON.stringify(body),
+    });
+  });
 }
 
 /**
@@ -493,6 +530,24 @@ test.describe('S7: Route guard — non-ED redirected from ED-only routes', () =>
       timeout: ELEMENT_TIMEOUT,
     });
   });
+
+  test('board-member navigating to /foundation/social-listening is redirected to /foundation/overview', async ({ page }) => {
+    await stubPersona(page, ['board-member']);
+    await stubNavLensItems(page, 'foundation');
+    await stubProjectApi(page, MOCK_FOUNDATION_SLUG, false);
+    await setPersonaCookie(page, ['board-member']);
+
+    await page.goto('/', { waitUntil: 'domcontentloaded' });
+    skipWhenAuthMissing(page);
+
+    await page.goto(`/foundation/social-listening?project=${MOCK_FOUNDATION_SLUG}`, { waitUntil: 'domcontentloaded' });
+    skipWhenAuthMissing(page);
+
+    await expect(page, 'persona=board-member should be redirected away from /foundation/social-listening').toHaveURL(/\/foundation\/overview/, {
+      timeout: ELEMENT_TIMEOUT,
+    });
+    await expect(page.getByTestId('social-listening-page'), 'persona=board-member should never render the social listening page').toHaveCount(0);
+  });
 });
 
 test.describe('S8: Route guard — ED persona passes on ED-only routes', () => {
@@ -511,6 +566,30 @@ test.describe('S8: Route guard — ED persona passes on ED-only routes', () => {
     await expect(page, 'persona=executive-director should remain on /foundation/health-metrics').toHaveURL(/\/foundation\/health-metrics/, {
       timeout: ELEMENT_TIMEOUT,
     });
+  });
+
+  test('ED navigating to /foundation/social-listening reaches the page and sees its content', async ({ page }) => {
+    await stubPersona(page, ['executive-director']);
+    await stubNavLensItems(page, 'foundation');
+    await stubProjectApi(page, MOCK_FOUNDATION_SLUG, true);
+    await stubSocialListeningApi(page);
+    await setPersonaCookie(page, ['executive-director']);
+
+    await page.goto('/', { waitUntil: 'domcontentloaded' });
+    skipWhenAuthMissing(page);
+
+    await page.goto(`/foundation/social-listening?project=${MOCK_FOUNDATION_SLUG}`, { waitUntil: 'domcontentloaded' });
+    skipWhenAuthMissing(page);
+
+    await expect(page, 'persona=executive-director should remain on /foundation/social-listening').toHaveURL(/\/foundation\/social-listening/, {
+      timeout: ELEMENT_TIMEOUT,
+    });
+    await expect(page.getByTestId('social-listening-page'), 'persona=executive-director lens=foundation page=social-listening').toBeVisible({
+      timeout: ELEMENT_TIMEOUT,
+    });
+    await expect(page.getByTestId('social-listening-title'), 'persona=executive-director lens=foundation page=social-listening title').toHaveText(
+      'Social Listening'
+    );
   });
 });
 
@@ -649,11 +728,28 @@ test.describe('S15: Foundation lens — LF Staff (isLFStaff: true, contributor p
     await gotoAndWaitForSidebar(page, `/foundation/overview?project=${MOCK_FOUNDATION_SLUG}`);
   });
 
-  test('sees Metrics section with Health Metrics (LF Staff gets canViewExecutiveDashboards)', async ({ page }) => {
+  test('sees Metrics section with Health Metrics and Social Listening (LF Staff gets canViewExecutiveDashboards)', async ({ page }) => {
     await expect(page.getByTestId(SIDEBAR.metricsSection), 'persona=lf-staff lens=foundation section=metrics').toBeVisible({
       timeout: ELEMENT_TIMEOUT,
     });
     await expect(page.getByTestId(SIDEBAR.healthMetrics), 'persona=lf-staff lens=foundation item=health-metrics').toBeVisible({
+      timeout: ELEMENT_TIMEOUT,
+    });
+    await expect(page.getByTestId(SIDEBAR.socialListening), 'persona=lf-staff lens=foundation item=social-listening').toBeVisible({
+      timeout: ELEMENT_TIMEOUT,
+    });
+  });
+
+  test('LF Staff navigating to /foundation/social-listening reaches the page (dashboardAccessGuard)', async ({ page }) => {
+    await stubSocialListeningApi(page);
+
+    await page.goto(`/foundation/social-listening?project=${MOCK_FOUNDATION_SLUG}`, { waitUntil: 'domcontentloaded' });
+    skipWhenAuthMissing(page);
+
+    await expect(page, 'persona=lf-staff should remain on /foundation/social-listening').toHaveURL(/\/foundation\/social-listening/, {
+      timeout: ELEMENT_TIMEOUT,
+    });
+    await expect(page.getByTestId('social-listening-page'), 'persona=lf-staff lens=foundation page=social-listening').toBeVisible({
       timeout: ELEMENT_TIMEOUT,
     });
   });

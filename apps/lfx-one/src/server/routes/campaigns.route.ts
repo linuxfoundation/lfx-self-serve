@@ -22,6 +22,11 @@ router.post('/brief/generate', (req, res, next) => campaignController.generateBr
 router.post('/brief/refine', (req, res, next) => campaignController.refineBrief(req, res, next));
 router.post('/brief/persist', (req, res, next) => campaignController.persistBrief(req, res, next));
 router.get('/brief', (req, res, next) => campaignController.loadBrief(req, res, next));
+// campaign-service's OWN metrics and action items for one brief. Distinct from `/monitor` and its
+// per-platform siblings below, which read the ad platforms directly and derive action items from
+// four separate rule engines in this BFF. Brief-scoped where those are account-scoped, so it is
+// not a drop-in replacement for them; nothing is cut over to it yet.
+router.get('/brief/metrics', (req, res, next) => campaignController.getBriefMetrics(req, res, next));
 router.post('/create', (req, res, next) => campaignController.createCampaign(req, res, next));
 router.get('/list', (req, res, next) => campaignController.listBriefCampaigns(req, res, next));
 router.get('/jobs/:jobId', (req, res, next) => campaignController.getJobStatus(req, res, next));
@@ -38,6 +43,8 @@ router.get('/reddit/monitor', (req, res, next) => campaignController.getRedditMo
 router.get('/meta/accounts', (req, res) => campaignController.getMetaAccounts(req, res));
 router.get('/meta/monitor', (req, res, next) => campaignController.getMetaMonitor(req, res, next));
 router.get('/keywords', (req, res, next) => campaignController.getKeywords(req, res, next));
+router.post('/audience/build', (req, res, next) => campaignController.buildAudience(req, res, next));
+router.post('/email-copy', (req, res, next) => campaignController.generateEmailCopy(req, res, next));
 router.get('/audience', (req, res, next) => campaignController.getAudience(req, res, next));
 router.post('/keywords/actions', (req, res, next) => campaignController.executeKeywordActions(req, res, next));
 router.patch('/:campaignId/status', (req, res, next) => campaignController.updateCampaignStatus(req, res, next));
