@@ -10,6 +10,7 @@ import {
   MentorshipLfProjectsResponse,
   MentorshipNameAvailability,
   MentorshipProgram,
+  MentorshipProgramDetail,
   MentorshipProgramsResponse,
   MentorshipProgramStatus,
 } from '@lfx-one/shared/interfaces';
@@ -34,6 +35,13 @@ export class MentorshipService {
     return this.http
       .get<MentorshipProgramsResponse>('/api/mentorship/programs', { params: httpParams })
       .pipe(catchError(this.handleError(EMPTY_MENTORSHIP_PROGRAMS_RESPONSE, 'getPrograms')));
+  }
+
+  /** Loads a program by id (default URL) or slug. */
+  public getProgram(programId: string): Observable<MentorshipProgramDetail | null> {
+    return this.http
+      .get<MentorshipProgramDetail>(`/api/mentorship/programs/${encodeURIComponent(programId)}`)
+      .pipe(catchError(this.handleError(null, 'getProgram')));
   }
 
   public enrollProgram(form: MentorshipEnrollForm): Observable<MentorshipProgram> {

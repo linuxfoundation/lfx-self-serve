@@ -2,10 +2,12 @@
 // SPDX-License-Identifier: MIT
 
 import {
+  EMPTY_MENTORSHIP_PROGRAM_LISTS,
   MENTORSHIP_LF_PROJECT_PAGE_SIZE,
   MENTORSHIP_PROGRAM_STATUSES,
   MENTORSHIP_PROJECT_OPTIONS,
   MOCK_MENTORSHIP_LF_PROJECTS,
+  MOCK_MENTORSHIP_PROGRAM_LISTS,
   MOCK_MENTORSHIP_PROGRAMS,
   mentorshipCiiBadgeJsonUrl,
 } from '@lfx-one/shared/constants';
@@ -15,10 +17,11 @@ import {
   MentorshipLfProjectsResponse,
   MentorshipNameAvailability,
   MentorshipProgram,
+  MentorshipProgramDetail,
   MentorshipProgramsResponse,
   MentorshipProgramStatus,
 } from '@lfx-one/shared/interfaces';
-import { isMentorshipCiiProjectId, mentorshipProgramSlug } from '@lfx-one/shared/utils';
+import { buildMentorshipProgramDetail, isMentorshipCiiProjectId, mentorshipProgramSlug } from '@lfx-one/shared/utils';
 import { Request } from 'express';
 
 import { ResourceNotFoundError, ServiceValidationError } from '../errors';
@@ -49,6 +52,19 @@ export class MentorshipService {
     logger.success(req, 'mentorship_get_programs', startTime, { count: filtered.length, total: filtered.length });
 
     return { data: filtered, total: filtered.length };
+  }
+
+  public async getProgram(req: Request, programId: string): Promise<MentorshipProgramDetail> {
+    const startTime = logger.startOperation(req, 'mentorship_get_program', { programId });
+    const program = programsStore.find((item) => item.id === programId) ?? programsStore.find((item) => item.slug === programId);
+    if (!program) {
+      throw new ResourceNotFoundError('Mentorship program', programId, { operation: 'mentorship_get_program' });
+    }
+
+    const lists = MOCK_MENTORSHIP_PROGRAM_LISTS[program.slug] ?? EMPTY_MENTORSHIP_PROGRAM_LISTS;
+    const detail = buildMentorshipProgramDetail(program, lists);
+    logger.success(req, 'mentorship_get_program', startTime, { programId, slug: program.slug, tabCounts: detail.tabCounts });
+    return detail;
   }
 
   public async enrollProgram(req: Request, input: MentorshipEnrollForm): Promise<MentorshipProgram> {

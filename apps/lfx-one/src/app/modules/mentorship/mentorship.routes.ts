@@ -17,4 +17,8 @@ export const MENTORSHIP_ROUTES: Routes = [
     path: 'admin/enroll',
     loadComponent: () => import('./admin/enroll-program/enroll-program.component').then((m) => m.EnrollProgramComponent),
   },
+  {
+    path: 'admin/:programId',
+    loadComponent: () => import('./admin/program-detail/program-detail.component').then((m) => m.ProgramDetailComponent),
+  },
 ];

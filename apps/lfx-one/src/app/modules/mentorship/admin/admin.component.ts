@@ -44,10 +44,8 @@ export class AdminComponent {
   protected readonly totalPrograms = computed(() => this.programsState().total);
 
   // ─── Protected Methods ─────────────────────────────────────────────────────
-  protected onProgramClick(): void {
-    // TODO: navigate to `/mentorship/admin/${slug}` once ProgramDetailComponent is re-introduced.
-    // The card still emits its slug on `(cardClick)` — restore the router.navigate call here
-    // and reinstate the `/mentorship/admin/:programId` route in `mentorship.routes.ts` when detail lands.
+  protected onProgramClick(programId: string): void {
+    void this.router.navigate(['/mentorship/admin', programId]);
   }
 
   protected onSearchChange(value: string): void {

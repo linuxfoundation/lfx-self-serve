@@ -1,0 +1,76 @@
+<!-- Copyright The Linux Foundation and each contributor to LFX. -->
+<!-- SPDX-License-Identifier: MIT -->
+
+<div class="flex flex-col gap-4" data-testid="mentorship-mentors-tab">
+  <div class="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+    <div class="flex flex-col gap-3 sm:flex-row sm:items-center flex-1">
+      <div class="sm:w-72">
+        <lfx-input-text [form]="form" control="search" placeholder="Search" icon="fa-light fa-magnifying-glass" dataTest="mentorship-mentors-search" />
+      </div>
+      <div class="sm:w-52">
+        <lfx-select
+          [form]="form"
+          control="status"
+          [options]="statusOptions()"
+          optionLabel="label"
+          optionValue="value"
+          placeholder="Status"
+          styleClass="w-full"
+          dataTest="mentorship-mentors-status" />
+      </div>
+    </div>
+    <lfx-button
+      label="Invite Mentor"
+      icon="fa-light fa-plus"
+      iconPos="left"
+      severity="primary"
+      size="small"
+      (onClick)="onInviteMentor()"
+      data-testid="mentorship-mentors-invite" />
+  </div>
+
+  <div class="overflow-x-auto rounded-xl border border-gray-200 bg-white">
+    <table class="w-full min-w-[48rem] text-left">
+      <thead>
+        <tr class="border-b border-gray-200">
+          <th class="px-4 py-3 text-xs font-semibold uppercase tracking-wide text-gray-500">Mentor</th>
+          <th class="px-4 py-3 text-xs font-semibold uppercase tracking-wide text-gray-500">Status</th>
+          <th class="px-4 py-3 text-xs font-semibold uppercase tracking-wide text-gray-500">Invitation Date</th>
+          <th class="px-4 py-3 text-xs font-semibold uppercase tracking-wide text-gray-500">Profile Created?</th>
+        </tr>
+      </thead>
+      <tbody>
+        @for (row of rows(); track row.id) {
+          <tr class="border-b border-gray-100 last:border-b-0" [attr.data-testid]="'mentorship-mentor-row-' + row.id">
+            <td class="px-4 py-3">
+              <div class="flex items-center gap-3 min-w-0">
+                <lfx-avatar
+                  [image]="row.avatarUrl ?? ''"
+                  [label]="row.initials"
+                  shape="circle"
+                  size="normal"
+                  [styleClass]="row.avatarStyleClass"
+                  [ariaLabel]="row.name" />
+                <div class="flex flex-col min-w-0">
+                  <span class="text-sm font-medium text-gray-900 truncate">{{ row.name }}</span>
+                  <span class="text-xs text-gray-500 truncate">{{ row.email }}</span>
+                </div>
+              </div>
+            </td>
+            <td class="px-4 py-3">
+              <span class="inline-flex items-center text-xs font-semibold px-2 py-0.5 rounded-full" [class]="row.statusBadgeClass">
+                {{ row.statusLabel }}
+              </span>
+            </td>
+            <td class="px-4 py-3 text-sm text-gray-700">{{ row.invitedOnLabel }}</td>
+            <td class="px-4 py-3 text-sm text-gray-700">{{ row.profileCreatedLabel }}</td>
+          </tr>
+        } @empty {
+          <tr>
+            <td colspan="4" class="px-4 py-10 text-center text-sm text-gray-500" data-testid="mentorship-mentors-empty">No mentors.</td>
+          </tr>
+        }
+      </tbody>
+    </table>
+  </div>
+</div>

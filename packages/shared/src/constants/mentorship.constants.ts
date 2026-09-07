@@ -1,7 +1,13 @@
 // Copyright The Linux Foundation and each contributor to LFX.
 // SPDX-License-Identifier: MIT
 
-import type { MentorshipProgram, MentorshipProgramsResponse, MentorshipProgramStatus } from '../interfaces/mentorship.interface';
+import type {
+  MentorshipPersonStatus,
+  MentorshipProgram,
+  MentorshipProgramsResponse,
+  MentorshipProgramStatus,
+  MentorshipTermRowStatus,
+} from '../interfaces/mentorship.interface';
 
 /**
  * Allowed program statuses. Ordered by lifecycle so a `.sort` on this array
@@ -42,6 +48,52 @@ export const EMPTY_MENTORSHIP_PROGRAMS_RESPONSE: MentorshipProgramsResponse = {
   total: 0,
 };
 
+/** Underline tabs on `/mentorship/admin/:programId`. Order matches the admin screenshot. */
+export const MENTORSHIP_PROGRAM_DETAIL_TABS = [
+  { value: 'mentees', label: 'Current Mentees' },
+  { value: 'applicants', label: 'Applicants' },
+  { value: 'mentors', label: 'Mentors' },
+  { value: 'terms', label: 'Terms' },
+] as const;
+
+export const MENTORSHIP_PERSON_STATUSES = ['accepted', 'pending', 'declined', 'graduated', 'invited'] as const;
+
+export const MENTORSHIP_PERSON_STATUS_LABELS: Record<MentorshipPersonStatus, string> = {
+  accepted: 'Accepted',
+  pending: 'Pending',
+  declined: 'Declined',
+  graduated: 'Graduated',
+  invited: 'Invited',
+};
+
+export const MENTORSHIP_PERSON_STATUS_BADGE_CLASSES: Record<MentorshipPersonStatus, string> = {
+  accepted: 'bg-emerald-50 text-emerald-700',
+  pending: 'bg-amber-50 text-amber-700',
+  declined: 'bg-red-50 text-red-600',
+  graduated: 'bg-gray-100 text-gray-600',
+  invited: 'bg-blue-50 text-blue-700',
+};
+
+export const MENTORSHIP_TERM_ROW_STATUSES = ['open', 'closed'] as const;
+
+export const MENTORSHIP_TERM_ROW_STATUS_LABELS: Record<MentorshipTermRowStatus, string> = {
+  open: 'Open',
+  closed: 'Closed',
+};
+
+export const MENTORSHIP_TERM_ROW_STATUS_BADGE_CLASSES: Record<MentorshipTermRowStatus, string> = {
+  open: 'bg-emerald-50 text-emerald-700',
+  closed: 'bg-gray-100 text-gray-600',
+};
+
+export const MENTORSHIP_PROGRAM_DETAIL_COMING_SOON = 'This action is not available yet.';
+
+export const MENTORSHIP_TERM_SHOULD_CLOSE_WARNING = 'This term should be closed because it has ended. Please close it to prevent new applications.';
+export const MENTORSHIP_TERM_CANNOT_CLOSE_MESSAGE =
+  'This term cannot be closed until all accepted applicants are either graduated or declined. Please ensure there are zero accepted applicants before closing the term.';
+export const MENTORSHIP_TERM_CLOSE_CONFIRM = 'Closing this term will automatically decline all pending applications. Continue?';
+export const MENTORSHIP_TERM_REOPEN_CONFIRM = 'Are you sure you want to re-open this term?';
+
 /**
  * Deterministic mock programs backing the mentorship BFF while the upstream
  * mentorship service is unavailable. Server-only import path
@@ -58,7 +110,7 @@ export const MOCK_MENTORSHIP_PROGRAMS: MentorshipProgram[] = [
     projectName: 'LF Energy',
     term: 'Fall 2026',
     status: 'open',
-    stats: { mentors: 2, mentees: 3, graduated: 6 },
+    stats: { mentors: 4, mentees: 2, graduated: 6 },
     createdOn: '2026-06-01T00:00:00.000Z',
     updatedOn: '2026-08-15T00:00:00.000Z',
   },

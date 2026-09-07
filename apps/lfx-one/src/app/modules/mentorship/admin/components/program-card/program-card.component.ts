@@ -10,7 +10,7 @@ import { MentorshipProgram } from '@lfx-one/shared/interfaces';
  * Compact card for the mentorship admin list. Mirrors `InitiativeCardComponent`
  * shape: avatar tile on the left, project-line + status badge + title in the
  * middle, three-column metrics on the right, plus a chevron. Click emits the
- * program slug so the parent can drive navigation.
+ * program id so the parent can drive navigation.
  */
 @Component({
   selector: 'lfx-mentorship-program-card',
@@ -48,6 +48,6 @@ export class ProgramCardComponent {
   });
 
   protected onCardClick(): void {
-    this.cardClick.emit(this.program().slug);
+    this.cardClick.emit(this.program().id);
   }
 }

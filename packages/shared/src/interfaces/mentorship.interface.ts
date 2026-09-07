@@ -1,7 +1,12 @@
 // Copyright The Linux Foundation and each contributor to LFX.
 // SPDX-License-Identifier: MIT
 
-import type { MENTORSHIP_PROGRAM_STATUSES } from '../constants/mentorship.constants';
+import type {
+  MENTORSHIP_PERSON_STATUSES,
+  MENTORSHIP_PROGRAM_DETAIL_TABS,
+  MENTORSHIP_PROGRAM_STATUSES,
+  MENTORSHIP_TERM_ROW_STATUSES,
+} from '../constants/mentorship.constants';
 
 /**
  * Enrollment / graduation counters shown on the admin program card.
@@ -23,7 +28,7 @@ export type MentorshipProgramStatus = (typeof MENTORSHIP_PROGRAM_STATUSES)[numbe
 /** Core program fields as returned by the LFX One BFF for the mentorship admin list. */
 export interface MentorshipProgram {
   id: string;
-  /** URL-safe identifier used in `/mentorship/admin/:slug`. */
+  /** URL-safe identifier. `/mentorship/admin/:programId` accepts `id` (default) or `slug`. */
   slug: string;
   /** Program name, e.g. "GridFlow: Time-Series Ingestion Pipeline". */
   name: string;
@@ -154,3 +159,64 @@ export interface MentorshipCiiBadge {
 }
 
 export type MentorshipCiiLookupStatus = 'idle' | 'loading' | 'valid' | 'invalid';
+
+/** Admin program-detail underline tabs. */
+export type MentorshipProgramDetailTab = (typeof MENTORSHIP_PROGRAM_DETAIL_TABS)[number]['value'];
+
+/** Count badges shown next to each program-detail tab label. */
+export interface MentorshipProgramTabCounts {
+  mentees: number;
+  applicants: number;
+  mentors: number;
+  terms: number;
+}
+
+/** Person row status on mentees / applicants / mentors tabs. */
+export type MentorshipPersonStatus = (typeof MENTORSHIP_PERSON_STATUSES)[number];
+
+/** Mentee, applicant, or mentor row on the admin program-detail tabs. */
+export interface MentorshipProgramPerson {
+  id: string;
+  name: string;
+  email: string;
+  avatarUrl?: string;
+  status: MentorshipPersonStatus;
+  termName: string;
+  /** ISO `YYYY-MM-DD` invitation date — mentors tab. */
+  invitedOn?: string;
+  /** ISO `YYYY-MM-DD` application date — applicants / mentors tab. */
+  appliedOn?: string;
+  profileCreated?: boolean;
+}
+
+/** Term lifecycle on the admin program-detail Terms tab. */
+export type MentorshipTermRowStatus = (typeof MENTORSHIP_TERM_ROW_STATUSES)[number];
+
+/** Term row on the admin program-detail Terms tab. */
+export interface MentorshipProgramTermRow {
+  id: string;
+  name: string;
+  status: MentorshipTermRowStatus;
+  pending: number;
+  declined: number;
+  accepted: number;
+  graduated: number;
+  startDate: string;
+  endDate: string;
+  applicationStartDate: string;
+  applicationEndDate: string;
+}
+
+/** Tab lists returned with a program-detail payload. */
+export interface MentorshipProgramLists {
+  mentees: MentorshipProgramPerson[];
+  applicants: MentorshipProgramPerson[];
+  mentors: MentorshipProgramPerson[];
+  terms: MentorshipProgramTermRow[];
+}
+
+/** Full admin program-detail payload from `GET /api/mentorship/programs/:slug`. */
+export interface MentorshipProgramDetail extends MentorshipProgramLists {
+  program: MentorshipProgram;
+  tabCounts: MentorshipProgramTabCounts;
+}

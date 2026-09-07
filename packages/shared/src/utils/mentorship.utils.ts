@@ -19,10 +19,16 @@ import type {
   MentorshipEnrollFieldErrors,
   MentorshipEnrollForm,
   MentorshipEnrollStep,
+  MentorshipProgram,
+  MentorshipProgramDetail,
+  MentorshipProgramLists,
+  MentorshipProgramPerson,
+  MentorshipProgramTabCounts,
   MentorshipProgramTerm,
+  MentorshipProgramTermRow,
   MentorshipTermDateErrors,
 } from '../interfaces/mentorship.interface';
-import { monthYearToIsoDate } from './date-time.utils';
+import { formatIsoDateLabel, monthYearToIsoDate } from './date-time.utils';
 import { stripHtml } from './html-utils';
 import { normalizeToUrl } from './url.utils';
 
@@ -58,24 +64,25 @@ export function mentorshipDescriptionLength(html: string): number {
 
 export function getMentorshipTermDateErrors(
   term: Pick<MentorshipProgramTerm, 'startDate' | 'endDate' | 'applicationStartDate' | 'applicationEndDate'>,
-  today = new Date()
+  today = new Date(),
+  original?: Pick<MentorshipProgramTerm, 'startDate' | 'endDate' | 'applicationStartDate' | 'applicationEndDate'>
 ): MentorshipTermDateErrors {
   const errors: MentorshipTermDateErrors = {};
   const todayIso = toMentorshipDateOnly(today);
   const currentMonthStart = `${today.getFullYear()}-${String(today.getMonth() + 1).padStart(2, '0')}-01`;
 
-  if (term.startDate < currentMonthStart) {
+  if (term.startDate < currentMonthStart && term.startDate !== original?.startDate) {
     errors.startDate = 'Start month should be greater than or equal to current month.';
   }
   if (term.endDate < term.startDate) {
     errors.endDate = 'End date must be on or after the start date.';
   }
-  if (term.applicationStartDate < todayIso) {
+  if (term.applicationStartDate < todayIso && term.applicationStartDate !== original?.applicationStartDate) {
     errors.applicationStartDate = 'Application start date cannot be before today.';
   } else if (term.applicationStartDate >= term.startDate) {
     errors.applicationStartDate = 'Application start date must be before the term start month.';
   }
-  if (term.applicationEndDate < todayIso) {
+  if (term.applicationEndDate < todayIso && term.applicationEndDate !== original?.applicationEndDate) {
     errors.applicationEndDate = 'Application end date cannot be before today.';
   } else if (term.applicationEndDate < term.applicationStartDate) {
     errors.applicationEndDate = 'Application end date must be on or after the application start date.';
@@ -220,4 +227,61 @@ export function mentorshipProgramSlug(name: string): string {
     .replace(/[^a-z0-9]+/g, '-')
     .replace(/^-+|-+$/g, '');
   return slug || 'program';
+}
+
+export function buildMentorshipProgramTabCounts(lists: MentorshipProgramLists): MentorshipProgramTabCounts {
+  return {
+    mentees: lists.mentees.length,
+    applicants: lists.applicants.length,
+    mentors: lists.mentors.length,
+    terms: lists.terms.length,
+  };
+}
+
+export function buildMentorshipProgramDetail(program: MentorshipProgram, lists: MentorshipProgramLists): MentorshipProgramDetail {
+  return {
+    program,
+    tabCounts: buildMentorshipProgramTabCounts(lists),
+    ...lists,
+  };
+}
+
+/** Case-insensitive match on name, email, or term. Empty search matches everyone. */
+export function matchesMentorshipPersonSearch(person: MentorshipProgramPerson, search: string): boolean {
+  const needle = search.trim().toLowerCase();
+  if (!needle) return true;
+  return person.name.toLowerCase().includes(needle) || person.email.toLowerCase().includes(needle) || person.termName.toLowerCase().includes(needle);
+}
+
+/** Inclusive UTC date range for term / invitation columns, e.g. `Jul 1, 2026 – Aug 31, 2026`. */
+export function formatMentorshipDateRange(start: string, end: string): string {
+  return `${formatIsoDateLabel(start)} – ${formatIsoDateLabel(end)}`;
+}
+
+/** Short month-year for the terms table, e.g. `Sep 2026`. */
+export function formatMentorshipShortMonthYear(value: string): string {
+  const parsed = parseMentorshipDateOnly(value);
+  if (!parsed) return formatMentorshipMonthYear(value);
+  return parsed.toLocaleDateString('en-US', { month: 'short', year: 'numeric' });
+}
+
+export function isMentorshipTermEnded(endDate: string, today = new Date()): boolean {
+  return lastDayOfMentorshipMonth(endDate) < toMentorshipDateOnly(today);
+}
+
+export function mentorshipOpenTermCount(terms: ReadonlyArray<Pick<MentorshipProgramTermRow, 'status'>>): number {
+  return terms.filter((term) => term.status === 'open').length;
+}
+
+export function mentorshipTermHasApplications(term: Pick<MentorshipProgramTermRow, 'pending' | 'declined' | 'accepted' | 'graduated'>): boolean {
+  return term.pending + term.declined + term.accepted + term.graduated > 0;
+}
+
+/** Two-letter initials from the first two whitespace-delimited tokens, e.g. "Alex Rivera" → "AR". */
+export function mentorshipPersonInitials(name: string): string {
+  const tokens = name.trim().split(/\s+/);
+  if (tokens.length === 0 || tokens[0].length === 0) return '?';
+  const first = tokens[0][0];
+  const second = tokens[1]?.[0] ?? tokens[0][1] ?? '';
+  return (first + second).toUpperCase();
 }

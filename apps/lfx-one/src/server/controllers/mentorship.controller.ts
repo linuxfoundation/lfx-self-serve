@@ -103,6 +103,28 @@ export class MentorshipController {
     }
   }
 
+  // GET /api/mentorship/programs/:programId — id (default) or slug
+  public async getProgram(req: Request, res: Response, next: NextFunction): Promise<void> {
+    const startTime = logger.startOperation(req, 'get_mentorship_program');
+
+    try {
+      if (!(await getUsernameFromAuth(req))) {
+        throw new AuthenticationError('User authentication required', { operation: 'get_mentorship_program' });
+      }
+
+      const programId = typeof req.params['programId'] === 'string' ? req.params['programId'].trim() : '';
+      if (!programId) {
+        throw ServiceValidationError.forField('programId', 'Program id or slug is required.', { operation: 'get_mentorship_program' });
+      }
+
+      const program = await this.mentorshipService.getProgram(req, programId);
+      logger.success(req, 'get_mentorship_program', startTime, { programId });
+      res.json(program);
+    } catch (error) {
+      next(error);
+    }
+  }
+
   // GET /api/mentorship/programs/name-available
   public async isProgramNameAvailable(req: Request, res: Response, next: NextFunction): Promise<void> {
     const startTime = logger.startOperation(req, 'get_mentorship_name_available');

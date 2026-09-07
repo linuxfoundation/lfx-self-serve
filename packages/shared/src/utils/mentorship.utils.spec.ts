@@ -5,14 +5,22 @@ import { describe, expect, it } from 'vitest';
 
 import { createEmptyMentorshipEnrollForm } from '../constants/mentorship-enroll.constants';
 import {
+  buildMentorshipProgramDetail,
+  formatMentorshipDateRange,
   formatMentorshipMonthYear,
+  formatMentorshipShortMonthYear,
   getMentorshipEnrollStepErrors,
   getMentorshipTermDateErrors,
+  isMentorshipTermEnded,
+  mentorshipOpenTermCount,
+  mentorshipTermHasApplications,
   isMentorshipCiiProjectId,
   isMentorshipEnrollStepValid,
   isMentorshipHttpUrl,
   isMentorshipLogoFileName,
+  matchesMentorshipPersonSearch,
   mentorshipMonthYearToStartDate,
+  mentorshipPersonInitials,
   mentorshipProgramSlug,
   parseMentorshipDateOnly,
   parseMentorshipMonthYear,
@@ -128,6 +136,37 @@ describe('getMentorshipTermDateErrors', () => {
 
     expect(errors.startDate).toBe('Start month should be greater than or equal to current month.');
   });
+
+  it('preserves an existing past application window when the values are unchanged', () => {
+    const original = {
+      startDate: '2026-09-01',
+      endDate: '2026-12-01',
+      applicationStartDate: '2026-07-01',
+      applicationEndDate: '2026-08-31',
+    };
+
+    expect(getMentorshipTermDateErrors(original, new Date(2026, 8, 7), original)).toEqual({});
+  });
+});
+
+describe('mentorship term lifecycle helpers', () => {
+  it('treats the last day of the end month as the term end', () => {
+    expect(isMentorshipTermEnded('2026-08-01', new Date(2026, 8, 7))).toBe(true);
+    expect(isMentorshipTermEnded('2026-12-01', new Date(2026, 8, 7))).toBe(false);
+  });
+
+  it('counts only open terms toward the four-term cap', () => {
+    expect(mentorshipOpenTermCount([{ status: 'open' }, { status: 'closed' }, { status: 'open' }])).toBe(2);
+  });
+
+  it('treats any application count as existing applications', () => {
+    expect(mentorshipTermHasApplications({ pending: 0, declined: 0, accepted: 0, graduated: 0 })).toBe(false);
+    expect(mentorshipTermHasApplications({ pending: 0, declined: 1, accepted: 0, graduated: 0 })).toBe(true);
+  });
+
+  it('formats a short month-year label', () => {
+    expect(formatMentorshipShortMonthYear('2026-09-01')).toBe('Sep 2026');
+  });
 });
 
 describe('isMentorshipCiiProjectId', () => {
@@ -166,5 +205,54 @@ describe('mentorshipProgramSlug', () => {
 
   it('falls back when the name is empty', () => {
     expect(mentorshipProgramSlug('   ')).toBe('program');
+  });
+});
+
+describe('program detail helpers', () => {
+  it('derives tab counts from list lengths', () => {
+    const detail = buildMentorshipProgramDetail(
+      {
+        id: 'mp_test',
+        slug: 'test',
+        name: 'Test',
+        projectName: 'LF Energy',
+        term: 'Fall 2026',
+        status: 'open',
+        stats: { mentors: 0, mentees: 0, graduated: 0 },
+        createdOn: '2026-01-01T00:00:00.000Z',
+        updatedOn: '2026-01-01T00:00:00.000Z',
+      },
+      {
+        mentees: [{ id: '1', name: 'A', email: 'a@example.com', status: 'accepted', termName: 'Fall 2026' }],
+        applicants: [],
+        mentors: [
+          { id: '2', name: 'B', email: 'b@example.com', status: 'invited', termName: 'Fall 2026' },
+          { id: '3', name: 'C', email: 'c@example.com', status: 'accepted', termName: 'Fall 2026' },
+        ],
+        terms: [],
+      }
+    );
+
+    expect(detail.tabCounts).toEqual({ mentees: 1, applicants: 0, mentors: 2, terms: 0 });
+  });
+
+  it('matches people by name, email, or term', () => {
+    const person = { id: '1', name: 'Alex Rivera', email: 'alex.rivera@example.com', status: 'accepted' as const, termName: 'Fall 2026' };
+
+    expect(matchesMentorshipPersonSearch(person, '')).toBe(true);
+    expect(matchesMentorshipPersonSearch(person, 'rivera')).toBe(true);
+    expect(matchesMentorshipPersonSearch(person, 'ALEX.RIVERA')).toBe(true);
+    expect(matchesMentorshipPersonSearch(person, 'fall')).toBe(true);
+    expect(matchesMentorshipPersonSearch(person, 'winter')).toBe(false);
+  });
+
+  it('formats an inclusive UTC date range', () => {
+    expect(formatMentorshipDateRange('2026-07-01', '2026-08-31')).toBe('Jul 1, 2026 – Aug 31, 2026');
+  });
+
+  it('builds two-letter initials from a display name', () => {
+    expect(mentorshipPersonInitials('Alex Rivera')).toBe('AR');
+    expect(mentorshipPersonInitials('Priya')).toBe('PR');
+    expect(mentorshipPersonInitials('   ')).toBe('?');
   });
 });
