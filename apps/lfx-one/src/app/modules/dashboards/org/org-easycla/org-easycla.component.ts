@@ -7,7 +7,7 @@ import { takeUntilDestroyed, toObservable, toSignal } from '@angular/core/rxjs-i
 import { FormControl, FormGroup } from '@angular/forms';
 import type { OrgClaGroup, OrgClaGroupList } from '@lfx-one/shared/interfaces';
 import { SkeletonModule } from 'primeng/skeleton';
-import { catchError, distinctUntilChanged, filter, of, switchMap, tap } from 'rxjs';
+import { catchError, distinctUntilChanged, filter, of, skip, switchMap, tap } from 'rxjs';
 
 import { ButtonComponent } from '@components/button/button.component';
 import { EmptyStateComponent } from '@components/empty-state/empty-state.component';
@@ -44,6 +44,7 @@ export class OrgEasyclaComponent {
   });
 
   protected readonly fetchError = signal(false);
+  private readonly claLoadingState = signal(false);
   private readonly page = signal(0);
 
   // ── Org context ───────────────────────────────────────────────────────────
@@ -79,10 +80,22 @@ export class OrgEasyclaComponent {
 
   // ── Data ──────────────────────────────────────────────────────────────────
   private readonly searchTerm: Signal<string> = this.initSearchTerm();
+
+  // Shared with the constructor's org-switch reset below — mirrors org-groups' orgUid$.
+  private readonly orgUid$ = toObservable(computed(() => this.accountContext.selectedAccount()?.uid)).pipe(
+    filter((uid): uid is string => !!uid),
+    distinctUntilChanged()
+  );
+
   private readonly claData: Signal<OrgClaGroupList | null | undefined> = this.initClaData();
 
-  /** Undefined until the first response lands; `null` after a failure, which is a different state. */
-  protected readonly claLoading = computed(() => this.hasCompany() && this.claData() === undefined && !this.fetchError());
+  /**
+   * Undefined until the first response lands; `null` after a failure, which is a different state.
+   * The explicit flag covers the switch: `toSignal` holds the previous organization's response
+   * until the new one arrives, so `=== undefined` alone would let that organization's cards — or
+   * its "signed nothing" empty state — render under the newly selected company's name.
+   */
+  protected readonly claLoading = computed(() => this.hasCompany() && (this.claData() === undefined || this.claLoadingState()) && !this.fetchError());
 
   protected readonly claGroups: Signal<OrgClaGroup[]> = computed(() => this.claData()?.claGroups ?? []);
   protected readonly filteredClaGroups: Signal<OrgClaGroup[]> = this.initFilteredClaGroups();
@@ -125,6 +138,14 @@ export class OrgEasyclaComponent {
     // page of a non-empty result. Driven off the raw control value rather than the trimmed term so
     // clearing a query down to trailing whitespace also returns to the top.
     this.filterForm.controls.search.valueChanges.pipe(takeUntilDestroyed()).subscribe(() => this.page.set(0));
+
+    // A query typed against the previous organization would carry over and hide the new one's
+    // agreements behind the no-matches empty state, and a leftover index would open its list
+    // part-way through. `skip(1)` leaves the first load alone; only an actual switch resets.
+    this.orgUid$.pipe(skip(1), takeUntilDestroyed()).subscribe(() => {
+      this.filterForm.reset({ search: '' });
+      this.page.set(0);
+    });
   }
 
   protected changePage(delta: number): void {
@@ -141,16 +162,15 @@ export class OrgEasyclaComponent {
       return signal<OrgClaGroupList | null | undefined>(undefined);
     }
 
-    const orgUid$ = toObservable(computed(() => this.accountContext.selectedAccount()?.uid)).pipe(
-      filter((uid): uid is string => !!uid),
-      distinctUntilChanged()
-    );
-
     return toSignal(
-      orgUid$.pipe(
-        tap(() => this.fetchError.set(false)),
+      this.orgUid$.pipe(
+        tap(() => {
+          this.claLoadingState.set(true);
+          this.fetchError.set(false);
+        }),
         switchMap((uid) =>
           this.claService.getClaGroups(uid).pipe(
+            tap(() => this.claLoadingState.set(false)),
             catchError((error: unknown) => {
               // A failure must never become an empty list here. Upstream returns an empty list both
               // for an organization with no agreements and for one it has no record of, so there is
@@ -158,6 +178,7 @@ export class OrgEasyclaComponent {
               // one of those is a claim about the company's legal position.
               console.error('Failed to load organization CLA groups:', error);
               this.fetchError.set(true);
+              this.claLoadingState.set(false);
               return of(null);
             })
           )

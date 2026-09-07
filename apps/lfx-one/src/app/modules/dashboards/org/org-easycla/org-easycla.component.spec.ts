@@ -15,7 +15,7 @@ import { PersonaService } from '@services/persona.service';
 import { OrgNavigationService } from '@shared/services/org-navigation.service';
 // The no-access branch renders a `lfxOpenIntercom` support button, which injects MessageService.
 import { MessageService } from 'primeng/api';
-import { of, throwError } from 'rxjs';
+import { of, Subject, throwError } from 'rxjs';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 
 import { OrgEasyclaComponent } from './org-easycla.component';
@@ -355,6 +355,81 @@ describe('OrgEasyclaComponent', () => {
       fixture.componentInstance['changePage'](1);
       fixture.detectChanges();
       await search(fixture, 'Project');
+
+      expect(byTestId(fixture, 'org-easycla-page-label')?.textContent).toContain('Showing 1–8 of 11');
+    });
+  });
+
+  // The component survives an org switch, so every piece of state keyed to the previous company
+  // has to be dropped by hand. What makes this more than a tidiness concern is the subject matter:
+  // one company's agreements shown under another company's name is a false claim about who has
+  // signed what.
+  describe('switching organizations', () => {
+    const OTHER_ACCOUNT = { uid: '0014100000Zq8xbAAB', accountName: 'Halcyon Systems' };
+
+    async function switchOrg(fixture: ComponentFixture<OrgEasyclaComponent>): Promise<void> {
+      selectedAccount.set(OTHER_ACCOUNT);
+      await fixture.whenStable();
+      fixture.detectChanges();
+    }
+
+    it("drops the previous organization's cards while the new request is in flight", async () => {
+      getClaGroups.mockReturnValue(of({ orgUid: SELECTED_ACCOUNT.uid, claGroups: manyClaGroups(3) }));
+      const fixture = await render();
+      expect(allByTestId(fixture, 'org-easycla-card')).toHaveLength(3);
+
+      getClaGroups.mockReturnValue(new Subject());
+      await switchOrg(fixture);
+
+      expect(allByTestId(fixture, 'org-easycla-card')).toHaveLength(0);
+      expect(byTestId(fixture, 'org-easycla-list-loading')).not.toBeNull();
+    });
+
+    it('does not claim the new organization has signed nothing before its response lands', async () => {
+      getClaGroups.mockReturnValue(of({ orgUid: SELECTED_ACCOUNT.uid, claGroups: [] }));
+      const fixture = await render();
+      expect(byTestId(fixture, 'org-easycla-empty-state')).not.toBeNull();
+
+      getClaGroups.mockReturnValue(new Subject());
+      await switchOrg(fixture);
+
+      expect(byTestId(fixture, 'org-easycla-empty-state')).toBeNull();
+    });
+
+    it("shows the new organization's agreements once they arrive", async () => {
+      getClaGroups.mockReturnValue(of({ orgUid: SELECTED_ACCOUNT.uid, claGroups: manyClaGroups(3) }));
+      const fixture = await render();
+
+      getClaGroups.mockReturnValue(of({ orgUid: OTHER_ACCOUNT.uid, claGroups: manyClaGroups(5) }));
+      await switchOrg(fixture);
+
+      expect(allByTestId(fixture, 'org-easycla-card')).toHaveLength(5);
+      expect(getClaGroups).toHaveBeenLastCalledWith(OTHER_ACCOUNT.uid);
+    });
+
+    // A query aimed at the previous company would otherwise hide the new company's agreements
+    // behind the no-matches state, which reads as "this company has none".
+    it('clears a search carried over from the previous organization', async () => {
+      getClaGroups.mockReturnValue(of({ orgUid: SELECTED_ACCOUNT.uid, claGroups: manyClaGroups(3) }));
+      const fixture = await render();
+      await search(fixture, 'Foundation 0');
+      expect(allByTestId(fixture, 'org-easycla-card')).toHaveLength(1);
+
+      getClaGroups.mockReturnValue(of({ orgUid: OTHER_ACCOUNT.uid, claGroups: manyClaGroups(3) }));
+      await switchOrg(fixture);
+
+      expect(fixture.componentInstance['filterForm'].controls.search.value).toBe('');
+      expect(allByTestId(fixture, 'org-easycla-card')).toHaveLength(3);
+    });
+
+    it("opens the new organization's list at the first page", async () => {
+      getClaGroups.mockReturnValue(of({ orgUid: SELECTED_ACCOUNT.uid, claGroups: manyClaGroups(11) }));
+      const fixture = await render();
+      fixture.componentInstance['changePage'](1);
+      fixture.detectChanges();
+
+      getClaGroups.mockReturnValue(of({ orgUid: OTHER_ACCOUNT.uid, claGroups: manyClaGroups(11) }));
+      await switchOrg(fixture);
 
       expect(byTestId(fixture, 'org-easycla-page-label')?.textContent).toContain('Showing 1–8 of 11');
     });
