@@ -2,7 +2,7 @@
 <!-- SPDX-License-Identifier: MIT -->
 
 <div
-  class="flex items-center gap-4 p-5 cursor-pointer hover:bg-gray-50 transition-colors"
+  class="flex flex-col gap-4 p-5 cursor-pointer hover:bg-gray-50 transition-colors sm:flex-row sm:items-center"
   role="button"
   tabindex="0"
   [attr.aria-label]="program().name"
@@ -10,44 +10,50 @@
   (click)="onCardClick()"
   (keydown.enter)="onCardClick()"
   (keydown.space)="onCardClick(); $event.preventDefault()">
-  <!-- Avatar / Initials -->
-  <lfx-avatar
-    [image]="program().logoUrl"
-    [label]="initials()"
-    shape="square"
-    size="large"
-    [styleClass]="avatarStyleClass()"
-    [ariaLabel]="program().name + ' avatar'" />
+  <div class="flex items-center gap-4 min-w-0 flex-1">
+    <!-- Avatar / Initials -->
+    <lfx-avatar
+      [image]="program().logoUrl"
+      [label]="initials()"
+      shape="square"
+      size="large"
+      [styleClass]="avatarStyleClass()"
+      [ariaLabel]="program().name + ' avatar'" />
 
-  <!-- Content -->
-  <div class="flex flex-col gap-1 min-w-0 flex-1">
-    <div class="flex items-center gap-2 flex-wrap">
-      <span class="text-xs font-medium text-gray-500">{{ seasonLine() }}</span>
-      <span class="inline-flex items-center text-xs font-semibold px-2 py-0.5 rounded-full" [class]="statusBadgeClass()">
-        {{ statusLabel() }}
-      </span>
+    <!-- Content -->
+    <div class="flex flex-col gap-1 min-w-0 flex-1">
+      <div class="flex items-center gap-2 flex-wrap">
+        <span class="text-xs font-medium text-gray-500">{{ seasonLine() }}</span>
+        <span class="inline-flex items-center text-xs font-semibold px-2 py-0.5 rounded-full" [class]="statusBadgeClass()">
+          {{ statusLabel() }}
+        </span>
+      </div>
+      <span class="text-base font-bold text-gray-900 truncate">{{ program().name }}</span>
     </div>
-    <span class="text-base font-bold text-gray-900 truncate">{{ program().name }}</span>
+
+    <div class="flex-shrink-0 text-gray-300 sm:hidden" aria-hidden="true">
+      <i class="fa-light fa-chevron-right text-sm"></i>
+    </div>
   </div>
 
   <!-- Metrics -->
-  <div class="flex items-center gap-8 flex-shrink-0" data-testid="mentorship-program-card-metrics">
-    <div class="flex flex-col items-end">
+  <div class="flex items-center justify-between sm:justify-end sm:gap-8 sm:flex-shrink-0" data-testid="mentorship-program-card-metrics">
+    <div class="flex flex-col items-start sm:items-end">
       <span class="text-[10px] font-semibold tracking-wider text-gray-400 uppercase">Mentors</span>
       <span class="text-lg font-bold text-gray-900">{{ program().stats.mentors }}</span>
     </div>
-    <div class="flex flex-col items-end">
+    <div class="flex flex-col items-start sm:items-end">
       <span class="text-[10px] font-semibold tracking-wider text-gray-400 uppercase">Mentees</span>
       <span class="text-lg font-bold text-gray-900">{{ program().stats.mentees }}</span>
     </div>
-    <div class="flex flex-col items-end">
+    <div class="flex flex-col items-start sm:items-end">
       <span class="text-[10px] font-semibold tracking-wider text-gray-400 uppercase">Graduated</span>
       <span class="text-lg font-bold text-gray-900">{{ program().stats.graduated }}</span>
     </div>
   </div>
 
   <!-- Chevron -->
-  <div class="flex-shrink-0 text-gray-300" aria-hidden="true">
+  <div class="hidden flex-shrink-0 text-gray-300 sm:block" aria-hidden="true">
     <i class="fa-light fa-chevron-right text-sm"></i>
   </div>
 </div>

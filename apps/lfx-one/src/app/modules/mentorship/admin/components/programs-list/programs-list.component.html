@@ -4,16 +4,10 @@
 <div class="flex flex-col gap-5" data-testid="mentorship-programs-list">
   <!-- Search + Status filter row -->
   <div class="flex flex-col sm:flex-row gap-3">
-    <div class="flex-1">
-      <label for="mentorship-programs-search" class="sr-only">Search programs</label>
-      <lfx-input-text
-        [form]="form"
-        control="search"
-        id="mentorship-programs-search"
-        placeholder="Search"
-        icon="fa-light fa-magnifying-glass"
-        dataTest="mentorship-programs-search" />
-    </div>
+    <label class="flex-1">
+      <span class="sr-only">Search programs</span>
+      <lfx-input-text [form]="form" control="search" placeholder="Search" icon="fa-light fa-magnifying-glass" dataTest="mentorship-programs-search" />
+    </label>
     <div class="w-full sm:w-56">
       <lfx-select
         [form]="form"

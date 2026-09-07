@@ -9,7 +9,7 @@ import { EMPTY_MENTORSHIP_PROGRAMS_RESPONSE, MENTORSHIP_PROGRAM_PAGE_SIZE } from
 import { MentorshipProgramsResponse, MentorshipProgramStatus } from '@lfx-one/shared/interfaces';
 import { MentorshipService } from '@services/mentorship.service';
 import { merge, Subject } from 'rxjs';
-import { debounceTime, distinctUntilChanged, finalize, map, scan, switchMap, tap } from 'rxjs/operators';
+import { debounceTime, distinctUntilChanged, exhaustMap, finalize, map, scan, switchMap, takeUntil, tap } from 'rxjs/operators';
 
 import { ProgramsListComponent } from './components/programs-list/programs-list.component';
 
@@ -35,6 +35,7 @@ export class AdminComponent {
 
   // ─── Simple WritableSignals ────────────────────────────────────────────────
   protected readonly hasLoaded = signal(false);
+  protected readonly filterLoading = signal(false);
   protected readonly loadingMore = signal(false);
   protected readonly searchTerm = signal<string>('');
   protected readonly statusFilter = signal<MentorshipProgramStatus | null>(null);
@@ -46,7 +47,7 @@ export class AdminComponent {
   // ─── Computed / Async Signals ──────────────────────────────────────────────
   private readonly programsState: Signal<MentorshipProgramsResponse> = this.initPrograms();
   protected readonly programs = computed(() => this.programsState().data);
-  protected readonly hasMore = computed(() => this.programsState().data.length < this.programsState().total);
+  protected readonly hasMore = computed(() => !this.filterLoading() && this.programsState().data.length < this.programsState().total);
 
   // ─── Protected Methods ─────────────────────────────────────────────────────
   protected onProgramClick(programId: string): void {
@@ -72,7 +73,7 @@ export class AdminComponent {
   }
 
   protected onLoadMore(): void {
-    if (this.loadingMore() || !this.hasMore()) return;
+    if (this.loadingMore() || this.filterLoading() || !this.hasMore()) return;
     this.loadingMore.set(true);
     this.programsOffset.update((curr) => curr + MENTORSHIP_PROGRAM_PAGE_SIZE);
     this.loadMore$.next();
@@ -88,37 +89,57 @@ export class AdminComponent {
     );
 
     const firstPage$ = filters$.pipe(
-      tap(() => this.programsOffset.set(0)),
-      map((filters) => ({ filters, offset: 0, reset: true }))
+      tap(() => {
+        this.programsOffset.set(0);
+        this.filterLoading.set(true);
+      }),
+      switchMap((filters) =>
+        this.mentorshipService
+          .getPrograms({
+            search: filters.search || undefined,
+            status: filters.status ?? undefined,
+            offset: 0,
+            limit: MENTORSHIP_PROGRAM_PAGE_SIZE,
+          })
+          .pipe(
+            map((response) => ({ ...response, reset: true as const, failed: false })),
+            finalize(() => this.filterLoading.set(false))
+          )
+      )
     );
 
     const nextPage$ = this.loadMore$.pipe(
-      map(() => ({
-        filters: { search: this.searchTerm(), status: this.statusFilter() },
-        offset: this.programsOffset(),
-        reset: false,
-      }))
+      exhaustMap(() =>
+        this.mentorshipService
+          .getPrograms({
+            search: this.searchTerm() || undefined,
+            status: this.statusFilter() ?? undefined,
+            offset: this.programsOffset(),
+            limit: MENTORSHIP_PROGRAM_PAGE_SIZE,
+          })
+          .pipe(
+            takeUntil(filters$),
+            map((response) => {
+              const failed = response.data.length === 0 && response.total === 0;
+              return { ...response, reset: false as const, failed };
+            }),
+            tap((page) => {
+              if (page.failed) {
+                this.programsOffset.update((curr) => Math.max(0, curr - MENTORSHIP_PROGRAM_PAGE_SIZE));
+              }
+            }),
+            finalize(() => this.loadingMore.set(false))
+          )
+      )
     );
 
     return toSignal(
       merge(firstPage$, nextPage$).pipe(
-        switchMap(({ filters, offset, reset }) =>
-          this.mentorshipService
-            .getPrograms({
-              search: filters.search || undefined,
-              status: filters.status ?? undefined,
-              offset,
-              limit: MENTORSHIP_PROGRAM_PAGE_SIZE,
-            })
-            .pipe(
-              map((response) => ({ ...response, reset })),
-              finalize(() => this.loadingMore.set(false))
-            )
-        ),
-        scan(
-          (acc, curr) => (curr.reset ? { data: curr.data, total: curr.total } : { data: [...acc.data, ...curr.data], total: curr.total }),
-          EMPTY_MENTORSHIP_PROGRAMS_RESPONSE
-        ),
+        scan((acc, curr) => {
+          if (curr.reset) return { data: curr.data, total: curr.total };
+          if (curr.failed) return acc;
+          return { data: [...acc.data, ...curr.data], total: curr.total };
+        }, EMPTY_MENTORSHIP_PROGRAMS_RESPONSE),
         tap(() => this.hasLoaded.set(true))
       ),
       { initialValue: EMPTY_MENTORSHIP_PROGRAMS_RESPONSE }
