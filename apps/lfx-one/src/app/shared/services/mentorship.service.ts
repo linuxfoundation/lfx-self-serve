@@ -27,10 +27,12 @@ import { catchError, Observable, of, take } from 'rxjs';
 export class MentorshipService {
   private readonly http = inject(HttpClient);
 
-  public getPrograms(params?: { search?: string; status?: MentorshipProgramStatus }): Observable<MentorshipProgramsResponse> {
+  public getPrograms(params?: { search?: string; status?: MentorshipProgramStatus; offset?: number; limit?: number }): Observable<MentorshipProgramsResponse> {
     let httpParams = new HttpParams();
     if (params?.search) httpParams = httpParams.set('search', params.search);
     if (params?.status) httpParams = httpParams.set('status', params.status);
+    if (params?.offset !== undefined) httpParams = httpParams.set('offset', String(params.offset));
+    if (params?.limit !== undefined) httpParams = httpParams.set('limit', String(params.limit));
 
     return this.http
       .get<MentorshipProgramsResponse>('/api/mentorship/programs', { params: httpParams })

@@ -14,6 +14,7 @@ import {
   MENTORSHIP_INVALID_URL,
   MENTORSHIP_MAX_OPEN_TERMS,
   MENTORSHIP_MAX_OPEN_TERMS_MESSAGE,
+  MENTORSHIP_TERM_NAME_MAX,
 } from '../constants/mentorship-enroll.constants';
 import type {
   MentorshipEnrollFieldErrors,
@@ -32,8 +33,23 @@ import { formatIsoDateLabel, monthYearToIsoDate } from './date-time.utils';
 import { stripHtml } from './html-utils';
 import { normalizeToUrl } from './url.utils';
 
+const MENTORSHIP_ISO_DATE = /^(\d{4})-(\d{2})-(\d{2})$/;
+const MENTORSHIP_ISO_DATE_ERROR = 'Enter a valid date (YYYY-MM-DD).';
+const MENTORSHIP_TERM_FIELDS_ERROR = 'Each term needs a name and valid calendar dates (YYYY-MM-DD).';
+
 function isBlank(value: string): boolean {
   return !value.trim();
+}
+
+/** Exact `YYYY-MM-DD` that exists on the calendar (rejects `2026-02-31` and `9999-z`). */
+export function isMentorshipIsoDate(value: string): boolean {
+  const match = MENTORSHIP_ISO_DATE.exec(value);
+  if (!match) return false;
+  const year = Number(match[1]);
+  const month = Number(match[2]);
+  const day = Number(match[3]);
+  const date = new Date(year, month - 1, day);
+  return date.getFullYear() === year && date.getMonth() === month - 1 && date.getDate() === day;
 }
 
 /** CII Best Practices project IDs are numeric, matching the old maintainer enroll form. */
@@ -70,23 +86,35 @@ export function getMentorshipTermDateErrors(
   const errors: MentorshipTermDateErrors = {};
   const todayIso = toMentorshipDateOnly(today);
   const currentMonthStart = `${today.getFullYear()}-${String(today.getMonth() + 1).padStart(2, '0')}-01`;
+  const startValid = isMentorshipIsoDate(term.startDate);
+  const endValid = isMentorshipIsoDate(term.endDate);
+  const appStartValid = isMentorshipIsoDate(term.applicationStartDate);
+  const appEndValid = isMentorshipIsoDate(term.applicationEndDate);
 
-  if (term.startDate < currentMonthStart && term.startDate !== original?.startDate) {
+  if (!startValid) {
+    errors.startDate = MENTORSHIP_ISO_DATE_ERROR;
+  } else if (term.startDate < currentMonthStart && term.startDate !== original?.startDate) {
     errors.startDate = 'Start month should be greater than or equal to current month.';
   }
-  if (term.endDate < term.startDate) {
+  if (!endValid) {
+    errors.endDate = MENTORSHIP_ISO_DATE_ERROR;
+  } else if (startValid && term.endDate < term.startDate) {
     errors.endDate = 'End date must be on or after the start date.';
   }
-  if (term.applicationStartDate < todayIso && term.applicationStartDate !== original?.applicationStartDate) {
+  if (!appStartValid) {
+    errors.applicationStartDate = MENTORSHIP_ISO_DATE_ERROR;
+  } else if (term.applicationStartDate < todayIso && term.applicationStartDate !== original?.applicationStartDate) {
     errors.applicationStartDate = 'Application start date cannot be before today.';
-  } else if (term.applicationStartDate >= term.startDate) {
+  } else if (startValid && term.applicationStartDate >= term.startDate) {
     errors.applicationStartDate = 'Application start date must be before the term start month.';
   }
-  if (term.applicationEndDate < todayIso && term.applicationEndDate !== original?.applicationEndDate) {
+  if (!appEndValid) {
+    errors.applicationEndDate = MENTORSHIP_ISO_DATE_ERROR;
+  } else if (term.applicationEndDate < todayIso && term.applicationEndDate !== original?.applicationEndDate) {
     errors.applicationEndDate = 'Application end date cannot be before today.';
-  } else if (term.applicationEndDate < term.applicationStartDate) {
+  } else if (appStartValid && term.applicationEndDate < term.applicationStartDate) {
     errors.applicationEndDate = 'Application end date must be on or after the application start date.';
-  } else if (term.applicationEndDate > lastDayOfMentorshipMonth(term.endDate)) {
+  } else if (endValid && term.applicationEndDate > lastDayOfMentorshipMonth(term.endDate)) {
     errors.applicationEndDate = 'Application end date must be on or before the term end month.';
   }
   return errors;
@@ -137,8 +165,16 @@ export function getMentorshipEnrollStepErrors(step: MentorshipEnrollStep, form: 
     } else if (form.terms.length > MENTORSHIP_MAX_OPEN_TERMS) {
       errors.terms = MENTORSHIP_MAX_OPEN_TERMS_MESSAGE;
     } else {
-      const firstTermError = form.terms.map((term) => Object.values(getMentorshipTermDateErrors(term))[0]).find(Boolean);
-      if (firstTermError) errors.terms = firstTermError;
+      const incompleteTerm = form.terms.find((term) => isBlank(term.id) || isBlank(term.name) || term.name.trim().length > MENTORSHIP_TERM_NAME_MAX);
+      if (incompleteTerm) {
+        errors.terms =
+          incompleteTerm.name.trim().length > MENTORSHIP_TERM_NAME_MAX
+            ? `Term name must be ${MENTORSHIP_TERM_NAME_MAX} characters or fewer.`
+            : MENTORSHIP_TERM_FIELDS_ERROR;
+      } else {
+        const firstTermError = form.terms.map((term) => Object.values(getMentorshipTermDateErrors(term))[0]).find(Boolean);
+        if (firstTermError) errors.terms = firstTermError;
+      }
     }
     return errors;
   }

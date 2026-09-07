@@ -17,6 +17,13 @@ const parseTrimmedString = (val: unknown): string | undefined => {
   return trimmed.length > 0 ? trimmed : undefined;
 };
 
+const parseIntQuery = (val: unknown): number | undefined => {
+  const raw = parseTrimmedString(val);
+  if (raw === undefined) return undefined;
+  const parsed = Number.parseInt(raw, 10);
+  return Number.isFinite(parsed) ? parsed : undefined;
+};
+
 function asString(value: unknown): string {
   return typeof value === 'string' ? value : '';
 }
@@ -93,6 +100,8 @@ export class MentorshipController {
       const programs = await this.mentorshipService.getPrograms(req, {
         search: parseTrimmedString(search),
         status: rawStatus,
+        offset: parseIntQuery(req.query['offset']),
+        limit: parseIntQuery(req.query['limit']),
       });
 
       logger.success(req, 'get_mentorship_programs', startTime, { result_count: programs.data.length });
@@ -156,12 +165,10 @@ export class MentorshipController {
         throw new AuthenticationError('User authentication required', { operation: 'get_mentorship_lf_projects' });
       }
 
-      const offset = Number.parseInt(typeof req.query['offset'] === 'string' ? req.query['offset'] : '0', 10);
-      const limit = Number.parseInt(typeof req.query['limit'] === 'string' ? req.query['limit'] : '', 10);
       const projects = await this.mentorshipService.getLfProjects(req, {
         search: parseTrimmedString(req.query['search']),
-        offset: Number.isFinite(offset) ? offset : 0,
-        limit: Number.isFinite(limit) ? limit : undefined,
+        offset: parseIntQuery(req.query['offset']),
+        limit: parseIntQuery(req.query['limit']),
       });
 
       logger.success(req, 'get_mentorship_lf_projects', startTime, { result_count: projects.data.length });

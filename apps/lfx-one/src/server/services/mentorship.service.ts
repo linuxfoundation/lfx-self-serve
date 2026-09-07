@@ -3,13 +3,13 @@
 
 import {
   EMPTY_MENTORSHIP_PROGRAM_LISTS,
+  MENTORSHIP_CII_BADGE_JSON_BASE,
   MENTORSHIP_LF_PROJECT_PAGE_SIZE,
   MENTORSHIP_PROGRAM_STATUSES,
   MENTORSHIP_PROJECT_OPTIONS,
   MOCK_MENTORSHIP_LF_PROJECTS,
   MOCK_MENTORSHIP_PROGRAM_LISTS,
   MOCK_MENTORSHIP_PROGRAMS,
-  mentorshipCiiBadgeJsonUrl,
 } from '@lfx-one/shared/constants';
 import {
   MentorshipCiiBadge,
@@ -24,9 +24,13 @@ import {
 import { buildMentorshipProgramDetail, isMentorshipCiiProjectId, mentorshipProgramSlug } from '@lfx-one/shared/utils';
 import { Request } from 'express';
 
-import { ResourceNotFoundError, ServiceValidationError } from '../errors';
+import { ConflictError, MicroserviceError, ResourceNotFoundError, ServiceValidationError } from '../errors';
 
 import { logger } from './logger.service';
+
+const CII_BADGE_ORIGIN = new URL(MENTORSHIP_CII_BADGE_JSON_BASE).origin;
+const DEFAULT_PROGRAM_LIMIT = 50;
+const MAX_LIMIT = 50;
 
 /**
  * In-memory store so POST enrollments show up on the admin list in this
@@ -34,8 +38,30 @@ import { logger } from './logger.service';
  */
 const programsStore: MentorshipProgram[] = MOCK_MENTORSHIP_PROGRAMS.map((program) => ({ ...program }));
 
+function paginateOffsetLimit<T>(items: readonly T[], offset: number, limit: number): { data: T[]; total: number } {
+  const start = Math.max(0, offset);
+  const size = Math.min(MAX_LIMIT, Math.max(1, limit));
+  return { data: items.slice(start, start + size), total: items.length };
+}
+
+/** Allowlisted CII badge URL: constant origin + digit-only project id. */
+function buildCiiBadgeJsonUrl(projectId: string): URL {
+  const digits = /^(\d+)$/.exec(projectId.trim())?.[1];
+  if (!digits) {
+    throw ServiceValidationError.forField('projectId', 'CII Project ID must be numeric', { operation: 'mentorship_get_cii_badge' });
+  }
+  const url = new URL(`/projects/${digits}/badge.json`, CII_BADGE_ORIGIN);
+  if (url.origin !== CII_BADGE_ORIGIN) {
+    throw ServiceValidationError.forField('projectId', 'CII Project ID must be numeric', { operation: 'mentorship_get_cii_badge' });
+  }
+  return url;
+}
+
 export class MentorshipService {
-  public async getPrograms(req: Request, options: { search?: string; status?: MentorshipProgramStatus } = {}): Promise<MentorshipProgramsResponse> {
+  public async getPrograms(
+    req: Request,
+    options: { search?: string; status?: MentorshipProgramStatus; offset?: number; limit?: number } = {}
+  ): Promise<MentorshipProgramsResponse> {
     const startTime = logger.startOperation(req, 'mentorship_get_programs', options);
 
     let filtered: MentorshipProgram[] = programsStore;
@@ -49,9 +75,10 @@ export class MentorshipService {
       }
     }
 
-    logger.success(req, 'mentorship_get_programs', startTime, { count: filtered.length, total: filtered.length });
+    const page = paginateOffsetLimit(filtered, options.offset ?? 0, options.limit ?? DEFAULT_PROGRAM_LIMIT);
+    logger.success(req, 'mentorship_get_programs', startTime, { count: page.data.length, total: page.total });
 
-    return { data: filtered, total: filtered.length };
+    return page;
   }
 
   public async getProgram(req: Request, programId: string): Promise<MentorshipProgramDetail> {
@@ -70,14 +97,21 @@ export class MentorshipService {
   public async enrollProgram(req: Request, input: MentorshipEnrollForm): Promise<MentorshipProgram> {
     const startTime = logger.startOperation(req, 'mentorship_enroll_program', { name: input.name });
 
+    const name = input.name.trim();
+    const slug = mentorshipProgramSlug(name);
+    const taken = programsStore.some((program) => program.name.trim().toLowerCase() === name.toLowerCase() || program.slug === slug);
+    if (taken) {
+      throw new ConflictError('A mentorship program with this name already exists.', 'CONFLICT', { operation: 'mentorship_enroll_program' });
+    }
+
     const now = new Date().toISOString();
     const projectLabel = MENTORSHIP_PROJECT_OPTIONS.find((option) => option.value === input.projectId)?.label ?? input.projectId;
     const firstTerm = input.terms[0];
 
     const program: MentorshipProgram = {
       id: `mp_${Date.now()}`,
-      slug: mentorshipProgramSlug(input.name),
-      name: input.name.trim(),
+      slug,
+      name,
       projectName: projectLabel,
       term: firstTerm?.name ?? 'TBD',
       status: 'pending-review',
@@ -104,11 +138,9 @@ export class MentorshipService {
     const startTime = logger.startOperation(req, 'mentorship_get_lf_projects', options);
     const needle = options.search?.trim().toLowerCase() ?? '';
     const filtered = needle ? MOCK_MENTORSHIP_LF_PROJECTS.filter((project) => project.name.toLowerCase().includes(needle)) : [...MOCK_MENTORSHIP_LF_PROJECTS];
-    const offset = Math.max(0, options.offset ?? 0);
-    const limit = Math.min(50, Math.max(1, options.limit ?? MENTORSHIP_LF_PROJECT_PAGE_SIZE));
-    const data = filtered.slice(offset, offset + limit);
-    logger.success(req, 'mentorship_get_lf_projects', startTime, { count: data.length, total: filtered.length });
-    return { data, total: filtered.length };
+    const page = paginateOffsetLimit(filtered, options.offset ?? 0, options.limit ?? MENTORSHIP_LF_PROJECT_PAGE_SIZE);
+    logger.success(req, 'mentorship_get_lf_projects', startTime, { count: page.data.length, total: page.total });
+    return page;
   }
 
   public async getCiiBadge(req: Request, projectId: string): Promise<MentorshipCiiBadge> {
@@ -118,17 +150,56 @@ export class MentorshipService {
       throw ServiceValidationError.forField('projectId', 'CII Project ID must be numeric', { operation: 'mentorship_get_cii_badge' });
     }
 
-    const response = await fetch(mentorshipCiiBadgeJsonUrl(projectId));
+    const url = buildCiiBadgeJsonUrl(projectId);
+    let response: Response;
+    try {
+      response = await fetch(url, { redirect: 'error' });
+    } catch (error) {
+      throw new MicroserviceError('CII Best Practices is temporarily unavailable. Please try again later.', 502, 'UPSTREAM_UNREACHABLE', {
+        operation: 'mentorship_get_cii_badge',
+        service: 'cii_best_practices',
+        path: url.pathname,
+        originalError: error instanceof Error ? error : undefined,
+        transportFailure: true,
+      });
+    }
+
+    if (response.status === 404) {
+      throw new ResourceNotFoundError('CII project', projectId, { operation: 'mentorship_get_cii_badge' });
+    }
     if (!response.ok) {
-      throw new ResourceNotFoundError('CII project', projectId, { operation: 'mentorship_get_cii_badge' });
+      throw MicroserviceError.fromMicroserviceResponse(
+        response.status,
+        response.statusText,
+        {},
+        'cii_best_practices',
+        url.pathname,
+        'mentorship_get_cii_badge'
+      );
     }
 
-    const payload = (await response.json()) as { badge_level?: unknown };
-    if (typeof payload.badge_level !== 'string' || !payload.badge_level) {
-      throw new ResourceNotFoundError('CII project', projectId, { operation: 'mentorship_get_cii_badge' });
+    let payload: unknown;
+    try {
+      payload = await response.json();
+    } catch (error) {
+      throw new MicroserviceError('CII Best Practices returned an invalid response.', 502, 'BAD_GATEWAY', {
+        operation: 'mentorship_get_cii_badge',
+        service: 'cii_best_practices',
+        path: url.pathname,
+        originalError: error instanceof Error ? error : undefined,
+      });
     }
 
-    const badge: MentorshipCiiBadge = { projectId, badgeLevel: payload.badge_level };
+    const badgeLevel = payload && typeof payload === 'object' ? (payload as { badge_level?: unknown }).badge_level : undefined;
+    if (typeof badgeLevel !== 'string' || !badgeLevel) {
+      throw new MicroserviceError('CII Best Practices returned an invalid response.', 502, 'BAD_GATEWAY', {
+        operation: 'mentorship_get_cii_badge',
+        service: 'cii_best_practices',
+        path: url.pathname,
+      });
+    }
+
+    const badge: MentorshipCiiBadge = { projectId, badgeLevel };
     logger.success(req, 'mentorship_get_cii_badge', startTime, { projectId, badgeLevel: badge.badgeLevel });
     return badge;
   }
