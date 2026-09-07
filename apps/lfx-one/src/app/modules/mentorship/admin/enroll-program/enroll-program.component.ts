@@ -1,7 +1,8 @@
 // Copyright The Linux Foundation and each contributor to LFX.
 // SPDX-License-Identifier: MIT
 
-import { ChangeDetectionStrategy, Component, computed, inject, signal } from '@angular/core';
+import { isPlatformBrowser } from '@angular/common';
+import { ChangeDetectionStrategy, Component, computed, inject, PLATFORM_ID, signal } from '@angular/core';
 import { toSignal } from '@angular/core/rxjs-interop';
 import { FormControl, FormGroup, Validators } from '@angular/forms';
 import { Router } from '@angular/router';
@@ -10,7 +11,12 @@ import {
   createEmptyMentorshipEnrollForm,
   MENTORSHIP_CII_CHECKING,
   MENTORSHIP_CII_INVALID_ID,
+  MENTORSHIP_ENROLL_CANCEL_CONFIRM,
+  MENTORSHIP_ENROLL_FORM_INCOMPLETE,
+  MENTORSHIP_ENROLL_NAME_CHECKING,
   MENTORSHIP_ENROLL_NAME_MAX,
+  MENTORSHIP_ENROLL_NAME_MIN,
+  MENTORSHIP_ENROLL_NAME_TAKEN,
   MENTORSHIP_ENROLL_STEP_LABELS,
   MENTORSHIP_ENROLL_STEPS_ORDER,
 } from '@lfx-one/shared/constants';
@@ -18,12 +24,14 @@ import {
   MentorshipCiiLookupStatus,
   MentorshipEnrollForm,
   MentorshipEnrollStep,
+  MentorshipNameLookupStatus,
   MentorshipPrerequisite,
   MentorshipProgramTerm,
 } from '@lfx-one/shared/interfaces';
 import { getMentorshipEnrollStepErrors } from '@lfx-one/shared/utils';
 import { MentorshipService } from '@services/mentorship.service';
-import { MessageService } from 'primeng/api';
+import { ConfirmationService, MessageService } from 'primeng/api';
+import { ConfirmDialogModule } from 'primeng/confirmdialog';
 import { tap } from 'rxjs';
 
 import { EnrollDetailsStepComponent } from './components/enroll-details-step/enroll-details-step.component';
@@ -38,7 +46,15 @@ import { EnrollStepperComponent } from './components/enroll-stepper/enroll-stepp
  */
 @Component({
   selector: 'lfx-mentorship-enroll-program',
-  imports: [ButtonComponent, EnrollStepperComponent, EnrollDetailsStepComponent, EnrollSetupStepComponent, EnrollPrerequisitesStepComponent],
+  imports: [
+    ButtonComponent,
+    ConfirmDialogModule,
+    EnrollStepperComponent,
+    EnrollDetailsStepComponent,
+    EnrollSetupStepComponent,
+    EnrollPrerequisitesStepComponent,
+  ],
+  providers: [ConfirmationService],
   templateUrl: './enroll-program.component.html',
   changeDetection: ChangeDetectionStrategy.OnPush,
 })
@@ -46,10 +62,15 @@ export class EnrollProgramComponent {
   private readonly router = inject(Router);
   private readonly mentorshipService = inject(MentorshipService);
   private readonly messageService = inject(MessageService);
+  private readonly confirmationService = inject(ConfirmationService);
+  private readonly platformId = inject(PLATFORM_ID);
 
   protected readonly form = new FormGroup({
     importProgramId: new FormControl('', { nonNullable: true }),
-    name: new FormControl('', { nonNullable: true, validators: [Validators.required, Validators.maxLength(MENTORSHIP_ENROLL_NAME_MAX)] }),
+    name: new FormControl('', {
+      nonNullable: true,
+      validators: [Validators.required, Validators.minLength(MENTORSHIP_ENROLL_NAME_MIN), Validators.maxLength(MENTORSHIP_ENROLL_NAME_MAX)],
+    }),
     projectId: new FormControl('', { nonNullable: true, validators: [Validators.required] }),
     technologies: new FormControl<string[]>([], { nonNullable: true }),
     description: new FormControl('', { nonNullable: true }),
@@ -69,6 +90,8 @@ export class EnrollProgramComponent {
   protected readonly showErrors = signal(false);
   protected readonly submitting = signal(false);
   protected readonly ciiLookupStatus = signal<MentorshipCiiLookupStatus>('idle');
+  protected readonly nameLookupStatus = signal<MentorshipNameLookupStatus>('idle');
+  protected readonly formIncomplete = MENTORSHIP_ENROLL_FORM_INCOMPLETE;
 
   private readonly formSnapshot = toSignal(
     this.form.valueChanges.pipe(
@@ -110,6 +133,7 @@ export class EnrollProgramComponent {
     this.showErrors.set(false);
     const index = MENTORSHIP_ENROLL_STEPS_ORDER.indexOf(current);
     this.step.set(MENTORSHIP_ENROLL_STEPS_ORDER[index - 1] ?? 'details');
+    this.scrollToTop();
   }
 
   protected onNext(): void {
@@ -119,6 +143,14 @@ export class EnrollProgramComponent {
     if (firstError) {
       this.showErrors.set(true);
       this.messageService.add({ severity: 'warn', summary: 'Check this step', detail: firstError, life: 4000 });
+      return;
+    }
+
+    const programName = this.form.controls.name.value.trim();
+    if (current === 'details' && programName.length >= MENTORSHIP_ENROLL_NAME_MIN && this.nameLookupStatus() !== 'available') {
+      this.showErrors.set(true);
+      const detail = this.nameLookupStatus() === 'loading' ? MENTORSHIP_ENROLL_NAME_CHECKING : MENTORSHIP_ENROLL_NAME_TAKEN;
+      this.messageService.add({ severity: 'warn', summary: 'Check this step', detail, life: 4000 });
       return;
     }
 
@@ -139,15 +171,31 @@ export class EnrollProgramComponent {
     const index = MENTORSHIP_ENROLL_STEPS_ORDER.indexOf(current);
     const next = MENTORSHIP_ENROLL_STEPS_ORDER[index + 1];
     if (next) this.step.set(next);
+    this.scrollToTop();
   }
 
   protected onCiiLookupStatusChange(status: MentorshipCiiLookupStatus): void {
     this.ciiLookupStatus.set(status);
   }
 
+  protected onNameLookupStatusChange(status: MentorshipNameLookupStatus): void {
+    this.nameLookupStatus.set(status);
+  }
+
   protected onCancel(): void {
-    this.revokeLogoPreview();
-    void this.router.navigate(['/mentorship/admin']);
+    this.confirmationService.confirm({
+      header: 'Cancel enrollment',
+      message: MENTORSHIP_ENROLL_CANCEL_CONFIRM,
+      icon: 'fa-light fa-triangle-exclamation',
+      acceptLabel: 'Yes, cancel',
+      rejectLabel: 'Stay',
+      acceptButtonStyleClass: 'p-button-sm p-button-danger',
+      rejectButtonStyleClass: 'p-button-secondary p-button-sm p-button-outlined',
+      accept: () => {
+        this.revokeLogoPreview();
+        void this.router.navigate(['/mentorship/admin']);
+      },
+    });
   }
 
   private submitEnrollment(): void {
@@ -188,6 +236,12 @@ export class EnrollProgramComponent {
       prerequisites: (value.prerequisites ?? empty.prerequisites).map((item) => ({ ...item })),
       termsAccepted: value.termsAccepted === true,
     };
+  }
+
+  private scrollToTop(): void {
+    if (isPlatformBrowser(this.platformId)) {
+      window.scrollTo(0, 0);
+    }
   }
 
   private revokeLogoPreview(): void {

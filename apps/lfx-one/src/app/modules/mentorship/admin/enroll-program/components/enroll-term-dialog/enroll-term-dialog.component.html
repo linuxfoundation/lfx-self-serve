@@ -26,8 +26,8 @@
         appendTo="body"
         styleClass="w-full"
         dataTest="mentorship-enroll-term-start-month" />
-      @if (showErrors() && form.controls.startMonth.invalid) {
-        <p class="text-xs text-red-600">Start month is required.</p>
+      @if (showErrors() && (form.controls.startMonth.invalid || dateErrors()['startDate'])) {
+        <p class="text-xs text-red-600">{{ dateErrors()['startDate'] || 'Start month is required.' }}</p>
       }
     </div>
     <div class="flex flex-col gap-1">
@@ -88,18 +88,30 @@
   <div class="grid grid-cols-1 gap-4 sm:grid-cols-2">
     <div class="flex flex-col gap-1">
       <label class="text-sm font-medium text-gray-700">Application Start Date <span class="text-red-500">*</span></label>
-      <lfx-calendar [form]="form" control="applicationStartDate" placeholder="YYYY-MM-DD" dateFormat="yy-mm-dd" appendTo="body" styleClass="w-full" />
-      @if (showErrors() && form.controls.applicationStartDate.invalid) {
-        <p class="text-xs text-red-600">Application start date is required.</p>
+      <lfx-calendar
+        [form]="form"
+        control="applicationStartDate"
+        placeholder="YYYY-MM-DD"
+        dateFormat="yy-mm-dd"
+        [minDate]="minApplicationDate"
+        appendTo="body"
+        styleClass="w-full" />
+      @if (showErrors() && (form.controls.applicationStartDate.invalid || dateErrors()['applicationStartDate'])) {
+        <p class="text-xs text-red-600">{{ dateErrors()['applicationStartDate'] || 'Application start date is required.' }}</p>
       }
     </div>
     <div class="flex flex-col gap-1">
       <label class="text-sm font-medium text-gray-700">Application End Date <span class="text-red-500">*</span></label>
-      <lfx-calendar [form]="form" control="applicationEndDate" placeholder="YYYY-MM-DD" dateFormat="yy-mm-dd" appendTo="body" styleClass="w-full" />
-      @if (showErrors() && (form.controls.applicationEndDate.invalid || form.controls.applicationEndDate.errors?.['order'])) {
-        <p class="text-xs text-red-600">
-          {{ form.controls.applicationEndDate.errors?.['order'] ? 'Application end must be on or after the start date.' : 'Application end date is required.' }}
-        </p>
+      <lfx-calendar
+        [form]="form"
+        control="applicationEndDate"
+        placeholder="YYYY-MM-DD"
+        dateFormat="yy-mm-dd"
+        [minDate]="minApplicationDate"
+        appendTo="body"
+        styleClass="w-full" />
+      @if (showErrors() && (form.controls.applicationEndDate.invalid || dateErrors()['applicationEndDate'])) {
+        <p class="text-xs text-red-600">{{ dateErrors()['applicationEndDate'] || 'Application end date is required.' }}</p>
       }
     </div>
   </div>

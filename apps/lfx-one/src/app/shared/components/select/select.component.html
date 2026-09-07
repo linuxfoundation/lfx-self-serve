@@ -56,7 +56,9 @@
     [checkmark]="checkmark()"
     [loading]="loading()"
     [attr.data-test]="dataTest()"
-    (onChange)="handleChange($event)">
+    (onChange)="handleChange($event)"
+    (onFilter)="handleFilter($event)"
+    (onLazyLoad)="handleLazyLoad($event)">
     @if (itemTemplate()) {
       <ng-template let-option #item>
         <ng-container *ngTemplateOutlet="itemTemplate()!; context: { $implicit: option }"></ng-container>

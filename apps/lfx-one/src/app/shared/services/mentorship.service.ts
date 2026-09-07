@@ -3,8 +3,16 @@
 
 import { HttpClient, HttpErrorResponse, HttpParams } from '@angular/common/http';
 import { inject, Injectable } from '@angular/core';
-import { EMPTY_MENTORSHIP_PROGRAMS_RESPONSE } from '@lfx-one/shared/constants';
-import { MentorshipCiiBadge, MentorshipEnrollForm, MentorshipProgram, MentorshipProgramsResponse, MentorshipProgramStatus } from '@lfx-one/shared/interfaces';
+import { EMPTY_MENTORSHIP_LF_PROJECTS_RESPONSE, EMPTY_MENTORSHIP_PROGRAMS_RESPONSE, MENTORSHIP_LF_PROJECT_PAGE_SIZE } from '@lfx-one/shared/constants';
+import {
+  MentorshipCiiBadge,
+  MentorshipEnrollForm,
+  MentorshipLfProjectsResponse,
+  MentorshipNameAvailability,
+  MentorshipProgram,
+  MentorshipProgramsResponse,
+  MentorshipProgramStatus,
+} from '@lfx-one/shared/interfaces';
 import { catchError, Observable, of, take } from 'rxjs';
 
 /**
@@ -30,6 +38,24 @@ export class MentorshipService {
 
   public enrollProgram(form: MentorshipEnrollForm): Observable<MentorshipProgram> {
     return this.http.post<MentorshipProgram>('/api/mentorship/programs', form).pipe(take(1));
+  }
+
+  public isProgramNameAvailable(name: string): Observable<MentorshipNameAvailability> {
+    return this.http.get<MentorshipNameAvailability>('/api/mentorship/programs/name-available', { params: new HttpParams().set('name', name) }).pipe(
+      take(1),
+      catchError(() => of({ available: true }))
+    );
+  }
+
+  public getLfProjects(params?: { search?: string; offset?: number; limit?: number }): Observable<MentorshipLfProjectsResponse> {
+    let httpParams = new HttpParams();
+    if (params?.search) httpParams = httpParams.set('search', params.search);
+    if (params?.offset !== undefined) httpParams = httpParams.set('offset', String(params.offset));
+    httpParams = httpParams.set('limit', String(params?.limit ?? MENTORSHIP_LF_PROJECT_PAGE_SIZE));
+
+    return this.http
+      .get<MentorshipLfProjectsResponse>('/api/mentorship/lf-projects', { params: httpParams })
+      .pipe(catchError(this.handleError(EMPTY_MENTORSHIP_LF_PROJECTS_RESPONSE, 'getLfProjects')));
   }
 
   public getCiiBadge(projectId: string): Observable<MentorshipCiiBadge | null> {

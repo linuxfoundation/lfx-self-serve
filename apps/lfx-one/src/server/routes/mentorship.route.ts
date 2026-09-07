@@ -8,8 +8,10 @@ import { MentorshipController } from '../controllers/mentorship.controller';
 const router = Router();
 const mentorshipController = new MentorshipController();
 
+router.get('/programs/name-available', (req, res, next) => mentorshipController.isProgramNameAvailable(req, res, next));
 router.get('/programs', (req, res, next) => mentorshipController.getPrograms(req, res, next));
 router.post('/programs', (req, res, next) => mentorshipController.enrollProgram(req, res, next));
+router.get('/lf-projects', (req, res, next) => mentorshipController.getLfProjects(req, res, next));
 router.get('/cii/:projectId', (req, res, next) => mentorshipController.getCiiBadge(req, res, next));
 
 export default router;

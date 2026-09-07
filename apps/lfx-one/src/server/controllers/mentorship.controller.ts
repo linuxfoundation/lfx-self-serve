@@ -103,6 +103,52 @@ export class MentorshipController {
     }
   }
 
+  // GET /api/mentorship/programs/name-available
+  public async isProgramNameAvailable(req: Request, res: Response, next: NextFunction): Promise<void> {
+    const startTime = logger.startOperation(req, 'get_mentorship_name_available');
+
+    try {
+      if (!(await getUsernameFromAuth(req))) {
+        throw new AuthenticationError('User authentication required', { operation: 'get_mentorship_name_available' });
+      }
+
+      const name = parseTrimmedString(req.query['name']) ?? '';
+      if (!name) {
+        throw ServiceValidationError.forField('name', 'Program name is required.', { operation: 'get_mentorship_name_available' });
+      }
+
+      const result = await this.mentorshipService.isProgramNameAvailable(req, name);
+      logger.success(req, 'get_mentorship_name_available', startTime, { available: result.available });
+      res.json(result);
+    } catch (error) {
+      next(error);
+    }
+  }
+
+  // GET /api/mentorship/lf-projects
+  public async getLfProjects(req: Request, res: Response, next: NextFunction): Promise<void> {
+    const startTime = logger.startOperation(req, 'get_mentorship_lf_projects');
+
+    try {
+      if (!(await getUsernameFromAuth(req))) {
+        throw new AuthenticationError('User authentication required', { operation: 'get_mentorship_lf_projects' });
+      }
+
+      const offset = Number.parseInt(typeof req.query['offset'] === 'string' ? req.query['offset'] : '0', 10);
+      const limit = Number.parseInt(typeof req.query['limit'] === 'string' ? req.query['limit'] : '', 10);
+      const projects = await this.mentorshipService.getLfProjects(req, {
+        search: parseTrimmedString(req.query['search']),
+        offset: Number.isFinite(offset) ? offset : 0,
+        limit: Number.isFinite(limit) ? limit : undefined,
+      });
+
+      logger.success(req, 'get_mentorship_lf_projects', startTime, { result_count: projects.data.length });
+      res.json(projects);
+    } catch (error) {
+      next(error);
+    }
+  }
+
   // POST /api/mentorship/programs
   public async enrollProgram(req: Request, res: Response, next: NextFunction): Promise<void> {
     const startTime = logger.startOperation(req, 'enroll_mentorship_program');

@@ -109,12 +109,42 @@ export interface MentorshipEnrollFieldErrors {
   technologies?: string;
   description?: string;
   repositoryUrl?: string;
+  websiteUrl?: string;
+  codeOfConductUrl?: string;
   logoFileName?: string;
   ciiProjectId?: string;
   skills?: string;
   terms?: string;
   prerequisites?: string;
+  challengeUrl?: string;
   termsAccepted?: string;
+}
+
+/** Linux Foundation project option for the enroll project picker. */
+export interface MentorshipLfProject {
+  id: string;
+  name: string;
+  logoUrl?: string;
+}
+
+export type MentorshipLfProjectsResponse = {
+  data: MentorshipLfProject[];
+  total: number;
+};
+
+/** Result of the mock unique-name check. */
+export interface MentorshipNameAvailability {
+  available: boolean;
+}
+
+export type MentorshipNameLookupStatus = 'idle' | 'loading' | 'available' | 'taken';
+
+/** Date-field errors from the add/edit term dialog. */
+export interface MentorshipTermDateErrors {
+  startDate?: string;
+  endDate?: string;
+  applicationStartDate?: string;
+  applicationEndDate?: string;
 }
 
 /** Result of looking up a CII Best Practices badge by project ID. */

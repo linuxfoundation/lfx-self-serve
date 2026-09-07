@@ -33,9 +33,11 @@
 
   <div class="flex flex-col gap-1">
     <label class="text-sm font-medium text-gray-700">Due Date <span class="text-red-500">*</span></label>
-    <lfx-calendar [form]="form" control="dueDate" placeholder="YYYY-MM-DD" dateFormat="yy-mm-dd" appendTo="body" styleClass="w-full" />
+    <lfx-calendar [form]="form" control="dueDate" placeholder="YYYY-MM-DD" dateFormat="yy-mm-dd" [minDate]="minDueDate()" appendTo="body" styleClass="w-full" />
     @if (showErrors() && !form.controls.dueDate.value) {
-      <p class="text-xs text-red-600">Due date is required.</p>
+      <p class="text-xs text-red-600">A valid due date is required (YYYY-MM-DD).</p>
+    } @else if (showErrors() && dueDateInvalid()) {
+      <p class="text-xs text-red-600">Due date should be greater than today's date.</p>
     }
   </div>
 

@@ -26,13 +26,27 @@
               <td class="px-4 py-4 text-sm font-medium text-gray-900 whitespace-nowrap">{{ item.name }}</td>
               <td class="px-4 py-4 text-sm text-gray-600">
                 <p>{{ item.description }}</p>
+                @if (item.id === 'prereq-cover') {
+                  <ul class="mt-2 list-disc pl-5 flex flex-col gap-1">
+                    @for (prompt of coverLetterPrompts; track prompt) {
+                      <li>{{ prompt }}</li>
+                    }
+                  </ul>
+                }
                 @if (item.challengeUrl !== undefined) {
-                  <input
-                    type="url"
-                    class="mt-2 max-w-md w-full rounded-md border border-gray-300 px-3 py-2 text-sm"
-                    [value]="item.challengeUrl"
-                    placeholder="https://www.github.com/..."
-                    (input)="onChallengeUrlInput(item.id, $event)" />
+                  <div class="mt-2 flex flex-col gap-1">
+                    <label class="text-xs font-medium text-gray-600" [attr.for]="'challenge-url-' + item.id">Add URL:</label>
+                    <input
+                      type="url"
+                      [id]="'challenge-url-' + item.id"
+                      class="max-w-md w-full rounded-md border border-gray-300 px-3 py-2 text-sm"
+                      [value]="item.challengeUrl"
+                      placeholder="https://www.github.com/..."
+                      (input)="onChallengeUrlInput(item.id, $event)" />
+                    @if (errors().challengeUrl) {
+                      <p class="text-xs text-red-600">{{ errors().challengeUrl }}</p>
+                    }
+                  </div>
                 }
               </td>
               <td class="px-4 py-4">

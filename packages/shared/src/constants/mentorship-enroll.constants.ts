@@ -1,7 +1,14 @@
 // Copyright The Linux Foundation and each contributor to LFX.
 // SPDX-License-Identifier: MIT
 
-import type { MentorshipEnrollForm, MentorshipEnrollStep, MentorshipPrerequisite, MentorshipProgramTerm } from '../interfaces/mentorship.interface';
+import type {
+  MentorshipEnrollForm,
+  MentorshipEnrollStep,
+  MentorshipLfProject,
+  MentorshipLfProjectsResponse,
+  MentorshipPrerequisite,
+  MentorshipProgramTerm,
+} from '../interfaces/mentorship.interface';
 
 export const MENTORSHIP_ENROLL_STEPS_ORDER: MentorshipEnrollStep[] = ['details', 'setup', 'prerequisites'];
 
@@ -11,30 +18,59 @@ export const MENTORSHIP_ENROLL_STEP_LABELS: Record<MentorshipEnrollStep, string>
   prerequisites: 'Prerequisites',
 };
 
+export const MENTORSHIP_ENROLL_NAME_MIN = 3;
 export const MENTORSHIP_ENROLL_NAME_MAX = 100;
 export const MENTORSHIP_ENROLL_DESCRIPTION_MAX = 3000;
 export const MENTORSHIP_TERM_NAME_MAX = 50;
+export const MENTORSHIP_MAX_OPEN_TERMS = 4;
 export const MENTORSHIP_CUSTOM_PREREQ_NAME_MAX = 20;
 export const MENTORSHIP_CUSTOM_PREREQ_DESCRIPTION_MAX = 500;
 export const MENTORSHIP_CUSTOM_PREREQ_FILE_LABEL = 'Check if completion of this task requires that the mentee submits a file.';
+export const MENTORSHIP_LF_PROJECT_PAGE_SIZE = 10;
 
 /** Year choices for the term dialog — last year through 10 years ahead. */
 export const MENTORSHIP_TERM_YEAR_OPTIONS: ReadonlyArray<{ label: string; value: string }> = Array.from({ length: 12 }, (_, index) => {
-  const year = (new Date().getFullYear() + index).toString();
+  const year = (new Date().getFullYear() - 1 + index).toString();
   return { label: year, value: year };
 });
 
 export const MENTORSHIP_ENROLL_LOGO_ACCEPT = '.jpg,.jpeg,.png,.svg,image/jpeg,image/png,image/svg+xml';
+export const MENTORSHIP_ENROLL_LOGO_EXTENSIONS = ['jpg', 'jpeg', 'png', 'svg'] as const;
 export const MENTORSHIP_ENROLL_LOGO_MAX_BYTES = 2 * 1024 * 1024;
 export const MENTORSHIP_ENROLL_LOGO_HELPER = 'JPG, PNG, SVG · 420px × 420px · Max 2 MB';
+export const MENTORSHIP_ENROLL_LOGO_TYPE_ERROR = 'Program logo is not the right file type.';
 
 export const MENTORSHIP_ENROLL_DETAILS_INTRO = 'Describe the program and the project it belongs to. This is what candidates read on your program page.';
 export const MENTORSHIP_ENROLL_SETUP_INTRO = 'Define the skills mentees need and the term schedule for this program.';
-export const MENTORSHIP_ENROLL_SETUP_SKILLS_HELPER = 'List skills that help match the right mentees. You can invite mentors after enrollment is approved.';
-export const MENTORSHIP_ENROLL_SETUP_MENTOR_INFO = 'After your program is approved, you can invite mentors from the program dashboard.';
-export const MENTORSHIP_ENROLL_SETUP_TERMS_HELPER = 'Add the mentorship terms you plan to run. Applicants apply to a specific term.';
-export const MENTORSHIP_ENROLL_PREREQ_INTRO = 'Select which application materials are required. You can add custom prerequisites if needed.';
-export const MENTORSHIP_ENROLL_TERMS_INTRO = 'Before you submit your program enrollment to the LFX Platform, review and accept the terms and conditions below.';
+export const MENTORSHIP_ENROLL_SETUP_SKILLS_HELPER =
+  'What skills or interest areas are you looking for in prospective mentees? Remember to include non-technical areas that your program could benefit from.';
+export const MENTORSHIP_ENROLL_SETUP_MENTOR_INFO = 'Mentor invitation has been moved to the Mentors tab and will be available after your program is approved.';
+export const MENTORSHIP_MENTOR_DOCS_URL = 'https://docs.linuxfoundation.org/lfx/mentorship/administrators/manage-mentors';
+export const MENTORSHIP_ENROLL_SETUP_TERMS_HELPER =
+  'The mentorship program is available for specific periods throughout the year - you may also define a custom term.';
+export const MENTORSHIP_ENROLL_PREREQ_INTRO =
+  'In order for candidates to qualify for your mentorship program, they will have to complete the following prerequisites. Please select the applicable prerequisites and provide clear and complete instructions, including external links where relevant.';
+export const MENTORSHIP_ENROLL_TERMS_INTRO =
+  'Before you submit your mentorship program to LFX Platform, please review and accept the terms and conditions below.';
+export const MENTORSHIP_ENROLL_REPO_HELPER =
+  "This URL will be used to display the repository statistics on your LFX mentorship page, as well as to provide a link to the program's repository.";
+export const MENTORSHIP_ENROLL_WEBSITE_HELPER = 'This URL will be available as a link on your LFX mentorship page.';
+export const MENTORSHIP_ENROLL_COC_INTRO =
+  'Like security, diversity and inclusion are our top priorities. We ask that all projects have a published Code of Conduct (CoC) to identify the standard behavior expected of their community — and to protect those involved. If your project does not already have a CoC, you can use our template to quickly create one. If you do not enter a link to your own CoC, your project listing on Mentorship will default to the Contributor Covenant. Note that you can update your project at any time should you wish to change the link to your own CoC.';
+export const MENTORSHIP_ENROLL_FORM_INCOMPLETE = 'Something on the form is not complete or invalid. Please correct the highlighted fields before continuing.';
+export const MENTORSHIP_ENROLL_CANCEL_CONFIRM = 'You will lose your changes—are you sure you wish to cancel?';
+export const MENTORSHIP_ENROLL_DELETE_TERM_CONFIRM = 'Are you sure you want to delete this term?';
+export const MENTORSHIP_ENROLL_NAME_TAKEN = 'This program name is taken.';
+export const MENTORSHIP_ENROLL_NAME_CHECKING = 'Checking program name...';
+export const MENTORSHIP_INVALID_URL = 'The link must be a valid URL.';
+export const MENTORSHIP_CHALLENGE_URL_REQUIRED = 'The link is required.';
+export const MENTORSHIP_MAX_OPEN_TERMS_MESSAGE = 'You can have at most 4 open terms per Mentorship Program. Close or delete one to create another.';
+export const MENTORSHIP_COVER_LETTER_PROMPTS: readonly string[] = [
+  'How did you find out about our mentorship program?',
+  'Why are you interested in this program?',
+  'What experience and knowledge/skills do you have that are applicable to this program?',
+  'What do you hope to get out of this mentorship experience?',
+];
 
 export const MENTORSHIP_CII_HOST = 'https://www.bestpractices.dev';
 export const MENTORSHIP_CII_APPLY_URL = `${MENTORSHIP_CII_HOST}/`;
@@ -64,13 +100,36 @@ export const MENTORSHIP_POLICY_LINKS: ReadonlyArray<{ label: string; href: strin
   { label: 'Privacy Policy', href: 'https://www.linuxfoundation.org/privacy' },
 ];
 
-export const MENTORSHIP_PROJECT_OPTIONS: ReadonlyArray<{ value: string; label: string }> = [
-  { value: 'proj-gridflow', label: 'GridFlow' },
-  { value: 'proj-apicurio', label: 'Apicurio Registry' },
-  { value: 'proj-janusgraph', label: 'JanusGraph' },
-  { value: 'proj-thanos', label: 'Thanos' },
-  { value: 'proj-k8s', label: 'Kubernetes' },
+export const MOCK_MENTORSHIP_LF_PROJECTS: readonly MentorshipLfProject[] = [
+  { id: 'proj-gridflow', name: 'GridFlow' },
+  { id: 'proj-apicurio', name: 'Apicurio Registry' },
+  { id: 'proj-janusgraph', name: 'JanusGraph' },
+  { id: 'proj-thanos', name: 'Thanos' },
+  { id: 'proj-k8s', name: 'Kubernetes' },
+  { id: 'proj-prometheus', name: 'Prometheus' },
+  { id: 'proj-envoy', name: 'Envoy' },
+  { id: 'proj-istio', name: 'Istio' },
+  { id: 'proj-helm', name: 'Helm' },
+  { id: 'proj-containerd', name: 'containerd' },
+  { id: 'proj-fluentd', name: 'Fluentd' },
+  { id: 'proj-linkerd', name: 'Linkerd' },
+  { id: 'proj-opa', name: 'Open Policy Agent' },
+  { id: 'proj-spiffe', name: 'SPIFFE' },
+  { id: 'proj-argo', name: 'Argo' },
+  { id: 'proj-coredns', name: 'CoreDNS' },
+  { id: 'proj-etcd', name: 'etcd' },
+  { id: 'proj-crio', name: 'CRI-O' },
+  { id: 'proj-tikv', name: 'TiKV' },
+  { id: 'proj-rook', name: 'Rook' },
 ];
+
+export const EMPTY_MENTORSHIP_LF_PROJECTS_RESPONSE: MentorshipLfProjectsResponse = { data: [], total: 0 };
+
+/** @deprecated Prefer `MOCK_MENTORSHIP_LF_PROJECTS` — kept so existing enroll/BFF mappings keep working. */
+export const MENTORSHIP_PROJECT_OPTIONS: ReadonlyArray<{ value: string; label: string }> = MOCK_MENTORSHIP_LF_PROJECTS.map((project) => ({
+  value: project.id,
+  label: project.name,
+}));
 
 /**
  * Canonical skill / technology catalog used by the enroll wizard.
@@ -261,47 +320,47 @@ export const MENTORSHIP_SKILL_OPTIONS: readonly string[] = [
 ];
 
 export const MENTORSHIP_DEFAULT_TERM: MentorshipProgramTerm = {
-  id: 'term-3-2026',
-  name: 'Term 3 - 2026',
-  startDate: '2026-09-01',
-  endDate: '2026-11-01',
-  applicationStartDate: '2026-06-01',
-  applicationEndDate: '2026-08-31',
+  id: 'term-1-2027',
+  name: 'Term 1 - 2027',
+  startDate: '2027-03-01',
+  endDate: '2027-05-01',
+  applicationStartDate: '2026-12-01',
+  applicationEndDate: '2027-02-28',
 };
 
 export const MENTORSHIP_DEFAULT_PREREQUISITES: MentorshipPrerequisite[] = [
   {
     id: 'prereq-resume',
     name: 'Resume',
-    description: 'Upload a current resume or CV.',
+    description: 'Upload the most recent version of your resume.',
     required: false,
     requireFile: true,
   },
   {
     id: 'prereq-cover',
     name: 'Cover Letter',
-    description: 'Explain why you want to join this program.',
+    description: 'A letter to the program covering the following topics:',
     required: false,
     requireFile: true,
   },
   {
     id: 'prereq-school',
     name: 'School Enrollment Verification',
-    description: 'Proof of current school enrollment, if applicable.',
+    description: 'Students must upload proof of enrollment (college transcript, or copy student ID, or admissions offer if graduating from high school).',
     required: false,
     requireFile: false,
   },
   {
     id: 'prereq-permission',
     name: 'Participation permission from school or employer',
-    description: 'Written permission if required by your institution.',
+    description: 'By submitting this task, I certify that I have permission from my school or employer to participate in this mentorship program.',
     required: false,
     requireFile: false,
   },
   {
     id: 'prereq-coding',
     name: 'Coding Challenge',
-    description: 'Link to the coding challenge applicants should complete.',
+    description: 'Complete a code challenge',
     required: false,
     challengeUrl: '',
   },
@@ -357,7 +416,7 @@ const MENTORSHIP_IMPORT_PROGRAM_DETAILS: Record<string, ImportedProgramSource> =
     codeOfConductUrl: 'https://www.contributor-covenant.org/version/2/1/code_of_conduct/',
     logoFileName: 'gridflow-logo.png',
     skills: ['GO', 'Kubernetes'],
-    terms: [{ ...MENTORSHIP_DEFAULT_TERM, name: 'Term 3 - 2026' }],
+    terms: [{ ...MENTORSHIP_DEFAULT_TERM }],
     prerequisites: clonePrerequisites().map((item, index) => ({ ...item, required: index === 0 })),
   },
   mp_apicurio_winter26: {
@@ -371,7 +430,7 @@ const MENTORSHIP_IMPORT_PROGRAM_DETAILS: Record<string, ImportedProgramSource> =
     codeOfConductUrl: 'https://github.com/Apicurio/apicurio-registry/blob/main/CODE_OF_CONDUCT.md',
     logoFileName: 'apicurio-logo.png',
     skills: ['GO', 'React', 'API'],
-    terms: [{ ...MENTORSHIP_DEFAULT_TERM, name: 'Term 3 - 2026' }],
+    terms: [{ ...MENTORSHIP_DEFAULT_TERM }],
     prerequisites: clonePrerequisites().map((item) => ({
       ...item,
       required: item.id === 'prereq-resume' || item.id === 'prereq-cover',
@@ -405,16 +464,21 @@ const MENTORSHIP_IMPORT_PROGRAM_DETAILS: Record<string, ImportedProgramSource> =
     terms: [
       {
         ...MENTORSHIP_DEFAULT_TERM,
-        name: 'Term 2 - 2026',
-        startDate: '2026-04-01',
-        endDate: '2026-06-01',
-        applicationStartDate: '2026-01-15',
-        applicationEndDate: '2026-03-15',
+        name: 'Term 2 - 2027',
+        startDate: '2027-06-01',
+        endDate: '2027-08-01',
+        applicationStartDate: '2027-03-01',
+        applicationEndDate: '2027-05-15',
       },
     ],
     prerequisites: clonePrerequisites().map((item) => ({ ...item, required: item.id === 'prereq-resume' })),
   },
 };
+
+function currentMonthStartIso(): string {
+  const now = new Date();
+  return `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}-01`;
+}
 
 export function formFromImportedMentorshipProgram(importProgramId: string): MentorshipEnrollForm {
   if (!importProgramId) {
@@ -439,7 +503,7 @@ export function formFromImportedMentorshipProgram(importProgramId: string): Ment
     logoFileName: source.logoFileName,
     logoPreviewUrl: '',
     skills: [...source.skills],
-    terms: source.terms.map((term) => ({ ...term })),
+    terms: source.terms.filter((term) => term.startDate >= currentMonthStartIso()).map((term) => ({ ...term })),
     prerequisites: clonePrerequisites(source.prerequisites),
     termsAccepted: false,
   };

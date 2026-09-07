@@ -7,14 +7,19 @@ import { FormControl, FormGroup, ReactiveFormsModule } from '@angular/forms';
 import { ButtonComponent } from '@components/button/button.component';
 import { SelectComponent } from '@components/select/select.component';
 import {
+  MENTORSHIP_ENROLL_DELETE_TERM_CONFIRM,
   MENTORSHIP_ENROLL_SETUP_INTRO,
   MENTORSHIP_ENROLL_SETUP_MENTOR_INFO,
   MENTORSHIP_ENROLL_SETUP_SKILLS_HELPER,
   MENTORSHIP_ENROLL_SETUP_TERMS_HELPER,
+  MENTORSHIP_MAX_OPEN_TERMS,
+  MENTORSHIP_MAX_OPEN_TERMS_MESSAGE,
+  MENTORSHIP_MENTOR_DOCS_URL,
   MENTORSHIP_SKILL_OPTIONS,
 } from '@lfx-one/shared/constants';
 import { MentorshipEnrollFieldErrors, MentorshipProgramTerm, MentorshipTermFormDialogData } from '@lfx-one/shared/interfaces';
 import { formatMentorshipMonthYear } from '@lfx-one/shared/utils';
+import { ConfirmationService } from 'primeng/api';
 import { DialogService, DynamicDialogRef } from 'primeng/dynamicdialog';
 import { startWith, switchMap, take } from 'rxjs';
 
@@ -31,6 +36,7 @@ export class EnrollSetupStepComponent {
   public readonly errors = input<MentorshipEnrollFieldErrors>({});
 
   private readonly dialogService = inject(DialogService);
+  private readonly confirmationService = inject(ConfirmationService);
 
   protected readonly draftSkillForm = new FormGroup({
     skill: new FormControl('', { nonNullable: true }),
@@ -40,6 +46,9 @@ export class EnrollSetupStepComponent {
   protected readonly skillsHelper = MENTORSHIP_ENROLL_SETUP_SKILLS_HELPER;
   protected readonly mentorInfo = MENTORSHIP_ENROLL_SETUP_MENTOR_INFO;
   protected readonly termsHelper = MENTORSHIP_ENROLL_SETUP_TERMS_HELPER;
+  protected readonly mentorDocsUrl = MENTORSHIP_MENTOR_DOCS_URL;
+  protected readonly maxTerms = MENTORSHIP_MAX_OPEN_TERMS;
+  protected readonly maxTermsMessage = MENTORSHIP_MAX_OPEN_TERMS_MESSAGE;
 
   protected readonly draftSkillValue = toSignal(this.draftSkillForm.controls.skill.valueChanges, { initialValue: '' });
 
@@ -85,7 +94,10 @@ export class EnrollSetupStepComponent {
     this.form().controls['skills'].setValue(this.skills().filter((item) => item !== skill));
   }
 
+  protected readonly canAddTerm = computed(() => this.terms().length < this.maxTerms);
+
   protected addTerm(): void {
+    if (!this.canAddTerm()) return;
     this.openTermDialog({ mode: 'add' });
   }
 
@@ -96,7 +108,18 @@ export class EnrollSetupStepComponent {
   }
 
   protected deleteTerm(id: string): void {
-    this.form().controls['terms'].setValue(this.terms().filter((term) => term.id !== id));
+    this.confirmationService.confirm({
+      header: 'Delete Term',
+      message: MENTORSHIP_ENROLL_DELETE_TERM_CONFIRM,
+      icon: 'fa-light fa-triangle-exclamation',
+      acceptLabel: 'Delete Term',
+      rejectLabel: 'Cancel',
+      acceptButtonStyleClass: 'p-button-sm p-button-danger',
+      rejectButtonStyleClass: 'p-button-secondary p-button-sm p-button-outlined',
+      accept: () => {
+        this.form().controls['terms'].setValue(this.terms().filter((term) => term.id !== id));
+      },
+    });
   }
 
   private openTermDialog(data: MentorshipTermFormDialogData): void {

@@ -13,14 +13,16 @@
       <lfx-select
         [form]="form()"
         control="importProgramId"
-        [options]="importOptions"
+        [options]="importOptions()"
         optionLabel="label"
         optionValue="value"
-        placeholder="Select Program..."
+        [placeholder]="importLoading() ? 'Loading...' : 'Select Program...'"
+        [filter]="true"
+        [loading]="importLoading()"
         styleClass="w-full"
         (onChange)="onImportProgram()"
         dataTest="mentorship-enroll-import" />
-      <p class="text-xs text-gray-500">Optionally start from a program you already administer.</p>
+      <p class="text-xs text-gray-500">Copies details, skills and prerequisites from a program you have run before.</p>
     </div>
 
     <div class="flex flex-col gap-1">
@@ -28,9 +30,12 @@
         <label class="text-sm font-medium text-gray-700" for="name">Program Name <span class="text-red-500">*</span></label>
         <span class="text-xs text-gray-400">{{ nameLength() }} / {{ nameMax }}</span>
       </div>
-      <lfx-input-text [form]="form()" control="name" placeholder="Enter program name" dataTest="mentorship-enroll-name" />
-      @if (errors().name) {
-        <p class="text-xs text-red-600">{{ errors().name }}</p>
+      <lfx-input-text [form]="form()" control="name" id="name" placeholder="Enter program name" [maxlength]="nameMax" dataTest="mentorship-enroll-name" />
+      @if (nameLookup().status === 'loading') {
+        <p class="text-xs text-gray-500">{{ nameChecking }}</p>
+      }
+      @if (errors().name || nameLookup().status === 'taken') {
+        <p class="text-xs text-red-600">{{ errors().name || nameTaken }}</p>
       }
     </div>
 
@@ -39,13 +44,40 @@
       <lfx-select
         [form]="form()"
         control="projectId"
-        [options]="projectOptions"
+        inputId="projectId"
+        [options]="projectOptions()"
         optionLabel="label"
         optionValue="value"
-        placeholder="Select a project"
+        placeholder="Select Linux Foundation Open Source Project..."
         [filter]="true"
+        [lazy]="true"
+        [loading]="lfProjectsLoading()"
+        scrollHeight="300px"
         styleClass="w-full"
-        dataTest="mentorship-enroll-project" />
+        (onFilter)="onLfFilter($event)"
+        (onLazyLoad)="onLfLazyLoad()"
+        dataTest="mentorship-enroll-project">
+        <ng-template #item let-option>
+          <div class="flex items-center gap-2">
+            @if (option.logoUrl) {
+              <img [src]="option.logoUrl" [alt]="option.label" class="size-6 rounded object-contain" />
+            } @else {
+              <span class="flex size-6 shrink-0 items-center justify-center rounded bg-blue-100 text-xs font-semibold text-blue-700">{{
+                projectInitial(option.label)
+              }}</span>
+            }
+            <span>{{ option.label }}</span>
+          </div>
+        </ng-template>
+        <ng-template #selectedItem let-option>
+          <div class="flex items-center gap-2">
+            <span class="flex size-6 shrink-0 items-center justify-center rounded bg-blue-100 text-xs font-semibold text-blue-700">{{
+              projectInitial(option.label)
+            }}</span>
+            <span>{{ option.label }}</span>
+          </div>
+        </ng-template>
+      </lfx-select>
       @if (errors().projectId) {
         <p class="text-xs text-red-600">{{ errors().projectId }}</p>
       }
@@ -108,8 +140,13 @@
 
     <div class="flex flex-col gap-1">
       <label class="text-sm font-medium text-gray-700" for="repositoryUrl">Repository URL <span class="text-red-500">*</span></label>
-      <lfx-input-text [form]="form()" control="repositoryUrl" placeholder="https://github.com/org/repo" dataTest="mentorship-enroll-repo" />
-      <p class="text-xs text-gray-500">Public repository mentees will contribute to during the program.</p>
+      <lfx-input-text
+        [form]="form()"
+        control="repositoryUrl"
+        id="repositoryUrl"
+        placeholder="Enter a valid URL (e.g., https://www.example.com/repo)"
+        dataTest="mentorship-enroll-repo" />
+      <p class="text-xs text-gray-500">{{ repoHelper }}</p>
       @if (errors().repositoryUrl) {
         <p class="text-xs text-red-600">{{ errors().repositoryUrl }}</p>
       }
@@ -117,8 +154,16 @@
 
     <div class="flex flex-col gap-1">
       <label class="text-sm font-medium text-gray-700" for="websiteUrl">Website URL</label>
-      <lfx-input-text [form]="form()" control="websiteUrl" placeholder="https://example.org" dataTest="mentorship-enroll-website" />
-      <p class="text-xs text-gray-500">Optional project or program homepage.</p>
+      <lfx-input-text
+        [form]="form()"
+        control="websiteUrl"
+        id="websiteUrl"
+        placeholder="Enter a valid URL (e.g., https://www.example.com/)"
+        dataTest="mentorship-enroll-website" />
+      <p class="text-xs text-gray-500">{{ websiteHelper }}</p>
+      @if (errors().websiteUrl) {
+        <p class="text-xs text-red-600">{{ errors().websiteUrl }}</p>
+      }
     </div>
   </section>
 
@@ -166,13 +211,14 @@
   <section class="rounded-2xl border border-gray-200 bg-white p-6 md:p-8 flex flex-col gap-4">
     <div class="flex flex-col gap-2">
       <h2 class="text-lg font-semibold text-gray-900">Code of Conduct</h2>
-      <p class="text-sm text-gray-600 leading-5">
-        A Code of Conduct sets expectations for respectful participation. Link to your project's Code of Conduct, or start from a community template.
-      </p>
+      <p class="text-sm text-gray-600 leading-5">{{ cocIntro }}</p>
     </div>
     <div class="flex flex-col gap-1">
       <label class="text-sm font-medium text-gray-700" for="codeOfConductUrl">Code of Conduct URL</label>
-      <lfx-input-text [form]="form()" control="codeOfConductUrl" placeholder="https://example.org/code-of-conduct" dataTest="mentorship-enroll-coc" />
+      <lfx-input-text [form]="form()" control="codeOfConductUrl" id="codeOfConductUrl" placeholder="Code of Conduct URL" dataTest="mentorship-enroll-coc" />
+      @if (errors().codeOfConductUrl) {
+        <p class="text-xs text-red-600">{{ errors().codeOfConductUrl }}</p>
+      }
     </div>
     <a [href]="codeOfConductTemplateUrl" target="_blank" rel="noopener noreferrer" class="inline-flex text-sm font-medium text-blue-600 hover:text-blue-700">
       Start from a template

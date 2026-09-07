@@ -8,6 +8,7 @@ import { ButtonComponent } from '@components/button/button.component';
 import { CheckboxComponent } from '@components/checkbox/checkbox.component';
 import {
   createEmptyCustomMentorshipPrerequisite,
+  MENTORSHIP_COVER_LETTER_PROMPTS,
   MENTORSHIP_ENROLL_PREREQ_INTRO,
   MENTORSHIP_ENROLL_TERMS_INTRO,
   mentorshipPolicyHref,
@@ -29,6 +30,7 @@ export class EnrollPrerequisitesStepComponent {
 
   protected readonly prereqIntro = MENTORSHIP_ENROLL_PREREQ_INTRO;
   protected readonly termsIntro = MENTORSHIP_ENROLL_TERMS_INTRO;
+  protected readonly coverLetterPrompts = MENTORSHIP_COVER_LETTER_PROMPTS;
   protected readonly platformUseHref = mentorshipPolicyHref('LFX Platform Use Agreement');
   protected readonly serviceTermsHref = mentorshipPolicyHref('Service-Specific Use Terms');
   protected readonly acceptableUseHref = mentorshipPolicyHref('Acceptable Use Policy');

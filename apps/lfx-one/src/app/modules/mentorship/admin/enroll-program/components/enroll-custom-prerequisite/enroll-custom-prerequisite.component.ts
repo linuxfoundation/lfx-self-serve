@@ -42,6 +42,17 @@ export class EnrollCustomPrerequisiteComponent {
   protected readonly nameLength = computed(() => String(this.formSnapshot().name ?? '').length);
   protected readonly descriptionLength = computed(() => String(this.formSnapshot().description ?? '').length);
   protected readonly title = computed(() => `Custom Prerequisite ${this.index()}`);
+  protected readonly minDueDate = computed(() => {
+    const tomorrow = new Date();
+    tomorrow.setDate(tomorrow.getDate() + 1);
+    tomorrow.setHours(0, 0, 0, 0);
+    return tomorrow;
+  });
+  protected readonly dueDateInvalid = computed(() => {
+    const due = this.formSnapshot().dueDate;
+    if (!due) return false;
+    return toMentorshipDateOnly(due) <= toMentorshipDateOnly(new Date());
+  });
 
   public constructor() {
     effect(() => {

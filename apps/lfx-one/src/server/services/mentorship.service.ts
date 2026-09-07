@@ -1,8 +1,23 @@
 // Copyright The Linux Foundation and each contributor to LFX.
 // SPDX-License-Identifier: MIT
 
-import { MENTORSHIP_PROGRAM_STATUSES, MENTORSHIP_PROJECT_OPTIONS, MOCK_MENTORSHIP_PROGRAMS, mentorshipCiiBadgeJsonUrl } from '@lfx-one/shared/constants';
-import { MentorshipCiiBadge, MentorshipEnrollForm, MentorshipProgram, MentorshipProgramsResponse, MentorshipProgramStatus } from '@lfx-one/shared/interfaces';
+import {
+  MENTORSHIP_LF_PROJECT_PAGE_SIZE,
+  MENTORSHIP_PROGRAM_STATUSES,
+  MENTORSHIP_PROJECT_OPTIONS,
+  MOCK_MENTORSHIP_LF_PROJECTS,
+  MOCK_MENTORSHIP_PROGRAMS,
+  mentorshipCiiBadgeJsonUrl,
+} from '@lfx-one/shared/constants';
+import {
+  MentorshipCiiBadge,
+  MentorshipEnrollForm,
+  MentorshipLfProjectsResponse,
+  MentorshipNameAvailability,
+  MentorshipProgram,
+  MentorshipProgramsResponse,
+  MentorshipProgramStatus,
+} from '@lfx-one/shared/interfaces';
 import { isMentorshipCiiProjectId, mentorshipProgramSlug } from '@lfx-one/shared/utils';
 import { Request } from 'express';
 
@@ -59,6 +74,25 @@ export class MentorshipService {
 
     logger.success(req, 'mentorship_enroll_program', startTime, { id: program.id, slug: program.slug });
     return program;
+  }
+
+  public async isProgramNameAvailable(req: Request, name: string): Promise<MentorshipNameAvailability> {
+    const startTime = logger.startOperation(req, 'mentorship_name_available', { name });
+    const needle = name.trim().toLowerCase();
+    const taken = programsStore.some((program) => program.name.trim().toLowerCase() === needle);
+    logger.success(req, 'mentorship_name_available', startTime, { available: !taken });
+    return { available: !taken };
+  }
+
+  public async getLfProjects(req: Request, options: { search?: string; offset?: number; limit?: number } = {}): Promise<MentorshipLfProjectsResponse> {
+    const startTime = logger.startOperation(req, 'mentorship_get_lf_projects', options);
+    const needle = options.search?.trim().toLowerCase() ?? '';
+    const filtered = needle ? MOCK_MENTORSHIP_LF_PROJECTS.filter((project) => project.name.toLowerCase().includes(needle)) : [...MOCK_MENTORSHIP_LF_PROJECTS];
+    const offset = Math.max(0, options.offset ?? 0);
+    const limit = Math.min(50, Math.max(1, options.limit ?? MENTORSHIP_LF_PROJECT_PAGE_SIZE));
+    const data = filtered.slice(offset, offset + limit);
+    logger.success(req, 'mentorship_get_lf_projects', startTime, { count: data.length, total: filtered.length });
+    return { data, total: filtered.length };
   }
 
   public async getCiiBadge(req: Request, projectId: string): Promise<MentorshipCiiBadge> {

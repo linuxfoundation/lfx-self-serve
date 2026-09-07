@@ -52,7 +52,10 @@
 
     <div class="flex items-start gap-3 rounded-xl border border-blue-100 bg-blue-50 px-4 py-3 text-sm text-blue-700">
       <i class="fa-solid fa-circle-info shrink-0 mt-0.5" aria-hidden="true"></i>
-      <p>{{ mentorInfo }}</p>
+      <p>
+        {{ mentorInfo }}
+        <a [href]="mentorDocsUrl" target="_blank" rel="noopener noreferrer" class="font-medium text-blue-700 hover:text-blue-800 underline">Learn more</a>
+      </p>
     </div>
   </section>
 
@@ -93,6 +96,16 @@
     @if (errors().terms) {
       <p class="text-xs text-red-600">{{ errors().terms }}</p>
     }
-    <lfx-button label="Add Term" icon="fa-light fa-plus" severity="primary" size="small" (onClick)="addTerm()" data-testid="mentorship-enroll-add-term" />
+    @if (!canAddTerm()) {
+      <p class="text-sm text-gray-600">{{ maxTermsMessage }}</p>
+    }
+    <lfx-button
+      label="Add Term"
+      icon="fa-light fa-plus"
+      severity="primary"
+      size="small"
+      [disabled]="!canAddTerm()"
+      (onClick)="addTerm()"
+      data-testid="mentorship-enroll-add-term" />
   </section>
 </div>

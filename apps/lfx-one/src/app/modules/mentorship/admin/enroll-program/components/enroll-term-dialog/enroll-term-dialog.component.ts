@@ -10,7 +10,13 @@ import { InputTextComponent } from '@components/input-text/input-text.component'
 import { SelectComponent } from '@components/select/select.component';
 import { MENTORSHIP_TERM_NAME_MAX, MENTORSHIP_TERM_YEAR_OPTIONS, MONTH_OPTIONS } from '@lfx-one/shared/constants';
 import { MentorshipProgramTerm, MentorshipTermFormDialogData } from '@lfx-one/shared/interfaces';
-import { mentorshipMonthYearToStartDate, parseMentorshipDateOnly, parseMentorshipMonthYear, toMentorshipDateOnly } from '@lfx-one/shared/utils';
+import {
+  getMentorshipTermDateErrors,
+  mentorshipMonthYearToStartDate,
+  parseMentorshipDateOnly,
+  parseMentorshipMonthYear,
+  toMentorshipDateOnly,
+} from '@lfx-one/shared/utils';
 import { DynamicDialogConfig, DynamicDialogRef } from 'primeng/dynamicdialog';
 
 @Component({
@@ -28,6 +34,8 @@ export class EnrollTermDialogComponent {
   protected readonly yearOptions = MENTORSHIP_TERM_YEAR_OPTIONS.map((option) => ({ ...option }));
   protected readonly nameMax = MENTORSHIP_TERM_NAME_MAX;
   protected readonly showErrors = signal(false);
+  protected readonly minApplicationDate = new Date();
+  protected readonly dateErrors = signal<Record<string, string>>({});
 
   protected readonly form = new FormGroup({
     name: new FormControl('', { nonNullable: true, validators: [Validators.required, Validators.maxLength(MENTORSHIP_TERM_NAME_MAX)] }),
@@ -83,19 +91,17 @@ export class EnrollTermDialogComponent {
 
     const startDate = mentorshipMonthYearToStartDate(value.startMonth, value.startYear);
     const endDate = mentorshipMonthYearToStartDate(value.endMonth, value.endYear);
-    if (endDate < startDate) {
-      this.showErrors.set(true);
-      this.form.controls.endYear.setErrors({ order: true });
-      return;
-    }
-
     const applicationStartDate = toMentorshipDateOnly(applicationStart);
     const applicationEndDate = toMentorshipDateOnly(applicationEnd);
-    if (applicationEndDate < applicationStartDate) {
+    const dateErrors = getMentorshipTermDateErrors({ startDate, endDate, applicationStartDate, applicationEndDate });
+    if (Object.keys(dateErrors).length) {
       this.showErrors.set(true);
-      this.form.controls.applicationEndDate.setErrors({ order: true });
+      this.dateErrors.set(Object.fromEntries(Object.entries(dateErrors).map(([key, value]) => [key, value ?? ''])));
+      if (dateErrors.endDate) this.form.controls.endYear.setErrors({ order: true });
+      if (dateErrors.applicationEndDate) this.form.controls.applicationEndDate.setErrors({ order: true });
       return;
     }
+    this.dateErrors.set({});
 
     const term: MentorshipProgramTerm = {
       id: this.data.term?.id ?? `term-new-${Date.now()}`,
