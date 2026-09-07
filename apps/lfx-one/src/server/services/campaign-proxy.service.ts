@@ -1071,23 +1071,19 @@ function svgBlockEnd(scan: string, openEnd: number): number {
   let tag = SVG_TAG_RE.exec(scan);
 
   while (tag !== null) {
-    // A commented `<svg>` or `</svg>` inside the element is TEXT, not a tag. Counting it broke the
-    // depth both ways: a commented opening left the element looking unclosed and dropped every
-    // word after it, and a commented close ended it early and leaked the real body into the
-    // prompt. The main loop already consumes comments; this scan runs beneath it and has to do the
-    // same, or the two readers disagree -- which is the defect class the single scan exists to
-    // remove, reappearing one level down.
     // Anything between the opening tag and here that is NOT ordinary markup -- a comment, or a
     // nested `<script>`/`<style>` body -- can contain a `<svg`-looking token that is plain text.
-    // Counting those broke the depth both ways: a commented opening left the element unclosed and
-    // dropped every following word, a commented close ended it early and leaked the body. An
-    // earlier fix handled comments but not the raw-text case, which is the same hazard one step
-    // over: `<svg><style>a{content:"<!--"}</style>` has a `<!--` that is CSS, not a comment.
+    // Counting those broke the depth both ways: a commented opening left the element looking
+    // unclosed and dropped every following word, a commented close ended it early and leaked the
+    // real body into the prompt. The main loop already consumes these; this scan runs beneath it
+    // and has to do the same, or the two readers disagree -- which is the defect class the single
+    // scan exists to remove, reappearing one level down. An earlier fix handled comments but not
+    // the raw-text case, the same hazard one step over: `<svg><style>a{content:"<!--"}</style>`
+    // has a `<!--` that is CSS.
     //
-    // `inertCursor` only ever moves FORWARD. Re-deriving the inert regions from the element start
-    // for each tag was correct and quadratic -- 6.4s on 1k levels of nesting with comments --
-    // because every tag rescanned everything before it. Carrying the cursor makes each region cost
-    // one visit no matter how many tags follow it.
+    // `inertCursor` only ever moves FORWARD, so each region is classified once per element rather
+    // than once per tag -- re-deriving from the element start cost 6.4s on 1k levels of nesting.
+    // `advanceInert` bounds the scan within that; see its own note.
     if (tag.index >= inertCursor) {
       const skipTo = advanceInert(scan, inertCursor, tag.index);
       if (skipTo === -1) {
