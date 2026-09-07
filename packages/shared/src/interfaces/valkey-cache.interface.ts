@@ -21,6 +21,17 @@ export interface CachePort {
   /** Best-effort invalidation. A null key (fail-closed) or disabled cache is a no-op; a fault is swallowed and reported via the returned `deleted` boolean rather than a throw. `timeoutMs` overrides the default per-op cap. */
   del(key: string | null, timeoutMs?: number): Promise<boolean>;
 
-  /** Read-through helper; `key === null` (or disabled cache) runs `fetcher()` directly (fail-closed); `accept` rejects a malformed cached value as a miss. Cache faults are swallowed, but errors from `fetcher()` propagate to the caller. */
-  withCache<T>(key: string | null, ttlSeconds: number, fetcher: () => Promise<T>, accept?: (value: unknown) => boolean): Promise<T>;
+  /**
+   * Read-through helper; `key === null` or a disabled cache runs `fetcher()` directly.
+   * `accept` rejects malformed cached values as misses; `storable` decides whether a fresh result
+   * may be written. A non-storable result still reaches the caller. Cache faults are swallowed,
+   * but errors from `fetcher()` propagate.
+   */
+  withCache<T>(
+    key: string | null,
+    ttlSeconds: number,
+    fetcher: () => Promise<T>,
+    accept?: (value: unknown) => boolean,
+    storable?: (value: T) => boolean
+  ): Promise<T>;
 }

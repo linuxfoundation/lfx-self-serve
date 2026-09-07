@@ -14,6 +14,7 @@ import type {
   OrgAllEmployeeVotingStatus,
   OrgAllEmployeesResponse,
   OrgCompanyEmailsStatus,
+  OrgPersonCompanyEmailsResponse,
   OrgPersonSource,
 } from '@lfx-one/shared/interfaces';
 import { isFilterSafeIdentifier, splitDisplayName } from '@lfx-one/shared/utils';
@@ -109,19 +110,13 @@ interface TrainingRow {
   COURSE_NAME: string | null;
 }
 
-/** Org Lens "People → All Employees" analytics — backed by the 6 PLATINUM_LFX_ONE.ORG_PEOPLE_* tables. Empty rows produce an empty envelope, never a 404. */
-/** Shape of a company-address read that reports how it went rather than throwing. */
-interface CompanyEmailsResult {
-  companyEmails: string[];
-  companyEmailsStatus: OrgCompanyEmailsStatus;
-}
-
-/** No identity was available, so no lookup was attempted — distinct from a lookup that returned nothing. */
-const UNAVAILABLE_COMPANY_EMAILS: CompanyEmailsResult = { companyEmails: [], companyEmailsStatus: 'unavailable' };
+/** No unique identity is available, or the feature is disabled — distinct from a resolved empty lookup. */
+const UNAVAILABLE_COMPANY_EMAILS: OrgPersonCompanyEmailsResponse = { companyEmails: [], companyEmailsStatus: 'unavailable' };
 
 /** The lookup ran and errored. The rest of the detail response still renders. */
-const FAILED_COMPANY_EMAILS: CompanyEmailsResult = { companyEmails: [], companyEmailsStatus: 'failed' };
+const FAILED_COMPANY_EMAILS: OrgPersonCompanyEmailsResponse = { companyEmails: [], companyEmailsStatus: 'failed' };
 
+/** Org Lens "People → All Employees" analytics — backed by the 6 PLATINUM_LFX_ONE.ORG_PEOPLE_* tables. Empty rows produce an empty envelope, never a 404. */
 export class OrgLensPeopleService {
   private snowflakeService: SnowflakeService;
   // Lazily constructed: OrgPeopleDirectoryService's own constructor builds an OrgLensPeopleService,
@@ -216,13 +211,10 @@ export class OrgLensPeopleService {
   /**
    * Company-affiliated emails for a person the caller identifies by LF username (governance surfaces).
    *
-   * Read the prequalified address table first. Only an empty result probes the spine to distinguish
-   * a known person with no addresses from an unavailable identity. The spine is a union view, so
-   * querying it on every drawer open makes the common populated path unnecessarily expensive.
-   * Reject multiple person keys in the address result. Warehouse validation of normalized username
-   * uniqueness across the full spine remains a follow-up, including identities without addresses.
+   * Resolve exactly one person across the account's full normalized username spine before returning
+   * any addresses. Identities without addresses still make a username ambiguous.
    */
-  public async getCompanyEmailsByUsername(accountId: string, username: string): Promise<CompanyEmailsResult> {
+  public async getCompanyEmailsByUsername(accountId: string, username: string): Promise<OrgPersonCompanyEmailsResponse> {
     if (!isServerFeatureEnabled(ServerFeatureFlag.OrgLensCompanyEmails)) {
       return UNAVAILABLE_COMPANY_EMAILS;
     }
@@ -231,30 +223,13 @@ export class OrgLensPeopleService {
       return UNAVAILABLE_COMPANY_EMAILS;
     }
     try {
-      const read = await this.fetchCompanyEmailsByUsername(accountId, normalizedUsername);
-      if (read.companyEmailsStatus !== 'resolved' || read.companyEmails.length > 0) {
-        return read;
-      }
-      return (await this.isUsernameOnSpine(accountId, normalizedUsername)) ? read : UNAVAILABLE_COMPANY_EMAILS;
+      return await this.fetchCompanyEmailsByUsername(accountId, normalizedUsername);
     } catch (error) {
       logger.info(undefined, 'get_org_lens_people_company_emails_by_username', 'company email lookup failed; serving detail without addresses', {
         err: error,
       });
       return FAILED_COMPANY_EMAILS;
     }
-  }
-
-  /** An empty address read is authoritative only when this account's spine identifies one person. */
-  private async isUsernameOnSpine(accountId: string, username: string): Promise<boolean> {
-    const query = `
-      SELECT 1 AS PRESENT
-      FROM ANALYTICS.PLATINUM_LFX_ONE._ORG_PEOPLE_SPINE
-      WHERE ACCOUNT_ID = ? AND LOWER(TRIM(LF_USERNAME)) = ?
-      GROUP BY ACCOUNT_ID
-      HAVING COUNT(DISTINCT PERSON_KEY) = 1
-    `;
-    const result = await this.snowflakeService.execute<{ PRESENT: number }>(query, [accountId, username]);
-    return result.rows.length > 0;
   }
 
   /** Looks up a live-only person's LF username from the live roster (access/board/committee/keyContact sources). */
@@ -462,7 +437,7 @@ export class OrgLensPeopleService {
    * population who holds a qualifying address. No verified identity resolved → not available, never
    * none on record (DR-005 corollary 2, DR-011).
    */
-  private async tryFetchCompanyEmailsForPersonKey(accountId: string, personKey: string): Promise<CompanyEmailsResult> {
+  private async tryFetchCompanyEmailsForPersonKey(accountId: string, personKey: string): Promise<OrgPersonCompanyEmailsResponse> {
     if (!isServerFeatureEnabled(ServerFeatureFlag.OrgLensCompanyEmails) || personKey.startsWith('cdp:')) {
       return UNAVAILABLE_COMPANY_EMAILS;
     }
@@ -503,18 +478,26 @@ export class OrgLensPeopleService {
    * As above, for the governance surfaces (Board, Committee, Key Contacts, Access) whose rows carry an
    * LF username rather than a person_key.
    *
-   * Username normalization matches the empty-result spine probe. Address qualification stays in
-   * the warehouse; person keys here only prevent combining multiple identities into one response.
+   * Resolve identity and read its prequalified addresses atomically. A left join preserves a known
+   * person with no addresses; an absent or ambiguous identity produces no rows.
    */
-  private async fetchCompanyEmailsByUsername(accountId: string, username: string): Promise<CompanyEmailsResult> {
+  private async fetchCompanyEmailsByUsername(accountId: string, username: string): Promise<OrgPersonCompanyEmailsResponse> {
     const query = `
-      SELECT EMAIL, PERSON_KEY
-      FROM ANALYTICS.PLATINUM_LFX_ONE.ORG_PEOPLE_COMPANY_EMAILS
-      WHERE ACCOUNT_ID = ? AND LOWER(TRIM(LF_USERNAME)) = ?
-      ORDER BY IS_PRIMARY DESC, EMAIL ASC
+      WITH resolved_person AS (
+        SELECT ACCOUNT_ID, MIN(PERSON_KEY) AS PERSON_KEY
+        FROM ANALYTICS.PLATINUM_LFX_ONE._ORG_PEOPLE_SPINE
+        WHERE ACCOUNT_ID = ? AND LOWER(TRIM(LF_USERNAME)) = ?
+        GROUP BY ACCOUNT_ID
+        HAVING COUNT(DISTINCT PERSON_KEY) = 1
+      )
+      SELECT emails.EMAIL
+      FROM resolved_person AS person
+      LEFT JOIN ANALYTICS.PLATINUM_LFX_ONE.ORG_PEOPLE_COMPANY_EMAILS AS emails
+        ON emails.ACCOUNT_ID = person.ACCOUNT_ID AND emails.PERSON_KEY = person.PERSON_KEY
+      ORDER BY emails.IS_PRIMARY DESC, emails.EMAIL ASC
     `;
-    const result = await this.snowflakeService.execute<{ EMAIL: string; PERSON_KEY: string }>(query, [accountId, username]);
-    if (new Set(result.rows.map((row) => row.PERSON_KEY)).size > 1) {
+    const result = await this.snowflakeService.execute<{ EMAIL: string | null }>(query, [accountId, username]);
+    if (result.rows.length === 0) {
       return UNAVAILABLE_COMPANY_EMAILS;
     }
     return { companyEmails: result.rows.map((row) => row.EMAIL).filter((email): email is string => !!email), companyEmailsStatus: 'resolved' };

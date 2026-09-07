@@ -3,13 +3,15 @@
 
 import { createRequire } from 'node:module';
 
+import type { OrgPersonCompanyEmailsResponse } from '@lfx-one/shared/interfaces';
 import { agreedUsername } from '@lfx-one/shared/utils';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
-const { execute, getLive, isServerFeatureEnabled } = vi.hoisted(() => ({
+const { execute, getLive, isServerFeatureEnabled, cacheValues } = vi.hoisted(() => ({
   execute: vi.fn(),
   getLive: vi.fn(),
   isServerFeatureEnabled: vi.fn(),
+  cacheValues: new Map<string, string>(),
 }));
 
 vi.mock('@lfx-one/shared/utils', async () => ({
@@ -30,11 +32,40 @@ vi.mock('./org-people-directory.service', () => ({
     public getLive = getLive;
   },
 }));
-vi.mock('./valkey.service', () => ({
-  withOrgCache: (_account: string, _key: string, _ttl: number, fetcher: () => Promise<unknown>) => fetcher(),
+vi.mock('ioredis', () => ({
+  default: class {
+    public status = 'ready';
+    public on(): this {
+      return this;
+    }
+    public async get(key: string): Promise<string | null> {
+      return cacheValues.get(key) ?? null;
+    }
+    public async set(key: string, value: string): Promise<void> {
+      cacheValues.set(key, value);
+    }
+    public async quit(): Promise<void> {
+      /* No connection in this fixture. */
+    }
+  },
 }));
+vi.mock('../utils/shutdown', () => ({ addShutdownHook: vi.fn() }));
+vi.mock('./valkey.service', async () => {
+  const actual = await vi.importActual<typeof import('./valkey.service')>('./valkey.service');
+  return {
+    ...actual,
+    withOrgCache: <T>(
+      account: string,
+      key: string,
+      ttl: number,
+      fetcher: () => Promise<T>,
+      accept?: (value: unknown) => boolean,
+      storable?: (value: T) => boolean
+    ): Promise<T> => actual.ValkeyService.getInstance().withCache(actual.buildOrgCacheKey(account, key), ttl, fetcher, accept, storable),
+  };
+});
 vi.mock('./logger.service', () => ({
-  logger: { info: vi.fn() },
+  logger: { info: vi.fn(), debug: vi.fn(), warning: vi.fn() },
 }));
 vi.mock('../helpers/server-feature-flag.helper', () => ({
   isServerFeatureEnabled,
@@ -42,6 +73,7 @@ vi.mock('../helpers/server-feature-flag.helper', () => ({
 }));
 
 import { OrgLensPeopleService } from './org-lens-people.service';
+import { ValkeyService } from './valkey.service';
 
 interface SqlDatabase {
   exec(sql: string): void;
@@ -58,7 +90,7 @@ const { DatabaseSync } = createRequire(import.meta.url)('node:sqlite') as { Data
 const ACCOUNT = 'account-one';
 const LIVE_PERSON = 'live-access-mixeduser';
 const GOVERNANCE_USERNAME = agreedUsername([' MixedUser ', 'mixeduser'])!;
-const UNAVAILABLE = { companyEmails: [], companyEmailsStatus: 'unavailable' };
+const UNAVAILABLE: OrgPersonCompanyEmailsResponse = { companyEmails: [], companyEmailsStatus: 'unavailable' };
 let database: SqlDatabase;
 let service: OrgLensPeopleService;
 
@@ -72,16 +104,25 @@ function addPerson(account: string, personKey: string, username: string, emails:
 
 beforeEach(() => {
   vi.resetAllMocks();
+  vi.stubEnv('VALKEY_URL', 'redis://localhost:6379');
+  cacheValues.clear();
+  ValkeyService.resetInstance();
   database = new DatabaseSync(':memory:');
   database.exec(`
     CREATE TABLE _ORG_PEOPLE_SPINE (ACCOUNT_ID TEXT, PERSON_KEY TEXT, LF_USERNAME TEXT);
     CREATE TABLE ORG_PEOPLE_COMPANY_EMAILS (ACCOUNT_ID TEXT, PERSON_KEY TEXT, LF_USERNAME TEXT, EMAIL TEXT, IS_PRIMARY INTEGER);
   `);
   // Execute the service's relational query rather than duplicating its identity matching in a mock.
-  // Only Snowflake's database/schema qualifier is removed for the in-memory SQL engine.
-  execute.mockImplementation(async (query: string, binds: string[]) => ({
-    rows: database.prepare(query.replaceAll('ANALYTICS.PLATINUM_LFX_ONE.', '')).all(...binds),
-  }));
+  // Adapt schema qualifiers and booleans to SQLite; Snowflake returns boolean columns as booleans.
+  execute.mockImplementation(async (query: string, binds: string[]) => {
+    const rows = database.prepare(query.replaceAll('ANALYTICS.PLATINUM_LFX_ONE.', '')).all(...binds);
+    for (const row of rows) {
+      for (const column of ['IS_BOARD', 'IS_MAINTAINER', 'IS_SPEAKER']) {
+        if (column in row) row[column] = row[column] === 1;
+      }
+    }
+    return { rows };
+  });
   isServerFeatureEnabled.mockReturnValue(true);
   getLive.mockResolvedValue({ rows: [{ personKey: LIVE_PERSON, lfUsername: 'mixeduser' }] });
   service = new OrgLensPeopleService();
@@ -89,9 +130,11 @@ beforeEach(() => {
 
 afterEach(() => {
   database.close();
+  ValkeyService.resetInstance();
+  vi.unstubAllEnvs();
 });
 
-async function expectBothPaths(expected: { companyEmails: string[]; companyEmailsStatus: string }): Promise<void> {
+async function expectBothPaths(expected: OrgPersonCompanyEmailsResponse): Promise<void> {
   expect(await service.getCompanyEmailsByUsername(ACCOUNT, GOVERNANCE_USERNAME)).toEqual(expected);
   expect(await service.getEmployeeDetail({} as never, ACCOUNT, LIVE_PERSON)).toMatchObject(expected);
 }
@@ -114,17 +157,23 @@ describe('OrgLensPeopleService username company emails', () => {
     await expectBothPaths({ companyEmails: [], companyEmailsStatus: 'resolved' });
   });
 
-  it('returns addresses even when the optional spine view is unavailable', async () => {
+  it('reports a failed lookup when the spine is unavailable even if addresses exist', async () => {
     addPerson(ACCOUNT, 'person-one', 'MixedUser', ['first@company.example']);
     database.exec('DROP TABLE _ORG_PEOPLE_SPINE');
 
-    await expectBothPaths({ companyEmails: ['first@company.example'], companyEmailsStatus: 'resolved' });
+    await expectBothPaths({ companyEmails: [], companyEmailsStatus: 'failed' });
   });
 
-  it('fails closed for case-folded collisions when both people have addresses without probing the spine', async () => {
+  it('fails closed for case-folded collisions when both people have addresses', async () => {
     addPerson(ACCOUNT, 'person-one', 'MixedUser', ['first@company.example']);
     addPerson(ACCOUNT, 'person-two', 'mixeduser', ['second@company.example']);
-    database.exec('DROP TABLE _ORG_PEOPLE_SPINE');
+
+    await expectBothPaths(UNAVAILABLE);
+  });
+
+  it('fails closed for case-folded collisions when only one person has addresses', async () => {
+    addPerson(ACCOUNT, 'person-one', 'MixedUser', ['first@company.example']);
+    addPerson(ACCOUNT, 'person-two', 'mixeduser');
 
     await expectBothPaths(UNAVAILABLE);
   });
@@ -136,7 +185,7 @@ describe('OrgLensPeopleService username company emails', () => {
     await expectBothPaths(UNAVAILABLE);
   });
 
-  it('reports a failed lookup when the empty-result spine probe fails', async () => {
+  it('reports a failed lookup when the spine is unavailable and no addresses exist', async () => {
     database.exec('DROP TABLE _ORG_PEOPLE_SPINE');
 
     await expectBothPaths({ companyEmails: [], companyEmailsStatus: 'failed' });
@@ -144,6 +193,13 @@ describe('OrgLensPeopleService username company emails', () => {
 
   it('does not treat identities that exist only at another account as resolved', async () => {
     addPerson('other-account', 'person-one', 'MixedUser', ['other@other.example']);
+
+    await expectBothPaths(UNAVAILABLE);
+  });
+
+  it('does not resolve addresses whose identity is absent from the spine', async () => {
+    addPerson(ACCOUNT, 'person-one', 'MixedUser', ['first@company.example']);
+    database.exec('DELETE FROM _ORG_PEOPLE_SPINE');
 
     await expectBothPaths(UNAVAILABLE);
   });
@@ -165,5 +221,156 @@ describe('OrgLensPeopleService username company emails', () => {
     execute.mockRejectedValue(new Error('warehouse unavailable'));
 
     await expectBothPaths({ companyEmails: [], companyEmailsStatus: 'failed' });
+  });
+});
+
+describe('OrgLensPeopleService person-key company emails', () => {
+  const personKey = 'person-one';
+  const activity = {
+    boardSeats: [
+      {
+        committeeId: 'board-one',
+        committeeName: 'Governing Board',
+        foundationId: 'foundation-one',
+        foundationName: 'Foundation One',
+        committeeRole: 'Chair',
+        votingStatus: 'Voting',
+        isBoard: true,
+      },
+    ],
+    committeeSeats: [
+      {
+        committeeId: 'committee-one',
+        committeeName: 'Technical Committee',
+        foundationId: 'foundation-one',
+        foundationName: 'Foundation One',
+        committeeRole: 'Member',
+        votingStatus: 'Observer',
+        isBoard: false,
+      },
+    ],
+    code: [
+      {
+        projectId: 'project-one',
+        projectName: 'Project One',
+        foundationId: 'foundation-one',
+        foundationName: 'Foundation One',
+        totalCommits: 12,
+        lastActivityDate: '2026-04-12',
+        isMaintainer: true,
+      },
+    ],
+    events: [
+      {
+        eventId: 'event-one',
+        eventName: 'Community Summit',
+        foundationId: 'foundation-one',
+        foundationName: 'Foundation One',
+        isSpeaker: true,
+        eventsCount: 1,
+        lastEventEndDate: '2026-04-10',
+      },
+    ],
+    training: [
+      {
+        courseId: 'course-one',
+        courseName: 'Project Fundamentals',
+        status: 'Certified',
+        certificationsCount: 1,
+        coursesCount: 1,
+      },
+    ],
+  };
+
+  beforeEach(() => {
+    database.exec(`
+      CREATE TABLE ORG_PEOPLE_COMMITTEE_MEMBERSHIP (
+        ACCOUNT_ID TEXT, PERSON_KEY TEXT, COMMITTEE_ID TEXT, COMMITTEE_NAME TEXT, COMMITTEE_TYPE TEXT,
+        IS_BOARD INTEGER, COMMITTEE_ROLE TEXT, VOTING_STATUS TEXT, FOUNDATION_ID TEXT, FOUNDATION_NAME TEXT
+      );
+      CREATE TABLE ORG_PEOPLE_CODE_CONTRIBUTIONS (
+        ACCOUNT_ID TEXT, PERSON_KEY TEXT, PROJECT_ID TEXT, PROJECT_NAME TEXT, FOUNDATION_ID TEXT,
+        FOUNDATION_NAME TEXT, TOTAL_COMMITS INTEGER, IS_MAINTAINER INTEGER, LAST_ACTIVITY_DATE TEXT
+      );
+      CREATE TABLE ORG_PEOPLE_EVENTS (
+        ACCOUNT_ID TEXT, PERSON_KEY TEXT, EVENT_ID TEXT, EVENT_NAME TEXT, EVENT_END_DATE TEXT,
+        IS_SPEAKER INTEGER, FOUNDATION_ID TEXT, FOUNDATION_NAME TEXT
+      );
+      CREATE TABLE ORG_PEOPLE_TRAINING (
+        ACCOUNT_ID TEXT, PERSON_KEY TEXT, COURSE_OR_CERT_ID TEXT, STATUS TEXT, COURSE_ID TEXT, COURSE_NAME TEXT
+      );
+    `);
+    database
+      .prepare('INSERT INTO ORG_PEOPLE_COMMITTEE_MEMBERSHIP VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)')
+      .run(ACCOUNT, personKey, 'board-one', 'Governing Board', 'Board', 1, 'Chair', 'Voting Rep', 'foundation-one', 'Foundation One');
+    database
+      .prepare('INSERT INTO ORG_PEOPLE_COMMITTEE_MEMBERSHIP VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)')
+      .run(ACCOUNT, personKey, 'committee-one', 'Technical Committee', 'Technical', 0, 'Member', 'Observer', 'foundation-one', 'Foundation One');
+    database
+      .prepare('INSERT INTO ORG_PEOPLE_CODE_CONTRIBUTIONS VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)')
+      .run(ACCOUNT, personKey, 'project-one', 'Project One', 'foundation-one', 'Foundation One', 12, 1, '2026-04-12');
+    database
+      .prepare('INSERT INTO ORG_PEOPLE_EVENTS VALUES (?, ?, ?, ?, ?, ?, ?, ?)')
+      .run(ACCOUNT, personKey, 'event-one', 'Community Summit', '2026-04-10', 1, 'foundation-one', 'Foundation One');
+    database
+      .prepare('INSERT INTO ORG_PEOPLE_TRAINING VALUES (?, ?, ?, ?, ?, ?)')
+      .run(ACCOUNT, personKey, 'cert-one', 'Certified', 'course-one', 'Project Fundamentals');
+  });
+
+  it('returns only the keyed person and account addresses in primary-first alphabetical order alongside activity', async () => {
+    addPerson(ACCOUNT, personKey, 'MixedUser', ['z-primary@company.example', 'b-secondary@company.example', 'a-secondary@company.example']);
+    addPerson('other-account', personKey, 'MixedUser', ['other-employer@other.example']);
+    addPerson(ACCOUNT, 'person-two', 'mixeduser', ['other-person@company.example']);
+
+    expect(await service.getEmployeeDetail({} as never, ACCOUNT, personKey)).toEqual({
+      personKey,
+      ...activity,
+      companyEmails: ['z-primary@company.example', 'a-secondary@company.example', 'b-secondary@company.example'],
+      companyEmailsStatus: 'resolved',
+    });
+  });
+
+  it('preserves board, committee, code, event and training activity when the optional keyed email lookup fails', async () => {
+    addPerson(ACCOUNT, personKey, 'MixedUser', ['first@company.example']);
+    database.exec('DROP TABLE ORG_PEOPLE_COMPANY_EMAILS');
+
+    expect(await service.getEmployeeDetail({} as never, ACCOUNT, personKey)).toEqual({
+      personKey,
+      ...activity,
+      companyEmails: [],
+      companyEmailsStatus: 'failed',
+    });
+  });
+
+  it('retries a failed email lookup instead of replaying the failure from cache', async () => {
+    addPerson(ACCOUNT, personKey, 'MixedUser', ['first@company.example']);
+    database.exec('ALTER TABLE ORG_PEOPLE_COMPANY_EMAILS RENAME TO SAVED_EMAILS');
+    expect(await service.getEmployeeDetail({} as never, ACCOUNT, personKey)).toMatchObject({
+      companyEmailsStatus: 'failed',
+      companyEmails: [],
+    });
+    database.exec('ALTER TABLE SAVED_EMAILS RENAME TO ORG_PEOPLE_COMPANY_EMAILS');
+    expect(await service.getEmployeeDetail({} as never, ACCOUNT, personKey)).toMatchObject({
+      companyEmailsStatus: 'resolved',
+      companyEmails: ['first@company.example'],
+    });
+    database.exec('DROP TABLE ORG_PEOPLE_COMPANY_EMAILS');
+    expect(await service.getEmployeeDetail({} as never, ACCOUNT, personKey)).toMatchObject({
+      companyEmailsStatus: 'resolved',
+      companyEmails: ['first@company.example'],
+    });
+  });
+
+  it('does not serve cached addresses after the server flag turns off or retain the off state after enabling', async () => {
+    addPerson(ACCOUNT, personKey, 'MixedUser', ['first@company.example']);
+    isServerFeatureEnabled.mockReturnValue(false);
+    expect(await service.getEmployeeDetail({} as never, ACCOUNT, personKey)).toMatchObject(UNAVAILABLE);
+    isServerFeatureEnabled.mockReturnValue(true);
+    expect(await service.getEmployeeDetail({} as never, ACCOUNT, personKey)).toMatchObject({
+      companyEmailsStatus: 'resolved',
+      companyEmails: ['first@company.example'],
+    });
+    isServerFeatureEnabled.mockReturnValue(false);
+    expect(await service.getEmployeeDetail({} as never, ACCOUNT, personKey)).toMatchObject(UNAVAILABLE);
   });
 });

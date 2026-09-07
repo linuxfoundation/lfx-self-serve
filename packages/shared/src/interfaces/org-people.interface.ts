@@ -179,9 +179,9 @@ export interface OrgAllEmployeeDetail {
    * `ANALYTICS.PLATINUM_LFX_ONE.ORG_PEOPLE_COMPANY_EMAILS`.
    *
    * Uncapped — ten addresses for one person is a real observed value, so consumers must not assume a
-   * bound. An empty array is an authoritative "no company address on record", not an error: personal
-   * and other-employer addresses are not omitted from this list, they are never retrieved, so no
-   * client-side filtering is required or permitted.
+   * bound. Only `companyEmailsStatus === 'resolved'` makes an empty array mean none on record.
+   * Failed and unavailable lookups also return empty arrays. Address qualification happens in the
+   * warehouse; no client-side filtering is required or permitted.
    */
   companyEmails: string[];
   /**
@@ -189,8 +189,8 @@ export interface OrgAllEmployeeDetail {
    * empty result from a lookup that never ran, and would render "no company address on record" —
    * a factual claim about a named individual — on the strength of a failure.
    *
-   * - `resolved`: the lookup ran. An empty array here genuinely means none on record.
-   * - `unavailable`: no identity was available to look up with, so nothing was attempted.
+   * - `resolved`: identity was available and the lookup succeeded; an empty array means none on record.
+   * - `unavailable`: the feature is disabled or no unique usable identity is available for the lookup.
    * - `failed`: the lookup ran and errored. Deliberately does not fail the whole detail response —
    *   the activity tabs must keep rendering.
    */
@@ -204,19 +204,18 @@ export type OrgCompanyEmailsStatus = 'resolved' | 'unavailable' | 'failed';
  * Committee, Key Contacts, Org Lens Access) whose rows carry an LF username rather than a
  * `personKey`.
  *
- * Keyed on an identity, never on an address. An address-keyed variant of this lookup was withdrawn:
- * once it returns real data it becomes an interface that, given any email address, returns the other
- * addresses the same human holds — an enumeration primitive over personal data, on a read path that
- * does not yet enforce the organization relation.
+ * Keyed on an identity, never on an address. The organization access gate applies before the handler.
+ * An address-keyed variant was withdrawn because it would allow enumerating another address held by
+ * a person from an arbitrary input address; organization access alone does not make that key safe.
  */
 export interface OrgPersonCompanyEmailsResponse {
   companyEmails: string[];
   /**
    * Same three-way status as `OrgAllEmployeeDetail.companyEmailsStatus`. `unavailable` is the
-   * answer when the username is not on the address model's spine at this account (an Org Lens Access
-   * principal who is not a committee member, key contact or roster person), or when the server-side
-   * feature flag is off — never "none on record". A client that sees no status must treat the
-   * response as unavailable, not as an empty set.
+   * answer when the username is absent or ambiguous on the address model's spine at this account,
+   * or when the server-side feature flag is off — never "none on record".
+   * A client that sees no status must treat the
+   * response as failed, not as unavailable or an empty set.
    */
   companyEmailsStatus: OrgCompanyEmailsStatus;
 }

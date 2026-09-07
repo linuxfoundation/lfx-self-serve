@@ -300,4 +300,34 @@ test.describe('Org Lens Code Contributions — person detail drawer (S3)', () =>
     await expect(page.getByTestId('person-detail-drawer-email-failed')).toHaveCount(0);
     await expect(page.getByTestId('person-detail-drawer-email-not-available')).toHaveCount(0);
   });
+
+  for (const { label, status, state, otherState } of [
+    { label: 'S3c', status: 'failed', state: 'failed', otherState: 'not-available' },
+    { label: 'S3d', status: 'unavailable', state: 'not-available', otherState: 'failed' },
+  ] as const) {
+    test(`${label}: person-key detail with ${status} company emails hides stale addresses`, async ({ page }) => {
+      await stubFeatureFlags(page, { [ORG_LENS_PRIVATE_RELEASE_FLAG]: true });
+      await gotoContributions(page);
+      await waitForContributionsLoaded(page);
+      // Keep the populated fixture adversarial: only a resolved status may expose addresses.
+      await stubPersonDetail(page, { ...MOCK_PERSON_DETAIL, companyEmailsStatus: status });
+
+      await switchToCommitsTab(page);
+      const detailResponse = page.waitForResponse(
+        (response) =>
+          new URL(response.url()).pathname === `/api/orgs/${MOCK_ACCOUNT_ID}/lens/people/${encodeURIComponent(MOCK_PERSON_KEY)}/detail` &&
+          response.request().method() === 'GET'
+      );
+      await page.getByTestId('org-contributions-committer-demo-aramirez-20260513').click();
+      expect((await detailResponse).status()).toBe(200);
+      await expect(page.getByTestId('person-detail-drawer-header')).toContainText('Ana Ramirez');
+      await expect(page.getByTestId(`person-detail-drawer-email-${state}`)).toBeVisible({ timeout: DATA_LOAD_TIMEOUT });
+      await expect(page.getByTestId(`person-detail-drawer-email-${otherState}`)).toHaveCount(0);
+      await expect(page.getByTestId('person-detail-drawer-email-none')).toHaveCount(0);
+      await expect(page.getByTestId('person-detail-drawer-email')).toHaveCount(0);
+      for (const email of MOCK_PERSON_DETAIL.companyEmails) {
+        await expect(page.getByText(email, { exact: true })).toHaveCount(0);
+      }
+    });
+  }
 });

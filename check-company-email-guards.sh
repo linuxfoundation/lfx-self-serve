@@ -25,13 +25,17 @@
 # RELATIONSHIP between two tokens that will normally be written on different lines, so it slurps
 # each file instead — see scan_multiline.
 
-set -uo pipefail
+set -euo pipefail
 
 search_roots=(apps/lfx-one/src apps/lfx-one/e2e packages/shared/src)
 
 # Filter out this script's own doc comments if it ever lands under a search root.
 scan() {
-  grep -REn "$1" "${search_roots[@]}" 2>/dev/null || true
+  grep -REn "$1" "${search_roots[@]}" || {
+    local scan_status=$?
+    # grep uses 1 for an ordinary no-match result; higher statuses are scanner failures.
+    [ "${scan_status}" -eq 1 ] || return "${scan_status}"
+  }
 }
 
 # Check 3 cannot be a line-at-a-time grep. The prohibited shape is a company-emails URL and
@@ -53,7 +57,7 @@ scan() {
 # generous, since a false positive here is a two-minute conversation and a false negative is a
 # personal-data enumeration primitive shipped to production.
 scan_multiline() {
-  find "${search_roots[@]}" -type f \( -name '*.ts' -o -name '*.html' -o -name '*.js' \) 2>/dev/null |
+  find "${search_roots[@]}" -type f \( -name '*.ts' -o -name '*.html' -o -name '*.js' \) |
     while IFS= read -r file; do
       awk -v FILE="${file}" -v WINDOW=400 '
         # Strip line comments so a doc comment mentioning both tokens is not a violation.
@@ -84,7 +88,7 @@ scan_multiline() {
             start = pos + 1
           }
         }
-      ' "${file}"
+      ' "${file}" || return "$?"
     done
 }
 
