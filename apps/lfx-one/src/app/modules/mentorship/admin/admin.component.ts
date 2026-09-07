@@ -5,10 +5,11 @@ import { ChangeDetectionStrategy, Component, computed, inject, signal, Signal } 
 import { toObservable, toSignal } from '@angular/core/rxjs-interop';
 import { ButtonComponent } from '@components/button/button.component';
 import { RouteLoadingComponent } from '@components/loading/route-loading.component';
-import { EMPTY_MENTORSHIP_PROGRAMS_RESPONSE } from '@lfx-one/shared/constants';
+import { EMPTY_MENTORSHIP_PROGRAMS_RESPONSE, MENTORSHIP_PROGRAM_PAGE_SIZE } from '@lfx-one/shared/constants';
 import { MentorshipProgramsResponse, MentorshipProgramStatus } from '@lfx-one/shared/interfaces';
 import { MentorshipService } from '@services/mentorship.service';
-import { debounceTime, distinctUntilChanged, map, switchMap, tap } from 'rxjs/operators';
+import { merge, Subject } from 'rxjs';
+import { debounceTime, distinctUntilChanged, finalize, map, scan, switchMap, tap } from 'rxjs/operators';
 
 import { ProgramsListComponent } from './components/programs-list/programs-list.component';
 
@@ -18,8 +19,9 @@ import { ProgramsListComponent } from './components/programs-list/programs-list.
  * Mirrors `MyInitiativesComponent`'s shape: signal-driven state, `toSignal`
  * over a computed request observable, and a child list component that owns
  * card rendering + empty state. Search + status filter are lifted here (not in
- * the list child) so a future paginated "load more" driver can share the same
- * filter signals without prop-drilling.
+ * the list child) so the offset/limit load-more driver can share the same
+ * filter signals without prop-drilling. Offset increments on Load more;
+ * filter changes reset offset to 0 and replace the accumulated page.
  */
 @Component({
   selector: 'lfx-mentorship-admin',
@@ -32,14 +34,19 @@ export class AdminComponent {
   private readonly mentorshipService = inject(MentorshipService);
 
   // ─── Simple WritableSignals ────────────────────────────────────────────────
-  protected readonly isLoading = signal(true);
+  protected readonly hasLoaded = signal(false);
+  protected readonly loadingMore = signal(false);
   protected readonly searchTerm = signal<string>('');
   protected readonly statusFilter = signal<MentorshipProgramStatus | null>(null);
+
+  // ─── Pagination Driver ─────────────────────────────────────────────────────
+  private readonly programsOffset = signal(0);
+  private readonly loadMore$ = new Subject<void>();
 
   // ─── Computed / Async Signals ──────────────────────────────────────────────
   private readonly programsState: Signal<MentorshipProgramsResponse> = this.initPrograms();
   protected readonly programs = computed(() => this.programsState().data);
-  protected readonly totalPrograms = computed(() => this.programsState().total);
+  protected readonly hasMore = computed(() => this.programsState().data.length < this.programsState().total);
 
   // ─── Protected Methods ─────────────────────────────────────────────────────
   protected onProgramClick(programId: string): void {
@@ -64,26 +71,55 @@ export class AdminComponent {
     // void this.router.navigate(['/mentorship/admin/enroll']);
   }
 
+  protected onLoadMore(): void {
+    if (this.loadingMore() || !this.hasMore()) return;
+    this.loadingMore.set(true);
+    this.programsOffset.update((curr) => curr + MENTORSHIP_PROGRAM_PAGE_SIZE);
+    this.loadMore$.next();
+  }
+
   // ─── Private Initializers ──────────────────────────────────────────────────
   private initPrograms(): Signal<MentorshipProgramsResponse> {
-    // Rebuild the request whenever search or status changes.
+    // Rebuild the first page whenever search or status changes.
     // Debounce search input so keystroke bursts don't fan out to the BFF.
     const filters$ = toObservable(computed(() => ({ search: this.searchTerm(), status: this.statusFilter() }))).pipe(
       debounceTime(200),
-      distinctUntilChanged((a, b) => a.search === b.search && a.status === b.status),
-      tap(() => this.isLoading.set(true))
+      distinctUntilChanged((a, b) => a.search === b.search && a.status === b.status)
+    );
+
+    const firstPage$ = filters$.pipe(
+      tap(() => this.programsOffset.set(0)),
+      map((filters) => ({ filters, offset: 0, reset: true }))
+    );
+
+    const nextPage$ = this.loadMore$.pipe(
+      map(() => ({
+        filters: { search: this.searchTerm(), status: this.statusFilter() },
+        offset: this.programsOffset(),
+        reset: false,
+      }))
     );
 
     return toSignal(
-      filters$.pipe(
-        switchMap((filters) =>
-          this.mentorshipService.getPrograms({
-            search: filters.search || undefined,
-            status: filters.status ?? undefined,
-          })
+      merge(firstPage$, nextPage$).pipe(
+        switchMap(({ filters, offset, reset }) =>
+          this.mentorshipService
+            .getPrograms({
+              search: filters.search || undefined,
+              status: filters.status ?? undefined,
+              offset,
+              limit: MENTORSHIP_PROGRAM_PAGE_SIZE,
+            })
+            .pipe(
+              map((response) => ({ ...response, reset })),
+              finalize(() => this.loadingMore.set(false))
+            )
         ),
-        map((response) => response),
-        tap(() => this.isLoading.set(false))
+        scan(
+          (acc, curr) => (curr.reset ? { data: curr.data, total: curr.total } : { data: [...acc.data, ...curr.data], total: curr.total }),
+          EMPTY_MENTORSHIP_PROGRAMS_RESPONSE
+        ),
+        tap(() => this.hasLoaded.set(true))
       ),
       { initialValue: EMPTY_MENTORSHIP_PROGRAMS_RESPONSE }
     );

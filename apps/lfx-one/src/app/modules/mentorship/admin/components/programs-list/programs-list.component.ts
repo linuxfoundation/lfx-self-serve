@@ -1,22 +1,19 @@
 // Copyright The Linux Foundation and each contributor to LFX.
 // SPDX-License-Identifier: MIT
 
-import { ChangeDetectionStrategy, Component, computed, effect, input, output, untracked } from '@angular/core';
-import { takeUntilDestroyed } from '@angular/core/rxjs-interop';
+import { ChangeDetectionStrategy, Component, computed, input, output } from '@angular/core';
+import { takeUntilDestroyed, toObservable } from '@angular/core/rxjs-interop';
 import { FormControl, FormGroup, ReactiveFormsModule } from '@angular/forms';
+import { ButtonComponent } from '@components/button/button.component';
 import { CardComponent } from '@components/card/card.component';
 import { EmptyStateComponent } from '@components/empty-state/empty-state.component';
 import { InputTextComponent } from '@components/input-text/input-text.component';
 import { SelectComponent } from '@components/select/select.component';
 import { MENTORSHIP_PROGRAM_STATUS_LABELS, MENTORSHIP_PROGRAM_STATUSES } from '@lfx-one/shared/constants';
-import { MentorshipProgram, MentorshipProgramStatus } from '@lfx-one/shared/interfaces';
+import { FilterOption, MentorshipProgram, MentorshipProgramStatus } from '@lfx-one/shared/interfaces';
+import { combineLatest } from 'rxjs';
 
 import { ProgramCardComponent } from '../program-card/program-card.component';
-
-interface StatusOption {
-  label: string;
-  value: MentorshipProgramStatus | null;
-}
 
 /**
  * Search + status filter + card list. Owns its own FormGroup for the search
@@ -28,7 +25,7 @@ interface StatusOption {
  */
 @Component({
   selector: 'lfx-mentorship-programs-list',
-  imports: [ReactiveFormsModule, InputTextComponent, SelectComponent, CardComponent, EmptyStateComponent, ProgramCardComponent],
+  imports: [ReactiveFormsModule, ButtonComponent, InputTextComponent, SelectComponent, CardComponent, EmptyStateComponent, ProgramCardComponent],
   templateUrl: './programs-list.component.html',
   changeDetection: ChangeDetectionStrategy.OnPush,
 })
@@ -37,9 +34,12 @@ export class ProgramsListComponent {
   public readonly programs = input.required<MentorshipProgram[]>();
   public readonly searchTerm = input<string>('');
   public readonly statusFilter = input<MentorshipProgramStatus | null>(null);
+  public readonly hasMore = input<boolean>(false);
+  public readonly loadingMore = input<boolean>(false);
   public readonly searchChange = output<string>();
   public readonly statusChange = output<MentorshipProgramStatus | null>();
   public readonly programClick = output<string>();
+  public readonly loadMore = output<void>();
 
   // ─── Form ──────────────────────────────────────────────────────────────────
   protected readonly form = new FormGroup({
@@ -48,7 +48,7 @@ export class ProgramsListComponent {
   });
 
   // ─── Static Options ────────────────────────────────────────────────────────
-  protected readonly statusOptions: StatusOption[] = [
+  protected readonly statusOptions: FilterOption<MentorshipProgramStatus | null>[] = [
     { label: 'All statuses', value: null },
     ...MENTORSHIP_PROGRAM_STATUSES.map((status) => ({
       label: MENTORSHIP_PROGRAM_STATUS_LABELS[status],
@@ -66,10 +66,9 @@ export class ProgramsListComponent {
   public constructor() {
     // Sync the parent's `searchTerm` / `statusFilter` signals into the form
     // (one-way), so parent-driven resets stay reflected in the inputs.
-    effect(() => {
-      const nextSearch = this.searchTerm();
-      const nextStatus = this.statusFilter();
-      untracked(() => {
+    combineLatest([toObservable(this.searchTerm), toObservable(this.statusFilter)])
+      .pipe(takeUntilDestroyed())
+      .subscribe(([nextSearch, nextStatus]) => {
         if (this.form.controls.search.value !== nextSearch) {
           this.form.controls.search.setValue(nextSearch, { emitEvent: false });
         }
@@ -77,7 +76,6 @@ export class ProgramsListComponent {
           this.form.controls.status.setValue(nextStatus, { emitEvent: false });
         }
       });
-    });
 
     // Forward form changes back to the parent as plain outputs.
     this.form.controls.search.valueChanges.pipe(takeUntilDestroyed()).subscribe((value) => this.searchChange.emit(value ?? ''));
@@ -87,5 +85,9 @@ export class ProgramsListComponent {
 
   protected onCardClick(slug: string): void {
     this.programClick.emit(slug);
+  }
+
+  protected onLoadMore(): void {
+    this.loadMore.emit();
   }
 }

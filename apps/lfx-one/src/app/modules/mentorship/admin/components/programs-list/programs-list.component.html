@@ -5,7 +5,14 @@
   <!-- Search + Status filter row -->
   <div class="flex flex-col sm:flex-row gap-3">
     <div class="flex-1">
-      <lfx-input-text [form]="form" control="search" placeholder="Search" icon="fa-light fa-magnifying-glass" dataTest="mentorship-programs-search" />
+      <label for="mentorship-programs-search" class="sr-only">Search programs</label>
+      <lfx-input-text
+        [form]="form"
+        control="search"
+        id="mentorship-programs-search"
+        placeholder="Search"
+        icon="fa-light fa-magnifying-glass"
+        dataTest="mentorship-programs-search" />
     </div>
     <div class="w-full sm:w-56">
       <lfx-select
@@ -15,6 +22,7 @@
         optionLabel="label"
         optionValue="value"
         placeholder="Filter By Status"
+        ariaLabel="Filter by status"
         [showClear]="true"
         [styleClass]="'w-full'"
         data-testid="mentorship-programs-status-filter" />
@@ -32,5 +40,11 @@
     }
   } @else {
     <lfx-empty-state icon="fa-light fa-user-group" [title]="emptyTitle()" [subtitle]="emptySubtitle()" data-testid="mentorship-programs-empty-state" />
+  }
+
+  @if (hasMore()) {
+    <div class="flex justify-center pt-3" data-testid="mentorship-programs-load-more">
+      <lfx-button label="Load more" severity="secondary" size="small" [loading]="loadingMore()" [disabled]="loadingMore()" (onClick)="onLoadMore()" />
+    </div>
   }
 </div>

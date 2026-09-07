@@ -20,16 +20,19 @@
       </div>
     </div>
 
-    @if (isLoading() && programs().length === 0) {
+    @if (!hasLoaded()) {
       <lfx-route-loading data-testid="mentorship-admin-loading" />
     } @else {
       <lfx-mentorship-programs-list
         [programs]="programs()"
         [searchTerm]="searchTerm()"
         [statusFilter]="statusFilter()"
+        [hasMore]="hasMore()"
+        [loadingMore]="loadingMore()"
         (searchChange)="onSearchChange($event)"
         (statusChange)="onStatusChange($event)"
-        (programClick)="onProgramClick($event)" />
+        (programClick)="onProgramClick($event)"
+        (loadMore)="onLoadMore()" />
     }
   </div>
 </div>
