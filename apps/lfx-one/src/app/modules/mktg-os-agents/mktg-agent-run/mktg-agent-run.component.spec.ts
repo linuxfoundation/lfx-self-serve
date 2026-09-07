@@ -551,6 +551,28 @@ describe('MktgAgentRunComponent', () => {
       expect((generate.mock.calls[0][0] as MktgGenerateRequest).answers['gap_fill_notes']).toBe('Anchor to the v2 launch');
     });
 
+    it('tells the memory a cleared optional field is blank, so the old answer cannot come back', async () => {
+      dependencyDocs = { 'proj-1:brand-kit': brandKitDoc('# Kit') };
+      activeContext.set(PROJECT_1);
+      await fixture.whenStable();
+      fillBase();
+      component['intakeForm'].controls['gap_fill_notes'].setValue('Anchor to the v2 launch');
+      component['onSubmit']();
+
+      expect(rememberAnswers).toHaveBeenLastCalledWith('proj-1', 'foundation-setup', expect.objectContaining({ gap_fill_notes: 'Anchor to the v2 launch' }));
+
+      // The user clears the note and runs again. The PAYLOAD still omits the
+      // blank optional field, but the memory is handed the full intake state:
+      // the note has to be erased there, or it returns to the form once this
+      // run's 24h record expires and the 30-day memory is the only copy left.
+      component['phase'].set('form');
+      component['intakeForm'].controls['gap_fill_notes'].setValue('   ');
+      component['onSubmit']();
+
+      expect((generate.mock.calls[1][0] as MktgGenerateRequest).answers['gap_fill_notes']).toBeUndefined();
+      expect(rememberAnswers).toHaveBeenLastCalledWith('proj-1', 'foundation-setup', expect.objectContaining({ gap_fill_notes: '' }));
+    });
+
     it('surfaces the five derivative chips as copyable values on the result', async () => {
       storedRuns = {
         'proj-1:foundation-setup': {

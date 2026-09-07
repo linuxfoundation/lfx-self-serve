@@ -84,6 +84,34 @@ describe('MktgAnswerMemoryService', () => {
     expect(memory['project_name'].value).toBe('TestOrbit');
   });
 
+  it('erases a remembered answer when the same intake resubmits it blank', () => {
+    service.remember('proj-1', 'foundation-setup', { project_name: 'TestOrbit', gap_fill_notes: 'Anchor to the v2 launch' });
+
+    // The user clears the optional note and runs again. Leaving the old note
+    // standing would re-offer — and re-submit — words they deliberately
+    // removed, once the 24h run record that masked it has expired.
+    service.remember('proj-1', 'foundation-setup', { project_name: 'TestOrbit', gap_fill_notes: '   ' });
+
+    const memory = service.load('proj-1');
+    expect(memory['gap_fill_notes']).toBeUndefined();
+    expect(memory['project_name'].value).toBe('TestOrbit');
+    expect(stored('proj-1')['gap_fill_notes']).toBeUndefined();
+  });
+
+  it('erases rather than keeps the older answer when the new one is past the value cap', () => {
+    service.remember('proj-1', 'brand-kit', { gap_fill_notes: 'Short note' });
+    service.remember('proj-1', 'brand-kit', { gap_fill_notes: 'x'.repeat(MKTG_ANSWER_MEMORY_MAX_VALUE_CHARS + 1) });
+
+    expect(service.load('proj-1')['gap_fill_notes']).toBeUndefined();
+  });
+
+  it('leaves a key the caller never mentions alone — silence is another intake, not a clear', () => {
+    service.remember('proj-1', 'brand-kit', { github_url: 'https://github.com/example-org/one', project_name: 'TestOrbit' });
+    service.remember('proj-1', 'foundation-setup', { project_name: 'TestOrbit' });
+
+    expect(service.load('proj-1')['github_url'].value).toBe('https://github.com/example-org/one');
+  });
+
   it('prunes entries past the TTL on read and rewrites what is left', () => {
     const expired = new Date(Date.now() - MKTG_ANSWER_MEMORY_TTL_MS - 1000).toISOString();
     window.localStorage.setItem(

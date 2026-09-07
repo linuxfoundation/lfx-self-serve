@@ -71,6 +71,15 @@ export class MktgAnswerMemoryService {
    * can offer them back. Only the caller's own intake answers belong here —
    * never auto-attached dependency documents, which are document-sized and
    * already resolved from their own source.
+   *
+   * Pass the intake's FULL submitted state, blank fields included: a key
+   * present with a blank (or unretainable) value ERASES whatever this memory
+   * held for it. The store's contract is "what the user last submitted", and
+   * an optional field the user deliberately cleared must not come back — the
+   * run record that would otherwise mask it expires in 24h while this memory
+   * lives 30 days, so a stale value would be re-offered and re-submitted long
+   * after the user removed it. Keys the caller does not mention are another
+   * intake's business and are left untouched.
    */
   public remember(projectUid: string, agentId: string, answers: Record<string, string>): void {
     const key = this.storageKey(projectUid);
@@ -83,6 +92,13 @@ export class MktgAnswerMemoryService {
     for (const [fieldKey, value] of Object.entries(answers)) {
       const trimmed = (value ?? '').trim();
       if (!trimmed || trimmed.length > MKTG_ANSWER_MEMORY_MAX_VALUE_CHARS) {
+        // Not retainable as the latest answer — so it cannot be left standing
+        // as an older one either. Dropping an over-cap value with the blanks
+        // is deliberate: the user replaced the short answer we held.
+        if (fieldKey in next) {
+          delete next[fieldKey];
+          changed = true;
+        }
         continue;
       }
       next[fieldKey] = { value: trimmed, agentId, savedAt };

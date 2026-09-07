@@ -523,6 +523,20 @@ export class MktgAgentRunComponent {
   }
 
   /**
+   * Every intake field with its trimmed value, BLANKS INCLUDED — the answer
+   * memory needs the full submitted state to erase a field the user cleared,
+   * which the submit payload (`buildAnswers`) deliberately omits. Without it
+   * the memory would keep re-offering an optional answer the user removed.
+   */
+  private buildIntakeState(): Record<string, string> {
+    const state: Record<string, string> = {};
+    for (const field of this.intake?.fields ?? []) {
+      state[field.key] = this.intakeForm.controls[field.key].value.trim();
+    }
+    return state;
+  }
+
+  /**
    * Whether every catalog dependency of this agent has resolved stored output
    * for the active project. Fail-closed while resolution is in flight (the
    * record is null) — a run must never submit without its attachments.
@@ -700,8 +714,11 @@ export class MktgAgentRunComponent {
     // Remember what the user typed, keyed by intake field key, so the NEXT
     // agent's form on this project can offer it back instead of asking again.
     // Only the intake's own answers — the auto-attached dependency documents
-    // added below are document-sized and resolved from their own source.
-    this.answerMemory.remember(projectUid, agent.id, answers);
+    // added below are document-sized and resolved from their own source. The
+    // FULL state goes in, not the payload: a cleared optional field has to
+    // erase its remembered answer rather than leave the old one to be
+    // re-offered once this run's 24h record expires.
+    this.answerMemory.remember(projectUid, agent.id, this.buildIntakeState());
 
     this.errorText.set('');
     this.docExpanded.set(false);
