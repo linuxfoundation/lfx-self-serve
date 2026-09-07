@@ -34,6 +34,7 @@ import { buildInsightsUrl, normalizeHealthScoreCategoryV2 } from '@lfx-one/share
 
 import { toIsoDate } from '../helpers/date-format.helper';
 import { escapeSqlLikePattern } from '../helpers/validation.helper';
+import { logger } from './logger.service';
 import { buildOrgCacheKey, valkeyService } from './valkey.service';
 import { SnowflakeService } from './snowflake.service';
 
@@ -1893,10 +1894,17 @@ export class OrgLensProjectDetailService {
     };
   }
 
-  private mapHealth(row: Pick<HeroRow, 'HEALTH_SCORE_CATEGORY_V2'>): OrgLensProjectHealth | null {
+  private mapHealth(row: Pick<HeroRow, 'HEALTH_SCORE_CATEGORY_V2' | 'PROJECT_SLUG'>): OrgLensProjectHealth | null {
     // The warehouse v2 category is the sole source of truth for the health label — never fall back to
     // classifying the legacy v1 score when the v2 category is null (LFXV2-3379).
-    return normalizeHealthScoreCategoryV2(row.HEALTH_SCORE_CATEGORY_V2);
+    const category = normalizeHealthScoreCategoryV2(row.HEALTH_SCORE_CATEGORY_V2);
+    if (row.HEALTH_SCORE_CATEGORY_V2 && !category) {
+      logger.warning(undefined, 'map_org_project_health', 'Unrecognized warehouse health_score_category_v2; treating as unavailable', {
+        slug: row.PROJECT_SLUG,
+        category: row.HEALTH_SCORE_CATEGORY_V2,
+      });
+    }
+    return category;
   }
 
   private buildTechnicalCards(cards: CardsRow | null, index: SparklineIndex, axis: string[]): OrgLensProjectInfluenceCard[] {

@@ -59,8 +59,9 @@ export function buildLensAwareInsightsUrl(
  * `get_health_score_category_v2` macro and the Insights primary project Health Score component
  * (`health-score.vue`): `>= 85` Excellent, `>= 70` Healthy, `>= 50` Fair, `>= 30` Concerning, else
  * Critical. The `unavailable` state (no score) is handled by callers, so this returns only the five
- * scored bands and is the single source both the Org Lens Projects table and the project-detail hero
- * classify through (they must never disagree).
+ * scored bands. LFXV2-3379 removed the Org Lens Projects table's and project-detail hero's calls to
+ * this legacy v1 classifier in favor of the warehouse-computed `health_score_category_v2` (see
+ * `normalizeHealthScoreCategoryV2` below).
  */
 export function classifyHealthScore(score: number): Exclude<HealthScore, 'unavailable'> {
   if (score >= 85) {
