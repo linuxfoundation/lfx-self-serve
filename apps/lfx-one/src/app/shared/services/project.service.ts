@@ -112,6 +112,14 @@ export class ProjectService {
             this.project$.next(project);
             this.project.set(project);
           }
+          // null only ever comes from the catchError above — evict failures so the next
+          // caller retries instead of replaying a transient error for the rest of the
+          // session (GH-1570: a poisoned entry would pin the newsletter guard and route
+          // reconciliation to a stale context). Concurrent subscribers still share this
+          // emission; only future lookups re-fetch.
+          if (!project) {
+            this.projectCache.delete(cacheKey);
+          }
         })
       );
       this.projectCache.set(cacheKey, project$);

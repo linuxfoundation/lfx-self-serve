@@ -125,8 +125,9 @@ export function syncEntityProjectContext<T extends EntityWithProject>(
  *  - Route-uid changes resolve at least once per activation, even when the active context's uid
  *    already matches: a uid-equal cookie context can still carry a stale name/logo/slug or sit
  *    under the wrong context kind (a foundation-owned newsletter under /project/newsletters), so
- *    the write below only suppresses once the FULL context (isSameProjectContext) and the
- *    computed kind both match. The resolve hits the shareReplay-cached getProject — the route's
+ *    the write below only suppresses once the FULL context (isSameProjectContext), the
+ *    computed kind, and the URL's ?project= all agree. The resolve hits the shareReplay-cached
+ *    getProject — the route's
  *    guard already resolved the same uid on activation — so the happy path costs no request.
  *  - NavigationEnd re-applies synchronously from the per-uid resolved cache: query-param-only
  *    navigations (?step=N) don't re-run guards, but MainLayout.syncLensFromRoute re-asserts the
@@ -190,16 +191,24 @@ export function reconcileRouteProjectContext(
     .subscribe((resolved) => {
       if (!resolved) return;
       // Suppress the repeat only once the FULL context (isSameProjectContext compares
-      // name/slug/logoUrl, not just uid) and the computed kind both match — a uid-equal cookie
-      // context can still carry stale chrome or sit under the wrong kind.
+      // name/slug/logoUrl, not just uid), the computed kind, AND the URL all agree — a uid-equal
+      // cookie context can still carry stale chrome or sit under the wrong kind, and a stale
+      // ?project= must still fall through so it gets repaired: syncProjectQueryParam skips while
+      // a navigation is in flight, so the activation-time apply can't fix the URL and this
+      // NavigationEnd re-apply is the first chance that can (setProject runs its URL sync outside
+      // the same-context early return). Suppressing on context alone would leave the old slug in
+      // the URL for the session.
+      const urlParams = router.parseUrl(router.url).queryParams;
+      const urlAgrees = !('project' in urlParams) || urlParams['project'] === resolved.context.slug;
       if (
         projectContextService.activeRouteLensKind() === (resolved.isFoundation ? 'foundation' : 'project') &&
-        isSameProjectContext(projectContextService.activeContext(), resolved.context)
+        isSameProjectContext(projectContextService.activeContext(), resolved.context) &&
+        urlAgrees
       ) {
         return;
       }
       // Mirror syncEntityProjectContext: only write ?project= to the URL when already present.
-      const syncUrl = 'project' in router.parseUrl(router.url).queryParams;
+      const syncUrl = 'project' in urlParams;
       applyEntityProjectContext(projectContextService, resolved.context, resolved.isFoundation, syncUrl);
     });
 }
