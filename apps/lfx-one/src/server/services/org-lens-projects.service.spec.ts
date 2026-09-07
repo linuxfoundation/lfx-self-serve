@@ -170,4 +170,19 @@ describe('OrgLensProjectsService health score mapping', () => {
 
     expect(response.projects[0]?.healthMetrics).toEqual([]);
   });
+
+  it('omits health metrics when only some warehouse percentage columns are present, never fabricating 0% for the rest (LFXV2-3379)', async () => {
+    mockProjectsRow(
+      projectsRow({
+        HEALTH_CONTRIBUTOR_PERCENTAGE: 42,
+        HEALTH_POPULARITY_PERCENTAGE: null,
+        HEALTH_DEVELOPMENT_PERCENTAGE: 75,
+        HEALTH_SECURITY_PERCENTAGE: null,
+      })
+    );
+
+    const response = await service.getProjects(ACCOUNT_ID, ORG_NAME, null);
+
+    expect(response.projects[0]?.healthMetrics).toEqual([]);
+  });
 });
