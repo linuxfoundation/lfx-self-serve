@@ -6,7 +6,7 @@ import { TestBed } from '@angular/core/testing';
 import { Router, UrlTree } from '@angular/router';
 import { FeatureFlagService } from '@shared/services/feature-flag.service';
 import { ProjectService } from '@shared/services/project.service';
-import { of, throwError } from 'rxjs';
+import { of } from 'rxjs';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 
 import { formationProjectEnabledGuard } from './formation-project-enabled.guard';
@@ -126,15 +126,6 @@ describe('formationProjectEnabledGuard', () => {
 
   it('redirects to project overview when the project is not in a Formation stage', async () => {
     getProject.mockReturnValue(of({ stage: 'Active' }));
-    setNavigationProject('my-project');
-
-    const result = await runGuard();
-
-    expect(result).toEqual({ denied: '/project/overview', opts: { queryParams: { project: 'my-project' } } });
-  });
-
-  it('redirects to project overview when the project fetch fails', async () => {
-    getProject.mockReturnValue(throwError(() => new Error('network error')));
     setNavigationProject('my-project');
 
     const result = await runGuard();

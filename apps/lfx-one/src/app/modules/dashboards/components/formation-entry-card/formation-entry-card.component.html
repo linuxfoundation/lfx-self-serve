@@ -12,7 +12,7 @@
     <p class="text-sm text-gray-600 m-0" data-testid="formation-entry-card-summary">
       {{ doneCount() }} of {{ totalCount() }} done
       @if (totalGatingCount() > 0) {
-        · {{ totalGatingCount() - openGatingCount() }} of {{ totalGatingCount() }} required for Active open
+        · {{ openGatingCount() }} of {{ totalGatingCount() }} required for Active open
       }
     </p>
   }

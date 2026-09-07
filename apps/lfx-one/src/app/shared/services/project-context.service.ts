@@ -128,10 +128,13 @@ export class ProjectContextService {
   public readonly activeProjectAnnouncementDateHasError: Signal<boolean> = this.announcementDateHasError.asReadonly();
 
   /**
-   * The active context's project `stage` (e.g. `"Formation - Exploratory"`), refetched whenever
-   * the context changes. `ProjectContext` itself never carries `stage` — `projectQueryParamGuard`
-   * builds it from a `Project` response but drops that field — so this is a project-detail refetch,
-   * not a derivation of `activeContext`. `null` while resolving, absent, or unauthenticated.
+   * The active context's project `stage` (e.g. `"Formation - Exploratory"`). `ProjectContext`
+   * itself never carries `stage` — `projectQueryParamGuard` builds it from a `Project` response but
+   * drops that field — so this reads it via a separate `ProjectService.getProject` call keyed off
+   * `activeContext`, not a derivation of it. That call is cached per slug for the service's
+   * lifetime (shared with `projectQueryParamGuard`'s own read), so the value reflects the project's
+   * stage as of its first fetch this session, not a live re-check on every context change. `null`
+   * while resolving, absent, or unauthenticated.
    */
   public readonly activeProjectStage: Signal<string | null> = this.initActiveProjectStage();
 
@@ -361,10 +364,7 @@ export class ProjectContextService {
           if (!ctx?.slug || !authenticated) {
             return of(null);
           }
-          return this.projectService.getProject(ctx.slug, false).pipe(
-            map((project) => project?.stage ?? null),
-            catchError(() => of(null))
-          );
+          return this.projectService.getProject(ctx.slug, false).pipe(map((project) => project?.stage ?? null));
         })
       ),
       { initialValue: null }

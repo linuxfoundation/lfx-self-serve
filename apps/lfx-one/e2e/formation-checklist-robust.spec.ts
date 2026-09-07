@@ -14,7 +14,7 @@ import {
   buildBaseProject,
   DATA_LOAD_TIMEOUT,
   FORMATION_PROJECT_SLUG,
-  gotoProjectOverview,
+  gotoProjectFormation,
   mockFormationChecklistApis,
   stubFormationFlag,
 } from './helpers/formation-checklist.helper';
@@ -30,7 +30,7 @@ test.describe('Formation checklist section — structural contract', () => {
   test.beforeEach(async ({ page }) => {
     await stubFormationFlag(page, true);
     await mockFormationChecklistApis(page, { project: PROJECT });
-    await gotoProjectOverview(page, FORMATION_PROJECT_SLUG);
+    await gotoProjectFormation(page, FORMATION_PROJECT_SLUG);
     await expect(page.getByTestId('formation-checklist-section')).toBeVisible({ timeout: DATA_LOAD_TIMEOUT });
   });
 
@@ -184,7 +184,7 @@ test.describe('Formation checklist section — structural contract', () => {
           body: JSON.stringify({ formation: FORMATION, template: mockFormationTemplate, items: itemsWithLink, data_source: 'fixture' }),
         })
       );
-      await gotoProjectOverview(page, FORMATION_PROJECT_SLUG);
+      await gotoProjectFormation(page, FORMATION_PROJECT_SLUG);
       await page.getByTestId(`formation-checklist-row-title-${item.uid}`).click();
 
       const drawer = page.getByTestId('formation-item-drawer');
@@ -213,7 +213,7 @@ test.describe('Formation checklist section — structural contract', () => {
     test('inline error state nests a retry button in place of the panels', async ({ page }) => {
       await stubFormationFlag(page, true);
       await mockFormationChecklistApis(page, { project: PROJECT, checklistState: 'error' });
-      await gotoProjectOverview(page, FORMATION_PROJECT_SLUG);
+      await gotoProjectFormation(page, FORMATION_PROJECT_SLUG);
 
       const error = page.getByTestId('formation-checklist-inline-error');
       await expect(error).toBeVisible({ timeout: DATA_LOAD_TIMEOUT });

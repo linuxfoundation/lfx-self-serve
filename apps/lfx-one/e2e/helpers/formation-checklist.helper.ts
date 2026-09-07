@@ -117,3 +117,11 @@ export async function gotoProjectOverview(page: Page, slug: string): Promise<voi
   await page.goto(`/project/overview?project=${slug}`, { waitUntil: 'domcontentloaded' });
   skipWhenAuthMissing(page);
 }
+
+/** Navigates to the formation checklist's own route (GH-1958), guarded by `formationProjectEnabledGuard`. */
+export async function gotoProjectFormation(page: Page, slug: string): Promise<void> {
+  await page.goto('/', { waitUntil: 'domcontentloaded' });
+  skipWhenAuthMissing(page);
+  await page.goto(`/project/formation?project=${slug}`, { waitUntil: 'domcontentloaded' });
+  skipWhenAuthMissing(page);
+}

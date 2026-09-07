@@ -9,7 +9,7 @@ import {
   buildBaseProject,
   DATA_LOAD_TIMEOUT,
   FORMATION_PROJECT_SLUG,
-  gotoProjectOverview,
+  gotoProjectFormation,
   mockFormationChecklistApis,
   stubFormationFlag,
 } from './helpers/formation-checklist.helper';
@@ -21,7 +21,7 @@ test.describe('Formation Checklist section (GH-1958)', () => {
   test('renders the readiness strip, both template sections, and gates the section on the Formation stage', async ({ page }) => {
     await stubFormationFlag(page, true);
     await mockFormationChecklistApis(page, { project: buildBaseProject(FORMATION_PROJECT_SLUG) });
-    await gotoProjectOverview(page, FORMATION_PROJECT_SLUG);
+    await gotoProjectFormation(page, FORMATION_PROJECT_SLUG);
 
     const section = page.getByTestId('formation-checklist-section');
     await expect(section).toBeVisible({ timeout: DATA_LOAD_TIMEOUT });
@@ -34,29 +34,29 @@ test.describe('Formation Checklist section (GH-1958)', () => {
     await expect(page.getByTestId('formation-checklist-row-title-formation-item:cascade-data-alliance:draft-project-record')).toBeVisible();
   });
 
-  test('does not render the checklist section for a project not in a Formation stage', async ({ page }) => {
+  test('redirects to project overview for a project not in a Formation stage', async ({ page }) => {
     await stubFormationFlag(page, true);
     await mockFormationChecklistApis(page, { project: buildBaseProject(FORMATION_PROJECT_SLUG, { stage: 'Active' }) });
-    await gotoProjectOverview(page, FORMATION_PROJECT_SLUG);
+    await gotoProjectFormation(page, FORMATION_PROJECT_SLUG);
 
-    // Something else on the page must be visible first, or a slow-loading section could produce a false negative.
-    await expect(page.getByTestId('project-dashboard-container')).toBeVisible({ timeout: DATA_LOAD_TIMEOUT });
+    // formationProjectEnabledGuard denies the match and bounces back to the overview, preserving the slug.
+    await page.waitForURL(new RegExp(`/project/overview\\?project=${FORMATION_PROJECT_SLUG}`));
     await expect(page.getByTestId('formation-checklist-section')).toHaveCount(0);
   });
 
-  test('does not render the checklist section when formation-enabled is off, even for a Formation-stage project', async ({ page }) => {
+  test('redirects to project overview when formation-enabled is off, even for a Formation-stage project', async ({ page }) => {
     await stubFormationFlag(page, false);
     await mockFormationChecklistApis(page, { project: buildBaseProject(FORMATION_PROJECT_SLUG) });
-    await gotoProjectOverview(page, FORMATION_PROJECT_SLUG);
+    await gotoProjectFormation(page, FORMATION_PROJECT_SLUG);
 
-    await expect(page.getByTestId('project-dashboard-container')).toBeVisible({ timeout: DATA_LOAD_TIMEOUT });
+    await page.waitForURL(new RegExp(`/project/overview\\?project=${FORMATION_PROJECT_SLUG}`));
     await expect(page.getByTestId('formation-checklist-section')).toHaveCount(0);
   });
 
   test('a row action opens the item drawer with notes/history lazy-loaded', async ({ page }) => {
     await stubFormationFlag(page, true);
     await mockFormationChecklistApis(page, { project: buildBaseProject(FORMATION_PROJECT_SLUG) });
-    await gotoProjectOverview(page, FORMATION_PROJECT_SLUG);
+    await gotoProjectFormation(page, FORMATION_PROJECT_SLUG);
 
     const rowTitle = page.getByTestId('formation-checklist-row-title-formation-item:cascade-data-alliance:contribution-agreement-executed');
     await expect(rowTitle).toBeVisible({ timeout: DATA_LOAD_TIMEOUT });
@@ -70,7 +70,7 @@ test.describe('Formation Checklist section (GH-1958)', () => {
   test('the "Choose a template" empty state renders when no template has been chosen', async ({ page }) => {
     await stubFormationFlag(page, true);
     await mockFormationChecklistApis(page, { project: buildBaseProject(FORMATION_PROJECT_SLUG), checklistState: 'no-template' });
-    await gotoProjectOverview(page, FORMATION_PROJECT_SLUG);
+    await gotoProjectFormation(page, FORMATION_PROJECT_SLUG);
 
     await expect(page.getByTestId('formation-checklist-empty-no-template')).toBeVisible({ timeout: DATA_LOAD_TIMEOUT });
   });
@@ -78,7 +78,7 @@ test.describe('Formation Checklist section (GH-1958)', () => {
   test('the "hasn\'t started" empty state renders when a template is chosen but has no items yet', async ({ page }) => {
     await stubFormationFlag(page, true);
     await mockFormationChecklistApis(page, { project: buildBaseProject(FORMATION_PROJECT_SLUG), checklistState: 'no-items' });
-    await gotoProjectOverview(page, FORMATION_PROJECT_SLUG);
+    await gotoProjectFormation(page, FORMATION_PROJECT_SLUG);
 
     await expect(page.getByTestId('formation-checklist-empty-no-items')).toBeVisible({ timeout: DATA_LOAD_TIMEOUT });
   });
@@ -86,7 +86,7 @@ test.describe('Formation Checklist section (GH-1958)', () => {
   test('the inline error state renders (with a working Retry) on a 500 from the checklist endpoint', async ({ page }) => {
     await stubFormationFlag(page, true);
     await mockFormationChecklistApis(page, { project: buildBaseProject(FORMATION_PROJECT_SLUG), checklistState: 'error' });
-    await gotoProjectOverview(page, FORMATION_PROJECT_SLUG);
+    await gotoProjectFormation(page, FORMATION_PROJECT_SLUG);
 
     await expect(page.getByTestId('formation-checklist-inline-error')).toBeVisible({ timeout: DATA_LOAD_TIMEOUT });
     const retry = page.getByTestId('formation-checklist-retry');
@@ -122,7 +122,7 @@ test.describe('Formation Checklist section (GH-1958)', () => {
         body: JSON.stringify({ formation, template: mockFormationTemplate, items, data_source: 'fixture' }),
       })
     );
-    await gotoProjectOverview(page, FORMATION_PROJECT_SLUG);
+    await gotoProjectFormation(page, FORMATION_PROJECT_SLUG);
 
     const button = page.getByTestId(`formation-checklist-row-link-${linkItem.uid}`);
     await expect(button).toBeVisible({ timeout: DATA_LOAD_TIMEOUT });
@@ -169,7 +169,7 @@ test.describe('Formation Checklist section (GH-1958)', () => {
       await route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify({ ...item, status: 'done', skip_reason: null }) });
     });
 
-    await gotoProjectOverview(page, FORMATION_PROJECT_SLUG);
+    await gotoProjectFormation(page, FORMATION_PROJECT_SLUG);
 
     const drawer = page.getByTestId('formation-item-drawer');
     const markCompleteHost = page.getByTestId('formation-item-drawer-mark-complete');

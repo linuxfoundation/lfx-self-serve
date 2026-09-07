@@ -85,6 +85,6 @@ export const formationProjectEnabledGuard: CanMatchFn = async () => {
     return deniedOverview(router, undefined);
   }
 
-  const project = await firstValueFrom(projectService.getProject(slug, false).pipe(catchError(() => of(null))));
+  const project = await firstValueFrom(projectService.getProject(slug, false));
   return isFormationStage(project?.stage) ? true : deniedOverview(router, slug);
 };
