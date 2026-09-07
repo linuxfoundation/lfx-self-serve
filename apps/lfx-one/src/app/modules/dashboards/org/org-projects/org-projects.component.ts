@@ -14,6 +14,7 @@ import {
   DEFAULT_ORG_PROJECTS_WORKSPACES,
   HEALTH_SCORE_BADGE,
   HEALTH_SCORE_LABELS,
+  HEALTH_SCORE_PARTIAL_SUFFIX,
   INFLUENCE_BAND_BAR_FILL_CLASS,
   INFLUENCE_BAND_BAR_FILL_CLASS_LIGHT,
   INFLUENCE_BAND_LABELS,
@@ -47,7 +48,7 @@ import type {
   OrgProjectsWorkspaceId,
   SortDirection,
 } from '@lfx-one/shared/interfaces';
-import { buildInsightsUrl, downloadCsv, localDateStamp } from '@lfx-one/shared/utils';
+import { buildInsightsUrl, downloadCsv, isPartialHealthScore, localDateStamp } from '@lfx-one/shared/utils';
 import { MenuItem, MessageService } from 'primeng/api';
 import { DialogModule } from 'primeng/dialog';
 import { PopoverModule } from 'primeng/popover';
@@ -595,7 +596,7 @@ export class OrgProjectsComponent {
   // Full health summary (rating + sub-scores) so keyboard/screen-reader users get the popover's content without a mouse.
   protected healthAriaLabel(project: OrgLensProject): string {
     const metrics = project.healthMetrics.map((m) => `${m.label} ${m.value}`).join(', ');
-    return `Health: ${HEALTH_SCORE_LABELS[this.normalizeHealth(project.health)]}. ${metrics}.`;
+    return `Health: ${this.healthLabelFor(project)}. ${metrics}.`;
   }
   /** The "Add project(s)" multi-select filter box drives the debounced server-side project search. */
   protected onAddProjectsFilter(query: string): void {
@@ -794,7 +795,7 @@ export class OrgProjectsComponent {
           ecosystemBars: orgMetricsUnavailable ? [] : this.bandBars(project.ecosystemInfluence),
           technicalBandLabel: orgMetricsUnavailable ? ORG_PROJECTS_METRIC_UNAVAILABLE_LABEL : INFLUENCE_BAND_LABELS[project.technicalInfluence],
           ecosystemBandLabel: orgMetricsUnavailable ? ORG_PROJECTS_METRIC_UNAVAILABLE_LABEL : INFLUENCE_BAND_LABELS[project.ecosystemInfluence],
-          healthLabel: HEALTH_SCORE_LABELS[this.normalizeHealth(project.health)],
+          healthLabel: this.healthLabelFor(project),
           healthBadge: HEALTH_SCORE_BADGE[this.normalizeHealth(project.health)],
           // Need ≥2 samples to draw a line; a shorter series renders a flat baseline placeholder instead.
           hasTrendData: project.trend.series.length > 1,
@@ -1034,6 +1035,13 @@ export class OrgProjectsComponent {
 
   private normalizeHealth(health: HealthScore): HealthScore {
     return Object.prototype.hasOwnProperty.call(HEALTH_SCORE_BADGE, health) ? health : 'unavailable';
+  }
+
+  // Bare band label, plus " - Partial" when the BFF-sourced coveredCategoryCount marks a 2-of-3 score
+  // (never recomputed locally — see OrgLensProject.healthCoveredCategoryCount).
+  private healthLabelFor(project: OrgLensProject): string {
+    const label = HEALTH_SCORE_LABELS[this.normalizeHealth(project.health)];
+    return isPartialHealthScore(project.healthCoveredCategoryCount) ? `${label}${HEALTH_SCORE_PARTIAL_SUFFIX}` : label;
   }
 
   // Fallback rows (explicit health-only/unavailable, influence/trend "Unavailable") always sort after measured rows,
