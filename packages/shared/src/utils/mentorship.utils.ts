@@ -204,10 +204,19 @@ export function getMentorshipEnrollStepErrors(step: MentorshipEnrollStep, form: 
   } else if (!form.prerequisites.some((item) => item.required)) {
     errors.prerequisites = 'At least one prerequisite is required.';
   }
-  if (!form.termsAccepted) {
+  if (!isMentorshipTermsAccepted(form.termsAccepted)) {
     errors.termsAccepted = 'Please accept terms and conditions in order to proceed.';
   }
   return errors;
+}
+
+/**
+ * PrimeNG's checkbox can write `true`, or a non-empty array when `binary` is not applied.
+ * Treat any of those as an accepted terms check so a visually checked box is not rejected.
+ */
+export function isMentorshipTermsAccepted(value: unknown): boolean {
+  if (value === true || value === 1 || value === 'true') return true;
+  return Array.isArray(value) && value.length > 0;
 }
 
 export function isMentorshipEnrollStepValid(step: MentorshipEnrollStep, form: MentorshipEnrollForm): boolean {

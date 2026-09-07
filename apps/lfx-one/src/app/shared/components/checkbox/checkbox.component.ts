@@ -13,6 +13,7 @@ import { CheckboxModule } from 'primeng/checkbox';
 export class CheckboxComponent {
   public readonly form = input.required<FormGroup>();
   public readonly control = input.required<string>();
+  public readonly inputId = input<string>();
   public readonly label = input<string>('');
   public readonly binary = input<boolean>(true);
   public readonly disabled = input<boolean>(false);
