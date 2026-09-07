@@ -218,11 +218,10 @@
               data-testid="committee-about-charter-link">
               {{ committee().charter!.url }}
             </a>
-            @if (committee().charter?.updated_by; as updatedBy) {
-              <span class="text-xs text-gray-400" data-testid="committee-about-charter-updated-by"
-                >Last updated by {{ updatedBy.name || updatedBy.username || 'someone' }} on {{ committee().charter!.updated_at | date: 'MMM d, y' }}</span
-              >
-            }
+            <span class="text-xs text-gray-400" data-testid="committee-about-charter-updated-by"
+              >Last updated by {{ committee().charter?.updated_by?.name || committee().charter?.updated_by?.username || 'someone' }} on
+              {{ committee().charter!.updated_at | date: 'MMM d, y' }}</span
+            >
           </div>
         } @else if (committee().charter; as charter) {
           <span

@@ -102,6 +102,24 @@ describe('CommitteeAboutComponent charter card', () => {
     expect(updatedBy!.textContent).toContain('Alice Example');
   });
 
+  it('still shows the "Last updated by someone on <date>" line when the charter has no updated_by (upstream permits it to be absent)', async () => {
+    fixture.componentRef.setInput(
+      'committee',
+      committee({
+        charter: {
+          url: 'https://example.org/governance/charter.pdf',
+          version: 1,
+          updated_at: '2026-08-01T00:00:00Z',
+        },
+      })
+    );
+    await fixture.whenStable();
+
+    const updatedBy = fixture.nativeElement.querySelector('[data-testid="committee-about-charter-updated-by"]');
+    expect(updatedBy).not.toBeNull();
+    expect(updatedBy!.textContent).toContain('Last updated by someone');
+  });
+
   it('shows an "Add charter" edit button when editable and no charter exists', async () => {
     fixture.componentRef.setInput('committee', committee());
     fixture.componentRef.setInput('canEdit', true);
