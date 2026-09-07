@@ -568,13 +568,89 @@ export interface ClaRow {
 }
 
 /**
+ * Status of one organization CCLA, derived server-side (#1978).
+ *
+ * Upstream exposes signed-ness and the sanctions flag as two independent booleans; the card
+ * has one slot, and sanctions win — presenting a sanctioned entity's agreement as ordinarily
+ * signed is the more damaging of the two possible errors.
+ *
+ * The approved design's third value, "not started", is **not producible** here: the upstream
+ * list is derived from signed + approved CCLA signatures, so every row it returns is signed.
+ * An unsigned CLA Group is the Sign CLA flow's subject, not this list's. Recorded rather than
+ * omitted so its absence does not read as a defect to someone comparing against the design.
+ */
+export type OrgClaGroupStatus = 'signed' | 'sanctioned';
+
+/** One Salesforce project covered by an organization's CLA Group (#1978). */
+export interface OrgClaGroupProject {
+  projectSfid?: string;
+  projectName: string;
+}
+
+/**
+ * One corporate CLA the organization holds — one signing entity, one CLA Group (#1978).
+ *
+ * Every field here is organization-grain. The upstream payload carries the CCLA managers
+ * themselves; they are dropped at the mapper, so `claManagersCount` is all that survives.
+ * That drop is at the mapper and not at the template on purpose: a template that declines to
+ * render a field still ships it to the browser inside the transferred state.
+ */
+export interface OrgClaGroup {
+  /**
+   * The CCLA signature id. The row key.
+   *
+   * `claGroupId` is deliberately not the key: the upstream grain is (signing entity x CLA
+   * group), so one organization can hold two rows for the same CLA Group under different
+   * signing entities.
+   */
+  id: string;
+  /** CLA Group display name, falling back to its UUID so a nameless row still renders. */
+  claGroupName: string;
+  claGroupId?: string;
+  /**
+   * The signing entity that actually signed. Present only when it differs from the
+   * organization's own name — the common case would otherwise repeat the page title on
+   * every card.
+   */
+  signingEntityName?: string;
+  foundationName?: string;
+  foundationSfid?: string;
+  /** Covered projects, in the upstream's `projectName` order. May be empty. */
+  projects: OrgClaGroupProject[];
+  /** RFC3339 instant the CCLA was signed. Carried for the agreement detail view. */
+  signedOn?: string;
+  status: OrgClaGroupStatus;
+  /**
+   * Upstream's own `needsClaManager` — signed with zero CLA managers — taken verbatim.
+   *
+   * Not re-derived from `claManagersCount`, though the two agree today. Two definitions of
+   * one condition that agree now is precisely the arrangement that drifts later; the
+   * producer owns this one.
+   */
+  needsClaManager: boolean;
+  claManagersCount: number;
+  /**
+   * How many approval criteria (the rules deciding who may be covered) the agreement has.
+   *
+   * **Always absent.** The CLA service returns no such count, and the card's first stat is
+   * this one — not the employee-acknowledgement count, which is a different quantity with no
+   * slot on this page. The field exists so that when the producer adds the count, populating
+   * it is a one-line mapper change and no consumer moves.
+   *
+   * Do not populate this from `approvedContributorsCount`, do not default it to 0, and do not
+   * fetch it per row: an approval-list call per card is an N+1 on the landing page. Absent
+   * renders as unavailable, which is true; 0 would assert the agreement approves nobody.
+   */
+  approvalCriteriaCount?: number;
+}
+
+/**
  * Response of `GET /api/orgs/:orgUid/lens/cla-groups` — the Organization Lens EasyCLA list.
  *
  * `orgUid` echoes the grant-checked path parameter rather than anything the caller sent in a
  * body or query, so the client can key a cache on the org the server actually served.
- * `claGroups` is empty until the BE-1 wiring (#1978) lands.
  */
 export interface OrgClaGroupList {
   orgUid: string;
-  claGroups: [];
+  claGroups: OrgClaGroup[];
 }

@@ -224,3 +224,96 @@ export interface RecordedGithubIdentity {
   githubId: string;
   githubUsername?: string;
 }
+
+// ---------------------------------------------------------------------------
+// Organization Lens EasyCLA — `GET /v4/company/external/{companySFID}/cla-groups`
+// (easycla#5188). Server-only, like everything above: only the mapped
+// OrgClaGroup crosses into @lfx-one/shared. That boundary is not stylistic —
+// this payload carries the CCLA managers by name, and this surface renders only
+// how many there are. A type shared with the client is a type someone forwards.
+// ---------------------------------------------------------------------------
+
+/** One Salesforce project a CLA Group covers (`#/definitions/company-cla-group-project`). */
+export interface EasyClaCompanyClaGroupProject {
+  projectSFID?: string;
+  projectName?: string;
+}
+
+/**
+ * One CLA manager on the CCLA signature ACL (`#/definitions/company-cla-group-manager`).
+ *
+ * Typed so the count can be trusted against the array when they disagree — not so the
+ * entries can be forwarded. Nothing in this file's consumers may map one of these onto a
+ * shared interface; the managers surface is its own feature with its own authorization
+ * argument.
+ */
+export interface EasyClaCompanyClaGroupManager {
+  userID?: string;
+  lfUsername?: string;
+}
+
+/**
+ * One CCLA of one signing entity under one CLA group (`#/definitions/company-cla-group`).
+ *
+ * The grain is (signing entity x CLA group), not CLA group: one organization can hold
+ * agreements for the same group under several company records sharing its external SFID,
+ * so `claGroupID` alone does not identify an entry. `signatureID` does.
+ *
+ * Every field is optional here though upstream declares them present, because a producer
+ * that drops one should degrade a single card rather than fail the page.
+ */
+export interface EasyClaCompanyClaGroup {
+  companyID?: string;
+  companySFID?: string;
+  companyName?: string;
+  /** The signing entity's name; upstream falls back to the company name when it has none. */
+  signingEntityName?: string;
+  claGroupID?: string;
+  claGroupName?: string;
+  foundationSFID?: string;
+  foundationName?: string;
+  /** Sorted by `projectName` upstream. */
+  projects?: EasyClaCompanyClaGroupProject[];
+  /**
+   * Always true in practice: the list is derived from signed + approved CCLA signatures,
+   * so an unsigned group is not returned at all. Typed because the sanctions override
+   * reads better against an explicit flag than against its absence.
+   */
+  signed?: boolean;
+  signedOn?: string;
+  signatureID?: string;
+  /** Stored sanctions flag of the *signing entity*, not of the parent organization. */
+  sanctioned?: boolean;
+  /**
+   * Employee acknowledgements (ECLAs) under this CCLA — people covered.
+   *
+   * Deliberately not mapped onto the list row. This is not the count the CLA Group card
+   * previews: that slot is the approval *criteria* count, the rules that decide who may be
+   * covered, which this endpoint does not return in any form. The two are routinely
+   * confused because the surface being replaced labels its rules section as though it
+   * listed contributors. Substituting this here would put a real number under a label
+   * naming a different quantity.
+   */
+  approvedContributorsCount?: number;
+  claManagersCount?: number;
+  /** Sorted by `lfUsername` upstream. Counted, never forwarded. */
+  claManagers?: EasyClaCompanyClaGroupManager[];
+  /** Upstream-computed: signed with zero CLA managers. Taken as given, never re-derived. */
+  needsClaManager?: boolean;
+  autoCreateECLA?: boolean;
+}
+
+/**
+ * Response for `GET /v4/company/external/{companySFID}/cla-groups`
+ * (`#/definitions/company-cla-groups`).
+ *
+ * An unknown company and a company with no CCLAs both return 200 with an empty `list` —
+ * the endpoint never creates a company record as a side effect of being asked about one.
+ * There is no 404 on this path.
+ */
+export interface EasyClaCompanyClaGroupList {
+  companySFID?: string;
+  resultCount?: number;
+  /** Sorted by `signingEntityName` then `claGroupName` upstream. */
+  list?: EasyClaCompanyClaGroup[];
+}
