@@ -12,6 +12,7 @@
         [text]="true"
         size="small"
         styleClass="!text-blue-600 !px-0 self-start"
+        [disabled]="submitting()"
         (onClick)="onCancel()"
         data-testid="mentorship-enroll-back-to-programs" />
       <div class="flex flex-col gap-1">
@@ -50,6 +51,7 @@
         severity="secondary"
         [text]="true"
         size="small"
+        [disabled]="submitting()"
         (onClick)="onBack()"
         data-testid="mentorship-enroll-back" />
       <lfx-button

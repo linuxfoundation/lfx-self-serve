@@ -31,7 +31,7 @@
         <label class="text-sm font-medium text-gray-700" for="name">Program Name <span class="text-red-500">*</span></label>
         <span class="text-xs text-gray-400">{{ nameLength() }} / {{ nameMax }}</span>
       </div>
-      <lfx-input-text [form]="form()" control="name" id="name" placeholder="Enter program name" [maxlength]="nameMax" dataTest="mentorship-enroll-name" />
+      <lfx-input-text [form]="form()" control="name" inputId="name" placeholder="Enter program name" [maxlength]="nameMax" dataTest="mentorship-enroll-name" />
       @if (nameLookup().status === 'loading') {
         <p class="text-xs text-gray-500">{{ nameChecking }}</p>
       }
@@ -146,7 +146,7 @@
       <lfx-input-text
         [form]="form()"
         control="repositoryUrl"
-        id="repositoryUrl"
+        inputId="repositoryUrl"
         placeholder="Enter a valid URL (e.g., https://www.example.com/repo)"
         dataTest="mentorship-enroll-repo" />
       <p class="text-xs text-gray-500">{{ repoHelper }}</p>
@@ -160,7 +160,7 @@
       <lfx-input-text
         [form]="form()"
         control="websiteUrl"
-        id="websiteUrl"
+        inputId="websiteUrl"
         placeholder="Enter a valid URL (e.g., https://www.example.com/)"
         dataTest="mentorship-enroll-website" />
       <p class="text-xs text-gray-500">{{ websiteHelper }}</p>
@@ -184,7 +184,7 @@
             <lfx-input-text
               [form]="form()"
               control="ciiProjectId"
-              id="ciiProjectId"
+              inputId="ciiProjectId"
               placeholder="Project ID"
               styleClass="!border-0 !shadow-none !rounded-none w-full"
               dataTest="mentorship-enroll-cii" />
@@ -218,7 +218,12 @@
     </div>
     <div class="flex flex-col gap-1">
       <label class="text-sm font-medium text-gray-700" for="codeOfConductUrl">Code of Conduct URL</label>
-      <lfx-input-text [form]="form()" control="codeOfConductUrl" id="codeOfConductUrl" placeholder="Code of Conduct URL" dataTest="mentorship-enroll-coc" />
+      <lfx-input-text
+        [form]="form()"
+        control="codeOfConductUrl"
+        inputId="codeOfConductUrl"
+        placeholder="Code of Conduct URL"
+        dataTest="mentorship-enroll-coc" />
       @if (errors().codeOfConductUrl) {
         <p class="text-xs text-red-600">{{ errors().codeOfConductUrl }}</p>
       }

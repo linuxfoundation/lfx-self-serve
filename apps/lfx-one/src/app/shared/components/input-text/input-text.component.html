@@ -7,7 +7,7 @@
       <p-inputicon [class]="icon()" />
       <input
         pInputText
-        [id]="id()"
+        [id]="inputId() || id()"
         [formControlName]="control()"
         [pSize]="size()!"
         [type]="type()"
@@ -22,7 +22,7 @@
   } @else {
     <input
       pInputText
-      [id]="id()"
+      [id]="inputId() || id()"
       [formControlName]="control()"
       [pSize]="size()!"
       [type]="type()"

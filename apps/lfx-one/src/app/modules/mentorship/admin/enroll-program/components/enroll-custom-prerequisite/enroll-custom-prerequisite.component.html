@@ -23,7 +23,7 @@
     <lfx-input-text
       [form]="form"
       control="name"
-      [id]="'custom-prereq-name-' + index()"
+      [inputId]="'custom-prereq-name-' + index()"
       placeholder="Enter Prerequisite Name"
       [dataTest]="'mentorship-enroll-custom-prereq-name-' + index()" />
     @if (showErrors() && !form.controls.name.value.trim()) {
@@ -51,7 +51,7 @@
     <lfx-textarea
       [form]="form"
       control="description"
-      [id]="'custom-prereq-description-' + index()"
+      [inputId]="'custom-prereq-description-' + index()"
       placeholder="Write a short description about your prerequisite"
       [rows]="4"
       [maxlength]="descriptionMax"

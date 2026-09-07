@@ -2,8 +2,8 @@
 // SPDX-License-Identifier: MIT
 
 import { isPlatformBrowser } from '@angular/common';
-import { ChangeDetectionStrategy, Component, computed, DestroyRef, inject, PLATFORM_ID, signal } from '@angular/core';
-import { takeUntilDestroyed, toSignal } from '@angular/core/rxjs-interop';
+import { ChangeDetectionStrategy, Component, computed, inject, PLATFORM_ID, signal } from '@angular/core';
+import { toSignal } from '@angular/core/rxjs-interop';
 import { FormControl, FormGroup, Validators } from '@angular/forms';
 import { Router } from '@angular/router';
 import { ButtonComponent } from '@components/button/button.component';
@@ -32,7 +32,7 @@ import { getMentorshipEnrollStepErrors } from '@lfx-one/shared/utils';
 import { MentorshipService } from '@services/mentorship.service';
 import { ConfirmationService, MessageService } from 'primeng/api';
 import { ConfirmDialogModule } from 'primeng/confirmdialog';
-import { tap } from 'rxjs';
+import { take, tap } from 'rxjs';
 
 import { EnrollDetailsStepComponent } from './components/enroll-details-step/enroll-details-step.component';
 import { EnrollPrerequisitesStepComponent } from './components/enroll-prerequisites-step/enroll-prerequisites-step.component';
@@ -64,7 +64,6 @@ export class EnrollProgramComponent {
   private readonly messageService = inject(MessageService);
   private readonly confirmationService = inject(ConfirmationService);
   private readonly platformId = inject(PLATFORM_ID);
-  private readonly destroyRef = inject(DestroyRef);
 
   protected readonly form = new FormGroup({
     importProgramId: new FormControl('', { nonNullable: true }),
@@ -190,6 +189,7 @@ export class EnrollProgramComponent {
   }
 
   protected onCancel(): void {
+    if (this.submitting()) return;
     this.confirmationService.confirm({
       header: 'Cancel enrollment',
       message: MENTORSHIP_ENROLL_CANCEL_CONFIRM,
@@ -210,7 +210,7 @@ export class EnrollProgramComponent {
     this.submitting.set(true);
     this.mentorshipService
       .enrollProgram(this.toEnrollForm(this.form.getRawValue()))
-      .pipe(takeUntilDestroyed(this.destroyRef))
+      .pipe(take(1))
       .subscribe({
         next: () => {
           this.submitting.set(false);
