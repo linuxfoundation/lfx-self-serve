@@ -7,7 +7,13 @@
       <label class="text-sm font-medium text-gray-700" for="dialog-term-name">Name <span class="text-red-500">*</span></label>
       <span class="text-xs text-gray-400">{{ nameLength() }} / {{ nameMax }}</span>
     </div>
-    <lfx-input-text [form]="form" control="name" inputId="dialog-term-name" placeholder="Term name" dataTest="mentorship-enroll-term-name" />
+    <lfx-input-text
+      [form]="form"
+      control="name"
+      inputId="dialog-term-name"
+      placeholder="Term name"
+      [maxlength]="nameMax"
+      dataTest="mentorship-enroll-term-name" />
     @if (showErrors() && form.controls.name.invalid) {
       <p class="text-xs text-red-600">Term name is required.</p>
     }
