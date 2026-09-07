@@ -43,11 +43,16 @@ export class AdminComponent {
   // ─── Pagination Driver ─────────────────────────────────────────────────────
   private readonly programsOffset = signal(0);
   private readonly loadMore$ = new Subject<void>();
+  /** Last filter pair that `filters$` actually applied (post-debounce). */
+  private readonly appliedSearch = signal('');
+  private readonly appliedStatus = signal<MentorshipProgramStatus | null>(null);
 
   // ─── Computed / Async Signals ──────────────────────────────────────────────
   private readonly programsState: Signal<MentorshipProgramsResponse> = this.initPrograms();
   protected readonly programs = computed(() => this.programsState().data);
-  protected readonly hasMore = computed(() => !this.filterLoading() && this.programsState().data.length < this.programsState().total);
+  /** True while the raw inputs have not yet been applied (inside the 200 ms debounce). */
+  private readonly filtersDirty = computed(() => this.searchTerm() !== this.appliedSearch() || this.statusFilter() !== this.appliedStatus());
+  protected readonly hasMore = computed(() => !this.filterLoading() && !this.filtersDirty() && this.programsState().data.length < this.programsState().total);
 
   // ─── Protected Methods ─────────────────────────────────────────────────────
   protected onProgramClick(programId: string): void {
@@ -93,9 +98,11 @@ export class AdminComponent {
     );
 
     const firstPage$ = filters$.pipe(
-      tap(() => {
+      tap((filters) => {
         this.programsOffset.set(0);
         this.filterLoading.set(true);
+        this.appliedSearch.set(filters.search);
+        this.appliedStatus.set(filters.status);
       }),
       switchMap((filters) =>
         this.mentorshipService
@@ -120,8 +127,8 @@ export class AdminComponent {
       exhaustMap(() =>
         this.mentorshipService
           .getPrograms({
-            search: this.searchTerm() || undefined,
-            status: this.statusFilter() ?? undefined,
+            search: this.appliedSearch() || undefined,
+            status: this.appliedStatus() ?? undefined,
             offset: this.programsOffset(),
             limit: MENTORSHIP_PROGRAM_PAGE_SIZE,
           })
