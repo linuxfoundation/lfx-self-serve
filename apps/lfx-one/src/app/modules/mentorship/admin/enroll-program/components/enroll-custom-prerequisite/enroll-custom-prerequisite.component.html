@@ -25,6 +25,7 @@
       control="name"
       [inputId]="'custom-prereq-name-' + index()"
       placeholder="Enter Prerequisite Name"
+      [maxlength]="nameMax"
       [dataTest]="'mentorship-enroll-custom-prereq-name-' + index()" />
     @if (showErrors() && !form.controls.name.value.trim()) {
       <p class="text-xs text-red-600">Prerequisite name is required.</p>
@@ -63,7 +64,7 @@
   </div>
 
   <div class="flex items-start gap-3">
-    <lfx-checkbox [form]="form" control="requireFile" />
-    <p class="min-w-0 flex-1 text-sm text-gray-700 leading-5">{{ fileLabel }}</p>
+    <lfx-checkbox [form]="form" control="requireFile" [inputId]="'custom-prereq-require-file-' + index()" />
+    <label class="min-w-0 flex-1 text-sm text-gray-700 leading-5" [attr.for]="'custom-prereq-require-file-' + index()">{{ fileLabel }}</label>
   </div>
 </section>
