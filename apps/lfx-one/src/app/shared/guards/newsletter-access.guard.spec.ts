@@ -39,8 +39,8 @@ describe('newsletterAccessGuard', () => {
 
   const runGuard = async (r: ActivatedRouteSnapshot): Promise<boolean | UrlTree> => {
     const result = TestBed.runInInjectionContext(() => newsletterAccessGuard(r, {} as RouterStateSnapshot));
-    // The ED fast path returns `true` synchronously and the no-context fallback a bare UrlTree;
-    // every other branch returns an Observable.
+    // The no-:projectUid ED fast path returns `true` synchronously and the no-context
+    // fallback a bare UrlTree; every other branch returns an Observable.
     if (result instanceof Observable) {
       return firstValueFrom(result as Observable<boolean | UrlTree>);
     }
@@ -68,13 +68,37 @@ describe('newsletterAccessGuard', () => {
     });
   });
 
-  it('allows the executive-director persona synchronously without resolving any project', async () => {
+  it('allows the executive-director persona synchronously on routes without a :projectUid', async () => {
     currentPersona.set('executive-director');
+
+    const result = await runGuard(route());
+
+    expect(result).toBe(true);
+    expect(getProject).not.toHaveBeenCalled();
+  });
+
+  it('awaits the route-project resolution for the executive-director persona on :projectUid routes', async () => {
+    // The page's reconcileRouteProjectContext reuses this shareReplay-cached lookup —
+    // resolving it in the guard keeps chrome from painting a stale cookie-restored
+    // context while the page's own fetch is in flight (GH-1570).
+    currentPersona.set('executive-director');
+    projectsByKey = { 'uid-a': { slug: 'route-project' } };
 
     const result = await runGuard(route({ params: { projectUid: 'uid-a', id: 'n1' } }));
 
     expect(result).toBe(true);
-    expect(getProject).not.toHaveBeenCalled();
+    expect(getProject).toHaveBeenCalledWith('uid-a', false);
+  });
+
+  it('does not deny the executive-director persona when the route-project resolution fails', async () => {
+    // Fail-open: 'uid-gone' is intentionally unseeded, so the lookup resolves null —
+    // a deleted/unknown project or fetch error must not deny the ED fast path.
+    currentPersona.set('executive-director');
+
+    const result = await runGuard(route({ params: { projectUid: 'uid-gone', id: 'n1' } }));
+
+    expect(result).toBe(true);
+    expect(getProject).toHaveBeenCalledWith('uid-gone', false);
   });
 
   it('authorizes against the route :projectUid rather than a stale query param or cookie-restored context', async () => {

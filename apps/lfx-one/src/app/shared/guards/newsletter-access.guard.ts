@@ -13,7 +13,9 @@ import { ProjectService } from '../services/project.service';
  * Route guard for the newsletters feature.
  *
  * Grants access to:
- *   - Executive Director persona (fast path, synchronous), OR
+ *   - Executive Director persona (fast path — synchronous except on `:projectUid`
+ *     deep links, which await the route-project resolution so page chrome never
+ *     paints a stale cookie-restored context, GH-1570), OR
  *   - Users with writer (or owner-equivalent) permission on the route's
  *     foundation/project — `project.writer === true` set by the backend's
  *     FGA-driven role check.
@@ -37,9 +39,27 @@ export const newsletterAccessGuard: CanActivateFn = (route: ActivatedRouteSnapsh
   const projectService = inject(ProjectService);
   const router = inject(Router);
 
-  // Fast path: ED persona. Synchronous (cookie-seeded) so SSR + first-paint
-  // navigations don't need to await an HTTP round-trip.
+  // Edit/analytics routes carry the owning project as `:projectUid` — for writer
+  // checks it wins over the query param and the cookie-restored context, both of
+  // which can be stale when a link is shared or the user switched projects since
+  // it was cut. The /foundation|project/newsletters mounts run this guard at the
+  // parent too (the flat mount deliberately omits it), where the param lives on
+  // the child snapshot being activated — look one level down so the mount-level
+  // invocation resolves the same route project.
+  const projectUid = route.paramMap.get('projectUid') ?? route.firstChild?.paramMap.get('projectUid') ?? null;
+
+  // Fast path: ED persona. Synchronous (cookie-seeded) on routes without a
+  // :projectUid, so SSR + first-paint navigations don't need to await an HTTP
+  // round-trip. Edit/analytics deep links are the exception: they await the
+  // route-project resolution because the page's reconcileRouteProjectContext
+  // reuses this shareReplay-cached lookup — returning before it resolves would
+  // let chrome paint the stale cookie-restored context for the request's
+  // duration (GH-1570). Fail-open: getProject maps errors to null, and the ED
+  // is never denied here.
   if (personaService.currentPersona() === 'executive-director') {
+    if (projectUid) {
+      return projectService.getProject(projectUid, false).pipe(map(() => true));
+    }
     return true;
   }
 
@@ -64,14 +84,6 @@ export const newsletterAccessGuard: CanActivateFn = (route: ActivatedRouteSnapsh
   // routes that carry neither (e.g., the `/newsletters` lens-redirect parent).
   const contextSlug = route.queryParamMap.get('project') ?? projectContextService.activeContext()?.slug ?? null;
 
-  // Edit/analytics routes carry the owning project as `:projectUid` — it wins
-  // over the query param and the cookie-restored context, both of which can be
-  // stale when a link is shared or the user switched projects since it was cut.
-  // The /foundation|project/newsletters mounts run this guard at the parent too
-  // (the flat mount deliberately omits it), where the param lives on the child
-  // snapshot being activated — look one level down so the mount-level invocation
-  // authorizes against the same route project instead of the legacy chain.
-  const projectUid = route.paramMap.get('projectUid') ?? route.firstChild?.paramMap.get('projectUid') ?? null;
   if (projectUid) {
     return projectService.getProject(projectUid, false).pipe(
       switchMap((resolved) => {
