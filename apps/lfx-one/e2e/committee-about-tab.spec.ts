@@ -137,6 +137,102 @@ test.describe('Group About tab (LFXV2-1713)', () => {
     await expect(page.getByRole('dialog')).toContainText('Edit Description');
   });
 
+  // These two exercise the actual editCharterRequested -> openEditCharter -> saveCharter wiring
+  // through committee-view (unit-tested in isolation on the card and the dialog separately, but
+  // not through this binding -- the PUT payload, the post-save refresh, and the no-op guard on an
+  // unchanged value all live in committee-view, which has no spec file of its own; see
+  // committee-view.component.ts:554-564's no-op guard comment).
+  test('admin (canEdit): adding a charter PUTs { charter: { url } }, refreshes, and shows the link with attribution', async ({ page }) => {
+    const charterUrl = 'https://example.org/e2e-charter.pdf';
+    let committeeState = baseCommittee({ my_role: 'Chair', writer: true });
+    await mockCommitteeApis(page, { committee: committeeState });
+
+    // Override the plain GET-only route registered above: PUT mutates the closed-over state and
+    // returns it, the subsequent GET (fired by saveCharter's refreshCommittee()) reads it back --
+    // mirrors the org-profile.spec.ts "S3: edit + save" stubbed-PUT pattern.
+    let putBody: unknown = null;
+    await page.route(`**/api/committees/${COMMITTEE_UID}`, (route) => {
+      const method = route.request().method();
+      if (method === 'PUT') {
+        putBody = route.request().postDataJSON();
+        committeeState = {
+          ...committeeState,
+          charter: { url: charterUrl, version: 1, updated_at: '2026-09-07T00:00:00Z', updated_by: { name: 'E2E Tester', username: 'e2e-tester', email: 'e2e@example.org' } },
+        };
+        return route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify(committeeState) });
+      }
+      if (method === 'GET') {
+        return route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify(committeeState) });
+      }
+      return route.fallback();
+    });
+
+    await gotoCommitteeTab(page);
+    await expect(page.getByTestId('committee-about')).toBeVisible({ timeout: DATA_LOAD_TIMEOUT });
+    await expect(page.getByTestId('committee-about-charter-empty')).toBeVisible();
+
+    await page.getByTestId('committee-about-edit-charter-btn').click();
+    const dialog = page.getByRole('dialog');
+    await expect(dialog).toBeVisible();
+    await expect(dialog).toContainText('Add Charter');
+
+    await page.locator('[data-test="committee-view-charter-input"]').fill(charterUrl);
+    await page.getByTestId('charter-dialog-save').click();
+
+    await expect(dialog).toHaveCount(0);
+    await expect(page.locator('.p-toast')).toContainText('Charter updated');
+    await expect.poll(() => putBody).toEqual({ charter: { url: charterUrl } });
+
+    const link = page.getByTestId('committee-about-charter-link');
+    await expect(link).toBeVisible({ timeout: DATA_LOAD_TIMEOUT });
+    await expect(link).toHaveAttribute('href', charterUrl);
+    await expect(page.getByTestId('committee-about-charter-updated-by')).toContainText('Last updated by E2E Tester');
+  });
+
+  test('admin (canEdit): saving the charter dialog dirty-but-unchanged is a no-op -- no PUT, no toast', async ({ page }) => {
+    const existingUrl = 'https://example.org/existing-charter.pdf';
+    await mockCommitteeApis(page, {
+      committee: baseCommittee({
+        my_role: 'Chair',
+        writer: true,
+        charter: { url: existingUrl, version: 3, updated_at: '2026-08-01T00:00:00Z', updated_by: { name: 'Prior Editor', username: 'prior', email: 'prior@example.org' } },
+      }),
+    });
+
+    let putCalled = false;
+    await page.route(`**/api/committees/${COMMITTEE_UID}`, (route) => {
+      if (route.request().method() === 'PUT') {
+        putCalled = true;
+        return route.fulfill({ status: 200, contentType: 'application/json', body: '{}' });
+      }
+      return route.fallback();
+    });
+
+    await gotoCommitteeTab(page);
+    await expect(page.getByTestId('committee-about-charter-link')).toBeVisible({ timeout: DATA_LOAD_TIMEOUT });
+
+    await page.getByTestId('committee-about-edit-charter-btn').click();
+    const dialog = page.getByRole('dialog');
+    await expect(dialog).toBeVisible();
+    await expect(dialog).toContainText('Edit Charter');
+
+    const input = page.locator('[data-test="committee-view-charter-input"]');
+    await expect(input).toHaveValue(existingUrl);
+    // Dirty the control without changing its final value -- FormControl.dirty latches true on
+    // any edit and never resets on its own, independent of whether the value ends up matching
+    // the original. This is exactly the case saveCharter()'s no-op guard exists for.
+    await input.fill(`${existingUrl}/`);
+    await input.fill(existingUrl);
+    await expect(page.getByTestId('charter-dialog-save')).toBeEnabled();
+
+    await page.getByTestId('charter-dialog-save').click();
+    await expect(dialog).toHaveCount(0);
+
+    await page.waitForTimeout(300);
+    expect(putCalled).toBe(false);
+    await expect(page.locator('.p-toast')).not.toBeVisible();
+  });
+
   test('?tab=about deep-links directly into the About tab', async ({ page }) => {
     await mockCommitteeApis(page, { committee: baseCommittee({ my_role: null, writer: false }) });
     await gotoCommitteeTab(page, '?tab=about');
