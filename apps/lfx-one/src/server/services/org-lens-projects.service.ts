@@ -496,7 +496,7 @@ export class OrgLensProjectsService {
   private mapProject(row: OrgLensProjectRow, peopleRows: OrgLensProjectPersonRow[]): OrgLensProject {
     const people = peopleRows.filter((person) => person.PROJECT_SLUG === row.PROJECT_SLUG);
     const category = normalizeHealthScoreCategoryV2(row.HEALTH_SCORE_CATEGORY_V2);
-    if (row.HEALTH_SCORE_CATEGORY_V2 && !category) {
+    if (row.HEALTH_SCORE_CATEGORY_V2 != null && !category) {
       logger.warning(undefined, 'map_org_project_health', 'Unrecognized warehouse health_score_category_v2; treating as unavailable', {
         slug: row.PROJECT_SLUG,
         category: row.HEALTH_SCORE_CATEGORY_V2,
@@ -533,7 +533,7 @@ export class OrgLensProjectsService {
       commits1y: 0,
       changeDriver: { label: 'Not calculated yet', direction: 'flat' },
       description: row.DESCRIPTION ?? `${row.PROJECT_NAME} is an open source project in the ${this.mapFoundation(row).name} ecosystem.`,
-      healthMetrics: this.hasHealthMetrics(row) ? this.mapHealthMetrics(row) : [],
+      healthMetrics: category && this.hasHealthMetrics(row) ? this.mapHealthMetrics(row) : [],
       // Real org-scoped row (org-dashboard parity): every metric is genuine, including participating
       // projects with activity_count = 0. fetchNoActivityProjects overrides this for its fallback rows.
       metricsState: 'full',

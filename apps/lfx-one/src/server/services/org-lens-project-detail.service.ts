@@ -1887,7 +1887,7 @@ export class OrgLensProjectDetailService {
       firstCommit: toIsoDate(row.FIRST_COMMIT_TS),
       softwareValueUsd: row.SOFTWARE_VALUE ?? null,
       health: this.mapHealth(row),
-      // Sourced straight from the warehouse — never recomputed, per health.mapHealth's v2-category/score precedence.
+      // Sourced straight from the warehouse — never recomputed, independent of mapHealth's category normalization.
       healthMaxScore: row.HEALTH_MAX_SCORE_V2 ?? null,
       healthCoveredCategoryCount: row.COVERED_CATEGORY_COUNT_V2 ?? null,
       foundationLabel,
@@ -1898,7 +1898,7 @@ export class OrgLensProjectDetailService {
     // The warehouse v2 category is the sole source of truth for the health label — never fall back to
     // classifying the legacy v1 score when the v2 category is null (LFXV2-3379).
     const category = normalizeHealthScoreCategoryV2(row.HEALTH_SCORE_CATEGORY_V2);
-    if (row.HEALTH_SCORE_CATEGORY_V2 && !category) {
+    if (row.HEALTH_SCORE_CATEGORY_V2 != null && !category) {
       logger.warning(undefined, 'map_org_project_health', 'Unrecognized warehouse health_score_category_v2; treating as unavailable', {
         slug: row.PROJECT_SLUG,
         category: row.HEALTH_SCORE_CATEGORY_V2,
