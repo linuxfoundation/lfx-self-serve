@@ -29,6 +29,8 @@ import {
   PD_VALID_TABS,
   PD_DEFAULT_TIME_RANGE,
   PD_DRAWER_QUERY_PARAM,
+  HEALTH_SCORE_BADGE,
+  HEALTH_SCORE_LABELS,
   HEALTH_SCORE_PARTIAL_SUFFIX,
   PD_HEALTH_TAG,
   PD_NON_LF_MARKER,
@@ -213,8 +215,10 @@ export class OrgProjectDetailComponent {
   protected readonly healthMeta = computed(() => {
     const hero = this.hero();
     const health = hero?.health;
+    // Null health (no v2 category, LFXV2-3379) renders the same "Unavailable" tag the Org Lens
+    // projects table shows for the identical condition, rather than omitting the badge entirely.
     if (!health) {
-      return null;
+      return { label: HEALTH_SCORE_LABELS.unavailable, ...HEALTH_SCORE_BADGE.unavailable };
     }
     const tag = PD_HEALTH_TAG[health];
     // Bare-band bg/text stay unsuffixed for color lookup; only the rendered label gets " - Partial",
