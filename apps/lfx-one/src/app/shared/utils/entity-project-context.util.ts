@@ -1,7 +1,7 @@
 // Copyright The Linux Foundation and each contributor to LFX.
 // SPDX-License-Identifier: MIT
 
-import { DestroyRef, Signal } from '@angular/core';
+import { computed, DestroyRef, Signal } from '@angular/core';
 import { takeUntilDestroyed, toObservable } from '@angular/core/rxjs-interop';
 import { NavigationEnd, Router } from '@angular/router';
 import { EntityWithProject, ProjectContext } from '@lfx-one/shared/interfaces';
@@ -109,6 +109,61 @@ export function syncEntityProjectContext<T extends EntityWithProject>(
       } else {
         projectContextService.setProject(context, syncUrl);
       }
+    });
+}
+
+/**
+ * Route-carried-project reconciliation for entity pages whose URL carries the owning project
+ * as a `:projectUid` route param (newsletter edit/analytics, GH-1570) rather than inside the
+ * entity payload. The URL is authoritative for the page's fetches, but page chrome (name/logo,
+ * sidebar) follows `activeContext()`, which a stale cookie-restored context can leave pointing
+ * at a different project. When the two disagree, resolve the route project by uid and re-point
+ * the context via applyEntityProjectContext — the uid-only variant of the entity-signal syncs
+ * above, for routes with no enriched entity payload.
+ *
+ * The mismatch is computed over BOTH the route uid and `activeContextUid()`: the context write
+ * makes them agree, which quiets the trigger, and a later route-lens re-assert (e.g. MainLayout
+ * on `?step=N` navigations) flips the mismatch back on, so the correction self-heals without
+ * NavigationEnd wiring. The re-apply hits the shareReplay-cached getProject — the route's guard
+ * has already resolved the same uid on activation, so the happy path costs no extra request.
+ *
+ * Call once from the component constructor (injection context is required for toObservable).
+ * A failed uid lookup resolves null (relation-gated `getProject(uid, false)`) and leaves the
+ * existing context untouched — legacy behavior, same degradation philosophy as the fallback sync.
+ */
+export function reconcileRouteProjectContext(
+  routeProjectUid: Signal<string | null>,
+  projectService: ProjectService,
+  projectContextService: ProjectContextService,
+  router: Router,
+  destroyRef: DestroyRef
+): void {
+  const unreconciledRouteProjectUid = computed(() => {
+    const uid = routeProjectUid();
+    if (!uid || uid === projectContextService.activeContextUid()) return null;
+    return uid;
+  });
+
+  toObservable(unreconciledRouteProjectUid)
+    .pipe(
+      filter((uid): uid is string => uid !== null),
+      switchMap((uid) => projectService.getProject(uid, false)),
+      takeUntilDestroyed(destroyRef)
+    )
+    .subscribe((project) => {
+      // null = deleted/unknown project (or no viewer relation) — keep the
+      // existing context rather than erroring the page.
+      if (!project) return;
+      const context: ProjectContext = {
+        uid: project.uid,
+        name: project.name,
+        slug: project.slug,
+        parent_uid: project.parent_uid,
+        logoUrl: project.logo_url,
+      };
+      // Mirror syncEntityProjectContext: only write ?project= to the URL when already present.
+      const syncUrl = 'project' in router.parseUrl(router.url).queryParams;
+      applyEntityProjectContext(projectContextService, context, computeIsFoundation(project), syncUrl);
     });
 }
 

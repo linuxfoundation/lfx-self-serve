@@ -50,7 +50,10 @@ export const newsletterAccessGuard: CanActivateFn = (route: ActivatedRouteSnapsh
     projectService.getProject(slug, false).pipe(
       map((project) => {
         if (project?.writer !== true) {
-          return router.createUrlTree([overviewPath], { queryParams: { project: slug } });
+          // `_notice: 'access'` mirrors writerGuard's denial convention — AppComponent turns it
+          // into the generic "Access Denied" toast (survives the SSR redirect, unlike a
+          // guard-side MessageService.add, which has no DOM on the server).
+          return router.createUrlTree([overviewPath], { queryParams: { project: slug, _notice: 'access' } });
         }
         return true;
       })
@@ -80,7 +83,7 @@ export const newsletterAccessGuard: CanActivateFn = (route: ActivatedRouteSnapsh
         // The uid lookup already returned the project entity, so check writer
         // directly on it; the resolved slug is only needed for the denial redirect.
         if (resolved.writer !== true) {
-          return of(router.createUrlTree([overviewPath], { queryParams: { project: resolved.slug } }));
+          return of(router.createUrlTree([overviewPath], { queryParams: { project: resolved.slug, _notice: 'access' } }));
         }
         return of(true);
       })
