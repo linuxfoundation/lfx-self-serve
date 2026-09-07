@@ -480,6 +480,11 @@ function currentMonthStartIso(): string {
   return `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}-01`;
 }
 
+/** True when the program has mock enrollment details that the import picker can copy. */
+export function isMentorshipProgramImportable(programId: string): boolean {
+  return Object.hasOwn(MENTORSHIP_IMPORT_PROGRAM_DETAILS, programId);
+}
+
 export function formFromImportedMentorshipProgram(importProgramId: string): MentorshipEnrollForm {
   if (!importProgramId) {
     return createEmptyMentorshipEnrollForm();

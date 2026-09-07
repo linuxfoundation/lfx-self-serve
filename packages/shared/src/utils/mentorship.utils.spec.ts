@@ -19,6 +19,7 @@ import {
   isMentorshipHttpUrl,
   isMentorshipIsoDate,
   isMentorshipLogoFileName,
+  isMentorshipTermsAccepted,
   matchesMentorshipPersonSearch,
   mentorshipMonthYearToStartDate,
   mentorshipPersonInitials,
@@ -48,6 +49,18 @@ describe('getMentorshipEnrollStepErrors', () => {
     expect(getMentorshipEnrollStepErrors('setup', form).terms).toBe('Add at least one program term.');
     expect(getMentorshipEnrollStepErrors('prerequisites', form).prerequisites).toBe('At least one prerequisite is required.');
     expect(getMentorshipEnrollStepErrors('prerequisites', form).termsAccepted).toBe('Please accept terms and conditions in order to proceed.');
+  });
+
+  it('treats a PrimeNG non-binary checkbox value as accepted terms', () => {
+    const form = createEmptyMentorshipEnrollForm();
+    form.prerequisites = form.prerequisites.map((item) => (item.id === 'prereq-cover' ? { ...item, required: true } : item));
+    (form as { termsAccepted: unknown }).termsAccepted = [undefined];
+
+    expect(isMentorshipTermsAccepted(true)).toBe(true);
+    expect(isMentorshipTermsAccepted(false)).toBe(false);
+    expect(isMentorshipTermsAccepted([])).toBe(false);
+    expect(isMentorshipTermsAccepted([undefined])).toBe(true);
+    expect(getMentorshipEnrollStepErrors('prerequisites', form).termsAccepted).toBeUndefined();
   });
 
   it('requires custom prerequisite fields when a custom card is added', () => {

@@ -3,9 +3,9 @@
 
 <ng-container [formGroup]="form()">
   <div class="flex items-center gap-2">
-    <p-checkbox [formControlName]="control()" [binary]="binary()" [inputId]="control()" [styleClass]="styleClass()" class="flex" />
+    <p-checkbox [formControlName]="control()" [binary]="binary()" [inputId]="inputId() || control()" [styleClass]="styleClass()" class="flex" />
     @if (label()) {
-      <label [for]="control()" [class]="labelClass() || 'text-sm font-medium text-gray-700 leading-3'">{{ label() }}</label>
+      <label [for]="inputId() || control()" [class]="labelClass() || 'text-sm font-medium text-gray-700 leading-3'">{{ label() }}</label>
     }
   </div>
 </ng-container>

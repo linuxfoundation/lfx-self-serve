@@ -7,7 +7,7 @@
       <p-inputicon [class]="icon()" />
       <input
         pInputText
-        [id]="id()"
+        [id]="inputId() || id()"
         [formControlName]="control()"
         [pSize]="size()!"
         [type]="type()"
@@ -15,12 +15,14 @@
         [class]="styleClass()"
         class="w-full"
         [autocomplete]="autocomplete()"
+        [readonly]="readonly()"
+        [attr.maxlength]="maxlength()"
         [attr.data-test]="dataTest()" />
     </p-iconfield>
   } @else {
     <input
       pInputText
-      [id]="id()"
+      [id]="inputId() || id()"
       [formControlName]="control()"
       [pSize]="size()!"
       [type]="type()"
@@ -28,6 +30,8 @@
       [class]="styleClass()"
       class="w-full"
       [autocomplete]="autocomplete()"
+      [readonly]="readonly()"
+      [attr.maxlength]="maxlength()"
       [attr.data-test]="dataTest()" />
   }
 </ng-container>
