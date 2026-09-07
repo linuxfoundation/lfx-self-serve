@@ -55,7 +55,7 @@ export class AdminComponent {
   protected readonly hasMore = computed(() => !this.filterLoading() && !this.filtersDirty() && this.programsState().data.length < this.programsState().total);
 
   // ─── Protected Methods ─────────────────────────────────────────────────────
-  protected onProgramClick(programId: string): void {
+  protected onProgramClick(): void {
     // TODO: wire up program-detail flow (LFXV2-<TBD>) — currently a no-op
     // so the CTA visibly renders without silently promising navigation the
     // rest of the module doesn't yet support.
