@@ -641,9 +641,16 @@ export class MktgAgentRunComponent {
    * left this form asking for a repo URL the user had typed into the Brand Kit
    * intake minutes earlier. Precedence is enforced by ORDER and by the
    * empty-control check — LFX wins, a restored answer wins, and this fills
-   * only what is left. The current agent's own answers are skipped: its
-   * stored run already restores them, and "From your Message Foundation run"
-   * on the Message Foundation form would be nonsense.
+   * only what is left.
+   *
+   * The agent's OWN remembered answers fill too, but carry no provenance chip:
+   * "From your Message Foundation run" on the Message Foundation form would be
+   * nonsense, while skipping them outright re-asks the user from day two
+   * onward — stored runs are pruned at `MKTG_RUN_STORAGE_TTL_MS` (24h, they
+   * hold a session capability token) while the answer memory lives for
+   * `MKTG_ANSWER_MEMORY_TTL_MS` (30 days), so after the run expires this is
+   * the only surviving copy. The empty-control check above already decides
+   * whether anything needs filling.
    */
   private applyRememberedAnswers(projectUid: string): void {
     if (!this.intake) {
@@ -652,7 +659,7 @@ export class MktgAgentRunComponent {
     const remembered = this.answerMemory.load(projectUid);
     for (const field of this.intake.fields) {
       const entry = remembered[field.key];
-      if (!entry || entry.agentId === this.agent?.id) {
+      if (!entry) {
         continue;
       }
       const control = this.intakeForm.controls[field.key];
@@ -660,7 +667,9 @@ export class MktgAgentRunComponent {
         continue;
       }
       control.setValue(entry.value);
-      this.fromPriorRun.update((labels) => ({ ...labels, [field.key]: `From your ${mktgAgentDocumentName(entry.agentId)} run` }));
+      if (entry.agentId !== this.agent?.id) {
+        this.fromPriorRun.update((labels) => ({ ...labels, [field.key]: `From your ${mktgAgentDocumentName(entry.agentId)} run` }));
+      }
     }
   }
 

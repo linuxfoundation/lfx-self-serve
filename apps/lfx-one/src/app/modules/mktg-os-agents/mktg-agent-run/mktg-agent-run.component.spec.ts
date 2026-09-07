@@ -227,12 +227,16 @@ describe('MktgAgentRunComponent', () => {
       expect(priorRunChip('github_url')).toBeNull();
     });
 
-    it('never overwrites a restored answer, and never re-offers this agent’s OWN answers', async () => {
+    it('never overwrites a restored answer, and re-offers this agent’s OWN answers without a provenance chip', async () => {
+      // A stored run is pruned after 24h while the answer memory lives 30 days,
+      // so from day two the memory is the ONLY surviving copy of this agent's
+      // own answers — skipping them outright would re-ask the user. The chip is
+      // what gets suppressed: "From your Brand Kit run" on the Brand Kit form
+      // would be nonsense.
       storedRuns = { 'proj-1': storedRun('proj-1', '# Doc', { project_name: 'Restored Name' }) };
       rememberedAnswers = {
         'proj-1': {
           project_name: { value: 'Reused Name', agentId: 'foundation-setup', savedAt: '2026-08-20T00:00:00.000Z' },
-          // Same agent as this page: its stored run already restores these.
           voice_adjectives: { value: 'confident, technical', agentId: 'brand-kit', savedAt: '2026-08-20T00:00:00.000Z' },
         },
       };
@@ -241,7 +245,7 @@ describe('MktgAgentRunComponent', () => {
       component['onEditInputs']();
       await fixture.whenStable();
 
-      expect(component['intakeForm'].getRawValue()).toMatchObject({ project_name: 'Restored Name', voice_adjectives: '' });
+      expect(component['intakeForm'].getRawValue()).toMatchObject({ project_name: 'Restored Name', voice_adjectives: 'confident, technical' });
       expect(priorRunChip('project_name')).toBeNull();
       expect(priorRunChip('voice_adjectives')).toBeNull();
     });
@@ -618,6 +622,24 @@ describe('MktgAgentRunComponent', () => {
         expect(component['submitDisabled']()).toBe(true);
         component['onSubmit']();
         expect(generate).not.toHaveBeenCalled();
+      });
+
+      it('associates the blocking error with the control so a screen reader can find it', async () => {
+        dependencyDocs = { 'proj-1:brand-kit': brandKitDoc('# Kit') };
+        activeContext.set(PROJECT_1);
+        await fixture.whenStable();
+
+        fillNameAndUrl('https://github.com/orgs/aaif/repositories');
+        await fixture.whenStable();
+
+        const input = host().querySelector<HTMLInputElement>('[data-test="mktg-intake-github_url"]');
+        expect(input?.getAttribute('aria-invalid')).toBe('true');
+        expect(input?.getAttribute('aria-describedby')).toBe('mktg-intake-github_url-error');
+        expect(fieldError('github_url')?.id).toBe('mktg-intake-github_url-error');
+
+        fillNameAndUrl('https://github.com/example-org/example-repo');
+        await fixture.whenStable();
+        expect(host().querySelector('[data-test="mktg-intake-github_url"]')?.getAttribute('aria-invalid')).toBeNull();
       });
 
       it('blocks submission on a URL that is not a GitHub repository at all', async () => {

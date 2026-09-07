@@ -59,6 +59,14 @@ describe('githubRepoUrlValidator', () => {
     }
   });
 
+  it('rejects an owner GitHub could never assign, before the BFF pays for the 404', () => {
+    for (const value of ['https://github.com/bad_owner/example-repo', 'https://github.com/-example-org/example-repo']) {
+      expect(validate(value)).toEqual({ githubRepoUrl: { reason: 'unrecognized' } });
+    }
+    // Repository names keep the looser rule.
+    expect(validate('https://github.com/example-org/example_repo.v2')).toBeNull();
+  });
+
   it('leaves emptiness to `required` so the two never double-report', () => {
     expect(validate('')).toBeNull();
     expect(validate('   ')).toBeNull();

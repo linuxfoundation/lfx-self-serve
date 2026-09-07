@@ -170,11 +170,16 @@ describe('GithubReadmeService', () => {
       expect((await service.fetchReadme(req, 'https://github.com/example-org')).outcome).toEqual({ fetched: false, skipReason: 'fetch-failed' });
     });
 
-    it('reports a non-public .github repo on the org fallback as not-public', async () => {
+    it('reports an organization with no readable profile README as not-a-repo-url, however it failed', async () => {
+      // Most organizations have no `.github` repo at all, which with a token
+      // surfaces as a 404 on the visibility check. For the URL the user typed
+      // that is "no profile README here", not a permissions problem to chase.
       vi.stubEnv('GITHUB_API_TOKEN', 'ghp_test-token');
-      fetchMock.mockResolvedValueOnce(jsonResponse({ private: true, visibility: 'private' }));
+      fetchMock.mockResolvedValueOnce(jsonResponse({}, false, 404));
+      expect((await service.fetchReadme(req, 'https://github.com/example-org')).outcome).toEqual({ fetched: false, skipReason: 'not-a-repo-url' });
 
-      expect((await service.fetchReadme(req, 'https://github.com/example-org')).outcome).toEqual({ fetched: false, skipReason: 'not-public' });
+      fetchMock.mockResolvedValueOnce(jsonResponse({ private: true, visibility: 'private' }));
+      expect((await service.fetchReadme(req, 'https://github.com/other-org')).outcome).toEqual({ fetched: false, skipReason: 'not-a-repo-url' });
     });
 
     it('caches the profile README separately from the .github repo README', async () => {
@@ -218,7 +223,9 @@ describe('GithubReadmeService', () => {
     });
 
     it('separates an absent README (404) from GitHub failing us (5xx, timeout)', async () => {
-      fetchMock.mockResolvedValue(textResponse('', false, 404));
+      // Tokenless, a README 404 is resolved against the repo metadata: a
+      // visible repository simply has no README.
+      fetchMock.mockResolvedValueOnce(textResponse('', false, 404)).mockResolvedValueOnce(jsonResponse(publicRepoMetadata));
       expect((await service.fetchReadme(req, 'https://github.com/example-org/example-repo')).outcome).toEqual({ fetched: false, skipReason: 'no-readme' });
 
       fetchMock.mockResolvedValue(textResponse('', false, 500));
@@ -256,6 +263,22 @@ describe('GithubReadmeService', () => {
 
       fetchMock.mockResolvedValueOnce(jsonResponse({}, false, 403, { 'x-ratelimit-remaining': '0' }));
       expect((await service.fetchReadme(req, 'https://github.com/example-org/third-repo')).outcome).toEqual({ fetched: false, skipReason: 'fetch-failed' });
+    });
+
+    it('reports a private repo as not-public even WITHOUT a token, where GitHub 404s both cases alike', async () => {
+      // Anonymous GitHub answers 404 for "no README" and for "repo you cannot
+      // see"; the metadata probe is what tells them apart, so the default
+      // tokenless deployment gives the access remedy rather than the wrong one.
+      fetchMock.mockResolvedValueOnce(textResponse('', false, 404)).mockResolvedValueOnce(jsonResponse({}, false, 404));
+
+      expect((await service.fetchReadme(req, 'https://github.com/example-org/secret-repo')).outcome).toEqual({ fetched: false, skipReason: 'not-public' });
+      expect(fetchMock.mock.calls[1][0]).toBe('https://api.github.com/repos/example-org/secret-repo');
+    });
+
+    it('keeps the README endpoint’s own 404 when the metadata probe is itself throttled', async () => {
+      fetchMock.mockResolvedValueOnce(textResponse('', false, 404)).mockResolvedValueOnce(jsonResponse({}, false, 403, { 'x-ratelimit-remaining': '0' }));
+
+      expect((await service.fetchReadme(req, 'https://github.com/example-org/example-repo')).outcome).toEqual({ fetched: false, skipReason: 'no-readme' });
     });
 
     it('never fetches for a github.com product route — /orgs/<org>/repositories is not a repository', async () => {

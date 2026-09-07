@@ -54,6 +54,35 @@ describe('parseGithubUrlTarget', () => {
     expect(parseGithubUrlTarget('https://github.com/owner/re po')).toBeNull();
   });
 
+  it('holds the OWNER to GitHub’s stricter account rules while repositories keep theirs', () => {
+    // An account name cannot contain `_` or `.`, cannot lead or trail with a
+    // hyphen, cannot double a hyphen, and stops at 39 characters — a URL that
+    // breaks any of those names an account that cannot exist, so the README
+    // request for it would 404 by construction.
+    for (const url of [
+      'https://github.com/bad_owner/example-repo',
+      'https://github.com/bad.owner/example-repo',
+      'https://github.com/-example-org/example-repo',
+      'https://github.com/example-org-/example-repo',
+      'https://github.com/example--org/example-repo',
+      `https://github.com/${'a'.repeat(40)}/example-repo`,
+    ]) {
+      expect(parseGithubUrlTarget(url)).toBeNull();
+    }
+
+    // Repository names DO allow underscores and dots.
+    expect(parseGithubUrlTarget('https://github.com/example-org/example_repo.v2')).toEqual({
+      kind: 'repository',
+      owner: 'example-org',
+      repo: 'example_repo.v2',
+    });
+    expect(parseGithubUrlTarget(`https://github.com/${'a'.repeat(39)}/example-repo`)).toEqual({
+      kind: 'repository',
+      owner: 'a'.repeat(39),
+      repo: 'example-repo',
+    });
+  });
+
   it('returns null for github.com’s own reserved routes rather than reading them as an owner/repo', () => {
     // `/orgs/<org>/repositories` is what a user copies out of an organization's
     // repository list; read positionally it looks exactly like `owner/repo`.

@@ -6,8 +6,21 @@ import { GithubUrlTarget } from '../interfaces';
 /** Hosts a user-supplied GitHub URL may use. Anything else is not a GitHub target at all. */
 const GITHUB_HOSTS = new Set(['github.com', 'www.github.com']);
 
-/** Owner/repo path segments: GitHub's own allowed character set. */
-const GITHUB_SEGMENT_RE = /^[A-Za-z0-9_.-]+$/;
+/** Repository name segment: GitHub's own allowed character set for repos (underscores and dots included). */
+const GITHUB_REPO_SEGMENT_RE = /^[A-Za-z0-9_.-]+$/;
+
+/**
+ * Owner (user or organization) segment. STRICTER than the repository rule:
+ * GitHub accounts allow alphanumerics and single, non-leading, non-trailing
+ * hyphens — no underscores and no dots — so `github.com/bad_owner/repo` names
+ * an account that cannot exist and the BFF's README request for it is a
+ * guaranteed 404. Catching it in the parser turns a thin document minutes
+ * later into a field error now.
+ */
+const GITHUB_OWNER_SEGMENT_RE = /^[A-Za-z0-9](?:-?[A-Za-z0-9])*$/;
+
+/** GitHub's account-name length limit; anything longer cannot be an owner. */
+const GITHUB_OWNER_MAX_LENGTH = 39;
 
 /**
  * First path segments github.com reserves for its OWN routes, which can never
@@ -101,7 +114,7 @@ export function parseGithubUrlTarget(githubUrl: string): GithubUrlTarget | null 
 
   const segments = parsed.pathname.split('/').filter(Boolean);
   const owner = segments[0] ?? '';
-  if (!GITHUB_SEGMENT_RE.test(owner)) {
+  if (!GITHUB_OWNER_SEGMENT_RE.test(owner) || owner.length > GITHUB_OWNER_MAX_LENGTH) {
     return null;
   }
   // A github.com product route (`/orgs/...`, `/marketplace/...`, ...) names no
@@ -114,7 +127,7 @@ export function parseGithubUrlTarget(githubUrl: string): GithubUrlTarget | null 
   }
 
   const repo = segments[1].replace(/\.git$/, '');
-  if (!GITHUB_SEGMENT_RE.test(repo)) {
+  if (!GITHUB_REPO_SEGMENT_RE.test(repo)) {
     return null;
   }
   return { kind: 'repository', owner, repo };

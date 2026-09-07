@@ -173,13 +173,16 @@ export class GithubReadmeService {
     const url = `${GITHUB_API_BASE}/repos/${encodeURIComponent(owner)}/${encodeURIComponent(GITHUB_ORG_PROFILE_REPO)}/contents/${GITHUB_ORG_PROFILE_README_PATH}`;
     const attempt = await this.requestReadme(req, url, repo, cacheKey);
     if (attempt.readme === null) {
-      // Only a genuine ABSENCE (404 / empty profile README) means the URL the
-      // user gave has nothing readable behind it. A GitHub outage, a rate
-      // limit or a non-public `.github` repo is a different fact with a
-      // different remedy, so its reason is carried through rather than
-      // rewritten as "not a repository" — telling someone to fix a correct URL
-      // during a GitHub 5xx sends them after the wrong problem.
-      const skipReason = attempt.skipReason === 'no-readme' ? 'not-a-repo-url' : attempt.skipReason;
+      // A GitHub outage or rate limit is a different fact with a different
+      // remedy — retry, not "fix your URL" — so `fetch-failed` is carried
+      // through rather than rewritten as "not a repository". Everything else
+      // (no `.github` repo, no `profile/README.md`, a private `.github`) is
+      // the ordinary "this organization publishes no profile README" case,
+      // which for the URL the user actually typed means exactly
+      // `not-a-repo-url`: most organizations have no `.github` repo at all,
+      // and reporting that as a visibility problem would send them looking
+      // for permissions that were never the issue.
+      const skipReason = attempt.skipReason === 'fetch-failed' ? 'fetch-failed' : 'not-a-repo-url';
       logger.info(req, 'github_readme_fetch', 'No organization profile README available — generating without a README', {
         owner,
         reason: skipReason,
@@ -222,8 +225,16 @@ export class GithubReadmeService {
 
       if (!response.ok) {
         this.logFailedResponse(req, 'GitHub README fetch', response, repo);
-        // A 404 is an absent README; anything else is GitHub failing us.
-        return { readme: null, skipReason: response.status === 404 ? 'no-readme' : 'fetch-failed' };
+        if (response.status !== 404) {
+          return { readme: null, skipReason: 'fetch-failed' };
+        }
+        // A 404 is ambiguous without a token: GitHub answers the same way for
+        // "public repo, no README" and "repo you cannot see". Resolve it so a
+        // tokenless deployment still tells a private-repo user about ACCESS
+        // rather than claiming their repository has no README. With a token
+        // the visibility gate above already ran, so the 404 can only be a
+        // genuinely absent README.
+        return { readme: null, skipReason: this.apiToken ? 'no-readme' : await this.classifyAnonymous404(req, repo) };
       }
 
       const text = await response.text();
@@ -244,6 +255,40 @@ export class GithubReadmeService {
         repo: repo.repo,
       });
       return { readme: null, skipReason: 'fetch-failed' };
+    }
+  }
+
+  /**
+   * Tells a genuinely absent README apart from a repository the anonymous
+   * public cannot see, for the tokenless path where GitHub returns 404 for
+   * both. One extra metadata call, only on the 404 branch: a 200 means the
+   * repository is publicly visible and simply has no README, a 404 means it
+   * is not visible to us at all. Anything else leaves the README endpoint's
+   * own 404 as the answer — a throttled metadata call is no reason to
+   * upgrade a definite "no README here" into a guess.
+   */
+  private async classifyAnonymous404(req: Request, repo: { owner: string; repo: string }): Promise<'no-readme' | 'not-public'> {
+    try {
+      const url = `${GITHUB_API_BASE}/repos/${encodeURIComponent(repo.owner)}/${encodeURIComponent(repo.repo)}`;
+      const response = await fetch(url, {
+        method: 'GET',
+        headers: this.buildHeaders('application/vnd.github+json'),
+        signal: AbortSignal.timeout(GITHUB_README_TIMEOUT_MS),
+      });
+      if (response.ok) {
+        return 'no-readme';
+      }
+      if (response.status === 404) {
+        logger.info(req, 'github_readme_fetch', 'Repository is not visible anonymously — generating without a README', {
+          owner: repo.owner,
+          repo: repo.repo,
+          reason: 'not-public',
+        });
+        return 'not-public';
+      }
+      return 'no-readme';
+    } catch {
+      return 'no-readme';
     }
   }
 
