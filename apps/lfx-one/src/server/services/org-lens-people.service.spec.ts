@@ -114,14 +114,32 @@ describe('OrgLensPeopleService username company emails', () => {
     await expectBothPaths({ companyEmails: [], companyEmailsStatus: 'resolved' });
   });
 
-  it.each([
-    { description: 'both people have addresses', secondEmails: ['second@company.example'] },
-    { description: 'only one person has addresses', secondEmails: [] },
-  ])('fails closed for case-folded identity collisions when $description', async ({ secondEmails }) => {
+  it('returns addresses even when the optional spine view is unavailable', async () => {
     addPerson(ACCOUNT, 'person-one', 'MixedUser', ['first@company.example']);
-    addPerson(ACCOUNT, 'person-two', 'mixeduser', secondEmails);
+    database.exec('DROP TABLE _ORG_PEOPLE_SPINE');
+
+    await expectBothPaths({ companyEmails: ['first@company.example'], companyEmailsStatus: 'resolved' });
+  });
+
+  it('fails closed for case-folded collisions when both people have addresses without probing the spine', async () => {
+    addPerson(ACCOUNT, 'person-one', 'MixedUser', ['first@company.example']);
+    addPerson(ACCOUNT, 'person-two', 'mixeduser', ['second@company.example']);
+    database.exec('DROP TABLE _ORG_PEOPLE_SPINE');
 
     await expectBothPaths(UNAVAILABLE);
+  });
+
+  it('does not report none on record when an empty lookup has an ambiguous identity', async () => {
+    addPerson(ACCOUNT, 'person-one', 'MixedUser');
+    addPerson(ACCOUNT, 'person-two', 'mixeduser');
+
+    await expectBothPaths(UNAVAILABLE);
+  });
+
+  it('reports a failed lookup when the empty-result spine probe fails', async () => {
+    database.exec('DROP TABLE _ORG_PEOPLE_SPINE');
+
+    await expectBothPaths({ companyEmails: [], companyEmailsStatus: 'failed' });
   });
 
   it('does not treat identities that exist only at another account as resolved', async () => {

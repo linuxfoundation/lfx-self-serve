@@ -216,13 +216,11 @@ export class OrgLensPeopleService {
   /**
    * Company-affiliated emails for a person the caller identifies by LF username (governance surfaces).
    *
-   * Returns a status, not a bare list, because an empty list has two very different meanings here and
-   * the panel must not conflate them (FR-009). `unavailable` when the server-side flag is off, or when
-   * the username is absent or ambiguous on the address model's spine at this account. `resolved`
-   * with `[]` only when the spine identifies exactly one person and they hold no qualifying address.
-   *
-   * Resolve against the full spine, including people without addresses, before joining emails by
-   * person key. Otherwise case-folding could expose one person's addresses under another's name.
+   * Read the prequalified address table first. Only an empty result probes the spine to distinguish
+   * a known person with no addresses from an unavailable identity. The spine is a union view, so
+   * querying it on every drawer open makes the common populated path unnecessarily expensive.
+   * Reject multiple person keys in the address result. Warehouse validation of normalized username
+   * uniqueness across the full spine remains a follow-up, including identities without addresses.
    */
   public async getCompanyEmailsByUsername(accountId: string, username: string): Promise<CompanyEmailsResult> {
     if (!isServerFeatureEnabled(ServerFeatureFlag.OrgLensCompanyEmails)) {
@@ -233,13 +231,30 @@ export class OrgLensPeopleService {
       return UNAVAILABLE_COMPANY_EMAILS;
     }
     try {
-      return await this.fetchCompanyEmailsByUsername(accountId, normalizedUsername);
+      const read = await this.fetchCompanyEmailsByUsername(accountId, normalizedUsername);
+      if (read.companyEmailsStatus !== 'resolved' || read.companyEmails.length > 0) {
+        return read;
+      }
+      return (await this.isUsernameOnSpine(accountId, normalizedUsername)) ? read : UNAVAILABLE_COMPANY_EMAILS;
     } catch (error) {
       logger.info(undefined, 'get_org_lens_people_company_emails_by_username', 'company email lookup failed; serving detail without addresses', {
         err: error,
       });
       return FAILED_COMPANY_EMAILS;
     }
+  }
+
+  /** An empty address read is authoritative only when this account's spine identifies one person. */
+  private async isUsernameOnSpine(accountId: string, username: string): Promise<boolean> {
+    const query = `
+      SELECT 1 AS PRESENT
+      FROM ANALYTICS.PLATINUM_LFX_ONE._ORG_PEOPLE_SPINE
+      WHERE ACCOUNT_ID = ? AND LOWER(TRIM(LF_USERNAME)) = ?
+      GROUP BY ACCOUNT_ID
+      HAVING COUNT(DISTINCT PERSON_KEY) = 1
+    `;
+    const result = await this.snowflakeService.execute<{ PRESENT: number }>(query, [accountId, username]);
+    return result.rows.length > 0;
   }
 
   /** Looks up a live-only person's LF username from the live roster (access/board/committee/keyContact sources). */
@@ -488,27 +503,18 @@ export class OrgLensPeopleService {
    * As above, for the governance surfaces (Board, Committee, Key Contacts, Access) whose rows carry an
    * LF username rather than a person_key.
    *
-   * The full spine avoids ORG_PEOPLE_ALL's engagement gate, which drops most corporate key contacts.
-   * A unique person with no qualifying addresses still produces one row, with a null email; an
-   * absent or ambiguous username produces no rows.
+   * Username normalization matches the empty-result spine probe. Address qualification stays in
+   * the warehouse; person keys here only prevent combining multiple identities into one response.
    */
   private async fetchCompanyEmailsByUsername(accountId: string, username: string): Promise<CompanyEmailsResult> {
     const query = `
-      WITH identity AS (
-        SELECT ACCOUNT_ID, MIN(PERSON_KEY) AS PERSON_KEY
-        FROM ANALYTICS.PLATINUM_LFX_ONE._ORG_PEOPLE_SPINE
-        WHERE ACCOUNT_ID = ? AND LOWER(TRIM(LF_USERNAME)) = ?
-        GROUP BY ACCOUNT_ID
-        HAVING COUNT(DISTINCT PERSON_KEY) = 1
-      )
-      SELECT emails.EMAIL
-      FROM identity
-      LEFT JOIN ANALYTICS.PLATINUM_LFX_ONE.ORG_PEOPLE_COMPANY_EMAILS emails
-        ON emails.ACCOUNT_ID = identity.ACCOUNT_ID AND emails.PERSON_KEY = identity.PERSON_KEY
-      ORDER BY emails.IS_PRIMARY DESC, emails.EMAIL ASC
+      SELECT EMAIL, PERSON_KEY
+      FROM ANALYTICS.PLATINUM_LFX_ONE.ORG_PEOPLE_COMPANY_EMAILS
+      WHERE ACCOUNT_ID = ? AND LOWER(TRIM(LF_USERNAME)) = ?
+      ORDER BY IS_PRIMARY DESC, EMAIL ASC
     `;
-    const result = await this.snowflakeService.execute<{ EMAIL: string | null }>(query, [accountId, username]);
-    if (result.rows.length === 0) {
+    const result = await this.snowflakeService.execute<{ EMAIL: string; PERSON_KEY: string }>(query, [accountId, username]);
+    if (new Set(result.rows.map((row) => row.PERSON_KEY)).size > 1) {
       return UNAVAILABLE_COMPANY_EMAILS;
     }
     return { companyEmails: result.rows.map((row) => row.EMAIL).filter((email): email is string => !!email), companyEmailsStatus: 'resolved' };
