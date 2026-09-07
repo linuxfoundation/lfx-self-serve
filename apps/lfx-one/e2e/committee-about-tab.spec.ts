@@ -157,7 +157,12 @@ test.describe('Group About tab (LFXV2-1713)', () => {
         putBody = route.request().postDataJSON();
         committeeState = {
           ...committeeState,
-          charter: { url: charterUrl, version: 1, updated_at: '2026-09-07T00:00:00Z', updated_by: { name: 'E2E Tester', username: 'e2e-tester', email: 'e2e@example.org' } },
+          charter: {
+            url: charterUrl,
+            version: 1,
+            updated_at: '2026-09-07T00:00:00Z',
+            updated_by: { name: 'E2E Tester', username: 'e2e-tester', email: 'e2e@example.org' },
+          },
         };
         return route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify(committeeState) });
       }
@@ -195,7 +200,12 @@ test.describe('Group About tab (LFXV2-1713)', () => {
       committee: baseCommittee({
         my_role: 'Chair',
         writer: true,
-        charter: { url: existingUrl, version: 3, updated_at: '2026-08-01T00:00:00Z', updated_by: { name: 'Prior Editor', username: 'prior', email: 'prior@example.org' } },
+        charter: {
+          url: existingUrl,
+          version: 3,
+          updated_at: '2026-08-01T00:00:00Z',
+          updated_by: { name: 'Prior Editor', username: 'prior', email: 'prior@example.org' },
+        },
       }),
     });
 
