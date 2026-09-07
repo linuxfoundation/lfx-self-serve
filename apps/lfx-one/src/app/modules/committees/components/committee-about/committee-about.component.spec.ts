@@ -63,7 +63,7 @@ describe('CommitteeAboutComponent charter card', () => {
           url: '',
           version: 2,
           updated_at: '2026-08-01T00:00:00Z',
-          updated_by: { username: 'alice', email: 'alice@example.org', name: 'Alice Example' },
+          updated_by: { username: 'alice', name: 'Alice Example' },
         },
       })
     );
@@ -85,7 +85,7 @@ describe('CommitteeAboutComponent charter card', () => {
           url: 'https://example.org/governance/charter.pdf',
           version: 1,
           updated_at: '2026-08-01T00:00:00Z',
-          updated_by: { username: 'alice', email: 'alice@example.org', name: 'Alice Example' },
+          updated_by: { username: 'alice', name: 'Alice Example' },
         },
       })
     );

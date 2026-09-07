@@ -161,7 +161,7 @@ test.describe('Group About tab (LFXV2-1713)', () => {
             url: charterUrl,
             version: 1,
             updated_at: '2026-09-07T00:00:00Z',
-            updated_by: { name: 'E2E Tester', username: 'e2e-tester', email: 'e2e@example.org' },
+            updated_by: { name: 'E2E Tester', username: 'e2e-tester' },
           },
         };
         return route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify(committeeState) });
@@ -204,7 +204,7 @@ test.describe('Group About tab (LFXV2-1713)', () => {
           url: existingUrl,
           version: 3,
           updated_at: '2026-08-01T00:00:00Z',
-          updated_by: { name: 'Prior Editor', username: 'prior', email: 'prior@example.org' },
+          updated_by: { name: 'Prior Editor', username: 'prior' },
         },
       }),
     });

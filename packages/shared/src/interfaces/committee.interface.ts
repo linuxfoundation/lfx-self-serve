@@ -498,6 +498,18 @@ export interface CommitteeExternalSource {
 }
 
 /**
+ * User reference shown on publicly-visible committee fields, without contact details.
+ * Mirrors the upstream `public-audit-user` Goa type — unlike {@link CommitteeUser} (writers/
+ * auditors, authenticated-only), this shape can reach anonymous viewers of public committees, so
+ * it omits `email` and leaves every field optional.
+ */
+export interface PublicAuditUser {
+  name?: string;
+  username?: string;
+  avatar?: string;
+}
+
+/**
  * Committee charter: a link to an externally hosted governance document (e.g. a PDF, or a
  * `CHARTER.md` in a repo) — not a file upload into this system.
  */
@@ -509,7 +521,7 @@ export interface CommitteeCharter {
   /** ISO date string of the last change (set, edit, or clear) */
   updated_at: string;
   /** User who made the last change */
-  updated_by?: CommitteeUser;
+  updated_by?: PublicAuditUser;
 }
 
 /**
