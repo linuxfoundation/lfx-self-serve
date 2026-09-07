@@ -8,11 +8,19 @@ import { Router } from '@angular/router';
 import { ButtonComponent } from '@components/button/button.component';
 import {
   createEmptyMentorshipEnrollForm,
+  MENTORSHIP_CII_CHECKING,
+  MENTORSHIP_CII_INVALID_ID,
   MENTORSHIP_ENROLL_NAME_MAX,
   MENTORSHIP_ENROLL_STEP_LABELS,
   MENTORSHIP_ENROLL_STEPS_ORDER,
 } from '@lfx-one/shared/constants';
-import { MentorshipEnrollForm, MentorshipEnrollStep, MentorshipPrerequisite, MentorshipProgramTerm } from '@lfx-one/shared/interfaces';
+import {
+  MentorshipCiiLookupStatus,
+  MentorshipEnrollForm,
+  MentorshipEnrollStep,
+  MentorshipPrerequisite,
+  MentorshipProgramTerm,
+} from '@lfx-one/shared/interfaces';
 import { getMentorshipEnrollStepErrors } from '@lfx-one/shared/utils';
 import { MentorshipService } from '@services/mentorship.service';
 import { MessageService } from 'primeng/api';
@@ -60,6 +68,7 @@ export class EnrollProgramComponent {
   protected readonly step = signal<MentorshipEnrollStep>('details');
   protected readonly showErrors = signal(false);
   protected readonly submitting = signal(false);
+  protected readonly ciiLookupStatus = signal<MentorshipCiiLookupStatus>('idle');
 
   private readonly formSnapshot = toSignal(
     this.form.valueChanges.pipe(
@@ -113,6 +122,14 @@ export class EnrollProgramComponent {
       return;
     }
 
+    const ciiId = this.form.controls.ciiProjectId.value.trim();
+    if (current === 'details' && ciiId && this.ciiLookupStatus() !== 'valid') {
+      this.showErrors.set(true);
+      const detail = this.ciiLookupStatus() === 'loading' ? MENTORSHIP_CII_CHECKING : MENTORSHIP_CII_INVALID_ID;
+      this.messageService.add({ severity: 'warn', summary: 'Check this step', detail, life: 4000 });
+      return;
+    }
+
     if (current === 'prerequisites') {
       this.submitEnrollment();
       return;
@@ -122,6 +139,10 @@ export class EnrollProgramComponent {
     const index = MENTORSHIP_ENROLL_STEPS_ORDER.indexOf(current);
     const next = MENTORSHIP_ENROLL_STEPS_ORDER[index + 1];
     if (next) this.step.set(next);
+  }
+
+  protected onCiiLookupStatusChange(status: MentorshipCiiLookupStatus): void {
+    this.ciiLookupStatus.set(status);
   }
 
   protected onCancel(): void {

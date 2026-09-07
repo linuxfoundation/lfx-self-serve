@@ -125,14 +125,38 @@
   <section class="rounded-2xl border border-gray-200 bg-white p-6 md:p-8 flex flex-col gap-4">
     <div class="flex flex-col gap-2">
       <h2 class="text-lg font-semibold text-gray-900">Core Infrastructure Initiative Best Practices</h2>
-      <p class="text-sm text-gray-600 leading-5">
-        The CII Best Practices badge program helps open source projects demonstrate security and quality practices. Enter your project ID if you already
-        participate.
-      </p>
+      <p class="text-sm text-gray-600 leading-5">{{ ciiIntro }}</p>
     </div>
-    <div class="flex flex-col gap-1">
-      <label class="text-sm font-medium text-gray-700" for="ciiProjectId">CII Project ID</label>
-      <lfx-input-text [form]="form()" control="ciiProjectId" placeholder="1234" dataTest="mentorship-enroll-cii" />
+    <div class="flex flex-col gap-3 sm:flex-row sm:items-end">
+      <div class="flex flex-col gap-1 flex-1 min-w-0">
+        <label class="text-sm font-medium text-gray-700" for="ciiProjectId">CII Project ID</label>
+        <div class="flex items-stretch overflow-hidden rounded-lg border border-gray-200 bg-white">
+          <span class="flex items-center px-3 text-sm text-gray-500 bg-gray-50 border-r border-gray-200" aria-hidden="true">#</span>
+          <div class="min-w-0 flex-1">
+            <lfx-input-text
+              [form]="form()"
+              control="ciiProjectId"
+              id="ciiProjectId"
+              placeholder="Project ID"
+              styleClass="!border-0 !shadow-none !rounded-none w-full"
+              dataTest="mentorship-enroll-cii" />
+          </div>
+        </div>
+        @if (ciiLookup().status === 'loading') {
+          <p class="text-xs text-gray-500">{{ ciiChecking }}</p>
+        }
+        @if (errors().ciiProjectId || ciiLookup().status === 'invalid') {
+          <p class="text-xs text-red-600">{{ errors().ciiProjectId || ciiInvalidId }}</p>
+        }
+      </div>
+      @if (ciiBadgeImageUrl()) {
+        <div class="flex flex-col gap-1 shrink-0">
+          <span class="text-xs font-medium text-gray-500">Project CII Badge</span>
+          <a [href]="ciiProjectHref()" target="_blank" rel="noopener noreferrer" data-testid="mentorship-enroll-cii-badge">
+            <img [src]="ciiBadgeImageUrl()" [alt]="'CII Best Practices badge for project ' + ciiLookup().projectId" class="h-5" />
+          </a>
+        </div>
+      }
     </div>
     <a [href]="ciiApplyUrl" target="_blank" rel="noopener noreferrer" class="inline-flex text-sm font-medium text-blue-600 hover:text-blue-700"
       >Apply for CII</a

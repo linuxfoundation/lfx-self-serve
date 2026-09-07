@@ -3,6 +3,7 @@
 
 import { MONTH_OPTIONS } from '../constants/profile.constants';
 import {
+  MENTORSHIP_CII_INVALID_ID,
   MENTORSHIP_CUSTOM_PREREQ_DESCRIPTION_MAX,
   MENTORSHIP_CUSTOM_PREREQ_NAME_MAX,
   MENTORSHIP_ENROLL_DESCRIPTION_MAX,
@@ -14,6 +15,11 @@ import { stripHtml } from './html-utils';
 
 function isBlank(value: string): boolean {
   return !value.trim();
+}
+
+/** CII Best Practices project IDs are numeric, matching the old maintainer enroll form. */
+export function isMentorshipCiiProjectId(value: string): boolean {
+  return /^\d+$/.test(value.trim());
 }
 
 export function mentorshipDescriptionLength(html: string): number {
@@ -37,6 +43,9 @@ export function getMentorshipEnrollStepErrors(step: MentorshipEnrollStep, form: 
     }
     if (isBlank(form.repositoryUrl)) errors.repositoryUrl = 'Repository URL is required.';
     if (isBlank(form.logoFileName)) errors.logoFileName = 'Program logo is required.';
+    if (form.ciiProjectId.trim() && !isMentorshipCiiProjectId(form.ciiProjectId)) {
+      errors.ciiProjectId = MENTORSHIP_CII_INVALID_ID;
+    }
     return errors;
   }
 

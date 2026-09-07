@@ -1,10 +1,12 @@
 // Copyright The Linux Foundation and each contributor to LFX.
 // SPDX-License-Identifier: MIT
 
-import { MENTORSHIP_PROGRAM_STATUSES, MENTORSHIP_PROJECT_OPTIONS, MOCK_MENTORSHIP_PROGRAMS } from '@lfx-one/shared/constants';
-import { MentorshipEnrollForm, MentorshipProgram, MentorshipProgramsResponse, MentorshipProgramStatus } from '@lfx-one/shared/interfaces';
-import { mentorshipProgramSlug } from '@lfx-one/shared/utils';
+import { MENTORSHIP_PROGRAM_STATUSES, MENTORSHIP_PROJECT_OPTIONS, MOCK_MENTORSHIP_PROGRAMS, mentorshipCiiBadgeJsonUrl } from '@lfx-one/shared/constants';
+import { MentorshipCiiBadge, MentorshipEnrollForm, MentorshipProgram, MentorshipProgramsResponse, MentorshipProgramStatus } from '@lfx-one/shared/interfaces';
+import { isMentorshipCiiProjectId, mentorshipProgramSlug } from '@lfx-one/shared/utils';
 import { Request } from 'express';
+
+import { ResourceNotFoundError, ServiceValidationError } from '../errors';
 
 import { logger } from './logger.service';
 
@@ -57,6 +59,28 @@ export class MentorshipService {
 
     logger.success(req, 'mentorship_enroll_program', startTime, { id: program.id, slug: program.slug });
     return program;
+  }
+
+  public async getCiiBadge(req: Request, projectId: string): Promise<MentorshipCiiBadge> {
+    const startTime = logger.startOperation(req, 'mentorship_get_cii_badge', { projectId });
+
+    if (!isMentorshipCiiProjectId(projectId)) {
+      throw ServiceValidationError.forField('projectId', 'CII Project ID must be numeric', { operation: 'mentorship_get_cii_badge' });
+    }
+
+    const response = await fetch(mentorshipCiiBadgeJsonUrl(projectId));
+    if (!response.ok) {
+      throw new ResourceNotFoundError('CII project', projectId, { operation: 'mentorship_get_cii_badge' });
+    }
+
+    const payload = (await response.json()) as { badge_level?: unknown };
+    if (typeof payload.badge_level !== 'string' || !payload.badge_level) {
+      throw new ResourceNotFoundError('CII project', projectId, { operation: 'mentorship_get_cii_badge' });
+    }
+
+    const badge: MentorshipCiiBadge = { projectId, badgeLevel: payload.badge_level };
+    logger.success(req, 'mentorship_get_cii_badge', startTime, { projectId, badgeLevel: badge.badgeLevel });
+    return badge;
   }
 }
 

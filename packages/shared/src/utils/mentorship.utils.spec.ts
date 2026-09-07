@@ -7,6 +7,7 @@ import { createEmptyMentorshipEnrollForm } from '../constants/mentorship-enroll.
 import {
   formatMentorshipMonthYear,
   getMentorshipEnrollStepErrors,
+  isMentorshipCiiProjectId,
   isMentorshipEnrollStepValid,
   mentorshipMonthYearToStartDate,
   mentorshipProgramSlug,
@@ -63,6 +64,27 @@ describe('getMentorshipEnrollStepErrors', () => {
     form.logoFileName = 'logo.png';
 
     expect(isMentorshipEnrollStepValid('details', form)).toBe(true);
+  });
+
+  it('rejects a non-numeric CII project ID', () => {
+    const form = createEmptyMentorshipEnrollForm();
+    form.name = 'GridFlow Mentorship';
+    form.projectId = 'proj-gridflow';
+    form.technologies = ['GO'];
+    form.description = '<p>Build a pipeline.</p>';
+    form.repositoryUrl = 'https://github.com/lfenergy/gridflow';
+    form.logoFileName = 'logo.png';
+    form.ciiProjectId = 'abc';
+
+    expect(getMentorshipEnrollStepErrors('details', form).ciiProjectId).toBe('Invalid CII Project ID');
+  });
+});
+
+describe('isMentorshipCiiProjectId', () => {
+  it('accepts digits only', () => {
+    expect(isMentorshipCiiProjectId('1842')).toBe(true);
+    expect(isMentorshipCiiProjectId('abc')).toBe(false);
+    expect(isMentorshipCiiProjectId('')).toBe(false);
   });
 });
 

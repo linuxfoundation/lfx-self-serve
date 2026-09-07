@@ -4,7 +4,7 @@
 import { HttpClient, HttpErrorResponse, HttpParams } from '@angular/common/http';
 import { inject, Injectable } from '@angular/core';
 import { EMPTY_MENTORSHIP_PROGRAMS_RESPONSE } from '@lfx-one/shared/constants';
-import { MentorshipEnrollForm, MentorshipProgram, MentorshipProgramsResponse, MentorshipProgramStatus } from '@lfx-one/shared/interfaces';
+import { MentorshipCiiBadge, MentorshipEnrollForm, MentorshipProgram, MentorshipProgramsResponse, MentorshipProgramStatus } from '@lfx-one/shared/interfaces';
 import { catchError, Observable, of, take } from 'rxjs';
 
 /**
@@ -30,6 +30,13 @@ export class MentorshipService {
 
   public enrollProgram(form: MentorshipEnrollForm): Observable<MentorshipProgram> {
     return this.http.post<MentorshipProgram>('/api/mentorship/programs', form).pipe(take(1));
+  }
+
+  public getCiiBadge(projectId: string): Observable<MentorshipCiiBadge | null> {
+    return this.http.get<MentorshipCiiBadge>(`/api/mentorship/cii/${encodeURIComponent(projectId)}`).pipe(
+      take(1),
+      catchError(() => of(null))
+    );
   }
 
   /**

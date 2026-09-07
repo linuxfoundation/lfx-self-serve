@@ -36,8 +36,26 @@ export const MENTORSHIP_ENROLL_SETUP_TERMS_HELPER = 'Add the mentorship terms yo
 export const MENTORSHIP_ENROLL_PREREQ_INTRO = 'Select which application materials are required. You can add custom prerequisites if needed.';
 export const MENTORSHIP_ENROLL_TERMS_INTRO = 'Before you submit your program enrollment to the LFX Platform, review and accept the terms and conditions below.';
 
-export const MENTORSHIP_CII_APPLY_URL = 'https://bestpractices.coreinfrastructure.org/';
+export const MENTORSHIP_CII_HOST = 'https://www.bestpractices.dev';
+export const MENTORSHIP_CII_APPLY_URL = `${MENTORSHIP_CII_HOST}/`;
+export const MENTORSHIP_CII_BADGE_JSON_BASE = 'https://bestpractices.coreinfrastructure.org/projects';
+export const MENTORSHIP_CII_INTRO =
+  'Security is our top priority on Mentorship, and we ask all participating projects to participate in our Core Infrastructure Initiative (CII) Best Practices badge program. If your project is not already participating in the CII Best Practices badge program, please enroll within 90 days to ensure continuation of your project on the platform.';
+export const MENTORSHIP_CII_INVALID_ID = 'Invalid CII Project ID';
+export const MENTORSHIP_CII_CHECKING = 'Checking CII Project ID...';
 export const MENTORSHIP_CODE_OF_CONDUCT_TEMPLATE_URL = 'https://www.contributor-covenant.org/';
+
+export function mentorshipCiiProjectUrl(projectId: string): string {
+  return `${MENTORSHIP_CII_HOST}/projects/${projectId}`;
+}
+
+export function mentorshipCiiBadgeImageUrl(projectId: string): string {
+  return `${MENTORSHIP_CII_HOST}/projects/${projectId}/badge`;
+}
+
+export function mentorshipCiiBadgeJsonUrl(projectId: string): string {
+  return `${MENTORSHIP_CII_BADGE_JSON_BASE}/${projectId}/badge.json`;
+}
 
 export const MENTORSHIP_POLICY_LINKS: ReadonlyArray<{ label: string; href: string }> = [
   { label: 'LFX Platform Use Agreement', href: 'https://www.linuxfoundation.org/legal/platform-use-agreement' },

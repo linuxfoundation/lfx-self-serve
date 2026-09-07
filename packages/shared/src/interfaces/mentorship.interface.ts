@@ -110,8 +110,17 @@ export interface MentorshipEnrollFieldErrors {
   description?: string;
   repositoryUrl?: string;
   logoFileName?: string;
+  ciiProjectId?: string;
   skills?: string;
   terms?: string;
   prerequisites?: string;
   termsAccepted?: string;
 }
+
+/** Result of looking up a CII Best Practices badge by project ID. */
+export interface MentorshipCiiBadge {
+  projectId: string;
+  badgeLevel: string;
+}
+
+export type MentorshipCiiLookupStatus = 'idle' | 'loading' | 'valid' | 'invalid';

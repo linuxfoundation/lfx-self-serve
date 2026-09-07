@@ -10,5 +10,6 @@ const mentorshipController = new MentorshipController();
 
 router.get('/programs', (req, res, next) => mentorshipController.getPrograms(req, res, next));
 router.post('/programs', (req, res, next) => mentorshipController.enrollProgram(req, res, next));
+router.get('/cii/:projectId', (req, res, next) => mentorshipController.getCiiBadge(req, res, next));
 
 export default router;

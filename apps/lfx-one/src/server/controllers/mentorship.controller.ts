@@ -136,4 +136,24 @@ export class MentorshipController {
       next(error);
     }
   }
+
+  // GET /api/mentorship/cii/:projectId
+  public async getCiiBadge(req: Request, res: Response, next: NextFunction): Promise<void> {
+    const startTime = logger.startOperation(req, 'get_mentorship_cii_badge');
+
+    try {
+      if (!(await getUsernameFromAuth(req))) {
+        throw new AuthenticationError('User authentication required', { operation: 'get_mentorship_cii_badge' });
+      }
+
+      const projectId = typeof req.params['projectId'] === 'string' ? req.params['projectId'] : '';
+      const badge = await this.mentorshipService.getCiiBadge(req, projectId);
+
+      logger.success(req, 'get_mentorship_cii_badge', startTime, { projectId: badge.projectId });
+
+      res.json(badge);
+    } catch (error) {
+      next(error);
+    }
+  }
 }

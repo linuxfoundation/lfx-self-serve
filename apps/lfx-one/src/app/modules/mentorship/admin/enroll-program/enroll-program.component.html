@@ -23,7 +23,7 @@
 
     @switch (step()) {
       @case ('details') {
-        <lfx-mentorship-enroll-details-step [form]="form" [errors]="stepErrors()" />
+        <lfx-mentorship-enroll-details-step [form]="form" [errors]="stepErrors()" (ciiLookupStatusChange)="onCiiLookupStatusChange($event)" />
       }
       @case ('setup') {
         <lfx-mentorship-enroll-setup-step [form]="form" [errors]="stepErrors()" />
