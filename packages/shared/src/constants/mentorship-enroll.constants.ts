@@ -74,7 +74,7 @@ export const MENTORSHIP_COVER_LETTER_PROMPTS: readonly string[] = [
 
 export const MENTORSHIP_CII_HOST = 'https://www.bestpractices.dev';
 export const MENTORSHIP_CII_APPLY_URL = `${MENTORSHIP_CII_HOST}/`;
-export const MENTORSHIP_CII_BADGE_JSON_BASE = 'https://bestpractices.coreinfrastructure.org/projects';
+export const MENTORSHIP_CII_BADGE_JSON_BASE = `${MENTORSHIP_CII_HOST}/projects`;
 export const MENTORSHIP_CII_INTRO =
   'Security is our top priority on Mentorship, and we ask all participating projects to participate in our Core Infrastructure Initiative (CII) Best Practices badge program. If your project is not already participating in the CII Best Practices badge program, please enroll within 90 days to ensure continuation of your project on the platform.';
 export const MENTORSHIP_CII_INVALID_ID = 'Invalid CII Project ID';

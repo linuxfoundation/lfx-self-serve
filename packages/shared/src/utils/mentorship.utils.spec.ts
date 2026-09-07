@@ -66,6 +66,22 @@ describe('getMentorshipEnrollStepErrors', () => {
     expect(getMentorshipEnrollStepErrors('prerequisites', form).prerequisites).toBe('Complete each custom prerequisite or delete it.');
   });
 
+  it('rejects a custom prerequisite whose due date is not a real calendar date', () => {
+    const form = createEmptyMentorshipEnrollForm();
+    form.prerequisites = [
+      {
+        id: 'prereq-custom-1',
+        name: 'Write a design doc',
+        description: 'Describe the proposed change.',
+        required: true,
+        custom: true,
+        dueDate: 'not-a-date',
+      },
+    ];
+
+    expect(getMentorshipEnrollStepErrors('prerequisites', form).prerequisites).toBe('Complete each custom prerequisite or delete it.');
+  });
+
   it('treats a filled details step as valid', () => {
     const form = createEmptyMentorshipEnrollForm();
     form.name = 'GridFlow Mentorship';

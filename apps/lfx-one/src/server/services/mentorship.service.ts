@@ -29,6 +29,7 @@ import { logger } from './logger.service';
 
 const DEFAULT_PROGRAM_LIMIT = 50;
 const MAX_LIMIT = 50;
+const CII_BADGE_TIMEOUT_MS = 10_000;
 
 /**
  * In-memory store so POST enrollments show up on the admin list in this
@@ -45,14 +46,14 @@ function paginateOffsetLimit<T>(items: readonly T[], offset: number, limit: numb
 /**
  * Allowlisted CII badge URL. `Number()` is the sanitizer CodeQL models for path IDs
  * (`js/request-forgery`); keep the host as a string literal concatenated with that number.
- * Must stay aligned with `MENTORSHIP_CII_BADGE_JSON_BASE`.
+ * Must stay aligned with `MENTORSHIP_CII_HOST` / `MENTORSHIP_CII_BADGE_JSON_BASE`.
  */
 function buildCiiBadgeJsonUrl(projectId: string): string {
   const numericId = Number(projectId.trim());
   if (!Number.isInteger(numericId) || numericId < 1) {
     throw ServiceValidationError.forField('projectId', 'CII Project ID must be numeric', { operation: 'mentorship_get_cii_badge' });
   }
-  return 'https://bestpractices.coreinfrastructure.org/projects/' + numericId + '/badge.json';
+  return 'https://www.bestpractices.dev/projects/' + numericId + '/badge.json';
 }
 
 export class MentorshipService {
@@ -151,7 +152,7 @@ export class MentorshipService {
     const url = buildCiiBadgeJsonUrl(projectId);
     let response: Response;
     try {
-      response = await fetch(url, { redirect: 'error' });
+      response = await fetch(url, { redirect: 'error', signal: AbortSignal.timeout(CII_BADGE_TIMEOUT_MS) });
     } catch (error) {
       throw new MicroserviceError('CII Best Practices is temporarily unavailable. Please try again later.', 502, 'UPSTREAM_UNREACHABLE', {
         operation: 'mentorship_get_cii_badge',
