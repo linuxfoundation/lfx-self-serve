@@ -56,11 +56,14 @@ export class OrgEasyclaCardComponent {
   /**
    * The approval-criteria count — how many rules decide who may be covered.
    *
-   * The CLA service returns no such count, so this is always absent and the card shows an em dash
-   * under the label rather than a number. It is deliberately not filled from the employee
-   * acknowledgement count, which counts the people covered rather than the rules covering them;
-   * a real number under a label naming a different quantity is worse than a visible gap. A zero
-   * would be worse still — it would assert the agreement approves nobody.
+   * Absent when the CLA service deployment does not return the count, in which case the card
+   * shows an em dash rather than a number — true, where a 0 would assert the agreement approves
+   * nobody. A real 0 from a deployment that does return it renders as 0, which is the honest
+   * answer for an agreement with no rules yet.
+   *
+   * Never filled from the employee acknowledgement count, which counts the people covered
+   * rather than the rules covering them: a real number under a label naming a different
+   * quantity is worse than a visible gap.
    */
   protected readonly approvalCriteriaValue = computed(() => {
     const count = this.claGroup().approvalCriteriaCount;

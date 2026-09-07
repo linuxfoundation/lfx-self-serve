@@ -295,6 +295,18 @@ export interface EasyClaCompanyClaGroup {
    * naming a different quantity.
    */
   approvedContributorsCount?: number;
+  /**
+   * Approval criteria on the CCLA — rules granting coverage, summed across all six lists
+   * (email, email domain, GitHub username, GitHub org, GitLab username, GitLab group).
+   * This is the count the card previews, and it is unrelated to `approvedContributorsCount`
+   * above: one domain rule can cover a whole company.
+   *
+   * Optional because absence is meaningful. Upstream declares it `x-omitempty: false`, so a
+   * deployment carrying the field always sends it — including `0`. Absent therefore means the
+   * environment predates the producer change, which is a different fact from an agreement that
+   * approves nobody, and the two must not collapse.
+   */
+  approvalCriteriaCount?: number;
   claManagersCount?: number;
   /** Sorted by `lfUsername` upstream. Counted, never forwarded. */
   claManagers?: EasyClaCompanyClaGroupManager[];

@@ -163,13 +163,34 @@ describe('OrgClaService.listClaGroups — what must not cross to the client', ()
 });
 
 describe('OrgClaService.listClaGroups — the approval-criteria count', () => {
-  it('leaves the approval-criteria count absent rather than defaulting it to zero', async () => {
-    gatewayFetch.mockResolvedValue(upstreamList(upstreamEntry()));
+  it('carries the count upstream supplies', async () => {
+    gatewayFetch.mockResolvedValue(upstreamList(upstreamEntry({ approvalCriteriaCount: 7 })));
+
+    const [row] = (await new OrgClaService().listClaGroups(req(), ORG_UID)).claGroups;
+
+    expect(row.approvalCriteriaCount).toBe(7);
+  });
+
+  // Upstream declares the field `x-omitempty: false`, so a deployment carrying it sends 0 for an
+  // agreement with no rules. That is a real answer and has to survive the mapper.
+  it('carries a supplied zero rather than dropping it', async () => {
+    gatewayFetch.mockResolvedValue(upstreamList(upstreamEntry({ approvalCriteriaCount: 0 })));
+
+    const [row] = (await new OrgClaService().listClaGroups(req(), ORG_UID)).claGroups;
+
+    expect(row.approvalCriteriaCount).toBe(0);
+  });
+
+  // The distinction the previous test protects only means something if the other side holds:
+  // a deployment predating the producer change sends nothing, and nothing must not become 0.
+  // One says "this agreement approves nobody"; the other says "this deployment cannot tell you".
+  it('leaves the count absent when upstream omits it, rather than defaulting to zero', async () => {
+    gatewayFetch.mockResolvedValue(upstreamList(upstreamEntry({ approvalCriteriaCount: undefined })));
 
     const [row] = (await new OrgClaService().listClaGroups(req(), ORG_UID)).claGroups;
 
     expect(row.approvalCriteriaCount).toBeUndefined();
-    expect(row.approvalCriteriaCount).not.toBe(0);
+    expect('approvalCriteriaCount' in row).toBe(false);
   });
 
   it('does not fill the approval-criteria count from the employee-acknowledgement count', async () => {
@@ -177,11 +198,11 @@ describe('OrgClaService.listClaGroups — the approval-criteria count', () => {
     // covered, acknowledgements are the people covered. Asserting "not zero" alone would
     // still pass if the acknowledgement count were substituted here, which is the specific
     // mistake worth pinning.
-    gatewayFetch.mockResolvedValue(upstreamList(upstreamEntry({ approvedContributorsCount: 412 })));
+    gatewayFetch.mockResolvedValue(upstreamList(upstreamEntry({ approvedContributorsCount: 412, approvalCriteriaCount: 3 })));
 
     const [row] = (await new OrgClaService().listClaGroups(req(), ORG_UID)).claGroups;
 
-    expect(row.approvalCriteriaCount).not.toBe(412);
+    expect(row.approvalCriteriaCount).toBe(3);
     expect(JSON.stringify(row)).not.toContain('412');
   });
 });

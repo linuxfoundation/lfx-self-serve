@@ -630,16 +630,17 @@ export interface OrgClaGroup {
   needsClaManager: boolean;
   claManagersCount: number;
   /**
-   * How many approval criteria (the rules deciding who may be covered) the agreement has.
+   * How many approval criteria (the rules deciding who may be covered) the agreement has,
+   * summed across the six approval lists. This is the card's first stat.
    *
-   * **Always absent.** The CLA service returns no such count, and the card's first stat is
-   * this one — not the employee-acknowledgement count, which is a different quantity with no
-   * slot on this page. The field exists so that when the producer adds the count, populating
-   * it is a one-line mapper change and no consumer moves.
+   * Optional because absence carries meaning: it says the CLA service deployment did not
+   * return the count, which happens in any environment predating the producer change. That
+   * is not the same as an agreement with no rules, and the two must render differently —
+   * absent shows as unavailable, 0 shows as 0.
    *
-   * Do not populate this from `approvedContributorsCount`, do not default it to 0, and do not
-   * fetch it per row: an approval-list call per card is an N+1 on the landing page. Absent
-   * renders as unavailable, which is true; 0 would assert the agreement approves nobody.
+   * Do not populate this from `approvedContributorsCount`, which counts the people covered
+   * rather than the rules covering them; do not default it to 0; and do not fetch it per row,
+   * since an approval-list call per card is an N+1 on the landing page.
    */
   approvalCriteriaCount?: number;
 }

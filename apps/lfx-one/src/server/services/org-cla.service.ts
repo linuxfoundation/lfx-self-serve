@@ -27,10 +27,10 @@ const SERVICE = 'org_cla_service';
  *   there are, so the identities have no reason to leave the server. Rendering them is a
  *   separate feature and needs its own authorization argument.
  * - `approvedContributorsCount` — a real number, but not the one the card's first stat
- *   names. That slot is the approval *criteria* count (the rules deciding who may be
- *   covered); this is the count of employee acknowledgements (the people covered). They are
- *   easy to confuse because the console this replaces labels its rules section as though it
- *   listed contributors. Mapping it here is how it ends up under the wrong label.
+ *   names. That slot is `approvalCriteriaCount` (the rules deciding who may be covered);
+ *   this is the count of employee acknowledgements (the people covered). They are easy to
+ *   confuse because the console this replaces labels its rules section as though it listed
+ *   contributors. Mapping it here is how it ends up under the wrong label.
  *
  * `autoCreateECLA` and `signed` are likewise not carried: the first belongs to a later
  * feature, the second is folded into `status` so no consumer forms a second opinion about
@@ -67,8 +67,11 @@ function toOrgClaGroup(entry: EasyClaCompanyClaGroup, companyName: string): OrgC
     status: toStatus(entry),
     needsClaManager: entry.needsClaManager === true,
     claManagersCount: entry.claManagersCount ?? 0,
-    // approvalCriteriaCount is intentionally never set — see its doc on OrgClaGroup before
-    // adding it here. It is not approvedContributorsCount and it is not 0.
+    // Carried only when upstream actually sent a number, so an environment still running a
+    // producer without the field renders the stat as unavailable rather than asserting 0.
+    // `?? 0` here would turn "this deployment cannot tell you" into "this agreement approves
+    // nobody" — a legal claim, and a false one.
+    ...(typeof entry.approvalCriteriaCount === 'number' ? { approvalCriteriaCount: entry.approvalCriteriaCount } : {}),
   };
 }
 

@@ -163,8 +163,9 @@ describe('OrgEasyclaCardComponent', () => {
       expect(fixture.nativeElement.textContent).toContain('CLA Managers');
     });
 
-    // The CLA service supplies no approval-criteria count. A zero here would assert the agreement
-    // approves nobody — a claim about a company's legal configuration this data cannot support.
+    // A CLA service deployment predating the count sends nothing. A zero here would assert the
+    // agreement approves nobody — a claim about a company's legal configuration that an absent
+    // field cannot support.
     it('shows the approval-entries stat as unavailable rather than as zero', async () => {
       const fixture = await render(claGroup());
 
@@ -173,9 +174,7 @@ describe('OrgEasyclaCardComponent', () => {
       expect(fixture.nativeElement.textContent).toContain('approval entries');
     });
 
-    // Pins the swap the placeholder exists to make cheap: when the producer adds the count, the
-    // mapper populates it and nothing in this template moves.
-    it('renders a real approval-criteria count once one is supplied', async () => {
+    it('renders a real approval-criteria count when one is supplied', async () => {
       const fixture = await render(claGroup({ approvalCriteriaCount: 7 }));
 
       expect(textOf(fixture, 'org-easycla-card-approval-count')).toBe('7');
