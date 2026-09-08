@@ -16,7 +16,7 @@ import { OrgLensMembershipsService } from '@services/org-lens-memberships.servic
 import { OrgRoleGrantsService } from '@services/org-role-grants.service';
 import { PersonDetailDrawerService } from '@services/person-detail-drawer.service';
 import { EMPTY_ORG_KEY_CONTACTS_RESPONSE, roleToContactType } from '@lfx-one/shared/constants';
-import { avatarInitials } from '@lfx-one/shared/utils';
+import { agreedUsername, avatarInitials } from '@lfx-one/shared/utils';
 import type {
   AddKeyContactRequest,
   EditKeyContactDialogData,
@@ -174,7 +174,8 @@ export class KeyContactsComponent {
       title: group.title,
       initials: group.initials,
       avatarUrl: group.avatarUrl,
-      email: group.email,
+      // Email-keyed groups may span people: the username is a lookup key only when every assignment carries the same one.
+      username: agreedUsername(group.assignments.map((a) => a.username)),
     });
   }
 
@@ -240,6 +241,7 @@ export class KeyContactsComponent {
           fullName: group.displayName,
           email: group.email,
           initials: this.deriveInitials(first.firstName, first.lastName),
+          username: agreedUsername(group.assignments.map((a) => a.username)),
         },
         roles,
         orgUid,

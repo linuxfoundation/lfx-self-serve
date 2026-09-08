@@ -498,10 +498,9 @@ export class OrgProjectDetailComponent {
     this.loadRosterPage(cardKey, event.first ?? 0, rowsPerPage);
   }
 
-  // Roster rows (all 13 card types) carry only name/avatar/initials — no personKey/email (see
-  // OrgLensCardDetailCell). Unlike Board/Committee rows, there's no real email to derive company
-  // variants from here, so the drawer opens without one and its email section stays empty rather
-  // than showing addresses fabricated from the display name.
+  // Roster rows (all 13 card types) carry only name/avatar/initials — no personKey or username (see
+  // OrgLensCardDetailCell), so the drawer opens without an identity key and reports company emails
+  // as unavailable.
   protected onRosterPersonClick(person: { name: string; avatarUrl?: string; initials: string }): void {
     this.drawer.open({
       name: person.name,

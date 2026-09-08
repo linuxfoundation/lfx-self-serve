@@ -174,26 +174,37 @@ export interface OrgAllEmployeeDetail {
   events: OrgAllEmployeeEvent[];
   training: OrgAllEmployeeTraining[];
   /**
-   * Email address(es) on this person's LF account affiliated with the company at the domain
-   * level (per Salesforce Account domain(s)), excluding personal/academic addresses. Demo-derived
-   * pending a real Salesforce Account multi-domain + LF SSO multi-email pipeline — see
-   * `deriveDemoCompanyEmails` in org-lens-people.service.ts.
+   * Addresses on the org's domains, primary-first. Uncapped. Empty means "none on record" only when
+   * `companyEmailsStatus === 'resolved'`; failed and unavailable lookups also return empty arrays.
    */
   companyEmails: string[];
+  /**
+   * `resolved`: lookup succeeded, empty means none on record. `unavailable`: feature off or no usable
+   * identity. `failed`: lookup errored; never fails the whole detail response.
+   */
+  companyEmailsStatus: OrgCompanyEmailsStatus;
 }
 
+export type OrgCompanyEmailsStatus = 'resolved' | 'unavailable' | 'failed';
+
 /**
- * Response for the email-based company-emails lookup — used by Org Lens tabs (Board/Committee)
- * whose rows have no `personKey` to fetch the full `OrgAllEmployeeDetail` payload on.
+ * Response for the username-keyed company-emails lookup. Keyed on an identity, never on an address:
+ * an address key would let a caller enumerate a person's other addresses from an arbitrary input.
  */
-export interface OrgLensCompanyEmailsResponse {
+export interface OrgPersonCompanyEmailsResponse {
   companyEmails: string[];
+  /**
+   * A username-keyed response is `resolved` only with at least one address; `unavailable` otherwise
+   * (no username, no qualifying address, ambiguous match, or flag off). A missing status must be
+   * treated as `failed`, never as `unavailable` or an empty set.
+   */
+  companyEmailsStatus: OrgCompanyEmailsStatus;
 }
 
 /**
- * Internal fetch-result shape for `PersonDetailDrawerService`. `detail` stays `null` for
- * email-only lookups (Board/Committee openers with no `personKey`) so the drawer's "Detailed
- * activity isn't available" state stays truthful instead of implying verified-empty activity.
+ * Internal fetch-result shape for `PersonDetailDrawerService`. `detail` stays `null` for openers that
+ * carry only an identity and no `personKey`, so the drawer's "Detailed activity isn't available" state
+ * stays truthful instead of implying verified-empty activity.
  */
 export interface OrgDrawerFetchResult {
   detail: OrgAllEmployeeDetail | null;

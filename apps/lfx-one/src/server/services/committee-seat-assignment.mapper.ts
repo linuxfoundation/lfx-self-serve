@@ -82,6 +82,7 @@ export function toPerson(s: CommitteeServiceOrgSeat): CommitteeMemberPerson {
     fullName,
     jobTitle: s.job_title?.trim() ? s.job_title.trim() : null,
     initials,
+    username: s.username?.trim() ? s.username.trim() : null,
     avatarUrl: resolveSeatAvatar(s),
   };
 }

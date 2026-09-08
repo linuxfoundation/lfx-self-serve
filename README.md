@@ -44,7 +44,7 @@ of conduct, development process, and how to submit pull requests.
 
 #### Prerequisites
 
-- **Node.js** v22+ (specified in package.json)
+- **Node.js** 22.13+ or 23.4+ (`engines` in package.json; `node:sqlite` is unflagged from those releases)
 - **Yarn** v4.9.2+ package manager
 - **Auth0 Account** for authentication setup
 - **Supabase Project** for user profile email management
