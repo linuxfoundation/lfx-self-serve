@@ -5,6 +5,7 @@ import { FoundationEventStatus } from '../enums';
 import type {
   AttendeeAccommodationPaidBy,
   AttendeeType,
+  EventTabId,
   FilterOption,
   MyEventsResponse,
   EventsResponse,
@@ -85,6 +86,11 @@ export const COMING_SOON_SENTINEL = 'coming-soon';
 
 export const VALID_EVENT_STATUS_VALUES: ReadonlySet<string> = new Set(['Active', 'Planned', 'Pending', 'Completed', COMING_SOON_SENTINEL]);
 export const VALID_MY_EVENT_STATUS_VALUES: ReadonlySet<string> = new Set(['registered', 'attended', 'not-registered']);
+
+/** Default tab for the My Events dashboard when `?tab=` is absent or invalid. */
+export const DEFAULT_MY_EVENTS_TAB_ID: EventTabId = 'upcoming';
+/** The tabs the My Events dashboard actually renders; used to validate `?tab=` query-param input. */
+export const VALID_MY_EVENTS_TAB_IDS: ReadonlySet<EventTabId> = new Set<EventTabId>(['upcoming', 'past', 'visa-letters', 'travel-funding']);
 /** Severity map for foundation event display statuses, used by the events table tag component. */
 export const FOUNDATION_EVENT_STATUS_SEVERITY_MAP: Partial<Record<string, TagSeverity>> = {
   [FoundationEventStatus.REGISTRATION_OPEN]: 'warn',

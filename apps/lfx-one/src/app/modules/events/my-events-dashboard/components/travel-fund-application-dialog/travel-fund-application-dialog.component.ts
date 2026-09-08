@@ -8,7 +8,8 @@ import { UserService } from '@app/shared/services/user.service';
 import { ButtonComponent } from '@components/button/button.component';
 import { MyEvent, TravelFundAboutMe, TravelFundApplication, TravelFundExpenses, TravelFundStep } from '@lfx-one/shared/interfaces';
 import { MessageService } from 'primeng/api';
-import { DynamicDialogRef } from 'primeng/dynamicdialog';
+import { DynamicDialogConfig, DynamicDialogRef } from 'primeng/dynamicdialog';
+import { catchError, of } from 'rxjs';
 import { ApplicationSuccessComponent } from '../application-success/application-success.component';
 import { EventSelectionComponent } from '../event-selection/event-selection.component';
 import { StepIndicatorComponent } from '../step-indicator/step-indicator.component';
@@ -34,6 +35,7 @@ import { TRAVEL_FUND_STEP_ORDER } from '@lfx-one/shared/constants/events.constan
 })
 export class TravelFundApplicationDialogComponent {
   private readonly ref = inject(DynamicDialogRef);
+  private readonly config = inject(DynamicDialogConfig);
   private readonly eventsService = inject(EventsService);
   private readonly userService = inject(UserService);
   private readonly messageService = inject(MessageService);
@@ -70,6 +72,10 @@ export class TravelFundApplicationDialogComponent {
       isCompleted: TRAVEL_FUND_STEP_ORDER.indexOf(s.id) < TRAVEL_FUND_STEP_ORDER.indexOf(this.step()),
     }))
   );
+
+  public constructor() {
+    this.resolveDeepLinkedEvent();
+  }
 
   public onNextStep(): void {
     if (this.step() === 'terms') {
@@ -137,5 +143,32 @@ export class TravelFundApplicationDialogComponent {
 
   public onCancel(): void {
     this.ref.close(null);
+  }
+
+  /** Preselects the event from a deep link (`?tab=travel-funding&event=<id>`), skipping to the Terms step on a match. */
+  private resolveDeepLinkedEvent(): void {
+    const eventId = (this.config.data?.initialEventId as string | null | undefined) || undefined;
+    if (!eventId) return;
+
+    this.eventsService
+      .getMyEvents({ eventId, isPast: false, registeredOnly: true, isTravelFundRequestAccepted: true, excludePastTravelFundDeadline: true })
+      .pipe(
+        catchError(() => of(null)),
+        takeUntilDestroyed(this.destroyRef)
+      )
+      .subscribe((response) => {
+        const event = response?.data[0];
+        if (event) {
+          this.selectedEvent.set(event);
+          this.step.set('terms');
+          return;
+        }
+
+        this.messageService.add({
+          severity: 'info',
+          summary: 'Event not found',
+          detail: "We couldn't find that event among your eligible registered events — please choose it below.",
+        });
+      });
   }
 }

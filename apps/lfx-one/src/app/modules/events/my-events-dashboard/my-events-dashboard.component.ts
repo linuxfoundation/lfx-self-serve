@@ -1,13 +1,14 @@
 // Copyright The Linux Foundation and each contributor to LFX.
 // SPDX-License-Identifier: MIT
 
-import { Component, computed, inject, Signal, signal, viewChild } from '@angular/core';
+import { Component, computed, effect, inject, Signal, signal, viewChild } from '@angular/core';
 import { toSignal } from '@angular/core/rxjs-interop';
+import { ActivatedRoute, Router } from '@angular/router';
 import { ButtonComponent } from '@components/button/button.component';
 import { CardComponent } from '@components/card/card.component';
 import { CardTabsBarComponent } from '@components/card-tabs-bar/card-tabs-bar.component';
 import { ToastMessageComponent } from '@components/toast-message/toast-message.component';
-import { MY_EVENT_STATUS_OPTIONS, VISA_REQUEST_STATUS_OPTIONS } from '@lfx-one/shared/constants';
+import { DEFAULT_MY_EVENTS_TAB_ID, MY_EVENT_STATUS_OPTIONS, VALID_MY_EVENTS_TAB_IDS, VISA_REQUEST_STATUS_OPTIONS } from '@lfx-one/shared/constants';
 import { EventTabId, FilterOption, FilterPillOption } from '@lfx-one/shared/interfaces';
 import { OpenIntercomDirective } from '@shared/directives/open-intercom.directive';
 import { MessageService } from 'primeng/api';
@@ -41,9 +42,16 @@ const SALESFORCE_ERROR_TOAST_KEY = 'my-events-salesforce-error';
 export class MyEventsDashboardComponent {
   private readonly userService = inject(UserService);
   private readonly messageService = inject(MessageService);
+  private readonly route = inject(ActivatedRoute);
+  private readonly router = inject(Router);
   private readonly eventsListRef = viewChild(EventsListComponent);
 
-  protected readonly activeTab = signal<EventTabId>('upcoming');
+  /** Guards the deep-linked `?event=` auto-open so it fires at most once per page load. */
+  private readonly deepLinkEventConsumed = signal(false);
+
+  protected readonly activeTab: Signal<EventTabId> = this.initActiveTab();
+  /** Event id from a deep link (`?tab=visa-letters&event=<id>`); null once the URL is stripped post-auto-open, or absent. */
+  protected readonly activeEventId: Signal<string | null> = this.initActiveEventId();
 
   protected readonly tabOptions: FilterPillOption[] = [
     { id: 'upcoming', label: 'Upcoming' },
@@ -83,6 +91,19 @@ export class MyEventsDashboardComponent {
   protected readonly salesforceErrorToastKey = SALESFORCE_ERROR_TOAST_KEY;
   protected readonly isCreateEnabled: Signal<boolean> = this.initIsCreateEnabled();
 
+  public constructor() {
+    // Auto-open the request dialog for a deep link (`?tab=visa-letters&event=<id>`), once
+    // isCreateEnabled resolves. Guarded so switching tabs away and back never reopens it.
+    effect(() => {
+      if (this.deepLinkEventConsumed()) return;
+      if (!this.isRequestTab() || !this.activeEventId() || !this.isCreateEnabled()) return;
+
+      this.deepLinkEventConsumed.set(true);
+      void this.router.navigate([], { relativeTo: this.route, queryParams: { event: null }, queryParamsHandling: 'merge', replaceUrl: true });
+      this.openCurrentRequestDialog();
+    });
+  }
+
   protected onFoundationChange(value: string | null): void {
     this.selectedFoundation.set(value);
   }
@@ -100,7 +121,15 @@ export class MyEventsDashboardComponent {
   }
 
   protected onActiveTabChange(tab: string): void {
-    this.activeTab.set(tab as EventTabId);
+    if (!VALID_MY_EVENTS_TAB_IDS.has(tab as EventTabId)) return;
+
+    void this.router.navigate([], {
+      relativeTo: this.route,
+      queryParams: { tab: tab === DEFAULT_MY_EVENTS_TAB_ID ? null : tab, event: null },
+      queryParamsHandling: 'merge',
+      replaceUrl: true,
+    });
+
     // Reset all filters when switching tabs — each tab has different filter sets
     this.selectedFoundation.set(null);
     this.selectedRole.set(null);
@@ -118,6 +147,19 @@ export class MyEventsDashboardComponent {
     this.selectedRole.set(null);
     this.selectedStatus.set(null);
     this.selectedSearchQuery.set('');
+  }
+
+  private initActiveTab(): Signal<EventTabId> {
+    const queryParamMap = toSignal(this.route.queryParamMap, { initialValue: this.route.snapshot.queryParamMap });
+    return computed(() => {
+      const raw = queryParamMap().get('tab');
+      return raw && VALID_MY_EVENTS_TAB_IDS.has(raw as EventTabId) ? (raw as EventTabId) : DEFAULT_MY_EVENTS_TAB_ID;
+    });
+  }
+
+  private initActiveEventId(): Signal<string | null> {
+    const queryParamMap = toSignal(this.route.queryParamMap, { initialValue: this.route.snapshot.queryParamMap });
+    return computed(() => queryParamMap().get('event'));
   }
 
   private initIsCreateEnabled(): Signal<boolean> {
