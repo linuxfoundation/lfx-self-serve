@@ -1,8 +1,8 @@
 // Copyright The Linux Foundation and each contributor to LFX.
 // SPDX-License-Identifier: MIT
 
-import { ChangeDetectionStrategy, Component, computed, input, output } from '@angular/core';
-import { takeUntilDestroyed, toObservable, toSignal } from '@angular/core/rxjs-interop';
+import { ChangeDetectionStrategy, Component, computed, input, output, signal } from '@angular/core';
+import { takeUntilDestroyed, toObservable } from '@angular/core/rxjs-interop';
 import { FormControl, FormGroup, ReactiveFormsModule } from '@angular/forms';
 import { ButtonComponent } from '@components/button/button.component';
 import { CalendarComponent } from '@components/calendar/calendar.component';
@@ -37,7 +37,9 @@ export class EnrollCustomPrerequisiteComponent {
     requireFile: new FormControl(false, { nonNullable: true }),
   });
 
-  private readonly formSnapshot = toSignal(this.form.valueChanges, { initialValue: this.form.getRawValue() });
+  // Written explicitly rather than derived from `valueChanges`: the `item` sync patches with
+  // `emitEvent: false`, so a derived snapshot would never see the restored values.
+  private readonly formSnapshot = signal(this.form.getRawValue());
 
   protected readonly nameLength = computed(() => String(this.formSnapshot().name ?? '').length);
   protected readonly descriptionLength = computed(() => String(this.formSnapshot().description ?? '').length);
@@ -66,9 +68,13 @@ export class EnrollCustomPrerequisiteComponent {
           },
           { emitEvent: false }
         );
+        this.formSnapshot.set(this.form.getRawValue());
       });
 
-    this.form.valueChanges.pipe(takeUntilDestroyed()).subscribe(() => this.emitChange());
+    this.form.valueChanges.pipe(takeUntilDestroyed()).subscribe(() => {
+      this.emitChange();
+      this.formSnapshot.set(this.form.getRawValue());
+    });
   }
 
   protected onDelete(): void {

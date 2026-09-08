@@ -21,10 +21,11 @@
 
   <div class="grid grid-cols-1 gap-4 sm:grid-cols-2">
     <div class="flex flex-col gap-1">
-      <label class="text-sm font-medium text-gray-700">Start Month <span class="text-red-500">*</span></label>
+      <label class="text-sm font-medium text-gray-700" for="dialog-term-start-month">Start Month <span class="text-red-500">*</span></label>
       <lfx-select
         [form]="form"
         control="startMonth"
+        inputId="dialog-term-start-month"
         [options]="monthOptions"
         optionLabel="label"
         optionValue="value"
@@ -37,10 +38,11 @@
       }
     </div>
     <div class="flex flex-col gap-1">
-      <label class="text-sm font-medium text-gray-700">Start Year <span class="text-red-500">*</span></label>
+      <label class="text-sm font-medium text-gray-700" for="dialog-term-start-year">Start Year <span class="text-red-500">*</span></label>
       <lfx-select
         [form]="form"
         control="startYear"
+        inputId="dialog-term-start-year"
         [options]="yearOptions"
         optionLabel="label"
         optionValue="value"
@@ -56,10 +58,11 @@
 
   <div class="grid grid-cols-1 gap-4 sm:grid-cols-2">
     <div class="flex flex-col gap-1">
-      <label class="text-sm font-medium text-gray-700">End Month <span class="text-red-500">*</span></label>
+      <label class="text-sm font-medium text-gray-700" for="dialog-term-end-month">End Month <span class="text-red-500">*</span></label>
       <lfx-select
         [form]="form"
         control="endMonth"
+        inputId="dialog-term-end-month"
         [options]="monthOptions"
         optionLabel="label"
         optionValue="value"
@@ -72,10 +75,11 @@
       }
     </div>
     <div class="flex flex-col gap-1">
-      <label class="text-sm font-medium text-gray-700">End Year <span class="text-red-500">*</span></label>
+      <label class="text-sm font-medium text-gray-700" for="dialog-term-end-year">End Year <span class="text-red-500">*</span></label>
       <lfx-select
         [form]="form"
         control="endYear"
+        inputId="dialog-term-end-year"
         [options]="yearOptions"
         optionLabel="label"
         optionValue="value"
@@ -93,10 +97,11 @@
 
   <div class="grid grid-cols-1 gap-4 sm:grid-cols-2">
     <div class="flex flex-col gap-1">
-      <label class="text-sm font-medium text-gray-700">Application Start Date <span class="text-red-500">*</span></label>
+      <label class="text-sm font-medium text-gray-700" for="dialog-term-application-start">Application Start Date <span class="text-red-500">*</span></label>
       <lfx-calendar
         [form]="form"
         control="applicationStartDate"
+        inputId="dialog-term-application-start"
         placeholder="YYYY-MM-DD"
         dateFormat="yy-mm-dd"
         [minDate]="minApplicationDate()"
@@ -107,10 +112,11 @@
       }
     </div>
     <div class="flex flex-col gap-1">
-      <label class="text-sm font-medium text-gray-700">Application End Date <span class="text-red-500">*</span></label>
+      <label class="text-sm font-medium text-gray-700" for="dialog-term-application-end">Application End Date <span class="text-red-500">*</span></label>
       <lfx-calendar
         [form]="form"
         control="applicationEndDate"
+        inputId="dialog-term-application-end"
         placeholder="YYYY-MM-DD"
         dateFormat="yy-mm-dd"
         [minDate]="minApplicationDate()"

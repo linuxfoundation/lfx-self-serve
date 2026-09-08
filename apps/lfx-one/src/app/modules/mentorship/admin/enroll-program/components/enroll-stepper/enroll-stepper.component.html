@@ -4,7 +4,7 @@
 <div class="rounded-2xl border border-gray-200 bg-white px-4 py-5 md:px-6" data-testid="mentorship-enroll-stepper">
   <ol class="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
     @for (step of steps; track step; let index = $index) {
-      <li class="flex items-center gap-3 min-w-0 flex-1">
+      <li class="flex items-center gap-3 min-w-0 flex-1" [attr.aria-current]="isCurrent(step) ? 'step' : null">
         <div class="flex items-center gap-3 min-w-0">
           <span
             class="flex size-7 shrink-0 items-center justify-center rounded-full text-xs font-semibold"

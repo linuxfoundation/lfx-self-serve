@@ -125,7 +125,7 @@ export class EnrollSetupStepComponent {
 
   private openTermDialog(data: MentorshipTermFormDialogData): void {
     const dialogRef = this.dialogService.open(EnrollTermDialogComponent, {
-      header: data.mode === 'edit' ? 'Edit Term' : '',
+      header: data.mode === 'edit' ? 'Edit Term' : 'Add Term',
       width: '36rem',
       modal: true,
       closable: true,

@@ -98,7 +98,8 @@ export class EnrollTermDialogComponent {
     const endDate = mentorshipMonthYearToStartDate(value.endMonth, value.endYear);
     const applicationStartDate = toMentorshipDateOnly(applicationStart);
     const applicationEndDate = toMentorshipDateOnly(applicationEnd);
-    const dateErrors = getMentorshipTermDateErrors({ startDate, endDate, applicationStartDate, applicationEndDate });
+    // Pass the term being edited so dates it already had in the past stay valid when left unchanged.
+    const dateErrors = getMentorshipTermDateErrors({ startDate, endDate, applicationStartDate, applicationEndDate }, new Date(), this.data.term);
     if (Object.keys(dateErrors).length) {
       this.showErrors.set(true);
       this.dateErrors.set(Object.fromEntries(Object.entries(dateErrors).map(([key, value]) => [key, value ?? ''])));
