@@ -54,6 +54,15 @@ describe('OpenProfileBannerComponent', () => {
     fixture.componentInstance.linkClick.subscribe(linkClick);
   });
 
+  it('stretches to the width of its flex-item host so it lines up with sibling sidebar slots', () => {
+    // Guards the `host: { class: 'block w-full' }` binding: the parent sidebar column is a
+    // `flex flex-col items-start` container, so without an explicit block+full-width host this
+    // element (and its child slot's own w-full) would shrink to content width instead of
+    // stretching like every other slot in that column.
+    expect(fixture.nativeElement.classList.contains('block')).toBe(true);
+    expect(fixture.nativeElement.classList.contains('w-full')).toBe(true);
+  });
+
   it('hides the banner slot when show is false', async () => {
     fixture.componentRef.setInput('show', false);
     await fixture.whenStable();

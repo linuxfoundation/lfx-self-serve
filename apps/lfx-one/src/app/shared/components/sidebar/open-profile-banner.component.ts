@@ -9,6 +9,7 @@ import { OpenIntercomDirective } from '@shared/directives/open-intercom.directiv
 // [class.hidden] (not @if) mirrors the me-selector's SSR-hydration-safe visibility toggle.
 @Component({
   selector: 'lfx-open-profile-banner',
+  host: { class: 'block w-full' },
   imports: [OpenIntercomDirective],
   templateUrl: './open-profile-banner.component.html',
 })

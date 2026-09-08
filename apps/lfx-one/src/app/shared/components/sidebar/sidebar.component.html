@@ -133,7 +133,7 @@
         Me lens. Markup/visibility/click-wiring lives in OpenProfileBannerComponent so it's
         unit-testable without the sidebar's full child/service graph; this only wires it up.
       -->
-      <lfx-open-profile-banner class="w-full" [show]="showMeSelector()" (linkClick)="trackOpenProfileBannerClick()" />
+      <lfx-open-profile-banner [show]="showMeSelector()" (linkClick)="trackOpenProfileBannerClick()" />
 
       <!--
         Gated on hydrated() so the concrete lens menu is withheld until the browser commits its first
