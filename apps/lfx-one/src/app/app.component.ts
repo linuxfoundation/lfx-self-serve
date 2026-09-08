@@ -87,7 +87,6 @@ export class AppComponent {
       const isImpersonating = Boolean(this.auth?.impersonating);
       this.segmentService.setImpersonating(isImpersonating);
       this.plausibleService.setImpersonating(isImpersonating);
-      this.dataDogRumService.setImpersonating(isImpersonating);
       this.userService.impersonating.set(isImpersonating);
       this.userService.impersonator.set(isImpersonating ? (this.auth.impersonator ?? null) : null);
 
