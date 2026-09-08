@@ -24,6 +24,7 @@ export class MicroserviceError extends BaseApiError {
       originalMessage?: string;
       originalError?: Error;
       transportFailure?: boolean;
+      clientMessage?: string;
     } = {}
   ) {
     super(message, statusCode, code, {
@@ -32,6 +33,7 @@ export class MicroserviceError extends BaseApiError {
       path: options.path,
       originalError: options.originalError,
       transportFailure: options.transportFailure,
+      clientMessage: options.clientMessage,
     });
 
     this.errorBody = options.errorBody;

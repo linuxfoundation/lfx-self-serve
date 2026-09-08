@@ -27,7 +27,7 @@ This is legal attestation copy: do not hardcode a sentence here, and do not rewo
       data-testid="org-easycla-attestation-embargo" />
   </div>
 
-  <ul class="mt-3 list-disc space-y-2 pl-9 text-sm text-slate-700" data-testid="org-easycla-attestation-conditions">
+  <ul class="mt-3 flex list-disc flex-col gap-2 pl-9 text-sm text-slate-700" data-testid="org-easycla-attestation-conditions">
     @for (condition of copy.embargoConditions; track condition) {
       <li>{{ condition }}</li>
     }

@@ -168,6 +168,72 @@ export function searchInput(page: Page): Locator {
   return page.locator('[data-test="org-easycla-search"]');
 }
 
+// ---------------------------------------------------------------------------
+// The self-sign hand-off (GH-1983)
+// ---------------------------------------------------------------------------
+
+/** The CLA Group search behind the picker. */
+export const SIGN_OPTIONS_ROUTE = '**/api/orgs/*/lens/cla-groups/sign-options*';
+
+/** The write. Every spec below stubs it; none may ever let it reach a real CLA service. */
+export const SIGN_ROUTE = '**/api/orgs/*/lens/cla-groups/sign';
+
+/**
+ * Where the hand-off is told to send the signer.
+ *
+ * A synthetic address on a reserved domain, routed and fulfilled locally by `stubHandoff` so the
+ * browser never leaves the app under test. A real signing address here would create a real
+ * envelope against a real agreement on every run.
+ */
+export const STUB_SIGN_URL = 'https://signing.example.org/session/e2e-stub';
+
+/** A searchable CLA Group, corporate-signable unless a case says otherwise. */
+export function signOption(overrides: Record<string, unknown> = {}) {
+  return {
+    claGroupId: 'aaaaaaaa-1111-4111-8111-111111111111',
+    claGroupName: 'Cascade CLA',
+    projectName: 'Cascade',
+    projectSfid: 'a09410000182dD2AAI',
+    cclaEnabled: true,
+    iclaEnabled: true,
+    matchTypes: ['project'],
+    organizations: [],
+    ...overrides,
+  };
+}
+
+export function signOptionsResponse(results: ReturnType<typeof signOption>[], truncated = false) {
+  return { searchTerm: 'cascade', resultCount: results.length, truncated, results };
+}
+
+/**
+ * Stubs the whole hand-off chain: the picker's search, the signature request, and the signing
+ * address the request answers with.
+ *
+ * The last one is the important one and is not optional. The component assigns the returned
+ * address to `location.href`, so without a route intercepting it the browser navigates away to
+ * whatever the fixture said — and a fixture that ever named a real signing host would drive a
+ * real DocuSign session from CI. Fulfilling it locally keeps the assertion (did we navigate to
+ * exactly the address the server returned?) while the navigation lands on a blank local page.
+ */
+export async function stubHandoff(page: Page, options: { search?: unknown; sign?: { status: number; body: unknown }; signUrl?: string } = {}): Promise<void> {
+  const signUrl = options.signUrl ?? STUB_SIGN_URL;
+
+  await fulfillJson(page, SIGN_OPTIONS_ROUTE, options.search ?? signOptionsResponse([signOption()]));
+
+  const sign = options.sign ?? { status: 200, body: { signUrl } };
+  await page.route(SIGN_ROUTE, (route) => route.fulfill({ status: sign.status, contentType: 'application/json', body: JSON.stringify(sign.body) }));
+
+  await page.route(`${signUrl}**`, (route) =>
+    route.fulfill({ status: 200, contentType: 'text/html', body: '<html><body data-testid="stub-signing-service">stub signing service</body></html>' })
+  );
+}
+
+/** The picker's search box. Same `data-test` quirk as the list's, for the same reason. */
+export function groupSearchInput(page: Page): Locator {
+  return page.locator('[data-test="org-easycla-group-select-search"]');
+}
+
 /** Skips when the shared Playwright credentials are absent, as every authenticated spec does. */
 export function skipWithoutCredentials(): void {
   if (!process.env.TEST_USERNAME || !process.env.TEST_PASSWORD) {

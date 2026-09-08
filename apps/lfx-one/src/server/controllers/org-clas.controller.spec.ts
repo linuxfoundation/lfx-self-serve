@@ -27,7 +27,7 @@ const { loggerMock } = vi.hoisted(() => ({
 }));
 vi.mock('../services/logger.service', () => ({ logger: loggerMock }));
 
-import { AuthenticationError } from '../errors';
+import { AuthenticationError, ServiceValidationError } from '../errors';
 import { logger } from '../services/logger.service';
 import { OrgClasController } from './org-clas.controller';
 
@@ -152,6 +152,25 @@ function signReq(body: Record<string, unknown> = {}) {
   } as any;
 }
 
+/**
+ * Runs the sign controller and returns what it rejected with.
+ *
+ * The rejections go to `next(error)` rather than to `res.status(400).json(...)`, so the shared
+ * error handler owns the envelope and the severity — client input that fails validation is a
+ * WARN, and logging it as an ERROR inflates the signal this service is watched by. Asserting
+ * through `next` rather than through `res` is what keeps that true: a branch that answered
+ * directly would leave `next` uncalled and fail here.
+ */
+async function rejectionOf(body: Record<string, unknown>): Promise<{ statusCode: number; code: string; response: Record<string, any> }> {
+  const next = vi.fn();
+  await new OrgClasController().requestCorporateSignature(signReq(body), buildRes(), next);
+
+  const error = next.mock.calls[0]?.[0] as ServiceValidationError | undefined;
+  expect(error, 'expected the controller to reject via next(error)').toBeInstanceOf(ServiceValidationError);
+
+  return { statusCode: error!.statusCode, code: error!.code, response: error!.toResponse() };
+}
+
 describe('OrgClasController.getSignOptions', () => {
   it('returns 401 (via next) when there is no authenticated user', async () => {
     getUsernameFromAuth.mockResolvedValue(null);
@@ -207,77 +226,72 @@ describe('OrgClasController.getSignOptions', () => {
  */
 describe('OrgClasController.requestCorporateSignature — the attestations', () => {
   it('refuses when the authorization confirmation is false, and never calls upstream', async () => {
-    const res = buildRes();
-
-    await new OrgClasController().requestCorporateSignature(signReq({ authorityAcked: false }), res, vi.fn());
-
+    expect((await rejectionOf({ authorityAcked: false })).statusCode).toBe(400);
     expect(requestCorporateSignature).not.toHaveBeenCalled();
-    expect(res.status).toHaveBeenCalledWith(400);
   });
 
   it('refuses when the compliance confirmation is false, and never calls upstream', async () => {
-    const res = buildRes();
-
-    await new OrgClasController().requestCorporateSignature(signReq({ embargoAcked: false }), res, vi.fn());
-
+    expect((await rejectionOf({ embargoAcked: false })).statusCode).toBe(400);
     expect(requestCorporateSignature).not.toHaveBeenCalled();
-    expect(res.status).toHaveBeenCalledWith(400);
   });
 
   it('refuses when both are false', async () => {
-    const res = buildRes();
-
-    await new OrgClasController().requestCorporateSignature(signReq({ authorityAcked: false, embargoAcked: false }), res, vi.fn());
-
+    expect((await rejectionOf({ authorityAcked: false, embargoAcked: false })).statusCode).toBe(400);
     expect(requestCorporateSignature).not.toHaveBeenCalled();
-    expect(res.status).toHaveBeenCalledWith(400);
   });
 
   it('refuses when either is absent', async () => {
-    const res = buildRes();
-
-    await new OrgClasController().requestCorporateSignature(signReq({ authorityAcked: undefined }), res, vi.fn());
-
+    expect((await rejectionOf({ authorityAcked: undefined })).statusCode).toBe(400);
     expect(requestCorporateSignature).not.toHaveBeenCalled();
-    expect(res.status).toHaveBeenCalledWith(400);
   });
 
   // The specific failure this guards: `Boolean(body.authorityAcked)` or `!!body.authorityAcked`
   // would accept every one of these and record an attestation nobody made.
   it.each([['true'], [1], [{}], [[]], ['yes']])('refuses the truthy non-boolean %p rather than coercing it', async (value) => {
-    const res = buildRes();
-
-    await new OrgClasController().requestCorporateSignature(signReq({ authorityAcked: value }), res, vi.fn());
-
+    expect((await rejectionOf({ authorityAcked: value })).statusCode).toBe(400);
     expect(requestCorporateSignature).not.toHaveBeenCalled();
-    expect(res.status).toHaveBeenCalledWith(400);
   });
 
   // An operation opened and never terminated reads on a dashboard as a request still in flight.
-  // Every rejection below the `startOperation` has to close it.
+  // The error handler is what terminates these now, so what this asserts is that the rejection
+  // actually reaches it — a branch that answered on `res` directly would strand the operation.
   it.each([
     ['a withdrawn confirmation', { embargoAcked: false }],
     ['a missing project', { projectSfid: '' }],
     ['a malformed CLA group id', { claGroupId: 'not-a-uuid' }],
-  ])('closes the operation it opened when rejecting %s', async (_case, body) => {
-    const res = buildRes();
-
-    await new OrgClasController().requestCorporateSignature(signReq(body), res, vi.fn());
-
-    expect(res.status).toHaveBeenCalledWith(400);
+  ])('hands the rejection to the error handler when rejecting %s', async (_case, body) => {
+    expect((await rejectionOf(body)).statusCode).toBe(400);
     expect(loggerMock.startOperation).toHaveBeenCalledTimes(1);
-    expect(loggerMock.error).toHaveBeenCalledTimes(1);
-    expect(loggerMock.error.mock.calls[0][1]).toBe('request_org_cla_corporate_signature');
+    // Not logged here at all: bad client input is not an operational error, and the handler
+    // classifies a 400 as a warning. A `logger.error` on this path is the defect.
+    expect(loggerMock.error).not.toHaveBeenCalled();
   });
 
-  // The types, not the values: a log line is not a place to record a legal assertion.
-  it('records that a non-boolean arrived without recording what it was', async () => {
-    const res = buildRes();
+  // A log line — and a response — is not a place to record a legal assertion. Naming which of the
+  // two confirmations was withheld would record exactly that, so neither the value nor the field
+  // is reported: the rejection is about the pair.
+  it('says a confirmation is missing without saying which one, or what arrived instead', async () => {
+    const { code, response } = await rejectionOf({ embargoAcked: 'yes please' });
 
-    await new OrgClasController().requestCorporateSignature(signReq({ embargoAcked: 'yes please' }), res, vi.fn());
+    expect(code).toBe('VALIDATION_ERROR');
+    const serialized = JSON.stringify(response);
+    expect(serialized).not.toContain('yes please');
+    expect(serialized).not.toContain('embargoAcked');
+    expect(serialized).not.toContain('authorityAcked');
+    expect(response['error']).toBe('Both the authorization and compliance confirmations are required');
+  });
 
-    expect(loggerMock.error.mock.calls[0][4]).toMatchObject({ embargo_acked_type: 'string' });
-    expect(JSON.stringify(loggerMock.error.mock.calls[0][4])).not.toContain('yes please');
+  // The whole point of D: one envelope. Every rejection from this route carries the standard
+  // `error` + `code` shape rather than the bare `{ message }` a direct `res.json` produced.
+  it.each([
+    ['a missing project', { projectSfid: '' }],
+    ['a malformed CLA group id', { claGroupId: 'not-a-uuid' }],
+    ['a withdrawn confirmation', { embargoAcked: false }],
+  ])('answers %s in the standard error envelope', async (_case, body) => {
+    const { response } = await rejectionOf(body);
+
+    expect(response).toMatchObject({ code: 'VALIDATION_ERROR' });
+    expect(typeof response['error']).toBe('string');
   });
 
   it('passes both confirmations through as the booleans that arrived, not as literals', async () => {
@@ -310,21 +324,13 @@ describe('OrgClasController.requestCorporateSignature', () => {
   });
 
   it('rejects a missing project identifier before calling upstream', async () => {
-    const res = buildRes();
-
-    await new OrgClasController().requestCorporateSignature(signReq({ projectSfid: '   ' }), res, vi.fn());
-
+    expect((await rejectionOf({ projectSfid: '   ' })).statusCode).toBe(400);
     expect(requestCorporateSignature).not.toHaveBeenCalled();
-    expect(res.status).toHaveBeenCalledWith(400);
   });
 
   it('rejects a CLA group identifier that is not a UUID', async () => {
-    const res = buildRes();
-
-    await new OrgClasController().requestCorporateSignature(signReq({ claGroupId: 'nimbus-foundation' }), res, vi.fn());
-
+    expect((await rejectionOf({ claGroupId: 'nimbus-foundation' })).statusCode).toBe(400);
     expect(requestCorporateSignature).not.toHaveBeenCalled();
-    expect(res.status).toHaveBeenCalledWith(400);
   });
 
   // The organization is the grant-checked path segment. A body that names a different one is

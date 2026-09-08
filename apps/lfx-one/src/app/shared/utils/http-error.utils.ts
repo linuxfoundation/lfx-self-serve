@@ -75,8 +75,16 @@ export function serverAuthoredMessage(error: unknown, fallback: string): string 
  * Whether the response body carries a message the server wrote, in any shape this BFF emits.
  *
  * There are two, because the server has two paths: `BaseApiError#toResponse` answers with the
- * message under `error`, while a controller that validates and replies directly answers with it
- * under `message`. A reader that knows only one of them silently loses half the server's replies.
+ * message under `error`, while a controller that answers `res.status(...).json({ message })`
+ * directly answers with it under `message`. A reader that knows only one of them silently loses
+ * half the server's replies.
+ *
+ * **Both are still live and this must stay tolerant of both.** The org-lens sign route was moved
+ * onto the error-class path so it emits only the first, and the temptation is then to narrow this
+ * to `error`. Don't: the second shape is emitted by roughly two dozen surviving call sites across
+ * `clas`, `crowdfunding`, `profile` and `org-lens-project-detail`, including the sibling Me-lens
+ * CLA controller. Narrowing would turn every one of their messages into the generic fallback.
+ * Converting them is worth doing and is not this feature's to do.
  */
 function hasServerAuthoredMessage(error: unknown): boolean {
   const body = error instanceof HttpErrorResponse ? error.error : null;

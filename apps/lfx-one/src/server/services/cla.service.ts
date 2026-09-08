@@ -389,12 +389,20 @@ export function producerMessageFrom(errorBody: unknown): string | null {
 }
 
 /**
- * Re-labels an ownership refusal with the message the CLA service sent, so that message —
- * rather than "403 Forbidden" — is what the contributor is shown.
+ * Carries the CLA service's refusal to the client as `clientMessage`, so that sentence — rather
+ * than "403 Forbidden" — is what the contributor is shown.
  *
  * Scoped to 403 on purpose. That is the one status whose body is a statement about the
  * contributor's own identity and therefore worth repeating verbatim; relaying the prose of a
  * 500 would put upstream internals on screen for something they can do nothing about.
+ *
+ * **`message` is deliberately left alone**, and that is the point of the field. The refusal is
+ * exactly the text that must not be logged — a scope refusal names the caller, a trade-compliance
+ * refusal names the organization's standing — and `message` is logged three ways over: the error
+ * handler formats `API error: ${error.message}`, passes the error itself as `err`, and Pino's
+ * serializer reads `.message` off it. Writing the refusal into `message` therefore published it
+ * to the log line no matter what was done to the body afterwards. `clientMessage` reaches
+ * `toResponse` and nothing else; see `BaseApiError`.
  *
  * Exported for the corporate hand-off (#1983), which lands in the same window: the CLA service
  * answers a trade-compliance refusal with a 403 whose body names the reason and the support
@@ -407,24 +415,29 @@ export function withProducerRefusalMessage(error: unknown, operation = 'cla_prep
   const message = producerMessageFrom(error.errorBody);
   if (!message) return error;
 
-  return new MicroserviceError(message, error.statusCode, error.code, {
+  return new MicroserviceError(error.message, error.statusCode, error.code, {
     operation,
     service,
     errorBody: error.errorBody,
+    clientMessage: message,
   });
 }
 
 /**
- * The same error with the raw upstream body dropped, keeping its message, status and code.
+ * The same error with the raw upstream body dropped, keeping its status, code and client message.
  *
- * `MicroserviceError#getLogContext` returns `error_body`, and the API error handler spreads that
- * into its log line — so an error carrying an upstream body logs that body wherever it is finally
- * handled, however carefully the fetch that produced it was configured. Compose this after
- * anything that needed to read the body (`withProducerRefusalMessage`) and before the throw, on
- * the paths whose upstream refusals name a person or an organization's compliance standing.
+ * `MicroserviceError#getLogContext` returns `error_body` and the API error handler spreads that
+ * into its log line; Pino's error serializer copies it a second time, since it enumerates the
+ * error's own string keys. So an error carrying an upstream body logs that body wherever it is
+ * finally handled, however carefully the fetch that produced it was configured. Compose this
+ * after anything that needed to read the body (`withProducerRefusalMessage`) and before the
+ * throw, on the paths whose upstream refusals name a person or an organization's standing.
  *
- * The message survives, which is the point: the sentence written for the user is kept and the
- * record it was extracted from is not.
+ * This drops the body only. It is not on its own sufficient to keep a refusal out of the logs,
+ * because the sentence extracted from the body is the sensitive part and dropping its container
+ * does nothing about it — `withProducerRefusalMessage` putting that sentence in `clientMessage`
+ * rather than `message` is the half that handles it. Both are needed: one for the record, one
+ * for the sentence.
  */
 export function withoutUpstreamBody(error: unknown): unknown {
   if (!(error instanceof MicroserviceError) || error.errorBody === undefined) return error;
@@ -435,6 +448,7 @@ export function withoutUpstreamBody(error: unknown): unknown {
     path: error.path,
     originalMessage: error.originalMessage,
     transportFailure: error.transportFailure,
+    clientMessage: error.clientMessage,
   });
 }
 

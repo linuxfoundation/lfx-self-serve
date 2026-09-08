@@ -12,8 +12,12 @@ SPDX-License-Identifier: MIT
   -->
   <!--
     Keydown is bound here rather than on the rows. The rows are not focusable — focus stays in the
-    text box so the viewer can keep typing while moving the highlight, which is what the listbox's
-    `aria-activedescendant` describes.
+    text box so the viewer can keep typing while moving the highlight.
+
+    The combobox attributes go on the input itself, not on this container and not on the listbox.
+    `aria-activedescendant` is read from whatever holds focus, which is the text box throughout;
+    on the listbox it names the right element and is never announced, because nothing ever focuses
+    the listbox. That failure is invisible on screen, which is how it survived a first pass.
   -->
   <div (keydown)="onKeydown($event)">
     <label for="org-easycla-group-select-search-input" class="sr-only">Search projects and CLA groups</label>
@@ -27,13 +31,17 @@ SPDX-License-Identifier: MIT
       placeholder="Search projects, CLA groups, or organizations…"
       autocomplete="off"
       styleClass="w-full"
+      role="combobox"
+      ariaAutocomplete="list"
+      ariaControls="org-easycla-group-select-results"
+      [ariaExpanded]="listboxOpen()"
+      [ariaActivedescendant]="activeOptionId()"
       data-testid="org-easycla-group-select-search" />
 
     <div
       id="org-easycla-group-select-results"
       role="listbox"
       aria-label="Matching CLA groups"
-      [attr.aria-activedescendant]="highlightedIndex() >= 0 ? 'org-easycla-group-option-' + options()[highlightedIndex()]?.claGroupId : null"
       class="mt-1 max-h-64 w-full overflow-y-auto rounded-lg border border-slate-200 bg-white shadow-lg"
       data-testid="org-easycla-group-select-results">
       @if (error()) {
@@ -59,8 +67,12 @@ SPDX-License-Identifier: MIT
           Results stay on screen while the next search runs, matching the Me-lens picker: a cold
           producer search is a multi-table scan, so swapping the list for a spinner on every
           keystroke past the third would flash the modal empty for that whole window.
+
+          Shown for the debounce as well as the request (`stale`, not just `loading`), because the
+          rows underneath answer the previous term for both — and they are not selectable for
+          either, so the banner is what explains why clicking one does nothing.
         -->
-        @if (loading()) {
+        @if (stale()) {
           <div class="flex items-center gap-2 border-b border-slate-100 px-4 py-2 text-xs text-slate-500" data-testid="org-easycla-group-select-pending">
             <i class="fa-light fa-spinner-third fa-spin" aria-hidden="true"></i>
             Searching…
@@ -77,12 +89,12 @@ SPDX-License-Identifier: MIT
             role="option"
             [id]="'org-easycla-group-option-' + option.claGroupId"
             [attr.aria-selected]="selected()?.claGroupId === option.claGroupId"
-            [attr.aria-disabled]="!!option.disabledReason"
+            [attr.aria-disabled]="!!option.disabledReason || stale()"
             class="border-b border-slate-100 px-4 py-2.5 text-left last:border-b-0"
-            [class.cursor-pointer]="!option.disabledReason"
-            [class.hover:bg-slate-50]="!option.disabledReason"
-            [class.cursor-not-allowed]="!!option.disabledReason"
-            [class.opacity-60]="!!option.disabledReason"
+            [class.cursor-pointer]="!option.disabledReason && !stale()"
+            [class.hover:bg-slate-50]="!option.disabledReason && !stale()"
+            [class.cursor-not-allowed]="!!option.disabledReason || stale()"
+            [class.opacity-60]="!!option.disabledReason || stale()"
             [class.bg-slate-50]="selected()?.claGroupId === option.claGroupId || highlightedIndex() === index"
             [attr.data-testid]="'org-easycla-group-select-' + option.claGroupId"
             (click)="onSelect(option)">

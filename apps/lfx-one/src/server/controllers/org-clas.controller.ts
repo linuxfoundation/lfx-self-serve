@@ -144,23 +144,23 @@ export class OrgClasController {
       // verbatim, so a client-supplied one would turn the hand-off into an open redirect.
       const body = req.body as { projectSfid?: unknown; claGroupId?: unknown; authorityAcked?: unknown; embargoAcked?: unknown } | undefined;
 
-      // Each rejection below closes the operation it opened. A bare `return` would leave a
-      // `started` entry with no terminator and no duration, so a dashboard pairing the two would
-      // read every rejected request as an operation still in flight.
+      // Each rejection below throws rather than answering directly, so the shared error handler
+      // classifies it: one response envelope, WARN rather than ERROR (bad client input is not an
+      // operational fault, and logging it as one inflates the error signal this service is
+      // watched by), and the operation terminated on the same path as every other failure. The
+      // sibling `getPdfUrl` above already does this; these three were the outliers.
       const projectSfid = String(body?.projectSfid ?? '').trim();
       if (!projectSfid) {
-        const message = 'A project identifier is required';
-        logger.error(req, 'request_org_cla_corporate_signature', startTime, new Error(message), { org_uid: orgUid });
-        res.status(400).json({ message });
-        return;
+        throw ServiceValidationError.fromFieldErrors({ projectSfid: 'A project identifier is required' }, 'A project identifier is required', {
+          operation: 'request_org_cla_corporate_signature',
+        });
       }
 
       const claGroupId = String(body?.claGroupId ?? '').trim();
       if (!CLA_GROUP_ID_PATTERN.test(claGroupId)) {
-        const message = 'A CLA group identifier is required';
-        logger.error(req, 'request_org_cla_corporate_signature', startTime, new Error(message), { org_uid: orgUid });
-        res.status(400).json({ message });
-        return;
+        throw ServiceValidationError.fromFieldErrors({ claGroupId: 'A CLA group identifier is required' }, 'A CLA group identifier is required', {
+          operation: 'request_org_cla_corporate_signature',
+        });
       }
 
       // Compared against the literal `true`, not coerced. These two carry the legal weight of the
@@ -168,17 +168,14 @@ export class OrgClasController {
       // never made, and the failure would be invisible everywhere downstream because upstream
       // sees only the boolean that arrives. Upstream refuses a false as well; answering it here
       // spends no round trip to learn that a signatory who withdrew a confirmation cannot sign.
+      //
+      // Reported against `attestations` rather than against whichever of the two failed. Naming
+      // the failing one would record, in a log line and in the response, that this signatory did
+      // not affirm that specific statement — which is the legal assertion itself, and the reason
+      // the values are not logged either.
       if (body?.authorityAcked !== true || body?.embargoAcked !== true) {
         const message = 'Both the authorization and compliance confirmations are required';
-        // The types, never the values: what is useful in a log is whether something non-boolean
-        // arrived, and recording an attestation's value would put a legal assertion in a log line.
-        logger.error(req, 'request_org_cla_corporate_signature', startTime, new Error(message), {
-          org_uid: orgUid,
-          authority_acked_type: typeof body?.authorityAcked,
-          embargo_acked_type: typeof body?.embargoAcked,
-        });
-        res.status(400).json({ message });
-        return;
+        throw ServiceValidationError.fromFieldErrors({ attestations: message }, message, { operation: 'request_org_cla_corporate_signature' });
       }
 
       const result = await this.orgClaService.requestCorporateSignature(req, orgUid, {

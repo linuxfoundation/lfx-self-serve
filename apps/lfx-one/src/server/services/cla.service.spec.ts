@@ -1190,7 +1190,32 @@ describe('ClaService.prepareSign', () => {
 
     // The endpoint ships no reason code, so its prose is the only thing there is to say. Relaying
     // "403 Forbidden" instead would tell the contributor nothing they can act on.
-    await expect(new ClaService().prepareSign(prepareReq, '12345', CLA_GROUP_ID)).rejects.toMatchObject({ statusCode: 403, message: refusal });
+    //
+    // It arrives as `clientMessage`, not `message`. The sentence is a statement about who the
+    // caller is, and `message` is what the API error handler formats into its log line — so the
+    // relay writes the part that is shown and leaves the part that is recorded generic.
+    await expect(new ClaService().prepareSign(prepareReq, '12345', CLA_GROUP_ID)).rejects.toMatchObject({
+      statusCode: 403,
+      clientMessage: refusal,
+    });
+  });
+
+  it('keeps the relayed refusal out of the message the log line is built from', async () => {
+    const refusal = 'the provided identity does not belong to the authenticated user';
+    gatewayFetch.mockRejectedValueOnce(
+      new MicroserviceError('Failed to prepare the CLA signing session: 403 Forbidden', 403, 'FORBIDDEN', {
+        service: 'cla_service',
+        errorBody: JSON.stringify({ code: '403', message: refusal }),
+      })
+    );
+
+    const thrown = await new ClaService()
+      .prepareSign(prepareReq, '12345', CLA_GROUP_ID)
+      .then(() => null)
+      .catch((error: unknown) => error as Error);
+
+    expect(thrown?.message).not.toContain(refusal);
+    expect(thrown?.message).toBe('Failed to prepare the CLA signing session: 403 Forbidden');
   });
 
   it('does not derive a reason code from the refusal prose', async () => {

@@ -103,6 +103,11 @@ describe('OrgEasyclaGroupSelectComponent', () => {
     return testid(fixture, 'org-easycla-group-continue')?.querySelector('button') as HTMLButtonElement;
   }
 
+  /** The focused element, and so the only one whose ARIA state assistive technology announces. */
+  function searchBoxOf(fixture: ComponentFixture<OrgEasyclaGroupSelectComponent>): HTMLInputElement {
+    return fixture.nativeElement.querySelector('#org-easycla-group-select-search-input') as HTMLInputElement;
+  }
+
   beforeEach(() => {
     vi.useFakeTimers();
     getSignOptions.mockReset();
@@ -288,8 +293,11 @@ describe('OrgEasyclaGroupSelectComponent', () => {
    * activation behaviour of their own. Without the handling below there is no way to choose a CLA
    * Group without a pointer — the flow is simply unavailable to a keyboard-only signatory.
    *
-   * The highlight roves from the text box, which keeps focus, so `aria-activedescendant` on the
-   * listbox is what tells a screen reader which row is current.
+   * The highlight roves from the text box, which keeps focus, so the combobox attributes have to
+   * be on the text box: `aria-activedescendant` is read from the focused element, and on the
+   * listbox — which nothing ever focuses — it names the right row and is never announced. These
+   * assertions therefore read the input, not the list. Asserting against the list is how the
+   * first version of this passed while being silent to every screen reader.
    */
   describe('keyboard', () => {
     function press(fixture: ComponentFixture<OrgEasyclaGroupSelectComponent>, key: string): void {
@@ -317,16 +325,36 @@ describe('OrgEasyclaGroupSelectComponent', () => {
       });
     });
 
+    // The wiring that makes the highlight audible at all. Without `role="combobox"` and
+    // `aria-controls` on the focused input, `aria-activedescendant` on it has nothing to resolve
+    // against and assistive technology has no reason to look for a list.
+    it('declares the input a combobox controlling the results list', async () => {
+      getSignOptions.mockReturnValue(of(results([signable])));
+
+      const fixture = await render();
+      const input = () => searchBoxOf(fixture);
+
+      expect(input().getAttribute('role')).toBe('combobox');
+      expect(input().getAttribute('aria-autocomplete')).toBe('list');
+      expect(input().getAttribute('aria-controls')).toBe('org-easycla-group-select-results');
+      expect(results_(fixture).id).toBe('org-easycla-group-select-results');
+
+      // Before a search there is nothing to expand into; after one there is.
+      expect(input().getAttribute('aria-expanded')).toBe('false');
+      await search(fixture);
+      expect(input().getAttribute('aria-expanded')).toBe('true');
+    });
+
     it('names the highlighted row so a screen reader can follow the arrow keys', async () => {
       getSignOptions.mockReturnValue(of(results([signable])));
 
       const fixture = await render();
       await search(fixture);
-      expect(results_(fixture).getAttribute('aria-activedescendant')).toBeNull();
+      expect(searchBoxOf(fixture).getAttribute('aria-activedescendant')).toBeNull();
 
       press(fixture, 'ArrowDown');
 
-      expect(results_(fixture).getAttribute('aria-activedescendant')).toBe(`org-easycla-group-option-${signable.claGroupId}`);
+      expect(searchBoxOf(fixture).getAttribute('aria-activedescendant')).toBe(`org-easycla-group-option-${signable.claGroupId}`);
       expect(row(fixture, signable).id).toBe(`org-easycla-group-option-${signable.claGroupId}`);
     });
 
@@ -337,11 +365,11 @@ describe('OrgEasyclaGroupSelectComponent', () => {
       await search(fixture);
       press(fixture, 'ArrowDown');
       press(fixture, 'ArrowDown');
-      expect(results_(fixture).getAttribute('aria-activedescendant')).toBe(`org-easycla-group-option-${individualOnly.claGroupId}`);
+      expect(searchBoxOf(fixture).getAttribute('aria-activedescendant')).toBe(`org-easycla-group-option-${individualOnly.claGroupId}`);
 
       press(fixture, 'ArrowUp');
 
-      expect(results_(fixture).getAttribute('aria-activedescendant')).toBe(`org-easycla-group-option-${signable.claGroupId}`);
+      expect(searchBoxOf(fixture).getAttribute('aria-activedescendant')).toBe(`org-easycla-group-option-${signable.claGroupId}`);
     });
 
     // The highlight does stop on a row that cannot be signed, because the reason it cannot is the
@@ -353,7 +381,7 @@ describe('OrgEasyclaGroupSelectComponent', () => {
       const fixture = await render();
       await search(fixture, 'driftwood');
       press(fixture, 'ArrowDown');
-      expect(results_(fixture).getAttribute('aria-activedescendant')).toBe(`org-easycla-group-option-${multiProject.claGroupId}`);
+      expect(searchBoxOf(fixture).getAttribute('aria-activedescendant')).toBe(`org-easycla-group-option-${multiProject.claGroupId}`);
 
       press(fixture, 'Enter');
 
@@ -373,7 +401,7 @@ describe('OrgEasyclaGroupSelectComponent', () => {
 
       await search(fixture, 'beacon');
 
-      expect(results_(fixture).getAttribute('aria-activedescendant')).toBeNull();
+      expect(searchBoxOf(fixture).getAttribute('aria-activedescendant')).toBeNull();
     });
 
     it('backs out on Escape', async () => {
@@ -395,6 +423,123 @@ describe('OrgEasyclaGroupSelectComponent', () => {
       press(fixture, 'Enter');
 
       expect(close).not.toHaveBeenCalled();
+    });
+  });
+
+  /**
+   * The window between a keystroke and the results that answer it.
+   *
+   * The rows for the previous term stay rendered across the debounce and the request that follows
+   * it. If they stay choosable, a viewer can pick one in that window and the response that lands
+   * afterwards swaps the list out from under a selection it never contained — and Continue then
+   * opens a corporate agreement for a project the viewer had already started typing away from.
+   *
+   * These cases interleave typing and choosing deliberately. A test that only advances the clock
+   * and asserts on the final list passes against the broken version, because the bug is not in
+   * what is fetched: `switchMap` cancels the previous request correctly. It is in what remains
+   * clickable while that happens.
+   */
+  describe('a search the viewer has moved on from', () => {
+    /** Types without letting the debounce elapse, leaving the previous rows on screen. */
+    function type(fixture: ComponentFixture<OrgEasyclaGroupSelectComponent>, term: string): void {
+      const form = (fixture.componentInstance as unknown as { searchForm: { controls: { query: { setValue: (v: string) => void } } } }).searchForm;
+      form.controls.query.setValue(term);
+      fixture.detectChanges();
+    }
+
+    it('refuses a row clicked after the term it belongs to was changed', async () => {
+      getSignOptions.mockReturnValueOnce(of(results([signable]))).mockReturnValue(of(results([individualOnly])));
+
+      const fixture = await render();
+      await search(fixture, 'cascade');
+      expect(row(fixture, signable)).not.toBeNull();
+
+      // Mid-word. `signable` is still drawn, and is now a result for a term nobody is searching.
+      type(fixture, 'beacon');
+      row(fixture, signable).click();
+      fixture.detectChanges();
+
+      expect(continueButton(fixture).disabled).toBe(true);
+
+      // And it stays refused after the new results land, rather than being resurrected by them.
+      await vi.advanceTimersByTimeAsync(600);
+      fixture.detectChanges();
+      expect(continueButton(fixture).disabled).toBe(true);
+      expect(close).not.toHaveBeenCalled();
+    });
+
+    // The keyboard route to the same defect, and it needs the extra ArrowDown to be worth having.
+    // Typing already resets the highlight, so an Enter pressed straight after it is refused for
+    // that reason alone and the case would pass with no staleness handling at all. Re-highlighting
+    // first puts the cursor back on a superseded row, which is the state only the guard refuses.
+    it('refuses a re-highlighted superseded row on Enter, not only on click', async () => {
+      getSignOptions.mockReturnValueOnce(of(results([signable]))).mockReturnValue(of(results([individualOnly])));
+
+      const fixture = await render();
+      await search(fixture, 'cascade');
+
+      type(fixture, 'beacon');
+      const key = (name: string) => {
+        testid(fixture, 'org-easycla-group-select-results')?.dispatchEvent(new KeyboardEvent('keydown', { key: name, bubbles: true }));
+        fixture.detectChanges();
+      };
+      key('ArrowDown');
+      key('Enter');
+
+      expect(continueButton(fixture).disabled).toBe(true);
+      expect(close).not.toHaveBeenCalled();
+      // The highlight is not announced either, so nothing reads out a row that cannot be chosen.
+      expect(searchBoxOf(fixture).getAttribute('aria-activedescendant')).toBeNull();
+    });
+
+    it('marks the superseded rows as unavailable while they are still drawn', async () => {
+      getSignOptions.mockReturnValueOnce(of(results([signable]))).mockReturnValue(of(results([individualOnly])));
+
+      const fixture = await render();
+      await search(fixture, 'cascade');
+      expect(row(fixture, signable).getAttribute('aria-disabled')).toBe('false');
+
+      type(fixture, 'beacon');
+
+      expect(row(fixture, signable).getAttribute('aria-disabled')).toBe('true');
+      // And the viewer is told why the rows stopped responding, rather than left guessing.
+      expect(testid(fixture, 'org-easycla-group-select-pending')).not.toBeNull();
+    });
+
+    it('makes the rows choosable again once the results catch up with the term', async () => {
+      getSignOptions.mockReturnValueOnce(of(results([individualOnly]))).mockReturnValue(of(results([signable], false, 'cascade')));
+
+      const fixture = await render();
+      await search(fixture, 'beacon');
+      type(fixture, 'cascade');
+      await vi.advanceTimersByTimeAsync(600);
+      fixture.detectChanges();
+
+      expect(testid(fixture, 'org-easycla-group-select-pending')).toBeNull();
+      row(fixture, signable).click();
+      fixture.detectChanges();
+      continueButton(fixture).click();
+
+      expect(close).toHaveBeenCalledWith({
+        claGroupId: signable.claGroupId,
+        projectSfid: signable.projectSfid,
+        projectName: signable.projectName,
+      });
+    });
+
+    // Choosing writes the CLA Group's name into the field, which is a value change like any
+    // other. If that were treated as the viewer moving on, every selection would immediately
+    // invalidate itself and Continue would never enable.
+    it('does not treat writing the chosen name into the field as a new search', async () => {
+      getSignOptions.mockReturnValue(of(results([signable])));
+
+      const fixture = await render();
+      await search(fixture, 'cascade');
+      row(fixture, signable).click();
+      fixture.detectChanges();
+
+      expect(continueButton(fixture).disabled).toBe(false);
+      expect(testid(fixture, 'org-easycla-group-select-pending')).toBeNull();
     });
   });
 });

@@ -32,4 +32,22 @@ export class InputTextComponent {
   public describedBy = input<string>();
   /** Marks the control invalid for assistive tech; the visible error text is the caller's. */
   public invalid = input<boolean>(false);
+
+  /**
+   * Combobox wiring, for the typeahead pickers that put a results list under this field.
+   *
+   * These belong on the `<input>` and nowhere else. `aria-activedescendant` in particular is read
+   * from the element that holds focus, and focus stays in the text box while the arrow keys move
+   * a highlight through the list — so the same attribute placed on the list container, which is
+   * never focused, announces nothing at all. That is a silent failure: the highlight looks right
+   * on screen and a screen reader hears none of it.
+   *
+   * All optional and null by default, so a field that is not a combobox emits no ARIA it has no
+   * business claiming.
+   */
+  public role = input<string>();
+  public ariaControls = input<string>();
+  public ariaActivedescendant = input<string | null>();
+  public ariaExpanded = input<boolean>();
+  public ariaAutocomplete = input<string>();
 }

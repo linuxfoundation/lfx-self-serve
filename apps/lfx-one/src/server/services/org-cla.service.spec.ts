@@ -817,7 +817,18 @@ describe('OrgClaService.requestCorporateSignature', () => {
     });
     gatewayFetch.mockRejectedValueOnce(refusal);
 
-    await expect(new OrgClaService().requestCorporateSignature(signReq(), ORG_UID, signRequest())).rejects.toThrow(/trade compliance review/);
+    const thrown = await new OrgClaService()
+      .requestCorporateSignature(signReq(), ORG_UID, signRequest())
+      .then(() => null)
+      .catch((error: unknown) => error);
+
+    // `clientMessage`, not `message`: the sentence is what the signatory reads and `toResponse`
+    // serves it, while `message` — the one the error handler formats into its log line — stays
+    // generic. Asserting `rejects.toThrow(/…/)` here would match on `message` and so would pass
+    // for the version of this code that logged the refusal.
+    expect((thrown as MicroserviceErrorType).clientMessage).toMatch(/trade compliance review/);
+    expect((thrown as MicroserviceErrorType).toResponse()['error']).toMatch(/trade compliance review/);
+    expect((thrown as MicroserviceErrorType).message).not.toMatch(/trade compliance review/);
   });
 
   /**
@@ -856,10 +867,16 @@ describe('OrgClaService.requestCorporateSignature', () => {
       .then(() => null)
       .catch((error: unknown) => error);
 
-    expect((thrown as MicroserviceErrorType).message).toBe(refusal);
+    expect((thrown as MicroserviceErrorType).clientMessage).toBe(refusal);
     expect((thrown as MicroserviceErrorType).errorBody).toBeUndefined();
     // The API error handler spreads this into its log line, so it is the thing that must be clean.
     expect(JSON.stringify((thrown as MicroserviceErrorType).getLogContext())).not.toContain('sanction_status');
+    // And the sentence itself, which the log line carries separately as `API error: ${message}`.
+    expect((thrown as MicroserviceErrorType).message).not.toContain(refusal);
+    // The whole error as any key-enumerating serializer would see it — `customErrorSerializer`
+    // copies every own string key onto the log payload, so a client message held under one would
+    // be written straight back into the line the two assertions above just cleaned.
+    expect(JSON.stringify({ ...(thrown as object), message: (thrown as Error).message })).not.toContain(refusal);
   });
 
   // Nothing about the body-dropping is 403-specific: a 5xx body from this endpoint is no more
