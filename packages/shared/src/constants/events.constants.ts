@@ -89,7 +89,7 @@ export const VALID_EVENT_STATUS_VALUES: ReadonlySet<string> = new Set(['Active',
 export const VALID_MY_EVENT_STATUS_VALUES: ReadonlySet<string> = new Set(['registered', 'attended', 'not-registered']);
 
 /** My Events dashboard tabs in visible order (`upcoming` is the default) — single source for the tab-pills bar and `?tab=` validation. */
-export const MY_EVENTS_TABS: FilterPillOption[] = [
+export const MY_EVENTS_TABS: (FilterPillOption & { id: EventTabId })[] = [
   { id: 'upcoming', label: 'Upcoming' },
   { id: 'past', label: 'Past' },
   { id: 'visa-letters', label: 'Visa Letters' },
@@ -99,7 +99,7 @@ export const MY_EVENTS_TABS: FilterPillOption[] = [
 /** Default tab for the My Events dashboard when `?tab=` is absent or invalid. */
 export const DEFAULT_MY_EVENTS_TAB_ID: EventTabId = 'upcoming';
 /** Derived from MY_EVENTS_TABS; used to validate `?tab=` query-param input. */
-export const VALID_MY_EVENTS_TAB_IDS: ReadonlySet<EventTabId> = new Set(MY_EVENTS_TABS.map((t) => t.id as EventTabId));
+export const VALID_MY_EVENTS_TAB_IDS: ReadonlySet<EventTabId> = new Set(MY_EVENTS_TABS.map((t) => t.id));
 /** Severity map for foundation event display statuses, used by the events table tag component. */
 export const FOUNDATION_EVENT_STATUS_SEVERITY_MAP: Partial<Record<string, TagSeverity>> = {
   [FoundationEventStatus.REGISTRATION_OPEN]: 'warn',

@@ -24,28 +24,27 @@ const MATCHED_EVENT = {
   status: 'Registered',
 };
 
+const DIALOG_TIMEOUT = { timeout: 10000 };
+
 /**
- * Mocks all /api/events* calls. The `eventId`-filtered call (the deep-link resolver) returns
- * `matchedEvent` when its id matches, otherwise empty — every other call (stats probes, request
- * lists, countries) resolves empty so the dashboard renders deterministically.
+ * Mocks all /api/events* calls. The `eventId`-filtered call (the deep-link resolver, made
+ * client-side once the dialog opens) returns `matchedEvent` when its id matches, otherwise empty.
+ * Every other call this test actually exercises client-side (the event-selection grid's fetch,
+ * countries, organizations) resolves empty so the dialog renders deterministically.
  */
 async function mockEventRoutes(page: Page, { matchedEvent }: { matchedEvent?: typeof MATCHED_EVENT } = {}) {
   await page.route('**/api/events**', (route) => {
-    const url = new URL(route.request().url());
+    const url = route.request().url();
 
-    if (url.pathname.includes('/countries')) {
+    if (url.includes('/countries')) {
       return route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify(EMPTY_COUNTRIES_RESPONSE) });
     }
-    if (
-      url.pathname.includes('/visa-requests') ||
-      url.pathname.includes('/travel-fund-requests') ||
-      url.pathname.includes('/organizations') ||
-      url.pathname.includes('/all')
-    ) {
+    if (url.includes('/visa-requests') || url.includes('/travel-fund-requests') || url.includes('search-organizations') || url.includes('/all')) {
       return route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify({ data: [] }) });
     }
 
-    const eventId = url.searchParams.get('eventId');
+    const parsedUrl = new URL(url);
+    const eventId = parsedUrl.searchParams.get('eventId');
     if (eventId) {
       const data = matchedEvent && eventId === matchedEvent.id ? [matchedEvent] : [];
       return route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify({ data, total: data.length, pageSize: 1, offset: 0 }) });
@@ -67,7 +66,7 @@ test.describe('My Events — Visa/Travel-Fund Request Deep Link', () => {
     await page.goto(`/events?tab=visa-letters&event=${MATCHED_EVENT.id}`, { waitUntil: 'domcontentloaded' });
     await expect(page).not.toHaveURL(/auth0\.com/);
 
-    await expect(page.getByTestId('visa-request-application-dialog')).toBeVisible({ timeout: 10000 });
+    await expect(page.getByTestId('visa-request-application-dialog')).toBeVisible(DIALOG_TIMEOUT);
     await expect(page.getByTestId('visa-request-step-circle-2')).toHaveClass(/bg-blue-600/);
 
     // The `event` param is stripped once consumed, so a refresh doesn't reopen the dialog.
@@ -80,7 +79,7 @@ test.describe('My Events — Visa/Travel-Fund Request Deep Link', () => {
     await page.goto(`/events?tab=travel-funding&event=${MATCHED_EVENT.id}`, { waitUntil: 'domcontentloaded' });
     await expect(page).not.toHaveURL(/auth0\.com/);
 
-    await expect(page.getByTestId('travel-fund-application-dialog')).toBeVisible({ timeout: 10000 });
+    await expect(page.getByTestId('travel-fund-application-dialog')).toBeVisible(DIALOG_TIMEOUT);
     await expect(page.getByTestId('travel-fund-step-circle-2')).toHaveClass(/bg-blue-600/);
     await expect(page).not.toHaveURL(/event=/);
   });
@@ -90,8 +89,8 @@ test.describe('My Events — Visa/Travel-Fund Request Deep Link', () => {
     await page.goto('/events?tab=visa-letters&event=unknown-event-id', { waitUntil: 'domcontentloaded' });
     await expect(page).not.toHaveURL(/auth0\.com/);
 
-    await expect(page.getByTestId('visa-request-application-dialog')).toBeVisible({ timeout: 10000 });
-    await expect(page.getByTestId('event-selection-grid')).toBeVisible({ timeout: 10000 });
+    await expect(page.getByTestId('visa-request-application-dialog')).toBeVisible(DIALOG_TIMEOUT);
+    await expect(page.getByTestId('event-selection-grid')).toBeVisible(DIALOG_TIMEOUT);
     await expect(page.getByText("couldn't find that event")).toBeVisible();
   });
 });

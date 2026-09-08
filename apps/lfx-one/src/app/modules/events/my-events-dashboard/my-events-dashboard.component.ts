@@ -97,14 +97,13 @@ export class MyEventsDashboardComponent {
   protected readonly isCreateEnabled: Signal<boolean> = this.initIsCreateEnabled();
 
   public constructor() {
-    // Auto-open the request dialog for a deep link (`?tab=visa-letters&event=<id>`), once
-    // isCreateEnabled resolves. Effects run before child components render on the same pass, so
-    // the request-list child for this tab may not exist yet when these guards first pass — the
-    // actual open is deferred to afterNextRender (after children commit) and only marked consumed
-    // once it actually opens, so a still-unready child causes a silent retry, not a silent no-op.
+    // Auto-open the request dialog for a deep link (`?tab=visa-letters&event=<id>`). Reads
+    // eventsListRef() so a late-mounting child re-triggers this effect and retries the open,
+    // rather than silently dropping the deep link if it wasn't rendered yet on the first pass.
     effect(() => {
       if (this.deepLinkEventConsumed()) return;
       if (!this.isRequestTab() || !this.activeEventId() || !this.isCreateEnabled()) return;
+      this.eventsListRef();
 
       afterNextRender(
         () => {
@@ -115,6 +114,8 @@ export class MyEventsDashboardComponent {
         { injector: this.injector }
       );
     });
+    // effect() (not toObservable+RxJS) is deliberate: the body's only job is scheduling an
+    // afterNextRender callback, which needs an injection context at the point it fires.
   }
 
   protected onFoundationChange(value: string | null): void {
