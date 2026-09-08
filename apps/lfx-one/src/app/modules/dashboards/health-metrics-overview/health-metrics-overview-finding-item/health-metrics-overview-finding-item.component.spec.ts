@@ -20,6 +20,7 @@ describe('HealthMetricsOverviewFindingItemComponent', () => {
       sentence: 'Plain sentence with no emphasis.',
       keyValue: '8 of 31',
       keyLabel: 'below 50%',
+      sortRank: 10,
       evaluatedAt: '2026-09-01',
       linkIsExternal: false,
       ...overrides,
@@ -33,10 +34,14 @@ describe('HealthMetricsOverviewFindingItemComponent', () => {
     fixture.detectChanges();
   }
 
+  function sentenceEl(): HTMLParagraphElement {
+    return fixture.nativeElement.querySelector('[data-testid="health-metrics-overview-finding-sentence"]');
+  }
+
   it('renders a plain sentence with no bold segment when there is no emphasis', async () => {
     await render();
 
-    const paragraph: HTMLParagraphElement = fixture.nativeElement.querySelectorAll('p')[1];
+    const paragraph = sentenceEl();
     expect(paragraph.textContent?.trim()).toBe('Plain sentence with no emphasis.');
     expect(paragraph.querySelector('b')).toBeNull();
   });
@@ -44,7 +49,7 @@ describe('HealthMetricsOverviewFindingItemComponent', () => {
   it('renders the emphasis substring in bold and leaves the rest as plain text', async () => {
     await render({ sentence: 'Lowest is TAG App Delivery at 29%.', emphasis: 'TAG App Delivery' });
 
-    const paragraph: HTMLParagraphElement = fixture.nativeElement.querySelectorAll('p')[1];
+    const paragraph = sentenceEl();
     expect(paragraph.querySelector('b')?.textContent).toBe('TAG App Delivery');
     expect(paragraph.textContent?.trim()).toBe('Lowest is TAG App Delivery at 29%.');
   });
@@ -52,7 +57,7 @@ describe('HealthMetricsOverviewFindingItemComponent', () => {
   it('falls back to plain text when the emphasis substring is not found in the sentence', async () => {
     await render({ sentence: 'Nothing matches here.', emphasis: 'missing' });
 
-    const paragraph: HTMLParagraphElement = fixture.nativeElement.querySelectorAll('p')[1];
+    const paragraph = sentenceEl();
     expect(paragraph.querySelector('b')).toBeNull();
     expect(paragraph.textContent?.trim()).toBe('Nothing matches here.');
   });
@@ -60,18 +65,18 @@ describe('HealthMetricsOverviewFindingItemComponent', () => {
   it('clamps a non-zero filled count to at least one rendered dot', async () => {
     await render({ visual: { kind: 'dots', groups: [{ label: 'Renewals', filled: 1, total: 60 }] } });
 
-    const dots = fixture.nativeElement.querySelectorAll('.flex.flex-wrap.gap-1 > span');
-    const filledDots = Array.from<Element>(dots).filter((dot) => !dot.classList.contains('bg-gray-200'));
+    const dots = fixture.nativeElement.querySelectorAll('[data-testid="health-metrics-overview-finding-dots"] span');
+    const filledDots = Array.from<Element>(dots).filter((dot) => dot.getAttribute('data-filled') === 'true');
     expect(filledDots.length).toBeGreaterThanOrEqual(1);
   });
 
   it('omits a dot group with zero total instead of rendering it empty', async () => {
     await render({ visual: { kind: 'dots', groups: [{ label: 'Empty group', filled: 0, total: 0 }] } });
 
-    expect(fixture.nativeElement.querySelector('.flex.flex-wrap.gap-1')).toBeNull();
+    expect(fixture.nativeElement.querySelector('[data-testid="health-metrics-overview-finding-dots"]')).toBeNull();
   });
 
-  it('resolves each bar part to a classification tone class', async () => {
+  it('resolves each bar part to its classification tone', async () => {
     await render({
       visual: {
         kind: 'bar',
@@ -82,8 +87,14 @@ describe('HealthMetricsOverviewFindingItemComponent', () => {
       },
     });
 
-    const bars = fixture.nativeElement.querySelectorAll('.flex.h-2.w-full > div');
-    expect(bars[0].classList).toContain('bg-red-500');
-    expect(bars[1].classList).toContain('bg-emerald-500');
+    const parts = fixture.nativeElement.querySelectorAll('[data-testid="health-metrics-overview-finding-bar"] > div');
+    expect(parts[0].getAttribute('data-classification')).toBe('act');
+    expect(parts[1].getAttribute('data-classification')).toBe('ok');
+  });
+
+  it('renders a link testid unique to the finding by sortRank', async () => {
+    await render({ sortRank: 42, linkHref: 'https://pcc.lfx.dev/project/abc/reports/health-metrics/meetings#committees' });
+
+    expect(fixture.nativeElement.querySelector('[data-testid="health-metrics-overview-finding-link-42"]')).not.toBeNull();
   });
 });

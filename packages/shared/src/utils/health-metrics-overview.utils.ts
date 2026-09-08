@@ -3,15 +3,20 @@
 
 import { HEALTH_METRICS_OVERVIEW_LINK_TARGETS } from '../constants/health-metrics-overview.constants';
 
+import type { HealthMetricsOverviewLinkTarget } from '../interfaces/health-metrics-overview.interface';
+
 /**
  * Resolves an `hm_findings.link_target` key to a full PCC URL: `{pccBaseUrl}/project/{pccProjectId}
  * /reports/health-metrics{anchor}`. `pccBaseUrl` is passed in by the caller (e.g. `environment.urls.pcc`)
- * so this package stays environment-agnostic. Returns `undefined` for an unrecognized key (including
- * `code.insights`, which opens externally via `buildLensAwareInsightsUrl` instead) or a missing
- * `pccProjectId`, so a caller never renders a broken link.
+ * so this package stays environment-agnostic. Returns `undefined` for `code.insights` (which opens
+ * externally via `buildLensAwareInsightsUrl` instead) or a missing `pccProjectId`, so a caller never
+ * renders a broken link.
  */
-export function buildHealthMetricsOverviewPccUrl(pccBaseUrl: string, pccProjectId: string, linkTarget: string): string | undefined {
-  const anchor = (HEALTH_METRICS_OVERVIEW_LINK_TARGETS as Record<string, string>)[linkTarget];
+export function buildHealthMetricsOverviewPccUrl(pccBaseUrl: string, pccProjectId: string, linkTarget: HealthMetricsOverviewLinkTarget): string | undefined {
+  const anchor =
+    linkTarget in HEALTH_METRICS_OVERVIEW_LINK_TARGETS
+      ? HEALTH_METRICS_OVERVIEW_LINK_TARGETS[linkTarget as keyof typeof HEALTH_METRICS_OVERVIEW_LINK_TARGETS]
+      : undefined;
   if (!anchor || !pccProjectId) {
     return undefined;
   }

@@ -10,7 +10,7 @@
       </div>
       <p class="text-sm font-semibold text-gray-900">{{ finding().title }}</p>
       <!-- prettier-ignore -->
-      <p class="text-sm text-gray-600">@for (segment of sentenceSegments(); track $index) {@if (segment.bold) {<b>{{ segment.text }}</b>} @else {{{ segment.text }}}}</p>
+      <p class="text-sm text-gray-600" data-testid="health-metrics-overview-finding-sentence">@for (segment of sentenceSegments(); track $index) {@if (segment.bold) {<b>{{ segment.text }}</b>} @else {{{ segment.text }}}}</p>
     </div>
 
     <div class="flex flex-col items-end gap-1 text-right">
@@ -22,7 +22,7 @@
           [target]="finding().linkIsExternal ? '_blank' : '_self'"
           [rel]="finding().linkIsExternal ? 'noopener noreferrer' : null"
           class="text-xs font-medium text-blue-600 hover:underline"
-          data-testid="health-metrics-overview-finding-link">
+          [attr.data-testid]="'health-metrics-overview-finding-link-' + finding().sortRank">
           {{ finding().linkIsExternal ? 'View in LFX Insights' : 'View details' }}
           @if (finding().linkIsExternal) {
             <i class="fa-light fa-arrow-up-right-from-square" aria-hidden="true"></i>
@@ -33,13 +33,17 @@
   </div>
 
   @if (dotGroupsVisual(); as dotGroups) {
-    <div class="flex flex-col gap-1.5">
+    <div class="flex flex-col gap-1.5" data-testid="health-metrics-overview-finding-dots">
       @for (group of dotGroups; track group.label) {
         <div class="flex items-center gap-2">
           <span class="w-40 shrink-0 text-xs text-gray-500">{{ group.label }}</span>
           <div class="flex flex-wrap gap-1">
             @for (filled of group.dots; track $index) {
-              <span class="h-2 w-2 rounded-full" [ngClass]="filled ? classificationMeta().dotClass : 'bg-gray-200'" aria-hidden="true"></span>
+              <span
+                class="h-2 w-2 rounded-full"
+                [ngClass]="filled ? classificationMeta().dotClass : 'bg-gray-200'"
+                [attr.data-filled]="filled"
+                aria-hidden="true"></span>
             }
           </div>
         </div>
@@ -47,9 +51,13 @@
     </div>
   } @else if (barVisual(); as bar) {
     <div class="flex flex-col gap-1">
-      <div class="flex h-2 w-full overflow-hidden rounded-full bg-gray-100">
+      <div class="flex h-2 w-full overflow-hidden rounded-full bg-gray-100" data-testid="health-metrics-overview-finding-bar">
         @for (part of bar.parts; track part.label) {
-          <div [ngClass]="part.toneClass" [style.width.%]="part.value" [attr.aria-label]="part.label + ': ' + part.value + '%'"></div>
+          <div
+            [ngClass]="part.toneClass"
+            [style.width.%]="part.value"
+            [attr.data-classification]="part.tone"
+            [attr.aria-label]="part.label + ': ' + part.value + '%'"></div>
         }
       </div>
       @if (bar.caption) {

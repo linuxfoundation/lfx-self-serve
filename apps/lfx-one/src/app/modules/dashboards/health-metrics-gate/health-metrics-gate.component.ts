@@ -13,6 +13,12 @@ import { HealthMetricsOverviewComponent } from '../health-metrics-overview/healt
  * client agree on this until the flag resolves) and swaps to the LFXV2-3365 overview page once
  * `health-metrics-overview-enabled` flips true — a signal-driven `@if` inside one stable route,
  * not a router-level component swap, so hydration never has to reconcile two different trees.
+ *
+ * Accepted trade-off: on a flag-on load, `HealthMetricsComponent` still mounts and starts its own
+ * fetches for one tick before the swap to the overview page. A `CanMatchFn` awaiting flag
+ * readiness (the `org-lens-enabled.guard.ts` pattern) would avoid that, but it would also delay
+ * the legacy page's SSR-rendered first paint for the ~100% of users the flag is still off for —
+ * a worse trade while this page is dark-launched to a small cohort.
  */
 @Component({
   selector: 'lfx-health-metrics-gate',

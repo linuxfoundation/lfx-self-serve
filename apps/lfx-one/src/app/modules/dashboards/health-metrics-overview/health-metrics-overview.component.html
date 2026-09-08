@@ -19,8 +19,8 @@
         <div class="flex flex-col gap-3" [attr.data-testid]="'health-metrics-overview-findings-group-' + findingGroup.group">
           <h2 class="text-sm font-semibold text-gray-700">{{ findingGroup.group }}</h2>
           <div class="flex flex-col gap-2">
-            @for (finding of findingGroup.findings; track finding.title + finding.area) {
-              <lfx-health-metrics-overview-finding-item [finding]="finding" />
+            @for (finding of findingGroup.findings; track finding.sortRank) {
+              <lfx-health-metrics-overview-finding-item [finding]="finding" [attr.data-testid]="'health-metrics-overview-finding-' + finding.sortRank" />
             }
           </div>
         </div>

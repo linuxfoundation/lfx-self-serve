@@ -72,6 +72,7 @@ export class HealthMetricsOverviewComponent {
   private initFindingGroups(): Signal<HealthMetricsOverviewFindingGroup[]> {
     return computed(() => {
       const foundation = this.projectContextService.selectedFoundation();
+      const foundationSfid = this.projectContextService.selectedFoundationSfid();
 
       // Groups render in the fixed order below regardless of how many findings each has; a group
       // with no findings this period is hidden rather than rendered empty (never re-sorted).
@@ -79,16 +80,22 @@ export class HealthMetricsOverviewComponent {
         group,
         findings: HEALTH_METRICS_OVERVIEW_FIXTURE_FINDINGS.filter((finding) => HEALTH_METRICS_OVERVIEW_CLASSIFICATIONS[finding.classification].group === group)
           .sort((a, b) => a.sortRank - b.sortRank)
-          .map((finding) => HealthMetricsOverviewComponent.toFindingViewModel(finding, foundation)),
+          .map((finding) => HealthMetricsOverviewComponent.toFindingViewModel(finding, foundation, foundationSfid)),
       })).filter((groupViewModel) => groupViewModel.findings.length > 0);
     });
   }
 
-  private static toFindingViewModel(finding: HealthMetricsFinding, foundation: ProjectContext | null): HealthMetricsOverviewFindingViewModel {
+  private static toFindingViewModel(
+    finding: HealthMetricsFinding,
+    foundation: ProjectContext | null,
+    foundationSfid: string | null
+  ): HealthMetricsOverviewFindingViewModel {
     const isInsightsLink = finding.linkTarget === HEALTH_METRICS_OVERVIEW_INSIGHTS_LINK_TARGET;
+    // PCC's `/project/{id}/...` routes are keyed by the Salesforce ID, not the LFX v2 project uid —
+    // resolve through `selectedFoundationSfid` (null while resolving degrades to a hidden link).
     const linkHref = isInsightsLink
       ? buildLensAwareInsightsUrl(foundation?.slug, true)
-      : buildHealthMetricsOverviewPccUrl(environment.urls.pcc, foundation?.uid ?? '', finding.linkTarget);
+      : buildHealthMetricsOverviewPccUrl(environment.urls.pcc, foundationSfid ?? '', finding.linkTarget);
 
     return {
       classification: finding.classification,
@@ -99,6 +106,7 @@ export class HealthMetricsOverviewComponent {
       emphasis: finding.emphasis,
       keyValue: finding.keyValue,
       keyLabel: finding.keyLabel,
+      sortRank: finding.sortRank,
       evaluatedAt: finding.evaluatedAt,
       linkHref,
       linkIsExternal: isInsightsLink,

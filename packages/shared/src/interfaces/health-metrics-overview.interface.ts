@@ -1,13 +1,21 @@
 // Copyright The Linux Foundation and each contributor to LFX.
 // SPDX-License-Identifier: MIT
 
-import type { HEALTH_METRICS_OVERVIEW_AREAS, HEALTH_METRICS_OVERVIEW_CLASSIFICATIONS } from '../constants/health-metrics-overview.constants';
+import type {
+  HEALTH_METRICS_OVERVIEW_AREAS,
+  HEALTH_METRICS_OVERVIEW_CLASSIFICATIONS,
+  HEALTH_METRICS_OVERVIEW_INSIGHTS_LINK_TARGET,
+  HEALTH_METRICS_OVERVIEW_LINK_TARGETS,
+} from '../constants/health-metrics-overview.constants';
 
 /** Area key, fixed order per LFXV2-3365: Engagement, Events, Members, Non-Members, Training, Code. */
 export type HealthMetricsOverviewArea = (typeof HEALTH_METRICS_OVERVIEW_AREAS)[number]['key'];
 
 /** Urgency classification — never a category or a composite score, per the logic spec's hard constraints. */
 export type HealthMetricsOverviewClassification = keyof typeof HEALTH_METRICS_OVERVIEW_CLASSIFICATIONS;
+
+/** A recognized `hm_findings.link_target` value — every PCC anchor key plus the one external Insights target. */
+export type HealthMetricsOverviewLinkTarget = keyof typeof HEALTH_METRICS_OVERVIEW_LINK_TARGETS | typeof HEALTH_METRICS_OVERVIEW_INSIGHTS_LINK_TARGET;
 
 /**
  * Mirrors the `hm_area_state` dbt table (LFXV2-3364) — always one row per area per foundation per
@@ -38,7 +46,7 @@ export interface HealthMetricsFinding {
   emphasis?: string;
   keyValue: string;
   keyLabel: string;
-  linkTarget: string;
+  linkTarget: HealthMetricsOverviewLinkTarget;
   sortRank: number;
   evaluatedAt: string;
   visual?: HealthMetricsFindingVisual;
@@ -92,6 +100,8 @@ export interface HealthMetricsOverviewFindingViewModel {
   emphasis?: string;
   keyValue: string;
   keyLabel: string;
+  /** Carried through from {@link HealthMetricsFinding.sortRank} — display order and, since it's unique per row, also this row's `@for` track key and `data-testid` suffix. */
+  sortRank: number;
   evaluatedAt: string;
   linkHref?: string;
   linkIsExternal: boolean;
