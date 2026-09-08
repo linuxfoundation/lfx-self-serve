@@ -208,37 +208,35 @@
     <div class="flex flex-col gap-2">
       <h3 class="text-sm font-semibold text-gray-900">Charter</h3>
       <div class="flex items-start gap-2">
-        @if (committee().charter?.url) {
-          <div class="flex-1 flex flex-col gap-1 min-w-0">
-            <a
-              [href]="committee().charter!.url"
-              target="_blank"
-              rel="noopener"
-              class="text-sm text-blue-600 hover:text-blue-800 break-all"
-              data-testid="committee-about-charter-link">
-              {{ committee().charter!.url }}
-            </a>
-            <span class="text-xs text-gray-400" data-testid="committee-about-charter-updated-by"
-              >Last updated by {{ committee().charter?.updated_by?.name || committee().charter?.updated_by?.username || 'someone' }} on
-              {{ committee().charter!.updated_at | date: 'MMM d, y' }}</span
+        @if (committee().charter; as charter) {
+          @if (charter.url) {
+            <div class="flex-1 flex flex-col gap-1 min-w-0">
+              <a
+                [href]="charter.url"
+                target="_blank"
+                rel="noopener noreferrer"
+                class="text-sm text-blue-600 hover:text-blue-800 break-all"
+                data-testid="committee-about-charter-link">
+                {{ charter.url }}
+              </a>
+              <span class="text-xs text-gray-400" data-testid="committee-about-charter-updated-by"
+                >Last updated by {{ charter.updated_by?.name || charter.updated_by?.username || 'someone' }} on
+                {{ charter.updated_at | date: 'MMM d, y' }}</span
+              >
+            </div>
+          } @else {
+            <span
+              class="text-gray-400 text-sm italic flex-1 underline decoration-dotted"
+              [pTooltip]="charterRemovedLabel()"
+              tooltipPosition="top"
+              tooltipEvent="both"
+              tabindex="0"
+              role="note"
+              [attr.aria-label]="charterRemovedLabel()"
+              data-testid="committee-about-charter-empty"
+              >No charter yet</span
             >
-          </div>
-        } @else if (committee().charter; as charter) {
-          <span
-            class="text-gray-400 text-sm italic flex-1 underline decoration-dotted"
-            [pTooltip]="
-              'Removed by ' + (charter.updated_by?.name || charter.updated_by?.username || 'someone') + ' on ' + (charter.updated_at | date: 'MMM d, y')
-            "
-            tooltipPosition="top"
-            tooltipEvent="both"
-            tabindex="0"
-            role="note"
-            [attr.aria-label]="
-              'Removed by ' + (charter.updated_by?.name || charter.updated_by?.username || 'someone') + ' on ' + (charter.updated_at | date: 'MMM d, y')
-            "
-            data-testid="committee-about-charter-empty"
-            >No charter yet</span
-          >
+          }
         } @else {
           <span class="text-gray-400 text-sm italic flex-1" data-testid="committee-about-charter-empty">No charter yet</span>
         }

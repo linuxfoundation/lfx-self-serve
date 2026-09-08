@@ -1,7 +1,7 @@
 // Copyright The Linux Foundation and each contributor to LFX.
 // SPDX-License-Identifier: MIT
 
-import { DatePipe, NgClass } from '@angular/common';
+import { DatePipe, formatDate, NgClass } from '@angular/common';
 import { ChangeDetectionStrategy, Component, computed, inject, input, output, Signal } from '@angular/core';
 import { ButtonComponent } from '@components/button/button.component';
 import { CardComponent } from '@components/card/card.component';
@@ -81,6 +81,14 @@ export class CommitteeAboutComponent {
 
   // Complex computed
   public cadenceSummary: Signal<string> = computed(() => buildCommitteeCadenceSummary(this.upcomingMeetings()));
+  // Single source for the "Removed by … on …" charter attribution, shared by the tooltip and the
+  // aria-label so a future copy tweak can't desynchronize the sighted and screen-reader text.
+  public charterRemovedLabel: Signal<string> = computed(() => {
+    const charter = this.committee().charter;
+    const who = charter?.updated_by?.name || charter?.updated_by?.username || 'someone';
+    const when = charter?.updated_at ? formatDate(charter.updated_at, 'MMM d, y', 'en-US') : '';
+    return `Removed by ${who} on ${when}`;
+  });
 
   // Public methods
   public onSubscribe(): void {
