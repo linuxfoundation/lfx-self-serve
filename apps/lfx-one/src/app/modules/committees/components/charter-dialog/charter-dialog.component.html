@@ -16,7 +16,7 @@
     styleClass="!w-full"
     dataTest="committee-view-charter-input"></lfx-input-text>
   @if (charterForm.get('url')?.invalid && charterForm.get('url')?.dirty) {
-    <p class="text-xs text-red-600 mt-1" data-testid="committee-charter-url-error">
+    <p role="alert" class="text-xs text-red-600 mt-1" data-testid="committee-charter-url-error">
       @if (charterForm.get('url')?.errors?.['maxCodePoints']) {
         URL is too long (max 2,048 characters).
       } @else {
