@@ -337,6 +337,9 @@ export * from './foundation-message.interface';
 // Social Listening interfaces (LFXV2-3002)
 export * from './social-listening.interface';
 
+// Gatewaze admin embed host-context contract (embedded React-in-Angular pilot)
+export * from './gw-embed.interface';
+
 // Per-user preference store + BFF wire contracts (LFXV2-3002 Block 0)
 export * from './user-preference.interface';
 

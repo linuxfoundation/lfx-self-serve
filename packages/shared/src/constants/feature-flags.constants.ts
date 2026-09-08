@@ -95,6 +95,20 @@ export const MARKETING_OPS_FGA_ENABLED_FLAG = 'marketing-ops-fga-enabled';
 export const MENTORSHIP_ENABLED_FLAG = 'mentorship-enabled';
 
 /**
+ * Dark-launch gate for the embedded Gatewaze admin pilot — the `/foundation/gw` route tree that
+ * mounts the `@gatewaze/admin-embed` React app natively (no iframe) inside LFX One. Default false:
+ * this is a pilot for a small cohort, and the route guard fails closed like `akritesEnabledGuard`
+ * and `mentorshipEnabledGuard` rather than open, since the embed is not ready for general users.
+ *
+ * **UI-only** — evaluated through `FeatureFlagService.getBooleanFlag`, which is the OpenFeature Web
+ * SDK and never runs server-side, so it cannot gate an Express handler. The BFF proxy
+ * (`/api/gw/*`) is gated independently, server-side, by `ServerFeatureFlag.GatewazeEmbedEnabled`
+ * (`server-feature-flag.helper.ts`) — an env-var kill switch that also defaults off. Both must be
+ * enabled for the pilot to actually be reachable.
+ */
+export const GATEWAZE_EMBED_ENABLED_FLAG = 'gatewaze-embed-enabled';
+
+/**
  * `localStorage` key holding a `Record<string, boolean>` of locally-forced flag values, read by
  * `FeatureFlagService.getBooleanFlag` in **non-production builds only**.
  *

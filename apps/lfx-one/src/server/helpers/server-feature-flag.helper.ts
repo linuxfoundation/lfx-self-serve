@@ -396,6 +396,29 @@ export enum ServerFeatureFlag {
    * pixels; a flag that ships the PII is not a gate.
    */
   OrgLensCompanyEmails = 'LFX_ORG_LENS_COMPANY_EMAILS_ENABLED',
+
+  /**
+   * Gates `/api/gw/*` (`gw-proxy.route.ts`), the BFF proxy in front of the embedded Gatewaze
+   * admin pilot (`GwModuleOutletComponent`, `/foundation/gw`). OFF answers every request under
+   * the prefix with an identical 404 `gw_flag_disabled`, whether or not the caller is
+   * authenticated — the point is that an unauthenticated probe cannot distinguish "flag off"
+   * from "no such route" from "not authenticated".
+   *
+   * Deliberately paired with, and independent of, the client-side `gatewaze-embed-enabled`
+   * OpenFeature flag (`gatewaze-embed-enabled.guard.ts`). The Web SDK never runs server-side, so
+   * the client flag hides the route and nav but leaves the BFF reachable by direct call — this
+   * flag is what makes the dark launch a real kill switch. Both must be on for the pilot to work.
+   *
+   * ASSUMPTION (spec truncated before describing per-cohort membership): this is a boolean,
+   * all-or-nothing gate rather than a per-user/per-org allowlist. Revisit if a cohort mechanism
+   * is specified later — until then this flag being on means the pilot is reachable by every
+   * authenticated caller, not just the intended pilot cohort.
+   *
+   * OFF by default. No overlap hazard during a rolling update: every route this gates is
+   * stateless and read/write-through to the upstream Gatewaze service, so a request either
+   * reaches a flag-on pod and proxies, or a flag-off pod and 404s — never a partial write.
+   */
+  GatewazeEmbedEnabled = 'LFX_GATEWAZE_EMBED_ENABLED',
 }
 
 /**

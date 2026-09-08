@@ -34,6 +34,7 @@ import createPickerRouter from './routes/create-picker.route';
 import documentsRouter from './routes/documents.route';
 import enrollmentRouter from './routes/enrollment.route';
 import eventsRouter from './routes/events.route';
+import gwProxyRouter from './routes/gw-proxy.route';
 import impersonationRouter from './routes/impersonation.route';
 import mailingListsRouter from './routes/mailing-lists.route';
 import meetingsRouter from './routes/meetings.route';
@@ -116,11 +117,40 @@ app.use(
   compression({
     level: 6,
     threshold: 1024,
+    // Exclude /api/gw: gw-proxy.route.ts streams the upstream Gatewaze response body straight
+    // through byte-for-byte (including whatever Content-Encoding it already carries), so this
+    // middleware must never re-compress or re-wrap it.
+    filter: (req: Request, res: Response) => {
+      if (req.path.startsWith('/api/gw')) {
+        return false;
+      }
+      return compression.filter(req, res);
+    },
   })
 );
 
-app.use(express.json({ limit: '15mb' }));
-app.use(express.urlencoded({ extended: true, limit: '15mb' }));
+// /api/gw (gw-proxy.route.ts) is excluded from both parsers below: it forwards the request body to
+// GW_API_URL byte-for-byte and content-type-agnostically (JSON, multipart, or anything else), so it
+// needs the raw, unconsumed request stream rather than a parsed body it would have to
+// re-serialize. These two mounts run before authMiddleware (like the parsers they wrap), so
+// exclusion by path is used here rather than mounting gwProxyRouter "before" them — see
+// gw-proxy.route.ts's own mount below, after authMiddleware, for the auth-ordering half of this.
+const jsonBodyParser = express.json({ limit: '15mb' });
+const urlencodedBodyParser = express.urlencoded({ extended: true, limit: '15mb' });
+app.use((req: Request, res: Response, next: NextFunction) => {
+  if (req.path.startsWith('/api/gw')) {
+    next();
+    return;
+  }
+  jsonBodyParser(req, res, next);
+});
+app.use((req: Request, res: Response, next: NextFunction) => {
+  if (req.path.startsWith('/api/gw')) {
+    next();
+    return;
+  }
+  urlencodedBodyParser(req, res, next);
+});
 
 // Liveness and readiness endpoints registered before the static handler,
 // logger, auth, and rate-limit middleware so:
@@ -376,6 +406,12 @@ app.use('/api/ossprey', (req, res) => {
 });
 // Marketing OS Agents: Guild proxy, gated to authenticated users (LD flag controls UI visibility).
 app.use('/api/mktg-agents', mktgAgentsRouter);
+// Gatewaze admin embed pilot proxy — forwards to GW_API_URL, gated server-side by
+// GatewazeEmbedEnabled (see server-feature-flag.helper.ts) with a uniform 404 when the flag is
+// off or the caller is unauthenticated. Mounted here, after authMiddleware and the rate limiters
+// above, per the spec; see the body-parser/compression exclusions above for the other half of
+// this route's isolation from global middleware.
+app.use('/api/gw', gwProxyRouter);
 
 app.use('/public/api/*', apiErrorHandler);
 app.use('/api/*', apiErrorHandler);
@@ -393,6 +429,15 @@ const crowdfundingCallbackController = new CrowdfundingController();
 app.get('/crowdfunding/callback', authRateLimiter, (req, res) => crowdfundingCallbackController.handleCrowdfundingAuthCallback(req, res));
 
 const crowdfundingAuthService = new CrowdfundingAuthService();
+
+// Minimal frame protection for the embedded Gatewaze admin pilot page only — NOT applied
+// globally. Scoped narrowly because the rest of the app's framing behavior is out of scope for
+// this pilot; a global change here would be a much bigger blast radius than this task calls for.
+app.use('/foundation/gw', (_req: Request, res: Response, next: NextFunction) => {
+  res.setHeader('X-Frame-Options', 'SAMEORIGIN');
+  res.setHeader('Content-Security-Policy', "frame-ancestors 'self'");
+  next();
+});
 
 app.use('/**', async (req: Request, res: Response, next: NextFunction) => {
   const ssrStartTime = Date.now();
@@ -488,6 +533,12 @@ app.use('/**', async (req: Request, res: Response, next: NextFunction) => {
     allowedTracingUrls: [process.env['LFX_V2_SERVICE'], process.env['PCC_BASE_URL']].filter(Boolean) as string[],
     intercomAppId: process.env['INTERCOM_APP_ID'] || '',
     stripePublishableKey: process.env['STRIPE_PUBLISHABLE_KEY'] || '',
+    // Gatewaze admin embed pilot (/foundation/gw) — see RuntimeConfig's doc comments for the
+    // ASSUMPTION notes: no real Supabase project or LFID start URL exist for this pilot yet, so
+    // these are empty (falsy) until the real values are provided.
+    gwSupabaseUrl: process.env['GW_SUPABASE_URL'] || '',
+    gwSupabaseAnonKey: process.env['GW_SUPABASE_ANON_KEY'] || '',
+    gwLfidStartUrl: process.env['GW_LFID_START_URL'] || '',
   };
 
   logger.debug(req, 'intercom_ssr_context', 'Intercom SSR inputs resolved', {
