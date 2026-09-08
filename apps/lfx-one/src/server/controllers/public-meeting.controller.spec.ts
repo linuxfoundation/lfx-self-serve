@@ -63,6 +63,9 @@ vi.mock('@lfx-one/shared/utils', async () => ({
   // `meeting.controller.spec.ts` already uses for `truncateToUtf16Units`): `string.utils.ts` has no
   // imports of its own, so this pulls in none of the aliased barrel graph the mock exists to avoid.
   joinAsSentenceList: (await import('../../../../../packages/shared/src/utils/string.utils')).joinAsSentenceList,
+  // Real too, for the same reason: the field-length assertions are about what the controller sends
+  // upstream, and a stub would make them assert nothing.
+  truncateToUtf16Units: (await import('../../../../../packages/shared/src/utils/string.utils')).truncateToUtf16Units,
 }));
 // meeting.helper imports HOST_KEY_* from shared/constants; stub the barrel so the full constants
 // module graph (which re-imports shared/enums for ArtifactVisibility etc.) doesn't load.
@@ -1009,11 +1012,43 @@ describe('PublicMeetingController.registerForPublicMeeting', () => {
   // row would be invisible to the join-URL lookup.
   it('takes username from the session, strips its provider prefix, and ignores the body', async () => {
     getEffectiveUsernameMock.mockReturnValue('auth0|realuser');
-    const { req, res, next } = buildRegisterReq(true, { username: 'someone-else' });
+    getEffectiveEmailMock.mockReturnValue('a@example.com');
+    const { req, res, next } = buildRegisterReq(true, { email: 'a@example.com', username: 'someone-else' });
 
     await controller.registerForPublicMeeting(req, res, next);
 
     expect(next).not.toHaveBeenCalled();
     expect(meetingSvc.addMeetingRegistrantSelf.mock.calls[0][2].username).toBe('realuser');
+  });
+
+  // The LFID is what makes a row *this* person's, so it may only be stamped on a row that carries an
+  // address the session owns. Without this, one signed-in visitor could register a colleague's email
+  // and silently own the resulting RSVP.
+  it('omits the session username when the submitted email is not the session email', async () => {
+    getEffectiveUsernameMock.mockReturnValue('auth0|realuser');
+    getEffectiveEmailMock.mockReturnValue('someone-else@example.com');
+    const { req, res, next } = buildRegisterReq(true, { email: 'a@example.com' });
+
+    await controller.registerForPublicMeeting(req, res, next);
+
+    expect(next).not.toHaveBeenCalled();
+    expect(meetingSvc.addMeetingRegistrantSelf.mock.calls[0][2]).not.toHaveProperty('username');
+  });
+
+  // Ownership is an address comparison, not a string comparison: the IdP hands back a lowercased
+  // address and the registrant types whatever they type.
+  it('treats a differently-cased and padded submitted email as the session email', async () => {
+    getEffectiveUsernameMock.mockReturnValue('auth0|realuser');
+    getEffectiveEmailMock.mockReturnValue('a@example.com');
+    const { req, res, next } = buildRegisterReq(true, { email: '  A@Example.COM  ' });
+
+    await controller.registerForPublicMeeting(req, res, next);
+
+    expect(next).not.toHaveBeenCalled();
+
+    const forwarded = meetingSvc.addMeetingRegistrantSelf.mock.calls[0][2];
+
+    expect(forwarded.username).toBe('realuser');
+    expect(forwarded.email).toBe('a@example.com');
   });
 });

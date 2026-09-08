@@ -716,7 +716,7 @@ export class MeetingController {
       req.body?.map((update: { uid: string; changes: UpdateMeetingRegistrantRequest }) => ({
         ...update,
         changes: {
-          ...update.changes,
+          ...MeetingController.stripCommitteeUid(update.changes),
           meeting_id: uid,
         },
       })) || [];
@@ -1511,7 +1511,10 @@ export class MeetingController {
    */
   public async generateAgenda(req: Request, res: Response, next: NextFunction): Promise<void> {
     const startTime = logger.startOperation(req, 'generate_agenda', {
-      meeting_type: req.body['meetingType'],
+      // Bounded before it is logged: nothing validates `meetingType` at this point, and the request
+      // body is client content behind a 15mb limit. It reaches the prompt only through
+      // `getMeetingTypeDescription`'s exhaustive switch, so the log is the only exposure.
+      meeting_type: MeetingController.readPromptField(req.body['meetingType']) || null,
       has_context: !!req.body['context'],
     });
 
@@ -1862,26 +1865,40 @@ export class MeetingController {
   }
 
   /**
+   * Drops a runtime `committee_uid` from a registrant update body.
+   *
+   * `UpdateMeetingRegistrantRequest` declares no such field, but that is a compile-time guarantee
+   * only: `req.body` is untyped JSON and `toUpstreamRegistrantBody` forwards every key it doesn't
+   * recognize, so an extra one here would reach upstream — which derives `type: 'committee'` from
+   * whatever SFID it receives. That would route around the meeting-scoped allowlist the create path
+   * enforces, using the edit endpoint instead. Attribution is set when a guest is added and never
+   * edited, so stripping costs nothing.
+   */
+  private static stripCommitteeUid(changes: UpdateMeetingRegistrantRequest): UpdateMeetingRegistrantRequest {
+    // eslint-disable-next-line @typescript-eslint/no-unused-vars -- destructure-to-strip: the key is deleted, not read
+    const { committee_uid: _dropped, ...rest } = changes as UpdateMeetingRegistrantRequest & { committee_uid?: unknown };
+
+    return rest;
+  }
+
+  /**
    * The v2 UIDs of the committees actually attached to a meeting — the allowlist that
    * `resolveRegistrantCommitteeUids` checks a client-supplied `committee_uid` against.
    *
-   * A read failure resolves to an empty set rather than propagating. That fails closed: every
-   * committee attribution in the batch is stripped and those guests land as `direct`, which is the
-   * same fallback the resolver already documents for an unresolvable UID. The alternative — letting
-   * the error out — would fail the entire registrant batch on a transient read, and attribution is
-   * recoverable by re-saving in a way a half-applied guest list isn't.
+   * A read failure propagates rather than resolving to an empty set. Swallowing it would answer 201
+   * "all registrants added" while every group guest silently landed as `direct`, and there is no way
+   * back: `UpdateMeetingRegistrantRequest` declares no `committee_uid`, and `updateMeetingRegistrants`
+   * resolves none — so a re-save cannot restore what a downgrade dropped. Nothing has been written at
+   * the point this runs, so letting the error out fails the whole batch cleanly and the organizer can
+   * retry. An empty set is reserved for the case it actually describes: a meeting with no committees.
+   *
+   * `access: false` because only `committees[].uid` is read here — the default would additionally pay
+   * a committee-name query fan-out and an FGA access check, both discarded.
    */
   private async getMeetingCommitteeUids(req: Request, meetingUid: string): Promise<Set<string>> {
-    try {
-      const meeting = await this.meetingService.getMeetingById(req, meetingUid, 'v1_meeting');
-      return new Set((meeting.committees || []).map((committee) => committee.uid));
-    } catch (error) {
-      logger.warning(req, 'get_meeting_committee_uids', 'Could not load meeting committees; dropping all committee attribution', {
-        meeting_id: meetingUid,
-        error: error instanceof Error ? error.message : String(error),
-      });
-      return new Set<string>();
-    }
+    const meeting = await this.meetingService.getMeetingById(req, meetingUid, 'v1_meeting', { access: false });
+
+    return new Set((meeting.committees || []).map((committee) => committee.uid));
   }
 
   /**
@@ -1916,7 +1933,10 @@ export class MeetingController {
       logger.warning(req, 'resolve_registrant_committee_uids', 'Dropped committee UIDs not associated with this meeting', {
         requested: requestedUids.length,
         associated: v2Uids.length,
-        unassociated: requestedUids.filter((uid) => !allowedV2Uids.has(uid)),
+        // Counts only. `committee_uid` is unvalidated client content on an unbounded batch behind a
+        // 15mb body limit, and `logger.warning` passes metadata through untruncated — logging the
+        // values would let one request push megabytes of attacker-chosen strings into CloudWatch.
+        unassociated: requestedUids.length - v2Uids.length,
       });
     }
 

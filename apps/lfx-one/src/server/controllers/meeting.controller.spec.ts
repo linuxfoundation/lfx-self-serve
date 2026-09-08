@@ -19,6 +19,7 @@ const { meetingSvc, aiSvc, committeeSvc, resolveCommitteeV2UidsToV1IdsMock } = v
     getMeetingRegistrants: vi.fn(),
     getMeetingRegistrantsByEmail: vi.fn(),
     addMeetingRegistrant: vi.fn(),
+    updateMeetingRegistrant: vi.fn(),
   },
   aiSvc: { generateMeetingAgenda: vi.fn() },
   committeeSvc: { getCommitteeById: vi.fn(), getCommitteeMembers: vi.fn() },
@@ -203,6 +204,9 @@ describe('MeetingController', () => {
   describe('addMeetingRegistrants', () => {
     beforeEach(() => {
       meetingSvc.addMeetingRegistrant.mockImplementation((_req: Request, registrant: Record<string, unknown>) => Promise.resolve(registrant));
+      // Committee attribution is allowlisted against the meeting's own committees, so the meeting has
+      // to actually carry the group the request attributes a guest to.
+      meetingSvc.getMeetingById.mockResolvedValue({ committees: [{ uid: V2_COMMITTEE_UID }] });
     });
 
     // GH-1463: upstream stores a v1 SFID and derives type: 'committee' from it. Forwarding the v2
@@ -214,6 +218,32 @@ describe('MeetingController', () => {
       await controller.addMeetingRegistrants(req, buildRes(), next);
 
       expect(meetingSvc.addMeetingRegistrant).toHaveBeenCalledWith(req, expect.objectContaining({ committee_uid: V1_COMMITTEE_SFID }));
+    });
+
+    // A caller can attribute a guest to any committee UID it likes; only the ones the meeting is
+    // actually scoped to may be resolved, or the v1 lookup becomes an unauthorized cross-project read.
+    it('strips a committee_uid the meeting is not scoped to without looking it up', async () => {
+      const req = buildReq({ body: [{ email: 'a@example.com', committee_uid: 'cmte-v2-someone-elses' }] });
+
+      await controller.addMeetingRegistrants(req, buildRes(), next);
+
+      expect(resolveCommitteeV2UidsToV1IdsMock).not.toHaveBeenCalled();
+      const [, forwarded] = meetingSvc.addMeetingRegistrant.mock.calls[0];
+      expect(forwarded).not.toHaveProperty('committee_uid');
+    });
+
+    // An unknown allowlist fails the batch rather than downgrading it: nothing has been written yet,
+    // and a 201 that silently dropped every group attribution has no recovery path (the update
+    // contract carries no `committee_uid`).
+    it('fails the batch when the meeting committees cannot be loaded', async () => {
+      const upstreamError = new Error('upstream down');
+      meetingSvc.getMeetingById.mockRejectedValue(upstreamError);
+      const req = buildReq({ body: [{ email: 'a@example.com', committee_uid: V2_COMMITTEE_UID }] });
+
+      await controller.addMeetingRegistrants(req, buildRes(), next);
+
+      expect(next).toHaveBeenCalledWith(upstreamError);
+      expect(meetingSvc.addMeetingRegistrant).not.toHaveBeenCalled();
     });
 
     // The key is deleted, not nulled: upstream declares `committee_uid` a non-nullable optional
@@ -244,6 +274,24 @@ describe('MeetingController', () => {
 
       expect(resolveCommitteeV2UidsToV1IdsMock).not.toHaveBeenCalled();
       expect(meetingSvc.addMeetingRegistrant).toHaveBeenCalledWith(req, expect.objectContaining({ email: 'a@example.com' }));
+    });
+  });
+
+  describe('updateMeetingRegistrants', () => {
+    // The edit endpoint is the one path that isn't allowlisted against the meeting's committees —
+    // `UpdateMeetingRegistrantRequest` declares no `committee_uid`, but that's a compile-time
+    // guarantee and `req.body` is untyped JSON that the service forwards key-for-key.
+    it('strips a runtime committee_uid instead of forwarding it upstream', async () => {
+      meetingSvc.updateMeetingRegistrant.mockImplementation((_req: Request, _uid: string, _regUid: string, changes: Record<string, unknown>) =>
+        Promise.resolve(changes)
+      );
+      const req = buildReq({ body: [{ uid: 'reg-1', changes: { email: 'a@example.com', committee_uid: V1_COMMITTEE_SFID } }] });
+
+      await controller.updateMeetingRegistrants(req, buildRes(), next);
+
+      const [, , , forwarded] = meetingSvc.updateMeetingRegistrant.mock.calls[0];
+      expect(forwarded).not.toHaveProperty('committee_uid');
+      expect(forwarded).toMatchObject({ email: 'a@example.com', meeting_id: MEETING_ID });
     });
   });
 

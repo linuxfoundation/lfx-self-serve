@@ -57,11 +57,14 @@ export class AiService {
   public async generateMeetingAgenda(req: Request, request: GenerateAgendaRequest): Promise<GenerateAgendaResponse> {
     this.assertConfigured();
 
+    // Shapes, not values: the title, the goal and the project name are all organizer-authored content
+    // that ends up in the prompt, and the controller's own truncation telemetry logs lengths only for
+    // exactly that reason. The success log downstream already reports `has_project_name`.
     const startTime = logger.startOperation(req, 'generate_meeting_agenda', {
       meetingType: request.meetingType,
-      title: request.title,
+      titleLength: request.title?.length ?? 0,
       hasContext: !!request.context,
-      projectName: request.projectName,
+      hasProjectName: !!request.projectName,
     });
 
     try {

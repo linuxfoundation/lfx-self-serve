@@ -933,9 +933,20 @@ export class MeetingService {
       this.toUpstreamRegistrantBody(updateData)
     );
 
-    // The submitted payload underlies the response: on a body-less 2xx it is the only truthful
-    // description of what upstream now stores, and where upstream did answer, its values win.
-    return { ...updateData, ...this.fromUpstreamRegistrant(updatedRegistrant) } as MeetingRegistrant;
+    // Where upstream answered, its body is the whole answer — merging the submitted payload underneath
+    // it would report fields as persisted that upstream never stored: `toUpstreamRegistrantBody`
+    // deliberately omits nullish `org_name`/`avatar_url`/`occurrence_id` so upstream keeps the old
+    // value, and Goa discards `linkedin_profile` outright.
+    if (updatedRegistrant) {
+      return this.fromUpstreamRegistrant(updatedRegistrant);
+    }
+
+    // A body-less 2xx is the one case with nothing else to report: `ApiClientService` turns an empty
+    // body into `null`, so mapping it would return `{}` — and `processRegistrantOperations` hands the
+    // result back to the client as the updated row. The submitted payload is the closest available
+    // description of what upstream now stores. It inherits the two caveats above: a cleared
+    // organization and a `linkedin_profile` both echo back as if they had been written.
+    return { ...updateData } as MeetingRegistrant;
   }
 
   /**

@@ -1067,6 +1067,39 @@ describe('MeetingService registrant write payloads', () => {
     }
   });
 
+  // `ApiClientService` turns an empty response body into `null`. Mapping that alone would return
+  // `{}`, and `processRegistrantOperations` hands the result straight back as the updated row — so a
+  // succeeded write would render as a registrant that lost every field.
+  it('falls back to the submitted payload when the update answers without a body', async () => {
+    proxyRequest.mockResolvedValue(null);
+
+    const result = await service.updateMeetingRegistrant(req, 'meeting-1', 'reg-1', {
+      meeting_id: 'meeting-1',
+      email: 'a@example.com',
+      first_name: 'A',
+      last_name: 'B',
+    });
+
+    expect(result).toMatchObject({ email: 'a@example.com', first_name: 'A', last_name: 'B' });
+  });
+
+  // Where upstream did answer, its body is the whole answer: merging the request underneath it would
+  // report an omitted `org_name: null` as cleared when upstream still holds the old organization.
+  it('does not merge the submitted payload under a body upstream did answer with', async () => {
+    proxyRequest.mockResolvedValue({ uid: 'reg-1', org: 'Acme' });
+
+    const result = await service.updateMeetingRegistrant(req, 'meeting-1', 'reg-1', {
+      meeting_id: 'meeting-1',
+      email: 'a@example.com',
+      first_name: 'A',
+      last_name: 'B',
+      org_name: null,
+    });
+
+    expect(result).toMatchObject({ uid: 'reg-1', org_name: 'Acme' });
+    expect(result).not.toHaveProperty('email');
+  });
+
   // Self-registration builds its own payload against a different endpoint, and it's the one path
   // where a registrant types their own organization — so it has to rename too.
   it('renames on the self-registration path', async () => {

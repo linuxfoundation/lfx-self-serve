@@ -689,6 +689,16 @@ export class PublicMeetingController {
    * still register a third party's address for a public meeting and trigger an invite to it.
    * `publicApiRateLimiter` caps the volume, not the primitive. Such a row is now unattributed, so it
    * no longer collides with that person's own registration — the invite is the whole of the abuse.
+   * Nothing here checks `email_verified` either, so an IdP that admits an unverified address would
+   * still let an attacker who set their own account email to the victim's earn the stamp.
+   *
+   * What it costs: the registration form prefills the session email but leaves it editable, and
+   * ownership is decided against the session's single primary address. A signed-in user who registers
+   * with a secondary address of theirs now gets an unattributed row, so `createMeetingRsvp` — which
+   * resolves on session-email-OR-username — won't find it, and the RSVP controls read as
+   * "not invited". Closing that means comparing against the user's *verified* address set rather than
+   * the primary, which is an Auth0 Management round trip on an anonymous-capable route; deliberately
+   * left for its own change rather than bolted onto the identity fix.
    */
   private toSelfRegistration(req: Request, body: unknown): CreateMeetingRegistrantRequest {
     const raw = (body ?? {}) as Record<string, unknown>;
