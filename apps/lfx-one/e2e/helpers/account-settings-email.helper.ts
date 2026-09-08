@@ -80,6 +80,18 @@ function emailListPayload(): Record<string, unknown> {
   };
 }
 
+/**
+ * The exact body BaseApiError.toResponse() emits, so the specs run the branch of
+ * extractErrorMessage production runs: errors[].message for the 400 (the endpoint's only 400 is a
+ * ServiceValidationError) and the top-level error for anything else. There is no top-level message.
+ */
+function errorBody(behavior: { status: number; message: string }): Record<string, unknown> {
+  const base = { error: behavior.message, service: 'profile_controller', path: '/api/profile/emails/meeting-invite' };
+  return behavior.status === 400
+    ? { ...base, code: 'VALIDATION_ERROR', errors: [{ field: 'email', message: behavior.message, code: 'FIELD_VALIDATION_ERROR' }] }
+    : { ...base, code: 'SERVICE_UNAVAILABLE' };
+}
+
 function inviteStateFor(email: string | null): InviteState {
   return email === null ? NO_INVITE_OVERRIDE : { email_id: `email-id-${email}`, email };
 }
@@ -128,7 +140,7 @@ export async function installEmailMocks(page: Page, options: EmailMockOptions = 
           return route.fulfill({
             status: putBehavior.status,
             contentType: 'application/json',
-            body: JSON.stringify({ error: 'meeting_invite_rejected', message: putBehavior.message }),
+            body: JSON.stringify(errorBody(putBehavior)),
           });
         }
 

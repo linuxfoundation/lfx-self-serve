@@ -170,7 +170,8 @@ test.describe('Account Settings — Email Management', () => {
     });
 
     test('routes a non-validation failure to a toast rather than the inline banner', async ({ page }) => {
-      const unavailable = 'Meeting service is temporarily unavailable. Try again shortly.';
+      // Verbatim from profile.controller.ts's `unavailable` arm.
+      const unavailable = 'The meeting service is temporarily unavailable. Please try again in a few minutes.';
       await openEmailSettings(page, { putBehavior: { kind: 'error', status: 503, message: unavailable } });
 
       await openRowMenu(page, ALTERNATE_EMAIL);
