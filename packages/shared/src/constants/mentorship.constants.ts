@@ -101,6 +101,20 @@ export const MENTORSHIP_TERM_CLOSE_CONFIRM = 'Closing this term will automatical
 export const MENTORSHIP_TERM_REOPEN_CONFIRM = 'Are you sure you want to re-open this term?';
 
 /**
+ * Builds a project icon URL from a Linux Foundation artwork repo (`cncf`, `lfai`,
+ * `lf-energy`), which all publish icons at the same
+ * `projects/<dir>/icon/color/<name>-icon-color.svg` path. `name` defaults to `dir`
+ * because a few projects break the convention — `open-policy-agent` ships
+ * `opa-icon-color.svg`.
+ *
+ * Only feeds the mocks below; removed with them once the upstream mentorship
+ * service returns real logo URLs.
+ */
+export function mentorshipArtworkIconUrl(org: string, dir: string, name: string = dir): string {
+  return `https://raw.githubusercontent.com/${org}/artwork/main/projects/${dir}/icon/color/${name}-icon-color.svg`;
+}
+
+/**
  * Deterministic mock programs backing the mentorship BFF while the upstream
  * mentorship service is unavailable. Server-only import path
  * (`@lfx-one/shared/constants`) so the shape stays in one place.
@@ -117,6 +131,7 @@ export const MOCK_MENTORSHIP_PROGRAMS: MentorshipProgram[] = [
     term: 'Fall 2026',
     status: 'open',
     stats: { mentors: 4, mentees: 2, graduated: 6 },
+    logoUrl: mentorshipArtworkIconUrl('lf-energy', 'grid-exchange-fabric'),
     createdOn: '2026-06-01T00:00:00.000Z',
     updatedOn: '2026-08-15T00:00:00.000Z',
   },
@@ -128,6 +143,7 @@ export const MOCK_MENTORSHIP_PROGRAMS: MentorshipProgram[] = [
     term: 'Winter 2026',
     status: 'pending-review',
     stats: { mentors: 2, mentees: 0, graduated: 0 },
+    logoUrl: mentorshipArtworkIconUrl('cncf', 'apicurio-registry'),
     createdOn: '2026-07-10T00:00:00.000Z',
     updatedOn: '2026-08-20T00:00:00.000Z',
   },
@@ -139,6 +155,7 @@ export const MOCK_MENTORSHIP_PROGRAMS: MentorshipProgram[] = [
     term: 'Fall 2026',
     status: 'open',
     stats: { mentors: 1, mentees: 1, graduated: 2 },
+    logoUrl: mentorshipArtworkIconUrl('lfai', 'janusgraph'),
     createdOn: '2026-05-15T00:00:00.000Z',
     updatedOn: '2026-08-25T00:00:00.000Z',
   },
@@ -150,6 +167,7 @@ export const MOCK_MENTORSHIP_PROGRAMS: MentorshipProgram[] = [
     term: 'Summer 2026',
     status: 'completed',
     stats: { mentors: 2, mentees: 0, graduated: 3 },
+    logoUrl: mentorshipArtworkIconUrl('cncf', 'thanos'),
     createdOn: '2026-03-01T00:00:00.000Z',
     updatedOn: '2026-07-30T00:00:00.000Z',
   },

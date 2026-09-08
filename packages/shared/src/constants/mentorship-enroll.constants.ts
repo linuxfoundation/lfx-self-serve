@@ -9,6 +9,7 @@ import type {
   MentorshipPrerequisite,
   MentorshipProgramTerm,
 } from '../interfaces/mentorship.interface';
+import { mentorshipArtworkIconUrl } from './mentorship.constants';
 
 export const MENTORSHIP_ENROLL_STEPS_ORDER: MentorshipEnrollStep[] = ['details', 'setup', 'prerequisites'];
 
@@ -107,26 +108,26 @@ export const MENTORSHIP_POLICY_LINKS: ReadonlyArray<{ label: string; href: strin
 ];
 
 export const MOCK_MENTORSHIP_LF_PROJECTS: readonly MentorshipLfProject[] = [
-  { id: 'proj-gridflow', name: 'GridFlow' },
-  { id: 'proj-apicurio', name: 'Apicurio Registry' },
-  { id: 'proj-janusgraph', name: 'JanusGraph' },
-  { id: 'proj-thanos', name: 'Thanos' },
-  { id: 'proj-k8s', name: 'Kubernetes' },
-  { id: 'proj-prometheus', name: 'Prometheus' },
-  { id: 'proj-envoy', name: 'Envoy' },
-  { id: 'proj-istio', name: 'Istio' },
-  { id: 'proj-helm', name: 'Helm' },
-  { id: 'proj-containerd', name: 'containerd' },
-  { id: 'proj-fluentd', name: 'Fluentd' },
-  { id: 'proj-linkerd', name: 'Linkerd' },
-  { id: 'proj-opa', name: 'Open Policy Agent' },
-  { id: 'proj-spiffe', name: 'SPIFFE' },
-  { id: 'proj-argo', name: 'Argo' },
-  { id: 'proj-coredns', name: 'CoreDNS' },
-  { id: 'proj-etcd', name: 'etcd' },
-  { id: 'proj-crio', name: 'CRI-O' },
-  { id: 'proj-tikv', name: 'TiKV' },
-  { id: 'proj-rook', name: 'Rook' },
+  { id: 'proj-gridflow', name: 'GridFlow', logoUrl: mentorshipArtworkIconUrl('lf-energy', 'grid-exchange-fabric') },
+  { id: 'proj-apicurio', name: 'Apicurio Registry', logoUrl: mentorshipArtworkIconUrl('cncf', 'apicurio-registry') },
+  { id: 'proj-janusgraph', name: 'JanusGraph', logoUrl: mentorshipArtworkIconUrl('lfai', 'janusgraph') },
+  { id: 'proj-thanos', name: 'Thanos', logoUrl: mentorshipArtworkIconUrl('cncf', 'thanos') },
+  { id: 'proj-k8s', name: 'Kubernetes', logoUrl: mentorshipArtworkIconUrl('cncf', 'kubernetes') },
+  { id: 'proj-prometheus', name: 'Prometheus', logoUrl: mentorshipArtworkIconUrl('cncf', 'prometheus') },
+  { id: 'proj-envoy', name: 'Envoy', logoUrl: mentorshipArtworkIconUrl('cncf', 'envoy') },
+  { id: 'proj-istio', name: 'Istio', logoUrl: mentorshipArtworkIconUrl('cncf', 'istio') },
+  { id: 'proj-helm', name: 'Helm', logoUrl: mentorshipArtworkIconUrl('cncf', 'helm') },
+  { id: 'proj-containerd', name: 'containerd', logoUrl: mentorshipArtworkIconUrl('cncf', 'containerd') },
+  { id: 'proj-fluentd', name: 'Fluentd', logoUrl: mentorshipArtworkIconUrl('cncf', 'fluentd') },
+  { id: 'proj-linkerd', name: 'Linkerd', logoUrl: mentorshipArtworkIconUrl('cncf', 'linkerd') },
+  { id: 'proj-opa', name: 'Open Policy Agent', logoUrl: mentorshipArtworkIconUrl('cncf', 'open-policy-agent', 'opa') },
+  { id: 'proj-spiffe', name: 'SPIFFE', logoUrl: mentorshipArtworkIconUrl('cncf', 'spiffe') },
+  { id: 'proj-argo', name: 'Argo', logoUrl: mentorshipArtworkIconUrl('cncf', 'argo') },
+  { id: 'proj-coredns', name: 'CoreDNS', logoUrl: mentorshipArtworkIconUrl('cncf', 'coredns') },
+  { id: 'proj-etcd', name: 'etcd', logoUrl: mentorshipArtworkIconUrl('cncf', 'etcd') },
+  { id: 'proj-crio', name: 'CRI-O', logoUrl: mentorshipArtworkIconUrl('cncf', 'crio') },
+  { id: 'proj-tikv', name: 'TiKV', logoUrl: mentorshipArtworkIconUrl('cncf', 'tikv') },
+  { id: 'proj-rook', name: 'Rook', logoUrl: mentorshipArtworkIconUrl('cncf', 'rook') },
 ];
 
 export const EMPTY_MENTORSHIP_LF_PROJECTS_RESPONSE: MentorshipLfProjectsResponse = { data: [], total: 0 };
