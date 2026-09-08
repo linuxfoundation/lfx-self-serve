@@ -437,6 +437,21 @@ describe('OrgEasyclaComponent', () => {
       expect(allByTestId(fixture, 'org-easycla-card')).toHaveLength(3);
     });
 
+    // `companyName()` reacts to the account signal in the same pass, while the response in hand is
+    // still the previous organization's, so timing alone does not hold the invariant. Rows are
+    // gated on the orgUid the server echoed matching the organization the header names — and the
+    // gate holds the loading state rather than emptying the list, because an empty list on a
+    // settled page is not neutral, it is the "hasn't signed any CLAs yet" claim.
+    it("withholds a response carrying another organization's uid", async () => {
+      getClaGroups.mockReturnValue(of({ orgUid: OTHER_ACCOUNT.uid, claGroups: manyClaGroups(3) }));
+
+      const fixture = await render();
+
+      expect(allByTestId(fixture, 'org-easycla-card')).toHaveLength(0);
+      expect(byTestId(fixture, 'org-easycla-empty-state')).toBeNull();
+      expect(byTestId(fixture, 'org-easycla-list-loading')).toBeTruthy();
+    });
+
     it("opens the new organization's list at the first page", async () => {
       getClaGroups.mockReturnValue(of({ orgUid: SELECTED_ACCOUNT.uid, claGroups: manyClaGroups(11) }));
       const fixture = await render();

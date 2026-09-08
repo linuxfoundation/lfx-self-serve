@@ -90,12 +90,32 @@ export class OrgEasyclaComponent {
   private readonly claData: Signal<OrgClaGroupList | null | undefined> = this.initClaData();
 
   /**
+   * True while the response in hand does not belong to the organization named in the header.
+   *
+   * The server echoes the `orgUid` it served precisely so the client can key on it. Timing alone
+   * does not hold the invariant: `companyName()` reacts to `selectedAccount` immediately, while
+   * `orgUid$` re-emits only when `toObservable`'s effect flushes — after the template pass — so
+   * `claLoadingState` is still false for one cycle after a switch. Comparing identity closes that
+   * window regardless of when the flush lands.
+   */
+  private readonly claDataIsForSelectedOrg = computed(() => {
+    const data = this.claData();
+    return !data || data.orgUid === this.accountContext.selectedAccount()?.uid;
+  });
+
+  /**
    * Undefined until the first response lands; `null` after a failure, which is a different state.
    * The explicit flag covers the switch: `toSignal` holds the previous organization's response
    * until the new one arrives, so `=== undefined` alone would let that organization's cards — or
    * its "signed nothing" empty state — render under the newly selected company's name.
+   *
+   * The mismatch is folded in here rather than emptying `claGroups()`, because an empty list on a
+   * settled page is not a neutral value — it is the "hasn't signed any CLAs yet" claim. Holding the
+   * loading state instead shows a skeleton, which asserts nothing.
    */
-  protected readonly claLoading = computed(() => this.hasCompany() && (this.claData() === undefined || this.claLoadingState()) && !this.fetchError());
+  protected readonly claLoading = computed(
+    () => this.hasCompany() && (this.claData() === undefined || this.claLoadingState() || !this.claDataIsForSelectedOrg()) && !this.fetchError()
+  );
 
   protected readonly claGroups: Signal<OrgClaGroup[]> = computed(() => this.claData()?.claGroups ?? []);
   protected readonly filteredClaGroups: Signal<OrgClaGroup[]> = this.initFilteredClaGroups();
