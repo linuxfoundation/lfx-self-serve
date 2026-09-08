@@ -1,6 +1,7 @@
 // Copyright The Linux Foundation and each contributor to LFX.
 // SPDX-License-Identifier: MIT
 
+import type { ValidationError } from '@lfx-one/shared/interfaces';
 import type { NextFunction, Request, Response } from 'express';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 
@@ -91,15 +92,32 @@ vi.mock('../services/logger.service', () => ({
   },
 }));
 
+/**
+ * Stand-in for `ServiceValidationError`, mirroring the field the real class exposes.
+ *
+ * `../errors` is mocked so these tests don't drag in `BaseApiError` and the shared constants behind
+ * it, but the double carries `validationErrors: ValidationError[]` — the real class's own property,
+ * populated by its own factories' rules — rather than a convenient `fields` map. A double with a
+ * shape of its own lets an assertion pin a contract that exists nowhere but this file: it would keep
+ * passing after the production error changed, and it silently discarded the `message` that
+ * `forField` is called with, which is the part a caller actually reads.
+ */
 class FakeValidationError extends Error {
-  public constructor(public readonly fields: unknown) {
+  public constructor(public readonly validationErrors: ValidationError[]) {
     super('validation');
   }
 }
 vi.mock('../errors', () => ({
   ServiceValidationError: {
-    forField: (field: string) => new FakeValidationError({ [field]: 'required' }),
-    fromFieldErrors: (fields: unknown) => new FakeValidationError(fields),
+    forField: (field: string, message: string) => new FakeValidationError([{ field, message, code: 'FIELD_VALIDATION_ERROR' }]),
+    fromFieldErrors: (fieldErrors: Record<string, string | string[]>) =>
+      new FakeValidationError(
+        Object.entries(fieldErrors).map(([field, messages]) => ({
+          field,
+          message: Array.isArray(messages) ? messages.join(', ') : messages,
+          code: 'FIELD_VALIDATION_ERROR',
+        }))
+      ),
   },
 }));
 
@@ -115,7 +133,7 @@ function buildRes(): Response {
 
 function buildReq(overrides: Partial<Request> = {}, headers: Record<string, string> = {}): Request {
   // `get` is stubbed because the registrant batch endpoints read `content-length` off the request for
-  // their `content_length` log field. These reqs are built by hand rather than sent over HTTP, so no
+  // their `request_content_length` log field. These reqs are built by hand rather than sent over HTTP, so no
   // header exists unless a test asks for one — which is also the state a chunked request arrives in,
   // and what exercises `readContentLength`'s `null` fallback.
   return {
@@ -364,7 +382,7 @@ describe('MeetingController', () => {
       await controller.addMeetingRegistrants(req, buildRes(), next);
 
       expect(next).not.toHaveBeenCalledWith(expect.any(TypeError));
-      expect(next).toHaveBeenCalledWith(expect.objectContaining({ fields: { 'registrants.email': 'required' } }));
+      expect(next).toHaveBeenCalledWith(expect.objectContaining({ validationErrors: [expect.objectContaining({ field: 'registrants.email' })] }));
       expect(meetingSvc.addMeetingRegistrant).not.toHaveBeenCalled();
     });
 
@@ -373,17 +391,37 @@ describe('MeetingController', () => {
 
       await controller.addMeetingRegistrants(req, buildRes(), next);
 
-      expect(logger.startOperation).toHaveBeenCalledWith(req, 'add_meeting_registrants', expect.objectContaining({ content_length: 2048 }));
+      expect(logger.startOperation).toHaveBeenCalledWith(req, 'add_meeting_registrants', expect.objectContaining({ request_content_length: 2048 }));
     });
 
-    it('records a null content length when the request declares none', async () => {
-      const req = buildReq({ body: [{ email: 'a@example.com' }] });
+    // `null`, not `0`: a chunked request omits the header, and logging it as `0` would make it
+    // indistinguishable from a declared empty body. The empty-string case is the one that regresses
+    // silently — `Number('')` is `0`, so a header that arrives blank lands on exactly the value the
+    // `null` exists to stay distinct from — and the malformed cases would otherwise log a byte count
+    // no real request can produce.
+    it.each([
+      ['declares none', undefined],
+      ['sends an empty header', ''],
+      ['sends a whitespace-only header', '   '],
+      ['sends a non-numeric header', 'abc'],
+      ['sends a negative header', '-1'],
+      ['sends a fractional header', '12.5'],
+    ])('records a null content length when the request %s', async (_label, header) => {
+      const req = buildReq({ body: [{ email: 'a@example.com' }] }, header === undefined ? {} : { 'content-length': header });
 
       await controller.addMeetingRegistrants(req, buildRes(), next);
 
-      // `null`, not `0`: a chunked request omits the header, and logging it as `0` would make it
-      // indistinguishable from an empty body.
-      expect(logger.startOperation).toHaveBeenCalledWith(req, 'add_meeting_registrants', expect.objectContaining({ content_length: null }));
+      expect(logger.startOperation).toHaveBeenCalledWith(req, 'add_meeting_registrants', expect.objectContaining({ request_content_length: null }));
+    });
+
+    it('records a zero content length when the request explicitly declares one', async () => {
+      const req = buildReq({ body: [{ email: 'a@example.com' }] }, { 'content-length': '0' });
+
+      await controller.addMeetingRegistrants(req, buildRes(), next);
+
+      // A declared `0` is a measurement, not a missing header, so it is kept as `0` — that is the
+      // distinction the `null` above is protecting.
+      expect(logger.startOperation).toHaveBeenCalledWith(req, 'add_meeting_registrants', expect.objectContaining({ request_content_length: 0 }));
     });
   });
 
@@ -438,19 +476,20 @@ describe('MeetingController', () => {
       await controller.updateMeetingRegistrants(req, buildRes(), next);
 
       expect(next).not.toHaveBeenCalledWith(expect.any(TypeError));
-      expect(next).toHaveBeenCalledWith(expect.objectContaining({ fields: { 'registrants.changes': 'required' } }));
+      expect(next).toHaveBeenCalledWith(expect.objectContaining({ validationErrors: [expect.objectContaining({ field: 'registrants.changes' })] }));
       expect(meetingSvc.updateMeetingRegistrant).not.toHaveBeenCalled();
     });
 
-    // Spreading `null` is legal and yields `{}`, so the body map doesn't throw — the entry simply
-    // arrives with no UID, and the UID check is what turns it away.
+    // The body map reads the entry rather than spreading it — `update?.uid ?? ''` and
+    // `stripCommitteeUid(update?.changes)`, both null-safe — so a `null` entry doesn't throw. It
+    // simply arrives with an empty UID, and the UID check is what turns it away.
     it('rejects a null entry on the missing-UID check rather than throwing', async () => {
       const req = buildReq({ body: [null] });
 
       await controller.updateMeetingRegistrants(req, buildRes(), next);
 
       expect(next).not.toHaveBeenCalledWith(expect.any(TypeError));
-      expect(next).toHaveBeenCalledWith(expect.objectContaining({ fields: { 'registrants.uid': 'required' } }));
+      expect(next).toHaveBeenCalledWith(expect.objectContaining({ validationErrors: [expect.objectContaining({ field: 'registrants.uid' })] }));
       expect(meetingSvc.updateMeetingRegistrant).not.toHaveBeenCalled();
     });
 

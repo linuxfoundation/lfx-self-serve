@@ -754,6 +754,27 @@ export interface MeetingRegistrantWithState extends MeetingRegistrant {
 }
 
 /**
+ * A guest list row, with every derived string precomputed
+ * @description The composer's guest list is projected into these once per `guests()` change rather
+ * than recomputed per binding: the frontend checklist bars method calls in render-time expressions,
+ * and the display name alone was read three times per row (label, tooltip, remove button's
+ * accessible name). `trackId` is the identity the `@for` tracks on — a saved guest has a `uid`, one
+ * added in this session only has a `tempId`.
+ */
+export interface ComposerGuestRow {
+  /** The registrant this row renders, for the handlers and the fields read directly. */
+  guest: MeetingRegistrantWithState;
+  /** `uid` when saved, `tempId` while pending. */
+  trackId: string;
+  /** Avatar initials, from the name when known and the email otherwise. */
+  initials: string;
+  /** `first last`, as typed — no fallback, since both are required to add a guest. */
+  displayName: string;
+  /** `email · org`, collapsing to just the email when the org is unknown. */
+  secondaryLine: string;
+}
+
+/**
  * Batch update request for meeting registrants
  * @description Request payload for updating multiple registrants at once
  */

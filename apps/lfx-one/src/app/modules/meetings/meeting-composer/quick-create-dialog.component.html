@@ -2,6 +2,14 @@
 <!-- SPDX-License-Identifier: MIT -->
 
 <!-- Quick create dialog (GH-1460) -->
+
+<!-- Declarative `<p-dialog>` rather than `DialogService.open()`, which `docs/reviews/frontend-checklist.md`
+     marks as the rule: this dialog is one of two surfaces the composer opens — the drawer is the other —
+     and both are driven off the same `MeetingComposerService` signals from a single always-mounted host,
+     so the open/close state has one owner and one lifecycle. `DialogService.open()` is imperative and
+     returns its own ref, which would split that ownership in two and leave the service's `isOpen()` and
+     the ref's lifetime to be kept in step by hand. Called out here so the deviation reads as a decision;
+     it is not the only one in the app (eight other templates mount `<p-dialog>` directly today). -->
 <p-dialog
   [visible]="composer.isOpen()"
   (visibleChange)="onVisibleChange($event)"
@@ -63,10 +71,13 @@
           styleClass="w-full min-h-[80px] max-h-[200px]"
           [rows]="4"
           [maxlength]="agendaMaxLength"
+          [ariaDescribedBy]="prefilledAgenda() ? 'quick-create-agenda-hint' : undefined"
           data-testid="quick-create-agenda-textarea" />
         <div class="flex items-center justify-between gap-2">
           @if (prefilledAgenda()) {
-            <p class="text-xs text-gray-500" data-testid="quick-create-agenda-hint">Suggested agenda template — adjust as needed.</p>
+            <p id="quick-create-agenda-hint" class="text-xs text-gray-500" data-testid="quick-create-agenda-hint">
+              Suggested agenda template — adjust as needed.
+            </p>
           }
           <p class="ml-auto text-xs" [ngClass]="agendaCounterClass()">{{ agendaLength() }}/{{ agendaMaxLength }}</p>
         </div>

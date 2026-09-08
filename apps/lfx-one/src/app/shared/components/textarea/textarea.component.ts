@@ -1,7 +1,7 @@
 // Copyright The Linux Foundation and each contributor to LFX.
 // SPDX-License-Identifier: MIT
 
-import { Component, input, Signal } from '@angular/core';
+import { Component, computed, input, Signal } from '@angular/core';
 import { FormGroup, ReactiveFormsModule } from '@angular/forms';
 import { TextareaModule } from 'primeng/textarea';
 
@@ -36,6 +36,14 @@ export class TextareaComponent {
    * not for a value written programmatically with `setValue`.
    */
   public maxlength = input<number>();
+  /**
+   * Id of the element that describes this field, wired through as `aria-describedby`.
+   * @description A hint rendered next to the textarea is invisible to a screen reader unless the
+   * field points at it, and the hint lives in the caller's template — only the caller knows which
+   * one applies and when. Bound as an attribute so an unset value emits nothing rather than an
+   * `aria-describedby` pointing at `""`.
+   */
+  public ariaDescribedBy = input<string>();
   public dataTest = input<string>();
   /** id of the element describing a validation error (wired to aria-describedby). */
   public describedBy = input<string>();
@@ -43,4 +51,16 @@ export class TextareaComponent {
   public invalid = input<boolean>(false);
   /** Marks the control mandatory for assistive tech (wired to aria-required). */
   public required = input<boolean>(false);
+
+  /**
+   * The two description hooks joined, because they share one attribute.
+   * @description A field can carry a standing hint (`ariaDescribedBy`) and a transient validation
+   * error (`describedBy`) at the same time; letting either win would silently drop the other for a
+   * screen reader. Null rather than `''` so an unset pair emits no attribute at all.
+   */
+  protected readonly describedByIds: Signal<string | null> = this.initDescribedByIds();
+
+  private initDescribedByIds(): Signal<string | null> {
+    return computed(() => [this.ariaDescribedBy(), this.describedBy()].filter((id): id is string => !!id).join(' ') || null);
+  }
 }

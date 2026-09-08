@@ -7,7 +7,7 @@ import { FormGroup } from '@angular/forms';
 import { FeatureToggleComponent } from '@components/feature-toggle/feature-toggle.component';
 import { UserSearchComponent } from '@components/user-search/user-search.component';
 import { COMMITTEE_LABEL, SHOW_MEETING_ATTENDEES_FEATURE } from '@lfx-one/shared/constants';
-import type { CommitteeMember, ManualGuestDialogResult, MeetingRegistrantWithState } from '@lfx-one/shared/interfaces';
+import type { ComposerGuestRow, CommitteeMember, ManualGuestDialogResult, MeetingRegistrantWithState } from '@lfx-one/shared/interfaces';
 import { avatarInitials } from '@lfx-one/shared/utils';
 import { MeetingService } from '@services/meeting.service';
 import { MessageService } from 'primeng/api';
@@ -48,16 +48,24 @@ export class ComposerGuestsComponent {
   protected readonly groupGuestCount = computed(() => this.visibleGuests().filter((guest) => guest.type === 'committee').length);
   protected readonly directGuestCount = computed(() => this.visibleGuests().filter((guest) => guest.type === 'direct').length);
 
+  /**
+   * The guest list, with every derived string resolved once per change.
+   * @description Rendered instead of `visibleGuests()` directly: these strings used to be method
+   * calls in the template, which Angular re-evaluates on every change-detection pass — the display
+   * name three times per row and the secondary line twice. Computing them here runs each once per
+   * guest, and only when the list itself changes.
+   */
+  protected readonly guestRows = computed<ComposerGuestRow[]>(() =>
+    this.visibleGuests().map((guest) => ({
+      guest,
+      trackId: guest.uid || guest.tempId || '',
+      initials: avatarInitials(guest.first_name, guest.last_name, guest.email),
+      displayName: `${guest.first_name} ${guest.last_name}`,
+      secondaryLine: [guest.email, guest.org_name].filter(Boolean).join(' · '),
+    }))
+  );
+
   private readonly invitedEmails: Signal<Set<string>> = computed(() => new Set(this.visibleGuests().map((guest) => guest.email?.toLowerCase() ?? '')));
-
-  protected initials(guest: MeetingRegistrantWithState): string {
-    return avatarInitials(guest.first_name, guest.last_name, guest.email);
-  }
-
-  /** `email · org` secondary line, collapsing to just the email when the org is unknown. */
-  protected secondaryLine(guest: MeetingRegistrantWithState): string {
-    return [guest.email, guest.org_name].filter(Boolean).join(' · ');
-  }
 
   /**
    * Adds the person picked from search, or falls back to the manual dialog.

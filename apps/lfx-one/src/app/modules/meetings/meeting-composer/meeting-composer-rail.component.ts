@@ -60,7 +60,17 @@ export class MeetingComposerRailComponent {
       earlyRead: () => {
         this.composer.activeSection();
 
-        return this.compact() ? this.elementRef.nativeElement.querySelector<HTMLElement>('[data-active-chip]') : null;
+        if (!this.compact()) {
+          return null;
+        }
+
+        const chip = this.elementRef.nativeElement.querySelector<HTMLElement>('[data-active-chip]');
+
+        // `lg:hidden` is a CSS breakpoint, not an input, so this component has no signal that says
+        // whether its own chip row is on screen — at `lg` and up the row is still in the DOM and this
+        // query still finds the chip. `getClientRects()` is empty for anything `display: none`, which
+        // is the one reliable read of "laid out" available here.
+        return chip?.getClientRects().length ? chip : null;
       },
       // `scrollIntoView` reads layout before it scrolls, so it is a mixed read/write rather than the pure
       // write the `write` phase promises.

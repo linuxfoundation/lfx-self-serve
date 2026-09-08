@@ -1,8 +1,7 @@
 // Copyright The Linux Foundation and each contributor to LFX.
 // SPDX-License-Identifier: MIT
 
-import { NgTemplateOutlet } from '@angular/common';
-import { Component, computed, inject, input } from '@angular/core';
+import { Component, computed, inject } from '@angular/core';
 import { RouterLink } from '@angular/router';
 import { DashboardQuickLink } from '@lfx-one/shared/interfaces';
 import { MeetingComposerService } from '@modules/meetings/meeting-composer/meeting-composer.service';
@@ -10,14 +9,12 @@ import { ProjectContextService } from '@services/project-context.service';
 
 @Component({
   selector: 'lfx-dashboard-quicklinks',
-  imports: [NgTemplateOutlet, RouterLink],
+  imports: [RouterLink],
   templateUrl: './dashboard-quicklinks.component.html',
 })
 export class DashboardQuicklinksComponent {
   private readonly projectContextService = inject(ProjectContextService);
   private readonly composer = inject(MeetingComposerService);
-
-  public readonly layout = input<'header' | 'sidebar'>('header');
 
   protected readonly links: DashboardQuickLink[] = [
     {
@@ -38,6 +35,7 @@ export class DashboardQuicklinksComponent {
           variant: 'quick',
           projectUid: this.projectContextService.activeContextUid() || undefined,
         }),
+      hasPopup: 'dialog',
       // Meeting-authoring permission, not writer permission: a meeting coordinator who isn't a
       // project writer can create meetings, and gating this on `canWrite` hid the link from them.
       visible: () => this.projectContextService.canWriteMeetings(),

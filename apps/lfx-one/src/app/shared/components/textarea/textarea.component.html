@@ -13,7 +13,7 @@
     [class]="styleClass()"
     [autoResize]="autoResize()"
     [attr.maxlength]="maxlength() || null"
-    [attr.aria-describedby]="describedBy() || null"
+    [attr.aria-describedby]="describedByIds()"
     [attr.aria-invalid]="invalid() ? true : null"
     [attr.aria-required]="required() ? true : null"
     [attr.data-test]="dataTest()"></textarea>

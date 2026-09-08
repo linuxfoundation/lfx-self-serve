@@ -23,7 +23,7 @@ import {
 import { truncateToUtf16Units } from '@lfx-one/shared/utils';
 import { NextFunction, Request, Response } from 'express';
 
-import { NULLISH_DROPPED_REGISTRANT_KEYS } from '../constants';
+import { NULLISH_DROPPED_REGISTRANT_KEYS, UNCONDITIONALLY_DROPPED_REGISTRANT_KEYS } from '../constants';
 import { resolveCommitteeV2UidsToV1Ids } from '../helpers/committee-v1-mapping.helper';
 import { AuthorizationError, ServiceValidationError } from '../errors';
 import {
@@ -641,12 +641,14 @@ export class MeetingController {
     const startTime = logger.startOperation(req, 'add_meeting_registrants', {
       meeting_id: uid,
       registrant_count: registrantData.length,
-      // `content_length`, not `body_size`: the sibling operations in this file log `body_size` by
-      // re-serializing `req.body`, and that is a different measurement — a gzipped or chunked request
-      // makes the two disagree. The two batch endpoints are the ones most likely to carry a body near
-      // the 15mb JSON limit, so they read the header instead of allocating a second copy of it, and
-      // the field is named for what it actually holds so the two can't be aggregated together.
-      content_length: MeetingController.readContentLength(req),
+      // `request_content_length`, not `body_size`: the sibling operations in this file log `body_size`
+      // by re-serializing `req.body`, and that is a different measurement — a gzipped or chunked
+      // request makes the two disagree. The two batch endpoints are the ones most likely to carry a
+      // body near the 15mb JSON limit, so they read the header instead of allocating a second copy of
+      // it. The name is qualified because a bare `content_length` is already three other things in
+      // this codebase — a raw header string, an upstream *response* Content-Length, and a character
+      // count — and none of them can be aggregated with this one.
+      request_content_length: MeetingController.readContentLength(req),
     });
 
     try {
@@ -773,12 +775,14 @@ export class MeetingController {
     const startTime = logger.startOperation(req, 'update_meeting_registrants', {
       meeting_id: uid,
       registrant_count: updateData.length,
-      // `content_length`, not `body_size`: the sibling operations in this file log `body_size` by
-      // re-serializing `req.body`, and that is a different measurement — a gzipped or chunked request
-      // makes the two disagree. The two batch endpoints are the ones most likely to carry a body near
-      // the 15mb JSON limit, so they read the header instead of allocating a second copy of it, and
-      // the field is named for what it actually holds so the two can't be aggregated together.
-      content_length: MeetingController.readContentLength(req),
+      // `request_content_length`, not `body_size`: the sibling operations in this file log `body_size`
+      // by re-serializing `req.body`, and that is a different measurement — a gzipped or chunked
+      // request makes the two disagree. The two batch endpoints are the ones most likely to carry a
+      // body near the 15mb JSON limit, so they read the header instead of allocating a second copy of
+      // it. The name is qualified because a bare `content_length` is already three other things in
+      // this codebase — a raw header string, an upstream *response* Content-Length, and a character
+      // count — and none of them can be aggregated with this one.
+      request_content_length: MeetingController.readContentLength(req),
     });
 
     try {
@@ -1972,14 +1976,16 @@ export class MeetingController {
    * The count is taken over the keys that survive the outbound mapper, not over the raw ones,
    * because every key the mapper drops is a key that cannot reach upstream:
    * - `committee_uid` — `stripCommitteeUid` removes it here, before the body is forwarded.
-   * - `meeting_id` — `toUpstreamRegistrantBody` deletes it; the meeting is addressed by the path.
-   * - `org_name` / `avatar_url` / `occurrence_id` — the mapper renames these to `org`,
-   *   `profile_picture` and `occurrence`, but only when the value is non-nullish, so a `null` here
-   *   contributes nothing to the outbound body.
+   * - {@link UNCONDITIONALLY_DROPPED_REGISTRANT_KEYS} — `toUpstreamRegistrantBody` deletes these
+   *   whatever their value is.
+   * - {@link NULLISH_DROPPED_REGISTRANT_KEYS} — the mapper renames these, but only when the value is
+   *   non-nullish, so a `null` here contributes nothing to the outbound body.
    *
    * Counting the raw keys instead let `{ "meeting_id": "M1" }` and `{ "org_name": null }` through
-   * the guard and straight into the empty `PUT` it exists to prevent. Keep this list in step with
-   * `MeetingService.toUpstreamRegistrantBody`.
+   * the guard and straight into the empty `PUT` it exists to prevent. The two lists are the same
+   * ones `toUpstreamRegistrantBody`'s delete loop reads — it consumes their union as
+   * `APP_ONLY_REGISTRANT_KEYS` — so a key added to either half reaches the mapper and this guard in
+   * one edit, and neither can be updated without the other.
    */
   private static hasRegistrantChanges(changes: unknown): boolean {
     if (typeof changes !== 'object' || changes === null || Array.isArray(changes)) {
@@ -1989,12 +1995,12 @@ export class MeetingController {
     const stripped = MeetingController.stripCommitteeUid(changes as UpdateMeetingRegistrantRequest) as unknown as Record<string, unknown>;
 
     return Object.entries(stripped).some(([key, value]) => {
-      if (key === 'meeting_id') {
+      // Widened for the lookups only: `includes` on a `readonly ['org_name', ...]` won't accept an
+      // arbitrary string, and the keys here come off untyped JSON.
+      if ((UNCONDITIONALLY_DROPPED_REGISTRANT_KEYS as readonly string[]).includes(key)) {
         return false;
       }
 
-      // Widened for the lookup only: `includes` on a `readonly ['org_name', ...]` won't accept an
-      // arbitrary string, and the keys here come off untyped JSON.
       return (NULLISH_DROPPED_REGISTRANT_KEYS as readonly string[]).includes(key) ? value != null : true;
     });
   }
@@ -2144,15 +2150,22 @@ export class MeetingController {
   }
 
   /**
-   * The request's declared `Content-Length`, or `null` when it carries none.
+   * The request's declared `Content-Length`, or `null` when it declares none this can trust.
    * @description A chunked request omits the header entirely, so `null` is a real outcome and not an
-   * error — logging it as `0` would make it indistinguishable from an empty body. A non-numeric value
-   * is normalised the same way: `Number('abc')` is `NaN`, which Pino serializes as `null` anyway, so
-   * this only makes that deliberate instead of incidental.
+   * error — logging it as `0` would make it indistinguishable from a declared empty body. That is why
+   * the raw header is checked before the conversion rather than after: `Number('')` is `0`, so an
+   * empty or whitespace-only header would otherwise be logged as the very value `null` exists to stay
+   * distinct from.
+   *
+   * Anything that isn't a non-negative integer is `null` too. `Content-Length` is defined as a count
+   * of octets, so `-1` and `12.5` are as malformed as `abc`; logging them verbatim would put values
+   * into the field that no real request can produce, and a reader aggregating it can't tell those
+   * apart from a genuine measurement.
    */
   private static readContentLength(req: Request): number | null {
-    const declared = Number(req.get('content-length'));
+    const declared = Number(req.get('content-length')?.trim() || Number.NaN);
 
-    return Number.isFinite(declared) ? declared : null;
+    // `isInteger` implies finite, so this rejects `NaN` and `Infinity` as well.
+    return Number.isInteger(declared) && declared >= 0 ? declared : null;
   }
 }

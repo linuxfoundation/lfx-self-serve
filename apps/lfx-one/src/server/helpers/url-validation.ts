@@ -27,6 +27,22 @@
  */
 
 /**
+ * Escapes a value so it can only ever be one segment of an upstream URL path
+ * @description Upstream paths are built by interpolating identifiers into a template string, and
+ * some of those identifiers arrive in a request *body*, where Express applies no per-segment
+ * parsing at all. A raw `../../something` would then be normalized away by the URL parser and aim
+ * the request at a different endpoint on the same service, still carrying the caller's bearer
+ * token. Encoding keeps a traversal attempt as a literal (unmatched) identifier, so it 404s
+ * upstream instead of resolving somewhere else.
+ *
+ * A well-formed identifier — the UUIDs the meeting service issues — contains nothing
+ * `encodeURIComponent` touches, so this is a no-op on every legitimate value.
+ * @param segment - The identifier to interpolate
+ * @returns The percent-encoded segment
+ */
+export const encodePathSegment = (segment: string): string => encodeURIComponent(segment);
+
+/**
  * Validates and sanitizes a URL to prevent open redirect attacks
  * @param url - The URL to validate
  * @param allowedDomains - Array of allowed domains (optional)

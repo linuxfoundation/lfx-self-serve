@@ -59,6 +59,7 @@ import { attachRsvpsToRegistrants, filterRsvpsToActiveRegistrants } from '../hel
 import { APP_ONLY_REGISTRANT_KEYS } from '../constants';
 import { pollEndpoint } from '../helpers/poll-endpoint.helper';
 import { fetchAllQueryResources } from '../helpers/query-service.helper';
+import { encodePathSegment } from '../helpers/url-validation';
 import { getEffectiveEmail, getEffectiveUsername, getUsernameFromAuth, stripAuthPrefix } from '../utils/auth-helper';
 import { AccessCheckService } from './access-check.service';
 import { CommitteeService } from './committee.service';
@@ -943,7 +944,9 @@ export class MeetingService {
     const updatedRegistrant = await this.microserviceProxy.proxyRequest<Record<string, unknown> | null>(
       req,
       'LFX_V2_SERVICE',
-      `/itx/meetings/${meetingUid}/registrants/${registrantUid}`,
+      // `registrantUid` is client-supplied through the batch endpoint's *body*, where nothing splits
+      // the request into path segments for us — see `encodePathSegment`.
+      `/itx/meetings/${encodePathSegment(meetingUid)}/registrants/${encodePathSegment(registrantUid)}`,
       'PUT',
       undefined,
       this.toUpstreamRegistrantBody(updateData)
@@ -976,7 +979,13 @@ export class MeetingService {
       registrant_uid: registrantUid,
     });
 
-    await this.microserviceProxy.proxyRequest<void>(req, 'LFX_V2_SERVICE', `/itx/meetings/${meetingUid}/registrants/${registrantUid}`, 'DELETE');
+    // Same body-supplied identifier as the update path above — see `encodePathSegment`.
+    await this.microserviceProxy.proxyRequest<void>(
+      req,
+      'LFX_V2_SERVICE',
+      `/itx/meetings/${encodePathSegment(meetingUid)}/registrants/${encodePathSegment(registrantUid)}`,
+      'DELETE'
+    );
   }
 
   /**
@@ -989,7 +998,12 @@ export class MeetingService {
     });
 
     // Call the LFX API endpoint for resending invitation
-    await this.microserviceProxy.proxyRequest<void>(req, 'LFX_V2_SERVICE', `/itx/meetings/${meetingUid}/registrants/${registrantId}/resend`, 'POST');
+    await this.microserviceProxy.proxyRequest<void>(
+      req,
+      'LFX_V2_SERVICE',
+      `/itx/meetings/${encodePathSegment(meetingUid)}/registrants/${encodePathSegment(registrantId)}/resend`,
+      'POST'
+    );
   }
 
   /**
@@ -1985,9 +1999,7 @@ export class MeetingService {
     // Keys, not truthiness — see `addMeetingRegistrant`. This is the path a registrant drives from the
     // public meeting page, so an unusable body used to surface to them as a `{}` "created" record.
     const hasUpstreamBody = !!upstreamRegistrant && Object.keys(upstreamRegistrant).length > 0;
-    const newRegistrant = hasUpstreamBody
-      ? this.fromUpstreamRegistrant(upstreamRegistrant)
-      : MeetingService.registrantFromSubmittedPayload(registrantData);
+    const newRegistrant = hasUpstreamBody ? this.fromUpstreamRegistrant(upstreamRegistrant) : MeetingService.registrantFromSubmittedPayload(registrantData);
 
     logger.success(req, 'add_meeting_registrant_self', startTime, {
       meeting_id: meetingId,
