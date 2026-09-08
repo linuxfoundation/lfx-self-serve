@@ -172,15 +172,19 @@ export class GithubReadmeService {
       return userAttempt;
     }
 
-    // The personal-profile probe is strictly additive: it can supply a README,
-    // never change WHY the account URL produced none. That reason belongs to
-    // the URL the user typed — it names no repository — so the organization
-    // attempt's own outcome is what gets reported either way.
+    // Same rule as the first probe, for the same reason: "GitHub failed us" is
+    // not "this account publishes no profile README". If the personal probe
+    // could not be ASKED, we do not know whether a personal profile README
+    // exists, so the honest report is `fetch-failed` (retry) rather than a
+    // verdict on the URL. Any other outcome is a genuine absence and leaves the
+    // organization attempt's own reason — which is about the URL the user
+    // typed: it names no repository.
+    const skipReason = userAttempt.outcome.skipReason === 'fetch-failed' ? 'fetch-failed' : orgAttempt.outcome.skipReason;
     logger.info(req, 'github_readme_fetch', 'No profile README available for the account — generating without a README', {
       owner,
-      reason: orgAttempt.outcome.skipReason,
+      reason: skipReason,
     });
-    return orgAttempt;
+    return { readme: null, outcome: { fetched: false, skipReason } };
   }
 
   /** The organization profile README — `<owner>/.github` → `profile/README.md`. */
