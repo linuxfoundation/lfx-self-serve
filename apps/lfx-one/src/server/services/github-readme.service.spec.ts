@@ -158,10 +158,11 @@ describe('GithubReadmeService', () => {
       ]);
     });
 
-    it('falls back to the PERSONAL profile README when the account has no organization profile', async () => {
+    it('falls back to the ACCOUNT-NAMED repository README when there is no organization profile', async () => {
       // `github.com/<owner>` is a person as often as an organization, and a
       // person's profile README lives in `<owner>/<owner>`, not in
-      // `<owner>/.github` — probing only the latter could never find it.
+      // `<owner>/.github` — probing only the latter could never find it. The
+      // result is recorded by location, not by an inferred account type.
       fetchMock
         .mockResolvedValueOnce(textResponse('', false, 404))
         .mockResolvedValueOnce(jsonResponse({}, false, 404))
@@ -170,11 +171,11 @@ describe('GithubReadmeService', () => {
       const result = await service.fetchReadme(req, 'https://github.com/some-person');
 
       expect(result.readme).toBe('# Hi, I build things');
-      expect(result.outcome).toEqual({ fetched: true, source: 'user-profile' });
+      expect(result.outcome).toEqual({ fetched: true, source: 'owner-repo' });
       expect(fetchMock.mock.calls.at(-1)?.[0]).toBe('https://api.github.com/repos/some-person/some-person/readme');
     });
 
-    it('caches the personal profile README as the repository README it actually is', async () => {
+    it('caches the account-named repository README as the repository README it actually is', async () => {
       fetchMock
         .mockResolvedValueOnce(textResponse('', false, 404))
         .mockResolvedValueOnce(jsonResponse({}, false, 404))
@@ -188,7 +189,7 @@ describe('GithubReadmeService', () => {
       expect(fetchMock).toHaveBeenCalledTimes(calls);
     });
 
-    it('keeps the account-URL verdict when the personal profile is genuinely absent too', async () => {
+    it('keeps the account-URL verdict when the second location is genuinely absent too', async () => {
       // Both profiles answered, neither exists: the URL still names no
       // repository, so that — not anything the second probe returned — is what
       // is reported.
@@ -200,9 +201,9 @@ describe('GithubReadmeService', () => {
       expect(fetchMock.mock.calls.map((call) => call[0])).toContain('https://api.github.com/repos/some-person/some-person/readme');
     });
 
-    it('reports an outage on the PERSONAL probe as fetch-failed — an unanswered probe is not an absence', async () => {
+    it('reports an outage on the SECOND probe as fetch-failed — an unanswered probe is not an absence', async () => {
       // The organization profile is genuinely absent, but GitHub then failed
-      // the personal one: whether a personal profile README exists is unknown,
+      // the account-named repository: whether that README exists is unknown,
       // so the honest advice is retry rather than "fix your URL".
       fetchMock
         .mockResolvedValueOnce(textResponse('', false, 404))

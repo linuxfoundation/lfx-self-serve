@@ -48,12 +48,12 @@ const GITHUB_README_CACHE_MAX_ENTRIES = 100;
  * of being left to wonder why the agent underperformed.
  *
  * Account URLs are resolved rather than rejected: `github.com/<owner>` has no
- * repository README, but GitHub serves a profile README for BOTH kinds of
- * account it may name — an organization's from `<owner>/.github` at
- * `profile/README.md`, a personal one from the `<owner>/<owner>` repository —
- * and either is often exactly the overview the agent wants. Both are attempted
- * before giving up, because the URL alone never says which kind of account it
- * is; a miss gives up cleanly.
+ * repository README, but two locations hold an account overview — the
+ * organization profile README (`<owner>/.github` → `profile/README.md`) and
+ * the README of the `<owner>/<owner>` repository — and either is often exactly
+ * what the agent wants. Both are attempted before giving up, and each result
+ * records WHERE it came from rather than what it implies about the account; a
+ * miss gives up cleanly.
  *
  * SSRF guard: the user-supplied URL is never fetched. It is only PARSED (by
  * the shared `parseGithubUrlTarget`, github.com hosts only, path segments
@@ -150,37 +150,40 @@ export class GithubReadmeService {
 
   /**
    * An account URL names no repository, so there is no repository README — but
-   * GitHub renders a profile README for either kind of account the URL may
-   * name, and the URL cannot say which: an organization's lives in
-   * `<owner>/.github` at `profile/README.md`, a personal one is the README of
-   * the `<owner>/<owner>` repository. Both are attempted, organization first
-   * (the common case for the LF projects this collects URLs for), turning a
-   * dead end into an overview the agent can actually ground on. When neither
-   * exists we give up cleanly and say so.
+   * two well-known LOCATIONS hold an overview of an account, and both are
+   * attempted before giving up: `<owner>/.github` at `profile/README.md` (how
+   * GitHub renders an organization profile) and the README of the
+   * `<owner>/<owner>` repository (how it renders a personal one, and in
+   * practice an organization's flagship repository).
+   *
+   * Deliberately no account-type lookup first. The type is not needed to pick
+   * a location — both are tried, cheapest-first — and neither result is
+   * labelled with an account type it would have to infer: what is recorded is
+   * WHERE the README came from. An extra `/users/<owner>` round-trip per run
+   * would buy a claim this service has no need to make.
    */
   private async fetchOwnerProfileReadme(req: Request, owner: string): Promise<MktgReadmeFetchResult> {
     const orgAttempt = await this.fetchOrgProfileReadme(req, owner);
     if (orgAttempt.readme !== null || orgAttempt.outcome.skipReason === 'fetch-failed') {
       // A GitHub outage or rate limit is a different fact with a different
-      // remedy — retry, not "fix your URL" — and the personal-profile probe
-      // would only hit the same wall, so it is not attempted.
+      // remedy — retry, not "fix your URL" — and the second probe would only
+      // hit the same wall, so it is not attempted.
       return orgAttempt;
     }
 
-    const userAttempt = await this.fetchUserProfileReadme(req, owner);
-    if (userAttempt.readme !== null) {
-      return userAttempt;
+    const ownerRepoAttempt = await this.fetchOwnerRepoReadme(req, owner);
+    if (ownerRepoAttempt.readme !== null) {
+      return ownerRepoAttempt;
     }
 
     // Same rule as the first probe, for the same reason: "GitHub failed us" is
-    // not "this account publishes no profile README". If the personal probe
-    // could not be ASKED, we do not know whether a personal profile README
-    // exists, so the honest report is `fetch-failed` (retry) rather than a
-    // verdict on the URL. Any other outcome is a genuine absence and leaves the
-    // organization attempt's own reason — which is about the URL the user
-    // typed: it names no repository.
-    const skipReason = userAttempt.outcome.skipReason === 'fetch-failed' ? 'fetch-failed' : orgAttempt.outcome.skipReason;
-    logger.info(req, 'github_readme_fetch', 'No profile README available for the account — generating without a README', {
+    // not "this account publishes no overview". If the second probe could not
+    // be ASKED, we do not know whether that README exists, so the honest report
+    // is `fetch-failed` (retry) rather than a verdict on the URL. Any other
+    // outcome is a genuine absence and leaves the organization attempt's own
+    // reason — which is about the URL the user typed: it names no repository.
+    const skipReason = ownerRepoAttempt.outcome.skipReason === 'fetch-failed' ? 'fetch-failed' : orgAttempt.outcome.skipReason;
+    logger.info(req, 'github_readme_fetch', 'No overview README available for the account — generating without a README', {
       owner,
       reason: skipReason,
     });
@@ -223,23 +226,24 @@ export class GithubReadmeService {
   }
 
   /**
-   * The personal profile README — the root README of the `<owner>/<owner>`
-   * repository, which is how GitHub renders a USER's profile. Reached only
-   * when the organization profile README is genuinely absent, so an account
-   * that turns out to be a person still grounds the agent on something real
-   * instead of on a path that could never have held their profile.
+   * The README of the repository NAMED AFTER the account, `<owner>/<owner>`.
+   * That is where GitHub renders a personal profile README, and where an
+   * organization named after its flagship project keeps that project's
+   * overview — either way the closest thing to an account overview once the
+   * organization profile path has come up empty, and either way recorded for
+   * what it is (`owner-repo`) rather than as a guess at the account type.
    */
-  private async fetchUserProfileReadme(req: Request, owner: string): Promise<MktgReadmeFetchResult> {
+  private async fetchOwnerRepoReadme(req: Request, owner: string): Promise<MktgReadmeFetchResult> {
     // Same cache key shape as any repository README, because that is exactly
     // what this is — `github.com/<owner>/<owner>` later hits the same entry.
     const cacheKey = `${owner.toLowerCase()}/${owner.toLowerCase()}`;
     const cached = this.readCache(cacheKey);
     if (cached !== null) {
-      logger.debug(req, 'github_readme_fetch', 'Serving the personal profile README from the in-process cache — no GitHub round-trip', { owner });
-      return { readme: cached, outcome: { fetched: true, source: 'user-profile' } };
+      logger.debug(req, 'github_readme_fetch', 'Serving the account-named repository README from the in-process cache — no GitHub round-trip', { owner });
+      return { readme: cached, outcome: { fetched: true, source: 'owner-repo' } };
     }
 
-    logger.info(req, 'github_readme_fetch', 'No organization profile README — trying the personal profile README', {
+    logger.info(req, 'github_readme_fetch', 'No organization profile README — trying the repository named after the account', {
       owner,
       profile_repo: owner,
     });
@@ -249,7 +253,7 @@ export class GithubReadmeService {
     if (attempt.readme === null) {
       return { readme: null, outcome: { fetched: false, skipReason: attempt.skipReason } };
     }
-    return { readme: attempt.readme, outcome: { fetched: true, source: 'user-profile' } };
+    return { readme: attempt.readme, outcome: { fetched: true, source: 'owner-repo' } };
   }
 
   /**
