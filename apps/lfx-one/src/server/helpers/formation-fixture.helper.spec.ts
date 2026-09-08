@@ -1,6 +1,7 @@
 // Copyright The Linux Foundation and each contributor to LFX.
 // SPDX-License-Identifier: MIT
 
+import { FORMATION_TEMPLATE } from '@lfx-one/shared/constants';
 import { describe, expect, it } from 'vitest';
 
 // The real isValidUrl, not a hand-copied mirror: a future tightening/loosening of its guard (it
@@ -12,7 +13,26 @@ import { describe, expect, it } from 'vitest';
 // never imports `@lfx-one/shared/utils`, so there's nothing here for a mock to intercept.
 import { isValidUrl } from '@lfx-one/shared/utils/url.utils';
 
-import { generateMockFormation, STATIC_QUEUE_FORMATIONS } from './formation-fixture.helper';
+import { generateMockFormation, SEEDED_FORMATION_TEMPLATE, STATIC_QUEUE_FORMATIONS } from './formation-fixture.helper';
+
+const TEMPLATE_ITEMS = FORMATION_TEMPLATE.sections.flatMap((section) => section.items);
+const TEMPLATE_GATING_COUNT = TEMPLATE_ITEMS.filter((item) => item.is_gating).length;
+
+describe('SEEDED_FORMATION_TEMPLATE', () => {
+  // Drift guard: the fixture's item/gating counts must always equal the real seeded template's —
+  // this is the specific regression (#1958) this ticket fixes, and it must not silently recur.
+  it("has the same section, item, and gating counts as #1959's real FORMATION_TEMPLATE", () => {
+    const fixtureItems = SEEDED_FORMATION_TEMPLATE.sections.flatMap((section) => section.items);
+
+    expect(SEEDED_FORMATION_TEMPLATE.sections.length).toBe(FORMATION_TEMPLATE.sections.length);
+    expect(fixtureItems.length).toBe(TEMPLATE_ITEMS.length);
+    expect(fixtureItems.filter((item) => item.is_gating).length).toBe(TEMPLATE_GATING_COUNT);
+  });
+
+  it('keeps the fixture-owned uid rather than the template-default one', () => {
+    expect(SEEDED_FORMATION_TEMPLATE.uid).not.toBe(FORMATION_TEMPLATE.uid);
+  });
+});
 
 describe('generateMockFormation', () => {
   const { items } = generateMockFormation({
@@ -23,22 +43,18 @@ describe('generateMockFormation', () => {
     stage: 'Formation - Engaged',
   });
 
-  it('gives every link/status_only item an action_href that passes isValidUrl', () => {
-    const linkItems = items.filter((item) => item.action === 'link' || item.action === 'status_only');
-
-    expect(linkItems.length).toBeGreaterThan(0);
-    for (const item of linkItems) {
-      expect(item.action_href).not.toBeNull();
-      expect(isValidUrl(item.action_href as string)).toBe(true);
-    }
+  it('generates exactly one item per real template item', () => {
+    expect(items.length).toBe(TEMPLATE_ITEMS.length);
   });
 
-  it('gives every non-link action a null action_href', () => {
-    const nonLinkItems = items.filter((item) => item.action !== 'link' && item.action !== 'status_only');
+  it("carries each row's action_href straight from the template's action_link, defaulting to null", () => {
+    for (const item of items) {
+      const templateItem = TEMPLATE_ITEMS.find((candidate) => candidate.key === item.template_item_key);
 
-    expect(nonLinkItems.length).toBeGreaterThan(0);
-    for (const item of nonLinkItems) {
-      expect(item.action_href).toBeNull();
+      expect(item.action_href).toBe(templateItem?.action_link ?? null);
+      if (item.action_href !== null) {
+        expect(isValidUrl(item.action_href)).toBe(true);
+      }
     }
   });
 });
@@ -48,5 +64,12 @@ describe('STATIC_QUEUE_FORMATIONS', () => {
     const entityTypes = new Set(STATIC_QUEUE_FORMATIONS.map((row) => row.entity_type));
 
     expect(entityTypes).toEqual(new Set(['foundation', 'child_project', 'project']));
+  });
+
+  it("derives every row's gating_items_total from the real template rather than a hard-coded literal", () => {
+    for (const row of STATIC_QUEUE_FORMATIONS) {
+      expect(row.gating_items_total).toBe(TEMPLATE_GATING_COUNT);
+      expect(row.gating_items_open).toBeLessThanOrEqual(row.gating_items_total);
+    }
   });
 });

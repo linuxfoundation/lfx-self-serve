@@ -2,8 +2,7 @@
 // SPDX-License-Identifier: MIT
 
 import { ProjectStage } from '@lfx-one/shared/enums';
-import { SEEDED_FORMATION_TEMPLATE_UID } from '@lfx-one/shared/constants';
-import { FormationActionType, FormationOwnerTeam, FormationTemplateSectionKey } from '@lfx-one/shared/enums';
+import { FORMATION_TEMPLATE, SEEDED_FORMATION_TEMPLATE_UID } from '@lfx-one/shared/constants';
 import type {
   Formation,
   FormationItem,
@@ -24,10 +23,9 @@ import crypto from 'crypto';
  * calls for real proxy calls once that ships; this file's shapes already match the shared
  * `Formation`/`FormationItem` interfaces, so downstream code needs no change.
  *
- * The seeded template's real content is #1959's responsibility (a parallel Epic-1 ticket) — this
- * one is a structurally faithful placeholder (2 sections, 6 gating items, mirrors the reviewed
- * design mockup) so this ticket's UI has something real to render against without blocking on
- * #1959 landing first.
+ * Template *content* (sections, items, gates, sub-items) comes from #1959's real seeded
+ * `FORMATION_TEMPLATE` (`@lfx-one/shared/constants`) — this file only synthesizes runtime-only
+ * fixture state on top of it (status, owner, sub-item statuses, `can_complete`, timestamps).
  */
 
 const SYNTHETIC_STAFF: FormationUser[] = [
@@ -38,181 +36,14 @@ const SYNTHETIC_STAFF: FormationUser[] = [
   { username: 'morgan.hale', name: 'Morgan Hale' },
 ];
 
-const CHAT_WORKSPACE_SUB_ITEMS: FormationTemplateSubItem[] = [
-  { key: 'workspace-created', title: 'Slack workspace created', owner_team: FormationOwnerTeam.IT },
-  { key: 'channels-configured', title: 'Default channels configured', owner_team: FormationOwnerTeam.IT },
-  { key: 'integrations-connected', title: 'Integrations connected (GitHub, calendar)', owner_team: FormationOwnerTeam.IT },
-  { key: 'access-granted', title: 'Project lead access granted', owner_team: FormationOwnerTeam.IT },
-];
-
-interface SeedTemplateItem {
-  key: string;
-  title: string;
-  is_gating: boolean;
-  owner_team: FormationOwnerTeam;
-  action: FormationActionType;
-  sub_items?: FormationTemplateSubItem[];
-}
-
-interface SeedSection {
-  key: FormationTemplateSectionKey;
-  title: string;
-  items: SeedTemplateItem[];
-}
-
-const SEED_SECTIONS: SeedSection[] = [
-  {
-    key: FormationTemplateSectionKey.LEGAL_AND_ENTITY,
-    title: 'Legal and entity',
-    items: [
-      {
-        key: 'draft-project-record',
-        title: 'Draft project record (Prospect)',
-        is_gating: true,
-        owner_team: FormationOwnerTeam.PRODUCT_OPS,
-        action: FormationActionType.LINK,
-      },
-      {
-        key: 'intake-form-submitted',
-        title: 'Intake form submitted',
-        is_gating: true,
-        owner_team: FormationOwnerTeam.COMMUNITY,
-        action: FormationActionType.LINK,
-      },
-      {
-        key: 'formation-review-packet',
-        title: 'Formation review and instruction packet',
-        is_gating: true,
-        owner_team: FormationOwnerTeam.FORMATION,
-        action: FormationActionType.LINK,
-      },
-      {
-        key: 'preliminary-trademark-search',
-        title: 'Preliminary trademark search',
-        is_gating: false,
-        owner_team: FormationOwnerTeam.BRAND_COUNSEL,
-        action: FormationActionType.LINK,
-      },
-      {
-        key: 'technical-charter-agreed',
-        title: 'Technical charter reviewed and agreed',
-        is_gating: true,
-        owner_team: FormationOwnerTeam.COMMUNITY,
-        action: FormationActionType.LINK,
-      },
-      {
-        key: 'contribution-agreement-executed',
-        title: 'Contribution agreement executed',
-        is_gating: true,
-        owner_team: FormationOwnerTeam.FORMATION,
-        action: FormationActionType.LINK,
-      },
-      {
-        key: 'in-depth-trademark-series-llc',
-        title: 'In-depth trademark search and Series LLC',
-        is_gating: true,
-        owner_team: FormationOwnerTeam.FORMATION,
-        action: FormationActionType.MANUAL,
-      },
-    ],
-  },
-  {
-    key: FormationTemplateSectionKey.COMMUNITY_AND_LAUNCH,
-    title: 'Community and launch',
-    items: [
-      {
-        key: 'repositories-connected',
-        title: 'Repositories connected; GitHub org set up',
-        is_gating: false,
-        owner_team: FormationOwnerTeam.COMMUNITY,
-        action: FormationActionType.PROVISIONABLE,
-      },
-      {
-        key: 'domain-and-dns-transfer',
-        title: 'Domain and DNS transfer',
-        is_gating: false,
-        owner_team: FormationOwnerTeam.COMMUNITY,
-        action: FormationActionType.REQUEST,
-      },
-      {
-        key: 'website-logo-footer',
-        title: 'Website, logo and entity footer',
-        is_gating: false,
-        owner_team: FormationOwnerTeam.PRODUCT_OPS,
-        action: FormationActionType.LINK,
-      },
-      { key: 'mailing-lists', title: 'Mailing lists', is_gating: false, owner_team: FormationOwnerTeam.PRODUCT_OPS, action: FormationActionType.PROVISIONABLE },
-      {
-        key: 'chat-workspace',
-        title: 'Chat workspace (Slack)',
-        is_gating: false,
-        owner_team: FormationOwnerTeam.IT,
-        action: FormationActionType.PROVISIONABLE,
-        sub_items: CHAT_WORKSPACE_SUB_ITEMS,
-      },
-      {
-        key: 'insights-onboarding',
-        title: 'LFX Insights onboarding and project lead access',
-        is_gating: false,
-        owner_team: FormationOwnerTeam.PRODUCT_OPS,
-        action: FormationActionType.REQUEST,
-      },
-      {
-        key: 'asset-transfers',
-        title: 'Asset transfers: trademarks, service accounts, social',
-        is_gating: false,
-        owner_team: FormationOwnerTeam.PRODUCT_OPS,
-        action: FormationActionType.MANUAL,
-      },
-      {
-        key: 'tsc-formed',
-        title: 'TSC formed and kickoff scheduled',
-        is_gating: false,
-        owner_team: FormationOwnerTeam.PRODUCT_OPS,
-        action: FormationActionType.PROVISIONABLE,
-      },
-      {
-        key: 'member-join-page',
-        title: 'Member join page',
-        is_gating: false,
-        owner_team: FormationOwnerTeam.PRODUCT,
-        action: FormationActionType.PROVISIONABLE,
-      },
-      {
-        key: 'launch-communications',
-        title: 'Launch communications',
-        is_gating: false,
-        owner_team: FormationOwnerTeam.MARKETING,
-        action: FormationActionType.LINK,
-      },
-      {
-        key: 'formation-sets-active',
-        title: 'Formation sets stage to Active',
-        is_gating: false,
-        owner_team: FormationOwnerTeam.FORMATION,
-        action: FormationActionType.STATUS_ONLY,
-      },
-    ],
-  },
-];
-
+/** The fixture keeps its own uid — the seeded template's identity is a fixture concern, its content isn't. */
 export const SEEDED_FORMATION_TEMPLATE: FormationTemplate = {
+  ...FORMATION_TEMPLATE,
   uid: SEEDED_FORMATION_TEMPLATE_UID,
-  version: 1,
-  name: 'Project formation',
-  sections: SEED_SECTIONS.map((section) => ({
-    key: section.key,
-    title: section.title,
-    items: section.items.map((item) => ({
-      key: item.key,
-      title: item.title,
-      is_gating: item.is_gating,
-      owner_team: item.owner_team,
-      action: item.action,
-      sub_items: item.sub_items,
-    })),
-  })),
 };
+
+/** Every gating item in the real template — derived once so the queue's fixture rows can't drift from #1959's actual gate count. */
+const TEMPLATE_GATING_ITEMS_TOTAL = FORMATION_TEMPLATE.sections.flatMap((section) => section.items).filter((item) => item.is_gating).length;
 
 function hashToUnitFloat(seed: string): number {
   const digest = crypto.createHash('sha256').update(seed).digest();
@@ -265,7 +96,7 @@ interface GenerateFormationInput {
 
 /** Deterministic per-project fixture generator (SHA-256-seeded off `projectUid`, never `Math.random()`) — same request yields the same response every reload. */
 export function generateMockFormation(input: GenerateFormationInput): { formation: Formation; items: FormationItem[] } {
-  const flatItems = SEED_SECTIONS.flatMap((section) => section.items.map((item) => ({ section, item })));
+  const flatItems = FORMATION_TEMPLATE.sections.flatMap((section) => section.items.map((item) => ({ section, item })));
   const total = flatItems.length;
 
   const items: FormationItem[] = flatItems.map(({ section, item }, index) => {
@@ -289,12 +120,9 @@ export function generateMockFormation(input: GenerateFormationInput): { formatio
       // union, but TS treats string enums nominally — bridge the gap with a double cast rather than
       // duplicating every seed entry under two parallel types.
       action: item.action as unknown as FormationItem['action'],
-      // '#' isn't an absolute http(s) URL, so isValidUrl (the same guard action_href is checked
-      // against before it ever reaches [href]) rejects it — every generated link/status_only item
-      // would render the disabled "Link unavailable" fallback against a real dev server. A
-      // synthetic but valid absolute URL keeps the enabled path exercisable outside of e2e's mocks.
-      action_href:
-        item.action === FormationActionType.LINK || item.action === FormationActionType.STATUS_ONLY ? `https://example.com/formation/${item.key}` : null,
+      // The template's own action_link, if any — no seeded row sets one today, so this is null
+      // across the board (including domain_dns, which correctly ships with no destination).
+      action_href: item.action_link ?? null,
       detail: null,
       notes: null,
       links: [],
@@ -353,9 +181,9 @@ export const STATIC_QUEUE_FORMATIONS: Formation[] = [
     sub_stage: 'engaged',
     announcement_date: new Date(Date.now() + 3 * 24 * 60 * 60 * 1000).toISOString(),
     is_activating: false,
-    gating_items_open: 3,
-    gating_items_total: 6,
-    blocking_item_title: 'Contribution agreement executed',
+    gating_items_open: 2,
+    gating_items_total: TEMPLATE_GATING_ITEMS_TOTAL,
+    blocking_item_title: 'Contribution agreement (DocuSign)',
     subtitle: 'With Northbridge Systems · Transition of an existing alliance',
     created_at: new Date(0).toISOString(),
     updated_at: new Date(0).toISOString(),
@@ -371,9 +199,9 @@ export const STATIC_QUEUE_FORMATIONS: Formation[] = [
     sub_stage: 'exploratory',
     announcement_date: null,
     is_activating: false,
-    gating_items_open: 5,
-    gating_items_total: 6,
-    blocking_item_title: 'Trademark status',
+    gating_items_open: 3,
+    gating_items_total: TEMPLATE_GATING_ITEMS_TOTAL,
+    blocking_item_title: 'In-depth trademark search and Series LLC',
     subtitle: 'Under Meridian Research Consortium · No PMO contact',
     created_at: new Date(0).toISOString(),
     updated_at: new Date(0).toISOString(),
@@ -389,9 +217,9 @@ export const STATIC_QUEUE_FORMATIONS: Formation[] = [
     sub_stage: 'engaged',
     announcement_date: new Date(Date.now() + 12 * 24 * 60 * 60 * 1000).toISOString(),
     is_activating: false,
-    gating_items_open: 2,
-    gating_items_total: 6,
-    blocking_item_title: 'Code assignment',
+    gating_items_open: 1,
+    gating_items_total: TEMPLATE_GATING_ITEMS_TOTAL,
+    blocking_item_title: 'Charter agreed',
     subtitle: 'Project transfer from a prior host · Intent announced',
     created_at: new Date(0).toISOString(),
     updated_at: new Date(0).toISOString(),
@@ -408,7 +236,7 @@ export const STATIC_QUEUE_FORMATIONS: Formation[] = [
     announcement_date: new Date(Date.now() - 60 * 24 * 60 * 60 * 1000).toISOString(),
     is_activating: true,
     gating_items_open: 0,
-    gating_items_total: 6,
+    gating_items_total: TEMPLATE_GATING_ITEMS_TOTAL,
     blocking_item_title: null,
     subtitle: 'Gating items done, ready to set Active',
     created_at: new Date(0).toISOString(),
