@@ -64,3 +64,21 @@ test.describe('My Events — Visa/Travel-Fund Request Deep Link', () => {
     await expect(page.getByText("couldn't find that event")).toBeVisible();
   });
 });
+
+test.describe('My Events — Visa/Travel-Fund Request Deep Link — non-"me" starting lens', () => {
+  // Regression coverage for PR #2247 review (Copilot): MyEventsDashboardComponent only mounts
+  // under the me/project lens, so a deep link opened while the persisted lens is foundation/org
+  // must force the lens to `me` (myEventsRequestLensGuard) rather than silently never auto-opening.
+  test('foundation lens: the guard forces me and the dialog still auto-opens', async ({ page, context, baseURL }) => {
+    const domain = baseURL ? new URL(baseURL).hostname : 'localhost';
+    await context.addCookies([{ name: LENS_COOKIE_KEY, value: 'foundation', domain, path: '/' }]);
+
+    await mockEventRoutes(page, { matchedEvent: MATCHED_EVENT });
+    await page.goto(`/events?tab=visa-letters&event=${MATCHED_EVENT.id}`, { waitUntil: 'domcontentloaded' });
+    await expect(page).not.toHaveURL(/auth0\.com/);
+    await expect(page).not.toHaveURL(/\/foundation\/events/);
+
+    await expect(page.getByTestId('visa-request-application-dialog')).toBeVisible(DIALOG_TIMEOUT);
+    await expect(page.getByTestId('visa-request-terms')).toBeVisible();
+  });
+});

@@ -11,6 +11,7 @@ import { ToastMessageComponent } from '@components/toast-message/toast-message.c
 import {
   DEFAULT_MY_EVENTS_TAB_ID,
   MY_EVENT_STATUS_OPTIONS,
+  MY_EVENTS_REQUEST_TAB_IDS,
   MY_EVENTS_TABS,
   VALID_MY_EVENTS_TAB_IDS,
   VISA_REQUEST_STATUS_OPTIONS,
@@ -72,7 +73,7 @@ export class MyEventsDashboardComponent {
   protected readonly isPast = computed(() => this.activeTab() === 'past');
 
   /** True when the active tab uses request-style filters (no role, no foundation, different statuses). */
-  protected readonly isRequestTab = computed(() => this.activeTab() === 'visa-letters' || this.activeTab() === 'travel-funding');
+  protected readonly isRequestTab = computed(() => MY_EVENTS_REQUEST_TAB_IDS.has(this.activeTab()));
 
   protected readonly currentStatusOptions = computed<FilterOption[]>(() => (this.isRequestTab() ? VISA_REQUEST_STATUS_OPTIONS : MY_EVENT_STATUS_OPTIONS));
 

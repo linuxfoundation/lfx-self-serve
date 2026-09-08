@@ -17,6 +17,7 @@ import { orgLensRoiEnabledGuard } from './shared/guards/org-lens-roi-enabled.gua
 import { akritesEnabledGuard } from './shared/guards/akrites-enabled.guard';
 import { mentorshipEnabledGuard } from './shared/guards/mentorship-enabled.guard';
 import { mktgOsAgentsEnabledGuard } from './shared/guards/mktg-os-agents-enabled.guard';
+import { myEventsRequestLensGuard } from './shared/guards/my-events-request-lens.guard';
 import { projectQueryParamGuard } from './shared/guards/project-query-param.guard';
 import { settingsLensRedirectGuard } from './shared/guards/settings-lens-redirect.guard';
 
@@ -449,7 +450,7 @@ export const routes: Routes = [
       },
       {
         path: 'events',
-        canActivate: [lensRedirectGuard, projectQueryParamGuard],
+        canActivate: [myEventsRequestLensGuard, lensRedirectGuard, projectQueryParamGuard],
         loadChildren: () => import('./modules/events/events.routes').then((m) => m.EVENTS_ROUTES),
       },
       {

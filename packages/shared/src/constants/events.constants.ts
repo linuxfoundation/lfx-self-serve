@@ -100,6 +100,8 @@ export const MY_EVENTS_TABS: (FilterPillOption & { id: EventTabId })[] = [
 export const DEFAULT_MY_EVENTS_TAB_ID: EventTabId = 'upcoming';
 /** Derived from MY_EVENTS_TABS; used to validate `?tab=` query-param input. */
 export const VALID_MY_EVENTS_TAB_IDS: ReadonlySet<EventTabId> = new Set(MY_EVENTS_TABS.map((t) => t.id));
+/** The two request-style tabs (different filters, and deep-linkable via `?tab=<id>&event=<id>`). */
+export const MY_EVENTS_REQUEST_TAB_IDS: ReadonlySet<EventTabId> = new Set(['visa-letters', 'travel-funding']);
 /** Severity map for foundation event display statuses, used by the events table tag component. */
 export const FOUNDATION_EVENT_STATUS_SEVERITY_MAP: Partial<Record<string, TagSeverity>> = {
   [FoundationEventStatus.REGISTRATION_OPEN]: 'warn',
