@@ -1,6 +1,7 @@
 // Copyright The Linux Foundation and each contributor to LFX.
 // SPDX-License-Identifier: MIT
 
+import { HttpErrorResponse } from '@angular/common/http';
 import { signal } from '@angular/core';
 import { TestBed } from '@angular/core/testing';
 import { ActivatedRouteSnapshot, convertToParamMap, Router, RouterStateSnapshot, UrlTree } from '@angular/router';
@@ -8,22 +9,25 @@ import { Project, ProjectContext } from '@lfx-one/shared/interfaces';
 import { PersonaService } from '@shared/services/persona.service';
 import { ProjectContextService } from '@shared/services/project-context.service';
 import { ProjectService } from '@shared/services/project.service';
-import { firstValueFrom, Observable, of } from 'rxjs';
+import { firstValueFrom, Observable, of, throwError } from 'rxjs';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 
 import { newsletterAccessGuard } from './newsletter-access.guard';
 
 // Covers the GH-1570 resolution order: the route's own `:projectUid` wins over a stale
 // `?project=` / cookie-restored context (including at the lens mount, where the param lives on
-// the child snapshot), a failed uid lookup degrades to the legacy slug chain instead of
-// denying, and every denial carries `_notice: 'access'` so AppComponent can toast it.
+// the child snapshot), a confirmed-missing uid lookup (400/404) degrades to the legacy slug
+// chain while a transient failure fails closed, and every denial carries `_notice: 'access'`
+// so AppComponent can toast it.
 describe('newsletterAccessGuard', () => {
   let currentPersona: ReturnType<typeof signal<string>>;
   let activeContext: ReturnType<typeof signal<ProjectContext | null>>;
   let getProject: ReturnType<typeof vi.fn>;
+  let getProjectStrict: ReturnType<typeof vi.fn>;
   let router: { parseUrl: ReturnType<typeof vi.fn>; createUrlTree: ReturnType<typeof vi.fn> };
-  // Per-test project registry keyed by the slugOrUid getProject is called with;
-  // a missing key resolves null (relation-gated / failed lookup).
+  // Per-test project registry keyed by the slugOrUid the service is called with:
+  // getProject resolves a missing key as null (relation-gated / failed lookup);
+  // getProjectStrict errors it as a 404 (confirmed missing).
   let projectsByKey: Record<string, Partial<Project> | null>;
 
   const route = (
@@ -52,6 +56,10 @@ describe('newsletterAccessGuard', () => {
     activeContext = signal<ProjectContext | null>(null);
     projectsByKey = {};
     getProject = vi.fn().mockImplementation((key: string) => of((projectsByKey[key] ?? null) as Project | null));
+    getProjectStrict = vi.fn().mockImplementation((key: string) => {
+      const project = projectsByKey[key];
+      return project ? of(project as Project) : throwError(() => new HttpErrorResponse({ status: 404, statusText: 'Not Found' }));
+    });
 
     router = {
       parseUrl: vi.fn().mockImplementation((url: string) => ({ redirect: url }) as unknown as UrlTree),
@@ -62,7 +70,7 @@ describe('newsletterAccessGuard', () => {
       providers: [
         { provide: PersonaService, useValue: { currentPersona } },
         { provide: ProjectContextService, useValue: { activeContext } },
-        { provide: ProjectService, useValue: { getProject } },
+        { provide: ProjectService, useValue: { getProject, getProjectStrict } },
         { provide: Router, useValue: router },
       ],
     });
@@ -113,7 +121,7 @@ describe('newsletterAccessGuard', () => {
     const result = await runGuard(route({ params: { projectUid: 'uid-a', id: 'n1' }, query: { project: 'stale-slug' } }));
 
     expect(result).toBe(true);
-    expect(getProject).toHaveBeenCalledWith('uid-a', false);
+    expect(getProjectStrict).toHaveBeenCalledWith('uid-a');
     expect(getProject).not.toHaveBeenCalledWith('stale-slug', false);
   });
 
@@ -123,20 +131,20 @@ describe('newsletterAccessGuard', () => {
     const result = await runGuard(route({ childParams: { projectUid: 'uid-a', id: 'n1' } }));
 
     expect(result).toBe(true);
-    expect(getProject).toHaveBeenCalledWith('uid-a', false);
+    expect(getProjectStrict).toHaveBeenCalledWith('uid-a');
   });
 
-  it('degrades to the legacy slug chain when the uid lookup resolves null', async () => {
+  it('degrades to the legacy slug chain when the uid lookup confirms the project missing', async () => {
     activeContext.set({ uid: 'uid-ctx', slug: 'ctx-slug', name: 'Context Project' });
     projectsByKey = {
-      'uid-gone': null, // deleted/unknown project
+      'uid-gone': null, // deleted/unknown project → getProjectStrict 404s
       'ctx-slug': { slug: 'ctx-slug', writer: true },
     };
 
     const result = await runGuard(route({ params: { projectUid: 'uid-gone', id: 'n1' } }));
 
     expect(result).toBe(true);
-    expect(getProject).toHaveBeenCalledWith('uid-gone', false);
+    expect(getProjectStrict).toHaveBeenCalledWith('uid-gone');
     expect(getProject).toHaveBeenCalledWith('ctx-slug', false);
   });
 
@@ -146,7 +154,23 @@ describe('newsletterAccessGuard', () => {
     const result = await runGuard(route({ params: { projectUid: 'uid-gone', id: 'n1' } }));
 
     expect(result).toEqual({ redirect: '/project/overview' });
-    expect(getProject).toHaveBeenCalledTimes(1);
+    expect(getProjectStrict).toHaveBeenCalledTimes(1);
+    expect(getProject).not.toHaveBeenCalled();
+  });
+
+  it('fails closed without consulting the stale context when the uid lookup errors transiently', async () => {
+    // The pre-review behavior rechecked the writer bit against the restored context on ANY
+    // failure — a transient 5xx could deny a legitimate route-project writer or authorize
+    // against an unrelated project (GH-1570). Only a confirmed 400/404 may degrade.
+    activeContext.set({ uid: 'uid-stale', slug: 'stale-slug', name: 'Stale Project' });
+    projectsByKey = { 'stale-slug': { slug: 'stale-slug', writer: true } };
+    getProjectStrict.mockReturnValueOnce(throwError(() => new HttpErrorResponse({ status: 500 })));
+
+    const result = await runGuard(route({ params: { projectUid: 'uid-a', id: 'n1' } }));
+
+    // Plain overview redirect — no `_notice: 'access'`, since a blip is not a denial.
+    expect(result).toEqual({ redirect: '/project/overview' });
+    expect(getProject).not.toHaveBeenCalled();
   });
 
   it('denies with the resolved slug and the access notice when the route project is not writable', async () => {
@@ -155,6 +179,7 @@ describe('newsletterAccessGuard', () => {
     const result = await runGuard(route({ params: { projectUid: 'uid-a', id: 'n1' } }));
 
     expect(result).toEqual({ denied: '/project/overview', opts: { queryParams: { project: 'route-project', _notice: 'access' } } });
+    expect(getProjectStrict).toHaveBeenCalledWith('uid-a');
   });
 
   it('prefers the ?project= query param over the active context on routes without :projectUid', async () => {

@@ -3,7 +3,8 @@
 
 import { HttpClient } from '@angular/common/http';
 import { TestBed } from '@angular/core/testing';
-import { of, throwError } from 'rxjs';
+import { Project } from '@lfx-one/shared/interfaces';
+import { of, Subject, throwError } from 'rxjs';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
 import { ProjectService } from './project.service';
@@ -71,5 +72,71 @@ describe('ProjectService.getProjectSlugs', () => {
     let result: string[] | null = ['sentinel'];
     service.getProjectSlugs().subscribe((slugs) => (result = slugs));
     expect(result).toBeNull();
+  });
+});
+
+describe('ProjectService.getProject', () => {
+  let service: ProjectService;
+  let httpGet: ReturnType<typeof vi.fn>;
+
+  const projectA = { uid: 'uid-a', slug: 'slug-a', name: 'Project A' } as Project;
+
+  beforeEach(() => {
+    httpGet = vi.fn().mockReturnValue(of(projectA));
+    TestBed.configureTestingModule({
+      providers: [
+        {
+          provide: HttpClient,
+          useValue: { get: httpGet, post: vi.fn(), put: vi.fn(), patch: vi.fn(), delete: vi.fn() },
+        },
+      ],
+    });
+    service = TestBed.inject(ProjectService);
+  });
+
+  afterEach(() => {
+    TestBed.resetTestingModule();
+  });
+
+  it('caches a successful lookup so a second call for the same key shares one request', () => {
+    const results: (Project | null)[] = [];
+    service.getProject('slug-a', false).subscribe((p) => results.push(p));
+    service.getProject('slug-a', false).subscribe((p) => results.push(p));
+    expect(httpGet).toHaveBeenCalledTimes(1);
+    expect(httpGet).toHaveBeenCalledWith('/api/projects/slug-a', { params: undefined });
+    expect(results).toEqual([projectA, projectA]);
+  });
+
+  it('evicts the cache entry on error so the next getProject call re-fetches instead of replaying null', () => {
+    // Plain Error (not HttpErrorResponse) — the failure path under test is the same either way.
+    httpGet.mockReturnValueOnce(throwError(() => new Error('network-error')));
+    let first: Project | null | undefined;
+    service.getProject('slug-a', false).subscribe((p) => (first = p));
+    expect(first).toBeNull();
+
+    // The errored entry must be gone: the next lookup issues a fresh HTTP request
+    // rather than replaying the cached null for the rest of the session.
+    let second: Project | null | undefined;
+    service.getProject('slug-a', false).subscribe((p) => (second = p));
+    expect(httpGet).toHaveBeenCalledTimes(2);
+    expect(second).toEqual(projectA);
+  });
+
+  it('evicts via the upstream error tap even when the error lands with zero downstream subscribers', () => {
+    const source = new Subject<Project>();
+    httpGet.mockReturnValueOnce(source.asObservable());
+
+    // Subscribe then unsubscribe before the error lands — a canceled navigation.
+    // shareReplay (refCount: false) keeps the source subscription alive, so the error
+    // arrives with no downstream subscriber to run the post-shareReplay eviction tap.
+    service.getProject('slug-a', false).subscribe().unsubscribe();
+    source.error(new Error('network-error'));
+
+    // Without the upstream tap({ error }) eviction, the poisoned entry would stay
+    // cached and replay null here instead of re-fetching.
+    let result: Project | null | undefined;
+    service.getProject('slug-a', false).subscribe((p) => (result = p));
+    expect(httpGet).toHaveBeenCalledTimes(2);
+    expect(result).toEqual(projectA);
   });
 });

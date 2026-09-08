@@ -1,9 +1,10 @@
 // Copyright The Linux Foundation and each contributor to LFX.
 // SPDX-License-Identifier: MIT
 
+import { HttpErrorResponse } from '@angular/common/http';
 import { inject } from '@angular/core';
 import { ActivatedRouteSnapshot, CanActivateFn, Router, UrlTree } from '@angular/router';
-import { map, Observable, of, switchMap } from 'rxjs';
+import { catchError, map, Observable, of } from 'rxjs';
 
 import { PersonaService } from '../services/persona.service';
 import { ProjectContextService } from '../services/project-context.service';
@@ -27,8 +28,9 @@ import { ProjectService } from '../services/project.service';
  *      project) (GH-1570).
  *   2. The URL's `?project=<slug>` query param, then the active context's
  *      slug — the legacy chain, used by the list/create routes and as the
- *      fallback when uid resolution fails (deleted/unknown project), so a
- *      fetch error degrades to the old behavior instead of denying.
+ *      fallback only when the uid lookup confirms the project is gone
+ *      (400/404); a transient lookup failure fails closed instead of
+ *      re-checking the writer bit against a possibly-stale context.
  *
  * Redirects to the lens-appropriate overview on denial to preserve
  * the active project context without triggering a lens switch.
@@ -85,19 +87,33 @@ export const newsletterAccessGuard: CanActivateFn = (route: ActivatedRouteSnapsh
   const contextSlug = route.queryParamMap.get('project') ?? projectContextService.activeContext()?.slug ?? null;
 
   if (projectUid) {
-    return projectService.getProject(projectUid, false).pipe(
-      switchMap((resolved) => {
-        if (!resolved) {
-          // Deleted/unknown project — degrade to the legacy chain rather than
-          // deny on a fetch error.
-          return contextSlug ? checkWriterAccess(contextSlug) : of(router.parseUrl(overviewPath));
-        }
+    // Status-preserving lookup (getProjectStrict propagates HttpErrorResponse where
+    // getProject would collapse every failure to null) so the legacy chain below runs
+    // only for a CONFIRMED missing project — a transient 5xx must not silently
+    // re-check the writer bit against the possibly-stale contextSlug, reintroducing
+    // the wrong-context authorization this guard removed (GH-1570). Uncached, so
+    // reconcileRouteProjectContext's cached getProject re-fetches on activation — one
+    // extra GET per deep link, the price of distinguishing statuses.
+    return projectService.getProjectStrict(projectUid).pipe(
+      map((resolved): boolean | UrlTree => {
         // The uid lookup already returned the project entity, so check writer
         // directly on it; the resolved slug is only needed for the denial redirect.
         if (resolved.writer !== true) {
-          return of(router.createUrlTree([overviewPath], { queryParams: { project: resolved.slug, _notice: 'access' } }));
+          return router.createUrlTree([overviewPath], { queryParams: { project: resolved.slug, _notice: 'access' } });
         }
-        return of(true);
+        return true;
+      }),
+      catchError((error: unknown) => {
+        const status = error instanceof HttpErrorResponse ? error.status : 0;
+        if (status === 400 || status === 404) {
+          // Confirmed deleted/unknown project — degrade to the legacy chain rather
+          // than deny outright.
+          return contextSlug ? checkWriterAccess(contextSlug) : of(router.parseUrl(overviewPath));
+        }
+        // Transient/unknown failure — fail closed rather than authorize against a
+        // stale context. Plain overview redirect without `_notice: 'access'`: a blip
+        // is not a denial, and the user can retry the navigation.
+        return of(router.parseUrl(overviewPath));
       })
     );
   }
