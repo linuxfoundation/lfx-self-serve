@@ -8,9 +8,11 @@ import { DataDogRumService } from './datadog-rum.service';
 import { FeatureFlagService } from './feature-flag.service';
 
 /**
- * Covers waitForReady() — the shared wait every flag-gated CanMatch guard uses to survive a
- * provider that's still initializing. Must be called synchronously from an injection context
- * (see the method's JSDoc), so each test runs it via TestBed.runInInjectionContext().
+ * Covers waitForReady() — the shared wait every flag-gated guard uses to survive a provider
+ * that's still initializing, including both `CanMatch` guards (e.g. `mktgOsAgentsEnabledGuard`)
+ * and the two `CanActivateFn` guards (`campaignAccessGuard`, `marketingImpactAccessGuard`).
+ * `providerReady$` is built once as a service field at construction time, so `waitForReady()`
+ * itself has no injection-context requirement and can be awaited from any async context.
  */
 describe('FeatureFlagService', () => {
   let service: FeatureFlagService;
@@ -35,7 +37,7 @@ describe('FeatureFlagService', () => {
   it('resolves true immediately without reporting when the provider is already ready', async () => {
     (service as unknown as { isProviderReady: { set: (value: boolean) => void } }).isProviderReady.set(true);
 
-    const result = await TestBed.runInInjectionContext(() => service.waitForReady(context, 5000));
+    const result = await service.waitForReady(context, 5000);
 
     expect(result).toBe(true);
     expect(addError).not.toHaveBeenCalled();
@@ -45,7 +47,7 @@ describe('FeatureFlagService', () => {
     vi.useFakeTimers();
     const isProviderReady = (service as unknown as { isProviderReady: { set: (value: boolean) => void } }).isProviderReady;
 
-    const pending = TestBed.runInInjectionContext(() => service.waitForReady(context, 5000));
+    const pending = service.waitForReady(context, 5000);
     isProviderReady.set(true);
     TestBed.tick();
     const result = await pending;
@@ -57,7 +59,7 @@ describe('FeatureFlagService', () => {
   it('resolves false and reports to RUM exactly once when the provider never becomes ready before the timeout', async () => {
     vi.useFakeTimers();
 
-    const pending = TestBed.runInInjectionContext(() => service.waitForReady(context, 5000));
+    const pending = service.waitForReady(context, 5000);
     await vi.advanceTimersByTimeAsync(5000);
     const result = await pending;
 
