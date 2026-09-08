@@ -25,7 +25,7 @@ function deepFreeze<T>(value: T, seen = new WeakSet<object>()): T {
  * pending stakeholder review (GH-1959). Only legal/entity items may gate the formation's
  * transition to Active (not all of them do); community and launch items never gate. Bump
  * `version` alongside any content edit here once this template has shipped — see
- * `FormationTemplate.version`. Pre-release content edits (like this one) stay at v1.
+ * `FormationTemplate.version`. Content edits made before the first release stay at v1.
  *
  * Shape adopted from the canonical `FormationTemplate` (GH-2163) — nested `sections[].items[]`,
  * snake_case keys with no `legal-`/`launch-` prefix (the prefix was a local-only convention;
@@ -66,6 +66,10 @@ export const FORMATION_TEMPLATE: FormationTemplate = deepFreeze({
           is_gating: true,
         },
         {
+          // Completion follows a DocuSign envelope link (action_link exists for exactly this),
+          // but no canonical DocuSign envelope/template URL is defined anywhere in this repo, so
+          // it is left unset rather than guessed — see GH-1959 for the open question raised with
+          // the formation owners, alongside the same question for domain_dns below.
           key: 'contribution_agreement',
           title: 'Contribution agreement (DocuSign)',
           owner_team: FormationOwnerTeam.FORMATION,
@@ -101,15 +105,15 @@ export const FORMATION_TEMPLATE: FormationTemplate = deepFreeze({
           is_gating: false,
         },
         {
-          // LFX does not register domains — someone does this work elsewhere, so the row is
-          // manual and records status rather than provisioning. It should still say where that
-          // work happens (action_link exists for exactly this), but no canonical IT/domain
+          // Request-shaped rows are status-only in Epic 1 — the request mechanism and SLA are
+          // deferred to #1963, so this row only records who owns it and whether it's done, with
+          // an optional link (action_link exists for exactly this). No canonical IT/domain
           // destination is defined anywhere in this repo, so it is left unset rather than guessed
           // — see GH-1959 for the open question raised with the formation/IT owners.
           key: 'domain_dns',
           title: 'Domain/DNS',
           owner_team: FormationOwnerTeam.IT,
-          action: FormationActionType.MANUAL,
+          action: FormationActionType.STATUS_ONLY,
           is_gating: false,
         },
         {
@@ -129,23 +133,27 @@ export const FORMATION_TEMPLATE: FormationTemplate = deepFreeze({
           is_gating: false,
         },
         {
+          // Request-shaped row, status-only in Epic 1 (see domain_dns above) — the four IT
+          // sub-item titles are #1963's canonical set, not this ticket's original best-effort
+          // draft.
           key: 'chat_workspace',
           title: 'Chat workspace',
           owner_team: FormationOwnerTeam.IT,
-          action: FormationActionType.REQUEST,
+          action: FormationActionType.STATUS_ONLY,
           is_gating: false,
           sub_items: [
             { key: 'chat_workspace_create', title: 'Create workspace', owner_team: FormationOwnerTeam.IT },
-            { key: 'chat_workspace_channels', title: 'Configure channels', owner_team: FormationOwnerTeam.IT },
-            { key: 'chat_workspace_roles', title: 'Set up roles and permissions', owner_team: FormationOwnerTeam.IT },
-            { key: 'chat_workspace_onboard_admins', title: 'Onboard admins', owner_team: FormationOwnerTeam.IT },
+            { key: 'chat_workspace_invite_admin', title: 'Invite lfitslackadmin@', owner_team: FormationOwnerTeam.IT },
+            { key: 'chat_workspace_add_inventory', title: 'Add to inventory', owner_team: FormationOwnerTeam.IT },
+            { key: 'chat_workspace_submit_pro_sku', title: 'Submit Pro SKU', owner_team: FormationOwnerTeam.IT },
           ],
         },
         {
+          // Request-shaped row, status-only in Epic 1 — see domain_dns above.
           key: 'insights_access',
           title: 'Insights access',
           owner_team: FormationOwnerTeam.PRODUCT_OPS,
-          action: FormationActionType.REQUEST,
+          action: FormationActionType.STATUS_ONLY,
           is_gating: false,
         },
         {

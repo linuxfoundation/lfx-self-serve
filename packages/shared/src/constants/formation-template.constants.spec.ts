@@ -15,7 +15,9 @@ import { FORMATION_TEMPLATE } from './formation-template.constants';
  * data (and forces a conscious version bump alongside any edit to it) and the gating-id list
  * gives that one behaviorally-significant fact (which items block Active) its own named failure;
  * every other test asserts a structural invariant that must hold for any future content — with
- * one exception: dropping the last item owned by a given team also fails owner-team coverage.
+ * two exceptions: dropping the last item owned by a given team also fails owner-team coverage,
+ * and the item/gate count test below is itself content-pinned (it hardcodes today's totals, not
+ * a structural rule).
  */
 describe('FORMATION_TEMPLATE', () => {
   const allItems = (): FormationTemplateItem[] => FORMATION_TEMPLATE.sections.flatMap((section) => section.items);
@@ -40,6 +42,7 @@ describe('FORMATION_TEMPLATE', () => {
     const sectionFingerprint = (section: FormationTemplateSection): string =>
       `${section.key}::${section.title}::[${section.items.map(itemFingerprint).join(';')}]`;
 
+    expect(FORMATION_TEMPLATE.uid).toBe('formation-template-default');
     expect(FORMATION_TEMPLATE.version).toBe(1);
     expect(FORMATION_TEMPLATE.name).toBe('Project formation');
     expect(FORMATION_TEMPLATE.sections.map(sectionFingerprint)).toEqual([
@@ -56,11 +59,11 @@ describe('FORMATION_TEMPLATE', () => {
       'community_and_launch::Community and launch::[' +
         [
           'repositories_github_owner|Repositories and GitHub owner|community|provisionable||false|',
-          'domain_dns|Domain/DNS|it|manual||false|',
+          'domain_dns|Domain/DNS|it|status_only||false|',
           'website_logo_footer|Website/logo/footer|marketing|manual||false|',
           'mailing_lists|Mailing lists|community|provisionable||false|',
-          'chat_workspace|Chat workspace|it|request||false|chat_workspace_create|Create workspace|it,chat_workspace_channels|Configure channels|it,chat_workspace_roles|Set up roles and permissions|it,chat_workspace_onboard_admins|Onboard admins|it',
-          'insights_access|Insights access|product_ops|request||false|',
+          'chat_workspace|Chat workspace|it|status_only||false|chat_workspace_create|Create workspace|it,chat_workspace_invite_admin|Invite lfitslackadmin@|it,chat_workspace_add_inventory|Add to inventory|it,chat_workspace_submit_pro_sku|Submit Pro SKU|it',
+          'insights_access|Insights access|product_ops|status_only||false|',
           'asset_transfers|Asset transfers|formation|manual||false|',
           'tsc_kickoff|TSC and kickoff|community|provisionable||false|',
           'member_join_page|Member join page|product|manual||false|',
