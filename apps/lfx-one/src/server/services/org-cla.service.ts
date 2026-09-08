@@ -8,13 +8,32 @@
 // One upstream call per page load, whatever the number of agreements. Searching and paging
 // happen client-side over the fetched set, so nothing on this path fans out per row.
 
-import type { OrgClaGroup, OrgClaGroupList, OrgClaGroupProject, OrgClaGroupStatus, PdfUrlResponse } from '@lfx-one/shared/interfaces';
+import { ORG_EASYCLA_PATH } from '@lfx-one/shared/constants';
+import type {
+  ClaGroupOption,
+  ClaGroupSearchResponse,
+  OrgClaGroup,
+  OrgClaGroupList,
+  OrgClaGroupProject,
+  OrgClaGroupStatus,
+  OrgClaSignRequest,
+  OrgClaSignResponse,
+  PdfUrlResponse,
+} from '@lfx-one/shared/interfaces';
 import type { Request } from 'express';
 
-import type { EasyClaCompanyClaGroup, EasyClaCompanyClaGroupList, EasyClaSignedDocument } from '../types/cla.types';
+import type {
+  EasyClaCompanyClaGroup,
+  EasyClaCompanyClaGroupList,
+  EasyClaSearchList,
+  EasyClaSelfServeCorporateSignatureInput,
+  EasyClaSelfServeCorporateSignatureOutput,
+  EasyClaSignedDocument,
+} from '../types/cla.types';
 import { MicroserviceError } from '../errors';
 import { claServiceBaseUrl } from '../helpers/cla-service-url.helper';
 import { gatewayFetch } from '../helpers/gateway-fetch.helper';
+import { claReturnUrl, toClaGroupOption, withProducerRefusalMessage } from './cla.service';
 import { logger } from './logger.service';
 import { isImpersonating } from '../utils/auth-helper';
 
@@ -266,5 +285,147 @@ export class OrgClaService {
     // would be invented. The URL is presigned and short-lived, but its lifetime is upstream's to
     // state, and `0` would read to a consumer as already expired.
     return { url };
+  }
+
+  /**
+   * Searches CLA Groups the organization could sign a corporate CLA for (#1983).
+   *
+   * Wraps the Me-lens per-result mapper rather than reimplementing or amending it, and appends
+   * `projectSfid` afterwards. That id is what the corporate signature request is keyed on, and it
+   * has no consumer on the Me-lens path, so carrying it in the shared mapper would put an unread
+   * field into that response and into the state it ships with. Keeping the append here leaves the
+   * Me-lens envelope byte-identical.
+   *
+   * Upstream sets the id from a project-to-CLA-Group mapping row and deliberately leaves it unset
+   * when a CLA Group maps to several projects with none of them foundation-level. It is therefore
+   * carried only when upstream sent one, and its absence is what the picker renders as
+   * "cannot be signed from here" — a property of the CLA Group, not a failure.
+   *
+   * Runs on the default gateway token with no impersonation branch, same as the Me-lens search:
+   * the CLA Group catalogue is not organization-scoped upstream, so there is no ownership check
+   * for a token swap to satisfy. The organization gate on this route is the dark-launch flag and
+   * `requireOrgLensAccess`; nothing about the caller's company reaches the query.
+   */
+  public async getSignOptions(req: Request, searchTerm: string): Promise<ClaGroupSearchResponse> {
+    const startTime = logger.startOperation(req, 'org_cla_sign_options');
+
+    const params = new URLSearchParams({ searchTerm });
+    const list = await gatewayFetch<EasyClaSearchList>(req, `${claServiceBaseUrl(SERVICE)}/v4/cla-group/search?${params.toString()}`, {
+      operation: 'org_cla_sign_options',
+      service: SERVICE,
+      errorMessage: 'Failed to search CLA groups',
+      errorCode: 'UPSTREAM_ERROR',
+    });
+
+    const upstreamResults = list?.results ?? [];
+    const results: ClaGroupOption[] = upstreamResults.map((result) => {
+      const option = toClaGroupOption(result);
+      const projectSfid = result.projectSFID?.trim();
+      return projectSfid ? { ...option, projectSfid } : option;
+    });
+
+    const envelope: ClaGroupSearchResponse = {
+      searchTerm: list?.searchTerm ?? searchTerm,
+      resultCount: list?.resultCount ?? results.length,
+      truncated: list?.truncated === true,
+      results,
+    };
+
+    logger.success(req, 'org_cla_sign_options', startTime, {
+      result_count: envelope.resultCount,
+      truncated: envelope.truncated,
+      signable_count: results.filter((option) => !!option.projectSfid && option.cclaEnabled === true).length,
+    });
+    return envelope;
+  }
+
+  /**
+   * Opens a corporate signing session for the organization and returns where the signatory
+   * completes it (#1983).
+   *
+   * Three values are deliberately not taken from the caller's body:
+   *
+   * - the organization, which is the grant-checked `orgUid` path parameter;
+   * - the return address, derived from the request Host and host-checked, because EasyCLA stores
+   *   it and later redirects to it verbatim — a client-supplied one would be an open redirect;
+   * - the caller's identity, which travels as the default gateway token. That token is the
+   *   signatory's own, exchanged for the gateway audience, and it is what makes the signature
+   *   attributable. There is no impersonation branch precisely because the route is blocked
+   *   during impersonation instead: a corporate agreement signed under an impersonated session
+   *   would bind a company on behalf of somebody who did not act.
+   *
+   * The two attestations are passed through exactly as received. They are not defaulted here and
+   * must not be: the client gates on both, so a request arriving with either false is either a
+   * signatory who withdrew a confirmation or a client that has regressed, and both must reach the
+   * refusal rather than be papered over. Upstream rejects the request ahead of any signing work
+   * for the same reason.
+   *
+   * Authorization is upstream's alone. It checks the caller's signing authority for the project
+   * and organization pair — refusing a platform-administrator token, which an org-lens read grant
+   * has no bearing on — and screens the company for trade compliance on every request. Neither is
+   * pre-empted here: the compliance status carried on an existing agreement row cannot answer for
+   * an organization that holds no agreements yet, which is the population this flow serves.
+   */
+  public async requestCorporateSignature(req: Request, orgUid: string, request: OrgClaSignRequest): Promise<OrgClaSignResponse> {
+    const startTime = logger.startOperation(req, 'org_cla_request_corporate_signature', {
+      project_sfid: request.projectSfid,
+      cla_group_id: request.claGroupId,
+    });
+
+    // Derived before the call: an unusable origin dead-ends the hand-off anyway, and failing
+    // afterwards would leave a real signing session behind with nowhere to return to.
+    const returnUrl = claReturnUrl(req, ORG_EASYCLA_PATH);
+
+    // snake_case on the wire, unlike the Me-lens prepare-sign next door. Built as a typed object
+    // rather than spread from the request so every field crossing the spelling boundary is named.
+    const body: EasyClaSelfServeCorporateSignatureInput = {
+      project_sfid: request.projectSfid,
+      company_sfid: orgUid,
+      return_url: returnUrl,
+      authority_acked: request.authorityAcked,
+      embargo_acked: request.embargoAcked,
+    };
+
+    let result: EasyClaSelfServeCorporateSignatureOutput | null;
+    try {
+      result = await gatewayFetch<EasyClaSelfServeCorporateSignatureOutput>(req, `${claServiceBaseUrl(SERVICE)}/v4/self-serve/request-corporate-signature`, {
+        operation: 'org_cla_request_corporate_signature',
+        service: SERVICE,
+        errorMessage: 'Failed to request the corporate CLA signature',
+        errorCode: 'UPSTREAM_ERROR',
+        method: 'POST',
+        body,
+      });
+    } catch (error) {
+      // A 403 here is a sentence written for the signatory — the trade-compliance refusal names
+      // the reason and the support route, and the authority refusal names the missing scope.
+      // Relabelling is what puts those words on screen instead of "403 Forbidden".
+      throw withProducerRefusalMessage(error, 'org_cla_request_corporate_signature', SERVICE);
+    }
+
+    const signUrl = result?.sign_url?.trim() ?? '';
+    const signatureId = result?.signature_id?.trim() ?? '';
+
+    // An empty signing address is how upstream signals that the agreement was emailed to a named
+    // signatory instead — a shape this route never requests, since it sends no `send_as_email`.
+    // Receiving one means the request was not fulfilled the way it was made, so it fails loudly.
+    // Navigating to an empty address would send the signatory to this application's own root and
+    // read as a successful hand-off that silently signed nothing.
+    if (!signUrl || !signatureId) {
+      logger.error(req, 'org_cla_request_corporate_signature', startTime, new Error('upstream returned no usable signing session'), {
+        has_sign_url: !!signUrl,
+        has_signature_id: !!signatureId,
+      });
+      throw new MicroserviceError('Upstream opened no usable corporate signing session', 502, 'CLA_SIGN_SESSION_INCOMPLETE', {
+        operation: 'org_cla_request_corporate_signature',
+        service: SERVICE,
+      });
+    }
+
+    // The signature id is logged for correlation and deliberately not returned: nothing on the
+    // client reads it, and it identifies a named person's agreement.
+    logger.success(req, 'org_cla_request_corporate_signature', startTime, { org_uid: orgUid, signature_id: signatureId });
+
+    return { signUrl };
   }
 }

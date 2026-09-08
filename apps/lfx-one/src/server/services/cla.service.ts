@@ -76,8 +76,15 @@ export { claServiceBaseUrl };
 const KNOWN_MATCH_TYPES = new Set<string>(['claGroup', 'project', 'organization', 'repository']);
 const KNOWN_ORG_SOURCES = new Set<string>(['github', 'gitlab', 'gerrit']);
 
-/** Maps one upstream search result onto the option the picker and the hand-off consume. */
-function toClaGroupOption(result: EasyClaSearchResult): ClaGroupOption {
+/**
+ * Maps one upstream search result onto the option the picker and the hand-off consume.
+ *
+ * Exported for the Org Lens sign-options route (#1983), which wraps rather than replaces it: it
+ * calls this for the shared shape and appends `projectSfid` afterwards, so the Me-lens response
+ * stays byte-identical. Do not add an Org-Lens-only field here — see the note on Salesforce ids
+ * in `toClaGroupSearchResponse` below.
+ */
+export function toClaGroupOption(result: EasyClaSearchResult): ClaGroupOption {
   return {
     claGroupId: result.claGroupID ?? '',
     projectName: result.projectName || undefined,
@@ -103,8 +110,14 @@ function toClaGroupOption(result: EasyClaSearchResult): ClaGroupOption {
  * The envelope is mirrored rather than flattened to an array because `truncated` describes the
  * result *set* — a cap cannot ride inside one of the results. The one field renamed is the
  * identifier (`claGroupID` → `claGroupId`), so Angular is not made to carry two spellings of the
- * same UUID. Salesforce ids are deliberately not carried across. ICLA/CCLA enablement flags are
- * forwarded for Gerrit contract-type routing (#2066); the GitHub prepare-sign path does not branch on them.
+ * same UUID. ICLA/CCLA enablement flags are forwarded for Gerrit contract-type routing (#2066);
+ * the GitHub prepare-sign path does not branch on them.
+ *
+ * Salesforce ids are not carried across *here*, because this envelope's consumer — the Me-lens
+ * picker and its hand-off — is keyed on `claGroupId` alone, and an unread field still ships to
+ * the browser inside the transferred state. The corporate hand-off does need the project id, and
+ * carries it on its own path: `OrgClaService.getSignOptions` appends `projectSfid` after calling
+ * `toClaGroupOption`. Moving it in here would put it in this response too, for no consumer.
  *
  * `searchTerm` falls back to the term the BFF actually sent, so the client can always tell which
  * query a set belongs to even if the producer echoes nothing.
@@ -143,8 +156,13 @@ const PREVIEW_RETURN_HOSTNAME = /^ui-pr-\d{1,10}\.dev\.v2\.cluster\.linuxfound\.
  * Because that makes the origin request-controlled, the host is checked against our own origins
  * before it is handed onward: EasyCLA stores this value and later redirects to it verbatim, so an
  * unchecked forged Host would turn a trusted hand-off into an open redirect.
+ *
+ * `path` selects where the signer lands: the contributor's own CLAs by default, or the Org Lens
+ * EasyCLA page for the corporate hand-off (#1983). A parameter rather than a second function
+ * because the host check above is the security-critical part, and it must exist exactly once.
+ * Callers pass a shared path constant, never a request-derived value.
  */
-export function claReturnUrl(req: Request): string {
+export function claReturnUrl(req: Request, path: string = MY_CLAS_PATH): string {
   const host = req.get('host');
   if (!host) {
     throw new MicroserviceError('Cannot derive the CLA return URL: request has no Host header', 500, 'RETURN_URL_UNRESOLVABLE', { service: SERVICE });
@@ -167,7 +185,7 @@ export function claReturnUrl(req: Request): string {
     throw new MicroserviceError('Cannot derive the CLA return URL: untrusted Host header', 500, 'RETURN_URL_UNTRUSTED', { service: SERVICE });
   }
 
-  return `${req.protocol}://${host}${MY_CLAS_PATH}`;
+  return `${req.protocol}://${host}${path}`;
 }
 
 // Identity keys the CLA service reports as `"<type>:<value>"`, both in the verified `identity`
@@ -377,16 +395,21 @@ export function producerMessageFrom(errorBody: unknown): string | null {
  * Scoped to 403 on purpose. That is the one status whose body is a statement about the
  * contributor's own identity and therefore worth repeating verbatim; relaying the prose of a
  * 500 would put upstream internals on screen for something they can do nothing about.
+ *
+ * Exported for the corporate hand-off (#1983), which lands in the same window: the CLA service
+ * answers a trade-compliance refusal with a 403 whose body names the reason and the support
+ * route, and answers a missing signing authority with a 403 too. `operation` and `service` are
+ * parameters so the relabelled error keeps the caller's own log identity.
  */
-function withProducerRefusalMessage(error: unknown): unknown {
+export function withProducerRefusalMessage(error: unknown, operation = 'cla_prepare_sign', service = SERVICE): unknown {
   if (!(error instanceof MicroserviceError) || error.statusCode !== 403) return error;
 
   const message = producerMessageFrom(error.errorBody);
   if (!message) return error;
 
   return new MicroserviceError(message, error.statusCode, error.code, {
-    operation: 'cla_prepare_sign',
-    service: SERVICE,
+    operation,
+    service,
     errorBody: error.errorBody,
   });
 }

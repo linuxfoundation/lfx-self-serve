@@ -1,0 +1,48 @@
+<!--
+Copyright The Linux Foundation and each contributor to LFX.
+SPDX-License-Identifier: MIT
+-->
+
+<div class="flex flex-col" data-testid="org-easycla-sign-handoff-dialog">
+  @switch (state()) {
+    @case ('preparing') {
+      <div class="flex flex-col items-center gap-3 py-6 text-center" data-testid="org-easycla-sign-preparing">
+        <i class="fa-light fa-spinner-third fa-spin text-3xl text-slate-400" aria-hidden="true"></i>
+        <p class="text-sm text-slate-600">{{ copy.preparing.body }}</p>
+        <!-- Stated before the signatory commits, not after: becoming the initial CLA Manager is a
+             standing responsibility, and learning it afterwards is learning it too late. -->
+        <p class="text-sm font-medium text-slate-900" data-testid="org-easycla-sign-manager-notice">{{ copy.preparing.consequence }}</p>
+      </div>
+    }
+
+    @case ('ready') {
+      <div class="flex flex-col gap-4" data-testid="org-easycla-sign-ready">
+        <div class="flex items-center gap-2 text-emerald-700">
+          <i class="fa-light fa-circle-check text-2xl" aria-hidden="true"></i>
+          <span class="text-sm font-semibold">{{ copy.ready.header }}</span>
+        </div>
+        <p class="text-sm text-slate-600">{{ copy.ready.body }}</p>
+        <div class="mt-2 flex justify-end gap-2">
+          <lfx-button [label]="copy.ready.cancelLabel" severity="secondary" [outlined]="true" (onClick)="onCancel()" data-testid="org-easycla-sign-cancel" />
+          <lfx-button [label]="copy.ready.continueLabel" (onClick)="onReviewAndSign()" data-testid="org-easycla-sign-review" />
+        </div>
+      </div>
+    }
+
+    @case ('failed') {
+      <div class="flex flex-col gap-4" role="alert" data-testid="org-easycla-sign-failed">
+        <div class="flex items-center gap-2 text-red-700">
+          <i class="fa-light fa-triangle-exclamation text-2xl" aria-hidden="true"></i>
+          <span class="text-sm font-semibold">{{ copy.failure.header }}</span>
+        </div>
+        <!-- The CLA service's own sentence when it refused in words; the generic copy otherwise.
+             A trade-compliance refusal names the reason and how to challenge it, which nothing
+             written here could reproduce and keep current. -->
+        <p class="text-sm text-slate-600" data-testid="org-easycla-sign-failure-message">{{ failureMessage() }}</p>
+        <div class="mt-2 flex justify-end">
+          <lfx-button label="Close" severity="secondary" [outlined]="true" (onClick)="onCancel()" data-testid="org-easycla-sign-failed-close" />
+        </div>
+      </div>
+    }
+  }
+</div>

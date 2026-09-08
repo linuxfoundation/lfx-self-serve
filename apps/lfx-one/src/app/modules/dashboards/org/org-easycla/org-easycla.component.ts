@@ -2,13 +2,14 @@
 // SPDX-License-Identifier: MIT
 
 import { isPlatformBrowser } from '@angular/common';
-import { ChangeDetectionStrategy, Component, computed, inject, PLATFORM_ID, signal, Signal } from '@angular/core';
+import { ChangeDetectionStrategy, Component, computed, DestroyRef, inject, PLATFORM_ID, signal, Signal } from '@angular/core';
 import { takeUntilDestroyed, toObservable, toSignal } from '@angular/core/rxjs-interop';
 import { FormControl, FormGroup } from '@angular/forms';
 import { RouterLink } from '@angular/router';
-import type { OrgClaGroup, OrgClaGroupList } from '@lfx-one/shared/interfaces';
+import { CCLA_SIGN_COPY } from '@lfx-one/shared/constants';
+import type { OrgClaGroup, OrgClaGroupList, OrgClaGroupPickerResult, OrgClaSignAttestations } from '@lfx-one/shared/interfaces';
 import { orgClaOpenLabel } from '@lfx-one/shared/utils';
-import { DialogService } from 'primeng/dynamicdialog';
+import { DialogService, DynamicDialogRef } from 'primeng/dynamicdialog';
 import { SkeletonModule } from 'primeng/skeleton';
 import { catchError, distinctUntilChanged, filter, of, skip, switchMap, tap } from 'rxjs';
 
@@ -24,6 +25,9 @@ import { OrgNavigationService } from '@shared/services/org-navigation.service';
 
 import { OrgEasyclaCardComponent } from './org-easycla-card/org-easycla-card.component';
 import { orgClaCoverageDialogConfig, OrgEasyclaCoverageDialogComponent } from './org-easycla-coverage-dialog/org-easycla-coverage-dialog.component';
+import { OrgEasyclaAttestationComponent } from './org-easycla-sign/org-easycla-attestation.component';
+import { OrgEasyclaGroupSelectComponent } from './org-easycla-sign/org-easycla-group-select.component';
+import { OrgEasyclaSignHandoffComponent } from './org-easycla-sign/org-easycla-sign-handoff.component';
 
 @Component({
   selector: 'lfx-org-easycla',
@@ -41,8 +45,12 @@ export class OrgEasyclaComponent {
   private readonly personaService = inject(PersonaService);
   private readonly orgNavigation = inject(OrgNavigationService);
   private readonly claService = inject(OrgLensClaService);
-  private readonly platformId = inject(PLATFORM_ID);
   private readonly dialogService = inject(DialogService);
+  private readonly destroyRef = inject(DestroyRef);
+  private readonly platformId = inject(PLATFORM_ID);
+
+  /** One hand-off at a time. Also what disables the Sign CLA control while a flow is open. */
+  protected readonly signingOpen = signal(false);
 
   // ── Search (client-side; the upstream list takes no search parameter) ──────
   protected readonly orgClaOpenLabel = orgClaOpenLabel;
@@ -58,6 +66,16 @@ export class OrgEasyclaComponent {
   // ── Org context ───────────────────────────────────────────────────────────
   protected readonly companyName = computed(() => this.accountContext.selectedAccount()?.accountName ?? '');
   protected readonly hasCompany = computed(() => !!this.accountContext.selectedAccount()?.uid);
+
+  /**
+   * Names the reason when Sign CLA is disabled, so a screen reader hears one instead of a bare
+   * "disabled". Computed rather than a template ternary — the control has two distinct reasons.
+   */
+  protected readonly signClaAriaLabel = computed(() => {
+    if (!this.hasCompany()) return 'Sign a corporate CLA — select an organization first';
+    if (this.signingOpen()) return 'Sign a corporate CLA — a signing request is already open';
+    return 'Sign a corporate CLA';
+  });
 
   /**
    * True once both grant fetches have returned and the caller holds no org access. The route guard
@@ -193,6 +211,72 @@ export class OrgEasyclaComponent {
    */
   protected openCoverage(claGroup: OrgClaGroup): void {
     this.dialogService.open(OrgEasyclaCoverageDialogComponent, orgClaCoverageDialogConfig(claGroup));
+  }
+
+  /**
+   * Starts the corporate signing flow (#1983): pick a CLA Group, confirm authorization and export
+   * compliance, then hand off.
+   *
+   * Three dialogs in sequence rather than one stepped component, matching the Me-lens hand-off:
+   * each step closes with what the next one needs, so no step can read a value another step was
+   * responsible for collecting. In particular the attestation dialog closes with the two
+   * confirmations themselves, and this method passes them straight through — it never
+   * reconstructs them from the fact that the dialog closed with something.
+   */
+  protected startSigning(): void {
+    const orgUid = this.accountContext.selectedAccount()?.uid;
+    // Single-flight: the control is disabled while a flow is open, and this is the second line.
+    if (!orgUid || this.signingOpen()) return;
+
+    this.signingOpen.set(true);
+
+    const pickerRef = this.dialogService.open(OrgEasyclaGroupSelectComponent, {
+      header: CCLA_SIGN_COPY.picker.header,
+      width: '40rem',
+      modal: true,
+      closable: true,
+      dismissableMask: true,
+      data: { orgUid },
+    }) as DynamicDialogRef;
+
+    pickerRef.onClose.pipe(takeUntilDestroyed(this.destroyRef)).subscribe((chosen: OrgClaGroupPickerResult | null | undefined) => {
+      if (!chosen) {
+        this.signingOpen.set(false);
+        return;
+      }
+      this.confirmThenHandOff(orgUid, chosen);
+    });
+  }
+
+  private confirmThenHandOff(orgUid: string, chosen: OrgClaGroupPickerResult): void {
+    const attestationRef = this.dialogService.open(OrgEasyclaAttestationComponent, {
+      header: CCLA_SIGN_COPY.attestation.header,
+      width: '42rem',
+      modal: true,
+      closable: true,
+      dismissableMask: true,
+    }) as DynamicDialogRef;
+
+    attestationRef.onClose.pipe(takeUntilDestroyed(this.destroyRef)).subscribe((attestations: OrgClaSignAttestations | null | undefined) => {
+      if (!attestations) {
+        this.signingOpen.set(false);
+        return;
+      }
+
+      const handoffRef = this.dialogService.open(OrgEasyclaSignHandoffComponent, {
+        header: CCLA_SIGN_COPY.preparing.header,
+        width: '40rem',
+        modal: true,
+        // Not dismissable by clicking away: a real signing session is opened behind this dialog,
+        // and its address is the only thing that reaches the signatory. Losing it to a stray
+        // click means an envelope exists that nobody was handed.
+        closable: true,
+        dismissableMask: false,
+        data: { orgUid, projectSfid: chosen.projectSfid, claGroupId: chosen.claGroupId, attestations },
+      }) as DynamicDialogRef;
+
+      handoffRef.onClose.pipe(takeUntilDestroyed(this.destroyRef)).subscribe(() => this.signingOpen.set(false));
+    });
   }
 
   private initSearchTerm(): Signal<string> {

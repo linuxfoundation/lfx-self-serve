@@ -212,6 +212,79 @@ export const ORG_CLA_NOT_STARTED_COPY = {
 } as const;
 
 /**
+ * Where EasyCLA returns a signatory after signing a corporate CLA (#1983). Mirrors the `easycla`
+ * child route under /org in the org dashboard routes.
+ *
+ * Sibling of `MY_CLAS_PATH` for the same reason that one is shared: the BFF derives the return
+ * address from the request Host, and the two hand-offs must not disagree on where they land.
+ */
+export const ORG_EASYCLA_PATH = '/org/easycla';
+
+/**
+ * Copy for the corporate signing flow (#1983), taken verbatim from the approved design.
+ *
+ * Held here rather than inlined in the template because this is the first attestation the
+ * product renders itself — every earlier CLA surface handed off to another product before any
+ * attestation appeared. Wording that a signatory affirms under their own authority should not
+ * be reachable by a template edit that reads as a copy tweak, and keeping it in one file gives
+ * the legal review a single subject.
+ *
+ * Not paraphrased, not re-ordered, not shortened.
+ */
+export const CCLA_SIGN_COPY = {
+  attestation: {
+    header: 'Confirm Authorization to Sign the CLA',
+    authorityHeading: 'Authorization Confirmation',
+    authorityLabel: 'I am authorized to sign this Contributor License Agreement (CLA) on behalf of my company.',
+    embargoHeading: 'Compliance Confirmation',
+    embargoLabel: 'I hereby certify that I am not, and/or the organization I am representing is not:',
+    embargoConditions: [
+      'located in Cuba, Iran, North Korea, Syria, the Crimea Region of Ukraine, or the Russian-controlled areas of the Donetsk or Luhansk regions of Ukraine;',
+      'owned or controlled by, acting for or on behalf of, or an individual or entity that has in the past acted for or on behalf of the Government of Cuba, Iran, North Korea, Syria, or Venezuela;',
+    ],
+    /**
+     * The third condition carries a link mid-sentence, so it cannot sit in the array above
+     * without the template either rendering markup from a string or losing the link.
+     */
+    embargoSanctionsCondition: {
+      before: "listed as a blocked person by the U.S. Department of the Treasury's ",
+      linkText: 'Office of Foreign Assets Control (OFAC)',
+      linkUrl: 'https://ofac.treasury.gov/sanctions-programs-and-country-information',
+      after: ' or directly or indirectly owned 50 percent or more by such a listed person',
+    },
+    continueLabel: 'Continue',
+    cancelLabel: 'Cancel',
+  },
+  preparing: {
+    header: 'Configuring CLA Manager Settings…',
+    body: 'Please wait while we configure the initial CLA Manager settings for this CLA.',
+    /** Stated before the signatory commits, so the consequence is not first learned after signing. */
+    consequence: 'When this CLA is signed, you will be the initial CLA Manager.',
+  },
+  ready: {
+    header: 'Review CCLA',
+    body: 'Click below to review and sign CCLA. After the CCLA is signed, you will be the initial CLA Manager and authorized to approve contributors and add additional CLA Managers.',
+    continueLabel: 'Review and Sign CCLA',
+    cancelLabel: 'Cancel',
+  },
+  failure: {
+    header: 'Unable to prepare CLA',
+    /**
+     * Only for a failure the CLA service did not explain. A refusal it *did* explain is shown in
+     * its own words — it names the reason and what to do next, and substituting this would
+     * discard both.
+     */
+    body: 'We could not prepare this CLA right now. Please try again, or contact support if the problem continues.',
+  },
+  picker: {
+    header: 'Sign a Corporate CLA',
+    /** Why a row cannot be signed. Shown on the row, because the row stays visible. */
+    multiProjectDisabledReason: 'This CLA group covers several projects and cannot be signed from here.',
+    cclaDisabledReason: 'This CLA group does not offer a corporate CLA.',
+  },
+} as const;
+
+/**
  * Tab order of the Organization Lens CLA Group detail page. `OrgClaDetailTab` is derived from
  * this, so the set exists once: a tab added here is a compile error everywhere that switches on
  * the union until it is handled.

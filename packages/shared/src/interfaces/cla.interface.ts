@@ -219,6 +219,18 @@ export interface ClaGroupOption {
   /** Full repository name the term resolved to — set only when `matchTypes` includes `repository`. */
   matchedRepositoryName?: string;
   matchedRepositoryURL?: string;
+  /**
+   * Salesforce id of the project a corporate signature is requested against (#1983).
+   *
+   * **Set only by the Organization Lens sign-options route.** The Me-lens search omits it: that
+   * hand-off is keyed on `claGroupId` alone, and a field no template reads still ships to the
+   * browser inside the transferred state.
+   *
+   * Absent on the Org Lens path too when the CLA group maps to several projects with no
+   * foundation-level row — upstream declines to pick one arbitrarily. That is a real property of
+   * the CLA group, not a failure, and it makes the group unsignable from here.
+   */
+  projectSfid?: string;
 }
 
 /**
@@ -718,4 +730,89 @@ export interface OrgClaCoverageDialogData {
   claGroupName: string;
   foundationName?: string;
   projects: OrgClaGroupProject[];
+}
+
+/**
+ * One hand-off request for a corporate CLA (#1983).
+ *
+ * The organization is deliberately absent: it comes from the grant-checked `:orgUid` path
+ * segment. So is the return address, which the BFF derives from the request — EasyCLA stores it
+ * and later redirects to it verbatim, so a client-supplied one would be an open redirect.
+ */
+export interface OrgClaSignRequest {
+  /** From the chosen search result. Keys the corporate signature upstream. */
+  projectSfid: string;
+  claGroupId: string;
+  /**
+   * The signatory's own checkbox state at the moment they continued — never a literal, never
+   * inferred from having reached this step. The two attestations are the legally operative part
+   * of this request, and the value that matters is the one the signatory actually set.
+   */
+  authorityAcked: boolean;
+  embargoAcked: boolean;
+}
+
+/**
+ * The signing session EasyCLA opened, as the client consumes it (#1983).
+ *
+ * Deliberately just the address. Upstream also returns the signature, CLA group, project and
+ * company identifiers, and none of them has a consumer here — the hand-off navigates and the
+ * page is replaced. The signature id in particular is a pointer to a named person's agreement,
+ * so shipping it to the browser unread would be handing out a reference for nothing.
+ */
+export interface OrgClaSignResponse {
+  /**
+   * Where the signatory completes the ceremony. Navigated to as returned, never composed.
+   *
+   * Never empty on this path: upstream leaves it empty only for a request sent as an email to a
+   * named signatory, which this route does not make, so an empty value is a failure rather than
+   * a state to render.
+   */
+  signUrl: string;
+}
+
+/**
+ * The two confirmations the signatory gave, as they actually stood when they continued (#1983).
+ *
+ * A distinct type from the request so the attestation step can close with exactly this and
+ * nothing else — the step that collects them is the only place entitled to say what they were.
+ */
+export interface OrgClaSignAttestations {
+  authorityAcked: boolean;
+  embargoAcked: boolean;
+}
+
+/** What the Org Lens CLA group picker is given. */
+export interface OrgClaGroupSelectDialogData {
+  orgUid: string;
+}
+
+/** What the Org Lens CLA group picker closes with. */
+export interface OrgClaGroupPickerResult {
+  claGroupId: string;
+  projectSfid: string;
+  projectName: string;
+}
+
+/**
+ * A picker row, plus why it cannot be chosen. `disabledReason` is null when the row is selectable.
+ *
+ * A row the organization cannot sign keeps its place and states its reason rather than being
+ * filtered out, so the reason is part of the row's shape rather than a lookup beside it.
+ */
+export interface OrgClaGroupOptionView extends ClaGroupOptionView {
+  disabledReason: string | null;
+}
+
+/**
+ * What the hand-off dialog is given: the chosen CLA group, and the confirmations behind it.
+ *
+ * The attestations travel as data rather than being re-collected here, because the step that
+ * collected them is the only one entitled to say what the signatory set.
+ */
+export interface OrgClaSignHandoffDialogData {
+  orgUid: string;
+  projectSfid: string;
+  claGroupId: string;
+  attestations: OrgClaSignAttestations;
 }

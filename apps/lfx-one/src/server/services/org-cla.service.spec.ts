@@ -17,6 +17,7 @@ vi.mock('./logger.service', () => ({
 }));
 
 const { OrgClaService } = await import('./org-cla.service');
+const { MicroserviceError } = await import('../errors');
 
 const ORG_UID = '0014100000Te2ovAAB';
 
@@ -636,5 +637,210 @@ describe('OrgClaService.getPdfUrl — the organization scope gate', () => {
       `https://gw.example.org/cla-service/v4/company/external/${ORG_UID}/cla-groups`,
       expect.objectContaining({ operation: 'org_cla_list_cla_groups' })
     );
+  });
+});
+
+// ---------------------------------------------------------------------------
+// Corporate signing hand-off (#1983)
+// ---------------------------------------------------------------------------
+
+const CLA_GROUP_ID = '7f3a1c22-9d51-4a8e-b0c6-2e4f81d9a733';
+const PROJECT_SFID = 'a09410000182dD3AAI';
+
+/** A request the CLA service would accept. Cases override only what they are about. */
+function signRequest(overrides: Record<string, unknown> = {}) {
+  return { projectSfid: PROJECT_SFID, claGroupId: CLA_GROUP_ID, authorityAcked: true, embargoAcked: true, ...overrides } as any;
+}
+
+/** A request carrying the Host the return address is derived from. */
+function signReq(): Request {
+  return { protocol: 'https', get: (header: string) => (header === 'host' ? 'app.lfx.dev' : undefined) } as unknown as Request;
+}
+
+describe('OrgClaService.getSignOptions', () => {
+  it('carries the project Salesforce id upstream sent, which is what the corporate request is keyed on', async () => {
+    gatewayFetch.mockResolvedValueOnce({
+      searchTerm: 'nimbus',
+      resultCount: 1,
+      results: [{ claGroupID: CLA_GROUP_ID, claGroupName: 'Nimbus Foundation CLA', projectName: 'Cascade', projectSFID: PROJECT_SFID, cclaEnabled: true }],
+    });
+
+    const envelope = await new OrgClaService().getSignOptions(req(), 'nimbus');
+
+    expect(envelope.results[0]).toMatchObject({ claGroupId: CLA_GROUP_ID, projectSfid: PROJECT_SFID, cclaEnabled: true });
+  });
+
+  // Upstream leaves the id unset for a CLA group spanning several projects with no
+  // foundation-level row. Defaulting it to an empty string would make the row look signable and
+  // produce a request that cannot succeed; the picker needs to see the absence.
+  it('omits the project id entirely when upstream resolved none, rather than defaulting it', async () => {
+    gatewayFetch.mockResolvedValueOnce({
+      searchTerm: 'nimbus',
+      resultCount: 1,
+      results: [{ claGroupID: CLA_GROUP_ID, claGroupName: 'Nimbus Foundation CLA', cclaEnabled: true }],
+    });
+
+    const envelope = await new OrgClaService().getSignOptions(req(), 'nimbus');
+
+    expect(envelope.results[0]).not.toHaveProperty('projectSfid');
+  });
+
+  it('treats a blank project id as no project id', async () => {
+    gatewayFetch.mockResolvedValueOnce({
+      searchTerm: 'nimbus',
+      resultCount: 1,
+      results: [{ claGroupID: CLA_GROUP_ID, projectSFID: '   ', cclaEnabled: true }],
+    });
+
+    expect(await new OrgClaService().getSignOptions(req(), 'nimbus')).toMatchObject({ results: [expect.not.objectContaining({ projectSfid: '   ' })] });
+  });
+
+  it('preserves the envelope fields the picker reads', async () => {
+    gatewayFetch.mockResolvedValueOnce({ searchTerm: 'nimbus', resultCount: 40, truncated: true, results: [] });
+
+    expect(await new OrgClaService().getSignOptions(req(), 'nimbus')).toMatchObject({ searchTerm: 'nimbus', resultCount: 40, truncated: true });
+  });
+});
+
+describe('OrgClaService.requestCorporateSignature', () => {
+  const upstreamOk = {
+    signature_id: 'signature-uuid-1',
+    sign_url: 'https://docusign.example.org/session/1',
+    cla_group_id: CLA_GROUP_ID,
+    project_sfid: PROJECT_SFID,
+    company_id: 'company-uuid-1',
+    company_sfid: ORG_UID,
+  };
+
+  // snake_case on this upstream, unlike the Me-lens prepare-sign next door, which is camelCase in
+  // both directions. Getting this wrong fails silently: go-swagger ignores unknown keys, so a
+  // camelCase body would arrive as a request with no project and no attestations.
+  it('sends the body in snake_case, with the organization from the grant-checked path', async () => {
+    gatewayFetch.mockResolvedValueOnce(upstreamOk);
+
+    await new OrgClaService().requestCorporateSignature(signReq(), ORG_UID, signRequest());
+
+    expect(gatewayFetch).toHaveBeenCalledWith(
+      expect.anything(),
+      'https://gw.example.org/cla-service/v4/self-serve/request-corporate-signature',
+      expect.objectContaining({
+        method: 'POST',
+        // The whole body. A subset matcher would not notice a required field going missing, and
+        // would not notice a designee field being added either.
+        body: {
+          project_sfid: PROJECT_SFID,
+          company_sfid: ORG_UID,
+          return_url: 'https://app.lfx.dev/org/easycla',
+          authority_acked: true,
+          embargo_acked: true,
+        },
+      })
+    );
+  });
+
+  // The counterpart to the controller's gate, one layer down: even reached directly, this method
+  // relays what it was given. A literal here would mean the controller's check was the only thing
+  // standing between a withdrawn confirmation and a signed agreement.
+  it('relays a withdrawn confirmation as withdrawn rather than substituting true', async () => {
+    gatewayFetch.mockResolvedValueOnce(upstreamOk);
+
+    await new OrgClaService().requestCorporateSignature(signReq(), ORG_UID, signRequest({ embargoAcked: false }));
+
+    expect(gatewayFetch).toHaveBeenCalledWith(
+      expect.anything(),
+      expect.any(String),
+      expect.objectContaining({ body: expect.objectContaining({ authority_acked: true, embargo_acked: false }) })
+    );
+  });
+
+  it('derives the return address server-side, pointing at the Organization Lens rather than the profile CLAs', async () => {
+    gatewayFetch.mockResolvedValueOnce(upstreamOk);
+
+    await new OrgClaService().requestCorporateSignature(signReq(), ORG_UID, signRequest());
+
+    expect(gatewayFetch).toHaveBeenCalledWith(
+      expect.anything(),
+      expect.any(String),
+      expect.objectContaining({ body: expect.objectContaining({ return_url: 'https://app.lfx.dev/org/easycla' }) })
+    );
+  });
+
+  // The endpoint accepts these four for the send-by-email and designee paths. This feature
+  // implements neither, and `send_as_email` in particular changes what the response means.
+  it('sends none of the designee or send-by-email fields', async () => {
+    gatewayFetch.mockResolvedValueOnce(upstreamOk);
+
+    await new OrgClaService().requestCorporateSignature(signReq(), ORG_UID, signRequest());
+
+    const body = gatewayFetch.mock.calls[0][2].body;
+    expect(body).not.toHaveProperty('send_as_email');
+    expect(body).not.toHaveProperty('authority_name');
+    expect(body).not.toHaveProperty('authority_email');
+    expect(body).not.toHaveProperty('signing_entity_name');
+  });
+
+  it('maps the upstream response onto the shape the client consumes', async () => {
+    gatewayFetch.mockResolvedValueOnce(upstreamOk);
+
+    // Just the address. Upstream also returns the signature, CLA group, project and company
+    // identifiers; none has a client consumer, and the signature id points at a named person's
+    // agreement, so none of them crosses to the browser.
+    expect(await new OrgClaService().requestCorporateSignature(signReq(), ORG_UID, signRequest())).toEqual({
+      signUrl: 'https://docusign.example.org/session/1',
+    });
+  });
+
+  // An empty signing address is how upstream reports that it emailed a named signatory instead —
+  // a shape this route never asks for. Returning it as success would navigate the signatory to
+  // this application's own root and read as a completed hand-off.
+  it.each([[''], ['   '], [undefined]])('fails rather than succeeding when the signing address is %p', async (signUrl) => {
+    gatewayFetch.mockResolvedValueOnce({ ...upstreamOk, sign_url: signUrl });
+
+    await expect(new OrgClaService().requestCorporateSignature(signReq(), ORG_UID, signRequest())).rejects.toThrow(/no usable corporate signing session/);
+  });
+
+  it('fails when upstream returned no signature identifier', async () => {
+    gatewayFetch.mockResolvedValueOnce({ ...upstreamOk, signature_id: '' });
+
+    await expect(new OrgClaService().requestCorporateSignature(signReq(), ORG_UID, signRequest())).rejects.toThrow(/no usable corporate signing session/);
+  });
+
+  // The trade-compliance refusal is a 403 whose body is a sentence written for the signatory,
+  // naming the reason and the support route. Showing "403 Forbidden" instead discards it.
+  it("re-labels a 403 with the CLA service's own words", async () => {
+    const refusal = new MicroserviceError('Forbidden', 403, 'UPSTREAM_ERROR', {
+      service: 'org_cla_service',
+      errorBody: JSON.stringify({
+        message: 'We are sorry, but this organization requires additional trade compliance review, so the CLA cannot be completed at this time.',
+      }),
+    });
+    gatewayFetch.mockRejectedValueOnce(refusal);
+
+    await expect(new OrgClaService().requestCorporateSignature(signReq(), ORG_UID, signRequest())).rejects.toThrow(/trade compliance review/);
+  });
+
+  // Scoped to 403 for the reason the helper documents: a 500's prose is about upstream internals,
+  // not about the caller, and putting it on screen helps nobody.
+  it('leaves a 500 with its own message rather than relaying upstream prose', async () => {
+    gatewayFetch.mockRejectedValueOnce(
+      new MicroserviceError('Failed to request the corporate CLA signature', 500, 'UPSTREAM_ERROR', {
+        service: 'org_cla_service',
+        errorBody: JSON.stringify({ message: 'panic: nil pointer dereference in signature repository' }),
+      })
+    );
+
+    await expect(new OrgClaService().requestCorporateSignature(signReq(), ORG_UID, signRequest())).rejects.toThrow(/Failed to request the corporate CLA/);
+  });
+
+  // No pre-gate on the organization's compliance status: the CLA service screens on every
+  // request, and the status on an existing agreement row cannot answer for an organization that
+  // holds none — which is the population this flow exists for.
+  it('never reads the organization CLA list before requesting the signature', async () => {
+    gatewayFetch.mockResolvedValueOnce(upstreamOk);
+
+    await new OrgClaService().requestCorporateSignature(signReq(), ORG_UID, signRequest());
+
+    expect(gatewayFetch).toHaveBeenCalledTimes(1);
+    expect(gatewayFetch).not.toHaveBeenCalledWith(expect.anything(), expect.stringContaining('/cla-groups'), expect.anything());
   });
 });

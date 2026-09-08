@@ -129,22 +129,134 @@ describe('OrgEasyclaComponent', () => {
       expect(byTestId(fixture, 'org-easycla-title')?.textContent).not.toContain('—');
     });
 
-    it('renders the Sign CLA control, disabled, so the empty-state copy points at something real', async () => {
+    it('offers the Sign CLA control once an organization is selected', async () => {
       const fixture = await render();
       const signCla = byTestId(fixture, 'org-easycla-sign-cla');
 
       expect(signCla).toBeTruthy();
-      expect(signCla?.querySelector('button')?.disabled).toBe(true);
+      expect(signCla?.querySelector('button')?.disabled).toBe(false);
     });
 
-    // The tooltip carrying the reason opens on hover only: its directive is on the non-focusable
-    // host while the button inside is disabled. The accessible name is the path that reaches a
-    // screen reader, which would otherwise hear "Sign CLA, disabled" and no reason for it.
-    it('names the reason the Sign CLA control is disabled, not just that it is', async () => {
+    it('cannot be used before an organization resolves, because there is nothing to sign for', async () => {
+      selectedAccount.set(null);
+
+      const fixture = await render();
+
+      const button = byTestId(fixture, 'org-easycla-sign-cla')?.querySelector('button');
+      expect(button?.disabled).toBe(true);
+      // A disabled control must say why, or a screen reader hears only "disabled".
+      expect(button?.getAttribute('aria-label')).toContain('select an organization first');
+    });
+
+    // Not disabled for a viewer who lacks signing authority. The CLA service decides that per
+    // project and organization and explains its refusal in words; this layer cannot know it, and
+    // guessing would hide the control from people who do hold the authority.
+    it('offers the control without pre-judging the viewer’s signing authority', async () => {
       const fixture = await render();
       const button = byTestId(fixture, 'org-easycla-sign-cla')?.querySelector('button');
 
-      expect(button?.getAttribute('aria-label')).toContain('coming soon');
+      expect(button?.disabled).toBe(false);
+      expect(button?.getAttribute('aria-label')).toBe('Sign a corporate CLA');
+    });
+  });
+
+  // The component's own job in the signing flow is only to sequence three dialogs and carry each
+  // one's result to the next. What is worth proving is that it carries rather than reconstructs:
+  // the attestations reaching the hand-off must be the ones the attestation dialog closed with.
+  describe('corporate signing flow', () => {
+    const chosen = { claGroupId: 'cla-group-uuid-1', projectSfid: 'a09410000182dD2AAI', projectName: 'Cascade' };
+
+    /** Each `open` closes with the next queued result, so a whole flow can be driven in order. */
+    function dialogHarness(closeResults: unknown[]) {
+      const opened: { component: unknown; config: { data?: unknown } }[] = [];
+      const open = vi.fn((component: unknown, config: { data?: unknown } = {}) => {
+        opened.push({ component, config });
+        const result = closeResults[opened.length - 1];
+        return { onClose: of(result), close: vi.fn() };
+      });
+      return { opened, open };
+    }
+
+    async function renderWithDialogs(closeResults: unknown[]) {
+      const harness = dialogHarness(closeResults);
+      TestBed.resetTestingModule();
+      await TestBed.configureTestingModule({
+        imports: [OrgEasyclaComponent],
+        providers: [
+          provideRouter([]),
+          provideNoopAnimations(),
+          { provide: AccountContextService, useValue: { selectedAccount, hasOrgSelectorAccess } },
+          { provide: OrgRoleGrantsService, useValue: { loaded: grantsLoaded } },
+          { provide: PersonaService, useValue: { personaLoaded } },
+          { provide: OrgNavigationService, useValue: { loaded: navLoaded } },
+          { provide: OrgLensClaService, useValue: { getClaGroups } },
+          MessageService,
+        ],
+      })
+        // The component provides DialogService itself, so the component-level provider is the one
+        // that has to be replaced; a module-level override would not be seen.
+        .overrideComponent(OrgEasyclaComponent, { set: { providers: [{ provide: DialogService, useValue: { open: harness.open } }] } })
+        .compileComponents();
+
+      const fixture = TestBed.createComponent(OrgEasyclaComponent);
+      fixture.detectChanges();
+      await fixture.whenStable();
+      fixture.detectChanges();
+      return { fixture, harness };
+    }
+
+    it('asks which CLA group to sign for, scoped to the selected organization', async () => {
+      const { fixture, harness } = await renderWithDialogs([null]);
+
+      byTestId(fixture, 'org-easycla-sign-cla')?.querySelector('button')?.click();
+
+      expect(harness.opened).toHaveLength(1);
+      expect(harness.opened[0].config.data).toEqual({ orgUid: SELECTED_ACCOUNT.uid });
+    });
+
+    it('does not ask for a confirmation when no CLA group was chosen', async () => {
+      const { fixture, harness } = await renderWithDialogs([null]);
+
+      byTestId(fixture, 'org-easycla-sign-cla')?.querySelector('button')?.click();
+
+      expect(harness.opened).toHaveLength(1);
+    });
+
+    it('does not hand off when the confirmation step was dismissed', async () => {
+      const { fixture, harness } = await renderWithDialogs([chosen, null]);
+
+      byTestId(fixture, 'org-easycla-sign-cla')?.querySelector('button')?.click();
+
+      expect(harness.opened).toHaveLength(2);
+    });
+
+    // The load-bearing one. Whatever the attestation dialog closed with is what the hand-off is
+    // given — not a `true` written here, and not an inference from the dialog having closed at
+    // all. A regression that hardcoded these would make the signatory's confirmation unfalsifiable
+    // from this side.
+    it('hands the confirmations to the signing step exactly as the signatory gave them', async () => {
+      const attestations = { authorityAcked: true, embargoAcked: true };
+      const { fixture, harness } = await renderWithDialogs([chosen, attestations, null]);
+
+      byTestId(fixture, 'org-easycla-sign-cla')?.querySelector('button')?.click();
+
+      expect(harness.opened).toHaveLength(3);
+      expect(harness.opened[2].config.data).toEqual({
+        orgUid: SELECTED_ACCOUNT.uid,
+        projectSfid: chosen.projectSfid,
+        claGroupId: chosen.claGroupId,
+        attestations,
+      });
+    });
+
+    // A dismissed flow must release the control, or the page needs a reload to try again.
+    it('offers the control again after a dismissed flow', async () => {
+      const { fixture } = await renderWithDialogs([null]);
+
+      byTestId(fixture, 'org-easycla-sign-cla')?.querySelector('button')?.click();
+      fixture.detectChanges();
+
+      expect(byTestId(fixture, 'org-easycla-sign-cla')?.querySelector('button')?.disabled).toBe(false);
     });
   });
 

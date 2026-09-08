@@ -1,0 +1,58 @@
+<!--
+Copyright The Linux Foundation and each contributor to LFX.
+SPDX-License-Identifier: MIT
+
+Every string below is bound from CCLA_SIGN_COPY.attestation, verbatim from the approved design.
+This is legal attestation copy: do not hardcode a sentence here, and do not reword one.
+-->
+
+<div class="flex flex-col" data-testid="org-easycla-attestation-dialog">
+  <p class="text-sm font-semibold text-slate-900">{{ copy.authorityHeading }}</p>
+  <div class="mt-2">
+    <lfx-checkbox
+      [form]="form"
+      control="authorityAcked"
+      [label]="copy.authorityLabel"
+      labelClass="text-sm text-slate-700"
+      data-testid="org-easycla-attestation-authority" />
+  </div>
+
+  <p class="mt-6 text-sm font-semibold text-slate-900">{{ copy.embargoHeading }}</p>
+  <div class="mt-2">
+    <lfx-checkbox
+      [form]="form"
+      control="embargoAcked"
+      [label]="copy.embargoLabel"
+      labelClass="text-sm text-slate-700"
+      data-testid="org-easycla-attestation-embargo" />
+  </div>
+
+  <ul class="mt-3 list-disc space-y-2 pl-9 text-sm text-slate-700" data-testid="org-easycla-attestation-conditions">
+    @for (condition of copy.embargoConditions; track condition) {
+      <li>{{ condition }}</li>
+    }
+    <!--
+      Split rather than listed with the two above because the link sits mid-sentence. `noopener`
+      is on the link because the opened context must not be handed control of this one — this
+      page is mid-way through a legal act.
+    -->
+    <li>
+      {{ copy.embargoSanctionsCondition.before
+      }}<a [href]="copy.embargoSanctionsCondition.linkUrl" target="_blank" rel="noopener noreferrer" class="text-blue-700 underline">{{
+        copy.embargoSanctionsCondition.linkText
+      }}</a
+      >{{ copy.embargoSanctionsCondition.after }}
+    </li>
+  </ul>
+
+  <!--
+    No "I am not authorized" control here, operable or disabled. The designee path it belongs to
+    is not implemented in this feature, and a legal confirmation step is the wrong place to
+    advertise an unavailable route: a signatory who is genuinely not authorized would read a
+    greyed-out control as their answer and stop, having been shown no way forward at all.
+  -->
+  <div class="mt-8 flex justify-end gap-2">
+    <lfx-button [label]="copy.cancelLabel" severity="secondary" [outlined]="true" (onClick)="onCancel()" data-testid="org-easycla-attestation-cancel" />
+    <lfx-button [label]="copy.continueLabel" [disabled]="!bothAcked()" (onClick)="onContinue()" data-testid="org-easycla-attestation-continue" />
+  </div>
+</div>
