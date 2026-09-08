@@ -255,6 +255,21 @@ describe('OrgEasyclaComponent', () => {
       expect(byTestId(fixture, 'org-easycla-empty-state')).toBeNull();
       consoleError.mockRestore();
     });
+
+    // On the failure state there is nothing loaded to filter, and the no-matches state cannot fire,
+    // so the box would accept input and change nothing — a second, unexplained fault on a page that
+    // has already told the viewer what went wrong.
+    it('withholds the search box on the failure state, where it could filter nothing', async () => {
+      getClaGroups.mockReturnValue(throwError(() => new Error('upstream exploded')));
+      const consoleError = vi.spyOn(console, 'error').mockImplementation(() => undefined);
+
+      const fixture = await render();
+
+      expect(byTestId(fixture, 'org-easycla-toolbar')).toBeNull();
+      // Sign CLA is in the header rather than the toolbar, so the failure state does not take it.
+      expect(byTestId(fixture, 'org-easycla-sign-cla')).toBeTruthy();
+      consoleError.mockRestore();
+    });
   });
 
   describe('search', () => {

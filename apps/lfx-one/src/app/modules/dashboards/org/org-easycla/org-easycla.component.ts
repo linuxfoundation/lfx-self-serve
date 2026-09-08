@@ -127,11 +127,15 @@ export class OrgEasyclaComponent {
   protected readonly noClasTitle = computed(() => `${this.companyName()} hasn't signed any CLAs yet`);
 
   /**
-   * The toolbar does not collapse with the list: both empty states keep the search box and the
-   * Sign CLA button visible, so a viewer can revise a search or start an agreement without
-   * reloading. Only the card grid and the pager hide.
+   * The toolbar holds the search box and nothing else — the Sign CLA button lives in the header and
+   * renders unconditionally, so it is not what keeps this visible.
+   *
+   * It does not collapse with the list: a viewer whose search matched nothing needs the box to
+   * revise it. It is withheld on the failure state, where `claGroups()` is empty and
+   * `showNoMatchesEmptyState` cannot fire, so typing would filter nothing and change nothing — a
+   * field that looks interactive and is inert reads as a second, unexplained fault.
    */
-  protected readonly showToolbar = computed(() => this.settled() || this.fetchError());
+  protected readonly showToolbar = computed(() => this.settled());
 
   public constructor() {
     // A narrowed set has its own first page; keeping the old index would show the viewer an empty

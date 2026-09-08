@@ -58,8 +58,8 @@
   } @else {
     @if (showToolbar()) {
       <!-- Survives both empty states on purpose: a viewer whose search matched nothing needs the
-           box to revise it, and a viewer with no CLAs needs the Sign CLA button the empty-state
-           copy points at. Only the grid and the pager collapse. -->
+           box to revise it. Only the grid and the pager collapse. The Sign CLA button the no-CLAs
+           copy points at is in the header above, outside this block, so it is unaffected. -->
       <div class="flex" data-testid="org-easycla-toolbar">
         <!-- The placeholder is not a label: it disappears as soon as anything is typed, leaving a
              screen reader with an unnamed field.
