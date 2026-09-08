@@ -13,6 +13,7 @@ import {
   GRID_COLS_CLASS,
   GRID_DIVIDER_CLASS,
   GROUPS_ENGAGEMENT_ICON_CLASS,
+  HEALTH_METRICS_OVERVIEW_CLASSIFICATIONS,
   lfxColors,
   lfxFontSizes,
   MENTION_PLATFORM_CONFIG,
@@ -105,6 +106,9 @@ export default {
     'bg-emerald-100',
     'bg-red-100',
     'bg-gray-100',
+    // Health Metrics Overview classification accents (HEALTH_METRICS_OVERVIEW_CLASSIFICATIONS in
+    // @lfx-one/shared, not scanned here) — applied via [ngClass] on tiles and finding rows.
+    ...Object.values(HEALTH_METRICS_OVERVIEW_CLASSIFICATIONS).flatMap((c) => [c.dotClass, c.accentClass, c.textClass].flatMap((s) => s.split(' '))),
   ],
   theme: {
     // `container.screens` only sizes the `.container` utility's max-width per breakpoint — it does

@@ -11,7 +11,6 @@ import { campaignAccessGuard } from './shared/guards/campaign-access.guard';
 import { formationEnabledGuard } from './shared/guards/formation-enabled.guard';
 import { formationProjectEnabledGuard } from './shared/guards/formation-project-enabled.guard';
 import { formationsQueueAuditorGuard } from './shared/guards/formations-queue-auditor.guard';
-import { healthMetricsOverviewEnabledGuard } from './shared/guards/health-metrics-overview-enabled.guard';
 import { lensRedirectGuard } from './shared/guards/lens-redirect.guard';
 import { marketingImpactAccessGuard } from './shared/guards/marketing-impact-access.guard';
 import { newsletterAccessGuard } from './shared/guards/newsletter-access.guard';
@@ -47,21 +46,14 @@ export const routes: Routes = [
         canActivate: [projectQueryParamGuard],
         loadComponent: () => import('./modules/dashboards/dashboard.component').then((m) => m.DashboardComponent),
       },
-      // Foundation Lens — Health Metrics Overview page (LFXV2-3365 replacement, dark-launched)
-      {
-        path: 'foundation/health-metrics',
-        canMatch: [healthMetricsOverviewEnabledGuard],
-        data: { lens: 'foundation' },
-        canActivate: [dashboardAccessGuard, projectQueryParamGuard],
-        loadComponent: () =>
-          import('./modules/dashboards/health-metrics-overview/health-metrics-overview.component').then((m) => m.HealthMetricsOverviewComponent),
-      },
-      // Foundation Lens — Health Metrics page (ED + LF Staff) — flag-off fallback for the entry above
+      // Foundation Lens — Health Metrics page (ED + LF Staff). Renders the LFXV2-3365 overview
+      // replacement once health-metrics-overview-enabled is on; a single stable route/component
+      // keeps SSR and the post-hydration flag decision on the same DOM tree (see HealthMetricsGateComponent).
       {
         path: 'foundation/health-metrics',
         data: { lens: 'foundation' },
         canActivate: [dashboardAccessGuard, projectQueryParamGuard],
-        loadComponent: () => import('./modules/dashboards/health-metrics/health-metrics.component').then((m) => m.HealthMetricsComponent),
+        loadComponent: () => import('./modules/dashboards/health-metrics-gate/health-metrics-gate.component').then((m) => m.HealthMetricsGateComponent),
       },
       // Foundation Lens — Campaign Impact page (ED + LF Staff always; marketing_auditor when marketing-ops-fga-enabled is on — LF Staff still see only the Social Listening tab)
       {

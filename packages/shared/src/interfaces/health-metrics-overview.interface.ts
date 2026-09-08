@@ -9,7 +9,11 @@ export type HealthMetricsOverviewArea = (typeof HEALTH_METRICS_OVERVIEW_AREAS)[n
 /** Urgency classification — never a category or a composite score, per the logic spec's hard constraints. */
 export type HealthMetricsOverviewClassification = keyof typeof HEALTH_METRICS_OVERVIEW_CLASSIFICATIONS;
 
-/** Mirrors the `hm_area_state` dbt table (LFXV2-3364) — always one row per area per foundation per period. */
+/**
+ * Mirrors the `hm_area_state` dbt table (LFXV2-3364) — always one row per area per foundation per
+ * period. Fields are camelCase here; whatever service layer calls the LFXV2-3364 API is responsible
+ * for mapping the table's snake_case columns (`stat_value`, `evaluated_at`, ...) onto this shape.
+ */
 export interface HealthMetricsAreaState {
   area: HealthMetricsOverviewArea;
   statValue: string;
@@ -19,12 +23,19 @@ export interface HealthMetricsAreaState {
   evaluatedAt: string;
 }
 
-/** Mirrors the `hm_findings` dbt table (LFXV2-3364) — one row per triggered rule per area/entity. */
+/**
+ * Mirrors the `hm_findings` dbt table (LFXV2-3364) — one row per triggered rule per area/entity.
+ * Fields are camelCase here; the mapping from the table's snake_case columns (`key_value`,
+ * `link_target`, `sort_rank`, ...) is the responsibility of whatever service layer calls the API.
+ * `sentence` is plain text with no markup; `emphasis`, when present, names the exact substring of
+ * `sentence` the UI should render in bold — see `sentenceSegments` in the finding-item component.
+ */
 export interface HealthMetricsFinding {
   classification: HealthMetricsOverviewClassification;
   area: HealthMetricsOverviewArea;
   title: string;
   sentence: string;
+  emphasis?: string;
   keyValue: string;
   keyLabel: string;
   linkTarget: string;
@@ -36,7 +47,7 @@ export interface HealthMetricsFinding {
 /** Optional per-finding visual encoding (logic spec §8.7) — omitted for "good"/"none" classification findings. */
 export type HealthMetricsFindingVisual =
   | { kind: 'dots'; groups: HealthMetricsFindingVisualDotGroup[] }
-  | { kind: 'bar'; parts: HealthMetricsFindingVisualBarPart[]; caption?: string }
+  | ({ kind: 'bar' } & HealthMetricsFindingVisualBar)
   | { kind: 'band'; low: number; high: number; goal: number; caption?: string }
   | { kind: 'tags'; tags: string[] };
 
@@ -50,6 +61,12 @@ export interface HealthMetricsFindingVisualBarPart {
   label: string;
   value: number;
   tone: HealthMetricsOverviewClassification;
+}
+
+/** The `bar` member of {@link HealthMetricsFindingVisual}, named so the finding-item component can type its precomputed view model against it. */
+export interface HealthMetricsFindingVisualBar {
+  parts: HealthMetricsFindingVisualBarPart[];
+  caption?: string;
 }
 
 /** Container-computed view model for `lfx-health-metrics-overview-tile` — one per rendered tile. */
@@ -72,6 +89,7 @@ export interface HealthMetricsOverviewFindingViewModel {
   areaLabel: string;
   title: string;
   sentence: string;
+  emphasis?: string;
   keyValue: string;
   keyLabel: string;
   evaluatedAt: string;
@@ -84,4 +102,27 @@ export interface HealthMetricsOverviewFindingViewModel {
 export interface HealthMetricsOverviewFindingGroup {
   group: string;
   findings: HealthMetricsOverviewFindingViewModel[];
+}
+
+/** One segment of a finding's `sentence`, split around its optional `emphasis` substring — lets the template render bold text via interpolation instead of `[innerHTML]`. */
+export interface HealthMetricsSentenceSegment {
+  text: string;
+  bold: boolean;
+}
+
+/** Precomputed dot-cluster group ready for iteration — `dots[i]` is `true` when that dot renders filled. Rendered dot count is capped and proportionally scaled; see `health-metrics-overview-finding-item.component.ts`. */
+export interface HealthMetricsFindingVisualDotsGroupViewModel {
+  label: string;
+  dots: boolean[];
+}
+
+/** A {@link HealthMetricsFindingVisualBarPart} with its classification tone pre-resolved to a Tailwind color class, so the template never calls a method to look it up. */
+export interface HealthMetricsFindingVisualBarPartViewModel extends HealthMetricsFindingVisualBarPart {
+  toneClass: string;
+}
+
+/** Precomputed bar-visual view model for `lfx-health-metrics-overview-finding-item`. */
+export interface HealthMetricsFindingVisualBarViewModel {
+  parts: HealthMetricsFindingVisualBarPartViewModel[];
+  caption?: string;
 }

@@ -5,8 +5,6 @@ import { Component, computed, inject, Signal } from '@angular/core';
 import {
   HEALTH_METRICS_OVERVIEW_AREAS,
   HEALTH_METRICS_OVERVIEW_CLASSIFICATIONS,
-  HEALTH_METRICS_OVERVIEW_FIXTURE_AREA_STATE,
-  HEALTH_METRICS_OVERVIEW_FIXTURE_FINDINGS,
   HEALTH_METRICS_OVERVIEW_GROUP_ORDER,
   HEALTH_METRICS_OVERVIEW_INSIGHTS_LINK_TARGET,
 } from '@lfx-one/shared/constants';
@@ -14,6 +12,7 @@ import { buildHealthMetricsOverviewPccUrl, buildLensAwareInsightsUrl } from '@lf
 import { ProjectContextService } from '@services/project-context.service';
 import { environment } from '@environments/environment';
 
+import { HEALTH_METRICS_OVERVIEW_FIXTURE_AREA_STATE, HEALTH_METRICS_OVERVIEW_FIXTURE_FINDINGS } from './health-metrics-overview.fixture';
 import { HealthMetricsOverviewFindingItemComponent } from './health-metrics-overview-finding-item/health-metrics-overview-finding-item.component';
 import { HealthMetricsOverviewTileComponent } from './health-metrics-overview-tile/health-metrics-overview-tile.component';
 
@@ -37,7 +36,7 @@ export class HealthMetricsOverviewComponent {
   protected readonly tiles: Signal<HealthMetricsOverviewTileViewModel[]> = this.initTiles();
   protected readonly findingGroups: Signal<HealthMetricsOverviewFindingGroup[]> = this.initFindingGroups();
 
-  protected readonly hasFindings = computed(() => HEALTH_METRICS_OVERVIEW_FIXTURE_FINDINGS.length > 0);
+  protected readonly hasFindings = computed(() => this.findingGroups().length > 0);
 
   private static readonly areaStateByKey = new Map(HEALTH_METRICS_OVERVIEW_FIXTURE_AREA_STATE.map((state) => [state.area, state]));
   private static readonly areaNameByKey = new Map(HEALTH_METRICS_OVERVIEW_AREAS.map((areaMeta) => [areaMeta.key, areaMeta.name]));
@@ -97,6 +96,7 @@ export class HealthMetricsOverviewComponent {
       areaLabel: HealthMetricsOverviewComponent.areaNameByKey.get(finding.area) ?? finding.area,
       title: finding.title,
       sentence: finding.sentence,
+      emphasis: finding.emphasis,
       keyValue: finding.keyValue,
       keyLabel: finding.keyLabel,
       evaluatedAt: finding.evaluatedAt,
