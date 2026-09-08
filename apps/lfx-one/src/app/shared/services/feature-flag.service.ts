@@ -5,6 +5,7 @@ import { computed, inject, Injectable, Signal, signal } from '@angular/core';
 import { toObservable } from '@angular/core/rxjs-interop';
 import { environment } from '@environments/environment';
 import { FEATURE_FLAG_OVERRIDE_STORAGE_KEY, User } from '@lfx-one/shared';
+import { FeatureFlagGuardContext } from '@lfx-one/shared/interfaces';
 import { Client, EvaluationContext, JsonValue, OpenFeature, ProviderEvents, ProviderStatus } from '@openfeature/web-sdk';
 import { catchError, filter, firstValueFrom, of, timeout } from 'rxjs';
 
@@ -101,8 +102,14 @@ export class FeatureFlagService {
    * rather than duplicated per guard — a guard that resolves this way is otherwise a silent
    * redirect with no way to tell it happened after the fact (see GH-1351); LD's own logger is
    * disabled in production and a `console.*` call isn't forwarded to RUM.
+   *
+   * **Must be called synchronously from an active injection context** (e.g. directly inside a
+   * `CanMatchFn`, before any `await`). It internally builds an observable via `toObservable()`,
+   * which calls `inject()` — that only works while the injection context from the guard's own
+   * invocation is still open. Awaiting anything in the caller first closes that context and this
+   * call throws.
    */
-  public async waitForReady(context: { guard: string; flag: string }, timeoutMs = 5000): Promise<boolean> {
+  public async waitForReady(context: FeatureFlagGuardContext, timeoutMs = 5000): Promise<boolean> {
     if (this.isProviderReady()) {
       return true;
     }

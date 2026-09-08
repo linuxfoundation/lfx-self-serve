@@ -133,18 +133,24 @@ The `FeatureFlagService` is located at `src/app/shared/services/feature-flag.ser
   providedIn: 'root',
 })
 export class FeatureFlagService {
+  private readonly dataDogRumService = inject(DataDogRumService);
+
   private client: Client | null = null;
   private readonly isInitialized = signal<boolean>(false);
+  private readonly isProviderReady = signal<boolean>(false);
   private readonly context = signal<EvaluationContext | null>(null);
 
   // Public readonly signals
   public readonly initialized = this.isInitialized.asReadonly();
 
+  /** True once the OpenFeature provider reaches READY (real flag values streamed); distinct from `initialized` (user context applied). */
+  public readonly providerReady = this.isProviderReady.asReadonly();
+
   /**
    * Initialize OpenFeature client with user context
    * Call this method from app.component when user is authenticated
    */
-  public async initialize(user: any): Promise<void> {
+  public async initialize(user: User): Promise<void> {
     if (this.isInitialized()) {
       return;
     }
@@ -162,11 +168,50 @@ export class FeatureFlagService {
       this.context.set(userContext);
       this.isInitialized.set(true);
 
+      // Register handlers BEFORE seeding from the current status so a READY transition that
+      // lands in the gap can't be missed — the Ready handler covers the slower streaming case,
+      // and the status seed below covers the already-READY case (the app initializer awaits
+      // setProviderAndWait before bootstrap).
       this.setupEventHandlers();
+
+      if (this.client.providerStatus === ProviderStatus.READY) {
+        this.isProviderReady.set(true);
+      }
     } catch (error) {
       console.error('Failed to initialize feature flag service:', error);
       this.isInitialized.set(false);
     }
+  }
+
+  /**
+   * Wait for the provider to reach READY, up to `timeoutMs` (default 5000). Every flag-gated
+   * `CanMatch` guard uses this so the provider being slow to initialize (or stuck, if
+   * LaunchDarkly was unreachable during bootstrap) doesn't produce a silent, unexplained redirect
+   * when a user navigates — the timeout path is reported to Datadog RUM exactly once here rather
+   * than duplicated per guard (see GH-1351).
+   *
+   * Must be called synchronously from an active injection context (e.g. directly inside a
+   * `CanMatchFn`, before any `await`) — it builds an observable via `toObservable()`, which needs
+   * the caller's own still-open injection context.
+   */
+  public async waitForReady(context: FeatureFlagGuardContext, timeoutMs = 5000): Promise<boolean> {
+    if (this.isProviderReady()) {
+      return true;
+    }
+
+    const ready = await firstValueFrom(
+      toObservable(this.isProviderReady).pipe(
+        filter((isReady): isReady is true => isReady === true),
+        timeout(timeoutMs),
+        catchError(() => of(false))
+      )
+    );
+
+    if (!ready) {
+      this.dataDogRumService.addError(new Error('Feature flag provider not ready before guard timeout'), context);
+    }
+
+    return ready;
   }
 }
 ```
@@ -174,10 +219,11 @@ export class FeatureFlagService {
 **Key Design Decisions:**
 
 - **Singleton Service**: `providedIn: 'root'` ensures single instance across application
-- **Private State**: `client`, `isInitialized`, and `context` are private for encapsulation
+- **Private State**: `client`, `isInitialized`, `isProviderReady`, and `context` are private for encapsulation
 - **Public Readonly Signals**: Exposed signals use `asReadonly()` to prevent external mutation
 - **Lazy Initialization**: Service doesn't initialize in constructor; waits for explicit `initialize()` call
 - **Idempotent**: Multiple `initialize()` calls are safe (checks `isInitialized()` first)
+- **Instrumented readiness wait**: `waitForReady()` centralizes the guard-facing timeout so every flag-gated route reports the same way to RUM on failure, instead of each guard duplicating its own wait/timeout/log logic
 
 ### Provider Setup
 
@@ -228,6 +274,7 @@ import { LaunchDarklyClientProvider } from '@openfeature/launchdarkly-client-pro
 import { OpenFeature } from '@openfeature/web-sdk';
 import { basicLogger } from 'launchdarkly-js-client-sdk';
 
+import { DataDogRumService } from '../services/datadog-rum.service';
 import { getRuntimeConfig } from './runtime-config.provider';
 
 async function initializeOpenFeature(): Promise<void> {
@@ -236,6 +283,9 @@ async function initializeOpenFeature(): Promise<void> {
     return;
   }
 
+  // Injected before the first `await` — inject() needs the active injection context, which this
+  // app-initializer callback only holds synchronously.
+  const dataDogRumService = inject(DataDogRumService);
   const transferState = inject(TransferState);
   const runtimeConfig = getRuntimeConfig(transferState);
   const clientId = runtimeConfig.launchDarklyClientId;
@@ -256,7 +306,10 @@ async function initializeOpenFeature(): Promise<void> {
     await OpenFeature.setProviderAndWait(provider);
   } catch (error) {
     console.error('Failed to initialize OpenFeature with LaunchDarkly:', error);
-    // App continues without feature flags
+    // App continues without feature flags — but the provider never reaches READY, so every
+    // flag-gated guard will independently wait out its own timeout later (GH-1351). Report here
+    // too so the bootstrap failure itself is visible, not just each guard's downstream timeout.
+    dataDogRumService.addError(error instanceof Error ? error : new Error(String(error)), { source: 'initializeOpenFeature' });
   }
 }
 
@@ -1114,13 +1167,14 @@ logger: basicLogger({ level: 'none' });
 
 **Error Types:**
 
-| Severity | Message                                     | When                          |
-| -------- | ------------------------------------------- | ----------------------------- |
-| WARN     | "LaunchDarkly client ID not configured"     | Missing environment variable  |
-| ERROR    | "Failed to initialize OpenFeature"          | Provider initialization fails |
-| ERROR    | "Failed to initialize feature flag service" | User context setup fails      |
-| ERROR    | "Error evaluating [type] flag '[key]'"      | Individual flag error         |
-| ERROR    | "Feature flag provider error"               | Provider runtime error        |
+| Severity    | Message                                                | When                                                                                                                                                                                                              |
+| ----------- | ------------------------------------------------------ | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| WARN        | "LaunchDarkly client ID not configured"                | Missing environment variable                                                                                                                                                                                      |
+| ERROR + RUM | "Failed to initialize OpenFeature with LaunchDarkly"   | Provider initialization fails — also reported via `dataDogRumService.addError()` with `{ source: 'initializeOpenFeature' }`, so the bootstrap failure itself is visible, not just each guard's downstream timeout |
+| ERROR       | "Failed to initialize feature flag service"            | User context setup fails                                                                                                                                                                                          |
+| ERROR       | "Error evaluating [type] flag '[key]'"                 | Individual flag error                                                                                                                                                                                             |
+| ERROR       | "Feature flag provider error"                          | Provider runtime error                                                                                                                                                                                            |
+| RUM only    | "Feature flag provider not ready before guard timeout" | `waitForReady()` times out before the provider reaches READY (GH-1351) — reported via `dataDogRumService.addError()` with `{ guard, flag }` context, not logged to console                                        |
 
 ## 🎨 Real-World Examples
 
