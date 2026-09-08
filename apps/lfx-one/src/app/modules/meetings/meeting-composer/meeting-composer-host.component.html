@@ -18,8 +18,9 @@
           @let editBlockedReason = editFromToastBlockedReason();
 
           <div class="mt-1 flex items-center gap-3">
-            <!-- `aria-disabled` rather than `disabled`, matching the rail: the toast auto-dismisses, so an
-                 unreachable control here would leave a screen-reader user no way to hear why it did nothing.
+            <!-- `aria-disabled` rather than `disabled`, matching the rail: a focusable control that explains
+                 itself beats an unreachable one, which would leave a screen-reader user no way to hear why
+                 nothing happened.
                  The reason rides on `aria-label`/`title` rather than an sr-only child, because PrimeNG's
                  toast item is an `aria-atomic` live region — adding or removing a child re-announces the
                  whole toast. `onEditCreatedMeeting` is the real guard. -->

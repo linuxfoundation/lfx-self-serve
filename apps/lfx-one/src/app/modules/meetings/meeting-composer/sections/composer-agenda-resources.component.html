@@ -146,7 +146,9 @@
                 [title]="attachment.name">
                 {{ attachment.name }}
               </span>
-              @if (attachment.file_size) {
+              <!-- Null check, not truthiness: `file_size` is optional, and a genuine 0-byte upload
+                   still has a size to show — `FileSizePipe` renders it as "0 B". -->
+              @if (attachment.file_size !== null && attachment.file_size !== undefined) {
                 <span class="flex-shrink-0 text-xs text-gray-400">{{ attachment.file_size | fileSize }}</span>
               }
             </div>
