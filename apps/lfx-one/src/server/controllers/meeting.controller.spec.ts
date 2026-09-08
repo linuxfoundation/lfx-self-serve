@@ -113,12 +113,11 @@ function buildRes(): Response {
   return res;
 }
 
-function buildReq(overrides: Partial<Request> = {}): Request {
+function buildReq(overrides: Partial<Request> = {}, headers: Record<string, string> = {}): Request {
   // `get` is stubbed because the registrant batch endpoints read `content-length` off the request for
-  // their `body_size` log field. Returning `undefined` is the honest default — Express omits the
-  // header on a bodyless request — and exercises the `?? 0` fallback rather than papering over it.
-  const headers: Record<string, string | undefined> = { 'content-length': undefined };
-
+  // their `content_length` log field. These reqs are built by hand rather than sent over HTTP, so no
+  // header exists unless a test asks for one — which is also the state a chunked request arrives in,
+  // and what exercises `readContentLength`'s `null` fallback.
   return {
     params: { uid: MEETING_ID },
     query: {},
@@ -346,10 +345,14 @@ describe('MeetingController', () => {
       expect(meetingSvc.addMeetingRegistrant).not.toHaveBeenCalled();
     });
 
-    // `email` is the only identity a new registrant has, and `createBatchResponse` keys its per-item
-    // results by it — so an entry without one used to reach upstream as a create carrying nothing but
-    // the meeting UID and come back keyed by `undefined`. Spreading `null` is legal, so the mapping
-    // itself never threw; the entry just stopped looking empty once `meeting_id` was added.
+    // `email` is the only identity a new registrant has, and the per-failure log line is keyed by it —
+    // so an entry without one used to reach upstream as a create with a literal `{}` body (the mapper
+    // deletes the `meeting_id` added here) and be logged against `undefined`. Spreading `null` is
+    // legal, so the mapping itself never threw; the entry just stopped looking empty once
+    // `meeting_id` was added.
+    //
+    // The asserted field name is what distinguishes the email guard from the two checks that run
+    // before it — without it these cases would keep passing if the guard were deleted.
     it.each([
       ['a null entry', [null]],
       ['an empty object', [{}]],
@@ -361,8 +364,26 @@ describe('MeetingController', () => {
       await controller.addMeetingRegistrants(req, buildRes(), next);
 
       expect(next).not.toHaveBeenCalledWith(expect.any(TypeError));
-      expect(next).toHaveBeenCalledWith(expect.any(FakeValidationError));
+      expect(next).toHaveBeenCalledWith(expect.objectContaining({ fields: { 'registrants.email': 'required' } }));
       expect(meetingSvc.addMeetingRegistrant).not.toHaveBeenCalled();
+    });
+
+    it('records the declared content length on the operation when the request carries the header', async () => {
+      const req = buildReq({ body: [{ email: 'a@example.com' }] }, { 'content-length': '2048' });
+
+      await controller.addMeetingRegistrants(req, buildRes(), next);
+
+      expect(logger.startOperation).toHaveBeenCalledWith(req, 'add_meeting_registrants', expect.objectContaining({ content_length: 2048 }));
+    });
+
+    it('records a null content length when the request declares none', async () => {
+      const req = buildReq({ body: [{ email: 'a@example.com' }] });
+
+      await controller.addMeetingRegistrants(req, buildRes(), next);
+
+      // `null`, not `0`: a chunked request omits the header, and logging it as `0` would make it
+      // indistinguishable from an empty body.
+      expect(logger.startOperation).toHaveBeenCalledWith(req, 'add_meeting_registrants', expect.objectContaining({ content_length: null }));
     });
   });
 
@@ -392,6 +413,10 @@ describe('MeetingController', () => {
     // guarantee; the 400 is what stops an entry with nothing to apply from reaching upstream as a
     // `PUT .../registrants/reg-1` carrying a literal `{}` — an empty write whose field semantics are
     // ITX's to define, echoed back to the client as the "updated" registrant.
+    // Each case asserts `registrants.changes` specifically. Asserting only `FakeValidationError`
+    // would let a case pass on one of the two checks that run first — `[null]` in particular is
+    // rejected for its missing UID and never reaches this guard at all, which is why it's a separate
+    // test below rather than a row here.
     it.each([
       ['omits changes', [{ uid: 'reg-1' }]],
       ['sends an empty changes object', [{ uid: 'reg-1', changes: {} }]],
@@ -401,15 +426,43 @@ describe('MeetingController', () => {
       // `committee_uid` is stripped before forwarding, so an entry carrying only that key still
       // forwards an empty write.
       ['sends only a committee_uid', [{ uid: 'reg-1', changes: { committee_uid: V1_COMMITTEE_SFID } }]],
-      ['sends a null entry', [null]],
+      // The three keys below survive `stripCommitteeUid` but not `toUpstreamRegistrantBody`:
+      // `meeting_id` is deleted outright, and the renamed fields are dropped when nullish. Counting
+      // raw keys let all three through the guard and into the empty `PUT` it exists to reject.
+      ['sends only a meeting_id', [{ uid: 'reg-1', changes: { meeting_id: MEETING_ID } }]],
+      ['sends only a null org_name', [{ uid: 'reg-1', changes: { org_name: null } }]],
+      ['sends only nullish renamed fields', [{ uid: 'reg-1', changes: { org_name: null, avatar_url: undefined, occurrence_id: null } }]],
     ])('rejects an entry that %s instead of forwarding an empty write', async (_label, body) => {
       const req = buildReq({ body });
 
       await controller.updateMeetingRegistrants(req, buildRes(), next);
 
       expect(next).not.toHaveBeenCalledWith(expect.any(TypeError));
-      expect(next).toHaveBeenCalledWith(expect.any(FakeValidationError));
+      expect(next).toHaveBeenCalledWith(expect.objectContaining({ fields: { 'registrants.changes': 'required' } }));
       expect(meetingSvc.updateMeetingRegistrant).not.toHaveBeenCalled();
+    });
+
+    // Spreading `null` is legal and yields `{}`, so the body map doesn't throw — the entry simply
+    // arrives with no UID, and the UID check is what turns it away.
+    it('rejects a null entry on the missing-UID check rather than throwing', async () => {
+      const req = buildReq({ body: [null] });
+
+      await controller.updateMeetingRegistrants(req, buildRes(), next);
+
+      expect(next).not.toHaveBeenCalledWith(expect.any(TypeError));
+      expect(next).toHaveBeenCalledWith(expect.objectContaining({ fields: { 'registrants.uid': 'required' } }));
+      expect(meetingSvc.updateMeetingRegistrant).not.toHaveBeenCalled();
+    });
+
+    // A non-nullish value on a renamed field is a real change, so the guard has to let it through —
+    // the drop list is about nullish values, not about the keys themselves.
+    it('forwards an entry whose only change is a renamed field with a value', async () => {
+      const req = buildReq({ body: [{ uid: 'reg-1', changes: { org_name: 'Acme' } }] });
+
+      await controller.updateMeetingRegistrants(req, buildRes(), next);
+
+      expect(next).not.toHaveBeenCalledWith(expect.any(FakeValidationError));
+      expect(meetingSvc.updateMeetingRegistrant).toHaveBeenCalledWith(req, MEETING_ID, 'reg-1', expect.objectContaining({ org_name: 'Acme' }));
     });
 
     it('rejects a non-array body as a validation error rather than throwing', async () => {

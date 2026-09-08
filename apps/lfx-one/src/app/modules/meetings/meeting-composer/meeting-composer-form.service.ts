@@ -169,7 +169,15 @@ export class MeetingComposerFormService {
    */
   private readonly reset$ = new Subject<void>();
 
-  /** Incremented on every `initialize()` so callers can detect a submit that outlived its open. */
+  /**
+   * Incremented on every `initialize()` so callers can detect a submit that outlived its open.
+   * @description Deliberately not incremented on close. A close on its own leaves nothing for a
+   * resolving save to corrupt — every piece of state it writes is reset by the next `initialize()` —
+   * and cancelling there would swallow the emission the host turns into the "Meeting created" toast,
+   * which is the only route back to a meeting now that creating no longer navigates. What the guard
+   * is actually for is a close *followed by a reopen*, where the resolving save would write into a
+   * different meeting's form. Covered in `meeting-composer-form.service.spec.ts`.
+   */
   private generation = 0;
 
   public constructor() {

@@ -694,14 +694,21 @@ export interface DashboardMeetingCardProps {
 
 /**
  * Dashboard quick link
- * @description Navigation shortcut displayed in the dashboard header for write-enabled users
+ * @description Navigation shortcut displayed in the dashboard header or sidebar. Each link carries
+ * its own visibility predicate, because the permission a link needs is the permission of the thing
+ * it opens — not a single permission shared by the whole row.
  */
 export interface DashboardQuickLink {
   /** Display label for the quick link */
   label: string;
   /** FontAwesome icon class (e.g. 'fa-light fa-calendar') */
   icon: string;
-  /** Router link path segments. Omitted when `command` opens an in-page surface instead of navigating. */
+  /**
+   * Router link path segments.
+   * @description Required unless `command` is set. With neither, the link renders as an anchor with
+   * no `routerLink` — a dead, unfocusable row with no visible error — so a link that navigates has
+   * to declare this.
+   */
   route?: string[];
   /**
    * Click handler for links that open something over the current page rather than navigate.
@@ -709,6 +716,12 @@ export interface DashboardQuickLink {
    * destination it doesn't have. Takes precedence over `route` when both are set.
    */
   command?: () => void;
+  /**
+   * Whether the current user can use this link. Omitted means always visible.
+   * @description Read inside a computed, so it must be a signal read or an equivalently reactive
+   * expression rather than a value captured at construction.
+   */
+  visible?: () => boolean;
   /** Pre-computed data-testid slug (e.g. 'create-meeting') */
   testId: string;
 }

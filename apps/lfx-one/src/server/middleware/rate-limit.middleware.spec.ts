@@ -8,9 +8,12 @@ import { aiRateLimiter } from './rate-limit.middleware';
 
 // `aiRateLimiter` counts in the default in-process MemoryStore, so the counter is shared across
 // every test in this file. express-rate-limit exposes no reset, so each test has to use its own key
-// instead — and the keys are derived from the test's own name rather than written by hand, so a test
+// instead — and the keys are keyed off the test's own name rather than written by hand, so a test
 // added later cannot silently land in a bucket an earlier test already drained.
 const AI_LIMIT = 10;
+
+/** The /56 prefix handed to each test name on first use — see `testIpv6Prefix`. */
+const ipv6PrefixesByTest = new Map<string, string>();
 
 /** A `sub` unique to the running test, so no two tests share a rate-limit bucket. */
 function testSub(): string {
@@ -23,16 +26,23 @@ function testSub(): string {
  * The limiter masks anonymous callers to /56 — the first three groups plus the high byte of the
  * fourth — so tests that need two addresses inside one bucket vary only the fourth group's low byte,
  * and a different prefix is a different bucket.
+ *
+ * Handed out sequentially on first use rather than hashed from the test name: a hash has to fold the
+ * name into the 16 bits the third group holds, so two names could collide onto one prefix and share a
+ * bucket — which is the exact failure this function exists to rule out.
  */
 function testIpv6Prefix(): string {
   const name = expect.getState().currentTestName ?? 'unknown';
-  let hash = 0;
+  const existing = ipv6PrefixesByTest.get(name);
 
-  for (const character of name) {
-    hash = (hash * 31 + character.charCodeAt(0)) % 0x10000;
+  if (existing) {
+    return existing;
   }
 
-  return `2001:db8:${hash.toString(16).padStart(4, '0')}`;
+  const prefix = `2001:db8:${(ipv6PrefixesByTest.size + 1).toString(16).padStart(4, '0')}`;
+  ipv6PrefixesByTest.set(name, prefix);
+
+  return prefix;
 }
 
 // Minimal Express stand-ins. express-rate-limit only reads `req.ip`, `req.oidc` (through our

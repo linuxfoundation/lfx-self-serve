@@ -53,9 +53,10 @@ import {
 } from '@lfx-one/shared/utils';
 import { Request } from 'express';
 
-import { AuthorizationError, ResourceNotFoundError, ServiceValidationError } from '../errors';
+import { ResourceNotFoundError, AuthorizationError, ServiceValidationError } from '../errors';
 import { fetchEntityProject, toEntityProjectFields } from '../helpers/entity-project-enrichment.helper';
 import { attachRsvpsToRegistrants, filterRsvpsToActiveRegistrants } from '../helpers/meeting-rsvp.helper';
+import { APP_ONLY_REGISTRANT_KEYS } from '../constants';
 import { pollEndpoint } from '../helpers/poll-endpoint.helper';
 import { fetchAllQueryResources } from '../helpers/query-service.helper';
 import { getEffectiveEmail, getEffectiveUsername, getUsernameFromAuth, stripAuthPrefix } from '../utils/auth-helper';
@@ -900,9 +901,10 @@ export class MeetingService {
     const sanitizedPayload = logger.sanitize({ registrantData });
     logger.debug(req, 'add_meeting_registrant', 'Creating meeting registrant', sanitizedPayload);
 
-    // `| null` in the type parameter because that is what actually comes back: `ApiClientService`
-    // maps an empty response body to `null`. Same reasoning as `updateMeetingRegistrant` below —
-    // declaring it non-nullable would make the guard read as always-true to TypeScript.
+    // `| null` in the type parameter because the contract permits it: `ITXZoomMeetingRegistrant`,
+    // the only response this POST declares, has no `required:` block, so a literal `{}` — or no body
+    // at all, which `ApiClientService` maps to `null` — is schema-valid. Declaring it non-nullable
+    // would make the guard read as always-true to TypeScript.
     const newRegistrant = await this.microserviceProxy.proxyRequest<Record<string, unknown> | null>(
       req,
       'LFX_V2_SERVICE',
@@ -933,8 +935,9 @@ export class MeetingService {
     const sanitizedPayload = logger.sanitize({ updateData });
     logger.debug(req, 'update_meeting_registrant', 'Updating meeting registrant payload', sanitizedPayload);
 
-    // `| null` in the type parameter because that is what actually comes back: `ApiClientService`
-    // maps an empty response body to `null`. Declaring it non-nullable made the guard below read as
+    // `| null` in the type parameter because that is what always comes back: this PUT declares only
+    // `204 No Content`, so an empty body is the documented response, not a degenerate case, and
+    // `ApiClientService` maps one to `null`. Declaring it non-nullable made the guard below read as
     // always-true to TypeScript, so a future cleanup could have deleted the fallback without a
     // compile error.
     const updatedRegistrant = await this.microserviceProxy.proxyRequest<Record<string, unknown> | null>(
@@ -1967,8 +1970,9 @@ export class MeetingService {
       ...(registrantData.occurrence_id && { occurrence: registrantData.occurrence_id }),
     };
 
-    // `| null` in the type parameter because that is what actually comes back: `ApiClientService`
-    // maps an empty response body to `null`.
+    // `| null` in the type parameter because the contract permits it — see `addMeetingRegistrant`:
+    // `ITXZoomMeetingRegistrant` declares no required properties, so an empty body is schema-valid,
+    // and `ApiClientService` maps one to `null`.
     const upstreamRegistrant = await this.microserviceProxy.proxyRequest<Record<string, unknown> | null>(
       req,
       'LFX_V2_SERVICE',
@@ -1978,8 +1982,8 @@ export class MeetingService {
       payload,
       { 'X-Sync': 'true' }
     );
-    // Keys, not truthiness — see `addMeetingRegistrant`. This path is the public registration one, so
-    // an unusable body used to surface to an anonymous registrant as a `{}` "created" record.
+    // Keys, not truthiness — see `addMeetingRegistrant`. This is the path a registrant drives from the
+    // public meeting page, so an unusable body used to surface to them as a `{}` "created" record.
     const hasUpstreamBody = !!upstreamRegistrant && Object.keys(upstreamRegistrant).length > 0;
     const newRegistrant = hasUpstreamBody
       ? this.fromUpstreamRegistrant(upstreamRegistrant)
@@ -1989,9 +1993,9 @@ export class MeetingService {
       meeting_id: meetingId,
       // `?? null` rather than leaving it `undefined`: Pino drops undefined values, so a create whose
       // upstream body carried no UID logged as a success line with no `registrant_uid` field at all,
-      // indistinguishable from a log-shape change. `upstream_body` says which branch produced it.
+      // indistinguishable from a log-shape change. `has_upstream_body` says which branch produced it.
       registrant_uid: newRegistrant.uid ?? null,
-      upstream_body: hasUpstreamBody,
+      has_upstream_body: hasUpstreamBody,
     });
 
     return newRegistrant;
@@ -2264,17 +2268,10 @@ export class MeetingService {
     const { org_name, avatar_url, occurrence_id } = body;
     const upstream: Record<string, unknown> = { ...body };
 
-    // Intersection, not union: a union only rejects a key once it's gone from *both* interfaces, so a
-    // rename on one of them would still compile while the `delete` quietly stopped matching. All four
-    // keys exist on both, so the intersection compiles as-is and does fail the build on either rename.
-    const appOnlyKeys: (keyof CreateMeetingRegistrantRequest & keyof UpdateMeetingRegistrantRequest)[] = [
-      'meeting_id',
-      'org_name',
-      'avatar_url',
-      'occurrence_id',
-    ];
-
-    for (const appOnlyKey of appOnlyKeys) {
+    // Shared with `MeetingController.hasRegistrantChanges`, which has to know exactly which keys
+    // vanish here to tell an empty update apart from a real one — see the constant's own docs for
+    // why it's typed as the intersection of the two request interfaces.
+    for (const appOnlyKey of APP_ONLY_REGISTRANT_KEYS) {
       delete upstream[appOnlyKey];
     }
 

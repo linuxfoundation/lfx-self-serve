@@ -23,6 +23,7 @@ import {
 import { truncateToUtf16Units } from '@lfx-one/shared/utils';
 import { NextFunction, Request, Response } from 'express';
 
+import { NULLISH_DROPPED_REGISTRANT_KEYS } from '../constants';
 import { resolveCommitteeV2UidsToV1Ids } from '../helpers/committee-v1-mapping.helper';
 import { AuthorizationError, ServiceValidationError } from '../errors';
 import {
@@ -618,7 +619,11 @@ export class MeetingController {
 
   /**
    * POST /meetings/:uid/registrants
-   * @description Adds one or more registrants with partial success support
+   * @description Adds one or more registrants with partial success support. Partial success covers
+   * upstream failures only — a per-item 207 says "this row was attempted and upstream refused it".
+   * Client-shape validation is all-or-nothing and answers 400 before anything is attempted: a body
+   * with a malformed row is a client bug the client is going to fix and resend, and creating the
+   * other rows first would make that resend duplicate every one of them.
    */
   public async addMeetingRegistrants(req: Request, res: Response, next: NextFunction): Promise<void> {
     const { uid } = req.params;
@@ -636,9 +641,12 @@ export class MeetingController {
     const startTime = logger.startOperation(req, 'add_meeting_registrants', {
       meeting_id: uid,
       registrant_count: registrantData.length,
-      // `content-length` rather than re-serializing the parsed body: the JSON limit is 15mb, and
-      // stringifying only to read `.length` allocates a second copy of it on every request.
-      body_size: Number(req.get('content-length') ?? 0),
+      // `content_length`, not `body_size`: the sibling operations in this file log `body_size` by
+      // re-serializing `req.body`, and that is a different measurement — a gzipped or chunked request
+      // makes the two disagree. The two batch endpoints are the ones most likely to carry a body near
+      // the 15mb JSON limit, so they read the header instead of allocating a second copy of it, and
+      // the field is named for what it actually holds so the two can't be aggregated together.
+      content_length: MeetingController.readContentLength(req),
     });
 
     try {
@@ -668,11 +676,14 @@ export class MeetingController {
         return;
       }
 
-      // `email` is the one required field on `CreateMeetingRegistrantRequest` and the only identity
-      // a new registrant has — the batch response even keys its per-item results by it. Judged on the
-      // raw entries, since the mapping above already gave every one of them a `meeting_id`. Left
-      // unguarded, `[null]` and `[{}]` both cleared every check and sent upstream a create carrying
-      // nothing but the meeting UID, then reported the result back keyed by `undefined`.
+      // `email` is the only identity a not-yet-created registrant has — it's what
+      // `createBatchResponse` passes to `getIdentifier` for the per-failure log line, so without it a
+      // failure is logged against `undefined` and can't be traced back to a row. (Three more fields
+      // are non-optional on `CreateMeetingRegistrantRequest`, but `meeting_id` is supplied here from
+      // the path and upstream requires none of them, so only `email` is checked.) Judged on the raw
+      // entries, since the mapping above already gave every one of them a `meeting_id` —
+      // `toUpstreamRegistrantBody` deletes that again, so `[null]` and `[{}]` used to clear every
+      // check and send upstream a create with a literal `{}` body.
       if (rawRegistrants.some((registrant) => typeof registrant?.email !== 'string' || registrant.email.trim().length === 0)) {
         const validationError = ServiceValidationError.forField('registrants.email', 'One or more registrants are missing an email address', {
           operation: 'add_meeting_registrants',
@@ -732,7 +743,10 @@ export class MeetingController {
 
   /**
    * PUT /meetings/:uid/registrants
-   * @description Updates one or more registrants with partial success support
+   * @description Updates one or more registrants with partial success support. As on the create path,
+   * partial success covers upstream failures only; a body with a malformed row answers 400 before
+   * anything is attempted, so the client's fix-and-resend re-applies the whole batch rather than
+   * re-applying the rows that already landed.
    */
   public async updateMeetingRegistrants(req: Request, res: Response, next: NextFunction): Promise<void> {
     const { uid } = req.params;
@@ -743,9 +757,13 @@ export class MeetingController {
     // the "No registrants provided" check below answers with a 400; entries that carry a UID but no
     // usable `changes` are caught by the third check, since by then every mapped `changes` looks
     // non-empty because of the `meeting_id` added here.
-    const rawUpdates: { uid: string; changes?: UpdateMeetingRegistrantRequest }[] = Array.isArray(req.body) ? req.body : [];
+    const rawUpdates: ({ uid: string; changes?: UpdateMeetingRegistrantRequest } | null | undefined)[] = Array.isArray(req.body) ? req.body : [];
+    // `uid` is read off the entry rather than spread, and defaulted to `''` rather than left
+    // `undefined`: a `null` entry has no `uid` at all, and the "missing UID" check below is what
+    // rejects it. Defaulting keeps that the single place the requirement is enforced, instead of
+    // splitting it between a type assertion here and a runtime check there.
     const updateData: { uid: string; changes: UpdateMeetingRegistrantRequest }[] = rawUpdates.map((update) => ({
-      ...update,
+      uid: update?.uid ?? '',
       changes: {
         ...MeetingController.stripCommitteeUid(update?.changes),
         meeting_id: uid,
@@ -755,9 +773,12 @@ export class MeetingController {
     const startTime = logger.startOperation(req, 'update_meeting_registrants', {
       meeting_id: uid,
       registrant_count: updateData.length,
-      // `content-length` rather than re-serializing the parsed body: the JSON limit is 15mb, and
-      // stringifying only to read `.length` allocates a second copy of it on every request.
-      body_size: Number(req.get('content-length') ?? 0),
+      // `content_length`, not `body_size`: the sibling operations in this file log `body_size` by
+      // re-serializing `req.body`, and that is a different measurement — a gzipped or chunked request
+      // makes the two disagree. The two batch endpoints are the ones most likely to carry a body near
+      // the 15mb JSON limit, so they read the header instead of allocating a second copy of it, and
+      // the field is named for what it actually holds so the two can't be aggregated together.
+      content_length: MeetingController.readContentLength(req),
     });
 
     try {
@@ -797,7 +818,8 @@ export class MeetingController {
         return;
       }
 
-      // Check that every entry actually asks for a change. Judged on `rawUpdates`, not `updateData`:
+      // Check that every entry actually asks for a change — measured against what survives the
+      // outbound mapper, not against the raw key count. Judged on `rawUpdates`, not `updateData`:
       // the mapping above adds `meeting_id` to every `changes`, so by then even `[{ "uid": "x" }]`
       // looks like a change. Left unguarded it cleared all three checks and sent upstream a
       // `PUT .../registrants/x` with a literal `{}` body — an empty write whose field semantics are
@@ -1945,15 +1967,36 @@ export class MeetingController {
    * Deliberately typed `unknown`: the declared `UpdateMeetingRegistrantRequest` is a compile-time
    * guarantee only, and this reads straight off `req.body`. Arrays and primitives are rejected
    * rather than counted — `Object.keys('ab')` is `['0', '1']`, which would otherwise pass as two
-   * changes. `committee_uid` doesn't count either, since `stripCommitteeUid` removes it before the
-   * body is forwarded, so an entry carrying only that key would still forward an empty write.
+   * changes.
+   *
+   * The count is taken over the keys that survive the outbound mapper, not over the raw ones,
+   * because every key the mapper drops is a key that cannot reach upstream:
+   * - `committee_uid` — `stripCommitteeUid` removes it here, before the body is forwarded.
+   * - `meeting_id` — `toUpstreamRegistrantBody` deletes it; the meeting is addressed by the path.
+   * - `org_name` / `avatar_url` / `occurrence_id` — the mapper renames these to `org`,
+   *   `profile_picture` and `occurrence`, but only when the value is non-nullish, so a `null` here
+   *   contributes nothing to the outbound body.
+   *
+   * Counting the raw keys instead let `{ "meeting_id": "M1" }` and `{ "org_name": null }` through
+   * the guard and straight into the empty `PUT` it exists to prevent. Keep this list in step with
+   * `MeetingService.toUpstreamRegistrantBody`.
    */
   private static hasRegistrantChanges(changes: unknown): boolean {
     if (typeof changes !== 'object' || changes === null || Array.isArray(changes)) {
       return false;
     }
 
-    return Object.keys(MeetingController.stripCommitteeUid(changes as UpdateMeetingRegistrantRequest)).length > 0;
+    const stripped = MeetingController.stripCommitteeUid(changes as UpdateMeetingRegistrantRequest) as unknown as Record<string, unknown>;
+
+    return Object.entries(stripped).some(([key, value]) => {
+      if (key === 'meeting_id') {
+        return false;
+      }
+
+      // Widened for the lookup only: `includes` on a `readonly ['org_name', ...]` won't accept an
+      // arbitrary string, and the keys here come off untyped JSON.
+      return (NULLISH_DROPPED_REGISTRANT_KEYS as readonly string[]).includes(key) ? value != null : true;
+    });
   }
 
   /**
@@ -2098,5 +2141,18 @@ export class MeetingController {
     }
 
     return floored;
+  }
+
+  /**
+   * The request's declared `Content-Length`, or `null` when it carries none.
+   * @description A chunked request omits the header entirely, so `null` is a real outcome and not an
+   * error — logging it as `0` would make it indistinguishable from an empty body. A non-numeric value
+   * is normalised the same way: `Number('abc')` is `NaN`, which Pino serializes as `null` anyway, so
+   * this only makes that deliberate instead of incidental.
+   */
+  private static readContentLength(req: Request): number | null {
+    const declared = Number(req.get('content-length'));
+
+    return Number.isFinite(declared) ? declared : null;
   }
 }

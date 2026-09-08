@@ -64,6 +64,7 @@ vi.mock('./logger.service', () => ({
 
 import type { Request } from 'express';
 
+import { logger } from './logger.service';
 import { MeetingService } from './meeting.service';
 
 const req = {} as unknown as Request;
@@ -996,7 +997,12 @@ describe('MeetingService registrant write payloads', () => {
 
   beforeEach(() => {
     proxyRequest.mockReset();
+    // `{}` is a body with no usable fields, which is the fallback branch on every write path here.
+    // The outbound-payload tests below don't care — they read `proxyRequest`'s arguments — but the
+    // tests that assert on a *returned* registrant have to set their own response, or they'd be
+    // checking the fallback while claiming to check the mapping.
     proxyRequest.mockResolvedValue({});
+    vi.mocked(logger.success).mockClear();
     service = new MeetingService();
   });
 
@@ -1098,6 +1104,63 @@ describe('MeetingService registrant write payloads', () => {
 
     expect(result).toMatchObject({ uid: 'reg-1', org_name: 'Acme' });
     expect(result).not.toHaveProperty('email');
+  });
+
+  // Same reasoning as the update fallback above, on the two create paths: `ApiClientService` maps an
+  // empty response body to `null`, and a 201 carrying a literal `{}` is truthy — so both were mapped
+  // straight through and reported a created registrant with every field missing. The submitted payload
+  // is the closest description of what upstream now holds; `uid` is the one thing it can't supply.
+  it.each([
+    ['null', null],
+    ['an empty object', {}],
+  ])('falls back to the submitted payload when the create answers with %s', async (_label, body) => {
+    proxyRequest.mockResolvedValue(body);
+
+    const result = await service.addMeetingRegistrant(req, {
+      meeting_id: 'meeting-1',
+      email: 'a@example.com',
+      first_name: 'A',
+      last_name: 'B',
+    });
+
+    expect(result).toMatchObject({ email: 'a@example.com', first_name: 'A', last_name: 'B' });
+    expect(result.uid).toBeUndefined();
+  });
+
+  // Self-registration is the path a registrant drives from the public meeting page, so the same
+  // unusable body used to surface to them as a `{}` "created" record. Its success line has to say
+  // which branch produced the result — without `has_upstream_body` and an explicit `null` uid, Pino
+  // drops the undefined `uid` and the line is indistinguishable from a create whose log shape changed.
+  it('logs which branch the self-registration create returned from when upstream sends no body', async () => {
+    proxyRequest.mockResolvedValue(null);
+
+    const result = await service.addMeetingRegistrantSelf(req, 'meeting-1', {
+      meeting_id: 'meeting-1',
+      email: 'a@example.com',
+      first_name: 'A',
+      last_name: 'B',
+    });
+
+    expect(result).toMatchObject({ email: 'a@example.com' });
+    expect(logger.success).toHaveBeenCalledWith(
+      req,
+      'add_meeting_registrant_self',
+      expect.anything(),
+      expect.objectContaining({ registrant_uid: null, has_upstream_body: false })
+    );
+  });
+
+  it('reports the upstream branch on the self-registration create when upstream does answer', async () => {
+    proxyRequest.mockResolvedValue({ uid: 'reg-1' });
+
+    await service.addMeetingRegistrantSelf(req, 'meeting-1', { meeting_id: 'meeting-1', email: 'a@example.com', first_name: 'A', last_name: 'B' });
+
+    expect(logger.success).toHaveBeenCalledWith(
+      req,
+      'add_meeting_registrant_self',
+      expect.anything(),
+      expect.objectContaining({ registrant_uid: 'reg-1', has_upstream_body: true })
+    );
   });
 
   // Self-registration builds its own payload against a different endpoint, and it's the one path

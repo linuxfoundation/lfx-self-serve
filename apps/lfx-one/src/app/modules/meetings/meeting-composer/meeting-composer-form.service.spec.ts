@@ -151,6 +151,133 @@ describe('MeetingComposerFormService — submit generation guard', () => {
 
     expect(addMeetingRegistrants).toHaveBeenCalledWith('meeting-1', [expect.objectContaining({ meeting_id: 'meeting-1' })]);
   });
+
+  /**
+   * Closing without reopening deliberately leaves the generation alone, so the save runs to completion.
+   * @description Reviewer feedback asked for the token to be invalidated on every close as well, not just
+   * on reopen. Doing that would break the create path: `announceCreatedMeeting` in the host is the only
+   * route back to a meeting now that creating no longer navigates, and it only fires on an emission. A
+   * close that bumped the generation would swallow the emission for a meeting that genuinely was created,
+   * and — because the guests were in fact attached — would replace the "Meeting created" toast with the
+   * "guests and resources were not attached" warning. The state writes the guard exists to prevent
+   * (`meetingId.set`, `reportDependentResults`) are harmless here, because they are all reset by the next
+   * `initialize()`. These two cases pin that down so a future change to it has to be deliberate.
+   */
+  it('emits and attaches guests when the composer closed without reopening', () => {
+    const created = new Subject<Meeting>();
+    createMeeting.mockReturnValue(created);
+    service.registrantUpdates.set({ toAdd: [REGISTRANT], toUpdate: [], toDelete: [] });
+
+    const emissions: (Meeting | null)[] = [];
+    service.submit().subscribe((meeting) => emissions.push(meeting));
+
+    // No `initialize()` — a close on its own touches nothing the submit pipeline reads.
+    created.next({ id: 'meeting-1' } as Meeting);
+    created.complete();
+
+    expect(emissions).toEqual([{ id: 'meeting-1' }]);
+    expect(addMeetingRegistrants).toHaveBeenCalledWith('meeting-1', [expect.objectContaining({ meeting_id: 'meeting-1' })]);
+    expect(messageAdd).not.toHaveBeenCalledWith(expect.objectContaining({ summary: 'Partially saved' }));
+  });
+
+  it('clears the submitting flag when the composer closed without reopening', () => {
+    const created = new Subject<Meeting>();
+    createMeeting.mockReturnValue(created);
+
+    service.submit().subscribe();
+    expect(service.submitting()).toBe(true);
+
+    created.next({ id: 'meeting-1' } as Meeting);
+    created.complete();
+
+    // The reopen cases leave this to the next `initialize()`; a plain close has no next `initialize()`,
+    // so the flag has to be cleared here or the reopened composer would start with Save disabled.
+    expect(service.submitting()).toBe(false);
+  });
+});
+
+/**
+ * Covers the attachment-deletion queue across a save.
+ * @description `processAttachmentOperations` snapshots the queue up front, so what survives the pass is
+ * not simply "the queue, cleared": the ids that failed have to stay, and anything the organizer removed
+ * while the requests were in flight has to stay too — clearing wholesale would drop it with no trace,
+ * and clearing nothing would retry a delete upstream has already applied.
+ */
+describe('MeetingComposerFormService — attachment deletion queue', () => {
+  let service: MeetingComposerFormService;
+  let deleteMeetingAttachment: ReturnType<typeof vi.fn>;
+  let messageAdd: ReturnType<typeof vi.fn>;
+
+  beforeEach(() => {
+    deleteMeetingAttachment = vi.fn().mockReturnValue(of(undefined));
+    messageAdd = vi.fn();
+
+    TestBed.configureTestingModule({
+      providers: [
+        MeetingComposerFormService,
+        { provide: MessageService, useValue: { add: messageAdd } },
+        { provide: CommitteeService, useValue: {} },
+        { provide: ProjectContextService, useValue: { activeContextUid: () => null } },
+        {
+          provide: MeetingService,
+          useValue: {
+            createMeeting: vi.fn().mockReturnValue(of({ id: 'meeting-1' } as Meeting)),
+            updateMeeting: vi.fn(),
+            addMeetingRegistrants: vi.fn().mockReturnValue(of({ summary: { successful: 0, failed: 0 } })),
+            updateMeetingRegistrants: vi.fn().mockReturnValue(of({ summary: { successful: 0, failed: 0 } })),
+            deleteMeetingRegistrants: vi.fn().mockReturnValue(of({ summary: { successful: 0, failed: 0 } })),
+            createMeetingAttachment: vi.fn(),
+            deleteMeetingAttachment,
+            uploadMeetingFile: vi.fn(),
+          },
+        },
+      ],
+    });
+
+    service = TestBed.inject(MeetingComposerFormService);
+    service.initialize({ mode: 'create', projectUid: 'project-1' });
+    service.form().patchValue({ title: 'Composer meeting', meeting_type: 'Technical' });
+  });
+
+  it('keeps the ids whose delete failed and drops the ones that succeeded', () => {
+    deleteMeetingAttachment.mockImplementation((_meetingId: string, attachmentId: string) =>
+      attachmentId === 'doc-2' ? throwError(() => new Error('upstream refused')) : of(undefined)
+    );
+    service.deleteAttachment('doc-1');
+    service.deleteAttachment('doc-2');
+
+    service.submit().subscribe();
+
+    expect(service.pendingAttachmentDeletions()).toEqual(['doc-2']);
+    // Counted as a resource failure, so the organizer is told the meeting saved but the removal didn't.
+    expect(messageAdd).toHaveBeenCalledWith(expect.objectContaining({ severity: 'warn', detail: expect.stringContaining('1 resource(s)') }));
+  });
+
+  it('keeps a deletion queued after the pass snapshotted the queue', () => {
+    const firstDelete = new Subject<void>();
+    deleteMeetingAttachment.mockReturnValue(firstDelete);
+    service.deleteAttachment('doc-1');
+
+    service.submit().subscribe();
+
+    // Queued while the request is in flight, so it is not in the snapshot the pass is working from.
+    service.deleteAttachment('doc-2');
+    firstDelete.next();
+    firstDelete.complete();
+
+    expect(service.pendingAttachmentDeletions()).toEqual(['doc-2']);
+    expect(deleteMeetingAttachment).toHaveBeenCalledTimes(1);
+  });
+
+  it('reports nothing when every queued deletion succeeded', () => {
+    service.deleteAttachment('doc-1');
+    service.deleteAttachment('doc-2');
+
+    service.submit().subscribe();
+
+    expect(service.pendingAttachmentDeletions()).toEqual([]);
+    expect(messageAdd).not.toHaveBeenCalled();
+  });
 });
 
 /**
