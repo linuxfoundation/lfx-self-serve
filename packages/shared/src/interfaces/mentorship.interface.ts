@@ -142,7 +142,7 @@ export interface MentorshipNameAvailability {
   available: boolean;
 }
 
-export type MentorshipNameLookupStatus = 'idle' | 'loading' | 'available' | 'taken';
+export type MentorshipNameLookupStatus = 'idle' | 'loading' | 'available' | 'taken' | 'unavailable';
 
 /** Date-field errors from the add/edit term dialog. */
 export interface MentorshipTermDateErrors {
@@ -158,7 +158,7 @@ export interface MentorshipCiiBadge {
   badgeLevel: string;
 }
 
-export type MentorshipCiiLookupStatus = 'idle' | 'loading' | 'valid' | 'invalid';
+export type MentorshipCiiLookupStatus = 'idle' | 'loading' | 'valid' | 'invalid' | 'unavailable';
 
 /** Admin program-detail underline tabs. */
 export type MentorshipProgramDetailTab = (typeof MENTORSHIP_PROGRAM_DETAIL_TABS)[number]['value'];

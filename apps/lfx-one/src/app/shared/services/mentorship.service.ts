@@ -14,7 +14,7 @@ import {
   MentorshipProgramsResponse,
   MentorshipProgramStatus,
 } from '@lfx-one/shared/interfaces';
-import { catchError, Observable, of, take } from 'rxjs';
+import { catchError, Observable, of, take, throwError } from 'rxjs';
 
 /**
  * Talks to the LFX One BFF's `/api/mentorship/*` endpoints.
@@ -51,10 +51,7 @@ export class MentorshipService {
   }
 
   public isProgramNameAvailable(name: string): Observable<MentorshipNameAvailability> {
-    return this.http.get<MentorshipNameAvailability>('/api/mentorship/programs/name-available', { params: new HttpParams().set('name', name) }).pipe(
-      take(1),
-      catchError(() => of({ available: true }))
-    );
+    return this.http.get<MentorshipNameAvailability>('/api/mentorship/programs/name-available', { params: new HttpParams().set('name', name) }).pipe(take(1));
   }
 
   public getLfProjects(params?: { search?: string; offset?: number; limit?: number }): Observable<MentorshipLfProjectsResponse> {
@@ -71,7 +68,11 @@ export class MentorshipService {
   public getCiiBadge(projectId: string): Observable<MentorshipCiiBadge | null> {
     return this.http.get<MentorshipCiiBadge>(`/api/mentorship/cii/${encodeURIComponent(projectId)}`).pipe(
       take(1),
-      catchError(() => of(null))
+      catchError((err: HttpErrorResponse) => {
+        if (err.status === 404) return of(null);
+        console.error('[MentorshipService] getCiiBadge failed', err);
+        return throwError(() => err);
+      })
     );
   }
 
