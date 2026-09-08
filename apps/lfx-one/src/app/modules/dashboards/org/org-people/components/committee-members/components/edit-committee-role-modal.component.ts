@@ -204,7 +204,7 @@ export class EditCommitteeRoleModalComponent {
       initials: person.initials,
       avatarUrl: person.avatarUrl ?? null,
       avatarColorClass: 'bg-purple-500',
-      email: person.email,
+      username: person.username ?? null,
     });
   }
 

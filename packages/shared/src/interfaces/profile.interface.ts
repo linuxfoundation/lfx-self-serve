@@ -375,6 +375,9 @@ export type IdentityState = 'verified' | 'unverified';
 export interface ConnectedIdentityFull {
   id: string;
   provider: IdentityProvider;
+  // CDP's identity type (distinct from `provider`, which the server can rewrite — e.g. a
+  // Google-cross-matched CDP email row keeps `type: 'email'` while `provider` becomes 'google').
+  type: CdpIdentityType;
   identifier: string;
   state: IdentityState;
   icon: string;

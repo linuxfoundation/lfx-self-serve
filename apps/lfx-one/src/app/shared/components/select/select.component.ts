@@ -91,9 +91,19 @@ export class SelectComponent {
 
   // Events
   public readonly onChange = output<any>();
+  public readonly onFilter = output<any>();
+  public readonly onLazyLoad = output<any>();
 
   // Event handlers
   protected handleChange(event: any): void {
     this.onChange.emit(event);
+  }
+
+  protected handleFilter(event: any): void {
+    this.onFilter.emit(event);
+  }
+
+  protected handleLazyLoad(event: any): void {
+    this.onLazyLoad.emit(event);
   }
 }

@@ -17,6 +17,8 @@ export class InputTextComponent {
   public control = input.required<string>();
   public type = input<string>();
   public id = input<string>();
+  /** Id applied to the focusable input — pair with an external `<label for>`. Prefer this over `id` so the host does not get a duplicate id. */
+  public inputId = input<string>();
   public size = input<'large' | 'small'>();
   public placeholder = input<string>();
   public class = input<string>();
@@ -24,6 +26,8 @@ export class InputTextComponent {
   public dataTest = input<string>();
   public icon = input<string>();
   public styleClass = input<string>();
+  public readonly = input<boolean>(false);
+  public maxlength = input<number>();
   /** Id of the element describing this input (e.g. its error message) — wired to `aria-describedby`. */
   public describedBy = input<string>();
   /** Marks the control invalid for assistive tech; the visible error text is the caller's. */

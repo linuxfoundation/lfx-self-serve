@@ -254,6 +254,15 @@ describe('OrgLensProjectDetailService.getHeroBlock health mapping', () => {
 
     expect(block?.hero.health).toBeNull();
   });
+
+  it('passes healthMaxScore and healthCoveredCategoryCount straight through from the warehouse', async () => {
+    mockHeroRow({ HEALTH_OVERALL_SCORE_V2: 70, HEALTH_SCORE_CATEGORY_V2: 'Healthy', COVERED_CATEGORY_COUNT_V2: 2, HEALTH_MAX_SCORE_V2: 75 });
+
+    const block = await service.getHeroBlock(ORG, SLUG);
+
+    expect(block?.hero.healthCoveredCategoryCount).toBe(2);
+    expect(block?.hero.healthMaxScore).toBe(75);
+  });
 });
 
 describe('OrgLensProjectDetailService.getLeaderboardBreakdown', () => {

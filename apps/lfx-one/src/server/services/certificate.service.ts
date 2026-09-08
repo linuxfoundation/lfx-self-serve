@@ -12,7 +12,7 @@ import { Request } from 'express';
 import { AuthorizationError, ResourceNotFoundError } from '../errors';
 import { logger } from './logger.service';
 import { SnowflakeService } from './snowflake.service';
-import { PDFTemplateDetails, CertificateData, CertificateEventRow } from '@lfx-one/shared/interfaces';
+import { PDFTemplateDetails, CertificateData, CertificateEventRow, CertificateResult } from '@lfx-one/shared/interfaces';
 import {
   DEFAULT_LOGO_WIDTH,
   DEFAULT_TEMPLATE,
@@ -20,7 +20,7 @@ import {
   LF_OPEN_SOURCE_OVERRIDE_MATCH,
   PROJECT_TEMPLATES,
 } from '@lfx-one/shared/constants/pdf.constants';
-import { isBackfillEventSource } from '@lfx-one/shared/utils';
+import { buildCertificateFileName, isBackfillEventSource } from '@lfx-one/shared/utils';
 
 // In production, import.meta.url points to the server bundle (dist/lfx-one/server/server.mjs)
 // and pdf-templates are copied there by the build script.
@@ -45,7 +45,7 @@ export class CertificateService {
     this.snowflakeService = SnowflakeService.getInstance();
   }
 
-  public async generateCertificate(req: Request, data: CertificateData): Promise<Buffer> {
+  public async generateCertificate(req: Request, data: CertificateData): Promise<CertificateResult> {
     logger.debug(req, 'generate_certificate', 'Fetching event data for certificate', {
       event_id: data.eventId,
     });
@@ -82,7 +82,9 @@ export class CertificateService {
       project_id: eventRow.PROJECT_ID,
     });
 
-    return this.buildPdf(data.userName, eventRow, template);
+    const pdf = await this.buildPdf(data.userName, eventRow, template);
+    const fileName = buildCertificateFileName(eventRow.EVENT_NAME, eventRow.EVENT_START_DATE, data.eventId);
+    return { pdf, fileName };
   }
 
   /**

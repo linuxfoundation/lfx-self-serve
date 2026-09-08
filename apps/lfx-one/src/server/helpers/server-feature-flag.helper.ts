@@ -389,6 +389,13 @@ export enum ServerFeatureFlag {
    * not-yet-converged pod still 409s. Reverse to roll back.
    */
   OrgLensClaM3 = 'LFX_ORG_LENS_CLA_M3_ENABLED',
+
+  /**
+   * Gates the company-email read in the Org Lens person drawer (LFXV2-3296). OFF (default) answers
+   * `unavailable` without querying the warehouse. Server-side because the client flag only hides the
+   * pixels; a flag that ships the PII is not a gate.
+   */
+  OrgLensCompanyEmails = 'LFX_ORG_LENS_COMPANY_EMAILS_ENABLED',
 }
 
 /**

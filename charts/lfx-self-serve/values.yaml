@@ -574,6 +574,22 @@ environment:
   LFX_ORG_LENS_CLA_M3_ENABLED:
     value:
 
+  # Serves company-affiliated email addresses in the Organization Lens person drawer
+  # (GET /api/orgs/:orgUid/lens/people/:personKey/detail and .../by-username/:username/company-emails,
+  # LFXV2-3296). Off (default) answers `unavailable` without querying the warehouse; the drawer
+  # renders "Company emails aren't available from this view".
+  #
+  # Server-side gate for personal data: the client-side org-lens-private-release OpenFeature flag
+  # only hides the pixels and never runs server-side, so on its own it would leave the BFF
+  # serving addresses by direct call.
+  #
+  # Rollout ordering: set this true and confirm the rolling update has converged BEFORE enabling
+  # the client flag, or the UI shows "unavailable" from not-yet-converged pods. Roll back in the
+  # opposite order — client flag off first, then this. Overlap is harmless: a caller gets either
+  # addresses or `unavailable`, never a partial or fabricated result.
+  LFX_ORG_LENS_COMPANY_EMAILS_ENABLED:
+    value:
+
   # Serves PATCH /api/campaigns/:campaignId/status from campaign-service instead of the
   # per-platform SDK calls in campaign-proxy.service.ts (LFXV2-3226).
   #

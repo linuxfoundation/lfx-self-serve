@@ -29,6 +29,7 @@ import {
   PD_VALID_TABS,
   PD_DEFAULT_TIME_RANGE,
   PD_DRAWER_QUERY_PARAM,
+  HEALTH_SCORE_PARTIAL_SUFFIX,
   PD_HEALTH_TAG,
   PD_NON_LF_MARKER,
   PD_VALID_DRAWER_CARD_KEYS,
@@ -58,7 +59,7 @@ import type {
   OrgLensProjectLeaderboardRow,
   OrgLensTrendBlock,
 } from '@lfx-one/shared/interfaces';
-import { parseLocalDateString } from '@lfx-one/shared/utils';
+import { isPartialHealthScore, parseLocalDateString } from '@lfx-one/shared/utils';
 import type { MenuItem } from 'primeng/api';
 import { DrawerModule } from 'primeng/drawer';
 import { InputTextModule } from 'primeng/inputtext';
@@ -210,8 +211,15 @@ export class OrgProjectDetailComponent {
   protected readonly isNonLfProject = computed(() => this.heroState().data?.isNonLfProject ?? false);
   protected readonly breadcrumbItems = computed<MenuItem[]>(() => this.initBreadcrumb());
   protected readonly healthMeta = computed(() => {
-    const health = this.hero()?.health;
-    return health ? PD_HEALTH_TAG[health] : null;
+    const hero = this.hero();
+    const health = hero?.health;
+    if (!health) {
+      return null;
+    }
+    const tag = PD_HEALTH_TAG[health];
+    // Bare-band bg/text stay unsuffixed for color lookup; only the rendered label gets " - Partial",
+    // sourced straight from the BFF's healthCoveredCategoryCount — never recomputed locally.
+    return isPartialHealthScore(hero?.healthCoveredCategoryCount ?? null) ? { ...tag, label: `${tag.label}${HEALTH_SCORE_PARTIAL_SUFFIX}` } : tag;
   });
   protected readonly firstCommitLabel = computed(() => this.formatMonthYear(this.hero()?.firstCommit ?? null));
   protected readonly softwareValueLabel = computed(() => this.formatCompactUsd(this.hero()?.softwareValueUsd ?? null));
@@ -490,10 +498,9 @@ export class OrgProjectDetailComponent {
     this.loadRosterPage(cardKey, event.first ?? 0, rowsPerPage);
   }
 
-  // Roster rows (all 13 card types) carry only name/avatar/initials — no personKey/email (see
-  // OrgLensCardDetailCell). Unlike Board/Committee rows, there's no real email to derive company
-  // variants from here, so the drawer opens without one and its email section stays empty rather
-  // than showing addresses fabricated from the display name.
+  // Roster rows (all 13 card types) carry only name/avatar/initials — no personKey or username (see
+  // OrgLensCardDetailCell), so the drawer opens without an identity key and reports company emails
+  // as unavailable.
   protected onRosterPersonClick(person: { name: string; avatarUrl?: string; initials: string }): void {
     this.drawer.open({
       name: person.name,

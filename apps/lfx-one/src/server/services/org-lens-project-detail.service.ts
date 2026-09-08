@@ -46,6 +46,8 @@ interface HeroRow {
   DESCRIPTION: string | null;
   HEALTH_OVERALL_SCORE_V2: number | null;
   HEALTH_SCORE_CATEGORY_V2: string | null;
+  COVERED_CATEGORY_COUNT_V2: number | null;
+  HEALTH_MAX_SCORE_V2: number | null;
   SOFTWARE_VALUE: number | null;
   FIRST_COMMIT_TS: Date | string | null;
 }
@@ -1099,6 +1101,7 @@ export class OrgLensProjectDetailService {
       `
         SELECT PROJECT_NAME, PROJECT_SLUG, PROJECT_LOGO_URL, FOUNDATION_NAME, IS_LF_PROJECT,
                DESCRIPTION, HEALTH_OVERALL_SCORE_V2, HEALTH_SCORE_CATEGORY_V2,
+               COVERED_CATEGORY_COUNT_V2, HEALTH_MAX_SCORE_V2,
                SOFTWARE_VALUE, FIRST_COMMIT_TS
         FROM ${this.projectsTable()}
         WHERE ACCOUNT_ID = ? AND PROJECT_SLUG = ?
@@ -1882,6 +1885,9 @@ export class OrgLensProjectDetailService {
       firstCommit: toIsoDate(row.FIRST_COMMIT_TS),
       softwareValueUsd: row.SOFTWARE_VALUE ?? null,
       health: this.mapHealth(row),
+      // Sourced straight from the warehouse — never recomputed, per health.mapHealth's v2-category/score precedence.
+      healthMaxScore: row.HEALTH_MAX_SCORE_V2 ?? null,
+      healthCoveredCategoryCount: row.COVERED_CATEGORY_COUNT_V2 ?? null,
       foundationLabel,
     };
   }

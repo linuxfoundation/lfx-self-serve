@@ -23,7 +23,7 @@ export function isValidUrl(urlString: string): boolean {
   // Check for dangerous URL patterns first
   for (const pattern of DANGEROUS_URL_PATTERNS) {
     if (pattern.test(urlString)) {
-      console.debug(`Rejected dangerous URL pattern: ${urlString}`);
+      console.debug('Rejected dangerous URL pattern', urlString);
       return false;
     }
   }
@@ -33,13 +33,13 @@ export function isValidUrl(urlString: string): boolean {
 
     // Only allow http and https protocols
     if (!['http:', 'https:'].includes(url.protocol)) {
-      console.debug(`Invalid URL protocol: ${url.protocol} for URL: ${urlString}`);
+      console.debug('Invalid URL protocol', url.protocol, urlString);
       return false;
     }
 
     // Basic hostname validation
     if (!url.hostname || url.hostname.length < 3) {
-      console.debug(`Invalid hostname: ${url.hostname} for URL: ${urlString}`);
+      console.debug('Invalid hostname', url.hostname, urlString);
       return false;
     }
 
@@ -53,13 +53,13 @@ export function isValidUrl(urlString: string): boolean {
       hostname.startsWith('192.168.') ||
       hostname === '0.0.0.0'
     ) {
-      console.debug(`Rejected private/local URL: ${urlString}`);
+      console.debug('Rejected private/local URL', urlString);
       return false;
     }
 
     return true;
   } catch (error) {
-    console.debug(`URL validation failed for: ${urlString}`, error);
+    console.debug('URL validation failed', urlString, error);
     return false;
   }
 }

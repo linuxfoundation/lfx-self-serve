@@ -591,6 +591,23 @@ Roll back in the opposite order — client flag off first. Overlap during the ro
 while the module is read-only: a caller gets either the list or a 409, never a partial write.
 Revisit that once the M3 write paths (sign, managers, approval list) land behind this flag.
 
+#### Organization Lens Company Emails
+
+| Parameter                                         | Description                                                                                           | Required | Default |
+| ------------------------------------------------- | ----------------------------------------------------------------------------------------------------- | -------- | ------- |
+| `environment.LFX_ORG_LENS_COMPANY_EMAILS_ENABLED` | Serves company-affiliated addresses in the Organization Lens person drawer; off answers `unavailable` | No       | off     |
+
+Server-side gate for personal data (LFXV2-3296). With it off, every company-email read — the
+`/detail` bundle and `/by-username/:username/company-emails` — answers `unavailable` without
+querying the warehouse, and the drawer renders "Company emails aren't available from this view".
+The client-side `org-lens-private-release` OpenFeature flag only hides the section; it never runs
+server-side, so on its own it would leave the BFF serving addresses by direct call.
+
+**Rollout ordering:** enable this flag and confirm the rolling update has converged before turning
+the client flag on, or users see "unavailable" from not-yet-converged pods. Roll back in the
+opposite order — client flag off first, then this. Overlap is harmless: a caller gets either
+addresses or `unavailable`, never a partial or fabricated result.
+
 #### AI Service Configuration
 
 | Parameter                  | Description                              | Required | Default |

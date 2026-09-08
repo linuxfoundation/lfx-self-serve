@@ -16,7 +16,7 @@ Walk through each step interactively, verifying success before moving on.
 
 Check that the following are installed:
 
-1. **Node.js v22+** — Run `node --version` to verify. If missing, instruct them to install via [nvm](https://github.com/nvm-sh/nvm) or [nodejs.org](https://nodejs.org/).
+1. **Node.js 22.13+ (or 23.4+)** — Run `node --version` to verify. If missing, instruct them to install via [nvm](https://github.com/nvm-sh/nvm) or [nodejs.org](https://nodejs.org/).
 2. **Yarn v4.9.2+** — Run `yarn --version` to verify. This project uses Yarn Berry (Corepack). If missing: `corepack enable && corepack prepare yarn@4.9.2 --activate`.
 3. **Git** — Run `git --version` to verify.
 
@@ -80,7 +80,7 @@ yarn install
 
 Verify the install completed without errors. If there are issues:
 
-- Ensure Node.js v22+ is active
+- Ensure Node.js 22.13+ (or 23.4+) is active
 - Try `corepack enable` if Yarn isn't recognized
 - Delete `node_modules` and `.yarn/cache` then retry
 

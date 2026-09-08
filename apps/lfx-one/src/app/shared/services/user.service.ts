@@ -19,6 +19,7 @@ import {
   Impersonator,
   LinuxAliasData,
   Meeting,
+  MeetingInviteEmail,
   PastMeeting,
   ProfileAuthStatus,
   ProfilePictureUploadResponse,
@@ -211,6 +212,25 @@ export class UserService {
     return this.http.put<{ message: string }>(`/api/profile/emails/${encodeURIComponent(email)}/primary`, {}).pipe(take(1));
   }
 
+  /**
+   * Get the user's preferred meeting-invitation email from meeting-service via NATS.
+   * Null fields mean no override (invitations fall back to the primary email). Lets a request
+   * failure propagate as an error rather than swallowing it into the same shape as "no override" —
+   * callers that gate delete/remove actions on this value must be able to tell "confirmed none"
+   * from "unknown" and fail closed on the latter.
+   */
+  public getMeetingInviteEmail(): Observable<MeetingInviteEmail> {
+    return this.http.get<MeetingInviteEmail>('/api/profile/emails/meeting-invite');
+  }
+
+  /**
+   * Set the user's preferred meeting-invitation email.
+   * @param email - The verified email address to receive meeting invitations
+   */
+  public setMeetingInviteEmail(email: string): Observable<MeetingInviteEmail> {
+    return this.http.put<MeetingInviteEmail>('/api/profile/emails/meeting-invite', { email }).pipe(take(1));
+  }
+
   // Linux.com email alias methods
 
   /**
@@ -387,15 +407,20 @@ export class UserService {
   }
 
   /**
-   * Reject an identity (mark as "not me") via CDP, and unlink from Auth0 if provider/auth0UserId provided
+   * Reject an identity (mark as "not me") via CDP, and unlink from Auth0 if provider/auth0UserId provided.
+   * Pass `email` when removing an email identity — the server uses it to block removal of the
+   * address currently pinned as the meeting-invitation email (the client-side guard is UX only).
    */
-  public rejectIdentity(identityId: string, provider?: string, auth0UserId?: string): Observable<{ success: boolean }> {
+  public rejectIdentity(identityId: string, provider?: string, auth0UserId?: string, email?: string): Observable<{ success: boolean }> {
     const body: Record<string, string> = {};
     if (provider) {
       body['provider'] = provider;
     }
     if (auth0UserId) {
       body['auth0UserId'] = auth0UserId;
+    }
+    if (email) {
+      body['email'] = email;
     }
     // Auth0 identity IDs contain URL-reserved characters (e.g. `|` in `auth0|abc123`);
     // encode before interpolating so the PATCH route resolves reliably.
