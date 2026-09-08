@@ -161,6 +161,29 @@ describe('reconcileRouteProjectContext', () => {
     expect(setRouteLensKind).toHaveBeenCalledTimes(1);
   });
 
+  it('defers the stale ?project= repair past navigation finalization, then re-applies with the URL sync', async () => {
+    // A deep link carrying a stale slug from a prior selection: syncUrl=true (param present),
+    // urlAgrees=false (stale) — the activation apply corrects the context but syncProjectQueryParam
+    // no-ops while a navigation is in flight, and Angular only clears currentNavigation in the
+    // navigation stream's finalize (after NavigationEnd subscribers run), so the re-apply can't
+    // repair the URL synchronously either. The repair must re-fire from a microtask once the
+    // navigation has finalized (PR #2224 review: Cursor Bugbot + Copilot).
+    router.parseUrl = vi.fn().mockReturnValue({ queryParams: { project: 'stale-slug' } });
+    // Model Angular's finalize: the apply's check runs during the NavigationEnd dispatch
+    // (navigation still set — cleared only in the stream's finalize, after subscribers run);
+    // the deferred repair's check runs post-finalization (null).
+    let navChecks = 0;
+    router.getCurrentNavigation = vi.fn(() => (++navChecks === 1 ? ({ id: 1 } as unknown as ReturnType<Router['getCurrentNavigation']>) : null));
+
+    start();
+    await stable();
+
+    // Without the deferred repair the activation apply is the ONLY write (and its URL sync is
+    // suppressed); with it, a second same-value apply lands post-finalization with syncUrl=true.
+    expect(setFoundation).toHaveBeenCalledTimes(2);
+    expect(setFoundation).toHaveBeenLastCalledWith(resolvedContext, true);
+  });
+
   it('leaves the existing context untouched when the route project lookup resolves null', async () => {
     getProject.mockReturnValue(of(null));
 

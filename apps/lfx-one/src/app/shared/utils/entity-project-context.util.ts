@@ -193,11 +193,12 @@ export function reconcileRouteProjectContext(
       // Suppress the repeat only once the FULL context (isSameProjectContext compares
       // name/slug/logoUrl, not just uid), the computed kind, AND the URL all agree — a uid-equal
       // cookie context can still carry stale chrome or sit under the wrong kind, and a stale
-      // ?project= must still fall through so it gets repaired: syncProjectQueryParam skips while
-      // a navigation is in flight, so the activation-time apply can't fix the URL and this
-      // NavigationEnd re-apply is the first chance that can (setProject runs its URL sync outside
-      // the same-context early return). Suppressing on context alone would leave the old slug in
-      // the URL for the session.
+      // ?project= must still fall through so it gets repaired: suppressing on context alone
+      // would leave the old slug in the URL for the session. The repair can't land
+      // synchronously, though — syncProjectQueryParam skips while a navigation is in flight,
+      // and Angular only clears currentNavigation in the navigation stream's finalize, AFTER
+      // NavigationEnd subscribers run — so both the activation apply and this re-apply see the
+      // URL sync suppressed. The actual repair is deferred to a microtask below.
       const urlParams = router.parseUrl(router.url).queryParams;
       const urlAgrees = !('project' in urlParams) || urlParams['project'] === resolved.context.slug;
       if (
@@ -210,6 +211,20 @@ export function reconcileRouteProjectContext(
       // Mirror syncEntityProjectContext: only write ?project= to the URL when already present.
       const syncUrl = 'project' in urlParams;
       applyEntityProjectContext(projectContextService, resolved.context, resolved.isFoundation, syncUrl);
+      // The apply above corrects the context synchronously (pre-change-detection), but its URL
+      // sync is suppressed while a navigation is in flight — and this re-apply is itself still
+      // inside the navigation (currentNavigation clears in the stream's finalize, after
+      // NavigationEnd subscribers run). Defer the URL repair to a microtask: it runs after the
+      // finalizer, when getCurrentNavigation() is null and the re-invoked setter's URL sync can
+      // land (setProject/setFoundation run it outside the same-context early return, so the
+      // context re-writes are same-value no-ops and only the ?project= repair takes effect).
+      if (syncUrl && !urlAgrees && router.getCurrentNavigation()) {
+        queueMicrotask(() => {
+          // A newer navigation owns the URL now — skip; its own re-apply re-queues the repair.
+          if (router.getCurrentNavigation()) return;
+          applyEntityProjectContext(projectContextService, resolved.context, resolved.isFoundation, true);
+        });
+      }
     });
 }
 

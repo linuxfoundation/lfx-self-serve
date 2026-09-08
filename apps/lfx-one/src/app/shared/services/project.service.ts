@@ -102,6 +102,12 @@ export class ProjectService {
     if (!this.projectCache.has(cacheKey)) {
       const params = options?.meetingCoordinator ? new HttpParams().set('meeting_coordinator', 'true') : undefined;
       const project$ = this.http.get<Project>(`/api/projects/${slugOrUid}`, { params }).pipe(
+        // Evict on source error, before catchError/shareReplay: shareReplay keeps its source
+        // subscription alive after downstream unsubscribes (refCount: false), so a canceled
+        // navigation can let the request fail with zero subscribers — a downstream eviction
+        // tap would never run and the entry would replay the catchError'd null to the next
+        // lookup instead of retrying (matches the meeting and mailing-list detail caches).
+        tap({ error: () => this.projectCache.delete(cacheKey) }),
         catchError((error) => {
           console.error('Failed to fetch project:', error);
           return of(null);
