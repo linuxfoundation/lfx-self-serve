@@ -3,7 +3,7 @@
 
 import { describe, expect, it } from 'vitest';
 
-import { extractUrls, isProfileHubPath } from './url.utils';
+import { extractUrls, isProfileHubPath, isRelativeInAppPath } from './url.utils';
 
 describe('extractUrls', () => {
   it('extracts http and https URLs from prose', () => {
@@ -77,5 +77,24 @@ describe('isProfileHubPath', () => {
     expect(isProfileHubPath('/org/profile')).toBe(false);
     expect(isProfileHubPath('/meetings')).toBe(false);
     expect(isProfileHubPath('/')).toBe(false);
+  });
+});
+
+describe('isRelativeInAppPath', () => {
+  it('accepts an in-app relative path', () => {
+    expect(isRelativeInAppPath('/project/x')).toBe(true);
+    expect(isRelativeInAppPath('/project/{{project.uid}}/committees/new')).toBe(true);
+  });
+
+  it('rejects a protocol-relative value', () => {
+    expect(isRelativeInAppPath('//evil.com')).toBe(false);
+  });
+
+  it('rejects an absolute URL', () => {
+    expect(isRelativeInAppPath('https://example.com')).toBe(false);
+  });
+
+  it('rejects an empty string', () => {
+    expect(isRelativeInAppPath('')).toBe(false);
   });
 });

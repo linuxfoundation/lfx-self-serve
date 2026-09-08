@@ -49,10 +49,10 @@
     <div [attr.data-testid]="'formation-checklist-row-action-' + item().uid">
       @switch (item().action) {
         @case ('link') {
-          <ng-container *ngTemplateOutlet="externalLinkAction; context: linkActions.link" />
+          <ng-container *ngTemplateOutlet="linkOrDetailsAction; context: linkActions.link" />
         }
         @case ('status_only') {
-          <ng-container *ngTemplateOutlet="externalLinkAction; context: linkActions.status_only" />
+          <ng-container *ngTemplateOutlet="linkOrDetailsAction; context: linkActions.status_only" />
         }
         @case ('provisionable') {
           @if (isActionable()) {
@@ -65,13 +65,7 @@
           }
         }
         @case ('manual') {
-          <lfx-button
-            label="View details"
-            size="small"
-            severity="secondary"
-            [outlined]="true"
-            (onClick)="onOpenDrawer()"
-            [attr.data-testid]="'formation-checklist-row-manual-' + item().uid" />
+          <ng-container *ngTemplateOutlet="viewDetailsAction" />
         }
       }
     </div>
@@ -89,9 +83,9 @@
   </div>
 </div>
 
-<!-- `link`/`status_only`: open an external href, or a disabled button when the href is missing/unsafe. Context is `linkActions.link`/`.status_only` (see `FORMATION_LINK_ROW_ACTIONS`) — typed at the definition site, not inline here. -->
-<ng-template #externalLinkAction let-testidPrefix="testidPrefix">
-  @if (safeActionHref(); as href) {
+<!-- `link`/`status_only`: an external href opens in a new tab, an in-app relative path routes via `routerLink`, and no safe destination falls back to the shared "View details" affordance. Context is `linkActions.link`/`.status_only` (see `FORMATION_LINK_ROW_ACTIONS`) — typed at the definition site, not inline here. -->
+<ng-template #linkOrDetailsAction let-testidPrefix="testidPrefix">
+  @if (safeExternalHref(); as href) {
     <lfx-button
       label="Open"
       size="small"
@@ -101,13 +95,22 @@
       target="_blank"
       rel="noopener noreferrer"
       [attr.data-testid]="testidPrefix + '-' + item().uid" />
+  } @else if (safeInternalPath(); as path) {
+    <lfx-button label="Open" size="small" severity="secondary" [outlined]="true" [routerLink]="path" [attr.data-testid]="testidPrefix + '-' + item().uid" />
   } @else {
-    <!-- A disabled button isn't focusable, so a hover-only `tooltip` would never reach a keyboard/screen-reader user — render the reason as visible text instead. -->
-    <div class="flex items-center gap-2">
-      <lfx-button label="Open" size="small" severity="secondary" [outlined]="true" [disabled]="true" [attr.data-testid]="testidPrefix + '-' + item().uid" />
-      <span class="text-xs text-gray-500">Link unavailable</span>
-    </div>
+    <ng-container *ngTemplateOutlet="viewDetailsAction" />
   }
+</ng-template>
+
+<!-- Shared "nothing to open, but there's still detail" affordance — used by `manual` directly and by `link`/`status_only` rows with no safe destination. -->
+<ng-template #viewDetailsAction>
+  <lfx-button
+    label="View details"
+    size="small"
+    severity="secondary"
+    [outlined]="true"
+    (onClick)="onOpenDrawer()"
+    [attr.data-testid]="'formation-checklist-row-manual-' + item().uid" />
 </ng-template>
 
 <!-- `provisionable`/`request`: fires `onAction()`, or a disabled button when `can_complete` is false. Context is `gatedActions.provisionable`/`.request` (see `FORMATION_GATED_ROW_ACTIONS`) — typed at the definition site, not inline here. -->

@@ -13,7 +13,7 @@ import {
   FORMATION_ITEM_STATUS_SEVERITY,
   FORMATION_LINK_ROW_ACTIONS,
 } from '@lfx-one/shared/constants';
-import { isValidUrl } from '@lfx-one/shared/utils';
+import { isRelativeInAppPath, isValidUrl } from '@lfx-one/shared/utils';
 import { MenuItem } from 'primeng/api';
 
 @Component({
@@ -46,7 +46,7 @@ export class FormationChecklistRowComponent {
   /** Overflow menu "Skip with reason" — the parent already owns this flow (opens `ReasonPromptDialogComponent`) for the drawer's Skip button; reused verbatim here. */
   public readonly skipRequested = output<FormationItem>();
 
-  /** `#gatedAction`/`#externalLinkAction` template contexts, keyed by action kind — typed at the definition site (see `FORMATION_GATED_ROW_ACTIONS`/`FORMATION_LINK_ROW_ACTIONS`), not inline in the template where `*ngTemplateOutlet` context is untyped. */
+  /** `#gatedAction`/`#linkOrDetailsAction` template contexts, keyed by action kind — typed at the definition site (see `FORMATION_GATED_ROW_ACTIONS`/`FORMATION_LINK_ROW_ACTIONS`), not inline in the template where `*ngTemplateOutlet` context is untyped. */
   protected readonly gatedActions = FORMATION_GATED_ROW_ACTIONS;
   protected readonly linkActions = FORMATION_LINK_ROW_ACTIONS;
 
@@ -63,10 +63,20 @@ export class FormationChecklistRowComponent {
     const done = subItems.filter((subItem) => subItem.status === 'done').length;
     return `${done} of ${subItems.length} sub-items done`;
   });
-  /** `action_href` is API-sourced (fixture today, a real upstream response once #1957 lands) — never trust it into `[href]` unvalidated. `null` renders no link rather than a raw/unsafe URL. */
-  protected readonly safeActionHref = computed(() => {
+  /**
+   * `action_href` is API-sourced (fixture today, a real upstream response once #1957 lands) — never
+   * trust it into `[href]`/`[routerLink]` unvalidated. Split into external/internal so the template
+   * can bind each to the right control: an absolute value still needs scheme validation and opens in
+   * a new tab, while a relative in-app path routes through `routerLink` in place instead of a raw
+   * anchor. `null` on both means no safe destination — the row falls back to "View details".
+   */
+  protected readonly safeExternalHref = computed(() => {
     const href = this.item().action_href;
-    return href && isValidUrl(href) ? href : null;
+    return href && !isRelativeInAppPath(href) && isValidUrl(href) ? href : null;
+  });
+  protected readonly safeInternalPath = computed(() => {
+    const href = this.item().action_href;
+    return href && isRelativeInAppPath(href) ? href : null;
   });
 
   protected statusMenuItems: MenuItem[] = [];
