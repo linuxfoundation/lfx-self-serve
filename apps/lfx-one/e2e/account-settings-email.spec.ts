@@ -75,11 +75,17 @@ test.describe('Account Settings — Email Management', () => {
       const mocks = await openEmailSettings(page, { initialInvite: { email_id: 'email-id-alt', email: ALTERNATE_EMAIL } });
 
       await expect(emailRow(page, ALTERNATE_EMAIL).getByTestId(INVITE_BADGE)).toBeVisible({ timeout: ELEMENT_TIMEOUT });
+      const initialInviteGets = mocks.inviteGetCount();
 
       await openRowMenu(page, PRIMARY_EMAIL);
       await menuItem(page, MENU_RESET_TO_PRIMARY).click();
 
-      await expect(page.locator(`[data-testid="${INVITE_BADGE}"]`)).toHaveCount(0, { timeout: ELEMENT_TIMEOUT });
+      // The post-write refetch unmounts the whole card, badges included, so a bare count-0 would
+      // also pass mid-load. Settle on rendered rows after a completed refetch before asserting.
+      await expect.poll(() => mocks.inviteGetCount(), { timeout: ELEMENT_TIMEOUT }).toBeGreaterThan(initialInviteGets);
+      await expect(page.getByTestId('email-settings-loading')).toHaveCount(0, { timeout: ELEMENT_TIMEOUT });
+      await expect(emailRow(page, ALTERNATE_EMAIL)).toBeVisible({ timeout: ELEMENT_TIMEOUT });
+      await expect(page.locator(`[data-testid="${INVITE_BADGE}"]`)).toHaveCount(0);
       expect(mocks.putBodies()).toEqual([{ email: MEETING_INVITE_PRIMARY_SENTINEL }]);
     });
 
