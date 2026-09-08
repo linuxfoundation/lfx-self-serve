@@ -62,12 +62,18 @@
            copy points at. Only the grid and the pager collapse. -->
       <div class="flex" data-testid="org-easycla-toolbar">
         <!-- The placeholder is not a label: it disappears as soon as anything is typed, leaving a
-             screen reader with an unnamed field. Same pattern as the groups list's search. -->
+             screen reader with an unnamed field.
+
+             `[id]` is bound, not written as a plain attribute. A static `id` would set the wrapper
+             component's input *and* stay on its host element, so two elements would carry the id
+             and `for` would resolve to the wrapper — which labels nothing. The binding reaches only
+             the native input. `org-easycla-list-robust.spec.ts` asserts the association resolves,
+             because a label that names nothing looks identical in the markup to one that works. -->
         <label for="org-easycla-search-input" class="sr-only">Search CLAs</label>
         <lfx-input-text
           [form]="filterForm"
           control="search"
-          id="org-easycla-search-input"
+          [id]="'org-easycla-search-input'"
           placeholder="Search CLAs…"
           icon="fa-light fa-magnifying-glass"
           class="w-full sm:max-w-xs"

@@ -42,7 +42,11 @@ export class OrgEasyclaCardComponent {
   protected readonly coverageChips = computed<string[]>(() => {
     const { projects, foundationName } = this.claGroup();
 
-    if (projects.length === 0) return [];
+    // An empty project list is the foundation-wide case, not an absence of coverage. The source
+    // omits the entry whose project is the foundation itself, so an agreement covering a whole
+    // foundation arrives with no projects and only its foundation name — and naming nothing would
+    // leave a card that search can match on that name while never showing it.
+    if (projects.length === 0) return foundationName ? [foundationName] : [];
     if (projects.length === 1) return [projects[0].projectName];
 
     const projectsChip = `Covers ${projects.length} projects`;

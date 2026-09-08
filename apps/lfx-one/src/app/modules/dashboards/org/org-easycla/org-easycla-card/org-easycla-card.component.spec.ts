@@ -104,8 +104,17 @@ describe('OrgEasyclaCardComponent', () => {
       expect(allText(fixture, 'org-easycla-card-coverage')).toEqual(['Covers 2 projects']);
     });
 
-    it('renders no coverage element when nothing is covered', async () => {
-      const fixture = await render(claGroup({ projects: [] }));
+    // The foundation-wide case. The source omits the entry whose project is the foundation itself,
+    // so an agreement covering a whole foundation arrives with no projects at all — showing nothing
+    // would hide the only coverage it has, on the card whose search can match that very name.
+    it('names the foundation when the agreement covers it and carries no projects', async () => {
+      const fixture = await render(claGroup({ projects: [], foundationName: 'Nimbus Foundation' }));
+
+      expect(allText(fixture, 'org-easycla-card-coverage')).toEqual(['Nimbus Foundation']);
+    });
+
+    it('renders no coverage element when neither a project nor a foundation is known', async () => {
+      const fixture = await render(claGroup({ projects: [], foundationName: undefined }));
 
       expect(allText(fixture, 'org-easycla-card-coverage')).toEqual([]);
     });

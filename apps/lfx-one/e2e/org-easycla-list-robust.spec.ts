@@ -66,6 +66,19 @@ test.describe('Org Lens EasyCLA list — structure', () => {
     await expect(pageRoot.getByTestId('org-easycla-grid').getByTestId('org-easycla-card')).toHaveCount(3);
   });
 
+  // A label element is not an accessible name until it resolves to the control. `getByLabel`
+  // performs the same association a screen reader does, so it fails where a `for` attribute points
+  // at a wrapper rather than the input inside it — which is invisible to any assertion that only
+  // checks the label's presence.
+  test('gives the search box an accessible name that resolves to the input itself', async ({ page }) => {
+    await gotoEasyclaList(page, stubRows(3));
+    await expect(page.getByTestId('org-easycla-grid')).toBeVisible({ timeout: PAGE_LOAD_TIMEOUT });
+
+    const labelled = page.getByLabel('Search CLAs');
+    await expect(labelled).toHaveCount(1);
+    await expect(labelled).toHaveJSProperty('tagName', 'INPUT');
+  });
+
   test('gives every card the full field contract', async ({ page }) => {
     await gotoEasyclaList(page, stubRows(3));
 
