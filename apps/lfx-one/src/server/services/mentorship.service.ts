@@ -12,7 +12,7 @@ import {
 } from '@lfx-one/shared/constants';
 import {
   MentorshipCiiBadge,
-  MentorshipEnrollForm,
+  MentorshipEnrollRequest,
   MentorshipLfProjectsResponse,
   MentorshipLogoUploadResponse,
   MentorshipNameAvailability,
@@ -68,7 +68,7 @@ export class MentorshipService {
     req: Request,
     options: { search?: string; status?: MentorshipProgramStatus; offset?: number; limit?: number } = {}
   ): Promise<MentorshipProgramsResponse> {
-    const startTime = logger.startOperation(req, 'mentorship_get_programs', options);
+    logger.debug(req, 'mentorship_get_programs', 'Filtering mentorship programs', options);
 
     let filtered: MentorshipProgram[] = programsStore;
     if (options.status) {
@@ -82,13 +82,13 @@ export class MentorshipService {
     }
 
     const page = paginateOffsetLimit(filtered, options.offset ?? 0, options.limit ?? DEFAULT_PROGRAM_LIMIT);
-    logger.success(req, 'mentorship_get_programs', startTime, { count: page.data.length, total: page.total });
+    logger.debug(req, 'mentorship_get_programs', 'Mentorship programs page built', { count: page.data.length, total: page.total });
 
     return page;
   }
 
   public async getProgram(req: Request, programId: string): Promise<MentorshipProgramDetail> {
-    const startTime = logger.startOperation(req, 'mentorship_get_program', { programId });
+    logger.debug(req, 'mentorship_get_program', 'Resolving mentorship program', { programId });
     const program = this.findProgram(programId);
     if (!program) {
       throw new ResourceNotFoundError('Mentorship program', programId, { operation: 'mentorship_get_program' });
@@ -96,12 +96,12 @@ export class MentorshipService {
 
     const lists = MOCK_MENTORSHIP_PROGRAM_LISTS[program.slug] ?? EMPTY_MENTORSHIP_PROGRAM_LISTS;
     const detail = buildMentorshipProgramDetail(program, lists);
-    logger.success(req, 'mentorship_get_program', startTime, { programId, slug: program.slug, tabCounts: detail.tabCounts });
+    logger.debug(req, 'mentorship_get_program', 'Mentorship program detail built', { programId, slug: program.slug, tabCounts: detail.tabCounts });
     return detail;
   }
 
-  public async enrollProgram(req: Request, input: MentorshipEnrollForm): Promise<MentorshipProgram> {
-    const startTime = logger.startOperation(req, 'mentorship_enroll_program', { name: input.name });
+  public async enrollProgram(req: Request, input: MentorshipEnrollRequest): Promise<MentorshipProgram> {
+    logger.debug(req, 'mentorship_enroll_program', 'Enrolling mentorship program', { name: input.name });
 
     const name = input.name.trim();
     const slug = mentorshipProgramSlug(name);
@@ -128,7 +128,7 @@ export class MentorshipService {
 
     programsStore.unshift(program);
 
-    logger.success(req, 'mentorship_enroll_program', startTime, { id: program.id, slug: program.slug });
+    logger.debug(req, 'mentorship_enroll_program', 'Mentorship program created', { id: program.id, slug: program.slug });
     return program;
   }
 
@@ -171,24 +171,24 @@ export class MentorshipService {
   }
 
   public async isProgramNameAvailable(req: Request, name: string): Promise<MentorshipNameAvailability> {
-    const startTime = logger.startOperation(req, 'mentorship_name_available', { name });
+    logger.debug(req, 'mentorship_name_available', 'Checking mentorship program name availability', { name });
     const needle = name.trim().toLowerCase();
     const taken = programsStore.some((program) => program.name.trim().toLowerCase() === needle);
-    logger.success(req, 'mentorship_name_available', startTime, { available: !taken });
+    logger.debug(req, 'mentorship_name_available', 'Mentorship program name availability resolved', { available: !taken });
     return { available: !taken };
   }
 
   public async getLfProjects(req: Request, options: { search?: string; offset?: number; limit?: number } = {}): Promise<MentorshipLfProjectsResponse> {
-    const startTime = logger.startOperation(req, 'mentorship_get_lf_projects', options);
+    logger.debug(req, 'mentorship_get_lf_projects', 'Filtering LF projects', options);
     const needle = options.search?.trim().toLowerCase() ?? '';
     const filtered = needle ? MOCK_MENTORSHIP_LF_PROJECTS.filter((project) => project.name.toLowerCase().includes(needle)) : [...MOCK_MENTORSHIP_LF_PROJECTS];
     const page = paginateOffsetLimit(filtered, options.offset ?? 0, options.limit ?? MENTORSHIP_LF_PROJECT_PAGE_SIZE);
-    logger.success(req, 'mentorship_get_lf_projects', startTime, { count: page.data.length, total: page.total });
+    logger.debug(req, 'mentorship_get_lf_projects', 'LF projects page built', { count: page.data.length, total: page.total });
     return page;
   }
 
   public async getCiiBadge(req: Request, projectId: string): Promise<MentorshipCiiBadge> {
-    const startTime = logger.startOperation(req, 'mentorship_get_cii_badge', { projectId });
+    logger.debug(req, 'mentorship_get_cii_badge', 'Fetching CII badge', { projectId });
 
     if (!isMentorshipCiiProjectId(projectId)) {
       throw ServiceValidationError.forField('projectId', 'CII Project ID must be numeric', { operation: 'mentorship_get_cii_badge' });
@@ -247,7 +247,7 @@ export class MentorshipService {
     }
 
     const badge: MentorshipCiiBadge = { projectId, badgeLevel };
-    logger.success(req, 'mentorship_get_cii_badge', startTime, { projectId, badgeLevel: badge.badgeLevel });
+    logger.debug(req, 'mentorship_get_cii_badge', 'CII badge resolved', { projectId, badgeLevel: badge.badgeLevel });
     return badge;
   }
 

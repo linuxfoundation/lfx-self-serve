@@ -4,7 +4,7 @@
 import { NextFunction, Request, Response } from 'express';
 
 import { MENTORSHIP_LOGO_MIME_TYPES } from '@lfx-one/shared/constants';
-import { MentorshipEnrollForm } from '@lfx-one/shared/interfaces';
+import { MentorshipEnrollRequest } from '@lfx-one/shared/interfaces';
 import { getMentorshipEnrollStepErrors } from '@lfx-one/shared/utils';
 
 import { AuthenticationError, ServiceValidationError } from '../errors';
@@ -33,7 +33,7 @@ function asStringArray(value: unknown): string[] {
   return Array.isArray(value) ? value.filter((item): item is string => typeof item === 'string' && item.trim().length > 0) : [];
 }
 
-function parseEnrollBody(body: unknown): MentorshipEnrollForm {
+function parseEnrollBody(body: unknown): MentorshipEnrollRequest {
   const raw = body && typeof body === 'object' ? (body as Record<string, unknown>) : {};
   const termsRaw = Array.isArray(raw['terms']) ? raw['terms'] : [];
   const prereqRaw = Array.isArray(raw['prerequisites']) ? raw['prerequisites'] : [];
@@ -49,7 +49,6 @@ function parseEnrollBody(body: unknown): MentorshipEnrollForm {
     ciiProjectId: asString(raw['ciiProjectId']),
     codeOfConductUrl: asString(raw['codeOfConductUrl']),
     logoFileName: asString(raw['logoFileName']),
-    logoPreviewUrl: '',
     skills: asStringArray(raw['skills']),
     terms: termsRaw
       .filter((item): item is Record<string, unknown> => !!item && typeof item === 'object')

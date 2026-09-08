@@ -91,9 +91,8 @@ export interface MentorshipPrerequisite {
 }
 
 /**
- * Payload collected by the enroll wizard and POSTed to `/api/mentorship/programs`.
- * This payload carries only `logoFileName`; the logo bytes go up separately in the second phase,
- * a raw-body POST to `/api/mentorship/programs/:programId/logo` once the program id exists.
+ * State held by the enroll wizard. `logoPreviewUrl` is a browser-only `blob:` URL for the picker,
+ * so the wizard posts `MentorshipEnrollRequest` rather than this shape.
  */
 export interface MentorshipEnrollForm {
   importProgramId: string;
@@ -112,6 +111,13 @@ export interface MentorshipEnrollForm {
   prerequisites: MentorshipPrerequisite[];
   termsAccepted: boolean;
 }
+
+/**
+ * Body POSTed to `/api/mentorship/programs`. It carries only `logoFileName`; the logo bytes go up
+ * separately in the second phase, a raw-body POST to
+ * `/api/mentorship/programs/:programId/logo` once the program id exists.
+ */
+export type MentorshipEnrollRequest = Omit<MentorshipEnrollForm, 'logoPreviewUrl'>;
 
 /** Field-keyed validation errors for a single enroll wizard step. */
 export interface MentorshipEnrollFieldErrors {

@@ -18,7 +18,7 @@ import {
 } from '../constants/mentorship-enroll.constants';
 import type {
   MentorshipEnrollFieldErrors,
-  MentorshipEnrollForm,
+  MentorshipEnrollRequest,
   MentorshipEnrollStep,
   MentorshipProgram,
   MentorshipProgramDetail,
@@ -129,7 +129,7 @@ export function getMentorshipTermDateErrors(
   return errors;
 }
 
-export function getMentorshipEnrollStepErrors(step: MentorshipEnrollStep, form: MentorshipEnrollForm): MentorshipEnrollFieldErrors {
+export function getMentorshipEnrollStepErrors(step: MentorshipEnrollStep, form: MentorshipEnrollRequest): MentorshipEnrollFieldErrors {
   if (step === 'details') {
     const errors: MentorshipEnrollFieldErrors = {};
     if (isBlank(form.name)) {
@@ -228,7 +228,7 @@ export function isMentorshipTermsAccepted(value: unknown): boolean {
   return Array.isArray(value) && value.length > 0;
 }
 
-export function isMentorshipEnrollStepValid(step: MentorshipEnrollStep, form: MentorshipEnrollForm): boolean {
+export function isMentorshipEnrollStepValid(step: MentorshipEnrollStep, form: MentorshipEnrollRequest): boolean {
   return Object.keys(getMentorshipEnrollStepErrors(step, form)).length === 0;
 }
 

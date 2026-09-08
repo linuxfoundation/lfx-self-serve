@@ -4,6 +4,7 @@
 import { PLATFORM_ID, signal } from '@angular/core';
 import { TestBed } from '@angular/core/testing';
 import { Route, Router, UrlSegment } from '@angular/router';
+import { MENTORSHIP_ENABLED_FLAG } from '@lfx-one/shared/constants';
 import { FeatureFlagService } from '@shared/services/feature-flag.service';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 
@@ -13,6 +14,7 @@ describe('mentorshipEnabledGuard', () => {
   let getFlagOverride: ReturnType<typeof vi.fn>;
   let providerReady: ReturnType<typeof signal<boolean>>;
   let getBooleanFlag: ReturnType<typeof vi.fn>;
+  let waitForReady: ReturnType<typeof vi.fn>;
   let router: {
     parseUrl: ReturnType<typeof vi.fn>;
   };
@@ -26,6 +28,16 @@ describe('mentorshipEnabledGuard', () => {
     getFlagOverride = vi.fn().mockReturnValue(undefined);
     providerReady = signal(true);
     getBooleanFlag = vi.fn().mockReturnValue(signal(false));
+    waitForReady = vi.fn().mockImplementation(
+      (_context: unknown, timeoutMs = 5000) =>
+        new Promise((resolve) => {
+          if (providerReady()) {
+            resolve(true);
+            return;
+          }
+          setTimeout(() => resolve(false), timeoutMs);
+        })
+    );
 
     router = {
       parseUrl: vi.fn().mockImplementation((url: string) => ({ redirected: url })),
@@ -35,7 +47,7 @@ describe('mentorshipEnabledGuard', () => {
       providers: [
         {
           provide: FeatureFlagService,
-          useValue: { getFlagOverride, providerReady: providerReady.asReadonly(), getBooleanFlag },
+          useValue: { getFlagOverride, providerReady: providerReady.asReadonly(), getBooleanFlag, waitForReady },
         },
         { provide: Router, useValue: router },
         { provide: PLATFORM_ID, useValue: 'browser' },
@@ -60,6 +72,7 @@ describe('mentorshipEnabledGuard', () => {
     const result = await runGuard();
 
     expect(result).toBe(true);
+    expect(waitForReady).not.toHaveBeenCalled();
     expect(getBooleanFlag).not.toHaveBeenCalled();
   });
 
@@ -71,6 +84,7 @@ describe('mentorshipEnabledGuard', () => {
 
     expect(router.parseUrl).toHaveBeenCalledWith('/');
     expect(result).toEqual({ redirected: '/' });
+    expect(waitForReady).not.toHaveBeenCalled();
     expect(getBooleanFlag).not.toHaveBeenCalled();
   });
 
@@ -101,6 +115,7 @@ describe('mentorshipEnabledGuard', () => {
 
     vi.useRealTimers();
 
+    expect(waitForReady).toHaveBeenCalledWith({ guard: 'mentorshipEnabledGuard', flag: MENTORSHIP_ENABLED_FLAG });
     expect(router.parseUrl).toHaveBeenCalledWith('/');
     expect(result).toEqual({ redirected: '/' });
     expect(getBooleanFlag).not.toHaveBeenCalled();

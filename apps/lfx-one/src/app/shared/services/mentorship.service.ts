@@ -7,6 +7,7 @@ import { EMPTY_MENTORSHIP_LF_PROJECTS_RESPONSE, EMPTY_MENTORSHIP_PROGRAMS_RESPON
 import {
   MentorshipCiiBadge,
   MentorshipEnrollForm,
+  MentorshipEnrollRequest,
   MentorshipLfProjectsResponse,
   MentorshipLogoUploadResponse,
   MentorshipNameAvailability,
@@ -48,7 +49,25 @@ export class MentorshipService {
   }
 
   public enrollProgram(form: MentorshipEnrollForm): Observable<MentorshipProgram> {
-    return this.http.post<MentorshipProgram>('/api/mentorship/programs', form).pipe(take(1));
+    // Built field by field rather than spread: `logoPreviewUrl` is a browser-only `blob:` URL, and
+    // an allowlist keeps any future UI-only wizard state out of the request body by default.
+    const request: MentorshipEnrollRequest = {
+      importProgramId: form.importProgramId,
+      name: form.name,
+      projectId: form.projectId,
+      technologies: form.technologies,
+      description: form.description,
+      repositoryUrl: form.repositoryUrl,
+      websiteUrl: form.websiteUrl,
+      ciiProjectId: form.ciiProjectId,
+      codeOfConductUrl: form.codeOfConductUrl,
+      logoFileName: form.logoFileName,
+      skills: form.skills,
+      terms: form.terms,
+      prerequisites: form.prerequisites,
+      termsAccepted: form.termsAccepted,
+    };
+    return this.http.post<MentorshipProgram>('/api/mentorship/programs', request).pipe(take(1));
   }
 
   /**
