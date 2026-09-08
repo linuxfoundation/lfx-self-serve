@@ -136,9 +136,10 @@ export class MeetingComposerFormService {
 
   /**
    * Project uid the submit payload will actually be written against.
-   * @description Mirrors the `project_uid` resolution in `prepareMeetingData()` exactly, so callers
-   * that need to describe "the meeting's project" — the AI agenda prompt, for one — cannot describe a
-   * different project from the one the save writes to. Empty when nothing has resolved yet.
+   * @description The single source for that resolution — `prepareMeetingData()` reads this rather than
+   * repeating the expression, so callers that need to describe "the meeting's project" (the AI agenda
+   * prompt, for one) cannot describe a different project from the one the save writes to. Empty when
+   * nothing has resolved yet.
    */
   public readonly effectiveProjectUid: Signal<string> = computed(
     () => this.meeting()?.project_uid || this.contextProjectUid() || this.projectContextService.activeContextUid()
@@ -274,6 +275,11 @@ export class MeetingComposerFormService {
           form.get('startTime')?.valid &&
           form.get('duration')?.valid &&
           form.get('customDuration')?.valid &&
+          // Same `invalid ?? true` shape as the reminder controls below: an out-of-range stored value
+          // (min 10 / max 60) fails whole-form validity, so this section has to be the one that says so.
+          // Edit mode reaches it — the API, PCC and Zoom all accept early-join values outside our range,
+          // and `populateFormWithMeetingData` patches whatever is stored verbatim.
+          !(form.get('early_join_time_minutes')?.invalid ?? true) &&
           !form.errors?.['futureDateTime']
         );
 
@@ -283,8 +289,15 @@ export class MeetingComposerFormService {
         // the ?? true fallback still fails closed if the controls are ever missing from the form.
         return (form.get('platform')?.valid ?? false) && !(form.get('reminderHours')?.invalid ?? true) && !(form.get('reminderMinutes')?.invalid ?? true);
 
-      case 'guests':
       case 'agenda-resources':
+        // `description` carries `maxLength(MEETING_AGENDA_MAX_LENGTH)`. The template's `maxlength`
+        // attribute only constrains typing, so an over-cap agenda still arrives two ways: a stored one
+        // in edit mode, and an AI generation that came back long. Either kills whole-form validity, so
+        // without this the organizer gets a dead Save button and nothing pointing at the cause.
+        return !(form.get('description')?.invalid ?? true);
+
+      case 'guests':
+        // The only section that owns no validated control: guests are a list, not a form.
         return true;
 
       default:
@@ -305,9 +318,9 @@ export class MeetingComposerFormService {
    * `section.required` is deliberately not consulted. Save is gated on whole-form validity, and an
    * optional section can still hold an invalid control — `platform-features` is the live case, since
    * its reminder inputs carry validators and are enabled in edit mode. Skipping optional sections here
-   * is what previously left a disabled Save button with nothing on screen explaining it. A section with
-   * no validators of its own (`guests`, `agenda-resources`) reports valid unconditionally, so widening
-   * this cannot make them nag.
+   * is what previously left a disabled Save button with nothing on screen explaining it. `isSectionValid`
+   * covers every control that carries a validator, so `form.valid === false` always flags some section;
+   * `guests` is the one section that owns none and so can never nag.
    */
   public sectionNeedsAttention(section: MeetingComposerSection, visitedSections: ReadonlySet<MeetingComposerSectionId>): boolean {
     const isEditMode = this.isEditMode();
@@ -857,7 +870,7 @@ export class MeetingComposerFormService {
     const recurrenceObject = this.buildRecurrencePayload(formValue);
 
     return {
-      project_uid: this.meeting()?.project_uid || this.contextProjectUid() || this.projectContextService.activeContextUid(),
+      project_uid: this.effectiveProjectUid(),
       title: formValue.title,
       description: formValue.description || '',
       start_time: startDateTime,

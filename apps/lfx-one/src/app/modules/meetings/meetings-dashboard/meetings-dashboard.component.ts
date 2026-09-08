@@ -45,7 +45,6 @@ import { LensService } from '@services/lens.service';
 import { MeetingService } from '@services/meeting.service';
 import { PersonaService } from '@services/persona.service';
 import { ProjectContextService } from '@services/project-context.service';
-import { ProjectService } from '@services/project.service';
 import { UserService } from '@services/user.service';
 import { OnRenderDirective } from '@shared/directives/on-render.directive';
 import { MenuItem } from 'primeng/api';
@@ -97,7 +96,6 @@ import { MeetingsTopBarComponent } from './components/meetings-top-bar/meetings-
 export class MeetingsDashboardComponent {
   private readonly meetingService = inject(MeetingService);
   private readonly projectContextService = inject(ProjectContextService);
-  private readonly projectService = inject(ProjectService);
   private readonly personaService = inject(PersonaService);
   private readonly lensService = inject(LensService);
   private readonly userService = inject(UserService);

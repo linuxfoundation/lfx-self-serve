@@ -3,7 +3,7 @@
 
 import { TestBed } from '@angular/core/testing';
 import { FormArray, FormControl, FormGroup } from '@angular/forms';
-import type { Meeting, MeetingRegistrant, MeetingRegistrantWithState } from '@lfx-one/shared/interfaces';
+import type { Meeting, MeetingComposerSection, MeetingComposerSectionId, MeetingRegistrant, MeetingRegistrantWithState } from '@lfx-one/shared/interfaces';
 import { CommitteeService } from '@services/committee.service';
 import { MeetingService } from '@services/meeting.service';
 import { ProjectContextService } from '@services/project-context.service';
@@ -328,5 +328,116 @@ describe('MeetingComposerFormService — load retry', () => {
     service.retryLoadMeeting();
 
     expect(getMeeting).not.toHaveBeenCalled();
+  });
+});
+
+/**
+ * Covers the save gate the composer footer and the rail both read. Save is gated on whole-form
+ * validity, so every control that carries a validator has to be reachable from some section's
+ * `isSectionValid` — otherwise the organizer gets a dead Save button and nothing pointing at the
+ * cause. These assert the sections that own the easy-to-miss controls.
+ */
+describe('MeetingComposerFormService — save gate', () => {
+  let service: MeetingComposerFormService;
+  // Read through a closure rather than baked into the provider: `effectiveProjectUid` reads
+  // `activeContextUid()` as a plain call, and `initialize()` writes `contextProjectUid`, which is what
+  // actually invalidates the computed — so changing this and reopening is enough.
+  let ambientProjectUid: string | null = null;
+
+  beforeEach(() => {
+    ambientProjectUid = null;
+
+    TestBed.configureTestingModule({
+      providers: [
+        MeetingComposerFormService,
+        { provide: MessageService, useValue: { add: vi.fn() } },
+        { provide: CommitteeService, useValue: {} },
+        { provide: ProjectContextService, useValue: { activeContextUid: () => ambientProjectUid } },
+        { provide: MeetingService, useValue: {} },
+      ],
+    });
+
+    service = TestBed.inject(MeetingComposerFormService);
+    service.initialize({ mode: 'create', projectUid: 'project-1' });
+    service.form().patchValue({ title: 'Composer meeting', meeting_type: 'Technical' });
+  });
+
+  // The API, PCC and Zoom all accept early-join values outside [10, 60], and edit mode patches
+  // whatever is stored verbatim — so this is a real state, not a typing-only one.
+  it('flags date-schedule when the early-join value falls outside the allowed range', () => {
+    service.form().get('early_join_time_minutes')?.setValue(90);
+
+    expect(service.form().valid).toBe(false);
+    expect(service.isSectionValid('date-schedule')).toBe(false);
+  });
+
+  it('flags agenda-resources when the agenda exceeds the cap', () => {
+    service.form().get('description')?.setValue('x'.repeat(2001));
+
+    expect(service.form().valid).toBe(false);
+    expect(service.isSectionValid('agenda-resources')).toBe(false);
+  });
+
+  it('never flags guests, the one section that owns no validated control', () => {
+    expect(service.isSectionValid('guests')).toBe(true);
+  });
+
+  // `platform-features` is not a required section, but its reminder controls carry validators and are
+  // enabled in edit mode. Skipping optional sections is what previously left Save disabled silently.
+  it('flags an optional section whose control is invalid', () => {
+    service.form().get('reminderHours')?.enable();
+    service.form().get('reminderHours')?.setValue(999);
+
+    expect(service.form().valid).toBe(false);
+    expect(service.isSectionValid('platform-features')).toBe(false);
+    expect(
+      service.sectionNeedsAttention(
+        { id: 'platform-features', label: 'Platform & Features', required: false } as MeetingComposerSection,
+        new Set(['platform-features'])
+      )
+    ).toBe(true);
+  });
+
+  it('does not flag an unvisited section in create mode', () => {
+    service.form().get('description')?.setValue('x'.repeat(2001));
+
+    expect(
+      service.sectionNeedsAttention(
+        { id: 'agenda-resources', label: 'Agenda & Resources', required: false } as MeetingComposerSection,
+        new Set<MeetingComposerSectionId>()
+      )
+    ).toBe(false);
+  });
+
+  it('routes an off-scale stored duration to Custom rather than leaving the chips unselected', () => {
+    service.setDuration(37);
+
+    expect(service.form().get('duration')?.value).toBe('custom');
+    expect(service.form().get('customDuration')?.value).toBe(37);
+    // Marked so the range error shows, instead of silently deadening submit.
+    expect(service.form().get('customDuration')?.touched).toBe(true);
+  });
+
+  it('clears the custom control when the duration is back on the chip scale', () => {
+    service.setDuration(37);
+
+    service.setDuration(30);
+
+    expect(service.form().get('duration')?.value).toBe(30);
+    expect(service.form().get('customDuration')?.value).toBeNull();
+  });
+
+  it('resolves the effective project from the open context before the ambient one', () => {
+    ambientProjectUid = 'ambient-project';
+    service.initialize({ mode: 'create', projectUid: 'project-1' });
+
+    expect(service.effectiveProjectUid()).toBe('project-1');
+  });
+
+  it('falls back to the ambient context when the open carried no project', () => {
+    ambientProjectUid = 'ambient-project';
+    service.initialize({ mode: 'create' });
+
+    expect(service.effectiveProjectUid()).toBe('ambient-project');
   });
 });

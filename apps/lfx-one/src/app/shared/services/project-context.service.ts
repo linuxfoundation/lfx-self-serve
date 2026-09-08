@@ -387,8 +387,22 @@ export class ProjectContextService {
           if (!ctx?.slug) {
             return of(false);
           }
-          return this.projectService.getProject(ctx.slug, false, { meetingCoordinator: true }).pipe(
-            map((project) => project?.writer === true || project?.meetingCoordinator === true),
+          // Two requests rather than one `?meeting_coordinator=true` fetch, and cheaper than it
+          // looks: the plain `getProject(slug, false)` response is already in ProjectService's
+          // cache on every navigation — `projectQueryParamGuard` fetches that exact key — while
+          // `:mc` is a separate cache entry and so a genuine extra round trip on the SSR critical
+          // path of every page. Upstream skips the `meeting_coordinator` FGA check outright for
+          // writers (`project.service.ts:344`), so for a writer that second request could only
+          // echo back what the first already said. Only a non-writer actually needs it.
+          return this.projectService.getProject(ctx.slug, false).pipe(
+            switchMap((project) => {
+              if (project?.writer === true) {
+                return of(true);
+              }
+              return this.projectService
+                .getProject(ctx.slug, false, { meetingCoordinator: true })
+                .pipe(map((coordinatorProject) => coordinatorProject?.writer === true || coordinatorProject?.meetingCoordinator === true));
+            }),
             catchError(() => of(false))
           );
         })

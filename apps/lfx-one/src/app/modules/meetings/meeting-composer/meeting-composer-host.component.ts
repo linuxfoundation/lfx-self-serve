@@ -12,6 +12,7 @@ import { ProjectContextService } from '@services/project-context.service';
 import { MessageService } from 'primeng/api';
 import { DrawerModule } from 'primeng/drawer';
 import { ToastModule } from 'primeng/toast';
+import type { ToastPositionType } from 'primeng/types/toast';
 import { filter, pairwise } from 'rxjs';
 
 import { MeetingComposerFormService } from './meeting-composer-form.service';
@@ -62,7 +63,13 @@ export class MeetingComposerHostComponent {
 
   protected readonly sections: readonly MeetingComposerSection[] = MEETING_COMPOSER_SECTIONS;
   protected readonly toastKey = MEETING_COMPOSER_TOAST_KEY;
-  protected readonly toastPosition = MEETING_COMPOSER_TOAST_POSITION;
+  /**
+   * Annotated rather than inferred, so the shared literal is checked against PrimeNG's own union.
+   * @description The constant lives in `@lfx-one/shared`, which carries no PrimeNG dependency — not
+   * even a peer one — so the type has to be applied here, at the only place that feeds it to `<p-toast>`.
+   * A typo in the constant would otherwise reach the DOM as a silently ignored `position`.
+   */
+  protected readonly toastPosition: ToastPositionType = MEETING_COMPOSER_TOAST_POSITION;
 
   /**
    * Single mode source for the chrome, matching what the rail reads.
@@ -233,6 +240,11 @@ export class MeetingComposerHostComponent {
       meetingQueryParams: meeting.password ? { password: meeting.password } : {},
     };
 
+    // Only the newest sticky toast survives. Without a lifetime nothing retires these on its own, so
+    // creating several meetings in a row stacked permanent multi-line toasts up over the content the
+    // organizer is still working in. Scoped to this key, so unrelated toasts are untouched.
+    this.messageService.clear(this.toastKey);
+
     this.messageService.add({
       key: this.toastKey,
       severity: 'success',
@@ -240,8 +252,12 @@ export class MeetingComposerHostComponent {
       detail: data.meetingTitle,
       // Sticky, not timed. The toast carries the only two routes back to the meeting now that creating
       // doesn't navigate, and a fixed lifetime put them out of reach of anyone who needs longer than a
-      // few seconds to read and target them. It has an explicit dismiss control instead.
+      // few seconds to read and target them.
       sticky: true,
+      // Explicit rather than relying on the PrimeNG default: with `sticky`, the close button is the only
+      // way out, and it renders outside the custom-template branch — so a template refactor upstream
+      // could strand an undismissable toast. Stating it keeps the intent checkable.
+      closable: true,
       data,
     });
   }

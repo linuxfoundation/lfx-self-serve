@@ -136,13 +136,17 @@ export class ComposerAgendaResourcesComponent {
     const context = (form.get('aiPrompt')?.value as string | null)?.trim() || null;
     const title = (form.get('title')?.value as string | null)?.trim() || null;
     const meetingType = this.meetingType();
-    // Only name the project when the ambient context is the same project the save will write to.
+    // The saved meeting's own project name first: in edit mode the composer is frequently open over a
+    // different context (the Me lens, another project), and `project_name` is a required field on the
+    // meeting the form already holds — so this is the authoritative name, not a fallback.
+    // Otherwise, only name the ambient project when it is the same one the save will write to.
     // `prepareMeetingData()` prefers the captured open-context uid over the ambient one, so a composer
     // opened from a group/deep link while the sidebar still points elsewhere would otherwise ask the
     // model for an agenda about the wrong project. The server omits an absent descriptor, so dropping
     // it is strictly better than sending a mismatched one.
     const project = this.projectContextService.activeContext();
-    const projectName = project && project.uid === this.formService.effectiveProjectUid() ? project.name : null;
+    const ambientProjectName = project && project.uid === this.formService.effectiveProjectUid() ? project.name : null;
+    const projectName = this.formService.meeting()?.project_name || ambientProjectName;
 
     // A title or a goal — whichever the organizer has — is enough. Edit mode drops the rail's
     // section locking entirely, so the organizer can be standing here having just cleared the title;
