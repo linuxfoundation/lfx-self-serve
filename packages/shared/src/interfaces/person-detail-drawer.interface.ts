@@ -12,13 +12,12 @@ export interface PersonDrawerContext {
   personKey?: string;
   /** Pre-loaded Governance seats when there is no personKey to fetch on. */
   governanceSeats?: OrgAllEmployeeCommitteeMembership[];
-  /** Raw email to resolve companyEmails by when there is no personKey (Board/Committee/Key Contacts/Access openers). */
-  email?: string;
   name: string;
   title?: string | null;
   avatarUrl?: string | null;
   initials?: string;
   avatarColorClass?: string;
+  /** Company-address lookup key for governance openers that have no personKey. Never an email address. */
   username?: string | null;
   profileUrl?: string | null;
   sourceIconClass?: string | null;

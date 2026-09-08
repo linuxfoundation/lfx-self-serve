@@ -342,3 +342,6 @@ export * from './user-preference.interface';
 
 // Individual Dashboard → LFX migration banner (LFXV2-3336)
 export * from './id-migration.interface';
+
+// Feature flag guard readiness context (GH-1351)
+export * from './feature-flag.interface';
