@@ -9,6 +9,8 @@
         <span>{{ finding().areaLabel }}</span>
       </div>
       <p class="text-sm font-semibold text-gray-900">{{ finding().title }}</p>
+      <!-- Kept on one line — multi-line @for/@if/@else lets Angular collapse whitespace into stray spaces around interpolations. -->
+      <!-- The `{{{ ... }}}}` is @else's block braces wrapping a `{{ }}` interpolation, not one ambiguous brace run. -->
       <!-- prettier-ignore -->
       <p class="text-sm text-gray-600" data-testid="health-metrics-overview-finding-sentence">@for (segment of sentenceSegments(); track $index) {@if (segment.bold) {<b>{{ segment.text }}</b>} @else {{{ segment.text }}}}</p>
     </div>
