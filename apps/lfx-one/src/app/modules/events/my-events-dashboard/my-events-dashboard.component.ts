@@ -1,8 +1,8 @@
 // Copyright The Linux Foundation and each contributor to LFX.
 // SPDX-License-Identifier: MIT
 
-import { afterNextRender, Component, computed, effect, inject, Injector, Signal, signal, viewChild } from '@angular/core';
-import { toSignal } from '@angular/core/rxjs-interop';
+import { afterNextRender, Component, computed, inject, Injector, Signal, signal, viewChild } from '@angular/core';
+import { takeUntilDestroyed, toObservable, toSignal } from '@angular/core/rxjs-interop';
 import { ActivatedRoute, Router } from '@angular/router';
 import { ButtonComponent } from '@components/button/button.component';
 import { CardComponent } from '@components/card/card.component';
@@ -20,7 +20,7 @@ import { OpenIntercomDirective } from '@shared/directives/open-intercom.directiv
 import { MessageService } from 'primeng/api';
 import { ToastModule } from 'primeng/toast';
 import { Tooltip } from 'primeng/tooltip';
-import { catchError, defer, finalize, map, of } from 'rxjs';
+import { catchError, combineLatest, defer, filter, finalize, map, of } from 'rxjs';
 import { DiscoverEventsButtonComponent } from '../components/discover-events-button/discover-events-button.component';
 import { EventsTopBarComponent } from '../components/events-top-bar/events-top-bar.component';
 import { EventsListComponent } from './components/events-list/events-list.component';
@@ -56,8 +56,8 @@ export class MyEventsDashboardComponent {
   /** Single subscription to the route's query params — activeTab and activeEventId both derive from it. */
   private readonly queryParamMap = toSignal(this.route.queryParamMap, { initialValue: this.route.snapshot.queryParamMap });
 
-  /** Guards the deep-linked `?event=` auto-open so it fires at most once per page load. */
-  private readonly deepLinkEventConsumed = signal(false);
+  /** Guards the deep-linked `?event=` auto-open so each event id fires at most once per page load. */
+  private readonly consumedDeepLinkEventIds = new Set<string>();
 
   protected readonly activeTab: Signal<EventTabId> = this.initActiveTab();
   /** Event id from a deep link (`?tab=visa-letters&event=<id>`); null once the URL is stripped post-auto-open, or absent. */
@@ -97,25 +97,26 @@ export class MyEventsDashboardComponent {
   protected readonly isCreateEnabled: Signal<boolean> = this.initIsCreateEnabled();
 
   public constructor() {
-    // Auto-open the request dialog for a deep link (`?tab=visa-letters&event=<id>`). Reads
-    // eventsListRef() so a late-mounting child re-triggers this effect and retries the open,
-    // rather than silently dropping the deep link if it wasn't rendered yet on the first pass.
-    effect(() => {
-      if (this.deepLinkEventConsumed()) return;
-      if (!this.isRequestTab() || !this.activeEventId() || !this.isCreateEnabled()) return;
-      this.eventsListRef();
-
-      afterNextRender(
-        () => {
-          if (this.deepLinkEventConsumed() || !this.openCurrentRequestDialog()) return;
-          this.deepLinkEventConsumed.set(true);
-          void this.router.navigate([], { relativeTo: this.route, queryParams: { event: null }, queryParamsHandling: 'merge', replaceUrl: true });
-        },
-        { injector: this.injector }
-      );
-    });
-    // effect() (not toObservable+RxJS) is deliberate: the body's only job is scheduling an
-    // afterNextRender callback, which needs an injection context at the point it fires.
+    // Auto-open the request dialog for a deep link (`?tab=visa-letters&event=<id>`). RxJS, not
+    // effect(), per the frontend checklist (effect() is reserved for logging/debugging —
+    // docs/reviews/frontend-checklist.md §5); afterNextRender's explicit injector keeps the
+    // deferred-render timing this needs without an active injection context at fire time.
+    combineLatest([toObservable(this.isRequestTab), toObservable(this.activeEventId), toObservable(this.isCreateEnabled)])
+      .pipe(
+        map(([isRequestTab, eventId, isCreateEnabled]) => (isRequestTab && isCreateEnabled ? eventId : null)),
+        filter((eventId): eventId is string => !!eventId && !this.consumedDeepLinkEventIds.has(eventId)),
+        takeUntilDestroyed()
+      )
+      .subscribe((eventId) => {
+        afterNextRender(
+          () => {
+            if (this.consumedDeepLinkEventIds.has(eventId) || !this.openCurrentRequestDialog()) return;
+            this.consumedDeepLinkEventIds.add(eventId);
+            void this.router.navigate([], { relativeTo: this.route, queryParams: { event: null }, queryParamsHandling: 'merge', replaceUrl: true });
+          },
+          { injector: this.injector }
+        );
+      });
   }
 
   protected onFoundationChange(value: string | null): void {
@@ -157,6 +158,11 @@ export class MyEventsDashboardComponent {
   protected openCurrentRequestDialog(): boolean {
     if (!this.isCreateEnabled()) return false;
     return this.eventsListRef()?.openCurrentRequestDialog() ?? false;
+  }
+
+  /** Template wrapper — (onClick) expects void; openCurrentRequestDialog()'s boolean return would otherwise trigger preventDefault(). */
+  protected onNewRequestClick(): void {
+    this.openCurrentRequestDialog();
   }
 
   protected resetFilters(): void {

@@ -1,14 +1,12 @@
 // Copyright The Linux Foundation and each contributor to LFX.
 // SPDX-License-Identifier: MIT
 
-import { expect, Page, test } from '@playwright/test';
+import { expect, test } from '@playwright/test';
 import { skipWhenAuthMissing } from './helpers/auth.helper';
+import { mockEventRoutes } from './helpers/events-mock.helper';
 import { DEFAULT_LENS, LENS_COOKIE_KEY } from '@lfx-one/shared/constants';
 
 test.beforeEach(() => skipWhenAuthMissing());
-
-const EMPTY_EVENTS_RESPONSE = { data: [], total: 0, pageSize: 10, offset: 0 };
-const EMPTY_COUNTRIES_RESPONSE = { data: [] };
 
 const DEEP_LINK_EVENT_ID = 'evt-deep-link-123';
 const MATCHED_EVENT = {
@@ -26,34 +24,6 @@ const MATCHED_EVENT = {
 
 const DIALOG_TIMEOUT = { timeout: 10000 };
 
-/**
- * Mocks all /api/events* calls. The `eventId`-filtered call (the deep-link resolver, made
- * client-side once the dialog opens) returns `matchedEvent` when its id matches, otherwise empty.
- * Every other call this test actually exercises client-side (the event-selection grid's fetch,
- * countries, organizations) resolves empty so the dialog renders deterministically.
- */
-async function mockEventRoutes(page: Page, { matchedEvent }: { matchedEvent?: typeof MATCHED_EVENT } = {}) {
-  await page.route('**/api/events**', (route) => {
-    const url = route.request().url();
-
-    if (url.includes('/countries')) {
-      return route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify(EMPTY_COUNTRIES_RESPONSE) });
-    }
-    if (url.includes('/visa-requests') || url.includes('/travel-fund-requests') || url.includes('search-organizations') || url.includes('/all')) {
-      return route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify({ data: [] }) });
-    }
-
-    const parsedUrl = new URL(url);
-    const eventId = parsedUrl.searchParams.get('eventId');
-    if (eventId) {
-      const data = matchedEvent && eventId === matchedEvent.id ? [matchedEvent] : [];
-      return route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify({ data, total: data.length, pageSize: 1, offset: 0 }) });
-    }
-
-    return route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify(EMPTY_EVENTS_RESPONSE) });
-  });
-}
-
 test.describe('My Events — Visa/Travel-Fund Request Deep Link', () => {
   test.beforeEach(async ({ context, baseURL }) => {
     // Ensure "me" lens is active so lensRedirectGuard doesn't redirect to /foundation/events.
@@ -67,7 +37,7 @@ test.describe('My Events — Visa/Travel-Fund Request Deep Link', () => {
     await expect(page).not.toHaveURL(/auth0\.com/);
 
     await expect(page.getByTestId('visa-request-application-dialog')).toBeVisible(DIALOG_TIMEOUT);
-    await expect(page.getByTestId('visa-request-step-circle-2')).toHaveClass(/bg-blue-600/);
+    await expect(page.getByTestId('visa-request-terms')).toBeVisible();
 
     // The `event` param is stripped once consumed, so a refresh doesn't reopen the dialog.
     await expect(page).toHaveURL(/tab=visa-letters/);
@@ -80,7 +50,7 @@ test.describe('My Events — Visa/Travel-Fund Request Deep Link', () => {
     await expect(page).not.toHaveURL(/auth0\.com/);
 
     await expect(page.getByTestId('travel-fund-application-dialog')).toBeVisible(DIALOG_TIMEOUT);
-    await expect(page.getByTestId('travel-fund-step-circle-2')).toHaveClass(/bg-blue-600/);
+    await expect(page.getByTestId('travel-fund-terms')).toBeVisible();
     await expect(page).not.toHaveURL(/event=/);
   });
 

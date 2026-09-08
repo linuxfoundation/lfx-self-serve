@@ -9,7 +9,7 @@ import { ButtonComponent } from '@components/button/button.component';
 import { MyEvent, TravelFundAboutMe, TravelFundApplication, TravelFundExpenses, TravelFundStep } from '@lfx-one/shared/interfaces';
 import { MessageService } from 'primeng/api';
 import { DynamicDialogConfig, DynamicDialogRef } from 'primeng/dynamicdialog';
-import { catchError, finalize, of } from 'rxjs';
+import { finalize } from 'rxjs';
 import { ApplicationSuccessComponent } from '../application-success/application-success.component';
 import { EventSelectionComponent } from '../event-selection/event-selection.component';
 import { StepIndicatorComponent } from '../step-indicator/step-indicator.component';
@@ -17,6 +17,7 @@ import { TravelFundTermsComponent } from '../travel-fund-terms/travel-fund-terms
 import { AboutMeFormComponent } from '../about-me-form/about-me-form.component';
 import { TravelExpensesFormComponent } from '../travel-expenses-form/travel-expenses-form.component';
 import { TRAVEL_FUND_STEP_ORDER } from '@lfx-one/shared/constants/events.constants';
+import { resolveDeepLinkedEvent$ } from '../../utils/resolve-deep-linked-event.util';
 
 @Component({
   selector: 'lfx-travel-fund-application-dialog',
@@ -153,21 +154,20 @@ export class TravelFundApplicationDialogComponent {
     if (!eventId) return;
 
     this.resolvingDeepLink.set(true);
-    this.eventsService
-      .getMyEvents({ eventId, isPast: false, registeredOnly: true, isTravelFundRequestAccepted: true, excludePastTravelFundDeadline: true })
+    resolveDeepLinkedEvent$(
+      this.eventsService.getMyEvents({ eventId, isPast: false, registeredOnly: true, isTravelFundRequestAccepted: true, excludePastTravelFundDeadline: true }),
+      eventId,
+      'travel fund request'
+    )
       .pipe(
-        catchError((error) => {
-          console.error('Failed to resolve deep-linked travel fund request event:', error);
-          return of('error' as const);
-        }),
         finalize(() => this.resolvingDeepLink.set(false)),
         takeUntilDestroyed(this.destroyRef)
       )
-      .subscribe((response) => {
+      .subscribe((event) => {
         // The user may already have picked an event manually while this was in flight — don't clobber it.
         if (this.step() !== 'select-event' || this.selectedEvent()) return;
 
-        if (response === 'error') {
+        if (event === 'error') {
           this.messageService.add({
             severity: 'error',
             summary: 'Error',
@@ -176,7 +176,6 @@ export class TravelFundApplicationDialogComponent {
           return;
         }
 
-        const event = response.data[0];
         if (event) {
           this.selectedEvent.set(event);
           this.step.set('terms');
