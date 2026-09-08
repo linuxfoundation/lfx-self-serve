@@ -3,7 +3,7 @@
 
 import { NextFunction, Request, Response } from 'express';
 
-import { AuthenticationError } from '../errors';
+import { AuthenticationError, ServiceValidationError } from '../errors';
 import { assertOrgUid } from '../helpers/org-uid.helper';
 import { OrgClaService } from '../services/org-cla.service';
 import { logger } from '../services/logger.service';
@@ -29,6 +29,37 @@ export class OrgClasController {
       logger.success(req, 'list_org_cla_groups', startTime, { org_uid: orgUid, cla_group_count: result.claGroups.length });
       res.setHeader('Cache-Control', 'no-store');
       res.json(result);
+    } catch (error) {
+      next(error);
+    }
+  }
+
+  // GET /api/orgs/:orgUid/lens/cla-groups/:signatureId/pdf-url
+  public async getPdfUrl(req: Request, res: Response, next: NextFunction): Promise<void> {
+    const startTime = logger.startOperation(req, 'get_org_cla_pdf_url');
+
+    try {
+      if (!(await getUsernameFromAuth(req))) {
+        throw new AuthenticationError('User authentication required', { operation: 'get_org_cla_pdf_url' });
+      }
+
+      const orgUid = req.params['orgUid'];
+      assertOrgUid(orgUid, 'get_org_cla_pdf_url');
+
+      const signatureId = (req.params['signatureId'] ?? '').trim();
+      if (!signatureId) {
+        throw ServiceValidationError.forField('signatureId', 'signatureId path parameter is required', { operation: 'get_org_cla_pdf_url' });
+      }
+
+      const pdf = await this.orgClaService.getPdfUrl(req, orgUid, signatureId);
+      if (!pdf) {
+        res.status(404).json({ message: 'Signed document not found' });
+        return;
+      }
+
+      logger.success(req, 'get_org_cla_pdf_url', startTime, { org_uid: orgUid, signature_id: signatureId });
+      res.setHeader('Cache-Control', 'no-store');
+      res.json(pdf);
     } catch (error) {
       next(error);
     }

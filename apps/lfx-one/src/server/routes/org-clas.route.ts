@@ -30,5 +30,6 @@ router.use('/:orgUid/lens/cla-groups', (_req, _res, next) => {
 });
 
 router.get('/:orgUid/lens/cla-groups', requireOrgLensAccess, (req, res, next) => orgClasController.listClaGroups(req, res, next));
+router.get('/:orgUid/lens/cla-groups/:signatureId/pdf-url', requireOrgLensAccess, (req, res, next) => orgClasController.getPdfUrl(req, res, next));
 
 export default router;

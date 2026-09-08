@@ -1,7 +1,7 @@
 // Copyright The Linux Foundation and each contributor to LFX.
 // SPDX-License-Identifier: MIT
 
-import type { CLA_MANAGER_REQUEST_TYPES } from '../constants/cla.constants';
+import type { CLA_MANAGER_REQUEST_TYPES, ORG_CLA_DETAIL_TABS } from '../constants/cla.constants';
 import type { TagSeverity } from './components.interface';
 
 // UI-facing shapes for the read-only "CLAs" view (Me lens → Profile tab).
@@ -631,6 +631,13 @@ export interface OrgClaGroup {
    * present the moment signing began as the moment it completed.
    */
   signedOn?: string;
+  /**
+   * Name on the CCLA signature. Absent when the signature carries no signatory name, or when the
+   * deployment predates the field — so the detail view must still be able to state a signed date
+   * without naming anyone. There is no CLA-manager fallback: a manager is a different role, and
+   * naming one here would attribute the signature to somebody who did not make it.
+   */
+  signedBy?: string;
   status: OrgClaGroupStatus;
   /**
    * Upstream's own `needsClaManager` — signed with zero CLA managers — taken verbatim.
@@ -666,4 +673,25 @@ export interface OrgClaGroup {
 export interface OrgClaGroupList {
   orgUid: string;
   claGroups: OrgClaGroup[];
+}
+
+export type OrgClaDetailTab = (typeof ORG_CLA_DETAIL_TABS)[number]['id'];
+
+/** One tab trigger as the detail page renders it. `badge` is empty when the tab carries no count. */
+export interface OrgClaDetailTabView {
+  id: OrgClaDetailTab;
+  label: string;
+  badge: string;
+}
+
+/** How one `OrgClaGroupStatus` is presented as a status pill. */
+export interface OrgClaStatusDisplay {
+  label: string;
+  severity: TagSeverity;
+}
+
+export interface OrgClaCoverageDialogData {
+  claGroupName: string;
+  foundationName?: string;
+  projects: OrgClaGroupProject[];
 }

@@ -292,6 +292,12 @@ export interface EasyClaCompanyClaGroup {
    * `signed`, never alone.
    */
   signedOn?: string;
+  /**
+   * Name on the CCLA signature (`SignatoryName`). Upstream omits it when that name is blank and
+   * offers no CLA-manager fallback, so its absence means the signer is unknown — not that the
+   * agreement is unsigned.
+   */
+  signedBy?: string;
   signatureID?: string;
   /** Stored sanctions flag of the *signing entity*, not of the parent organization. */
   sanctioned?: boolean;
@@ -340,4 +346,11 @@ export interface EasyClaCompanyClaGroupList {
   resultCount?: number;
   /** Sorted by `signingEntityName` then `claGroupName` upstream. */
   list?: EasyClaCompanyClaGroup[];
+}
+
+export interface EasyClaSignedDocument {
+  signature_id?: string;
+  signed_cla_url?: string;
+  signatureID?: string;
+  signedClaUrl?: string;
 }

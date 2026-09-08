@@ -194,6 +194,8 @@ describe('OrgEasyclaComponent', () => {
 
       expect(allByTestId(fixture, 'org-easycla-card')).toHaveLength(3);
       expect(byTestId(fixture, 'org-easycla-empty-state')).toBeNull();
+      const link = byTestId(fixture, 'org-easycla-card-link') as HTMLAnchorElement | null;
+      expect(link?.getAttribute('href')).toContain('/org/easycla/a');
     });
 
     it('fetches once for the selected organization', async () => {

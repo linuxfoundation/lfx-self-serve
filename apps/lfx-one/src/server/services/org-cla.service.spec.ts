@@ -12,6 +12,9 @@ const { gatewayFetch, isImpersonating } = vi.hoisted(() => ({ gatewayFetch: vi.f
 vi.mock('../helpers/gateway-fetch.helper', () => ({ gatewayFetch }));
 vi.mock('../helpers/cla-service-url.helper', () => ({ claServiceBaseUrl: () => 'https://gw.example.org/cla-service' }));
 vi.mock('../utils/auth-helper', () => ({ isImpersonating }));
+vi.mock('./logger.service', () => ({
+  logger: { startOperation: vi.fn(() => 0), success: vi.fn(), warning: vi.fn(), error: vi.fn(), debug: vi.fn(), info: vi.fn() },
+}));
 
 const { OrgClaService } = await import('./org-cla.service');
 
@@ -316,6 +319,33 @@ describe('OrgClaService.listClaGroups — status', () => {
     expect(row.signedOn).toBe('2024-03-11T09:20:00Z');
   });
 
+  it('carries the signer name on a signed agreement', async () => {
+    gatewayFetch.mockResolvedValue(upstreamList(upstreamEntry({ signed: true, signedBy: 'Alex Signer' })));
+
+    const [row] = (await new OrgClaService().listClaGroups(req(), ORG_UID)).claGroups;
+
+    expect(row.signedBy).toBe('Alex Signer');
+  });
+
+  it('withholds the signer name on an unsigned agreement', async () => {
+    gatewayFetch.mockResolvedValue(upstreamList(upstreamEntry({ signed: false, signedBy: 'Alex Signer' })));
+
+    const [row] = (await new OrgClaService().listClaGroups(req(), ORG_UID)).claGroups;
+
+    expect(row.signedBy).toBeUndefined();
+  });
+
+  // Upstream omits the field for a blank signatory name, and a deployment predating it omits it
+  // too. Both mean the signer is unknown, which the row states by carrying nothing.
+  it('omits the signer name when upstream sends none', async () => {
+    gatewayFetch.mockResolvedValue(upstreamList(upstreamEntry({ signed: true, signedBy: undefined })));
+
+    const [row] = (await new OrgClaService().listClaGroups(req(), ORG_UID)).claGroups;
+
+    expect(row.signedBy).toBeUndefined();
+    expect(row.signedOn).toBe('2024-03-11T09:20:00Z');
+  });
+
   it('lets sanctioned win over an unsigned agreement too', async () => {
     gatewayFetch.mockResolvedValue(upstreamList(upstreamEntry({ signed: false, sanctioned: true })));
 
@@ -482,5 +512,105 @@ describe('OrgClaService.listClaGroups — order and detail hand-off', () => {
     expect(row.signedOn).toBe('2024-03-11T09:20:00Z');
     expect(row.foundationSfid).toBe('a09410000182dD2AAI');
     expect(row.foundationName).toBe('Nimbus Foundation');
+  });
+});
+
+describe('OrgClaService.getPdfUrl', () => {
+  // The document read is preceded by the organization's own list, which is what binds the
+  // signature to the caller's organization. Both upstream calls are staged, in that order.
+  function stageDocument(document: unknown, entries: EasyClaCompanyClaGroup[] = [upstreamEntry()]): void {
+    gatewayFetch.mockResolvedValueOnce(upstreamList(...entries)).mockResolvedValueOnce(document);
+  }
+
+  function stageDocumentFailure(error: unknown, entries: EasyClaCompanyClaGroup[] = [upstreamEntry()]): void {
+    gatewayFetch.mockResolvedValueOnce(upstreamList(...entries)).mockRejectedValueOnce(error);
+  }
+
+  it('maps signed_cla_url onto the shared download shape', async () => {
+    stageDocument({ signature_id: 'signature-uuid-1', signed_cla_url: 'https://s3.example.org/ccla.pdf' });
+
+    const pdf = await new OrgClaService().getPdfUrl(req(), ORG_UID, 'signature-uuid-1');
+
+    expect(pdf).toEqual({ url: 'https://s3.example.org/ccla.pdf', expiresInSeconds: 0 });
+    expect(gatewayFetch).toHaveBeenCalledWith(
+      expect.anything(),
+      'https://gw.example.org/cla-service/v4/signatures/signature-uuid-1/signed-document',
+      expect.objectContaining({ operation: 'org_cla_get_pdf_url', service: 'org_cla_service' })
+    );
+  });
+
+  it('also accepts the camelCase field names a generated client may emit', async () => {
+    stageDocument({ signatureID: 'signature-uuid-1', signedClaUrl: 'https://s3.example.org/ccla.pdf' });
+
+    expect(await new OrgClaService().getPdfUrl(req(), ORG_UID, 'signature-uuid-1')).toEqual({
+      url: 'https://s3.example.org/ccla.pdf',
+      expiresInSeconds: 0,
+    });
+  });
+
+  it('returns null on a 404', async () => {
+    const { MicroserviceError } = await import('../errors');
+    stageDocumentFailure(new MicroserviceError('not found', 404, 'NOT_FOUND', { service: 'cla_service' }));
+
+    expect(await new OrgClaService().getPdfUrl(req(), ORG_UID, 'signature-uuid-1')).toBeNull();
+  });
+
+  it('returns null when upstream omits the url', async () => {
+    stageDocument({ signature_id: 'signature-uuid-1' });
+
+    expect(await new OrgClaService().getPdfUrl(req(), ORG_UID, 'signature-uuid-1')).toBeNull();
+  });
+
+  it('propagates a 403 rather than turning it into a missing document', async () => {
+    const { MicroserviceError } = await import('../errors');
+    stageDocumentFailure(new MicroserviceError('forbidden', 403, 'FORBIDDEN', { service: 'cla_service' }));
+
+    await expect(new OrgClaService().getPdfUrl(req(), ORG_UID, 'signature-uuid-1')).rejects.toMatchObject({ statusCode: 403 });
+  });
+
+  it('authorizes the document read with the target token during impersonation', async () => {
+    isImpersonating.mockReturnValue(true);
+    stageDocument({ signed_cla_url: 'https://s3.example.org/ccla.pdf' });
+
+    await new OrgClaService().getPdfUrl(req({ bearerToken: 'target-token' }), ORG_UID, 'signature-uuid-1');
+
+    expect(gatewayFetch).toHaveBeenCalledWith(
+      expect.anything(),
+      expect.stringContaining('/v4/signatures/signature-uuid-1/signed-document'),
+      expect.objectContaining({ bearerToken: 'target-token' })
+    );
+  });
+});
+
+// The org grant proves which organization the caller may view as, not which signatures belong to
+// it. Without the list lookup the signature id alone selects the document, so any id a caller can
+// name is readable under their own organization's path.
+describe('OrgClaService.getPdfUrl — the organization scope gate', () => {
+  it('answers a signature that is not on the organization list as absent', async () => {
+    gatewayFetch.mockResolvedValueOnce(upstreamList(upstreamEntry({ signatureID: 'signature-this-org-signed' })));
+
+    expect(await new OrgClaService().getPdfUrl(req(), ORG_UID, 'signature-another-org-signed')).toBeNull();
+  });
+
+  it('never reaches the document endpoint for a signature the organization does not hold', async () => {
+    gatewayFetch.mockResolvedValueOnce(upstreamList(upstreamEntry({ signatureID: 'signature-this-org-signed' })));
+
+    await new OrgClaService().getPdfUrl(req(), ORG_UID, 'signature-another-org-signed');
+
+    expect(gatewayFetch).toHaveBeenCalledTimes(1);
+    expect(gatewayFetch).not.toHaveBeenCalledWith(expect.anything(), expect.stringContaining('/signed-document'), expect.anything());
+  });
+
+  it('resolves the list against the caller-scoped orgUid, not anything the request carried', async () => {
+    gatewayFetch.mockResolvedValueOnce(upstreamList(upstreamEntry())).mockResolvedValueOnce({ signed_cla_url: 'https://s3.example.org/ccla.pdf' });
+
+    await new OrgClaService().getPdfUrl(req(), ORG_UID, 'signature-uuid-1');
+
+    expect(gatewayFetch).toHaveBeenNthCalledWith(
+      1,
+      expect.anything(),
+      `https://gw.example.org/cla-service/v4/company/external/${ORG_UID}/cla-groups`,
+      expect.objectContaining({ operation: 'org_cla_list_cla_groups' })
+    );
   });
 });

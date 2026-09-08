@@ -5,6 +5,7 @@ import { isPlatformBrowser } from '@angular/common';
 import { ChangeDetectionStrategy, Component, computed, inject, PLATFORM_ID, signal, Signal } from '@angular/core';
 import { takeUntilDestroyed, toObservable, toSignal } from '@angular/core/rxjs-interop';
 import { FormControl, FormGroup } from '@angular/forms';
+import { RouterLink } from '@angular/router';
 import type { OrgClaGroup, OrgClaGroupList } from '@lfx-one/shared/interfaces';
 import { SkeletonModule } from 'primeng/skeleton';
 import { catchError, distinctUntilChanged, filter, of, skip, switchMap, tap } from 'rxjs';
@@ -23,7 +24,7 @@ import { OrgEasyclaCardComponent } from './org-easycla-card/org-easycla-card.com
 
 @Component({
   selector: 'lfx-org-easycla',
-  imports: [ButtonComponent, EmptyStateComponent, InputTextComponent, OpenIntercomDirective, OrgEasyclaCardComponent, SkeletonModule],
+  imports: [ButtonComponent, EmptyStateComponent, InputTextComponent, OpenIntercomDirective, OrgEasyclaCardComponent, RouterLink, SkeletonModule],
   templateUrl: './org-easycla.component.html',
   changeDetection: ChangeDetectionStrategy.OnPush,
 })

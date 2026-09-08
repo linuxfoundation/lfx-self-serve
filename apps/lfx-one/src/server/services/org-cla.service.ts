@@ -8,13 +8,14 @@
 // One upstream call per page load, whatever the number of agreements. Searching and paging
 // happen client-side over the fetched set, so nothing on this path fans out per row.
 
-import type { OrgClaGroup, OrgClaGroupList, OrgClaGroupProject, OrgClaGroupStatus } from '@lfx-one/shared/interfaces';
+import type { OrgClaGroup, OrgClaGroupList, OrgClaGroupProject, OrgClaGroupStatus, PdfUrlResponse } from '@lfx-one/shared/interfaces';
 import type { Request } from 'express';
 
-import type { EasyClaCompanyClaGroup, EasyClaCompanyClaGroupList } from '../types/cla.types';
+import type { EasyClaCompanyClaGroup, EasyClaCompanyClaGroupList, EasyClaSignedDocument } from '../types/cla.types';
 import { MicroserviceError } from '../errors';
 import { claServiceBaseUrl } from '../helpers/cla-service-url.helper';
 import { gatewayFetch } from '../helpers/gateway-fetch.helper';
+import { logger } from './logger.service';
 import { isImpersonating } from '../utils/auth-helper';
 
 const SERVICE = 'org_cla_service';
@@ -75,6 +76,10 @@ function toOrgClaGroup(entry: EasyClaCompanyClaGroup & { signatureID: string }, 
     // shared contract defines as the instant the CCLA was signed would hand the detail view a
     // date to present as a signature date for an agreement that has none.
     ...(entry.signed === true && entry.signedOn ? { signedOn: entry.signedOn } : {}),
+    // Gated on `signed` for the same reason as the date above, and omitted when upstream sent no
+    // name — a deployment predating the field, or a signature whose signatory name is blank. Both
+    // read as "the signer is not known", which the overview answers by naming nobody.
+    ...(entry.signed === true && entry.signedBy ? { signedBy: entry.signedBy } : {}),
     status: toStatus(entry),
     needsClaManager: entry.needsClaManager === true,
     claManagersCount: entry.claManagersCount ?? 0,
@@ -178,5 +183,57 @@ export class OrgClaService {
       // engineer sees probing the endpoint directly matches what the page shows.
       claGroups: entries.map((entry) => toOrgClaGroup(entry, companyName)),
     };
+  }
+
+  /**
+   * Resolves the download URL for one agreement's signed CCLA.
+   *
+   * The signature is resolved through the organization's own list first, and a signature that is
+   * not on it is answered as absent without the upstream ever being called. `requireOrgLensAccess`
+   * proves which organization the caller may view as; it says nothing about which signatures
+   * belong to that organization, so without this step the `orgUid` in the path is decorative and
+   * the id alone selects the document. That is the whole gate on this path: upstream authorizes
+   * the signed-document read against project scope, which is a different question from the
+   * company-level grant this route is reached with, so it cannot be relied on to answer this one.
+   *
+   * The cost is the list call the page has already made — paid once per download, which is a
+   * button press, not a render.
+   */
+  public async getPdfUrl(req: Request, orgUid: string, signatureId: string): Promise<PdfUrlResponse | null> {
+    const startTime = logger.startOperation(req, 'org_cla_get_pdf_url', { signature_id: signatureId });
+
+    const { claGroups } = await this.listClaGroups(req, orgUid);
+    if (!claGroups.some((group) => group.id === signatureId)) {
+      logger.warning(req, 'org_cla_get_pdf_url', 'signature is not on this organization CLA list', { org_uid: orgUid, signature_id: signatureId });
+      logger.success(req, 'org_cla_get_pdf_url', startTime, { outcome: 'not_on_organization_list' });
+      return null;
+    }
+
+    let result: EasyClaSignedDocument | null;
+    try {
+      result = await gatewayFetch<EasyClaSignedDocument>(req, `${claServiceBaseUrl()}/v4/signatures/${encodeURIComponent(signatureId)}/signed-document`, {
+        operation: 'org_cla_get_pdf_url',
+        service: SERVICE,
+        errorMessage: 'Failed to fetch signed document URL',
+        errorCode: 'UPSTREAM_ERROR',
+        bearerToken: isImpersonating(req) ? req.bearerToken : undefined,
+      });
+    } catch (error) {
+      if (error instanceof MicroserviceError && error.statusCode === 404) {
+        logger.success(req, 'org_cla_get_pdf_url', startTime, { outcome: 'document_absent' });
+        return null;
+      }
+      logger.error(req, 'org_cla_get_pdf_url', startTime, error, { signature_id: signatureId });
+      throw error;
+    }
+
+    const url = result?.signed_cla_url?.trim() || result?.signedClaUrl?.trim() || '';
+    if (!url) {
+      logger.success(req, 'org_cla_get_pdf_url', startTime, { outcome: 'no_url_on_document' });
+      return null;
+    }
+
+    logger.success(req, 'org_cla_get_pdf_url', startTime, { outcome: 'resolved' });
+    return { url, expiresInSeconds: 0 };
   }
 }

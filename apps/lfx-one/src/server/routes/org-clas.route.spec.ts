@@ -7,11 +7,12 @@ import express from 'express';
 import type { Server } from 'node:http';
 import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, it, vi } from 'vitest';
 
-const { listClaGroups } = vi.hoisted(() => ({ listClaGroups: vi.fn() }));
+const { listClaGroups, getPdfUrl } = vi.hoisted(() => ({ listClaGroups: vi.fn(), getPdfUrl: vi.fn() }));
 
 vi.mock('../controllers/org-clas.controller', () => ({
   OrgClasController: class {
     public listClaGroups = listClaGroups;
+    public getPdfUrl = getPdfUrl;
   },
 }));
 
@@ -74,6 +75,9 @@ beforeEach(() => {
   vi.clearAllMocks();
   process.env['LFX_ORG_LENS_CLA_M3_ENABLED'] = 'true';
   listClaGroups.mockImplementation(ok);
+  getPdfUrl.mockImplementation((_req: express.Request, res: express.Response) => {
+    res.json({ url: 'https://s3.example.org/ccla.pdf', expiresInSeconds: 0 });
+  });
   getAccessAwareOrgs.mockResolvedValue({ resolved: new Map([[GRANTED, { roleSource: 'direct-writer' }]]), upstreamFailed: false });
 });
 
@@ -119,5 +123,30 @@ describe('org-clas router', () => {
 
     expect(res.status).not.toBe(409);
     expect(genericLensGuard).toHaveBeenCalled();
+  });
+
+  it('refuses the signed-document url for an org the caller holds no grant on', async () => {
+    const res = await fetch(`${baseUrl}/api/orgs/${UNGRANTED}/lens/cla-groups/signature-uuid-1/pdf-url`);
+
+    expect(res.status).toBe(403);
+    expect(getPdfUrl).not.toHaveBeenCalled();
+  });
+
+  it('admits the signed-document url for a granted org', async () => {
+    const res = await fetch(`${baseUrl}/api/orgs/${GRANTED}/lens/cla-groups/signature-uuid-1/pdf-url`);
+
+    expect(res.status).toBe(200);
+    expect(getPdfUrl).toHaveBeenCalled();
+    expect(await res.json()).toEqual({ url: 'https://s3.example.org/ccla.pdf', expiresInSeconds: 0 });
+  });
+
+  it('refuses the signed-document url when the server flag is off, before any grant lookup', async () => {
+    delete process.env['LFX_ORG_LENS_CLA_M3_ENABLED'];
+
+    const res = await fetch(`${baseUrl}/api/orgs/${GRANTED}/lens/cla-groups/signature-uuid-1/pdf-url`);
+
+    expect(res.status).toBe(409);
+    expect(getPdfUrl).not.toHaveBeenCalled();
+    expect(getAccessAwareOrgs).not.toHaveBeenCalled();
   });
 });

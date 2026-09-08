@@ -181,3 +181,16 @@ export const CLA_MANAGER_MODAL_COPY = {
     },
   },
 } as const;
+
+/**
+ * Tab order of the Organization Lens CLA Group detail page. `OrgClaDetailTab` is derived from
+ * this, so the set exists once: a tab added here is a compile error everywhere that switches on
+ * the union until it is handled.
+ */
+export const ORG_CLA_DETAIL_TABS = [
+  { id: 'overview', label: 'Overview' },
+  { id: 'managers', label: 'CLA Managers' },
+  { id: 'approval', label: 'Approval List' },
+  { id: 'acknowledgments', label: 'Contributor Acknowledgments' },
+  { id: 'activity', label: 'Activity Log' },
+] as const;
