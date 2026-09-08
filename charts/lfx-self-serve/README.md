@@ -385,11 +385,10 @@ campaign-service. It is separate from the reads flag above because it MUTATES li
 campaigns, and a REMOVE is irreversible — Google cannot re-enable a removed criterion, only
 create a new one with a new id.
 
-**Off is not a working fallback here either** — the same as the HubSpot UTM flag above, and
-unlike the rest of this list. The legacy path
-calls `getGadsClient()`, which throws whenever the `GADS_*` variables are absent — and they were
-deactivated deliberately. With this off, keyword actions do not work at all. This flag is what
-makes them work, not what changes which backend serves them.
+**Off is not a working fallback here.** The legacy path calls `getGadsClient()`, which throws
+whenever the `GADS_*` variables are absent — and they were deactivated deliberately. With this
+off, keyword actions do not work at all. This flag is what makes them work, not what changes which
+backend serves them.
 
 The granularity of failure changes when it is on. The legacy path issued one Google call per
 keyword, so each succeeded or failed alone. campaign-service takes one atomic batch per
@@ -416,9 +415,11 @@ smaller number is the correct one.
 A project with no campaign-service campaigns reads empty rather than falling back to the
 account-wide query — the fallback would be the cross-tenant leak this flag closes.
 
-It has no ordering dependency on the other flags, and unlike `STATUS_TOGGLE` it comes back off
-cleanly: both routes are reads with no persisted state and no UUID-keyed id space, so disabling
-it restores the previous behaviour exactly, leak included. It does not cover keyword actions
+It has no ordering dependency on the other flags, and unlike `STATUS_TOGGLE` nothing is stranded
+by disabling it: both routes are reads with no persisted state and no UUID-keyed id space. But
+"off" only WORKS where the `GADS_*` variables are still live — where they were deactivated the
+legacy arm calls `getGadsClient()`, which throws, so flipping back breaks the keywords and
+audience reads rather than restoring them. It does not cover keyword actions
 (pause/remove): those have their own flag, `LFX_CUTOVER_CAMPAIGN_SERVICE_KEYWORD_ACTIONS`,
 documented above — enabling this one leaves them wherever that flag puts them.
 
@@ -566,6 +567,46 @@ regardless of this flag.
 server flag. Rolling the server flag back while the client flag is still on leaves the UI
 advertising Campaigns/Analytics access to marketing-ops users that the BFF will now reject —
 broken UX, not a security hazard, but avoidable by sequencing the rollback.
+
+#### Organization Lens EasyCLA Dark Launch
+
+| Parameter                                 | Description                                                                | Required | Default |
+| ----------------------------------------- | -------------------------------------------------------------------------- | -------- | ------- |
+| `environment.LFX_ORG_LENS_CLA_M3_ENABLED` | Serves the M3 Organization Lens EasyCLA routes; off answers the module 409 | No       | off     |
+
+Unrelated to the marketing flags above — this one gates a feature's existence rather than an
+authorization model, and OFF is the pre-launch state rather than a stricter baseline. With it off,
+every route under `/api/orgs/:orgUid/lens/cla-groups` answers 409 `FEATURE_DISABLED` before the org
+lens grant lookup runs; nothing else under `/api/orgs` is affected. No caller can be locked out of
+anything they have today, because the module is new.
+
+It is the server half of a two-flag dark launch. The client-side `org-lens-cla-m3-enabled`
+OpenFeature flag hides the `/org/easycla` route and its nav item, but the Web SDK never runs
+server-side, so on its own it leaves the BFF reachable by direct call. Both must be on for the
+module to work.
+
+**Rollout ordering:** enable this flag and confirm the rolling update has fully converged before
+turning the client flag on, or the UI advertises a page that a not-yet-converged pod still 409s.
+Roll back in the opposite order — client flag off first. Overlap during the rollout is harmless
+while the module is read-only: a caller gets either the list or a 409, never a partial write.
+Revisit that once the M3 write paths (sign, managers, approval list) land behind this flag.
+
+#### Organization Lens Company Emails
+
+| Parameter                                         | Description                                                                                           | Required | Default |
+| ------------------------------------------------- | ----------------------------------------------------------------------------------------------------- | -------- | ------- |
+| `environment.LFX_ORG_LENS_COMPANY_EMAILS_ENABLED` | Serves company-affiliated addresses in the Organization Lens person drawer; off answers `unavailable` | No       | off     |
+
+Server-side gate for personal data (LFXV2-3296). With it off, every company-email read — the
+`/detail` bundle and `/by-username/:username/company-emails` — answers `unavailable` without
+querying the warehouse, and the drawer renders "Company emails aren't available from this view".
+The client-side `org-lens-private-release` OpenFeature flag only hides the section; it never runs
+server-side, so on its own it would leave the BFF serving addresses by direct call.
+
+**Rollout ordering:** enable this flag and confirm the rolling update has converged before turning
+the client flag on, or users see "unavailable" from not-yet-converged pods. Roll back in the
+opposite order — client flag off first, then this. Overlap is harmless: a caller gets either
+addresses or `unavailable`, never a partial or fabricated result.
 
 #### AI Service Configuration
 

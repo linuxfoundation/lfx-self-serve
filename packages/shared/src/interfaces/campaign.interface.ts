@@ -1851,6 +1851,28 @@ export interface HubSpotEmailSearchResult {
   error: string | null;
 }
 
+// ---------------------------------------------------------------------------
+// Keyword actions
+// ---------------------------------------------------------------------------
+
+/**
+ * One keyword action's outcome as the UI stores it.
+ *
+ * `state` is derived ONCE when the result is recorded, not in the template: a keyword action has
+ * THREE outcomes and `success` can only express two. An UNCONFIRMED action may already have
+ * applied, and a retried REMOVE is irreversible — so rendering it as "failed" invites exactly
+ * the retry that must not happen.
+ */
+export interface KeywordActionOutcome {
+  success: boolean;
+  message: string;
+  state: 'done' | 'unconfirmed' | 'failed';
+}
+
+// ---------------------------------------------------------------------------
+// HubSpot UTM
+// ---------------------------------------------------------------------------
+
 /**
  * One campaign as campaign-service returns it.
  *
@@ -1883,28 +1905,6 @@ export interface CampaignServiceHubSpotCampaigns {
    */
   capped: boolean;
 }
-
-// ---------------------------------------------------------------------------
-// Keyword actions
-// ---------------------------------------------------------------------------
-
-/**
- * One keyword action's outcome as the UI stores it.
- *
- * `state` is derived ONCE when the result is recorded, not in the template: a keyword action has
- * THREE outcomes and `success` can only express two. An UNCONFIRMED action may already have
- * applied, and a retried REMOVE is irreversible — so rendering it as "failed" invites exactly
- * the retry that must not happen.
- */
-export interface KeywordActionOutcome {
-  success: boolean;
-  message: string;
-  state: 'done' | 'unconfirmed' | 'failed';
-}
-
-// ---------------------------------------------------------------------------
-// HubSpot UTM
-// ---------------------------------------------------------------------------
 
 export interface HubSpotUtmLookupResult {
   found: boolean;

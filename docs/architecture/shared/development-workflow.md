@@ -262,7 +262,7 @@ Projects inherit from shared configuration:
     "typescript": "5.8.3"
   },
   "engines": {
-    "node": ">=22"
+    "node": "^22.13 || >=23.4"
   }
 }
 ```

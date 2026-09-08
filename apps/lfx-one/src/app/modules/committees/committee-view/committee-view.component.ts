@@ -43,6 +43,7 @@ import { COMMITTEE_ENGAGEMENT_DEFAULT_WINDOW, COMMITTEE_VALID_TABS, WG_ENGAGEMEN
 import {
   canManageCommitteeMembers,
   committeeRequiresOrganization,
+  committeeRouteIdMatches,
   findPendingInvitationForCommittee,
   invitationRequiresOrganization,
 } from '@lfx-one/shared/utils';
@@ -306,20 +307,25 @@ export class CommitteeViewComponent {
   // notified the wrapper, and meetingCoordinatorLoading stayed forced `true` forever for the new
   // committee (Copilot). A fresh object literal is always reference-distinct, so every emission below
   // reliably propagates, and meetingCoordinatorLoading/meetingCoordinator (further down) compare the
-  // tag against the LIVE committeeId() directly rather than needing a value-change to "release" them.
+  // loaded committee to the live route param (UID or vanity slug) rather than needing a value-change
+  // to "release" them.
   private readonly meetingCoordinatorState: Signal<{ committeeUid: string | null; loading: boolean; coordinator: boolean }> = this.initMeetingCoordinator();
   // True until meetingCoordinatorState has settled FOR THE CURRENT committee (the tag comparison
   // covers both "still mid-navigation, state belongs to the previous committee" and "fetch actually
   // in flight" — see the state signal's doc comment above).
   public readonly meetingCoordinatorLoading: Signal<boolean> = computed(() => {
     const state = this.meetingCoordinatorState();
-    return state.committeeUid !== this.committeeId() || state.loading;
+    const committee = this.committee();
+    // Route param may be a vanity slug while `state.committeeUid` / `committee.uid` are UUIDs
+    // (GH-2072). Compare the loaded committee to the route, then confirm the probe belongs to it.
+    return !committeeRouteIdMatches(this.committeeId(), committee) || state.committeeUid !== committee?.uid || state.loading;
   });
   // Only trusts the resolved grant once meetingCoordinatorState belongs to the CURRENT committee —
   // never leaks a stale previous committee's resolved value into eligible() below.
   public readonly meetingCoordinator: Signal<boolean> = computed(() => {
     const state = this.meetingCoordinatorState();
-    return state.committeeUid === this.committeeId() && state.coordinator;
+    const committee = this.committee();
+    return committeeRouteIdMatches(this.committeeId(), committee) && state.committeeUid === committee?.uid && state.coordinator;
   });
 
   // Single source of truth for "can this user read committee engagement data" (LFXV2-1705), shared
@@ -545,7 +551,7 @@ export class CommitteeViewComponent {
         if (!result?.organization) {
           return;
         }
-        if (this.committeeId() !== committee.uid) {
+        if (!committeeRouteIdMatches(this.committeeId(), committee)) {
           return;
         }
         organization = result.organization;
@@ -575,7 +581,7 @@ export class CommitteeViewComponent {
         if (!result?.organization) {
           return;
         }
-        if (this.committeeId() !== committee.uid) {
+        if (!committeeRouteIdMatches(this.committeeId(), committee)) {
           return;
         }
         organization = result.organization;
@@ -955,7 +961,9 @@ export class CommitteeViewComponent {
           // `this.committee()` holds the *previous* committee until this switchMap's read emits, so
           // navigating between groups (e.g. a parent/subgroup link) would otherwise misread a still-
           // loading different group as a silent refresh and skip the retry window (Cursor Bugbot).
-          const isInitialLoad = this.committee()?.uid !== committeeId;
+          // Vanity `/groups/<slug>` routes keep the slug in the param while `committee.uid` is the
+          // UUID — treat slug and UID as the same committee (GH-2072).
+          const isInitialLoad = !committeeRouteIdMatches(committeeId, this.committee());
 
           return this.readCommitteeToleratingPropagation(committeeId, isInitialLoad).pipe(
             finalize(() => {
@@ -1262,8 +1270,10 @@ export class CommitteeViewComponent {
       // on route.paramMap); `committee()` — and therefore `uid` below — only catches up once the
       // async committee fetch resolves. Comparing the two detects the in-between window where
       // engagement()/engagementLoading still reflect the PREVIOUS committee (Cursor Bugbot).
+      // Vanity URLs keep a slug in the route while `uid` is the UUID (GH-2072).
       routeCommitteeId: this.committeeId(),
       uid: this.committee()?.uid ?? null,
+      ssoGroupName: this.committee()?.sso_group_name,
       window: this.engagementWindow(),
       // FeatureFlagService.providerReady() — not initialized(), which only confirms user context was
       // applied to the LaunchDarkly client, not that the provider has actually streamed real flag
@@ -1303,6 +1313,7 @@ export class CommitteeViewComponent {
           (a, b) =>
             a.routeCommitteeId === b.routeCommitteeId &&
             a.uid === b.uid &&
+            a.ssoGroupName === b.ssoGroupName &&
             a.window === b.window &&
             a.flagResolved === b.flagResolved &&
             a.enabled === b.enabled &&
@@ -1310,7 +1321,7 @@ export class CommitteeViewComponent {
             a.notEligible === b.notEligible &&
             a.refresh === b.refresh
         ),
-        switchMap(({ routeCommitteeId, uid, window, flagResolved, enabled, roleLoading, notEligible }) => {
+        switchMap(({ routeCommitteeId, uid, ssoGroupName, window, flagResolved, enabled, roleLoading, notEligible }) => {
           // SSR (or an unreachable LaunchDarkly client that never initializes) fails closed to the
           // flag's default and stays that way forever — terminal immediately, no reason to wait.
           if (!isPlatformBrowser(this.platformId)) {
@@ -1335,7 +1346,8 @@ export class CommitteeViewComponent {
           // committee/window data with no loading indicator. Clear immediately (not EMPTY, which
           // would preserve it) and show the skeleton. Distinct from an ordinary same-committee
           // roleLoading refresh below, where the still-valid prior data should keep rendering.
-          if (routeCommitteeId !== uid) {
+          // Vanity slugs must not be treated as a different committee than the loaded UID (GH-2072).
+          if (!committeeRouteIdMatches(routeCommitteeId, { uid, sso_group_name: ssoGroupName })) {
             this.engagementLoading.set(true);
             return of(null);
           }

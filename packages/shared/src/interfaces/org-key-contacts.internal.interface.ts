@@ -24,6 +24,8 @@ export interface KeyContactDoc {
   board_member?: boolean;
   /** Optional avatar URL once member-service enriches key_contact person photos; null/absent → initials. */
   avatar?: string | null;
+  /** LFID username resolved upstream by member-service. Absence means "no identity available", not "no addresses". */
+  username?: string | null;
 }
 
 /** Minimal query-service project_membership document used during key-contact resolution. */

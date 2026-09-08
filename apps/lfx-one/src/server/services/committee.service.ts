@@ -1,7 +1,7 @@
 // Copyright The Linux Foundation and each contributor to LFX.
 // SPDX-License-Identifier: MIT
 
-import { CHAT_WEBHOOK_URL_MAX_LENGTH, SLACK_INCOMING_WEBHOOK_URL_PATTERN } from '@lfx-one/shared/constants';
+import { CHAT_WEBHOOK_URL_MAX_LENGTH, SLACK_INCOMING_WEBHOOK_URL_PATTERN, UUID_REGEX } from '@lfx-one/shared/constants';
 import { CommitteeMemberRole } from '@lfx-one/shared/enums';
 import {
   AcceptCommitteeInviteRequest,
@@ -316,6 +316,55 @@ export class CommitteeService {
     }
 
     return permitted.slice(0, pageSize).map((c) => this.stripChatWebhookUrl(c));
+  }
+
+  /**
+   * Resolves a committee route param to a UID. UUIDs pass through; anything else is treated as an
+   * `sso_group_name` vanity slug and looked up via query-service (same tag the public group page
+   * uses — GH-2072 / LFXV2-2012).
+   *
+   * Authorization depends on the caller's `req.bearerToken`:
+   * - Authenticated `GET /api/committees/:id` keeps the user token, so query-service FGA filtering
+   *   applies. A project admin who is not a group member still sees committees they can view; a
+   *   private group they cannot view resolves as not found rather than leaking existence.
+   * - Public `GET /public/api/groups/:id` swaps in an M2M token before calling this; privacy is
+   *   enforced afterwards by rejecting `!committee.public`.
+   *
+   * Must run before proxying `GET /committees/{uid}` — Heimdall authorizes `committee:{id}#viewer`
+   * using the path capture, and every FGA tuple is keyed by UID, not slug.
+   *
+   * @param options.operation Logger / error operation name (defaults to `resolve_committee_uid`)
+   * @param options.service Error `service` field (defaults to `committee_service`)
+   * @param options.path Error `path` field (defaults to `/committees/${id}`)
+   * @param options.resourceType Not-found resource label (defaults to `Committee`; public groups pass `Group`)
+   */
+  public async resolveCommitteeUid(
+    req: Request,
+    id: string,
+    options: { operation?: string; service?: string; path?: string; resourceType?: string } = {}
+  ): Promise<string> {
+    const operation = options.operation ?? 'resolve_committee_uid';
+    const service = options.service ?? 'committee_service';
+    const resourceType = options.resourceType ?? 'Committee';
+    const path = options.path ?? `/committees/${id}`;
+
+    if (UUID_REGEX.test(id)) {
+      return id;
+    }
+
+    const { resources } = await this.microserviceProxy.proxyRequest<QueryServiceResponse<Committee>>(req, 'LFX_V2_SERVICE', '/query/resources', 'GET', {
+      type: 'committee',
+      tags: `sso_group_name:${id.toLowerCase()}`,
+      page_size: 1,
+    });
+
+    const committeeUid = resources[0]?.data?.uid;
+    if (!committeeUid) {
+      throw new ResourceNotFoundError(resourceType, id, { operation, service, path });
+    }
+
+    logger.debug(req, operation, 'Resolved slug to UID', { slug: id, committee_uid: committeeUid });
+    return committeeUid;
   }
 
   /**
@@ -1009,11 +1058,25 @@ export class CommitteeService {
    * committee/project lookup fails, the row is still returned with `committee_name`
    * falling back to the committee UID — the list is never dropped wholesale.
    *
-   * `inviter_name` / `expires_at` are left undefined — the committee-service contract
-   * does not provide them today.
+   * `inviter_name` and `expires_at` are sourced from the invite itself — committee-service now
+   * persists the inviter (name/username/email/avatar) and a `created_at + 30 days` expiry on the
+   * `committee_invite` resource. They degrade to null on older invite records that predate those
+   * fields.
    */
   public async getMyPendingInvitations(req: Request, email: string): Promise<PendingInvitation[]> {
-    const pendingInvites = await this.fetchPendingCommitteeInvitesByEmail(req, email);
+    const fetchedInvites = await this.fetchPendingCommitteeInvitesByEmail(req, email);
+
+    // Drop expired invites so neither surface shows an Accept button whose request is guaranteed to
+    // fail — committee-service rejects acceptance past `expires_at`. Legacy records with no expiry,
+    // and any with an unparseable timestamp, stay visible (never hide a genuinely-pending invite).
+    const now = Date.now();
+    const pendingInvites = fetchedInvites.filter((invite) => {
+      if (!invite.expires_at) {
+        return true;
+      }
+      const expiresAt = Date.parse(invite.expires_at);
+      return Number.isNaN(expiresAt) || expiresAt > now;
+    });
     if (pendingInvites.length === 0) {
       return [];
     }
@@ -1036,6 +1099,7 @@ export class CommitteeService {
         project_name?: string | null;
         project_slug?: string | null;
         is_foundation?: boolean | null;
+        sso_group_name?: string | null;
       }
     >();
 
@@ -1056,6 +1120,7 @@ export class CommitteeService {
             // consumers treat it as "no slug", never as an empty-string slug.
             project_slug: enrichedCommittee?.project_slug || null,
             is_foundation: enrichedCommittee?.is_foundation ?? null,
+            sso_group_name: committee.sso_group_name || null,
           });
         }
       }
@@ -1078,6 +1143,7 @@ export class CommitteeService {
         project_name: context?.project_name ?? null,
         project_slug: context?.project_slug ?? null,
         is_foundation: context?.is_foundation ?? null,
+        sso_group_name: context?.sso_group_name ?? null,
         category: context?.category ?? null,
         role: invite.role ?? null,
         invitee_email: invite.invitee_email,
@@ -1085,9 +1151,13 @@ export class CommitteeService {
         created_at: invite.created_at,
         organization: invite.organization ?? null,
         organization_required: invite.organization_required ?? null,
-        // inviter_name / expires_at are intentionally omitted (left undefined) — they're reserved
-        // optional fields not in the committee-service contract yet, so JSON drops them rather than
-        // sending an explicit null that consumers would have to disambiguate from "set".
+        // Surface who invited the user and when the invite expires (committee-service now persists
+        // both on the invite). Prefer the inviter's display name, falling back to the username
+        // (always present upstream when a principal exists — a username-only inviter still attributes
+        // the row rather than degrading to "You've been invited"); null only when neither is present.
+        // expires_at is null on legacy records created before upstream stored it.
+        inviter_name: invite.inviter?.name?.trim() || invite.inviter?.username?.trim() || null,
+        expires_at: invite.expires_at ?? null,
       } satisfies PendingInvitation;
     });
   }

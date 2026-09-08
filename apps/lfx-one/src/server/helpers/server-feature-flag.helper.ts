@@ -229,10 +229,18 @@ export enum ServerFeatureFlag {
    * this flag exists to close — so an empty table is the honest answer for a project whose
    * campaigns were never created through campaign-service.
    *
-   * SAFE TO TURN OFF. Both routes are reads with no persisted state, so flipping back restores
-   * the previous behaviour exactly, leak included. That is the opposite of
-   * `CampaignServiceStatusToggle`, which does not come back off — no UUID-shaped id is involved
-   * here, so there is no id space that only one backend can address.
+   * NOTHING IS STRANDED BY TURNING THIS OFF. Both routes are reads with no persisted state and
+   * no UUID-shaped id space, so flipping back strands no work — the opposite of
+   * `CampaignServiceStatusToggle`, where only one backend can address the id space.
+   *
+   * That is not the same as "off works". Where the `GADS_*` variables were deactivated, the
+   * legacy arm calls `getGadsClient()`, which throws before any read. In those environments
+   * flipping back does not restore the previous behaviour; it breaks the keywords and audience
+   * reads outright.
+   *
+   * This is a property of the GADS_* credentials, not of this flag — every legacy path that
+   * reaches `getGadsClient()` shares it. Do not read any flag's note as a promise that the
+   * others roll back cleanly; check the mechanism each one names.
    *
    * Does NOT gate `executeKeywordActions`. That route MUTATES live keywords, so it has its own
    * flag — `CampaignServiceKeywordActions`, defined just below — because a write needs a
@@ -247,8 +255,10 @@ export enum ServerFeatureFlag {
    *
    * SEPARATE from `CampaignServiceInsights`, which covers the two keyword/audience READS, and
    * the split is deliberate: this one MUTATES live paid campaigns, so it needs a rollback story
-   * a read does not. The reads can be flipped back with no trace; a REMOVE cannot be undone —
-   * Google cannot re-enable a removed criterion, only create a new one with a new id.
+   * a read does not. Flipping the reads back STRANDS nothing -- they persist no state, so there
+   * is nothing left behind either way (whether the legacy read still functions is a separate
+   * question, answered on `CampaignServiceInsights` itself). A REMOVE cannot be undone: Google
+   * cannot re-enable a removed criterion, only create a new one with a new id.
    *
    * THE GRANULARITY OF FAILURE CHANGES. The legacy path issues one Google call per keyword, so
    * each succeeds or fails alone. campaign-service takes one atomic batch per campaign, so a
@@ -262,8 +272,11 @@ export enum ServerFeatureFlag {
    *
    * The legacy path is ALREADY BROKEN in every environment where the `GADS_*` variables were
    * deactivated: `getGadsClient()` throws before any mutate is attempted. So "off" is not a
-   * working fallback here the way it is for the reads — it is the state in which keyword actions
-   * do not work at all. Same accepted values as the flags above.
+   * working fallback here — it is the state in which keyword actions do not work at all. Nor is
+   * it one for the INSIGHTS reads, whose legacy arm calls the same `getGadsClient()`; the
+   * difference is when the breakage SURFACES: a read fails as soon as the tab is opened, while a
+   * write fails only once an operator attempts an action -- at which point it is announced, not
+   * silent (`announceKeywordOutcome` on both error arms). Same accepted values as the flags above.
    */
   CampaignServiceKeywordActions = 'LFX_CUTOVER_CAMPAIGN_SERVICE_KEYWORD_ACTIONS',
 
@@ -356,6 +369,33 @@ export enum ServerFeatureFlag {
    * flag exists so a bad rollout can be reverted with an env var, not a revert PR.
    */
   MarketingOpsFga = 'LFX_MARKETING_OPS_FGA_ENABLED',
+
+  /**
+   * Serves the M3 Organization Lens EasyCLA routes (`org-clas.route.ts`). OFF answers every
+   * route under the module with 409 `FEATURE_DISABLED` before any handler runs.
+   *
+   * Deliberately paired with, and independent of, the client-side `org-lens-cla-m3-enabled`
+   * OpenFeature flag. The Web SDK never runs server-side, so the client flag hides the route
+   * and nav but leaves the BFF reachable by direct call — this flag is what makes the dark
+   * launch a real kill switch rather than a UI convention. Both must be on for the module to
+   * work, which is #1982's acceptance criterion.
+   *
+   * Overlap during a rolling update is harmless while the module is read-only: a caller either
+   * gets the list or a 409, never a partial write. Re-read that once the M3 write paths (sign,
+   * managers, approval list) land behind this same flag.
+   *
+   * Rollout order mirrors `LFX_MARKETING_OPS_FGA_ENABLED`: enable this and let the rollout
+   * converge BEFORE turning the client flag on, or the UI advertises a page that a
+   * not-yet-converged pod still 409s. Reverse to roll back.
+   */
+  OrgLensClaM3 = 'LFX_ORG_LENS_CLA_M3_ENABLED',
+
+  /**
+   * Gates the company-email read in the Org Lens person drawer (LFXV2-3296). OFF (default) answers
+   * `unavailable` without querying the warehouse. Server-side because the client flag only hides the
+   * pixels; a flag that ships the PII is not a gate.
+   */
+  OrgLensCompanyEmails = 'LFX_ORG_LENS_COMPANY_EMAILS_ENABLED',
 }
 
 /**

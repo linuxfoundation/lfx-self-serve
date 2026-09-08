@@ -104,6 +104,15 @@ describe('AttendanceReconciliationService', () => {
       expect(updatePastMeetingParticipant).not.toHaveBeenCalled();
     });
 
+    it('excludes an attendee already marked is_unknown so it does not resurface on every reopen', async () => {
+      getPastMeetingParticipants.mockResolvedValue([buildParticipant({ is_attended: true, is_verified: false, is_unknown: true })]);
+
+      const result = await service.reconcilePastMeetingParticipants(req, 'occ-1', pastMeeting);
+
+      expect(result).toEqual({ results: [], candidate_pool_size: 0, auto_applied_count: 0, needs_review_count: 0, pool_degraded: false });
+      expect(updatePastMeetingParticipant).not.toHaveBeenCalled();
+    });
+
     it('auto-applies a deterministic exact-email match and marks it verified', async () => {
       getPastMeetingParticipants.mockResolvedValue([
         buildParticipant({ uid: 'attendee-1', email: 'alice@example.com', is_attended: true, is_verified: false }),

@@ -206,7 +206,9 @@ export const ACCOUNT_SETTINGS_SECTIONS = {
  * and `no_code` are also emitted by the identity-link callback below, but their
  * wording is flow-agnostic and ProfileIdentitiesComponent's own hasOwn guard on
  * this map already skips them, so keeping them here (rather than duplicated in
- * both maps) is safe against a double toast.
+ * both maps) is safe against a double toast. `impersonation_read_only` is the same
+ * kind of shared code: it's also emitted by `/social/callback`, but the message is
+ * identical regardless of which flow blocked it, so one entry here covers both.
  */
 export const PROFILE_AUTH_ERROR_MESSAGES: Readonly<Record<string, string>> = {
   profile_auth_not_configured: 'Authorization is not available right now. Please try again later.',
@@ -216,6 +218,7 @@ export const PROFILE_AUTH_ERROR_MESSAGES: Readonly<Record<string, string>> = {
   user_mismatch: 'You authorized a different account. Please sign in as yourself and try again.',
   invalid_state: 'Security validation failed. Please try again.',
   no_code: 'Authorization did not complete. Please try again.',
+  impersonation_read_only: 'This action is not available while impersonating a user.',
 };
 
 /**

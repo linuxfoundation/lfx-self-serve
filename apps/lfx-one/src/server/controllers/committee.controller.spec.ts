@@ -15,6 +15,7 @@ const { getEffectiveEmailMock, committeeSvc } = vi.hoisted(() => ({
     // Stub remaining methods so the constructor doesn't fail.
     getCommittees: vi.fn(),
     getCommitteeById: vi.fn(),
+    resolveCommitteeUid: vi.fn((_req: unknown, id: string) => Promise.resolve(id)),
     getCommitteeSettings: vi.fn(),
     getPendingCommitteeInvites: vi.fn(),
     acceptPendingCommitteeInvitesAfterLfidAccept: vi.fn(),
@@ -242,5 +243,39 @@ describe('CommitteeController.getCommitteeCalendar', () => {
     expect(next).not.toHaveBeenCalled();
     expect(buildVCalendar).toHaveBeenCalledWith(expect.anything(), expect.any(String), undefined);
     expect(res.send).toHaveBeenCalled();
+  });
+});
+
+describe('CommitteeController.getCommitteeById — vanity slug resolution (GH-2072)', () => {
+  let controller: CommitteeController;
+
+  beforeEach(() => {
+    vi.clearAllMocks();
+    controller = new CommitteeController();
+    committeeSvc.resolveCommitteeUid.mockImplementation((_req: unknown, id: string) => Promise.resolve(id));
+    committeeSvc.getCommitteeById.mockResolvedValue({ uid: COMMITTEE_ID, category: 'Working Group' });
+  });
+
+  it('resolves the route param to a UID before fetching the committee', async () => {
+    committeeSvc.resolveCommitteeUid.mockResolvedValueOnce(COMMITTEE_ID);
+    const req = buildReq();
+    req.params.id = 'cncf-toc';
+    const res = { json: vi.fn() };
+    const next = vi.fn();
+
+    await controller.getCommitteeById(req, res as any, next);
+
+    expect(committeeSvc.resolveCommitteeUid).toHaveBeenCalledWith(
+      req,
+      'cncf-toc',
+      expect.objectContaining({ operation: 'get_committee_by_id', service: 'committee_controller' })
+    );
+    expect(committeeSvc.getCommitteeById).toHaveBeenCalledWith(
+      req,
+      COMMITTEE_ID,
+      expect.objectContaining({ includeMembership: true, includeProjectMetadata: true })
+    );
+    expect(res.json).toHaveBeenCalledWith({ uid: COMMITTEE_ID, category: 'Working Group' });
+    expect(next).not.toHaveBeenCalled();
   });
 });

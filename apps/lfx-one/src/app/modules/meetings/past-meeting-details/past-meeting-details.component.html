@@ -245,6 +245,12 @@
     @if (meeting.organizer) {
       <lfx-meeting-materials-drawer [pastMeetingId]="pastMeetingResourceId()" [(visible)]="materialsDrawerVisible" (materialsChanged)="onMaterialsChanged()">
       </lfx-meeting-materials-drawer>
+
+      <lfx-attendance-reconciliation-drawer
+        [pastMeetingId]="pastMeetingResourceId()"
+        [(visible)]="reconciliationDrawerVisible"
+        (reconciliationChanged)="onReconciliationChanged()">
+      </lfx-attendance-reconciliation-drawer>
     }
 
     <!-- Participants Table -->
@@ -279,6 +285,15 @@
             <i class="fa-light fa-users text-gray-500 text-sm"></i>
             <h2 class="text-sm font-medium text-gray-700">Participants</h2>
             <span class="text-xs font-medium text-gray-500 bg-gray-200 px-1.5 py-0.5 rounded-full">{{ participants().length }}</span>
+            @if (meeting.organizer) {
+              <button
+                type="button"
+                (click)="openReconciliationDrawer()"
+                class="text-xs text-blue-600 hover:text-blue-800 font-medium transition-colors"
+                data-testid="reconcile-attendance-btn">
+                Reconcile Attendance
+              </button>
+            }
           </div>
           <div class="flex flex-wrap items-center gap-3">
             <!-- Invitation Filter -->

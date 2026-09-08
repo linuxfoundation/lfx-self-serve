@@ -137,6 +137,9 @@ export * from './public-group.interface';
 // Lens interfaces
 export * from './lens.interface';
 
+// Formation interfaces
+export * from './formation.interface';
+
 // Navigation interfaces
 export * from './navigation.interface';
 
@@ -336,3 +339,6 @@ export * from './user-preference.interface';
 
 // Individual Dashboard → LFX migration banner (LFXV2-3336)
 export * from './id-migration.interface';
+
+// Feature flag guard readiness context (GH-1351)
+export * from './feature-flag.interface';

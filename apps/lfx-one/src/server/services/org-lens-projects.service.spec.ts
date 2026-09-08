@@ -56,6 +56,8 @@ function projectsRow(overrides: Record<string, unknown> = {}) {
     DBT_RUN_AT: null,
     HEALTH_OVERALL_SCORE_V2: null,
     HEALTH_SCORE_CATEGORY_V2: null,
+    COVERED_CATEGORY_COUNT_V2: null,
+    HEALTH_MAX_SCORE_V2: null,
     HEALTH_CONTRIBUTOR_PERCENTAGE: null,
     HEALTH_POPULARITY_PERCENTAGE: null,
     HEALTH_DEVELOPMENT_PERCENTAGE: null,
@@ -111,5 +113,23 @@ describe('OrgLensProjectsService health score mapping', () => {
     const response = await service.getProjects(ACCOUNT_ID, ORG_NAME, null);
 
     expect(response.projects[0]?.health).toBe('unavailable');
+  });
+
+  it('passes healthMaxScore and healthCoveredCategoryCount straight through from the warehouse', async () => {
+    mockProjectsRow(projectsRow({ HEALTH_OVERALL_SCORE_V2: 70, HEALTH_SCORE_CATEGORY_V2: 'Healthy', COVERED_CATEGORY_COUNT_V2: 2, HEALTH_MAX_SCORE_V2: 75 }));
+
+    const response = await service.getProjects(ACCOUNT_ID, ORG_NAME, null);
+
+    expect(response.projects[0]?.healthCoveredCategoryCount).toBe(2);
+    expect(response.projects[0]?.healthMaxScore).toBe(75);
+  });
+
+  it('passes through a full (3-category) score unchanged, not marked partial', async () => {
+    mockProjectsRow(projectsRow({ HEALTH_OVERALL_SCORE_V2: 90, COVERED_CATEGORY_COUNT_V2: 3, HEALTH_MAX_SCORE_V2: 100 }));
+
+    const response = await service.getProjects(ACCOUNT_ID, ORG_NAME, null);
+
+    expect(response.projects[0]?.healthCoveredCategoryCount).toBe(3);
+    expect(response.projects[0]?.healthMaxScore).toBe(100);
   });
 });

@@ -557,6 +557,39 @@ environment:
   LFX_MARKETING_OPS_FGA_ENABLED:
     value:
 
+  # Serves the M3 Organization Lens EasyCLA routes (/api/orgs/:orgUid/lens/cla-groups and the
+  # children added as M3 lands). Off answers the whole module 409 FEATURE_DISABLED.
+  #
+  # This is the server half of a two-flag dark launch. The client-side org-lens-cla-m3-enabled
+  # OpenFeature flag hides the /org/easycla route and its nav item, but the Web SDK never runs
+  # server-side, so on its own it leaves the BFF reachable by direct call. Both must be on for
+  # the module to work.
+  #
+  # Rollout ordering (same shape as LFX_MARKETING_OPS_FGA_ENABLED): set this true and confirm the
+  # rolling update has fully converged BEFORE enabling the client flag, or the UI advertises a
+  # page that a not-yet-converged pod still 409s. Reverse to roll back — client flag off first.
+  #
+  # Overlap during the rollout is harmless while the module is read-only: a caller gets either the
+  # list or a 409, never a partial write. Revisit once the M3 write paths land behind this flag.
+  LFX_ORG_LENS_CLA_M3_ENABLED:
+    value:
+
+  # Serves company-affiliated email addresses in the Organization Lens person drawer
+  # (GET /api/orgs/:orgUid/lens/people/:personKey/detail and .../by-username/:username/company-emails,
+  # LFXV2-3296). Off (default) answers `unavailable` without querying the warehouse; the drawer
+  # renders "Company emails aren't available from this view".
+  #
+  # Server-side gate for personal data: the client-side org-lens-private-release OpenFeature flag
+  # only hides the pixels and never runs server-side, so on its own it would leave the BFF
+  # serving addresses by direct call.
+  #
+  # Rollout ordering: set this true and confirm the rolling update has converged BEFORE enabling
+  # the client flag, or the UI shows "unavailable" from not-yet-converged pods. Roll back in the
+  # opposite order — client flag off first, then this. Overlap is harmless: a caller gets either
+  # addresses or `unavailable`, never a partial or fabricated result.
+  LFX_ORG_LENS_COMPANY_EMAILS_ENABLED:
+    value:
+
   # Serves PATCH /api/campaigns/:campaignId/status from campaign-service instead of the
   # per-platform SDK calls in campaign-proxy.service.ts (LFXV2-3226).
   #
@@ -610,10 +643,15 @@ environment:
   # deliberate — the fallback would be the account-wide read, which is the cross-tenant leak
   # this flag exists to close.
   #
-  # UNLIKE STATUS_TOGGLE, THIS COMES BACK OFF CLEANLY. Both routes are reads with no persisted
-  # state and no UUID-keyed id space, so nothing is stranded by disabling it: flipping back
-  # restores the previous behaviour exactly, leak included. It has no ordering dependency on
-  # any other flag on this list.
+  # UNLIKE STATUS_TOGGLE, NOTHING IS STRANDED BY DISABLING THIS. Both routes are reads with no
+  # persisted state and no UUID-keyed id space, so flipping back strands no work and has no
+  # ordering dependency on any other flag on this list.
+  #
+  # But "off" is only a WORKING fallback where the GADS_* variables are still live. Where they
+  # were deactivated, the legacy arm calls getGadsClient(), which throws before any read -- the
+  # same mechanism documented on the keyword-actions flag below. In those environments flipping
+  # back does not restore the previous behaviour; it breaks the keywords and audience reads
+  # outright.
   #
   # Does NOT gate keyword ACTIONS (pause/remove). Those have their own flag,
   # LFX_CUTOVER_CAMPAIGN_SERVICE_KEYWORD_ACTIONS, immediately below — a write needs a rollback
@@ -635,10 +673,13 @@ environment:
   # one campaign's keywords can pause while another's do not. Every keyword is still reported
   # individually, and a campaign-level failure marks all of that campaign's keywords failed.
   #
-  # "OFF" IS NOT A WORKING FALLBACK HERE, unlike every other flag on this list. The legacy path
-  # calls getGadsClient(), which throws whenever the GADS_* variables are absent — and they were
-  # deactivated deliberately. So with this off, keyword actions do not work at all; this flag is
-  # what makes them work, not what changes which backend serves them.
+  # "OFF" IS NOT A WORKING FALLBACK HERE. This is a property of the GADS_* credentials, not of
+  # this flag: every legacy path reaching getGadsClient() shares it, INSIGHTS above included.
+  # Do not read it as a promise that the other flags roll back cleanly -- JOBS must stay on and
+  # come off LAST, and legacy CREATE reaches the same client through getCustomer(). The legacy
+  # path calls getGadsClient(), which throws whenever the GADS_* variables are absent — and they
+  # were deactivated deliberately. So with this off, keyword actions do not work at all; this flag
+  # is what makes them work, not what changes which backend serves them.
   #
   # TWO CHANGES APPLY WITH THIS FLAG OFF, both deliberate. First: the
   # /keywords/actions endpoint now refuses a body of more than 50 keyword rows on

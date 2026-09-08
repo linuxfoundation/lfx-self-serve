@@ -60,6 +60,7 @@ import surveysRouter from './routes/surveys.route';
 import trainingRouter from './routes/training.route';
 import crowdfundingRouter from './routes/crowdfunding.route';
 import clasRouter from './routes/clas.route';
+import orgClasRouter from './routes/org-clas.route';
 import transactionRouter from './routes/transaction.route';
 import userRouter from './routes/user.route';
 import userNewslettersRouter from './routes/user-newsletters.route';
@@ -330,6 +331,10 @@ app.use('/api/mailing-lists', mailingListsRouter);
 app.use('/api/meetings', meetingsRouter);
 app.use('/api/meetups', meetupsRouter);
 app.use('/api/organizations', organizationsRouter);
+// Ahead of orgsRouter deliberately: both mount on /api/orgs, and orgsRouter's
+// `/:orgUid/lens` guard matches the CLA path, so mounting second would run the grant
+// lookup before the module's kill switch and answer 403/503 where 409 is promised.
+app.use('/api/orgs', orgClasRouter);
 app.use('/api/orgs', orgsRouter);
 app.use('/api/past-meetings', pastMeetingsRouter);
 app.use('/api/profile', profileRouter);
@@ -373,11 +378,13 @@ app.use('/api/mktg-agents', mktgAgentsRouter);
 app.use('/public/api/*', apiErrorHandler);
 app.use('/api/*', apiErrorHandler);
 
-// Profile auth callback registered in Auth0 Profile Client.
+// Profile auth callback registered in Auth0 Profile Client. Sits outside the /api error-handler
+// mount, so its impersonation guard lives in-handler rather than via blockDuringImpersonation
+// — see ProfileController.blockCallbackDuringImpersonation.
 const profileCallbackController = new ProfileController();
 app.get('/passwordless/callback', authRateLimiter, (req, res) => profileCallbackController.handleProfileAuthCallback(req, res));
 
-// GitHub/LinkedIn OAuth redirect target.
+// GitHub/LinkedIn OAuth redirect target. Same in-handler impersonation guard as above.
 app.get('/social/callback', authRateLimiter, (req, res) => profileCallbackController.handleSocialCallback(req, res));
 
 const crowdfundingCallbackController = new CrowdfundingController();

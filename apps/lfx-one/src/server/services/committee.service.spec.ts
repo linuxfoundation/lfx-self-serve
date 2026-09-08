@@ -2,7 +2,7 @@
 // SPDX-License-Identifier: MIT
 
 import { CommitteeMemberVisibility } from '@lfx-one/shared/enums';
-import type { Committee, QueryServiceResponse } from '@lfx-one/shared/interfaces';
+import type { Committee, CommitteeInvite, QueryServiceResponse } from '@lfx-one/shared/interfaces';
 import type { MockInstance } from 'vitest';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
@@ -40,10 +40,16 @@ vi.mock('@lfx-one/shared/enums', () => ({
   CommitteeMemberVisibility: { HIDDEN: 'hidden', BASIC_PROFILE: 'basic_profile' },
 }));
 vi.mock('@lfx-one/shared/utils', () => ({ invitationRequiresOrganization: vi.fn() }));
-vi.mock('@lfx-one/shared/constants', () => ({
-  SLACK_INCOMING_WEBHOOK_URL_PATTERN: /^https:\/\/hooks\.slack\.com\/services\/T[A-Za-z0-9]+\/B[A-Za-z0-9]+\/[A-Za-z0-9]+$/,
-  CHAT_WEBHOOK_URL_MAX_LENGTH: 500,
-}));
+vi.mock('@lfx-one/shared/constants', async () => {
+  const regex = await vi.importActual<typeof import('../../../../../packages/shared/src/constants/regex.constants')>(
+    '../../../../../packages/shared/src/constants/regex.constants'
+  );
+  return {
+    SLACK_INCOMING_WEBHOOK_URL_PATTERN: /^https:\/\/hooks\.slack\.com\/services\/T[A-Za-z0-9]+\/B[A-Za-z0-9]+\/[A-Za-z0-9]+$/,
+    CHAT_WEBHOOK_URL_MAX_LENGTH: 500,
+    UUID_REGEX: regex.UUID_REGEX,
+  };
+});
 vi.mock('./microservice-proxy.service', () => ({
   MicroserviceProxyService: class {
     public proxyRequest = proxyRequest;
@@ -408,6 +414,64 @@ describe('CommitteeService — chat_webhook_url (LFXV2-3080)', () => {
 
       expect('chat_webhook_url' in result).toBe(false);
       expect(result.project_slug).toBe('test-project');
+    });
+  });
+
+  describe('resolveCommitteeUid', () => {
+    const COMMITTEE_UUID = '7cad5a8d-19d0-41a4-81a6-043453daf9ee';
+
+    it('returns a UUID unchanged without querying', async () => {
+      const result = await service.resolveCommitteeUid(req, COMMITTEE_UUID);
+
+      expect(result).toBe(COMMITTEE_UUID);
+      expect(proxyRequest).not.toHaveBeenCalled();
+    });
+
+    it('resolves a vanity slug via sso_group_name tag lookup and lowercases the slug', async () => {
+      vi.mocked(logger.debug).mockClear();
+      proxyRequest.mockResolvedValueOnce(pageOf([{ uid: COMMITTEE_UUID }]));
+
+      const result = await service.resolveCommitteeUid(req, 'My-Group-Slug');
+
+      expect(result).toBe(COMMITTEE_UUID);
+      expect(proxyRequest).toHaveBeenCalledOnce();
+      expect(proxyRequest.mock.calls[0][2]).toBe('/query/resources');
+      expect(proxyRequest.mock.calls[0][4]).toMatchObject({
+        type: 'committee',
+        tags: 'sso_group_name:my-group-slug',
+        page_size: 1,
+      });
+      expect(logger.debug).toHaveBeenCalledWith(
+        req,
+        'resolve_committee_uid',
+        'Resolved slug to UID',
+        expect.objectContaining({ slug: 'My-Group-Slug', committee_uid: COMMITTEE_UUID })
+      );
+    });
+
+    it('throws ResourceNotFoundError when the slug matches no committee the caller can see', async () => {
+      proxyRequest.mockResolvedValueOnce(pageOf([]));
+
+      await expect(service.resolveCommitteeUid(req, 'missing-group')).rejects.toMatchObject({
+        statusCode: 404,
+        message: "Committee with ID 'missing-group' not found",
+      });
+    });
+
+    it('uses resourceType Group when the public group path asks for it', async () => {
+      proxyRequest.mockResolvedValueOnce(pageOf([]));
+
+      await expect(
+        service.resolveCommitteeUid(req, 'missing-group', {
+          operation: 'get_public_group_by_id',
+          service: 'public_groups_controller',
+          path: '/groups/missing-group',
+          resourceType: 'Group',
+        })
+      ).rejects.toMatchObject({
+        statusCode: 404,
+        message: "Group with ID 'missing-group' not found",
+      });
     });
   });
 
@@ -922,5 +986,109 @@ describe('CommitteeService.getCommitteeBase', () => {
     // getting caught and re-thrown as a freshly constructed lookalike (which a type/status-only
     // assertion couldn't tell apart from this).
     await expect(service.getCommitteeBase(req, COMMITTEE_UID)).rejects.toBe(upstreamError);
+  });
+});
+
+describe('CommitteeService.getMyPendingInvitations — inviter/expiry mapping', () => {
+  let service: CommitteeService;
+
+  const baseInvite = (over: Partial<CommitteeInvite>): CommitteeInvite => ({
+    uid: 'invite-1',
+    committee_uid: 'committee-1',
+    invitee_email: 'invitee@example.com',
+    status: 'pending',
+    created_at: '2026-01-02T03:04:05Z',
+    committee_name: 'Technical Steering Committee',
+    ...over,
+  });
+
+  // Computed relative to now so the expired-invite filter behaves deterministically regardless of
+  // the wall clock (a hardcoded date would flip from future to past over time).
+  const futureExpiry = new Date(Date.now() + 7 * 24 * 60 * 60 * 1000).toISOString();
+  const pastExpiry = new Date(Date.now() - 24 * 60 * 60 * 1000).toISOString();
+
+  // fetchAllQueryResources (real impl) unwraps resources[].data, so wrap each invite accordingly.
+  const mockInvites = (invites: CommitteeInvite[]): void => {
+    proxyRequest.mockResolvedValue({ resources: invites.map((data) => ({ data })) });
+  };
+
+  beforeEach(() => {
+    proxyRequest.mockReset();
+    service = new CommitteeService();
+    // Isolate the raw-invite → PendingInvitation mapping from committee/project enrichment.
+    (service as unknown as { getCommitteesByIds: unknown }).getCommitteesByIds = vi.fn().mockResolvedValue(new Map());
+  });
+
+  it('maps inviter_name and expires_at from a fully populated inviter', async () => {
+    mockInvites([
+      baseInvite({
+        inviter: { name: 'First Last', username: 'first-last', email: 'first.last@example.com', avatar: 'https://cdn.example.com/avatar.png' },
+        expires_at: futureExpiry,
+      }),
+    ]);
+
+    const [row] = await service.getMyPendingInvitations(req, 'invitee@example.com');
+
+    expect(row.inviter_name).toBe('First Last');
+    expect(row.expires_at).toBe(futureExpiry);
+  });
+
+  it('falls back to the username for a username-only partial inviter, and keeps expires_at', async () => {
+    mockInvites([
+      baseInvite({
+        inviter: { username: 'first-last' },
+        expires_at: futureExpiry,
+      }),
+    ]);
+
+    const [row] = await service.getMyPendingInvitations(req, 'invitee@example.com');
+
+    expect(row.inviter_name).toBe('first-last');
+    expect(row.expires_at).toBe(futureExpiry);
+  });
+
+  it('maps both to null on legacy invites missing inviter and expiry', async () => {
+    mockInvites([baseInvite({})]);
+
+    const [row] = await service.getMyPendingInvitations(req, 'invitee@example.com');
+
+    expect(row.inviter_name).toBeNull();
+    expect(row.expires_at).toBeNull();
+  });
+
+  it('falls back to the username when the inviter name is whitespace-only', async () => {
+    mockInvites([baseInvite({ inviter: { name: '   ', username: 'first-last' } })]);
+
+    const [row] = await service.getMyPendingInvitations(req, 'invitee@example.com');
+
+    expect(row.inviter_name).toBe('first-last');
+  });
+
+  it('maps inviter_name to null when both name and username are absent', async () => {
+    mockInvites([baseInvite({ inviter: { email: 'first.last@example.com' } })]);
+
+    const [row] = await service.getMyPendingInvitations(req, 'invitee@example.com');
+
+    expect(row.inviter_name).toBeNull();
+  });
+
+  it('excludes an invite whose expiry has passed (accept would be rejected upstream)', async () => {
+    mockInvites([baseInvite({ uid: 'expired-invite', expires_at: pastExpiry })]);
+
+    const rows = await service.getMyPendingInvitations(req, 'invitee@example.com');
+
+    expect(rows).toHaveLength(0);
+  });
+
+  it('keeps invites with no expiry or an unparseable expiry, dropping only the expired one', async () => {
+    mockInvites([
+      baseInvite({ uid: 'legacy-no-expiry' }),
+      baseInvite({ uid: 'unparseable-expiry', expires_at: 'not-a-date' }),
+      baseInvite({ uid: 'expired', expires_at: pastExpiry }),
+    ]);
+
+    const rows = await service.getMyPendingInvitations(req, 'invitee@example.com');
+
+    expect(rows.map((r) => r.uid).sort()).toEqual(['legacy-no-expiry', 'unparseable-expiry']);
   });
 });
