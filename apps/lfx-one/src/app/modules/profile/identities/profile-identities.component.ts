@@ -22,6 +22,7 @@ import {
 import { emailsEqual } from '@lfx-one/shared/utils';
 import { UserService } from '@services/user.service';
 import { OpenIntercomDirective } from '@shared/directives/open-intercom.directive';
+import { extractErrorMessage } from '@shared/utils/http-error.utils';
 import { MenuItem, MessageService } from 'primeng/api';
 import { DialogService, DynamicDialogRef } from 'primeng/dynamicdialog';
 import { catchError, forkJoin, map, of, startWith, switchMap, take } from 'rxjs';
@@ -219,7 +220,13 @@ export class ProfileIdentitiesComponent implements OnInit {
                 window.location.href = err.error.authorize_url;
                 return;
               }
-              this.messageService.add({ severity: 'error', summary: 'Error', detail: 'Failed to remove identity. Please try again.' });
+              // extractErrorMessage surfaces the server's crafted 409 meeting_invite_email_active
+              // copy (e.g. a race with another tab) instead of a generic, unactionable retry toast.
+              this.messageService.add({
+                severity: 'error',
+                summary: 'Error',
+                detail: extractErrorMessage(err, 'Failed to remove identity. Please try again.'),
+              });
             },
           });
       }
