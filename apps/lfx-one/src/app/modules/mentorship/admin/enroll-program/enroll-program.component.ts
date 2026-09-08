@@ -3,7 +3,7 @@
 
 import { isPlatformBrowser } from '@angular/common';
 import { ChangeDetectionStrategy, Component, computed, DestroyRef, inject, PLATFORM_ID, signal } from '@angular/core';
-import { takeUntilDestroyed, toSignal } from '@angular/core/rxjs-interop';
+import { toSignal } from '@angular/core/rxjs-interop';
 import { FormControl, FormGroup, Validators } from '@angular/forms';
 import { Router } from '@angular/router';
 import { ButtonComponent } from '@components/button/button.component';
@@ -98,6 +98,8 @@ export class EnrollProgramComponent {
   protected readonly formIncomplete = MENTORSHIP_ENROLL_FORM_INCOMPLETE;
   /** Held here, not in the form: the details step is destroyed on every step change. */
   private readonly logoFile = signal<File | null>(null);
+  /** Set on teardown so a submit that lands after navigation can skip its redirect. */
+  private destroyed = false;
 
   private readonly formSnapshot = toSignal(
     this.form.valueChanges.pipe(
@@ -134,6 +136,12 @@ export class EnrollProgramComponent {
     if (current === 'setup') return `Next: ${MENTORSHIP_ENROLL_STEP_LABELS.prerequisites}`;
     return 'Submit';
   });
+
+  public constructor() {
+    this.destroyRef.onDestroy(() => {
+      this.destroyed = true;
+    });
+  }
 
   protected onBack(): void {
     const current = this.step();
@@ -221,6 +229,10 @@ export class EnrollProgramComponent {
   /**
    * Two-phase: the logo is keyed to a program that does not exist until the create call
    * returns, so it can only be uploaded afterwards.
+   *
+   * Deliberately not torn down with the component: unsubscribing aborts the in-flight create, so
+   * navigating mid-submit would leave a program created with no feedback and a retry that hits a
+   * name conflict. The toast is app-level and still lands; only the redirect is skipped.
    */
   private submitEnrollment(): void {
     if (this.submitting()) return;
@@ -229,8 +241,7 @@ export class EnrollProgramComponent {
       .enrollProgram(this.toEnrollForm(this.form.getRawValue()))
       .pipe(
         take(1),
-        switchMap((program) => this.uploadLogo(program.id)),
-        takeUntilDestroyed(this.destroyRef)
+        switchMap((program) => this.uploadLogo(program.id))
       )
       .subscribe({
         next: (logoUploaded) => {
@@ -241,7 +252,7 @@ export class EnrollProgramComponent {
               ? { severity: 'success', summary: 'Enrollment submitted', detail: 'Your program was submitted and is pending review.', life: 5000 }
               : { severity: 'warn', summary: 'Enrollment submitted', detail: MENTORSHIP_LOGO_UPLOAD_FAILED, life: 8000 }
           );
-          void this.router.navigate(['/mentorship/admin']);
+          if (!this.destroyed) void this.router.navigate(['/mentorship/admin']);
         },
         error: () => {
           this.submitting.set(false);
