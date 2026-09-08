@@ -1,7 +1,7 @@
 // Copyright The Linux Foundation and each contributor to LFX.
 // SPDX-License-Identifier: MIT
 
-import { ChangeDetectionStrategy, Component, computed, inject, input, linkedSignal, output } from '@angular/core';
+import { ChangeDetectionStrategy, Component, computed, inject, input, linkedSignal } from '@angular/core';
 import { ButtonComponent } from '@components/button/button.component';
 import { MenuComponent } from '@components/menu/menu.component';
 import {
@@ -43,8 +43,6 @@ import { EnrollTermDialogComponent } from '../../../enroll-program/components/en
 })
 export class TermsTabComponent {
   public readonly terms = input.required<MentorshipProgramTermRow[]>();
-  public readonly termsChange = output<MentorshipProgramTermRow[]>();
-
   private readonly dialogService = inject(DialogService);
   private readonly confirmationService = inject(ConfirmationService);
 
@@ -217,7 +215,6 @@ export class TermsTabComponent {
 
   private setTerms(next: MentorshipProgramTermRow[]): void {
     this.draftTerms.set(next);
-    this.termsChange.emit(next);
   }
 
   private toFormTerm(term: MentorshipProgramTermRow): MentorshipProgramTerm {

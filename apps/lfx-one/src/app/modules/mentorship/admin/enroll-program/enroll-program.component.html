@@ -29,7 +29,8 @@
           [form]="form"
           [errors]="stepErrors()"
           (ciiLookupStatusChange)="onCiiLookupStatusChange($event)"
-          (nameLookupStatusChange)="onNameLookupStatusChange($event)" />
+          (nameLookupStatusChange)="onNameLookupStatusChange($event)"
+          (logoFileChange)="onLogoFileChange($event)" />
       }
       @case ('setup') {
         <lfx-mentorship-enroll-setup-step [form]="form" [errors]="stepErrors()" />

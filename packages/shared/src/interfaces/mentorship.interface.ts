@@ -48,6 +48,11 @@ export type MentorshipProgramsResponse = {
   total: number;
 };
 
+/** Response of `POST /api/mentorship/programs/:programId/logo`. */
+export interface MentorshipLogoUploadResponse {
+  logoUrl: string;
+}
+
 /** Wizard step keys for `/mentorship/admin/enroll`. */
 export type MentorshipEnrollStep = 'details' | 'setup' | 'prerequisites';
 

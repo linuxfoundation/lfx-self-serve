@@ -14,6 +14,7 @@ import {
   MentorshipCiiBadge,
   MentorshipEnrollForm,
   MentorshipLfProjectsResponse,
+  MentorshipLogoUploadResponse,
   MentorshipNameAvailability,
   MentorshipProgram,
   MentorshipProgramDetail,
@@ -22,14 +23,18 @@ import {
 } from '@lfx-one/shared/interfaces';
 import { buildMentorshipProgramDetail, isMentorshipCiiProjectId, mentorshipProgramSlug } from '@lfx-one/shared/utils';
 import { Request } from 'express';
+import { createHash } from 'node:crypto';
 
 import { ConflictError, MicroserviceError, ResourceNotFoundError, ServiceValidationError } from '../errors';
 
 import { logger } from './logger.service';
+import { ObjectStoreService } from './object-store.service';
 
 const DEFAULT_PROGRAM_LIMIT = 50;
 const MAX_LIMIT = 50;
 const CII_BADGE_TIMEOUT_MS = 10_000;
+/** Key namespace inside the shared CDN-fronted public-image bucket. */
+const MENTORSHIP_LOGO_KEY_PREFIX = 'mentorship-logos';
 
 /**
  * In-memory store so POST enrollments show up on the admin list in this
@@ -57,6 +62,8 @@ function buildCiiBadgeJsonUrl(projectId: string): string {
 }
 
 export class MentorshipService {
+  private readonly objectStore = new ObjectStoreService();
+
   public async getPrograms(
     req: Request,
     options: { search?: string; status?: MentorshipProgramStatus; offset?: number; limit?: number } = {}
@@ -82,7 +89,7 @@ export class MentorshipService {
 
   public async getProgram(req: Request, programId: string): Promise<MentorshipProgramDetail> {
     const startTime = logger.startOperation(req, 'mentorship_get_program', { programId });
-    const program = programsStore.find((item) => item.id === programId) ?? programsStore.find((item) => item.slug === programId);
+    const program = this.findProgram(programId);
     if (!program) {
       throw new ResourceNotFoundError('Mentorship program', programId, { operation: 'mentorship_get_program' });
     }
@@ -123,6 +130,44 @@ export class MentorshipService {
 
     logger.success(req, 'mentorship_enroll_program', startTime, { id: program.id, slug: program.slug });
     return program;
+  }
+
+  /**
+   * Second phase of enrollment: the wizard creates the program, then PUTs the logo bytes here.
+   * Split because the object key is namespaced under the program, which does not exist until the
+   * create call returns.
+   *
+   * Content-addressed key, so re-uploading identical bytes is a no-op overwrite and the URL is
+   * safe to cache immutably. Shares the CDN-fronted avatars bucket under its own `mentorship-logos/`
+   * prefix — see `ObjectStoreService.putPublicImage`.
+   */
+  public async uploadProgramLogo(req: Request, programId: string, buffer: Buffer, contentType: string): Promise<MentorshipLogoUploadResponse> {
+    logger.debug(req, 'mentorship_upload_program_logo', 'Uploading program logo', { programId, content_type: contentType, size: buffer.length });
+
+    const program = this.findProgram(programId);
+    if (!program) {
+      throw new ResourceNotFoundError('Mentorship program', programId, { operation: 'mentorship_upload_program_logo' });
+    }
+
+    const digest = createHash('sha256').update(buffer).digest('hex');
+    const key = `${MENTORSHIP_LOGO_KEY_PREFIX}/${digest}.${contentType === 'image/png' ? 'png' : 'jpg'}`;
+    const { url } = await this.objectStore.putPublicImage(req, key, buffer, contentType);
+
+    // No absolute URL means there is nothing to persist onto the program, so the logo would
+    // silently stay unset — surface it as the configuration error it is.
+    if (!url) {
+      throw new MicroserviceError('CDN_URL_PREFIX is not configured; cannot generate a public program logo URL', 500, 'CDN_NOT_CONFIGURED', {
+        operation: 'mentorship_upload_program_logo',
+        service: 'object-store',
+        path: key,
+      });
+    }
+
+    program.logoUrl = url;
+    program.updatedOn = new Date().toISOString();
+
+    logger.debug(req, 'mentorship_upload_program_logo', 'Program logo uploaded', { programId: program.id, key });
+    return { logoUrl: url };
   }
 
   public async isProgramNameAvailable(req: Request, name: string): Promise<MentorshipNameAvailability> {
@@ -194,6 +239,11 @@ export class MentorshipService {
     const badge: MentorshipCiiBadge = { projectId, badgeLevel };
     logger.success(req, 'mentorship_get_cii_badge', startTime, { projectId, badgeLevel: badge.badgeLevel });
     return badge;
+  }
+
+  /** Programs resolve by id (default) or slug, matching `/mentorship/admin/:programId`. */
+  private findProgram(programId: string): MentorshipProgram | undefined {
+    return programsStore.find((item) => item.id === programId) ?? programsStore.find((item) => item.slug === programId);
   }
 }
 

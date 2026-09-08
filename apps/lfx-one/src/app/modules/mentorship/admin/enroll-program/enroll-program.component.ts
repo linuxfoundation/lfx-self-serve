@@ -21,6 +21,7 @@ import {
   MENTORSHIP_ENROLL_NAME_UNAVAILABLE,
   MENTORSHIP_ENROLL_STEP_LABELS,
   MENTORSHIP_ENROLL_STEPS_ORDER,
+  MENTORSHIP_LOGO_UPLOAD_FAILED,
 } from '@lfx-one/shared/constants';
 import {
   MentorshipCiiLookupStatus,
@@ -34,7 +35,7 @@ import { getMentorshipEnrollStepErrors, isMentorshipTermsAccepted } from '@lfx-o
 import { MentorshipService } from '@services/mentorship.service';
 import { ConfirmationService, MessageService } from 'primeng/api';
 import { ConfirmDialogModule } from 'primeng/confirmdialog';
-import { map, startWith, take, tap } from 'rxjs';
+import { catchError, map, Observable, of, startWith, switchMap, take, tap } from 'rxjs';
 
 import { EnrollDetailsStepComponent } from './components/enroll-details-step/enroll-details-step.component';
 import { EnrollPrerequisitesStepComponent } from './components/enroll-prerequisites-step/enroll-prerequisites-step.component';
@@ -94,6 +95,8 @@ export class EnrollProgramComponent {
   protected readonly ciiLookupStatus = signal<MentorshipCiiLookupStatus>('idle');
   protected readonly nameLookupStatus = signal<MentorshipNameLookupStatus>('idle');
   protected readonly formIncomplete = MENTORSHIP_ENROLL_FORM_INCOMPLETE;
+  /** Held here, not in the form: the details step is destroyed on every step change. */
+  private readonly logoFile = signal<File | null>(null);
 
   private readonly formSnapshot = toSignal(
     this.form.valueChanges.pipe(
@@ -210,22 +213,32 @@ export class EnrollProgramComponent {
     });
   }
 
+  protected onLogoFileChange(file: File | null): void {
+    this.logoFile.set(file);
+  }
+
+  /**
+   * Two-phase: the logo is keyed to a program that does not exist until the create call
+   * returns, so it can only be uploaded afterwards.
+   */
   private submitEnrollment(): void {
     if (this.submitting()) return;
     this.submitting.set(true);
     this.mentorshipService
       .enrollProgram(this.toEnrollForm(this.form.getRawValue()))
-      .pipe(take(1))
+      .pipe(
+        take(1),
+        switchMap((program) => this.uploadLogo(program.id))
+      )
       .subscribe({
-        next: () => {
+        next: (logoUploaded) => {
           this.submitting.set(false);
           this.revokeLogoPreview();
-          this.messageService.add({
-            severity: 'success',
-            summary: 'Enrollment submitted',
-            detail: 'Your program was submitted and is pending review.',
-            life: 5000,
-          });
+          this.messageService.add(
+            logoUploaded
+              ? { severity: 'success', summary: 'Enrollment submitted', detail: 'Your program was submitted and is pending review.', life: 5000 }
+              : { severity: 'warn', summary: 'Enrollment submitted', detail: MENTORSHIP_LOGO_UPLOAD_FAILED, life: 8000 }
+          );
           void this.router.navigate(['/mentorship/admin']);
         },
         error: () => {
@@ -238,6 +251,20 @@ export class EnrollProgramComponent {
           });
         },
       });
+  }
+
+  /**
+   * Resolves false rather than erroring: the program is already created by this point, so a
+   * failed logo upload downgrades the result to a warning instead of reporting a failed
+   * enrollment the admin would try to repeat (and hit a name conflict on).
+   */
+  private uploadLogo(programId: string): Observable<boolean> {
+    const file = this.logoFile();
+    if (!file) return of(true);
+    return this.mentorshipService.uploadProgramLogo(programId, file).pipe(
+      map(() => true),
+      catchError(() => of(false))
+    );
   }
 
   private nameLookupMessage(status: MentorshipNameLookupStatus): string {

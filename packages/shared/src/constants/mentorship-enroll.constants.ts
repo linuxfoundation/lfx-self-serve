@@ -34,11 +34,15 @@ export const MENTORSHIP_TERM_YEAR_OPTIONS: ReadonlyArray<{ label: string; value:
   return { label: year, value: year };
 });
 
-export const MENTORSHIP_ENROLL_LOGO_ACCEPT = '.jpg,.jpeg,.png,.svg,image/jpeg,image/png,image/svg+xml';
-export const MENTORSHIP_ENROLL_LOGO_EXTENSIONS = ['jpg', 'jpeg', 'png', 'svg'] as const;
+export const MENTORSHIP_ENROLL_LOGO_ACCEPT = '.jpg,.jpeg,.png,image/jpeg,image/png';
+/** SVG excluded (XSS risk), matching `ALLOWED_AVATAR_MIME_TYPES`. Must stay in step with `MENTORSHIP_LOGO_MIME_TYPES`. */
+export const MENTORSHIP_ENROLL_LOGO_EXTENSIONS = ['jpg', 'jpeg', 'png'] as const;
+/** MIME types the BFF accepts on `POST /api/mentorship/programs/:programId/logo`. */
+export const MENTORSHIP_LOGO_MIME_TYPES = ['image/png', 'image/jpeg'] as const;
 export const MENTORSHIP_ENROLL_LOGO_MAX_BYTES = 2 * 1024 * 1024;
-export const MENTORSHIP_ENROLL_LOGO_HELPER = 'JPG, PNG, SVG · 420px × 420px · Max 2 MB';
+export const MENTORSHIP_ENROLL_LOGO_HELPER = 'JPG, PNG · 420px × 420px · Max 2 MB';
 export const MENTORSHIP_ENROLL_LOGO_TYPE_ERROR = 'Program logo is not the right file type.';
+export const MENTORSHIP_LOGO_UPLOAD_FAILED = 'The program was created, but its logo could not be uploaded. Edit the program to try again.';
 
 export const MENTORSHIP_ENROLL_DETAILS_INTRO = 'Describe the program and the project it belongs to. This is what candidates read on your program page.';
 export const MENTORSHIP_ENROLL_SETUP_INTRO = 'Define the skills mentees need and the term schedule for this program.';

@@ -8,6 +8,7 @@ import {
   MentorshipCiiBadge,
   MentorshipEnrollForm,
   MentorshipLfProjectsResponse,
+  MentorshipLogoUploadResponse,
   MentorshipNameAvailability,
   MentorshipProgram,
   MentorshipProgramDetail,
@@ -48,6 +49,19 @@ export class MentorshipService {
 
   public enrollProgram(form: MentorshipEnrollForm): Observable<MentorshipProgram> {
     return this.http.post<MentorshipProgram>('/api/mentorship/programs', form).pipe(take(1));
+  }
+
+  /**
+   * Second phase of enrollment: raw-body upload keyed to a program that already exists,
+   * mirroring `OrgProfileService.uploadLogo`. Rethrows so the wizard can report a program
+   * that was created without its logo.
+   */
+  public uploadProgramLogo(programId: string, file: File): Observable<MentorshipLogoUploadResponse> {
+    return this.http
+      .post<MentorshipLogoUploadResponse>(`/api/mentorship/programs/${encodeURIComponent(programId)}/logo`, file, {
+        headers: { 'Content-Type': file.type },
+      })
+      .pipe(take(1));
   }
 
   public isProgramNameAvailable(name: string): Observable<MentorshipNameAvailability> {

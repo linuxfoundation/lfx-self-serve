@@ -69,6 +69,12 @@ export class EnrollDetailsStepComponent {
   public readonly errors = input<MentorshipEnrollFieldErrors>({});
   public readonly ciiLookupStatusChange = output<MentorshipCiiLookupStatus>();
   public readonly nameLookupStatusChange = output<MentorshipNameLookupStatus>();
+  /**
+   * The picked file itself, which the form cannot hold — it only carries the name and a
+   * browser-local preview URL. The wizard owns it because this step is destroyed on every
+   * step change, and the upload happens after the program is created.
+   */
+  public readonly logoFileChange = output<File | null>();
 
   private readonly mentorshipService = inject(MentorshipService);
   private readonly lfFilter$ = new Subject<string>();
@@ -276,6 +282,9 @@ export class EnrollDetailsStepComponent {
     this.revokeLogoPreview();
     const fileEl = this.fileInput()?.nativeElement;
     if (fileEl) fileEl.value = '';
+    // An import replaces the whole form, including the logo fields — so the previously
+    // picked file no longer matches what the form claims and must not be uploaded.
+    this.logoFileChange.emit(null);
     this.form().patchValue(formFromImportedMentorshipProgram(importId));
     this.logoError.set('');
   }
@@ -312,22 +321,19 @@ export class EnrollDetailsStepComponent {
     const file = input.files?.[0];
     this.logoError.set('');
     if (!file) {
-      this.revokeLogoPreview();
-      this.form().patchValue({ logoFileName: '', logoPreviewUrl: '' });
+      this.clearLogo();
       return;
     }
     if (!isMentorshipLogoFileName(file.name)) {
       this.logoError.set(MENTORSHIP_ENROLL_LOGO_TYPE_ERROR);
       input.value = '';
-      this.revokeLogoPreview();
-      this.form().patchValue({ logoFileName: '', logoPreviewUrl: '' });
+      this.clearLogo();
       return;
     }
     if (file.size > MENTORSHIP_ENROLL_LOGO_MAX_BYTES) {
       this.logoError.set('File must be 2 MB or smaller.');
       input.value = '';
-      this.revokeLogoPreview();
-      this.form().patchValue({ logoFileName: '', logoPreviewUrl: '' });
+      this.clearLogo();
       return;
     }
     this.revokeLogoPreview();
@@ -335,6 +341,7 @@ export class EnrollDetailsStepComponent {
       logoFileName: file.name,
       logoPreviewUrl: URL.createObjectURL(file),
     });
+    this.logoFileChange.emit(file);
   }
 
   protected projectInitial(name: string): string {
@@ -356,6 +363,12 @@ export class EnrollDetailsStepComponent {
     const cached = this.selectedProject();
     if (cached?.id === projectId) return cached;
     return MOCK_MENTORSHIP_LF_PROJECTS.find((project) => project.id === projectId);
+  }
+
+  private clearLogo(): void {
+    this.revokeLogoPreview();
+    this.form().patchValue({ logoFileName: '', logoPreviewUrl: '' });
+    this.logoFileChange.emit(null);
   }
 
   private revokeLogoPreview(): void {
