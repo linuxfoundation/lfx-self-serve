@@ -26,6 +26,7 @@ import { AccessCheckService } from '../services/access-check.service';
 import { AttendanceReconciliationService } from '../services/attendance-reconciliation.service';
 import { logger } from '../services/logger.service';
 import { MeetingService } from '../services/meeting.service';
+import { personaDetectionService } from '../utils/persona-helper';
 
 /**
  * Controller for handling past meeting HTTP requests
@@ -175,8 +176,8 @@ export class PastMeetingController {
 
   /**
    * POST /past-meetings/:uid/participants
-   * Organizer-only, enforced both here and by lfx-v2-meeting-service on the ITX endpoint —
-   * belt-and-suspenders defense in depth, matching the reconcile endpoint's BFF-level check.
+   * Restricted to the meeting organizer, a writer on the meeting's project, or an Executive
+   * Director of that project (GH-1672 follow-up) — matches the reconcile endpoint's gate.
    */
   public async createPastMeetingParticipant(req: Request, res: Response, next: NextFunction): Promise<void> {
     const { uid } = req.params;
@@ -209,7 +210,7 @@ export class PastMeetingController {
 
       if (!isOrganizer) {
         return next(
-          new AuthorizationError('Only the meeting organizer can manage past meeting participants', {
+          new AuthorizationError("You do not have permission to manage this meeting's participants", {
             operation: 'create_past_meeting_participant',
             service: 'past_meeting_controller',
           })
@@ -231,8 +232,8 @@ export class PastMeetingController {
 
   /**
    * PUT /past-meetings/:uid/participants/:participantId
-   * Organizer-only, enforced both here and by lfx-v2-meeting-service on the ITX endpoint —
-   * belt-and-suspenders defense in depth, matching the reconcile endpoint's BFF-level check.
+   * Restricted to the meeting organizer, a writer on the meeting's project, or an Executive
+   * Director of that project (GH-1672 follow-up) — matches the reconcile endpoint's gate.
    */
   public async updatePastMeetingParticipant(req: Request, res: Response, next: NextFunction): Promise<void> {
     const { uid, participantId } = req.params;
@@ -275,7 +276,7 @@ export class PastMeetingController {
 
       if (!isOrganizer) {
         return next(
-          new AuthorizationError('Only the meeting organizer can manage past meeting participants', {
+          new AuthorizationError("You do not have permission to manage this meeting's participants", {
             operation: 'update_past_meeting_participant',
             service: 'past_meeting_controller',
           })
@@ -297,8 +298,8 @@ export class PastMeetingController {
 
   /**
    * DELETE /past-meetings/:uid/participants/:participantId
-   * Organizer-only, enforced both here and by lfx-v2-meeting-service on the ITX endpoint —
-   * belt-and-suspenders defense in depth, matching the reconcile endpoint's BFF-level check.
+   * Restricted to the meeting organizer, a writer on the meeting's project, or an Executive
+   * Director of that project (GH-1672 follow-up) — matches the reconcile endpoint's gate.
    */
   public async deletePastMeetingParticipant(req: Request, res: Response, next: NextFunction): Promise<void> {
     const { uid, participantId } = req.params;
@@ -331,7 +332,7 @@ export class PastMeetingController {
 
       if (!isOrganizer) {
         return next(
-          new AuthorizationError('Only the meeting organizer can manage past meeting participants', {
+          new AuthorizationError("You do not have permission to manage this meeting's participants", {
             operation: 'delete_past_meeting_participant',
             service: 'past_meeting_controller',
           })
@@ -379,7 +380,7 @@ export class PastMeetingController {
 
       if (!isOrganizer) {
         return next(
-          new AuthorizationError('Only the meeting organizer can trigger attendance reconciliation', {
+          new AuthorizationError('You do not have permission to trigger attendance reconciliation for this meeting', {
             operation: 'reconcile_past_meeting_participants',
             service: 'past_meeting_controller',
           })
@@ -1018,8 +1019,10 @@ export class PastMeetingController {
   }
 
   /**
-   * Resolves whether the requesting user is the organizer of a past meeting. Unauthenticated
-   * requests and access-check failures both default to false (fail closed).
+   * Resolves whether the requesting user may manage a past meeting's participants/attendance —
+   * the meeting organizer, a writer on the meeting's project, or an Executive Director of that
+   * project (GH-1672 follow-up: reconciliation is no longer organizer-only). Unauthenticated
+   * requests and access-check failures all default to false (fail closed).
    */
   private async isPastMeetingOrganizer(req: Request, pastMeeting: PastMeeting, uid: string): Promise<boolean> {
     if (!req.oidc?.isAuthenticated()) {
@@ -1027,14 +1030,36 @@ export class PastMeetingController {
     }
 
     try {
-      const meetingWithAccess = await this.accessCheckService.addAccessToResource(
-        req,
-        { ...pastMeeting, id: pastMeeting.meeting_and_occurrence_id ?? uid },
-        'v1_past_meeting',
-        'organizer'
-      );
-      return meetingWithAccess.organizer ?? false;
+      const [isOrganizer, isProjectWriter, isProjectED] = await Promise.all([
+        this.accessCheckService
+          .addAccessToResource(req, { ...pastMeeting, id: pastMeeting.meeting_and_occurrence_id ?? uid }, 'v1_past_meeting', 'organizer')
+          .then((meetingWithAccess) => meetingWithAccess.organizer ?? false),
+        pastMeeting.project_uid
+          ? this.accessCheckService.checkSingleAccess(req, { resource: 'project', id: pastMeeting.project_uid, access: 'writer' })
+          : Promise.resolve(false),
+        this.isProjectExecutiveDirector(req, pastMeeting.project_uid),
+      ]);
+
+      return isOrganizer || isProjectWriter || isProjectED;
     } catch {
+      return false;
+    }
+  }
+
+  /** Root-writer/LF-staff bypass matches `requireExecutiveDirector`'s scope rules. */
+  private async isProjectExecutiveDirector(req: Request, projectUid: string | undefined): Promise<boolean> {
+    if (!projectUid) {
+      return false;
+    }
+
+    try {
+      const result = await personaDetectionService.getPersonas(req, undefined, 'none');
+      if (result.isRootWriter || result.isLFStaff) {
+        return true;
+      }
+      return (result.personaProjects?.['executive-director'] ?? []).some((project) => project.projectUid === projectUid);
+    } catch (error) {
+      logger.warning(req, 'is_project_executive_director', 'ED check failed, assuming no access', { err: error, project_uid: projectUid });
       return false;
     }
   }

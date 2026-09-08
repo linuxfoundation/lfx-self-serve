@@ -6,7 +6,7 @@ import { beforeEach, describe, expect, it, vi } from 'vitest';
 const PAST_MEETING_UID = 'a0000000-0000-0000-0000-000000000001';
 
 // Hoisted mocks — defined before any module is imported so vi.mock factories can reference them.
-const { meetingSvc, reconciliationSvc, addAccessToResourceMock, validateUidParameterMock } = vi.hoisted(() => ({
+const { meetingSvc, reconciliationSvc, addAccessToResourceMock, checkSingleAccessMock, getPersonasMock, validateUidParameterMock } = vi.hoisted(() => ({
   meetingSvc: {
     getPastMeetingById: vi.fn(),
   },
@@ -14,6 +14,8 @@ const { meetingSvc, reconciliationSvc, addAccessToResourceMock, validateUidParam
     reconcilePastMeetingParticipants: vi.fn(),
   },
   addAccessToResourceMock: vi.fn(),
+  checkSingleAccessMock: vi.fn(),
+  getPersonasMock: vi.fn(),
   validateUidParameterMock: vi.fn(() => true),
 }));
 
@@ -47,8 +49,11 @@ vi.mock('../services/attendance-reconciliation.service', () => ({
 }));
 vi.mock('../services/access-check.service', () => ({
   AccessCheckService: vi.fn(function () {
-    return { addAccessToResource: addAccessToResourceMock };
+    return { addAccessToResource: addAccessToResourceMock, checkSingleAccess: checkSingleAccessMock };
   }),
+}));
+vi.mock('../utils/persona-helper', () => ({
+  personaDetectionService: { getPersonas: getPersonasMock },
 }));
 vi.mock('../services/logger.service', () => ({
   logger: { startOperation: vi.fn(() => 0), success: vi.fn(), warning: vi.fn(), error: vi.fn(), info: vi.fn(), debug: vi.fn() },
@@ -75,14 +80,17 @@ function buildPastMeeting(overrides: Record<string, unknown> = {}): any {
 }
 
 // Reconciliation matching logic itself is tested at its source (attendance-reconciliation.service.spec.ts)
-// per the three-file pattern. This spec covers only the controller's authorization gate: a non-organizer
-// must never reach the AI-backed reconciliation call (GH-1672 item 4 organizer-only trigger).
-describe('PastMeetingController.reconcilePastMeetingParticipants — organizer gate', () => {
+// per the three-file pattern. This spec covers only the controller's authorization gate: only the
+// organizer, a project writer, or a project ED may reach the AI-backed reconciliation call (GH-1672
+// follow-up broadened this from organizer-only).
+describe('PastMeetingController.reconcilePastMeetingParticipants — attendance-management authorization gate', () => {
   let controller: PastMeetingController;
 
   beforeEach(() => {
     vi.clearAllMocks();
     validateUidParameterMock.mockReturnValue(true);
+    checkSingleAccessMock.mockResolvedValue(false);
+    getPersonasMock.mockResolvedValue({ isRootWriter: false, isLFStaff: false, personaProjects: {} });
     controller = new PastMeetingController();
     meetingSvc.getPastMeetingById.mockResolvedValue(buildPastMeeting());
   });
@@ -135,5 +143,95 @@ describe('PastMeetingController.reconcilePastMeetingParticipants — organizer g
     expect(reconciliationSvc.reconcilePastMeetingParticipants).toHaveBeenCalledWith(expect.anything(), PAST_MEETING_UID, buildPastMeeting());
     expect(res.json).toHaveBeenCalledWith(result);
     expect(next).not.toHaveBeenCalled();
+  });
+
+  it('runs reconciliation when the caller is not the organizer but is a writer on the meeting project', async () => {
+    const pastMeeting = buildPastMeeting({ project_uid: 'project-1' });
+    meetingSvc.getPastMeetingById.mockResolvedValue(pastMeeting);
+    addAccessToResourceMock.mockResolvedValue({ ...pastMeeting, organizer: false });
+    checkSingleAccessMock.mockResolvedValue(true);
+    const result = { results: [], candidate_pool_size: 0, auto_applied_count: 0, needs_review_count: 0 };
+    reconciliationSvc.reconcilePastMeetingParticipants.mockResolvedValue(result);
+    const res = buildRes();
+    const next = vi.fn();
+
+    await controller.reconcilePastMeetingParticipants(buildReq(true), res, next);
+
+    expect(checkSingleAccessMock).toHaveBeenCalledWith(expect.anything(), { resource: 'project', id: 'project-1', access: 'writer' });
+    expect(reconciliationSvc.reconcilePastMeetingParticipants).toHaveBeenCalled();
+    expect(res.json).toHaveBeenCalledWith(result);
+    expect(next).not.toHaveBeenCalled();
+  });
+
+  it('runs reconciliation when the caller is an Executive Director of the meeting project', async () => {
+    const pastMeeting = buildPastMeeting({ project_uid: 'project-1' });
+    meetingSvc.getPastMeetingById.mockResolvedValue(pastMeeting);
+    addAccessToResourceMock.mockResolvedValue({ ...pastMeeting, organizer: false });
+    checkSingleAccessMock.mockResolvedValue(false);
+    getPersonasMock.mockResolvedValue({
+      isRootWriter: false,
+      isLFStaff: false,
+      personaProjects: { 'executive-director': [{ projectUid: 'project-1', projectSlug: 'proj-slug', projectName: 'Proj' }] },
+    });
+    const result = { results: [], candidate_pool_size: 0, auto_applied_count: 0, needs_review_count: 0 };
+    reconciliationSvc.reconcilePastMeetingParticipants.mockResolvedValue(result);
+    const res = buildRes();
+    const next = vi.fn();
+
+    await controller.reconcilePastMeetingParticipants(buildReq(true), res, next);
+
+    expect(reconciliationSvc.reconcilePastMeetingParticipants).toHaveBeenCalled();
+    expect(res.json).toHaveBeenCalledWith(result);
+    expect(next).not.toHaveBeenCalled();
+  });
+
+  it('runs reconciliation when the caller is root-writer/LF-staff, bypassing per-project ED scoping', async () => {
+    const pastMeeting = buildPastMeeting({ project_uid: 'project-1' });
+    meetingSvc.getPastMeetingById.mockResolvedValue(pastMeeting);
+    addAccessToResourceMock.mockResolvedValue({ ...pastMeeting, organizer: false });
+    checkSingleAccessMock.mockResolvedValue(false);
+    getPersonasMock.mockResolvedValue({ isRootWriter: true, isLFStaff: false, personaProjects: {} });
+    const result = { results: [], candidate_pool_size: 0, auto_applied_count: 0, needs_review_count: 0 };
+    reconciliationSvc.reconcilePastMeetingParticipants.mockResolvedValue(result);
+    const res = buildRes();
+    const next = vi.fn();
+
+    await controller.reconcilePastMeetingParticipants(buildReq(true), res, next);
+
+    expect(reconciliationSvc.reconcilePastMeetingParticipants).toHaveBeenCalled();
+    expect(res.json).toHaveBeenCalledWith(result);
+    expect(next).not.toHaveBeenCalled();
+  });
+
+  it('rejects with 403 when the caller is not the organizer, not a project writer, and not a project ED', async () => {
+    const pastMeeting = buildPastMeeting({ project_uid: 'project-1' });
+    meetingSvc.getPastMeetingById.mockResolvedValue(pastMeeting);
+    addAccessToResourceMock.mockResolvedValue({ ...pastMeeting, organizer: false });
+    checkSingleAccessMock.mockResolvedValue(false);
+    getPersonasMock.mockResolvedValue({ isRootWriter: false, isLFStaff: false, personaProjects: {} });
+    const res = buildRes();
+    const next = vi.fn();
+
+    await controller.reconcilePastMeetingParticipants(buildReq(true), res, next);
+
+    expect(reconciliationSvc.reconcilePastMeetingParticipants).not.toHaveBeenCalled();
+    expect(next).toHaveBeenCalledWith(expect.objectContaining({ statusCode: 403 }));
+    expect(res.json).not.toHaveBeenCalled();
+  });
+
+  it('rejects with 403 and fails closed when the ED persona check itself throws', async () => {
+    const pastMeeting = buildPastMeeting({ project_uid: 'project-1' });
+    meetingSvc.getPastMeetingById.mockResolvedValue(pastMeeting);
+    addAccessToResourceMock.mockResolvedValue({ ...pastMeeting, organizer: false });
+    checkSingleAccessMock.mockResolvedValue(false);
+    getPersonasMock.mockRejectedValue(new Error('persona service unavailable'));
+    const res = buildRes();
+    const next = vi.fn();
+
+    await controller.reconcilePastMeetingParticipants(buildReq(true), res, next);
+
+    expect(reconciliationSvc.reconcilePastMeetingParticipants).not.toHaveBeenCalled();
+    expect(next).toHaveBeenCalledWith(expect.objectContaining({ statusCode: 403 }));
+    expect(res.json).not.toHaveBeenCalled();
   });
 });
