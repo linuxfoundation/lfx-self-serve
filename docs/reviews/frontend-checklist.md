@@ -169,14 +169,14 @@ public visible = model(false);
 
 ## 8. Tailwind spacing (SHOULD FIX)
 
-Use `flex + flex-col + gap-*` instead of `space-y-*`. Prefer standard Tailwind spacing over arbitrary values, except when a design specifies an exact pixel size — `apps/lfx-one`'s 14px root font-size makes the rem scale undershoot (see `.claude/rules/styling.md` § Layout primitives), so `[Npx]` with a short comment is accepted there. Use `[class.invisible]` instead of `@if` for small toggle elements.
+Use `flex + flex-col + gap-*` instead of `space-y-*`. Prefer standard Tailwind spacing (and font-size) utilities over arbitrary values, except when a design specifies an exact pixel size — `apps/lfx-one`'s 14px root font-size makes the rem scale undershoot for both (see `.claude/rules/styling.md` § Layout primitives), so `[Npx]` with a short comment is accepted there. Use `[class.invisible]` instead of `@if` for small toggle elements.
 
 **Violation:**
 
 ```html
 <div class="space-y-4">...</div>
+<!-- arbitrary px with no design cite or comment -->
 <div class="p-[24px] mt-[13px]">...</div>
-<!-- no design cite or comment -->
 @if (isVisible()) { <span class="badge">New</span> }
 ```
 
