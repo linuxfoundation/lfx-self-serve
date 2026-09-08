@@ -102,3 +102,4 @@ export * from './foundation-message.constants';
 export * from './social-listening.constants';
 export * from './id-migration.constants';
 export * from './formation.constants';
+export * from './formation-template.constants';
