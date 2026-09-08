@@ -20,7 +20,11 @@ import { isImpersonating } from '../utils/auth-helper';
 const SERVICE = 'org_cla_service';
 
 /**
- * Maps one upstream entry onto the list row.
+ * Maps one upstream entry onto the list row, once its signature id is known to be present.
+ *
+ * The id is required here rather than defaulted, so the check for it stays at the point where a
+ * malformed response can still be rejected as one. A default inside the mapper would silently
+ * produce a row that renders.
  *
  * Two upstream fields are dropped here rather than left unrendered, because a field the
  * template ignores still reaches the browser inside the transferred state:
@@ -37,13 +41,6 @@ const SERVICE = 'org_cla_service';
  * `autoCreateECLA` and `signed` are likewise not carried: the first belongs to a later
  * feature, the second is folded into `status` so no consumer forms a second opinion about
  * what "signed" means for display.
- */
-/**
- * Maps one upstream entry, once its signature id is known to be present.
- *
- * The id is required here rather than defaulted, so the check for it stays at the point where a
- * malformed response can still be rejected as one. A default inside the mapper would silently
- * produce a row that renders.
  */
 function toOrgClaGroup(entry: EasyClaCompanyClaGroup & { signatureID: string }, companyName: string): OrgClaGroup {
   const projects: OrgClaGroupProject[] = (entry.projects ?? [])
