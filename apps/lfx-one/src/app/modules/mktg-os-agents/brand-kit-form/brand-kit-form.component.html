@@ -74,6 +74,9 @@
     <!-- Intake form -->
     <form [formGroup]="intakeForm" (ngSubmit)="onSubmit()" class="flex flex-col gap-4" data-testid="brand-kit-form-intake">
       @for (q of questions; track q.key) {
+        <!-- One source for the visible error and the ARIA state: a format error shows from the first keystroke, the required message only after a blur. Binding aria-invalid to the same condition keeps assistive tech from being told the field is fine while an error is on screen. -->
+        @let errorId = 'brand-kit-q-' + q.questionNumber + '-error';
+        @let errorShown = !!fieldFormatErrors()[q.key] || (intakeForm.controls[q.key].touched && intakeForm.controls[q.key].invalid);
         <div class="flex flex-col gap-1.5">
           <label [for]="'brand-kit-q-' + q.questionNumber" class="text-sm font-medium text-gray-700"> {{ q.questionNumber }}. {{ q.question }} </label>
           <!-- Control kind comes from the SHARED intake definition, so a single-line answer (the repository URL) is a text input here exactly as it is on the run shell. -->
@@ -84,29 +87,23 @@
               [control]="q.key"
               [rows]="2"
               [autoResize]="true"
-              [describedBy]="'brand-kit-q-' + q.questionNumber + '-error'"
-              [invalid]="intakeForm.controls[q.key].touched && intakeForm.controls[q.key].invalid"
+              [describedBy]="errorShown ? errorId : ''"
+              [invalid]="errorShown"
               [dataTest]="'brand-kit-form-answer-' + q.key" />
           } @else {
             <lfx-input-text
               [id]="'brand-kit-q-' + q.questionNumber"
               [form]="intakeForm"
               [control]="q.key"
-              [describedBy]="'brand-kit-q-' + q.questionNumber + '-error'"
-              [invalid]="intakeForm.controls[q.key].touched && intakeForm.controls[q.key].invalid"
+              [describedBy]="errorShown ? errorId : ''"
+              [invalid]="errorShown"
               [dataTest]="'brand-kit-form-answer-' + q.key" />
           }
           <!-- A format failure names the ACTUAL problem; the generic required message only covers a blank answer. -->
           @if (fieldFormatErrors()[q.key]; as formatError) {
-            <span
-              [id]="'brand-kit-q-' + q.questionNumber + '-error'"
-              class="text-xs text-red-500"
-              role="alert"
-              [attr.data-testid]="'brand-kit-form-field-error-' + q.key"
-              >{{ formatError }}</span
-            >
+            <span [id]="errorId" class="text-xs text-red-500" role="alert" [attr.data-testid]="'brand-kit-form-field-error-' + q.key">{{ formatError }}</span>
           } @else if (intakeForm.controls[q.key].touched && intakeForm.controls[q.key].invalid) {
-            <span [id]="'brand-kit-q-' + q.questionNumber + '-error'" class="text-xs text-red-500">This answer is required.</span>
+            <span [id]="errorId" class="text-xs text-red-500">This answer is required.</span>
           }
         </div>
       }

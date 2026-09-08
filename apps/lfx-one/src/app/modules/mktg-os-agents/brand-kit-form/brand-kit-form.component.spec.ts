@@ -218,6 +218,28 @@ describe('BrandKitFormComponent — generation poll state machine', () => {
       expect(fieldError()).toBeNull();
       expect(submitButton()?.disabled).toBe(true);
     });
+
+    // The format message renders from the first keystroke, before the control
+    // is ever blurred. When `aria-invalid` waited for `touched`, a screen
+    // reader was told the field was fine for the whole interval a sighted user
+    // was looking at a blocking error.
+    it('marks the field invalid for assistive tech as soon as the error is visible, without waiting for a blur', () => {
+      fillAll('https://github.com/aaif');
+      const control = fixture.nativeElement.querySelector('[data-test="brand-kit-form-answer-github_url"]');
+
+      expect(fieldError()).not.toBeNull();
+      expect(control?.getAttribute('aria-invalid')).toBe('true');
+      expect(control?.getAttribute('aria-describedby')).toBe(fieldError()?.id);
+    });
+
+    it('claims neither invalidity nor an error description while the value is usable', () => {
+      fillAll(VALID_REPO_URL);
+      const control = fixture.nativeElement.querySelector('[data-test="brand-kit-form-answer-github_url"]');
+
+      expect(fieldError()).toBeNull();
+      expect(control?.getAttribute('aria-invalid')).toBeNull();
+      expect(control?.getAttribute('aria-describedby')).toBeNull();
+    });
   });
 
   /**
