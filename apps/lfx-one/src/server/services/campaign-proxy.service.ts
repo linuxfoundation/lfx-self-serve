@@ -740,6 +740,12 @@ const SVG_TAG_RE = /<(\/?)svg(?=[\s/>])/gi;
  */
 function startTagEnd(html: string, from: number): number {
   let quote = '';
+  // A quote only OPENS a value when it directly follows `=` (whitespace between is allowed).
+  // Entering quote mode on any quote made a stray apostrophe -- `<svg data-x=it's>` -- open a
+  // phantom value that ran to the next matching quote anywhere in the document, or to EOF, so the
+  // tag never ended and the page tail was dropped. WHATWG puts a quote in the
+  // unquoted-attribute-value state into the VALUE and lets `>` still close the tag.
+  let afterEquals = false;
   for (let i = from; i < html.length; i++) {
     const ch = html[i];
     if (quote !== '') {
@@ -748,12 +754,22 @@ function startTagEnd(html: string, from: number): number {
       }
       continue;
     }
-    if (ch === '"' || ch === "'") {
+    if ((ch === '"' || ch === "'") && afterEquals) {
       quote = ch;
+      afterEquals = false;
       continue;
     }
     if (ch === '>') {
       return i;
+    }
+    if (ch === '=') {
+      afterEquals = true;
+      continue;
+    }
+    // Whitespace between `=` and the value is allowed, so it PRESERVES the state; anything else
+    // means the value has started unquoted and a later quote is just one of its characters.
+    if (ch !== ' ' && ch !== '\t' && ch !== '\n' && ch !== '\r' && ch !== '\f') {
+      afterEquals = false;
     }
   }
   return -1;
@@ -973,6 +989,53 @@ const INERT_LOOKAHEAD = 4096;
 const INERT_TOKEN_MAX = 8;
 
 /**
+ * `indexOf` that ignores hits inside a quoted attribute value.
+ *
+ * A `<!--` written inside an attribute is text, not a comment opening; treating it as one made the
+ * inert walk hunt for a `-->` that never comes and drop everything after it.
+ */
+function quoteAwareIndexOf(haystack: string, needle: string): number {
+  let at = haystack.indexOf(needle);
+  while (at !== -1 && isInsideAttributeValue(haystack, at)) {
+    at = haystack.indexOf(needle, at + 1);
+  }
+  return at;
+}
+
+/**
+ * Whether `index` falls inside a quoted attribute value, scanning from the start of `text`.
+ *
+ * Quote mode opens only on a quote that follows `=`, matching `startTagEnd` -- a stray apostrophe
+ * in an unquoted value is a character, not a delimiter.
+ */
+function isInsideAttributeValue(text: string, index: number): boolean {
+  let quote = '';
+  let afterEquals = false;
+  for (let i = 0; i < index; i++) {
+    const ch = text[i];
+    if (quote !== '') {
+      if (ch === quote) {
+        quote = '';
+      }
+      continue;
+    }
+    if ((ch === '"' || ch === "'") && afterEquals) {
+      quote = ch;
+      afterEquals = false;
+      continue;
+    }
+    if (ch === '=') {
+      afterEquals = true;
+      continue;
+    }
+    if (ch !== ' ' && ch !== '\t' && ch !== '\n' && ch !== '\r' && ch !== '\f') {
+      afterEquals = false;
+    }
+  }
+  return quote !== '';
+}
+
+/**
  * Walk inert regions -- comments and raw-text bodies -- from `from` up to `at`.
  *
  * Returns the index just past the region containing `at` when one does, `at` itself when none
@@ -1002,9 +1065,16 @@ function advanceInert(html: string, from: number, at: number): number {
     const limit = Math.min(cursor + INERT_LOOKAHEAD, at);
     const window = html.slice(cursor, limit);
 
-    const commentOffset = window.indexOf('<!--');
+    const commentOffset = quoteAwareIndexOf(window, '<!--');
     RAW_TEXT_OPEN_RE.lastIndex = 0;
-    const rawMatch = RAW_TEXT_OPEN_RE.exec(window);
+    let rawMatch = RAW_TEXT_OPEN_RE.exec(window);
+    // Skip candidates sitting INSIDE an attribute value. `startTagEnd` and `isJsonLdTag` were made
+    // quote-aware; this search was not, so `<svg><g data-x="<script>"/>...` read the attribute's
+    // text as a real `<script>` opening, failed to find its close, and dropped the page tail.
+    while (rawMatch !== null && isInsideAttributeValue(window, rawMatch.index)) {
+      RAW_TEXT_OPEN_RE.lastIndex = rawMatch.index + 1;
+      rawMatch = RAW_TEXT_OPEN_RE.exec(window);
+    }
 
     if (commentOffset === -1 && rawMatch === null) {
       if (limit >= at) {
@@ -1110,6 +1180,11 @@ function svgBlockEnd(scan: string, openEnd: number): number {
     } else if (scan[tagEnd - 1] !== '/') {
       depth++;
     }
+    // PAST the tag just counted, not its start. Leaving the cursor at `tag.index` made the next
+    // call re-read this tag's own attribute span, so a `<script`, `<style` or `<!--` sitting in an
+    // attribute value was read as a real inert opening whose close is never found -- and the page
+    // tail was dropped.
+    inertCursor = tagEnd + 1;
     SVG_TAG_RE.lastIndex = tagEnd + 1;
     tag = SVG_TAG_RE.exec(scan);
   }

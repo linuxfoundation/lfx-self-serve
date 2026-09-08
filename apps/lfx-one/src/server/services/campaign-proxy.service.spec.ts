@@ -1427,6 +1427,44 @@ describe('extractableHtml', () => {
     expect(out).toContain('Tokyo');
   });
 
+  // A quote only OPENS an attribute value when it follows `=`. Entering quote mode on ANY quote
+  // made a stray apostrophe in an unquoted value -- `<svg data-x=it's>` -- open a phantom value
+  // that ran to the next matching quote anywhere in the document, so the tag never ended and the
+  // page tail was dropped. WHATWG puts such a quote into the value and lets `>` still close.
+  it('does not open a quoted value on an apostrophe in an unquoted attribute', () => {
+    const out = extractableHtml(`<svg data-x=it's><text>SECRET</text></svg><p>Tokyo's venue</p>`);
+
+    expect(out, 'a stray apostrophe swallowed the rest of the page').toContain('Tokyo');
+    expect(out).not.toContain('SECRET');
+  });
+
+  // The inert-region search must skip candidates inside an attribute VALUE, like the tag scan and
+  // the json-ld test already do. A `<script`/`<style`/`<!--` written in an attribute is text: read
+  // as a real opening, its close is never found and the page tail goes with it.
+  describe.each([
+    ['a script token', '<svg><g data-x="<script>"/><svg>a</svg>b</svg>'],
+    ['a style token', '<svg><g data-x="<style>"/><path/></svg>'],
+    ['a comment token', '<svg><g data-x="<!--"/><path/></svg>'],
+  ])('%s inside an svg attribute value', (_label, block) => {
+    it('is not treated as an inert opening', () => {
+      expect(extractableHtml(`${block}<p>Tokyo</p>`), 'an attribute value ended the svg walk').toContain('Tokyo');
+    });
+  });
+
+  // The reviewer's packed shapes: one inert kind inside ONE `<svg>`, so the window grows. The
+  // sibling and nesting tests keep an svg token between regions and stay green while these fail.
+  describe.each([
+    ['comments', `<svg>${'<!-- c -->'.repeat(104_850)}</svg>`],
+    ['raw text', `<svg>${'<style>a</style>'.repeat(65_530)}</svg>`],
+  ])('an svg packed with %s', (_label, body) => {
+    it('stays linear', () => {
+      const started = Date.now();
+      extractableHtml(body);
+
+      expect(Date.now() - started, 'the inert walk rescanned its window per region').toBeLessThan(3000);
+    });
+  });
+
   it('returns an empty string for input that is entirely strippable', () => {
     expect(extractableHtml('<style>.a{color:red}</style>').trim()).toBe('');
   });
