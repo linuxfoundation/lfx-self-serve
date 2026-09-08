@@ -11,10 +11,16 @@ server's structure; this one measures how long it takes to boot and why the
 
 The `lfx-self-serve` chart's `startupProbe` allows up to 310s for a pod to become
 ready (`charts/lfx-self-serve/values.yaml:199-200`), a budget sized against an
-assumption of ~4 minute cold starts. [Issue #1375](https://github.com/linuxfoundation/lfx-self-serve/issues/1375)
-separately set `maxSurge: 1` on the Deployment to stop node churn during
-rollouts, which means every release now pays that cold-start cost three times
-in sequence (`replicaCount: 3`).
+assumption of ~4 minute cold starts. This chart's own default is
+`maxSurge: "100%"` (`charts/lfx-self-serve/values.yaml:7-13`), but prod and
+staging override that in the separate `lfx-v2-argocd` repo
+(`values/prod/lfx-self-serve.yaml:102-108`, `values/staging/lfx-self-serve.yaml:99-106`)
+to `maxSurge: 1` — [issue #1375](https://github.com/linuxfoundation/lfx-self-serve/issues/1375),
+per that override's own comment, specifically to stop a `maxSurge: "100%"` rollout
+(3 pods / 1500m CPU at once) from forcing Karpenter to provision new nodes on a
+cluster that's CPU-request-bound. The trade: with `maxSurge: 1` and
+`replicaCount: 3`, prod and staging now pay the cold-start cost three times in
+sequence per rollout, instead of once concurrently across three surged pods.
 
 Before this work, the only boot-related log line was at `debug` level and never
 emitted in any environment (`LOG_LEVEL` defaults to `info`), so the ~4 minute
