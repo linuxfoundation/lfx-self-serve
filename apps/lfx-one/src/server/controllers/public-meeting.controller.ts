@@ -8,11 +8,11 @@ import {
   CreateMeetingRegistrantRequest,
   MeetingOccurrenceSummary,
   MeetingRegistrant,
-  Project,
   PublicMeetingOccurrencesResponse,
+  Project,
   PublicMeetingProject,
 } from '@lfx-one/shared/interfaces';
-import { joinAsSentenceList } from '@lfx-one/shared/utils';
+import { joinAsSentenceList, truncateToUtf16Units } from '@lfx-one/shared/utils';
 import { NextFunction, Request, Response } from 'express';
 
 import { ResourceNotFoundError, ServiceValidationError } from '../errors';
@@ -668,13 +668,17 @@ export class PublicMeetingController {
    * shape nothing produced. Anything that isn't a string is dropped, which is what stops an object or
    * array from clearing the caller's `if (!registrantData.email …)` gate and reaching upstream.
    *
-   * `username` is taken from the session when there is one and never from the body — a signed-in
-   * registrant keeps their LFID attribution on a record written with application credentials, and a
-   * forged one still can't get in. It's stripped of any provider prefix because a registrant record
-   * stores the plain LFID: every read path strips before matching (`getMeetingRegistrantsByUsername`),
-   * so an `auth0|`-prefixed row would be invisible to the join-URL lookup that the username is stamped
-   * for in the first place. `email` is lowercased for the same reason, since query-service matching is
-   * case-sensitive and every read path lowercases.
+   * `username` is taken from the session and never from the body, and only when the submitted email
+   * is the one that session belongs to. That second condition is what keeps LFID attribution honest:
+   * the row is written with application credentials, so upstream applies no ownership check of its
+   * own, and `getMeetingRegistrantsForUser` matches on email OR username. A row carrying one person's
+   * LFID against another person's address would therefore match both of them, and `createMeetingRsvp`
+   * takes `registrants[0]` from an unordered result — so either party's RSVP could land on it. Only
+   * stamping self-registrations removes that ambiguity at the source. It's stripped of any provider
+   * prefix because a registrant record stores the plain LFID: every read path strips before matching
+   * (`getMeetingRegistrantsByUsername`), so an `auth0|`-prefixed row would be invisible to the
+   * join-URL lookup that the username is stamped for in the first place. `email` is lowercased for the
+   * same reason, since query-service matching is case-sensitive and every read path lowercases.
    *
    * The three identifiers — `meeting_id`, `email` and `occurrence_id` — are trimmed but not truncated,
    * unlike the free-text fields, because truncating one would turn an unusable value into a different,
@@ -682,26 +686,32 @@ export class PublicMeetingController {
    * what was actually wrong.
    *
    * What this doesn't close: `email` is the one field here that can't be self-asserted, so anyone can
-   * register a third party's address for a public meeting and trigger an invite to it — and when the
-   * caller is signed in, the resulting row also carries their LFID against an address they don't own,
-   * which `getMeetingRegistrantsForUser`'s email-OR-username query matches for both parties.
-   * `publicApiRateLimiter` caps the volume, not the primitive.
+   * still register a third party's address for a public meeting and trigger an invite to it.
+   * `publicApiRateLimiter` caps the volume, not the primitive. Such a row is now unattributed, so it
+   * no longer collides with that person's own registration — the invite is the whole of the abuse.
    */
   private toSelfRegistration(req: Request, body: unknown): CreateMeetingRegistrantRequest {
     const raw = (body ?? {}) as Record<string, unknown>;
-    const text = (key: string): string => (typeof raw[key] === 'string' ? (raw[key] as string).trim().slice(0, PUBLIC_REGISTRATION_FIELD_MAX_LENGTH) : '');
+    const text = (key: string): string =>
+      typeof raw[key] === 'string' ? truncateToUtf16Units((raw[key] as string).trim(), PUBLIC_REGISTRATION_FIELD_MAX_LENGTH) : '';
     // Identifiers are narrowed and trimmed but never truncated — see the length branch in
     // `registerForPublicMeeting`, which rejects them by name instead.
     const identity = (key: string): string => (typeof raw[key] === 'string' ? (raw[key] as string).trim() : '');
+    const submittedEmail = identity('email').toLowerCase();
+    // The LFID is only stamped when the caller is registering the address their own session is for.
+    // Registering a third party's address stays allowed, but it produces an unattributed row rather
+    // than one that a downstream email-OR-username lookup would match for two different people.
     const sessionUsername = getEffectiveUsername(req);
-    const username = sessionUsername ? stripAuthPrefix(sessionUsername) : '';
+    const sessionEmail = getEffectiveEmail(req)?.trim().toLowerCase() || '';
+    const ownsSubmittedEmail = !!sessionEmail && sessionEmail === submittedEmail;
+    const username = sessionUsername && ownsSubmittedEmail ? stripAuthPrefix(sessionUsername) : '';
     const jobTitle = text('job_title');
     const orgName = text('org_name');
     const occurrenceId = identity('occurrence_id');
 
     return {
       meeting_id: identity('meeting_id'),
-      email: identity('email').toLowerCase(),
+      email: submittedEmail,
       first_name: text('first_name'),
       last_name: text('last_name'),
       host: false,

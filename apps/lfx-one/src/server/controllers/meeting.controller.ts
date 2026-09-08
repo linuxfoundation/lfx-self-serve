@@ -661,8 +661,12 @@ export class MeetingController {
       }
 
       // Group-added guests arrive carrying the v2 committee UID the picker works in; upstream
-      // stores a v1 SFID and derives `type: 'committee'` from it.
-      const resolvedRegistrants = await this.resolveRegistrantCommitteeUids(req, registrantData);
+      // stores a v1 SFID and derives `type: 'committee'` from it. The meeting is loaded first so a
+      // UID that isn't one of this meeting's own committees can be stripped before it's resolved —
+      // the client is the only source of that field, and nothing downstream re-checks it.
+      const hasCommitteeAttribution = registrantData.some((registrant: CreateMeetingRegistrantRequest) => !!registrant.committee_uid);
+      const allowedCommitteeUids = hasCommitteeAttribution ? await this.getMeetingCommitteeUids(req, uid) : new Set<string>();
+      const resolvedRegistrants = await this.resolveRegistrantCommitteeUids(req, registrantData, allowedCommitteeUids);
 
       // Process registrants with fail-fast for 403 errors
       // This will stop the processing if a 403 error is encountered
@@ -1512,7 +1516,7 @@ export class MeetingController {
     });
 
     try {
-      const { meetingType, projectName, maxCharacters, title: rawTitle, context: rawContext } = req.body;
+      const { meetingType, projectName: rawProjectName, maxCharacters, title: rawTitle, context: rawContext } = req.body;
       // A title / type / project are not guaranteed to exist: edit mode drops the rail's section
       // locking, so the organizer can request an agenda having just cleared the title, and the
       // client's project context resolves asynchronously. Only require enough signal to write a
@@ -1521,6 +1525,10 @@ export class MeetingController {
       // prompt, which is also why both are capped at the prompt budget.
       const title = MeetingController.readPromptField(rawTitle);
       const context = MeetingController.readPromptField(rawContext);
+      // Normalized on the same footing as the other two: it is interpolated into the prompt by
+      // `AiService.buildAgendaPrompt` and recorded in the operation log, and the route accepts direct
+      // clients under a 15mb body limit, so an unbounded value reaches both.
+      const projectName = MeetingController.readPromptField(rawProjectName);
 
       // Truncation is invisible to the organizer — the request still succeeds and returns an agenda
       // written against a shortened descriptor — so log it. Derived by comparing what arrived against
@@ -1531,6 +1539,7 @@ export class MeetingController {
       const truncated = [
         { field: 'title', raw: rawTitle, kept: title },
         { field: 'context', raw: rawContext, kept: context },
+        { field: 'projectName', raw: rawProjectName, kept: projectName },
       ].flatMap(({ field, raw, kept }) => {
         if (typeof raw !== 'string' || kept === undefined) {
           return [];
@@ -1853,6 +1862,29 @@ export class MeetingController {
   }
 
   /**
+   * The v2 UIDs of the committees actually attached to a meeting — the allowlist that
+   * `resolveRegistrantCommitteeUids` checks a client-supplied `committee_uid` against.
+   *
+   * A read failure resolves to an empty set rather than propagating. That fails closed: every
+   * committee attribution in the batch is stripped and those guests land as `direct`, which is the
+   * same fallback the resolver already documents for an unresolvable UID. The alternative — letting
+   * the error out — would fail the entire registrant batch on a transient read, and attribution is
+   * recoverable by re-saving in a way a half-applied guest list isn't.
+   */
+  private async getMeetingCommitteeUids(req: Request, meetingUid: string): Promise<Set<string>> {
+    try {
+      const meeting = await this.meetingService.getMeetingById(req, meetingUid, 'v1_meeting');
+      return new Set((meeting.committees || []).map((committee) => committee.uid));
+    } catch (error) {
+      logger.warning(req, 'get_meeting_committee_uids', 'Could not load meeting committees; dropping all committee attribution', {
+        meeting_id: meetingUid,
+        error: error instanceof Error ? error.message : String(error),
+      });
+      return new Set<string>();
+    }
+  }
+
+  /**
    * Rewrites each registrant's `committee_uid` from the v2 UID the client works in to the v1 SFID
    * upstream stores. Upstream derives `type: 'committee'` from that field, so dropping it (as the
    * BFF used to) silently persists a group-added guest as `direct` and loses attribution.
@@ -1862,9 +1894,31 @@ export class MeetingController {
    * key is deleted, not nulled: upstream's `CreateItxRegistrantRequestBody` declares `committee_uid`
    * as a non-nullable optional `string`, so an explicit `null` is off-contract even though omission
    * is fine. A `null` arriving from the client is dropped for the same reason.
+   *
+   * `allowedV2Uids` is the meeting's own `committees[].uid` set, and a UID outside it is stripped
+   * before any lookup. Without that gate the resolver would happily resolve any committee UID the
+   * caller cared to send — `resolveCommitteeV2UidsToV1Ids` goes over NATS with the BFF's own
+   * credentials and applies no authorization of its own — and upstream derives `type: 'committee'`
+   * from whatever SFID it receives. That would let a meeting editor attribute a guest to a committee
+   * the meeting has nothing to do with, inflating `committee_members_count` against it. Such a row
+   * would also read back unenriched, since `enrichCommitteeRegistrants` only maps the meeting's own
+   * committees, leaking the raw v1 SFID to the client.
    */
-  private async resolveRegistrantCommitteeUids(req: Request, registrants: CreateMeetingRegistrantRequest[]): Promise<CreateMeetingRegistrantRequest[]> {
-    const v2Uids = [...new Set(registrants.map((registrant) => registrant.committee_uid).filter((value): value is string => !!value))];
+  private async resolveRegistrantCommitteeUids(
+    req: Request,
+    registrants: CreateMeetingRegistrantRequest[],
+    allowedV2Uids: Set<string>
+  ): Promise<CreateMeetingRegistrantRequest[]> {
+    const requestedUids = [...new Set(registrants.map((registrant) => registrant.committee_uid).filter((value): value is string => !!value))];
+    const v2Uids = requestedUids.filter((uid) => allowedV2Uids.has(uid));
+
+    if (v2Uids.length < requestedUids.length) {
+      logger.warning(req, 'resolve_registrant_committee_uids', 'Dropped committee UIDs not associated with this meeting', {
+        requested: requestedUids.length,
+        associated: v2Uids.length,
+        unassociated: requestedUids.filter((uid) => !allowedV2Uids.has(uid)),
+      });
+    }
 
     // Still fall through to the map when there's nothing to resolve — a client that sent an explicit
     // `committee_uid: null` needs the key dropped, and only the map below does that.
@@ -1878,7 +1932,7 @@ export class MeetingController {
     }
 
     return registrants.map((registrant) => {
-      const v1Sfid = registrant.committee_uid ? v2ToV1Map.get(registrant.committee_uid) : undefined;
+      const v1Sfid = registrant.committee_uid && allowedV2Uids.has(registrant.committee_uid) ? v2ToV1Map.get(registrant.committee_uid) : undefined;
 
       if (v1Sfid) {
         return { ...registrant, committee_uid: v1Sfid };

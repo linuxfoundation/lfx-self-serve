@@ -933,7 +933,9 @@ export class MeetingService {
       this.toUpstreamRegistrantBody(updateData)
     );
 
-    return this.fromUpstreamRegistrant(updatedRegistrant);
+    // The submitted payload underlies the response: on a body-less 2xx it is the only truthful
+    // description of what upstream now stores, and where upstream did answer, its values win.
+    return { ...updateData, ...this.fromUpstreamRegistrant(updatedRegistrant) } as MeetingRegistrant;
   }
 
   /**
@@ -2267,9 +2269,16 @@ export class MeetingService {
    * Absent stays absent rather than becoming `null` — the app's spelling is only introduced for a
    * value upstream actually returned, so a missing field reads as "the write response didn't say"
    * instead of "upstream stored nothing".
+   *
+   * A body-less 2xx maps to no fields rather than throwing. `ApiClientService` turns an empty
+   * response body into `null` (`data = text ? JSON.parse(text) : null`), and destructuring that
+   * would throw *after* the write had already succeeded — turning a successful registrant edit into
+   * a failed batch item under `processRegistrantOperations`' `Promise.allSettled`. The response
+   * documented above is a populated body, so this is defence rather than an expectation; callers
+   * that need a value here already have to treat every field as "the write response didn't say".
    */
-  private fromUpstreamRegistrant(upstream: Record<string, unknown>): MeetingRegistrant {
-    const { org, profile_picture, occurrence, modified_at, ...rest } = upstream;
+  private fromUpstreamRegistrant(upstream: Record<string, unknown> | null | undefined): MeetingRegistrant {
+    const { org, profile_picture, occurrence, modified_at, ...rest } = upstream ?? {};
 
     return {
       ...rest,
