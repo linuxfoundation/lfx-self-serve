@@ -5,7 +5,7 @@ import '@angular/compiler';
 
 import express from 'express';
 import type { Server } from 'node:http';
-import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, it, vi } from 'vitest';
+import { afterAll, beforeAll, beforeEach, describe, expect, it, vi } from 'vitest';
 
 const { listClaGroups, getPdfUrl } = vi.hoisted(() => ({ listClaGroups: vi.fn(), getPdfUrl: vi.fn() }));
 
@@ -48,9 +48,8 @@ function ok(_req: express.Request, res: express.Response): void {
 }
 
 // Mirrors orgsRouter's `router.use('/:orgUid/lens', requireOrgLensAccess)`, which shares the
-// /api/orgs mount and matches the CLA path. Mounting it here in the same order as server.ts is
-// what makes the flag-off case a real assertion: with the CLA router mounted second, this guard
-// would run first and the module would answer 403 rather than 409.
+// /api/orgs mount and matches the CLA path without owning a route for it. Mounted here in the
+// same order as server.ts so the sibling-path case below asserts against the real arrangement.
 const genericLensGuard = vi.fn((_req: express.Request, _res: express.Response, next: express.NextFunction) => next());
 
 beforeAll(async () => {
@@ -73,16 +72,11 @@ afterAll(async () => {
 
 beforeEach(() => {
   vi.clearAllMocks();
-  process.env['LFX_ORG_LENS_CLA_M3_ENABLED'] = 'true';
   listClaGroups.mockImplementation(ok);
   getPdfUrl.mockImplementation((_req: express.Request, res: express.Response) => {
     res.json({ url: 'https://s3.example.org/ccla.pdf' });
   });
   getAccessAwareOrgs.mockResolvedValue({ resolved: new Map([[GRANTED, { roleSource: 'direct-writer' }]]), upstreamFailed: false });
-});
-
-afterEach(() => {
-  delete process.env['LFX_ORG_LENS_CLA_M3_ENABLED'];
 });
 
 describe('org-clas router', () => {
@@ -101,28 +95,14 @@ describe('org-clas router', () => {
     expect(await res.json()).toEqual({ orgUid: GRANTED, claGroups: [] });
   });
 
-  // The client flag only hides the page; this is what makes the dark launch a real kill switch.
-  // The generic-guard assertion is the ordering regression test — see genericLensGuard above.
-  it('refuses the list for a granted org when the server flag is off, before any grant lookup', async () => {
-    delete process.env['LFX_ORG_LENS_CLA_M3_ENABLED'];
+  // This router mounts on the shared /api/orgs prefix ahead of orgsRouter, so it must claim the
+  // CLA paths and nothing else. If it ever widened, sibling lens paths would stop reaching the
+  // router that owns them.
+  it('leaves sibling org-lens paths to the router that owns them', async () => {
+    await fetch(`${baseUrl}/api/orgs/${GRANTED}/lens/memberships`);
 
-    const res = await fetch(`${baseUrl}/api/orgs/${GRANTED}/lens/cla-groups`);
-
-    expect(res.status).toBe(409);
-    expect(listClaGroups).not.toHaveBeenCalled();
-    expect(getAccessAwareOrgs).not.toHaveBeenCalled();
-    expect(genericLensGuard).not.toHaveBeenCalled();
-  });
-
-  // The gate is scoped to the CLA prefix precisely so mounting this router first cannot
-  // 409 the rest of the /api/orgs family.
-  it('leaves sibling org-lens paths untouched when the server flag is off', async () => {
-    delete process.env['LFX_ORG_LENS_CLA_M3_ENABLED'];
-
-    const res = await fetch(`${baseUrl}/api/orgs/${GRANTED}/lens/memberships`);
-
-    expect(res.status).not.toBe(409);
     expect(genericLensGuard).toHaveBeenCalled();
+    expect(listClaGroups).not.toHaveBeenCalled();
   });
 
   it('refuses the signed-document url for an org the caller holds no grant on', async () => {
@@ -138,15 +118,5 @@ describe('org-clas router', () => {
     expect(res.status).toBe(200);
     expect(getPdfUrl).toHaveBeenCalled();
     expect(await res.json()).toEqual({ url: 'https://s3.example.org/ccla.pdf' });
-  });
-
-  it('refuses the signed-document url when the server flag is off, before any grant lookup', async () => {
-    delete process.env['LFX_ORG_LENS_CLA_M3_ENABLED'];
-
-    const res = await fetch(`${baseUrl}/api/orgs/${GRANTED}/lens/cla-groups/signature-uuid-1/pdf-url`);
-
-    expect(res.status).toBe(409);
-    expect(getPdfUrl).not.toHaveBeenCalled();
-    expect(getAccessAwareOrgs).not.toHaveBeenCalled();
   });
 });

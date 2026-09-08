@@ -26,10 +26,12 @@ export const ORG_LENS_ROI_ENABLED_FLAG = 'org-lens-roi-enabled';
  * milestone-gate precedent. Default false: a missing LaunchDarkly flag keeps the
  * module invisible. The route guard fails closed (unlike `myClasEnabledGuard`).
  *
- * Client half of a two-flag gate — evaluated through `FeatureFlagService.getBooleanFlag`,
- * which is the Web SDK and never runs server-side. It hides the route and nav only;
- * `ServerFeatureFlag.OrgLensClaM3` is what closes the BFF. Both must be on for the module
- * to work, and the server flag must be rolled out first (see its doc for why).
+ * Evaluated through `FeatureFlagService.getBooleanFlag`, which is the Web SDK and never runs
+ * server-side, so this hides the route and nav without closing the BFF. That is deliberate and
+ * matches M1/M2: the module's routes still require an Org Lens grant, and the data they read is
+ * already reachable through the ACS-authorized EasyCLA APIs and the Corporate CLA Console, so a
+ * second env-var gate would add a GitOps round-trip to every rollout without withholding
+ * anything. Revisit if M3 write paths (sign, managers, approval list) land on these routes.
  */
 export const ORG_LENS_CLA_M3_ENABLED_FLAG = 'org-lens-cla-m3-enabled';
 /**
