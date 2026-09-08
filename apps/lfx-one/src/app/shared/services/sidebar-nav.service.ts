@@ -9,6 +9,7 @@ import {
   DOCUMENT_LABEL,
   MAILING_LIST_LABEL,
   MARKETING_OPS_FGA_ENABLED_FLAG,
+  MENTORSHIP_ENABLED_FLAG,
   MKTG_OS_AGENTS_ENABLED_FLAG,
   MKTG_OS_AGENTS_LABEL,
   ORG_LENS_CLA_M3_ENABLED_FLAG,
@@ -51,6 +52,8 @@ export class SidebarNavService {
   private readonly isOrgLensEnabled = this.featureFlagService.getBooleanFlag(ORG_LENS_ENABLED_FLAG, false);
   /** Dark-launch gate for the Akrites admin dashboard; hides the Security nav section when off. */
   private readonly isAkritesEnabled = this.featureFlagService.getBooleanFlag(AKRITES_ENABLED_FLAG, false);
+  /** Dark-launch gate for the Mentorship module; hides the Mentorship nav section when off, matching `mentorshipEnabledGuard`. */
+  private readonly isMentorshipEnabled = this.featureFlagService.getBooleanFlag(MENTORSHIP_ENABLED_FLAG, false);
   /** Dark-launch gate for the Marketing OS marketplace; hides the nav item on project and foundation lenses when off. */
   private readonly isMktgOsAgentsEnabled = this.featureFlagService.getBooleanFlag(MKTG_OS_AGENTS_ENABLED_FLAG, false);
   /** Dark-launch gate for the Org Lens ROI Metrics page; hides its org-lens nav entry when off. */
@@ -120,10 +123,18 @@ export class SidebarNavService {
     return [...items.slice(0, afterProjects), this.orgRoiNavItem, ...items.slice(afterProjects)];
   });
 
-  // Me Lens nav with feature-flagged sections stripped (Security/Akrites is dark-launched).
-  private readonly visibleMeLensItems = computed((): SidebarMenuItem[] =>
-    this.isAkritesEnabled() ? this.meLensItems : this.meLensItems.filter((item) => item.label !== 'Security')
-  );
+  // Me Lens nav with feature-flagged sections stripped (Security/Akrites and Mentorship are dark-launched).
+  private readonly visibleMeLensItems = computed((): SidebarMenuItem[] => {
+    const hiddenSections = new Set<string>();
+    if (!this.isAkritesEnabled()) {
+      hiddenSections.add('Security');
+    }
+    if (!this.isMentorshipEnabled()) {
+      hiddenSections.add('Mentorship');
+    }
+
+    return hiddenSections.size > 0 ? this.meLensItems.filter((item) => !hiddenSections.has(item.label)) : this.meLensItems;
+  });
 
   // --- Me Lens Items ---
   // Crowdfunding is a top-level section (peer of My Engagement / My Growth), with its

@@ -4,6 +4,7 @@
 import { signal } from '@angular/core';
 import { TestBed } from '@angular/core/testing';
 import {
+  MENTORSHIP_ENABLED_FLAG,
   MKTG_OS_AGENTS_ENABLED_FLAG,
   MKTG_OS_AGENTS_LABEL,
   ORG_LENS_CLA_M3_ENABLED_FLAG,
@@ -29,6 +30,7 @@ describe('SidebarNavService', () => {
   const orgLensEnabled = signal(false);
   const orgEasyclaEnabled = signal(false);
   const orgRoiEnabled = signal(false);
+  const mentorshipEnabled = signal(false);
   const hasFullFoundationAccess = signal(true);
   const currentPersona = signal('executive-director');
 
@@ -45,6 +47,7 @@ describe('SidebarNavService', () => {
     orgLensEnabled.set(false);
     orgEasyclaEnabled.set(false);
     orgRoiEnabled.set(false);
+    mentorshipEnabled.set(false);
     hasFullFoundationAccess.set(true);
     currentPersona.set('executive-director');
 
@@ -59,6 +62,7 @@ describe('SidebarNavService', () => {
               if (key === ORG_LENS_ENABLED_FLAG) return orgLensEnabled;
               if (key === ORG_LENS_CLA_M3_ENABLED_FLAG) return orgEasyclaEnabled;
               if (key === ORG_LENS_ROI_ENABLED_FLAG) return orgRoiEnabled;
+              if (key === MENTORSHIP_ENABLED_FLAG) return mentorshipEnabled;
               return signal(false);
             }),
           },
@@ -189,6 +193,28 @@ describe('SidebarNavService', () => {
     );
     expect(engagementLabels.indexOf('EasyCLA')).toBe(engagementLabels.indexOf('Code Contributions') + 1);
     expect(engagementLabels.indexOf('Events')).toBe(engagementLabels.indexOf('EasyCLA') + 1);
+  });
+
+  it('hides the Mentorship section from the Me lens while its flag is off', () => {
+    activeLens.set('me');
+
+    const items = TestBed.inject(SidebarNavService).sidebarItems();
+
+    expect(labels(items)).not.toContain('Mentorship');
+    expect(findByLink(sectionItems(items, 'Mentorship'), '/mentorship/admin')).toBeUndefined();
+  });
+
+  it('shows the Mentorship section on the Me lens when its flag is on', () => {
+    activeLens.set('me');
+    mentorshipEnabled.set(true);
+
+    const items = TestBed.inject(SidebarNavService).sidebarItems();
+
+    // Akrites stays off here: the two dark-launch gates on this lens must filter independently.
+    expect(labels(items)).not.toContain('Security');
+    expect(findByLink(sectionItems(items, 'Mentorship'), '/mentorship/admin')).toEqual(
+      expect.objectContaining({ label: 'Admin', routerLink: '/mentorship/admin' })
+    );
   });
 
   it('keeps ROI after Projects while EasyCLA stays in the section when both flags are on', () => {
