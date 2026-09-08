@@ -9,7 +9,7 @@ import { ButtonComponent } from '@components/button/button.component';
 import { MyEvent, TravelFundAboutMe, TravelFundApplication, TravelFundExpenses, TravelFundStep } from '@lfx-one/shared/interfaces';
 import { MessageService } from 'primeng/api';
 import { DynamicDialogConfig, DynamicDialogRef } from 'primeng/dynamicdialog';
-import { catchError, of } from 'rxjs';
+import { catchError, finalize, of } from 'rxjs';
 import { ApplicationSuccessComponent } from '../application-success/application-success.component';
 import { EventSelectionComponent } from '../event-selection/event-selection.component';
 import { StepIndicatorComponent } from '../step-indicator/step-indicator.component';
@@ -51,6 +51,8 @@ export class TravelFundApplicationDialogComponent {
   protected submitting = signal(false);
   protected submitted = signal(false);
   protected submittedEventName = signal('');
+  /** True while resolving a deep-linked `?event=<id>` — gates the select-event step so it doesn't flash before snapping to Terms. */
+  protected readonly resolvingDeepLink = signal(false);
 
   protected readonly isNextDisabled = computed(() => {
     if (this.step() === 'select-event') return !this.selectedEvent();
@@ -150,14 +152,31 @@ export class TravelFundApplicationDialogComponent {
     const eventId = (this.config.data?.initialEventId as string | null | undefined) || undefined;
     if (!eventId) return;
 
+    this.resolvingDeepLink.set(true);
     this.eventsService
       .getMyEvents({ eventId, isPast: false, registeredOnly: true, isTravelFundRequestAccepted: true, excludePastTravelFundDeadline: true })
       .pipe(
-        catchError(() => of(null)),
+        catchError((error) => {
+          console.error('Failed to resolve deep-linked travel fund request event:', error);
+          return of('error' as const);
+        }),
+        finalize(() => this.resolvingDeepLink.set(false)),
         takeUntilDestroyed(this.destroyRef)
       )
       .subscribe((response) => {
-        const event = response?.data[0];
+        // The user may already have picked an event manually while this was in flight — don't clobber it.
+        if (this.step() !== 'select-event' || this.selectedEvent()) return;
+
+        if (response === 'error') {
+          this.messageService.add({
+            severity: 'error',
+            summary: 'Error',
+            detail: 'Something went wrong while loading your events. Please try again.',
+          });
+          return;
+        }
+
+        const event = response.data[0];
         if (event) {
           this.selectedEvent.set(event);
           this.step.set('terms');

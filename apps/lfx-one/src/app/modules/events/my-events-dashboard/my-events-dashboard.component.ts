@@ -1,14 +1,20 @@
 // Copyright The Linux Foundation and each contributor to LFX.
 // SPDX-License-Identifier: MIT
 
-import { Component, computed, effect, inject, Signal, signal, viewChild } from '@angular/core';
+import { afterNextRender, Component, computed, effect, inject, Injector, Signal, signal, viewChild } from '@angular/core';
 import { toSignal } from '@angular/core/rxjs-interop';
 import { ActivatedRoute, Router } from '@angular/router';
 import { ButtonComponent } from '@components/button/button.component';
 import { CardComponent } from '@components/card/card.component';
 import { CardTabsBarComponent } from '@components/card-tabs-bar/card-tabs-bar.component';
 import { ToastMessageComponent } from '@components/toast-message/toast-message.component';
-import { DEFAULT_MY_EVENTS_TAB_ID, MY_EVENT_STATUS_OPTIONS, VALID_MY_EVENTS_TAB_IDS, VISA_REQUEST_STATUS_OPTIONS } from '@lfx-one/shared/constants';
+import {
+  DEFAULT_MY_EVENTS_TAB_ID,
+  MY_EVENT_STATUS_OPTIONS,
+  MY_EVENTS_TABS,
+  VALID_MY_EVENTS_TAB_IDS,
+  VISA_REQUEST_STATUS_OPTIONS,
+} from '@lfx-one/shared/constants';
 import { EventTabId, FilterOption, FilterPillOption } from '@lfx-one/shared/interfaces';
 import { OpenIntercomDirective } from '@shared/directives/open-intercom.directive';
 import { MessageService } from 'primeng/api';
@@ -44,7 +50,11 @@ export class MyEventsDashboardComponent {
   private readonly messageService = inject(MessageService);
   private readonly route = inject(ActivatedRoute);
   private readonly router = inject(Router);
+  private readonly injector = inject(Injector);
   private readonly eventsListRef = viewChild(EventsListComponent);
+
+  /** Single subscription to the route's query params — activeTab and activeEventId both derive from it. */
+  private readonly queryParamMap = toSignal(this.route.queryParamMap, { initialValue: this.route.snapshot.queryParamMap });
 
   /** Guards the deep-linked `?event=` auto-open so it fires at most once per page load. */
   private readonly deepLinkEventConsumed = signal(false);
@@ -53,12 +63,7 @@ export class MyEventsDashboardComponent {
   /** Event id from a deep link (`?tab=visa-letters&event=<id>`); null once the URL is stripped post-auto-open, or absent. */
   protected readonly activeEventId: Signal<string | null> = this.initActiveEventId();
 
-  protected readonly tabOptions: FilterPillOption[] = [
-    { id: 'upcoming', label: 'Upcoming' },
-    { id: 'past', label: 'Past' },
-    { id: 'visa-letters', label: 'Visa Letters' },
-    { id: 'travel-funding', label: 'Travel Funding' },
-  ];
+  protected readonly tabOptions: FilterPillOption[] = MY_EVENTS_TABS;
   protected readonly selectedFoundation = signal<string | null>(null);
   protected readonly selectedRole = signal<string | null>(null);
   protected readonly selectedStatus = signal<string | null>(null);
@@ -93,14 +98,22 @@ export class MyEventsDashboardComponent {
 
   public constructor() {
     // Auto-open the request dialog for a deep link (`?tab=visa-letters&event=<id>`), once
-    // isCreateEnabled resolves. Guarded so switching tabs away and back never reopens it.
+    // isCreateEnabled resolves. Effects run before child components render on the same pass, so
+    // the request-list child for this tab may not exist yet when these guards first pass — the
+    // actual open is deferred to afterNextRender (after children commit) and only marked consumed
+    // once it actually opens, so a still-unready child causes a silent retry, not a silent no-op.
     effect(() => {
       if (this.deepLinkEventConsumed()) return;
       if (!this.isRequestTab() || !this.activeEventId() || !this.isCreateEnabled()) return;
 
-      this.deepLinkEventConsumed.set(true);
-      void this.router.navigate([], { relativeTo: this.route, queryParams: { event: null }, queryParamsHandling: 'merge', replaceUrl: true });
-      this.openCurrentRequestDialog();
+      afterNextRender(
+        () => {
+          if (this.deepLinkEventConsumed() || !this.openCurrentRequestDialog()) return;
+          this.deepLinkEventConsumed.set(true);
+          void this.router.navigate([], { relativeTo: this.route, queryParams: { event: null }, queryParamsHandling: 'merge', replaceUrl: true });
+        },
+        { injector: this.injector }
+      );
     });
   }
 
@@ -123,6 +136,8 @@ export class MyEventsDashboardComponent {
   protected onActiveTabChange(tab: string): void {
     if (!VALID_MY_EVENTS_TAB_IDS.has(tab as EventTabId)) return;
 
+    // Deliberate replaceUrl, matching the deep-link strip above and OrgEventsDashboardComponent's
+    // tab pattern — manual tab switches don't push a history entry.
     void this.router.navigate([], {
       relativeTo: this.route,
       queryParams: { tab: tab === DEFAULT_MY_EVENTS_TAB_ID ? null : tab, event: null },
@@ -137,9 +152,10 @@ export class MyEventsDashboardComponent {
     this.selectedSearchQuery.set('');
   }
 
-  protected openCurrentRequestDialog(): void {
-    if (!this.isCreateEnabled()) return;
-    this.eventsListRef()?.openCurrentRequestDialog();
+  /** False when isCreateEnabled is false or the active tab's request-list child isn't rendered yet. */
+  protected openCurrentRequestDialog(): boolean {
+    if (!this.isCreateEnabled()) return false;
+    return this.eventsListRef()?.openCurrentRequestDialog() ?? false;
   }
 
   protected resetFilters(): void {
@@ -150,16 +166,14 @@ export class MyEventsDashboardComponent {
   }
 
   private initActiveTab(): Signal<EventTabId> {
-    const queryParamMap = toSignal(this.route.queryParamMap, { initialValue: this.route.snapshot.queryParamMap });
     return computed(() => {
-      const raw = queryParamMap().get('tab');
+      const raw = this.queryParamMap().get('tab');
       return raw && VALID_MY_EVENTS_TAB_IDS.has(raw as EventTabId) ? (raw as EventTabId) : DEFAULT_MY_EVENTS_TAB_ID;
     });
   }
 
   private initActiveEventId(): Signal<string | null> {
-    const queryParamMap = toSignal(this.route.queryParamMap, { initialValue: this.route.snapshot.queryParamMap });
-    return computed(() => queryParamMap().get('event'));
+    return computed(() => this.queryParamMap().get('event'));
   }
 
   private initIsCreateEnabled(): Signal<boolean> {

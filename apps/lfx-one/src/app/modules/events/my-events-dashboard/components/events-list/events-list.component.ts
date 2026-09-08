@@ -93,9 +93,9 @@ export class EventsListComponent {
       });
   }
 
-  /** Delegates to the currently rendered EventRequestListComponent (visa-letters / travel-funding tabs). */
-  public openCurrentRequestDialog(): void {
-    this.requestListRef()?.openApplicationDialog();
+  /** Delegates to the currently rendered EventRequestListComponent (visa-letters / travel-funding tabs). False if it isn't rendered yet. */
+  public openCurrentRequestDialog(): boolean {
+    return this.requestListRef()?.openApplicationDialog() ?? false;
   }
 
   protected onUpcomingPageChange(event: PageChangeEvent): void {

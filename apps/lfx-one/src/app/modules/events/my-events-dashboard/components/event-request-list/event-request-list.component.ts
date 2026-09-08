@@ -80,7 +80,7 @@ export class EventRequestListComponent {
       });
   }
 
-  public openApplicationDialog(): void {
+  public openApplicationDialog(): boolean {
     this.dialogService.open(this.config().dialogComponent, {
       header: this.config().dialogHeader,
       width: '800px',
@@ -89,6 +89,7 @@ export class EventRequestListComponent {
       closeOnEscape: true,
       data: { initialEventId: this.initialEventId() },
     });
+    return true;
   }
 
   protected onPageChange(event: { first: number; rows: number }): void {
