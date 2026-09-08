@@ -26,8 +26,8 @@ Before this work, the only boot-related log line was at `debug` level and never
 emitted in any environment (`LOG_LEVEL` defaults to `info`), so the ~4 minute
 figure was never actually measured against current infrastructure — it
 predates the dedicated `self-serve` Karpenter NodePool
-([#1428](https://github.com/linuxfoundation/lfx-self-serve/pull/1428), merged
-2026-08-29), which changed both the node pool and instance type
+([`lfx-v2-argocd#1428`](https://github.com/linuxfoundation/lfx-v2-argocd/pull/1428),
+merged 2026-08-29), which changed both the node pool and instance type
 (`general-purpose-large`/`t3a.xlarge` → `self-serve`/`m6a.xlarge`).
 
 ## What was instrumented
@@ -53,36 +53,46 @@ nodes that already had the image cached ("warm-node"), one from a rollout ~4
 minutes earlier that required an actual image pull on those same nodes
 ("cold-pull").
 
-| Phase                                                 | Warm-node (n=3) | Cold-pull (n=1)                     | Source                                                                               |
-| ----------------------------------------------------- | --------------- | ----------------------------------- | ------------------------------------------------------------------------------------ |
-| otel import (`otel.mjs` load + SDK start)             | 357–384ms       | 552ms                               | `[otel] import complete` `elapsed_ms`                                                |
-| Server module-graph eval (`engine_ms − elapsed_ms`)   | 2.47–2.70s      | 5.40s                               | `server_startup` `engine_ms` minus otel `elapsed_ms`                                 |
-| Angular engine construction (`routes_ms − engine_ms`) | 31–49ms         | 33ms                                | `server_startup` fields                                                              |
-| Router mounting + middleware (`boot_ms − routes_ms`)  | 12–20ms         | 14ms                                | `server_startup` fields                                                              |
-| **In-process boot total (`boot_ms`)**                 | **2.89–3.13s**  | **6.00s**                           | `server_startup` `boot_ms`                                                           |
-| Container `Started` → node process start (residual)   | ~1.9–2.8s       | ~2.8s                               | container `Started` event timestamp vs. (`server_startup` log timestamp − `boot_ms`) |
-| Image pull (`Pulling` → `Pulled`)                     | 0 (cache hit)   | 31.3–33.1s (n=3 pods, same rollout) | kubelet `Pulled` event message                                                       |
-| **Scheduled → app listening, end to end**             | **~3.7–5.8s**   | **~42s**                            | `Scheduled`/`Started` events → `server_startup` timestamp                            |
+| Phase                                                                                    | Warm-node (n=3) | Cold-pull (n=1)                     | Source                                                                               |
+| ---------------------------------------------------------------------------------------- | --------------- | ----------------------------------- | ------------------------------------------------------------------------------------ |
+| otel import (`otel.mjs` load + SDK start)                                                | 357–384ms       | 552ms                               | `[otel] import complete` `elapsed_ms`                                                |
+| Module-graph eval + Angular engine + Express app construction (`engine_ms − elapsed_ms`) | 2.47–2.70s      | 5.40s                               | `server_startup` `engine_ms` minus otel `elapsed_ms`                                 |
+| Router mounting + middleware (`routes_ms − engine_ms`)                                   | 31–49ms         | 33ms                                | `server_startup` fields                                                              |
+| Listen startup / socket bind (`boot_ms − routes_ms`)                                     | 12–20ms         | 14ms                                | `server_startup` fields                                                              |
+| **In-process boot total (`boot_ms`)**                                                    | **2.89–3.13s**  | **6.00s**                           | `server_startup` `boot_ms`                                                           |
+| Container `Started` → node process start (residual)                                      | ~1.9–2.8s       | ~2.8s                               | container `Started` event timestamp vs. (`server_startup` log timestamp − `boot_ms`) |
+| Image pull (`Pulling` → `Pulled`)                                                        | 0 (cache hit)   | 31.3–33.1s (n=3 pods, same rollout) | kubelet `Pulled` event message                                                       |
+| **Scheduled → app listening, end to end**                                                | **~3.7–5.8s**   | **~42s**                            | `Scheduled`/`Started` events → `server_startup` timestamp                            |
 
 Each row is the independent min/max across its sample set, not a per-sample
 sum — rows won't add up column-by-column. The end-to-end row is measured
-directly from events, not derived by summing the phase rows above it.
+directly from events, not derived by summing the phase rows above it. The
+three in-process marks (`server.ts:106,593,717`) are captured after
+construction/mounting work completes, not before it — `engine_ms` includes
+`new AngularNodeAppEngine()` and `express()` construction on top of the
+module-graph eval that precedes them, `routes_ms` includes all router and
+middleware mounting (not Angular engine construction alone), and `boot_ms`
+is the `listen()` callback firing, i.e. socket-bind time, not router
+mounting.
 
 **Findings:**
 
-- The in-process boot (module-graph eval + Angular engine construction +
-  router mounting + otel import) is **3 seconds on a warm node, 6 seconds on a
-  node that just pulled a fresh image** — the 2x gap is consistent with CPU
-  contention on a newly-scheduled node, not code cost. Almost all of it is
-  module-graph evaluation (imports), not otel and not Angular/router setup —
-  Angular engine construction and router mounting are each under 50ms and are
-  not meaningful optimization targets.
+- The in-process boot (module-graph eval + engine/app construction + router
+  mounting + listen startup + otel import) is **3 seconds on a warm node, 6
+  seconds on a node that just pulled a fresh image** — the 2x gap is
+  consistent with CPU contention on a newly-scheduled node, not code cost.
+  Almost all of it is the first phase — module-graph evaluation plus Angular
+  engine and Express app construction — not otel and not router
+  mounting/listen startup, which are each under 50ms and are not meaningful
+  optimization targets. This instrumentation can't further isolate
+  module-graph eval from engine/app construction within that first phase;
+  see the caveat above.
 - The corepack/yarn/pm2 launch overhead between the container's `Started`
   event and the Node process actually beginning (`performance.timeOrigin`) is
   consistently ~2–3 seconds, in both warm and cold-pull cases.
-- Image pull, post-#1428, now averages 35.3s (n=24, see
+- Image pull, post-`lfx-v2-argocd#1428`, now averages 35.3s (n=24, see
   [issue #1378 comment](https://github.com/linuxfoundation/lfx-self-serve/issues/1378)
-  for the full before/after comparison; it was 71.0s, n=86, pre-#1428).
+  for the full before/after comparison; it was 71.0s, n=86, pre-`lfx-v2-argocd#1428`).
 - **End to end, from `Scheduled` to the app accepting traffic, both observed
   cases were under 45 seconds** — nowhere near the 4-minute figure the probe
   budget assumes.
@@ -102,7 +112,8 @@ source of a multi-minute cold start, and it is the piece that would need a
 live-captured sample (watching for a `karpenter.sh` node-provisioning event
 followed by a first-ever pod schedule onto that node) to quantify. Until that
 sample exists, whether the ~4 minute figure is (a) stale, measured before
-#1428, or (b) still accurate for the specific case of a brand-new node, is an
+`lfx-v2-argocd#1428`, or (b) still accurate for the specific case of a
+brand-new node, is an
 open question this analysis cannot resolve from existing telemetry alone.
 
 ## Reproduction
@@ -141,8 +152,8 @@ Both acceptance criteria are partially addressed:
 `CrashLoopBackOff`-risk change — see the gating in the parent plan), capture at
 least one sample of a genuine Karpenter node-provisioning event to confirm
 whether that step, not anything measured here, is what the 310s budget is
-actually covering. If it turns out the budget is inherited from before #1428
-and no longer reflects reality, tightening it (with the arithmetic comment at
+actually covering. If it turns out the budget is inherited from before
+`lfx-v2-argocd#1428` and no longer reflects reality, tightening it (with the arithmetic comment at
 `values.yaml:199-200` updated in the same change) is low-risk and would
 directly shrink the three-sequential-cold-starts-per-rollout window that
 #1375 traded for. If new-node provisioning genuinely does take minutes, that

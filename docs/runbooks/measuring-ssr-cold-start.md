@@ -20,8 +20,13 @@ samples, not a live figure.
 kubectl -n ui get pods -l app.kubernetes.io/name=lfx-self-serve \
   --sort-by=.metadata.creationTimestamp
 
-# 2. Pull the pod-level events (Scheduled/Pulling/Pulled/Created/Started):
-kubectl -n ui describe pod <pod-name> | sed -n '/Events:/,$p'
+# 2. Pull the pod-level events (Scheduled/Pulling/Pulled/Created/Started).
+#    Use `get events`, not `describe pod` — describe renders event age
+#    relative to "now" (e.g. "2m"), which drifts as soon as any time has
+#    passed and can't be joined accurately to the absolute log timestamps
+#    below. `get events` exposes the actual firstTimestamp/lastTimestamp.
+kubectl -n ui get events --field-selector involvedObject.name=<pod-name> \
+  -o json | jq -r '.items[] | "\(.lastTimestamp) \(.reason) \(.message)"'
 
 # 3. Pull the two boot log lines (requires the pod's Datadog tags/name):
 #    - "server startup: Node Express server started" (has engine_ms/routes_ms/boot_ms)
