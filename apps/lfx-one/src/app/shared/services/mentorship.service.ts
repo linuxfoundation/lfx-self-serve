@@ -48,7 +48,8 @@ export class MentorshipService {
   }
 
   public enrollProgram(form: MentorshipEnrollForm): Observable<MentorshipProgram> {
-    // Built field by field rather than spread, so UI-only wizard state stays out of the body by default.
+    // Built field by field rather than spread: `logoPreviewUrl` is a browser-only `blob:` URL, and
+    // an allowlist keeps any future UI-only wizard state out of the request body by default.
     const request: MentorshipEnrollRequest = {
       importProgramId: form.importProgramId,
       name: form.name,
@@ -59,6 +60,7 @@ export class MentorshipService {
       websiteUrl: form.websiteUrl,
       ciiProjectId: form.ciiProjectId,
       codeOfConductUrl: form.codeOfConductUrl,
+      logoFileName: form.logoFileName,
       skills: form.skills,
       terms: form.terms,
       prerequisites: form.prerequisites,

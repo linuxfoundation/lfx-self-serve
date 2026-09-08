@@ -34,7 +34,7 @@ import { getMentorshipEnrollStepErrors, isMentorshipTermsAccepted } from '@lfx-o
 import { MentorshipService } from '@services/mentorship.service';
 import { ConfirmationService, MessageService } from 'primeng/api';
 import { ConfirmDialogModule } from 'primeng/confirmdialog';
-import { catchError, map, Observable, of, startWith, switchMap, take, tap } from 'rxjs';
+import { map, startWith, take, tap } from 'rxjs';
 
 import { EnrollDetailsStepComponent } from './components/enroll-details-step/enroll-details-step.component';
 import { EnrollPrerequisitesStepComponent } from './components/enroll-prerequisites-step/enroll-prerequisites-step.component';
@@ -81,6 +81,8 @@ export class EnrollProgramComponent {
     websiteUrl: new FormControl('', { nonNullable: true }),
     ciiProjectId: new FormControl('', { nonNullable: true }),
     codeOfConductUrl: new FormControl('', { nonNullable: true }),
+    logoFileName: new FormControl('', { nonNullable: true }),
+    logoPreviewUrl: new FormControl('', { nonNullable: true }),
     skills: new FormControl<string[]>([], { nonNullable: true }),
     terms: new FormControl<MentorshipProgramTerm[]>(createEmptyMentorshipEnrollForm().terms, { nonNullable: true }),
     prerequisites: new FormControl<MentorshipPrerequisite[]>(createEmptyMentorshipEnrollForm().prerequisites, { nonNullable: true }),
@@ -211,6 +213,7 @@ export class EnrollProgramComponent {
       acceptButtonStyleClass: 'p-button-sm p-button-danger',
       rejectButtonStyleClass: 'p-button-secondary p-button-sm p-button-outlined',
       accept: () => {
+        this.revokeLogoPreview();
         void this.router.navigate(['/mentorship/admin']);
       },
     });
@@ -230,6 +233,7 @@ export class EnrollProgramComponent {
       .subscribe({
         next: () => {
           this.submitting.set(false);
+          this.revokeLogoPreview();
           this.messageService.add({
             severity: 'success',
             summary: 'Enrollment submitted',
@@ -278,6 +282,13 @@ export class EnrollProgramComponent {
   private scrollToTop(): void {
     if (isPlatformBrowser(this.platformId)) {
       window.scrollTo(0, 0);
+    }
+  }
+
+  private revokeLogoPreview(): void {
+    const url = this.form.controls.logoPreviewUrl.value;
+    if (url.startsWith('blob:')) {
+      URL.revokeObjectURL(url);
     }
   }
 }

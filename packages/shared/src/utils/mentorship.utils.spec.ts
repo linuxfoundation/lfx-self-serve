@@ -19,6 +19,7 @@ import {
   isMentorshipEnrollStepValid,
   isMentorshipHttpUrl,
   isMentorshipIsoDate,
+  isMentorshipLogoFileName,
   isMentorshipTermsAccepted,
   matchesMentorshipPersonSearch,
   mentorshipMonthYearToStartDate,
@@ -38,6 +39,7 @@ describe('getMentorshipEnrollStepErrors', () => {
     expect(errors.technologies).toBe('Add at least one technology.');
     expect(errors.description).toBe('Program description is required.');
     expect(errors.repositoryUrl).toBe("A link to the program's repository is required.");
+    expect(errors.logoFileName).toBe('Logo is required.');
   });
 
   it('gives a new enroll form a term that still passes setup date checks', () => {
@@ -108,6 +110,7 @@ describe('getMentorshipEnrollStepErrors', () => {
     form.technologies = ['GO'];
     form.description = '<p>Build a pipeline.</p>';
     form.repositoryUrl = 'https://github.com/lfenergy/gridflow';
+    form.logoFileName = 'logo.png';
 
     expect(isMentorshipEnrollStepValid('details', form)).toBe(true);
   });
@@ -119,6 +122,7 @@ describe('getMentorshipEnrollStepErrors', () => {
     form.technologies = ['GO'];
     form.description = '<p>Build a pipeline.</p>';
     form.repositoryUrl = 'https://github.com/lfenergy/gridflow';
+    form.logoFileName = 'logo.png';
     form.ciiProjectId = 'abc';
 
     expect(getMentorshipEnrollStepErrors('details', form).ciiProjectId).toBe('Invalid CII Project ID');
@@ -131,6 +135,7 @@ describe('getMentorshipEnrollStepErrors', () => {
     form.technologies = ['GO'];
     form.description = '<p>Build a pipeline.</p>';
     form.repositoryUrl = 'not-a-url';
+    form.logoFileName = 'logo.png';
 
     expect(getMentorshipEnrollStepErrors('details', form).name).toContain('between 3 and 100');
     expect(getMentorshipEnrollStepErrors('details', form).repositoryUrl).toBe('The link must be a valid URL.');
@@ -179,11 +184,13 @@ describe('getMentorshipEnrollStepErrors', () => {
   });
 });
 
-describe('mentorship URL helpers', () => {
-  it('accepts http(s) URLs', () => {
+describe('mentorship URL and logo helpers', () => {
+  it('accepts http(s) URLs and image extensions from the old logo field', () => {
     expect(isMentorshipHttpUrl('https://github.com/org/repo')).toBe(true);
     expect(isMentorshipHttpUrl('google.com')).toBe(true);
     expect(isMentorshipHttpUrl('ftp://example.com')).toBe(false);
+    expect(isMentorshipLogoFileName('logo.PNG')).toBe(true);
+    expect(isMentorshipLogoFileName('notes.pdf')).toBe(false);
   });
 });
 

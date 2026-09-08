@@ -47,6 +47,7 @@ function parseEnrollBody(body: unknown): MentorshipEnrollRequest {
     websiteUrl: asString(raw['websiteUrl']),
     ciiProjectId: asString(raw['ciiProjectId']),
     codeOfConductUrl: asString(raw['codeOfConductUrl']),
+    logoFileName: asString(raw['logoFileName']),
     skills: asStringArray(raw['skills']),
     terms: termsRaw
       .filter((item): item is Record<string, unknown> => !!item && typeof item === 'object')

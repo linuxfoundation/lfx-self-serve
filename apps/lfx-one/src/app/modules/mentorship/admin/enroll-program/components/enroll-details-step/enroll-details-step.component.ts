@@ -20,6 +20,10 @@ import {
   MENTORSHIP_ENROLL_COC_INTRO,
   MENTORSHIP_ENROLL_DETAILS_INTRO,
   MENTORSHIP_ENROLL_DESCRIPTION_MAX,
+  MENTORSHIP_ENROLL_LOGO_ACCEPT,
+  MENTORSHIP_ENROLL_LOGO_HELPER,
+  MENTORSHIP_ENROLL_LOGO_MAX_BYTES,
+  MENTORSHIP_ENROLL_LOGO_TYPE_ERROR,
   MENTORSHIP_ENROLL_NAME_CHECKING,
   MENTORSHIP_ENROLL_NAME_MAX,
   MENTORSHIP_ENROLL_NAME_MIN,
@@ -34,7 +38,7 @@ import {
   mentorshipCiiProjectUrl,
 } from '@lfx-one/shared/constants';
 import { MentorshipCiiLookupStatus, MentorshipEnrollFieldErrors, MentorshipLfProject, MentorshipNameLookupStatus } from '@lfx-one/shared/interfaces';
-import { isMentorshipCiiProjectId, mentorshipDescriptionLength } from '@lfx-one/shared/utils';
+import { isMentorshipCiiProjectId, isMentorshipLogoFileName, mentorshipDescriptionLength } from '@lfx-one/shared/utils';
 import { MentorshipService } from '@services/mentorship.service';
 import {
   catchError,
@@ -71,6 +75,8 @@ export class EnrollDetailsStepComponent {
   private readonly lfLoadMore$ = new Subject<void>();
   protected readonly lfProjectItemSize = 40;
 
+  protected readonly fileInput = viewChild<ElementRef<HTMLInputElement>>('fileInput');
+  protected readonly logoError = signal('');
   protected readonly importLoading = signal(true);
   protected readonly importOptions = signal<{ value: string; label: string }[]>([{ value: '', label: 'None' }]);
   protected readonly lfProjects = signal<MentorshipLfProject[]>([]);
@@ -88,6 +94,8 @@ export class EnrollDetailsStepComponent {
   protected readonly intro = MENTORSHIP_ENROLL_DETAILS_INTRO;
   protected readonly nameMax = MENTORSHIP_ENROLL_NAME_MAX;
   protected readonly descriptionMax = MENTORSHIP_ENROLL_DESCRIPTION_MAX;
+  protected readonly logoAccept = MENTORSHIP_ENROLL_LOGO_ACCEPT;
+  protected readonly logoHelper = MENTORSHIP_ENROLL_LOGO_HELPER;
   protected readonly repoHelper = MENTORSHIP_ENROLL_REPO_HELPER;
   protected readonly websiteHelper = MENTORSHIP_ENROLL_WEBSITE_HELPER;
   protected readonly cocIntro = MENTORSHIP_ENROLL_COC_INTRO;
@@ -116,6 +124,8 @@ export class EnrollDetailsStepComponent {
     if (Array.isArray(fromSnapshot)) return fromSnapshot as string[];
     return (this.form().controls['technologies']?.value as string[]) ?? [];
   });
+  protected readonly logoFileName = computed(() => String(this.formSnapshot()['logoFileName'] ?? this.form().controls['logoFileName']?.value ?? ''));
+  protected readonly logoPreviewUrl = computed(() => String(this.formSnapshot()['logoPreviewUrl'] ?? this.form().controls['logoPreviewUrl']?.value ?? ''));
   protected readonly projectOptions = computed(() => {
     const selectedId = String(this.formSnapshot()['projectId'] ?? this.form().controls['projectId']?.value ?? '');
     const loaded = this.lfProjects();
@@ -263,7 +273,11 @@ export class EnrollDetailsStepComponent {
 
   protected onImportProgram(): void {
     const importId = (this.form().controls['importProgramId']?.value as string) ?? '';
+    this.revokeLogoPreview();
+    const fileEl = this.fileInput()?.nativeElement;
+    if (fileEl) fileEl.value = '';
     this.form().patchValue(formFromImportedMentorshipProgram(importId));
+    this.logoError.set('');
   }
 
   protected onLfFilter(event: { filter?: string }): void {
@@ -289,6 +303,37 @@ export class EnrollDetailsStepComponent {
     this.form().controls['technologies'].setValue(this.technologies().filter((item) => item !== tech));
   }
 
+  protected onBrowseLogo(): void {
+    this.fileInput()?.nativeElement.click();
+  }
+
+  protected onLogoChange(event: Event): void {
+    const input = event.target as HTMLInputElement;
+    const file = input.files?.[0];
+    this.logoError.set('');
+    if (!file) {
+      this.clearLogo();
+      return;
+    }
+    if (!isMentorshipLogoFileName(file.name)) {
+      this.logoError.set(MENTORSHIP_ENROLL_LOGO_TYPE_ERROR);
+      input.value = '';
+      this.clearLogo();
+      return;
+    }
+    if (file.size > MENTORSHIP_ENROLL_LOGO_MAX_BYTES) {
+      this.logoError.set('File must be 2 MB or smaller.');
+      input.value = '';
+      this.clearLogo();
+      return;
+    }
+    this.revokeLogoPreview();
+    this.form().patchValue({
+      logoFileName: file.name,
+      logoPreviewUrl: URL.createObjectURL(file),
+    });
+  }
+
   protected projectInitial(name: string): string {
     return name.trim().charAt(0).toUpperCase() || '?';
   }
@@ -308,5 +353,17 @@ export class EnrollDetailsStepComponent {
     const cached = this.selectedProject();
     if (cached?.id === projectId) return cached;
     return MOCK_MENTORSHIP_LF_PROJECTS.find((project) => project.id === projectId);
+  }
+
+  private clearLogo(): void {
+    this.revokeLogoPreview();
+    this.form().patchValue({ logoFileName: '', logoPreviewUrl: '' });
+  }
+
+  private revokeLogoPreview(): void {
+    const url = this.form().controls['logoPreviewUrl']?.value as string;
+    if (url?.startsWith('blob:')) {
+      URL.revokeObjectURL(url);
+    }
   }
 }

@@ -85,7 +85,10 @@ export interface MentorshipPrerequisite {
   dueDate?: string;
 }
 
-/** State held by the enroll wizard. The wizard posts `MentorshipEnrollRequest`, not this shape. */
+/**
+ * State held by the enroll wizard. `logoPreviewUrl` is a browser-only `blob:` URL for the picker,
+ * so the wizard posts `MentorshipEnrollRequest` rather than this shape.
+ */
 export interface MentorshipEnrollForm {
   importProgramId: string;
   name: string;
@@ -96,6 +99,8 @@ export interface MentorshipEnrollForm {
   websiteUrl: string;
   ciiProjectId: string;
   codeOfConductUrl: string;
+  logoFileName: string;
+  logoPreviewUrl: string;
   skills: string[];
   terms: MentorshipProgramTerm[];
   prerequisites: MentorshipPrerequisite[];
@@ -103,10 +108,10 @@ export interface MentorshipEnrollForm {
 }
 
 /**
- * Body POSTed to `/api/mentorship/programs`. Named apart from the wizard state so UI-only fields
- * can be omitted here as they are added, rather than leaking into the request by default.
+ * Body POSTed to `/api/mentorship/programs`. Carries `logoFileName` as metadata only — there is no
+ * logo upload endpoint, so the bytes the picker holds are never sent.
  */
-export type MentorshipEnrollRequest = MentorshipEnrollForm;
+export type MentorshipEnrollRequest = Omit<MentorshipEnrollForm, 'logoPreviewUrl'>;
 
 /** Field-keyed validation errors for a single enroll wizard step. */
 export interface MentorshipEnrollFieldErrors {
@@ -117,6 +122,7 @@ export interface MentorshipEnrollFieldErrors {
   repositoryUrl?: string;
   websiteUrl?: string;
   codeOfConductUrl?: string;
+  logoFileName?: string;
   ciiProjectId?: string;
   skills?: string;
   terms?: string;
