@@ -303,6 +303,47 @@ export class ObjectStoreService {
     }
   }
 
+  /**
+   * Upload a public image into the CDN-fronted bucket under a caller-supplied key. `CDN_URL_PREFIX`
+   * fronts the whole bucket, not just the `avatars/` prefix, so a caller that owns its own key
+   * namespace (e.g. `mentorship-logos/`) shares the same bucket and CDN.
+   *
+   * The key is expected to be content-addressed, which makes the object immutable and lets it carry
+   * an immutable Cache-Control — unlike `uploadProfilePicture`, whose key is stable per user and so
+   * needs a short TTL plus a cache-busting hint. Returns null when `CDN_URL_PREFIX` is unset, the
+   * same degraded-mode contract as `uploadProfilePicture`; callers that require a public URL must
+   * treat null as an error.
+   */
+  public async putPublicImage(req: Request, key: string, buffer: Buffer, contentType: string): Promise<{ url: string | null }> {
+    await this.ensureBucket();
+
+    const startTime = logger.startOperation(req, 'object_store_put_public_image', { key, content_type: contentType, size: buffer.length });
+
+    try {
+      await this.getClient().send(
+        new PutObjectCommand({
+          Bucket: this.getBucket(),
+          Key: key,
+          Body: buffer,
+          ContentType: contentType,
+          CacheControl: 'public, max-age=31536000, immutable',
+        })
+      );
+
+      const cdnPrefix = getAvatarCdnPrefix();
+      // Every segment of a content-addressed key is already URL-safe, so the key is
+      // concatenated as-is rather than percent-encoded (which would escape the separators).
+      const url = cdnPrefix ? `${cdnPrefix}/${key}` : null;
+
+      logger.success(req, 'object_store_put_public_image', startTime, { key, has_cdn_url: !!url });
+
+      return { url };
+    } catch (error) {
+      logger.error(req, 'object_store_put_public_image', startTime, error, { key });
+      throw error;
+    }
+  }
+
   private getClient(): S3Client {
     if (!this.client) {
       const endpoint = process.env['S3_ENDPOINT_URL'] || undefined;

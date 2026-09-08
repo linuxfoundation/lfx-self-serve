@@ -16,6 +16,10 @@ import {
   lfxFontSizes,
   MENTION_PLATFORM_CONFIG,
   MENTION_SENTIMENT_CONFIG,
+  MENTORSHIP_PERSON_STATUS_BADGE_CLASSES,
+  MENTORSHIP_PROGRAM_AVATAR_PALETTE,
+  MENTORSHIP_PROGRAM_STATUS_BADGE_CLASSES,
+  MENTORSHIP_TERM_ROW_STATUS_BADGE_CLASSES,
   ORG_MEETINGS_KPI_ICON_CLASS,
 } from '@lfx-one/shared/constants';
 import PrimeUI from 'tailwindcss-primeui';
@@ -31,6 +35,16 @@ export default {
     // Person-avatar palette: built at runtime by avatarColorClass() from AVATAR_COLORS in
     // @lfx-one/shared (outside `content`), so it would be purged. Spread the source list to avoid drift.
     ...AVATAR_COLORS,
+    // Mentorship admin cards: avatar tiles + status badges are selected at runtime from
+    // MENTORSHIP_PROGRAM_* maps in @lfx-one/shared (outside `content`). Split tokens so
+    // multi-class strings (e.g. `rounded-xl bg-rose-100 !text-rose-700`) are each generated.
+    ...MENTORSHIP_PROGRAM_AVATAR_PALETTE.flatMap((classes) => classes.split(' ')),
+    ...Object.values(MENTORSHIP_PROGRAM_STATUS_BADGE_CLASSES).flatMap((classes) => classes.split(' ')),
+    // Mentorship program-detail tabs: person status badges (applicants / mentees / mentors) and
+    // term-row status badges come from the same shared constants file, also outside `content`.
+    // `bg-red-50` (declined) appears nowhere else in scanned source, so it is purged without this.
+    ...Object.values(MENTORSHIP_PERSON_STATUS_BADGE_CLASSES).flatMap((classes) => classes.split(' ')),
+    ...Object.values(MENTORSHIP_TERM_ROW_STATUS_BADGE_CLASSES).flatMap((classes) => classes.split(' ')),
     // Social Listening platform icon colors (MENTION_PLATFORM_CONFIG in @lfx-one/shared, not scanned here)
     ...Object.values(MENTION_PLATFORM_CONFIG).map((c) => c.colorClass),
     // Social Listening analytics distribution bars (barClass on MENTION_PLATFORM_CONFIG / MENTION_SENTIMENT_CONFIG)

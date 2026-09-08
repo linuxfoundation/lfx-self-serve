@@ -278,6 +278,9 @@ export * from './linux-email.interface';
 // Crowdfunding interfaces
 export * from './crowdfunding.interface';
 
+// Mentorship interfaces
+export * from './mentorship.interface';
+
 // EasyCLA "CLAs" interfaces (Me lens)
 export * from './cla.interface';
 
