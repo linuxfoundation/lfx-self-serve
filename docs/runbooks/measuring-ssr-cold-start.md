@@ -24,9 +24,12 @@ kubectl -n ui get pods -l app.kubernetes.io/name=lfx-self-serve \
 #    Use `get events`, not `describe pod` — describe renders event age
 #    relative to "now" (e.g. "2m"), which drifts as soon as any time has
 #    passed and can't be joined accurately to the absolute log timestamps
-#    below. `get events` exposes the actual firstTimestamp/lastTimestamp.
+#    below. `get events` exposes the actual timestamp fields.
+#    `lastTimestamp` is deprecated and null on newer event producers, which
+#    instead populate `eventTime` or `series.lastObservedTime` — fall back
+#    across all three so this works on any producer.
 kubectl -n ui get events --field-selector involvedObject.name=<pod-name> \
-  -o json | jq -r '.items[] | "\(.lastTimestamp) \(.reason) \(.message)"'
+  -o json | jq -r '.items[] | "\(.eventTime // .series.lastObservedTime // .lastTimestamp) \(.reason) \(.message)"'
 
 # 3. Pull the two boot log lines (requires the pod's Datadog tags/name):
 #    - "server startup: Node Express server started" (has engine_ms/routes_ms/boot_ms)

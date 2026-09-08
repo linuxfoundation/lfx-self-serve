@@ -148,15 +148,26 @@ Both acceptance criteria are partially addressed:
   only shave seconds off a process that's already seconds long; none of them
   clears a bar that isn't the actual bottleneck.
 
-**Recommendation:** before touching the `startupProbe` budget (a
-`CrashLoopBackOff`-risk change — see the gating in the parent plan), capture at
-least one sample of a genuine Karpenter node-provisioning event to confirm
-whether that step, not anything measured here, is what the 310s budget is
-actually covering. If it turns out the budget is inherited from before
-`lfx-v2-argocd#1428` and no longer reflects reality, tightening it (with the arithmetic comment at
-`values.yaml:199-200` updated in the same change) is low-risk and would
-directly shrink the three-sequential-cold-starts-per-rollout window that
-#1375 traded for. If new-node provisioning genuinely does take minutes, that
-time lives entirely in Karpenter/EKS/AWS infrastructure outside this repo, and
-the correct finding for #1378 is that in-application cold start is not the
-bottleneck.
+**Recommendation:** the `startupProbe`'s 310s budget only covers the window
+from container start to `/livez` responding — kubelet doesn't begin probing
+until the container is already running, so a Karpenter node-provisioning
+event (which happens before the pod is scheduled and the container starts)
+falls entirely outside that window no matter how long it takes. The probe
+budget and the node-provisioning question are therefore separate, and a
+Karpenter sample cannot answer the first:
+
+- **The probe budget** can be evaluated from what's already measured here:
+  in-process boot (~3-6s) plus corepack/pm2 launch (~2-3s) is well under 310s
+  even in the cold-pull case. Tightening it (a `CrashLoopBackOff`-risk change
+  — see the gating in the parent plan, and the ≥20-sample p99 gate before
+  acting) is justified by this container-start-to-listening data alone, with
+  the arithmetic comment at `values.yaml:199-200` updated in the same change
+  — it would directly shrink the three-sequential-cold-starts-per-rollout
+  window that #1375 traded for.
+- **A genuine Karpenter node-provisioning sample** is still worth capturing,
+  but to answer a different question: whether the original ~4 minute
+  cold-start belief ever had a basis, not whether the probe budget is sized
+  correctly. If provisioning turns out to take minutes, that time lives
+  entirely in Karpenter/EKS/AWS infrastructure outside this repo — it would
+  explain where the original assumption came from, but it doesn't change the
+  probe-budget math above, since the probe never runs during that phase.
