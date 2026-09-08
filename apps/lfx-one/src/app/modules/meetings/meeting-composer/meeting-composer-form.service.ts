@@ -1,7 +1,7 @@
 // Copyright The Linux Foundation and each contributor to LFX.
 // SPDX-License-Identifier: MIT
 
-import { computed, DestroyRef, inject, Injectable, signal } from '@angular/core';
+import { computed, DestroyRef, inject, Injectable, signal, type Signal } from '@angular/core';
 import { takeUntilDestroyed } from '@angular/core/rxjs-interop';
 import { FormArray, FormControl, FormGroup, Validators } from '@angular/forms';
 import {
@@ -133,6 +133,16 @@ export class MeetingComposerFormService {
    * to the ambient context.
    */
   private readonly contextProjectUid = signal<string | null>(null);
+
+  /**
+   * Project uid the submit payload will actually be written against.
+   * @description Mirrors the `project_uid` resolution in `prepareMeetingData()` exactly, so callers
+   * that need to describe "the meeting's project" — the AI agenda prompt, for one — cannot describe a
+   * different project from the one the save writes to. Empty when nothing has resolved yet.
+   */
+  public readonly effectiveProjectUid: Signal<string> = computed(
+    () => this.meeting()?.project_uid || this.contextProjectUid() || this.projectContextService.activeContextUid()
+  );
 
   /**
    * Bumped on every form value/status change, and explicitly by `validateForSubmit()`.
@@ -291,12 +301,15 @@ export class MeetingComposerFormService {
    * to find out why Save is disabled. An edit whose meeting hasn't arrived is excluded — that form is
    * empty because of the fetch, not because of anything the organizer did. Callers must read `revision`
    * themselves: this is a plain method, so it carries no reactive dependency of its own.
+   *
+   * `section.required` is deliberately not consulted. Save is gated on whole-form validity, and an
+   * optional section can still hold an invalid control — `platform-features` is the live case, since
+   * its reminder inputs carry validators and are enabled in edit mode. Skipping optional sections here
+   * is what previously left a disabled Save button with nothing on screen explaining it. A section with
+   * no validators of its own (`guests`, `agenda-resources`) reports valid unconditionally, so widening
+   * this cannot make them nag.
    */
   public sectionNeedsAttention(section: MeetingComposerSection, visitedSections: ReadonlySet<MeetingComposerSectionId>): boolean {
-    if (!section.required) {
-      return false;
-    }
-
     const isEditMode = this.isEditMode();
 
     if (isEditMode && !this.meeting()) {
@@ -961,7 +974,6 @@ export class MeetingComposerFormService {
       meeting_type: meeting.meeting_type === MeetingType.NONE ? '' : meeting.meeting_type,
       startDate: startDate,
       startTime: startTime,
-      duration: meeting.duration || DEFAULT_DURATION,
       timezone: meeting.timezone || getUserTimezone(),
       early_join_time_minutes: meeting.early_join_time_minutes || DEFAULT_EARLY_JOIN_TIME,
       isRecurring: Boolean(meeting.recurrence && finalRecurrenceValue !== 'none'),
@@ -980,6 +992,11 @@ export class MeetingComposerFormService {
       recurrenceType: finalRecurrenceValue,
       committees: meeting.committees || [],
     });
+
+    // Duration is set through `setDuration()` rather than patched, because it lives in two controls.
+    // Patching `duration` alone left an off-chip stored value (20 or 75 minutes) selecting no chip at
+    // all while the form still read as valid, so the UI silently disagreed with what was saved.
+    this.setDuration(meeting.duration || DEFAULT_DURATION);
 
     if (meeting.recurrence) {
       this.populateRecurrenceGroup(meeting, isCustomRecurrence);

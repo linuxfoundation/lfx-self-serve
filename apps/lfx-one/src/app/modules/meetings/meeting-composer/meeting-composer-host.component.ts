@@ -6,7 +6,7 @@ import { Component, computed, inject, type Signal } from '@angular/core';
 import { takeUntilDestroyed, toObservable } from '@angular/core/rxjs-interop';
 import { RouterLink } from '@angular/router';
 import { ButtonComponent } from '@components/button/button.component';
-import { MEETING_COMPOSER_SECTIONS, MEETING_COMPOSER_TOAST_KEY, MEETING_COMPOSER_TOAST_LIFE } from '@lfx-one/shared/constants';
+import { MEETING_COMPOSER_SECTIONS, MEETING_COMPOSER_TOAST_KEY, MEETING_COMPOSER_TOAST_POSITION } from '@lfx-one/shared/constants';
 import type { Meeting, MeetingComposerSection, MeetingComposerToastData } from '@lfx-one/shared/interfaces';
 import { ProjectContextService } from '@services/project-context.service';
 import { MessageService } from 'primeng/api';
@@ -62,6 +62,7 @@ export class MeetingComposerHostComponent {
 
   protected readonly sections: readonly MeetingComposerSection[] = MEETING_COMPOSER_SECTIONS;
   protected readonly toastKey = MEETING_COMPOSER_TOAST_KEY;
+  protected readonly toastPosition = MEETING_COMPOSER_TOAST_POSITION;
 
   /**
    * Single mode source for the chrome, matching what the rail reads.
@@ -84,9 +85,18 @@ export class MeetingComposerHostComponent {
     this.formService.revision();
     return this.formService.isSectionValid(this.composer.activeSection());
   });
+  /**
+   * Gated on whole-form validity, which is the same rule `validateForSubmit()` applies.
+   * @description It used to check only the sections flagged `required`, which let the button and the
+   * submit path disagree: `platform-features` is not a required section, but its reminder controls
+   * carry validators and are enabled in edit mode, so a bad reminder value left Save clickable and
+   * `onSubmit()` returned silently. Anything that makes the form invalid now disables the button, and
+   * `sectionNeedsAttention()` no longer skips optional sections, so the reason is still findable.
+   */
   protected readonly canSubmit: Signal<boolean> = computed(() => {
+    // `revision` makes this recompute on every form value/status change — FormGroup validity is not a signal.
     this.formService.revision();
-    return this.sections.filter((section) => section.required).every((section) => this.formService.isSectionValid(section.id));
+    return this.formService.form().valid;
   });
   protected readonly activeSectionLabel: Signal<string> = computed(() => this.sections[this.activeIndex()]?.label ?? '');
   /** Whether any required section is flagged as blocking save, on the same rule as the rail's dots. */
@@ -195,7 +205,10 @@ export class MeetingComposerHostComponent {
         return 'Close the open composer first';
       }
 
-      return this.projectContextService.canWrite() ? null : 'You no longer have write access';
+      // Meeting-authoring permission, not writer-only: a meeting coordinator creates meetings without
+      // being a project writer, and `canWrite()` would deny them the edit action on the meeting this
+      // toast is announcing. Same signal the dashboard gates the create action on.
+      return this.projectContextService.canWriteMeetings() ? null : 'You no longer have write access';
     });
   }
 
@@ -225,7 +238,10 @@ export class MeetingComposerHostComponent {
       severity: 'success',
       summary: 'Meeting created',
       detail: data.meetingTitle,
-      life: MEETING_COMPOSER_TOAST_LIFE,
+      // Sticky, not timed. The toast carries the only two routes back to the meeting now that creating
+      // doesn't navigate, and a fixed lifetime put them out of reach of anyone who needs longer than a
+      // few seconds to read and target them. It has an explicit dismiss control instead.
+      sticky: true,
       data,
     });
   }

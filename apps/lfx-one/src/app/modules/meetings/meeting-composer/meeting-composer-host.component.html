@@ -6,7 +6,7 @@
 }
 
 <!-- Post-create toast (GH-1461): creating no longer navigates, so this is the way back to the meeting -->
-<p-toast [key]="toastKey" position="top-right">
+<p-toast [key]="toastKey" [position]="toastPosition">
   <ng-template let-message pTemplate="message">
     <div class="flex w-full items-start gap-3" data-testid="meeting-composer-toast">
       <i class="fa-light fa-circle-check mt-0.5 shrink-0 text-xl text-emerald-500" aria-hidden="true"></i>

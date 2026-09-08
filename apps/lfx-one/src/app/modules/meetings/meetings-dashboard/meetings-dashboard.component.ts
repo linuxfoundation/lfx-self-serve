@@ -48,7 +48,6 @@ import { ProjectContextService } from '@services/project-context.service';
 import { ProjectService } from '@services/project.service';
 import { UserService } from '@services/user.service';
 import { OnRenderDirective } from '@shared/directives/on-render.directive';
-import { hasMeetingWriteAccess } from '@shared/utils/write-access.util';
 import { MenuItem } from 'primeng/api';
 import { DialogService } from 'primeng/dynamicdialog';
 import { SkeletonModule } from 'primeng/skeleton';
@@ -164,7 +163,7 @@ export class MeetingsDashboardComponent {
   public projectOptions: Signal<{ label: string; value: string | null }[]>;
   public project: Signal<ProjectContext | null>;
   protected readonly canWrite = this.projectContextService.canWrite;
-  protected readonly canWriteMeetings: Signal<boolean> = this.initCanWriteMeetings();
+  protected readonly canWriteMeetings: Signal<boolean> = this.projectContextService.canWriteMeetings;
   protected readonly publicCalendarUrl: Signal<string | null> = this.initPublicCalendarUrl();
   protected readonly isFiltered = this.initIsFiltered();
   public loadingMore = signal(false);
@@ -483,21 +482,6 @@ export class MeetingsDashboardComponent {
       // "Quick start" heading and a divider above Advanced.
       return [{ label: 'Quick start', items: [...typeRows, { separator: true }, advancedRow] }];
     });
-  }
-
-  private initCanWriteMeetings(): Signal<boolean> {
-    return toSignal(
-      toObservable(this.projectContextService.activeContext).pipe(
-        switchMap((ctx) => {
-          if (!ctx?.slug) return of(false);
-          return this.projectService.getProject(ctx.slug, false, { meetingCoordinator: true }).pipe(
-            map((project) => hasMeetingWriteAccess(project)),
-            catchError(() => of(false))
-          );
-        })
-      ),
-      { initialValue: false }
-    );
   }
 
   private initializeUpcomingMeetings(): Signal<Meeting[]> {

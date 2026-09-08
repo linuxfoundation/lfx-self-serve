@@ -138,6 +138,15 @@ export class ProjectContextService {
    */
   public readonly activeProjectStage: Signal<string | null> = this.initActiveProjectStage();
 
+  /**
+   * Meeting-authoring permission for the current active context: writer *or* meeting coordinator.
+   * @description Distinct from {@link canWrite}, which is writer-only. A meeting coordinator can create
+   * and edit meetings without being a project writer, so gating a meeting action on `canWrite` locks out
+   * a legitimate coordinator — including from the meeting they just created. Lives here rather than in
+   * one dashboard so every meeting surface asks the same question.
+   */
+  public readonly canWriteMeetings: Signal<boolean> = this.initCanWriteMeetings();
+
   /** Salesforce 18-char ID for the active foundation — resolves PCC deep-link targets. `null` while resolving or unavailable. */
   public readonly selectedFoundationSfid: Signal<string | null> = this.initSelectedFoundationSfid();
 
@@ -368,6 +377,23 @@ export class ProjectContextService {
         })
       ),
       { initialValue: null }
+    );
+  }
+
+  private initCanWriteMeetings(): Signal<boolean> {
+    return toSignal(
+      toObservable(this.activeContext).pipe(
+        switchMap((ctx) => {
+          if (!ctx?.slug) {
+            return of(false);
+          }
+          return this.projectService.getProject(ctx.slug, false, { meetingCoordinator: true }).pipe(
+            map((project) => project?.writer === true || project?.meetingCoordinator === true),
+            catchError(() => of(false))
+          );
+        })
+      ),
+      { initialValue: false }
     );
   }
 

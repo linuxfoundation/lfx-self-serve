@@ -360,8 +360,15 @@ export const MEETING_COMPOSER_PREVIEW_FEATURES: MeetingComposerPreviewFeature[] 
  */
 export const MEETING_COMPOSER_TOAST_KEY = 'meeting-composer-toast';
 
-/** How long the post-create toast stays up, in ms — longer than a plain toast because it carries actions. */
-export const MEETING_COMPOSER_TOAST_LIFE = 10000;
+/**
+ * Where the composer's post-create toast renders.
+ * @description Not the app-wide top-right slot. Two independently positioned `p-toast` containers in the
+ * same corner overlap rather than stack, and the composer's own partial-save warning is emitted unkeyed
+ * — through the app-wide container — immediately before this success message, so the success toast could
+ * cover the warning that matters more. Bottom-right also suits a sticky, action-bearing toast, which is
+ * conventionally a snackbar slot.
+ */
+export const MEETING_COMPOSER_TOAST_POSITION = 'bottom-right';
 
 /**
  * Default meeting duration in minutes
