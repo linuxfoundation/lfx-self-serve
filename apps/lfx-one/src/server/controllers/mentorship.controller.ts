@@ -3,7 +3,6 @@
 
 import { NextFunction, Request, Response } from 'express';
 
-import { MENTORSHIP_LOGO_MIME_TYPES } from '@lfx-one/shared/constants';
 import { MentorshipEnrollRequest } from '@lfx-one/shared/interfaces';
 import { getMentorshipEnrollStepErrors } from '@lfx-one/shared/utils';
 
@@ -48,7 +47,6 @@ function parseEnrollBody(body: unknown): MentorshipEnrollRequest {
     websiteUrl: asString(raw['websiteUrl']),
     ciiProjectId: asString(raw['ciiProjectId']),
     codeOfConductUrl: asString(raw['codeOfConductUrl']),
-    logoFileName: asString(raw['logoFileName']),
     skills: asStringArray(raw['skills']),
     terms: termsRaw
       .filter((item): item is Record<string, unknown> => !!item && typeof item === 'object')
@@ -207,48 +205,6 @@ export class MentorshipController {
       logger.success(req, 'enroll_mentorship_program', startTime, { id: program.id });
 
       res.status(201).json(program);
-    } catch (error) {
-      next(error);
-    }
-  }
-
-  // POST /api/mentorship/programs/:programId/logo — raw image bytes (not multipart)
-  public async uploadProgramLogo(req: Request, res: Response, next: NextFunction): Promise<void> {
-    const startTime = logger.startOperation(req, 'upload_mentorship_program_logo', {
-      content_type: req.headers['content-type'],
-      content_length: req.headers['content-length'],
-    });
-
-    try {
-      if (!(await getUsernameFromAuth(req))) {
-        throw new AuthenticationError('User authentication required', { operation: 'upload_mentorship_program_logo' });
-      }
-
-      const programId = parseTrimmedString(req.params['programId']);
-      if (!programId) {
-        throw ServiceValidationError.forField('programId', 'Program id or slug is required.', { operation: 'upload_mentorship_program_logo' });
-      }
-
-      const rawContentType = req.headers['content-type'];
-      const contentType = (Array.isArray(rawContentType) ? rawContentType[0] : rawContentType || '').split(';')[0].trim();
-      if (!(MENTORSHIP_LOGO_MIME_TYPES as readonly string[]).includes(contentType)) {
-        throw ServiceValidationError.forField('content-type', `Unsupported image type: ${contentType || 'unknown'}`, {
-          operation: 'upload_mentorship_program_logo',
-        });
-      }
-
-      const rawBody: unknown = req.body;
-      // `Array.isArray` is redundant against `Buffer.isBuffer` at runtime; it is kept because CodeQL's
-      // js/type-confusion only clears the express body once the array shape is excluded explicitly.
-      if (Array.isArray(rawBody) || !Buffer.isBuffer(rawBody) || rawBody.length === 0) {
-        throw ServiceValidationError.forField('body', 'Request body must contain image data', { operation: 'upload_mentorship_program_logo' });
-      }
-
-      const result = await this.mentorshipService.uploadProgramLogo(req, programId, rawBody, contentType);
-
-      logger.success(req, 'upload_mentorship_program_logo', startTime, { programId });
-
-      res.status(201).json(result);
     } catch (error) {
       next(error);
     }

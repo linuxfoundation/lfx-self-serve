@@ -9,7 +9,6 @@ import {
   MentorshipEnrollForm,
   MentorshipEnrollRequest,
   MentorshipLfProjectsResponse,
-  MentorshipLogoUploadResponse,
   MentorshipNameAvailability,
   MentorshipProgram,
   MentorshipProgramDetail,
@@ -49,8 +48,7 @@ export class MentorshipService {
   }
 
   public enrollProgram(form: MentorshipEnrollForm): Observable<MentorshipProgram> {
-    // Built field by field rather than spread: `logoPreviewUrl` is a browser-only `blob:` URL, and
-    // an allowlist keeps any future UI-only wizard state out of the request body by default.
+    // Built field by field rather than spread, so UI-only wizard state stays out of the body by default.
     const request: MentorshipEnrollRequest = {
       importProgramId: form.importProgramId,
       name: form.name,
@@ -61,26 +59,12 @@ export class MentorshipService {
       websiteUrl: form.websiteUrl,
       ciiProjectId: form.ciiProjectId,
       codeOfConductUrl: form.codeOfConductUrl,
-      logoFileName: form.logoFileName,
       skills: form.skills,
       terms: form.terms,
       prerequisites: form.prerequisites,
       termsAccepted: form.termsAccepted,
     };
     return this.http.post<MentorshipProgram>('/api/mentorship/programs', request).pipe(take(1));
-  }
-
-  /**
-   * Second phase of enrollment: raw-body upload keyed to a program that already exists,
-   * mirroring `OrgProfileService.uploadLogo`. Rethrows so the wizard can report a program
-   * that was created without its logo.
-   */
-  public uploadProgramLogo(programId: string, file: File): Observable<MentorshipLogoUploadResponse> {
-    return this.http
-      .post<MentorshipLogoUploadResponse>(`/api/mentorship/programs/${encodeURIComponent(programId)}/logo`, file, {
-        headers: { 'Content-Type': file.type },
-      })
-      .pipe(take(1));
   }
 
   public isProgramNameAvailable(name: string): Observable<MentorshipNameAvailability> {

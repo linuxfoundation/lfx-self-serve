@@ -21,7 +21,6 @@ import {
   MENTORSHIP_ENROLL_NAME_UNAVAILABLE,
   MENTORSHIP_ENROLL_STEP_LABELS,
   MENTORSHIP_ENROLL_STEPS_ORDER,
-  MENTORSHIP_LOGO_UPLOAD_FAILED,
 } from '@lfx-one/shared/constants';
 import {
   MentorshipCiiLookupStatus,
@@ -82,8 +81,6 @@ export class EnrollProgramComponent {
     websiteUrl: new FormControl('', { nonNullable: true }),
     ciiProjectId: new FormControl('', { nonNullable: true }),
     codeOfConductUrl: new FormControl('', { nonNullable: true }),
-    logoFileName: new FormControl('', { nonNullable: true }),
-    logoPreviewUrl: new FormControl('', { nonNullable: true }),
     skills: new FormControl<string[]>([], { nonNullable: true }),
     terms: new FormControl<MentorshipProgramTerm[]>(createEmptyMentorshipEnrollForm().terms, { nonNullable: true }),
     prerequisites: new FormControl<MentorshipPrerequisite[]>(createEmptyMentorshipEnrollForm().prerequisites, { nonNullable: true }),
@@ -96,8 +93,6 @@ export class EnrollProgramComponent {
   protected readonly ciiLookupStatus = signal<MentorshipCiiLookupStatus>('idle');
   protected readonly nameLookupStatus = signal<MentorshipNameLookupStatus>('idle');
   protected readonly formIncomplete = MENTORSHIP_ENROLL_FORM_INCOMPLETE;
-  /** Held here, not in the form: the details step is destroyed on every step change. */
-  private readonly logoFile = signal<File | null>(null);
   /** Set on teardown so a submit that lands after navigation can skip its redirect. */
   private destroyed = false;
 
@@ -216,20 +211,12 @@ export class EnrollProgramComponent {
       acceptButtonStyleClass: 'p-button-sm p-button-danger',
       rejectButtonStyleClass: 'p-button-secondary p-button-sm p-button-outlined',
       accept: () => {
-        this.revokeLogoPreview();
         void this.router.navigate(['/mentorship/admin']);
       },
     });
   }
 
-  protected onLogoFileChange(file: File | null): void {
-    this.logoFile.set(file);
-  }
-
   /**
-   * Two-phase: the logo is keyed to a program that does not exist until the create call
-   * returns, so it can only be uploaded afterwards.
-   *
    * Deliberately not torn down with the component: unsubscribing aborts the in-flight create, so
    * navigating mid-submit would leave a program created with no feedback and a retry that hits a
    * name conflict. The toast is app-level and still lands; only the redirect is skipped.
@@ -239,19 +226,16 @@ export class EnrollProgramComponent {
     this.submitting.set(true);
     this.mentorshipService
       .enrollProgram(this.toEnrollForm(this.form.getRawValue()))
-      .pipe(
-        take(1),
-        switchMap((program) => this.uploadLogo(program.id))
-      )
+      .pipe(take(1))
       .subscribe({
-        next: (logoUploaded) => {
+        next: () => {
           this.submitting.set(false);
-          this.revokeLogoPreview();
-          this.messageService.add(
-            logoUploaded
-              ? { severity: 'success', summary: 'Enrollment submitted', detail: 'Your program was submitted and is pending review.', life: 5000 }
-              : { severity: 'warn', summary: 'Enrollment submitted', detail: MENTORSHIP_LOGO_UPLOAD_FAILED, life: 8000 }
-          );
+          this.messageService.add({
+            severity: 'success',
+            summary: 'Enrollment submitted',
+            detail: 'Your program was submitted and is pending review.',
+            life: 5000,
+          });
           if (!this.destroyed) void this.router.navigate(['/mentorship/admin']);
         },
         error: () => {
@@ -264,22 +248,6 @@ export class EnrollProgramComponent {
           });
         },
       });
-  }
-
-  /**
-   * Resolves false rather than erroring: the program is already created by this point, so a
-   * failed logo upload downgrades the result to a warning instead of reporting a failed
-   * enrollment the admin would try to repeat (and hit a name conflict on).
-   */
-  private uploadLogo(programId: string): Observable<boolean> {
-    const file = this.logoFile();
-    // The details step will not validate without a logo, so an empty signal here means the file
-    // was dropped (an import cleared it, for instance) and the program really has no logo.
-    if (!file) return of(false);
-    return this.mentorshipService.uploadProgramLogo(programId, file).pipe(
-      map(() => true),
-      catchError(() => of(false))
-    );
   }
 
   private nameLookupMessage(status: MentorshipNameLookupStatus): string {
@@ -310,13 +278,6 @@ export class EnrollProgramComponent {
   private scrollToTop(): void {
     if (isPlatformBrowser(this.platformId)) {
       window.scrollTo(0, 0);
-    }
-  }
-
-  private revokeLogoPreview(): void {
-    const url = this.form.controls.logoPreviewUrl.value;
-    if (url.startsWith('blob:')) {
-      URL.revokeObjectURL(url);
     }
   }
 }

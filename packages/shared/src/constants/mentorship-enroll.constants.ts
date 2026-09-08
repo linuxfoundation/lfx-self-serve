@@ -35,17 +35,6 @@ export const MENTORSHIP_TERM_YEAR_OPTIONS: ReadonlyArray<{ label: string; value:
   return { label: year, value: year };
 });
 
-export const MENTORSHIP_ENROLL_LOGO_ACCEPT = '.jpg,.jpeg,.png,image/jpeg,image/png';
-/** SVG excluded (XSS risk), matching `ALLOWED_AVATAR_MIME_TYPES`. Must stay in step with `MENTORSHIP_LOGO_MIME_TYPES`. */
-export const MENTORSHIP_ENROLL_LOGO_EXTENSIONS = ['jpg', 'jpeg', 'png'] as const;
-/** MIME types the BFF accepts on `POST /api/mentorship/programs/:programId/logo`. */
-export const MENTORSHIP_LOGO_MIME_TYPES = ['image/png', 'image/jpeg'] as const;
-export const MENTORSHIP_ENROLL_LOGO_MAX_BYTES = 2 * 1024 * 1024;
-export const MENTORSHIP_ENROLL_LOGO_HELPER = 'JPG, PNG · 420px × 420px · Max 2 MB';
-export const MENTORSHIP_ENROLL_LOGO_TYPE_ERROR = 'Program logo is not the right file type.';
-export const MENTORSHIP_LOGO_UPLOAD_FAILED =
-  'The program was created, but its logo could not be uploaded. Program editing is not available yet, so the program shows its initials for now.';
-
 export const MENTORSHIP_ENROLL_DETAILS_INTRO = 'Describe the program and the project it belongs to. This is what candidates read on your program page.';
 export const MENTORSHIP_ENROLL_SETUP_INTRO = 'Define the skills mentees need and the term schedule for this program.';
 export const MENTORSHIP_ENROLL_SETUP_SKILLS_HELPER =
@@ -417,8 +406,6 @@ export function createEmptyMentorshipEnrollForm(): MentorshipEnrollForm {
     websiteUrl: '',
     ciiProjectId: '',
     codeOfConductUrl: '',
-    logoFileName: '',
-    logoPreviewUrl: '',
     skills: [],
     terms: [createDefaultMentorshipTerm()],
     prerequisites: clonePrerequisites(),
@@ -426,9 +413,7 @@ export function createEmptyMentorshipEnrollForm(): MentorshipEnrollForm {
   };
 }
 
-// An imported template carries no logo bytes, so it must not carry a logo file name either —
-// the admin picks the logo, and `logoFileName` is what the details step validates against.
-type ImportedProgramSource = Omit<MentorshipEnrollForm, 'importProgramId' | 'termsAccepted' | 'logoFileName' | 'logoPreviewUrl' | 'terms'>;
+type ImportedProgramSource = Omit<MentorshipEnrollForm, 'importProgramId' | 'termsAccepted' | 'terms'>;
 
 const MENTORSHIP_IMPORT_PROGRAM_DETAILS: Record<string, ImportedProgramSource> = {
   mp_gridflow_fall26: {
@@ -509,8 +494,6 @@ export function formFromImportedMentorshipProgram(importProgramId: string): Ment
     websiteUrl: source.websiteUrl,
     ciiProjectId: source.ciiProjectId,
     codeOfConductUrl: source.codeOfConductUrl,
-    logoFileName: '',
-    logoPreviewUrl: '',
     skills: [...source.skills],
     terms: [createDefaultMentorshipTerm()],
     prerequisites: clonePrerequisites(source.prerequisites),

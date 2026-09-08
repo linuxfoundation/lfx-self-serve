@@ -8,7 +8,6 @@ import {
   MENTORSHIP_CUSTOM_PREREQ_DESCRIPTION_MAX,
   MENTORSHIP_CUSTOM_PREREQ_NAME_MAX,
   MENTORSHIP_ENROLL_DESCRIPTION_MAX,
-  MENTORSHIP_ENROLL_LOGO_EXTENSIONS,
   MENTORSHIP_ENROLL_NAME_MAX,
   MENTORSHIP_ENROLL_NAME_MIN,
   MENTORSHIP_INVALID_URL,
@@ -60,11 +59,6 @@ export function isMentorshipCiiProjectId(value: string): boolean {
 /** Optional-or-required HTTP(S) URL, matching the old maintainer `CustomValidators.url`. */
 export function isMentorshipHttpUrl(value: string): boolean {
   return normalizeToUrl(value.trim()) !== null;
-}
-
-export function isMentorshipLogoFileName(fileName: string): boolean {
-  const ext = fileName.trim().split('.').pop()?.toLowerCase() ?? '';
-  return (MENTORSHIP_ENROLL_LOGO_EXTENSIONS as readonly string[]).includes(ext);
 }
 
 export function lastDayOfMentorshipMonth(isoMonthStart: string): string {
@@ -154,11 +148,6 @@ export function getMentorshipEnrollStepErrors(step: MentorshipEnrollStep, form: 
     }
     if (form.codeOfConductUrl.trim() && !isMentorshipHttpUrl(form.codeOfConductUrl)) {
       errors.codeOfConductUrl = MENTORSHIP_INVALID_URL;
-    }
-    if (isBlank(form.logoFileName)) {
-      errors.logoFileName = 'Logo is required.';
-    } else if (!isMentorshipLogoFileName(form.logoFileName)) {
-      errors.logoFileName = 'Program logo is not the right file type.';
     }
     if (form.ciiProjectId.trim() && !isMentorshipCiiProjectId(form.ciiProjectId)) {
       errors.ciiProjectId = MENTORSHIP_CII_INVALID_ID;
