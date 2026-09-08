@@ -287,66 +287,69 @@ describe.each([
     stubServiceCall: () => meetingSvc.deletePastMeetingParticipant.mockResolvedValue(undefined),
     serviceMock: () => meetingSvc.deletePastMeetingParticipant,
   },
-])('PastMeetingController.$name — shares the attendance-management authorization gate', ({ invoke, buildReq: buildParticipantReq, stubServiceCall, serviceMock }) => {
-  let controller: PastMeetingController;
+])(
+  'PastMeetingController.$name — shares the attendance-management authorization gate',
+  ({ invoke, buildReq: buildParticipantReq, stubServiceCall, serviceMock }) => {
+    let controller: PastMeetingController;
 
-  beforeEach(() => {
-    vi.clearAllMocks();
-    validateUidParameterMock.mockReturnValue(true);
-    checkSingleAccessMock.mockResolvedValue(false);
-    getPersonasMock.mockResolvedValue({ isRootWriter: false, isLFStaff: false, personaProjects: {} });
-    controller = new PastMeetingController();
-    meetingSvc.getPastMeetingById.mockResolvedValue(buildPastMeeting({ project_uid: 'project-1' }));
-    stubServiceCall();
-  });
-
-  it('runs when the caller is the organizer', async () => {
-    addAccessToResourceMock.mockResolvedValue({ organizer: true });
-    const res = buildRes();
-    const next = vi.fn();
-
-    await invoke(controller, buildParticipantReq(true), res, next);
-
-    expect(serviceMock()).toHaveBeenCalled();
-    expect(next).not.toHaveBeenCalled();
-  });
-
-  it('runs when the caller is a writer on the meeting project', async () => {
-    addAccessToResourceMock.mockResolvedValue({ organizer: false });
-    checkSingleAccessMock.mockResolvedValue(true);
-    const res = buildRes();
-    const next = vi.fn();
-
-    await invoke(controller, buildParticipantReq(true), res, next);
-
-    expect(serviceMock()).toHaveBeenCalled();
-    expect(next).not.toHaveBeenCalled();
-  });
-
-  it('runs when the caller is an Executive Director of the meeting project', async () => {
-    addAccessToResourceMock.mockResolvedValue({ organizer: false });
-    getPersonasMock.mockResolvedValue({
-      isRootWriter: false,
-      isLFStaff: false,
-      personaProjects: { 'executive-director': [{ projectUid: 'project-1', projectSlug: 'proj-slug', projectName: 'Proj' }] },
+    beforeEach(() => {
+      vi.clearAllMocks();
+      validateUidParameterMock.mockReturnValue(true);
+      checkSingleAccessMock.mockResolvedValue(false);
+      getPersonasMock.mockResolvedValue({ isRootWriter: false, isLFStaff: false, personaProjects: {} });
+      controller = new PastMeetingController();
+      meetingSvc.getPastMeetingById.mockResolvedValue(buildPastMeeting({ project_uid: 'project-1' }));
+      stubServiceCall();
     });
-    const res = buildRes();
-    const next = vi.fn();
 
-    await invoke(controller, buildParticipantReq(true), res, next);
+    it('runs when the caller is the organizer', async () => {
+      addAccessToResourceMock.mockResolvedValue({ organizer: true });
+      const res = buildRes();
+      const next = vi.fn();
 
-    expect(serviceMock()).toHaveBeenCalled();
-    expect(next).not.toHaveBeenCalled();
-  });
+      await invoke(controller, buildParticipantReq(true), res, next);
 
-  it('rejects with 403 when the caller is not the organizer, not a project writer, and not a project ED', async () => {
-    addAccessToResourceMock.mockResolvedValue({ organizer: false });
-    const res = buildRes();
-    const next = vi.fn();
+      expect(serviceMock()).toHaveBeenCalled();
+      expect(next).not.toHaveBeenCalled();
+    });
 
-    await invoke(controller, buildParticipantReq(true), res, next);
+    it('runs when the caller is a writer on the meeting project', async () => {
+      addAccessToResourceMock.mockResolvedValue({ organizer: false });
+      checkSingleAccessMock.mockResolvedValue(true);
+      const res = buildRes();
+      const next = vi.fn();
 
-    expect(serviceMock()).not.toHaveBeenCalled();
-    expect(next).toHaveBeenCalledWith(expect.objectContaining({ statusCode: 403 }));
-  });
-});
+      await invoke(controller, buildParticipantReq(true), res, next);
+
+      expect(serviceMock()).toHaveBeenCalled();
+      expect(next).not.toHaveBeenCalled();
+    });
+
+    it('runs when the caller is an Executive Director of the meeting project', async () => {
+      addAccessToResourceMock.mockResolvedValue({ organizer: false });
+      getPersonasMock.mockResolvedValue({
+        isRootWriter: false,
+        isLFStaff: false,
+        personaProjects: { 'executive-director': [{ projectUid: 'project-1', projectSlug: 'proj-slug', projectName: 'Proj' }] },
+      });
+      const res = buildRes();
+      const next = vi.fn();
+
+      await invoke(controller, buildParticipantReq(true), res, next);
+
+      expect(serviceMock()).toHaveBeenCalled();
+      expect(next).not.toHaveBeenCalled();
+    });
+
+    it('rejects with 403 when the caller is not the organizer, not a project writer, and not a project ED', async () => {
+      addAccessToResourceMock.mockResolvedValue({ organizer: false });
+      const res = buildRes();
+      const next = vi.fn();
+
+      await invoke(controller, buildParticipantReq(true), res, next);
+
+      expect(serviceMock()).not.toHaveBeenCalled();
+      expect(next).toHaveBeenCalledWith(expect.objectContaining({ statusCode: 403 }));
+    });
+  }
+);
