@@ -19,6 +19,7 @@ nav:
       - Public Meetings: architecture/backend/public-meetings.md
       - Snowflake Integration: architecture/backend/snowflake-integration.md
       - SSR Server: architecture/backend/ssr-server.md
+      - SSR Cold-Start Timeline: architecture/backend/ssr-startup.md
     - Frontend:
       - Overview: architecture/frontend/README.md
       - Angular Patterns: architecture/frontend/angular-patterns.md
