@@ -18,6 +18,7 @@ export class ProjectService {
 
   private readonly http = inject(HttpClient);
   private readonly projectCache = new Map<string, Observable<Project | null>>();
+  private readonly strictProjectCache = new Map<string, Observable<Project>>();
   private readonly projectsCache = new Map<string, Observable<Project[]>>();
   private slugsCache$: Observable<string[] | null> | null = null;
 
@@ -102,6 +103,12 @@ export class ProjectService {
     if (!this.projectCache.has(cacheKey)) {
       const params = options?.meetingCoordinator ? new HttpParams().set('meeting_coordinator', 'true') : undefined;
       const project$ = this.http.get<Project>(`/api/projects/${slugOrUid}`, { params }).pipe(
+        // Evict on source error, before catchError/shareReplay: shareReplay keeps its source
+        // subscription alive after downstream unsubscribes (refCount: false), so a canceled
+        // navigation can let the request fail with zero subscribers — a downstream eviction
+        // tap would never run and the entry would replay the catchError'd null to the next
+        // lookup instead of retrying (matches the meeting and mailing-list detail caches).
+        tap({ error: () => this.projectCache.delete(cacheKey) }),
         catchError((error) => {
           console.error('Failed to fetch project:', error);
           return of(null);
@@ -112,6 +119,14 @@ export class ProjectService {
             this.project$.next(project);
             this.project.set(project);
           }
+          // null only ever comes from the catchError above — evict failures so the next
+          // caller retries instead of replaying a transient error for the rest of the
+          // session (GH-1570: a poisoned entry would pin the newsletter guard and route
+          // reconciliation to a stale context). Concurrent subscribers still share this
+          // emission; only future lookups re-fetch.
+          if (!project) {
+            this.projectCache.delete(cacheKey);
+          }
         })
       );
       this.projectCache.set(cacheKey, project$);
@@ -120,13 +135,29 @@ export class ProjectService {
   }
 
   /**
-   * Slug lookup that propagates HTTP failures instead of mapping them to null,
-   * for callers that must distinguish a missing project (400/404) from an
-   * upstream outage (5xx) — e.g. the newsletter reader's SSR 404 signaling.
-   * Uncached and side-effect free (does not touch the active-project state).
+   * Slug-or-uid lookup that propagates HTTP failures instead of mapping them to null,
+   * for callers that must distinguish a missing project (400/404) from an upstream
+   * outage (5xx) — e.g. the newsletter reader's SSR 404 signaling and the newsletter
+   * access guard's confirmed-missing degradation (GH-1570). shareReplay-cached like
+   * getProject so a deep link's stacked callers (the guard's mount- and child-route
+   * invocations, then route reconciliation) share one request per identifier; the
+   * entry evicts on error so a transient failure retries on the next lookup instead
+   * of replaying for the session. Cached separately from getProject's null-mapping
+   * entries and side-effect free (does not touch the active-project state). Note the
+   * slug and uid forms cache under separate keys for the same project.
    */
-  public getProjectStrict(slug: string): Observable<Project> {
-    return this.http.get<Project>(`/api/projects/${encodeURIComponent(slug)}`);
+  public getProjectStrict(slugOrUid: string): Observable<Project> {
+    if (!this.strictProjectCache.has(slugOrUid)) {
+      const project$ = this.http.get<Project>(`/api/projects/${encodeURIComponent(slugOrUid)}`).pipe(
+        // Evict on source error, before shareReplay pins it — shareReplay keeps its source
+        // subscription alive after downstream unsubscribes (refCount: false), so a canceled
+        // navigation could otherwise pin the error for the session (same race as getProject).
+        tap({ error: () => this.strictProjectCache.delete(slugOrUid) }),
+        shareReplay(1)
+      );
+      this.strictProjectCache.set(slugOrUid, project$);
+    }
+    return this.strictProjectCache.get(slugOrUid)!;
   }
 
   public getProjectSfid(uid: string): Observable<string | null> {
