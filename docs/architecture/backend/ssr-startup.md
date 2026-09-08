@@ -14,7 +14,7 @@ ready (`charts/lfx-self-serve/values.yaml:199-200`), a budget sized against an
 assumption of ~4 minute cold starts. This chart's own default is
 `maxSurge: "100%"` (`charts/lfx-self-serve/values.yaml:7-13`), but prod and
 staging override that in the separate `lfx-v2-argocd` repo
-(`values/prod/lfx-self-serve.yaml:102-108`, `values/staging/lfx-self-serve.yaml:99-106`)
+(`values/prod/lfx-self-serve.yaml:102-108`, `values/staging/lfx-self-serve.yaml:100-107`)
 to `maxSurge: 1` — [issue #1375](https://github.com/linuxfoundation/lfx-self-serve/issues/1375),
 per that override's own comment, specifically to stop a `maxSurge: "100%"` rollout
 (3 pods / 1500m CPU at once) from forcing Karpenter to provision new nodes on a
@@ -64,6 +64,10 @@ minutes earlier that required an actual image pull on those same nodes
 | Image pull (`Pulling` → `Pulled`) | 0 (cache hit) | 31.3–33.1s (n=3 pods, same rollout) | kubelet `Pulled` event message |
 | **Scheduled → app listening, end to end** | **~3.7–5.8s** | **~42s** | `Scheduled`/`Started` events → `server_startup` timestamp |
 
+Each row is the independent min/max across its sample set, not a per-sample
+sum — rows won't add up column-by-column. The end-to-end row is measured
+directly from events, not derived by summing the phase rows above it.
+
 **Findings:**
 
 - The in-process boot (module-graph eval + Angular engine construction +
@@ -103,28 +107,8 @@ open question this analysis cannot resolve from existing telemetry alone.
 
 ## Reproduction
 
-```bash
-# Cross-reference a specific rollout's Kubernetes events with its boot logs.
-# 1. Find the pods from a rollout:
-kubectl -n ui get pods -l app.kubernetes.io/name=lfx-self-serve \
-  --sort-by=.metadata.creationTimestamp
-
-# 2. Pull the pod-level events (Scheduled/Pulling/Pulled/Created/Started):
-kubectl -n ui describe pod <pod-name> | sed -n '/Events:/,$p'
-
-# 3. Pull the two boot log lines (requires the pod's Datadog tags/name):
-#    - "server startup: Node Express server started" (has engine_ms/routes_ms/boot_ms)
-#    - "[otel] import complete" (has elapsed_ms)
-kubectl -n ui logs <pod-name> --timestamps | grep -E 'otel\] import complete|server startup'
-```
-
-In Datadog: `service:lfx-self-serve env:<env> "Node Express server started"` and
-`service:lfx-self-serve env:<env> "otel] import complete"` — note the message
-text, not the `server_startup` field value, is what's searchable as free text.
-The numeric fields (`engine_ms`, `routes_ms`, `boot_ms`, `elapsed_ms`) are
-under `attributes.custom.data.*` / `attributes.custom.*` and are visible via
-the Datadog Logs Explorer or `search_datadog_logs` with `extra_fields: ["*"]`;
-they do not appear in a default TSV export.
+See the [Measuring SSR Cold Start runbook](../../runbooks/measuring-ssr-cold-start.md)
+for the `kubectl`/Datadog procedure used to gather the samples above.
 
 ## Environment caveats
 
