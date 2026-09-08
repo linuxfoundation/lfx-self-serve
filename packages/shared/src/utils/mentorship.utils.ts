@@ -185,7 +185,7 @@ export function getMentorshipEnrollStepErrors(step: MentorshipEnrollStep, form: 
     if (!item.custom) return false;
     if (isBlank(item.name) || item.name.trim().length > MENTORSHIP_CUSTOM_PREREQ_NAME_MAX) return true;
     if (isBlank(item.dueDate ?? '') || !isMentorshipIsoDate(item.dueDate ?? '')) return true;
-    if ((item.dueDate ?? '') <= todayIso) return true;
+    if ((item.dueDate ?? '') < todayIso) return true;
     return isBlank(item.description) || item.description.trim().length > MENTORSHIP_CUSTOM_PREREQ_DESCRIPTION_MAX;
   });
   const coding = form.prerequisites.find((item) => item.id === 'prereq-coding');
