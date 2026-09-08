@@ -49,6 +49,13 @@ export class FeatureFlagService {
   private readonly isProviderReady = signal<boolean>(false);
   private readonly context = signal<EvaluationContext | null>(null);
 
+  /**
+   * Built once as a field (not per-call) so `waitForReady()` can be awaited from anywhere —
+   * `toObservable()` only needs the injection context at construction time, and a service field
+   * initializer already runs inside one.
+   */
+  private readonly providerReady$ = toObservable(this.isProviderReady);
+
   // Public readonly signals
   public readonly initialized = this.isInitialized.asReadonly();
 
@@ -96,18 +103,18 @@ export class FeatureFlagService {
   /**
    * Wait for the provider to reach READY, up to `timeoutMs`.
    *
-   * Every flag-gated `CanMatch` guard needs this exact wait — the provider can still be
-   * initializing (or stuck, if LaunchDarkly was slow/unreachable during app bootstrap) when a
-   * user navigates. Centralized here so the timeout's fail path is instrumented exactly once,
-   * rather than duplicated per guard — a guard that resolves this way is otherwise a silent
-   * redirect with no way to tell it happened after the fact (see GH-1351); LD's own logger is
-   * disabled in production and a `console.*` call isn't forwarded to RUM.
+   * Every flag-gated route guard needs this exact wait — the provider can still be initializing
+   * (or stuck, if LaunchDarkly was slow/unreachable during app bootstrap) when a user navigates.
+   * Centralized here so the timeout's fail path is instrumented exactly once, rather than
+   * duplicated per guard — a guard that resolves this way is otherwise a silent redirect with no
+   * way to tell it happened after the fact (see GH-1351); LD's own logger is disabled in
+   * production and a `console.*` call isn't forwarded to RUM.
    *
-   * **Must be called synchronously from an active injection context** (e.g. directly inside a
-   * `CanMatchFn`, before any `await`). It internally builds an observable via `toObservable()`,
-   * which calls `inject()` — that only works while the injection context from the guard's own
-   * invocation is still open. Awaiting anything in the caller first closes that context and this
-   * call throws.
+   * Safe to call from any async context — `providerReady$` is built once as a field, so this no
+   * longer needs the injection context that building it per-call would have required.
+   *
+   * Reports once per call, not deduped across calls — intentional: per-navigation frequency is
+   * the signal (a sustained outage should show as sustained RUM volume, not a single flat line).
    */
   public async waitForReady(context: FeatureFlagGuardContext, timeoutMs = 5000): Promise<boolean> {
     if (this.isProviderReady()) {
@@ -115,7 +122,7 @@ export class FeatureFlagService {
     }
 
     const ready = await firstValueFrom(
-      toObservable(this.isProviderReady).pipe(
+      this.providerReady$.pipe(
         filter((isReady): isReady is true => isReady === true),
         timeout(timeoutMs),
         catchError(() => of(false))

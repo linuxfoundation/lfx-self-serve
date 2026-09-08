@@ -3,10 +3,9 @@
 
 import { isPlatformBrowser } from '@angular/common';
 import { inject, PLATFORM_ID } from '@angular/core';
-import { toObservable } from '@angular/core/rxjs-interop';
 import { ActivatedRouteSnapshot, CanActivateFn, Router } from '@angular/router';
 import { MARKETING_OPS_FGA_ENABLED_FLAG } from '@lfx-one/shared/constants';
-import { catchError, filter, map, of, switchMap, timeout } from 'rxjs';
+import { from, map, of, switchMap } from 'rxjs';
 
 import { FeatureFlagService } from '../services/feature-flag.service';
 import { PersonaService } from '../services/persona.service';
@@ -76,11 +75,7 @@ export const campaignAccessGuard: CanActivateFn = (route: ActivatedRouteSnapshot
 
   const providerReady$ = featureFlagService.providerReady()
     ? of(true)
-    : toObservable(featureFlagService.providerReady).pipe(
-        filter((isReady): isReady is true => isReady === true),
-        timeout(5000),
-        catchError(() => of(false))
-      );
+    : from(featureFlagService.waitForReady({ guard: 'campaignAccessGuard', flag: MARKETING_OPS_FGA_ENABLED_FLAG }));
 
   return providerReady$.pipe(
     switchMap((ready) => {

@@ -184,15 +184,24 @@ export class FeatureFlagService {
   }
 
   /**
+   * Built once as a field (not per-call) so `waitForReady()` can be awaited from anywhere —
+   * `toObservable()` only needs the injection context at construction time, and a service field
+   * initializer already runs inside one.
+   */
+  private readonly providerReady$ = toObservable(this.isProviderReady);
+
+  /**
    * Wait for the provider to reach READY, up to `timeoutMs` (default 5000). Every flag-gated
-   * `CanMatch` guard uses this so the provider being slow to initialize (or stuck, if
-   * LaunchDarkly was unreachable during bootstrap) doesn't produce a silent, unexplained redirect
-   * when a user navigates — the timeout path is reported to Datadog RUM exactly once here rather
-   * than duplicated per guard (see GH-1351).
+   * route guard uses this so the provider being slow to initialize (or stuck, if LaunchDarkly
+   * was unreachable during bootstrap) doesn't produce a silent, unexplained redirect when a user
+   * navigates — the timeout path is reported to Datadog RUM exactly once here rather than
+   * duplicated per guard (see GH-1351).
    *
-   * Must be called synchronously from an active injection context (e.g. directly inside a
-   * `CanMatchFn`, before any `await`) — it builds an observable via `toObservable()`, which needs
-   * the caller's own still-open injection context.
+   * Safe to call from any async context — `providerReady$` is built once as a field, so this no
+   * longer needs the injection context that building it per-call would have required.
+   *
+   * Reports once per call, not deduped across calls — intentional: per-navigation frequency is
+   * the signal (a sustained outage should show as sustained RUM volume, not a single flat line).
    */
   public async waitForReady(context: FeatureFlagGuardContext, timeoutMs = 5000): Promise<boolean> {
     if (this.isProviderReady()) {
@@ -200,7 +209,7 @@ export class FeatureFlagService {
     }
 
     const ready = await firstValueFrom(
-      toObservable(this.isProviderReady).pipe(
+      this.providerReady$.pipe(
         filter((isReady): isReady is true => isReady === true),
         timeout(timeoutMs),
         catchError(() => of(false))
@@ -223,7 +232,7 @@ export class FeatureFlagService {
 - **Public Readonly Signals**: Exposed signals use `asReadonly()` to prevent external mutation
 - **Lazy Initialization**: Service doesn't initialize in constructor; waits for explicit `initialize()` call
 - **Idempotent**: Multiple `initialize()` calls are safe (checks `isInitialized()` first)
-- **Instrumented readiness wait**: `waitForReady()` centralizes the guard-facing timeout so every flag-gated route reports the same way to RUM on failure, instead of each guard duplicating its own wait/timeout/log logic
+- **Instrumented readiness wait**: `waitForReady()` centralizes the guard-facing timeout so every flag-gated route — both `CanMatch` guards and the two `CanActivateFn` guards (`campaignAccessGuard`, `marketingImpactAccessGuard`) — reports the same way to RUM on failure, instead of each guard duplicating its own wait/timeout/log logic
 
 ### Provider Setup
 
