@@ -104,30 +104,38 @@ export class MktgAgentRunComponent {
   protected readonly run = signal<MktgStoredAgentRun | null>(null);
   protected readonly viewVersion = signal<number | null>(null);
   protected readonly docExpanded = signal(false);
-  /** Field keys pre-filled from LFX data this session — drives the "From LFX" chips. */
-  protected readonly fromLfx = signal<Record<string, boolean>>({});
+  /** Field keys pre-filled from LFX data this session — the raw record behind the "From LFX" chips. */
+  private readonly fromLfxApplied = signal<Record<string, boolean>>({});
   /**
    * Field keys whose LFX prefill source resolved WITHOUT a value. Tracked
-   * separately from fromLfx (which only records that a prefill was APPLIED to
-   * an empty control) so the "not set on your LFX project" hint reflects what
-   * LFX actually has — never restored answers or early typing.
+   * separately from fromLfxApplied (which only records that a prefill was
+   * APPLIED to an empty control) so the "not set on your LFX project" hint
+   * reflects what LFX actually has — never restored answers or early typing.
    */
   protected readonly lfxMissing = signal<Record<string, boolean>>({});
   /**
    * Field keys filled from an answer the user gave ANOTHER agent on this
    * project, mapped to the chip label naming that agent's document ("From your
-   * Brand Kit run"). Separate from {@link fromLfx} on purpose: a reused answer
-   * is not something LFX knows, and labelling it "From LFX" would misstate
-   * where the value came from.
+   * Brand Kit run"). Separate from {@link fromLfxApplied} on purpose: a reused
+   * answer is not something LFX knows, and labelling it "From LFX" would
+   * misstate where the value came from.
    */
-  protected readonly fromPriorRun = signal<Record<string, string>>({});
+  private readonly fromPriorRunApplied = signal<Record<string, string>>({});
   /**
    * Field keys filled from the answer memory at all — a superset of
-   * {@link fromPriorRun}, which covers only the fills that earn a chip. The
-   * agent's OWN remembered answers fill without a chip, and the
+   * {@link fromPriorRunApplied}, which covers only the fills that earn a chip.
+   * The agent's OWN remembered answers fill without a chip, and the
    * "not set on your LFX project" hint has to stand down for those too.
    */
-  protected readonly filledFromMemory = signal<Record<string, boolean>>({});
+  private readonly filledFromMemoryApplied = signal<Record<string, boolean>>({});
+  /**
+   * The exact (trimmed) value each prefill wrote into its control. Provenance
+   * is a claim about the value ON SCREEN, not about the session: once the user
+   * edits or clears a prefilled answer, "From LFX" / "From your Brand Kit run"
+   * describes nothing that is there, and the hint those fills suppress becomes
+   * the truth again. This is what {@link prefillIntact} compares against.
+   */
+  private readonly prefillAppliedValues = signal<Record<string, string>>({});
   /**
    * Resolved stored output per dependency agent id for the active project
    * (dec-agent-dependency-gating): server-persisted preferred, browser-stored
@@ -182,16 +190,33 @@ export class MktgAgentRunComponent {
    */
   protected readonly fieldFormatErrors: Signal<Record<string, string>> = this.initFieldFormatErrors();
   /**
+   * Prefilled keys whose control STILL holds the value the prefill wrote.
+   * Every provenance claim is gated on this, so clearing a reused repository
+   * URL drops its chip instead of captioning an empty box, and editing an LFX
+   * value stops it reading as LFX's.
+   */
+  private readonly prefillIntact: Signal<Record<string, boolean>> = computed(() => {
+    // Depend on the form's value so this follows every keystroke.
+    this.intakeValue();
+    const applied = this.prefillAppliedValues();
+    return Object.fromEntries(Object.entries(applied).map(([key, value]) => [key, (this.intakeForm.controls[key]?.value ?? '').trim() === value]));
+  });
+  /** "From LFX" chips — only for the fields still showing what LFX supplied. */
+  protected readonly fromLfx: Signal<Record<string, boolean>> = computed(() => this.gateOnIntactPrefill(this.fromLfxApplied()));
+  /** "From your <document> run" chips — likewise dropped the moment the reused value is edited away. */
+  protected readonly fromPriorRun: Signal<Record<string, string>> = computed(() => this.gateOnIntactPrefill(this.fromPriorRunApplied()));
+  /**
    * Field keys that should show the "not set on your LFX project" hint: the
    * LFX source came back empty AND nothing else filled the control. A field
    * filled from the answer memory already holds a value the user gave, so
    * repeating the LFX-is-empty hint next to it is noise — or, for the
    * agent's own remembered answers, which carry no chip, an instruction to
-   * supply what the form has already supplied.
+   * supply what the form has already supplied. Once that fill is edited away
+   * the field is empty-or-the-user's again and the hint is due back.
    */
   protected readonly missingPrefillHintKeys: Signal<Record<string, boolean>> = computed(() => {
     const missing = this.lfxMissing();
-    const reused = this.filledFromMemory();
+    const reused = this.gateOnIntactPrefill(this.filledFromMemoryApplied());
     return Object.fromEntries(Object.entries(missing).map(([key, isMissing]) => [key, isMissing && !reused[key]]));
   });
   /**
@@ -598,10 +623,11 @@ export class MktgAgentRunComponent {
     this.stage.set(0);
     this.errorText.set('');
     this.docExpanded.set(false);
-    this.fromLfx.set({});
+    this.fromLfxApplied.set({});
     this.lfxMissing.set({});
-    this.fromPriorRun.set({});
-    this.filledFromMemory.set({});
+    this.fromPriorRunApplied.set({});
+    this.filledFromMemoryApplied.set({});
+    this.prefillAppliedValues.set({});
     this.copiedDerivative.set('');
     this.intakeForm.reset();
     this.feedbackForm.reset();
@@ -651,7 +677,8 @@ export class MktgAgentRunComponent {
       const control = this.intakeForm.controls[field.key];
       if (control && !control.value.trim()) {
         control.setValue(trimmedValue);
-        this.fromLfx.update((flags) => ({ ...flags, [field.key]: true }));
+        this.recordPrefill(field.key, trimmedValue);
+        this.fromLfxApplied.update((flags) => ({ ...flags, [field.key]: true }));
       }
     }
   }
@@ -691,11 +718,23 @@ export class MktgAgentRunComponent {
         continue;
       }
       control.setValue(entry.value);
-      this.filledFromMemory.update((flags) => ({ ...flags, [field.key]: true }));
+      this.recordPrefill(field.key, entry.value.trim());
+      this.filledFromMemoryApplied.update((flags) => ({ ...flags, [field.key]: true }));
       if (entry.agentId !== this.agent?.id) {
-        this.fromPriorRun.update((labels) => ({ ...labels, [field.key]: `From your ${mktgAgentDocumentName(entry.agentId)} run` }));
+        this.fromPriorRunApplied.update((labels) => ({ ...labels, [field.key]: `From your ${mktgAgentDocumentName(entry.agentId)} run` }));
       }
     }
+  }
+
+  /** Remembers what a prefill wrote, so the chips it earns can be withdrawn when the user replaces it. */
+  private recordPrefill(key: string, value: string): void {
+    this.prefillAppliedValues.update((values) => ({ ...values, [key]: value }));
+  }
+
+  /** Keeps only the provenance entries whose field still holds the prefilled value. */
+  private gateOnIntactPrefill<T>(applied: Record<string, T>): Record<string, T> {
+    const intact = this.prefillIntact();
+    return Object.fromEntries(Object.entries(applied).filter(([key]) => intact[key]));
   }
 
   private startGeneration(feedback?: string): void {

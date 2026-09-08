@@ -279,6 +279,57 @@ describe('MktgAgentRunComponent', () => {
       expect(host().textContent).not.toContain('Not set on your LFX project');
     });
 
+    /**
+     * A chip is a claim about the value in the box, so it has to be withdrawn
+     * when the value goes. Clearing a reused repo URL used to leave "From your
+     * Message Foundation run" beside an empty control — and, worse, the fill it
+     * recorded kept suppressing the LFX-empty hint that was true again.
+     */
+    it('withdraws the reused-answer chip once the user clears the value it filled', async () => {
+      projects = { 'proj-one': { repository_url: '', description: '' } };
+      rememberedAnswers = {
+        'proj-1': { github_url: { value: 'https://github.com/example-org/example-repo', agentId: 'foundation-setup', savedAt: '2026-08-20T00:00:00.000Z' } },
+      };
+      activeContext.set(PROJECT_1);
+      await fixture.whenStable();
+      expect(priorRunChip('github_url')).not.toBeNull();
+
+      component['intakeForm'].controls['github_url'].setValue('');
+      await fixture.whenStable();
+
+      expect(priorRunChip('github_url')).toBeNull();
+    });
+
+    it('brings the LFX-empty hint back when the answer it stood down for is cleared', async () => {
+      projects = { 'proj-one': { repository_url: '', description: '' } };
+      rememberedAnswers = {
+        'proj-1': { one_line_description: { value: 'A runtime for agents.', agentId: 'brand-kit', savedAt: '2026-08-20T00:00:00.000Z' } },
+      };
+      activeContext.set(PROJECT_1);
+      await fixture.whenStable();
+      expect(host().textContent).not.toContain('Not set on your LFX project');
+
+      component['intakeForm'].controls['one_line_description'].setValue('');
+      await fixture.whenStable();
+
+      // LFX still has nothing and the box is empty again — the hint is the honest state.
+      expect(host().textContent).toContain('Not set on your LFX project');
+    });
+
+    it('stops calling a value "From LFX" once the user has typed over it', async () => {
+      projects = { 'proj-one': { repository_url: 'https://github.com/one/repo', description: 'One-line description from LFX' } };
+      activeContext.set(PROJECT_1);
+      await fixture.whenStable();
+      expect(fromLfxChip('github_url')).not.toBeNull();
+
+      component['intakeForm'].controls['github_url'].setValue('https://github.com/mine/own-repo');
+      await fixture.whenStable();
+
+      expect(fromLfxChip('github_url')).toBeNull();
+      // The other fields are untouched, so their provenance stands.
+      expect(fromLfxChip('one_line_description')).not.toBeNull();
+    });
+
     it('renders NO provenance chip at all when the LFX source resolves empty and nothing else fills the field', async () => {
       projects = { 'proj-one': { repository_url: '', description: '' } };
       activeContext.set(PROJECT_1);
