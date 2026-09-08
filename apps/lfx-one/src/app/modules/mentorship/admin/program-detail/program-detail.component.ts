@@ -46,12 +46,16 @@ export class ProgramDetailComponent {
   protected readonly isLoading = signal(true);
   protected readonly activeTab = signal<MentorshipProgramDetailTab>('mentees');
   protected readonly termsOverride = signal<MentorshipProgramTermRow[] | null>(null);
+  protected readonly menteesOverride = signal<MentorshipProgramPerson[] | null>(null);
   protected readonly applicantsOverride = signal<MentorshipProgramPerson[] | null>(null);
+  protected readonly mentorsOverride = signal<MentorshipProgramPerson[] | null>(null);
 
   protected readonly programId = toSignal(this.route.paramMap.pipe(map((params) => params.get('programId') ?? '')), { initialValue: '' });
   protected readonly detail: Signal<MentorshipProgramDetail | null> = this.initDetail();
   protected readonly terms = computed(() => this.termsOverride() ?? this.detail()?.terms ?? []);
+  protected readonly mentees = computed(() => this.menteesOverride() ?? this.detail()?.mentees ?? []);
   protected readonly applicants = computed(() => this.applicantsOverride() ?? this.detail()?.applicants ?? []);
+  protected readonly mentors = computed(() => this.mentorsOverride() ?? this.detail()?.mentors ?? []);
   protected readonly tabCounts = computed(() => {
     const detail = this.detail();
     if (!detail) return { mentees: 0, applicants: 0, mentors: 0, terms: 0 };
@@ -68,17 +72,13 @@ export class ProgramDetailComponent {
 
     if (renamedTerms.size === 0 && closedTermNames.size === 0) return;
 
-    // Applicants reference their term by name, so a rename has to be carried over
-    // before matching. Closing a term then declines its outstanding applications,
-    // so the Applicants tab must not keep showing those people as pending.
-    this.applicantsOverride.set(
-      this.applicants().map((applicant): MentorshipProgramPerson => {
-        const termName = renamedTerms.get(applicant.termName) ?? applicant.termName;
-        const decline = applicant.status === 'pending' && closedTermNames.has(termName);
-        if (termName === applicant.termName && !decline) return applicant;
-        return { ...applicant, termName, status: decline ? 'declined' : applicant.status };
-      })
-    );
+    // Every person list references its term by name, so a rename has to reach all
+    // three or their term column and term-based search go stale. Only applicants
+    // hold outstanding applications, so they are the only list a close declines.
+    const noDeclines = new Set<string>();
+    this.menteesOverride.set(this.applyTermChanges(this.mentees(), renamedTerms, noDeclines));
+    this.applicantsOverride.set(this.applyTermChanges(this.applicants(), renamedTerms, closedTermNames));
+    this.mentorsOverride.set(this.applyTermChanges(this.mentors(), renamedTerms, noDeclines));
   }
 
   protected onTabChange(tab: MentorshipProgramDetailTab): void {
@@ -91,6 +91,16 @@ export class ProgramDetailComponent {
       summary: 'Edit program',
       detail: MENTORSHIP_PROGRAM_DETAIL_COMING_SOON,
       life: 4000,
+    });
+  }
+
+  /** Carries term renames onto a person list and declines rows still pending on a closed term. */
+  private applyTermChanges(people: MentorshipProgramPerson[], renamedTerms: Map<string, string>, closedTermNames: Set<string>): MentorshipProgramPerson[] {
+    return people.map((person): MentorshipProgramPerson => {
+      const termName = renamedTerms.get(person.termName) ?? person.termName;
+      const decline = person.status === 'pending' && closedTermNames.has(termName);
+      if (termName === person.termName && !decline) return person;
+      return { ...person, termName, status: decline ? 'declined' : person.status };
     });
   }
 
@@ -121,7 +131,9 @@ export class ProgramDetailComponent {
         tap(() => {
           this.isLoading.set(true);
           this.termsOverride.set(null);
+          this.menteesOverride.set(null);
           this.applicantsOverride.set(null);
+          this.mentorsOverride.set(null);
         }),
         switchMap((programId) => this.mentorshipService.getProgram(programId).pipe(tap(() => this.isLoading.set(false))))
       ),

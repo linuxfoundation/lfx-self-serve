@@ -25,13 +25,13 @@
 
       @switch (activeTab()) {
         @case ('mentees') {
-          <lfx-mentorship-current-mentees-tab [mentees]="programDetail.mentees" />
+          <lfx-mentorship-current-mentees-tab [mentees]="mentees()" />
         }
         @case ('applicants') {
           <lfx-mentorship-applicants-tab [applicants]="applicants()" />
         }
         @case ('mentors') {
-          <lfx-mentorship-mentors-tab [mentors]="programDetail.mentors" />
+          <lfx-mentorship-mentors-tab [mentors]="mentors()" />
         }
         @case ('terms') {
           <lfx-mentorship-terms-tab [terms]="terms()" (termsChange)="onTermsChange($event)" />
