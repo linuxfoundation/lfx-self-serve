@@ -7,6 +7,7 @@ import { ButtonComponent } from '@components/button/button.component';
 import { InputTextComponent } from '@components/input-text/input-text.component';
 import { CHARTER_URL_MAX_LENGTH, CHARTER_URL_PATTERN } from '@lfx-one/shared/constants';
 import { CharterDialogData } from '@lfx-one/shared/interfaces';
+import { maxCodePointsValidator } from '@lfx-one/shared/validators';
 import { DynamicDialogConfig, DynamicDialogRef } from 'primeng/dynamicdialog';
 
 @Component({
@@ -24,9 +25,12 @@ export class CharterDialogComponent {
   // CHARTER_URL_PATTERN/CHARTER_URL_MAX_LENGTH mirror the backend's contract exactly, so a
   // client-valid value is guaranteed API-valid. Validators.pattern treats an empty value as valid
   // regardless of the pattern, so clearing the field (the charter-removal signal) is never blocked
-  // by this validator.
+  // by this validator. The length bound uses maxCodePointsValidator, not Validators.maxLength: the
+  // backend's Goa MaxLength(2048) counts Unicode code points (utf8.RuneCountInString), not the
+  // UTF-16 code units Validators.maxLength counts, so a non-BMP-heavy URL could be upstream-valid
+  // yet wrongly rejected here.
   public charterForm = new FormGroup({
-    url: new FormControl(this.url, [Validators.pattern(CHARTER_URL_PATTERN), Validators.maxLength(CHARTER_URL_MAX_LENGTH)]),
+    url: new FormControl(this.url, [Validators.pattern(CHARTER_URL_PATTERN), maxCodePointsValidator(CHARTER_URL_MAX_LENGTH)]),
   });
 
   public cancel(): void {

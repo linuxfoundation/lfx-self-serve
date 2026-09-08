@@ -82,6 +82,17 @@ describe('CharterDialogComponent', () => {
     expect(saveButton().disabled).toBe(true);
   });
 
+  it('accepts a URL at the 2,048 code-point limit built from non-BMP characters (would fail Validators.maxLength, which counts UTF-16 units)', async () => {
+    create();
+    // Each 😀 is 1 Unicode code point but 2 UTF-16 code units. 2000 of them + the 20-char prefix
+    // is under 2,048 code points (what the backend's Goa MaxLength(2048) counts) but over 2,048
+    // UTF-16 units (what Validators.maxLength counts) -- exactly the case maxCodePointsValidator
+    // exists to get right.
+    await typeUrl('https://example.org/' + '😀'.repeat(2000));
+    expect(fixture.nativeElement.querySelector('[data-testid="committee-charter-url-error"]')).toBeNull();
+    expect(saveButton().disabled).toBe(false);
+  });
+
   it('treats a blank value as valid regardless of the pattern (the removal signal)', async () => {
     create('https://example.org/charter.pdf');
     await typeUrl('');
