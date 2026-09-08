@@ -35,7 +35,11 @@ export class EnrollTermDialogComponent {
   protected readonly yearOptions = MENTORSHIP_TERM_YEAR_OPTIONS.map((option) => ({ ...option }));
   protected readonly nameMax = MENTORSHIP_TERM_NAME_MAX;
   protected readonly showErrors = signal(false);
-  protected readonly minApplicationDate = new Date();
+  protected readonly minApplicationDate = computed(() => {
+    const today = new Date();
+    today.setHours(0, 0, 0, 0);
+    return today;
+  });
   protected readonly dateErrors = signal<Record<string, string>>({});
 
   protected readonly form = new FormGroup({

@@ -99,7 +99,7 @@
         control="applicationStartDate"
         placeholder="YYYY-MM-DD"
         dateFormat="yy-mm-dd"
-        [minDate]="minApplicationDate"
+        [minDate]="minApplicationDate()"
         appendTo="body"
         styleClass="w-full" />
       @if (showErrors() && (form.controls.applicationStartDate.invalid || dateErrors()['applicationStartDate'])) {
@@ -113,7 +113,7 @@
         control="applicationEndDate"
         placeholder="YYYY-MM-DD"
         dateFormat="yy-mm-dd"
-        [minDate]="minApplicationDate"
+        [minDate]="minApplicationDate()"
         appendTo="body"
         styleClass="w-full" />
       @if (showErrors() && (form.controls.applicationEndDate.invalid || dateErrors()['applicationEndDate'])) {
