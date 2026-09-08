@@ -56,8 +56,8 @@ If an unverified identity is not yours, select **This is not me** to reject it.
 To reject an unverified identity instead, use **This is not me** on its row (see [Verify an unverified identity](#verify-an-unverified-identity)). Your **Primary** identity cannot be removed.
 
 > **Note:** Removing an identity can't be undone. As the removal dialog notes, identity information may be retained to help improve our services and support project insights — see the [Linux Foundation Privacy Policy](https://www.linuxfoundation.org/legal/privacy-policy) for what data is kept and why.
-
-> **Note:** A verified email currently set to receive meeting invitations can't be removed — its **Remove** option is disabled until you choose a different meeting-invitation email in [Settings](../settings/#available-settings).
+>
+> A verified email currently set to receive meeting invitations can't be removed — its **Remove** option is disabled until you choose a different meeting-invitation email in [Settings](../settings/#available-settings).
 
 ## Your Linux.com email alias
 
