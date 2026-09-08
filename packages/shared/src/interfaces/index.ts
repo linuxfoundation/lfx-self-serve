@@ -177,6 +177,9 @@ export * from './impersonation.interface';
 // Health Metrics interfaces
 export * from './health-metrics.interface';
 
+// Health Metrics Overview page (LFXV2-3365) interfaces
+export * from './health-metrics-overview.interface';
+
 // Multi-persona dashboard interfaces
 export * from './multi-persona-dashboard.interface';
 
