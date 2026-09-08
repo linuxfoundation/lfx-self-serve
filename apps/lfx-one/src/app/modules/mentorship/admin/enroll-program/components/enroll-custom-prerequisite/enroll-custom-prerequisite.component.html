@@ -65,9 +65,11 @@
       [rows]="4"
       [maxlength]="descriptionMax"
       styleClass="w-full"
-      [required]="true" />
-    @if (showErrors() && !form.controls.description.value.trim()) {
-      <p class="text-xs text-red-600">Prerequisite description is required.</p>
+      [required]="true"
+      [invalid]="descriptionMissing()"
+      [describedBy]="descriptionMissing() ? 'custom-prereq-description-error-' + index() : undefined" />
+    @if (descriptionMissing()) {
+      <p class="text-xs text-red-600" [id]="'custom-prereq-description-error-' + index()">Prerequisite description is required.</p>
     }
   </div>
 

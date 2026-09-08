@@ -5,6 +5,7 @@ import { ChangeDetectionStrategy, Component, computed, input, output } from '@an
 import { AvatarComponent } from '@components/avatar/avatar.component';
 import { MENTORSHIP_PROGRAM_AVATAR_PALETTE, MENTORSHIP_PROGRAM_STATUS_BADGE_CLASSES, MENTORSHIP_PROGRAM_STATUS_LABELS } from '@lfx-one/shared/constants';
 import { MentorshipProgram } from '@lfx-one/shared/interfaces';
+import { stableKeyIndex } from '@lfx-one/shared/utils';
 
 /**
  * Compact card for the mentorship admin list. Mirrors `InitiativeCardComponent`
@@ -30,13 +31,10 @@ export class ProgramCardComponent {
   protected readonly statusLabel = computed(() => MENTORSHIP_PROGRAM_STATUS_LABELS[this.program().status]);
   protected readonly statusBadgeClass = computed(() => MENTORSHIP_PROGRAM_STATUS_BADGE_CLASSES[this.program().status]);
 
-  /** Deterministic avatar tint based on the program title so repeat renders don't shuffle colors. */
-  protected readonly avatarStyleClass = computed(() => {
-    const key = this.program().name;
-    const seed = key.length > 0 ? key.charCodeAt(0) : 0;
-    const idx = seed % MENTORSHIP_PROGRAM_AVATAR_PALETTE.length;
-    return MENTORSHIP_PROGRAM_AVATAR_PALETTE[idx];
-  });
+  /** Deterministic avatar tint based on the whole program title so repeat renders don't shuffle colors. */
+  protected readonly avatarStyleClass = computed(
+    () => MENTORSHIP_PROGRAM_AVATAR_PALETTE[stableKeyIndex(this.program().name, MENTORSHIP_PROGRAM_AVATAR_PALETTE.length)]
+  );
 
   /** First letter of the title. `AvatarComponent.displayLabel` only renders `label.charAt(0)`. */
   protected readonly initials = computed(() => {

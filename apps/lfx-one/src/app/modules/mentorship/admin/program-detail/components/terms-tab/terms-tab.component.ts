@@ -50,7 +50,15 @@ export class TermsTabComponent {
   protected readonly shouldCloseWarning = MENTORSHIP_TERM_SHOULD_CLOSE_WARNING;
   protected readonly cannotCloseMessage = MENTORSHIP_TERM_CANNOT_CLOSE_MESSAGE;
 
-  protected readonly draftTerms = linkedSignal(() => this.terms());
+  /**
+   * Term actions are local until a write endpoint exists, so a re-emission of the same upstream
+   * terms must keep them. Only a genuinely different set of terms resets the local edits.
+   */
+  protected readonly draftTerms = linkedSignal<MentorshipProgramTermRow[], MentorshipProgramTermRow[]>({
+    source: this.terms,
+    computation: (terms, previous) => (previous && this.sameTermIds(previous.source, terms) ? previous.value : terms),
+  });
+
   protected readonly canAddTerm = computed(() => mentorshipOpenTermCount(this.draftTerms()) < MENTORSHIP_MAX_OPEN_TERMS);
 
   protected readonly rows = computed(() =>
@@ -215,6 +223,10 @@ export class TermsTabComponent {
 
   private setTerms(next: MentorshipProgramTermRow[]): void {
     this.draftTerms.set(next);
+  }
+
+  private sameTermIds(a: MentorshipProgramTermRow[], b: MentorshipProgramTermRow[]): boolean {
+    return a.length === b.length && a.every((term, index) => term.id === b[index].id);
   }
 
   private toFormTerm(term: MentorshipProgramTermRow): MentorshipProgramTerm {

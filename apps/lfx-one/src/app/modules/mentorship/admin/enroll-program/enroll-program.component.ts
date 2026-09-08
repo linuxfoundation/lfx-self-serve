@@ -2,8 +2,8 @@
 // SPDX-License-Identifier: MIT
 
 import { isPlatformBrowser } from '@angular/common';
-import { ChangeDetectionStrategy, Component, computed, inject, PLATFORM_ID, signal } from '@angular/core';
-import { toSignal } from '@angular/core/rxjs-interop';
+import { ChangeDetectionStrategy, Component, computed, DestroyRef, inject, PLATFORM_ID, signal } from '@angular/core';
+import { takeUntilDestroyed, toSignal } from '@angular/core/rxjs-interop';
 import { FormControl, FormGroup, Validators } from '@angular/forms';
 import { Router } from '@angular/router';
 import { ButtonComponent } from '@components/button/button.component';
@@ -67,6 +67,7 @@ export class EnrollProgramComponent {
   private readonly messageService = inject(MessageService);
   private readonly confirmationService = inject(ConfirmationService);
   private readonly platformId = inject(PLATFORM_ID);
+  private readonly destroyRef = inject(DestroyRef);
 
   protected readonly form = new FormGroup({
     importProgramId: new FormControl('', { nonNullable: true }),
@@ -228,7 +229,8 @@ export class EnrollProgramComponent {
       .enrollProgram(this.toEnrollForm(this.form.getRawValue()))
       .pipe(
         take(1),
-        switchMap((program) => this.uploadLogo(program.id))
+        switchMap((program) => this.uploadLogo(program.id)),
+        takeUntilDestroyed(this.destroyRef)
       )
       .subscribe({
         next: (logoUploaded) => {

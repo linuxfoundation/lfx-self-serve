@@ -49,6 +49,7 @@ export class EnrollCustomPrerequisiteComponent {
     today.setHours(0, 0, 0, 0);
     return today;
   });
+  protected readonly descriptionMissing = computed(() => this.showErrors() && !this.formSnapshot().description.trim());
   protected readonly dueDateInvalid = computed(() => {
     const due = this.formSnapshot().dueDate;
     if (!due) return false;

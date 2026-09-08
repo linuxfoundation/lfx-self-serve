@@ -23,20 +23,25 @@
         (tabChange)="onTabChange($event)"
         (editClick)="onEditProgram()" />
 
-      @switch (activeTab()) {
-        @case ('mentees') {
-          <lfx-mentorship-current-mentees-tab [mentees]="mentees()" />
+      <div
+        role="tabpanel"
+        [id]="'mentorship-program-detail-tab-panel-' + activeTab()"
+        [attr.aria-labelledby]="'mentorship-program-detail-tab-trigger-' + activeTab()">
+        @switch (activeTab()) {
+          @case ('mentees') {
+            <lfx-mentorship-current-mentees-tab [mentees]="mentees()" />
+          }
+          @case ('applicants') {
+            <lfx-mentorship-applicants-tab [applicants]="applicants()" />
+          }
+          @case ('mentors') {
+            <lfx-mentorship-mentors-tab [mentors]="mentors()" />
+          }
+          @case ('terms') {
+            <lfx-mentorship-terms-tab [terms]="terms()" />
+          }
         }
-        @case ('applicants') {
-          <lfx-mentorship-applicants-tab [applicants]="applicants()" />
-        }
-        @case ('mentors') {
-          <lfx-mentorship-mentors-tab [mentors]="mentors()" />
-        }
-        @case ('terms') {
-          <lfx-mentorship-terms-tab [terms]="terms()" />
-        }
-      }
+      </div>
     } @else {
       <lfx-empty-state
         icon="fa-light fa-folder-open"
