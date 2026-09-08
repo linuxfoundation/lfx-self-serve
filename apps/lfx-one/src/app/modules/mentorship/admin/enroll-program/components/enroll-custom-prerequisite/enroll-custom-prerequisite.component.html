@@ -38,7 +38,7 @@
     @if (showErrors() && !form.controls.dueDate.value) {
       <p class="text-xs text-red-600">A valid due date is required (YYYY-MM-DD).</p>
     } @else if (showErrors() && dueDateInvalid()) {
-      <p class="text-xs text-red-600">Due date should be greater than today's date.</p>
+      <p class="text-xs text-red-600">Due date cannot be before today.</p>
     }
   </div>
 

@@ -12,6 +12,7 @@ import {
   getMentorshipEnrollStepErrors,
   getMentorshipTermDateErrors,
   isMentorshipTermEnded,
+  mentorshipDateOnlyFloor,
   mentorshipOpenTermCount,
   mentorshipTermHasApplications,
   isMentorshipCiiProjectId,
@@ -223,7 +224,7 @@ describe('getMentorshipTermDateErrors', () => {
     const term = {
       startDate: '2027-03-01',
       endDate: '2027-05-01',
-      applicationStartDate: '2026-12-01',
+      applicationStartDate: '2026-11-30',
       applicationEndDate: '2027-02-28',
     };
 
@@ -237,8 +238,28 @@ describe('getMentorshipTermDateErrors', () => {
     expect(getMentorshipTermDateErrors(term, today)).toEqual({});
     expect(term.startDate).toBe('2026-12-01');
     expect(term.endDate).toBe('2027-02-01');
-    expect(term.applicationStartDate).toBe('2026-09-08');
+    expect(term.applicationStartDate).toBe('2026-09-09');
     expect(term.applicationEndDate).toBe('2026-11-30');
+  });
+
+  it('accepts a client-local today when the host calendar is one day ahead', () => {
+    const clientToday = new Date(2026, 8, 7);
+    const serverToday = new Date(2026, 8, 8);
+    const term = createDefaultMentorshipTerm(clientToday);
+
+    expect(mentorshipDateOnlyFloor(serverToday)).toBe('2026-09-07');
+    expect(getMentorshipTermDateErrors(term, serverToday)).toEqual({});
+    expect(
+      getMentorshipTermDateErrors(
+        {
+          startDate: '2026-12-01',
+          endDate: '2027-02-01',
+          applicationStartDate: '2026-09-07',
+          applicationEndDate: '2026-11-30',
+        },
+        serverToday
+      )
+    ).toEqual({});
   });
 });
 
