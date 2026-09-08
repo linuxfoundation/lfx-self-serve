@@ -340,7 +340,10 @@ export class MeetingService {
   }
 
   public cancelOccurrence(meetingId: string, occurrenceId: string): Observable<void> {
-    return this.http.delete<void>(`/api/meetings/${meetingId}/occurrences/${occurrenceId}`).pipe(take(1));
+    return this.http.delete<void>(`/api/meetings/${meetingId}/occurrences/${occurrenceId}`).pipe(
+      take(1),
+      tap(() => this.meetingDetailCache.delete(meetingId))
+    );
   }
 
   // ─── Meeting Attachment Methods ───────────────────────────────────────────
