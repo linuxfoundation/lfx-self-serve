@@ -6,6 +6,7 @@ import express, { NextFunction, Request, Response, Router } from 'express';
 
 import { MentorshipController } from '../controllers/mentorship.controller';
 import { MicroserviceError } from '../errors';
+import { blockDuringImpersonation } from '../middleware/impersonation-readonly.middleware';
 
 const router = Router();
 const mentorshipController = new MentorshipController();
@@ -36,6 +37,7 @@ router.post('/programs', (req, res, next) => mentorshipController.enrollProgram(
 // Body is the raw image bytes (not multipart), mirroring POST /api/profile/picture-upload.
 router.post(
   '/programs/:programId/logo',
+  blockDuringImpersonation,
   express.raw({ type: [...MENTORSHIP_LOGO_MIME_TYPES], limit: MENTORSHIP_ENROLL_LOGO_MAX_BYTES }),
   handleLogoUploadParseError,
   (req: Request, res: Response, next: NextFunction) => mentorshipController.uploadProgramLogo(req, res, next)
