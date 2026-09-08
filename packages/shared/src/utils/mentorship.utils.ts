@@ -78,14 +78,23 @@ export function mentorshipDescriptionLength(html: string): number {
   return stripHtml(html).length;
 }
 
+/**
+ * Host calendar day one before `today`. A UTC BFF is at most one civil day ahead
+ * of a behind-UTC browser, so "today" stamped on the client must still pass.
+ */
+export function mentorshipDateOnlyFloor(today = new Date()): string {
+  return toMentorshipDateOnly(new Date(today.getFullYear(), today.getMonth(), today.getDate() - 1));
+}
+
 export function getMentorshipTermDateErrors(
   term: Pick<MentorshipProgramTerm, 'startDate' | 'endDate' | 'applicationStartDate' | 'applicationEndDate'>,
   today = new Date(),
   original?: Pick<MentorshipProgramTerm, 'startDate' | 'endDate' | 'applicationStartDate' | 'applicationEndDate'>
 ): MentorshipTermDateErrors {
   const errors: MentorshipTermDateErrors = {};
-  const todayIso = toMentorshipDateOnly(today);
-  const currentMonthStart = `${today.getFullYear()}-${String(today.getMonth() + 1).padStart(2, '0')}-01`;
+  const todayFloor = mentorshipDateOnlyFloor(today);
+  const floorDate = new Date(today.getFullYear(), today.getMonth(), today.getDate() - 1);
+  const currentMonthStart = `${floorDate.getFullYear()}-${String(floorDate.getMonth() + 1).padStart(2, '0')}-01`;
   const startValid = isMentorshipIsoDate(term.startDate);
   const endValid = isMentorshipIsoDate(term.endDate);
   const appStartValid = isMentorshipIsoDate(term.applicationStartDate);
@@ -103,14 +112,14 @@ export function getMentorshipTermDateErrors(
   }
   if (!appStartValid) {
     errors.applicationStartDate = MENTORSHIP_ISO_DATE_ERROR;
-  } else if (term.applicationStartDate < todayIso && term.applicationStartDate !== original?.applicationStartDate) {
+  } else if (term.applicationStartDate < todayFloor && term.applicationStartDate !== original?.applicationStartDate) {
     errors.applicationStartDate = 'Application start date cannot be before today.';
   } else if (startValid && term.applicationStartDate >= term.startDate) {
     errors.applicationStartDate = 'Application start date must be before the term start month.';
   }
   if (!appEndValid) {
     errors.applicationEndDate = MENTORSHIP_ISO_DATE_ERROR;
-  } else if (term.applicationEndDate < todayIso && term.applicationEndDate !== original?.applicationEndDate) {
+  } else if (term.applicationEndDate < todayFloor && term.applicationEndDate !== original?.applicationEndDate) {
     errors.applicationEndDate = 'Application end date cannot be before today.';
   } else if (appStartValid && term.applicationEndDate < term.applicationStartDate) {
     errors.applicationEndDate = 'Application end date must be on or after the application start date.';
@@ -180,12 +189,12 @@ export function getMentorshipEnrollStepErrors(step: MentorshipEnrollStep, form: 
   }
 
   const errors: MentorshipEnrollFieldErrors = {};
-  const todayIso = toMentorshipDateOnly(new Date());
+  const todayFloor = mentorshipDateOnlyFloor();
   const incompleteCustom = form.prerequisites.some((item) => {
     if (!item.custom) return false;
     if (isBlank(item.name) || item.name.trim().length > MENTORSHIP_CUSTOM_PREREQ_NAME_MAX) return true;
     if (isBlank(item.dueDate ?? '') || !isMentorshipIsoDate(item.dueDate ?? '')) return true;
-    if ((item.dueDate ?? '') < todayIso) return true;
+    if ((item.dueDate ?? '') < todayFloor) return true;
     return isBlank(item.description) || item.description.trim().length > MENTORSHIP_CUSTOM_PREREQ_DESCRIPTION_MAX;
   });
   const coding = form.prerequisites.find((item) => item.id === 'prereq-coding');

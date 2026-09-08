@@ -50,9 +50,7 @@ export class EnrollCustomPrerequisiteComponent {
   protected readonly dueDateInvalid = computed(() => {
     const due = this.formSnapshot().dueDate;
     if (!due) return false;
-    const today = new Date();
-    today.setHours(0, 0, 0, 0);
-    return toMentorshipDateOnly(due) < toMentorshipDateOnly(today);
+    return toMentorshipDateOnly(due) < toMentorshipDateOnly(this.minDueDate());
   });
 
   public constructor() {

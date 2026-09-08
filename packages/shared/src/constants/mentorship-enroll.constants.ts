@@ -326,14 +326,15 @@ function toIsoDateOnly(date: Date): string {
 }
 
 /**
- * A term whose application window and start month are still valid on `today`.
- * Term starts three months out so the application window is never already past.
+ * A term whose application window and start month stay valid on `today` and on a
+ * UTC host one civil day ahead. Application start is tomorrow so an untouched
+ * default is never "already past" on the BFF.
  */
 export function createDefaultMentorshipTerm(today = new Date()): MentorshipProgramTerm {
   const start = new Date(today.getFullYear(), today.getMonth() + 3, 1);
   const end = new Date(today.getFullYear(), today.getMonth() + 5, 1);
   const applicationEnd = new Date(start.getFullYear(), start.getMonth(), 0);
-  const applicationStart = new Date(today.getFullYear(), today.getMonth(), today.getDate());
+  const applicationStart = new Date(today.getFullYear(), today.getMonth(), today.getDate() + 1);
   const year = start.getFullYear();
   return {
     id: `term-1-${year}`,
