@@ -215,6 +215,16 @@ export class MentorshipService {
       throw MicroserviceError.fromMicroserviceResponse(response.status, response.statusText, {}, 'cii_best_practices', url, 'mentorship_get_cii_badge');
     }
 
+    // Only parse a body the upstream actually declared as JSON — an HTML error or interstitial
+    // page served with a 200 must not reach the JSON parser.
+    if (!(response.headers.get('content-type') ?? '').toLowerCase().includes('application/json')) {
+      throw new MicroserviceError('CII Best Practices returned an invalid response.', 502, 'BAD_GATEWAY', {
+        operation: 'mentorship_get_cii_badge',
+        service: 'cii_best_practices',
+        path: url,
+      });
+    }
+
     let payload: unknown;
     try {
       payload = await response.json();

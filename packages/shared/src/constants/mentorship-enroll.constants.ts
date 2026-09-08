@@ -43,7 +43,8 @@ export const MENTORSHIP_LOGO_MIME_TYPES = ['image/png', 'image/jpeg'] as const;
 export const MENTORSHIP_ENROLL_LOGO_MAX_BYTES = 2 * 1024 * 1024;
 export const MENTORSHIP_ENROLL_LOGO_HELPER = 'JPG, PNG · 420px × 420px · Max 2 MB';
 export const MENTORSHIP_ENROLL_LOGO_TYPE_ERROR = 'Program logo is not the right file type.';
-export const MENTORSHIP_LOGO_UPLOAD_FAILED = 'The program was created, but its logo could not be uploaded. Edit the program to try again.';
+export const MENTORSHIP_LOGO_UPLOAD_FAILED =
+  'The program was created, but its logo could not be uploaded. Program editing is not available yet, so the program shows its initials for now.';
 
 export const MENTORSHIP_ENROLL_DETAILS_INTRO = 'Describe the program and the project it belongs to. This is what candidates read on your program page.';
 export const MENTORSHIP_ENROLL_SETUP_INTRO = 'Define the skills mentees need and the term schedule for this program.';
@@ -425,7 +426,9 @@ export function createEmptyMentorshipEnrollForm(): MentorshipEnrollForm {
   };
 }
 
-type ImportedProgramSource = Omit<MentorshipEnrollForm, 'importProgramId' | 'termsAccepted' | 'logoPreviewUrl' | 'terms'>;
+// An imported template carries no logo bytes, so it must not carry a logo file name either —
+// the admin picks the logo, and `logoFileName` is what the details step validates against.
+type ImportedProgramSource = Omit<MentorshipEnrollForm, 'importProgramId' | 'termsAccepted' | 'logoFileName' | 'logoPreviewUrl' | 'terms'>;
 
 const MENTORSHIP_IMPORT_PROGRAM_DETAILS: Record<string, ImportedProgramSource> = {
   mp_gridflow_fall26: {
@@ -437,7 +440,6 @@ const MENTORSHIP_IMPORT_PROGRAM_DETAILS: Record<string, ImportedProgramSource> =
     websiteUrl: 'https://lfenergy.org',
     ciiProjectId: '1842',
     codeOfConductUrl: 'https://www.contributor-covenant.org/version/2/1/code_of_conduct/',
-    logoFileName: 'gridflow-logo.png',
     skills: ['GO', 'Kubernetes'],
     prerequisites: clonePrerequisites().map((item, index) => ({ ...item, required: index === 0 })),
   },
@@ -450,7 +452,6 @@ const MENTORSHIP_IMPORT_PROGRAM_DETAILS: Record<string, ImportedProgramSource> =
     websiteUrl: 'https://www.apicur.io/',
     ciiProjectId: '2104',
     codeOfConductUrl: 'https://github.com/Apicurio/apicurio-registry/blob/main/CODE_OF_CONDUCT.md',
-    logoFileName: 'apicurio-logo.png',
     skills: ['GO', 'React', 'API'],
     prerequisites: clonePrerequisites().map((item) => ({
       ...item,
@@ -466,7 +467,6 @@ const MENTORSHIP_IMPORT_PROGRAM_DETAILS: Record<string, ImportedProgramSource> =
     websiteUrl: 'https://janusgraph.org',
     ciiProjectId: '',
     codeOfConductUrl: '',
-    logoFileName: '',
     skills: ['Java', 'Database'],
     prerequisites: clonePrerequisites(),
   },
@@ -479,7 +479,6 @@ const MENTORSHIP_IMPORT_PROGRAM_DETAILS: Record<string, ImportedProgramSource> =
     websiteUrl: 'https://thanos.io',
     ciiProjectId: '',
     codeOfConductUrl: '',
-    logoFileName: '',
     skills: ['GO', 'Kubernetes'],
     prerequisites: clonePrerequisites().map((item) => ({ ...item, required: item.id === 'prereq-resume' })),
   },
@@ -510,7 +509,7 @@ export function formFromImportedMentorshipProgram(importProgramId: string): Ment
     websiteUrl: source.websiteUrl,
     ciiProjectId: source.ciiProjectId,
     codeOfConductUrl: source.codeOfConductUrl,
-    logoFileName: source.logoFileName,
+    logoFileName: '',
     logoPreviewUrl: '',
     skills: [...source.skills],
     terms: [createDefaultMentorshipTerm()],

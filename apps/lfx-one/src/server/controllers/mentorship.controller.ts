@@ -239,7 +239,9 @@ export class MentorshipController {
       }
 
       const rawBody: unknown = req.body;
-      if (!Buffer.isBuffer(rawBody) || rawBody.length === 0) {
+      // `Array.isArray` is redundant against `Buffer.isBuffer` at runtime; it is kept because CodeQL's
+      // js/type-confusion only clears the express body once the array shape is excluded explicitly.
+      if (Array.isArray(rawBody) || !Buffer.isBuffer(rawBody) || rawBody.length === 0) {
         throw ServiceValidationError.forField('body', 'Request body must contain image data', { operation: 'upload_mentorship_program_logo' });
       }
 

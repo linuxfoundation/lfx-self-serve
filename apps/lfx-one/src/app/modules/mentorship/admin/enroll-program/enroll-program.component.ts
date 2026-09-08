@@ -260,7 +260,9 @@ export class EnrollProgramComponent {
    */
   private uploadLogo(programId: string): Observable<boolean> {
     const file = this.logoFile();
-    if (!file) return of(true);
+    // The details step will not validate without a logo, so an empty signal here means the file
+    // was dropped (an import cleared it, for instance) and the program really has no logo.
+    if (!file) return of(false);
     return this.mentorshipService.uploadProgramLogo(programId, file).pipe(
       map(() => true),
       catchError(() => of(false))
