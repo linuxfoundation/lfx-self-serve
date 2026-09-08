@@ -30,10 +30,15 @@ import { FormationActionType, FormationOwnerTeam, FormationTemplateSectionKey } 
 export type FormationSubStage = 'exploratory' | 'engaged' | 'on_hold';
 
 /**
- * What kind of record is in formation — drives the queue's Type column and indentation.
- * TODO(#1958): this is a display taxonomy that should be derived (`is_foundation` on the project,
- * plus "parent is not the root" for a child project) rather than stored; `child_project` is kept
- * as a stored value for now because the canonical `Formation` has neither signal yet.
+ * What kind of record is in formation — drives the queue's Type column and indentation. Derived,
+ * never stored: compute with {@link deriveFormationEntityType} (`formation.utils.ts`) from
+ * {@link Formation.is_foundation} and {@link Formation.parent_uid}, don't add a stored field for
+ * it (GH-2163 §1, confirmed on #1957 8 Sep — "nothing stored, and we can derive").
+ *
+ * Outstanding: the derivation is only correct if a top-level project's `parent_uid` reaches the
+ * client as `null` rather than the real (hidden, per-environment) root project's UID — see that
+ * field's doc comment. Nothing in this repo performs that normalization yet; it lands with the
+ * BFF's queue-wiring work, not here.
  */
 export type FormationEntityType = 'foundation' | 'child_project' | 'project';
 
@@ -45,12 +50,36 @@ export interface FormationUser {
 
 export interface Formation {
   uid: string;
+  /** The project this formation is FOR — not that project's parent; see {@link Formation.parent_uid} for that. */
   parent_project_uid: string;
   parent_project_slug: string;
   parent_project_name: string;
-  /** Present only for a `child_project` — the foundation/project this formation nests under, for the queue's indented display. */
+  /** Present only when {@link deriveFormationEntityType} resolves `child_project` — the foundation/project this formation nests under, for the queue's indented display. */
   parent_formation_name?: string;
-  entity_type: FormationEntityType;
+  /** Derivation input (#1957, GH-2163 §1) — whether {@link Formation.parent_project_uid}'s project is a foundation. Mirrors the upstream project's `is_foundation`. */
+  is_foundation: boolean;
+  /**
+   * Derivation input (#1957, GH-2163 §1) — the UID of {@link Formation.parent_project_uid}'s
+   * project's OWN parent (one level further up than `parent_project_uid` itself). Upstream, a
+   * project's `parent_uid` is required and non-empty — even a top-level project is parented to
+   * the hidden `ROOT` project (`lfx-v2-project-service` `scripts/root-project-setup`), whose UID
+   * is a fresh, per-environment UUID that is resolved only server-side (this repo's
+   * `persona-detection.service.ts` NATS `PROJECT_SLUG_TO_UID` lookup) and never reaches the
+   * client. This field must therefore be `null` here rather than that UID — the producer (the
+   * BFF, when it wires the real service) collapses a `ROOT`-parented project's `parent_uid` to
+   * `null` before this payload is built. This repo already has the ROOT-collapse precedent, just
+   * shaped slightly differently: `resolveParentProject` in `public-meeting.controller.ts`
+   * (LFXV2-3266) nulls out a project's *resolved parent object* — `parent?.slug ===
+   * ROOT_PROJECT_SLUG ? null : parent` — surfaced as `PublicMeetingProject.parent`, rather than
+   * collapsing a raw `parent_uid` string the way this field does; `deriveFormationEntityType`
+   * (`formation.utils.ts`) also treats an un-collapsed empty string the same as `null`, since an
+   * omitted/blank value is a more likely producer slip than a real ROOT UUID. Nothing in this
+   * repo performs the `parent_uid`-collapse normalization yet — nothing here derives
+   * `FormationEntityType` from a raw upstream value either. If a caller ever observes a real UID
+   * (not `null`/empty) on a top-level project, that normalization is missing or broken, and every
+   * foundation-tier formation would silently misderive as `child_project`.
+   */
+  parent_uid: string | null;
   template_uid: string;
   template_version: number;
   sub_stage: FormationSubStage;
@@ -100,6 +129,15 @@ export interface FormationSubItem {
 export interface FormationItem {
   uid: string;
   formation_uid: string;
+  /**
+   * The project this item's formation belongs to. Present because the real service (#1957)
+   * addresses an item's write route by `(project_uid, item_key)`, not by `uid` alone — the API
+   * gateway's authorization rule reads `project:<uid>` straight off the request path, and an
+   * opaque item `uid` would force that check inside the service instead. `uid` remains the
+   * durable reference for deep links and activity; `template_item_key` (the service's `item_key`)
+   * is stable by contract — a template upgrade only adds items, never renames or resets one.
+   */
+  project_uid: string;
   template_item_key: string;
   section_key: string;
   section_title: string;
@@ -231,7 +269,12 @@ export interface FormationChecklistResponse {
   data_source: 'fixture' | 'live';
 }
 
-/** Per-`sub_stage` counts for the queue's filter pills. */
+/**
+ * Per-`sub_stage` counts for the queue's filter pills. `foundations` and `child_projects` name
+ * the {@link FormationEntityType} derived taxonomy — `child_projects` counts both `child_project`
+ * and `project` rows (i.e. every non-foundation), so a plain top-level project isn't dropped from
+ * the breakdown while still counting toward `total`.
+ */
 export type FormationQueueTiles = Record<FormationSubStage, number> & {
   total: number;
   foundations: number;

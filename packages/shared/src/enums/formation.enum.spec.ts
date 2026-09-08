@@ -16,7 +16,7 @@ import { describe, expect, it } from 'vitest';
 
 import { FORMATION_SUB_STAGE_LABELS } from '../constants/formation.constants';
 import { FormationActionType, FormationOwnerTeam, FormationTemplateSectionKey } from './formation.enum';
-import type { FormationTemplate } from '../interfaces/formation.interface';
+import type { Formation, FormationItem, FormationTemplate } from '../interfaces/formation.interface';
 
 describe('FormationTemplateSectionKey', () => {
   it('is exhaustive against the two-section seeded template taxonomy', () => {
@@ -118,5 +118,105 @@ describe('FormationTemplate shape', () => {
     expect(manualItem.action_link).toContain('{{project.uid}}');
     expect(linkItem.action_link).toBe('https://example.com/docusign/envelope');
     expect(noLinkItem).not.toHaveProperty('action_link');
+  });
+});
+
+describe('Formation shape', () => {
+  // These two derivation-input fields (#1957, GH-2163 §1) replace the removed `entity_type`
+  // field. `satisfies` alone can't gate their presence or nullability — this package's `test`
+  // script (vitest, esbuild transpile) doesn't type-check, and `check-types` (tsc --noEmit)
+  // excludes `*.spec.ts` — so the round-trip below is the only thing that actually gates
+  // `parent_uid: null` surviving JSON transport as `null` rather than being dropped the way
+  // `undefined` would be. It does NOT and cannot gate that `entity_type` stays removed from the
+  // type — these are plain object literals, not re-checked against `Formation` at runtime, so a
+  // literal that never wrote `entity_type` proves nothing about whether the interface still has
+  // it. That removal is enforced only by `yarn check-types`/`yarn build` over the non-spec sources.
+  it('round-trips is_foundation and a null parent_uid (top-level project) through JSON', () => {
+    const formation = {
+      uid: 'formation-test',
+      parent_project_uid: 'project-test',
+      parent_project_slug: 'project-test-slug',
+      parent_project_name: 'Project Test',
+      is_foundation: true,
+      parent_uid: null,
+      template_uid: 'formation-template-test',
+      template_version: 1,
+      sub_stage: 'exploratory',
+      announcement_date: null,
+      is_activating: false,
+      gating_items_open: 1,
+      gating_items_total: 1,
+      blocking_item_title: null,
+      subtitle: null,
+      created_at: '2026-09-08T00:00:00.000Z',
+      updated_at: '2026-09-08T00:00:00.000Z',
+    } satisfies Formation;
+
+    const roundTripped = JSON.parse(JSON.stringify(formation)) as Formation;
+
+    expect(roundTripped.is_foundation).toBe(true);
+    expect(roundTripped).toHaveProperty('parent_uid');
+    expect(roundTripped.parent_uid).toBeNull();
+  });
+
+  it('round-trips a non-null parent_uid (nested project) through JSON', () => {
+    const formation = {
+      uid: 'formation-test-2',
+      parent_project_uid: 'project-test-2',
+      parent_project_slug: 'project-test-2-slug',
+      parent_project_name: 'Project Test 2',
+      is_foundation: false,
+      parent_uid: 'foundation-project-uid',
+      template_uid: 'formation-template-test',
+      template_version: 1,
+      sub_stage: 'engaged',
+      announcement_date: null,
+      is_activating: false,
+      gating_items_open: 1,
+      gating_items_total: 1,
+      blocking_item_title: null,
+      subtitle: null,
+      created_at: '2026-09-08T00:00:00.000Z',
+      updated_at: '2026-09-08T00:00:00.000Z',
+    } satisfies Formation;
+
+    const roundTripped = JSON.parse(JSON.stringify(formation)) as Formation;
+
+    expect(roundTripped.is_foundation).toBe(false);
+    expect(roundTripped.parent_uid).toBe('foundation-project-uid');
+  });
+});
+
+describe('FormationItem shape', () => {
+  it('round-trips project_uid through JSON', () => {
+    const item = {
+      uid: 'formation-item-test',
+      formation_uid: 'formation-test',
+      project_uid: 'project-test',
+      template_item_key: 'launch-chat-workspace',
+      section_key: 'community_and_launch',
+      section_title: 'Community and launch',
+      title: 'Chat workspace',
+      status: 'not_started',
+      is_gating: false,
+      owner_team: null,
+      owner: null,
+      due_date: null,
+      action: 'manual',
+      action_href: null,
+      detail: null,
+      notes: null,
+      links: [],
+      sub_items: [],
+      skip_reason: null,
+      can_complete: true,
+      created_at: '2026-09-08T00:00:00.000Z',
+      updated_at: '2026-09-08T00:00:00.000Z',
+    } satisfies FormationItem;
+
+    const roundTripped = JSON.parse(JSON.stringify(item)) as FormationItem;
+
+    expect(roundTripped).toHaveProperty('project_uid');
+    expect(roundTripped.project_uid).toBe('project-test');
   });
 });
