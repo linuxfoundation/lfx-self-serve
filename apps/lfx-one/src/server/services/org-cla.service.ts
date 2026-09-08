@@ -129,7 +129,7 @@ export class OrgClaService {
   public async listClaGroups(req: Request, orgUid: string): Promise<OrgClaGroupList> {
     const upstream = await gatewayFetch<EasyClaCompanyClaGroupList>(
       req,
-      `${claServiceBaseUrl()}/v4/company/external/${encodeURIComponent(orgUid)}/cla-groups`,
+      `${claServiceBaseUrl(SERVICE)}/v4/company/external/${encodeURIComponent(orgUid)}/cla-groups`,
       {
         operation: 'org_cla_list_cla_groups',
         service: SERVICE,

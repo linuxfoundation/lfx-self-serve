@@ -13,8 +13,12 @@ import { MicroserviceError } from '../errors';
 /**
  * Derived from API_GW_AUDIENCE, which is already required to mint the gateway token —
  * mirroring user.service.ts.
+ *
+ * `service` names the caller, not the upstream: the misconfiguration this can throw on belongs to
+ * whichever service failed to reach EasyCLA, and that is what a log reader needs to see. Defaulted
+ * to the Me-lens service so the original caller keeps its existing metadata unchanged.
  */
-export function claServiceBaseUrl(): string {
+export function claServiceBaseUrl(service = 'cla_service'): string {
   // Local-only override so a laptop BFF can talk to a standalone cla-backend-go
   // (see CLA_SERVICE_URL in apps/lfx-one/.env). Do not commit a non-empty value.
   const override = process.env['CLA_SERVICE_URL'];
@@ -23,9 +27,7 @@ export function claServiceBaseUrl(): string {
   }
   const audience = process.env['API_GW_AUDIENCE'];
   if (!audience) {
-    throw new MicroserviceError('API_GW_AUDIENCE environment variable is not configured', 503, 'API_GATEWAY_MISCONFIGURED', {
-      service: 'cla_service',
-    });
+    throw new MicroserviceError('API_GW_AUDIENCE environment variable is not configured', 503, 'API_GATEWAY_MISCONFIGURED', { service });
   }
   return `${audience.replace(/\/+$/, '')}/cla-service`;
 }
