@@ -21,10 +21,11 @@ import { NavigationService } from '@services/navigation.service';
 import { PersonaService } from '@services/persona.service';
 import { ProjectContextService } from '@services/project-context.service';
 import { UserService } from '@services/user.service';
-import { OpenIntercomDirective } from '@shared/directives/open-intercom.directive';
 import { Popover, PopoverModule } from 'primeng/popover';
 import { SkeletonModule } from 'primeng/skeleton';
 import { TooltipModule } from 'primeng/tooltip';
+
+import { OpenProfileBannerComponent } from './open-profile-banner.component';
 
 const PERSONA_ICONS: Partial<Record<PersonaType, string>> = {
   'executive-director': 'fa-light fa-briefcase',
@@ -42,7 +43,7 @@ const PERSONA_ICONS: Partial<Record<PersonaType, string>> = {
     AvatarComponent,
     BadgeComponent,
     LensTabsComponent,
-    OpenIntercomDirective,
+    OpenProfileBannerComponent,
     OrgSelectorComponent,
     ProjectSelectorComponent,
     PopoverModule,

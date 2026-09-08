@@ -38,7 +38,13 @@ describe('DataDogRumService — impersonation suppression', () => {
     addError.mockRestore();
   });
 
-  it('forwards addAction with its name and context by default', () => {
+  it('forwards addAction with its name and context', () => {
+    service.addAction(OPEN_PROFILE_BANNER_LINK_CLICKED, { source: 'sidebar' });
+
+    expect(addAction).toHaveBeenCalledWith(OPEN_PROFILE_BANNER_LINK_CLICKED, { source: 'sidebar' });
+  });
+
+  it('forwards addAction with no context when none is given', () => {
     service.addAction(OPEN_PROFILE_BANNER_LINK_CLICKED);
 
     expect(addAction).toHaveBeenCalledWith(OPEN_PROFILE_BANNER_LINK_CLICKED, undefined);
