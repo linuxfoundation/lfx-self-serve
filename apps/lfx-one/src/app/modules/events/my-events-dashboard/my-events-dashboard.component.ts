@@ -25,6 +25,7 @@ import { catchError, combineLatest, defer, filter, finalize, map, of } from 'rxj
 import { DiscoverEventsButtonComponent } from '../components/discover-events-button/discover-events-button.component';
 import { EventsTopBarComponent } from '../components/events-top-bar/events-top-bar.component';
 import { EventsListComponent } from './components/events-list/events-list.component';
+import { buildDeepLinkKey } from './utils/deep-link-consumption.util';
 import { UserService } from '@app/shared/services/user.service';
 
 /** Dedicated toast key so the custom support-CTA template renders only for this component's Salesforce-ID error toast. */
@@ -57,8 +58,13 @@ export class MyEventsDashboardComponent {
   /** Single subscription to the route's query params — activeTab and activeEventId both derive from it. */
   private readonly queryParamMap = toSignal(this.route.queryParamMap, { initialValue: this.route.snapshot.queryParamMap });
 
-  /** Guards the deep-linked `?event=` auto-open so each event id fires at most once per page load. */
-  private readonly consumedDeepLinkEventIds = new Set<string>();
+  /**
+   * Guards the deep-linked `?event=` auto-open so each (tab, event) pair fires at most once per
+   * page load. Keyed by `buildDeepLinkKey(tab, eventId)`, not the bare eventId (PR #2247 review,
+   * Copilot) — an eventId alone isn't unique across tabs, so consuming a visa-letters deep link
+   * must not also suppress a later travel-funding deep link for the same event.
+   */
+  private readonly consumedDeepLinkKeys = new Set<string>();
 
   protected readonly activeTab: Signal<EventTabId> = this.initActiveTab();
   /** Event id from a deep link (`?tab=visa-letters&event=<id>`); null once the URL is stripped post-auto-open, or absent. */
@@ -102,17 +108,21 @@ export class MyEventsDashboardComponent {
     // effect(), per the frontend checklist (effect() is reserved for logging/debugging —
     // docs/reviews/frontend-checklist.md §5); afterNextRender's explicit injector keeps the
     // deferred-render timing this needs without an active injection context at fire time.
-    combineLatest([toObservable(this.isRequestTab), toObservable(this.activeEventId), toObservable(this.isCreateEnabled)])
+    combineLatest([toObservable(this.activeTab), toObservable(this.isRequestTab), toObservable(this.activeEventId), toObservable(this.isCreateEnabled)])
       .pipe(
-        map(([isRequestTab, eventId, isCreateEnabled]) => (isRequestTab && isCreateEnabled ? eventId : null)),
-        filter((eventId): eventId is string => !!eventId && !this.consumedDeepLinkEventIds.has(eventId)),
+        map(([tab, isRequestTab, eventId, isCreateEnabled]) => (isRequestTab && isCreateEnabled && eventId ? { tab, eventId } : null)),
+        filter(
+          (deepLink): deepLink is { tab: EventTabId; eventId: string } =>
+            !!deepLink && !this.consumedDeepLinkKeys.has(buildDeepLinkKey(deepLink.tab, deepLink.eventId))
+        ),
         takeUntilDestroyed()
       )
-      .subscribe((eventId) => {
+      .subscribe(({ tab, eventId }) => {
+        const key = buildDeepLinkKey(tab, eventId);
         afterNextRender(
           () => {
-            if (this.consumedDeepLinkEventIds.has(eventId) || !this.openCurrentRequestDialog()) return;
-            this.consumedDeepLinkEventIds.add(eventId);
+            if (this.consumedDeepLinkKeys.has(key) || !this.openCurrentRequestDialog()) return;
+            this.consumedDeepLinkKeys.add(key);
             void this.router.navigate([], { relativeTo: this.route, queryParams: { event: null }, queryParamsHandling: 'merge', replaceUrl: true });
           },
           { injector: this.injector }

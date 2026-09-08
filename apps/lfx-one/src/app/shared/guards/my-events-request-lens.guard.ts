@@ -17,13 +17,20 @@ import { LensService } from '../services/lens.service';
  * otherwise), so a link opened while the persisted lens is `org` or `foundation` would silently
  * never auto-open the dialog. `setLens('me')` applies and persists the switch without navigating
  * (unlike `switchLens`), so the deep link's own URL still resolves the route on this pass.
+ *
+ * Calls `setLens('me')` unconditionally (no `activeLens() !== 'me'` guard) — `activeLens()` is a
+ * read-time clamp over the persisted `selectedLens`, and can already read `'me'` transiently
+ * (writer grants load post-hydration, see `getAllowedLensIds()`) while `selectedLens` itself is
+ * still `'foundation'`/`'project'`. Gating on `activeLens()` would then skip the very correction
+ * this guard exists to make. `setLens` is safe to call redundantly (`applyLensSelection` no-ops
+ * when unchanged) and `'me'` is always in the allowed set, so calling it unconditionally can't regress.
  */
 export const myEventsRequestLensGuard: CanActivateFn = (route) => {
   const lensService = inject(LensService);
 
   const tab = route.queryParams['tab'] as EventTabId | undefined;
   const eventId = route.queryParams['event'];
-  if (tab && MY_EVENTS_REQUEST_TAB_IDS.has(tab) && eventId && lensService.activeLens() !== 'me') {
+  if (tab && MY_EVENTS_REQUEST_TAB_IDS.has(tab) && eventId) {
     lensService.setLens('me');
   }
 

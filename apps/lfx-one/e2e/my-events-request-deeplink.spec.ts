@@ -69,9 +69,29 @@ test.describe('My Events — Visa/Travel-Fund Request Deep Link — non-"me" sta
   // Regression coverage for PR #2247 review (Copilot): MyEventsDashboardComponent only mounts
   // under the me/project lens, so a deep link opened while the persisted lens is foundation/org
   // must force the lens to `me` (myEventsRequestLensGuard) rather than silently never auto-opening.
+  //
+  // The lens cookie alone isn't enough to prove this: activeLens() clamps `foundation` back down to
+  // `me` for an account with no foundation-granting role, which would make this pass even with the
+  // guard removed. Stubbing `isLFStaff: true` (mirrors marketing-access.spec.ts's `stubPersona`)
+  // grants `foundation` for real, so the guard is the only thing standing between this cookie and a
+  // dialog that never opens.
   test('foundation lens: the guard forces me and the dialog still auto-opens', async ({ page, context, baseURL }) => {
     const domain = baseURL ? new URL(baseURL).hostname : 'localhost';
     await context.addCookies([{ name: LENS_COOKIE_KEY, value: 'foundation', domain, path: '/' }]);
+    await page.route('**/api/user/personas*', (route) =>
+      route.fulfill({
+        status: 200,
+        contentType: 'application/json',
+        body: JSON.stringify({
+          personas: ['contributor'],
+          personaProjects: {},
+          projects: [],
+          organizations: [],
+          isRootWriter: false,
+          isLFStaff: true,
+        }),
+      })
+    );
 
     await mockEventRoutes(page, { matchedEvent: MATCHED_EVENT });
     await page.goto(`/events?tab=visa-letters&event=${MATCHED_EVENT.id}`, { waitUntil: 'domcontentloaded' });
