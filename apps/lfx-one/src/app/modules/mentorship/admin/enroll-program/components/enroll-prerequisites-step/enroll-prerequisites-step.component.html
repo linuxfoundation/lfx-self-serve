@@ -36,13 +36,13 @@
                 @if (item.challengeUrl !== undefined) {
                   <div class="mt-2 flex flex-col gap-1">
                     <label class="text-xs font-medium text-gray-600" [attr.for]="'challenge-url-' + item.id">Add URL:</label>
-                    <input
+                    <lfx-input-text
+                      [form]="challengeForm"
+                      control="challengeUrl"
                       type="url"
-                      [id]="'challenge-url-' + item.id"
-                      class="max-w-md w-full rounded-md border border-gray-300 px-3 py-2 text-sm"
-                      [value]="item.challengeUrl"
+                      [inputId]="'challenge-url-' + item.id"
                       placeholder="https://www.github.com/..."
-                      (input)="onChallengeUrlInput(item.id, $event)" />
+                      styleClass="max-w-md" />
                     @if (errors().challengeUrl) {
                       <p class="text-xs text-red-600">{{ errors().challengeUrl }}</p>
                     }
@@ -93,12 +93,7 @@
     </div>
 
     <div class="flex items-start gap-3">
-      <p-checkbox
-        [formControl]="termsControl()"
-        [binary]="true"
-        inputId="mentorship-enroll-terms"
-        (onChange)="onTermsAcceptedChange($event)"
-        data-testid="mentorship-enroll-terms" />
+      <lfx-checkbox [form]="form()" control="termsAccepted" inputId="mentorship-enroll-terms" data-testid="mentorship-enroll-terms" />
       <p class="min-w-0 flex-1 text-sm text-gray-800 leading-5">
         <span class="text-red-500">*</span>
         I agree to the

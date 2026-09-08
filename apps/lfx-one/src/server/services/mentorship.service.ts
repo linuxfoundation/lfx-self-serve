@@ -23,7 +23,7 @@ import {
 } from '@lfx-one/shared/interfaces';
 import { buildMentorshipProgramDetail, isMentorshipCiiProjectId, mentorshipProgramSlug } from '@lfx-one/shared/utils';
 import { Request } from 'express';
-import { createHash } from 'node:crypto';
+import { createHash, randomUUID } from 'node:crypto';
 
 import { ConflictError, MicroserviceError, ResourceNotFoundError, ServiceValidationError } from '../errors';
 
@@ -115,7 +115,7 @@ export class MentorshipService {
     const firstTerm = input.terms[0];
 
     const program: MentorshipProgram = {
-      id: `mp_${Date.now()}`,
+      id: `mp_${randomUUID()}`,
       slug,
       name,
       projectName: projectLabel,

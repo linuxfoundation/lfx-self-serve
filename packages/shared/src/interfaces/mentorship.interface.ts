@@ -92,7 +92,8 @@ export interface MentorshipPrerequisite {
 
 /**
  * Payload collected by the enroll wizard and POSTed to `/api/mentorship/programs`.
- * Logo file bytes stay client-side; only `logoFileName` is sent to the BFF.
+ * This payload carries only `logoFileName`; the logo bytes go up separately in the second phase,
+ * a raw-body POST to `/api/mentorship/programs/:programId/logo` once the program id exists.
  */
 export interface MentorshipEnrollForm {
   importProgramId: string;
