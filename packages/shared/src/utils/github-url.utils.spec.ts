@@ -10,8 +10,8 @@ import { parseGithubUrlTarget } from './github-url.utils';
 /**
  * One parser serves both the intake form's inline warning and the BFF's README
  * fetch, so what it calls "a repository" is the contract both sides keep. The
- * organization case is the one that matters most: it used to be
- * indistinguishable from garbage, which is how an organization URL passed the
+ * account-only case is the one that matters most: it used to be
+ * indistinguishable from garbage, which is how `github.com/aaif` passed the
  * form and then produced a document with no README and no explanation.
  */
 describe('parseGithubUrlTarget', () => {
@@ -32,10 +32,17 @@ describe('parseGithubUrlTarget', () => {
     }
   });
 
-  it('resolves an owner-only URL as an ORGANIZATION rather than rejecting it', () => {
+  it('resolves an owner-only URL as an ACCOUNT rather than rejecting it', () => {
     // The exact shape that slipped through the intake unnoticed.
-    expect(parseGithubUrlTarget('https://github.com/aaif')).toEqual({ kind: 'organization', owner: 'aaif' });
-    expect(parseGithubUrlTarget('github.com/example-org/')).toEqual({ kind: 'organization', owner: 'example-org' });
+    expect(parseGithubUrlTarget('https://github.com/aaif')).toEqual({ kind: 'owner', owner: 'aaif' });
+    expect(parseGithubUrlTarget('github.com/example-org/')).toEqual({ kind: 'owner', owner: 'example-org' });
+  });
+
+  it('does not claim an owner-only URL is an organization — the URL cannot tell an org from a person', () => {
+    // A personal profile has the same shape, so `kind` stays neutral and the
+    // callers that care (the field message, the BFF's profile-README
+    // fallback) handle both possibilities rather than asserting one.
+    expect(parseGithubUrlTarget('https://github.com/some-person')?.kind).toBe('owner');
   });
 
   it('returns null for non-GitHub hosts, look-alike hosts, and malformed input', () => {

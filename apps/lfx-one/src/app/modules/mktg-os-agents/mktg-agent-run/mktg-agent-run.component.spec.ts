@@ -721,7 +721,7 @@ describe('MktgAgentRunComponent', () => {
         component['intakeForm'].controls['github_url'].setValue(url);
       };
 
-      it('blocks submission on an organization URL and says why', async () => {
+      it('blocks submission on a bare account URL and says why, without guessing it is an organization', async () => {
         dependencyDocs = { 'proj-1:brand-kit': brandKitDoc('# Kit') };
         activeContext.set(PROJECT_1);
         await fixture.whenStable();
@@ -729,7 +729,10 @@ describe('MktgAgentRunComponent', () => {
         fillNameAndUrl('https://github.com/aaif');
         await fixture.whenStable();
 
-        expect(fieldError('github_url')?.textContent).toContain('organization URL');
+        // `github.com/<owner>` is a person as often as an organization, and the
+        // message must not tell the user which one their own account is.
+        expect(fieldError('github_url')?.textContent).toContain('GitHub account URL');
+        expect(fieldError('github_url')?.textContent).not.toContain('organization');
         expect(fieldError('github_url')?.textContent).toContain('https://github.com/org/repo');
         expect(component['intakeForm'].valid).toBe(false);
         expect(component['submitDisabled']()).toBe(true);

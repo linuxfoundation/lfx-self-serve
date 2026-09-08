@@ -85,7 +85,7 @@ export class BrandKitFormComponent implements OnDestroy {
   protected readonly submitDisabled = computed(() => !this.intakeValid());
   /**
    * Blocking format-error copy per question key for the value currently typed
-   * (e.g. an organization URL where a repository URL is required). The control
+   * (e.g. a bare account URL where a repository URL is required). The control
    * carries the validator, so this is only the message — the submit button is
    * already inert through the form's validity.
    */

@@ -148,10 +148,11 @@ describe('BrandKitFormComponent — generation poll state machine', () => {
     const submitButton = (): HTMLButtonElement | null => fixture.nativeElement.querySelector('button[type="submit"]');
     const fieldError = (): HTMLElement | null => fixture.nativeElement.querySelector('[data-testid="brand-kit-form-field-error-github_url"]');
 
-    it('disables submit and names the problem for an organization URL', () => {
+    it('disables submit and names the problem for a bare account URL', () => {
       fillAll('https://github.com/aaif');
 
-      expect(fieldError()?.textContent).toContain('organization URL');
+      expect(fieldError()?.textContent).toContain('GitHub account URL');
+      expect(fieldError()?.textContent).not.toContain('organization');
       expect(submitButton()?.disabled).toBe(true);
 
       submitButton()?.click();

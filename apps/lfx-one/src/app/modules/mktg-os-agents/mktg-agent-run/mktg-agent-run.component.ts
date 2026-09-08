@@ -182,7 +182,7 @@ export class MktgAgentRunComponent {
   });
   /**
    * Blocking format error per field key for the value currently typed — e.g. a
-   * `github_url` that names an organization rather than a repository. The
+   * `github_url` that names an account rather than a repository. The
    * control carries the validator, so this signal is only the MESSAGE:
    * submission is already blocked by the form's own validity. The user is told
    * which mistake they made, at the moment they make it, instead of

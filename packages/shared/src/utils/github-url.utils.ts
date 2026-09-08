@@ -28,14 +28,14 @@ const GITHUB_REPO_MAX_LENGTH = 100;
 
 /**
  * Parses a user-supplied GitHub URL into the thing it actually names: an
- * owner/repo pair, or an owner on its own. Returns null for non-GitHub hosts,
- * malformed URLs, and hostile path segments.
+ * owner/repo pair, or an account (user or organization) on its own. Returns
+ * null for non-GitHub hosts, malformed URLs, and hostile path segments.
  *
  * ONE parser for both sides of the contract. The intake form uses it to warn,
  * before submission, that a value will not resolve to a readable repository —
- * the failure Joan hit when `https://github.com/aaif` (an organization) was
- * accepted silently — and the BFF's README fetch uses the same result to
- * decide between the repository README and the organization profile README.
+ * the failure Joan hit when `https://github.com/aaif` (an account, not a
+ * repository) was accepted silently — and the BFF's README fetch uses the same
+ * result to decide between the repository README and the profile READMEs.
  * Two independent notions of "a repo URL" would drift the warning away from
  * the behavior it warns about.
  *
@@ -71,7 +71,10 @@ export function parseGithubUrlTarget(githubUrl: string): GithubUrlTarget | null 
     return null;
   }
   if (segments.length < 2) {
-    return { kind: 'organization', owner };
+    // An account, not necessarily an ORGANIZATION: `github.com/<owner>` is a
+    // personal profile just as often, and nothing in the URL distinguishes
+    // them. Callers that need the difference resolve it against the API.
+    return { kind: 'owner', owner };
   }
 
   const repo = segments[1].replace(/\.git$/, '');

@@ -23,7 +23,7 @@ import {
  */
 const BRAND_KIT_FIELD_PRESENTATION: Record<(typeof BRAND_KIT_INTAKE_QUESTIONS)[number]['key'], Omit<MktgIntakeField, 'key' | 'question'>> = {
   project_name: { kind: 'text', prefill: 'project-name' },
-  // Q2 asks for the repo or README URL, and an organization URL answers
+  // Q2 asks for the repo or README URL, and an account URL answers
   // neither — refused here rather than accepted and quietly under-used.
   github_url: { kind: 'text', prefill: 'repository-url', format: 'github-repo-url' },
   one_line_description: {
@@ -165,13 +165,15 @@ export const MKTG_ENVELOPE_EXTRACTION_MAX_DEPTH = 16;
 /**
  * Blocking field-error copy for an intake value that fails its `format` rule.
  * Keyed by the rule and by what the value turned out to be, so the message
- * names the ACTUAL problem instead of a generic "invalid" — an organization
+ * names the ACTUAL problem instead of a generic "invalid" — an account
  * URL and a typo are different mistakes with different fixes.
  */
 export const MKTG_INTAKE_FORMAT_ERRORS: Record<MktgIntakeFieldFormat, Record<GithubRepoUrlErrorReason, string>> = {
   'github-repo-url': {
-    organization:
-      'That’s an organization URL, not a repository — there’s no repository README behind it. Enter a repository URL, e.g. https://github.com/org/repo.',
+    // Neutral about WHAT the account is: `github.com/<owner>` is an
+    // organization or a personal profile and the URL cannot say which, so
+    // naming it an organization would be a guess told to the user as a fact.
+    owner: 'That’s a GitHub account URL, not a repository — there’s no repository README behind it. Enter a repository URL, e.g. https://github.com/org/repo.',
     unrecognized: 'That doesn’t look like a GitHub repository URL. Enter one like https://github.com/org/repo so the agent can read the repository’s README.',
   },
 };

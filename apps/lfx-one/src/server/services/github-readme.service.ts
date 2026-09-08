@@ -47,11 +47,13 @@ const GITHUB_README_CACHE_MAX_ENTRIES = 100;
  * materially thinner document, and the user is told so on the result instead
  * of being left to wonder why the agent underperformed.
  *
- * Organization URLs are resolved rather than rejected: `github.com/<org>` has
- * no repository README, but GitHub serves an organization profile README from
- * `<org>/.github` at `profile/README.md`, which is often exactly the overview
- * the agent wants. It is attempted before giving up, and a miss gives up
- * cleanly.
+ * Account URLs are resolved rather than rejected: `github.com/<owner>` has no
+ * repository README, but GitHub serves a profile README for BOTH kinds of
+ * account it may name — an organization's from `<owner>/.github` at
+ * `profile/README.md`, a personal one from the `<owner>/<owner>` repository —
+ * and either is often exactly the overview the agent wants. Both are attempted
+ * before giving up, because the URL alone never says which kind of account it
+ * is; a miss gives up cleanly.
  *
  * SSRF guard: the user-supplied URL is never fetched. It is only PARSED (by
  * the shared `parseGithubUrlTarget`, github.com hosts only, path segments
@@ -115,8 +117,8 @@ export class GithubReadmeService {
       return { readme: null, outcome: { fetched: false, skipReason: 'not-a-repo-url' } };
     }
 
-    if (target.kind === 'organization') {
-      return this.fetchOrgProfileReadme(req, target.owner);
+    if (target.kind === 'owner') {
+      return this.fetchOwnerProfileReadme(req, target.owner);
     }
 
     return this.fetchRepositoryReadme(req, target);
@@ -147,12 +149,41 @@ export class GithubReadmeService {
   }
 
   /**
-   * An organization URL names no repository, so there is no repository README
-   * — but GitHub renders an organization's profile from `<org>/.github` at
-   * `profile/README.md`. Attempting it turns a dead end into an overview the
-   * agent can actually ground on; when the organization has none, we give up
-   * cleanly and say so.
+   * An account URL names no repository, so there is no repository README — but
+   * GitHub renders a profile README for either kind of account the URL may
+   * name, and the URL cannot say which: an organization's lives in
+   * `<owner>/.github` at `profile/README.md`, a personal one is the README of
+   * the `<owner>/<owner>` repository. Both are attempted, organization first
+   * (the common case for the LF projects this collects URLs for), turning a
+   * dead end into an overview the agent can actually ground on. When neither
+   * exists we give up cleanly and say so.
    */
+  private async fetchOwnerProfileReadme(req: Request, owner: string): Promise<MktgReadmeFetchResult> {
+    const orgAttempt = await this.fetchOrgProfileReadme(req, owner);
+    if (orgAttempt.readme !== null || orgAttempt.outcome.skipReason === 'fetch-failed') {
+      // A GitHub outage or rate limit is a different fact with a different
+      // remedy — retry, not "fix your URL" — and the personal-profile probe
+      // would only hit the same wall, so it is not attempted.
+      return orgAttempt;
+    }
+
+    const userAttempt = await this.fetchUserProfileReadme(req, owner);
+    if (userAttempt.readme !== null) {
+      return userAttempt;
+    }
+
+    // The personal-profile probe is strictly additive: it can supply a README,
+    // never change WHY the account URL produced none. That reason belongs to
+    // the URL the user typed — it names no repository — so the organization
+    // attempt's own outcome is what gets reported either way.
+    logger.info(req, 'github_readme_fetch', 'No profile README available for the account — generating without a README', {
+      owner,
+      reason: orgAttempt.outcome.skipReason,
+    });
+    return orgAttempt;
+  }
+
+  /** The organization profile README — `<owner>/.github` → `profile/README.md`. */
   private async fetchOrgProfileReadme(req: Request, owner: string): Promise<MktgReadmeFetchResult> {
     const repo = { owner, repo: GITHUB_ORG_PROFILE_REPO };
     const cacheKey = `${owner.toLowerCase()}/${GITHUB_ORG_PROFILE_REPO}/profile`;
@@ -162,7 +193,7 @@ export class GithubReadmeService {
       return { readme: cached, outcome: { fetched: true, source: 'org-profile' } };
     }
 
-    logger.info(req, 'github_readme_fetch', 'URL resolves to an organization, not a repository — trying the organization profile README', {
+    logger.info(req, 'github_readme_fetch', 'URL resolves to an account, not a repository — trying the organization profile README', {
       owner,
       profile_repo: GITHUB_ORG_PROFILE_REPO,
     });
@@ -173,23 +204,48 @@ export class GithubReadmeService {
     const url = `${GITHUB_API_BASE}/repos/${encodeURIComponent(owner)}/${encodeURIComponent(GITHUB_ORG_PROFILE_REPO)}/contents/${GITHUB_ORG_PROFILE_README_PATH}`;
     const attempt = await this.requestReadme(req, url, repo, cacheKey);
     if (attempt.readme === null) {
-      // A GitHub outage or rate limit is a different fact with a different
-      // remedy — retry, not "fix your URL" — so `fetch-failed` is carried
-      // through rather than rewritten as "not a repository". Everything else
-      // (no `.github` repo, no `profile/README.md`, a private `.github`) is
-      // the ordinary "this organization publishes no profile README" case,
-      // which for the URL the user actually typed means exactly
-      // `not-a-repo-url`: most organizations have no `.github` repo at all,
-      // and reporting that as a visibility problem would send them looking
-      // for permissions that were never the issue.
+      // `fetch-failed` is carried through rather than rewritten as "not a
+      // repository". Everything else (no `.github` repo, no
+      // `profile/README.md`, a private `.github`) is the ordinary "this
+      // account publishes no organization profile README" case, which for the
+      // URL the user actually typed means exactly `not-a-repo-url`: most
+      // accounts have no `.github` repo at all, and reporting that as a
+      // visibility problem would send them looking for permissions that were
+      // never the issue.
       const skipReason = attempt.skipReason === 'fetch-failed' ? 'fetch-failed' : 'not-a-repo-url';
-      logger.info(req, 'github_readme_fetch', 'No organization profile README available — generating without a README', {
-        owner,
-        reason: skipReason,
-      });
       return { readme: null, outcome: { fetched: false, skipReason } };
     }
     return { readme: attempt.readme, outcome: { fetched: true, source: 'org-profile' } };
+  }
+
+  /**
+   * The personal profile README — the root README of the `<owner>/<owner>`
+   * repository, which is how GitHub renders a USER's profile. Reached only
+   * when the organization profile README is genuinely absent, so an account
+   * that turns out to be a person still grounds the agent on something real
+   * instead of on a path that could never have held their profile.
+   */
+  private async fetchUserProfileReadme(req: Request, owner: string): Promise<MktgReadmeFetchResult> {
+    // Same cache key shape as any repository README, because that is exactly
+    // what this is — `github.com/<owner>/<owner>` later hits the same entry.
+    const cacheKey = `${owner.toLowerCase()}/${owner.toLowerCase()}`;
+    const cached = this.readCache(cacheKey);
+    if (cached !== null) {
+      logger.debug(req, 'github_readme_fetch', 'Serving the personal profile README from the in-process cache — no GitHub round-trip', { owner });
+      return { readme: cached, outcome: { fetched: true, source: 'user-profile' } };
+    }
+
+    logger.info(req, 'github_readme_fetch', 'No organization profile README — trying the personal profile README', {
+      owner,
+      profile_repo: owner,
+    });
+
+    const url = `${GITHUB_API_BASE}/repos/${encodeURIComponent(owner)}/${encodeURIComponent(owner)}/readme`;
+    const attempt = await this.requestReadme(req, url, { owner, repo: owner }, cacheKey);
+    if (attempt.readme === null) {
+      return { readme: null, outcome: { fetched: false, skipReason: attempt.skipReason } };
+    }
+    return { readme: attempt.readme, outcome: { fetched: true, source: 'user-profile' } };
   }
 
   /**

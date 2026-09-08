@@ -100,13 +100,15 @@ describe('GithubReadmeService', () => {
   });
 
   /**
-   * An organization URL (`github.com/<org>`) names no repository, which is
-   * exactly what silently cost a live run its README. It is not a dead end:
-   * GitHub renders an organization's profile from `<org>/.github` at
-   * `profile/README.md`, so that is attempted before giving up — and when it
-   * misses, the give-up is clean and REPORTED, never silent.
+   * An account URL (`github.com/<owner>`) names no repository, which is exactly
+   * what silently cost a live run its README. It is not a dead end: GitHub
+   * renders an organization's profile from `<owner>/.github` at
+   * `profile/README.md` and a PERSON's from the `<owner>/<owner>` repository.
+   * The URL never says which kind of account it is, so both are attempted
+   * before giving up — and when both miss, the give-up is clean and REPORTED,
+   * never silent.
    */
-  describe('organization URLs — try the profile README before giving up', () => {
+  describe('account URLs — try both profile READMEs before giving up', () => {
     it('fetches the organization profile README for an owner-only URL', async () => {
       fetchMock.mockResolvedValue(textResponse('# We are Example Org'));
 
@@ -142,18 +144,62 @@ describe('GithubReadmeService', () => {
       );
     });
 
-    it('runs the organization fallback through the SAME visibility gate as any repo', async () => {
+    it('runs the profile fallbacks through the SAME visibility gate as any repo', async () => {
       vi.stubEnv('GITHUB_API_TOKEN', 'ghp_test-token');
-      fetchMock.mockResolvedValueOnce(jsonResponse({ private: true, visibility: 'private' }));
+      fetchMock.mockResolvedValue(jsonResponse({ private: true, visibility: 'private' }));
 
       expect((await service.fetchReadme(req, 'https://github.com/example-org')).readme).toBeNull();
 
-      // Only the metadata call on the .github repo — the contents endpoint was never hit.
-      expect(fetchMock).toHaveBeenCalledTimes(1);
-      expect(fetchMock.mock.calls[0][0]).toBe('https://api.github.com/repos/example-org/.github');
+      // Metadata first on each candidate repo; neither README endpoint is ever
+      // reached, so the BFF's token cannot read a profile the public cannot.
+      expect(fetchMock.mock.calls.map((call) => call[0])).toEqual([
+        'https://api.github.com/repos/example-org/.github',
+        'https://api.github.com/repos/example-org/example-org',
+      ]);
     });
 
-    it('reports a GitHub outage on the org fallback as fetch-failed, not as a bad URL', async () => {
+    it('falls back to the PERSONAL profile README when the account has no organization profile', async () => {
+      // `github.com/<owner>` is a person as often as an organization, and a
+      // person's profile README lives in `<owner>/<owner>`, not in
+      // `<owner>/.github` — probing only the latter could never find it.
+      fetchMock
+        .mockResolvedValueOnce(textResponse('', false, 404))
+        .mockResolvedValueOnce(jsonResponse({}, false, 404))
+        .mockResolvedValueOnce(textResponse('# Hi, I build things'));
+
+      const result = await service.fetchReadme(req, 'https://github.com/some-person');
+
+      expect(result.readme).toBe('# Hi, I build things');
+      expect(result.outcome).toEqual({ fetched: true, source: 'user-profile' });
+      expect(fetchMock.mock.calls.at(-1)?.[0]).toBe('https://api.github.com/repos/some-person/some-person/readme');
+    });
+
+    it('caches the personal profile README as the repository README it actually is', async () => {
+      fetchMock
+        .mockResolvedValueOnce(textResponse('', false, 404))
+        .mockResolvedValueOnce(jsonResponse({}, false, 404))
+        .mockResolvedValueOnce(textResponse('# Hi, I build things'));
+
+      await service.fetchReadme(req, 'https://github.com/some-person');
+      const calls = fetchMock.mock.calls.length;
+      const direct = await service.fetchReadme(req, 'https://github.com/some-person/some-person');
+
+      expect(direct.readme).toBe('# Hi, I build things');
+      expect(fetchMock).toHaveBeenCalledTimes(calls);
+    });
+
+    it('never lets the personal-profile probe change WHY an account URL produced no README', async () => {
+      // The probe is additive: it can supply a README, it cannot rewrite the
+      // reason. The URL still names no repository, so that is what is reported.
+      fetchMock.mockResolvedValue(textResponse('', false, 404));
+
+      const result = await service.fetchReadme(req, 'https://github.com/some-person');
+
+      expect(result.outcome).toEqual({ fetched: false, skipReason: 'not-a-repo-url' });
+      expect(fetchMock.mock.calls.map((call) => call[0])).toContain('https://api.github.com/repos/some-person/some-person/readme');
+    });
+
+    it('reports a GitHub outage on the profile fallback as fetch-failed, not as a bad URL', async () => {
       // Telling a user to fix a URL that is fine, during a GitHub 5xx, sends
       // them after the wrong problem — the right advice is to retry.
       fetchMock.mockResolvedValue(textResponse('', false, 503));
@@ -162,6 +208,9 @@ describe('GithubReadmeService', () => {
 
       expect(result.readme).toBeNull();
       expect(result.outcome).toEqual({ fetched: false, skipReason: 'fetch-failed' });
+      // GitHub is down: the personal-profile probe would hit the same wall, so
+      // it is not spent on the rate-limit budget.
+      expect(fetchMock).toHaveBeenCalledTimes(1);
     });
 
     it('reports a timeout on the org fallback as fetch-failed', async () => {

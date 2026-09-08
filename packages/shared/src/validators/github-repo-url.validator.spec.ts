@@ -13,7 +13,7 @@ function control(value: unknown): AbstractControl {
 
 /**
  * The intake refuses a repo URL that provably cannot yield a README — an
- * organization URL like `https://github.com/aaif` is the case that reached a
+ * bare account URL like `https://github.com/aaif` is the case that reached a
  * live run, was dropped server-side, and came back as a thinner document with
  * no explanation. Blocking is a UI decision, not an agent-contract one: the
  * agent still tolerates a missing README, and the question wording is
@@ -35,8 +35,11 @@ describe('githubRepoUrlValidator', () => {
     }
   });
 
-  it('rejects an organization URL with the organization reason', () => {
-    expect(validate('https://github.com/aaif')).toEqual({ githubRepoUrl: { reason: 'organization' } });
+  it('rejects a bare account URL with the owner reason, for a person as much as an org', () => {
+    expect(validate('https://github.com/aaif')).toEqual({ githubRepoUrl: { reason: 'owner' } });
+    // Same reason for a personal profile: the message it selects must not call
+    // someone's own account an organization.
+    expect(validate('https://github.com/some-person')).toEqual({ githubRepoUrl: { reason: 'owner' } });
   });
 
   it('rejects a non-GitHub or malformed URL with the unrecognized reason', () => {

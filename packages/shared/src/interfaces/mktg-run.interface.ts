@@ -30,8 +30,15 @@ export type MktgIntakePrefillSource = 'project-name' | 'repository-url' | 'proje
  */
 export type MktgIntakeFieldFormat = 'github-repo-url';
 
-/** Where a README the BFF fetched for an agent came from. */
-export type MktgReadmeSource = 'repository' | 'org-profile';
+/**
+ * Where a README the BFF fetched for an agent came from: the repository the
+ * URL named, an organization's profile README (`<owner>/.github` →
+ * `profile/README.md`), or a personal profile README (the `<owner>/<owner>`
+ * repository). The two profile sources are separate because a
+ * `github.com/<owner>` URL says nothing about which kind of account it names,
+ * and recording the one we guessed at would misreport what grounded the run.
+ */
+export type MktgReadmeSource = 'repository' | 'org-profile' | 'user-profile';
 
 /**
  * Why the BFF's best-effort README fetch produced nothing. Carried to the UI

@@ -10,7 +10,8 @@ import { parseGithubUrlTarget } from '../utils/github-url.utils';
  * Requires a value that resolves to a single GitHub repository —
  * `github.com/<owner>/<repo>`, including deeper paths under it (a README blob
  * URL is a repository URL). Raises `{ githubRepoUrl: { reason } }`, where the
- * reason distinguishes an organization URL from something that is not a GitHub
+ * reason distinguishes an account URL (`github.com/<owner>`, which may be an
+ * organization or a personal profile) from something that is not a GitHub
  * repository URL at all.
  *
  * This BLOCKS submission on the Marketing OS intakes that collect a repo URL.
@@ -35,7 +36,7 @@ export function githubRepoUrlValidator(): ValidatorFn {
     if (target?.kind === 'repository') {
       return null;
     }
-    const error: GithubRepoUrlError = { reason: target?.kind === 'organization' ? 'organization' : 'unrecognized' };
+    const error: GithubRepoUrlError = { reason: target?.kind === 'owner' ? 'owner' : 'unrecognized' };
     return { githubRepoUrl: error };
   };
 }
