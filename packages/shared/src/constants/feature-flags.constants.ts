@@ -82,6 +82,19 @@ export const ORG_LENS_PRIVATE_RELEASE_FLAG = 'org-lens-private-release';
 export const MARKETING_OPS_FGA_ENABLED_FLAG = 'marketing-ops-fga-enabled';
 
 /**
+ * Dark-launch gate for the Mentorship module — the `/mentorship` route tree (admin list and the
+ * enroll-a-program wizard) and its Me Lens sidebar section. Default false: a missing LaunchDarkly
+ * flag keeps the module invisible, and the route guard fails closed like `akritesEnabledGuard`
+ * rather than open like `myClasEnabledGuard`, because nothing here has shipped to users yet.
+ *
+ * **UI-only** — evaluated through `FeatureFlagService.getBooleanFlag`, which is the OpenFeature Web
+ * SDK and never runs server-side, so it cannot gate an Express handler. The mentorship BFF routes
+ * stay reachable by a direct API caller while this is off; add a `ServerFeatureFlag` counterpart if
+ * the write paths ever need a kill switch of their own.
+ */
+export const MENTORSHIP_ENABLED_FLAG = 'mentorship-enabled';
+
+/**
  * `localStorage` key holding a `Record<string, boolean>` of locally-forced flag values, read by
  * `FeatureFlagService.getBooleanFlag` in **non-production builds only**.
  *
