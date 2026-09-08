@@ -53,16 +53,16 @@ nodes that already had the image cached ("warm-node"), one from a rollout ~4
 minutes earlier that required an actual image pull on those same nodes
 ("cold-pull").
 
-| Phase | Warm-node (n=3) | Cold-pull (n=1) | Source |
-| --- | --- | --- | --- |
-| otel import (`otel.mjs` load + SDK start) | 357–384ms | 552ms | `[otel] import complete` `elapsed_ms` |
-| Server module-graph eval (`engine_ms − elapsed_ms`) | 2.47–2.70s | 5.40s | `server_startup` `engine_ms` minus otel `elapsed_ms` |
-| Angular engine construction (`routes_ms − engine_ms`) | 31–49ms | 33ms | `server_startup` fields |
-| Router mounting + middleware (`boot_ms − routes_ms`) | 12–20ms | 14ms | `server_startup` fields |
-| **In-process boot total (`boot_ms`)** | **2.89–3.13s** | **6.00s** | `server_startup` `boot_ms` |
-| Container `Started` → node process start (residual) | ~1.9–2.8s | ~2.8s | container `Started` event timestamp vs. (`server_startup` log timestamp − `boot_ms`) |
-| Image pull (`Pulling` → `Pulled`) | 0 (cache hit) | 31.3–33.1s (n=3 pods, same rollout) | kubelet `Pulled` event message |
-| **Scheduled → app listening, end to end** | **~3.7–5.8s** | **~42s** | `Scheduled`/`Started` events → `server_startup` timestamp |
+| Phase                                                 | Warm-node (n=3) | Cold-pull (n=1)                     | Source                                                                               |
+| ----------------------------------------------------- | --------------- | ----------------------------------- | ------------------------------------------------------------------------------------ |
+| otel import (`otel.mjs` load + SDK start)             | 357–384ms       | 552ms                               | `[otel] import complete` `elapsed_ms`                                                |
+| Server module-graph eval (`engine_ms − elapsed_ms`)   | 2.47–2.70s      | 5.40s                               | `server_startup` `engine_ms` minus otel `elapsed_ms`                                 |
+| Angular engine construction (`routes_ms − engine_ms`) | 31–49ms         | 33ms                                | `server_startup` fields                                                              |
+| Router mounting + middleware (`boot_ms − routes_ms`)  | 12–20ms         | 14ms                                | `server_startup` fields                                                              |
+| **In-process boot total (`boot_ms`)**                 | **2.89–3.13s**  | **6.00s**                           | `server_startup` `boot_ms`                                                           |
+| Container `Started` → node process start (residual)   | ~1.9–2.8s       | ~2.8s                               | container `Started` event timestamp vs. (`server_startup` log timestamp − `boot_ms`) |
+| Image pull (`Pulling` → `Pulled`)                     | 0 (cache hit)   | 31.3–33.1s (n=3 pods, same rollout) | kubelet `Pulled` event message                                                       |
+| **Scheduled → app listening, end to end**             | **~3.7–5.8s**   | **~42s**                            | `Scheduled`/`Started` events → `server_startup` timestamp                            |
 
 Each row is the independent min/max across its sample set, not a per-sample
 sum — rows won't add up column-by-column. The end-to-end row is measured
@@ -87,7 +87,7 @@ directly from events, not derived by summing the phase rows above it.
   cases were under 45 seconds** — nowhere near the 4-minute figure the probe
   budget assumes.
 
-## What this does *not* explain
+## What this does _not_ explain
 
 None of the rollouts sampled here triggered an actual new EC2 node launch —
 the same handful of `self-serve` NodePool node IDs (e.g. `i-01763393aed569188`,
