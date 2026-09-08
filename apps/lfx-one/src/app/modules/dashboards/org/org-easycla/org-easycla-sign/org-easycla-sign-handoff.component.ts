@@ -2,11 +2,13 @@
 // SPDX-License-Identifier: MIT
 
 import { DOCUMENT } from '@angular/common';
-import { ChangeDetectionStrategy, Component, DestroyRef, inject, signal } from '@angular/core';
+import { HttpErrorResponse } from '@angular/common/http';
+import { ChangeDetectionStrategy, Component, DestroyRef, effect, inject, signal } from '@angular/core';
 import { takeUntilDestroyed } from '@angular/core/rxjs-interop';
 import { CCLA_SIGN_COPY } from '@lfx-one/shared/constants';
 import type { OrgClaSignHandoffDialogData, OrgClaSignResponse } from '@lfx-one/shared/interfaces';
 import { OrgLensClaService } from '@services/org-lens-cla.service';
+import { serverAuthoredMessage } from '@shared/utils/http-error.utils';
 import { DynamicDialogConfig, DynamicDialogRef } from 'primeng/dynamicdialog';
 
 import { ButtonComponent } from '@components/button/button.component';
@@ -46,7 +48,33 @@ export class OrgEasyclaSignHandoffComponent {
 
   private readonly prepared = signal<OrgClaSignResponse | null>(null);
 
+  /** Shell-dialog title per state, so the frame never contradicts the panel inside it. */
+  private readonly headerFor: Record<'preparing' | 'ready' | 'failed', string> = {
+    preparing: CCLA_SIGN_COPY.preparing.header,
+    ready: CCLA_SIGN_COPY.ready.header,
+    failed: CCLA_SIGN_COPY.failure.header,
+  };
+
   public constructor() {
+    // The shell dialog is PrimeNG's, and it re-reads `header`, `closable` and `closeOnEscape` from
+    // this config object on every change-detection pass — so driving them from state here is what
+    // keeps the frame honest, rather than fixing them at the call site that cannot see the state.
+    //
+    // While the request is in flight the dialog cannot be dismissed by either route. Closing it
+    // then destroys this component and its subscription, and the signing address that comes back
+    // is the only copy: the signature record and the DocuSign envelope are created by that same
+    // call, so a dismissal mid-flight leaves a real envelope nobody was handed. Both exits open
+    // again on `ready` and `failed`, where there is either an address on screen or nothing left
+    // to lose.
+    effect(() => {
+      const state = this.state();
+      const inFlight = state === 'preparing';
+
+      this.config.header = this.headerFor[state];
+      this.config.closable = !inFlight;
+      this.config.closeOnEscape = !inFlight;
+    });
+
     const data = this.config.data;
     if (!data) {
       this.state.set('failed');
@@ -113,14 +141,14 @@ export class OrgEasyclaSignHandoffComponent {
    * both are more useful than anything this layer could write — the compliance wording in
    * particular is maintained upstream and will change when the process does. Everything else
    * shares one message, because there is nothing in it the signatory could act on differently.
+   *
+   * Read through the shared helper rather than by hand. The BFF answers a relayed refusal with
+   * the sentence under `error` (`BaseApiError#toResponse`) and its own validation replies with it
+   * under `message`, so a reader that reaches for one spelling drops the other — and dropping
+   * `error` is dropping every refusal this relay exists for.
    */
   private messageFor(error: unknown): string {
-    const message = (error as { error?: { message?: unknown } } | null)?.error?.message;
-    const status = (error as { status?: unknown } | null)?.status;
-
-    if (status === 403 && typeof message === 'string' && message.trim()) {
-      return message.trim();
-    }
-    return CCLA_SIGN_COPY.failure.body;
+    if (!(error instanceof HttpErrorResponse) || error.status !== 403) return CCLA_SIGN_COPY.failure.body;
+    return serverAuthoredMessage(error, CCLA_SIGN_COPY.failure.body).trim();
   }
 }

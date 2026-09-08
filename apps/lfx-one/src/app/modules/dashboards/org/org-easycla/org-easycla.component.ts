@@ -264,13 +264,16 @@ export class OrgEasyclaComponent {
       }
 
       const handoffRef = this.dialogService.open(OrgEasyclaSignHandoffComponent, {
+        // Opened locked, and the component unlocks it — including this header, which it keeps in
+        // step with the state it is showing. A real signing session is opened behind this dialog
+        // as it appears, and the address it returns is the only thing that reaches the signatory:
+        // dismissing it before then, by mask, header control or Escape, leaves an envelope that
+        // exists and that nobody was handed. These three are the initial values only.
         header: CCLA_SIGN_COPY.preparing.header,
         width: '40rem',
         modal: true,
-        // Not dismissable by clicking away: a real signing session is opened behind this dialog,
-        // and its address is the only thing that reaches the signatory. Losing it to a stray
-        // click means an envelope exists that nobody was handed.
-        closable: true,
+        closable: false,
+        closeOnEscape: false,
         dismissableMask: false,
         data: { orgUid, projectSfid: chosen.projectSfid, claGroupId: chosen.claGroupId, attestations },
       }) as DynamicDialogRef;

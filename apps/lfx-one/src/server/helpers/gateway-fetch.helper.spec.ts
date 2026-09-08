@@ -97,3 +97,66 @@ describe('gatewayFetch sensitive response redaction', () => {
     expect(JSON.stringify(logger.warning.mock.calls)).not.toContain('SECRET-COUPON');
   });
 });
+
+/**
+ * The narrower option, for callers whose upstream refusals are written for the user: the sentence
+ * only exists in the body, so discarding the body outright would discard the message with it.
+ *
+ * Keeping the body on the error is half a control, not a whole one — `MicroserviceError` puts
+ * `errorBody` in its log context, and the API error handler logs that. The caller owes a
+ * `withoutUpstreamBody` after taking the message out. Documented on the option, and the reason
+ * these two behaviours are pinned separately.
+ */
+describe('gatewayFetch log-only redaction', () => {
+  const req = { apiGatewayToken: 'gateway-token' } as Request;
+  const options = {
+    operation: 'org_cla_request_corporate_signature',
+    service: 'org_cla_service',
+    errorMessage: 'Failed to request the corporate CLA signature',
+    errorCode: 'UPSTREAM_ERROR',
+    method: 'POST' as const,
+    redactResponseBodyFromLogs: true,
+  };
+
+  afterEach(() => {
+    vi.unstubAllGlobals();
+    vi.clearAllMocks();
+  });
+
+  it('keeps a non-OK body out of the log', async () => {
+    vi.stubGlobal(
+      'fetch',
+      vi.fn(async () => new Response(JSON.stringify({ message: 'refused', lf_username: 'SENSITIVE-HANDLE' }), { status: 403 }))
+    );
+
+    await gatewayFetch(req, 'https://gateway.example.test/sign', options).catch(() => undefined);
+
+    expect(JSON.stringify(logger.warning.mock.calls)).not.toContain('SENSITIVE-HANDLE');
+    expect(logger.warning.mock.calls[0]?.[3]).toMatchObject({ status: 403, body_redacted: true });
+  });
+
+  it('still attaches the body to the error, so the refusal sentence can be relayed', async () => {
+    vi.stubGlobal(
+      'fetch',
+      vi.fn(async () => new Response(JSON.stringify({ message: 'refused' }), { status: 403 }))
+    );
+
+    const error = (await gatewayFetch(req, 'https://gateway.example.test/sign', options).catch((caught: unknown) => caught)) as MicroserviceError;
+
+    expect(error.errorBody).toContain('refused');
+  });
+
+  // Otherwise a caller that set both would quietly get the weaker of the two.
+  it('is superseded by full redaction rather than overriding it', async () => {
+    vi.stubGlobal(
+      'fetch',
+      vi.fn(async () => new Response(JSON.stringify({ message: 'refused' }), { status: 403 }))
+    );
+
+    const error = (await gatewayFetch(req, 'https://gateway.example.test/sign', { ...options, redactResponseBody: true }).catch(
+      (caught: unknown) => caught
+    )) as MicroserviceError;
+
+    expect(error.errorBody).toBeUndefined();
+  });
+});

@@ -4,6 +4,7 @@
 import '@angular/compiler';
 
 import { DOCUMENT } from '@angular/common';
+import { HttpErrorResponse } from '@angular/common/http';
 import { ComponentFixture, TestBed } from '@angular/core/testing';
 import { CCLA_SIGN_COPY } from '@lfx-one/shared/constants';
 import type { OrgClaSignHandoffDialogData, OrgClaSignResponse } from '@lfx-one/shared/interfaces';
@@ -28,6 +29,7 @@ describe('OrgEasyclaSignHandoffComponent', () => {
   // the final value.
   const setHref = vi.fn();
   let location: { href: string };
+  let config: DynamicDialogConfig<OrgClaSignHandoffDialogData>;
 
   const data: OrgClaSignHandoffDialogData = {
     orgUid: '0014100000Te0xxAAC',
@@ -54,12 +56,15 @@ describe('OrgEasyclaSignHandoffComponent', () => {
         href = value;
       },
     };
+    // The real shape and the real initial values from the call site, because the component drives
+    // three of these and a bare `{ data }` stub would let a wrong initial value pass unnoticed.
+    config = { data: dialogData, header: CCLA_SIGN_COPY.preparing.header, closable: false, closeOnEscape: false };
     TestBed.resetTestingModule();
     await TestBed.configureTestingModule({
       imports: [OrgEasyclaSignHandoffComponent],
       providers: [
         { provide: DynamicDialogRef, useValue: { close } },
-        { provide: DynamicDialogConfig, useValue: { data: dialogData } },
+        { provide: DynamicDialogConfig, useValue: config },
         { provide: OrgLensClaService, useValue: { requestCorporateSignature } },
         // Only `location` is swapped. TestBed renders through DOCUMENT, so replacing it wholesale
         // breaks the fixture; jsdom also refuses a direct `document.location` assignment. Methods
@@ -89,6 +94,11 @@ describe('OrgEasyclaSignHandoffComponent', () => {
 
   function testid(fixture: ComponentFixture<OrgEasyclaSignHandoffComponent>, id: string): HTMLElement | null {
     return fixture.nativeElement.querySelector(`[data-testid="${id}"]`);
+  }
+
+  /** What `HttpClient` actually rejects with: a real `HttpErrorResponse` over this BFF's body. */
+  function bffError(status: number, body: unknown): HttpErrorResponse {
+    return new HttpErrorResponse({ status, statusText: 'x', url: '/api/orgs/x/lens/cla-groups/sign', error: body });
   }
 
   beforeEach(() => {
@@ -180,9 +190,25 @@ describe('OrgEasyclaSignHandoffComponent', () => {
   // A trade-compliance hold is explained upstream, names how to challenge it, and will change
   // when that process does. Replacing it with this application's generic sentence would drop the
   // only part of the message the signatory could act on.
+  //
+  // The fixtures below are real `HttpErrorResponse`s carrying the body this BFF actually sends.
+  // `BaseApiError#toResponse` puts the message under `error`, and the validation replies put it
+  // under `message`; an earlier version of this suite invented `{ error: { message } }`, which is
+  // neither, and passed against a component that could not read either one.
   it("shows a refusal in the CLA service's own words", async () => {
     const refusal = 'This company is subject to a trade-compliance hold. Contact support to review the determination.';
-    requestCorporateSignature.mockReturnValue(throwError(() => ({ status: 403, error: { message: refusal } })));
+    requestCorporateSignature.mockReturnValue(throwError(() => bffError(403, { error: refusal, code: 'UPSTREAM_ERROR' })));
+
+    const fixture = await render();
+
+    expect(testid(fixture, 'org-easycla-sign-failure-message')?.textContent).toContain(refusal);
+  });
+
+  // The BFF's own validation replies answer with `message`, so the relay has to read both spellings
+  // — a reader that knows only one drops half of what the server says.
+  it("shows a refusal the server sent under 'message'", async () => {
+    const refusal = 'Both the authorization and compliance confirmations are required';
+    requestCorporateSignature.mockReturnValue(throwError(() => bffError(403, { message: refusal })));
 
     const fixture = await render();
 
@@ -190,11 +216,24 @@ describe('OrgEasyclaSignHandoffComponent', () => {
   });
 
   it('shows the generic failure when the refusal was not explained', async () => {
-    requestCorporateSignature.mockReturnValue(throwError(() => ({ status: 500, error: { message: 'signature service unavailable' } })));
+    requestCorporateSignature.mockReturnValue(throwError(() => bffError(500, { error: 'signature service unavailable' })));
 
     const fixture = await render();
 
     expect(testid(fixture, 'org-easycla-sign-failure-message')?.textContent).toContain(CCLA_SIGN_COPY.failure.body);
+  });
+
+  // Angular synthesizes a non-empty `HttpErrorResponse.message` ("Http failure response for …")
+  // for every failure, so a reader that falls back to it puts an HTTP debugging string in front of
+  // a signatory who was refused.
+  it('shows the generic failure rather than Angular’s synthesized message when the body is empty', async () => {
+    requestCorporateSignature.mockReturnValue(throwError(() => bffError(403, null)));
+
+    const fixture = await render();
+
+    const shown = testid(fixture, 'org-easycla-sign-failure-message')?.textContent;
+    expect(shown).toContain(CCLA_SIGN_COPY.failure.body);
+    expect(shown).not.toContain('Http failure response');
   });
 
   it('closes without a result when the signatory backs out of an open session', async () => {
@@ -212,5 +251,64 @@ describe('OrgEasyclaSignHandoffComponent', () => {
 
     expect(requestCorporateSignature).not.toHaveBeenCalled();
     expect(testid(fixture, 'org-easycla-sign-failed')).not.toBeNull();
+  });
+
+  /**
+   * The signing request runs while this dialog is on screen, and it is the call that creates both
+   * the signature record and the DocuSign envelope. Dismissing the dialog destroys the component
+   * and its subscription, so the address that comes back is discarded and the envelope is left
+   * with nobody holding it. Neither exit is available until there is something to lose.
+   */
+  describe('while the signing request is in flight', () => {
+    it('cannot be dismissed by the header control or by Escape', async () => {
+      requestCorporateSignature.mockReturnValue(new Observable<OrgClaSignResponse>(() => undefined));
+
+      await render();
+
+      expect(config.closable).toBe(false);
+      expect(config.closeOnEscape).toBe(false);
+    });
+
+    it.each([
+      ['ready', () => of(response)],
+      ['failed', () => throwError(() => bffError(500, { error: 'nope' }))],
+    ])('can be dismissed again once it reaches %s', async (_state, source) => {
+      requestCorporateSignature.mockReturnValue(source());
+
+      await render();
+
+      expect(config.closable).toBe(true);
+      expect(config.closeOnEscape).toBe(true);
+    });
+  });
+
+  /**
+   * The shell dialog's title is PrimeNG's, and it is a static string at the call site. Left alone
+   * it keeps saying "Configuring CLA Manager Settings…" above a panel that says the session is
+   * ready, or that it failed.
+   */
+  describe('the dialog title', () => {
+    it.each([
+      ['preparing', () => new Observable<OrgClaSignResponse>(() => undefined), CCLA_SIGN_COPY.preparing.header],
+      ['ready', () => of(response), CCLA_SIGN_COPY.ready.header],
+      ['failed', () => throwError(() => bffError(500, { error: 'nope' })), CCLA_SIGN_COPY.failure.header],
+    ])('names the %s state', async (_state, source, expected) => {
+      requestCorporateSignature.mockReturnValue(source());
+
+      await render();
+
+      expect(config.header).toBe(expected);
+    });
+
+    // Would have been the whole bug: the title is set once at the call site and the panel moves on
+    // without it.
+    it('does not leave the preparing title above a ready panel', async () => {
+      requestCorporateSignature.mockReturnValue(of(response));
+
+      const fixture = await render();
+
+      expect(testid(fixture, 'org-easycla-sign-ready')).not.toBeNull();
+      expect(config.header).not.toBe(CCLA_SIGN_COPY.preparing.header);
+    });
   });
 });

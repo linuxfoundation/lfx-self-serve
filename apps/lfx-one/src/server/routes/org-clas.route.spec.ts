@@ -93,6 +93,12 @@ beforeEach(() => {
   requestCorporateSignature.mockImplementation((_req: express.Request, res: express.Response) => {
     res.json({ signUrl: 'https://signing.example.org/session/1' });
   });
+  getSignOptions.mockImplementation((_req: express.Request, res: express.Response) => {
+    res.json({ searchTerm: 'cascade', resultCount: 0, truncated: false, results: [] });
+  });
+  requestCorporateSignature.mockImplementation((_req: express.Request, res: express.Response) => {
+    res.json({ signUrl: 'https://docusign.example.org/session/1' });
+  });
   getAccessAwareOrgs.mockResolvedValue({ resolved: new Map([[GRANTED, { roleSource: 'direct-writer' }]]), upstreamFailed: false });
 });
 
@@ -229,5 +235,113 @@ describe('org-clas router — the corporate signing routes', () => {
 
     expect(getSignOptions).toHaveBeenCalled();
     expect(getPdfUrl).not.toHaveBeenCalled();
+  });
+
+  /**
+   * Choosing a CLA Group to sign for. A read, so impersonation stays allowed — exactly as on the
+   * Me-lens picker, and unlike the write next door.
+   *
+   * The literal `sign-options` segment also has to beat the `:signatureId` route declared after
+   * it; if the declaration order ever flipped, this would arrive at `getPdfUrl` instead.
+   */
+  describe('sign-options', () => {
+    it('refuses a search for an org the caller holds no grant on', async () => {
+      const res = await fetch(`${baseUrl}/api/orgs/${UNGRANTED}/lens/cla-groups/sign-options?search=cascade`);
+
+      expect(res.status).toBe(403);
+      expect(getSignOptions).not.toHaveBeenCalled();
+    });
+
+    it('admits a search for a granted org, and not as a signature id', async () => {
+      const res = await fetch(`${baseUrl}/api/orgs/${GRANTED}/lens/cla-groups/sign-options?search=cascade`);
+
+      expect(res.status).toBe(200);
+      expect(getSignOptions).toHaveBeenCalled();
+      expect(getPdfUrl).not.toHaveBeenCalled();
+    });
+
+    it('refuses a search when the server flag is off, before any grant lookup', async () => {
+      delete process.env['LFX_ORG_LENS_CLA_M3_ENABLED'];
+
+      const res = await fetch(`${baseUrl}/api/orgs/${GRANTED}/lens/cla-groups/sign-options?search=cascade`);
+
+      expect(res.status).toBe(409);
+      expect(getSignOptions).not.toHaveBeenCalled();
+      expect(getAccessAwareOrgs).not.toHaveBeenCalled();
+    });
+
+    it('stays available while impersonating, because it reads nothing and writes nothing', async () => {
+      isImpersonating.mockReturnValue(true);
+
+      const res = await fetch(`${baseUrl}/api/orgs/${GRANTED}/lens/cla-groups/sign-options?search=cascade`);
+
+      expect(res.status).toBe(200);
+      expect(getSignOptions).toHaveBeenCalled();
+    });
+  });
+
+  /**
+   * Opening the signing session: the one write in this router, and the one that creates a
+   * signature record and a DocuSign envelope against a company's legal position.
+   *
+   * Each guard is asserted to run *before* the next thing, not merely to be present. The payload
+   * below is a valid one throughout, so nothing here can pass by being rejected for its shape.
+   */
+  describe('sign', () => {
+    const body = {
+      projectSfid: 'a09410000182dD2AAI',
+      claGroupId: '11111111-1111-4111-8111-111111111111',
+      authorityAcked: true,
+      embargoAcked: true,
+    };
+
+    function sign(orgUid: string): Promise<Response> {
+      return fetch(`${baseUrl}/api/orgs/${orgUid}/lens/cla-groups/sign`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(body),
+      });
+    }
+
+    it('refuses a signing request for an org the caller holds no grant on', async () => {
+      const res = await sign(UNGRANTED);
+
+      expect(res.status).toBe(403);
+      expect(requestCorporateSignature).not.toHaveBeenCalled();
+    });
+
+    it('admits a signing request for a granted org', async () => {
+      const res = await sign(GRANTED);
+
+      expect(res.status).toBe(200);
+      expect(requestCorporateSignature).toHaveBeenCalled();
+    });
+
+    // The kill switch has to cover the write, not only the reads: a flag that hides the page while
+    // leaving this route live would let a signature be created in an environment it is off in.
+    it('refuses a signing request when the server flag is off, before any grant lookup', async () => {
+      delete process.env['LFX_ORG_LENS_CLA_M3_ENABLED'];
+
+      const res = await sign(GRANTED);
+
+      expect(res.status).toBe(409);
+      expect(requestCorporateSignature).not.toHaveBeenCalled();
+      expect(getAccessAwareOrgs).not.toHaveBeenCalled();
+    });
+
+    /**
+     * The payload carries no caller identity — the signatory is whoever the gateway token names.
+     * Under impersonation that is the wrong person, on a corporate agreement, and there is nothing
+     * in the record afterwards to say so. Refused before the controller runs, so no part of the
+     * request is acted on.
+     */
+    it('refuses a signing request while impersonating, before the controller runs', async () => {
+      isImpersonating.mockReturnValue(true);
+
+      const res = await sign(GRANTED);
+
+      expect(res.status).toBe(403);
+      expect(requestCorporateSignature).not.toHaveBeenCalled();
+    });
   });
 });

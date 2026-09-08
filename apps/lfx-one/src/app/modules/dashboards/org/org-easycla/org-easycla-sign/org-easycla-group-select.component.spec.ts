@@ -163,8 +163,9 @@ describe('OrgEasyclaGroupSelectComponent', () => {
     expect(testid(fixture, `org-easycla-group-disabled-${individualOnly.claGroupId}`)?.textContent).toContain(CCLA_SIGN_COPY.picker.cclaDisabledReason);
   });
 
-  // The reason is visible text, not only a tooltip: a disabled row is not focusable, so a
-  // tooltip-only reason never reaches anyone who cannot hover.
+  // The reason is visible text inside the option, not a tooltip: a tooltip never reaches anyone
+  // who cannot hover, and inside the option it becomes part of the row's accessible name, so it
+  // is read out when the keyboard highlight arrives.
   it('states the reason as text on the row itself', async () => {
     getSignOptions.mockReturnValue(of(results([multiProject])));
 
@@ -280,5 +281,120 @@ describe('OrgEasyclaGroupSelectComponent', () => {
     (testid(fixture, 'org-easycla-group-cancel')?.querySelector('button') as HTMLButtonElement).click();
 
     expect(close).toHaveBeenCalledWith(null);
+  });
+
+  /**
+   * The rows carry `role="option"` on plain elements, which are not focusable and have no
+   * activation behaviour of their own. Without the handling below there is no way to choose a CLA
+   * Group without a pointer — the flow is simply unavailable to a keyboard-only signatory.
+   *
+   * The highlight roves from the text box, which keeps focus, so `aria-activedescendant` on the
+   * listbox is what tells a screen reader which row is current.
+   */
+  describe('keyboard', () => {
+    function press(fixture: ComponentFixture<OrgEasyclaGroupSelectComponent>, key: string): void {
+      testid(fixture, 'org-easycla-group-select-results')?.dispatchEvent(new KeyboardEvent('keydown', { key, bubbles: true }));
+      fixture.detectChanges();
+    }
+
+    function results_(fixture: ComponentFixture<OrgEasyclaGroupSelectComponent>): HTMLElement {
+      return testid(fixture, 'org-easycla-group-select-results') as HTMLElement;
+    }
+
+    it('chooses the highlighted CLA group on Enter', async () => {
+      getSignOptions.mockReturnValue(of(results([signable])));
+
+      const fixture = await render();
+      await search(fixture);
+      press(fixture, 'ArrowDown');
+      press(fixture, 'Enter');
+      continueButton(fixture).click();
+
+      expect(close).toHaveBeenCalledWith({
+        claGroupId: signable.claGroupId,
+        projectSfid: signable.projectSfid,
+        projectName: signable.projectName,
+      });
+    });
+
+    it('names the highlighted row so a screen reader can follow the arrow keys', async () => {
+      getSignOptions.mockReturnValue(of(results([signable])));
+
+      const fixture = await render();
+      await search(fixture);
+      expect(results_(fixture).getAttribute('aria-activedescendant')).toBeNull();
+
+      press(fixture, 'ArrowDown');
+
+      expect(results_(fixture).getAttribute('aria-activedescendant')).toBe(`org-easycla-group-option-${signable.claGroupId}`);
+      expect(row(fixture, signable).id).toBe(`org-easycla-group-option-${signable.claGroupId}`);
+    });
+
+    it('moves down and back up through the list', async () => {
+      getSignOptions.mockReturnValue(of(results([signable, individualOnly])));
+
+      const fixture = await render();
+      await search(fixture);
+      press(fixture, 'ArrowDown');
+      press(fixture, 'ArrowDown');
+      expect(results_(fixture).getAttribute('aria-activedescendant')).toBe(`org-easycla-group-option-${individualOnly.claGroupId}`);
+
+      press(fixture, 'ArrowUp');
+
+      expect(results_(fixture).getAttribute('aria-activedescendant')).toBe(`org-easycla-group-option-${signable.claGroupId}`);
+    });
+
+    // The highlight does stop on a row that cannot be signed, because the reason it cannot is the
+    // row's whole payload and skipping past it would keep that from a keyboard-only viewer
+    // entirely. Enter is what refuses.
+    it('highlights a CLA group that cannot be signed but will not choose it', async () => {
+      getSignOptions.mockReturnValue(of(results([multiProject])));
+
+      const fixture = await render();
+      await search(fixture, 'driftwood');
+      press(fixture, 'ArrowDown');
+      expect(results_(fixture).getAttribute('aria-activedescendant')).toBe(`org-easycla-group-option-${multiProject.claGroupId}`);
+
+      press(fixture, 'Enter');
+
+      expect(continueButton(fixture).disabled).toBe(true);
+      expect(close).not.toHaveBeenCalled();
+    });
+
+    // The highlight is a position in the previous list. Carried across a new search it would let
+    // Enter confirm whichever CLA Group happens to land at that offset.
+    it('drops the highlight when a new search arrives', async () => {
+      getSignOptions.mockReturnValueOnce(of(results([signable, individualOnly]))).mockReturnValue(of(results([individualOnly])));
+
+      const fixture = await render();
+      await search(fixture);
+      press(fixture, 'ArrowDown');
+      press(fixture, 'ArrowDown');
+
+      await search(fixture, 'beacon');
+
+      expect(results_(fixture).getAttribute('aria-activedescendant')).toBeNull();
+    });
+
+    it('backs out on Escape', async () => {
+      getSignOptions.mockReturnValue(of(results([signable])));
+
+      const fixture = await render();
+      await search(fixture);
+      press(fixture, 'Escape');
+
+      expect(close).toHaveBeenCalledWith(null);
+    });
+
+    it('ignores Enter when the search failed and the rows are not on screen', async () => {
+      getSignOptions.mockReturnValue(throwError(() => new Error('gateway')));
+
+      const fixture = await render();
+      await search(fixture);
+      press(fixture, 'ArrowDown');
+      press(fixture, 'Enter');
+
+      expect(close).not.toHaveBeenCalled();
+    });
   });
 });

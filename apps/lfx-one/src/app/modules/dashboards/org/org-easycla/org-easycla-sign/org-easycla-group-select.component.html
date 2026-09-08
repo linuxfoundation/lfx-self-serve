@@ -10,7 +10,12 @@ SPDX-License-Identifier: MIT
     The results list is in flow, not an absolutely positioned overlay: inside a DynamicDialog an
     overlay contributes no height, so the dialog stays short and its content box crops the list.
   -->
-  <div>
+  <!--
+    Keydown is bound here rather than on the rows. The rows are not focusable — focus stays in the
+    text box so the viewer can keep typing while moving the highlight, which is what the listbox's
+    `aria-activedescendant` describes.
+  -->
+  <div (keydown)="onKeydown($event)">
     <label for="org-easycla-group-select-search-input" class="sr-only">Search projects and CLA groups</label>
     <lfx-input-text
       [id]="'org-easycla-group-select-search-input'"
@@ -25,8 +30,10 @@ SPDX-License-Identifier: MIT
       data-testid="org-easycla-group-select-search" />
 
     <div
+      id="org-easycla-group-select-results"
       role="listbox"
       aria-label="Matching CLA groups"
+      [attr.aria-activedescendant]="highlightedIndex() >= 0 ? 'org-easycla-group-option-' + options()[highlightedIndex()]?.claGroupId : null"
       class="mt-1 max-h-64 w-full overflow-y-auto rounded-lg border border-slate-200 bg-white shadow-lg"
       data-testid="org-easycla-group-select-results">
       @if (error()) {
@@ -59,15 +66,16 @@ SPDX-License-Identifier: MIT
             Searching…
           </div>
         }
-        @for (option of options(); track option.claGroupId) {
+        @for (option of options(); track option.claGroupId; let index = $index) {
           <!--
             A row that cannot be signed keeps its place and states why, rather than disappearing.
-            The reason is rendered as visible text and not only as a tooltip, because the row is
-            not focusable when disabled and a tooltip alone would never reach a viewer who cannot
-            hover.
+            The reason is rendered as visible text and not only as a tooltip, because a tooltip
+            would never reach a viewer who cannot hover. It is inside the option, so the reason is
+            part of the row's accessible name and is read when the highlight arrives.
           -->
           <div
             role="option"
+            [id]="'org-easycla-group-option-' + option.claGroupId"
             [attr.aria-selected]="selected()?.claGroupId === option.claGroupId"
             [attr.aria-disabled]="!!option.disabledReason"
             class="border-b border-slate-100 px-4 py-2.5 text-left last:border-b-0"
@@ -75,7 +83,7 @@ SPDX-License-Identifier: MIT
             [class.hover:bg-slate-50]="!option.disabledReason"
             [class.cursor-not-allowed]="!!option.disabledReason"
             [class.opacity-60]="!!option.disabledReason"
-            [class.bg-slate-50]="selected()?.claGroupId === option.claGroupId"
+            [class.bg-slate-50]="selected()?.claGroupId === option.claGroupId || highlightedIndex() === index"
             [attr.data-testid]="'org-easycla-group-select-' + option.claGroupId"
             (click)="onSelect(option)">
             <span class="block text-sm font-medium text-slate-900">{{ option.primaryName }}</span>

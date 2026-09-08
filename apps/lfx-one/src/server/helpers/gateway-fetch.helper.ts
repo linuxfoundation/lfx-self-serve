@@ -20,6 +20,18 @@ export interface GatewayFetchOptions {
   bearerToken?: string;
   /** Suppresses upstream response bodies from logs and client-visible error metadata. */
   redactResponseBody?: boolean;
+  /**
+   * Keeps a non-OK upstream body out of the log while still attaching it to the thrown error, for
+   * the callers that must relay a producer-authored refusal to the user — the body is the only
+   * place that sentence exists, so `redactResponseBody` would discard the message along with it.
+   *
+   * Attaching is not the end of the story: `MicroserviceError#getLogContext` puts `errorBody` in
+   * the error handler's own log line. A caller using this owes it to drop the body once it has
+   * taken the message out (`withoutUpstreamBody`), or the leak simply moves one layer up.
+   *
+   * Ignored when `redactResponseBody` is set, which discards the body outright.
+   */
+  redactResponseBodyFromLogs?: boolean;
 }
 
 /**
@@ -84,10 +96,11 @@ export async function gatewayFetch<T>(req: Request, url: string, options: Gatewa
     const body = options.redactResponseBody
       ? await discardResponseBody(upstream.body)
       : (await upstream.text().catch(() => '')).slice(0, UPSTREAM_ERROR_BODY_LIMIT);
+    const loggableBody = options.redactResponseBodyFromLogs ? undefined : body;
     const logContext = {
       status: upstream.status,
       status_text: upstream.statusText,
-      ...(body === undefined ? { body_redacted: true } : { body }),
+      ...(loggableBody === undefined ? { body_redacted: true } : { body: loggableBody }),
     };
 
     logger.warning(req, options.operation, 'Upstream returned non-OK response', logContext);

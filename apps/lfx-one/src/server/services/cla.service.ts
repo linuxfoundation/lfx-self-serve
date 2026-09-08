@@ -414,6 +414,30 @@ export function withProducerRefusalMessage(error: unknown, operation = 'cla_prep
   });
 }
 
+/**
+ * The same error with the raw upstream body dropped, keeping its message, status and code.
+ *
+ * `MicroserviceError#getLogContext` returns `error_body`, and the API error handler spreads that
+ * into its log line — so an error carrying an upstream body logs that body wherever it is finally
+ * handled, however carefully the fetch that produced it was configured. Compose this after
+ * anything that needed to read the body (`withProducerRefusalMessage`) and before the throw, on
+ * the paths whose upstream refusals name a person or an organization's compliance standing.
+ *
+ * The message survives, which is the point: the sentence written for the user is kept and the
+ * record it was extracted from is not.
+ */
+export function withoutUpstreamBody(error: unknown): unknown {
+  if (!(error instanceof MicroserviceError) || error.errorBody === undefined) return error;
+
+  return new MicroserviceError(error.message, error.statusCode, error.code, {
+    operation: error.operation,
+    service: error.service,
+    path: error.path,
+    originalMessage: error.originalMessage,
+    transportFailure: error.transportFailure,
+  });
+}
+
 // ---------------------------------------------------------------------------
 // Service
 // ---------------------------------------------------------------------------

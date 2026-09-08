@@ -46,6 +46,7 @@ import {
   recordedGithubIdentity,
   toClaGroupSearchResponse,
   toMyClaAgreement,
+  withoutUpstreamBody,
 } from './cla.service';
 
 const req = {} as unknown as Request;
@@ -1405,5 +1406,67 @@ describe('producerMessageFrom', () => {
     expect(producerMessageFrom(JSON.stringify({ code: '403' }))).toBeNull();
     expect(producerMessageFrom(JSON.stringify({ message: '   ' }))).toBeNull();
     expect(producerMessageFrom({ message: 'an object, not the raw text gatewayFetch carries' })).toBeNull();
+  });
+});
+
+/**
+ * The counterpart to reading a message out of an upstream body: getting rid of the body once the
+ * message has been taken out of it.
+ *
+ * It exists because `MicroserviceError#getLogContext` returns `error_body`, and the API error
+ * handler spreads that into the line it logs. An error that still carries an upstream body
+ * therefore logs it wherever it is finally handled, no matter how the fetch that produced it was
+ * configured — so the drop has to happen on the error, not only at the fetch.
+ */
+describe('withoutUpstreamBody', () => {
+  it('keeps the message, status and code while dropping the body', () => {
+    const error = new MicroserviceError('This organization requires additional review', 403, 'UPSTREAM_ERROR', {
+      operation: 'org_cla_request_corporate_signature',
+      service: 'org_cla_service',
+      path: '/v4/self-serve/request-corporate-signature',
+      originalMessage: 'HTTP 403: Forbidden',
+      errorBody: JSON.stringify({ message: 'This organization requires additional review', lf_username: 'SENSITIVE-HANDLE' }),
+    });
+
+    const scrubbed = withoutUpstreamBody(error) as MicroserviceError;
+
+    expect(scrubbed.message).toBe('This organization requires additional review');
+    expect(scrubbed.statusCode).toBe(403);
+    expect(scrubbed.code).toBe('UPSTREAM_ERROR');
+    expect(scrubbed.operation).toBe('org_cla_request_corporate_signature');
+    expect(scrubbed.service).toBe('org_cla_service');
+    expect(scrubbed.path).toBe('/v4/self-serve/request-corporate-signature');
+    expect(scrubbed.originalMessage).toBe('HTTP 403: Forbidden');
+    expect(scrubbed.errorBody).toBeUndefined();
+  });
+
+  // The log line the error handler emits is the thing this protects, so that is what is asserted —
+  // not merely the absence of the field.
+  it('leaves nothing from the body in the log context', () => {
+    const error = new MicroserviceError('Refused', 403, 'UPSTREAM_ERROR', {
+      errorBody: JSON.stringify({ sanction_status: 'pending_review' }),
+    });
+
+    expect(JSON.stringify(error.getLogContext())).toContain('pending_review');
+    expect(JSON.stringify((withoutUpstreamBody(error) as MicroserviceError).getLogContext())).not.toContain('pending_review');
+  });
+
+  // A transport failure is declared by the site that threw it and is read by the client as "our
+  // connection broke" — rebuilding the error must not silently reclassify that.
+  it('preserves a declared transport failure', () => {
+    const error = new MicroserviceError('Gateway unreachable', 502, 'NETWORK_ERROR', {
+      errorBody: 'connection reset',
+      transportFailure: true,
+    });
+
+    expect((withoutUpstreamBody(error) as MicroserviceError).toResponse()['transport']).toBe(true);
+  });
+
+  it('returns anything without a body untouched, rather than rebuilding it', () => {
+    const withoutBody = new MicroserviceError('Refused', 403, 'UPSTREAM_ERROR', { service: 'org_cla_service' });
+    const notOurs = new Error('boom');
+
+    expect(withoutUpstreamBody(withoutBody)).toBe(withoutBody);
+    expect(withoutUpstreamBody(notOurs)).toBe(notOurs);
   });
 });

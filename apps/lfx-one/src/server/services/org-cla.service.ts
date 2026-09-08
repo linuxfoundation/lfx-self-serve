@@ -33,7 +33,7 @@ import type {
 import { MicroserviceError } from '../errors';
 import { claServiceBaseUrl } from '../helpers/cla-service-url.helper';
 import { gatewayFetch } from '../helpers/gateway-fetch.helper';
-import { claReturnUrl, toClaGroupOption, withProducerRefusalMessage } from './cla.service';
+import { claReturnUrl, toClaGroupOption, withoutUpstreamBody, withProducerRefusalMessage } from './cla.service';
 import { logger } from './logger.service';
 import { isImpersonating } from '../utils/auth-helper';
 
@@ -395,12 +395,22 @@ export class OrgClaService {
         errorCode: 'UPSTREAM_ERROR',
         method: 'POST',
         body,
+        // A refusal from this endpoint names the caller's LF username when it is about scope, and
+        // the organization's trade-compliance standing when it is about sanctions. Neither belongs
+        // in an application log. Full redaction would take the refusal sentence with it — the body
+        // is the only place that sentence exists — so the body is kept out of the log here and
+        // dropped from the error below, once the message has been taken out of it.
+        redactResponseBodyFromLogs: true,
       });
     } catch (error) {
       // A 403 here is a sentence written for the signatory — the trade-compliance refusal names
       // the reason and the support route, and the authority refusal names the missing scope.
       // Relabelling is what puts those words on screen instead of "403 Forbidden".
-      throw withProducerRefusalMessage(error, 'org_cla_request_corporate_signature', SERVICE);
+      //
+      // Then the body goes, message already extracted. Without that second step the error reaches
+      // the API error handler still carrying it, and `getLogContext` writes it to the log line
+      // that handler emits — which is the same disclosure the fetch option just prevented.
+      throw withoutUpstreamBody(withProducerRefusalMessage(error, 'org_cla_request_corporate_signature', SERVICE));
     }
 
     const signUrl = result?.sign_url?.trim() ?? '';

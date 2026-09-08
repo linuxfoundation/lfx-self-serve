@@ -66,6 +66,9 @@ export class OrgEasyclaGroupSelectComponent {
 
   private readonly query = signal('');
 
+  /** Position of the keyboard highlight in `options`, or -1 when nothing is highlighted. */
+  protected readonly highlightedIndex = signal(-1);
+
   /**
    * Which "the list is empty" answer applies, so the template never infers one from a zero
    * length — which cannot tell "you have not typed yet" from "keep going" from "no matches".
@@ -111,6 +114,9 @@ export class OrgEasyclaGroupSelectComponent {
         if (!response) return;
         this.options.set(response.results.map((option) => this.toOrgOptionView(option)));
         this.truncated.set(response.truncated);
+        // The highlight is a position in the previous list; carrying it over would let Enter
+        // confirm whichever CLA Group happens to land at that offset in the new one.
+        this.highlightedIndex.set(-1);
       });
 
     this.searchForm.controls.query.valueChanges.pipe(takeUntilDestroyed()).subscribe((value) => {
@@ -120,10 +126,57 @@ export class OrgEasyclaGroupSelectComponent {
       }
 
       // A typed character invalidates the confirmed choice, so the summary and the continue
-      // control can never describe a CLA Group the text no longer matches.
+      // control can never describe a CLA Group the text no longer matches. The highlight is a
+      // position in the previous list, so it has to drop here rather than after the debounce —
+      // Enter during the request window would otherwise confirm a CLA Group the text no longer
+      // describes.
       this.selected.set(null);
+      this.highlightedIndex.set(-1);
       this.pushSearch(value ?? '');
     });
+  }
+
+  /**
+   * Arrow keys, Enter and Escape on the results list, matching the Me-lens picker.
+   *
+   * Bound at the field's container rather than on each row, and the rows are not focusable: focus
+   * stays in the text box so the viewer can keep typing while moving the highlight, which is what
+   * `aria-activedescendant` on the listbox describes.
+   *
+   * The highlight does stop on a row that cannot be signed. Skipping those would be the obvious
+   * reading of "disabled", and it is the wrong one here — the reason a CLA Group cannot be signed
+   * corporately is the row's whole payload, and a keyboard-only viewer who cannot reach the row
+   * never hears it. `onSelect` is what refuses; arriving is allowed.
+   */
+  protected onKeydown(event: KeyboardEvent): void {
+    if (event.key === 'Escape') {
+      this.ref.close(null);
+      return;
+    }
+
+    const options = this.options();
+    // Match the template: the error and keep-typing panels replace the rows, so the keyboard must
+    // not treat a leftover list as still on screen.
+    if (this.error() || this.queryBand() !== 'searchable' || options.length === 0) return;
+
+    switch (event.key) {
+      case 'ArrowDown':
+        // Otherwise the caret jumps to the end of the field on every step.
+        event.preventDefault();
+        this.highlightedIndex.set((this.highlightedIndex() + 1) % options.length);
+        break;
+      case 'ArrowUp':
+        event.preventDefault();
+        this.highlightedIndex.set((this.highlightedIndex() - 1 + options.length) % options.length);
+        break;
+      case 'Enter': {
+        const highlighted = options[this.highlightedIndex()];
+        if (!highlighted) return;
+        event.preventDefault();
+        this.onSelect(highlighted);
+        break;
+      }
+    }
   }
 
   protected retry(): void {
@@ -164,9 +217,11 @@ export class OrgEasyclaGroupSelectComponent {
     this.search$.next(value);
   }
 
+  /** Drops a list the template is no longer drawing, so Arrow/Enter cannot confirm a hidden row. */
   private clearResults(): void {
     this.options.set([]);
     this.truncated.set(false);
+    this.highlightedIndex.set(-1);
   }
 
   /**

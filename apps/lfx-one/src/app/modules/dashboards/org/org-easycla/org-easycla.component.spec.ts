@@ -166,10 +166,18 @@ describe('OrgEasyclaComponent', () => {
   describe('corporate signing flow', () => {
     const chosen = { claGroupId: 'cla-group-uuid-1', projectSfid: 'a09410000182dD2AAI', projectName: 'Cascade' };
 
+    /** Only the four the flow actually sets. The rest of DynamicDialogConfig is PrimeNG's default. */
+    interface DialogHarnessConfig {
+      data?: unknown;
+      closable?: boolean;
+      closeOnEscape?: boolean;
+      dismissableMask?: boolean;
+    }
+
     /** Each `open` closes with the next queued result, so a whole flow can be driven in order. */
     function dialogHarness(closeResults: unknown[]) {
-      const opened: { component: unknown; config: { data?: unknown } }[] = [];
-      const open = vi.fn((component: unknown, config: { data?: unknown } = {}) => {
+      const opened: { component: unknown; config: DialogHarnessConfig }[] = [];
+      const open = vi.fn((component: unknown, config: DialogHarnessConfig = {}) => {
         opened.push({ component, config });
         const result = closeResults[opened.length - 1];
         return { onClose: of(result), close: vi.fn() };
@@ -247,6 +255,37 @@ describe('OrgEasyclaComponent', () => {
         claGroupId: chosen.claGroupId,
         attestations,
       });
+    });
+
+    /**
+     * The hand-off opens locked by all three routes, and the component reopens them once the
+     * request has landed.
+     *
+     * The initial values belong here rather than in the hand-off's own suite, which supplies its
+     * own config and so cannot see what this call site passes. The signing request starts as that
+     * dialog appears and is the call that creates both the signature record and the DocuSign
+     * envelope: dismissed before the address comes back, it leaves an envelope nobody was handed.
+     */
+    it('opens the hand-off with no way to dismiss it', async () => {
+      const attestations = { authorityAcked: true, embargoAcked: true };
+      const { fixture, harness } = await renderWithDialogs([chosen, attestations, null]);
+
+      byTestId(fixture, 'org-easycla-sign-cla')?.querySelector('button')?.click();
+
+      expect(harness.opened[2].config).toMatchObject({ closable: false, closeOnEscape: false, dismissableMask: false });
+    });
+
+    // The two steps before it are freely dismissable: nothing has been created yet, and trapping
+    // someone in a legal confirmation they want to back out of would be its own problem.
+    it.each([
+      [0, 'CLA group picker'],
+      [1, 'attestation step'],
+    ])('leaves the %s dismissable, because nothing exists yet to lose', async (index) => {
+      const { fixture, harness } = await renderWithDialogs([chosen, { authorityAcked: true, embargoAcked: true }, null]);
+
+      byTestId(fixture, 'org-easycla-sign-cla')?.querySelector('button')?.click();
+
+      expect(harness.opened[index].config.closable).toBe(true);
     });
 
     // A dismissed flow must release the control, or the page needs a reload to try again.

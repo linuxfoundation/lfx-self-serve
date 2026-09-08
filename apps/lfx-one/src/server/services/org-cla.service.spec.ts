@@ -5,6 +5,7 @@ import { beforeEach, describe, expect, it, vi } from 'vitest';
 
 import type { Request } from 'express';
 
+import type { MicroserviceError as MicroserviceErrorType } from '../errors';
 import type { EasyClaCompanyClaGroup, EasyClaCompanyClaGroupList } from '../types/cla.types';
 
 const { gatewayFetch, isImpersonating } = vi.hoisted(() => ({ gatewayFetch: vi.fn(), isImpersonating: vi.fn(() => false) }));
@@ -817,6 +818,67 @@ describe('OrgClaService.requestCorporateSignature', () => {
     gatewayFetch.mockRejectedValueOnce(refusal);
 
     await expect(new OrgClaService().requestCorporateSignature(signReq(), ORG_UID, signRequest())).rejects.toThrow(/trade compliance review/);
+  });
+
+  /**
+   * A refusal from this endpoint names the caller's LF username when it is about scope, and the
+   * organization's trade-compliance standing when it is about sanctions. Neither belongs in an
+   * application log.
+   *
+   * Full redaction is not available here: `gatewayFetch` discards the body under that option, and
+   * the body is the only place the refusal sentence exists — the relay above would go with it. So
+   * the body is kept out of the log at the fetch, and dropped from the error afterwards, once its
+   * message has been taken out. Both halves are needed, and the second is the easier one to miss:
+   * without it the error reaches the API error handler still carrying the body, and that handler
+   * logs `getLogContext()`, which includes it.
+   */
+  it('keeps the upstream refusal body out of the logs', async () => {
+    gatewayFetch.mockResolvedValueOnce(upstreamOk);
+
+    await new OrgClaService().requestCorporateSignature(signReq(), ORG_UID, signRequest());
+
+    expect(gatewayFetch).toHaveBeenCalledWith(expect.anything(), expect.any(String), expect.objectContaining({ redactResponseBodyFromLogs: true }));
+  });
+
+  it('relays the refusal sentence without carrying the body that held it', async () => {
+    const refusal = 'This organization requires additional trade compliance review. Contact support to review the determination.';
+    gatewayFetch.mockRejectedValueOnce(
+      new MicroserviceError('Forbidden', 403, 'UPSTREAM_ERROR', {
+        service: 'org_cla_service',
+        // The shape upstream actually sends on a sanctions refusal: the sentence, alongside fields
+        // that identify the organization's standing and must not survive into a log line.
+        errorBody: JSON.stringify({ message: refusal, company_sfid: ORG_UID, sanction_status: 'pending_review' }),
+      })
+    );
+
+    const thrown = await new OrgClaService()
+      .requestCorporateSignature(signReq(), ORG_UID, signRequest())
+      .then(() => null)
+      .catch((error: unknown) => error);
+
+    expect((thrown as MicroserviceErrorType).message).toBe(refusal);
+    expect((thrown as MicroserviceErrorType).errorBody).toBeUndefined();
+    // The API error handler spreads this into its log line, so it is the thing that must be clean.
+    expect(JSON.stringify((thrown as MicroserviceErrorType).getLogContext())).not.toContain('sanction_status');
+  });
+
+  // Nothing about the body-dropping is 403-specific: a 5xx body from this endpoint is no more
+  // loggable, and it is not relayed either, so it has no reason to survive the throw.
+  it('carries no upstream body on a failure it did not relay', async () => {
+    gatewayFetch.mockRejectedValueOnce(
+      new MicroserviceError('Failed to request the corporate CLA signature', 500, 'UPSTREAM_ERROR', {
+        service: 'org_cla_service',
+        errorBody: JSON.stringify({ message: 'panic in signature repository', lf_username: 'someone' }),
+      })
+    );
+
+    const thrown = await new OrgClaService()
+      .requestCorporateSignature(signReq(), ORG_UID, signRequest())
+      .then(() => null)
+      .catch((error: unknown) => error);
+
+    expect((thrown as MicroserviceErrorType).errorBody).toBeUndefined();
+    expect(JSON.stringify((thrown as MicroserviceErrorType).getLogContext())).not.toContain('lf_username');
   });
 
   // Scoped to 403 for the reason the helper documents: a 500's prose is about upstream internals,
