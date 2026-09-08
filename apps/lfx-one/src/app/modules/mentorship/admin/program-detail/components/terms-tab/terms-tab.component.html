@@ -40,13 +40,7 @@
           <tr class="border-b border-gray-100 last:border-b-0" [attr.data-testid]="'mentorship-term-row-' + row.id">
             <td class="px-4 py-3">
               <div class="flex items-center gap-2">
-                <button
-                  type="button"
-                  class="text-sm font-medium text-blue-600 hover:text-blue-800"
-                  (click)="onEditTerm(row.id)"
-                  [attr.data-testid]="'mentorship-term-name-' + row.id">
-                  {{ row.name }}
-                </button>
+                <span class="text-sm font-medium text-blue-600" [attr.data-testid]="'mentorship-term-name-' + row.id">{{ row.name }}</span>
                 @if (row.shouldClose) {
                   <i class="fa-light fa-triangle-exclamation text-amber-500" [attr.title]="shouldCloseWarning" [attr.aria-label]="shouldCloseWarning"></i>
                 }

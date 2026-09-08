@@ -4,9 +4,10 @@
 <div class="flex flex-col gap-4" data-testid="mentorship-mentors-tab">
   <div class="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
     <div class="flex flex-col gap-3 sm:flex-row sm:items-center flex-1">
-      <div class="sm:w-72">
+      <label class="sm:w-72">
+        <span class="sr-only">Search mentors</span>
         <lfx-input-text [form]="form" control="search" placeholder="Search" icon="fa-light fa-magnifying-glass" dataTest="mentorship-mentors-search" />
-      </div>
+      </label>
       <div class="sm:w-52">
         <lfx-select
           [form]="form"
@@ -15,6 +16,7 @@
           optionLabel="label"
           optionValue="value"
           placeholder="Status"
+          ariaLabel="Filter mentors by status"
           styleClass="w-full"
           dataTest="mentorship-mentors-status" />
       </div>

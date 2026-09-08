@@ -28,7 +28,7 @@
           <lfx-mentorship-current-mentees-tab [mentees]="programDetail.mentees" />
         }
         @case ('applicants') {
-          <lfx-mentorship-applicants-tab [applicants]="programDetail.applicants" />
+          <lfx-mentorship-applicants-tab [applicants]="applicants()" />
         }
         @case ('mentors') {
           <lfx-mentorship-mentors-tab [mentors]="programDetail.mentors" />

@@ -3,9 +3,10 @@
 
 <div class="flex flex-col gap-4" data-testid="mentorship-current-mentees-tab">
   <div class="flex flex-col gap-3 sm:flex-row sm:items-center">
-    <div class="sm:w-72">
+    <label class="sm:w-72">
+      <span class="sr-only">Search mentees</span>
       <lfx-input-text [form]="form" control="search" placeholder="Search" icon="fa-light fa-magnifying-glass" dataTest="mentorship-mentees-search" />
-    </div>
+    </label>
     <div class="sm:w-52">
       <lfx-select
         [form]="form"
@@ -14,6 +15,7 @@
         optionLabel="label"
         optionValue="value"
         placeholder="Status"
+        ariaLabel="Filter mentees by status"
         styleClass="w-full"
         dataTest="mentorship-mentees-status" />
     </div>

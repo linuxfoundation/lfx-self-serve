@@ -59,6 +59,7 @@ export class TermsTabComponent {
     this.draftTerms().map((term) => {
       const ended = isMentorshipTermEnded(term.endDate);
       const shouldClose = term.status === 'open' && ended;
+      const canEdit = this.canEditTerm(term, ended);
       return {
         ...term,
         statusLabel: MENTORSHIP_TERM_ROW_STATUS_LABELS[term.status],
@@ -69,7 +70,7 @@ export class TermsTabComponent {
         applicationEndLabel: formatIsoDateLabel(term.applicationEndDate),
         shouldClose,
         cannotClose: shouldClose && term.accepted > 0,
-        menuItems: this.menuItemsFor(term, ended),
+        menuItems: this.menuItemsFor(term, ended, canEdit),
       };
     })
   );
@@ -81,14 +82,19 @@ export class TermsTabComponent {
 
   protected onEditTerm(id: string): void {
     const term = this.draftTerms().find((item) => item.id === id);
-    if (!term) return;
+    if (!term || !this.canEditTerm(term, isMentorshipTermEnded(term.endDate))) return;
     this.openTermDialog({ mode: 'edit', term: this.toFormTerm(term) });
   }
 
-  private menuItemsFor(term: MentorshipProgramTermRow, ended: boolean): MenuItem[] {
+  /** Terms that are both closed and past their end date are historical and locked. */
+  private canEditTerm(term: MentorshipProgramTermRow, ended: boolean): boolean {
+    return term.status !== 'closed' || !ended;
+  }
+
+  private menuItemsFor(term: MentorshipProgramTermRow, ended: boolean, canEdit: boolean): MenuItem[] {
     const items: MenuItem[] = [];
 
-    if (term.status !== 'closed' || !ended) {
+    if (canEdit) {
       items.push({ label: 'Edit', icon: 'fa-light fa-pen', command: () => this.onEditTerm(term.id) });
     }
 

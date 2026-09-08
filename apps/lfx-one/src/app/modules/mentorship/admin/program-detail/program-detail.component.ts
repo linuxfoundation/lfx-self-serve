@@ -8,7 +8,7 @@ import { ButtonComponent } from '@components/button/button.component';
 import { EmptyStateComponent } from '@components/empty-state/empty-state.component';
 import { RouteLoadingComponent } from '@components/loading/route-loading.component';
 import { MENTORSHIP_PROGRAM_DETAIL_COMING_SOON } from '@lfx-one/shared/constants';
-import { MentorshipProgramDetail, MentorshipProgramDetailTab, MentorshipProgramTermRow } from '@lfx-one/shared/interfaces';
+import { MentorshipProgramDetail, MentorshipProgramDetailTab, MentorshipProgramPerson, MentorshipProgramTermRow } from '@lfx-one/shared/interfaces';
 import { MentorshipService } from '@services/mentorship.service';
 import { MessageService } from 'primeng/api';
 import { filter, map, switchMap, tap } from 'rxjs';
@@ -46,10 +46,12 @@ export class ProgramDetailComponent {
   protected readonly isLoading = signal(true);
   protected readonly activeTab = signal<MentorshipProgramDetailTab>('mentees');
   protected readonly termsOverride = signal<MentorshipProgramTermRow[] | null>(null);
+  protected readonly applicantsOverride = signal<MentorshipProgramPerson[] | null>(null);
 
   protected readonly programId = toSignal(this.route.paramMap.pipe(map((params) => params.get('programId') ?? '')), { initialValue: '' });
   protected readonly detail: Signal<MentorshipProgramDetail | null> = this.initDetail();
   protected readonly terms = computed(() => this.termsOverride() ?? this.detail()?.terms ?? []);
+  protected readonly applicants = computed(() => this.applicantsOverride() ?? this.detail()?.applicants ?? []);
   protected readonly tabCounts = computed(() => {
     const detail = this.detail();
     if (!detail) return { mentees: 0, applicants: 0, mentors: 0, terms: 0 };
@@ -59,7 +61,19 @@ export class ProgramDetailComponent {
   });
 
   protected onTermsChange(terms: MentorshipProgramTermRow[]): void {
+    const closedTermNames = this.newlyClosedTermNames(this.terms(), terms);
     this.termsOverride.set(terms);
+
+    if (closedTermNames.size === 0) return;
+
+    // Closing a term declines its outstanding applications, so the Applicants tab
+    // must not keep showing those people as pending.
+    this.applicantsOverride.set(
+      this.applicants().map((applicant): MentorshipProgramPerson => {
+        const declined = applicant.status === 'pending' && closedTermNames.has(applicant.termName);
+        return declined ? { ...applicant, status: 'declined' } : applicant;
+      })
+    );
   }
 
   protected onTabChange(tab: MentorshipProgramDetailTab): void {
@@ -75,6 +89,11 @@ export class ProgramDetailComponent {
     });
   }
 
+  private newlyClosedTermNames(previous: MentorshipProgramTermRow[], next: MentorshipProgramTermRow[]): Set<string> {
+    const openTermIds = new Set(previous.filter((term) => term.status === 'open').map((term) => term.id));
+    return new Set(next.filter((term) => term.status === 'closed' && openTermIds.has(term.id)).map((term) => term.name));
+  }
+
   private initDetail(): Signal<MentorshipProgramDetail | null> {
     return toSignal(
       toObservable(this.programId).pipe(
@@ -82,6 +101,7 @@ export class ProgramDetailComponent {
         tap(() => {
           this.isLoading.set(true);
           this.termsOverride.set(null);
+          this.applicantsOverride.set(null);
         }),
         switchMap((programId) => this.mentorshipService.getProgram(programId).pipe(tap(() => this.isLoading.set(false))))
       ),
