@@ -105,3 +105,4 @@ export * from './foundation-message.constants';
 export * from './social-listening.constants';
 export * from './formation.constants';
 export * from './formation-template.constants';
+export * from './github-url.constants';

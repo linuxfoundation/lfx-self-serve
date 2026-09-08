@@ -4,12 +4,12 @@
 import { signal, WritableSignal } from '@angular/core';
 import { ComponentFixture, TestBed } from '@angular/core/testing';
 import { provideNoopAnimations } from '@angular/platform-browser/animations';
-import { provideRouter } from '@angular/router';
+import { provideRouter, Router } from '@angular/router';
 import { MktgDependencyDocument, MktgStoredAgentRun, ProjectContext } from '@lfx-one/shared/interfaces';
 import { MktgAgentRunService } from '@services/mktg-agent-run.service';
 import { MktgDependencyService } from '@services/mktg-dependency.service';
 import { ProjectContextService } from '@services/project-context.service';
-import { of } from 'rxjs';
+import { of, Subject } from 'rxjs';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 
 import { MktgOsAgentsComponent } from './mktg-os-agents.component';
@@ -35,6 +35,8 @@ describe('MktgOsAgentsComponent — stored-version badges follow the active proj
   let brandKitVersions: Record<string, number>;
   /** Resolved dependency document per `<projectUid>:<agentId>`, returned by the mocked dependency service. */
   let dependencyDocs: Record<string, MktgDependencyDocument>;
+  /** Stand-in for the service's run-completed notifications. */
+  let documentsChanged: Subject<string>;
 
   function storedRun(projectUid: string, version: number): MktgStoredAgentRun {
     return {
@@ -56,6 +58,7 @@ describe('MktgOsAgentsComponent — stored-version badges follow the active proj
     activeContext = signal<ProjectContext | null>(null);
     brandKitVersions = {};
     dependencyDocs = {};
+    documentsChanged = new Subject<string>();
     loadRun = vi.fn((projectUid: string, agentId: string) => {
       const version = brandKitVersions[projectUid];
       return agentId === 'brand-kit' && version ? storedRun(projectUid, version) : null;
@@ -67,11 +70,14 @@ describe('MktgOsAgentsComponent — stored-version badges follow the active proj
     await TestBed.configureTestingModule({
       imports: [MktgOsAgentsComponent],
       providers: [
-        provideRouter([]),
+        // A catch-all so the re-entry test can perform a REAL navigation and
+        // get a genuine NavigationEnd, rather than pushing one into the
+        // router's event subject by hand.
+        provideRouter([{ path: '**', children: [] }]),
         provideNoopAnimations(),
         { provide: ProjectContextService, useValue: { activeContext } },
         { provide: MktgAgentRunService, useValue: { loadRun } },
-        { provide: MktgDependencyService, useValue: { resolveDependencies } },
+        { provide: MktgDependencyService, useValue: { resolveDependencies, documentsChanged$: documentsChanged.asObservable() } },
       ],
     }).compileComponents();
 
@@ -188,6 +194,76 @@ describe('MktgOsAgentsComponent — stored-version badges follow the active proj
       await fixture.whenStable();
 
       expect(mfTile()?.getAttribute('aria-label')).toBe('Open Message Foundation Agent');
+    });
+
+    /**
+     * A live demo found the Message Foundation card still locked after the
+     * Brand Kit run finished: the gating only ever resolved on a project-uid
+     * change, so the only way to see a freshly generated Brand Kit was a full
+     * page reload. Generating a document and walking back to the grid is the
+     * ORDINARY path through this marketplace — it has to unlock without one.
+     */
+    describe('staleness — the grid re-resolves instead of waiting for a reload', () => {
+      it('unlocks the card when a run completes while the grid is showing', async () => {
+        activeContext.set(PROJECT_1);
+        await fixture.whenStable();
+        expect(mfTile()?.disabled).toBe(true);
+
+        // The run page finished a Brand Kit for this project.
+        dependencyDocs = { 'proj-1:brand-kit': kitDoc() };
+        documentsChanged.next('proj-1');
+        await fixture.whenStable();
+
+        expect(mfTile()?.disabled).toBe(false);
+      });
+
+      it('re-resolves when the marketplace becomes active again (returning from a run page)', async () => {
+        activeContext.set(PROJECT_1);
+        await fixture.whenStable();
+        const callsOnEntry = resolveDependencies.mock.calls.length;
+        expect(mfTile()?.disabled).toBe(true);
+
+        // The Brand Kit was generated while the user was on the run page; the
+        // grid only learns about it by re-resolving on the way back.
+        dependencyDocs = { 'proj-1:brand-kit': kitDoc() };
+        await TestBed.inject(Router).navigateByUrl('/mktg-os-agents');
+        await fixture.whenStable();
+
+        expect(resolveDependencies.mock.calls.length).toBeGreaterThan(callsOnEntry);
+        expect(mfTile()?.disabled).toBe(false);
+      });
+
+      it('resolves exactly once on first load — the refresh trigger must not double-fetch', async () => {
+        activeContext.set(PROJECT_1);
+        await fixture.whenStable();
+
+        expect(resolveDependencies).toHaveBeenCalledTimes(1);
+      });
+
+      it('ignores a completion notification for a DIFFERENT project', async () => {
+        activeContext.set(PROJECT_1);
+        await fixture.whenStable();
+        const callsOnEntry = resolveDependencies.mock.calls.length;
+
+        documentsChanged.next('proj-2');
+        await fixture.whenStable();
+
+        expect(resolveDependencies.mock.calls.length).toBe(callsOnEntry);
+      });
+
+      it('keeps the unlocked card unlocked while a refresh is in flight — no relock flicker', async () => {
+        dependencyDocs = { 'proj-1:brand-kit': kitDoc() };
+        activeContext.set(PROJECT_1);
+        await fixture.whenStable();
+        expect(mfTile()?.disabled).toBe(false);
+
+        // A refresh that never resolves: the card must not flash back to locked.
+        resolveDependencies.mockReturnValueOnce(new Subject<Record<string, MktgDependencyDocument | null>>().asObservable());
+        documentsChanged.next('proj-1');
+        await fixture.whenStable();
+
+        expect(mfTile()?.disabled).toBe(false);
+      });
     });
 
     it('re-evaluates on project switch — a kit on one project never unlocks another', async () => {

@@ -26,6 +26,8 @@
         [autocomplete]="autocomplete()"
         [readonly]="readonly()"
         [attr.maxlength]="maxlength()"
+        [attr.aria-describedby]="describedBy() || null"
+        [attr.aria-invalid]="invalid() ? true : null"
         [attr.data-test]="dataTest()" />
     </p-iconfield>
   } @else {
@@ -41,6 +43,8 @@
       [autocomplete]="autocomplete()"
       [readonly]="readonly()"
       [attr.maxlength]="maxlength()"
+      [attr.aria-describedby]="describedBy() || null"
+      [attr.aria-invalid]="invalid() ? true : null"
       [attr.data-test]="dataTest()" />
   }
 </ng-container>

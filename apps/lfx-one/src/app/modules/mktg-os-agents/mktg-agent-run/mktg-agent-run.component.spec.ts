@@ -6,21 +6,24 @@ import { ComponentFixture, TestBed } from '@angular/core/testing';
 import { provideNoopAnimations } from '@angular/platform-browser/animations';
 import { ActivatedRoute, convertToParamMap, provideRouter } from '@angular/router';
 import {
+  MktgAnswerMemory,
   MktgDependencyDocument,
   MktgGenerateProgress,
   MktgGenerateRequest,
+  MktgRunVersion,
   MktgStoredAgentRun,
   Project,
   ProjectContext,
   User,
 } from '@lfx-one/shared/interfaces';
 import { MktgAgentRunService } from '@services/mktg-agent-run.service';
+import { MktgAnswerMemoryService } from '@services/mktg-answer-memory.service';
 import { MktgDependencyService } from '@services/mktg-dependency.service';
 import { ProjectContextService } from '@services/project-context.service';
 import { ProjectService } from '@services/project.service';
 import { UserService } from '@services/user.service';
 import { MessageService } from 'primeng/api';
-import { of } from 'rxjs';
+import { from, of } from 'rxjs';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 
 import { MktgAgentRunComponent } from './mktg-agent-run.component';
@@ -47,10 +50,14 @@ describe('MktgAgentRunComponent', () => {
   let projects: Record<string, Partial<Project> | null>;
   /** Resolved dependency document per `<projectUid>:<agentId>`, returned by the mocked dependency service. */
   let dependencyDocs: Record<string, MktgDependencyDocument>;
+  /** Remembered answers per projectUid, returned by the mocked answer memory. */
+  let rememberedAnswers: Record<string, MktgAnswerMemory>;
   let loadRun: ReturnType<typeof vi.fn>;
   let getProject: ReturnType<typeof vi.fn>;
   let generate: ReturnType<typeof vi.fn>;
   let resolveDependencies: ReturnType<typeof vi.fn>;
+  let rememberAnswers: ReturnType<typeof vi.fn>;
+  let notifyDocumentsChanged: ReturnType<typeof vi.fn>;
 
   const storedRun = (projectUid: string, document: string, answers: Record<string, string>): MktgStoredAgentRun => ({
     agentId: 'brand-kit',
@@ -65,6 +72,8 @@ describe('MktgAgentRunComponent', () => {
   const host = (): HTMLElement => fixture.nativeElement as HTMLElement;
   const query = (testId: string): HTMLElement | null => host().querySelector(`[data-testid="${testId}"]`);
   const fromLfxChip = (fieldKey: string): HTMLElement | null => query(`mktg-agent-run-from-lfx-${fieldKey}`);
+  const priorRunChip = (fieldKey: string): HTMLElement | null => query(`mktg-agent-run-from-prior-run-${fieldKey}`);
+  const fieldError = (fieldKey: string): HTMLElement | null => query(`mktg-agent-run-field-error-${fieldKey}`);
   /** The checklist row's icon + SR state for one configured section label. */
   const sectionState = (label: string): { icon: string; sr: string } | null => {
     const rows = Array.from(host().querySelectorAll<HTMLElement>('[data-testid="mktg-agent-run-sections"] > div'));
@@ -81,6 +90,9 @@ describe('MktgAgentRunComponent', () => {
     storedRuns = {};
     projects = {};
     dependencyDocs = {};
+    rememberedAnswers = {};
+    rememberAnswers = vi.fn();
+    notifyDocumentsChanged = vi.fn();
     // Stored runs are keyed per agent: `<projectUid>` alone keeps the legacy
     // brand-kit fixtures working, `<projectUid>:<agentId>` scopes when a test
     // needs both the page agent's run AND a dependency source run.
@@ -102,7 +114,11 @@ describe('MktgAgentRunComponent', () => {
         { provide: ProjectService, useValue: { getProject } },
         { provide: UserService, useValue: { user: userSignal } },
         { provide: MktgAgentRunService, useValue: { loadRun, generate } },
-        { provide: MktgDependencyService, useValue: { resolveDependencies } },
+        { provide: MktgDependencyService, useValue: { resolveDependencies, notifyDocumentsChanged } },
+        {
+          provide: MktgAnswerMemoryService,
+          useValue: { load: (projectUid: string): MktgAnswerMemory => rememberedAnswers[projectUid] ?? {}, remember: rememberAnswers },
+        },
         MessageService,
       ],
     }).compileComponents();
@@ -161,6 +177,211 @@ describe('MktgAgentRunComponent', () => {
       expect(fromLfxChip('one_line_description')).toBeNull();
       // …and the available-but-unapplied LFX value must NOT read as missing.
       expect(host().textContent).not.toContain('Not set on your LFX project');
+    });
+  });
+
+  /**
+   * A live demo hit the worst version of this: the repo URL was typed into the
+   * Brand Kit intake, LFX had no `repository_url` for the project, and the
+   * Message Foundation form then asked for it again with an empty box. The
+   * marketplace must not re-ask what the user already answered — and must be
+   * honest about where a reused value came from, because calling it "From LFX"
+   * would claim LFX knows something it does not.
+   */
+  describe('prior-answer prefill — never re-ask what another agent already collected', () => {
+    beforeEach(async () => configure());
+
+    it('fills a field LFX has nothing for from the user’s earlier answer to another agent', async () => {
+      projects = { 'proj-one': { repository_url: '', description: '' } };
+      rememberedAnswers = {
+        'proj-1': { github_url: { value: 'https://github.com/example-org/example-repo', agentId: 'foundation-setup', savedAt: '2026-08-20T00:00:00.000Z' } },
+      };
+      activeContext.set(PROJECT_1);
+      await fixture.whenStable();
+
+      expect(component['intakeForm'].getRawValue()).toMatchObject({ github_url: 'https://github.com/example-org/example-repo' });
+    });
+
+    it('labels a reused answer with the run it came from — never "From LFX"', async () => {
+      projects = { 'proj-one': { repository_url: '', description: '' } };
+      rememberedAnswers = {
+        'proj-1': { github_url: { value: 'https://github.com/example-org/example-repo', agentId: 'foundation-setup', savedAt: '2026-08-20T00:00:00.000Z' } },
+      };
+      activeContext.set(PROJECT_1);
+      await fixture.whenStable();
+
+      expect(priorRunChip('github_url')?.textContent).toContain('From your Message Foundation run');
+      expect(fromLfxChip('github_url')).toBeNull();
+    });
+
+    it('lets LFX win: a value LFX HAS is never replaced by an older answer, and keeps the "From LFX" chip', async () => {
+      projects = { 'proj-one': { repository_url: 'https://github.com/lfx/from-lfx', description: 'From LFX' } };
+      rememberedAnswers = {
+        'proj-1': { github_url: { value: 'https://github.com/example-org/older-answer', agentId: 'foundation-setup', savedAt: '2026-08-20T00:00:00.000Z' } },
+      };
+      activeContext.set(PROJECT_1);
+      await fixture.whenStable();
+
+      expect(component['intakeForm'].getRawValue()).toMatchObject({ github_url: 'https://github.com/lfx/from-lfx' });
+      expect(fromLfxChip('github_url')).not.toBeNull();
+      expect(priorRunChip('github_url')).toBeNull();
+    });
+
+    it('never overwrites a restored answer, and re-offers this agent’s OWN answers without a provenance chip', async () => {
+      // A stored run is pruned after 24h while the answer memory lives 30 days,
+      // so from day two the memory is the ONLY surviving copy of this agent's
+      // own answers — skipping them outright would re-ask the user. The chip is
+      // what gets suppressed: "From your Brand Kit run" on the Brand Kit form
+      // would be nonsense.
+      storedRuns = { 'proj-1': storedRun('proj-1', '# Doc', { project_name: 'Restored Name' }) };
+      rememberedAnswers = {
+        'proj-1': {
+          project_name: { value: 'Reused Name', agentId: 'foundation-setup', savedAt: '2026-08-20T00:00:00.000Z' },
+          voice_adjectives: { value: 'confident, technical', agentId: 'brand-kit', savedAt: '2026-08-20T00:00:00.000Z' },
+        },
+      };
+      activeContext.set(PROJECT_1);
+      await fixture.whenStable();
+      component['onEditInputs']();
+      await fixture.whenStable();
+
+      expect(component['intakeForm'].getRawValue()).toMatchObject({ project_name: 'Restored Name', voice_adjectives: 'confident, technical' });
+      expect(priorRunChip('project_name')).toBeNull();
+      expect(priorRunChip('voice_adjectives')).toBeNull();
+    });
+
+    it('suppresses the LFX-empty hint for the agent’s OWN remembered answer too, chip or no chip', async () => {
+      // Own-agent fills carry no provenance chip, so the hint has to be
+      // suppressed on the fill itself — otherwise the form tells the user to
+      // describe their project right next to the description it just filled.
+      projects = { 'proj-one': { repository_url: '', description: '' } };
+      rememberedAnswers = {
+        'proj-1': { one_line_description: { value: 'A runtime for agents.', agentId: 'brand-kit', savedAt: '2026-08-20T00:00:00.000Z' } },
+      };
+      activeContext.set(PROJECT_1);
+      await fixture.whenStable();
+
+      expect(component['intakeForm'].getRawValue()).toMatchObject({ one_line_description: 'A runtime for agents.' });
+      expect(priorRunChip('one_line_description')).toBeNull();
+      expect(host().textContent).not.toContain('Not set on your LFX project');
+    });
+
+    it('suppresses the "not set on your LFX project" hint when a prior answer filled the field instead', async () => {
+      projects = { 'proj-one': { repository_url: '', description: '' } };
+      rememberedAnswers = {
+        'proj-1': { one_line_description: { value: 'A runtime for agents.', agentId: 'foundation-setup', savedAt: '2026-08-20T00:00:00.000Z' } },
+      };
+      activeContext.set(PROJECT_1);
+      await fixture.whenStable();
+
+      expect(component['intakeForm'].getRawValue()).toMatchObject({ one_line_description: 'A runtime for agents.' });
+      expect(priorRunChip('one_line_description')).not.toBeNull();
+      expect(host().textContent).not.toContain('Not set on your LFX project');
+    });
+
+    /**
+     * A chip is a claim about the value in the box, so it has to be withdrawn
+     * when the value goes. Clearing a reused repo URL used to leave "From your
+     * Message Foundation run" beside an empty control — and, worse, the fill it
+     * recorded kept suppressing the LFX-empty hint that was true again.
+     */
+    it('withdraws the reused-answer chip once the user clears the value it filled', async () => {
+      projects = { 'proj-one': { repository_url: '', description: '' } };
+      rememberedAnswers = {
+        'proj-1': { github_url: { value: 'https://github.com/example-org/example-repo', agentId: 'foundation-setup', savedAt: '2026-08-20T00:00:00.000Z' } },
+      };
+      activeContext.set(PROJECT_1);
+      await fixture.whenStable();
+      expect(priorRunChip('github_url')).not.toBeNull();
+
+      component['intakeForm'].controls['github_url'].setValue('');
+      await fixture.whenStable();
+
+      expect(priorRunChip('github_url')).toBeNull();
+    });
+
+    it('brings the LFX-empty hint back when the answer it stood down for is cleared', async () => {
+      projects = { 'proj-one': { repository_url: '', description: '' } };
+      rememberedAnswers = {
+        'proj-1': { one_line_description: { value: 'A runtime for agents.', agentId: 'brand-kit', savedAt: '2026-08-20T00:00:00.000Z' } },
+      };
+      activeContext.set(PROJECT_1);
+      await fixture.whenStable();
+      expect(host().textContent).not.toContain('Not set on your LFX project');
+
+      component['intakeForm'].controls['one_line_description'].setValue('');
+      await fixture.whenStable();
+
+      // LFX still has nothing and the box is empty again — the hint is the honest state.
+      expect(host().textContent).toContain('Not set on your LFX project');
+    });
+
+    it('stops calling a value "From LFX" once the user has typed over it', async () => {
+      projects = { 'proj-one': { repository_url: 'https://github.com/one/repo', description: 'One-line description from LFX' } };
+      activeContext.set(PROJECT_1);
+      await fixture.whenStable();
+      expect(fromLfxChip('github_url')).not.toBeNull();
+
+      component['intakeForm'].controls['github_url'].setValue('https://github.com/mine/own-repo');
+      await fixture.whenStable();
+
+      expect(fromLfxChip('github_url')).toBeNull();
+      // The other fields are untouched, so their provenance stands.
+      expect(fromLfxChip('one_line_description')).not.toBeNull();
+    });
+
+    it('renders NO provenance chip at all when the LFX source resolves empty and nothing else fills the field', async () => {
+      projects = { 'proj-one': { repository_url: '', description: '' } };
+      activeContext.set(PROJECT_1);
+      await fixture.whenStable();
+
+      // An empty prefill source must never be dressed up as "From LFX".
+      expect(fromLfxChip('github_url')).toBeNull();
+      expect(priorRunChip('github_url')).toBeNull();
+      expect(component['intakeForm'].getRawValue()).toMatchObject({ github_url: '' });
+    });
+
+    it('re-announces the project’s documents when a late persistence retry lands the server copy', async () => {
+      // Dependency resolution prefers the SERVER copy over any browser-stored
+      // run, so a document announced while the write was still failing would
+      // leave consumers on the previous server version until a page reload.
+      dependencyDocs = {};
+      const progress: MktgGenerateProgress[] = [
+        { type: 'submitted' },
+        { type: 'document', run: storedRun('proj-1', '# Kit v2', { project_name: 'TestOrbit' }) },
+        { type: 'persisted' },
+      ];
+      generate.mockImplementation(() => from(progress));
+      activeContext.set(PROJECT_1);
+      await fixture.whenStable();
+      for (const [key, control] of Object.entries(component['intakeForm'].controls)) {
+        control.setValue(key === 'github_url' ? 'https://github.com/example-org/example-repo' : `answer for ${key}`);
+      }
+
+      component['onSubmit']();
+      await fixture.whenStable();
+
+      // Once for the document, once for the server copy catching up.
+      expect(notifyDocumentsChanged.mock.calls.filter(([uid]) => uid === 'proj-1')).toHaveLength(2);
+    });
+
+    it('records the submitted answers so the NEXT agent can reuse them', async () => {
+      dependencyDocs = {};
+      activeContext.set(PROJECT_1);
+      await fixture.whenStable();
+      for (const [key, control] of Object.entries(component['intakeForm'].controls)) {
+        // github_url carries a blocking format rule — a placeholder there
+        // would refuse the submission this test is about.
+        control.setValue(key === 'github_url' ? 'https://github.com/example-org/example-repo' : `answer for ${key}`);
+      }
+
+      component['onSubmit']();
+
+      expect(rememberAnswers).toHaveBeenCalledWith(
+        'proj-1',
+        'brand-kit',
+        expect.objectContaining({ github_url: 'https://github.com/example-org/example-repo', project_name: 'answer for project_name' })
+      );
     });
   });
 
@@ -381,6 +602,28 @@ describe('MktgAgentRunComponent', () => {
       expect((generate.mock.calls[0][0] as MktgGenerateRequest).answers['gap_fill_notes']).toBe('Anchor to the v2 launch');
     });
 
+    it('tells the memory a cleared optional field is blank, so the old answer cannot come back', async () => {
+      dependencyDocs = { 'proj-1:brand-kit': brandKitDoc('# Kit') };
+      activeContext.set(PROJECT_1);
+      await fixture.whenStable();
+      fillBase();
+      component['intakeForm'].controls['gap_fill_notes'].setValue('Anchor to the v2 launch');
+      component['onSubmit']();
+
+      expect(rememberAnswers).toHaveBeenLastCalledWith('proj-1', 'foundation-setup', expect.objectContaining({ gap_fill_notes: 'Anchor to the v2 launch' }));
+
+      // The user clears the note and runs again. The PAYLOAD still omits the
+      // blank optional field, but the memory is handed the full intake state:
+      // the note has to be erased there, or it returns to the form once this
+      // run's 24h record expires and the 30-day memory is the only copy left.
+      component['phase'].set('form');
+      component['intakeForm'].controls['gap_fill_notes'].setValue('   ');
+      component['onSubmit']();
+
+      expect((generate.mock.calls[1][0] as MktgGenerateRequest).answers['gap_fill_notes']).toBeUndefined();
+      expect(rememberAnswers).toHaveBeenLastCalledWith('proj-1', 'foundation-setup', expect.objectContaining({ gap_fill_notes: '' }));
+    });
+
     it('surfaces the five derivative chips as copyable values on the result', async () => {
       storedRuns = {
         'proj-1:foundation-setup': {
@@ -461,6 +704,174 @@ describe('MktgAgentRunComponent', () => {
       } finally {
         vi.unstubAllGlobals();
       }
+    });
+
+    /**
+     * `https://github.com/aaif` — an organization, not a repository — was
+     * accepted by this form, dropped by the BFF's README fetch at debug level,
+     * and surfaced only as a document that said no README was provided. The UI
+     * now refuses it outright (product ruling: don't accept a URL that
+     * provably cannot yield a README). Paul's contract still governs what the
+     * AGENT accepts — free text, missing README tolerated — and the question
+     * wording is untouched; it simply doesn't bind the collection UI.
+     */
+    describe('github_url format rule — blocking', () => {
+      const fillNameAndUrl = (url: string): void => {
+        component['intakeForm'].controls['project_name'].setValue('TestOrbit');
+        component['intakeForm'].controls['github_url'].setValue(url);
+      };
+
+      it('blocks submission on a bare account URL and says why, without guessing it is an organization', async () => {
+        dependencyDocs = { 'proj-1:brand-kit': brandKitDoc('# Kit') };
+        activeContext.set(PROJECT_1);
+        await fixture.whenStable();
+
+        fillNameAndUrl('https://github.com/aaif');
+        await fixture.whenStable();
+
+        // `github.com/<owner>` is a person as often as an organization, and the
+        // message must not tell the user which one their own account is.
+        expect(fieldError('github_url')?.textContent).toContain('GitHub account URL');
+        expect(fieldError('github_url')?.textContent).not.toContain('organization');
+        expect(fieldError('github_url')?.textContent).toContain('https://github.com/org/repo');
+        expect(component['intakeForm'].valid).toBe(false);
+        expect(component['submitDisabled']()).toBe(true);
+        component['onSubmit']();
+        expect(generate).not.toHaveBeenCalled();
+      });
+
+      it('associates the blocking error with the control so a screen reader can find it', async () => {
+        dependencyDocs = { 'proj-1:brand-kit': brandKitDoc('# Kit') };
+        activeContext.set(PROJECT_1);
+        await fixture.whenStable();
+
+        fillNameAndUrl('https://github.com/orgs/aaif/repositories');
+        await fixture.whenStable();
+
+        const input = host().querySelector<HTMLInputElement>('[data-test="mktg-intake-github_url"]');
+        expect(input?.getAttribute('aria-invalid')).toBe('true');
+        expect(input?.getAttribute('aria-describedby')).toBe('mktg-intake-github_url-error');
+        expect(fieldError('github_url')?.id).toBe('mktg-intake-github_url-error');
+
+        fillNameAndUrl('https://github.com/example-org/example-repo');
+        await fixture.whenStable();
+        expect(host().querySelector('[data-test="mktg-intake-github_url"]')?.getAttribute('aria-invalid')).toBeNull();
+      });
+
+      it('blocks submission on a URL that is not a GitHub repository at all', async () => {
+        dependencyDocs = { 'proj-1:brand-kit': brandKitDoc('# Kit') };
+        activeContext.set(PROJECT_1);
+        await fixture.whenStable();
+
+        fillNameAndUrl('https://gitlab.com/example-org/example-repo');
+        await fixture.whenStable();
+
+        expect(fieldError('github_url')?.textContent).toContain('doesn’t look like a GitHub repository URL');
+        expect(component['submitDisabled']()).toBe(true);
+        component['onSubmit']();
+        expect(generate).not.toHaveBeenCalled();
+      });
+
+      it('clears the error and re-enables submission once a real repository URL is entered', async () => {
+        dependencyDocs = { 'proj-1:brand-kit': brandKitDoc('# Kit') };
+        activeContext.set(PROJECT_1);
+        await fixture.whenStable();
+
+        fillNameAndUrl('https://github.com/aaif');
+        await fixture.whenStable();
+        expect(component['submitDisabled']()).toBe(true);
+
+        component['intakeForm'].controls['github_url'].setValue('https://github.com/example-org/example-repo');
+        await fixture.whenStable();
+
+        expect(fieldError('github_url')).toBeNull();
+        expect(component['submitDisabled']()).toBe(false);
+        component['onSubmit']();
+        expect(generate).toHaveBeenCalledTimes(1);
+      });
+
+      it('leaves an empty box to the required rule — no format error, and no double message', async () => {
+        dependencyDocs = { 'proj-1:brand-kit': brandKitDoc('# Kit') };
+        activeContext.set(PROJECT_1);
+        await fixture.whenStable();
+
+        fillNameAndUrl('');
+        await fixture.whenStable();
+
+        expect(fieldError('github_url')).toBeNull();
+        expect(component['submitDisabled']()).toBe(true);
+      });
+
+      it('blocks the regenerate path on the same rule — a resubmit is a full submit', async () => {
+        dependencyDocs = { 'proj-1:brand-kit': brandKitDoc('# Kit') };
+        activeContext.set(PROJECT_1);
+        await fixture.whenStable();
+
+        fillNameAndUrl('https://github.com/aaif');
+        component['feedbackForm'].controls.feedback.setValue('Sharpen the pitch.');
+        await fixture.whenStable();
+
+        expect(component['regenerateDisabled']()).toBe(true);
+        component['onRegenerate']();
+        expect(generate).not.toHaveBeenCalled();
+      });
+    });
+
+    describe('README outcome on the result — a thin document is never a silent mystery', () => {
+      /** A stored Message Foundation run whose single version carries the given README outcome. */
+      const runWithReadme = (readme: MktgRunVersion['readme']): MktgStoredAgentRun => ({
+        agentId: 'foundation-setup',
+        projectUid: 'proj-1',
+        sessionId: 'sess-mf',
+        ownerToken: 'token-mf',
+        answers: { project_name: 'TestOrbit', github_url: 'https://github.com/aaif' },
+        versions: [{ version: 1, document: '# Doc', readme, createdAt: '2026-08-19T00:00:00.000Z' }],
+        savedAt: new Date().toISOString(),
+      });
+
+      it('states that the document was generated WITHOUT a README, and why', async () => {
+        storedRuns = { 'proj-1:foundation-setup': runWithReadme({ fetched: false, skipReason: 'not-a-repo-url' }) };
+        activeContext.set(PROJECT_1);
+        await fixture.whenStable();
+
+        expect(query('mktg-agent-run-readme-note')?.textContent).toContain('Generated without a README');
+        expect(query('mktg-agent-run-readme-note')?.textContent).toContain('didn’t resolve to a readable repository');
+      });
+
+      it('distinguishes an absent README from GitHub being unreachable', async () => {
+        storedRuns = { 'proj-1:foundation-setup': runWithReadme({ fetched: false, skipReason: 'no-readme' }) };
+        activeContext.set(PROJECT_1);
+        await fixture.whenStable();
+        expect(query('mktg-agent-run-readme-note')?.textContent).toContain('has no README');
+
+        storedRuns = { 'proj-2:foundation-setup': { ...runWithReadme({ fetched: false, skipReason: 'fetch-failed' }), projectUid: 'proj-2' } };
+        activeContext.set(PROJECT_2);
+        await fixture.whenStable();
+        expect(query('mktg-agent-run-readme-note')?.textContent).toContain('couldn’t be reached');
+      });
+
+      it('says a repository was not publicly readable rather than claiming it has no README', async () => {
+        // Different remedy: the repo may well HAVE a README — what failed was
+        // access, and telling the user to fix the URL sends them nowhere.
+        storedRuns = { 'proj-1:foundation-setup': runWithReadme({ fetched: false, skipReason: 'not-public' }) };
+        activeContext.set(PROJECT_1);
+        await fixture.whenStable();
+
+        expect(query('mktg-agent-run-readme-note')?.textContent).toContain('isn’t publicly readable');
+        expect(query('mktg-agent-run-readme-note')?.textContent).not.toContain('has no README');
+      });
+
+      it('says nothing when a README WAS used, or when the run predates the outcome being recorded', async () => {
+        storedRuns = { 'proj-1:foundation-setup': runWithReadme({ fetched: true, source: 'repository' }) };
+        activeContext.set(PROJECT_1);
+        await fixture.whenStable();
+        expect(query('mktg-agent-run-readme-note')).toBeNull();
+
+        storedRuns = { 'proj-2:foundation-setup': { ...runWithReadme(undefined), projectUid: 'proj-2' } };
+        activeContext.set(PROJECT_2);
+        await fixture.whenStable();
+        expect(query('mktg-agent-run-readme-note')).toBeNull();
+      });
     });
 
     it('restores a run persisted by the retired gate UI cleanly — unknown answer keys are ignored', async () => {
