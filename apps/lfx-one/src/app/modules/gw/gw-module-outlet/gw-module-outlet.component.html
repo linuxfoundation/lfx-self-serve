@@ -1,0 +1,16 @@
+<!-- Copyright The Linux Foundation and each contributor to LFX. -->
+<!-- SPDX-License-Identifier: MIT -->
+
+<div class="flex flex-col gap-4">
+  <!-- Unconditional siblings: the embed mounts into #embedRoot and renders portals (dialogs,
+       toasts, etc.) into #embedPortals. Both must exist in the DOM before mount() runs. -->
+  <div #embedRoot id="gw-embed-root"></div>
+  <div #embedPortals id="gw-embed-portals"></div>
+
+  @if (mountError()) {
+    <div class="flex flex-col gap-2 rounded border border-red-300 bg-red-50 p-4 text-red-700" role="alert">
+      <p class="font-semibold">The embedded admin module couldn't be loaded.</p>
+      <p>{{ mountError() }}</p>
+    </div>
+  }
+</div>

@@ -11,6 +11,7 @@ import { campaignAccessGuard } from './shared/guards/campaign-access.guard';
 import { formationEnabledGuard } from './shared/guards/formation-enabled.guard';
 import { formationProjectEnabledGuard } from './shared/guards/formation-project-enabled.guard';
 import { formationsQueueAuditorGuard } from './shared/guards/formations-queue-auditor.guard';
+import { gatewazeEmbedEnabledGuard } from './shared/guards/gatewaze-embed-enabled.guard';
 import { lensRedirectGuard } from './shared/guards/lens-redirect.guard';
 import { marketingImpactAccessGuard } from './shared/guards/marketing-impact-access.guard';
 import { newsletterAccessGuard } from './shared/guards/newsletter-access.guard';
@@ -318,6 +319,17 @@ export const routes: Routes = [
         canMatch: [mktgOsAgentsEnabledGuard],
         canActivate: [projectQueryParamGuard],
         loadChildren: () => import('./modules/mktg-os-agents/mktg-os-agents.routes').then((m) => m.MKTG_OS_AGENTS_ROUTES),
+      },
+      // Gatewaze admin embed pilot — dark-launched behind `gatewaze-embed-enabled` (CanMatch);
+      // invisible when the flag is off. Mounts the `@gatewaze/admin-embed` React app natively
+      // (no iframe) via GwModuleOutletComponent, which owns all sub-navigation once mounted —
+      // a single wildcard child route in GW_ROUTES is enough for the whole subtree.
+      {
+        path: `foundation/gw`,
+        data: { lens: 'foundation' },
+        canMatch: [gatewazeEmbedEnabledGuard],
+        canActivate: [authGuard],
+        loadChildren: () => import('./modules/gw/gw.routes').then((m) => m.GW_ROUTES),
       },
       {
         path: 'foundation/votes',
