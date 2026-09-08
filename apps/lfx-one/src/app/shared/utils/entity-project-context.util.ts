@@ -1,6 +1,7 @@
 // Copyright The Linux Foundation and each contributor to LFX.
 // SPDX-License-Identifier: MIT
 
+import { HttpErrorResponse } from '@angular/common/http';
 import { DestroyRef, Signal } from '@angular/core';
 import { takeUntilDestroyed, toObservable } from '@angular/core/rxjs-interop';
 import { NavigationEnd, Router } from '@angular/router';
@@ -187,7 +188,12 @@ export function reconcileRouteProjectContext(
             resolvedCache.set(uid, resolved);
             return resolved;
           }),
-          catchError(() => of(null))
+          catchError((error: unknown) => {
+            const status = error instanceof HttpErrorResponse ? error.status : 0;
+            // Bounded diagnostics (uid + status only) before keeping the existing context — §14.6.
+            console.warn(`reconcileRouteProjectContext: route-project lookup failed for uid ${uid} (status ${status}) — keeping existing context`);
+            return of(null);
+          })
         );
       }),
       takeUntilDestroyed(destroyRef)

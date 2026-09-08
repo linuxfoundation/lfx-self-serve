@@ -63,7 +63,12 @@ export const newsletterAccessGuard: CanActivateFn = (route: ActivatedRouteSnapsh
       // Same shareReplay-cached strict lookup as the writer path below, so the ED
       // deep link also resolves the route project with the one shared request.
       return projectService.getProjectStrict(projectUid).pipe(
-        catchError(() => of(null)),
+        catchError((error: unknown) => {
+          const status = error instanceof HttpErrorResponse ? error.status : 0;
+          // Bounded diagnostics (uid + status only) before the fail-open fallback — §14.6.
+          console.warn(`newsletterAccessGuard: ED route-project lookup failed for uid ${projectUid} (status ${status}) — failing open`);
+          return of(null);
+        }),
         map(() => true)
       );
     }
@@ -113,6 +118,8 @@ export const newsletterAccessGuard: CanActivateFn = (route: ActivatedRouteSnapsh
       }),
       catchError((error: unknown) => {
         const status = error instanceof HttpErrorResponse ? error.status : 0;
+        // Bounded diagnostics (uid + status only) before the fallback — §14.6.
+        console.warn(`newsletterAccessGuard: route-project lookup failed for uid ${projectUid} (status ${status})`);
         if (status === 400 || status === 404) {
           // Confirmed deleted/unknown project — degrade to the legacy chain rather
           // than deny outright.
