@@ -3371,7 +3371,16 @@ export class CampaignsComponent {
     //
     // Recorded provisionally here so a refusal explains itself, and cleared only on the ONE path
     // that actually succeeds -- see the `return briefId` branches below.
-    this.emailBriefConflict = persisted.conflict ?? null;
+    //
+    // GENERATION-GUARDED, like every other write on this path. `emailBriefConflict` is single
+    // shared state, not per-request: a stage change nulls `emailBriefPersistInFlight` so a newer
+    // persist can start, and the abandoned one then resolves and writes ITS outcome over the
+    // current send's. The operator sees a generic retry banner for a refusal that belongs to a
+    // send they have moved off, and `emailSaveFailureMessage` drops a pending overwrite because
+    // the conflict it matches against was already wiped.
+    if (generation === this.emailBriefPersistGeneration) {
+      this.emailBriefConflict = persisted.conflict ?? null;
+    }
     // Grant the escape the message promises, exactly as the paid path does (see the
     // `stale-brief` / `unverified-validator` / `superseded-after-write` promotion below).
     //
@@ -3418,10 +3427,11 @@ export class CampaignsComponent {
       // holds. Returning it is fine -- the caller that started this persist asked for it -- but
       // writing it into the SHARED cache is what strands the next action on the abandoned brief.
       if (generation !== this.emailBriefPersistGeneration) {
-        // Cleared on this path too: the persist SUCCEEDED, and the caller that started it is
-        // about to receive the id. Leaving a conflict set would render a stale reason against a
-        // save that worked.
-        this.emailBriefConflict = null;
+        // NOT cleared here. An earlier revision did, reasoning that a successful persist should
+        // not leave a conflict behind -- true of its OWN send, but this branch is the one where
+        // the page has moved on, so the token being cleared belongs to a DIFFERENT send. The
+        // caller that started this persist still receives its id; it simply no longer speaks for
+        // the state on screen.
         return briefId;
       }
       this.emailBriefConflict = null;

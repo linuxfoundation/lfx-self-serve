@@ -2646,6 +2646,43 @@ describe('CampaignsComponent — email delivery channel', () => {
       expect(priv.knownBriefIds.get(key)).toEqual(expect.objectContaining({ id: 'brief-77', etag: null, absence: 'overwrite' }));
     });
 
+    // `emailBriefConflict` is single shared state, so an abandoned persist must not write its
+    // outcome over the current send's. A stage change nulls `emailBriefPersistInFlight` so a newer
+    // persist can start, and the older one then resolves -- either overwriting the live conflict
+    // token or, on its success arm, wiping it. The operator then sees a generic retry banner for a
+    // refusal belonging to a send they moved off, and the pending overwrite is dropped because the
+    // conflict it matches against is gone.
+    it('does not let an abandoned persist write the current conflict token', async () => {
+      selectEmail();
+      internals().emailBriefOutput.set(emailBrief);
+      fixture.detectChanges();
+
+      const priv = internals() as unknown as { emailBriefConflict: string | null };
+
+      // A persist that will resolve AFTER the page has moved on.
+      const late = new Subject<CampaignBriefPersistResult>();
+      persist.mockReturnValue(late.asObservable());
+      vi.spyOn(TestBed.inject(CampaignService), 'generateEmailCopy').mockReturnValue(of({ enabled: true, copy }));
+      const inFlight = internals().onGenerateEmailCopy();
+
+      // The operator switches to a different send. `cfp-launch` -> `colocated-cfp-reminder` share
+      // a stage, so the brief survives; what matters is that the persist generation moves.
+      (internals() as unknown as { onSelectEmailType(id: string): void }).onSelectEmailType('cfp-launch');
+      internals().emailBriefOutput.set(emailBrief);
+      fixture.detectChanges();
+
+      // The CURRENT send records its own refusal.
+      priv.emailBriefConflict = 'unowned-brief-exists';
+
+      // Now the abandoned persist answers, with a different outcome.
+      late.next({ status: 'saved', briefId: 'brief-77', etag: null, approved: true } as unknown as CampaignBriefPersistResult);
+      late.complete();
+      await inFlight;
+      await fixture.whenStable();
+
+      expect(priv.emailBriefConflict, 'an abandoned persist wiped the live send conflict token').toBe('unowned-brief-exists');
+    });
+
     it('surfaces the upstream refusal rather than a generic message', async () => {
       selectEmail();
       internals().emailBriefOutput.set(emailBrief);
