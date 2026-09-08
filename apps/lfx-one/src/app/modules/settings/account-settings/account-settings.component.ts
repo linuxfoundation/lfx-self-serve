@@ -486,7 +486,7 @@ export class AccountSettingsComponent {
 
             const identityId = `auth0:${userId}`;
             this.userService
-              .rejectIdentity(identityId, 'email', userId)
+              .rejectIdentity(identityId, 'email', userId, email.email)
               .pipe(
                 take(1),
                 finalize(() => this.deletingEmailAddress.set(null))

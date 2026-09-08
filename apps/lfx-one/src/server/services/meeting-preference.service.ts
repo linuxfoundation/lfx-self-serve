@@ -182,7 +182,7 @@ export class MeetingPreferenceService {
 
   // Classify the upstream error string (the NATS reply carries only `{ error }`, no code) so the
   // controller can map it to an HTTP status: validation → 4xx, sync_pending/unavailable → 503,
-  // anything else → 502.
+  // anything else → 503 (see the fallback comment below for why unrecognized text lands there too).
   private classifyPreferredEmailError(error: string): SetMeetingInviteResult['reason'] {
     const normalized = error.toLowerCase();
     if (normalized.includes('not an active, verified address')) {
@@ -193,10 +193,15 @@ export class MeetingPreferenceService {
     }
     // The meeting-service's user-service client maps network failures and HTTP 429/502/503/504 to
     // a retryable error, but the NATS envelope only carries `err.Error()` — no error-type field —
-    // so recognize its known message shapes here rather than misclassifying them as `upstream`.
+    // so recognize its known message shapes here rather than falling through to the default below.
     if (normalized.includes('user-service request failed') || /\bhttp (429|502|503|504)\b/.test(normalized)) {
       return 'unavailable';
     }
-    return 'upstream';
+    // A structured user-service error body (e.g. `{"Message":"boom"}`) reaches here as opaque text
+    // with none of the markers above — matching it by string is fundamentally unreliable without an
+    // upstream envelope change (tracked separately). Default to the retryable path: an unrecognized
+    // failure from a downstream write is more often transient than a validation problem we'd have
+    // already caught above, so this only changes which "please try again" copy the user sees.
+    return 'unavailable';
   }
 }

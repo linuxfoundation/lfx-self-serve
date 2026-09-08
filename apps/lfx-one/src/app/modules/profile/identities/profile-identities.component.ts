@@ -210,7 +210,7 @@ export class ProfileIdentitiesComponent implements OnInit {
     dialogRef.onClose.pipe(take(1)).subscribe((result) => {
       if (result) {
         this.userService
-          .rejectIdentity(identity.id, identity.provider, identity.auth0UserId)
+          .rejectIdentity(identity.id, identity.provider, identity.auth0UserId, identity.type === 'email' ? identity.identifier : undefined)
           .pipe(take(1))
           .subscribe({
             next: () => this.userService.refreshUserIdentities(),

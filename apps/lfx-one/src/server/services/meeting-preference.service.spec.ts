@@ -208,11 +208,16 @@ describe('MeetingPreferenceService', () => {
       ['retry shortly', 'sync_pending'],
       // The meeting-service's user-service client wraps network failures as "user-service request
       // failed: <cause>" and maps HTTP 429/502/503/504 to a retryable error with no error-type
-      // field on the wire — both must classify as retryable rather than falling to `upstream`.
+      // field on the wire — recognize both message shapes directly rather than relying on the
+      // unrecognized-text fallback below.
       ['user-service request failed: connection reset', 'unavailable'],
       ['HTTP 503 error: upstream unavailable', 'unavailable'],
       ['HTTP 502 error', 'unavailable'],
-      ['something else broke', 'upstream'],
+      // A structured user-service error body (e.g. `{"Message":"boom"}`) reaches here as opaque
+      // text with none of the markers above — no string match can reliably tell it apart from a
+      // real permanent failure, so unrecognized text also falls to the retryable default (Copilot
+      // review, PR #1073): this only changes which "please try again" copy the user sees.
+      ['something else broke', 'unavailable'],
     ])('classifies the upstream error %j as %s', async (upstreamError, reason) => {
       natsRequest.mockResolvedValue(reply({ error: upstreamError }));
 

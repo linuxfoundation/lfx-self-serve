@@ -41,7 +41,7 @@ import {
   UserProfile,
   WorkExperienceCreateUpdateBody,
 } from '@lfx-one/shared/interfaces';
-import { isIdentityAlreadyLinkedError, isMeetingInvitePrimarySentinel } from '@lfx-one/shared/utils';
+import { emailsEqual, isIdentityAlreadyLinkedError, isMeetingInvitePrimarySentinel } from '@lfx-one/shared/utils';
 import { NextFunction, Request, Response } from 'express';
 
 import { AuthenticationError, AuthorizationError, MicroserviceError, ResourceNotFoundError, ServiceValidationError } from '../errors';
@@ -1397,7 +1397,28 @@ export class ProfileController {
       const lfid = this.resolveEffectiveLfid(req, sub);
 
       // If provider and auth0UserId are provided, attempt to unlink from Auth0 via NATS
-      const { provider, auth0UserId } = req.body || {};
+      const { provider, auth0UserId, email } = req.body || {};
+
+      // `email` is only sent for an email identity (see profile-identities.component.ts and
+      // account-settings.component.ts) — the client-side meeting-invite guard is a UX nicety, not
+      // an authorization boundary; a direct request, a stale tab, or a race between two tabs could
+      // otherwise remove the exact address the meeting-service still has pinned, orphaning the
+      // preference. Block here too, fail-closed on a failed preference lookup like the client does.
+      if (typeof email === 'string' && email) {
+        const v1Token = req.apiGatewayToken;
+        const preference = v1Token ? await this.meetingPreferenceService.getMeetingInviteEmail(req, v1Token) : null;
+
+        if (!preference || emailsEqual(preference.email, email)) {
+          res.status(409).json({
+            error: 'meeting_invite_email_active',
+            message: preference
+              ? 'This email is set to receive meeting invitations. Choose a different meeting-invitation email before removing it.'
+              : 'Could not confirm your meeting-invitation email. Please try again.',
+          });
+          return;
+        }
+      }
+
       if (provider && auth0UserId) {
         // Map CDP platform name to Auth0 provider name (e.g., 'google' → 'google-oauth2')
         const auth0Provider = CDP_TO_AUTH0_PROVIDER_MAP[provider] || provider;

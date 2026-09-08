@@ -82,6 +82,7 @@ vi.mock('@lfx-one/shared/interfaces', () => ({}));
 vi.mock('@lfx-one/shared/utils', () => ({
   isIdentityAlreadyLinkedError: vi.fn(() => false),
   isMeetingInvitePrimarySentinel: (value: string | null | undefined) => (value ?? '').trim().toLowerCase() === 'primary',
+  emailsEqual: (a: string | null | undefined, b: string | null | undefined) => !!a && !!b && a.trim().toLowerCase() === b.trim().toLowerCase(),
 }));
 
 vi.mock('../utils/auth-helper', () => ({
@@ -482,6 +483,91 @@ describe('ProfileController.setMeetingInviteEmail', () => {
     await controller.setMeetingInviteEmail(buildSetReq({ email: 'invite@example.com' }), buildRes(), next);
 
     expect(next).toHaveBeenCalledWith(expect.objectContaining({ code: 'BAD_GATEWAY', statusCode: 502 }));
+  });
+});
+
+describe('ProfileController.rejectIdentity — meeting-invite guard (Copilot review, PR #1073)', () => {
+  let controller: ProfileController;
+
+  // Synthetic (auth0:-prefixed) identityId — skips the CDP rejection call so these tests can focus
+  // on the meeting-invite guard added ahead of it.
+  function buildRejectReq(body: unknown, overrides: Record<string, unknown> = {}): any {
+    return buildReq({
+      params: { identityId: 'auth0:user-1' },
+      body,
+      path: '/api/profile/identities/auth0:user-1',
+      apiGatewayToken: 'v1-token',
+      ...overrides,
+    });
+  }
+
+  beforeEach(() => {
+    vi.clearAllMocks();
+    getUsernameFromAuthMock.mockResolvedValue('testuser');
+    controller = new ProfileController();
+  });
+
+  it('skips the guard entirely for a non-email identity removal (no email in the body)', async () => {
+    const res = buildRes();
+    const next = vi.fn();
+
+    await controller.rejectIdentity(buildRejectReq({}), res, next);
+
+    expect(meetingPrefSvc.getMeetingInviteEmail).not.toHaveBeenCalled();
+    expect(res.json).toHaveBeenCalledWith({ success: true });
+    expect(next).not.toHaveBeenCalled();
+  });
+
+  it('blocks removal with a 409 when the address matches the active meeting-invite email (case-insensitive)', async () => {
+    meetingPrefSvc.getMeetingInviteEmail.mockResolvedValue({ email_id: 'id-1', email: 'invite@example.com' });
+    const res = buildRes();
+    const next = vi.fn();
+
+    await controller.rejectIdentity(buildRejectReq({ email: 'Invite@Example.com' }), res, next);
+
+    expect(meetingPrefSvc.getMeetingInviteEmail).toHaveBeenCalledWith(expect.anything(), 'v1-token');
+    expect(res.status).toHaveBeenCalledWith(409);
+    expect(res.json).toHaveBeenCalledWith({
+      error: 'meeting_invite_email_active',
+      message: 'This email is set to receive meeting invitations. Choose a different meeting-invitation email before removing it.',
+    });
+    expect(next).not.toHaveBeenCalled();
+  });
+
+  it('fails closed with a 409 when there is no v1 api-gateway token to check the preference with', async () => {
+    const res = buildRes();
+    const next = vi.fn();
+
+    await controller.rejectIdentity(buildRejectReq({ email: 'someone@example.com' }, { apiGatewayToken: undefined }), res, next);
+
+    expect(meetingPrefSvc.getMeetingInviteEmail).not.toHaveBeenCalled();
+    expect(res.status).toHaveBeenCalledWith(409);
+    expect(res.json).toHaveBeenCalledWith({
+      error: 'meeting_invite_email_active',
+      message: 'Could not confirm your meeting-invitation email. Please try again.',
+    });
+  });
+
+  it('fails closed with a 409 when the preference lookup itself fails (service returns null)', async () => {
+    meetingPrefSvc.getMeetingInviteEmail.mockResolvedValue(null);
+    const res = buildRes();
+    const next = vi.fn();
+
+    await controller.rejectIdentity(buildRejectReq({ email: 'someone@example.com' }), res, next);
+
+    expect(res.status).toHaveBeenCalledWith(409);
+    expect(res.json).toHaveBeenCalledWith(expect.objectContaining({ message: 'Could not confirm your meeting-invitation email. Please try again.' }));
+  });
+
+  it('allows removal when the address does not match the active meeting-invite email', async () => {
+    meetingPrefSvc.getMeetingInviteEmail.mockResolvedValue({ email_id: 'id-1', email: 'other@example.com' });
+    const res = buildRes();
+    const next = vi.fn();
+
+    await controller.rejectIdentity(buildRejectReq({ email: 'someone@example.com' }), res, next);
+
+    expect(res.json).toHaveBeenCalledWith({ success: true });
+    expect(next).not.toHaveBeenCalled();
   });
 });
 

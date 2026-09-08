@@ -407,15 +407,20 @@ export class UserService {
   }
 
   /**
-   * Reject an identity (mark as "not me") via CDP, and unlink from Auth0 if provider/auth0UserId provided
+   * Reject an identity (mark as "not me") via CDP, and unlink from Auth0 if provider/auth0UserId provided.
+   * Pass `email` when removing an email identity — the server uses it to block removal of the
+   * address currently pinned as the meeting-invitation email (the client-side guard is UX only).
    */
-  public rejectIdentity(identityId: string, provider?: string, auth0UserId?: string): Observable<{ success: boolean }> {
+  public rejectIdentity(identityId: string, provider?: string, auth0UserId?: string, email?: string): Observable<{ success: boolean }> {
     const body: Record<string, string> = {};
     if (provider) {
       body['provider'] = provider;
     }
     if (auth0UserId) {
       body['auth0UserId'] = auth0UserId;
+    }
+    if (email) {
+      body['email'] = email;
     }
     // Auth0 identity IDs contain URL-reserved characters (e.g. `|` in `auth0|abc123`);
     // encode before interpolating so the PATCH route resolves reliably.
