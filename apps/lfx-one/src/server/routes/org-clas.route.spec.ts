@@ -76,7 +76,7 @@ beforeEach(() => {
   process.env['LFX_ORG_LENS_CLA_M3_ENABLED'] = 'true';
   listClaGroups.mockImplementation(ok);
   getPdfUrl.mockImplementation((_req: express.Request, res: express.Response) => {
-    res.json({ url: 'https://s3.example.org/ccla.pdf', expiresInSeconds: 0 });
+    res.json({ url: 'https://s3.example.org/ccla.pdf' });
   });
   getAccessAwareOrgs.mockResolvedValue({ resolved: new Map([[GRANTED, { roleSource: 'direct-writer' }]]), upstreamFailed: false });
 });
@@ -137,7 +137,7 @@ describe('org-clas router', () => {
 
     expect(res.status).toBe(200);
     expect(getPdfUrl).toHaveBeenCalled();
-    expect(await res.json()).toEqual({ url: 'https://s3.example.org/ccla.pdf', expiresInSeconds: 0 });
+    expect(await res.json()).toEqual({ url: 'https://s3.example.org/ccla.pdf' });
   });
 
   it('refuses the signed-document url when the server flag is off, before any grant lookup', async () => {

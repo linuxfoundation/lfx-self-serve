@@ -3,7 +3,8 @@
 
 import { ChangeDetectionStrategy, Component, computed, input } from '@angular/core';
 import type { OrgClaGroup } from '@lfx-one/shared/interfaces';
-import { ORG_CLA_STATUS_DISPLAY, orgClaCoverageChips } from '@lfx-one/shared/utils';
+import { ORG_CLA_STATUS_DISPLAY } from '@lfx-one/shared/constants';
+import { orgClaCoverageChips } from '@lfx-one/shared/utils';
 
 import { TagComponent } from '@components/tag/tag.component';
 

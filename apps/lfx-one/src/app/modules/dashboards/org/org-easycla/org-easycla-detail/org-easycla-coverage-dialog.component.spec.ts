@@ -41,6 +41,15 @@ describe('OrgEasyclaCoverageDialogComponent', () => {
     expect(fixture.nativeElement.querySelector('[data-testid="org-easycla-coverage-empty"]')?.textContent).toContain('No individual projects are listed');
   });
 
+  it('drops the subset caveat when the agreement covers the foundation', async () => {
+    const fixture = await render({ claGroupName: 'Acme CLA', foundationName: 'Acme Foundation', projects: [] });
+
+    // The empty branch states the agreement covers the foundation. Showing the "not necessarily
+    // every project" caveat beside it would assert the opposite legal scope in the same dialog.
+    expect(fixture.nativeElement.querySelector('[data-testid="org-easycla-coverage-hint"]')).toBeNull();
+    expect(fixture.nativeElement.querySelector('[data-testid="org-easycla-coverage-empty"]')?.textContent).toContain('covers the foundation');
+  });
+
   it('warns that a named foundation is not covered in full', async () => {
     const fixture = await render({
       claGroupName: 'Acme CLA',

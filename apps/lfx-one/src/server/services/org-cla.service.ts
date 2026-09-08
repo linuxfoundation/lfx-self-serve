@@ -234,6 +234,9 @@ export class OrgClaService {
     }
 
     logger.success(req, 'org_cla_get_pdf_url', startTime, { outcome: 'resolved' });
-    return { url, expiresInSeconds: 0 };
+    // No expiry reported: the signed-document response carries only the URL, so any number here
+    // would be invented. The URL is presigned and short-lived, but its lifetime is upstream's to
+    // state, and `0` would read to a consumer as already expired.
+    return { url };
   }
 }

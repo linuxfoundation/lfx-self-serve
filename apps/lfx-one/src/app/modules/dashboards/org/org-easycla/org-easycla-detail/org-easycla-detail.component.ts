@@ -7,15 +7,8 @@ import { takeUntilDestroyed, toObservable, toSignal } from '@angular/core/rxjs-i
 import { ActivatedRoute } from '@angular/router';
 import { HttpErrorResponse } from '@angular/common/http';
 import type { OrgClaDetailTab, OrgClaDetailTabView, OrgClaGroup, OrgClaGroupList, OrgClaStatusDisplay } from '@lfx-one/shared/interfaces';
-import { ORG_CLA_DETAIL_TABS } from '@lfx-one/shared/constants';
-import {
-  downloadFromUrl,
-  formatClaSignedOnInstant,
-  ORG_CLA_HEADING_STATUS,
-  ORG_CLA_STATUS_DISPLAY,
-  orgClaCoverageChips,
-  orgClaCoverageSummary,
-} from '@lfx-one/shared/utils';
+import { ORG_CLA_DETAIL_TABS, ORG_CLA_HEADING_STATUS, ORG_CLA_STATUS_DISPLAY } from '@lfx-one/shared/constants';
+import { downloadFromUrl, formatClaSignedOnInstant, orgClaCoverageChips, orgClaCoverageSummary } from '@lfx-one/shared/utils';
 import { MenuItem, MessageService } from 'primeng/api';
 import { DialogService } from 'primeng/dynamicdialog';
 import { SkeletonModule } from 'primeng/skeleton';
@@ -77,17 +70,20 @@ export class OrgEasyclaDetailComponent {
     { initialValue: (this.route.snapshot.paramMap.get('signatureId') ?? '').trim() }
   );
 
-  private readonly orgUid$ = toObservable(computed(() => this.accountContext.selectedAccount()?.uid)).pipe(
-    filter((uid): uid is string => !!uid),
-    distinctUntilChanged()
-  );
+  // Every selection the viewer makes, including clearing it.
+  private readonly selectedOrgUid$ = toObservable(computed(() => this.accountContext.selectedAccount()?.uid)).pipe(distinctUntilChanged());
+
+  private readonly orgUid$ = this.selectedOrgUid$.pipe(filter((uid): uid is string => !!uid));
 
   // Emits when the selected organization changes, skipping the value present at subscribe time.
   // Switching organizations does not destroy this component — it re-drives the list fetch — so
   // `takeUntilDestroyed` alone leaves an in-flight download running against the organization the
   // viewer has left, and its response would hand them that organization's agreement while the
   // page shows another. Cancelling drops the response and the request with it.
-  private readonly orgChanged$ = this.orgUid$.pipe(skip(1));
+  //
+  // Derived from the unfiltered stream, not `orgUid$`: clearing the selection empties the page
+  // just as switching does, so it must cancel too, and the non-empty filter would swallow it.
+  private readonly orgChanged$ = this.selectedOrgUid$.pipe(skip(1));
 
   private readonly claData: Signal<OrgClaGroupList | null | undefined> = this.initClaData();
 

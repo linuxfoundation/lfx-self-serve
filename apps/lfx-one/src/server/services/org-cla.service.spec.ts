@@ -531,7 +531,7 @@ describe('OrgClaService.getPdfUrl', () => {
 
     const pdf = await new OrgClaService().getPdfUrl(req(), ORG_UID, 'signature-uuid-1');
 
-    expect(pdf).toEqual({ url: 'https://s3.example.org/ccla.pdf', expiresInSeconds: 0 });
+    expect(pdf).toEqual({ url: 'https://s3.example.org/ccla.pdf' });
     expect(gatewayFetch).toHaveBeenCalledWith(
       expect.anything(),
       'https://gw.example.org/cla-service/v4/signatures/signature-uuid-1/signed-document',
@@ -542,10 +542,7 @@ describe('OrgClaService.getPdfUrl', () => {
   it('also accepts the camelCase field names a generated client may emit', async () => {
     stageDocument({ signatureID: 'signature-uuid-1', signedClaUrl: 'https://s3.example.org/ccla.pdf' });
 
-    expect(await new OrgClaService().getPdfUrl(req(), ORG_UID, 'signature-uuid-1')).toEqual({
-      url: 'https://s3.example.org/ccla.pdf',
-      expiresInSeconds: 0,
-    });
+    expect(await new OrgClaService().getPdfUrl(req(), ORG_UID, 'signature-uuid-1')).toEqual({ url: 'https://s3.example.org/ccla.pdf' });
   });
 
   it('returns null on a 404', async () => {

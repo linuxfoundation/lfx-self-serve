@@ -152,7 +152,12 @@ export interface MyClasState {
 export interface PdfUrlResponse {
   /** Short-lived presigned S3 URL (~15 min TTL). */
   url: string;
-  expiresInSeconds: number;
+  /**
+   * Lifetime upstream reported for the URL. Optional because not every upstream document
+   * endpoint returns one, and omitting it is honest where `0` would tell a consumer the URL
+   * has already expired. Absent means unknown, not immediate expiry.
+   */
+  expiresInSeconds?: number;
 }
 
 /** Why a CLA Group matched the search term (#1250 `cla-search-result.matchTypes`). */

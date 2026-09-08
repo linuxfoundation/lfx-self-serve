@@ -294,6 +294,32 @@ describe('OrgEasyclaDetailComponent', () => {
     clickSpy.mockRestore();
   });
 
+  it('abandons a download when the viewer clears the organization mid-request', async () => {
+    const clickSpy = vi.spyOn(HTMLAnchorElement.prototype, 'click').mockImplementation(() => undefined);
+    const pdf = new Subject<{ url: string; expiresInSeconds?: number }>();
+    getPdfUrl.mockReturnValue(pdf);
+
+    const fixture = await render();
+    (byTestId(fixture, 'org-easycla-detail-download')?.querySelector('button') ?? byTestId(fixture, 'org-easycla-detail-download'))?.click();
+    fixture.detectChanges();
+    await fixture.whenStable();
+
+    expect(getPdfUrl).toHaveBeenCalledTimes(1);
+
+    selectedAccount.set(null);
+    fixture.detectChanges();
+    await fixture.whenStable();
+
+    pdf.next({ url: 'https://s3.example.org/ccla.pdf' });
+    fixture.detectChanges();
+    await fixture.whenStable();
+
+    // Clearing empties the page exactly as switching does, so the response is just as stale. A
+    // cancellation stream that filters out the empty selection would let this one through.
+    expect(clickSpy).not.toHaveBeenCalled();
+    clickSpy.mockRestore();
+  });
+
   describe('tab bar keyboard navigation', () => {
     function pressOnTabs(fixture: ComponentFixture<OrgEasyclaDetailComponent>, key: string): KeyboardEvent {
       const event = new KeyboardEvent('keydown', { key, bubbles: true, cancelable: true });

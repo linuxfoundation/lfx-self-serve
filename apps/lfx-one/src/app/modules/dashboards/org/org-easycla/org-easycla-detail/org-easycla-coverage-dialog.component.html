@@ -2,8 +2,8 @@
 <!-- SPDX-License-Identifier: MIT -->
 
 <h3 class="sr-only" data-testid="org-easycla-coverage-title">Projects covered by {{ claGroupName }}</h3>
-<p class="mb-3 text-xs text-gray-500" data-testid="org-easycla-coverage-hint">{{ coverageHint }}</p>
 @if (projects.length) {
+  <p class="mb-3 text-xs text-gray-500" data-testid="org-easycla-coverage-hint">{{ coverageHint }}</p>
   <ul class="flex flex-col gap-2" data-testid="org-easycla-coverage-list">
     @for (project of projects; track project.projectName) {
       <li class="text-sm text-gray-800" data-testid="org-easycla-coverage-project">{{ project.projectName }}</li>
