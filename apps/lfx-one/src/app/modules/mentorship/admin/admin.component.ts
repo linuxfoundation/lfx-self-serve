@@ -57,11 +57,8 @@ export class AdminComponent {
   protected readonly hasMore = computed(() => !this.filterLoading() && !this.filtersDirty() && this.programsState().data.length < this.programsState().total);
 
   // ─── Protected Methods ─────────────────────────────────────────────────────
-  protected onProgramClick(): void {
-    // TODO: wire up program-detail flow (LFXV2-<TBD>) — currently a no-op
-    // so the CTA visibly renders without silently promising navigation the
-    // rest of the module doesn't yet support.
-    // void this.router.navigate(['/mentorship/admin', programId]);
+  protected onProgramClick(programId: string): void {
+    void this.router.navigate(['/mentorship/admin', programId]);
   }
 
   protected onSearchChange(value: string): void {

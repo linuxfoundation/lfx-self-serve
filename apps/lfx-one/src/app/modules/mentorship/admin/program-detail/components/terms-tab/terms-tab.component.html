@@ -1,0 +1,109 @@
+<!-- Copyright The Linux Foundation and each contributor to LFX. -->
+<!-- SPDX-License-Identifier: MIT -->
+
+<p-confirmDialog />
+<div class="flex flex-col gap-4" data-testid="mentorship-terms-tab">
+  <div class="flex items-center justify-between gap-3">
+    <h2 class="font-display font-semibold text-lg text-gray-900">Terms Management</h2>
+    <lfx-button
+      label="Create Term"
+      icon="fa-light fa-plus"
+      iconPos="left"
+      severity="primary"
+      size="small"
+      [disabled]="!canAddTerm()"
+      [tooltip]="canAddTerm() ? undefined : maxTermsMessage"
+      (onClick)="onCreateTerm()"
+      data-testid="mentorship-terms-create" />
+  </div>
+  @if (!canAddTerm()) {
+    <p class="text-sm text-gray-600">{{ maxTermsMessage }}</p>
+  }
+
+  <div class="overflow-x-auto rounded-xl border border-gray-200 bg-white">
+    <table class="w-full min-w-[64rem] text-left">
+      <thead>
+        <tr class="border-b border-gray-200">
+          <th class="px-4 py-3 text-sm font-medium text-gray-600">Term</th>
+          <th class="px-4 py-3 text-sm font-medium text-gray-600">Status</th>
+          <th class="px-4 py-3 text-sm font-medium text-gray-600">Pending</th>
+          <th class="px-4 py-3 text-sm font-medium text-gray-600">Declined</th>
+          <th class="px-4 py-3 text-sm font-medium text-gray-600">Accepted</th>
+          <th class="px-4 py-3 text-sm font-medium text-gray-600">Graduated</th>
+          <th class="px-4 py-3 text-sm font-medium text-gray-600">Dates</th>
+          <th class="px-4 py-3 text-sm font-medium text-gray-600">Application Dates</th>
+          <th class="px-4 py-3 text-sm font-medium text-gray-600 text-center">Actions</th>
+        </tr>
+      </thead>
+      <tbody>
+        @for (row of rows(); track row.id) {
+          <tr class="border-b border-gray-100 last:border-b-0" [attr.data-testid]="'mentorship-term-row-' + row.id">
+            <td class="px-4 py-3">
+              <div class="flex items-center gap-2">
+                <button
+                  type="button"
+                  class="text-sm font-medium text-blue-600 hover:text-blue-800"
+                  (click)="onEditTerm(row.id)"
+                  [attr.data-testid]="'mentorship-term-name-' + row.id">
+                  {{ row.name }}
+                </button>
+                @if (row.shouldClose) {
+                  <i class="fa-light fa-triangle-exclamation text-amber-500" [attr.title]="shouldCloseWarning" [attr.aria-label]="shouldCloseWarning"></i>
+                }
+              </div>
+            </td>
+            <td class="px-4 py-3">
+              <span class="inline-flex items-center text-xs font-semibold px-2 py-0.5 rounded-full" [class]="row.statusBadgeClass">
+                {{ row.statusLabel }}
+              </span>
+            </td>
+            <td class="px-4 py-3 text-sm font-medium text-amber-600">{{ row.pending }}</td>
+            <td class="px-4 py-3 text-sm font-medium text-red-600">{{ row.declined }}</td>
+            <td class="px-4 py-3">
+              <div class="flex items-center gap-2">
+                <span class="text-sm font-medium text-emerald-600">{{ row.accepted }}</span>
+                @if (row.cannotClose) {
+                  <i class="fa-light fa-circle-exclamation text-red-500" [attr.title]="cannotCloseMessage" [attr.aria-label]="cannotCloseMessage"></i>
+                }
+              </div>
+            </td>
+            <td class="px-4 py-3 text-sm font-medium text-teal-700">{{ row.graduated }}</td>
+            <td class="px-4 py-3 text-sm text-gray-500">
+              <div class="flex flex-col gap-0.5">
+                <span>Start: {{ row.startLabel }}</span>
+                <span>End: {{ row.endLabel }}</span>
+              </div>
+            </td>
+            <td class="px-4 py-3 text-sm text-gray-500">
+              <div class="flex flex-col gap-0.5">
+                <span>Start: {{ row.applicationStartLabel }}</span>
+                <span>End: {{ row.applicationEndLabel }}</span>
+              </div>
+            </td>
+            <td class="px-4 py-3 flex justify-center">
+              <div class="relative inline-block">
+                @if (row.menuItems.length > 0) {
+                  <lfx-button
+                    icon="fa-light fa-ellipsis"
+                    severity="secondary"
+                    size="small"
+                    [outlined]="true"
+                    [ariaLabel]="'Actions for ' + row.name"
+                    (onClick)="actionMenu.toggle($event)"
+                    [attr.data-testid]="'mentorship-term-actions-' + row.id" />
+                  <lfx-menu #actionMenu [model]="row.menuItems" [popup]="true" appendTo="body" styleClass="!min-w-[10rem]"></lfx-menu>
+                } @else {
+                  <span class="text-sm text-gray-500">-</span>
+                }
+              </div>
+            </td>
+          </tr>
+        } @empty {
+          <tr>
+            <td colspan="9" class="px-4 py-10 text-center text-sm text-gray-500" data-testid="mentorship-terms-empty">No terms.</td>
+          </tr>
+        }
+      </tbody>
+    </table>
+  </div>
+</div>

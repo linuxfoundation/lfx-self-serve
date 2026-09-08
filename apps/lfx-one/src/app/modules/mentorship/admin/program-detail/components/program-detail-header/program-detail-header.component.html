@@ -1,0 +1,51 @@
+<!-- Copyright The Linux Foundation and each contributor to LFX. -->
+<!-- SPDX-License-Identifier: MIT -->
+
+<div class="flex flex-col gap-6" data-testid="mentorship-program-detail-header">
+  <div class="flex flex-col gap-4 sm:flex-row sm:items-start sm:justify-between">
+    <div class="flex flex-col gap-2 min-w-0">
+      <h1 class="font-display font-light text-3xl text-gray-900" data-testid="mentorship-program-detail-title">
+        {{ program().name }}
+      </h1>
+      <div class="flex items-center gap-2 flex-wrap">
+        <span class="text-sm text-gray-500" data-testid="mentorship-program-detail-season">{{ seasonLine() }}</span>
+        <span
+          class="inline-flex items-center text-xs font-semibold px-2 py-0.5 rounded-full"
+          [class]="statusBadgeClass()"
+          data-testid="mentorship-program-detail-status">
+          {{ statusLabel() }}
+        </span>
+      </div>
+    </div>
+    <lfx-button
+      label="Edit Program"
+      icon="fa-light fa-pen"
+      iconPos="left"
+      severity="primary"
+      size="small"
+      styleClass="shrink-0"
+      (onClick)="onEditClick()"
+      data-testid="mentorship-program-detail-edit" />
+  </div>
+
+  <div class="border-b border-gray-200 flex items-center overflow-x-auto" data-testid="mentorship-program-detail-tabs">
+    @for (tab of tabItems(); track tab.value) {
+      <button
+        type="button"
+        class="relative px-4 py-3 text-base font-medium whitespace-nowrap transition-colors"
+        [class]="activeTab() === tab.value ? 'text-blue-600 font-semibold' : 'text-gray-500 hover:text-gray-900'"
+        (click)="onTabClick(tab.value)"
+        [attr.data-testid]="'mentorship-program-detail-tab-' + tab.value">
+        <span class="inline-flex items-center gap-2">
+          {{ tab.label }}
+          <span class="inline-flex min-w-5 items-center justify-center rounded bg-gray-100 px-1.5 py-0.5 text-xs font-medium text-gray-600">
+            {{ tab.count }}
+          </span>
+        </span>
+        @if (activeTab() === tab.value) {
+          <div class="absolute bottom-0 left-0 right-0 h-0.5 bg-blue-600 rounded-full"></div>
+        }
+      </button>
+    }
+  </div>
+</div>

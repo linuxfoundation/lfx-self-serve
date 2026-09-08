@@ -1,0 +1,50 @@
+<!-- Copyright The Linux Foundation and each contributor to LFX. -->
+<!-- SPDX-License-Identifier: MIT -->
+
+<div class="container mx-auto px-4 sm:px-6 lg:px-8" data-testid="mentorship-program-detail">
+  <div class="flex flex-col gap-6 pb-8">
+    <lfx-button
+      label="Programs"
+      icon="fa-light fa-chevron-left"
+      iconPos="left"
+      [text]="true"
+      size="small"
+      styleClass="!text-blue-600 !px-0 self-start mt-3"
+      routerLink="/mentorship/admin"
+      data-testid="mentorship-program-detail-back" />
+
+    @if (isLoading()) {
+      <lfx-route-loading data-testid="mentorship-program-detail-loading" />
+    } @else if (detail(); as programDetail) {
+      <lfx-mentorship-program-detail-header
+        [program]="programDetail.program"
+        [tabCounts]="tabCounts()"
+        [activeTab]="activeTab()"
+        (tabChange)="onTabChange($event)"
+        (editClick)="onEditProgram()" />
+
+      @switch (activeTab()) {
+        @case ('mentees') {
+          <lfx-mentorship-current-mentees-tab [mentees]="programDetail.mentees" />
+        }
+        @case ('applicants') {
+          <lfx-mentorship-applicants-tab [applicants]="programDetail.applicants" />
+        }
+        @case ('mentors') {
+          <lfx-mentorship-mentors-tab [mentors]="programDetail.mentors" />
+        }
+        @case ('terms') {
+          <lfx-mentorship-terms-tab [terms]="terms()" (termsChange)="onTermsChange($event)" />
+        }
+      }
+    } @else {
+      <lfx-empty-state
+        icon="fa-light fa-folder-open"
+        title="Program not found"
+        subtitle="This program is unavailable or the link is incorrect."
+        ctaLabel="Back to programs"
+        [ctaRoute]="['/mentorship/admin']"
+        data-testid="mentorship-program-detail-not-found" />
+    }
+  </div>
+</div>
