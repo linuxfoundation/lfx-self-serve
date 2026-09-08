@@ -176,6 +176,7 @@ Use `flex + flex-col + gap-*` instead of `space-y-*`. Prefer standard Tailwind s
 ```html
 <div class="space-y-4">...</div>
 <div class="p-[24px] mt-[13px]">...</div>
+<!-- no design cite or comment -->
 @if (isVisible()) { <span class="badge">New</span> }
 ```
 
@@ -184,6 +185,8 @@ Use `flex + flex-col + gap-*` instead of `space-y-*`. Prefer standard Tailwind s
 ```html
 <div class="flex flex-col gap-4">...</div>
 <div class="p-6 mt-3">...</div>
+<!-- design spec: 13px gutter; 14px root makes mt-3 undershoot it -->
+<div class="mt-[13px]">...</div>
 <span class="badge" [class.invisible]="!isVisible()">New</span>
 ```
 
