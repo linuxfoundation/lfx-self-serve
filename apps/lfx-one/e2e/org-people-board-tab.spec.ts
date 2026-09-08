@@ -358,11 +358,11 @@ test.describe('Org People → Board tab', () => {
   });
 
   // Board rows have no personKey, so the only address source is the username-keyed company-emails GET.
-  // With the flag OFF the fetch-side gate must skip the request entirely, not just hide the result.
+  // Jordan carries a username here so that only the OFF flag can be what stops the request.
   test('company-emails request never fires when org-lens-private-release is OFF', async ({ page }) => {
     await stubFeatureFlags(page, { [ORG_LENS_PRIVATE_RELEASE_FLAG]: false });
     await stubAccountContext(page);
-    await stubBoardMembers(page);
+    await stubBoardMembers(page, boardMembersResponse({ username: JORDAN_USERNAME }));
     let companyEmailCalls = 0;
     await page.route('**/api/orgs/*/lens/people/by-username/*/company-emails', (route) => {
       companyEmailCalls += 1;

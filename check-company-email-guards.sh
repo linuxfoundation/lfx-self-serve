@@ -3,13 +3,17 @@
 # Copyright The Linux Foundation and each contributor to LFX.
 # SPDX-License-Identifier: MIT
 
-# Guards the Org Lens company-address panel (LFXV2-3296) against two regressions, scanning the whole
-# tree (any occurrence is a reintroduction) and exiting 1 with file:line on violation:
+# Tripwire for the Org Lens company-address panel (LFXV2-3296): fails if identifiers from the two
+# removed code paths reappear anywhere in the tree, exiting 1 with file:line on violation.
 #
-# 1. No fabricated or demo-derived company addresses — every address must come from the warehouse.
-# 2. No email address is ever a lookup key. Address→addresses is an enumeration primitive over
+# 1. The fabricated / demo-derived company addresses — every address must come from the warehouse.
+# 2. The address-keyed company-emails lookup. Address→addresses is an enumeration primitive over
 #    personal data, and address→person is known to link unrelated people. Reads are identity-keyed
 #    (personKey or LF username) only; `PersonDrawerContext` carries no email field.
+#
+# This is a name-based guard against reverting those specific changes, not a proof that no
+# address-keyed read exists: a new one under a new name passes here. The behavioral contract is
+# held by the server and shared specs (org-lens-people.service.spec.ts, person-detail-drawer specs).
 
 set -euo pipefail
 

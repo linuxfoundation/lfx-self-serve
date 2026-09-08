@@ -411,6 +411,19 @@ describe('OrgLensPeopleService person-key company emails', () => {
     });
   });
 
+  it('keeps activity rows cached while the email lookup is failing', async () => {
+    addPerson(ACCOUNT, personKey, 'MixedUser', ['first@company.example']);
+    database.exec('DROP TABLE ORG_PEOPLE_COMPANY_EMAILS');
+    expect(await service.getEmployeeDetail({} as never, ACCOUNT, personKey)).toMatchObject({ ...activity, companyEmailsStatus: 'failed' });
+
+    database.exec(
+      'DROP TABLE ORG_PEOPLE_COMMITTEE_MEMBERSHIP; DROP TABLE ORG_PEOPLE_CODE_CONTRIBUTIONS; DROP TABLE ORG_PEOPLE_EVENTS; DROP TABLE ORG_PEOPLE_TRAINING'
+    );
+    const warehouseReads = execute.mock.calls.length;
+    expect(await service.getEmployeeDetail({} as never, ACCOUNT, personKey)).toMatchObject({ ...activity, companyEmailsStatus: 'failed' });
+    expect(execute).toHaveBeenCalledTimes(warehouseReads + 1);
+  });
+
   it('does not serve cached addresses after the server flag turns off or retain the off state after enabling', async () => {
     addPerson(ACCOUNT, personKey, 'MixedUser', ['first@company.example']);
     isServerFeatureEnabled.mockReturnValue(false);

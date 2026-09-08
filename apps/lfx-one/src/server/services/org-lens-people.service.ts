@@ -111,6 +111,13 @@ interface TrainingRow {
   COURSE_NAME: string | null;
 }
 
+interface EmployeeActivityRaw {
+  committeeRows: CommitteeMembershipRow[];
+  codeRows: CodeContributionRow[];
+  eventRows: EventRow[];
+  trainingRows: TrainingRow[];
+}
+
 /** No unique identity is available, or the feature is disabled — distinct from a resolved empty lookup. */
 const UNAVAILABLE_COMPANY_EMAILS: OrgPersonCompanyEmailsResponse = { companyEmails: [], companyEmailsStatus: 'unavailable' };
 
@@ -228,7 +235,7 @@ export class OrgLensPeopleService {
         VALKEY_CACHE.ORG_LENS_SNOWFLAKE_TTL_SECONDS,
         () => this.fetchCompanyEmailsByUsername(accountId, normalizedUsername),
         isCompanyEmailsResponse,
-        isCacheableEmployeeDetail
+        isCacheableCompanyEmails
       );
     } catch (error) {
       logger.info(undefined, 'get_org_lens_people_company_emails_by_username', 'company email lookup failed; serving detail without addresses', {
@@ -367,76 +374,71 @@ export class OrgLensPeopleService {
     };
   }
 
-  /** Cached per-org detail bundle (four raw row arrays plus the person's company addresses); a non-filter-safe personKey bypasses the shared cache to keep the key namespace intact. */
+  /**
+   * Activity rows and company addresses are cached separately: a failed address read is never stored,
+   * and must not cost the four activity queries their cache slot while the address table is unhealthy.
+   */
   private async fetchEmployeeDetailRaw(
     accountId: string,
     personKey: string
-  ): Promise<{
-    committeeRows: CommitteeMembershipRow[];
-    codeRows: CodeContributionRow[];
-    eventRows: EventRow[];
-    trainingRows: TrainingRow[];
-    companyEmails: string[];
-    companyEmailsStatus: OrgCompanyEmailsStatus;
-  }> {
-    if (!isFilterSafeIdentifier(personKey)) {
-      return this.runEmployeeDetailFetch(accountId, personKey);
-    }
+  ): Promise<EmployeeActivityRaw & { companyEmails: string[]; companyEmailsStatus: OrgCompanyEmailsStatus }> {
+    const [activity, emails] = await Promise.all([
+      this.fetchEmployeeActivityRaw(accountId, personKey),
+      this.getCompanyEmailsForPersonKey(accountId, personKey),
+    ]);
+    return { ...activity, companyEmails: emails.companyEmails, companyEmailsStatus: emails.companyEmailsStatus };
+  }
 
-    // Flag state is part of the key so a flag-OFF `unavailable` response is not served after the flag flips ON.
-    const emailsSuffix = isServerFeatureEnabled(ServerFeatureFlag.OrgLensCompanyEmails) ? 'emails' : 'noemails';
+  /** A non-filter-safe personKey bypasses the shared cache to keep the key namespace intact. */
+  private fetchEmployeeActivityRaw(accountId: string, personKey: string): Promise<EmployeeActivityRaw> {
+    if (!isFilterSafeIdentifier(personKey)) {
+      return this.runEmployeeActivityFetch(accountId, personKey);
+    }
     return withOrgCache(
       accountId,
-      `people-detail:${personKey}:${emailsSuffix}`,
+      `people-detail:${personKey}`,
       VALKEY_CACHE.ORG_LENS_SNOWFLAKE_TTL_SECONDS,
-      () => this.runEmployeeDetailFetch(accountId, personKey),
-      isEmployeeDetailRaw,
-      isCacheableEmployeeDetail
+      () => this.runEmployeeActivityFetch(accountId, personKey),
+      isEmployeeActivityRaw
     );
   }
 
-  private async runEmployeeDetailFetch(
-    accountId: string,
-    personKey: string
-  ): Promise<{
-    committeeRows: CommitteeMembershipRow[];
-    codeRows: CodeContributionRow[];
-    eventRows: EventRow[];
-    trainingRows: TrainingRow[];
-    companyEmails: string[];
-    companyEmailsStatus: OrgCompanyEmailsStatus;
-  }> {
-    // The address read resolves to a status instead of throwing so a failure on that one table cannot
-    // blank the activity tabs.
-    const [committeeRows, codeRows, eventRows, trainingRows, companyEmailsResult] = await Promise.all([
+  private async runEmployeeActivityFetch(accountId: string, personKey: string): Promise<EmployeeActivityRaw> {
+    const [committeeRows, codeRows, eventRows, trainingRows] = await Promise.all([
       this.fetchCommitteeMembershipRows(accountId, personKey),
       this.fetchCodeContributionRows(accountId, personKey),
       this.fetchEventRows(accountId, personKey),
       this.fetchTrainingRows(accountId, personKey),
-      this.tryFetchCompanyEmailsForPersonKey(accountId, personKey),
     ]);
-    return {
-      committeeRows,
-      codeRows,
-      eventRows,
-      trainingRows,
-      companyEmails: companyEmailsResult.companyEmails,
-      companyEmailsStatus: companyEmailsResult.companyEmailsStatus,
-    };
+    return { committeeRows, codeRows, eventRows, trainingRows };
   }
 
   /**
-   * A failure degrades this section only, never the whole detail response.
+   * A failure degrades this section only, never the whole detail response, and is never cached.
    *
-   * Flag off or a `cdp:` person key (no Salesforce identity to join on) short-circuits to `unavailable`:
-   * no verified identity → not available, never "none on record".
+   * Flag off or a `cdp:` person key (no Salesforce identity to join on) short-circuits to `unavailable`
+   * before the cache: no verified identity → not available, never "none on record".
    */
-  private async tryFetchCompanyEmailsForPersonKey(accountId: string, personKey: string): Promise<OrgPersonCompanyEmailsResponse> {
+  private async getCompanyEmailsForPersonKey(accountId: string, personKey: string): Promise<OrgPersonCompanyEmailsResponse> {
     if (!isServerFeatureEnabled(ServerFeatureFlag.OrgLensCompanyEmails) || personKey.startsWith('cdp:')) {
       return UNAVAILABLE_COMPANY_EMAILS;
     }
+    const fetcher = async (): Promise<OrgPersonCompanyEmailsResponse> => ({
+      companyEmails: await this.fetchCompanyEmails(accountId, personKey),
+      companyEmailsStatus: 'resolved',
+    });
     try {
-      return { companyEmails: await this.fetchCompanyEmails(accountId, personKey), companyEmailsStatus: 'resolved' };
+      if (!isFilterSafeIdentifier(personKey)) {
+        return await fetcher();
+      }
+      return await withOrgCache(
+        accountId,
+        `people-company-emails:${personKey}`,
+        VALKEY_CACHE.ORG_LENS_SNOWFLAKE_TTL_SECONDS,
+        fetcher,
+        isCompanyEmailsResponse,
+        isCacheableCompanyEmails
+      );
     } catch (error) {
       logger.info(undefined, 'get_org_lens_people_detail', 'company email lookup failed; serving detail without addresses', {
         person_key: personKey,
@@ -666,31 +668,13 @@ function isAllEmployeesRaw(value: unknown): boolean {
   );
 }
 
-function isEmployeeDetailRaw(value: unknown): boolean {
-  const v = value as {
-    committeeRows?: unknown;
-    codeRows?: unknown;
-    eventRows?: unknown;
-    trainingRows?: unknown;
-    companyEmails?: unknown;
-    companyEmailsStatus?: unknown;
-  } | null;
-  return (
-    !!v &&
-    Array.isArray(v.committeeRows) &&
-    Array.isArray(v.codeRows) &&
-    Array.isArray(v.eventRows) &&
-    Array.isArray(v.trainingRows) &&
-    // Entries cached before `companyEmails` existed are rejected as a miss rather than replayed.
-    Array.isArray(v.companyEmails) &&
-    v.companyEmails.every((email) => typeof email === 'string') &&
-    // 'failed' is never a valid cached state; legacy entries without a status are refetched.
-    (v.companyEmailsStatus === 'resolved' || v.companyEmailsStatus === 'unavailable')
-  );
+function isEmployeeActivityRaw(value: unknown): boolean {
+  const v = value as Partial<Record<keyof EmployeeActivityRaw, unknown>> | null;
+  return !!v && Array.isArray(v.committeeRows) && Array.isArray(v.codeRows) && Array.isArray(v.eventRows) && Array.isArray(v.trainingRows);
 }
 
 /** Failed lookups are never cached: a transient warehouse error must not hide addresses for the full TTL. `unavailable` is a stable property and is cacheable. */
-function isCacheableEmployeeDetail(value: { companyEmailsStatus: OrgCompanyEmailsStatus }): boolean {
+function isCacheableCompanyEmails(value: OrgPersonCompanyEmailsResponse): boolean {
   return value.companyEmailsStatus !== 'failed';
 }
 
