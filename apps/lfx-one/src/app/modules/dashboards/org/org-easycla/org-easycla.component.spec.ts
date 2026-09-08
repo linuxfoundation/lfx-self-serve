@@ -462,6 +462,25 @@ describe('OrgEasyclaComponent', () => {
       expect(byTestId(fixture, 'org-easycla-list-loading')).toBeTruthy();
     });
 
+    // The success path is keyed by the echoed orgUid, but a failure has no response to carry one,
+    // so a bare error flag would survive the switch and show the previous organization's failure
+    // under the new organization's name — the same wrong-company claim, on the other branch.
+    it("does not carry a failed organization's error onto the next one", async () => {
+      getClaGroups.mockReturnValue(throwError(() => new Error('upstream exploded')));
+      const consoleError = vi.spyOn(console, 'error').mockImplementation(() => undefined);
+      const fixture = await render();
+      expect(byTestId(fixture, 'org-easycla-error-state')).toBeTruthy();
+
+      // Read off the signal rather than the DOM, and with no render in between. The window is the
+      // pass between the account signal moving and `orgUid$`'s effect flushing, and anything that
+      // renders — `whenStable`, `detectChanges` — flushes that effect and steps over it. Reading a
+      // computed does not, so this is the only vantage point the window is visible from.
+      selectedAccount.set(OTHER_ACCOUNT);
+
+      expect(fixture.componentInstance['fetchError']()).toBe(false);
+      consoleError.mockRestore();
+    });
+
     it("opens the new organization's list at the first page", async () => {
       getClaGroups.mockReturnValue(of({ orgUid: SELECTED_ACCOUNT.uid, claGroups: manyClaGroups(11) }));
       const fixture = await render();

@@ -43,7 +43,20 @@ export class OrgEasyclaComponent {
     search: new FormControl<string>('', { nonNullable: true }),
   });
 
-  protected readonly fetchError = signal(false);
+  /**
+   * The organization whose load failed, rather than a bare "something failed" flag.
+   *
+   * Same reason the response is keyed by `orgUid`: `selectedAccount` moves a cycle before `orgUid$`
+   * flushes, so a boolean would keep the previous organization's failure on screen under the new
+   * organization's name — a claim about the wrong company, which is what this page exists to avoid.
+   */
+  private readonly failedOrgUid = signal<string | null>(null);
+
+  protected readonly fetchError = computed(() => {
+    const failed = this.failedOrgUid();
+    return failed !== null && failed === this.accountContext.selectedAccount()?.uid;
+  });
+
   private readonly claLoadingState = signal(false);
   private readonly page = signal(0);
 
@@ -190,7 +203,7 @@ export class OrgEasyclaComponent {
       this.orgUid$.pipe(
         tap(() => {
           this.claLoadingState.set(true);
-          this.fetchError.set(false);
+          this.failedOrgUid.set(null);
         }),
         switchMap((uid) =>
           this.claService.getClaGroups(uid).pipe(
@@ -201,7 +214,9 @@ export class OrgEasyclaComponent {
               // no signal left to distinguish "could not load" from "has signed nothing" — and only
               // one of those is a claim about the company's legal position.
               console.error('Failed to load organization CLA groups:', error);
-              this.fetchError.set(true);
+              // Recorded against the uid this request was made for, not as a bare flag, so the
+              // failure cannot outlive the selection that caused it.
+              this.failedOrgUid.set(uid);
               this.claLoadingState.set(false);
               return of(null);
             })
