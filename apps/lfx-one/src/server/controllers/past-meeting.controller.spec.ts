@@ -9,6 +9,9 @@ const PAST_MEETING_UID = 'a0000000-0000-0000-0000-000000000001';
 const { meetingSvc, reconciliationSvc, addAccessToResourceMock, checkSingleAccessMock, getPersonasMock, validateUidParameterMock } = vi.hoisted(() => ({
   meetingSvc: {
     getPastMeetingById: vi.fn(),
+    createPastMeetingParticipant: vi.fn(),
+    updatePastMeetingParticipant: vi.fn(),
+    deletePastMeetingParticipant: vi.fn(),
   },
   reconciliationSvc: {
     reconcilePastMeetingParticipants: vi.fn(),
@@ -233,5 +236,117 @@ describe('PastMeetingController.reconcilePastMeetingParticipants — attendance-
     expect(reconciliationSvc.reconcilePastMeetingParticipants).not.toHaveBeenCalled();
     expect(next).toHaveBeenCalledWith(expect.objectContaining({ statusCode: 403 }));
     expect(res.json).not.toHaveBeenCalled();
+  });
+});
+
+// The three participant-mutation endpoints share the same isPastMeetingOrganizer gate as
+// reconcile above. Run the same organizer/writer/ED/reject authorization matrix against each
+// so a future regression isolated to one handler doesn't go undetected.
+const PARTICIPANT_ID = 'attendee-1';
+
+describe.each([
+  {
+    name: 'createPastMeetingParticipant',
+    invoke: (controller: PastMeetingController, req: any, res: any, next: any) => controller.createPastMeetingParticipant(req, res, next),
+    buildReq: (authenticated: boolean) => ({
+      params: { uid: PAST_MEETING_UID },
+      body: { is_attended: true },
+      query: {},
+      path: '/test',
+      log: {},
+      oidc: { isAuthenticated: () => authenticated },
+    }),
+    stubServiceCall: () => meetingSvc.createPastMeetingParticipant.mockResolvedValue({ id: PARTICIPANT_ID }),
+    serviceMock: () => meetingSvc.createPastMeetingParticipant,
+  },
+  {
+    name: 'updatePastMeetingParticipant',
+    invoke: (controller: PastMeetingController, req: any, res: any, next: any) => controller.updatePastMeetingParticipant(req, res, next),
+    buildReq: (authenticated: boolean) => ({
+      params: { uid: PAST_MEETING_UID, participantId: PARTICIPANT_ID },
+      body: { is_attended: true },
+      query: {},
+      path: '/test',
+      log: {},
+      oidc: { isAuthenticated: () => authenticated },
+    }),
+    stubServiceCall: () => meetingSvc.updatePastMeetingParticipant.mockResolvedValue({ id: PARTICIPANT_ID }),
+    serviceMock: () => meetingSvc.updatePastMeetingParticipant,
+  },
+  {
+    name: 'deletePastMeetingParticipant',
+    invoke: (controller: PastMeetingController, req: any, res: any, next: any) => controller.deletePastMeetingParticipant(req, res, next),
+    buildReq: (authenticated: boolean) => ({
+      params: { uid: PAST_MEETING_UID, participantId: PARTICIPANT_ID },
+      body: {},
+      query: {},
+      path: '/test',
+      log: {},
+      oidc: { isAuthenticated: () => authenticated },
+    }),
+    stubServiceCall: () => meetingSvc.deletePastMeetingParticipant.mockResolvedValue(undefined),
+    serviceMock: () => meetingSvc.deletePastMeetingParticipant,
+  },
+])('PastMeetingController.$name — shares the attendance-management authorization gate', ({ invoke, buildReq: buildParticipantReq, stubServiceCall, serviceMock }) => {
+  let controller: PastMeetingController;
+
+  beforeEach(() => {
+    vi.clearAllMocks();
+    validateUidParameterMock.mockReturnValue(true);
+    checkSingleAccessMock.mockResolvedValue(false);
+    getPersonasMock.mockResolvedValue({ isRootWriter: false, isLFStaff: false, personaProjects: {} });
+    controller = new PastMeetingController();
+    meetingSvc.getPastMeetingById.mockResolvedValue(buildPastMeeting({ project_uid: 'project-1' }));
+    stubServiceCall();
+  });
+
+  it('runs when the caller is the organizer', async () => {
+    addAccessToResourceMock.mockResolvedValue({ organizer: true });
+    const res = buildRes();
+    const next = vi.fn();
+
+    await invoke(controller, buildParticipantReq(true), res, next);
+
+    expect(serviceMock()).toHaveBeenCalled();
+    expect(next).not.toHaveBeenCalled();
+  });
+
+  it('runs when the caller is a writer on the meeting project', async () => {
+    addAccessToResourceMock.mockResolvedValue({ organizer: false });
+    checkSingleAccessMock.mockResolvedValue(true);
+    const res = buildRes();
+    const next = vi.fn();
+
+    await invoke(controller, buildParticipantReq(true), res, next);
+
+    expect(serviceMock()).toHaveBeenCalled();
+    expect(next).not.toHaveBeenCalled();
+  });
+
+  it('runs when the caller is an Executive Director of the meeting project', async () => {
+    addAccessToResourceMock.mockResolvedValue({ organizer: false });
+    getPersonasMock.mockResolvedValue({
+      isRootWriter: false,
+      isLFStaff: false,
+      personaProjects: { 'executive-director': [{ projectUid: 'project-1', projectSlug: 'proj-slug', projectName: 'Proj' }] },
+    });
+    const res = buildRes();
+    const next = vi.fn();
+
+    await invoke(controller, buildParticipantReq(true), res, next);
+
+    expect(serviceMock()).toHaveBeenCalled();
+    expect(next).not.toHaveBeenCalled();
+  });
+
+  it('rejects with 403 when the caller is not the organizer, not a project writer, and not a project ED', async () => {
+    addAccessToResourceMock.mockResolvedValue({ organizer: false });
+    const res = buildRes();
+    const next = vi.fn();
+
+    await invoke(controller, buildParticipantReq(true), res, next);
+
+    expect(serviceMock()).not.toHaveBeenCalled();
+    expect(next).toHaveBeenCalledWith(expect.objectContaining({ statusCode: 403 }));
   });
 });
