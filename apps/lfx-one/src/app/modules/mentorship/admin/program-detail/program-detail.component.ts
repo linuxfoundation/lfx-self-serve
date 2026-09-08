@@ -61,17 +61,22 @@ export class ProgramDetailComponent {
   });
 
   protected onTermsChange(terms: MentorshipProgramTermRow[]): void {
-    const closedTermNames = this.newlyClosedTermNames(this.terms(), terms);
+    const previous = this.terms();
+    const renamedTerms = this.renamedTermNames(previous, terms);
+    const closedTermNames = this.newlyClosedTermNames(previous, terms);
     this.termsOverride.set(terms);
 
-    if (closedTermNames.size === 0) return;
+    if (renamedTerms.size === 0 && closedTermNames.size === 0) return;
 
-    // Closing a term declines its outstanding applications, so the Applicants tab
-    // must not keep showing those people as pending.
+    // Applicants reference their term by name, so a rename has to be carried over
+    // before matching. Closing a term then declines its outstanding applications,
+    // so the Applicants tab must not keep showing those people as pending.
     this.applicantsOverride.set(
       this.applicants().map((applicant): MentorshipProgramPerson => {
-        const declined = applicant.status === 'pending' && closedTermNames.has(applicant.termName);
-        return declined ? { ...applicant, status: 'declined' } : applicant;
+        const termName = renamedTerms.get(applicant.termName) ?? applicant.termName;
+        const decline = applicant.status === 'pending' && closedTermNames.has(termName);
+        if (termName === applicant.termName && !decline) return applicant;
+        return { ...applicant, termName, status: decline ? 'declined' : applicant.status };
       })
     );
   }
@@ -87,6 +92,21 @@ export class ProgramDetailComponent {
       detail: MENTORSHIP_PROGRAM_DETAIL_COMING_SOON,
       life: 4000,
     });
+  }
+
+  /** Maps a term's previous name to its new one for terms renamed in this change. */
+  private renamedTermNames(previous: MentorshipProgramTermRow[], next: MentorshipProgramTermRow[]): Map<string, string> {
+    const previousNames = new Map(previous.map((term) => [term.id, term.name]));
+    const renamed = new Map<string, string>();
+
+    for (const term of next) {
+      const previousName = previousNames.get(term.id);
+      if (previousName !== undefined && previousName !== term.name) {
+        renamed.set(previousName, term.name);
+      }
+    }
+
+    return renamed;
   }
 
   private newlyClosedTermNames(previous: MentorshipProgramTermRow[], next: MentorshipProgramTermRow[]): Set<string> {
