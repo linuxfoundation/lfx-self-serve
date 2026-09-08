@@ -53,6 +53,14 @@ describe('OrgEasyclaCardComponent', () => {
       expect(textOf(fixture, 'org-easycla-card-title')).toBe('Nimbus Foundation CLA');
     });
 
+    // The page it sits on has one `h1` and nothing else at level 2 while the grid is rendered, so
+    // an `h3` here would make a screen reader step h1 → h3 past a level that names nothing.
+    it('titles the card at the level below the page heading', async () => {
+      const fixture = await render(claGroup());
+
+      expect(fixture.nativeElement.querySelector('[data-testid="org-easycla-card-title"]')?.tagName).toBe('H2');
+    });
+
     it('shows the signing entity when the server sent one', async () => {
       const fixture = await render(claGroup({ signingEntityName: 'Vertex Robotics GmbH', status: 'signed' }));
 

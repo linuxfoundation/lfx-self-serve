@@ -3,7 +3,10 @@
 
 <article class="flex flex-col gap-3 rounded-lg border border-gray-200 bg-white p-4" data-testid="org-easycla-card">
   <header class="flex flex-col gap-0.5">
-    <h3 class="font-medium text-base text-gray-900" data-testid="org-easycla-card-title">{{ claGroup().claGroupName }}</h3>
+    <!-- Level 2, not 3: the page's only other heading is its `h1`, and the `h2` beside it belongs to
+         the no-access state, which never renders alongside this grid. An `h3` here would leave a
+         screen reader stepping h1 → h3 with nothing at level 2 to explain the jump. -->
+    <h2 class="font-medium text-base text-gray-900" data-testid="org-easycla-card-title">{{ claGroup().claGroupName }}</h2>
     <!-- Only when the signing entity differs from the organization — the server suppresses it
          otherwise, so this never repeats the page title. It is what distinguishes two cards that
          share a CLA Group name because the organization signed under several entities. -->

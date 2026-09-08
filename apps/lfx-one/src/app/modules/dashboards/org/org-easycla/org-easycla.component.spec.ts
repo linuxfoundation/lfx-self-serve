@@ -125,6 +125,16 @@ describe('OrgEasyclaComponent', () => {
       expect(signCla).toBeTruthy();
       expect(signCla?.querySelector('button')?.disabled).toBe(true);
     });
+
+    // The tooltip carrying the reason opens on hover only: its directive is on the non-focusable
+    // host while the button inside is disabled. The accessible name is the path that reaches a
+    // screen reader, which would otherwise hear "Sign CLA, disabled" and no reason for it.
+    it('names the reason the Sign CLA control is disabled, not just that it is', async () => {
+      const fixture = await render();
+      const button = byTestId(fixture, 'org-easycla-sign-cla')?.querySelector('button');
+
+      expect(button?.getAttribute('aria-label')).toContain('coming soon');
+    });
   });
 
   describe('access and org-selection states', () => {
