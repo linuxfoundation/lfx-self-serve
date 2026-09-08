@@ -15,6 +15,7 @@ import {
   MENTORSHIP_CII_CHECKING,
   MENTORSHIP_CII_INTRO,
   MENTORSHIP_CII_INVALID_ID,
+  MENTORSHIP_CII_UNAVAILABLE,
   MENTORSHIP_CODE_OF_CONDUCT_TEMPLATE_URL,
   MENTORSHIP_ENROLL_COC_INTRO,
   MENTORSHIP_ENROLL_DETAILS_INTRO,
@@ -27,10 +28,12 @@ import {
   MENTORSHIP_ENROLL_NAME_MAX,
   MENTORSHIP_ENROLL_NAME_MIN,
   MENTORSHIP_ENROLL_NAME_TAKEN,
+  MENTORSHIP_ENROLL_NAME_UNAVAILABLE,
   MENTORSHIP_ENROLL_REPO_HELPER,
   MENTORSHIP_ENROLL_WEBSITE_HELPER,
   MENTORSHIP_LF_PROJECT_PAGE_SIZE,
   MENTORSHIP_SKILL_OPTIONS,
+  MOCK_MENTORSHIP_LF_PROJECTS,
   mentorshipCiiBadgeImageUrl,
   mentorshipCiiProjectUrl,
 } from '@lfx-one/shared/constants';
@@ -79,6 +82,9 @@ export class EnrollDetailsStepComponent {
   protected readonly lfProjects = signal<MentorshipLfProject[]>([]);
   protected readonly lfProjectsLoading = signal(false);
   protected readonly lfProjectsTotal = signal(0);
+  private readonly selectedProject = signal<MentorshipLfProject | null>(null);
+  private readonly nameLookupRetry = signal(0);
+  private readonly ciiLookupRetry = signal(0);
   private lfSearch = '';
 
   protected readonly draftTechForm = new FormGroup({
@@ -96,9 +102,11 @@ export class EnrollDetailsStepComponent {
   protected readonly ciiApplyUrl = MENTORSHIP_CII_APPLY_URL;
   protected readonly ciiIntro = MENTORSHIP_CII_INTRO;
   protected readonly ciiInvalidId = MENTORSHIP_CII_INVALID_ID;
+  protected readonly ciiUnavailable = MENTORSHIP_CII_UNAVAILABLE;
   protected readonly ciiChecking = MENTORSHIP_CII_CHECKING;
   protected readonly nameChecking = MENTORSHIP_ENROLL_NAME_CHECKING;
   protected readonly nameTaken = MENTORSHIP_ENROLL_NAME_TAKEN;
+  protected readonly nameUnavailable = MENTORSHIP_ENROLL_NAME_UNAVAILABLE;
   protected readonly codeOfConductTemplateUrl = MENTORSHIP_CODE_OF_CONDUCT_TEMPLATE_URL;
 
   protected readonly draftTechnology = toSignal(this.draftTechForm.controls.technology.valueChanges, { initialValue: '' });
@@ -123,7 +131,9 @@ export class EnrollDetailsStepComponent {
     const loaded = this.lfProjects();
     const options = loaded.map((project) => ({ ...project, value: project.id, label: project.name }));
     if (selectedId && !options.some((option) => option.value === selectedId)) {
-      options.unshift({ id: selectedId, name: selectedId, value: selectedId, label: selectedId });
+      const remembered = this.resolveSelectedProject(selectedId, loaded);
+      const label = remembered?.name ?? selectedId;
+      options.unshift({ id: selectedId, name: label, value: selectedId, label, logoUrl: remembered?.logoUrl });
     }
     return options;
   });
@@ -137,13 +147,14 @@ export class EnrollDetailsStepComponent {
   private readonly programName = computed(() => String(this.formSnapshot()['name'] ?? this.form().controls['name']?.value ?? '').trim());
 
   protected readonly ciiLookup = toSignal(
-    toObservable(this.ciiProjectId).pipe(
-      switchMap((projectId) => {
+    toObservable(computed(() => ({ projectId: this.ciiProjectId(), retry: this.ciiLookupRetry() }))).pipe(
+      switchMap(({ projectId }) => {
         if (!projectId) return of({ status: 'idle' as const, projectId: '' });
         if (!isMentorshipCiiProjectId(projectId)) return of({ status: 'invalid' as const, projectId });
         return timer(300).pipe(
           switchMap(() => this.mentorshipService.getCiiBadge(projectId)),
           map((badge) => (badge ? { status: 'valid' as const, projectId: badge.projectId } : { status: 'invalid' as const, projectId })),
+          catchError(() => of({ status: 'unavailable' as const, projectId })),
           startWith({ status: 'loading' as const, projectId })
         );
       })
@@ -152,12 +163,13 @@ export class EnrollDetailsStepComponent {
   );
 
   protected readonly nameLookup = toSignal(
-    toObservable(this.programName).pipe(
-      switchMap((name) => {
+    toObservable(computed(() => ({ name: this.programName(), retry: this.nameLookupRetry() }))).pipe(
+      switchMap(({ name }) => {
         if (name.length < MENTORSHIP_ENROLL_NAME_MIN) return of({ status: 'idle' as const });
         return timer(300).pipe(
           switchMap(() => this.mentorshipService.isProgramNameAvailable(name)),
           map((result) => ({ status: result.available ? ('available' as const) : ('taken' as const) })),
+          catchError(() => of({ status: 'unavailable' as const })),
           startWith({ status: 'loading' as const })
         );
       })
@@ -182,6 +194,18 @@ export class EnrollDetailsStepComponent {
     toObservable(this.nameLookup)
       .pipe(takeUntilDestroyed())
       .subscribe((lookup) => this.nameLookupStatusChange.emit(lookup.status));
+
+    toObservable(computed(() => String(this.formSnapshot()['projectId'] ?? this.form().controls['projectId']?.value ?? '')))
+      .pipe(takeUntilDestroyed())
+      .subscribe((projectId) => this.rememberSelectedProject(projectId));
+
+    toObservable(this.lfProjects)
+      .pipe(takeUntilDestroyed())
+      .subscribe((projects) => {
+        const projectId = String(this.form().controls['projectId']?.value ?? '');
+        const found = projects.find((project) => project.id === projectId);
+        if (found) this.selectedProject.set(found);
+      });
 
     this.mentorshipService
       .getPrograms()
@@ -237,6 +261,14 @@ export class EnrollDetailsStepComponent {
         this.lfProjectsTotal.set(page.total);
         this.lfProjectsLoading.set(false);
       });
+  }
+
+  protected retryNameLookup(): void {
+    this.nameLookupRetry.update((count) => count + 1);
+  }
+
+  protected retryCiiLookup(): void {
+    this.ciiLookupRetry.update((count) => count + 1);
   }
 
   protected onImportProgram(): void {
@@ -307,6 +339,23 @@ export class EnrollDetailsStepComponent {
 
   protected projectInitial(name: string): string {
     return name.trim().charAt(0).toUpperCase() || '?';
+  }
+
+  private rememberSelectedProject(projectId: string): void {
+    if (!projectId) {
+      this.selectedProject.set(null);
+      return;
+    }
+    const remembered = this.resolveSelectedProject(projectId, this.lfProjects());
+    if (remembered) this.selectedProject.set(remembered);
+  }
+
+  private resolveSelectedProject(projectId: string, loaded: MentorshipLfProject[]): MentorshipLfProject | undefined {
+    const fromLoaded = loaded.find((project) => project.id === projectId);
+    if (fromLoaded) return fromLoaded;
+    const cached = this.selectedProject();
+    if (cached?.id === projectId) return cached;
+    return MOCK_MENTORSHIP_LF_PROJECTS.find((project) => project.id === projectId);
   }
 
   private revokeLogoPreview(): void {

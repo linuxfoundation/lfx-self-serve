@@ -11,12 +11,14 @@ import {
   createEmptyMentorshipEnrollForm,
   MENTORSHIP_CII_CHECKING,
   MENTORSHIP_CII_INVALID_ID,
+  MENTORSHIP_CII_UNAVAILABLE,
   MENTORSHIP_ENROLL_CANCEL_CONFIRM,
   MENTORSHIP_ENROLL_FORM_INCOMPLETE,
   MENTORSHIP_ENROLL_NAME_CHECKING,
   MENTORSHIP_ENROLL_NAME_MAX,
   MENTORSHIP_ENROLL_NAME_MIN,
   MENTORSHIP_ENROLL_NAME_TAKEN,
+  MENTORSHIP_ENROLL_NAME_UNAVAILABLE,
   MENTORSHIP_ENROLL_STEP_LABELS,
   MENTORSHIP_ENROLL_STEPS_ORDER,
 } from '@lfx-one/shared/constants';
@@ -154,16 +156,14 @@ export class EnrollProgramComponent {
     const programName = this.form.controls.name.value.trim();
     if (current === 'details' && programName.length >= MENTORSHIP_ENROLL_NAME_MIN && this.nameLookupStatus() !== 'available') {
       this.showErrors.set(true);
-      const detail = this.nameLookupStatus() === 'taken' ? MENTORSHIP_ENROLL_NAME_TAKEN : MENTORSHIP_ENROLL_NAME_CHECKING;
-      this.messageService.add({ severity: 'warn', summary: 'Check this step', detail, life: 4000 });
+      this.messageService.add({ severity: 'warn', summary: 'Check this step', detail: this.nameLookupMessage(this.nameLookupStatus()), life: 4000 });
       return;
     }
 
     const ciiId = this.form.controls.ciiProjectId.value.trim();
     if (current === 'details' && ciiId && this.ciiLookupStatus() !== 'valid') {
       this.showErrors.set(true);
-      const detail = this.ciiLookupStatus() === 'invalid' ? MENTORSHIP_CII_INVALID_ID : MENTORSHIP_CII_CHECKING;
-      this.messageService.add({ severity: 'warn', summary: 'Check this step', detail, life: 4000 });
+      this.messageService.add({ severity: 'warn', summary: 'Check this step', detail: this.ciiLookupMessage(this.ciiLookupStatus()), life: 4000 });
       return;
     }
 
@@ -238,6 +238,18 @@ export class EnrollProgramComponent {
           });
         },
       });
+  }
+
+  private nameLookupMessage(status: MentorshipNameLookupStatus): string {
+    if (status === 'taken') return MENTORSHIP_ENROLL_NAME_TAKEN;
+    if (status === 'unavailable') return MENTORSHIP_ENROLL_NAME_UNAVAILABLE;
+    return MENTORSHIP_ENROLL_NAME_CHECKING;
+  }
+
+  private ciiLookupMessage(status: MentorshipCiiLookupStatus): string {
+    if (status === 'invalid') return MENTORSHIP_CII_INVALID_ID;
+    if (status === 'unavailable') return MENTORSHIP_CII_UNAVAILABLE;
+    return MENTORSHIP_CII_CHECKING;
   }
 
   private toEnrollForm(value: Partial<MentorshipEnrollForm> = this.form.getRawValue()): MentorshipEnrollForm {

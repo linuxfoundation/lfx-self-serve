@@ -62,6 +62,7 @@ export const MENTORSHIP_ENROLL_CANCEL_CONFIRM = 'You will lose your changes—ar
 export const MENTORSHIP_ENROLL_DELETE_TERM_CONFIRM = 'Are you sure you want to delete this term?';
 export const MENTORSHIP_ENROLL_NAME_TAKEN = 'This program name is taken.';
 export const MENTORSHIP_ENROLL_NAME_CHECKING = 'Checking program name...';
+export const MENTORSHIP_ENROLL_NAME_UNAVAILABLE = 'Could not verify the program name. Please try again.';
 export const MENTORSHIP_INVALID_URL = 'The link must be a valid URL.';
 export const MENTORSHIP_CHALLENGE_URL_REQUIRED = 'The link is required.';
 export const MENTORSHIP_MAX_OPEN_TERMS_MESSAGE = 'You can have at most 4 open terms per Mentorship Program. Close or delete one to create another.';
@@ -79,6 +80,7 @@ export const MENTORSHIP_CII_INTRO =
   'Security is our top priority on Mentorship, and we ask all participating projects to participate in our Core Infrastructure Initiative (CII) Best Practices badge program. If your project is not already participating in the CII Best Practices badge program, please enroll within 90 days to ensure continuation of your project on the platform.';
 export const MENTORSHIP_CII_INVALID_ID = 'Invalid CII Project ID';
 export const MENTORSHIP_CII_CHECKING = 'Checking CII Project ID...';
+export const MENTORSHIP_CII_UNAVAILABLE = 'CII Best Practices is temporarily unavailable. Please try again.';
 export const MENTORSHIP_CODE_OF_CONDUCT_TEMPLATE_URL = 'https://www.contributor-covenant.org/';
 
 export function mentorshipCiiProjectUrl(projectId: string): string {
@@ -319,14 +321,29 @@ export const MENTORSHIP_SKILL_OPTIONS: readonly string[] = [
   'XML',
 ];
 
-export const MENTORSHIP_DEFAULT_TERM: MentorshipProgramTerm = {
-  id: 'term-1-2027',
-  name: 'Term 1 - 2027',
-  startDate: '2027-03-01',
-  endDate: '2027-05-01',
-  applicationStartDate: '2026-12-01',
-  applicationEndDate: '2027-02-28',
-};
+function toIsoDateOnly(date: Date): string {
+  return `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, '0')}-${String(date.getDate()).padStart(2, '0')}`;
+}
+
+/**
+ * A term whose application window and start month are still valid on `today`.
+ * Term starts three months out so the application window is never already past.
+ */
+export function createDefaultMentorshipTerm(today = new Date()): MentorshipProgramTerm {
+  const start = new Date(today.getFullYear(), today.getMonth() + 3, 1);
+  const end = new Date(today.getFullYear(), today.getMonth() + 5, 1);
+  const applicationEnd = new Date(start.getFullYear(), start.getMonth(), 0);
+  const applicationStart = new Date(today.getFullYear(), today.getMonth(), today.getDate());
+  const year = start.getFullYear();
+  return {
+    id: `term-1-${year}`,
+    name: `Term 1 - ${year}`,
+    startDate: toIsoDateOnly(start),
+    endDate: toIsoDateOnly(end),
+    applicationStartDate: toIsoDateOnly(applicationStart),
+    applicationEndDate: toIsoDateOnly(applicationEnd),
+  };
+}
 
 export const MENTORSHIP_DEFAULT_PREREQUISITES: MentorshipPrerequisite[] = [
   {
@@ -396,13 +413,13 @@ export function createEmptyMentorshipEnrollForm(): MentorshipEnrollForm {
     logoFileName: '',
     logoPreviewUrl: '',
     skills: [],
-    terms: [{ ...MENTORSHIP_DEFAULT_TERM }],
+    terms: [createDefaultMentorshipTerm()],
     prerequisites: clonePrerequisites(),
     termsAccepted: false,
   };
 }
 
-type ImportedProgramSource = Omit<MentorshipEnrollForm, 'importProgramId' | 'termsAccepted' | 'logoPreviewUrl'>;
+type ImportedProgramSource = Omit<MentorshipEnrollForm, 'importProgramId' | 'termsAccepted' | 'logoPreviewUrl' | 'terms'>;
 
 const MENTORSHIP_IMPORT_PROGRAM_DETAILS: Record<string, ImportedProgramSource> = {
   mp_gridflow_fall26: {
@@ -416,7 +433,6 @@ const MENTORSHIP_IMPORT_PROGRAM_DETAILS: Record<string, ImportedProgramSource> =
     codeOfConductUrl: 'https://www.contributor-covenant.org/version/2/1/code_of_conduct/',
     logoFileName: 'gridflow-logo.png',
     skills: ['GO', 'Kubernetes'],
-    terms: [{ ...MENTORSHIP_DEFAULT_TERM }],
     prerequisites: clonePrerequisites().map((item, index) => ({ ...item, required: index === 0 })),
   },
   mp_apicurio_winter26: {
@@ -430,7 +446,6 @@ const MENTORSHIP_IMPORT_PROGRAM_DETAILS: Record<string, ImportedProgramSource> =
     codeOfConductUrl: 'https://github.com/Apicurio/apicurio-registry/blob/main/CODE_OF_CONDUCT.md',
     logoFileName: 'apicurio-logo.png',
     skills: ['GO', 'React', 'API'],
-    terms: [{ ...MENTORSHIP_DEFAULT_TERM }],
     prerequisites: clonePrerequisites().map((item) => ({
       ...item,
       required: item.id === 'prereq-resume' || item.id === 'prereq-cover',
@@ -447,7 +462,6 @@ const MENTORSHIP_IMPORT_PROGRAM_DETAILS: Record<string, ImportedProgramSource> =
     codeOfConductUrl: '',
     logoFileName: '',
     skills: ['Java', 'Database'],
-    terms: [{ ...MENTORSHIP_DEFAULT_TERM }],
     prerequisites: clonePrerequisites(),
   },
   mp_thanos_summer26: {
@@ -461,24 +475,9 @@ const MENTORSHIP_IMPORT_PROGRAM_DETAILS: Record<string, ImportedProgramSource> =
     codeOfConductUrl: '',
     logoFileName: '',
     skills: ['GO', 'Kubernetes'],
-    terms: [
-      {
-        ...MENTORSHIP_DEFAULT_TERM,
-        name: 'Term 2 - 2027',
-        startDate: '2027-06-01',
-        endDate: '2027-08-01',
-        applicationStartDate: '2027-03-01',
-        applicationEndDate: '2027-05-15',
-      },
-    ],
     prerequisites: clonePrerequisites().map((item) => ({ ...item, required: item.id === 'prereq-resume' })),
   },
 };
-
-function currentMonthStartIso(): string {
-  const now = new Date();
-  return `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}-01`;
-}
 
 /** True when the program has mock enrollment details that the import picker can copy. */
 export function isMentorshipProgramImportable(programId: string): boolean {
@@ -508,7 +507,7 @@ export function formFromImportedMentorshipProgram(importProgramId: string): Ment
     logoFileName: source.logoFileName,
     logoPreviewUrl: '',
     skills: [...source.skills],
-    terms: source.terms.filter((term) => term.startDate >= currentMonthStartIso()).map((term) => ({ ...term })),
+    terms: [createDefaultMentorshipTerm()],
     prerequisites: clonePrerequisites(source.prerequisites),
     termsAccepted: false,
   };

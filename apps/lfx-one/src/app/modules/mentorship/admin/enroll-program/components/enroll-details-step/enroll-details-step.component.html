@@ -35,6 +35,18 @@
       @if (nameLookup().status === 'loading') {
         <p class="text-xs text-gray-500">{{ nameChecking }}</p>
       }
+      @if (nameLookup().status === 'unavailable') {
+        <div class="flex items-center gap-2">
+          <p class="text-xs text-red-600">{{ nameUnavailable }}</p>
+          <lfx-button
+            label="Try again"
+            [text]="true"
+            size="small"
+            styleClass="!px-0 !text-blue-600"
+            (onClick)="retryNameLookup()"
+            data-testid="mentorship-enroll-name-retry" />
+        </div>
+      }
       @if (errors().name || nameLookup().status === 'taken') {
         <p class="text-xs text-red-600">{{ errors().name || nameTaken }}</p>
       }
@@ -192,6 +204,18 @@
         </div>
         @if (ciiLookup().status === 'loading') {
           <p class="text-xs text-gray-500">{{ ciiChecking }}</p>
+        }
+        @if (ciiLookup().status === 'unavailable') {
+          <div class="flex items-center gap-2">
+            <p class="text-xs text-red-600">{{ ciiUnavailable }}</p>
+            <lfx-button
+              label="Try again"
+              [text]="true"
+              size="small"
+              styleClass="!px-0 !text-blue-600"
+              (onClick)="retryCiiLookup()"
+              data-testid="mentorship-enroll-cii-retry" />
+          </div>
         }
         @if (errors().ciiProjectId || ciiLookup().status === 'invalid') {
           <p class="text-xs text-red-600">{{ errors().ciiProjectId || ciiInvalidId }}</p>

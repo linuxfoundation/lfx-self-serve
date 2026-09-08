@@ -3,7 +3,7 @@
 
 import { describe, expect, it } from 'vitest';
 
-import { createEmptyMentorshipEnrollForm } from '../constants/mentorship-enroll.constants';
+import { createDefaultMentorshipTerm, createEmptyMentorshipEnrollForm } from '../constants/mentorship-enroll.constants';
 import {
   buildMentorshipProgramDetail,
   formatMentorshipDateRange,
@@ -39,6 +39,13 @@ describe('getMentorshipEnrollStepErrors', () => {
     expect(errors.description).toBe('Program description is required.');
     expect(errors.repositoryUrl).toBe("A link to the program's repository is required.");
     expect(errors.logoFileName).toBe('Logo is required.');
+  });
+
+  it('gives a new enroll form a term that still passes setup date checks', () => {
+    const form = createEmptyMentorshipEnrollForm();
+    form.skills = ['GO'];
+
+    expect(getMentorshipEnrollStepErrors('setup', form).terms).toBeUndefined();
   });
 
   it('requires at least one skill, term, required prerequisite, and accepted terms', () => {
@@ -210,6 +217,28 @@ describe('getMentorshipTermDateErrors', () => {
     };
 
     expect(getMentorshipTermDateErrors(original, new Date(2026, 8, 7), original)).toEqual({});
+  });
+
+  it('rejects a past application start when no original term is supplied', () => {
+    const term = {
+      startDate: '2027-03-01',
+      endDate: '2027-05-01',
+      applicationStartDate: '2026-12-01',
+      applicationEndDate: '2027-02-28',
+    };
+
+    expect(getMentorshipTermDateErrors(term, new Date(2026, 11, 2)).applicationStartDate).toBe('Application start date cannot be before today.');
+  });
+
+  it('builds a default enroll term that stays valid on the given day', () => {
+    const today = new Date(2026, 8, 8);
+    const term = createDefaultMentorshipTerm(today);
+
+    expect(getMentorshipTermDateErrors(term, today)).toEqual({});
+    expect(term.startDate).toBe('2026-12-01');
+    expect(term.endDate).toBe('2027-02-01');
+    expect(term.applicationStartDate).toBe('2026-09-08');
+    expect(term.applicationEndDate).toBe('2026-11-30');
   });
 });
 
