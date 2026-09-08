@@ -13,10 +13,9 @@ import type { HealthMetricsOverviewLinkTarget } from '../interfaces/health-metri
  * renders a broken link.
  */
 export function buildHealthMetricsOverviewPccUrl(pccBaseUrl: string, pccProjectId: string, linkTarget: HealthMetricsOverviewLinkTarget): string | undefined {
-  const anchor =
-    linkTarget in HEALTH_METRICS_OVERVIEW_LINK_TARGETS
-      ? HEALTH_METRICS_OVERVIEW_LINK_TARGETS[linkTarget as keyof typeof HEALTH_METRICS_OVERVIEW_LINK_TARGETS]
-      : undefined;
+  const anchor = Object.hasOwn(HEALTH_METRICS_OVERVIEW_LINK_TARGETS, linkTarget)
+    ? HEALTH_METRICS_OVERVIEW_LINK_TARGETS[linkTarget as keyof typeof HEALTH_METRICS_OVERVIEW_LINK_TARGETS]
+    : undefined;
   if (!anchor || !pccProjectId) {
     return undefined;
   }
