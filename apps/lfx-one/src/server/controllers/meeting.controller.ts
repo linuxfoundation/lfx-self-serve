@@ -2152,9 +2152,9 @@ export class MeetingController {
   /**
    * The request's declared `Content-Length`, or `null` when it declares none this can trust.
    * @description A chunked request omits the header entirely, so `null` is a real outcome and not an
-   * error — logging it as `0` would make it indistinguishable from a declared empty body. That is why
-   * the raw header is checked before the conversion rather than after: `Number('')` is `0`, so an
-   * empty or whitespace-only header would otherwise be logged as the very value `null` exists to stay
+   * error — logging it as `0` would make it indistinguishable from a declared empty body. The raw
+   * header is truthiness-checked before conversion for that reason: `Number('')` is `0`, so an absent
+   * or whitespace-only header would otherwise land as the very value the `null` exists to stay
    * distinct from.
    *
    * Anything that isn't a non-negative integer is `null` too. `Content-Length` is defined as a count
@@ -2163,9 +2163,12 @@ export class MeetingController {
    * apart from a genuine measurement.
    */
   private static readContentLength(req: Request): number | null {
-    const declared = Number(req.get('content-length')?.trim() || Number.NaN);
+    const raw = req.get('content-length')?.trim();
 
-    // `isInteger` implies finite, so this rejects `NaN` and `Infinity` as well.
-    return Number.isInteger(declared) && declared >= 0 ? declared : null;
+    // Matched as digits before converting rather than range-checked after. `Content-Length` is
+    // defined as `1*DIGIT`, but `Number` also accepts forms no HTTP client sends and this field can't
+    // represent honestly, and a range check runs too late to catch them: `'0x10'` becomes 16 and
+    // `'1e3'` becomes 1000, both of which are non-negative integers and would have been logged.
+    return raw && /^\d+$/.test(raw) ? Number(raw) : null;
   }
 }

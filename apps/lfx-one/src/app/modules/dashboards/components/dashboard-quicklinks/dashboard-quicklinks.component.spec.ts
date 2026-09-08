@@ -22,7 +22,11 @@ describe('DashboardQuicklinksComponent', () => {
   let fixture: ComponentFixture<DashboardQuicklinksComponent>;
   const canWrite = signal(false);
   const canWriteMeetings = signal(false);
-  const activeContextUid = signal<string | null>(null);
+  // `signal<string>('')`, matching `ProjectContextService.activeContextUid`, which is a
+  // `Signal<string>` that reports `''` for "no context" rather than `null`. A double typed
+  // `string | null` would let this file assert against a shape the real service never produces —
+  // the same drift the `FakeValidationError` double in the server specs was fixed for.
+  const activeContextUid = signal('');
   const open = vi.fn();
 
   /** The `data-testid` slug of every link rendered, in order. */
@@ -36,7 +40,7 @@ describe('DashboardQuicklinksComponent', () => {
   beforeEach(async () => {
     canWrite.set(false);
     canWriteMeetings.set(false);
-    activeContextUid.set(null);
+    activeContextUid.set('');
     open.mockClear();
 
     TestBed.configureTestingModule({

@@ -56,7 +56,7 @@ import { Request } from 'express';
 import { ResourceNotFoundError, AuthorizationError, ServiceValidationError } from '../errors';
 import { fetchEntityProject, toEntityProjectFields } from '../helpers/entity-project-enrichment.helper';
 import { attachRsvpsToRegistrants, filterRsvpsToActiveRegistrants } from '../helpers/meeting-rsvp.helper';
-import { APP_ONLY_REGISTRANT_KEYS } from '../constants';
+import { APP_ONLY_REGISTRANT_KEYS, RENAMED_REGISTRANT_KEYS } from '../constants';
 import { pollEndpoint } from '../helpers/poll-endpoint.helper';
 import { fetchAllQueryResources } from '../helpers/query-service.helper';
 import { encodePathSegment } from '../helpers/url-validation';
@@ -213,7 +213,7 @@ export class MeetingService {
 
     // All meetings are now ITX-managed, use the ITX endpoint
     const meeting = normalizeIndexedMeetingInviteResponses(
-      await this.microserviceProxy.proxyRequest<Meeting>(req, 'LFX_V2_SERVICE', `/itx/meetings/${meetingUid}`, 'GET')
+      await this.microserviceProxy.proxyRequest<Meeting>(req, 'LFX_V2_SERVICE', `/itx/meetings/${encodePathSegment(meetingUid)}`, 'GET')
     );
 
     // Set the meeting ID from the URL param
@@ -317,7 +317,12 @@ export class MeetingService {
       past_meeting_id: pastMeetingUid,
     });
 
-    const meeting = await this.microserviceProxy.proxyRequest<PastMeeting>(req, 'LFX_V2_SERVICE', `/itx/past_meetings/${pastMeetingUid}`, 'GET');
+    const meeting = await this.microserviceProxy.proxyRequest<PastMeeting>(
+      req,
+      'LFX_V2_SERVICE',
+      `/itx/past_meetings/${encodePathSegment(pastMeetingUid)}`,
+      'GET'
+    );
 
     if (!meeting) {
       throw new ResourceNotFoundError('Past Meeting', pastMeetingUid, {
@@ -551,7 +556,7 @@ export class MeetingService {
       operation: 'create_meeting',
       pollFn: async () => {
         try {
-          const meeting = await this.microserviceProxy.proxyRequest<Meeting>(req, 'LFX_V2_SERVICE', `/itx/meetings/${meetingId}`, 'GET');
+          const meeting = await this.microserviceProxy.proxyRequest<Meeting>(req, 'LFX_V2_SERVICE', `/itx/meetings/${encodePathSegment(meetingId)}`, 'GET');
           meeting.id = meetingId;
           fetchedMeeting = meeting;
           return true;
@@ -577,7 +582,7 @@ export class MeetingService {
    */
   public async updateMeeting(req: Request, meetingUid: string, meetingData: UpdateMeetingRequest, editType?: 'single' | 'future'): Promise<ApiResponse<void>> {
     // Fetch existing meeting to merge organizers
-    const existingMeeting = await this.microserviceProxy.proxyRequest<Meeting>(req, 'LFX_V2_SERVICE', `/itx/meetings/${meetingUid}`, 'GET');
+    const existingMeeting = await this.microserviceProxy.proxyRequest<Meeting>(req, 'LFX_V2_SERVICE', `/itx/meetings/${encodePathSegment(meetingUid)}`, 'GET');
 
     // Get the logged-in user's username to maintain organizer if not provided
     const username = await getUsernameFromAuth(req);
@@ -603,7 +608,14 @@ export class MeetingService {
 
     const query = editType ? { editType } : undefined;
 
-    return await this.microserviceProxy.proxyRequestWithResponse<void>(req, 'LFX_V2_SERVICE', `/itx/meetings/${meetingUid}`, 'PUT', query, updatePayload);
+    return await this.microserviceProxy.proxyRequestWithResponse<void>(
+      req,
+      'LFX_V2_SERVICE',
+      `/itx/meetings/${encodePathSegment(meetingUid)}`,
+      'PUT',
+      query,
+      updatePayload
+    );
   }
 
   /**
@@ -614,7 +626,7 @@ export class MeetingService {
       meeting_id: meetingUid,
     });
 
-    await this.microserviceProxy.proxyRequest<void>(req, 'LFX_V2_SERVICE', `/itx/meetings/${meetingUid}`, 'DELETE');
+    await this.microserviceProxy.proxyRequest<void>(req, 'LFX_V2_SERVICE', `/itx/meetings/${encodePathSegment(meetingUid)}`, 'DELETE');
 
     // After deleting, poll the query service until the meeting no longer appears.
     // The upstream service uses eventual consistency, so the resource may still be indexed briefly.
@@ -641,7 +653,12 @@ export class MeetingService {
       occurrence_id: occurrenceId,
     });
 
-    await this.microserviceProxy.proxyRequest<void>(req, 'LFX_V2_SERVICE', `/itx/meetings/${meetingUid}/occurrences/${occurrenceId}`, 'DELETE');
+    await this.microserviceProxy.proxyRequest<void>(
+      req,
+      'LFX_V2_SERVICE',
+      `/itx/meetings/${encodePathSegment(meetingUid)}/occurrences/${encodePathSegment(occurrenceId)}`,
+      'DELETE'
+    );
   }
 
   /**
@@ -909,7 +926,7 @@ export class MeetingService {
     const newRegistrant = await this.microserviceProxy.proxyRequest<Record<string, unknown> | null>(
       req,
       'LFX_V2_SERVICE',
-      `/itx/meetings/${registrantData.meeting_id}/registrants`,
+      `/itx/meetings/${encodePathSegment(registrantData.meeting_id)}/registrants`,
       'POST',
       undefined,
       this.toUpstreamRegistrantBody(registrantData)
@@ -1021,7 +1038,7 @@ export class MeetingService {
     const response = await this.microserviceProxy.proxyRequest<{ join_url: string; link: string }>(
       req,
       'LFX_V2_SERVICE',
-      `/itx/meetings/${meetingUid}/join_link`,
+      `/itx/meetings/${encodePathSegment(meetingUid)}/join_link`,
       'GET',
       params
     );
@@ -1384,7 +1401,7 @@ export class MeetingService {
     const updatedSummary = await this.microserviceProxy.proxyRequest<PastMeetingSummary>(
       req,
       'LFX_V2_SERVICE',
-      `/itx/past_meetings/${pastMeetingUid}/summaries/${summaryUid}`,
+      `/itx/past_meetings/${encodePathSegment(pastMeetingUid)}/summaries/${encodePathSegment(summaryUid)}`,
       'PUT',
       undefined,
       updateData
@@ -1429,7 +1446,7 @@ export class MeetingService {
     const result = await this.microserviceProxy.proxyRequest<ITXMeetingResponseResult>(
       req,
       'LFX_V2_SERVICE',
-      `/itx/meetings/${meetingUid}/responses`,
+      `/itx/meetings/${encodePathSegment(meetingUid)}/responses`,
       'POST',
       {},
       requestData
@@ -1641,7 +1658,7 @@ export class MeetingService {
     return this.microserviceProxy.proxyRequest<MeetingAttachment>(
       req,
       'LFX_V2_SERVICE',
-      `/itx/meetings/${meetingUid}/attachments`,
+      `/itx/meetings/${encodePathSegment(meetingUid)}/attachments`,
       'POST',
       undefined,
       attachmentData
@@ -1658,7 +1675,7 @@ export class MeetingService {
     await this.microserviceProxy.proxyRequest<void>(
       req,
       'LFX_V2_SERVICE',
-      `/itx/meetings/${meetingUid}/attachments/${attachmentUid}`,
+      `/itx/meetings/${encodePathSegment(meetingUid)}/attachments/${encodePathSegment(attachmentUid)}`,
       'PUT',
       undefined,
       updateData
@@ -1671,7 +1688,12 @@ export class MeetingService {
   public async deleteMeetingAttachment(req: Request, meetingUid: string, attachmentUid: string): Promise<void> {
     logger.debug(req, 'delete_meeting_attachment', 'Deleting meeting attachment', { meeting_id: meetingUid, attachment_uid: attachmentUid });
 
-    await this.microserviceProxy.proxyRequest<void>(req, 'LFX_V2_SERVICE', `/itx/meetings/${meetingUid}/attachments/${attachmentUid}`, 'DELETE');
+    await this.microserviceProxy.proxyRequest<void>(
+      req,
+      'LFX_V2_SERVICE',
+      `/itx/meetings/${encodePathSegment(meetingUid)}/attachments/${encodePathSegment(attachmentUid)}`,
+      'DELETE'
+    );
   }
 
   /**
@@ -1680,7 +1702,12 @@ export class MeetingService {
   public async getMeetingAttachmentInfo(req: Request, meetingUid: string, attachmentUid: string): Promise<MeetingAttachment> {
     logger.debug(req, 'get_meeting_attachment_info', 'Fetching meeting attachment info', { meeting_id: meetingUid, attachment_uid: attachmentUid });
 
-    return this.microserviceProxy.proxyRequest<MeetingAttachment>(req, 'LFX_V2_SERVICE', `/itx/meetings/${meetingUid}/attachments/${attachmentUid}`, 'GET');
+    return this.microserviceProxy.proxyRequest<MeetingAttachment>(
+      req,
+      'LFX_V2_SERVICE',
+      `/itx/meetings/${encodePathSegment(meetingUid)}/attachments/${encodePathSegment(attachmentUid)}`,
+      'GET'
+    );
   }
 
   /**
@@ -1692,7 +1719,7 @@ export class MeetingService {
     return this.microserviceProxy.proxyRequest<PresignAttachmentResponse>(
       req,
       'LFX_V2_SERVICE',
-      `/itx/meetings/${meetingUid}/attachments/presign`,
+      `/itx/meetings/${encodePathSegment(meetingUid)}/attachments/presign`,
       'POST',
       undefined,
       presignData
@@ -1753,7 +1780,7 @@ export class MeetingService {
     return this.microserviceProxy.proxyRequest<AttachmentDownloadUrlResponse>(
       req,
       'LFX_V2_SERVICE',
-      `/itx/meetings/${meetingUid}/attachments/${attachmentUid}/download`,
+      `/itx/meetings/${encodePathSegment(meetingUid)}/attachments/${encodePathSegment(attachmentUid)}/download`,
       'GET'
     );
   }
@@ -1792,7 +1819,7 @@ export class MeetingService {
     return this.microserviceProxy.proxyRequest<PastMeetingAttachment>(
       req,
       'LFX_V2_SERVICE',
-      `/itx/past_meetings/${encodeURIComponent(pastMeetingUid)}/attachments/${encodeURIComponent(attachmentUid)}`,
+      `/itx/past_meetings/${encodePathSegment(pastMeetingUid)}/attachments/${encodePathSegment(attachmentUid)}`,
       'GET'
     );
   }
@@ -1806,7 +1833,7 @@ export class MeetingService {
     return this.microserviceProxy.proxyRequest<AttachmentDownloadUrlResponse>(
       req,
       'LFX_V2_SERVICE',
-      `/itx/past_meetings/${encodeURIComponent(pastMeetingUid)}/attachments/${encodeURIComponent(attachmentUid)}/download`,
+      `/itx/past_meetings/${encodePathSegment(pastMeetingUid)}/attachments/${encodePathSegment(attachmentUid)}/download`,
       'GET'
     );
   }
@@ -1824,7 +1851,7 @@ export class MeetingService {
     return this.microserviceProxy.proxyRequest<PastMeetingAttachment>(
       req,
       'LFX_V2_SERVICE',
-      `/itx/past_meetings/${encodeURIComponent(pastMeetingUid)}/attachments`,
+      `/itx/past_meetings/${encodePathSegment(pastMeetingUid)}/attachments`,
       'POST',
       undefined,
       attachmentData
@@ -1840,7 +1867,7 @@ export class MeetingService {
     return this.microserviceProxy.proxyRequest<PresignAttachmentResponse>(
       req,
       'LFX_V2_SERVICE',
-      `/itx/past_meetings/${encodeURIComponent(pastMeetingUid)}/attachments/presign`,
+      `/itx/past_meetings/${encodePathSegment(pastMeetingUid)}/attachments/presign`,
       'POST',
       undefined,
       presignData
@@ -1899,7 +1926,7 @@ export class MeetingService {
     await this.microserviceProxy.proxyRequest<void>(
       req,
       'LFX_V2_SERVICE',
-      `/itx/past_meetings/${encodeURIComponent(pastMeetingUid)}/attachments/${encodeURIComponent(attachmentUid)}`,
+      `/itx/past_meetings/${encodePathSegment(pastMeetingUid)}/attachments/${encodePathSegment(attachmentUid)}`,
       'DELETE'
     );
   }
@@ -1990,7 +2017,7 @@ export class MeetingService {
     const upstreamRegistrant = await this.microserviceProxy.proxyRequest<Record<string, unknown> | null>(
       req,
       'LFX_V2_SERVICE',
-      `/itx/meetings/${meetingId}/registrants/self`,
+      `/itx/meetings/${encodePathSegment(meetingId)}/registrants/self`,
       'POST',
       undefined,
       payload,
@@ -2277,22 +2304,27 @@ export class MeetingService {
    * ("blank = all occurrences"), so a wrong guess silently rescopes an invite.
    */
   private toUpstreamRegistrantBody(body: CreateMeetingRegistrantRequest | UpdateMeetingRegistrantRequest): Record<string, unknown> {
-    const { org_name, avatar_url, occurrence_id } = body;
     const upstream: Record<string, unknown> = { ...body };
 
     // Shared with `MeetingController.hasRegistrantChanges`, which has to know exactly which keys
     // vanish here to tell an empty update apart from a real one — see the constant's own docs for
-    // why it's typed as the intersection of the two request interfaces.
+    // why it's keyed on the intersection of the two request interfaces.
     for (const appOnlyKey of APP_ONLY_REGISTRANT_KEYS) {
       delete upstream[appOnlyKey];
     }
 
-    return {
-      ...upstream,
-      ...(org_name == null ? {} : { org: org_name }),
-      ...(avatar_url == null ? {} : { profile_picture: avatar_url }),
-      ...(occurrence_id == null ? {} : { occurrence: occurrence_id }),
-    };
+    // Driven off the same map the delete loop's second half is derived from, so a key can't be
+    // deleted here and then forgotten on the way back in — which would be silent data loss with no
+    // type error to catch it.
+    for (const [appKey, upstreamKey] of Object.entries(RENAMED_REGISTRANT_KEYS)) {
+      const value = body[appKey as keyof typeof body];
+
+      if (value != null) {
+        upstream[upstreamKey] = value;
+      }
+    }
+
+    return upstream;
   }
 
   /**

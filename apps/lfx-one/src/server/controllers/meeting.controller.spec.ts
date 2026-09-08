@@ -99,19 +99,29 @@ vi.mock('../services/logger.service', () => ({
  * it, but the double carries `validationErrors: ValidationError[]` — the real class's own property,
  * populated by its own factories' rules — rather than a convenient `fields` map. A double with a
  * shape of its own lets an assertion pin a contract that exists nowhere but this file: it would keep
- * passing after the production error changed, and it silently discarded the `message` that
- * `forField` is called with, which is the part a caller actually reads.
+ * passing after the production error changed.
+ *
+ * The two factories' `message` strings are mirrored too, including the detail that `forField`
+ * *discards* the message it is handed and reports `Validation failed for <field>` instead, putting
+ * the caller's message only inside `validationErrors`. An earlier version of this double passed the
+ * message straight to `super()`, which would have let a handler that reads `err.message` pass here
+ * and report something else in production.
  */
 class FakeValidationError extends Error {
-  public constructor(public readonly validationErrors: ValidationError[]) {
-    super('validation');
+  public constructor(
+    message: string,
+    public readonly validationErrors: ValidationError[]
+  ) {
+    super(message);
   }
 }
 vi.mock('../errors', () => ({
   ServiceValidationError: {
-    forField: (field: string, message: string) => new FakeValidationError([{ field, message, code: 'FIELD_VALIDATION_ERROR' }]),
+    forField: (field: string, message: string) =>
+      new FakeValidationError(`Validation failed for ${field}`, [{ field, message, code: 'FIELD_VALIDATION_ERROR' }]),
     fromFieldErrors: (fieldErrors: Record<string, string | string[]>) =>
       new FakeValidationError(
+        'Validation failed',
         Object.entries(fieldErrors).map(([field, messages]) => ({
           field,
           message: Array.isArray(messages) ? messages.join(', ') : messages,
@@ -406,6 +416,9 @@ describe('MeetingController', () => {
       ['sends a non-numeric header', 'abc'],
       ['sends a negative header', '-1'],
       ['sends a fractional header', '12.5'],
+      ['sends a hexadecimal header', '0x10'],
+      ['sends an exponent-notation header', '1e3'],
+      ['sends a signed header', '+8'],
     ])('records a null content length when the request %s', async (_label, header) => {
       const req = buildReq({ body: [{ email: 'a@example.com' }] }, header === undefined ? {} : { 'content-length': header });
 

@@ -9,7 +9,7 @@ import { MeetingService } from '@services/meeting.service';
 import { PersonaService } from '@services/persona.service';
 import { ProjectContextService } from '@services/project-context.service';
 import { MessageService } from 'primeng/api';
-import { beforeEach, describe, expect, it, vi } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
 import { MeetingComposerFormService } from './meeting-composer-form.service';
 import { MeetingComposerRailComponent } from './meeting-composer-rail.component';
@@ -24,6 +24,9 @@ import { MeetingComposerService } from './meeting-composer.service';
  * ceiling and the "one past the furthest visited" frontier — are asserted, because either one alone
  * still passes the obvious cases: with only the ceiling, clearing the two required sections unlocks all
  * three optional ones at once; with only the frontier, a blank required section is walkable past.
+ *
+ * The last block covers the compact chip row's auto-scroll, which is the one behavior here that is not
+ * a pure function of the rows — it reads the rendered DOM.
  */
 describe('MeetingComposerRailComponent', () => {
   let fixture: ComponentFixture<MeetingComposerRailComponent>;
@@ -36,6 +39,29 @@ describe('MeetingComposerRailComponent', () => {
     rows()
       .filter((candidate) => candidate.reachable)
       .map((candidate) => candidate.section.id);
+
+  /**
+   * Drops the template for the blocks that only read `rows()`.
+   *
+   * Called per block rather than in the shared `beforeEach` because the compact block below needs the
+   * real markup — its subject is an `afterRenderEffect` that queries the rendered chip, so a stub would
+   * leave it asserting against an empty DOM while looking like it covered something.
+   */
+  const stubTemplate = (): void => {
+    TestBed.overrideComponent(MeetingComposerRailComponent, { set: { template: '', imports: [] } });
+  };
+
+  /**
+   * Resolves the two services under test.
+   *
+   * Separate from the shared `beforeEach` because the first `inject` instantiates the test module and
+   * `overrideComponent` throws after that — so a block that stubs its template has to stub before it
+   * reaches for a service.
+   */
+  const injectServices = (): void => {
+    composer = TestBed.inject(MeetingComposerService);
+    formService = TestBed.inject(MeetingComposerFormService);
+  };
 
   /** Fills what `details-access` validates, which is what unblocks everything after it. */
   const completeDetails = (): void => {
@@ -55,16 +81,12 @@ describe('MeetingComposerRailComponent', () => {
         { provide: PersonaService, useValue: { currentPersona: () => null } },
       ],
     });
-    // Rendered rows are covered by the section-state assertions below; the template only branches on
-    // them. Dropping it keeps the fixture free of the icon/class markup and of `NgClass`.
-    TestBed.overrideComponent(MeetingComposerRailComponent, { set: { template: '', imports: [] } });
-
-    composer = TestBed.inject(MeetingComposerService);
-    formService = TestBed.inject(MeetingComposerFormService);
   });
 
   describe('create mode', () => {
     beforeEach(() => {
+      stubTemplate();
+      injectServices();
       composer.open({ mode: 'create', projectUid: 'project-1' });
       formService.initialize({ mode: 'create', projectUid: 'project-1' });
 
@@ -150,6 +172,8 @@ describe('MeetingComposerRailComponent', () => {
 
   describe('edit mode', () => {
     beforeEach(() => {
+      stubTemplate();
+      injectServices();
       composer.open({ mode: 'edit', meetingUid: 'meeting-1' });
       // `initialize` is called without `meetingUid` on purpose: the fetch is what this test does not
       // want, and the rail reads mode, not the meeting.
@@ -168,6 +192,85 @@ describe('MeetingComposerRailComponent', () => {
       fixture.componentInstance['onSelect'](row('agenda-resources'));
 
       expect(composer.activeSection()).toBe('agenda-resources');
+    });
+  });
+
+  /**
+   * The compact chip row's `afterRenderEffect`, which scrolls the active chip into view.
+   *
+   * `lg:hidden` is a CSS breakpoint, so at desktop widths the chip row is still in the DOM and the
+   * component's query still finds the chip — the only thing separating "collapsed and visible" from
+   * "present but hidden" is whether the element has been laid out. Getting that wrong is invisible in
+   * the collapsed layout the feature was built for and yanks the desktop composer's scroll position
+   * sideways on every section change, so both branches are pinned here.
+   *
+   * This block renders the real template: the subject is a DOM read, and both `getClientRects` and
+   * `scrollIntoView` are patched on `Element.prototype` rather than on one node because the effect
+   * resolves its own element after the render this test can't reach into.
+   */
+  describe('compact chip row', () => {
+    const originalGetClientRects = Element.prototype.getClientRects;
+    const originalScrollIntoView = Element.prototype.scrollIntoView;
+    let scrolled: { testId: string | null; options: unknown }[];
+
+    /** jsdom performs no layout, so both states are stated outright rather than left to the default. */
+    const setLaidOut = (laidOut: boolean): void => {
+      Element.prototype.getClientRects = () => (laidOut ? [new DOMRect(0, 0, 120, 32)] : []) as unknown as DOMRectList;
+    };
+
+    const renderRail = (compact: boolean): void => {
+      fixture = TestBed.createComponent(MeetingComposerRailComponent);
+      fixture.componentRef.setInput('compact', compact);
+      // `TestBed.tick()` rather than `fixture.detectChanges()`: the latter runs this view's change
+      // detection, and `afterRenderEffect` only flushes on an application tick.
+      TestBed.tick();
+    };
+
+    beforeEach(() => {
+      scrolled = [];
+      // jsdom leaves `scrollIntoView` unimplemented, so this is a stand-in as much as a spy. The
+      // element is recorded by test id because the assertion is about *which* chip moved.
+      Element.prototype.scrollIntoView = function (options?: boolean | ScrollIntoViewOptions) {
+        scrolled.push({ testId: (this as Element).getAttribute('data-testid'), options });
+      };
+
+      injectServices();
+      composer.open({ mode: 'create', projectUid: 'project-1' });
+      formService.initialize({ mode: 'create', projectUid: 'project-1' });
+    });
+
+    afterEach(() => {
+      Element.prototype.getClientRects = originalGetClientRects;
+      Element.prototype.scrollIntoView = originalScrollIntoView;
+    });
+
+    it('scrolls the active chip into view once the row is laid out', () => {
+      setLaidOut(true);
+
+      renderRail(true);
+
+      // `nearest`/`center` and not `smooth`: the row is scrolled sideways under an already-open
+      // composer, so this has to be the minimum movement that reveals the chip.
+      expect(scrolled).toEqual([{ testId: 'meeting-composer-rail-compact-details-access', options: { block: 'nearest', inline: 'center' } }]);
+    });
+
+    it('leaves the scroll position alone when the chip row is in the DOM but not laid out', () => {
+      // What `lg:hidden` produces: the query still finds the chip, and `getClientRects()` is empty for
+      // anything `display: none`. Scrolling here would move the page behind a row nobody can see.
+      setLaidOut(false);
+
+      renderRail(true);
+
+      expect(fixture.nativeElement.querySelector('[data-active-chip]')).not.toBeNull();
+      expect(scrolled).toEqual([]);
+    });
+
+    it('never scrolls in the vertical layout, however the rail is laid out', () => {
+      setLaidOut(true);
+
+      renderRail(false);
+
+      expect(scrolled).toEqual([]);
     });
   });
 });

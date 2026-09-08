@@ -29,11 +29,17 @@
 /**
  * Escapes a value so it can only ever be one segment of an upstream URL path
  * @description Upstream paths are built by interpolating identifiers into a template string, and
- * some of those identifiers arrive in a request *body*, where Express applies no per-segment
- * parsing at all. A raw `../../something` would then be normalized away by the URL parser and aim
- * the request at a different endpoint on the same service, still carrying the caller's bearer
- * token. Encoding keeps a traversal attempt as a literal (unmatched) identifier, so it 404s
- * upstream instead of resolving somewhere else.
+ * `MicroserviceProxyService` concatenates the result onto the base URL without encoding anything.
+ * A raw `../../something` is then normalized away by the URL parser and aims the request at a
+ * different endpoint on the same service, still carrying the caller's credentials. Encoding keeps a
+ * traversal attempt as a literal (unmatched) identifier, so it 404s upstream instead of resolving
+ * somewhere else.
+ *
+ * Applied to every interpolated identifier, whatever its source. A body-supplied id is the obvious
+ * case, but a path parameter is not safe either: Express percent-decodes `req.params`, so a `%2F` in
+ * the request URL arrives as a real `/` in the value. The distinction is not worth tracking per call
+ * site — an id that reaches this function is either already URL-safe, in which case encoding is a
+ * no-op, or it is not, in which case encoding is exactly what was missing.
  *
  * A well-formed identifier — the UUIDs the meeting service issues — contains nothing
  * `encodeURIComponent` touches, so this is a no-op on every legitimate value.

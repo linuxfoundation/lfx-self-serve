@@ -55,15 +55,7 @@ export class ComposerGuestsComponent {
    * name three times per row and the secondary line twice. Computing them here runs each once per
    * guest, and only when the list itself changes.
    */
-  protected readonly guestRows = computed<ComposerGuestRow[]>(() =>
-    this.visibleGuests().map((guest) => ({
-      guest,
-      trackId: guest.uid || guest.tempId || '',
-      initials: avatarInitials(guest.first_name, guest.last_name, guest.email),
-      displayName: `${guest.first_name} ${guest.last_name}`,
-      secondaryLine: [guest.email, guest.org_name].filter(Boolean).join(' · '),
-    }))
-  );
+  protected readonly guestRows: Signal<ComposerGuestRow[]> = this.initGuestRows();
 
   private readonly invitedEmails: Signal<Set<string>> = computed(() => new Set(this.visibleGuests().map((guest) => guest.email?.toLowerCase() ?? '')));
 
@@ -118,6 +110,29 @@ export class ComposerGuestsComponent {
 
   protected onCommitteeMembersChange(members: CommitteeMember[]): void {
     this.formService.syncCommitteeMembers(members);
+  }
+
+  private initGuestRows(): Signal<ComposerGuestRow[]> {
+    return computed(() =>
+      this.visibleGuests().map((guest, index) => ({
+        guest,
+        // The index is the last resort, not the preferred key: it is unstable across a reorder,
+        // which is exactly what `track` exists to survive. It is still better than the `''` it
+        // replaced — two uid-less, tempId-less guests would both key on the empty string, and a
+        // duplicate `track` key is a runtime error rather than a degraded animation. Nothing
+        // produces such a guest today (`newGuestDefaults` always stamps a `tempId`, and loaded
+        // registrants carry a `uid`), so this arm only fires if upstream returns one with neither.
+        trackId: guest.uid || guest.tempId || guest.email || `guest-${index}`,
+        initials: avatarInitials(guest.first_name, guest.last_name, guest.email),
+        // Filtered and joined rather than interpolated into a template literal. The template this
+        // replaced rendered the two names with `{{ }}`, which prints nothing for a nullish value; a
+        // literal prints the string `"undefined"`. Both names are typed as required, so this only
+        // matters for a registrant that arrives from upstream without one — but that is exactly the
+        // row where a visible `"undefined"` would be worst.
+        displayName: [guest.first_name, guest.last_name].filter(Boolean).join(' '),
+        secondaryLine: [guest.email, guest.org_name].filter(Boolean).join(' · '),
+      }))
+    );
   }
 
   private openManualDialog(prefill: Record<string, unknown> | null): void {

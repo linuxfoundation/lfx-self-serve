@@ -6,6 +6,8 @@ import type https from 'node:https';
 import type { AddressInfo } from 'node:net';
 import { afterAll, beforeAll, describe, expect, it, vi } from 'vitest';
 
+import { encodePathSegment } from './url-validation';
+
 /**
  * Drives the REAL `fetchSafeUrl` against a real socket.
  *
@@ -91,5 +93,43 @@ describe('fetchSafeUrl response byte ceiling', () => {
     vi.mocked(dns.promises.resolve4).mockResolvedValueOnce(['10.0.0.5']);
 
     await expect(fetchSafeUrl('https://events.example.com/page', new AbortController().signal)).rejects.toThrow(/private IP/);
+  });
+});
+
+/**
+ * `encodePathSegment` is a one-line alias for `encodeURIComponent`, and that is exactly why it is
+ * tested: the thing worth pinning is not the encoding itself but the property the call sites depend
+ * on — that whatever an attacker puts in an identifier, the result is still one path segment.
+ *
+ * Without this, the function reads like a pointless wrapper and the obvious "simplification" is to
+ * inline it or drop it, silently un-fixing a traversal that reaches an internal service under the
+ * caller's own credentials.
+ */
+describe('encodePathSegment', () => {
+  it.each([
+    ['a parent-directory traversal', '../../itx/projects/pwn'],
+    ['an absolute path', '/itx/projects/pwn'],
+    ['a bare separator', 'a/b'],
+    ['an already-encoded separator, so it cannot be decoded back into one', '..%2F..%2Fadmin'],
+  ])('leaves no path separator in the output for %s', (_label, hostile) => {
+    const encoded = encodePathSegment(hostile);
+
+    expect(encoded).not.toContain('/');
+    // The URL parser resolves `.` and `..` only between separators, so removing the separators is
+    // what defuses the traversal — the dots themselves are harmless.
+    expect(new URL(`https://svc.example/itx/meetings/${encoded}/registrants`).pathname).toBe(`/itx/meetings/${encoded}/registrants`);
+  });
+
+  it('strips the query and fragment delimiters that would otherwise truncate the path', () => {
+    // `?` and `#` end the path, so an unencoded one turns the rest of the template — including the
+    // sub-resource the route was aiming at — into a query string the upstream router never sees.
+    expect(encodePathSegment('uid?x=1#frag')).toBe('uid%3Fx%3D1%23frag');
+  });
+
+  it.each([
+    ['a uuid', '7f3c1a2e-4b5d-4e6f-8a9b-0c1d2e3f4a5b'],
+    ['a slug', 'cncf-kubernetes'],
+  ])('is a no-op on %s, the shape every legitimate identifier has', (_label, identifier) => {
+    expect(encodePathSegment(identifier)).toBe(identifier);
   });
 });
