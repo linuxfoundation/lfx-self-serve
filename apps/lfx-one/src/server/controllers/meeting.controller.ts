@@ -2,6 +2,7 @@
 // SPDX-License-Identifier: MIT
 
 import { MEETING_AGENDA_MAX_LENGTH, MEETING_AGENDA_PROMPT_MAX_LENGTH } from '@lfx-one/shared/constants';
+import { MeetingType } from '@lfx-one/shared/enums';
 import {
   AttachmentCategory,
   BatchRegistrantOperationResponse,
@@ -621,11 +622,14 @@ export class MeetingController {
    */
   public async addMeetingRegistrants(req: Request, res: Response, next: NextFunction): Promise<void> {
     const { uid } = req.params;
-    const registrantData: CreateMeetingRegistrantRequest[] =
-      req.body?.map((registrant: CreateMeetingRegistrantRequest) => ({
-        ...registrant,
-        meeting_id: uid,
-      })) || [];
+    // Shape-guarded for the same reason as `updateMeetingRegistrants`: this runs outside the `try`,
+    // so a non-array body would throw before any log line exists to explain it.
+    const registrantData: CreateMeetingRegistrantRequest[] = Array.isArray(req.body)
+      ? req.body.map((registrant: CreateMeetingRegistrantRequest) => ({
+          ...registrant,
+          meeting_id: uid,
+        }))
+      : [];
 
     const startTime = logger.startOperation(req, 'add_meeting_registrants', {
       meeting_id: uid,
@@ -712,14 +716,20 @@ export class MeetingController {
    */
   public async updateMeetingRegistrants(req: Request, res: Response, next: NextFunction): Promise<void> {
     const { uid } = req.params;
-    const updateData: { uid: string; changes: UpdateMeetingRegistrantRequest }[] =
-      req.body?.map((update: { uid: string; changes: UpdateMeetingRegistrantRequest }) => ({
-        ...update,
-        changes: {
-          ...MeetingController.stripCommitteeUid(update.changes),
-          meeting_id: uid,
-        },
-      })) || [];
+    // `Array.isArray` rather than `req.body?.map`, and `update?.changes` rather than `update.changes`:
+    // this runs before `startOperation` and outside the `try`, so a throw here escapes the handler as
+    // an unhandled rejection with no log line at all. The declared types are a compile-time guarantee
+    // only — a client can PUT `{}` or `[{ "uid": "x" }]` past them. An empty list falls through to the
+    // "No registrants provided" validation below, which is the 400 those bodies deserve.
+    const updateData: { uid: string; changes: UpdateMeetingRegistrantRequest }[] = Array.isArray(req.body)
+      ? req.body.map((update: { uid: string; changes?: UpdateMeetingRegistrantRequest }) => ({
+          ...update,
+          changes: {
+            ...MeetingController.stripCommitteeUid(update?.changes),
+            meeting_id: uid,
+          },
+        }))
+      : [];
 
     const startTime = logger.startOperation(req, 'update_meeting_registrants', {
       meeting_id: uid,
@@ -1510,16 +1520,21 @@ export class MeetingController {
    * Generate meeting agenda using AI
    */
   public async generateAgenda(req: Request, res: Response, next: NextFunction): Promise<void> {
+    // Narrowed to the enum once, up front, and reused for every downstream consumer — the log lines
+    // here and in `AiService`, and the value forwarded into the prompt. `meetingType` has a closed value
+    // set, so unlike the free-text descriptors it needs no length budget: anything outside the set is
+    // not a meeting type and is dropped rather than truncated. Doing this once is the point — bounding
+    // only the start line left the INFO success line and `AiService`'s own log carrying the raw value,
+    // which is the higher-retention pair of the three.
+    const meetingType = MeetingController.readMeetingType(req.body?.['meetingType']);
+
     const startTime = logger.startOperation(req, 'generate_agenda', {
-      // Bounded before it is logged: nothing validates `meetingType` at this point, and the request
-      // body is client content behind a 15mb limit. It reaches the prompt only through
-      // `getMeetingTypeDescription`'s exhaustive switch, so the log is the only exposure.
-      meeting_type: MeetingController.readPromptField(req.body['meetingType']) || null,
-      has_context: !!req.body['context'],
+      meeting_type: meetingType ?? null,
+      has_context: !!req.body?.['context'],
     });
 
     try {
-      const { meetingType, projectName: rawProjectName, maxCharacters, title: rawTitle, context: rawContext } = req.body;
+      const { projectName: rawProjectName, maxCharacters, title: rawTitle, context: rawContext } = req.body;
       // A title / type / project are not guaranteed to exist: edit mode drops the rail's section
       // locking, so the organizer can request an agenda having just cleared the title, and the
       // client's project context resolves asynchronously. Only require enough signal to write a
@@ -1587,7 +1602,7 @@ export class MeetingController {
       // wizard, so track how it's actually being invoked (and how much it costs) per request.
       logger.success(req, 'generate_agenda', startTime, {
         estimated_duration: response.estimatedDuration,
-        meeting_type: meetingType || null,
+        meeting_type: meetingType ?? null,
         has_title: !!title,
         has_project_name: !!projectName,
         has_context: !!context,
@@ -1874,7 +1889,11 @@ export class MeetingController {
    * enforces, using the edit endpoint instead. Attribution is set when a guest is added and never
    * edited, so stripping costs nothing.
    */
-  private static stripCommitteeUid(changes: UpdateMeetingRegistrantRequest): UpdateMeetingRegistrantRequest {
+  private static stripCommitteeUid(changes: UpdateMeetingRegistrantRequest | undefined): UpdateMeetingRegistrantRequest {
+    if (!changes) {
+      return {} as UpdateMeetingRegistrantRequest;
+    }
+
     // eslint-disable-next-line @typescript-eslint/no-unused-vars -- destructure-to-strip: the key is deleted, not read
     const { committee_uid: _dropped, ...rest } = changes as UpdateMeetingRegistrantRequest & { committee_uid?: unknown };
 
@@ -1892,8 +1911,9 @@ export class MeetingController {
    * the point this runs, so letting the error out fails the whole batch cleanly and the organizer can
    * retry. An empty set is reserved for the case it actually describes: a meeting with no committees.
    *
-   * `access: false` because only `committees[].uid` is read here — the default would additionally pay
-   * a committee-name query fan-out and an FGA access check, both discarded.
+   * `access: false` because only `committees[].uid` is read here, and the default would additionally
+   * pay an FGA access check that is discarded. It does *not* skip `getCommitteeNameMap` — that runs
+   * unconditionally inside `getMeetingById` — so this saves the access check, not the name query.
    */
   private async getMeetingCommitteeUids(req: Request, meetingUid: string): Promise<Set<string>> {
     const meeting = await this.meetingService.getMeetingById(req, meetingUid, 'v1_meeting', { access: false });
@@ -1936,7 +1956,7 @@ export class MeetingController {
         // Counts only. `committee_uid` is unvalidated client content on an unbounded batch behind a
         // 15mb body limit, and `logger.warning` passes metadata through untruncated — logging the
         // values would let one request push megabytes of attacker-chosen strings into CloudWatch.
-        unassociated: requestedUids.length - v2Uids.length,
+        unassociated_count: requestedUids.length - v2Uids.length,
       });
     }
 
@@ -1976,6 +1996,18 @@ export class MeetingController {
    * leading budget's worth of signal, so a descriptor the organizer typed is never silently discarded
    * in full and the client guard mirrors this one exactly.
    */
+  /**
+   * Narrows a client-supplied meeting type to the enum, or drops it.
+   * @description `meetingType` is the one prompt input with a closed value set, and
+   * `getMeetingTypeDescription` already falls back to a generic descriptor for anything it doesn't
+   * recognise — so a value outside the set carries no signal and only exists to be logged and
+   * interpolated. Dropping it is strictly better than truncating it, which is what the free-text
+   * descriptors get.
+   */
+  private static readMeetingType(value: unknown): MeetingType | undefined {
+    return typeof value === 'string' && (Object.values(MeetingType) as string[]).includes(value) ? (value as MeetingType) : undefined;
+  }
+
   private static readPromptField(value: unknown): string | undefined {
     if (typeof value !== 'string') {
       return undefined;

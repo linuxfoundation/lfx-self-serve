@@ -61,7 +61,11 @@ export class AiService {
     // that ends up in the prompt, and the controller's own truncation telemetry logs lengths only for
     // exactly that reason. The success log downstream already reports `has_project_name`.
     const startTime = logger.startOperation(req, 'generate_meeting_agenda', {
-      meetingType: request.meetingType,
+      // `meetingType` is typed as the enum but arrives from a request body, and a type is not a
+      // runtime guarantee — an unrecognized value would be logged verbatim. `getMeetingTypeDescription`
+      // already defaults anything off the enum to a generic descriptor, so it never reaches the
+      // prompt; this log line was the only place an arbitrary string still got through.
+      meetingType: AiService.knownMeetingType(request.meetingType),
       titleLength: request.title?.length ?? 0,
       hasContext: !!request.context,
       hasProjectName: !!request.projectName,
@@ -559,6 +563,11 @@ export class AiService {
   }
 
   /** `default` also covers an unset type — the helper is reachable before one is chosen. */
+  /** Returns the value only when it is an actual `MeetingType` member, else `null`. */
+  private static knownMeetingType(value: unknown): MeetingType | null {
+    return typeof value === 'string' && (Object.values(MeetingType) as string[]).includes(value) ? (value as MeetingType) : null;
+  }
+
   private getMeetingTypeDescription(meetingType?: MeetingType): string {
     switch (meetingType) {
       case MeetingType.BOARD:

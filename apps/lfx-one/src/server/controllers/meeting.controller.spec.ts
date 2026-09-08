@@ -12,8 +12,10 @@ const MEETING_AGENDA_PROMPT_MAX_LENGTH = 1000;
 const MEETING_ID = 'meeting-1111';
 const V2_COMMITTEE_UID = 'cmte-v2-aaaa';
 const V1_COMMITTEE_SFID = 'a09v1SFIDaaaa';
+const USER_TOKEN = 'user-bearer-token';
+const M2M_TOKEN = 'm2m-bearer-token';
 
-const { meetingSvc, aiSvc, committeeSvc, resolveCommitteeV2UidsToV1IdsMock } = vi.hoisted(() => ({
+const { meetingSvc, aiSvc, committeeSvc, resolveCommitteeV2UidsToV1IdsMock, generateM2MTokenMock } = vi.hoisted(() => ({
   meetingSvc: {
     getMeetingById: vi.fn(),
     getMeetingRegistrants: vi.fn(),
@@ -24,12 +26,25 @@ const { meetingSvc, aiSvc, committeeSvc, resolveCommitteeV2UidsToV1IdsMock } = v
   aiSvc: { generateMeetingAgenda: vi.fn() },
   committeeSvc: { getCommitteeById: vi.fn(), getCommitteeMembers: vi.fn() },
   resolveCommitteeV2UidsToV1IdsMock: vi.fn(),
+  generateM2MTokenMock: vi.fn(),
 }));
 
 // The `@lfx-one/shared/*` path alias isn't wired into vitest, and the controller only uses those
 // imports as types — stub the barrels so their runtime module graphs never load.
 vi.mock('@lfx-one/shared/interfaces', () => ({}));
-vi.mock('@lfx-one/shared/enums', () => ({}));
+// `MeetingType` is imported as a value (the controller narrows client input against
+// `Object.values(MeetingType)`), so the stub has to carry the real members rather than being empty.
+vi.mock('@lfx-one/shared/enums', () => ({
+  MeetingType: {
+    BOARD: 'Board',
+    MAINTAINERS: 'Maintainers',
+    MARKETING: 'Marketing',
+    TECHNICAL: 'Technical',
+    LEGAL: 'Legal',
+    OTHER: 'Other',
+    NONE: 'None',
+  },
+}));
 // Literals rather than the consts above: `vi.mock` factories are hoisted, so they can't close over
 // module-level bindings. Kept in sync with `MEETING_AGENDA_*` in the shared constants barrel.
 vi.mock('@lfx-one/shared/constants', () => ({ MEETING_AGENDA_MAX_LENGTH: 2000, MEETING_AGENDA_PROMPT_MAX_LENGTH: 1000 }));
@@ -52,7 +67,7 @@ vi.mock('../helpers/committee-v1-mapping.helper', () => ({
   resolveCommitteeV2UidsToV1Ids: resolveCommitteeV2UidsToV1IdsMock,
 }));
 vi.mock('../utils/auth-helper', () => ({ getEffectiveEmail: vi.fn(() => 'user@example.com') }));
-vi.mock('../utils/m2m-token.util', () => ({ generateM2MToken: vi.fn().mockResolvedValue('m2m-bearer-token') }));
+vi.mock('../utils/m2m-token.util', () => ({ generateM2MToken: generateM2MTokenMock }));
 
 vi.mock('../services/meeting.service', () => ({ MeetingService: vi.fn(() => meetingSvc) }));
 vi.mock('../services/ai.service', () => ({ AiService: vi.fn(() => aiSvc) }));
@@ -85,6 +100,9 @@ vi.mock('../errors', () => ({
 }));
 
 const { MeetingController } = await import('./meeting.controller');
+// The stubbed logger, imported after the mock is registered, so the metadata assertions read the same
+// object the controller writes to.
+const { logger } = await import('../services/logger.service');
 
 function buildRes(): Response {
   const res = { status: vi.fn(() => res), json: vi.fn(() => res), send: vi.fn(() => res) } as unknown as Response;
@@ -199,6 +217,32 @@ describe('MeetingController', () => {
 
       expect(aiSvc.generateMeetingAgenda).toHaveBeenCalledWith(expect.anything(), expect.objectContaining({ maxCharacters: expected }));
     });
+
+    // `meetingType` is the one prompt input with a closed value set, and it lands in two log lines
+    // (this route's start line and `AiService`'s own) plus the prompt. Narrowing to the enum bounds all
+    // three at once — a 15mb string on a route behind `express.json({ limit: '15mb' })` would otherwise
+    // reach CloudWatch verbatim, and `getMeetingTypeDescription` falls back to a generic descriptor for
+    // anything off the enum anyway, so an unrecognized value carries no signal worth keeping.
+    it('forwards a recognized meeting type verbatim', async () => {
+      await controller.generateAgenda(buildReq({ body: { title: 'TAC Monthly', meetingType: 'Technical' } }), buildRes(), next);
+
+      expect(aiSvc.generateMeetingAgenda).toHaveBeenCalledWith(expect.anything(), expect.objectContaining({ meetingType: 'Technical' }));
+    });
+
+    it.each([
+      ['an unrecognized string', 'Definitely Not A Meeting Type'],
+      ['an oversized string', 'z'.repeat(50_000)],
+      ['a non-string value', { toString: (): string => 'Technical' }],
+    ])('drops %s rather than logging or prompting on it', async (_label, supplied) => {
+      const req = buildReq({ body: { title: 'TAC Monthly', meetingType: supplied } });
+
+      await controller.generateAgenda(req, buildRes(), next);
+
+      const [, request] = aiSvc.generateMeetingAgenda.mock.calls[0];
+      expect(request.meetingType).toBeUndefined();
+      // Dropped, not truncated: a prefix of an invalid type is still an invalid type.
+      expect(logger.startOperation).toHaveBeenCalledWith(req, 'generate_agenda', expect.objectContaining({ meeting_type: null }));
+    });
   });
 
   describe('addMeetingRegistrants', () => {
@@ -275,6 +319,16 @@ describe('MeetingController', () => {
       expect(resolveCommitteeV2UidsToV1IdsMock).not.toHaveBeenCalled();
       expect(meetingSvc.addMeetingRegistrant).toHaveBeenCalledWith(req, expect.objectContaining({ email: 'a@example.com' }));
     });
+
+    // Same unprotected position as the update endpoint's body map — see the note there.
+    it('rejects a non-array body as a validation error rather than throwing', async () => {
+      const req = buildReq({ body: { email: 'a@example.com' } });
+
+      await controller.addMeetingRegistrants(req, buildRes(), next);
+
+      expect(next).toHaveBeenCalledWith(expect.any(FakeValidationError));
+      expect(meetingSvc.addMeetingRegistrant).not.toHaveBeenCalled();
+    });
   });
 
   describe('updateMeetingRegistrants', () => {
@@ -292,6 +346,32 @@ describe('MeetingController', () => {
       const [, , , forwarded] = meetingSvc.updateMeetingRegistrant.mock.calls[0];
       expect(forwarded).not.toHaveProperty('committee_uid');
       expect(forwarded).toMatchObject({ email: 'a@example.com', meeting_id: MEETING_ID });
+    });
+
+    // The body map runs before `startOperation` and outside the `try`, and `routes/meetings.route.ts`
+    // registers a bare async arrow that Express 4 does not catch — so a throw here is an unhandled
+    // rejection that kills the SSR worker with no log line at all. `changes` and the array-ness of the
+    // body are compile-time guarantees only; both of these bodies are reachable over HTTP.
+    it('handles an entry that omits changes instead of throwing', async () => {
+      meetingSvc.updateMeetingRegistrant.mockImplementation((_req: Request, _uid: string, _regUid: string, changes: Record<string, unknown>) =>
+        Promise.resolve(changes)
+      );
+      const req = buildReq({ body: [{ uid: 'reg-1' }] });
+
+      await controller.updateMeetingRegistrants(req, buildRes(), next);
+
+      expect(next).not.toHaveBeenCalledWith(expect.any(TypeError));
+      const [, , , forwarded] = meetingSvc.updateMeetingRegistrant.mock.calls[0];
+      expect(forwarded).toEqual({ meeting_id: MEETING_ID });
+    });
+
+    it('rejects a non-array body as a validation error rather than throwing', async () => {
+      const req = buildReq({ body: { uid: 'reg-1' } });
+
+      await controller.updateMeetingRegistrants(req, buildRes(), next);
+
+      expect(next).toHaveBeenCalledWith(expect.any(FakeValidationError));
+      expect(meetingSvc.updateMeetingRegistrant).not.toHaveBeenCalled();
     });
   });
 
@@ -356,6 +436,7 @@ describe('MeetingController', () => {
       resolveCommitteeV2UidsToV1IdsMock.mockResolvedValue(new Map([[V2_COMMITTEE_UID, V1_COMMITTEE_SFID]]));
       committeeSvc.getCommitteeById.mockResolvedValue({ uid: V2_COMMITTEE_UID, name: 'TAC', category: 'Technical' });
       committeeSvc.getCommitteeMembers.mockResolvedValue([{ email: 'a@example.com', role: { name: 'Chair' }, voting: { status: 'Voting Rep' } }]);
+      generateM2MTokenMock.mockResolvedValue(M2M_TOKEN);
     });
 
     it('enriches committee metadata for a registrant of the meeting', async () => {
@@ -377,6 +458,55 @@ describe('MeetingController', () => {
 
       expect(next).not.toHaveBeenCalled();
       expect(res.json).toHaveBeenCalledWith([registrant]);
+    });
+
+    // The M2M token is swapped onto `req` for the privileged registrant reads and must come back off
+    // before the request continues its lifetime. `req` outlives this handler — SSR rendering and any
+    // later middleware read `req.bearerToken` — so a leaked M2M token means subsequent upstream calls
+    // are made with application credentials instead of the user's, silently bypassing per-user
+    // authorization. The restore lives in a `finally`, and these cover each way out of that block.
+    describe('bearer token restore', () => {
+      it('restores the user bearer token after the privileged reads succeed', async () => {
+        const req = buildReq({ bearerToken: USER_TOKEN } as Partial<Request>);
+
+        await controller.getMyMeetingRegistrants(req, buildRes(), next);
+
+        // Proof the swap actually happened, so the restore assertion isn't vacuous.
+        expect(meetingSvc.getMeetingRegistrants).toHaveBeenCalled();
+        expect(req.bearerToken).toBe(USER_TOKEN);
+      });
+
+      it('restores the user bearer token on the non-registrant, non-organizer early return', async () => {
+        meetingSvc.getMeetingById.mockResolvedValue({ uid: MEETING_ID, organizer: false, committees: [] });
+        meetingSvc.getMeetingRegistrantsByEmail.mockResolvedValue([]);
+        const req = buildReq({ bearerToken: USER_TOKEN } as Partial<Request>);
+        const res = buildRes();
+
+        await controller.getMyMeetingRegistrants(req, res, next);
+
+        expect(res.json).toHaveBeenCalledWith([]);
+        expect(req.bearerToken).toBe(USER_TOKEN);
+      });
+
+      it('restores the user bearer token when a privileged read throws', async () => {
+        meetingSvc.getMeetingRegistrants.mockRejectedValue(new Error('upstream 503'));
+        const req = buildReq({ bearerToken: USER_TOKEN } as Partial<Request>);
+
+        await controller.getMyMeetingRegistrants(req, buildRes(), next);
+
+        expect(next).toHaveBeenCalledWith(expect.any(Error));
+        expect(req.bearerToken).toBe(USER_TOKEN);
+      });
+
+      it('deletes the token rather than leaving the M2M one when the request had none', async () => {
+        // Anonymous-ish callers reach here with no bearer token at all. Assigning `undefined` back
+        // would leave the key present, so the restore deletes it — assert the key itself is gone.
+        const req = buildReq();
+
+        await controller.getMyMeetingRegistrants(req, buildRes(), next);
+
+        expect('bearerToken' in req).toBe(false);
+      });
     });
   });
 });

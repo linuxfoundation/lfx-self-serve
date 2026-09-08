@@ -924,7 +924,11 @@ export class MeetingService {
     const sanitizedPayload = logger.sanitize({ updateData });
     logger.debug(req, 'update_meeting_registrant', 'Updating meeting registrant payload', sanitizedPayload);
 
-    const updatedRegistrant = await this.microserviceProxy.proxyRequest<Record<string, unknown>>(
+    // `| null` in the type parameter because that is what actually comes back: `ApiClientService`
+    // maps an empty response body to `null`. Declaring it non-nullable made the guard below read as
+    // always-true to TypeScript, so a future cleanup could have deleted the fallback without a
+    // compile error.
+    const updatedRegistrant = await this.microserviceProxy.proxyRequest<Record<string, unknown> | null>(
       req,
       'LFX_V2_SERVICE',
       `/itx/meetings/${meetingUid}/registrants/${registrantUid}`,
@@ -937,13 +941,15 @@ export class MeetingService {
     // it would report fields as persisted that upstream never stored: `toUpstreamRegistrantBody`
     // deliberately omits nullish `org_name`/`avatar_url`/`occurrence_id` so upstream keeps the old
     // value, and Goa discards `linkedin_profile` outright.
-    if (updatedRegistrant) {
+    // Keys, not truthiness: a 2xx carrying a literal `{}` is truthy, and mapping it would hand the
+    // client back a registrant that lost every field — the exact failure the fallback exists to avoid.
+    if (updatedRegistrant && Object.keys(updatedRegistrant).length > 0) {
       return this.fromUpstreamRegistrant(updatedRegistrant);
     }
 
-    // A body-less 2xx is the one case with nothing else to report: `ApiClientService` turns an empty
-    // body into `null`, so mapping it would return `{}` — and `processRegistrantOperations` hands the
-    // result back to the client as the updated row. The submitted payload is the closest available
+    // A 2xx with no usable body is the one case with nothing else to report: `ApiClientService` turns
+    // an empty body into `null`, so mapping it would return `{}` — and `processRegistrantOperations`
+    // hands the result back to the client as the updated row. The submitted payload is the closest available
     // description of what upstream now stores. It inherits the two caveats above: a cleared
     // organization and a `linkedin_profile` both echo back as if they had been written.
     return { ...updateData } as MeetingRegistrant;
