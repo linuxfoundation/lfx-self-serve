@@ -2,15 +2,35 @@
 <!-- SPDX-License-Identifier: MIT -->
 
 <main class="container mx-auto flex flex-col gap-6 px-4 sm:px-6 lg:px-8" data-testid="org-easycla-page">
-  <header class="flex flex-col gap-2" data-testid="org-easycla-header">
-    <h1 class="font-display font-light text-2xl" data-testid="org-easycla-title">
-      @if (companyName()) {
-        EasyCLA &mdash; {{ companyName() }}
-      } @else {
-        EasyCLA
-      }
-    </h1>
-    <p class="text-sm text-gray-500" data-testid="org-easycla-subtitle">The corporate CLAs your organization has signed across Linux Foundation projects.</p>
+  <header class="flex flex-col gap-4 sm:flex-row sm:items-start sm:justify-between" data-testid="org-easycla-header">
+    <div class="flex flex-col gap-2">
+      <h1 class="font-display font-light text-2xl" data-testid="org-easycla-title">
+        @if (companyName()) {
+          EasyCLA &mdash; {{ companyName() }}
+        } @else {
+          EasyCLA
+        }
+      </h1>
+      <p class="text-sm text-gray-500" data-testid="org-easycla-subtitle">The corporate CLAs your organization holds across Linux Foundation projects.</p>
+    </div>
+
+    <!-- Rendered but not yet operable: the signing hand-off ships separately. It is here now
+         because the no-CLAs empty state tells the viewer to use it, and disabled reads as
+         "not yet available" where an enabled control wired to nothing reads as broken. There is
+         deliberately no click handler to leave behind — enabling it is the signing feature's job. -->
+    <!-- The reason is in the accessible name as well as the tooltip, because the tooltip alone
+         cannot reach everyone it needs to: the directive sits on the non-focusable `<p-button>`
+         host while the button inside it is disabled, so it opens on hover and never on focus.
+         Without this, assistive technology announces only "Sign CLA, disabled" and the viewer is
+         left to guess whether the control is unavailable to them or unavailable to everyone. -->
+    <lfx-button
+      label="Sign CLA"
+      icon="fa-light fa-file-signature"
+      [disabled]="true"
+      ariaLabel="Sign CLA — signing a new CLA from the Organization Lens is coming soon."
+      tooltip="Signing a new CLA from the Organization Lens is coming soon."
+      styleClass="shrink-0"
+      data-testid="org-easycla-sign-cla" />
   </header>
 
   @if (hasNoOrgAccess()) {
@@ -42,10 +62,87 @@
       title="No org selected"
       subtitle="Select an organization to view its CLAs." />
   } @else {
-    <lfx-empty-state
-      data-testid="org-easycla-empty-state"
-      icon="fa-light fa-file-signature"
-      title="No CLAs signed yet"
-      subtitle="Corporate CLAs your organization signs will appear here." />
+    @if (showToolbar()) {
+      <!-- Survives both empty states on purpose: a viewer whose search matched nothing needs the
+           box to revise it. Only the grid and the pager collapse. The Sign CLA button the no-CLAs
+           copy points at is in the header above, outside this block, so it is unaffected. -->
+      <div class="flex" data-testid="org-easycla-toolbar">
+        <!-- The placeholder is not a label: it disappears as soon as anything is typed, leaving a
+             screen reader with an unnamed field.
+
+             `[id]` is bound, not written as a plain attribute. A static `id` would set the wrapper
+             component's input *and* stay on its host element, so two elements would carry the id
+             and `for` would resolve to the wrapper — which labels nothing. The binding reaches only
+             the native input. `org-easycla-list-robust.spec.ts` asserts the association resolves,
+             because a label that names nothing looks identical in the markup to one that works. -->
+        <label for="org-easycla-search-input" class="sr-only">Search CLAs</label>
+        <lfx-input-text
+          [form]="filterForm"
+          control="search"
+          [id]="'org-easycla-search-input'"
+          placeholder="Search CLAs…"
+          icon="fa-light fa-magnifying-glass"
+          class="w-full sm:max-w-xs"
+          dataTest="org-easycla-search" />
+      </div>
+    }
+
+    @if (claLoading()) {
+      <section class="flex flex-col gap-3" data-testid="org-easycla-list-loading">
+        <p-skeleton width="100%" height="6rem" />
+        <p-skeleton width="100%" height="6rem" />
+      </section>
+    } @else if (fetchError()) {
+      <!-- Never the "signed nothing" copy: a failed load and an empty list are different facts,
+           and only one of them is a statement about the organization's legal position. -->
+      <lfx-empty-state
+        data-testid="org-easycla-error-state"
+        icon="fa-light fa-triangle-exclamation"
+        title="We couldn't load your CLAs"
+        subtitle="Something went wrong fetching this organization's corporate CLAs. Refresh the page to try again." />
+    } @else if (showNoClasEmptyState()) {
+      <lfx-empty-state
+        data-testid="org-easycla-empty-state"
+        icon="fa-light fa-file-signature"
+        [title]="noClasTitle()"
+        subtitle='Use "Sign CLA" above to find a CLA and get started.' />
+    } @else if (showNoMatchesEmptyState()) {
+      <lfx-empty-state
+        data-testid="org-easycla-no-matches-state"
+        icon="fa-light fa-magnifying-glass"
+        title="No CLAs match your search"
+        subtitle="Try a different project, foundation, or CLA name." />
+    } @else {
+      <section class="grid grid-cols-1 gap-4 md:grid-cols-2" data-testid="org-easycla-grid">
+        @for (claGroup of pagedClaGroups(); track claGroup.id) {
+          <lfx-org-easycla-card [claGroup]="claGroup" />
+        }
+      </section>
+
+      @if (showPager()) {
+        <div class="flex items-center justify-between gap-4" data-testid="org-easycla-pager">
+          <span class="text-sm text-gray-600" data-testid="org-easycla-page-label">{{ pageLabel() }}</span>
+          <div class="flex gap-2">
+            <lfx-button
+              label="Previous"
+              icon="fa-light fa-arrow-left"
+              [outlined]="true"
+              size="small"
+              [disabled]="onFirstPage()"
+              (onClick)="changePage(-1)"
+              data-testid="org-easycla-prev-page" />
+            <lfx-button
+              label="Next"
+              icon="fa-light fa-arrow-right"
+              iconPos="right"
+              [outlined]="true"
+              size="small"
+              [disabled]="onLastPage()"
+              (onClick)="changePage(1)"
+              data-testid="org-easycla-next-page" />
+          </div>
+        </div>
+      }
+    }
   }
 </main>
