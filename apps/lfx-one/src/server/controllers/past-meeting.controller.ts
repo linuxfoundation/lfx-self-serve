@@ -112,7 +112,7 @@ export class PastMeetingController {
       }
 
       const meeting = await this.meetingService.getPastMeetingById(req, uid);
-      meeting.organizer = await this.isPastMeetingOrganizer(req, meeting, uid);
+      meeting.organizer = await this.canManagePastMeetingParticipants(req, meeting, uid);
 
       const counts = await this.addParticipantsCount(req, uid);
       meeting.individual_registrants_count = counts.individual_registrants_count;
@@ -206,9 +206,9 @@ export class PastMeetingController {
       }
 
       const pastMeeting = await this.meetingService.getPastMeetingById(req, uid);
-      const isOrganizer = await this.isPastMeetingOrganizer(req, pastMeeting, uid);
+      const isAuthorized = await this.canManagePastMeetingParticipants(req, pastMeeting, uid);
 
-      if (!isOrganizer) {
+      if (!isAuthorized) {
         return next(
           new AuthorizationError("You do not have permission to manage this meeting's participants", {
             operation: 'create_past_meeting_participant',
@@ -272,9 +272,9 @@ export class PastMeetingController {
       }
 
       const pastMeeting = await this.meetingService.getPastMeetingById(req, uid);
-      const isOrganizer = await this.isPastMeetingOrganizer(req, pastMeeting, uid);
+      const isAuthorized = await this.canManagePastMeetingParticipants(req, pastMeeting, uid);
 
-      if (!isOrganizer) {
+      if (!isAuthorized) {
         return next(
           new AuthorizationError("You do not have permission to manage this meeting's participants", {
             operation: 'update_past_meeting_participant',
@@ -328,9 +328,9 @@ export class PastMeetingController {
       }
 
       const pastMeeting = await this.meetingService.getPastMeetingById(req, uid);
-      const isOrganizer = await this.isPastMeetingOrganizer(req, pastMeeting, uid);
+      const isAuthorized = await this.canManagePastMeetingParticipants(req, pastMeeting, uid);
 
-      if (!isOrganizer) {
+      if (!isAuthorized) {
         return next(
           new AuthorizationError("You do not have permission to manage this meeting's participants", {
             operation: 'delete_past_meeting_participant',
@@ -376,9 +376,9 @@ export class PastMeetingController {
       }
 
       const pastMeeting = await this.meetingService.getPastMeetingById(req, uid);
-      const isOrganizer = await this.isPastMeetingOrganizer(req, pastMeeting, uid);
+      const isAuthorized = await this.canManagePastMeetingParticipants(req, pastMeeting, uid);
 
-      if (!isOrganizer) {
+      if (!isAuthorized) {
         return next(
           new AuthorizationError('You do not have permission to trigger attendance reconciliation for this meeting', {
             operation: 'reconcile_past_meeting_participants',
@@ -1022,25 +1022,32 @@ export class PastMeetingController {
    * Resolves whether the requesting user may manage a past meeting's participants/attendance —
    * the meeting organizer, a writer on the meeting's project, or an Executive Director of that
    * project (GH-1672 follow-up: reconciliation is no longer organizer-only). Unauthenticated
-   * requests and access-check failures all default to false (fail closed).
+   * requests and access-check failures all default to false (fail closed). The organizer check
+   * runs first and short-circuits, since it covers the common self-service case without needing
+   * the project-level writer/ED lookups.
    */
-  private async isPastMeetingOrganizer(req: Request, pastMeeting: PastMeeting, uid: string): Promise<boolean> {
+  private async canManagePastMeetingParticipants(req: Request, pastMeeting: PastMeeting, uid: string): Promise<boolean> {
     if (!req.oidc?.isAuthenticated()) {
       return false;
     }
 
     try {
-      const [isOrganizer, isProjectWriter, isProjectED] = await Promise.all([
-        this.accessCheckService
-          .addAccessToResource(req, { ...pastMeeting, id: pastMeeting.meeting_and_occurrence_id ?? uid }, 'v1_past_meeting', 'organizer')
-          .then((meetingWithAccess) => meetingWithAccess.organizer ?? false),
+      const isOrganizer = await this.accessCheckService
+        .addAccessToResource(req, { ...pastMeeting, id: pastMeeting.meeting_and_occurrence_id ?? uid }, 'v1_past_meeting', 'organizer')
+        .then((meetingWithAccess) => meetingWithAccess.organizer ?? false);
+
+      if (isOrganizer) {
+        return true;
+      }
+
+      const [isProjectWriter, isProjectED] = await Promise.all([
         pastMeeting.project_uid
           ? this.accessCheckService.checkSingleAccess(req, { resource: 'project', id: pastMeeting.project_uid, access: 'writer' })
           : Promise.resolve(false),
         this.isProjectExecutiveDirector(req, pastMeeting.project_uid),
       ]);
 
-      return isOrganizer || isProjectWriter || isProjectED;
+      return isProjectWriter || isProjectED;
     } catch {
       return false;
     }
