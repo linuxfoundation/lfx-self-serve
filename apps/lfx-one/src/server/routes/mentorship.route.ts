@@ -33,7 +33,7 @@ function handleLogoUploadParseError(err: unknown, req: Request, _res: Response, 
 router.get('/programs/name-available', (req, res, next) => mentorshipController.isProgramNameAvailable(req, res, next));
 router.get('/programs/:programId', (req, res, next) => mentorshipController.getProgram(req, res, next));
 router.get('/programs', (req, res, next) => mentorshipController.getPrograms(req, res, next));
-router.post('/programs', (req, res, next) => mentorshipController.enrollProgram(req, res, next));
+router.post('/programs', blockDuringImpersonation, (req, res, next) => mentorshipController.enrollProgram(req, res, next));
 // Body is the raw image bytes (not multipart), mirroring POST /api/profile/picture-upload.
 router.post(
   '/programs/:programId/logo',
