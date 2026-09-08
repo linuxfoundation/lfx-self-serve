@@ -1,10 +1,14 @@
 // Copyright The Linux Foundation and each contributor to LFX.
 // SPDX-License-Identifier: MIT
 
-import { computed, Injectable, Signal, signal } from '@angular/core';
+import { computed, inject, Injectable, Signal, signal } from '@angular/core';
+import { toObservable } from '@angular/core/rxjs-interop';
 import { environment } from '@environments/environment';
 import { FEATURE_FLAG_OVERRIDE_STORAGE_KEY, User } from '@lfx-one/shared';
 import { Client, EvaluationContext, JsonValue, OpenFeature, ProviderEvents, ProviderStatus } from '@openfeature/web-sdk';
+import { catchError, filter, firstValueFrom, of, timeout } from 'rxjs';
+
+import { DataDogRumService } from './datadog-rum.service';
 
 /**
  * A locally-forced value for one flag, or `undefined` when none is set.
@@ -37,6 +41,8 @@ function readFlagOverride(key: string): boolean | undefined {
   providedIn: 'root',
 })
 export class FeatureFlagService {
+  private readonly dataDogRumService = inject(DataDogRumService);
+
   private client: Client | null = null;
   private readonly isInitialized = signal<boolean>(false);
   private readonly isProviderReady = signal<boolean>(false);
@@ -84,6 +90,36 @@ export class FeatureFlagService {
       console.error('Failed to initialize feature flag service:', error);
       this.isInitialized.set(false);
     }
+  }
+
+  /**
+   * Wait for the provider to reach READY, up to `timeoutMs`.
+   *
+   * Every flag-gated `CanMatch` guard needs this exact wait — the provider can still be
+   * initializing (or stuck, if LaunchDarkly was slow/unreachable during app bootstrap) when a
+   * user navigates. Centralized here so the timeout's fail path is instrumented exactly once,
+   * rather than duplicated per guard — a guard that resolves this way is otherwise a silent
+   * redirect with no way to tell it happened after the fact (see GH-1351); LD's own logger is
+   * disabled in production and a `console.*` call isn't forwarded to RUM.
+   */
+  public async waitForReady(context: { guard: string; flag: string }, timeoutMs = 5000): Promise<boolean> {
+    if (this.isProviderReady()) {
+      return true;
+    }
+
+    const ready = await firstValueFrom(
+      toObservable(this.isProviderReady).pipe(
+        filter((isReady): isReady is true => isReady === true),
+        timeout(timeoutMs),
+        catchError(() => of(false))
+      )
+    );
+
+    if (!ready) {
+      this.dataDogRumService.addError(new Error('Feature flag provider not ready before guard timeout'), context);
+    }
+
+    return ready;
   }
 
   /**

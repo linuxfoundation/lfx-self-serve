@@ -13,6 +13,7 @@ describe('orgLensClaM3EnabledGuard', () => {
   let getFlagOverride: ReturnType<typeof vi.fn>;
   let providerReady: ReturnType<typeof signal<boolean>>;
   let getBooleanFlag: ReturnType<typeof vi.fn>;
+  let waitForReady: ReturnType<typeof vi.fn>;
   let router: {
     parseUrl: ReturnType<typeof vi.fn>;
   };
@@ -26,6 +27,16 @@ describe('orgLensClaM3EnabledGuard', () => {
     getFlagOverride = vi.fn().mockReturnValue(undefined);
     providerReady = signal(true);
     getBooleanFlag = vi.fn().mockReturnValue(signal(false));
+    waitForReady = vi.fn().mockImplementation(
+      (_context: unknown, timeoutMs = 5000) =>
+        new Promise((resolve) => {
+          if (providerReady()) {
+            resolve(true);
+            return;
+          }
+          setTimeout(() => resolve(false), timeoutMs);
+        })
+    );
 
     router = {
       parseUrl: vi.fn().mockImplementation((url: string) => ({ redirected: url })),
@@ -35,7 +46,7 @@ describe('orgLensClaM3EnabledGuard', () => {
       providers: [
         {
           provide: FeatureFlagService,
-          useValue: { getFlagOverride, providerReady: providerReady.asReadonly(), getBooleanFlag },
+          useValue: { getFlagOverride, providerReady: providerReady.asReadonly(), getBooleanFlag, waitForReady },
         },
         { provide: Router, useValue: router },
         { provide: PLATFORM_ID, useValue: 'browser' },
