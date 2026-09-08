@@ -54,23 +54,23 @@ describe('OpenProfileBannerComponent', () => {
     fixture.componentInstance.linkClick.subscribe(linkClick);
   });
 
-  it('hides the banner slot when show is false', () => {
+  it('hides the banner slot when show is false', async () => {
     fixture.componentRef.setInput('show', false);
-    fixture.detectChanges();
+    await fixture.whenStable();
 
     expect(slot().classList.contains('hidden')).toBe(true);
   });
 
-  it('shows the banner slot when show is true', () => {
+  it('shows the banner slot when show is true', async () => {
     fixture.componentRef.setInput('show', true);
-    fixture.detectChanges();
+    await fixture.whenStable();
 
     expect(slot().classList.contains('hidden')).toBe(false);
   });
 
-  it('clicking the link emits linkClick and opens the Intercom messenger', () => {
+  it('clicking the link emits linkClick and opens the Intercom messenger', async () => {
     fixture.componentRef.setInput('show', true);
-    fixture.detectChanges();
+    await fixture.whenStable();
 
     link().click();
 
