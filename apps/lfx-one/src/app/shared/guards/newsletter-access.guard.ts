@@ -56,11 +56,16 @@ export const newsletterAccessGuard: CanActivateFn = (route: ActivatedRouteSnapsh
   // route-project resolution because the page's reconcileRouteProjectContext
   // reuses this shareReplay-cached lookup — returning before it resolves would
   // let chrome paint the stale cookie-restored context for the request's
-  // duration (GH-1570). Fail-open: getProject maps errors to null, and the ED
+  // duration (GH-1570). Fail-open: lookup errors are swallowed to null and the ED
   // is never denied here.
   if (personaService.currentPersona() === 'executive-director') {
     if (projectUid) {
-      return projectService.getProject(projectUid, false).pipe(map(() => true));
+      // Same shareReplay-cached strict lookup as the writer path below, so the ED
+      // deep link also resolves the route project with the one shared request.
+      return projectService.getProjectStrict(projectUid).pipe(
+        catchError(() => of(null)),
+        map(() => true)
+      );
     }
     return true;
   }
@@ -72,10 +77,9 @@ export const newsletterAccessGuard: CanActivateFn = (route: ActivatedRouteSnapsh
     projectService.getProject(slug, false).pipe(
       map((project) => {
         if (project?.writer !== true) {
-          // `_notice: 'access'` mirrors writerGuard's denial convention — AppComponent turns it
-          // into the generic "Access Denied" toast (survives the SSR redirect, unlike a
-          // guard-side MessageService.add, which has no DOM on the server).
-          return router.createUrlTree([overviewPath], { queryParams: { project: slug, _notice: 'access' } });
+          // Legacy list/create denial — plain redirect, no `_notice` toast: GH-1570 requires
+          // the no-`:projectUid` pages to behave exactly as before.
+          return router.createUrlTree([overviewPath], { queryParams: { project: slug } });
         }
         return true;
       })
@@ -91,14 +95,18 @@ export const newsletterAccessGuard: CanActivateFn = (route: ActivatedRouteSnapsh
     // getProject would collapse every failure to null) so the legacy chain below runs
     // only for a CONFIRMED missing project — a transient 5xx must not silently
     // re-check the writer bit against the possibly-stale contextSlug, reintroducing
-    // the wrong-context authorization this guard removed (GH-1570). Uncached, so
-    // reconcileRouteProjectContext's cached getProject re-fetches on activation — one
-    // extra GET per deep link, the price of distinguishing statuses.
+    // the wrong-context authorization this guard removed (GH-1570). The lookup is
+    // shareReplay-cached, so this guard's mount- and child-route invocations and
+    // reconcileRouteProjectContext share the one request per deep link.
     return projectService.getProjectStrict(projectUid).pipe(
       map((resolved): boolean | UrlTree => {
         // The uid lookup already returned the project entity, so check writer
         // directly on it; the resolved slug is only needed for the denial redirect.
         if (resolved.writer !== true) {
+          // `_notice: 'access'` mirrors writerGuard's denial convention — AppComponent turns it
+          // into the generic "Access Denied" toast (survives the SSR redirect, unlike a
+          // guard-side MessageService.add, which has no DOM on the server). Only the
+          // route-project denial carries it; the legacy chain above stays notice-free.
           return router.createUrlTree([overviewPath], { queryParams: { project: resolved.slug, _notice: 'access' } });
         }
         return true;

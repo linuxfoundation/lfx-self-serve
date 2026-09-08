@@ -17,8 +17,9 @@ import { newsletterAccessGuard } from './newsletter-access.guard';
 // Covers the GH-1570 resolution order: the route's own `:projectUid` wins over a stale
 // `?project=` / cookie-restored context (including at the lens mount, where the param lives on
 // the child snapshot), a confirmed-missing uid lookup (400/404) degrades to the legacy slug
-// chain while a transient failure fails closed, and every denial carries `_notice: 'access'`
-// so AppComponent can toast it.
+// chain while a transient failure fails closed. Only route-project (`:projectUid`) denials
+// carry `_notice: 'access'` for AppComponent to toast; legacy-chain denials keep the plain
+// pre-GH-1570 redirect so list/create behave exactly as before.
 describe('newsletterAccessGuard', () => {
   let currentPersona: ReturnType<typeof signal<string>>;
   let activeContext: ReturnType<typeof signal<ProjectContext | null>>;
@@ -95,18 +96,18 @@ describe('newsletterAccessGuard', () => {
     const result = await runGuard(route({ params: { projectUid: 'uid-a', id: 'n1' } }));
 
     expect(result).toBe(true);
-    expect(getProject).toHaveBeenCalledWith('uid-a', false);
+    expect(getProjectStrict).toHaveBeenCalledWith('uid-a');
   });
 
   it('does not deny the executive-director persona when the route-project resolution fails', async () => {
-    // Fail-open: 'uid-gone' is intentionally unseeded, so the lookup resolves null —
+    // Fail-open: 'uid-gone' is intentionally unseeded, so the strict lookup errors 404 —
     // a deleted/unknown project or fetch error must not deny the ED fast path.
     currentPersona.set('executive-director');
 
     const result = await runGuard(route({ params: { projectUid: 'uid-gone', id: 'n1' } }));
 
     expect(result).toBe(true);
-    expect(getProject).toHaveBeenCalledWith('uid-gone', false);
+    expect(getProjectStrict).toHaveBeenCalledWith('uid-gone');
   });
 
   it('authorizes against the route :projectUid rather than a stale query param or cookie-restored context', async () => {
@@ -212,7 +213,8 @@ describe('newsletterAccessGuard', () => {
 
     const result = await runGuard(route());
 
-    expect(result).toEqual({ denied: '/project/overview', opts: { queryParams: { project: 'ctx-slug', _notice: 'access' } } });
+    // Legacy-chain denial keeps the pre-GH-1570 plain redirect — no `_notice` toast.
+    expect(result).toEqual({ denied: '/project/overview', opts: { queryParams: { project: 'ctx-slug' } } });
   });
 
   it('redirects to the project overview when no project can be resolved at all', async () => {

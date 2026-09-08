@@ -127,8 +127,8 @@ export function syncEntityProjectContext<T extends EntityWithProject>(
  *    under the wrong context kind (a foundation-owned newsletter under /project/newsletters), so
  *    the write below only suppresses once the FULL context (isSameProjectContext), the
  *    computed kind, and the URL's ?project= all agree. The resolve hits the shareReplay-cached
- *    getProject — the route's
- *    guard already resolved the same uid on activation — so the happy path costs no request.
+ *    getProjectStrict — the route's newsletterAccessGuard already resolved the same uid on
+ *    activation — so the happy path costs no request.
  *  - NavigationEnd re-applies synchronously from the per-uid resolved cache: query-param-only
  *    navigations (?step=N) don't re-run guards, but MainLayout.syncLensFromRoute re-asserts the
  *    route's DECLARED lens kind on every navigation, clobbering this correction when the route
@@ -138,8 +138,9 @@ export function syncEntityProjectContext<T extends EntityWithProject>(
  *    flash the wrong project for a frame per step change.
  *
  * Call once from the component constructor (injection context is required for toObservable).
- * A failed uid lookup resolves null (relation-gated `getProject(uid, false)`) and leaves the
- * existing context untouched — legacy behavior, same degradation philosophy as the fallback sync.
+ * A failed uid lookup (deleted/unknown project, no viewer relation, or transient error — the
+ * status-preserving `getProjectStrict` failure is caught to null here) leaves the existing
+ * context untouched — legacy behavior, same degradation philosophy as the fallback sync.
  */
 export function reconcileRouteProjectContext(
   routeProjectUid: Signal<string | null>,
@@ -166,11 +167,13 @@ export function reconcileRouteProjectContext(
         if (cached) {
           return of(cached);
         }
-        return projectService.getProject(uid, false).pipe(
+        // getProjectStrict (not getProject): it shares the guard's shareReplay-cached lookup —
+        // the route's newsletterAccessGuard resolved the same uid on activation — so the happy
+        // path costs no extra request. A failed lookup (deleted/unknown project, no viewer
+        // relation, transient error) catches to null: keep the existing context rather than
+        // erroring the page.
+        return projectService.getProjectStrict(uid).pipe(
           map((project) => {
-            // null = deleted/unknown project (or no viewer relation) — keep the
-            // existing context rather than erroring the page.
-            if (!project) return null;
             const resolved = {
               context: {
                 uid: project.uid,
@@ -183,7 +186,8 @@ export function reconcileRouteProjectContext(
             };
             resolvedCache.set(uid, resolved);
             return resolved;
-          })
+          }),
+          catchError(() => of(null))
         );
       }),
       takeUntilDestroyed(destroyRef)

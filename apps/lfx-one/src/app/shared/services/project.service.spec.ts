@@ -140,3 +140,55 @@ describe('ProjectService.getProject', () => {
     expect(result).toEqual(projectA);
   });
 });
+
+describe('ProjectService.getProjectStrict', () => {
+  let service: ProjectService;
+  let httpGet: ReturnType<typeof vi.fn>;
+
+  const projectA = { uid: 'uid-a', slug: 'slug-a', name: 'Project A' } as Project;
+
+  beforeEach(() => {
+    httpGet = vi.fn().mockReturnValue(of(projectA));
+    TestBed.configureTestingModule({
+      providers: [
+        {
+          provide: HttpClient,
+          useValue: { get: httpGet, post: vi.fn(), put: vi.fn(), patch: vi.fn(), delete: vi.fn() },
+        },
+      ],
+    });
+    service = TestBed.inject(ProjectService);
+  });
+
+  afterEach(() => {
+    TestBed.resetTestingModule();
+  });
+
+  it('shares one request across the callers a deep link stacks up (mount guard, child guard, reconciliation)', () => {
+    const results: Project[] = [];
+    service.getProjectStrict('uid-a').subscribe((p) => results.push(p));
+    service.getProjectStrict('uid-a').subscribe((p) => results.push(p));
+    service.getProjectStrict('uid-a').subscribe((p) => results.push(p));
+
+    expect(httpGet).toHaveBeenCalledTimes(1);
+    expect(httpGet).toHaveBeenCalledWith('/api/projects/uid-a');
+    expect(results).toEqual([projectA, projectA, projectA]);
+  });
+
+  it('propagates HTTP errors instead of mapping them to null, so callers can distinguish 400/404 from 5xx', () => {
+    httpGet.mockReturnValueOnce(throwError(() => new Error('network-error')));
+    let caught: unknown;
+    service.getProjectStrict('uid-a').subscribe({ error: (e) => (caught = e) });
+    expect(caught).toBeInstanceOf(Error);
+  });
+
+  it('evicts the cache entry on error so the next lookup retries instead of replaying the failure', () => {
+    httpGet.mockReturnValueOnce(throwError(() => new Error('network-error')));
+    service.getProjectStrict('uid-a').subscribe({ error: () => undefined });
+
+    let second: Project | undefined;
+    service.getProjectStrict('uid-a').subscribe((p) => (second = p));
+    expect(httpGet).toHaveBeenCalledTimes(2);
+    expect(second).toEqual(projectA);
+  });
+});

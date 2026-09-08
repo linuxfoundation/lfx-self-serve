@@ -1,6 +1,7 @@
 // Copyright The Linux Foundation and each contributor to LFX.
 // SPDX-License-Identifier: MIT
 
+import { HttpErrorResponse } from '@angular/common/http';
 import { ApplicationRef, computed, DestroyRef, inject, signal } from '@angular/core';
 import { TestBed } from '@angular/core/testing';
 import { NavigationEnd, Router } from '@angular/router';
@@ -8,7 +9,7 @@ import { ProjectFunding, ProjectStage } from '@lfx-one/shared/enums';
 import { Project, ProjectContext } from '@lfx-one/shared/interfaces';
 import { ProjectContextService } from '@shared/services/project-context.service';
 import { ProjectService } from '@shared/services/project.service';
-import { of, Subject } from 'rxjs';
+import { of, Subject, throwError } from 'rxjs';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 
 import { reconcileRouteProjectContext } from './entity-project-context.util';
@@ -49,7 +50,7 @@ describe('reconcileRouteProjectContext', () => {
 
   let routeProjectUid: ReturnType<typeof signal<string | null>>;
   let routerEvents$: Subject<NavigationEnd>;
-  let getProject: ReturnType<typeof vi.fn>;
+  let getProjectStrict: ReturnType<typeof vi.fn>;
   let setRouteLensKind: ReturnType<typeof vi.fn>;
   let setFoundation: ReturnType<typeof vi.fn>;
   let setProject: ReturnType<typeof vi.fn>;
@@ -59,7 +60,13 @@ describe('reconcileRouteProjectContext', () => {
 
   const start = (): void => {
     TestBed.runInInjectionContext(() =>
-      reconcileRouteProjectContext(routeProjectUid.asReadonly(), { getProject } as unknown as ProjectService, projectContextService, router, inject(DestroyRef))
+      reconcileRouteProjectContext(
+        routeProjectUid.asReadonly(),
+        { getProjectStrict } as unknown as ProjectService,
+        projectContextService,
+        router,
+        inject(DestroyRef)
+      )
     );
   };
 
@@ -75,7 +82,7 @@ describe('reconcileRouteProjectContext', () => {
   beforeEach(() => {
     routeProjectUid = signal<string | null>(ROUTE_UID);
     routerEvents$ = new Subject<NavigationEnd>();
-    getProject = vi.fn().mockReturnValue(of(foundationProject));
+    getProjectStrict = vi.fn().mockReturnValue(of(foundationProject));
 
     // Mini ProjectContextService: the two context slots + the route-kind override, composed the
     // way the real service composes activeContext from them — so a MainLayout-style re-assert
@@ -109,7 +116,7 @@ describe('reconcileRouteProjectContext', () => {
     start();
     await stable();
 
-    expect(getProject).toHaveBeenCalledWith(ROUTE_UID, false);
+    expect(getProjectStrict).toHaveBeenCalledWith(ROUTE_UID);
     expect(setRouteLensKind).toHaveBeenCalledWith('foundation');
     expect(setFoundation).toHaveBeenCalledWith(resolvedContext, false);
     expect(setProject).not.toHaveBeenCalled();
@@ -126,7 +133,7 @@ describe('reconcileRouteProjectContext', () => {
     start();
     await stable();
 
-    expect(getProject).toHaveBeenCalledWith(ROUTE_UID, false);
+    expect(getProjectStrict).toHaveBeenCalledWith(ROUTE_UID);
     expect(setFoundation).toHaveBeenCalledWith(resolvedContext, false);
     expect(projectContextService.activeContext()).toEqual(resolvedContext);
   });
@@ -134,7 +141,7 @@ describe('reconcileRouteProjectContext', () => {
   it('re-applies the cached context on a later NavigationEnd after the route-lens re-assert clobbers it, without a second fetch', async () => {
     start();
     await stable();
-    expect(getProject).toHaveBeenCalledTimes(1);
+    expect(getProjectStrict).toHaveBeenCalledTimes(1);
 
     // A ?step= navigation doesn't re-run guards, but MainLayout.syncLensFromRoute re-asserts the
     // route's declared lens on the NavigationEnd — flipping the selector/sidebar back to the
@@ -142,7 +149,7 @@ describe('reconcileRouteProjectContext', () => {
     routeLensKind.set('project');
     await emitStepNavigation(1);
 
-    expect(getProject).toHaveBeenCalledTimes(1);
+    expect(getProjectStrict).toHaveBeenCalledTimes(1);
     expect(setFoundation).toHaveBeenCalledTimes(2);
     expect(setRouteLensKind).toHaveBeenLastCalledWith('foundation');
     expect(projectContextService.activeContext()).toEqual(resolvedContext);
@@ -156,7 +163,7 @@ describe('reconcileRouteProjectContext', () => {
 
     // Kind and context already agree with the resolution — the NavigationEnd is a same-value
     // no-op: no re-write and no second fetch.
-    expect(getProject).toHaveBeenCalledTimes(1);
+    expect(getProjectStrict).toHaveBeenCalledTimes(1);
     expect(setFoundation).toHaveBeenCalledTimes(1);
     expect(setRouteLensKind).toHaveBeenCalledTimes(1);
   });
@@ -184,15 +191,15 @@ describe('reconcileRouteProjectContext', () => {
     expect(setFoundation).toHaveBeenLastCalledWith(resolvedContext, true);
   });
 
-  it('leaves the existing context untouched when the route project lookup resolves null', async () => {
-    getProject.mockReturnValue(of(null));
+  it('leaves the existing context untouched when the route project lookup fails', async () => {
+    getProjectStrict.mockReturnValue(throwError(() => new HttpErrorResponse({ status: 404 })));
 
     start();
     await stable();
 
     // Deleted/unknown project (or no viewer relation): fail-open, no writes — the stale context
     // stays rather than erroring the page.
-    expect(getProject).toHaveBeenCalledWith(ROUTE_UID, false);
+    expect(getProjectStrict).toHaveBeenCalledWith(ROUTE_UID);
     expect(setRouteLensKind).not.toHaveBeenCalled();
     expect(setFoundation).not.toHaveBeenCalled();
     expect(setProject).not.toHaveBeenCalled();
