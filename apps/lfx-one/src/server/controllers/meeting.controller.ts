@@ -623,18 +623,22 @@ export class MeetingController {
   public async addMeetingRegistrants(req: Request, res: Response, next: NextFunction): Promise<void> {
     const { uid } = req.params;
     // Shape-guarded for the same reason as `updateMeetingRegistrants`: this runs outside the `try`,
-    // so a non-array body would throw before any log line exists to explain it.
-    const registrantData: CreateMeetingRegistrantRequest[] = Array.isArray(req.body)
-      ? req.body.map((registrant: CreateMeetingRegistrantRequest) => ({
-          ...registrant,
-          meeting_id: uid,
-        }))
-      : [];
+    // so a non-array body would throw before any log line exists to explain it. The raw entries are
+    // kept because the mapping below adds `meeting_id` to every one of them, which is enough to make
+    // even `[null]` look like a registrant — the `registrants.email` check inside the `try` judges the
+    // raw entry instead. Spreading `null` is legal, so this cannot throw on a null element.
+    const rawRegistrants: (CreateMeetingRegistrantRequest | null | undefined)[] = Array.isArray(req.body) ? req.body : [];
+    const registrantData: CreateMeetingRegistrantRequest[] = rawRegistrants.map((registrant) => ({
+      ...registrant,
+      meeting_id: uid,
+    })) as CreateMeetingRegistrantRequest[];
 
     const startTime = logger.startOperation(req, 'add_meeting_registrants', {
       meeting_id: uid,
       registrant_count: registrantData.length,
-      body_size: JSON.stringify(req.body).length,
+      // `content-length` rather than re-serializing the parsed body: the JSON limit is 15mb, and
+      // stringifying only to read `.length` allocates a second copy of it on every request.
+      body_size: Number(req.get('content-length') ?? 0),
     });
 
     try {
@@ -660,6 +664,22 @@ export class MeetingController {
         });
 
         // Send the validation error to the next middleware
+        next(validationError);
+        return;
+      }
+
+      // `email` is the one required field on `CreateMeetingRegistrantRequest` and the only identity
+      // a new registrant has — the batch response even keys its per-item results by it. Judged on the
+      // raw entries, since the mapping above already gave every one of them a `meeting_id`. Left
+      // unguarded, `[null]` and `[{}]` both cleared every check and sent upstream a create carrying
+      // nothing but the meeting UID, then reported the result back keyed by `undefined`.
+      if (rawRegistrants.some((registrant) => typeof registrant?.email !== 'string' || registrant.email.trim().length === 0)) {
+        const validationError = ServiceValidationError.forField('registrants.email', 'One or more registrants are missing an email address', {
+          operation: 'add_meeting_registrants',
+          service: 'meeting_controller',
+          path: req.path,
+        });
+
         next(validationError);
         return;
       }
@@ -719,22 +739,25 @@ export class MeetingController {
     // `Array.isArray` rather than `req.body?.map`, and `update?.changes` rather than `update.changes`:
     // this runs before `startOperation` and outside the `try`, so a throw here escapes the handler as
     // an unhandled rejection with no log line at all. The declared types are a compile-time guarantee
-    // only — a client can PUT `{}` or `[{ "uid": "x" }]` past them. An empty list falls through to the
-    // "No registrants provided" validation below, which is the 400 those bodies deserve.
-    const updateData: { uid: string; changes: UpdateMeetingRegistrantRequest }[] = Array.isArray(req.body)
-      ? req.body.map((update: { uid: string; changes?: UpdateMeetingRegistrantRequest }) => ({
-          ...update,
-          changes: {
-            ...MeetingController.stripCommitteeUid(update?.changes),
-            meeting_id: uid,
-          },
-        }))
-      : [];
+    // only — a client can PUT `{}` or `[{ "uid": "x" }]` past them. `{}` yields an empty list, which
+    // the "No registrants provided" check below answers with a 400; entries that carry a UID but no
+    // usable `changes` are caught by the third check, since by then every mapped `changes` looks
+    // non-empty because of the `meeting_id` added here.
+    const rawUpdates: { uid: string; changes?: UpdateMeetingRegistrantRequest }[] = Array.isArray(req.body) ? req.body : [];
+    const updateData: { uid: string; changes: UpdateMeetingRegistrantRequest }[] = rawUpdates.map((update) => ({
+      ...update,
+      changes: {
+        ...MeetingController.stripCommitteeUid(update?.changes),
+        meeting_id: uid,
+      },
+    }));
 
     const startTime = logger.startOperation(req, 'update_meeting_registrants', {
       meeting_id: uid,
       registrant_count: updateData.length,
-      body_size: JSON.stringify(req.body).length,
+      // `content-length` rather than re-serializing the parsed body: the JSON limit is 15mb, and
+      // stringifying only to read `.length` allocates a second copy of it on every request.
+      body_size: Number(req.get('content-length') ?? 0),
     });
 
     try {
@@ -765,6 +788,22 @@ export class MeetingController {
       // Check if the registrant UIDs are provided
       if (updateData.some((update) => !update.uid)) {
         const validationError = ServiceValidationError.forField('registrants.uid', 'One or more registrants are missing UID', {
+          operation: 'update_meeting_registrants',
+          service: 'meeting_controller',
+          path: req.path,
+        });
+
+        next(validationError);
+        return;
+      }
+
+      // Check that every entry actually asks for a change. Judged on `rawUpdates`, not `updateData`:
+      // the mapping above adds `meeting_id` to every `changes`, so by then even `[{ "uid": "x" }]`
+      // looks like a change. Left unguarded it cleared all three checks and sent upstream a
+      // `PUT .../registrants/x` with a literal `{}` body — an empty write whose field semantics are
+      // ITX's to define, and the client got `{ meeting_id }` echoed back as the "updated" registrant.
+      if (rawUpdates.some((update) => !MeetingController.hasRegistrantChanges(update?.changes))) {
+        const validationError = ServiceValidationError.forField('registrants.changes', 'One or more registrants have no changes to apply', {
           operation: 'update_meeting_registrants',
           service: 'meeting_controller',
           path: req.path,
@@ -1901,6 +1940,23 @@ export class MeetingController {
   }
 
   /**
+   * Whether a client-supplied `changes` object asks for anything this endpoint can actually apply.
+   *
+   * Deliberately typed `unknown`: the declared `UpdateMeetingRegistrantRequest` is a compile-time
+   * guarantee only, and this reads straight off `req.body`. Arrays and primitives are rejected
+   * rather than counted — `Object.keys('ab')` is `['0', '1']`, which would otherwise pass as two
+   * changes. `committee_uid` doesn't count either, since `stripCommitteeUid` removes it before the
+   * body is forwarded, so an entry carrying only that key would still forward an empty write.
+   */
+  private static hasRegistrantChanges(changes: unknown): boolean {
+    if (typeof changes !== 'object' || changes === null || Array.isArray(changes)) {
+      return false;
+    }
+
+    return Object.keys(MeetingController.stripCommitteeUid(changes as UpdateMeetingRegistrantRequest)).length > 0;
+  }
+
+  /**
    * The v2 UIDs of the committees actually attached to a meeting — the allowlist that
    * `resolveRegistrantCommitteeUids` checks a client-supplied `committee_uid` against.
    *
@@ -1996,18 +2052,6 @@ export class MeetingController {
    * leading budget's worth of signal, so a descriptor the organizer typed is never silently discarded
    * in full and the client guard mirrors this one exactly.
    */
-  /**
-   * Narrows a client-supplied meeting type to the enum, or drops it.
-   * @description `meetingType` is the one prompt input with a closed value set, and
-   * `getMeetingTypeDescription` already falls back to a generic descriptor for anything it doesn't
-   * recognise — so a value outside the set carries no signal and only exists to be logged and
-   * interpolated. Dropping it is strictly better than truncating it, which is what the free-text
-   * descriptors get.
-   */
-  private static readMeetingType(value: unknown): MeetingType | undefined {
-    return typeof value === 'string' && (Object.values(MeetingType) as string[]).includes(value) ? (value as MeetingType) : undefined;
-  }
-
   private static readPromptField(value: unknown): string | undefined {
     if (typeof value !== 'string') {
       return undefined;
@@ -2020,6 +2064,18 @@ export class MeetingController {
     }
 
     return truncateToUtf16Units(trimmed, MEETING_AGENDA_PROMPT_MAX_LENGTH);
+  }
+
+  /**
+   * Narrows a client-supplied meeting type to the enum, or drops it.
+   * @description `meetingType` is the one prompt input with a closed value set, and
+   * `AiService.getMeetingTypeDescription` already falls back to a generic descriptor for anything it
+   * doesn't recognise — so a value outside the set carries no signal and only exists to be logged and
+   * interpolated. Dropping it is strictly better than truncating it, which is what the free-text
+   * descriptors above get.
+   */
+  private static readMeetingType(value: unknown): MeetingType | undefined {
+    return typeof value === 'string' && (Object.values(MeetingType) as string[]).includes(value) ? (value as MeetingType) : undefined;
   }
 
   /**

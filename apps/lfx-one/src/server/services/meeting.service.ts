@@ -900,7 +900,10 @@ export class MeetingService {
     const sanitizedPayload = logger.sanitize({ registrantData });
     logger.debug(req, 'add_meeting_registrant', 'Creating meeting registrant', sanitizedPayload);
 
-    const newRegistrant = await this.microserviceProxy.proxyRequest<Record<string, unknown>>(
+    // `| null` in the type parameter because that is what actually comes back: `ApiClientService`
+    // maps an empty response body to `null`. Same reasoning as `updateMeetingRegistrant` below —
+    // declaring it non-nullable would make the guard read as always-true to TypeScript.
+    const newRegistrant = await this.microserviceProxy.proxyRequest<Record<string, unknown> | null>(
       req,
       'LFX_V2_SERVICE',
       `/itx/meetings/${registrantData.meeting_id}/registrants`,
@@ -909,7 +912,13 @@ export class MeetingService {
       this.toUpstreamRegistrantBody(registrantData)
     );
 
-    return this.fromUpstreamRegistrant(newRegistrant);
+    // Keys, not truthiness: a 201 carrying a literal `{}` is truthy, and mapping it would report a
+    // registrant with every field missing as a successful create.
+    if (newRegistrant && Object.keys(newRegistrant).length > 0) {
+      return this.fromUpstreamRegistrant(newRegistrant);
+    }
+
+    return MeetingService.registrantFromSubmittedPayload(registrantData);
   }
 
   /**
@@ -1958,7 +1967,9 @@ export class MeetingService {
       ...(registrantData.occurrence_id && { occurrence: registrantData.occurrence_id }),
     };
 
-    const upstreamRegistrant = await this.microserviceProxy.proxyRequest<Record<string, unknown>>(
+    // `| null` in the type parameter because that is what actually comes back: `ApiClientService`
+    // maps an empty response body to `null`.
+    const upstreamRegistrant = await this.microserviceProxy.proxyRequest<Record<string, unknown> | null>(
       req,
       'LFX_V2_SERVICE',
       `/itx/meetings/${meetingId}/registrants/self`,
@@ -1967,11 +1978,20 @@ export class MeetingService {
       payload,
       { 'X-Sync': 'true' }
     );
-    const newRegistrant = this.fromUpstreamRegistrant(upstreamRegistrant);
+    // Keys, not truthiness — see `addMeetingRegistrant`. This path is the public registration one, so
+    // an unusable body used to surface to an anonymous registrant as a `{}` "created" record.
+    const hasUpstreamBody = !!upstreamRegistrant && Object.keys(upstreamRegistrant).length > 0;
+    const newRegistrant = hasUpstreamBody
+      ? this.fromUpstreamRegistrant(upstreamRegistrant)
+      : MeetingService.registrantFromSubmittedPayload(registrantData);
 
     logger.success(req, 'add_meeting_registrant_self', startTime, {
       meeting_id: meetingId,
-      registrant_uid: newRegistrant.uid,
+      // `?? null` rather than leaving it `undefined`: Pino drops undefined values, so a create whose
+      // upstream body carried no UID logged as a success line with no `registrant_uid` field at all,
+      // indistinguishable from a log-shape change. `upstream_body` says which branch produced it.
+      registrant_uid: newRegistrant.uid ?? null,
+      upstream_body: hasUpstreamBody,
     });
 
     return newRegistrant;
@@ -2304,5 +2324,19 @@ export class MeetingService {
       ...(occurrence === undefined ? {} : { occurrence_id: occurrence }),
       ...(modified_at === undefined ? {} : { updated_at: modified_at }),
     } as MeetingRegistrant;
+  }
+
+  /**
+   * Fallback registrant for a create that upstream acknowledged with no usable body.
+   *
+   * The submitted payload is the closest available description of what upstream now stores, on the
+   * same reasoning `updateMeetingRegistrant` uses for its fallback. The one thing it cannot supply is
+   * `uid` — that's upstream's to mint — so the caller sees a registrant with no UID rather than a
+   * `{}` with no fields at all, and the M2M path's success log says which branch it came from.
+   * Deliberately not thrown: the write already succeeded, and throwing here would report a created
+   * registrant as a failure. Callers that need the UID have to read the registrant back.
+   */
+  private static registrantFromSubmittedPayload(registrantData: CreateMeetingRegistrantRequest): MeetingRegistrant {
+    return { ...registrantData } as MeetingRegistrant;
   }
 }

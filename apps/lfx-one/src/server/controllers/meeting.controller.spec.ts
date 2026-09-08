@@ -34,6 +34,10 @@ const { meetingSvc, aiSvc, committeeSvc, resolveCommitteeV2UidsToV1IdsMock, gene
 vi.mock('@lfx-one/shared/interfaces', () => ({}));
 // `MeetingType` is imported as a value (the controller narrows client input against
 // `Object.values(MeetingType)`), so the stub has to carry the real members rather than being empty.
+// Kept in sync with `MeetingType` in `packages/shared/src/enums/meeting.enum.ts` by hand — `vi.mock`
+// factories are hoisted, so they can't import the real enum to derive from. A member added upstream
+// and missed here shows up as a narrowing test that rejects a type the controller actually accepts,
+// not as a false pass: every assertion below tests a value against the stub's own member list.
 vi.mock('@lfx-one/shared/enums', () => ({
   MeetingType: {
     BOARD: 'Board',
@@ -110,7 +114,19 @@ function buildRes(): Response {
 }
 
 function buildReq(overrides: Partial<Request> = {}): Request {
-  return { params: { uid: MEETING_ID }, query: {}, body: {}, path: '/api/meetings', ...overrides } as unknown as Request;
+  // `get` is stubbed because the registrant batch endpoints read `content-length` off the request for
+  // their `body_size` log field. Returning `undefined` is the honest default — Express omits the
+  // header on a bodyless request — and exercises the `?? 0` fallback rather than papering over it.
+  const headers: Record<string, string | undefined> = { 'content-length': undefined };
+
+  return {
+    params: { uid: MEETING_ID },
+    query: {},
+    body: {},
+    path: '/api/meetings',
+    get: (name: string) => headers[name.toLowerCase()],
+    ...overrides,
+  } as unknown as Request;
 }
 
 describe('MeetingController', () => {
@@ -329,6 +345,25 @@ describe('MeetingController', () => {
       expect(next).toHaveBeenCalledWith(expect.any(FakeValidationError));
       expect(meetingSvc.addMeetingRegistrant).not.toHaveBeenCalled();
     });
+
+    // `email` is the only identity a new registrant has, and `createBatchResponse` keys its per-item
+    // results by it — so an entry without one used to reach upstream as a create carrying nothing but
+    // the meeting UID and come back keyed by `undefined`. Spreading `null` is legal, so the mapping
+    // itself never threw; the entry just stopped looking empty once `meeting_id` was added.
+    it.each([
+      ['a null entry', [null]],
+      ['an empty object', [{}]],
+      ['a blank email', [{ email: '   ' }]],
+      ['a non-string email', [{ email: 42 }]],
+    ])('rejects %s rather than creating a registrant with no email', async (_label, body) => {
+      const req = buildReq({ body });
+
+      await controller.addMeetingRegistrants(req, buildRes(), next);
+
+      expect(next).not.toHaveBeenCalledWith(expect.any(TypeError));
+      expect(next).toHaveBeenCalledWith(expect.any(FakeValidationError));
+      expect(meetingSvc.addMeetingRegistrant).not.toHaveBeenCalled();
+    });
   });
 
   describe('updateMeetingRegistrants', () => {
@@ -351,18 +386,30 @@ describe('MeetingController', () => {
     // The body map runs before `startOperation` and outside the `try`, and `routes/meetings.route.ts`
     // registers a bare async arrow that Express 4 does not catch — so a throw here is an unhandled
     // rejection that kills the SSR worker with no log line at all. `changes` and the array-ness of the
-    // body are compile-time guarantees only; both of these bodies are reachable over HTTP.
-    it('handles an entry that omits changes instead of throwing', async () => {
-      meetingSvc.updateMeetingRegistrant.mockImplementation((_req: Request, _uid: string, _regUid: string, changes: Record<string, unknown>) =>
-        Promise.resolve(changes)
-      );
-      const req = buildReq({ body: [{ uid: 'reg-1' }] });
+    // body are compile-time guarantees only; every body below is reachable over HTTP.
+    //
+    // Rejected rather than forwarded, and both halves matter. Not throwing is the unhandled-rejection
+    // guarantee; the 400 is what stops an entry with nothing to apply from reaching upstream as a
+    // `PUT .../registrants/reg-1` carrying a literal `{}` — an empty write whose field semantics are
+    // ITX's to define, echoed back to the client as the "updated" registrant.
+    it.each([
+      ['omits changes', [{ uid: 'reg-1' }]],
+      ['sends an empty changes object', [{ uid: 'reg-1', changes: {} }]],
+      // `Object.keys('ab')` is `['0', '1']`, so a primitive would count as two changes if the guard
+      // read keys without checking the type first.
+      ['sends a primitive as changes', [{ uid: 'reg-1', changes: 'ab' }]],
+      // `committee_uid` is stripped before forwarding, so an entry carrying only that key still
+      // forwards an empty write.
+      ['sends only a committee_uid', [{ uid: 'reg-1', changes: { committee_uid: V1_COMMITTEE_SFID } }]],
+      ['sends a null entry', [null]],
+    ])('rejects an entry that %s instead of forwarding an empty write', async (_label, body) => {
+      const req = buildReq({ body });
 
       await controller.updateMeetingRegistrants(req, buildRes(), next);
 
       expect(next).not.toHaveBeenCalledWith(expect.any(TypeError));
-      const [, , , forwarded] = meetingSvc.updateMeetingRegistrant.mock.calls[0];
-      expect(forwarded).toEqual({ meeting_id: MEETING_ID });
+      expect(next).toHaveBeenCalledWith(expect.any(FakeValidationError));
+      expect(meetingSvc.updateMeetingRegistrant).not.toHaveBeenCalled();
     });
 
     it('rejects a non-array body as a validation error rather than throwing', async () => {

@@ -701,8 +701,14 @@ export interface DashboardQuickLink {
   label: string;
   /** FontAwesome icon class (e.g. 'fa-light fa-calendar') */
   icon: string;
-  /** Router link path segments */
-  route: string[];
+  /** Router link path segments. Omitted when `command` opens an in-page surface instead of navigating. */
+  route?: string[];
+  /**
+   * Click handler for links that open something over the current page rather than navigate.
+   * @description Renders a button instead of an anchor, so nothing about the row promises a
+   * destination it doesn't have. Takes precedence over `route` when both are set.
+   */
+  command?: () => void;
   /** Pre-computed data-testid slug (e.g. 'create-meeting') */
   testId: string;
 }

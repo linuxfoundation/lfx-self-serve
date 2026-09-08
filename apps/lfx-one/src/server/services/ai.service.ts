@@ -64,8 +64,9 @@ export class AiService {
       // `meetingType` is typed as the enum but arrives from a request body, and a type is not a
       // runtime guarantee — an unrecognized value would be logged verbatim. `getMeetingTypeDescription`
       // already defaults anything off the enum to a generic descriptor, so it never reaches the
-      // prompt; this log line was the only place an arbitrary string still got through.
-      meetingType: AiService.knownMeetingType(request.meetingType),
+      // prompt. The only HTTP caller now narrows before calling, so this is the second of two gates
+      // rather than the last one; it stays because nothing stops a future caller from skipping the first.
+      meetingType: AiService.knownMeetingType(request.meetingType) ?? null,
       titleLength: request.title?.length ?? 0,
       hasContext: !!request.context,
       hasProjectName: !!request.projectName,
@@ -563,11 +564,6 @@ export class AiService {
   }
 
   /** `default` also covers an unset type — the helper is reachable before one is chosen. */
-  /** Returns the value only when it is an actual `MeetingType` member, else `null`. */
-  private static knownMeetingType(value: unknown): MeetingType | null {
-    return typeof value === 'string' && (Object.values(MeetingType) as string[]).includes(value) ? (value as MeetingType) : null;
-  }
-
   private getMeetingTypeDescription(meetingType?: MeetingType): string {
     switch (meetingType) {
       case MeetingType.BOARD:
@@ -587,6 +583,18 @@ export class AiService {
       default:
         return 'project team';
     }
+  }
+
+  /**
+   * Returns the value only when it is an actual `MeetingType` member, else `undefined`.
+   *
+   * Duplicated in `MeetingController.readMeetingType` on purpose rather than shared: this service is
+   * a library its callers can reach directly, and `generateMeetingAgenda` takes a request object
+   * whose `meetingType` is typed but not validated. The controller's copy exists so the HTTP
+   * boundary rejects junk early; this one exists so the service is safe even when it doesn't.
+   */
+  private static knownMeetingType(value: unknown): MeetingType | undefined {
+    return typeof value === 'string' && (Object.values(MeetingType) as string[]).includes(value) ? (value as MeetingType) : undefined;
   }
 
   private assertConfigured(): void {
