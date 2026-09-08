@@ -4,7 +4,7 @@
 import { ComponentFixture, TestBed } from '@angular/core/testing';
 import { provideNoopAnimations } from '@angular/platform-browser/animations';
 import { provideRouter } from '@angular/router';
-import { BRAND_KIT_INTAKE_QUESTIONS } from '@lfx-one/shared/constants';
+import { BRAND_KIT_INTAKE, BRAND_KIT_INTAKE_QUESTIONS } from '@lfx-one/shared/constants';
 import { BrandKitResultResponse } from '@lfx-one/shared/interfaces';
 import { BrandKitService } from '@services/brand-kit.service';
 import { MktgAnswerMemoryService } from '@services/mktg-answer-memory.service';
@@ -191,6 +191,25 @@ describe('BrandKitFormComponent — generation poll state machine', () => {
       expect(control?.tagName).toBe('INPUT');
       // A genuinely multi-line answer still gets a textarea.
       expect(fixture.nativeElement.querySelector('[data-test="brand-kit-form-answer-primary_audience"]')?.tagName).toBe('TEXTAREA');
+    });
+
+    // The two assertions above are samples; this one holds EVERY question to
+    // the shared definition. The template falls back to a text input for any
+    // key it finds no kind for, so a question that drifts out of
+    // `BRAND_KIT_INTAKE.fields` would silently downgrade a long-form answer to
+    // a single line — visible here, invisible in a two-field spot check.
+    it.each(BRAND_KIT_INTAKE.fields.map((field) => [field.key, field.kind] as const))(
+      'renders %s with the control kind the shared intake declares (%s)',
+      (key, kind) => {
+        const control = fixture.nativeElement.querySelector(`[data-test="brand-kit-form-answer-${key}"]`);
+        expect(control).not.toBeNull();
+        expect(control.tagName).toBe(kind === 'textarea' ? 'TEXTAREA' : 'INPUT');
+      }
+    );
+
+    it('declares a control kind for every question it renders', () => {
+      const declared = new Set(BRAND_KIT_INTAKE.fields.map((field) => field.key));
+      expect(BRAND_KIT_INTAKE_QUESTIONS.map((question) => question.key).filter((key) => !declared.has(key))).toEqual([]);
     });
 
     it('leaves a blank answer to the required rule rather than reporting a format problem', () => {

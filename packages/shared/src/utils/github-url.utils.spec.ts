@@ -3,6 +3,8 @@
 
 import { describe, expect, it } from 'vitest';
 
+import { GITHUB_RESERVED_ROOT_SEGMENTS } from '../constants/github-url.constants';
+
 import { parseGithubUrlTarget } from './github-url.utils';
 
 /**
@@ -103,19 +105,17 @@ describe('parseGithubUrlTarget', () => {
     // repository list; read positionally it looks exactly like `owner/repo`.
     expect(parseGithubUrlTarget('https://github.com/orgs/aaif/repositories')).toBeNull();
     expect(parseGithubUrlTarget('https://github.com/orgs/aaif')).toBeNull();
-    for (const url of [
-      'https://github.com/Orgs/aaif/repositories',
-      'https://github.com/marketplace/actions/checkout',
-      'https://github.com/apps/dependabot',
-      'https://github.com/settings/profile',
-      'https://github.com/sponsors/example-org',
-      'https://github.com/topics/kubernetes',
-      'https://github.com/collections/open-source-organizations',
-      'https://github.com/features/actions',
-      'https://github.com/login',
-    ]) {
-      expect(parseGithubUrlTarget(url)).toBeNull();
-    }
+    // Case-insensitive: the denylist is compared against a lowercased segment.
+    expect(parseGithubUrlTarget('https://github.com/Orgs/aaif/repositories')).toBeNull();
+  });
+
+  // Driven off the constant itself rather than a hand-picked sample: a typo or
+  // an omission in the denylist is exactly the mistake that reopens the
+  // guaranteed-404 gap above, and a fixed list of examples would not see it.
+  it.each([...GITHUB_RESERVED_ROOT_SEGMENTS])('refuses the reserved root segment /%s, alone and with a path under it', (segment) => {
+    expect(parseGithubUrlTarget(`https://github.com/${segment}`)).toBeNull();
+    expect(parseGithubUrlTarget(`https://github.com/${segment}/example-org`)).toBeNull();
+    expect(parseGithubUrlTarget(`https://github.com/${segment.toUpperCase()}/example-org`)).toBeNull();
   });
 
   it('returns null for a bare github.com with no owner at all', () => {

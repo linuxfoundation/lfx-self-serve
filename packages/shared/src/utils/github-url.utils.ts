@@ -1,6 +1,7 @@
 // Copyright The Linux Foundation and each contributor to LFX.
 // SPDX-License-Identifier: MIT
 
+import { GITHUB_RESERVED_ROOT_SEGMENTS } from '../constants/github-url.constants';
 import { GithubUrlTarget } from '../interfaces';
 
 /** Hosts a user-supplied GitHub URL may use. Anything else is not a GitHub target at all. */
@@ -24,62 +25,6 @@ const GITHUB_OWNER_MAX_LENGTH = 39;
 
 /** GitHub's repository-name length limit; anything longer cannot be a repository. */
 const GITHUB_REPO_MAX_LENGTH = 100;
-
-/**
- * First path segments github.com reserves for its OWN routes, which can never
- * be an account name. Without this, `github.com/orgs/<org>/repositories` — the
- * URL a user copies straight out of an organization's repository list — parses
- * as the repository `orgs/<org>`, clears the repository validator, and the BFF
- * then asks the API for `/repos/orgs/<org>/readme`, gets a 404, and produces
- * exactly the unexplained README-less document this contract exists to
- * prevent. A reserved first segment is not a repository URL, so the parser
- * refuses it here rather than letting every caller re-derive the rule.
- *
- * Deliberately a denylist of GitHub's product routes rather than an attempt at
- * every reserved word: a miss degrades to today's behaviour (a 404 and a
- * skip reason), while a false positive would reject a legitimate account.
- */
-const GITHUB_RESERVED_ROOT_SEGMENTS = new Set([
-  'about',
-  'account',
-  'admin',
-  'apps',
-  'blog',
-  'business',
-  'codespaces',
-  'collections',
-  'contact',
-  'customer-stories',
-  'dashboard',
-  'enterprise',
-  'enterprises',
-  'events',
-  'explore',
-  'features',
-  'issues',
-  'join',
-  'login',
-  'logout',
-  'marketplace',
-  'new',
-  'notifications',
-  'organizations',
-  'orgs',
-  'pricing',
-  'pulls',
-  'search',
-  'security',
-  'sessions',
-  'settings',
-  'signup',
-  'site',
-  'sponsors',
-  'stars',
-  'topics',
-  'trending',
-  'users',
-  'watching',
-]);
 
 /**
  * Parses a user-supplied GitHub URL into the thing it actually names: an
