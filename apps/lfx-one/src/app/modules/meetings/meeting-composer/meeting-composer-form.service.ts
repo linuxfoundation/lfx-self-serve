@@ -49,7 +49,6 @@ import {
   formatTo12HourInTimezone,
   generateRecurrenceObject,
   generateTempId,
-  getDefaultStartDateTime,
   getUserTimezone,
   isRecurrenceNeverEndSentinel,
   mapRecurrenceToFormValue,
@@ -639,8 +638,6 @@ export class MeetingComposerFormService {
   // Private initializer functions
 
   private createMeetingFormGroup(): FormGroup {
-    const defaultDateTime = getDefaultStartDateTime();
-
     return new FormGroup(
       {
         meeting_type: new FormControl('', [Validators.required]),
@@ -657,11 +654,14 @@ export class MeetingComposerFormService {
         // (see `TextareaComponent.maxlength`, bound as `[attr.maxlength]` precisely so it does not
         // become a validator), and a server-side truncation in `MeetingController.readPromptField`.
         aiPrompt: new FormControl(''),
-        startDate: new FormControl(defaultDateTime.date, [Validators.required]),
-        startTime: new FormControl(defaultDateTime.time, [Validators.required]),
+        // When the meeting happens is the organizer's call, never ours: a seeded date, time or timezone
+        // reads as an answer already given, and the one that gets shipped by accident is the one nobody
+        // looked at. They stay empty on a new meeting and required, so the composer asks for them.
+        startDate: new FormControl<Date | null>(null, [Validators.required]),
+        startTime: new FormControl('', [Validators.required]),
         duration: new FormControl(DEFAULT_DURATION, [Validators.required]),
         customDuration: new FormControl(''),
-        timezone: new FormControl(getUserTimezone(), [Validators.required]),
+        timezone: new FormControl('', [Validators.required]),
         early_join_time_minutes: new FormControl(DEFAULT_EARLY_JOIN_TIME, [Validators.min(MIN_EARLY_JOIN_TIME), Validators.max(MAX_EARLY_JOIN_TIME)]),
         isRecurring: new FormControl(false),
         recurrenceType: new FormControl('none'),

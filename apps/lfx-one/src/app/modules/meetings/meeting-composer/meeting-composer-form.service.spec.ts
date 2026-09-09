@@ -440,7 +440,14 @@ describe('MeetingComposerFormService — load retry', () => {
   // the meeting doesn't even have, with no error UI anywhere to explain the dead button.
   it('does not let an over-long AI goal block the meeting save', () => {
     service.initialize({ mode: 'create', projectUid: 'project-1' });
-    service.form().patchValue({ title: 'Composer meeting', meeting_type: 'Technical' });
+    service.form().patchValue({
+      title: 'Composer meeting',
+      meeting_type: 'Technical',
+      // Create mode seeds no schedule (GH-1454), so a submittable form has to state one here.
+      startDate: new Date(Date.now() + 7 * 24 * 60 * 60 * 1000),
+      startTime: '10:00 AM',
+      timezone: 'UTC',
+    });
     expect(service.validateForSubmit()).toBe(true);
 
     service.form().get('aiPrompt')?.setValue('x'.repeat(5000));

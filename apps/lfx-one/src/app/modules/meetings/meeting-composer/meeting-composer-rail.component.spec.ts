@@ -69,6 +69,16 @@ describe('MeetingComposerRailComponent', () => {
     formService.form().get('meeting_type')?.setValue('Board');
   };
 
+  /** The same for `date-schedule`, which create mode leaves entirely to the organizer (GH-1454). */
+  const completeSchedule = (): void => {
+    formService
+      .form()
+      .get('startDate')
+      ?.setValue(new Date(Date.now() + 7 * 24 * 60 * 60 * 1000));
+    formService.form().get('startTime')?.setValue('10:00 AM');
+    formService.form().get('timezone')?.setValue('UTC');
+  };
+
   beforeEach(() => {
     TestBed.configureTestingModule({
       providers: [
@@ -95,8 +105,8 @@ describe('MeetingComposerRailComponent', () => {
     });
 
     it('locks everything past the first required section while it is still empty', () => {
-      // `date-schedule` is valid from its own defaults, so a ceiling-only rule would already offer it.
-      expect(formService.isSectionValid('date-schedule')).toBe(true);
+      // `platform-features` is valid from its own defaults, so a ceiling-only rule would already offer it.
+      expect(formService.isSectionValid('platform-features')).toBe(true);
       expect(reachableIds()).toEqual(['details-access']);
     });
 
@@ -110,6 +120,7 @@ describe('MeetingComposerRailComponent', () => {
     it('advances the frontier one section per visit', () => {
       completeDetails();
       composer.setSection('date-schedule');
+      completeSchedule();
 
       expect(reachableIds()).toEqual(['details-access', 'date-schedule', 'platform-features']);
     });
@@ -117,6 +128,7 @@ describe('MeetingComposerRailComponent', () => {
     it('re-locks the sections past a required one that was emptied again', () => {
       completeDetails();
       composer.setSection('date-schedule');
+      completeSchedule();
       composer.setSection('platform-features');
       formService.form().get('title')?.setValue('');
 
@@ -127,9 +139,9 @@ describe('MeetingComposerRailComponent', () => {
 
     it('marks a section complete only after it has been visited', () => {
       completeDetails();
+      completeSchedule();
 
-      // Valid out of the box, but a check mark on a section nobody has opened claims work that did not
-      // happen.
+      // Valid, but a check mark on a section nobody has opened claims work that did not happen.
       expect(row('date-schedule').complete).toBe(false);
 
       composer.setSection('date-schedule');
