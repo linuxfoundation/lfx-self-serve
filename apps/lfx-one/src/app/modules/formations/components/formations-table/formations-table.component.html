@@ -82,7 +82,11 @@
             </td>
             <td class="text-sm text-gray-700">{{ row.announcement_date ? (row.announcement_date | date: 'MMM d') : 'Not set' }}</td>
             <td class="text-sm text-gray-700">
-              {{ row.blocked_item_titles[0] || (row.gates_cleared ? 'Formation to set Active' : '—') }}
+              @if (row.blocked_item_titles.length > 0) {
+                {{ row.blocked_item_titles.join(', ') }}
+              } @else {
+                {{ row.gates_cleared ? 'Formation to set Active' : '—' }}
+              }
             </td>
           </tr>
         </ng-template>

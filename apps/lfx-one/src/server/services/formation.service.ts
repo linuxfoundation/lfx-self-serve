@@ -825,9 +825,20 @@ export class FormationService {
       done: 0,
       skipped: 0,
     };
-    for (const item of items) {
-      progress[item.status] += 1;
+    if (items.length > 0) {
+      for (const item of items) {
+        progress[item.status] += 1;
+      }
+    } else {
+      // STATIC_QUEUE_FORMATIONS rows are never seeded into the per-item write store — only visiting
+      // a project's own checklist (getProjectFormation) does that. Without this fallback, every
+      // never-visited demo row would recompute as "0 of 0" from an empty item list, discarding the
+      // formation's own precomputed gating aggregate (which STATIC_QUEUE_FORMATIONS bakes in and
+      // refreshFormationReadiness keeps current for any row a mutation has touched).
+      progress.done = formation.gating_items_total - formation.gating_items_open;
+      progress.not_started = formation.gating_items_open;
     }
+    const blockedItemTitles = items.length > 0 ? blockedGatingItems.map((item) => item.title) : (formation.blocking_item_title?.split(', ') ?? []);
 
     // FormationQueueRow.assignees is bare usernames (matching the live indexer projection) — a
     // Set, not a Map keyed by FormationUser, since the fixture has no separate display-name source.
@@ -850,11 +861,14 @@ export class FormationService {
       parent_uid: collapseRootParentUid(formation.parent_uid, rootUid) ?? null,
       sub_stage: formation.sub_stage,
       lifecycle: 'formation',
-      gates_cleared: gatingItems.length > 0 && blockedGatingItems.length === 0 && formation.gating_items_open === 0,
+      // Sourced from the formation's own precomputed rollup, not re-derived from `items` here — that
+      // rollup (STATIC_QUEUE_FORMATIONS's baked-in defaults, kept current by refreshFormationReadiness
+      // on every mutation) is correct even for a never-visited demo row with no tracked items.
+      gates_cleared: formation.gating_items_total > 0 && formation.gating_items_open === 0,
       is_activating: formation.is_activating,
       announcement_date: formation.announcement_date,
       progress,
-      blocked_item_titles: blockedGatingItems.map((item) => item.title),
+      blocked_item_titles: blockedItemTitles,
       assignees: Array.from(assigneeUsernames),
     };
   }
