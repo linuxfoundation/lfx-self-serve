@@ -12,6 +12,7 @@ import {
 } from '@lfx-one/shared/constants';
 import { NatsSubjects } from '@lfx-one/shared/enums';
 import { ImpersonationStatusResponse, ImpersonationUser, Impersonator, LfxAccessTokenClaims, M2MTokenResponse, PersonaType } from '@lfx-one/shared/interfaces';
+import { classifyImpersonationExchangeFailure } from '@lfx-one/shared/utils/impersonation.utils';
 import { Request, Response } from 'express';
 
 import { MicroserviceError } from '../errors';
@@ -45,10 +46,11 @@ export class ImpersonationService {
 
       if (!result.success) {
         const errorMessage = result.error || 'Impersonation token exchange failed';
-        throw new MicroserviceError(errorMessage, 400, 'CTE_EXCHANGE_FAILED', {
+        const classified = classifyImpersonationExchangeFailure(errorMessage);
+        throw new MicroserviceError(classified.message, classified.statusCode, classified.code, {
           operation: 'cte_token_exchange',
           service: 'auth-service',
-          errorBody: { target_user: targetUser },
+          errorBody: { target_user: targetUser, upstreamError: errorMessage },
         });
       }
 

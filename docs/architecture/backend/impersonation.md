@@ -94,9 +94,14 @@ The CTE is performed by the **lfx-v2-auth-service** via NATS request-reply on su
 // NATS response (success)
 { success: true, data: { access_token: "<target user's JWT>" } }
 
-// NATS response (failure)
+// NATS response (failure — documented Auth0 deny)
 { success: false, error: "target_user_not_found: Target user 'jdoe' not found" }
+
+// NATS response (failure — current auth-service wrap when Auth0 returns HTTP 400)
+{ success: false, error: "token exchange request failed: upstream returned status 400" }
 ```
+
+`exchangeToken()` classifies those lookup-shaped strings as HTTP 404 `TARGET_USER_NOT_FOUND` with user-facing copy. Other `success: false` errors stay 400 `CTE_EXCHANGE_FAILED` with a generic message. Raw upstream text is kept on `errorBody.upstreamError` for logs (`getLogContext`). `toResponse()` does not forward that key, so it never becomes `upstreamCode`. The impersonation dialog maps `TARGET_USER_NOT_FOUND` to the locate copy and never renders the upstream string.
 
 Profile enrichment (fetching the target user's name and picture) also uses NATS via the `lfx.auth-service.user_metadata.read` subject — no direct Auth0 Management API calls are made from the UI server.
 
