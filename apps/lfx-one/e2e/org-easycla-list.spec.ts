@@ -184,6 +184,41 @@ test.describe('Org Lens EasyCLA list — content', () => {
     await expect(page.getByTestId('org-easycla-card')).toHaveCount(1);
   });
 
+  test('finds one project among the many an agreement covers', async ({ page }) => {
+    await gotoEasyclaList(
+      page,
+      stubList([
+        claGroup({
+          id: 'sig-1',
+          claGroupName: 'Nimbus Foundation CLA',
+          projects: [
+            { projectSfid: 'a09410000182dD3AAI', projectName: 'Cascade' },
+            { projectSfid: 'a09410000182dD4AAI', projectName: 'Driftwood' },
+            { projectSfid: 'a09410000182dD5AAI', projectName: 'Cascadia Tools' },
+          ],
+        }),
+      ])
+    );
+
+    await page.getByTestId('org-easycla-card-coverage-link').first().click();
+
+    const projects = page.getByTestId('org-easycla-coverage-project');
+    await expect(projects).toHaveCount(3, { timeout: PAGE_LOAD_TIMEOUT });
+
+    // Typed into the real field rather than set on the form, because this filter has no debounce —
+    // if the reactive binding were ever swapped for a change-event one, the list would stop tracking
+    // the keystrokes and only a real browser would notice.
+    await page.locator('[data-test="org-easycla-coverage-search"]').fill('casc');
+    await expect(projects).toHaveText(['Cascade', 'Cascadia Tools']);
+
+    await page.locator('[data-test="org-easycla-coverage-search"]').fill('nimbus');
+    await expect(projects).toHaveCount(0);
+    await expect(page.getByTestId('org-easycla-coverage-no-match')).toBeVisible();
+
+    await page.locator('[data-test="org-easycla-coverage-search"]').fill('');
+    await expect(projects).toHaveCount(3);
+  });
+
   test('hides the pager when every agreement fits on one page', async ({ page }) => {
     await gotoEasyclaList(page, stubList([claGroup({ id: 'sig-1', claGroupName: 'Nimbus Foundation CLA' })]));
 
