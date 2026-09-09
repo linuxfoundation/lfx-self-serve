@@ -6,11 +6,13 @@ import type {
   FormationActivity,
   FormationChecklistResponse,
   FormationItem,
+  FormationItemMapContext,
   FormationItemStatus,
   FormationQueueRow,
   FormationsQueueResponse,
   FormationSubStage,
-  FormationUser,
+  UpstreamFormationChecklist,
+  UpstreamFormationItem,
 } from '@lfx-one/shared/interfaces';
 import { FORMATION_QUEUE_SUB_STAGES } from '@lfx-one/shared/constants';
 import { QueryServiceResponse } from '@lfx-one/shared/interfaces';
@@ -20,7 +22,7 @@ import { Request } from 'express';
 import { isMicroserviceError, PreconditionFailedError, ResourceNotFoundError, AuthorizationError, ServiceValidationError } from '../errors';
 import { isFormationServiceLive } from '../helpers/formation-backend.helper';
 import { generateMockFormation, SEEDED_FORMATION_TEMPLATE, STATIC_QUEUE_FORMATIONS } from '../helpers/formation-fixture.helper';
-import { FormationItemMapContext, mapUpstreamFormationItem, UpstreamFormationChecklist, UpstreamFormationItem } from '../helpers/formation-mapper.helper';
+import { mapUpstreamFormationItem } from '../helpers/formation-mapper.helper';
 import { fetchAllQueryResources } from '../helpers/query-service.helper';
 import { collapseRootParentUid, resolveRootProjectUid } from '../helpers/root-project.helper';
 import { getEffectiveUsername } from '../utils/auth-helper';
@@ -42,14 +44,15 @@ import { NatsService } from './nats.service';
 import { ProjectService } from './project.service';
 
 /**
- * BFF service for the Formation Checklist section and Formations queue (GH-1958). Only
- * {@link getProjectFormation} branches on {@link isFormationServiceLive} today; the item mutations
- * (complete/skip/request/update) and the queue read {@link getFormationsQueue} are fixture-only and
- * each carry their own `// TODO(#1957)` marking the real `lfx-v2-formation-service` swap.
- * {@link getFormationItemOrThrow}/{@link getFormationItemDetail} resolve against whatever the store
- * already holds and need no swap marker of their own. The fixture generator's return shape already
- * matches `Formation`/`FormationItem[]`, so downstream code (controllers, Angular services) needs no
- * change when the swap happens.
+ * BFF service for the Formation Checklist section and Formations queue (GH-1958/GH-2267). All eight
+ * item mutations (complete/skip/request/status/update/accept/reject/reopen) and the queue read
+ * {@link getFormationsQueue} branch on {@link isFormationServiceLive} and call the real
+ * `lfx-v2-formation-service` when it is live. {@link getProjectFormation} is the one method still
+ * fixture-only — its live branch is `// TODO(GH-2267 Phase 1 remainder)` and unconditionally throws
+ * until the checklist read is wired. {@link getFormationItemOrThrow}/{@link getFormationItemDetail}
+ * resolve against whatever the store already holds and need no swap marker of their own. The fixture
+ * generator's return shape already matches `Formation`/`FormationItem[]`, so downstream code
+ * (controllers, Angular services) needs no change when the remaining swap happens.
  */
 export class FormationService {
   private readonly projectService = new ProjectService();
@@ -390,10 +393,13 @@ export class FormationService {
     const dueDateChanged = patch.due_date !== undefined && patch.due_date !== item.due_date;
 
     if (isFormationServiceLive()) {
+      // Explicit `null`, never `undefined` — ApiClientService's JSON.stringify drops undefined keys,
+      // so a clear (empty notes, unassign, clear due date) would otherwise send an empty PATCH that
+      // silently leaves the upstream field unchanged.
       const body: Record<string, unknown> = {};
-      if (notesChanged) body['note'] = nextNotes ?? undefined;
-      if (ownerChanged) body['assignee'] = nextOwnerUsername ?? undefined;
-      if (dueDateChanged) body['due_date'] = patch.due_date ?? undefined;
+      if (notesChanged) body['note'] = nextNotes;
+      if (ownerChanged) body['assignee'] = nextOwnerUsername;
+      if (dueDateChanged) body['due_date'] = patch.due_date ?? null;
       const raw = await this.mutateLiveItem(req, projectUid, itemKey, item.version, body, 'update_formation_item');
       const updated = await this.mapLiveItem(req, projectUid, raw);
       logger.debug(req, 'update_formation_item', 'Formation item updated', { item_uid: updated.uid });
@@ -571,16 +577,32 @@ export class FormationService {
     // subStage/search are applied client-side below, not as query-service params — the contract
     // (GH-2267 plan §7's `getFormationsQueue` row) only documents `type=formation` and an
     // `assignee:<username>` tag for "Mine"; there's no confirmed server-side sub_stage/name filter.
-    const rawRows = await fetchAllQueryResources<FormationQueueRow>(req, (pageToken) =>
-      this.microserviceProxy.proxyRequest<QueryServiceResponse<FormationQueueRow>>(req, 'LFX_V2_SERVICE', '/query/resources', 'GET', {
-        type: 'formation',
-        ...(pageToken && { page_token: pageToken }),
-      })
+    // failOnPartial: true — buildQueueTilesFromRows below is pure counting over rawRows, and a
+    // silently-partial page set would render wrong tile totals with no indication anything failed.
+    const rawRows = await fetchAllQueryResources<FormationQueueRow>(
+      req,
+      (pageToken) =>
+        this.microserviceProxy.proxyRequest<QueryServiceResponse<FormationQueueRow>>(req, 'LFX_V2_SERVICE', '/query/resources', 'GET', {
+          type: 'formation',
+          ...(pageToken && { page_token: pageToken }),
+        }),
+      { failOnPartial: true }
     );
 
     const rootUid = await resolveRootProjectUid(req, this.natsService);
-    let rows = rawRows.map((row) => ({ ...row, parent_uid: collapseRootParentUid(row.parent_uid, rootUid) ?? null }));
+    // The indexed projection's key set isn't fully confirmed upstream (FormationQueueRow's own doc) —
+    // default the array/object fields so a row missing one doesn't throw downstream (queue tiles,
+    // formations-table.component.ts's progress/blocked-title rendering).
+    const normalizedRows = rawRows.map((row) => ({
+      ...row,
+      parent_uid: collapseRootParentUid(row.parent_uid || null, rootUid) ?? null,
+      announcement_date: row.announcement_date ?? null,
+      progress: row.progress ?? ({} as FormationQueueRow['progress']),
+      blocked_item_titles: row.blocked_item_titles ?? [],
+      assignees: row.assignees ?? [],
+    }));
 
+    let rows = normalizedRows;
     if (subStage) {
       rows = rows.filter((row) => row.sub_stage === subStage);
     }
@@ -589,7 +611,7 @@ export class FormationService {
       rows = rows.filter((row) => row.project_name.toLowerCase().includes(term));
     }
 
-    const tiles = this.buildQueueTilesFromRows(rawRows);
+    const tiles = this.buildQueueTilesFromRows(normalizedRows);
 
     return { tiles, rows, data_source: 'live' };
   }
@@ -603,7 +625,12 @@ export class FormationService {
    */
   private async fetchLiveChecklistOrDenyNotFound(req: Request, projectUid: string, itemAddress: string): Promise<UpstreamFormationChecklist> {
     try {
-      return await this.microserviceProxy.proxyRequest<UpstreamFormationChecklist>(req, 'LFX_V2_FORMATION_SERVICE', `/formations/${projectUid}`, 'GET');
+      return await this.microserviceProxy.proxyRequest<UpstreamFormationChecklist>(
+        req,
+        'LFX_V2_FORMATION_SERVICE',
+        `/formations/${encodeURIComponent(projectUid)}`,
+        'GET'
+      );
     } catch (error) {
       if (isMicroserviceError(error) && (error.statusCode === 403 || error.statusCode === 404)) {
         logger.debug(req, 'get_formation_item', 'Denying formation-item access', { item_address: itemAddress, err: error });
@@ -642,7 +669,7 @@ export class FormationService {
       return await this.microserviceProxy.proxyRequest<UpstreamFormationItem>(
         req,
         'LFX_V2_FORMATION_SERVICE',
-        `/formations/${projectUid}/items/${itemKey}`,
+        `/formations/${encodeURIComponent(projectUid)}/items/${itemKey}`,
         'PATCH',
         undefined,
         body,
@@ -667,7 +694,7 @@ export class FormationService {
       return await this.microserviceProxy.proxyRequest<UpstreamFormationItem>(
         req,
         'LFX_V2_FORMATION_SERVICE',
-        `/formations/${projectUid}/items/${itemKey}/${action}`,
+        `/formations/${encodeURIComponent(projectUid)}/items/${itemKey}/${action}`,
         'POST',
         undefined,
         body,
@@ -725,10 +752,12 @@ export class FormationService {
       progress[item.status] += 1;
     }
 
-    const assigneesByUsername = new Map<string, FormationUser>();
+    // FormationQueueRow.assignees is bare usernames (matching the live indexer projection) — a
+    // Set, not a Map keyed by FormationUser, since the fixture has no separate display-name source.
+    const assigneeUsernames = new Set<string>();
     for (const item of items) {
       if (item.owner) {
-        assigneesByUsername.set(item.owner.username, item.owner);
+        assigneeUsernames.add(item.owner.username);
       }
     }
 
@@ -749,7 +778,7 @@ export class FormationService {
       announcement_date: formation.announcement_date,
       progress,
       blocked_item_titles: blockedGatingItems.map((item) => item.title),
-      assignees: Array.from(assigneesByUsername.values()),
+      assignees: Array.from(assigneeUsernames),
     };
   }
 

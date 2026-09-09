@@ -204,7 +204,11 @@ All validators:
 ## Guidelines
 
 - **Use `logger` service** — never import `serverLogger` directly
-- **Keep helpers pure** — no shared mutable state
+- **Keep helpers pure** — no shared mutable state. Narrow exception: `root-project.helper.ts`'s
+  module-level TTL cache for the ROOT project's uid — there is exactly one such value per
+  environment, losing it costs one extra NATS round-trip rather than any correctness, and a test
+  reset hook (`resetRootProjectUidCacheForTests`) keeps specs isolated. Don't extend this exception
+  to helpers caching per-request or per-entity data.
 - **Accept `req` for correlation** — pass it through from controllers
 - **Return defaults on error** — prefer graceful degradation over throwing
 - **Use generics** — make helpers reusable across different data types

@@ -350,17 +350,18 @@ environment:
   LFX_V2_SERVICE:
     value:
 
-  # `LFX_V2_CAMPAIGN_SERVICE` is deliberately NOT declared here, and neither are the sibling
-  # `LFX_V2_MEMBER_SERVICE` / `LFX_V2_COMMITTEE_SERVICE`. Each one falls back in code to
-  # `LFX_V2_SERVICE`, so leaving it unset routes campaign traffic through the gateway — and
-  # the gateway is where the authorization lives. Heimdall and OpenFGA enforce
-  # `campaign_manager` on the project in front of campaign-service; the service's own token
-  # check is an authentication check, not a project-scoped authorization one, so a base URL
-  # pointing straight at a service instance would let any caller holding a valid token act on
-  # a project it has no grant for, by knowing a job id.
+  # `LFX_V2_CAMPAIGN_SERVICE` is deliberately NOT declared here, and neither are the siblings
+  # `LFX_V2_MEMBER_SERVICE` / `LFX_V2_COMMITTEE_SERVICE` / `LFX_V2_FORMATION_SERVICE`. Each one
+  # falls back in code to `LFX_V2_SERVICE`, so leaving it unset routes traffic through the
+  # gateway — and the gateway is where the authorization lives. Heimdall and OpenFGA enforce
+  # the per-project/per-team grant (e.g. `campaign_manager` for campaign-service,
+  # `team:formation` membership for accept/reject/reopen) in front of each service; the
+  # service's own token check is an authentication check, not a project-scoped authorization
+  # one, so a base URL pointing straight at a service instance would let any caller holding a
+  # valid token act on a project or item it has no grant for.
   #
   # Omitting them here is not the enforcement, though — `templates/deployment.yaml` emits every
-  # entry in this map, so an override adds the variable without touching the chart. All three
+  # entry in this map, so an override adds the variable without touching the chart. All four
   # are rejected at render time by `lfx-self-serve.environment.gatewayOnlyValidate`; a
   # deployment that genuinely needs a direct address drops one from that list in a reviewed
   # chart commit. None of this is needed for the cutover flag below, a separate variable.

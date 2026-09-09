@@ -112,10 +112,7 @@ export function generateMockFormation(input: GenerateFormationInput): { formatio
       owner_team: item.owner_team,
       owner,
       due_date: null,
-      // FormationActionType's enum members share the exact string values of FormationItemAction's
-      // union, but TS treats string enums nominally — bridge the gap with a double cast rather than
-      // duplicating every seed entry under two parallel types.
-      action: item.action as unknown as FormationItem['action'],
+      action: item.action,
       // The template's own action_link, if any — no seeded row sets one today, so this is null
       // across the board (including domain_dns, which correctly ships with no destination).
       action_href: item.action_link ?? null,

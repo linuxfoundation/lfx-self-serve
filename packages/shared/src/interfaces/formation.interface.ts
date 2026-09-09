@@ -126,7 +126,10 @@ export type FormationItemStatus = 'not_started' | 'in_progress' | 'blocked' | 'a
  * `request` type is #1957/Epic 2). `status_only` items never expose how the underlying tooling was
  * set up (manual vs automated) — only Done/pending + an optional link.
  */
-export type FormationItemAction = 'manual' | 'link' | 'provisionable' | 'request' | 'status_only';
+// Derived from `FormationActionType` rather than its own literal union — the two must always agree
+// (the seeded template's `action` field is `FormationActionType`; a live checklist item's `action`
+// is one of these same values), and deriving it removes the need to cast between them.
+export type FormationItemAction = `${FormationActionType}`;
 
 export interface FormationSubItem {
   uid: string;
@@ -191,9 +194,8 @@ export interface FormationItem {
   /**
    * Optimistic-locking token (#1957/GH-2267 gap 1). Echoed on every read, sent back as `If-Match`
    * on every mutation; a stale value 412s upstream (mapped to `PreconditionFailedError` in the BFF)
-   * rather than silently overwriting a concurrent edit. Not present on any fixture-era item created
-   * before this field existed — callers reading an older stored item must treat a missing value as
-   * "unknown", never as "0" or "no lock".
+   * rather than silently overwriting a concurrent edit. Always populated — the fixture generator
+   * seeds `1` for every item, and the live mapper echoes the upstream `version` verbatim.
    */
   version: number;
 }
@@ -325,7 +327,8 @@ export interface FormationQueueRow {
   /** Six named progress counters (e.g. per-section or per-status breakdown) as published by the indexer — kept as a loose record until the projection's exact key set is confirmed upstream. */
   progress: Record<string, number>;
   blocked_item_titles: string[];
-  assignees: FormationUser[];
+  /** Bare usernames, as published by the indexer (`internal/domain/port/ports.go`'s `Assignees []string`) — not `FormationUser` objects. */
+  assignees: string[];
 }
 
 /** Response body for `GET /api/formations`. */
@@ -333,4 +336,53 @@ export interface FormationsQueueResponse {
   tiles: FormationQueueTiles;
   rows: FormationQueueRow[];
   data_source: 'fixture' | 'live';
+}
+
+/**
+ * Raw item shape from `GET /formations/{project_uid}` / a mutation response — one entry of
+ * {@link UpstreamFormationChecklist}'s `items[]`. Server-only (`formation-mapper.helper.ts` maps it
+ * onto {@link FormationItem}), kept here per this package's "no local interface in apps/lfx-one"
+ * convention rather than declared next to its sole consumer.
+ */
+export interface UpstreamFormationItem {
+  uid: string;
+  item_key: string;
+  section_key: string;
+  position: number;
+  title: string;
+  owner_team?: string | null;
+  gate: boolean;
+  requires_writer: boolean;
+  status_source: 'manual' | 'platform';
+  is_required: boolean;
+  checklist_type: string;
+  platform_check?: { min_count: number; resource_type: string } | null;
+  action_link?: string | null;
+  evidence_link?: string | null;
+  status: FormationItemStatus;
+  assignee?: string | null;
+  due_date?: string | null;
+  note?: string | null;
+  skip_reason?: string | null;
+  resolved_ref?: { type: string; uid: string } | null;
+  sub_items?: { key: string; title: string; status: FormationItemStatus }[];
+  version: number;
+}
+
+/** Raw response shape from `GET /formations/{project_uid}?v=1` — the GH-2267 plan's gap 3 (no `formation_uid`/timestamps). */
+export interface UpstreamFormationChecklist {
+  project_uid: string;
+  template_uid: string;
+  template_version: number;
+  lifecycle: string;
+  sections: { key: string; title: string; position: number }[];
+  items: UpstreamFormationItem[];
+  is_activating: boolean;
+}
+
+/** Everything `mapUpstreamFormationItem` needs beyond the raw item itself — none of it is on the wire. */
+export interface FormationItemMapContext {
+  formationUid: string;
+  projectUid: string;
+  projectSlug: string;
 }

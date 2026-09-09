@@ -8,11 +8,14 @@
  * (`FORMATION_BACKEND=live`). Both are env-driven rather than a hardcoded flip so the same build can
  * be pointed at either backend per-environment.
  *
- * This is the **only** switch — every formation read and mutation
- * (`getProjectFormation`/`getFormationsQueue`/`completeFormationItem`/`skipFormationItem`/
- * `requestFormationItem`/`updateFormationItem`/`updateFormationItemStatus`) branches on it. Per
- * Phase 7 of GH-2267, this stays the single documented switch for a staged cutover; if no staged
- * rollout turns out to be needed, delete this helper entirely and call the real proxy directly.
+ * This is the **only** switch — `getFormationsQueue`, every item mutation
+ * (`completeFormationItem`/`skipFormationItem`/`requestFormationItem`/`updateFormationItem`/
+ * `updateFormationItemStatus`/`acceptFormationItem`/`rejectFormationItem`/`reopenFormationItem`)
+ * branches on it. `getProjectFormation` does not yet — its live branch is
+ * `// TODO(GH-2267 Phase 1 remainder)` and unconditionally throws, so flipping this on before that
+ * lands 404s the checklist read while everything else goes live. Per Phase 7 of GH-2267, this stays
+ * the single documented switch for a staged cutover; if no staged rollout turns out to be needed,
+ * delete this helper entirely and call the real proxy directly.
  *
  * No `NODE_ENV==='production'` hard-block (unlike the mock-backend precedents `isEngagementMockBackend()`/
  * `WEEKLY_BRIEF_BACKEND`): production isn't "reachable with a misconfigured env var flipping on

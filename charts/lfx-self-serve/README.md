@@ -510,7 +510,8 @@ read "flag on, no errors" from this pre-CREATE era as a verified cutover.
 Campaign traffic reaches campaign-service **through the gateway**, at `environment.LFX_V2_SERVICE`.
 There is deliberately no chart parameter for a campaign-service base URL. The application does read
 `LFX_V2_CAMPAIGN_SERVICE` and falls back to `LFX_V2_SERVICE` when it is unset — the same shape as
-`LFX_V2_MEMBER_SERVICE` and `LFX_V2_COMMITTEE_SERVICE`, neither of which this chart declares either.
+`LFX_V2_MEMBER_SERVICE`, `LFX_V2_COMMITTEE_SERVICE` and `LFX_V2_FORMATION_SERVICE`, none of which
+this chart declares either.
 The fallback is what makes the gateway the default, and the gateway is where the authorization
 lives: Heimdall and OpenFGA enforce `campaign_manager` on the project in front of campaign-service,
 while the service's own token check authenticates the caller without authorizing them for that
@@ -519,7 +520,7 @@ act on a project it holds no grant for, given a job id.
 
 Omitting the key from `values.yaml` does not by itself close that path — `templates/deployment.yaml`
 emits every entry in `.Values.environment`, so an override adds the variable without touching this
-chart. All three variables are therefore rejected at render time by
+chart. All four variables are therefore rejected at render time by
 `lfx-self-serve.environment.gatewayOnlyValidate`, and `helm template` fails with the reason rather
 than producing a pod that silently bypasses the gateway. Declaring the key with an empty value is
 still fine: the container treats it as unset and the application resolves it to `LFX_V2_SERVICE`. A

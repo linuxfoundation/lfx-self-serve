@@ -3,13 +3,12 @@
 
 import '@angular/compiler';
 
-import type { Formation, FormationItem, QueryServiceResponse } from '@lfx-one/shared/interfaces';
+import type { Formation, FormationItem, QueryServiceResponse, UpstreamFormationChecklist, UpstreamFormationItem } from '@lfx-one/shared/interfaces';
 import { deriveFormationEntityType } from '@lfx-one/shared/utils';
 import type { Request } from 'express';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 
 import { MicroserviceError } from '../errors/microservice.error';
-import type { UpstreamFormationChecklist, UpstreamFormationItem } from '../helpers/formation-mapper.helper';
 
 const getProjectById = vi.fn();
 const getProjectIdBySlug = vi.fn();
@@ -40,8 +39,8 @@ vi.mock('./logger.service', () => ({
 }));
 // NatsService only backs resolveRootProjectUid's ROOT slug->uid lookup here (GH-2267 Phase 4). No
 // test in this file exercises the ROOT-collapse branch itself, so a resolved-but-empty response is
-// enough to keep every call fast and keep collapseRootParentUid a no-op — see root-project.helper.ts's
-// dedicated spec for the collapse logic itself.
+// enough to keep every call fast and keep collapseRootParentUid a no-op. `root-project.helper.ts`
+// has no dedicated spec yet — the collapse logic is only exercised indirectly through here.
 vi.mock('./nats.service', () => ({
   NatsService: vi.fn().mockImplementation(() => ({
     getCodec: () => ({
@@ -642,7 +641,7 @@ describe('FormationService', () => {
       title: 'Some item',
       gate: false,
       requires_writer: false,
-      status_source: 'user',
+      status_source: 'manual',
       is_required: true,
       checklist_type: 'manual',
       status: 'awaiting_acceptance',

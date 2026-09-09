@@ -3,7 +3,14 @@
 
 import { FORMATION_TEMPLATE } from '@lfx-one/shared/constants';
 import { ProjectStage } from '@lfx-one/shared/enums';
-import type { Formation, FormationItem, FormationItemLink, FormationItemStatus, FormationSubItem, FormationSubStage } from '@lfx-one/shared/interfaces';
+import type {
+  FormationItem,
+  FormationItemLink,
+  FormationItemMapContext,
+  FormationSubItem,
+  FormationSubStage,
+  UpstreamFormationItem,
+} from '@lfx-one/shared/interfaces';
 import { isRelativeInAppPath, isValidUrl } from '@lfx-one/shared/utils';
 
 /**
@@ -12,52 +19,11 @@ import { isRelativeInAppPath, isValidUrl } from '@lfx-one/shared/utils';
  * this repo's `Formation`/`FormationItem` shared types. Every field this file derives rather than
  * copies verbatim (`section_title`, `action`, `action_href`, `links`, `detail`) has no upstream
  * source at all — see the GH-2267 plan's Phase 5 "checklist read" section for why each one is
- * derived from the seeded `FORMATION_TEMPLATE` instead.
+ * derived from the seeded `FORMATION_TEMPLATE` instead. The raw upstream shapes themselves
+ * (`UpstreamFormationItem`/`UpstreamFormationChecklist`/`FormationItemMapContext`) live in
+ * `@lfx-one/shared/interfaces` rather than here, per this repo's "no local interface in
+ * apps/lfx-one" convention.
  */
-
-/** Raw item shape from `GET /formations/{project_uid}` / a mutation response — one entry of `FormationChecklist.items[]`. */
-export interface UpstreamFormationItem {
-  uid: string;
-  item_key: string;
-  section_key: string;
-  position: number;
-  title: string;
-  owner_team?: string | null;
-  gate: boolean;
-  requires_writer: boolean;
-  status_source: 'user' | 'platform';
-  is_required: boolean;
-  checklist_type: string;
-  platform_check?: string | null;
-  action_link?: string | null;
-  evidence_link?: string | null;
-  status: FormationItemStatus;
-  assignee?: string | null;
-  due_date?: string | null;
-  note?: string | null;
-  skip_reason?: string | null;
-  resolved_ref?: string | null;
-  sub_items?: { key: string; title: string; status: FormationItemStatus }[];
-  version: number;
-}
-
-/** Raw response shape from `GET /formations/{project_uid}?v=1` — the plan's gap 3 (no `formation_uid`/timestamps). */
-export interface UpstreamFormationChecklist {
-  project_uid: string;
-  template_uid: string;
-  template_version: number;
-  lifecycle: string;
-  sections: { key: string; title: string; position: number }[];
-  items: UpstreamFormationItem[];
-  is_activating: boolean;
-}
-
-/** Everything the mapper needs beyond the raw item itself — none of it is on the wire (see the file doc comment). */
-export interface FormationItemMapContext {
-  formationUid: string;
-  projectUid: string;
-  projectSlug: string;
-}
 
 const TEMPLATE_ITEMS_BY_KEY = new Map(FORMATION_TEMPLATE.sections.flatMap((section) => section.items.map((item) => [item.key, item])));
 const TEMPLATE_SECTION_TITLES_BY_KEY = new Map(FORMATION_TEMPLATE.sections.map((section) => [section.key as string, section.title]));
@@ -73,7 +39,7 @@ const TEMPLATE_SECTION_TITLES_BY_KEY = new Map(FORMATION_TEMPLATE.sections.map((
 function deriveItemAction(raw: UpstreamFormationItem): FormationItem['action'] {
   if (raw.status_source === 'platform') return 'provisionable';
   const templateItem = TEMPLATE_ITEMS_BY_KEY.get(raw.item_key);
-  return (templateItem?.action as unknown as FormationItem['action']) ?? 'manual';
+  return templateItem?.action ?? 'manual';
 }
 
 /**
@@ -155,43 +121,6 @@ export function mapUpstreamFormationItem(raw: UpstreamFormationItem, ctx: Format
   };
 }
 
-/**
- * Maps `GET /formations/{project_uid}`'s checklist-level fields onto `Formation`, given the
- * project record already resolved for slug→uid (`ProjectService.getProjectById`) — the plan's
- * "checklist read" §5: `parent_project_*`/`is_foundation`/`sub_stage`/`announcement_date` have no
- * checklist-response source at all and come from the project record instead.
- * `gating_items_open`/`gating_items_total`/`blocking_item_title`/`subtitle` are derived from
- * `items` (already collapsed for ROOT and enriched by the caller), mirroring
- * `FormationService.refreshFormationReadiness`'s fixture-era rollup so both data sources agree on
- * what "activating" means. `Formation.uid` is left absent (gap 3 — raised upstream on #1957) and
- * so are `created_at`/`updated_at` (same gap).
- */
-export function mapUpstreamFormationChecklist(
-  raw: UpstreamFormationChecklist,
-  project: { slug: string; name: string; parent_uid: string | null | undefined },
-  collapsedParentUid: string | null,
-  subStage: Formation['sub_stage'],
-  announcementDate: string | null,
-  items: FormationItem[]
-): Formation {
-  const gatingItems = items.filter((item) => item.is_gating);
-  const openGatingItems = gatingItems.filter((item) => item.status !== 'done' && item.status !== 'skipped');
-  const blockedGatingItems = gatingItems.filter((item) => item.status === 'blocked');
-
-  return {
-    parent_project_uid: raw.project_uid,
-    parent_project_slug: project.slug,
-    parent_project_name: project.name,
-    is_foundation: !collapsedParentUid,
-    parent_uid: collapsedParentUid,
-    template_uid: raw.template_uid,
-    template_version: raw.template_version,
-    sub_stage: subStage,
-    announcement_date: announcementDate,
-    is_activating: raw.is_activating,
-    gating_items_open: openGatingItems.length,
-    gating_items_total: gatingItems.length,
-    blocking_item_title: blockedGatingItems.length > 0 ? blockedGatingItems.map((item) => item.title).join(', ') : null,
-    subtitle: null,
-  };
-}
+// Note: `getProjectFormation`'s live branch (mapping `UpstreamFormationChecklist` onto `Formation`)
+// is not yet wired — see the GH-2267 plan's Phase 1 remainder. A `mapUpstreamFormationChecklist`
+// helper belongs here once that lands, matching `mapUpstreamFormationItem`'s shape.
