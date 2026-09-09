@@ -16,7 +16,8 @@ import {
   lfxFontSizes,
   MENTION_PLATFORM_CONFIG,
   MENTION_SENTIMENT_CONFIG,
-  MENTORSHIP_PERSON_STATUS_BADGE_CLASSES,
+  MENTORSHIP_MENTEE_STATUS_BADGE_CLASSES,
+  MENTORSHIP_MENTOR_STATUS_BADGE_CLASSES,
   MENTORSHIP_PROGRAM_AVATAR_PALETTE,
   MENTORSHIP_PROGRAM_STATUS_BADGE_CLASSES,
   MENTORSHIP_TERM_ROW_STATUS_BADGE_CLASSES,
@@ -40,10 +41,12 @@ export default {
     // multi-class strings (e.g. `rounded-xl bg-rose-100 !text-rose-700`) are each generated.
     ...MENTORSHIP_PROGRAM_AVATAR_PALETTE.flatMap((classes) => classes.split(' ')),
     ...Object.values(MENTORSHIP_PROGRAM_STATUS_BADGE_CLASSES).flatMap((classes) => classes.split(' ')),
-    // Mentorship program-detail tabs: person status badges (applicants / mentees / mentors) and
-    // term-row status badges come from the same shared constants file, also outside `content`.
-    // `bg-red-50` (declined) appears nowhere else in scanned source, so it is purged without this.
-    ...Object.values(MENTORSHIP_PERSON_STATUS_BADGE_CLASSES).flatMap((classes) => classes.split(' ')),
+    // Mentorship program-detail tabs: mentor/mentee status badges (Mentors / Applicants / Current
+    // Mentees) and term-row status badges come from shared constants, also outside `content`.
+    // The class strings are assembled in @lfx-one/shared, which Tailwind never scans, so these
+    // spreads are what guarantees they survive purging regardless of usage elsewhere.
+    ...Object.values(MENTORSHIP_MENTOR_STATUS_BADGE_CLASSES).flatMap((classes) => classes.split(' ')),
+    ...Object.values(MENTORSHIP_MENTEE_STATUS_BADGE_CLASSES).flatMap((classes) => classes.split(' ')),
     ...Object.values(MENTORSHIP_TERM_ROW_STATUS_BADGE_CLASSES).flatMap((classes) => classes.split(' ')),
     // Social Listening platform icon colors (MENTION_PLATFORM_CONFIG in @lfx-one/shared, not scanned here)
     ...Object.values(MENTION_PLATFORM_CONFIG).map((c) => c.colorClass),
