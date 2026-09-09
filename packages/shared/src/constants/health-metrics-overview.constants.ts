@@ -51,7 +51,7 @@ export const HEALTH_METRICS_OVERVIEW_LINK_TARGETS = {
   'mem.renewals': '/members#renewals',
   'mem.list': '/members',
   'non.orgs': '/non-members',
-  'trn.enrolment': '/training',
+  'trn.enrollment': '/training',
 } as const;
 
 /** The one `link_target` that opens externally (LFX Insights) instead of a PCC anchor. */

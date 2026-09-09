@@ -119,7 +119,7 @@ export const HEALTH_METRICS_OVERVIEW_FIXTURE_FINDINGS: HealthMetricsFinding[] = 
     sentence: 'No enrollment file received for this reporting period.',
     keyValue: '—',
     keyLabel: 'not yet available',
-    linkTarget: 'trn.enrolment',
+    linkTarget: 'trn.enrollment',
     sortRank: 70,
     evaluatedAt: '2026-09-01',
   },
