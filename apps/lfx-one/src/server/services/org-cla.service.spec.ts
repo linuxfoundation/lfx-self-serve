@@ -5,6 +5,7 @@ import { beforeEach, describe, expect, it, vi } from 'vitest';
 
 import type { Request } from 'express';
 
+import type * as ClaIdentifierUtils from '../../../../../packages/shared/src/utils/cla-identifier.utils';
 import type { MicroserviceError as MicroserviceErrorType } from '../errors';
 import type { EasyClaCompanyClaGroup, EasyClaCompanyClaGroupList } from '../types/cla.types';
 
@@ -13,6 +14,15 @@ const { gatewayFetch, isImpersonating, loggerWarning } = vi.hoisted(() => ({
   isImpersonating: vi.fn(() => false),
   loggerWarning: vi.fn(),
 }));
+
+// The shared utils barrel reaches Angular through unrelated siblings (form/meeting/vote), which the
+// node test environment cannot compile. Only the real identifier helper is wanted here — pulled
+// from its own module via `importActual` rather than restated, so the comparison under test is the
+// one that ships. Same approach `rewards-subject.spec.ts` uses for the Salesforce pattern.
+vi.mock('@lfx-one/shared/utils', async () => {
+  const actual = await vi.importActual<typeof ClaIdentifierUtils>('../../../../../packages/shared/src/utils/cla-identifier.utils');
+  return { isSameClaGroup: actual.isSameClaGroup, canonicalClaGroupId: actual.canonicalClaGroupId };
+});
 
 vi.mock('../helpers/gateway-fetch.helper', () => ({ gatewayFetch }));
 vi.mock('../helpers/cla-service-url.helper', () => ({ claServiceBaseUrl: () => 'https://gw.example.org/cla-service' }));
@@ -818,6 +828,20 @@ describe('OrgClaService.requestCorporateSignature', () => {
     gatewayFetch.mockResolvedValueOnce({ ...upstreamOk, cla_group_id: 'a-different-cla-group-uuid' });
 
     await expect(new OrgClaService().requestCorporateSignature(signReq(), ORG_UID, signRequest())).rejects.toThrow(/different CLA Group/);
+  });
+
+  // The request boundary accepts hyphenated and unhyphenated spellings in either case; the producer
+  // answers in its own. Comparing raw refuses a perfectly valid session after the envelope exists,
+  // which is worse than not checking at all — so the accepted spellings are pinned here.
+  it.each([
+    ['unhyphenated request', CLA_GROUP_ID.replaceAll('-', '')],
+    ['upper-case request', CLA_GROUP_ID.toUpperCase()],
+  ])('accepts the canonical echo against an %s', async (_label, claGroupId) => {
+    gatewayFetch.mockResolvedValueOnce({ ...upstreamOk, cla_group_id: CLA_GROUP_ID });
+
+    expect(await new OrgClaService().requestCorporateSignature(signReq(), ORG_UID, signRequest({ claGroupId }))).toEqual({
+      signUrl: 'https://docusign.example.org/session/1',
+    });
   });
 
   it('does not hand back the signing address when the CLA Group does not match', async () => {

@@ -259,6 +259,9 @@ export class OrgEasyclaComponent {
     const pickerRef = this.dialogService.open(OrgEasyclaGroupSelectComponent, {
       header: CCLA_SIGN_COPY.picker.header,
       width: '40rem',
+      // The Aura dialog preset caps nothing, so a fixed width alone runs off a 360-390px phone,
+      // taking the controls at its edges with it. Same cap the sibling coverage dialog documents.
+      style: { maxWidth: '90vw' },
       modal: true,
       closable: true,
       dismissableMask: true,
@@ -300,6 +303,9 @@ export class OrgEasyclaComponent {
     const attestationRef = this.dialogService.open(OrgEasyclaAttestationComponent, {
       header: CCLA_SIGN_COPY.attestation.header,
       width: '42rem',
+      // The Aura dialog preset caps nothing, so a fixed width alone runs off a 360-390px phone,
+      // taking the controls at its edges with it. Same cap the sibling coverage dialog documents.
+      style: { maxWidth: '90vw' },
       modal: true,
       closable: true,
       dismissableMask: true,
@@ -322,6 +328,9 @@ export class OrgEasyclaComponent {
         // exists and that nobody was handed. These three are the initial values only.
         header: CCLA_SIGN_COPY.preparing.header,
         width: '40rem',
+        // The Aura dialog preset caps nothing, so a fixed width alone runs off a 360-390px phone,
+        // taking the controls at its edges with it. Same cap the sibling coverage dialog documents.
+        style: { maxWidth: '90vw' },
         modal: true,
         closable: false,
         closeOnEscape: false,

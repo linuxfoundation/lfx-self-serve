@@ -1,7 +1,7 @@
 // Copyright The Linux Foundation and each contributor to LFX.
 // SPDX-License-Identifier: MIT
 
-import { CLA_GROUP_SEARCH_MIN_CHARS } from '@lfx-one/shared/constants';
+import { CLA_GROUP_ID_PATTERN, CLA_GROUP_SEARCH_MIN_CHARS, SALESFORCE_ID_PATTERN } from '@lfx-one/shared/constants';
 import { NextFunction, Request, Response } from 'express';
 
 import { AuthenticationError, ServiceValidationError } from '../errors';
@@ -10,12 +10,6 @@ import { assertOrgUid } from '../helpers/org-uid.helper';
 import { OrgClaService } from '../services/org-cla.service';
 import { logger } from '../services/logger.service';
 import { getUsernameFromAuth } from '../utils/auth-helper';
-
-/**
- * Same UUID shape the Me-lens hand-off validates, hyphens optional because the producer's own
- * pattern allows both spellings.
- */
-const CLA_GROUP_ID_PATTERN = /^[0-9a-f]{8}-?[0-9a-f]{4}-?[0-9a-f]{4}-?[0-9a-f]{4}-?[0-9a-f]{12}$/i;
 
 export class OrgClasController {
   private readonly orgClaService = new OrgClaService();
@@ -149,8 +143,12 @@ export class OrgClasController {
       // operational fault, and logging it as one inflates the error signal this service is
       // watched by), and the operation terminated on the same path as every other failure. The
       // sibling `getPdfUrl` above already does this; these three were the outliers.
+      // Shape-checked, not merely non-empty. A malformed identifier that is only checked for
+      // emptiness travels upstream and comes back as a 403 from the project-and-organization
+      // authorization check — which relays to the signatory as a refusal about their signing
+      // authority, when the real fault is a bad request this boundary could have named.
       const projectSfid = String(body?.projectSfid ?? '').trim();
-      if (!projectSfid) {
+      if (!SALESFORCE_ID_PATTERN.test(projectSfid)) {
         throw ServiceValidationError.fromFieldErrors({ projectSfid: 'A project identifier is required' }, 'A project identifier is required', {
           operation: 'request_org_cla_corporate_signature',
         });

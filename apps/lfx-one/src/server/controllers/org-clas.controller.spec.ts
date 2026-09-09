@@ -328,6 +328,18 @@ describe('OrgClasController.requestCorporateSignature', () => {
     expect(requestCorporateSignature).not.toHaveBeenCalled();
   });
 
+  // Shape-checked, not just non-empty. A malformed identifier that only fails an emptiness test
+  // reaches EasyCLA's project-and-organization authorization check and returns as a 403 — which
+  // this route relays in the producer's words, so the signatory is told their signing authority
+  // was refused when the real fault was a bad request this boundary could have named.
+  it.each([['nimbus'], ['not a salesforce id'], ['a0941000002wBz2AAE-extra'], ['../../etc/passwd']])(
+    'rejects a malformed project identifier %p before calling upstream',
+    async (projectSfid) => {
+      expect((await rejectionOf({ projectSfid })).statusCode).toBe(400);
+      expect(requestCorporateSignature).not.toHaveBeenCalled();
+    }
+  );
+
   it('rejects a CLA group identifier that is not a UUID', async () => {
     expect((await rejectionOf({ claGroupId: 'nimbus-foundation' })).statusCode).toBe(400);
     expect(requestCorporateSignature).not.toHaveBeenCalled();

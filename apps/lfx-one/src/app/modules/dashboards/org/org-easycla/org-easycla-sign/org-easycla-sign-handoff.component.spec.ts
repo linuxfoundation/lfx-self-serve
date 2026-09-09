@@ -236,14 +236,17 @@ describe('OrgEasyclaSignHandoffComponent', () => {
     expect(shown).not.toContain('Http failure response');
   });
 
-  it('closes without a result when the signatory backs out of an open session', async () => {
+  // By the time this state is reached the agreement and its DocuSign envelope exist upstream, and
+  // the address on screen is the only way anyone reaches them. A back-out here would strand a real
+  // agreement that this application cannot cancel or reuse, so the state offers no way back.
+  it('offers no way out of an open session except continuing to sign it', async () => {
     requestCorporateSignature.mockReturnValue(of(response));
 
     const fixture = await render();
-    (testid(fixture, 'org-easycla-sign-cancel')?.querySelector('button') as HTMLButtonElement).click();
 
-    expect(close).toHaveBeenCalledWith(null);
-    expect(location.href).toBe('https://example.test/org/easycla');
+    expect(testid(fixture, 'org-easycla-sign-cancel')).toBeNull();
+    expect(testid(fixture, 'org-easycla-sign-review')).not.toBeNull();
+    expect(close).not.toHaveBeenCalled();
   });
 
   it('fails closed when it is opened without a selection', async () => {
@@ -269,11 +272,23 @@ describe('OrgEasyclaSignHandoffComponent', () => {
       expect(config.closeOnEscape).toBe(false);
     });
 
-    it.each([
-      ['ready', () => of(response)],
-      ['failed', () => throwError(() => bffError(500, { error: 'nope' }))],
-    ])('can be dismissed again once it reaches %s', async (_state, source) => {
-      requestCorporateSignature.mockReturnValue(source());
+    // Still sealed on success, not just in flight. The envelope exists by then and the address on
+    // screen is the only copy, so an Escape here abandons a real agreement — and `ready` waits for
+    // a person, where the request itself usually answers in under a second. Sealing only the
+    // in-flight window would close the smaller of the two holes.
+    it('still cannot be dismissed once the session is open', async () => {
+      requestCorporateSignature.mockReturnValue(of(response));
+
+      await render();
+
+      expect(config.closable).toBe(false);
+      expect(config.closeOnEscape).toBe(false);
+    });
+
+    // The one dismissible state: no envelope to strand, and trapping someone in a dialog that
+    // reports a failure would leave them no way out at all.
+    it('can be dismissed once it reaches failed', async () => {
+      requestCorporateSignature.mockReturnValue(throwError(() => bffError(500, { error: 'nope' })));
 
       await render();
 

@@ -60,19 +60,22 @@ export class OrgEasyclaSignHandoffComponent {
     // this config object on every change-detection pass — so driving them from state here is what
     // keeps the frame honest, rather than fixing them at the call site that cannot see the state.
     //
-    // While the request is in flight the dialog cannot be dismissed by either route. Closing it
-    // then destroys this component and its subscription, and the signing address that comes back
-    // is the only copy: the signature record and the DocuSign envelope are created by that same
-    // call, so a dismissal mid-flight leaves a real envelope nobody was handed. Both exits open
-    // again on `ready` and `failed`, where there is either an address on screen or nothing left
-    // to lose.
+    // The dialog cannot be dismissed while the request is in flight, and still cannot once it
+    // succeeds. The signature record and the DocuSign envelope are created by that one call, and
+    // the address it returns is the only copy — so every exit before the signatory follows it
+    // abandons a real agreement upstream, which this application has no way to cancel or reuse.
+    // Sealing only the in-flight window would close the smaller of the two holes: the request
+    // usually answers in under a second, while `ready` waits for a person.
+    //
+    // `failed` is the one dismissible state. There is no envelope to strand, and trapping someone
+    // in a dialog that reports a failure would leave them no way out at all.
     effect(() => {
       const state = this.state();
-      const inFlight = state === 'preparing';
+      const dismissible = state === 'failed';
 
       this.config.header = this.headerFor[state];
-      this.config.closable = !inFlight;
-      this.config.closeOnEscape = !inFlight;
+      this.config.closable = dismissible;
+      this.config.closeOnEscape = dismissible;
     });
 
     const data = this.config.data;

@@ -24,10 +24,20 @@ This is legal attestation copy: do not hardcode a sentence here, and do not rewo
       control="embargoAcked"
       [label]="copy.embargoLabel"
       labelClass="text-sm text-slate-700"
+      ariaDescribedBy="org-easycla-attestation-conditions"
       data-testid="org-easycla-attestation-embargo" />
   </div>
 
-  <ul class="mt-3 flex list-disc flex-col gap-2 pl-9 text-sm text-slate-700" data-testid="org-easycla-attestation-conditions">
+  <!--
+    Described by, not merely adjacent. The checkbox's own label ends "… is not:", and the terms
+    that finish that sentence are these list items. Without the association a screen-reader user
+    arrives at the control having heard an incomplete sentence and affirms terms never read to
+    them, which is not a defensible way to take a legal attestation.
+  -->
+  <ul
+    id="org-easycla-attestation-conditions"
+    class="mt-3 flex list-disc flex-col gap-2 pl-9 text-sm text-slate-700"
+    data-testid="org-easycla-attestation-conditions">
     @for (condition of copy.embargoConditions; track condition) {
       <li>{{ condition }}</li>
     }

@@ -9,6 +9,7 @@
 // happen client-side over the fetched set, so nothing on this path fans out per row.
 
 import { ORG_EASYCLA_PATH } from '@lfx-one/shared/constants';
+import { isSameClaGroup } from '@lfx-one/shared/utils';
 import type {
   ClaGroupOption,
   ClaGroupSearchResponse,
@@ -303,12 +304,13 @@ export class OrgClaService {
    *
    * Runs on the default gateway token with no impersonation branch, same as the Me-lens search:
    * the CLA Group catalogue is not organization-scoped upstream, so there is no ownership check
-   * for a token swap to satisfy. The organization gate on this route is the dark-launch flag and
-   * `requireOrgLensAccess`; nothing about the caller's company reaches the query.
+   * for a token swap to satisfy. The gate on this route is `requireOrgLensAccess` alone; nothing
+   * about the caller's company reaches the query. The dark-launch flag is not part of it — that
+   * flag is an Angular route guard, so it hides the page without closing this endpoint.
    */
   public async getSignOptions(req: Request, searchTerm: string): Promise<ClaGroupSearchResponse> {
-    const startTime = logger.startOperation(req, 'org_cla_sign_options');
-
+    // No `startOperation` here, for the reason `getPdfUrl` above gives: the HTTP lifecycle is the
+    // controller's, and a second one double-counts the completion telemetry for one endpoint.
     const params = new URLSearchParams({ searchTerm });
     const list = await gatewayFetch<EasyClaSearchList>(req, `${claServiceBaseUrl(SERVICE)}/v4/cla-group/search?${params.toString()}`, {
       operation: 'org_cla_sign_options',
@@ -331,7 +333,10 @@ export class OrgClaService {
       results,
     };
 
-    logger.success(req, 'org_cla_sign_options', startTime, {
+    // A business event, not a request completion. How many of the matches are actually signable is
+    // the thing worth watching here: a search that returns rows the picker then greys out is how a
+    // project-to-CLA-Group mapping gap shows up in production.
+    logger.info(req, 'org_cla_sign_options', 'searched signable CLA groups', {
       result_count: envelope.resultCount,
       truncated: envelope.truncated,
       signable_count: results.filter((option) => !!option.projectSfid && option.cclaEnabled === true).length,
@@ -367,11 +372,8 @@ export class OrgClaService {
    * an organization that holds no agreements yet, which is the population this flow serves.
    */
   public async requestCorporateSignature(req: Request, orgUid: string, request: OrgClaSignRequest): Promise<OrgClaSignResponse> {
-    const startTime = logger.startOperation(req, 'org_cla_request_corporate_signature', {
-      project_sfid: request.projectSfid,
-      cla_group_id: request.claGroupId,
-    });
-
+    // No `startOperation` here, for the reason `getPdfUrl` above gives: the HTTP lifecycle is the
+    // controller's. The events below are business events on top of it, not a second request.
     // Derived before the call: an unusable origin dead-ends the hand-off anyway, and failing
     // afterwards would leave a real signing session behind with nowhere to return to.
     const returnUrl = claReturnUrl(req, ORG_EASYCLA_PATH);
@@ -422,7 +424,9 @@ export class OrgClaService {
     // Navigating to an empty address would send the signatory to this application's own root and
     // read as a successful hand-off that silently signed nothing.
     if (!signUrl || !signatureId) {
-      logger.error(req, 'org_cla_request_corporate_signature', startTime, new Error('upstream returned no usable signing session'), {
+      // The fields, not the severity: the throw below reaches the shared error handler, which logs
+      // the failure centrally. Duplicating that here as an error would double-count it.
+      logger.warning(req, 'org_cla_request_corporate_signature', 'upstream returned no usable signing session', {
         has_sign_url: !!signUrl,
         has_signature_id: !!signatureId,
       });
@@ -443,9 +447,13 @@ export class OrgClaService {
     // the cheaper of the two outcomes by a wide margin: the alternative is a corporate agreement
     // signed against the wrong CLA Group, which is a legal instrument that cannot be withdrawn by
     // this application. Binding the group in the request instead needs an upstream field.
+    // Compared canonically, never as raw strings. The request boundary accepts the hyphenated and
+    // unhyphenated spellings in either case, because the producer does, and the producer answers in
+    // its own canonical one — so a request that spelled the id differently would fail a raw
+    // comparison and have a perfectly valid signing session refused out from under it.
     const returnedClaGroupId = result?.cla_group_id?.trim() ?? '';
-    if (returnedClaGroupId && returnedClaGroupId !== request.claGroupId) {
-      logger.error(req, 'org_cla_request_corporate_signature', startTime, new Error('upstream opened a session for a different CLA Group'), {
+    if (returnedClaGroupId && !isSameClaGroup(returnedClaGroupId, request.claGroupId)) {
+      logger.warning(req, 'org_cla_request_corporate_signature', 'upstream opened a session for a different CLA Group', {
         requested_cla_group_id: request.claGroupId,
         returned_cla_group_id: returnedClaGroupId,
         project_sfid: request.projectSfid,
@@ -471,9 +479,11 @@ export class OrgClaService {
       );
     }
 
-    // The signature id is logged for correlation and deliberately not returned: nothing on the
-    // client reads it, and it identifies a named person's agreement.
-    logger.success(req, 'org_cla_request_corporate_signature', startTime, { org_uid: orgUid, signature_id: signatureId });
+    // A corporate agreement was just opened — the notable business event on this path, and the only
+    // record tying this request to the signature it created. The signature id is logged for that
+    // correlation and deliberately not returned: nothing on the client reads it, and it identifies
+    // a named person's agreement.
+    logger.info(req, 'org_cla_request_corporate_signature', 'opened a corporate signing session', { org_uid: orgUid, signature_id: signatureId });
 
     return { signUrl };
   }

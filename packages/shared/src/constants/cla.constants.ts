@@ -261,11 +261,16 @@ export const CCLA_SIGN_COPY = {
     /** Stated before the signatory commits, so the consequence is not first learned after signing. */
     consequence: 'When this CLA is signed, you will be the initial CLA Manager.',
   },
+  /**
+   * No cancel label, deliberately. By the time this state is on screen the agreement and its
+   * DocuSign envelope already exist upstream, and the address below is the only way anyone reaches
+   * them — so there is no exit here that does not abandon a real agreement. The one way on is
+   * forward, and the copy says the envelope is already waiting rather than implying it is not.
+   */
   ready: {
     header: 'Review CCLA',
-    body: 'Click below to review and sign CCLA. After the CCLA is signed, you will be the initial CLA Manager and authorized to approve contributors and add additional CLA Managers.',
+    body: 'Your CCLA is ready and waiting for signature. Continue to review and sign it. After the CCLA is signed, you will be the initial CLA Manager and authorized to approve contributors and add additional CLA Managers.',
     continueLabel: 'Review and Sign CCLA',
-    cancelLabel: 'Cancel',
   },
   failure: {
     header: 'Unable to prepare CLA',

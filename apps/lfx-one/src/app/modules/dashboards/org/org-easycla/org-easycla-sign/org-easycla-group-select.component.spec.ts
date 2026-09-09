@@ -108,10 +108,16 @@ describe('OrgEasyclaGroupSelectComponent', () => {
     return fixture.nativeElement.querySelector('#org-easycla-group-select-search-input') as HTMLInputElement;
   }
 
+  // jsdom implements no layout, so it ships no `scrollIntoView` at all — an unstubbed arrow press
+  // throws before the assertion is reached. Stubbed on the prototype rather than per element
+  // because the highlight scrolls on every arrow press, not on one deep-linked element.
+  const scrollIntoView = vi.fn();
   beforeEach(() => {
     vi.useFakeTimers();
     getSignOptions.mockReset();
     close.mockClear();
+    scrollIntoView.mockClear();
+    Element.prototype.scrollIntoView = scrollIntoView;
   });
 
   afterEach(() => vi.useRealTimers());
@@ -323,6 +329,24 @@ describe('OrgEasyclaGroupSelectComponent', () => {
         projectSfid: signable.projectSfid,
         projectName: signable.projectName,
       });
+    });
+
+    // Focus stays on the search box throughout the combobox pattern, so the browser scrolls
+    // nothing of its own when the highlight moves. Past the handful of rows the 240px list can
+    // show, a sighted keyboard user would lose sight of which row Enter is about to choose — and
+    // a screen-reader user would notice nothing wrong, which is what makes it easy to ship.
+    it('brings the newly highlighted row into view on each arrow press', async () => {
+      getSignOptions.mockReturnValue(of(results([signable, multiProject])));
+
+      const fixture = await render();
+      await search(fixture);
+      press(fixture, 'ArrowDown');
+      press(fixture, 'ArrowDown');
+
+      expect(scrollIntoView).toHaveBeenCalledTimes(2);
+      // `nearest` so a row already visible does not scroll; anything else jumps the list under the
+      // reader on every press.
+      expect(scrollIntoView).toHaveBeenLastCalledWith({ block: 'nearest' });
     });
 
     // The wiring that makes the highlight audible at all. Without `role="combobox"` and

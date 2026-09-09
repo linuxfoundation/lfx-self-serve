@@ -1,7 +1,7 @@
 // Copyright The Linux Foundation and each contributor to LFX.
 // SPDX-License-Identifier: MIT
 
-import { ChangeDetectionStrategy, Component, computed, inject, Signal, signal } from '@angular/core';
+import { ChangeDetectionStrategy, Component, computed, ElementRef, inject, Signal, signal } from '@angular/core';
 import { takeUntilDestroyed } from '@angular/core/rxjs-interop';
 import { FormControl, FormGroup, ReactiveFormsModule } from '@angular/forms';
 import { CCLA_SIGN_COPY, CLA_GROUP_SEARCH_DEBOUNCE_MS, CLA_GROUP_SEARCH_MIN_CHARS } from '@lfx-one/shared/constants';
@@ -45,6 +45,7 @@ import { InputTextComponent } from '@components/input-text/input-text.component'
   changeDetection: ChangeDetectionStrategy.OnPush,
 })
 export class OrgEasyclaGroupSelectComponent {
+  private readonly host = inject<ElementRef<HTMLElement>>(ElementRef);
   private readonly ref = inject(DynamicDialogRef);
   private readonly claService = inject(OrgLensClaService);
   private readonly config = inject<DynamicDialogConfig<OrgClaGroupSelectDialogData>>(DynamicDialogConfig);
@@ -213,10 +214,12 @@ export class OrgEasyclaGroupSelectComponent {
         // Otherwise the caret jumps to the end of the field on every step.
         event.preventDefault();
         this.highlightedIndex.set((this.highlightedIndex() + 1) % options.length);
+        this.revealHighlighted(options);
         break;
       case 'ArrowUp':
         event.preventDefault();
         this.highlightedIndex.set((this.highlightedIndex() - 1 + options.length) % options.length);
+        this.revealHighlighted(options);
         break;
       case 'Enter': {
         const highlighted = options[this.highlightedIndex()];
@@ -264,6 +267,26 @@ export class OrgEasyclaGroupSelectComponent {
 
   protected onCancel(): void {
     this.ref.close(null);
+  }
+
+  /**
+   * Brings the highlighted row into the scrolling list.
+   *
+   * Focus never leaves the search box — the combobox pattern puts `aria-activedescendant` there —
+   * so the browser does no scrolling of its own when the highlight moves. Past the few rows the
+   * list can show, the highlight would otherwise travel off-screen and a sighted keyboard user
+   * would have no way to tell which row Enter is about to choose. A screen reader is unaffected
+   * either way, which is why this is easy to miss.
+   *
+   * `nearest` so a highlight already in view does not scroll, which would make every arrow press
+   * jump the list under the reader.
+   */
+  private revealHighlighted(options: readonly OrgClaGroupOptionView[]): void {
+    const option = options[this.highlightedIndex()];
+    if (!option) return;
+
+    const row = this.host.nativeElement.querySelector(`#org-easycla-group-option-${CSS.escape(option.claGroupId)}`);
+    row?.scrollIntoView({ block: 'nearest' });
   }
 
   private pushSearch(value: string): void {

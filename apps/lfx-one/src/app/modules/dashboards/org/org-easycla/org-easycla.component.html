@@ -19,6 +19,11 @@
          Org Lens access, since every request the flow makes would be refused by the server and the
          page is already saying the module is unavailable beneath this control.
 
+         Also disabled until the org context has settled. `hasNoOrgAccess()` reads false while the
+         grants and persona are still loading, so without this a viewer with no grant can start the
+         flow inside the loading window and reach a refusal the page would otherwise have prevented.
+         The page body below gates on the same signal.
+
          Deliberately not disabled for a viewer who lacks signing authority: that is a different
          thing and not known here. The CLA service is the only party that knows, it decides per
          project and organization, and it explains its refusal in words worth reading. Hiding the
@@ -27,7 +32,7 @@
     <lfx-button
       label="Sign CLA"
       icon="fa-light fa-file-signature"
-      [disabled]="!hasCompany() || signingOpen() || hasNoOrgAccess()"
+      [disabled]="!hasCompany() || signingOpen() || hasNoOrgAccess() || !orgContextLoaded()"
       [ariaLabel]="signClaAriaLabel()"
       styleClass="shrink-0"
       (onClick)="startSigning()"
