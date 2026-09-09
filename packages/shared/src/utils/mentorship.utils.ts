@@ -16,8 +16,10 @@ import {
   MENTORSHIP_MAX_OPEN_TERMS_MESSAGE,
   MENTORSHIP_TERM_NAME_MAX,
 } from '../constants/mentorship-enroll.constants';
-import { MENTORSHIP_MENTEE_ACTIONS, MENTORSHIP_PROGRAM_AVATAR_PALETTE } from '../constants/mentorship.constants';
+import { MENTORSHIP_APPLICANT_ACTIONS, MENTORSHIP_MENTEE_ACTIONS, MENTORSHIP_PROGRAM_AVATAR_PALETTE } from '../constants/mentorship.constants';
 import type {
+  MentorshipApplicantAction,
+  MentorshipApplicantDisplayStatus,
   MentorshipEnrollFieldErrors,
   MentorshipEnrollRequest,
   MentorshipEnrollStep,
@@ -326,6 +328,37 @@ export function matchesMentorshipPersonSearch(person: MentorshipProgramMentee | 
  * already in is never offered. `graduated` is terminal, and only an accepted mentee
  * can graduate.
  */
+/**
+ * Whether every prerequisite task has been submitted. A person with no tasks assigned
+ * has not completed anything, so an empty assignment is never "complete".
+ */
+export function mentorshipPrerequisitesComplete(person: Pick<MentorshipProgramMentee, 'tasksSubmitted' | 'tasksTotal'>): boolean {
+  const total = person.tasksTotal ?? 0;
+  return total > 0 && (person.tasksSubmitted ?? 0) >= total;
+}
+
+/**
+ * Status to show for an applicant row. An application stays `pending` while the mentee
+ * works through the prerequisites, so the tab reads that as `applied` until every task
+ * is in and `tasks-completed` once they are. Every other status displays as-is.
+ */
+export function mentorshipApplicantDisplayStatus(applicant: MentorshipProgramMentee): MentorshipApplicantDisplayStatus {
+  if (applicant.status !== 'pending') return applicant.status;
+  return mentorshipPrerequisitesComplete(applicant) ? 'tasks-completed' : 'applied';
+}
+
+/**
+ * Row actions offered for an application's current status on the Applicants tab. Each
+ * action moves the application to the same-named status, so the one it already holds is
+ * never offered, and a mentee who has already graduated can no longer be accepted.
+ */
+export function mentorshipApplicantActionsFor(status: MentorshipMenteeStatus): MentorshipApplicantAction[] {
+  return MENTORSHIP_APPLICANT_ACTIONS.filter((action) => {
+    if (action === status) return false;
+    return action !== 'accepted' || status !== 'graduated';
+  });
+}
+
 export function mentorshipMenteeActionsFor(status: MentorshipMenteeStatus): MentorshipMenteeAction[] {
   if (status === 'graduated') return [];
   return MENTORSHIP_MENTEE_ACTIONS.filter((action) => {

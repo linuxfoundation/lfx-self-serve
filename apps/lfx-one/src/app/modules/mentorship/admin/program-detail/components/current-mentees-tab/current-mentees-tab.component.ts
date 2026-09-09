@@ -14,8 +14,8 @@ import {
   MENTORSHIP_CURRENT_MENTEE_STATUSES,
   MENTORSHIP_MENTEE_ACTION_ICONS,
   MENTORSHIP_MENTEE_ACTION_LABELS,
-  MENTORSHIP_MENTEE_PAGE_SIZE,
-  MENTORSHIP_MENTEE_ROWS_PER_PAGE_OPTIONS,
+  MENTORSHIP_PERSON_PAGE_SIZE,
+  MENTORSHIP_PERSON_ROWS_PER_PAGE_OPTIONS,
   MENTORSHIP_MENTEE_STATUS_BADGE_CLASSES,
   MENTORSHIP_MENTEE_STATUS_LABELS,
   MENTORSHIP_PROGRAM_DETAIL_COMING_SOON,
@@ -53,8 +53,8 @@ export class CurrentMenteesTabComponent {
   private readonly dialogService = inject(DialogService);
   private readonly messageService = inject(MessageService);
 
-  protected readonly pageSize = MENTORSHIP_MENTEE_PAGE_SIZE;
-  protected readonly rowsPerPageOptions = MENTORSHIP_MENTEE_ROWS_PER_PAGE_OPTIONS;
+  protected readonly pageSize = MENTORSHIP_PERSON_PAGE_SIZE;
+  protected readonly rowsPerPageOptions = MENTORSHIP_PERSON_ROWS_PER_PAGE_OPTIONS;
 
   /** Fixed rather than derived from the rows: the two statuses this tab can list. */
   protected readonly statusOptions = [

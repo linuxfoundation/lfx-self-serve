@@ -4,6 +4,7 @@
 import { describe, expect, it } from 'vitest';
 
 import { createDefaultMentorshipTerm, createEmptyMentorshipEnrollForm } from '../constants/mentorship-enroll.constants';
+import type { MentorshipProgramMentee } from '../interfaces/mentorship.interface';
 import {
   buildMentorshipProgramDetail,
   formatMentorshipDateRange,
@@ -23,6 +24,8 @@ import {
   isMentorshipLogoFileName,
   isMentorshipTermsAccepted,
   matchesMentorshipPersonSearch,
+  mentorshipApplicantActionsFor,
+  mentorshipApplicantDisplayStatus,
   mentorshipMenteeActionsFor,
   mentorshipMonthYearToStartDate,
   mentorshipPersonInitials,
@@ -406,6 +409,33 @@ describe('program detail helpers', () => {
     expect(mentorshipMenteeActionsFor('withdrawn')).toEqual(['declined']);
     // `graduated` is terminal.
     expect(mentorshipMenteeActionsFor('graduated')).toEqual([]);
+  });
+
+  it('reads an application as Applied until every prerequisite is submitted', () => {
+    const applicant = (overrides: Partial<MentorshipProgramMentee>): MentorshipProgramMentee => ({
+      id: 'app_1',
+      name: 'Ifeoma Adeyemi',
+      email: 'ifeoma.adeyemi@example.com',
+      status: 'pending',
+      termName: 'Fall 2026',
+      ...overrides,
+    });
+
+    expect(mentorshipApplicantDisplayStatus(applicant({ tasksSubmitted: 2, tasksTotal: 5 }))).toBe('applied');
+    expect(mentorshipApplicantDisplayStatus(applicant({ tasksSubmitted: 5, tasksTotal: 5 }))).toBe('tasks-completed');
+    // No prerequisites assigned is not the same as having completed them.
+    expect(mentorshipApplicantDisplayStatus(applicant({}))).toBe('applied');
+    // Every resolved status displays as itself, whatever the task counts say.
+    expect(mentorshipApplicantDisplayStatus(applicant({ status: 'accepted', tasksSubmitted: 1, tasksTotal: 5 }))).toBe('accepted');
+    expect(mentorshipApplicantDisplayStatus(applicant({ status: 'graduated' }))).toBe('graduated');
+  });
+
+  it('offers applicant row actions that exclude the current status, and never re-accepts a graduate', () => {
+    expect(mentorshipApplicantActionsFor('pending')).toEqual(['accepted', 'declined', 'withdrawn']);
+    expect(mentorshipApplicantActionsFor('accepted')).toEqual(['declined', 'withdrawn']);
+    expect(mentorshipApplicantActionsFor('declined')).toEqual(['accepted', 'withdrawn']);
+    expect(mentorshipApplicantActionsFor('withdrawn')).toEqual(['accepted', 'declined']);
+    expect(mentorshipApplicantActionsFor('graduated')).toEqual(['declined', 'withdrawn']);
   });
 
   it('formats task progress, and reports no label when nothing is assigned', () => {

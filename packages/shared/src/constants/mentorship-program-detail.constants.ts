@@ -4,6 +4,7 @@
 import type {
   MentorshipInvitableUser,
   MentorshipInvitableUsersResponse,
+  MentorshipProgramApplicant,
   MentorshipProgramLists,
   MentorshipProgramMentee,
   MentorshipProgramMentor,
@@ -22,9 +23,9 @@ export const EMPTY_MENTORSHIP_INVITABLE_USERS_RESPONSE: MentorshipInvitableUsers
 /** Default page size for the Mentors-tab invite picker. */
 export const MENTORSHIP_INVITABLE_USER_PAGE_SIZE = 50;
 
-/** Paginator defaults for the Current Mentees table. */
-export const MENTORSHIP_MENTEE_PAGE_SIZE = 10;
-export const MENTORSHIP_MENTEE_ROWS_PER_PAGE_OPTIONS = [10, 25, 50];
+/** Paginator defaults shared by the program-detail people tables. */
+export const MENTORSHIP_PERSON_PAGE_SIZE = 10;
+export const MENTORSHIP_PERSON_ROWS_PER_PAGE_OPTIONS = [10, 25, 50];
 
 /** Character cap on the reviewer note, mirrored by the dialog's counter. */
 export const MENTORSHIP_MENTEE_NOTE_MAX = 2000;
@@ -41,7 +42,6 @@ const gridflowMentees: MentorshipProgramMentee[] = [
     email: 'alex.rivera@example.com',
     status: 'accepted',
     termName: 'Fall 2026',
-    appliedOn: '2026-07-18',
     tasksSubmitted: 7,
     tasksTotal: 12,
     note: 'Strong Go background; paired well during the screening exercise.',
@@ -52,84 +52,106 @@ const gridflowMentees: MentorshipProgramMentee[] = [
     email: 'priya.shah@example.com',
     status: 'accepted',
     termName: 'Fall 2026',
-    appliedOn: '2026-07-21',
     tasksSubmitted: 4,
     tasksTotal: 12,
   },
 ];
 
-const gridflowApplicants: MentorshipProgramMentee[] = [
+/**
+ * Covers every Applicants-tab display status: `pending` with tasks outstanding reads as
+ * Applied, `pending` with all tasks in reads as Tasks Completed, and the four resolved
+ * statuses display as themselves.
+ */
+const gridflowApplicants: MentorshipProgramApplicant[] = [
   {
-    id: 'app_jordan_hale',
-    name: 'Jordan Hale',
-    email: 'jordan.hale@example.com',
+    id: 'app_ifeoma_adeyemi',
+    name: 'Ifeoma Adeyemi',
+    email: 'ifeoma.adeyemi@example.com',
     status: 'pending',
     termName: 'Fall 2026',
-    appliedOn: '2026-08-02',
+    createdOn: '2026-06-28',
+    updatedOn: '2026-07-02',
+    tasksSubmitted: 2,
+    tasksTotal: 5,
+    otherApplications: [
+      { programId: 'mp_apicurio_winter26', programName: 'Apicurio Registry', status: 'applied' },
+      { programId: 'mp_janusgraph_fall26', programName: 'JanusGraph', status: 'applied' },
+    ],
   },
   {
-    id: 'app_sam_okonkwo',
-    name: 'Sam Okonkwo',
-    email: 'sam.okonkwo@example.com',
+    id: 'app_diego_souza',
+    name: 'Diego Souza',
+    email: 'diego.souza@example.com',
     status: 'pending',
     termName: 'Fall 2026',
-    appliedOn: '2026-08-04',
+    createdOn: '2026-07-01',
+    updatedOn: '2026-07-12',
+    tasksSubmitted: 5,
+    tasksTotal: 5,
+    otherApplications: [{ programId: 'mp_thanos_summer26', programName: 'Thanos', status: 'applied' }],
   },
   {
-    id: 'app_mei_chen',
-    name: 'Mei Chen',
-    email: 'mei.chen@example.com',
-    status: 'pending',
-    termName: 'Fall 2026',
-    appliedOn: '2026-08-05',
-  },
-  {
-    id: 'app_luca_rossi',
-    name: 'Luca Rossi',
-    email: 'luca.rossi@example.com',
-    status: 'pending',
-    termName: 'Fall 2026',
-    appliedOn: '2026-08-06',
-  },
-  {
-    id: 'app_aisha_rahman',
-    name: 'Aisha Rahman',
-    email: 'aisha.rahman@example.com',
-    status: 'pending',
-    termName: 'Fall 2026',
-    appliedOn: '2026-08-07',
-  },
-  {
-    id: 'app_noah_berg',
-    name: 'Noah Berg',
-    email: 'noah.berg@example.com',
+    id: 'app_nadia_rahman',
+    name: 'Nadia Rahman',
+    email: 'nadia.rahman@example.com',
     status: 'declined',
-    termName: 'Fall 2026',
-    appliedOn: '2026-07-28',
+    termName: 'Spring 2026',
+    createdOn: '2025-11-12',
+    updatedOn: '2026-01-22',
   },
   {
-    id: 'app_elena_popov',
-    name: 'Elena Popov',
-    email: 'elena.popov@example.com',
-    status: 'pending',
-    termName: 'Fall 2026',
-    appliedOn: '2026-08-09',
+    id: 'app_ines_duarte',
+    name: 'Ines Duarte',
+    email: 'ines.duarte@example.com',
+    status: 'withdrawn',
+    termName: 'Summer 2026',
+    createdOn: '2026-02-18',
+    updatedOn: '2026-04-03',
   },
   {
-    id: 'app_chris_nguyen',
-    name: 'Chris Nguyen',
-    email: 'chris.nguyen@example.com',
-    status: 'pending',
+    id: 'app_hana_suzuki',
+    name: 'Hana Suzuki',
+    email: 'hana.suzuki@example.com',
+    status: 'accepted',
     termName: 'Fall 2026',
-    appliedOn: '2026-08-10',
+    createdOn: '2026-06-21',
+    updatedOn: '2026-07-08',
   },
   {
-    id: 'app_fatima_alsayed',
-    name: 'Fatima Al-Sayed',
-    email: 'fatima.alsayed@example.com',
-    status: 'declined',
+    id: 'app_marco_bianchi',
+    name: 'Marco Bianchi',
+    email: 'marco.bianchi@example.com',
+    status: 'accepted',
     termName: 'Fall 2026',
-    appliedOn: '2026-07-30',
+    createdOn: '2026-06-24',
+    updatedOn: '2026-07-10',
+  },
+  {
+    id: 'app_grace_wanjiru',
+    name: 'Grace Wanjiru',
+    email: 'grace.wanjiru@example.com',
+    status: 'graduated',
+    termName: 'Summer 2026',
+    createdOn: '2026-02-10',
+    updatedOn: '2026-08-24',
+  },
+  {
+    id: 'app_ravi_menon',
+    name: 'Ravi Menon',
+    email: 'ravi.menon@example.com',
+    status: 'graduated',
+    termName: 'Summer 2026',
+    createdOn: '2026-02-14',
+    updatedOn: '2026-08-24',
+  },
+  {
+    id: 'app_aiko_tanaka',
+    name: 'Aiko Tanaka',
+    email: 'aiko.tanaka@example.com',
+    status: 'graduated',
+    termName: 'Spring 2026',
+    createdOn: '2025-11-08',
+    updatedOn: '2026-05-25',
   },
 ];
 
@@ -243,7 +265,10 @@ export const MOCK_MENTORSHIP_PROGRAM_LISTS: Record<string, MentorshipProgramList
         email: 'riley.thompson@example.com',
         status: 'pending',
         termName: 'Winter 2026',
-        appliedOn: '2026-08-12',
+        createdOn: '2026-08-12',
+        updatedOn: '2026-08-20',
+        tasksSubmitted: 1,
+        tasksTotal: 4,
       },
       {
         id: 'app_apicurio_2',
@@ -251,7 +276,10 @@ export const MOCK_MENTORSHIP_PROGRAM_LISTS: Record<string, MentorshipProgramList
         email: 'kai.nakamura@example.com',
         status: 'pending',
         termName: 'Winter 2026',
-        appliedOn: '2026-08-15',
+        createdOn: '2026-08-15',
+        updatedOn: '2026-08-28',
+        tasksSubmitted: 4,
+        tasksTotal: 4,
       },
     ],
     mentors: [
@@ -296,7 +324,6 @@ export const MOCK_MENTORSHIP_PROGRAM_LISTS: Record<string, MentorshipProgramList
         email: 'taylor.brooks@example.com',
         status: 'accepted',
         termName: 'Fall 2026',
-        appliedOn: '2026-07-10',
         tasksSubmitted: 9,
         tasksTotal: 9,
       },
@@ -308,7 +335,10 @@ export const MOCK_MENTORSHIP_PROGRAM_LISTS: Record<string, MentorshipProgramList
         email: 'ivy.moreau@example.com',
         status: 'pending',
         termName: 'Fall 2026',
-        appliedOn: '2026-08-03',
+        createdOn: '2026-08-03',
+        updatedOn: '2026-08-19',
+        tasksSubmitted: 3,
+        tasksTotal: 6,
       },
       {
         id: 'app_janus_2',
@@ -316,7 +346,8 @@ export const MOCK_MENTORSHIP_PROGRAM_LISTS: Record<string, MentorshipProgramList
         email: 'diego.santos@example.com',
         status: 'declined',
         termName: 'Fall 2026',
-        appliedOn: '2026-07-25',
+        createdOn: '2026-07-25',
+        updatedOn: '2026-08-05',
       },
     ],
     mentors: [
@@ -367,7 +398,6 @@ export const MOCK_MENTORSHIP_PROGRAM_LISTS: Record<string, MentorshipProgramList
         email: 'dilan.ferreira@example.com',
         status: 'graduated',
         termName: 'Summer 2026',
-        appliedOn: '2026-03-20',
       },
       {
         id: 'mnt_thanos_2',
@@ -375,7 +405,6 @@ export const MOCK_MENTORSHIP_PROGRAM_LISTS: Record<string, MentorshipProgramList
         email: 'yuki.tanaka@example.com',
         status: 'graduated',
         termName: 'Summer 2026',
-        appliedOn: '2026-03-22',
       },
       {
         id: 'mnt_thanos_3',
@@ -383,7 +412,6 @@ export const MOCK_MENTORSHIP_PROGRAM_LISTS: Record<string, MentorshipProgramList
         email: 'omar.haddad@example.com',
         status: 'withdrawn',
         termName: 'Summer 2026',
-        appliedOn: '2026-03-25',
       },
       {
         id: 'mnt_thanos_4',
@@ -391,7 +419,6 @@ export const MOCK_MENTORSHIP_PROGRAM_LISTS: Record<string, MentorshipProgramList
         email: 'ines.duarte@example.com',
         status: 'declined',
         termName: 'Spring 2026',
-        appliedOn: '2026-01-15',
       },
     ],
     applicants: [],

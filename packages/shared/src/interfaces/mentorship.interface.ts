@@ -2,6 +2,8 @@
 // SPDX-License-Identifier: MIT
 
 import type {
+  MENTORSHIP_APPLICANT_ACTIONS,
+  MENTORSHIP_APPLICANT_DISPLAY_STATUSES,
   MENTORSHIP_MENTEE_ACTIONS,
   MENTORSHIP_MENTEE_STATUSES,
   MENTORSHIP_MENTOR_STATUSES,
@@ -214,11 +216,9 @@ export interface MentorshipProgramMentor extends MentorshipProgramPersonBase {
   profileCreated?: boolean;
 }
 
-/** Mentee row on the Current Mentees / Applicants tabs. */
+/** Mentee row on the Current Mentees / Past Mentees / Applicants tabs. */
 export interface MentorshipProgramMentee extends MentorshipProgramPersonBase {
   status: MentorshipMenteeStatus;
-  /** ISO `YYYY-MM-DD` application date. */
-  appliedOn?: string;
   termName: string;
   /** Tasks the mentee has submitted out of `tasksTotal`. Only accepted mentees carry tasks. */
   tasksSubmitted?: number;
@@ -236,6 +236,32 @@ export interface MentorshipMenteeNoteDialogData {
 
 /** Row action on the Current Mentees tab. Each maps to a terminal mentee status. */
 export type MentorshipMenteeAction = (typeof MENTORSHIP_MENTEE_ACTIONS)[number];
+
+/**
+ * Status as shown on the Applicants tab. `applied` and `tasks-completed` are both the
+ * `pending` wire status, split by whether every prerequisite task has been submitted.
+ */
+export type MentorshipApplicantDisplayStatus = (typeof MENTORSHIP_APPLICANT_DISPLAY_STATUSES)[number];
+
+/** Row action on the Applicants tab. Each maps to the same-named application status. */
+export type MentorshipApplicantAction = (typeof MENTORSHIP_APPLICANT_ACTIONS)[number];
+
+/** An application the same person holds on another program, listed alongside this one. */
+export interface MentorshipApplicantOtherApplication {
+  /** Target of the row's link — `/mentorship/admin/:programId`. */
+  programId: string;
+  /** Short program name; the full name is too long for the column. */
+  programName: string;
+  status: MentorshipApplicantDisplayStatus;
+}
+
+/** Applicant row on the Applicants tab — a mentee row plus its application metadata. */
+export interface MentorshipProgramApplicant extends MentorshipProgramMentee {
+  /** ISO `YYYY-MM-DD` dates behind the Application Dates column. */
+  createdOn: string;
+  updatedOn: string;
+  otherApplications?: MentorshipApplicantOtherApplication[];
+}
 
 /** Term lifecycle on the admin program-detail Terms tab. */
 export type MentorshipTermRowStatus = (typeof MENTORSHIP_TERM_ROW_STATUSES)[number];
@@ -258,7 +284,7 @@ export interface MentorshipProgramTermRow {
 /** Tab lists returned with a program-detail payload. */
 export interface MentorshipProgramLists {
   mentees: MentorshipProgramMentee[];
-  applicants: MentorshipProgramMentee[];
+  applicants: MentorshipProgramApplicant[];
   mentors: MentorshipProgramMentor[];
   terms: MentorshipProgramTermRow[];
 }

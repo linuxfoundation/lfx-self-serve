@@ -10,8 +10,8 @@ import { InputTextComponent } from '@components/input-text/input-text.component'
 import { SelectComponent } from '@components/select/select.component';
 import { TableComponent } from '@components/table/table.component';
 import {
-  MENTORSHIP_MENTEE_PAGE_SIZE,
-  MENTORSHIP_MENTEE_ROWS_PER_PAGE_OPTIONS,
+  MENTORSHIP_PERSON_PAGE_SIZE,
+  MENTORSHIP_PERSON_ROWS_PER_PAGE_OPTIONS,
   MENTORSHIP_MENTEE_STATUS_BADGE_CLASSES,
   MENTORSHIP_MENTEE_STATUS_LABELS,
   MENTORSHIP_PAST_MENTEE_STATUSES,
@@ -39,8 +39,8 @@ export class PastMenteesTabComponent {
 
   private readonly messageService = inject(MessageService);
 
-  protected readonly pageSize = MENTORSHIP_MENTEE_PAGE_SIZE;
-  protected readonly rowsPerPageOptions = MENTORSHIP_MENTEE_ROWS_PER_PAGE_OPTIONS;
+  protected readonly pageSize = MENTORSHIP_PERSON_PAGE_SIZE;
+  protected readonly rowsPerPageOptions = MENTORSHIP_PERSON_ROWS_PER_PAGE_OPTIONS;
 
   /** Fixed rather than derived from the rows: the statuses a finished mentee can hold. */
   protected readonly statusOptions = [
