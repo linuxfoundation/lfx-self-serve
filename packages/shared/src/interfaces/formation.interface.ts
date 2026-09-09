@@ -270,15 +270,17 @@ export interface FormationChecklistResponse {
 }
 
 /**
- * Per-`sub_stage` counts for the queue's filter pills. `foundations` and `child_projects` name
- * the {@link FormationEntityType} derived taxonomy — `child_projects` counts both `child_project`
- * and `project` rows (i.e. every non-foundation), so a plain top-level project isn't dropped from
- * the breakdown while still counting toward `total`.
+ * Per-`sub_stage` counts for the queue's filter pills. `foundations` and `projects` name the
+ * {@link FormationEntityType} derived taxonomy — `projects` counts both `child_project` and
+ * `project` rows (i.e. every non-foundation), so a plain top-level project isn't dropped from the
+ * breakdown while still counting toward `total`. Named `projects`, not `child_projects`, because
+ * the taxonomy now deliberately distinguishes a plain top-level `project` from a `child_project`
+ * and this aggregate deliberately includes both.
  */
 export type FormationQueueTiles = Record<FormationSubStage, number> & {
   total: number;
   foundations: number;
-  child_projects: number;
+  projects: number;
 };
 
 /** Response body for `GET /api/formations`. */

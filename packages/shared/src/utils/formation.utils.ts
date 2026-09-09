@@ -16,8 +16,12 @@ import type { Formation, FormationEntityType } from '../interfaces/formation.int
  * silently fall through to `child_project` just because it wrote the wrong falsy value. A caller
  * getting `child_project` for a project it knows is top-level means the producer sent a real,
  * non-empty UID (the un-normalized ROOT case), not that this function is wrong.
+ *
+ * `parent_uid` is `?: string | null` here, not `Formation`'s plain `string | null`, so the
+ * falsy-not-strict-null contract above is modeled honestly: `Formation.parent_uid` itself can
+ * never be `undefined`, but this helper deliberately also accepts a caller that omits the key.
  */
-export function deriveFormationEntityType(formation: Pick<Formation, 'is_foundation' | 'parent_uid'>): FormationEntityType {
+export function deriveFormationEntityType(formation: Pick<Formation, 'is_foundation'> & { parent_uid?: string | null }): FormationEntityType {
   if (formation.is_foundation) {
     return 'foundation';
   }

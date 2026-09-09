@@ -19,8 +19,8 @@ describe('deriveFormationEntityType', () => {
     // Deliberately falsy, not `=== null`: a producer that omits the key (`undefined`) or sends
     // an un-collapsed empty string is the more likely deviation from the `null` contract than a
     // real ROOT UUID, and must not silently mislabel a top-level project as `child_project`.
-    expect(deriveFormationEntityType({ is_foundation: false, parent_uid: undefined as unknown as null })).toBe('project');
-    expect(deriveFormationEntityType({ is_foundation: false, parent_uid: '' as unknown as null })).toBe('project');
+    expect(deriveFormationEntityType({ is_foundation: false, parent_uid: undefined })).toBe('project');
+    expect(deriveFormationEntityType({ is_foundation: false, parent_uid: '' })).toBe('project');
   });
 
   it('derives child_project when not a foundation and parent_uid names a real parent', () => {
