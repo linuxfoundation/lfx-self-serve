@@ -764,7 +764,7 @@ export interface MeetingRegistrantWithState extends MeetingRegistrant {
 export interface ComposerGuestRow {
   /** The registrant this row renders, for the handlers and the fields read directly. */
   guest: MeetingRegistrantWithState;
-  /** `uid` when saved, `tempId` while pending. */
+  /** `uid` when saved, `tempId` while pending, and the row's position when a guest carries neither. */
   trackId: string;
   /** Avatar initials, from the name when known and the email otherwise. */
   initials: string;
@@ -772,6 +772,8 @@ export interface ComposerGuestRow {
   displayName: string;
   /** `email · org`, collapsing to just the email when the org is unknown. */
   secondaryLine: string;
+  /** The remove button's accessible name, which always identifies *which* guest it removes. */
+  removeLabel: string;
 }
 
 /**

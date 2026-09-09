@@ -114,24 +114,37 @@ export class ComposerGuestsComponent {
 
   private initGuestRows(): Signal<ComposerGuestRow[]> {
     return computed(() =>
-      this.visibleGuests().map((guest, index) => ({
-        guest,
-        // The index is the last resort, not the preferred key: it is unstable across a reorder,
-        // which is exactly what `track` exists to survive. It is still better than the `''` it
-        // replaced — two uid-less, tempId-less guests would both key on the empty string, and a
-        // duplicate `track` key is a runtime error rather than a degraded animation. Nothing
-        // produces such a guest today (`newGuestDefaults` always stamps a `tempId`, and loaded
-        // registrants carry a `uid`), so this arm only fires if upstream returns one with neither.
-        trackId: guest.uid || guest.tempId || guest.email || `guest-${index}`,
-        initials: avatarInitials(guest.first_name, guest.last_name, guest.email),
+      this.visibleGuests().map((guest, index) => {
         // Filtered and joined rather than interpolated into a template literal. The template this
         // replaced rendered the two names with `{{ }}`, which prints nothing for a nullish value; a
         // literal prints the string `"undefined"`. Both names are typed as required, so this only
         // matters for a registrant that arrives from upstream without one — but that is exactly the
         // row where a visible `"undefined"` would be worst.
-        displayName: [guest.first_name, guest.last_name].filter(Boolean).join(' '),
-        secondaryLine: [guest.email, guest.org_name].filter(Boolean).join(' · '),
-      }))
+        const displayName = [guest.first_name, guest.last_name].filter(Boolean).join(' ');
+
+        return {
+          guest,
+          // The index is the last resort, not the preferred key: it is unstable across a reorder,
+          // which is exactly what `track` exists to survive. It is still better than the `''` it
+          // replaced — two uid-less, tempId-less guests would both key on the empty string, and a
+          // duplicate `track` key is a runtime error rather than a degraded animation. Nothing
+          // produces such a guest today (`newGuestDefaults` always stamps a `tempId`, and loaded
+          // registrants carry a `uid`), so this arm only fires if upstream returns one with neither.
+          //
+          // The email is deliberately not a rung between the two: it is not an identity here. The
+          // same address can appear twice — once carried in from a committee and once added by
+          // hand — and two rows keyed alike is the runtime error the index arm exists to avoid.
+          trackId: guest.uid || guest.tempId || `guest-${index}`,
+          initials: avatarInitials(guest.first_name, guest.last_name, guest.email),
+          displayName,
+          secondaryLine: [guest.email, guest.org_name].filter(Boolean).join(' · '),
+          // The button's only content is an icon, so this string is the whole accessible name. A
+          // nameless registrant would otherwise announce a bare "Remove", leaving a screen-reader
+          // user to count rows to find out which guest they are about to drop — the email is what
+          // identifies the row on screen in that case, so it identifies the button too.
+          removeLabel: `Remove ${displayName || guest.email || 'guest'}`,
+        };
+      })
     );
   }
 

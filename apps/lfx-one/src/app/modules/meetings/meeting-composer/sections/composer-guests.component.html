@@ -103,7 +103,7 @@
               <button
                 type="button"
                 class="flex-none rounded-md p-2 text-gray-400 hover:bg-gray-50 hover:text-red-600"
-                [attr.aria-label]="'Remove ' + row.displayName"
+                [attr.aria-label]="row.removeLabel"
                 (click)="onRemoveGuest(row.guest)"
                 [attr.data-testid]="'composer-guest-remove-' + row.trackId">
                 <i class="fa-light fa-xmark" aria-hidden="true"></i>
