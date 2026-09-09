@@ -34,6 +34,11 @@ RUN yarn workspace @lfx-one/shared build:${BUILD_ENV}
 # via environment variables (LD_CLIENT_ID, DD_RUM_CLIENT_ID, DD_RUM_APPLICATION_ID)
 RUN yarn workspace lfx-one-ui build:${BUILD_ENV}
 
+# build:${BUILD_ENV} (unlike the bare `build` script) doesn't copy PDF
+# templates into dist/, since certificate.service.ts resolves them relative
+# to the compiled server bundle, not the source tree.
+RUN cp -r apps/lfx-one/src/server/pdf-templates apps/lfx-one/dist/lfx-one/server/
+
 # Install production-only dependencies in a clean layer, so the runtime
 # stage below never inherits devDependencies (playwright, angular/cli,
 # typescript, etc.) that made the single-stage image slower to pull.
@@ -70,6 +75,10 @@ COPY --from=builder /app/packages/shared/dist ./packages/shared/dist
 COPY --from=builder /app/apps/lfx-one/dist ./apps/lfx-one/dist
 COPY --from=builder /app/apps/lfx-one/ecosystem.config.js ./apps/lfx-one/
 COPY --from=builder /app/apps/lfx-one/otel.mjs ./apps/lfx-one/
+
+# dist-docs is a sibling of dist/, not nested under it — sitemap.route.ts
+# resolves /sitemap.xml there relative to the compiled server bundle.
+COPY --from=builder /app/apps/lfx-one/dist-docs ./apps/lfx-one/dist-docs
 
 # Enable Corepack for Yarn, needed at runtime because CMD still goes
 # through `yarn workspace ... start:server` (see docs/architecture/backend/
