@@ -786,7 +786,17 @@ export class MeetingCardComponent implements OnInit {
       const meeting = this.meetingInput();
 
       if (this.pastMeeting()) {
-        return `/meetings/${getPastMeetingResourceId(meeting)}`;
+        const resourceId = getPastMeetingResourceId(meeting);
+
+        // Organizers (write access) land on the admin past-meeting details page — the
+        // "Reconcile Attendance" surface lives there and is otherwise unreachable from
+        // this card. Everyone else sees the public join/details page.
+        if (meeting.organizer) {
+          const commands = getEntityCommands('meetings', resourceId, meeting.is_foundation, 'details') ?? ['/meetings', resourceId, 'details'];
+          return '/' + commands.filter((segment) => segment !== '/').join('/');
+        }
+
+        return `/meetings/${resourceId}`;
       }
 
       const params = new URLSearchParams();
