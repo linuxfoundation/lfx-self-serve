@@ -152,6 +152,30 @@ describe('AttendanceReconciliationService', () => {
       expect(result.results[0]).toMatchObject({ attendee_id: 'attendee-1', confidence: 'none' });
     });
 
+    it('excludes a notetaker bot from prior verified attendees so it cannot resurface in the candidate pool', async () => {
+      getPastMeetingParticipants
+        .mockResolvedValueOnce([
+          buildParticipant({ uid: 'attendee-1', email: '', first_name: 'Libby', last_name: 'Schulze', is_attended: true, is_verified: false }),
+        ])
+        .mockResolvedValueOnce([
+          buildParticipant({
+            uid: 'prior-bot',
+            zoom_user_name: "Libby's Notetaker (Otter.ai)",
+            first_name: 'Libby',
+            last_name: 'Schulze',
+            is_verified: true,
+            is_attended: true,
+          }),
+        ]);
+      getPastOccurrencesForMeeting.mockResolvedValue([{ meeting_and_occurrence_id: 'occ-0' }, { meeting_and_occurrence_id: 'occ-1' }]);
+      isAiConfigured.mockReturnValue(false);
+
+      const result = await service.reconcilePastMeetingParticipants(req, 'occ-1', pastMeeting);
+
+      expect(result.candidate_pool_size).toBe(0);
+      expect(result.results[0]).toMatchObject({ attendee_id: 'attendee-1', confidence: 'none' });
+    });
+
     it('auto-applies a deterministic exact-email match and marks it verified', async () => {
       getPastMeetingParticipants.mockResolvedValue([
         buildParticipant({ uid: 'attendee-1', email: 'alice@example.com', is_attended: true, is_verified: false }),

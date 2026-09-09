@@ -730,9 +730,11 @@ export const RECONCILIATION_MAX_CANDIDATES_PER_AI_CALL = 50;
  * other tools here. Those three are also plausible real first/last names, and these bots' Zoom
  * display name is typically just the bare product word with nothing else, so anchoring to the
  * whole string still catches the bot while not excluding, e.g., an attendee named "Grain Adeyemi".
+ * Grain's default Zoom display name is "Grain Recorder", so "recorder" is accepted alongside
+ * "notetaker" as the optional suffix for these three.
  */
 export const RECONCILIATION_BOT_NAME_PATTERN =
-  /\bnotetaker\b|\botter\.?ai\b|\bfireflies\.?ai\b|\btl;?dv\b|\bread\.?ai\b|\bavoma\b|^fathom(\.?(ai|video))?\s*(notetaker)?$|^gong(\.?io)?\s*(notetaker)?$|^grain(\.?com)?\s*(notetaker)?$/i;
+  /\bnotetaker\b|\botter\.?ai\b|\bfireflies\.?ai\b|\btl;?dv\b|\bread\.?ai\b|\bavoma\b|^fathom(\.?(ai|video))?\s*(notetaker|recorder)?$|^gong(\.?io)?\s*(notetaker|recorder)?$|^grain(\.?com)?\s*(notetaker|recorder)?$/i;
 
 /**
  * The `AttachmentCategory` (`meeting-attachment.interface.ts`) value CommitteeActivityService's
