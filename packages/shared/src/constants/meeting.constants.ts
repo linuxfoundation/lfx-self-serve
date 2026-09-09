@@ -720,6 +720,15 @@ export const RECONCILIATION_MAX_CONCURRENT_AI_CALLS = 3;
 export const RECONCILIATION_MAX_CANDIDATES_PER_AI_CALL = 50;
 
 /**
+ * Matches recording/notetaker bot display names (e.g. "Libby's Notetaker (Otter.ai)", "Otter.ai",
+ * "Fireflies.ai Notetaker") so they can be excluded from reconciliation entirely — a bot is a tool
+ * riding along on the call, not a person needing identity verification, and it has no reason to be
+ * offered as a match candidate or queued for admin review against a real attendee.
+ */
+export const RECONCILIATION_BOT_NAME_PATTERN =
+  /\bnotetaker\b|\botter\.?ai\b|\bfireflies\.?ai\b|\bfathom\b|\bgong\.?io\b|\btl;?dv\b|\bread\.?ai\b|\bgrain\.?com\b|\bavoma\b/i;
+
+/**
  * The `AttachmentCategory` (`meeting-attachment.interface.ts`) value CommitteeActivityService's
  * notes_added leg treats as a note. A single source of truth for both the upstream `filters_all`
  * term-clause value and the client-side re-filter comparison — see fetchNotesAddedEvents's own

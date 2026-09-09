@@ -11,6 +11,8 @@ vi.mock('@lfx-one/shared/constants', () => ({
   RECONCILIATION_MAX_CANDIDATES_PER_AI_CALL: 50,
   RECONCILIATION_MAX_CONCURRENT_AI_CALLS: 3,
   RECONCILIATION_MAX_PRIOR_OCCURRENCES: 10,
+  RECONCILIATION_BOT_NAME_PATTERN:
+    /\bnotetaker\b|\botter\.?ai\b|\bfireflies\.?ai\b|\bfathom\b|\bgong\.?io\b|\btl;?dv\b|\bread\.?ai\b|\bgrain\.?com\b|\bavoma\b/i,
 }));
 
 const { getPastMeetingParticipants, getPastOccurrencesForMeeting, updatePastMeetingParticipant } = vi.hoisted(() => ({
@@ -111,6 +113,37 @@ describe('AttendanceReconciliationService', () => {
 
       expect(result).toEqual({ results: [], candidate_pool_size: 0, auto_applied_count: 0, needs_review_count: 0, pool_degraded: false });
       expect(updatePastMeetingParticipant).not.toHaveBeenCalled();
+    });
+
+    it('excludes a notetaker bot attendee from the unverified queue entirely', async () => {
+      getPastMeetingParticipants.mockResolvedValue([
+        buildParticipant({ uid: 'bot-1', zoom_user_name: "Libby's Notetaker (Otter.ai)", is_attended: true, is_verified: false }),
+      ]);
+
+      const result = await service.reconcilePastMeetingParticipants(req, 'occ-1', pastMeeting);
+
+      expect(result).toEqual({ results: [], candidate_pool_size: 0, auto_applied_count: 0, needs_review_count: 0, pool_degraded: false });
+      expect(updatePastMeetingParticipant).not.toHaveBeenCalled();
+    });
+
+    it('excludes a notetaker bot invitee from the candidate pool so it cannot be matched against', async () => {
+      getPastMeetingParticipants.mockResolvedValue([
+        buildParticipant({ uid: 'attendee-1', email: '', first_name: 'Libby', last_name: 'Schulze', is_attended: true, is_verified: false }),
+        buildParticipant({
+          uid: 'invitee-bot',
+          zoom_user_name: "Libby's Notetaker (Otter.ai)",
+          first_name: 'Libby',
+          last_name: 'Schulze',
+          is_invited: true,
+          is_attended: false,
+        }),
+      ]);
+      isAiConfigured.mockReturnValue(false);
+
+      const result = await service.reconcilePastMeetingParticipants(req, 'occ-1', pastMeeting);
+
+      expect(result.candidate_pool_size).toBe(0);
+      expect(result.results[0]).toMatchObject({ attendee_id: 'attendee-1', confidence: 'none' });
     });
 
     it('auto-applies a deterministic exact-email match and marks it verified', async () => {
