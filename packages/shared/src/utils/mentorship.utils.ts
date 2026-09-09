@@ -23,7 +23,8 @@ import type {
   MentorshipProgram,
   MentorshipProgramDetail,
   MentorshipProgramLists,
-  MentorshipProgramPerson,
+  MentorshipProgramMentee,
+  MentorshipProgramMentor,
   MentorshipProgramTabCounts,
   MentorshipProgramTerm,
   MentorshipProgramTermRow,
@@ -309,11 +310,11 @@ export function buildMentorshipProgramDetail(program: MentorshipProgram, lists: 
   };
 }
 
-/** Case-insensitive match on name, email, or term. Empty search matches everyone. */
-export function matchesMentorshipPersonSearch(person: MentorshipProgramPerson, search: string): boolean {
+/** Case-insensitive match on name or email. Empty search matches everyone. */
+export function matchesMentorshipPersonSearch(person: MentorshipProgramMentee | MentorshipProgramMentor, search: string): boolean {
   const needle = search.trim().toLowerCase();
   if (!needle) return true;
-  return person.name.toLowerCase().includes(needle) || person.email.toLowerCase().includes(needle) || person.termName.toLowerCase().includes(needle);
+  return person.name.toLowerCase().includes(needle) || person.email.toLowerCase().includes(needle);
 }
 
 /** Inclusive UTC date range for term / invitation columns, e.g. `Jul 1, 2026 – Aug 31, 2026`. */

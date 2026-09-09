@@ -1,7 +1,7 @@
 // Copyright The Linux Foundation and each contributor to LFX.
 // SPDX-License-Identifier: MIT
 
-import type { CLA_MANAGER_REQUEST_TYPES } from '../constants/cla.constants';
+import type { CLA_MANAGER_REQUEST_TYPES, ORG_CLA_DETAIL_TABS } from '../constants/cla.constants';
 import type { TagSeverity } from './components.interface';
 
 // UI-facing shapes for the read-only "CLAs" view (Me lens → Profile tab).
@@ -152,7 +152,12 @@ export interface MyClasState {
 export interface PdfUrlResponse {
   /** Short-lived presigned S3 URL (~15 min TTL). */
   url: string;
-  expiresInSeconds: number;
+  /**
+   * Lifetime upstream reported for the URL. Optional because not every upstream document
+   * endpoint returns one, and omitting it is honest where `0` would tell a consumer the URL
+   * has already expired. Absent means unknown, not immediate expiry.
+   */
+  expiresInSeconds?: number;
 }
 
 /** Why a CLA Group matched the search term (#1250 `cla-search-result.matchTypes`). */
@@ -581,8 +586,11 @@ export interface ClaRow {
  * would be a false statement about the organization's legal position, which is the same
  * failure the sanctions precedence and the empty-versus-failure split exist to prevent.
  *
- * Because signed-ness is folded in here rather than carried separately, copy elsewhere on the
- * card must not assert signing on its own: only `signed` licenses the word.
+ * Signed-ness is folded in here for display, so copy elsewhere on the card must not assert
+ * signing on its own: only a `signed` status licenses the word. It is additionally carried as
+ * the sibling `signed` boolean, which exists for a different question — whether a document can
+ * be fetched — and which this type cannot answer, because a `sanctioned` row may be signed or
+ * unsigned. Read `signed` to decide about the document; read this to decide what to say.
  */
 export type OrgClaGroupStatus = 'signed' | 'not-started' | 'sanctioned';
 
@@ -631,6 +639,23 @@ export interface OrgClaGroup {
    * present the moment signing began as the moment it completed.
    */
   signedOn?: string;
+  /**
+   * Name on the CCLA signature. Absent when the signature carries no signatory name, or when the
+   * deployment predates the field — so the detail view must still be able to state a signed date
+   * without naming anyone. There is no CLA-manager fallback: a manager is a different role, and
+   * naming one here would attribute the signature to somebody who did not make it.
+   */
+  signedBy?: string;
+  /**
+   * Whether a signed CCLA actually exists, taken from upstream's own flag.
+   *
+   * Deliberately separate from `status`, which cannot answer this: sanctions win the single
+   * status slot, so a `sanctioned` row may be signed or unsigned. Anything deciding whether
+   * there is a document to fetch must read this rather than infer from the status, and
+   * `signedOn` is not a stand-in either — it is additionally conditional on upstream sending
+   * a date, so a signed agreement can carry no date and still have a document.
+   */
+  signed: boolean;
   status: OrgClaGroupStatus;
   /**
    * Upstream's own `needsClaManager` — signed with zero CLA managers — taken verbatim.
@@ -666,4 +691,31 @@ export interface OrgClaGroup {
 export interface OrgClaGroupList {
   orgUid: string;
   claGroups: OrgClaGroup[];
+}
+
+export type OrgClaDetailTab = (typeof ORG_CLA_DETAIL_TABS)[number]['id'];
+
+/** One tab trigger as the detail page renders it. `badge` is empty when the tab carries no count. */
+export interface OrgClaDetailTabView {
+  id: OrgClaDetailTab;
+  label: string;
+  badge: string;
+}
+
+/** How one `OrgClaGroupStatus` is presented as a status pill. */
+export interface OrgClaStatusDisplay {
+  label: string;
+  severity: TagSeverity;
+}
+
+export interface OrgClaCoverageChip {
+  label: string;
+  /** Whether this chip stands for a project list worth opening. Only the "Covers N projects" chip does. */
+  opensCoverage: boolean;
+}
+
+export interface OrgClaCoverageDialogData {
+  claGroupName: string;
+  foundationName?: string;
+  projects: OrgClaGroupProject[];
 }

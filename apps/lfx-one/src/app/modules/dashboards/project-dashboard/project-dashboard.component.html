@@ -3,8 +3,32 @@
 
 <div class="container mx-auto px-4 sm:px-6 lg:px-8" data-testid="project-dashboard-container">
   @if (selectedProject()) {
-    <div class="mt-3 mb-6" data-testid="project-dashboard-foundation-project">
-      <h1 class="font-display font-light text-2xl">{{ selectedProject()?.name }} Overview</h1>
+    <div class="mt-3 mb-6 flex flex-col gap-2" data-testid="project-dashboard-foundation-project">
+      <div class="flex items-center gap-2">
+        <h1 class="font-display font-light text-2xl">{{ selectedProject()?.name }} Overview</h1>
+        @if (formationFlagEnabled() && isFormation()) {
+          <lfx-tag
+            [value]="'FORMATION · ' + formationSubStage()"
+            [rounded]="true"
+            [icon]="isConfidential() ? 'fa-light fa-lock' : undefined"
+            [styleClass]="
+              isConfidential() ? '!bg-amber-100 !text-amber-700 border border-amber-200' : '!bg-violet-100 !text-violet-700 border border-violet-200'
+            " />
+        }
+      </div>
+      @if (formationFlagEnabled() && isFormation()) {
+        <p class="text-sm text-gray-500" data-testid="project-dashboard-formation-subtitle">
+          Stage Formation · {{ formationSubStage() }}
+          @if (announcementDateLoading()) {
+            · Announcement date —
+          } @else if (!announcementDateHasError()) {
+            · Announcement date {{ announcementDateLabel() }}
+          }
+          @if (isConfidential()) {
+            · Not visible outside LF Formation and LF Legal until invited
+          }
+        </p>
+      }
     </div>
   }
 
@@ -78,7 +102,7 @@
     </div>
 
     @if (selectedProject()?.uid; as uid) {
-      <lfx-dashboard-sidebar [projectUid]="uid" [staffHeading]="staffHeading" />
+      <lfx-dashboard-sidebar [projectUid]="uid" [staffHeading]="staffHeading" [showFormationCard]="true" />
     }
   </div>
 </div>

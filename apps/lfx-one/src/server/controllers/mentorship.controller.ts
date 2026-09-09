@@ -211,6 +211,28 @@ export class MentorshipController {
     }
   }
 
+  // GET /api/mentorship/invitable-users
+  public async getInvitableUsers(req: Request, res: Response, next: NextFunction): Promise<void> {
+    const startTime = logger.startOperation(req, 'get_mentorship_invitable_users');
+
+    try {
+      if (!(await getUsernameFromAuth(req))) {
+        throw new AuthenticationError('User authentication required', { operation: 'get_mentorship_invitable_users' });
+      }
+
+      const users = await this.mentorshipService.getInvitableUsers(req, {
+        search: parseTrimmedString(req.query['search']),
+        offset: parseIntQuery(req.query['offset']),
+        limit: parseIntQuery(req.query['limit']),
+      });
+
+      logger.success(req, 'get_mentorship_invitable_users', startTime, { result_count: users.data.length });
+      res.json(users);
+    } catch (error) {
+      next(error);
+    }
+  }
+
   // GET /api/mentorship/cii/:projectId
   public async getCiiBadge(req: Request, res: Response, next: NextFunction): Promise<void> {
     const startTime = logger.startOperation(req, 'get_mentorship_cii_badge');

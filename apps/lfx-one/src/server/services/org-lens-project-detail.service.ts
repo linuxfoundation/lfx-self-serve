@@ -30,10 +30,11 @@ import type {
   OrgLensProjectTrendSeries,
   OrgLensTrendBlock,
 } from '@lfx-one/shared/interfaces';
-import { buildInsightsUrl, classifyHealthScore, normalizeHealthScoreCategoryV2 } from '@lfx-one/shared/utils';
+import { buildInsightsUrl, normalizeHealthScoreCategoryV2 } from '@lfx-one/shared/utils';
 
 import { toIsoDate } from '../helpers/date-format.helper';
 import { escapeSqlLikePattern } from '../helpers/validation.helper';
+import { logger } from './logger.service';
 import { buildOrgCacheKey, valkeyService } from './valkey.service';
 import { SnowflakeService } from './snowflake.service';
 
@@ -44,7 +45,6 @@ interface HeroRow {
   FOUNDATION_NAME: string | null;
   IS_LF_PROJECT: boolean | null;
   DESCRIPTION: string | null;
-  HEALTH_OVERALL_SCORE_V2: number | null;
   HEALTH_SCORE_CATEGORY_V2: string | null;
   COVERED_CATEGORY_COUNT_V2: number | null;
   HEALTH_MAX_SCORE_V2: number | null;
@@ -552,7 +552,9 @@ export class OrgLensProjectDetailService {
 
   public async getHeroBlock(orgUid: string, projectSlug: string): Promise<OrgLensHeroBlock | null> {
     const slug = projectSlug.trim().toLowerCase();
-    const key = buildOrgCacheKey(orgUid, `project-detail-hero:${this.paramSignature([slug])}`);
+    // `v2` bump: mapHealth no longer falls back to the legacy v1 score when the v2 category is null
+    // (LFXV2-3379) — bumping drops cached hero blocks computed under the old fallback logic (e.g. "Fair").
+    const key = buildOrgCacheKey(orgUid, `project-detail-hero:v2:${this.paramSignature([slug])}`);
     if (key !== null) {
       const cached = await valkeyService.getJson<OrgLensHeroBlock>(key, OrgLensProjectDetailService.isHeroBlock);
       if (cached !== null) return cached;
@@ -1100,7 +1102,7 @@ export class OrgLensProjectDetailService {
     const result = await this.snowflakeService.execute<HeroRow>(
       `
         SELECT PROJECT_NAME, PROJECT_SLUG, PROJECT_LOGO_URL, FOUNDATION_NAME, IS_LF_PROJECT,
-               DESCRIPTION, HEALTH_OVERALL_SCORE_V2, HEALTH_SCORE_CATEGORY_V2,
+               DESCRIPTION, HEALTH_SCORE_CATEGORY_V2,
                COVERED_CATEGORY_COUNT_V2, HEALTH_MAX_SCORE_V2,
                SOFTWARE_VALUE, FIRST_COMMIT_TS
         FROM ${this.projectsTable()}
@@ -1885,19 +1887,24 @@ export class OrgLensProjectDetailService {
       firstCommit: toIsoDate(row.FIRST_COMMIT_TS),
       softwareValueUsd: row.SOFTWARE_VALUE ?? null,
       health: this.mapHealth(row),
-      // Sourced straight from the warehouse — never recomputed, per health.mapHealth's v2-category/score precedence.
+      // Sourced straight from the warehouse — never recomputed, independent of mapHealth's category normalization.
       healthMaxScore: row.HEALTH_MAX_SCORE_V2 ?? null,
       healthCoveredCategoryCount: row.COVERED_CATEGORY_COUNT_V2 ?? null,
       foundationLabel,
     };
   }
 
-  private mapHealth(row: Pick<HeroRow, 'HEALTH_OVERALL_SCORE_V2' | 'HEALTH_SCORE_CATEGORY_V2'>): OrgLensProjectHealth | null {
-    const v2 = normalizeHealthScoreCategoryV2(row.HEALTH_SCORE_CATEGORY_V2);
-    if (v2) return v2;
-    const score = row.HEALTH_OVERALL_SCORE_V2;
-    if (score === null || score === undefined) return null;
-    return classifyHealthScore(score);
+  private mapHealth(row: Pick<HeroRow, 'HEALTH_SCORE_CATEGORY_V2' | 'PROJECT_SLUG'>): OrgLensProjectHealth | null {
+    // The warehouse v2 category is the sole source of truth for the health label — never fall back to
+    // classifying the legacy v1 score when the v2 category is null (LFXV2-3379).
+    const category = normalizeHealthScoreCategoryV2(row.HEALTH_SCORE_CATEGORY_V2);
+    if (row.HEALTH_SCORE_CATEGORY_V2 != null && !category) {
+      logger.warning(undefined, 'map_org_project_health', 'Unrecognized warehouse health_score_category_v2; treating as unavailable', {
+        slug: row.PROJECT_SLUG,
+        category: row.HEALTH_SCORE_CATEGORY_V2,
+      });
+    }
+    return category;
   }
 
   private buildTechnicalCards(cards: CardsRow | null, index: SparklineIndex, axis: string[]): OrgLensProjectInfluenceCard[] {

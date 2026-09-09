@@ -3,11 +3,18 @@
 
 import { HttpClient, HttpErrorResponse, HttpParams } from '@angular/common/http';
 import { inject, Injectable } from '@angular/core';
-import { EMPTY_MENTORSHIP_LF_PROJECTS_RESPONSE, EMPTY_MENTORSHIP_PROGRAMS_RESPONSE, MENTORSHIP_LF_PROJECT_PAGE_SIZE } from '@lfx-one/shared/constants';
+import {
+  EMPTY_MENTORSHIP_INVITABLE_USERS_RESPONSE,
+  EMPTY_MENTORSHIP_LF_PROJECTS_RESPONSE,
+  EMPTY_MENTORSHIP_PROGRAMS_RESPONSE,
+  MENTORSHIP_INVITABLE_USER_PAGE_SIZE,
+  MENTORSHIP_LF_PROJECT_PAGE_SIZE,
+} from '@lfx-one/shared/constants';
 import {
   MentorshipCiiBadge,
   MentorshipEnrollForm,
   MentorshipEnrollRequest,
+  MentorshipInvitableUsersResponse,
   MentorshipLfProjectsResponse,
   MentorshipNameAvailability,
   MentorshipProgram,
@@ -82,6 +89,18 @@ export class MentorshipService {
     return this.http
       .get<MentorshipLfProjectsResponse>('/api/mentorship/lf-projects', { params: httpParams })
       .pipe(catchError(this.handleError(EMPTY_MENTORSHIP_LF_PROJECTS_RESPONSE, 'getLfProjects')));
+  }
+
+  /** LFX users that can be invited as mentors. Not program-scoped. */
+  public getInvitableUsers(params?: { search?: string; offset?: number; limit?: number }): Observable<MentorshipInvitableUsersResponse> {
+    let httpParams = new HttpParams();
+    if (params?.search) httpParams = httpParams.set('search', params.search);
+    if (params?.offset !== undefined) httpParams = httpParams.set('offset', String(params.offset));
+    httpParams = httpParams.set('limit', String(params?.limit ?? MENTORSHIP_INVITABLE_USER_PAGE_SIZE));
+
+    return this.http
+      .get<MentorshipInvitableUsersResponse>('/api/mentorship/invitable-users', { params: httpParams })
+      .pipe(catchError(this.handleError(EMPTY_MENTORSHIP_INVITABLE_USERS_RESPONSE, 'getInvitableUsers')));
   }
 
   public getCiiBadge(projectId: string): Observable<MentorshipCiiBadge | null> {

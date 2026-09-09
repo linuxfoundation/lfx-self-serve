@@ -2,7 +2,8 @@
 // SPDX-License-Identifier: MIT
 
 import type {
-  MentorshipPersonStatus,
+  MentorshipMenteeStatus,
+  MentorshipMentorStatus,
   MentorshipProgram,
   MentorshipProgramsResponse,
   MentorshipProgramStatus,
@@ -62,22 +63,46 @@ export const MENTORSHIP_PROGRAM_DETAIL_TABS = [
   { value: 'terms', label: 'Terms' },
 ] as const;
 
-export const MENTORSHIP_PERSON_STATUSES = ['accepted', 'pending', 'declined', 'graduated', 'invited'] as const;
+/**
+ * Mentor lifecycle statuses on the admin Mentors tab. Source of the
+ * `MentorshipMentorStatus` union; declaration order is the lifecycle order.
+ */
+export const MENTORSHIP_MENTOR_STATUSES = ['pending', 'accepted', 'declined', 'withdrawn'] as const;
 
-export const MENTORSHIP_PERSON_STATUS_LABELS: Record<MentorshipPersonStatus, string> = {
+/**
+ * Mentee lifecycle statuses on the admin Current Mentees / Applicants tabs.
+ * Superset of mentor statuses; mentees additionally reach `graduated`.
+ */
+export const MENTORSHIP_MENTEE_STATUSES = ['pending', 'accepted', 'declined', 'withdrawn', 'graduated'] as const;
+
+export const MENTORSHIP_MENTOR_STATUS_LABELS: Record<MentorshipMentorStatus, string> = {
+  pending: 'Invited',
   accepted: 'Accepted',
-  pending: 'Pending',
   declined: 'Declined',
-  graduated: 'Graduated',
-  invited: 'Invited',
+  withdrawn: 'Withdrawn',
 };
 
-export const MENTORSHIP_PERSON_STATUS_BADGE_CLASSES: Record<MentorshipPersonStatus, string> = {
-  accepted: 'bg-emerald-50 text-emerald-700',
+export const MENTORSHIP_MENTEE_STATUS_LABELS: Record<MentorshipMenteeStatus, string> = {
+  pending: 'Pending',
+  accepted: 'Accepted',
+  declined: 'Declined',
+  withdrawn: 'Withdrawn',
+  graduated: 'Graduated',
+};
+
+export const MENTORSHIP_MENTOR_STATUS_BADGE_CLASSES: Record<MentorshipMentorStatus, string> = {
   pending: 'bg-amber-50 text-amber-700',
+  accepted: 'bg-emerald-50 text-emerald-700',
   declined: 'bg-red-50 text-red-600',
-  graduated: 'bg-gray-100 text-gray-600',
-  invited: 'bg-blue-50 text-blue-700',
+  withdrawn: 'bg-gray-100 text-gray-600',
+};
+
+export const MENTORSHIP_MENTEE_STATUS_BADGE_CLASSES: Record<MentorshipMenteeStatus, string> = {
+  pending: 'bg-amber-50 text-amber-700',
+  accepted: 'bg-emerald-50 text-emerald-700',
+  declined: 'bg-red-50 text-red-600',
+  withdrawn: 'bg-gray-100 text-gray-600',
+  graduated: 'bg-violet-50 text-violet-700',
 };
 
 export const MENTORSHIP_TERM_ROW_STATUSES = ['open', 'closed'] as const;

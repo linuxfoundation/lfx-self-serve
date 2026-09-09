@@ -1,6 +1,8 @@
 // Copyright The Linux Foundation and each contributor to LFX.
 // SPDX-License-Identifier: MIT
 
+import type { OrgClaGroup, OrgClaStatusDisplay } from '../interfaces/cla.interface';
+
 /** Long enough to not query on every keystroke, short enough that the CLA-group list feels live. */
 export const CLA_GROUP_SEARCH_DEBOUNCE_MS = 250;
 
@@ -181,3 +183,34 @@ export const CLA_MANAGER_MODAL_COPY = {
     },
   },
 } as const;
+
+/**
+ * Tab order of the Organization Lens CLA Group detail page. `OrgClaDetailTab` is derived from
+ * this, so the set exists once: a tab added here is a compile error everywhere that switches on
+ * the union until it is handled.
+ */
+export const ORG_CLA_DETAIL_TABS = [
+  { id: 'overview', label: 'Overview' },
+  { id: 'managers', label: 'CLA Managers' },
+  { id: 'approval', label: 'Approval List' },
+  { id: 'acknowledgments', label: 'Contributor Acknowledgments' },
+  { id: 'activity', label: 'Activity Log' },
+] as const;
+
+/** Pill shown against an agreement in the Organization Lens CLA list and on its detail page. */
+export const ORG_CLA_STATUS_DISPLAY: Record<OrgClaGroup['status'], OrgClaStatusDisplay> = {
+  signed: { label: 'Signed', severity: 'success' },
+  'not-started': { label: 'Not started', severity: 'secondary' },
+  sanctioned: { label: 'Sanctioned', severity: 'danger' },
+};
+
+/**
+ * Status wording for the detail page's card heading. Deliberately not the pill's label: the
+ * heading reads as a sentence about the agreement ("… — Not yet signed"), where the pill is a
+ * terse badge, and "Unavailable" states the consequence of a sanction without repeating it.
+ */
+export const ORG_CLA_HEADING_STATUS: Record<OrgClaGroup['status'], string> = {
+  signed: 'Signed',
+  'not-started': 'Not yet signed',
+  sanctioned: 'Unavailable',
+};

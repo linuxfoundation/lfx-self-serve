@@ -7,8 +7,8 @@ import { FormControl, FormGroup, ReactiveFormsModule } from '@angular/forms';
 import { AvatarComponent } from '@components/avatar/avatar.component';
 import { InputTextComponent } from '@components/input-text/input-text.component';
 import { SelectComponent } from '@components/select/select.component';
-import { MENTORSHIP_PERSON_STATUS_BADGE_CLASSES, MENTORSHIP_PERSON_STATUS_LABELS, MENTORSHIP_PROGRAM_AVATAR_PALETTE } from '@lfx-one/shared/constants';
-import { MentorshipPersonStatus, MentorshipProgramPerson } from '@lfx-one/shared/interfaces';
+import { MENTORSHIP_MENTEE_STATUS_BADGE_CLASSES, MENTORSHIP_MENTEE_STATUS_LABELS, MENTORSHIP_PROGRAM_AVATAR_PALETTE } from '@lfx-one/shared/constants';
+import { MentorshipMenteeStatus, MentorshipProgramMentee } from '@lfx-one/shared/interfaces';
 import { formatIsoDateLabel, matchesMentorshipPersonSearch, mentorshipPersonInitials } from '@lfx-one/shared/utils';
 import { startWith } from 'rxjs';
 
@@ -22,11 +22,11 @@ import { startWith } from 'rxjs';
   changeDetection: ChangeDetectionStrategy.OnPush,
 })
 export class ApplicantsTabComponent {
-  public readonly applicants = input.required<MentorshipProgramPerson[]>();
+  public readonly applicants = input.required<MentorshipProgramMentee[]>();
 
   protected readonly form = new FormGroup({
     search: new FormControl('', { nonNullable: true }),
-    status: new FormControl<MentorshipPersonStatus | null>(null),
+    status: new FormControl<MentorshipMenteeStatus | null>(null),
   });
 
   private readonly filters = toSignal(this.form.valueChanges.pipe(startWith(this.form.getRawValue())), {
@@ -38,7 +38,7 @@ export class ApplicantsTabComponent {
     return [
       { label: 'All statuses', value: null },
       ...statuses.map((status) => ({
-        label: MENTORSHIP_PERSON_STATUS_LABELS[status],
+        label: MENTORSHIP_MENTEE_STATUS_LABELS[status],
         value: status,
       })),
     ];
@@ -52,14 +52,14 @@ export class ApplicantsTabComponent {
       .map((person) => this.toRow(person));
   });
 
-  private toRow(person: MentorshipProgramPerson) {
+  private toRow(person: MentorshipProgramMentee) {
     const seed = person.name.length > 0 ? person.name.charCodeAt(0) : 0;
     return {
       ...person,
       initials: mentorshipPersonInitials(person.name),
       avatarStyleClass: MENTORSHIP_PROGRAM_AVATAR_PALETTE[seed % MENTORSHIP_PROGRAM_AVATAR_PALETTE.length],
-      statusLabel: MENTORSHIP_PERSON_STATUS_LABELS[person.status],
-      statusBadgeClass: MENTORSHIP_PERSON_STATUS_BADGE_CLASSES[person.status],
+      statusLabel: MENTORSHIP_MENTEE_STATUS_LABELS[person.status],
+      statusBadgeClass: MENTORSHIP_MENTEE_STATUS_BADGE_CLASSES[person.status],
       appliedOnLabel: person.appliedOn ? formatIsoDateLabel(person.appliedOn) : '—',
     };
   }

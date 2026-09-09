@@ -1,7 +1,7 @@
 <!-- Copyright The Linux Foundation and each contributor to LFX. -->
 <!-- SPDX-License-Identifier: MIT -->
 
-<main class="container mx-auto flex flex-col gap-6 px-4 sm:px-6 lg:px-8" data-testid="org-easycla-page">
+<div class="container mx-auto flex flex-col gap-6 px-4 sm:px-6 lg:px-8" data-testid="org-easycla-page">
   <header class="flex flex-col gap-4 sm:flex-row sm:items-start sm:justify-between" data-testid="org-easycla-header">
     <div class="flex flex-col gap-2">
       <h1 class="font-display font-light text-2xl" data-testid="org-easycla-title">
@@ -115,7 +115,26 @@
     } @else {
       <section class="grid grid-cols-1 gap-4 md:grid-cols-2" data-testid="org-easycla-grid">
         @for (claGroup of pagedClaGroups(); track claGroup.id) {
-          <lfx-org-easycla-card [claGroup]="claGroup" />
+          <!--
+            Stretched link, matching the me-selector in sidebar.component.html: the anchor
+            overlays the card as a SIBLING rather than wrapping it. Wrapping nested the "Needs a
+            CLA Manager" tag — which carries a tooltip and so takes `tabindex="0"` — inside the
+            link, giving a second tab stop within the card and making a click on the tag
+            ambiguous with following the agreement.
+
+            The card sits above the anchor but with pointer events off, so clicks fall through to
+            the link while the tag can re-enable them for its own tooltip.
+          -->
+          <div class="relative">
+            <a
+              [routerLink]="['/org/easycla', claGroup.id]"
+              class="absolute inset-0 z-0 rounded-lg focus:outline-none focus-visible:ring-2 focus-visible:ring-blue-500"
+              [attr.aria-label]="orgClaOpenLabel(claGroup)"
+              data-testid="org-easycla-card-link"></a>
+            <div class="relative z-10 pointer-events-none">
+              <lfx-org-easycla-card [claGroup]="claGroup" (coverageRequested)="openCoverage(claGroup)" />
+            </div>
+          </div>
         }
       </section>
 
@@ -145,4 +164,4 @@
       }
     }
   }
-</main>
+</div>

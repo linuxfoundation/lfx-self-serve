@@ -26,10 +26,12 @@ export const ORG_LENS_ROI_ENABLED_FLAG = 'org-lens-roi-enabled';
  * milestone-gate precedent. Default false: a missing LaunchDarkly flag keeps the
  * module invisible. The route guard fails closed (unlike `myClasEnabledGuard`).
  *
- * Client half of a two-flag gate — evaluated through `FeatureFlagService.getBooleanFlag`,
- * which is the Web SDK and never runs server-side. It hides the route and nav only;
- * `ServerFeatureFlag.OrgLensClaM3` is what closes the BFF. Both must be on for the module
- * to work, and the server flag must be rolled out first (see its doc for why).
+ * Evaluated through `FeatureFlagService.getBooleanFlag`, which is the Web SDK and never runs
+ * server-side, so this hides the route and nav without closing the BFF. That is deliberate and
+ * matches M1/M2: the module's routes still require an Org Lens grant, and the data they read is
+ * already reachable through the ACS-authorized EasyCLA APIs and the Corporate CLA Console, so a
+ * second env-var gate would add a GitOps round-trip to every rollout without withholding
+ * anything. Revisit if M3 write paths (sign, managers, approval list) land on these routes.
  */
 export const ORG_LENS_CLA_M3_ENABLED_FLAG = 'org-lens-cla-m3-enabled';
 /**
@@ -116,3 +118,18 @@ export const FEATURE_FLAG_OVERRIDE_STORAGE_KEY = 'lfx-feature-flag-overrides';
  * wait and the guard-level wait share one tunable budget instead of two independent magic numbers.
  */
 export const FEATURE_FLAG_READY_TIMEOUT_MS = 10_000;
+
+/**
+ * Gates the Formation Checklist Epic 1 surfaces (GH-1955/1958/1959/1962) — the project dashboard's
+ * Formation badge/subtitle/sidebar card, and the project selector's Formation tag. (A stage-scoped
+ * Formation nav item was tried and removed on review — see the comment on `projectLensItems` in
+ * `sidebar-nav.service.ts` — since it had nowhere distinct to route to.) LaunchDarkly targets a
+ * small internal audience while the formation flow is validated; default false so an unflagged
+ * evaluation renders the pre-Formation UI.
+ *
+ * **UI-only** — evaluated through `FeatureFlagService.getBooleanFlag`. Does not gate the BFF or any
+ * endpoint: the underlying `stage`/formation fields on `/api/projects/:slugOrUid` are already
+ * visible to anyone authorized to view the project regardless of this flag — it only controls
+ * whether Self Serve *renders* Formation-specific UI around already-reachable data.
+ */
+export const FORMATION_ENABLED_FLAG = 'formation-enabled';

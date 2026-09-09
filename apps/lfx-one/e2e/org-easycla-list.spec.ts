@@ -44,7 +44,9 @@ function nineClaGroups() {
     claGroup({ id: 'sig-2', claGroupName: 'Cascade Project CLA', claManagersCount: 1, approvalCriteriaCount: 1 }),
     claGroup({ id: 'sig-3', claGroupName: 'Driftwood CLA', needsClaManager: true, claManagersCount: 0 }),
     claGroup({ id: 'sig-4', claGroupName: 'Meridian CLA', status: 'sanctioned' }),
-    claGroup({ id: 'sig-5', claGroupName: 'Lumen CLA', status: 'not-started' }),
+    // `signed: false` alongside the status, or the fixture models an impossible row: a
+    // not-started agreement that nonetheless has a signed document to download.
+    claGroup({ id: 'sig-5', claGroupName: 'Lumen CLA', status: 'not-started', signed: false, signedOn: undefined }),
     claGroup({ id: 'sig-6', claGroupName: 'Harbor CLA', approvalCriteriaCount: undefined }),
     claGroup({ id: 'sig-7', claGroupName: 'Quarry CLA' }),
     claGroup({ id: 'sig-8', claGroupName: 'Ridgeway CLA' }),
@@ -144,6 +146,77 @@ test.describe('Org Lens EasyCLA list — content', () => {
 
     await page.getByTestId('org-easycla-prev-page').click();
     await expect(page.getByTestId('org-easycla-card')).toHaveCount(8);
+  });
+
+  // The real reason this needs a browser: the card sits under a stretched link that covers it
+  // entirely, so a chip that works in a unit test can still be unclickable — or can navigate to the
+  // detail page instead of opening the dialog. Only a real click through the real stacking context
+  // tells them apart, which is why the URL is asserted afterwards.
+  test('shows what an agreement covers without leaving the list', async ({ page }) => {
+    // The shared fixture covers one project, whose name the chip states outright — there is nothing
+    // to open, and no control. This case needs the multi-project row that does have one.
+    await gotoEasyclaList(
+      page,
+      stubList([
+        claGroup({
+          id: 'sig-1',
+          claGroupName: 'Nimbus Foundation CLA',
+          projects: [
+            { projectSfid: 'a09410000182dD3AAI', projectName: 'Cascade' },
+            { projectSfid: 'a09410000182dD4AAI', projectName: 'Driftwood' },
+          ],
+        }),
+      ])
+    );
+
+    const chip = page.getByTestId('org-easycla-card-coverage-link').first();
+    await expect(chip).toBeVisible({ timeout: PAGE_LOAD_TIMEOUT });
+    await chip.click();
+
+    const projects = page.getByTestId('org-easycla-coverage-project');
+    await expect(projects).toHaveCount(2, { timeout: PAGE_LOAD_TIMEOUT });
+    await expect(page.getByTestId('org-easycla-coverage-title')).toHaveText('Projects covered by Nimbus Foundation CLA');
+    expect(page.url()).toContain('/org/easycla');
+    expect(page.url()).not.toContain('/org/easycla/sig-1');
+
+    await page.getByTestId('org-easycla-coverage-close').click();
+    await expect(projects).toHaveCount(0);
+    await expect(page.getByTestId('org-easycla-card')).toHaveCount(1);
+  });
+
+  test('finds one project among the many an agreement covers', async ({ page }) => {
+    await gotoEasyclaList(
+      page,
+      stubList([
+        claGroup({
+          id: 'sig-1',
+          claGroupName: 'Nimbus Foundation CLA',
+          projects: [
+            { projectSfid: 'a09410000182dD3AAI', projectName: 'Cascade' },
+            { projectSfid: 'a09410000182dD4AAI', projectName: 'Driftwood' },
+            { projectSfid: 'a09410000182dD5AAI', projectName: 'Cascadia Tools' },
+          ],
+        }),
+      ])
+    );
+
+    await page.getByTestId('org-easycla-card-coverage-link').first().click();
+
+    const projects = page.getByTestId('org-easycla-coverage-project');
+    await expect(projects).toHaveCount(3, { timeout: PAGE_LOAD_TIMEOUT });
+
+    // Typed into the real field rather than set on the form, because this filter has no debounce —
+    // if the reactive binding were ever swapped for a change-event one, the list would stop tracking
+    // the keystrokes and only a real browser would notice.
+    await page.locator('[data-test="org-easycla-coverage-search"]').fill('casc');
+    await expect(projects).toHaveText(['Cascade', 'Cascadia Tools']);
+
+    await page.locator('[data-test="org-easycla-coverage-search"]').fill('nimbus');
+    await expect(projects).toHaveCount(0);
+    await expect(page.getByTestId('org-easycla-coverage-no-match')).toBeVisible();
+
+    await page.locator('[data-test="org-easycla-coverage-search"]').fill('');
+    await expect(projects).toHaveCount(3);
   });
 
   test('hides the pager when every agreement fits on one page', async ({ page }) => {

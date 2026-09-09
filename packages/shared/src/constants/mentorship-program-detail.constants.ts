@@ -1,7 +1,14 @@
 // Copyright The Linux Foundation and each contributor to LFX.
 // SPDX-License-Identifier: MIT
 
-import type { MentorshipProgramLists, MentorshipProgramPerson, MentorshipProgramTermRow } from '../interfaces/mentorship.interface';
+import type {
+  MentorshipInvitableUser,
+  MentorshipInvitableUsersResponse,
+  MentorshipProgramLists,
+  MentorshipProgramMentee,
+  MentorshipProgramMentor,
+  MentorshipProgramTermRow,
+} from '../interfaces/mentorship.interface';
 
 export const EMPTY_MENTORSHIP_PROGRAM_LISTS: MentorshipProgramLists = {
   mentees: [],
@@ -10,7 +17,12 @@ export const EMPTY_MENTORSHIP_PROGRAM_LISTS: MentorshipProgramLists = {
   terms: [],
 };
 
-const gridflowMentees: MentorshipProgramPerson[] = [
+export const EMPTY_MENTORSHIP_INVITABLE_USERS_RESPONSE: MentorshipInvitableUsersResponse = { data: [], total: 0 };
+
+/** Default page size for the Mentors-tab invite picker. */
+export const MENTORSHIP_INVITABLE_USER_PAGE_SIZE = 50;
+
+const gridflowMentees: MentorshipProgramMentee[] = [
   {
     id: 'mnt_alex_rivera',
     name: 'Alex Rivera',
@@ -18,7 +30,6 @@ const gridflowMentees: MentorshipProgramPerson[] = [
     status: 'accepted',
     termName: 'Fall 2026',
     appliedOn: '2026-07-18',
-    profileCreated: true,
   },
   {
     id: 'mnt_priya_shah',
@@ -27,11 +38,10 @@ const gridflowMentees: MentorshipProgramPerson[] = [
     status: 'accepted',
     termName: 'Fall 2026',
     appliedOn: '2026-07-21',
-    profileCreated: true,
   },
 ];
 
-const gridflowApplicants: MentorshipProgramPerson[] = [
+const gridflowApplicants: MentorshipProgramMentee[] = [
   {
     id: 'app_jordan_hale',
     name: 'Jordan Hale',
@@ -106,13 +116,12 @@ const gridflowApplicants: MentorshipProgramPerson[] = [
   },
 ];
 
-const gridflowMentors: MentorshipProgramPerson[] = [
+const gridflowMentors: MentorshipProgramMentor[] = [
   {
     id: 'mtr_dana_kovacs',
     name: 'Dana Kovacs',
     email: 'dana.kovacs@example.com',
     status: 'accepted',
-    termName: 'Fall 2026',
     invitedOn: '2026-06-12',
     profileCreated: true,
   },
@@ -121,7 +130,6 @@ const gridflowMentors: MentorshipProgramPerson[] = [
     name: 'Marcus Wei',
     email: 'marcus.wei@example.com',
     status: 'accepted',
-    termName: 'Fall 2026',
     invitedOn: '2026-06-14',
     profileCreated: true,
   },
@@ -129,8 +137,7 @@ const gridflowMentors: MentorshipProgramPerson[] = [
     id: 'mtr_sofia_alvarez',
     name: 'Sofia Alvarez',
     email: 'sofia.alvarez@example.com',
-    status: 'invited',
-    termName: 'Fall 2026',
+    status: 'pending',
     invitedOn: '2026-08-01',
     profileCreated: false,
   },
@@ -139,7 +146,6 @@ const gridflowMentors: MentorshipProgramPerson[] = [
     name: 'Ben Hartley',
     email: 'ben.hartley@example.com',
     status: 'accepted',
-    termName: 'Fall 2026',
     invitedOn: '2026-05-20',
     profileCreated: true,
   },
@@ -236,8 +242,7 @@ export const MOCK_MENTORSHIP_PROGRAM_LISTS: Record<string, MentorshipProgramList
         id: 'mtr_apicurio_1',
         name: 'Helen Cho',
         email: 'helen.cho@example.com',
-        status: 'invited',
-        termName: 'Winter 2026',
+        status: 'pending',
         invitedOn: '2026-07-20',
         profileCreated: false,
       },
@@ -245,8 +250,7 @@ export const MOCK_MENTORSHIP_PROGRAM_LISTS: Record<string, MentorshipProgramList
         id: 'mtr_apicurio_2',
         name: 'Omar Farouk',
         email: 'omar.farouk@example.com',
-        status: 'invited',
-        termName: 'Winter 2026',
+        status: 'pending',
         invitedOn: '2026-07-22',
         profileCreated: true,
       },
@@ -276,7 +280,6 @@ export const MOCK_MENTORSHIP_PROGRAM_LISTS: Record<string, MentorshipProgramList
         status: 'accepted',
         termName: 'Fall 2026',
         appliedOn: '2026-07-10',
-        profileCreated: true,
       },
     ],
     applicants: [
@@ -303,7 +306,6 @@ export const MOCK_MENTORSHIP_PROGRAM_LISTS: Record<string, MentorshipProgramList
         name: 'Nina Patel',
         email: 'nina.patel@example.com',
         status: 'accepted',
-        termName: 'Fall 2026',
         invitedOn: '2026-05-18',
         profileCreated: true,
       },
@@ -346,7 +348,6 @@ export const MOCK_MENTORSHIP_PROGRAM_LISTS: Record<string, MentorshipProgramList
         name: 'Grace Lin',
         email: 'grace.lin@example.com',
         status: 'accepted',
-        termName: 'Summer 2026',
         invitedOn: '2026-03-10',
         profileCreated: true,
       },
@@ -355,7 +356,6 @@ export const MOCK_MENTORSHIP_PROGRAM_LISTS: Record<string, MentorshipProgramList
         name: 'Peter Novak',
         email: 'peter.novak@example.com',
         status: 'accepted',
-        termName: 'Summer 2026',
         invitedOn: '2026-03-12',
         profileCreated: true,
       },
@@ -390,3 +390,23 @@ export const MOCK_MENTORSHIP_PROGRAM_LISTS: Record<string, MentorshipProgramList
     ],
   },
 };
+
+/**
+ * Deterministic mock pool of LFX users the admin can invite as mentors on the
+ * program-detail Mentors tab. Client-only import path (`@lfx-one/shared/constants`)
+ * until the upstream user-search endpoint is wired.
+ */
+export const MOCK_MENTORSHIP_INVITABLE_USERS: MentorshipInvitableUser[] = [
+  { id: 'usr_ada_lovelace', name: 'Ada Lovelace', email: 'ada.lovelace@example.com' },
+  { id: 'usr_grace_hopper', name: 'Grace Hopper', email: 'grace.hopper@example.com' },
+  { id: 'usr_linus_torvalds', name: 'Linus Torvalds', email: 'linus.torvalds@example.com' },
+  { id: 'usr_margaret_hamilton', name: 'Margaret Hamilton', email: 'margaret.hamilton@example.com' },
+  { id: 'usr_barbara_liskov', name: 'Barbara Liskov', email: 'barbara.liskov@example.com' },
+  { id: 'usr_donald_knuth', name: 'Donald Knuth', email: 'donald.knuth@example.com' },
+  { id: 'usr_katherine_johnson', name: 'Katherine Johnson', email: 'katherine.johnson@example.com' },
+  { id: 'usr_alan_kay', name: 'Alan Kay', email: 'alan.kay@example.com' },
+  { id: 'usr_radia_perlman', name: 'Radia Perlman', email: 'radia.perlman@example.com' },
+  { id: 'usr_tim_berners_lee', name: 'Tim Berners-Lee', email: 'tim.berners-lee@example.com' },
+  { id: 'usr_leslie_lamport', name: 'Leslie Lamport', email: 'leslie.lamport@example.com' },
+  { id: 'usr_shafi_goldwasser', name: 'Shafi Goldwasser', email: 'shafi.goldwasser@example.com' },
+];

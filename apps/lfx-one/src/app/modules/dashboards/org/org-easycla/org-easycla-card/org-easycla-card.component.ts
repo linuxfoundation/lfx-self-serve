@@ -1,9 +1,10 @@
 // Copyright The Linux Foundation and each contributor to LFX.
 // SPDX-License-Identifier: MIT
 
-import { ChangeDetectionStrategy, Component, computed, input } from '@angular/core';
-import type { OrgClaGroup } from '@lfx-one/shared/interfaces';
-import type { TagSeverity } from '@lfx-one/shared/interfaces';
+import { ChangeDetectionStrategy, Component, computed, input, output } from '@angular/core';
+import type { OrgClaCoverageChip, OrgClaGroup } from '@lfx-one/shared/interfaces';
+import { ORG_CLA_STATUS_DISPLAY } from '@lfx-one/shared/constants';
+import { orgClaCoverageChips } from '@lfx-one/shared/utils';
 
 import { TagComponent } from '@components/tag/tag.component';
 
@@ -20,38 +21,28 @@ import { TagComponent } from '@components/tag/tag.component';
   changeDetection: ChangeDetectionStrategy.OnPush,
 })
 export class OrgEasyclaCardComponent {
-  /** Status label and severity, keyed by the server-derived status. */
-  private static readonly statusDisplay: Record<OrgClaGroup['status'], { label: string; severity: TagSeverity }> = {
-    signed: { label: 'Signed', severity: 'success' },
-    'not-started': { label: 'Not started', severity: 'secondary' },
-    sanctioned: { label: 'Sanctioned', severity: 'danger' },
-  };
-
   public readonly claGroup = input.required<OrgClaGroup>();
 
-  protected readonly status = computed(() => OrgEasyclaCardComponent.statusDisplay[this.claGroup().status]);
+  /**
+   * Asks the page to show what this agreement covers.
+   *
+   * An event rather than a `DialogService` call, so the card stays presentational: the page already
+   * owns the row it rendered, and injecting a dialog here would make every card test stand up a
+   * dialog host to assert on a chip.
+   */
+  public readonly coverageRequested = output<void>();
+
+  protected readonly status = computed(() => ORG_CLA_STATUS_DISPLAY[this.claGroup().status]);
 
   /**
    * Coverage as the approved design frames it: name the project when there is exactly one,
    * otherwise name the foundation and say how many projects are covered.
    *
-   * Static text, not a link. The design's chip opens a coverage dialog that ships with the
-   * agreement detail view; a chip styled as actionable that does nothing reads as a bug, so it
-   * stays plain until there is somewhere for it to go.
+   * `opensCoverage` decides which chip is a control. Only the projects count is: a foundation name
+   * and a lone project name have no list to open, so the treatment on them would advertise an
+   * action that isn't there.
    */
-  protected readonly coverageChips = computed<string[]>(() => {
-    const { projects, foundationName } = this.claGroup();
-
-    // An empty project list is the foundation-wide case, not an absence of coverage. The source
-    // omits the entry whose project is the foundation itself, so an agreement covering a whole
-    // foundation arrives with no projects and only its foundation name — and naming nothing would
-    // leave a card that search can match on that name while never showing it.
-    if (projects.length === 0) return foundationName ? [foundationName] : [];
-    if (projects.length === 1) return [projects[0].projectName];
-
-    const projectsChip = `Covers ${projects.length} projects`;
-    return foundationName ? [foundationName, projectsChip] : [projectsChip];
-  });
+  protected readonly coverageChips = computed<OrgClaCoverageChip[]>(() => orgClaCoverageChips(this.claGroup()));
 
   /**
    * Names the signing entity, and says it signed only where the status says so.

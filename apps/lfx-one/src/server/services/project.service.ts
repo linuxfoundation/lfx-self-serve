@@ -332,7 +332,13 @@ export class ProjectService {
   /**
    * Fetches a single project by ID
    */
-  public async getProjectById(req: Request, uid: string, access: boolean = true, includeMeetingCoordinator: boolean = false): Promise<Project> {
+  public async getProjectById(
+    req: Request,
+    uid: string,
+    access: boolean = true,
+    includeMeetingCoordinator: boolean = false,
+    includeAuditor: boolean = false
+  ): Promise<Project> {
     const project = await this.microserviceProxy.proxyRequest<Project>(req, 'LFX_V2_SERVICE', `/projects/${uid}`, 'GET');
 
     if (!project) {
@@ -345,32 +351,58 @@ export class ProjectService {
 
     if (access) {
       const writerProject = await this.accessCheckService.addAccessToResource(req, project, 'project');
-      // Skip meeting_coordinator check when already a writer — the guard allows writer OR
-      // meeting_coordinator, so the extra round trip can't change the outcome.
+      // Skip the meeting_coordinator/auditor checks when already a writer. Per model.fga,
+      // `auditor: … or writer or …` — writer already implies auditor, so that round trip can't
+      // change the outcome. `meeting_coordinator: [user]` is a direct-only grant — writer does NOT
+      // imply it at the FGA level — but every consumer of this field (e.g. writer.guard.ts) already
+      // treats `writer === true` as sufficient on its own before ever reading meetingCoordinator,
+      // and upstream `meetings_creator: writer or meeting_coordinator` makes the same true one level
+      // up. So the round trip could return a different raw value for a writer, but never a
+      // different access outcome — skipping it is safe for that reason alone.
       // Return the field as undefined (omitted) rather than false — false would be a
       // false-negative assertion since the role was never actually checked for writers.
       if (writerProject.writer) {
         return writerProject;
       }
+      let result = writerProject;
       // Only run the meeting_coordinator FGA check when the caller explicitly requests it.
       // This field is consumed by exactly one branch of writer.guard.ts; running it on every
       // GET /api/projects/:slug call would add a second sequential access-check round-trip
       // for all non-writer callers (guards, components, etc.) that never read the field.
-      if (!includeMeetingCoordinator) {
-        return writerProject;
-      }
-      const isMeetingCoordinator = await this.accessCheckService
-        .checkSingleAccess(req, { resource: 'project', id: project.uid, access: 'meeting_coordinator' })
-        .catch((error) => {
-          logger.warning(req, 'get_project_by_id', 'meeting coordinator check failed, skipping field', {
-            project_uid: project.uid,
-            error: error instanceof Error ? error.message : String(error),
+      // Uses the Strict variant, which propagates upstream failures instead of degrading to
+      // `false` — checkSingleAccess's fallback would otherwise report a transient outage as a
+      // definitive "not a meeting coordinator", which the field's documented undefined-on-failure
+      // semantics promise not to do.
+      if (includeMeetingCoordinator) {
+        const isMeetingCoordinator = await this.accessCheckService
+          .checkSingleAccessStrict(req, { resource: 'project', id: project.uid, access: 'meeting_coordinator' })
+          .catch((error) => {
+            logger.warning(req, 'get_project_by_id', 'meeting coordinator check failed, skipping field', {
+              project_uid: project.uid,
+              err: error,
+            });
+            // Return undefined rather than false — false implies the check ran clean and found no
+            // role; undefined preserves the "unknown" semantics documented on Project.meetingCoordinator.
+            return undefined;
           });
-          // Return undefined rather than false — false implies the check ran clean and found no
-          // role; undefined preserves the "unknown" semantics documented on Project.meetingCoordinator.
-          return undefined;
-        });
-      return { ...writerProject, meetingCoordinator: isMeetingCoordinator };
+        result = { ...result, meetingCoordinator: isMeetingCoordinator };
+      }
+      // Only run the auditor FGA check when the caller explicitly requests it (FormationCardComponent's
+      // admin-link guard) — same rationale, and the same Strict variant, as meeting_coordinator above.
+      if (includeAuditor) {
+        const isAuditor = await this.accessCheckService
+          .checkSingleAccessStrict(req, { resource: 'project', id: project.uid, access: 'auditor' })
+          .catch((error) => {
+            logger.warning(req, 'get_project_by_id', 'auditor check failed, skipping field', {
+              project_uid: project.uid,
+              err: error,
+            });
+            // Return undefined rather than false — see meeting_coordinator comment above.
+            return undefined;
+          });
+        result = { ...result, auditor: isAuditor };
+      }
+      return result;
     }
 
     return project;
@@ -555,7 +587,12 @@ export class ProjectService {
    * Fetches a single project by slug using NATS for slug resolution
    * First resolves slug to ID via NATS, then fetches project data
    */
-  public async getProjectBySlug(req: Request, projectSlug: string, includeMeetingCoordinator: boolean = false): Promise<Project> {
+  public async getProjectBySlug(
+    req: Request,
+    projectSlug: string,
+    includeMeetingCoordinator: boolean = false,
+    includeAuditor: boolean = false
+  ): Promise<Project> {
     const natsResult = await this.getProjectIdBySlug(req, projectSlug);
 
     if (!natsResult.exists || !natsResult.uid) {
@@ -567,7 +604,7 @@ export class ProjectService {
     }
 
     // Now fetch the project using the resolved ID
-    return this.getProjectById(req, natsResult.uid, true, includeMeetingCoordinator);
+    return this.getProjectById(req, natsResult.uid, true, includeMeetingCoordinator, includeAuditor);
   }
 
   public async getProjectSettings(req: Request, uid: string): Promise<ProjectSettings> {

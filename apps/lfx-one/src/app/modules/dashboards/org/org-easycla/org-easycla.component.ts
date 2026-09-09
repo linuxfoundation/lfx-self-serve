@@ -5,7 +5,10 @@ import { isPlatformBrowser } from '@angular/common';
 import { ChangeDetectionStrategy, Component, computed, inject, PLATFORM_ID, signal, Signal } from '@angular/core';
 import { takeUntilDestroyed, toObservable, toSignal } from '@angular/core/rxjs-interop';
 import { FormControl, FormGroup } from '@angular/forms';
+import { RouterLink } from '@angular/router';
 import type { OrgClaGroup, OrgClaGroupList } from '@lfx-one/shared/interfaces';
+import { orgClaOpenLabel } from '@lfx-one/shared/utils';
+import { DialogService } from 'primeng/dynamicdialog';
 import { SkeletonModule } from 'primeng/skeleton';
 import { catchError, distinctUntilChanged, filter, of, skip, switchMap, tap } from 'rxjs';
 
@@ -20,10 +23,12 @@ import { OpenIntercomDirective } from '@shared/directives/open-intercom.directiv
 import { OrgNavigationService } from '@shared/services/org-navigation.service';
 
 import { OrgEasyclaCardComponent } from './org-easycla-card/org-easycla-card.component';
+import { orgClaCoverageDialogConfig, OrgEasyclaCoverageDialogComponent } from './org-easycla-coverage-dialog/org-easycla-coverage-dialog.component';
 
 @Component({
   selector: 'lfx-org-easycla',
-  imports: [ButtonComponent, EmptyStateComponent, InputTextComponent, OpenIntercomDirective, OrgEasyclaCardComponent, SkeletonModule],
+  imports: [ButtonComponent, EmptyStateComponent, InputTextComponent, OpenIntercomDirective, OrgEasyclaCardComponent, RouterLink, SkeletonModule],
+  providers: [DialogService],
   templateUrl: './org-easycla.component.html',
   changeDetection: ChangeDetectionStrategy.OnPush,
 })
@@ -37,8 +42,11 @@ export class OrgEasyclaComponent {
   private readonly orgNavigation = inject(OrgNavigationService);
   private readonly claService = inject(OrgLensClaService);
   private readonly platformId = inject(PLATFORM_ID);
+  private readonly dialogService = inject(DialogService);
 
   // ── Search (client-side; the upstream list takes no search parameter) ──────
+  protected readonly orgClaOpenLabel = orgClaOpenLabel;
+
   protected readonly filterForm = new FormGroup({
     search: new FormControl<string>('', { nonNullable: true }),
   });
@@ -174,6 +182,17 @@ export class OrgEasyclaComponent {
 
   protected changePage(delta: number): void {
     this.page.set(Math.min(Math.max(this.currentPage() + delta, 0), this.pageCount() - 1));
+  }
+
+  /**
+   * Shows what one row covers, without leaving the list.
+   *
+   * The row is handed back by the card rather than looked up by id: the card was rendered from this
+   * page's own filtered-and-paged slice, so re-finding it here would be a second source of truth
+   * for which agreement the viewer just pointed at.
+   */
+  protected openCoverage(claGroup: OrgClaGroup): void {
+    this.dialogService.open(OrgEasyclaCoverageDialogComponent, orgClaCoverageDialogConfig(claGroup));
   }
 
   private initSearchTerm(): Signal<string> {

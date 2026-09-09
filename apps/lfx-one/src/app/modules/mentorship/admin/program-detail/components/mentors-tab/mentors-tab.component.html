@@ -3,42 +3,57 @@
 
 <div class="flex flex-col gap-4" data-testid="mentorship-mentors-tab">
   <div class="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
-    <div class="flex flex-col gap-3 sm:flex-row sm:items-center flex-1">
-      <label class="sm:w-72">
-        <span class="sr-only">Search mentors</span>
-        <lfx-input-text [form]="form" control="search" placeholder="Search" icon="fa-light fa-magnifying-glass" dataTest="mentorship-mentors-search" />
-      </label>
-      <div class="sm:w-52">
+    <label class="w-full">
+      <span class="sr-only">Search mentors</span>
+      <lfx-input-text [form]="form" control="search" placeholder="Search" icon="fa-light fa-magnifying-glass" dataTest="mentorship-mentors-search" />
+    </label>
+
+    <div class="flex items-center gap-2">
+      <div class="w-full sm:w-72">
         <lfx-select
           [form]="form"
-          control="status"
-          [options]="statusOptions()"
+          control="invitee"
+          [options]="inviteOptions()"
           optionLabel="label"
           optionValue="value"
-          placeholder="Status"
-          ariaLabel="Filter mentors by status"
+          placeholder="Search and select mentors..."
+          [filter]="true"
+          filterBy="label,email"
+          filterPlaceholder="Search users"
+          [showClear]="true"
+          ariaLabel="Select a user to invite as a mentor"
           styleClass="w-full"
-          dataTest="mentorship-mentors-status" />
+          dataTest="mentorship-mentors-invitee">
+          <ng-template #item let-option>
+            <div class="flex flex-col gap-0.5">
+              <span class="text-sm font-medium text-gray-900">{{ option.label }}</span>
+              <span class="text-xs text-gray-500">{{ option.email }}</span>
+            </div>
+          </ng-template>
+        </lfx-select>
       </div>
+
+      <lfx-button
+        label="Invite"
+        icon="fa-light fa-plus"
+        iconPos="left"
+        severity="primary"
+        size="small"
+        [disabled]="!canInvite()"
+        (onClick)="onInviteMentor()"
+        data-testid="mentorship-mentors-invite" />
     </div>
-    <lfx-button
-      label="Invite Mentor"
-      icon="fa-light fa-plus"
-      iconPos="left"
-      severity="primary"
-      size="small"
-      (onClick)="onInviteMentor()"
-      data-testid="mentorship-mentors-invite" />
   </div>
 
   <div class="overflow-x-auto rounded-xl border border-gray-200 bg-white">
-    <table class="w-full min-w-[48rem] text-left">
+    <table class="w-full min-w-[48rem] table-fixed text-left">
       <thead>
         <tr class="border-b border-gray-200">
-          <th class="px-4 py-3 text-xs font-semibold uppercase tracking-wide text-gray-500">Mentor</th>
-          <th class="px-4 py-3 text-xs font-semibold uppercase tracking-wide text-gray-500">Status</th>
-          <th class="px-4 py-3 text-xs font-semibold uppercase tracking-wide text-gray-500">Invitation Date</th>
-          <th class="px-4 py-3 text-xs font-semibold uppercase tracking-wide text-gray-500">Profile Created?</th>
+          <th class="w-[35%] px-4 py-3 text-sm font-medium text-gray-600">Mentor</th>
+          <th class="w-[15%] px-4 py-3 text-sm font-medium text-gray-600">Status</th>
+          <th class="w-[24%] px-4 py-3 text-sm font-medium text-gray-600">Invitation Date</th>
+          <th class="w-[16%] px-4 py-3 text-sm font-medium text-gray-600">Profile Created?</th>
+          <th class="w-[10%] px-4 py-3 text-sm font-medium text-gray-600 text-end">Actions</th>
         </tr>
       </thead>
       <tbody>
@@ -54,8 +69,7 @@
                   [styleClass]="row.avatarStyleClass"
                   [ariaLabel]="row.name" />
                 <div class="flex flex-col min-w-0">
-                  <span class="text-sm font-medium text-gray-900 truncate">{{ row.name }}</span>
-                  <span class="text-xs text-gray-500 truncate">{{ row.email }}</span>
+                  <span class="text-sm font-medium text-gray-900 truncate" [title]="row.name">{{ row.name }}</span>
                 </div>
               </div>
             </td>
@@ -64,12 +78,47 @@
                 {{ row.statusLabel }}
               </span>
             </td>
-            <td class="px-4 py-3 text-sm text-gray-700">{{ row.invitedOnLabel }}</td>
-            <td class="px-4 py-3 text-sm text-gray-700">{{ row.profileCreatedLabel }}</td>
+            <td class="px-4 py-3 text-sm text-gray-700">{{ row.invitationLabel }}</td>
+            <td class="px-4 py-3 text-sm" [class]="row.profileCreatedClass">{{ row.profileCreatedLabel }}</td>
+            <td class="px-4 py-3">
+              <div class="flex items-center justify-end gap-3">
+                @if (row.canAccept) {
+                  <button
+                    type="button"
+                    class="text-emerald-600 transition-colors hover:text-emerald-700"
+                    [title]="'Accept ' + row.name"
+                    [attr.aria-label]="'Accept ' + row.name"
+                    (click)="onAcceptMentor(row.name)"
+                    [attr.data-testid]="'mentorship-mentor-accept-' + row.id">
+                    <i class="fa-light fa-circle-check" aria-hidden="true"></i>
+                  </button>
+                }
+                @if (row.canDecline) {
+                  <button
+                    type="button"
+                    class="text-amber-600 transition-colors hover:text-amber-700"
+                    [title]="'Decline ' + row.name"
+                    [attr.aria-label]="'Decline ' + row.name"
+                    (click)="onDeclineMentor(row.name)"
+                    [attr.data-testid]="'mentorship-mentor-decline-' + row.id">
+                    <i class="fa-light fa-circle-xmark" aria-hidden="true"></i>
+                  </button>
+                }
+                <button
+                  type="button"
+                  class="text-red-600 transition-colors hover:text-red-700"
+                  [title]="'Remove ' + row.name + ' from the program'"
+                  [attr.aria-label]="'Remove ' + row.name"
+                  (click)="onDeleteMentor(row.name)"
+                  [attr.data-testid]="'mentorship-mentor-delete-' + row.id">
+                  <i class="fa-light fa-trash-can" aria-hidden="true"></i>
+                </button>
+              </div>
+            </td>
           </tr>
         } @empty {
           <tr>
-            <td colspan="4" class="px-4 py-10 text-center text-sm text-gray-500" data-testid="mentorship-mentors-empty">No mentors.</td>
+            <td colspan="5" class="px-4 py-10 text-center text-sm text-gray-500" data-testid="mentorship-mentors-empty">No mentors.</td>
           </tr>
         }
       </tbody>
