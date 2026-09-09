@@ -15,3 +15,13 @@ export const PREFERRED_EMAIL_ERROR_TYPE = {
   INTERNAL: 'internal',
   UNAVAILABLE: 'unavailable',
 } as const;
+
+/**
+ * The upstream `code` value for "email not yet synced from Auth0 to SFDC" (#2269/#2270) — the one
+ * case that needs finer resolution than `type` gives. Single source of truth shared by
+ * `PreferredEmailErrorCode` (`user-profile.interface.ts`) and the runtime checks in
+ * `meeting-preference.service.ts`, so they can't drift independently.
+ */
+export const PREFERRED_EMAIL_ERROR_CODE = {
+  EMAIL_NOT_SYNCED: 'email_not_synced',
+} as const;

@@ -1,7 +1,7 @@
 // Copyright The Linux Foundation and each contributor to LFX.
 // SPDX-License-Identifier: MIT
 
-import { NATS_CONFIG, PREFERRED_EMAIL_ERROR_TYPE } from '@lfx-one/shared/constants';
+import { NATS_CONFIG, PREFERRED_EMAIL_ERROR_CODE, PREFERRED_EMAIL_ERROR_TYPE } from '@lfx-one/shared/constants';
 import { NatsSubjects } from '@lfx-one/shared/enums';
 import { MeetingInviteEmail, PreferredEmailErrorReply, PreferredEmailErrorType, SetMeetingInviteResult } from '@lfx-one/shared/interfaces';
 import { isMeetingInvitePrimarySentinel, redactEmailAddresses } from '@lfx-one/shared/utils';
@@ -171,7 +171,7 @@ export class MeetingPreferenceService {
     if (typeof error !== 'string') {
       return null;
     }
-    return { error, type: this.asKnownErrorType(type), code: code === 'email_not_synced' ? code : undefined };
+    return { error, type: this.asKnownErrorType(type), code: code === PREFERRED_EMAIL_ERROR_CODE.EMAIL_NOT_SYNCED ? code : undefined };
   }
 
   private asKnownErrorType(value: unknown): PreferredEmailErrorType | undefined {
@@ -203,7 +203,7 @@ export class MeetingPreferenceService {
   private classifyPreferredEmailError({ error, type, code }: PreferredEmailErrorReply): SetMeetingInviteResult['reason'] {
     // `code` is the finer signal — it's only set for the retryable "email not yet synced from
     // Auth0 to SFDC" case, which otherwise shares `type: 'unavailable'` with a generic outage.
-    if (code === 'email_not_synced') {
+    if (code === PREFERRED_EMAIL_ERROR_CODE.EMAIL_NOT_SYNCED) {
       return 'sync_pending';
     }
     if (type === 'validation') {

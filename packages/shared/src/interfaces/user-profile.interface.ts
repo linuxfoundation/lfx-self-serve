@@ -1,7 +1,7 @@
 // Copyright The Linux Foundation and each contributor to LFX.
 // SPDX-License-Identifier: MIT
 
-import { PREFERRED_EMAIL_ERROR_TYPE } from '../constants/user-profile.constants';
+import { PREFERRED_EMAIL_ERROR_CODE, PREFERRED_EMAIL_ERROR_TYPE } from '../constants/user-profile.constants';
 
 /**
  * Minimal user identity fields for displaying initials
@@ -63,9 +63,11 @@ export interface MeetingInviteEmail {
 // rather than trust it, see extractPreferredEmailError.
 export type PreferredEmailErrorType = (typeof PREFERRED_EMAIL_ERROR_TYPE)[keyof typeof PREFERRED_EMAIL_ERROR_TYPE];
 
-// The one case that needs finer resolution than `type` gives: "email not yet synced from Auth0
-// to SFDC" otherwise shares `type: 'unavailable'` with a generic outage.
-export type PreferredEmailErrorCode = 'email_not_synced';
+// Derived from PREFERRED_EMAIL_ERROR_CODE (single source of truth shared with the runtime checks
+// in extractPreferredEmailError/classifyPreferredEmailError). The one case that needs finer
+// resolution than `type` gives: "email not yet synced from Auth0 to SFDC" otherwise shares
+// `type: 'unavailable'` with a generic outage.
+export type PreferredEmailErrorCode = (typeof PREFERRED_EMAIL_ERROR_CODE)[keyof typeof PREFERRED_EMAIL_ERROR_CODE];
 
 /**
  * Error reply from the meeting-service `preferred_email.set` NATS RPC. `type` and `code` are
