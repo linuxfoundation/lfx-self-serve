@@ -132,7 +132,7 @@
               [attr.aria-label]="orgClaOpenLabel(claGroup)"
               data-testid="org-easycla-card-link"></a>
             <div class="relative z-10 pointer-events-none">
-              <lfx-org-easycla-card [claGroup]="claGroup" />
+              <lfx-org-easycla-card [claGroup]="claGroup" (coverageRequested)="openCoverage(claGroup)" />
             </div>
           </div>
         }

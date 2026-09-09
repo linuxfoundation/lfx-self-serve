@@ -15,9 +15,11 @@ import { PersonaService } from '@services/persona.service';
 import { OrgNavigationService } from '@shared/services/org-navigation.service';
 // The no-access branch renders a `lfxOpenIntercom` support button, which injects MessageService.
 import { MessageService } from 'primeng/api';
+import { DialogService } from 'primeng/dynamicdialog';
 import { of, Subject, throwError } from 'rxjs';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 
+import { OrgEasyclaCoverageDialogComponent } from './org-easycla-coverage-dialog/org-easycla-coverage-dialog.component';
 import { OrgEasyclaComponent } from './org-easycla.component';
 
 describe('OrgEasyclaComponent', () => {
@@ -30,6 +32,7 @@ describe('OrgEasyclaComponent', () => {
   const navLoaded = signal(true);
 
   const getClaGroups = vi.fn();
+  const openDialog = vi.fn();
 
   function claGroup(overrides: Partial<OrgClaGroup> = {}): OrgClaGroup {
     return {
@@ -69,6 +72,12 @@ describe('OrgEasyclaComponent', () => {
       ],
     }).compileComponents();
 
+    // Component-level `providers` win over TestBed's, so the dialog is stubbed the same way the
+    // detail spec stubs it — by overriding the component's own provider.
+    TestBed.overrideComponent(OrgEasyclaComponent, {
+      set: { providers: [{ provide: DialogService, useValue: { open: openDialog } }] },
+    });
+
     const fixture = TestBed.createComponent(OrgEasyclaComponent);
     fixture.detectChanges();
     await fixture.whenStable();
@@ -97,6 +106,7 @@ describe('OrgEasyclaComponent', () => {
     personaLoaded.set(true);
     navLoaded.set(true);
     getClaGroups.mockReset();
+    openDialog.mockReset();
     getClaGroups.mockReturnValue(of({ orgUid: SELECTED_ACCOUNT.uid, claGroups: [] }));
   });
 
@@ -237,6 +247,50 @@ describe('OrgEasyclaComponent', () => {
 
       expect(labels).toEqual(['Open Nimbus Foundation CLA, Acme Motors GmbH', 'Open Nimbus Foundation CLA, Acme Robotics Ltd']);
       expect(new Set(labels).size).toBe(2);
+    });
+
+    it('shows what a row covers without leaving the list', async () => {
+      getClaGroups.mockReturnValue(of({ orgUid: SELECTED_ACCOUNT.uid, claGroups: [claGroup()] }));
+
+      const fixture = await render();
+      (byTestId(fixture, 'org-easycla-card-coverage-link') as HTMLButtonElement | null)?.click();
+      fixture.detectChanges();
+
+      expect(openDialog).toHaveBeenCalledWith(
+        OrgEasyclaCoverageDialogComponent,
+        expect.objectContaining({
+          header: 'Projects covered by Nimbus Foundation CLA',
+          data: {
+            claGroupName: 'Nimbus Foundation CLA',
+            foundationName: 'Nimbus Foundation',
+            projects: [{ projectName: 'Cascade' }, { projectName: 'Driftwood' }],
+          },
+        })
+      );
+    });
+
+    // The rows share a CLA Group name and differ only in coverage, which is exactly the case an
+    // id lookup or a shared handler would get wrong: the dialog must describe the row clicked.
+    it('opens the dialog for the row whose chip was activated, not the first one', async () => {
+      getClaGroups.mockReturnValue(
+        of({
+          orgUid: SELECTED_ACCOUNT.uid,
+          claGroups: [
+            claGroup({ id: 'a', projects: [{ projectName: 'Cascade' }, { projectName: 'Driftwood' }] }),
+            claGroup({ id: 'b', projects: [{ projectName: 'Fathom' }, { projectName: 'Gantry' }, { projectName: 'Halyard' }] }),
+          ],
+        })
+      );
+
+      const fixture = await render();
+      const chips = allByTestId(fixture, 'org-easycla-card-coverage-link');
+      expect(chips).toHaveLength(2);
+
+      (chips[1] as HTMLButtonElement).click();
+      fixture.detectChanges();
+
+      expect(openDialog).toHaveBeenCalledOnce();
+      expect(openDialog.mock.calls[0][1].data.projects).toEqual([{ projectName: 'Fathom' }, { projectName: 'Gantry' }, { projectName: 'Halyard' }]);
     });
 
     it('fetches once for the selected organization', async () => {

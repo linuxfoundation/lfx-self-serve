@@ -148,6 +148,42 @@ test.describe('Org Lens EasyCLA list — content', () => {
     await expect(page.getByTestId('org-easycla-card')).toHaveCount(8);
   });
 
+  // The real reason this needs a browser: the card sits under a stretched link that covers it
+  // entirely, so a chip that works in a unit test can still be unclickable — or can navigate to the
+  // detail page instead of opening the dialog. Only a real click through the real stacking context
+  // tells them apart, which is why the URL is asserted afterwards.
+  test('shows what an agreement covers without leaving the list', async ({ page }) => {
+    // The shared fixture covers one project, whose name the chip states outright — there is nothing
+    // to open, and no control. This case needs the multi-project row that does have one.
+    await gotoEasyclaList(
+      page,
+      stubList([
+        claGroup({
+          id: 'sig-1',
+          claGroupName: 'Nimbus Foundation CLA',
+          projects: [
+            { projectSfid: 'a09410000182dD3AAI', projectName: 'Cascade' },
+            { projectSfid: 'a09410000182dD4AAI', projectName: 'Driftwood' },
+          ],
+        }),
+      ])
+    );
+
+    const chip = page.getByTestId('org-easycla-card-coverage-link').first();
+    await expect(chip).toBeVisible({ timeout: PAGE_LOAD_TIMEOUT });
+    await chip.click();
+
+    const projects = page.getByTestId('org-easycla-coverage-project');
+    await expect(projects).toHaveCount(2, { timeout: PAGE_LOAD_TIMEOUT });
+    await expect(page.getByTestId('org-easycla-coverage-title')).toHaveText('Projects covered by Nimbus Foundation CLA');
+    expect(page.url()).toContain('/org/easycla');
+    expect(page.url()).not.toContain('/org/easycla/sig-1');
+
+    await page.getByTestId('org-easycla-coverage-close').click();
+    await expect(projects).toHaveCount(0);
+    await expect(page.getByTestId('org-easycla-card')).toHaveCount(1);
+  });
+
   test('hides the pager when every agreement fits on one page', async ({ page }) => {
     await gotoEasyclaList(page, stubList([claGroup({ id: 'sig-1', claGroupName: 'Nimbus Foundation CLA' })]));
 

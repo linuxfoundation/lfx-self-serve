@@ -4,11 +4,40 @@
 import '@angular/compiler';
 
 import { ComponentFixture, TestBed } from '@angular/core/testing';
-import type { OrgClaCoverageDialogData } from '@lfx-one/shared/interfaces';
+import type { OrgClaCoverageDialogData, OrgClaGroup } from '@lfx-one/shared/interfaces';
 import { DynamicDialogConfig, DynamicDialogRef } from 'primeng/dynamicdialog';
 import { describe, expect, it, vi } from 'vitest';
 
-import { OrgEasyclaCoverageDialogComponent } from './org-easycla-coverage-dialog.component';
+import { orgClaCoverageDialogConfig, OrgEasyclaCoverageDialogComponent } from './org-easycla-coverage-dialog.component';
+
+describe('orgClaCoverageDialogConfig', () => {
+  const group: OrgClaGroup = {
+    id: 'signature-uuid-1',
+    claGroupName: 'Nimbus Foundation CLA',
+    foundationName: 'Nimbus Foundation',
+    projects: [{ projectName: 'Cascade' }, { projectName: 'Driftwood' }],
+    signed: true,
+    status: 'signed',
+    needsClaManager: false,
+    claManagersCount: 2,
+  };
+
+  it('names the agreement in the dialog header', () => {
+    expect(orgClaCoverageDialogConfig(group).header).toBe('Projects covered by Nimbus Foundation CLA');
+  });
+
+  it('asks for enough width to hold the header on one line', () => {
+    // Narrower than this and a typical CLA Group name wraps the header, which is what the design's
+    // 560px is buying. Pinned because the value reads as arbitrary and invites being trimmed.
+    expect(orgClaCoverageDialogConfig(group).width).toBe('36rem');
+  });
+
+  it('keeps the dialog within a narrow viewport', () => {
+    // The preferred width is fixed and the Aura preset caps nothing, so without this the dialog is
+    // wider than a phone and the list's right edge and the Close control sit off screen.
+    expect(orgClaCoverageDialogConfig(group).style).toEqual({ maxWidth: '90vw' });
+  });
+});
 
 describe('OrgEasyclaCoverageDialogComponent', () => {
   const closeDialog = vi.fn();
@@ -82,6 +111,17 @@ describe('OrgEasyclaCoverageDialogComponent', () => {
     close?.click();
 
     expect(closeDialog).toHaveBeenCalledOnce();
+  });
+
+  it('scrolls a long list rather than growing past the dismiss control', async () => {
+    const fixture = await render({
+      claGroupName: 'Acme CLA',
+      projects: Array.from({ length: 14 }, (_, i) => ({ projectName: `Project ${i + 1}` })),
+    });
+    const list = fixture.nativeElement.querySelector('[data-testid="org-easycla-coverage-list"]') as HTMLElement | null;
+
+    expect(list?.className).toContain('max-h-80');
+    expect(list?.className).toContain('overflow-y-auto');
   });
 
   it('offers the dismiss control even when no projects are listed', async () => {

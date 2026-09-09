@@ -18,7 +18,7 @@ import { DialogService } from 'primeng/dynamicdialog';
 import { BehaviorSubject, of, Subject, throwError } from 'rxjs';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 
-import { OrgEasyclaCoverageDialogComponent } from './org-easycla-coverage-dialog.component';
+import { OrgEasyclaCoverageDialogComponent } from '../org-easycla-coverage-dialog/org-easycla-coverage-dialog.component';
 import { OrgEasyclaDetailComponent } from './org-easycla-detail.component';
 
 describe('OrgEasyclaDetailComponent', () => {

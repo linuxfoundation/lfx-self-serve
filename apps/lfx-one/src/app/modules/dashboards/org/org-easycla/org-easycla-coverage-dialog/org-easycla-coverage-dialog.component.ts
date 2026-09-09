@@ -2,10 +2,32 @@
 // SPDX-License-Identifier: MIT
 
 import { Component, inject } from '@angular/core';
-import type { OrgClaCoverageDialogData, OrgClaGroupProject } from '@lfx-one/shared/interfaces';
+import type { OrgClaCoverageDialogData, OrgClaGroup, OrgClaGroupProject } from '@lfx-one/shared/interfaces';
 import { DynamicDialogConfig, DynamicDialogRef } from 'primeng/dynamicdialog';
 
 import { ButtonComponent } from '@components/button/button.component';
+
+/**
+ * How this dialog is opened, owned here rather than by each caller.
+ *
+ * Two surfaces open it — a list card and the agreement detail header — and they must present the
+ * same agreement identically. Left to the call sites, the header string and the width are two more
+ * things that can drift apart, and the drift would only ever be visible to whoever opened both.
+ */
+export function orgClaCoverageDialogConfig(group: OrgClaGroup): DynamicDialogConfig<OrgClaCoverageDialogData> {
+  return {
+    header: `Projects covered by ${group.claGroupName}`,
+    modal: true,
+    // The approved design gives this dialog 560px, and it needs the room: the header carries a CLA
+    // Group name, and below 36rem a typical one wraps to two lines and takes the subset caveat with
+    // it. 36rem is the nearest width the application already uses, so this asks for no new value.
+    width: '36rem',
+    // The Aura dialog preset caps nothing, so a fixed width alone runs off a 360–390px phone,
+    // taking the list's right edge and the Close control with it.
+    style: { maxWidth: '90vw' },
+    data: { claGroupName: group.claGroupName, foundationName: group.foundationName, projects: group.projects },
+  };
+}
 
 @Component({
   selector: 'lfx-org-easycla-coverage-dialog',

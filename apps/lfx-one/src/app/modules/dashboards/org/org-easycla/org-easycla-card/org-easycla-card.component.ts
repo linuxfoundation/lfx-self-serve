@@ -1,7 +1,7 @@
 // Copyright The Linux Foundation and each contributor to LFX.
 // SPDX-License-Identifier: MIT
 
-import { ChangeDetectionStrategy, Component, computed, input } from '@angular/core';
+import { ChangeDetectionStrategy, Component, computed, input, output } from '@angular/core';
 import type { OrgClaCoverageChip, OrgClaGroup } from '@lfx-one/shared/interfaces';
 import { ORG_CLA_STATUS_DISPLAY } from '@lfx-one/shared/constants';
 import { orgClaCoverageChips } from '@lfx-one/shared/utils';
@@ -23,16 +23,24 @@ import { TagComponent } from '@components/tag/tag.component';
 export class OrgEasyclaCardComponent {
   public readonly claGroup = input.required<OrgClaGroup>();
 
+  /**
+   * Asks the page to show what this agreement covers.
+   *
+   * An event rather than a `DialogService` call, so the card stays presentational: the page already
+   * owns the row it rendered, and injecting a dialog here would make every card test stand up a
+   * dialog host to assert on a chip.
+   */
+  public readonly coverageRequested = output<void>();
+
   protected readonly status = computed(() => ORG_CLA_STATUS_DISPLAY[this.claGroup().status]);
 
   /**
    * Coverage as the approved design frames it: name the project when there is exactly one,
    * otherwise name the foundation and say how many projects are covered.
    *
-   * Static text, not a link, even for the chip whose `opensCoverage` says otherwise. The dialog it
-   * would open now exists on the detail page, but this card sits under a stretched link that
-   * swallows its pointer events, so wiring it is delivered separately. A chip styled as actionable
-   * that navigates somewhere else instead reads as a bug.
+   * `opensCoverage` decides which chip is a control. Only the projects count is: a foundation name
+   * and a lone project name have no list to open, so the treatment on them would advertise an
+   * action that isn't there.
    */
   protected readonly coverageChips = computed<OrgClaCoverageChip[]>(() => orgClaCoverageChips(this.claGroup()));
 
