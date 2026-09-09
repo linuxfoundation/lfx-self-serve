@@ -5,8 +5,7 @@ import { NgClass } from '@angular/common';
 import { Component, computed, inject, output, signal, type Signal } from '@angular/core';
 import { takeUntilDestroyed, toObservable } from '@angular/core/rxjs-interop';
 import { ButtonComponent } from '@components/button/button.component';
-import { TextareaComponent } from '@components/textarea/textarea.component';
-import { MEETING_AGENDA_MAX_LENGTH, MEETING_AGENDA_WARNING_LENGTH, MEETING_DURATION_CHIP_OPTIONS, MEETING_TEMPLATES } from '@lfx-one/shared/constants';
+import { MEETING_DURATION_CHIP_OPTIONS, MEETING_TEMPLATES } from '@lfx-one/shared/constants';
 import { MeetingType } from '@lfx-one/shared/enums';
 import type { CardSelectorOption, CommitteeMember, MeetingTemplate } from '@lfx-one/shared/interfaces';
 import { getSelectableMeetingTypeOptions } from '@lfx-one/shared/utils';
@@ -15,6 +14,7 @@ import { DialogModule } from 'primeng/dialog';
 import { startWith, switchMap } from 'rxjs';
 
 import { MeetingCommitteeManagerComponent } from '../components/meeting-committee-manager/meeting-committee-manager.component';
+import { ComposerAgendaFieldComponent } from './composer-agenda-field.component';
 import { MeetingComposerFormService } from './meeting-composer-form.service';
 import { MeetingComposerService } from './meeting-composer.service';
 import { ComposerDateScheduleComponent } from './sections/composer-date-schedule.component';
@@ -34,7 +34,7 @@ import { ComposerDetailsAccessComponent } from './sections/composer-details-acce
     NgClass,
     DialogModule,
     ButtonComponent,
-    TextareaComponent,
+    ComposerAgendaFieldComponent,
     ComposerDetailsAccessComponent,
     ComposerDateScheduleComponent,
     MeetingCommitteeManagerComponent,
@@ -49,7 +49,13 @@ export class QuickCreateDialogComponent {
   /** Submit stays with the host, so both surfaces save through one path. */
   public readonly create = output<void>();
 
-  protected readonly agendaMaxLength = MEETING_AGENDA_MAX_LENGTH;
+  /**
+   * Asks to continue in the advanced drawer with everything entered so far.
+   * @description Announced rather than performed, for the same reason as {@link create}: switching
+   * surfaces takes both the composer service and the form service, and the host is the only place that
+   * holds them together.
+   */
+  public readonly switchToAdvanced = output<void>();
 
   // What the type's template wrote, tracked per control: most templates estimate a duration off the chip
   // scale, which `applyTypeTemplate` skips, so a single flag would keep the details hint alive on the
@@ -76,19 +82,6 @@ export class QuickCreateDialogComponent {
     return (this.formService.form().get('meeting_type')?.value as MeetingType | null) ?? null;
   });
 
-  protected readonly agendaLength: Signal<number> = computed(() => {
-    this.formService.revision();
-    return (this.formService.form().get('description')?.value as string | null)?.length ?? 0;
-  });
-  protected readonly agendaCounterClass: Signal<string> = computed(() => {
-    const length = this.agendaLength();
-
-    if (length >= MEETING_AGENDA_MAX_LENGTH) {
-      return 'text-red-600';
-    }
-
-    return length >= MEETING_AGENDA_WARNING_LENGTH ? 'text-amber-600' : 'text-gray-500';
-  });
   protected readonly canSubmit: Signal<boolean> = computed(() => {
     // FormGroup validity is not reactive; `revision` is what makes this recompute.
     this.formService.revision();
@@ -139,6 +132,10 @@ export class QuickCreateDialogComponent {
     this.create.emit();
   }
 
+  protected onSwitchToAdvanced(): void {
+    this.switchToAdvanced.emit();
+  }
+
   // Private initializer functions
   private initPrefilledTitle(): Signal<boolean> {
     return computed(() => {
@@ -175,7 +172,7 @@ export class QuickCreateDialogComponent {
    * scale are skipped, since seeding one would drop this surface into the custom-minutes input.
    */
   private applyTypeTemplate(meetingType: MeetingType | null): void {
-    const template = meetingType ? this.firstTemplate(meetingType) : null;
+    const template = this.defaultTemplateFor(meetingType);
 
     if (!template) {
       this.seededTitle.set(false);
@@ -212,7 +209,18 @@ export class QuickCreateDialogComponent {
     this.seededAgenda.set(seededAgenda);
   }
 
-  private firstTemplate(meetingType: MeetingType): MeetingTemplate | null {
+  /**
+   * The template a freshly picked type prefills from, if any.
+   * @description Every type but `Other` seeds from its first template. `Other` is the catch-all — its
+   * templates describe particular occasions (a community workshop, and so on) rather than anything the
+   * type itself implies, so guessing one puts a stranger's agenda and title in front of the organizer.
+   * They stay one click away in the agenda field's Templates popover, where picking one is a choice.
+   */
+  private defaultTemplateFor(meetingType: MeetingType | null): MeetingTemplate | null {
+    if (!meetingType || meetingType === MeetingType.OTHER) {
+      return null;
+    }
+
     return MEETING_TEMPLATES.find((group) => group.meetingType === meetingType)?.templates[0] ?? null;
   }
 }

@@ -236,6 +236,21 @@ export class MeetingComposerFormService {
   }
 
   /**
+   * Re-wires the form for the advanced drawer, leaving every value already entered in place.
+   * @description The counterpart to `MeetingComposerService.switchToAdvanced()`. Quick create wires one
+   * subscription the drawer must not have — the Board type's visibility/restriction default — and the
+   * form instance the organizer has been typing into is the one carrying it, so the subscriptions are
+   * rebuilt against that same instance rather than through `initialize()`, which would replace the form.
+   * Deliberately does not touch `reset$` or `generation`: this is the same open continuing, so an
+   * in-flight committee-context load still belongs to it.
+   */
+  public dropQuickCreateDefaults(): void {
+    this.formSubscriptions.unsubscribe();
+    this.formSubscriptions = new Subscription();
+    this.wireFormSubscriptions(false);
+  }
+
+  /**
    * Replaces the guest list and re-derives the pending registrant changes from it.
    * @description Single write path, so `registrantUpdates` can never drift from `guests`. `toUpdate` is
    * always empty today — the composer has no guest-edit affordance, so nothing produces a `'modified'`

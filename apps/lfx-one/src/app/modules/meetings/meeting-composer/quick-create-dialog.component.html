@@ -10,12 +10,16 @@
      returns its own ref, which would split that ownership in two and leave the service's `isOpen()` and
      the ref's lifetime to be kept in step by hand. Called out here so the deviation reads as a decision;
      it is not the only one in the app (eight other templates mount `<p-dialog>` directly today). -->
+<!-- `blockScroll` is on for the same reason it is on the drawer: PrimeNG appends the agenda popovers to
+     `body` and positions them in document coordinates, so scrolling the page behind a fixed dialog slides
+     an open panel off the button it hangs from. -->
 <p-dialog
   [visible]="composer.isOpen()"
   (visibleChange)="onVisibleChange($event)"
   [modal]="true"
   [draggable]="false"
   [dismissableMask]="true"
+  [blockScroll]="true"
   styleClass="w-[min(1200px,94vw)] [&_.p-dialog-content]:pt-5 [&_.p-dialog-header]:py-3 [&_.p-dialog-header]:border-b [&_.p-dialog-header]:border-gray-200 [&_.p-dialog-footer]:pt-5 [&_.p-dialog-footer]:border-t [&_.p-dialog-footer]:border-gray-200">
   <ng-template #header>
     <div class="flex flex-col gap-0.5">
@@ -61,27 +65,12 @@
         [showTypeSelect]="false"
         [titleHint]="prefilledTitle() ? 'Pre-filled for this meeting type — edit freely.' : null" />
 
-      <div class="flex flex-col gap-1.5">
-        <label for="quick-create-agenda" class="text-sm font-medium text-gray-900">Agenda</label>
-        <lfx-textarea
-          [form]="formService.form()"
-          control="description"
-          id="quick-create-agenda"
-          placeholder="Enter meeting agenda and key discussion points"
-          styleClass="w-full min-h-[80px] max-h-[200px]"
-          [rows]="4"
-          [maxlength]="agendaMaxLength"
-          [ariaDescribedBy]="prefilledAgenda() ? 'quick-create-agenda-hint' : undefined"
-          data-testid="quick-create-agenda-textarea" />
-        <div class="flex items-center justify-between gap-2">
-          @if (prefilledAgenda()) {
-            <p id="quick-create-agenda-hint" class="text-xs text-gray-500" data-testid="quick-create-agenda-hint">
-              Suggested agenda template — adjust as needed.
-            </p>
-          }
-          <p class="ml-auto text-xs" [ngClass]="agendaCounterClass()">{{ agendaLength() }}/{{ agendaMaxLength }}</p>
-        </div>
-      </div>
+      <lfx-composer-agenda-field
+        [form]="formService.form()"
+        inputId="quick-create-agenda"
+        [rows]="4"
+        textareaClass="w-full min-h-[80px] max-h-[200px]"
+        [hint]="prefilledAgenda() ? 'Suggested agenda template — adjust as needed.' : null" />
 
       <lfx-meeting-committee-manager
         [selectedCommittees]="formService.form().get('committees')?.value || []"
@@ -105,16 +94,44 @@
 
   <ng-template #footer>
     <div class="flex w-full items-center justify-between gap-2" data-testid="quick-create-footer">
-      <p class="flex items-center gap-1.5 text-xs text-gray-500">
-        <i class="fa-light fa-circle-info" aria-hidden="true"></i>
-        <span>You can configure advanced settings later.</span>
-      </p>
+      <!-- A callout with a way out, rather than the flat "configure advanced settings later" hint this
+           replaces: the drawer is where the features named here live, and both surfaces are driven by one
+           form instance, so moving over mid-fill keeps everything already entered.
+           Neutral greys, not the accent tint: this sits in the footer beside the primary Create meeting
+           button, and an accent-coloured panel there competes with it for the eye — the way out is a
+           side door, not the main one.
+           `text-xs` sits on the paragraph, not only on this wrapper: the base stylesheet gives `p` its own
+           font size, which beats an inherited one, so a size set out here reaches the icon and leaves the
+           sentence at body scale — the mismatch the icon's nudge margin used to paper over. With both at
+           one size the row centres on its own.
+           A plain `<button>` styled as a link, not `<lfx-button [link]>`: it sits inside a sentence, and
+           a PrimeNG button brings its own box model to a run of text. Same call as the composer toast's
+           actions. It carries a darker grey and an underline so it still reads as the clickable half of
+           the sentence now that colour no longer marks it out. -->
+      <div
+        class="flex min-w-0 items-center gap-1.5 rounded-md border border-gray-200 bg-gray-100 px-2.5 py-1.5 text-gray-600"
+        data-testid="quick-create-advanced-callout">
+        <i class="fa-light fa-circle-question shrink-0 text-xs" aria-hidden="true"></i>
+        <p class="text-xs">
+          Need guests, recordings or resources?
+          <button
+            type="button"
+            class="text-xs font-medium text-gray-800 underline hover:text-gray-900"
+            data-testid="quick-create-switch-advanced"
+            (click)="onSwitchToAdvanced()">
+            Switch to advanced mode
+          </button>
+        </p>
+      </div>
 
+      <!-- Default size, not the `small` the fields inside the dialog use: these two close the dialog out,
+           and the drawer's footer sizes its own Cancel / Back / Next the same way — one composer, so its
+           footer reads at one scale on both surfaces. The condensed sizing is for the form controls, which
+           is where the vertical room is worth reclaiming. -->
       <div class="flex items-center gap-2">
-        <lfx-button label="Cancel" severity="secondary" [text]="true" size="small" data-testid="quick-create-cancel" (onClick)="composer.close()" />
+        <lfx-button label="Cancel" severity="secondary" [text]="true" data-testid="quick-create-cancel" (onClick)="composer.close()" />
         <lfx-button
           label="Create meeting"
-          size="small"
           [loading]="formService.submitting()"
           [disabled]="!canSubmit()"
           data-testid="quick-create-submit"

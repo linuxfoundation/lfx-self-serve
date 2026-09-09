@@ -148,6 +148,19 @@ export class MeetingComposerHostComponent {
     }
   }
 
+  /**
+   * Continues a quick create in the drawer, carrying the answers over.
+   * @description The pairing lives here because this is the only place that holds both services: the
+   * composer service moves the surface, the form service drops the quick dialog's type-driven defaults
+   * so the drawer stops rewriting fields the organizer has already answered. Neither touches the form,
+   * which is why the values survive. The active section is left where the open put it — a quick open
+   * never leaves the first one — so the drawer lands on Details & Access with the rest still to visit.
+   */
+  protected onSwitchToAdvanced(): void {
+    this.formService.dropQuickCreateDefaults();
+    this.composer.switchToAdvanced();
+  }
+
   protected onNext(): void {
     const next = this.sections[this.activeIndex() + 1];
     if (next) {

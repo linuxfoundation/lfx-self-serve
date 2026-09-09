@@ -3,6 +3,7 @@
 
 import { TestBed } from '@angular/core/testing';
 import { FormArray, FormControl, FormGroup } from '@angular/forms';
+import { MeetingType, MeetingVisibility } from '@lfx-one/shared/enums';
 import type { Meeting, MeetingComposerSection, MeetingComposerSectionId, MeetingRegistrant, MeetingRegistrantWithState } from '@lfx-one/shared/interfaces';
 import { CommitteeService } from '@services/committee.service';
 import { MeetingService } from '@services/meeting.service';
@@ -573,5 +574,107 @@ describe('MeetingComposerFormService — save gate', () => {
     service.initialize({ mode: 'create' });
 
     expect(service.effectiveProjectUid()).toBe('ambient-project');
+  });
+});
+
+/**
+ * Covers the re-wire that "Switch to advanced mode" performs on the form the organizer is already
+ * typing into. Quick create wires one subscription the drawer must not have — the Board type's
+ * visibility/restriction default — and the only way to drop it without discarding the entered values
+ * is to rebuild the subscriptions against the same FormGroup instance, which is what these assert.
+ */
+describe('MeetingComposerFormService — switch to advanced', () => {
+  let service: MeetingComposerFormService;
+  let createMeeting: ReturnType<typeof vi.fn>;
+
+  beforeEach(() => {
+    createMeeting = vi.fn();
+
+    TestBed.configureTestingModule({
+      providers: [
+        MeetingComposerFormService,
+        { provide: MessageService, useValue: { add: vi.fn() } },
+        { provide: CommitteeService, useValue: {} },
+        { provide: ProjectContextService, useValue: { activeContextUid: () => null } },
+        { provide: MeetingService, useValue: { createMeeting } },
+      ],
+    });
+
+    service = TestBed.inject(MeetingComposerFormService);
+    service.initialize({ mode: 'create', variant: 'quick', projectUid: 'project-1' });
+  });
+
+  it('keeps the same form instance and everything entered into it', () => {
+    const form = service.form();
+    form.patchValue({ title: 'Quarterly sync', description: 'Roll call' });
+
+    service.dropQuickCreateDefaults();
+
+    // Identity as well as values: the dialog's sections and the drawer's sections both read
+    // `formService.form()`, so a replacement would blank the drawer even with the values copied over.
+    expect(service.form()).toBe(form);
+    expect(service.form().get('title')?.value).toBe('Quarterly sync');
+    expect(service.form().get('description')?.value).toBe('Roll call');
+  });
+
+  it('stops the meeting type from rewriting visibility and join restriction', () => {
+    service.form().patchValue({ visibility: MeetingVisibility.PUBLIC, restricted: false });
+
+    service.dropQuickCreateDefaults();
+    service.form().get('meeting_type')?.setValue(MeetingType.BOARD);
+
+    // The drawer walks every field explicitly, so it must not move one the organizer hasn't reached.
+    expect(service.form().get('visibility')?.value).toBe(MeetingVisibility.PUBLIC);
+    expect(service.form().get('restricted')?.value).toBe(false);
+  });
+
+  it('leaves a Board default already applied in the dialog in place', () => {
+    service.form().get('meeting_type')?.setValue(MeetingType.BOARD);
+
+    service.dropQuickCreateDefaults();
+
+    // Dropping the subscription is not undoing it: the organizer saw Private/Invited-only in the
+    // dialog, so the drawer has to open showing the same thing.
+    expect(service.form().get('visibility')?.value).toBe(MeetingVisibility.PRIVATE);
+    expect(service.form().get('restricted')?.value).toBe(true);
+  });
+
+  it('keeps the subscriptions both surfaces need', () => {
+    service.dropQuickCreateDefaults();
+    const revision = service.revision();
+
+    service.form().get('title')?.setValue('Re-wired');
+
+    // `revision` is what makes FormGroup value/validity reactive for every computed in both surfaces —
+    // the chip selections, the agenda counter, the save gate. Rebuilding the subscription set has to
+    // rebuild that one too.
+    expect(service.revision()).toBeGreaterThan(revision);
+  });
+
+  it('re-applies the custom-duration validators against the current value', () => {
+    service.setDuration(37);
+
+    service.dropQuickCreateDefaults();
+    service.form().get('customDuration')?.setValue(null);
+
+    // Wired from `duration`'s current value on every re-wire, not only on a later change: a switch made
+    // while Custom is selected would otherwise leave the minutes input unvalidated for the rest of the open.
+    expect(service.form().get('customDuration')?.valid).toBe(false);
+  });
+
+  it('does not disown a save already in flight for this open', () => {
+    const created = new Subject<Meeting>();
+    createMeeting.mockReturnValue(created);
+    service.form().patchValue({ title: 'Quarterly sync', meeting_type: MeetingType.TECHNICAL });
+    const emissions: (Meeting | null)[] = [];
+    service.submit().subscribe((meeting) => emissions.push(meeting));
+
+    service.dropQuickCreateDefaults();
+    created.next({ id: 'meeting-1' } as Meeting);
+    created.complete();
+
+    // The same open continuing, not a new one: the submit pipeline drops anything whose generation
+    // moved under it, so bumping it here would make the organizer's own save land silently.
+    expect(emissions).toEqual([{ id: 'meeting-1' }]);
   });
 });

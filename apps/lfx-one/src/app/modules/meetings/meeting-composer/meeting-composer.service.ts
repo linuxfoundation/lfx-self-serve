@@ -3,7 +3,7 @@
 
 import { computed, Injectable, signal } from '@angular/core';
 import { MEETING_COMPOSER_SECTIONS } from '@lfx-one/shared/constants';
-import type { MeetingComposerContext, MeetingComposerSectionId } from '@lfx-one/shared/interfaces';
+import type { MeetingComposerContext, MeetingComposerSectionId, MeetingComposerVariant } from '@lfx-one/shared/interfaces';
 
 const FIRST_SECTION: MeetingComposerSectionId = MEETING_COMPOSER_SECTIONS[0].id;
 
@@ -39,13 +39,23 @@ export class MeetingComposerService {
   private readonly _saveCount = signal(0);
   public readonly saveCount = this._saveCount.asReadonly();
 
+  /**
+   * Surface currently showing — held apart from the context, which only the entry point writes.
+   * @description Seeded from `context.variant` on every open, then owned here, because
+   * {@link switchToAdvanced} has to move the organizer from the dialog to the drawer *mid-fill*: the
+   * host re-initializes the form on any write to `context`, so deriving the surface from it would
+   * make the switch throw away everything the quick dialog was opened to collect.
+   */
+  private readonly _variant = signal<MeetingComposerVariant>('drawer');
+
   public readonly isOpen = computed(() => this._context() !== null);
-  public readonly isQuickCreate = computed(() => this._context()?.variant === 'quick');
+  public readonly isQuickCreate = computed(() => this._variant() === 'quick');
 
   public open(context: MeetingComposerContext): void {
     const section = context.section ?? FIRST_SECTION;
     this._activeSection.set(section);
     this._visitedSections.set(new Set([section]));
+    this._variant.set(context.variant ?? 'drawer');
     this._context.set(context);
   }
 
@@ -53,6 +63,20 @@ export class MeetingComposerService {
     this._context.set(null);
     this._activeSection.set(FIRST_SECTION);
     this._visitedSections.set(new Set([FIRST_SECTION]));
+    this._variant.set('drawer');
+  }
+
+  /**
+   * Moves an open quick create dialog into the full drawer, keeping the form exactly as it stands.
+   * @description The two surfaces are fed by one `MeetingComposerFormService` instance, so the values
+   * already entered need no copying — what they need is for nothing to reset them, which is why this
+   * writes the surface alone and leaves `context` untouched. Pair it with
+   * `MeetingComposerFormService.dropQuickCreateDefaults()`, which the drawer needs so a later type
+   * change stops rewriting fields; `MeetingComposerHostComponent` owns that pairing, being the only
+   * place that holds both services.
+   */
+  public switchToAdvanced(): void {
+    this._variant.set('drawer');
   }
 
   public notifySaved(): void {
