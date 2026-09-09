@@ -14,7 +14,7 @@
         @if (link.command; as command) {
           <button
             type="button"
-            (click)="command()"
+            (click)="command($event)"
             [attr.aria-haspopup]="link.hasPopup ?? null"
             class="flex items-center gap-2 text-sm text-primary hover:underline"
             [attr.data-testid]="'dashboard-quicklink-' + link.testId">
@@ -32,5 +32,8 @@
         }
       }
     </div>
+    <!-- One instance beside the links, not one per link: the panel is a popup PrimeNG teleports to
+         `body`, and it renders nothing until the "Create meeting" link toggles it against itself. -->
+    <lfx-meeting-create-menu #createMeetingMenu align="center" [projectUid]="activeProjectUid()" />
   </div>
 }

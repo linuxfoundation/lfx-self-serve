@@ -67,6 +67,17 @@ export class MenuComponent {
     }
   }
 
+  /**
+   * The popup panel currently on screen, or `null` while the menu is closed.
+   * @description A `[popup]` menu's panel is teleported to `appendTo`, so a caller that needs to
+   * measure or move it can't reach it through its own template. Reads back the panel PrimeNG is
+   * showing rather than querying the document by class, so two menus mounted on one page can't pick
+   * up each other's panel.
+   */
+  public overlayElement(): HTMLElement | null {
+    return this.menuRef()?.container ?? null;
+  }
+
   protected handleFocus(event: Event): void {
     this.onFocus.emit(event);
   }

@@ -737,9 +737,11 @@ export type DashboardQuickLink = DashboardQuickLinkBase &
         /**
          * Click handler for links that open something over the current page rather than navigate.
          * @description Renders a button instead of an anchor, so nothing about the row promises a
-         * destination it doesn't have.
+         * destination it doesn't have. Receives the click, because an overlay that positions itself
+         * against the control that opened it can only find that control through the event — and only
+         * while it is still being dispatched.
          */
-        command: () => void;
+        command: (event: Event) => void;
         /**
          * What the command opens, announced to assistive tech as `aria-haspopup`.
          * @description Declared by the link rather than assumed by the template: what a command

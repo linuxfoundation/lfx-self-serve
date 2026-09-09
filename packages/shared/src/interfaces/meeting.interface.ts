@@ -2000,9 +2000,9 @@ export interface MeetingLinkDialogResult {
 }
 
 /**
- * Extra per-row fields the meetings dashboard's Create Meeting dropdown renders alongside the
- * label and icon a PrimeNG `MenuItem` already carries.
- * @description Deliberately free of any PrimeNG import so it can live here — the dashboard
+ * Extra per-row fields the Create Meeting dropdown renders alongside the label and icon a PrimeNG
+ * `MenuItem` already carries.
+ * @description Deliberately free of any PrimeNG import so it can live here — the dropdown component
  * intersects it with `MenuItem` at the boundary and reads these fields from the menu's `item`
  * template. The dropdown is a descriptive picker rather than a plain list, so each row needs
  * supporting copy and its own icon tile, neither of which `MenuItem` can express.
@@ -2015,3 +2015,13 @@ export interface MeetingCreateMenuRow {
   /** `data-testid` for the row, since the template replaces PrimeNG's own item markup. */
   testId: string;
 }
+
+/**
+ * How the Create Meeting dropdown lines up with the control that opened it.
+ * @description PrimeNG only ever left-aligns a popup menu, which throws a panel this wide off the
+ * page when the trigger sits on the right — so the dropdown positions itself, and each entry point
+ * says which edge it wants. `'right'` suits a trigger whose own right edge is the layout's edge (the
+ * meetings dashboard's Create Meeting button); `'center'` suits a narrow trigger sitting inside a
+ * column, where hanging the whole panel off to one side reads as belonging to something else.
+ */
+export type MeetingCreateMenuAlign = 'right' | 'center';

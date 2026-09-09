@@ -3,8 +3,11 @@
 
 import { signal } from '@angular/core';
 import { ComponentFixture, TestBed } from '@angular/core/testing';
+import { By } from '@angular/platform-browser';
 import { provideRouter } from '@angular/router';
 import { MeetingComposerService } from '@modules/meetings/meeting-composer/meeting-composer.service';
+import { MeetingCreateMenuComponent } from '@modules/meetings/meeting-composer/meeting-create-menu.component';
+import { PersonaService } from '@services/persona.service';
 import { ProjectContextService } from '@services/project-context.service';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 
@@ -37,6 +40,9 @@ describe('DashboardQuicklinksComponent', () => {
 
   const link = (slug: string): HTMLElement | null => fixture.nativeElement.querySelector(`[data-testid="dashboard-quicklink-${slug}"]`);
 
+  /** The Create Meeting dropdown mounted beside the links. */
+  const createMeetingMenu = (): MeetingCreateMenuComponent => fixture.debugElement.query(By.directive(MeetingCreateMenuComponent)).componentInstance;
+
   beforeEach(async () => {
     canWrite.set(false);
     canWriteMeetings.set(false);
@@ -48,8 +54,13 @@ describe('DashboardQuicklinksComponent', () => {
         provideRouter([]),
         { provide: ProjectContextService, useValue: { canWrite, canWriteMeetings, activeContextUid } },
         { provide: MeetingComposerService, useValue: { open } },
+        { provide: PersonaService, useValue: { currentPersona: () => 'maintainer' } },
       ],
     });
+    // The dropdown's own markup is its own spec's business; these tests only care that this
+    // component mounts one and points it at the right project. Blanking the template also keeps
+    // `toggle` a no-op, so a click here can't reach into PrimeNG's overlay machinery.
+    TestBed.overrideComponent(MeetingCreateMenuComponent, { set: { template: '', imports: [] } });
 
     fixture = TestBed.createComponent(DashboardQuicklinksComponent);
     await fixture.whenStable();
@@ -80,16 +91,17 @@ describe('DashboardQuicklinksComponent', () => {
     expect(renderedSlugs()).toEqual(['create-group', 'create-mailing-list']);
   });
 
-  it('renders the meeting link as a button that announces the dialog it opens', async () => {
+  it('renders the meeting link as a button that announces the menu it opens', async () => {
     canWriteMeetings.set(true);
     await fixture.whenStable();
 
     const trigger = link('create-meeting');
 
-    // A button rather than an anchor, because it opens the composer over the current page: an anchor
-    // would put a destination in the status bar that this link does not navigate to.
+    // A button rather than an anchor, because it opens a dropdown over the current page: an anchor
+    // would put a destination in the status bar that this link does not navigate to. `menu`, not
+    // `dialog` — the click opens the type picker, and the composer is a choice further in.
     expect(trigger?.tagName).toBe('BUTTON');
-    expect(trigger?.getAttribute('aria-haspopup')).toBe('dialog');
+    expect(trigger?.getAttribute('aria-haspopup')).toBe('menu');
   });
 
   it('renders a navigating link as an anchor with an href and no popup announcement', async () => {
@@ -105,24 +117,50 @@ describe('DashboardQuicklinksComponent', () => {
     expect(trigger?.getAttribute('aria-haspopup')).toBeNull();
   });
 
-  it('opens the quick composer against the active project when the meeting link is clicked', async () => {
+  it('opens the create dropdown against the clicked link rather than the composer', async () => {
+    canWriteMeetings.set(true);
+    await fixture.whenStable();
+
+    // Read inside the call, not from the recorded event afterwards: `currentTarget` is only set
+    // while the event is being dispatched, which is the whole reason the dropdown has to be handed
+    // the event rather than look the trigger up later.
+    let openedAgainst: EventTarget | null = null;
+    const toggle = vi.spyOn(createMeetingMenu(), 'toggle').mockImplementation((event) => {
+      openedAgainst = event.currentTarget;
+    });
+    const trigger = link('create-meeting');
+    trigger?.click();
+
+    expect(toggle).toHaveBeenCalledOnce();
+    expect(openedAgainst).toBe(trigger);
+    // Nothing is created or pre-selected on the organizer's behalf: picking a meeting type or
+    // Advanced in the dropdown is what reaches the composer.
+    expect(open).not.toHaveBeenCalled();
+  });
+
+  it('scopes the dropdown to the active project', async () => {
     canWriteMeetings.set(true);
     activeContextUid.set('project-1');
     await fixture.whenStable();
 
-    link('create-meeting')?.click();
-
-    expect(open).toHaveBeenCalledWith({ mode: 'create', variant: 'quick', projectUid: 'project-1' });
+    expect(createMeetingMenu().projectUid()).toBe('project-1');
   });
 
-  it('leaves the project unset when there is no active context', async () => {
+  it('centres the dropdown on the link rather than hanging it off one side', async () => {
     canWriteMeetings.set(true);
     await fixture.whenStable();
 
-    link('create-meeting')?.click();
+    // The link is a narrow row inside the sidebar column, so a right-aligned panel would reach far
+    // out over the page beside it instead of reading as belonging to the link.
+    expect(createMeetingMenu().align()).toBe('center');
+  });
+
+  it('leaves the dropdown project unset when there is no active context', async () => {
+    canWriteMeetings.set(true);
+    await fixture.whenStable();
 
     // `undefined`, not `null` or `''`: the composer treats an explicit `projectUid` as taking
     // precedence over the ambient context, so passing a falsy one would pin it to nothing.
-    expect(open).toHaveBeenCalledWith({ mode: 'create', variant: 'quick', projectUid: undefined });
+    expect(createMeetingMenu().projectUid()).toBeUndefined();
   });
 });
