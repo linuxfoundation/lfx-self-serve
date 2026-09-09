@@ -1,7 +1,7 @@
 // Copyright The Linux Foundation and each contributor to LFX.
 // SPDX-License-Identifier: MIT
 
-import { NATS_CONFIG } from '@lfx-one/shared/constants';
+import { NATS_CONFIG, PREFERRED_EMAIL_ERROR_TYPE } from '@lfx-one/shared/constants';
 import { NatsSubjects } from '@lfx-one/shared/enums';
 import { MeetingInviteEmail, PreferredEmailErrorReply, PreferredEmailErrorType, SetMeetingInviteResult } from '@lfx-one/shared/interfaces';
 import { isMeetingInvitePrimarySentinel, redactEmailAddresses } from '@lfx-one/shared/utils';
@@ -175,8 +175,8 @@ export class MeetingPreferenceService {
   }
 
   private asKnownErrorType(value: unknown): PreferredEmailErrorType | undefined {
-    const KNOWN_TYPES: PreferredEmailErrorType[] = ['validation', 'forbidden', 'not_found', 'conflict', 'internal', 'unavailable'];
-    return KNOWN_TYPES.includes(value as PreferredEmailErrorType) ? (value as PreferredEmailErrorType) : undefined;
+    const knownTypes: PreferredEmailErrorType[] = Object.values(PREFERRED_EMAIL_ERROR_TYPE);
+    return knownTypes.includes(value as PreferredEmailErrorType) ? (value as PreferredEmailErrorType) : undefined;
   }
 
   // The upstream contract always emits both keys as strings (an override) or both as null (no

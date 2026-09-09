@@ -1,6 +1,8 @@
 // Copyright The Linux Foundation and each contributor to LFX.
 // SPDX-License-Identifier: MIT
 
+import { PREFERRED_EMAIL_ERROR_TYPE } from '../constants/user-profile.constants';
+
 /**
  * Minimal user identity fields for displaying initials
  */
@@ -55,10 +57,11 @@ export interface MeetingInviteEmail {
   email: string | null;
 }
 
-// The upstream `domain.ErrorType` values (#2269), stringified. Not exhaustive forever — the
-// meeting-service may add a value before self-serve knows about it — so callers must treat an
-// unrecognized wire string as absent rather than trust it, see extractPreferredEmailError.
-export type PreferredEmailErrorType = 'validation' | 'forbidden' | 'not_found' | 'conflict' | 'internal' | 'unavailable';
+// Derived from PREFERRED_EMAIL_ERROR_TYPE (single source of truth shared with the runtime
+// allow-list in asKnownErrorType). Not exhaustive forever — the meeting-service may add a value
+// before self-serve knows about it — so callers must treat an unrecognized wire string as absent
+// rather than trust it, see extractPreferredEmailError.
+export type PreferredEmailErrorType = (typeof PREFERRED_EMAIL_ERROR_TYPE)[keyof typeof PREFERRED_EMAIL_ERROR_TYPE];
 
 // The one case that needs finer resolution than `type` gives: "email not yet synced from Auth0
 // to SFDC" otherwise shares `type: 'unavailable'` with a generic outage.
