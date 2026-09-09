@@ -2,6 +2,7 @@
 // SPDX-License-Identifier: MIT
 
 import type {
+  MentorshipMenteeAction,
   MentorshipMenteeStatus,
   MentorshipMentorStatus,
   MentorshipProgram,
@@ -103,6 +104,32 @@ export const MENTORSHIP_MENTEE_STATUS_BADGE_CLASSES: Record<MentorshipMenteeStat
   declined: 'bg-red-50 text-red-600',
   withdrawn: 'bg-gray-100 text-gray-600',
   graduated: 'bg-violet-50 text-violet-700',
+};
+
+/**
+ * Statuses the admin Current Mentees tab can list. The tab covers enrolled mentees
+ * only, so its status filter offers these two rather than the full mentee lifecycle.
+ */
+export const MENTORSHIP_CURRENT_MENTEE_STATUSES: readonly MentorshipMenteeStatus[] = ['accepted', 'graduated'];
+
+/**
+ * Row actions on the admin Current Mentees tab. Source of the
+ * `MentorshipMenteeAction` union; each action moves the mentee to the
+ * same-named terminal status.
+ */
+export const MENTORSHIP_MENTEE_ACTIONS = ['withdrawn', 'declined', 'graduated'] as const;
+
+/** Menu labels for the Current Mentees row actions — imperative, unlike the status labels. */
+export const MENTORSHIP_MENTEE_ACTION_LABELS: Record<MentorshipMenteeAction, string> = {
+  withdrawn: 'Withdraw',
+  declined: 'Decline',
+  graduated: 'Graduate',
+};
+
+export const MENTORSHIP_MENTEE_ACTION_ICONS: Record<MentorshipMenteeAction, string> = {
+  withdrawn: 'fa-light fa-circle-minus',
+  declined: 'fa-light fa-circle-xmark',
+  graduated: 'fa-light fa-graduation-cap',
 };
 
 export const MENTORSHIP_TERM_ROW_STATUSES = ['open', 'closed'] as const;

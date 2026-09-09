@@ -22,6 +22,18 @@ export const EMPTY_MENTORSHIP_INVITABLE_USERS_RESPONSE: MentorshipInvitableUsers
 /** Default page size for the Mentors-tab invite picker. */
 export const MENTORSHIP_INVITABLE_USER_PAGE_SIZE = 50;
 
+/** Paginator defaults for the Current Mentees table. */
+export const MENTORSHIP_MENTEE_PAGE_SIZE = 10;
+export const MENTORSHIP_MENTEE_ROWS_PER_PAGE_OPTIONS = [10, 25, 50];
+
+/** Character cap on the reviewer note, mirrored by the dialog's counter. */
+export const MENTORSHIP_MENTEE_NOTE_MAX = 2000;
+
+export const MENTORSHIP_MENTEE_NOTE_PLACEHOLDER = 'Add context for the other reviewers — screening outcome, strengths, concerns.';
+
+/** Trailing half of the dialog's subtitle; the leading half names the mentee. */
+export const MENTORSHIP_MENTEE_NOTE_VISIBILITY = 'Visible to all admins and mentors on this program.';
+
 const gridflowMentees: MentorshipProgramMentee[] = [
   {
     id: 'mnt_alex_rivera',
@@ -30,6 +42,9 @@ const gridflowMentees: MentorshipProgramMentee[] = [
     status: 'accepted',
     termName: 'Fall 2026',
     appliedOn: '2026-07-18',
+    tasksSubmitted: 7,
+    tasksTotal: 12,
+    note: 'Strong Go background; paired well during the screening exercise.',
   },
   {
     id: 'mnt_priya_shah',
@@ -38,6 +53,8 @@ const gridflowMentees: MentorshipProgramMentee[] = [
     status: 'accepted',
     termName: 'Fall 2026',
     appliedOn: '2026-07-21',
+    tasksSubmitted: 4,
+    tasksTotal: 12,
   },
 ];
 
@@ -280,6 +297,8 @@ export const MOCK_MENTORSHIP_PROGRAM_LISTS: Record<string, MentorshipProgramList
         status: 'accepted',
         termName: 'Fall 2026',
         appliedOn: '2026-07-10',
+        tasksSubmitted: 9,
+        tasksTotal: 9,
       },
     ],
     applicants: [

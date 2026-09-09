@@ -2,6 +2,7 @@
 // SPDX-License-Identifier: MIT
 
 import type {
+  MENTORSHIP_MENTEE_ACTIONS,
   MENTORSHIP_MENTEE_STATUSES,
   MENTORSHIP_MENTOR_STATUSES,
   MENTORSHIP_PROGRAM_DETAIL_TABS,
@@ -219,7 +220,22 @@ export interface MentorshipProgramMentee extends MentorshipProgramPersonBase {
   /** ISO `YYYY-MM-DD` application date. */
   appliedOn?: string;
   termName: string;
+  /** Tasks the mentee has submitted out of `tasksTotal`. Only accepted mentees carry tasks. */
+  tasksSubmitted?: number;
+  tasksTotal?: number;
+  /** Reviewer note shared with the program's admins and mentors. */
+  note?: string;
 }
+
+/** Payload for the Current Mentees reviewer-note dialog. */
+export interface MentorshipMenteeNoteDialogData {
+  menteeId: string;
+  menteeName: string;
+  note: string;
+}
+
+/** Row action on the Current Mentees tab. Each maps to a terminal mentee status. */
+export type MentorshipMenteeAction = (typeof MENTORSHIP_MENTEE_ACTIONS)[number];
 
 /** Term lifecycle on the admin program-detail Terms tab. */
 export type MentorshipTermRowStatus = (typeof MENTORSHIP_TERM_ROW_STATUSES)[number];

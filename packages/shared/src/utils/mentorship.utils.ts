@@ -16,10 +16,13 @@ import {
   MENTORSHIP_MAX_OPEN_TERMS_MESSAGE,
   MENTORSHIP_TERM_NAME_MAX,
 } from '../constants/mentorship-enroll.constants';
+import { MENTORSHIP_MENTEE_ACTIONS } from '../constants/mentorship.constants';
 import type {
   MentorshipEnrollFieldErrors,
   MentorshipEnrollRequest,
   MentorshipEnrollStep,
+  MentorshipMenteeAction,
+  MentorshipMenteeStatus,
   MentorshipProgram,
   MentorshipProgramDetail,
   MentorshipProgramLists,
@@ -315,6 +318,30 @@ export function matchesMentorshipPersonSearch(person: MentorshipProgramMentee | 
   const needle = search.trim().toLowerCase();
   if (!needle) return true;
   return person.name.toLowerCase().includes(needle) || person.email.toLowerCase().includes(needle);
+}
+
+/**
+ * Row actions offered for a mentee's current status on the Current Mentees tab.
+ * Each action moves the mentee to the same-named status, so the status a mentee is
+ * already in is never offered. `graduated` is terminal, and only an accepted mentee
+ * can graduate.
+ */
+export function mentorshipMenteeActionsFor(status: MentorshipMenteeStatus): MentorshipMenteeAction[] {
+  if (status === 'graduated') return [];
+  return MENTORSHIP_MENTEE_ACTIONS.filter((action) => {
+    if (action === status) return false;
+    return action !== 'graduated' || status === 'accepted';
+  });
+}
+
+/**
+ * Task column label on the Current Mentees tab, e.g. `7 of 12 submitted`.
+ * Returns null when no tasks are assigned so the cell can render a dash instead
+ * of the misleading `0 of 0 submitted`.
+ */
+export function formatMentorshipTaskProgress(submitted?: number, total?: number): string | null {
+  if (!total || total <= 0) return null;
+  return `${submitted ?? 0} of ${total} submitted`;
 }
 
 /** Inclusive UTC date range for term / invitation columns, e.g. `Jul 1, 2026 – Aug 31, 2026`. */

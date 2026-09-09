@@ -3,64 +3,146 @@
 
 <div class="flex flex-col gap-4" data-testid="mentorship-current-mentees-tab">
   <div class="flex flex-col gap-3 sm:flex-row sm:items-center">
-    <label class="sm:w-72">
+    <!-- min-w-0 + flex-1: the search takes the leftover width without squeezing the
+         filter and export controls, which otherwise wrap their labels. -->
+    <label class="w-full min-w-0 sm:flex-1">
       <span class="sr-only">Search mentees</span>
       <lfx-input-text [form]="form" control="search" placeholder="Search" icon="fa-light fa-magnifying-glass" dataTest="mentorship-mentees-search" />
     </label>
-    <div class="sm:w-52">
-      <lfx-select
-        [form]="form"
-        control="status"
-        [options]="statusOptions()"
-        optionLabel="label"
-        optionValue="value"
-        placeholder="Status"
-        ariaLabel="Filter mentees by status"
-        styleClass="w-full"
-        dataTest="mentorship-mentees-status" />
+
+    <div class="flex shrink-0 items-center gap-2">
+      <div class="w-full sm:w-48">
+        <lfx-select
+          [form]="form"
+          control="status"
+          [options]="statusOptions"
+          optionLabel="label"
+          optionValue="value"
+          placeholder="Filter By Status"
+          ariaLabel="Filter mentees by status"
+          styleClass="w-full"
+          dataTest="mentorship-mentees-status" />
+      </div>
+
+      <lfx-button
+        label="Download By Status"
+        icon="fa-light fa-download"
+        iconPos="left"
+        severity="secondary"
+        size="small"
+        [outlined]="true"
+        styleClass="whitespace-nowrap !py-2.5"
+        (onClick)="onDownloadByStatus()"
+        data-testid="mentorship-mentees-download" />
     </div>
   </div>
 
-  <div class="overflow-x-auto rounded-xl border border-gray-200 bg-white">
-    <table class="w-full min-w-[36rem] text-left">
-      <thead>
-        <tr class="border-b border-gray-200">
-          <th class="px-4 py-3 text-xs font-semibold uppercase tracking-wide text-gray-500">Mentee</th>
-          <th class="px-4 py-3 text-xs font-semibold uppercase tracking-wide text-gray-500">Term</th>
-          <th class="px-4 py-3 text-xs font-semibold uppercase tracking-wide text-gray-500">Status</th>
+  <div class="overflow-hidden rounded-xl border border-gray-200 bg-white">
+    <lfx-table
+      [value]="rows()"
+      dataKey="id"
+      size="small"
+      [paginator]="true"
+      [rows]="pageSize"
+      [rowsPerPageOptions]="rowsPerPageOptions"
+      [showCurrentPageReport]="true"
+      currentPageReportTemplate="Showing {first} to {last} of {totalRecords}"
+      tableStyleClass="table-fixed"
+      paginatorDropdownAppendTo="body"
+      ariaLabel="Current mentees">
+      <ng-template #header>
+        <tr>
+          <th class="w-[32%] px-4 py-3 !text-sm !font-medium !text-gray-600">Mentee</th>
+          <th class="w-[14%] px-4 py-3 !text-sm !font-medium !text-gray-600">Status</th>
+          <th class="w-[20%] px-4 py-3 !text-sm !font-medium !text-gray-600">Tasks</th>
+          <th class="w-[20%] px-4 py-3 !text-sm !font-medium !text-gray-600">Create Task</th>
+          <th class="w-[14%] px-4 py-3 !text-sm !font-medium !text-gray-600 text-end">Actions</th>
         </tr>
-      </thead>
-      <tbody>
-        @for (row of rows(); track row.id) {
-          <tr class="border-b border-gray-100 last:border-b-0" [attr.data-testid]="'mentorship-mentee-row-' + row.id">
-            <td class="px-4 py-3">
-              <div class="flex items-center gap-3 min-w-0">
-                <lfx-avatar
-                  [image]="row.avatarUrl ?? ''"
-                  [label]="row.initials"
-                  shape="circle"
-                  size="normal"
-                  [styleClass]="row.avatarStyleClass"
-                  [ariaLabel]="row.name" />
-                <div class="flex flex-col min-w-0">
-                  <span class="text-sm font-medium text-gray-900 truncate">{{ row.name }}</span>
-                  <span class="text-xs text-gray-500 truncate">{{ row.email }}</span>
-                </div>
+      </ng-template>
+
+      <ng-template #body let-row>
+        <tr [attr.data-testid]="'mentorship-mentee-row-' + row.id">
+          <td class="px-4 py-3">
+            <div class="flex items-center gap-3 min-w-0">
+              <lfx-avatar
+                [image]="row.avatarUrl ?? ''"
+                [label]="row.initials"
+                shape="circle"
+                size="normal"
+                [styleClass]="row.avatarStyleClass"
+                [ariaLabel]="row.name" />
+              <div class="flex flex-col min-w-0">
+                <span class="text-sm font-medium text-blue-600 truncate" [title]="row.name">{{ row.name }}</span>
+                <button
+                  type="button"
+                  class="text-xs text-gray-500 truncate text-left transition-colors hover:text-blue-600"
+                  [title]="row.hasNote ? row.noteLabel : 'Add a reviewer note for ' + row.name"
+                  [attr.aria-label]="(row.hasNote ? 'Edit' : 'Add') + ' reviewer note for ' + row.name"
+                  (click)="onOpenNote(row.id)"
+                  [attr.data-testid]="'mentorship-mentee-note-' + row.id">
+                  {{ row.noteLabel }}
+                </button>
               </div>
-            </td>
-            <td class="px-4 py-3 text-sm text-gray-700">{{ row.termName }}</td>
-            <td class="px-4 py-3">
-              <span class="inline-flex items-center text-xs font-semibold px-2 py-0.5 rounded-full" [class]="row.statusBadgeClass">
-                {{ row.statusLabel }}
-              </span>
-            </td>
-          </tr>
-        } @empty {
-          <tr>
-            <td colspan="3" class="px-4 py-10 text-center text-sm text-gray-500" data-testid="mentorship-mentees-empty">No current mentees.</td>
-          </tr>
-        }
-      </tbody>
-    </table>
+            </div>
+          </td>
+          <td class="px-4 py-3">
+            <span class="inline-flex items-center text-xs font-semibold px-2 py-0.5 rounded-full" [class]="row.statusBadgeClass">
+              {{ row.statusLabel }}
+            </span>
+          </td>
+          <td class="px-4 py-3">
+            @if (row.taskLabel) {
+              <button
+                type="button"
+                class="text-sm text-blue-600 transition-colors hover:text-blue-700 hover:underline"
+                [attr.aria-label]="'View tasks for ' + row.name"
+                (click)="onViewTasks(row.name)"
+                [attr.data-testid]="'mentorship-mentee-tasks-' + row.id">
+                {{ row.taskLabel }}
+              </button>
+            } @else {
+              <span class="text-sm text-gray-500">No tasks assigned</span>
+            }
+          </td>
+          <td class="px-4 py-3">
+            <lfx-button
+              label="Create Task"
+              icon="fa-light fa-plus"
+              iconPos="left"
+              severity="secondary"
+              size="small"
+              [outlined]="true"
+              [ariaLabel]="'Create a task for ' + row.name"
+              (onClick)="onCreateTask(row.name)"
+              [attr.data-testid]="'mentorship-mentee-create-task-' + row.id" />
+          </td>
+          <td class="px-4 py-3">
+            <div class="flex items-center justify-end">
+              @if (row.menuItems.length > 0) {
+                <div class="relative inline-block">
+                  <lfx-button
+                    icon="fa-light fa-ellipsis"
+                    severity="secondary"
+                    size="small"
+                    [outlined]="true"
+                    [ariaLabel]="'Actions for ' + row.name"
+                    (onClick)="actionMenu.toggle($event)"
+                    [attr.data-testid]="'mentorship-mentee-actions-' + row.id" />
+                  <lfx-menu #actionMenu [model]="row.menuItems" [popup]="true" appendTo="body" styleClass="!min-w-[10rem]" />
+                </div>
+              } @else {
+                <span class="text-sm text-gray-500">-</span>
+              }
+            </div>
+          </td>
+        </tr>
+      </ng-template>
+
+      <ng-template #emptymessage>
+        <tr>
+          <td colspan="5" class="px-4 py-10 text-center text-sm text-gray-500" data-testid="mentorship-mentees-empty">No current mentees.</td>
+        </tr>
+      </ng-template>
+    </lfx-table>
   </div>
 </div>

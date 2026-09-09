@@ -9,6 +9,7 @@ import {
   formatMentorshipDateRange,
   formatMentorshipMonthYear,
   formatMentorshipShortMonthYear,
+  formatMentorshipTaskProgress,
   getMentorshipEnrollStepErrors,
   getMentorshipTermDateErrors,
   isMentorshipTermEnded,
@@ -22,6 +23,7 @@ import {
   isMentorshipLogoFileName,
   isMentorshipTermsAccepted,
   matchesMentorshipPersonSearch,
+  mentorshipMenteeActionsFor,
   mentorshipMonthYearToStartDate,
   mentorshipPersonInitials,
   mentorshipProgramSlug,
@@ -394,6 +396,26 @@ describe('program detail helpers', () => {
 
   it('formats an inclusive UTC date range', () => {
     expect(formatMentorshipDateRange('2026-07-01', '2026-08-31')).toBe('Jul 1, 2026 – Aug 31, 2026');
+  });
+
+  it('offers mentee row actions that exclude the current status, and none once graduated', () => {
+    expect(mentorshipMenteeActionsFor('accepted')).toEqual(['withdrawn', 'declined', 'graduated']);
+    // Only an accepted mentee can graduate.
+    expect(mentorshipMenteeActionsFor('pending')).toEqual(['withdrawn', 'declined']);
+    expect(mentorshipMenteeActionsFor('declined')).toEqual(['withdrawn']);
+    expect(mentorshipMenteeActionsFor('withdrawn')).toEqual(['declined']);
+    // `graduated` is terminal.
+    expect(mentorshipMenteeActionsFor('graduated')).toEqual([]);
+  });
+
+  it('formats task progress, and reports no label when nothing is assigned', () => {
+    expect(formatMentorshipTaskProgress(7, 12)).toBe('7 of 12 submitted');
+    expect(formatMentorshipTaskProgress(0, 12)).toBe('0 of 12 submitted');
+    // A missing count is a mentee with tasks assigned but none submitted yet.
+    expect(formatMentorshipTaskProgress(undefined, 9)).toBe('0 of 9 submitted');
+    // No assigned tasks must not render as "0 of 0 submitted".
+    expect(formatMentorshipTaskProgress(0, 0)).toBeNull();
+    expect(formatMentorshipTaskProgress(3, undefined)).toBeNull();
   });
 
   it('builds two-letter initials from a display name', () => {
