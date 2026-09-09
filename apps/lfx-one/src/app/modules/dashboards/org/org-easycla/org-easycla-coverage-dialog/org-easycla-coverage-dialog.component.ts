@@ -50,6 +50,10 @@ export class OrgEasyclaCoverageDialogComponent {
     ? `Part of ${this.dialogConfig.data.foundationName} — this CLA covers the projects below, not necessarily every project in the foundation.`
     : 'This CLA covers the projects below.';
 
+  // One source for both ends of the no-match state: the visible line and the announcement below
+  // have to say the same thing, and holding the sentence twice is how they stop.
+  protected readonly noMatchMessage = 'No covered projects match your search.';
+
   protected readonly searchForm = new FormGroup({ search: new FormControl('', { nonNullable: true }) });
 
   // Undebounced, unlike the org pages' search fields. Those debounce a filter over a roster or a
@@ -86,7 +90,7 @@ export class OrgEasyclaCoverageDialogComponent {
       if (!this.searchTerm().trim()) return '';
 
       const count = this.filteredProjects().length;
-      if (count === 0) return 'No covered projects match your search.';
+      if (count === 0) return this.noMatchMessage;
       return count === 1 ? '1 project matches your search.' : `${count} projects match your search.`;
     });
   }

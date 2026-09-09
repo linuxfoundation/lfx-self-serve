@@ -78,10 +78,7 @@ describe('OrgEasyclaCoverageDialogComponent', () => {
       projects: [{ projectName: 'Cascade' }, { projectName: 'Driftwood' }],
     });
 
-    const names = Array.from(fixture.nativeElement.querySelectorAll('[data-testid="org-easycla-coverage-project"]')).map((el) =>
-      (el as HTMLElement).textContent?.trim()
-    );
-    expect(names).toEqual(['Cascade', 'Driftwood']);
+    expect(projectNames(fixture)).toEqual(['Cascade', 'Driftwood']);
   });
 
   it('explains when no individual projects are listed', async () => {
@@ -254,6 +251,10 @@ describe('OrgEasyclaCoverageDialogComponent', () => {
       // its text is frequently not announced, and a count nobody asked for is noise on open.
       expect(region()).not.toBeNull();
       expect(region()?.getAttribute('aria-live')).toBe('polite');
+      // `role` is the hook assistive tech maps to a status region, and `aria-atomic` is what makes
+      // the whole sentence re-announce when only the count within it changes.
+      expect(region()?.getAttribute('role')).toBe('status');
+      expect(region()?.getAttribute('aria-atomic')).toBe('true');
       expect(region()?.textContent?.trim()).toBe('');
 
       search(fixture, 'casc');
@@ -266,6 +267,12 @@ describe('OrgEasyclaCoverageDialogComponent', () => {
       expect(region()?.textContent?.trim()).toBe('No covered projects match your search.');
 
       search(fixture, '');
+      expect(region()?.textContent?.trim()).toBe('');
+
+      // The announcement trims separately from the filter, so without this a blank term would
+      // narrate "3 projects match your search." over a list correctly showing everything — the
+      // full-count noise the region exists to suppress.
+      search(fixture, '   ');
       expect(region()?.textContent?.trim()).toBe('');
     });
 
