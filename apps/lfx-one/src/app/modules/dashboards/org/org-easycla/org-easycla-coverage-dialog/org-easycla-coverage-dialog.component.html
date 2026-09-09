@@ -23,18 +23,22 @@
 
   @if (filteredProjects().length) {
     <!--
-      The list scrolls inside the dialog rather than growing it, as the design has it. A foundation-wide
-      agreement can name a dozen projects or more, and without this the Close control below is pushed
-      off the bottom on the rows most likely to be opened.
+      Bounded and rule-separated, as `person-detail-drawer` renders its own lists — which is also what
+      the design's table rule draws. No hover tint though: that rule is a blanket one over every table
+      in the prototype, including the ones whose rows are links, and these rows open nothing.
 
-      `tabindex` because a scroll container holding no focusable content is unreachable by keyboard —
-      the clipped names could not be scrolled into view at all. Unconditional rather than gated on
-      overflowing: whether it overflows is a rendered height, so any project-count threshold standing
-      in for it is a guess that breaks the moment a row's height changes.
+      Scrolling rather than growing keeps the Close control on screen for a foundation-wide agreement.
+      `tabindex` because the container holds nothing focusable, so the clipped names were unreachable
+      by keyboard — unconditional, since overflow is a rendered height and a count threshold standing
+      in for it is a guess.
     -->
-    <ul class="mt-3 flex max-h-80 flex-col gap-2 overflow-y-auto" tabindex="0" aria-label="Covered projects" data-testid="org-easycla-coverage-list">
+    <ul
+      class="mt-3 flex max-h-80 flex-col divide-y divide-gray-100 overflow-y-auto rounded-lg border border-gray-200"
+      tabindex="0"
+      aria-label="Covered projects"
+      data-testid="org-easycla-coverage-list">
       @for (project of filteredProjects(); track project.projectName) {
-        <li class="text-sm text-gray-800" data-testid="org-easycla-coverage-project">{{ project.projectName }}</li>
+        <li class="px-4 py-3 text-sm text-gray-800" data-testid="org-easycla-coverage-project">{{ project.projectName }}</li>
       }
     </ul>
   } @else {

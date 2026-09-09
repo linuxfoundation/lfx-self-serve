@@ -144,6 +144,26 @@ describe('OrgEasyclaCoverageDialogComponent', () => {
     expect(fixture.nativeElement.querySelector('[data-testid="org-easycla-coverage-close"]')).not.toBeNull();
   });
 
+  it('separates the projects into rules rather than listing them bare', async () => {
+    const fixture = await render({
+      claGroupName: 'Acme CLA',
+      projects: [{ projectName: 'Cascade' }, { projectName: 'Driftwood' }],
+    });
+    const list = fixture.nativeElement.querySelector('[data-testid="org-easycla-coverage-list"]') as HTMLElement | null;
+    const row = fixture.nativeElement.querySelector('[data-testid="org-easycla-coverage-project"]') as HTMLElement | null;
+
+    // The design draws this as a bordered table, and the application renders its own lists the same
+    // way. Pinned because a bare list reads as unfinished and looks like a tidy-up rather than a loss.
+    expect(list?.className).toContain('divide-y');
+    expect(list?.className).toContain('border');
+    expect(row?.className).toContain('py-3');
+
+    // No hover tint: these rows open nothing, so a highlight following the cursor advertises an
+    // action that does not exist.
+    expect(list?.className).not.toMatch(/hover:/);
+    expect(row?.className).not.toMatch(/hover:/);
+  });
+
   it('keeps the scrolling list reachable by keyboard', async () => {
     const fixture = await render({
       claGroupName: 'Acme CLA',
