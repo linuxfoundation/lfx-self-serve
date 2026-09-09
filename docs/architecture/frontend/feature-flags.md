@@ -294,8 +294,15 @@ export class FeatureFlagService {
           // Irrevocable initialization failure — stay fail-closed, nothing to recover from.
         }
       );
-    } catch {
-      // Provider recorded ERROR before ever creating its underlying client — nothing to recover from.
+    } catch (error) {
+      // GeneralError = provider recorded ERROR before creating its client; nothing to recover.
+      // Anything else means the provider's internals moved — report it rather than silently
+      // fail-closing every guard for the session.
+      if (!(error instanceof GeneralError)) {
+        this.dataDogRumService.addError(error instanceof Error ? error : new Error(String(error)), {
+          source: 'attachErrorRecoveryListener',
+        });
+      }
     }
   }
 }
