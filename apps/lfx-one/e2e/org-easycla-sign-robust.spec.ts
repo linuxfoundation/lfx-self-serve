@@ -118,7 +118,9 @@ test.describe('Org Lens EasyCLA corporate self-sign — structure', () => {
 
     await onlyState(page, 'org-easycla-sign-ready');
     await expect(page.getByTestId('org-easycla-sign-review')).toBeVisible();
-    await expect(page.getByTestId('org-easycla-sign-cancel')).toBeVisible();
+    // No way out but forward: the agreement and its envelope exist by now, and the address behind
+    // this control is the only thing that reaches them.
+    await expect(page.getByTestId('org-easycla-sign-cancel')).toHaveCount(0);
   });
 
   test('settles on the failure state alone when the request is refused', async ({ page }) => {

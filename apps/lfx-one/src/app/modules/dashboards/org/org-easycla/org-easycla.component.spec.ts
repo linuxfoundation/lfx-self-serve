@@ -148,6 +148,21 @@ describe('OrgEasyclaComponent', () => {
       expect(button?.getAttribute('aria-label')).toContain('select an organization first');
     });
 
+    // `hasNoOrgAccess()` reads false while the grants and persona are still resolving, so without
+    // this gate a viewer holding no grant can start the flow inside the loading window and reach a
+    // refusal the page would otherwise have prevented.
+    it('cannot be used while the organization context is still resolving', async () => {
+      grantsLoaded.set(false);
+
+      const fixture = await render();
+
+      const button = byTestId(fixture, 'org-easycla-sign-cla')?.querySelector('button');
+      expect(button?.disabled).toBe(true);
+      // Every reason the control is disabled needs its own wording, or the announcement is just
+      // "disabled" with nothing behind it.
+      expect(button?.getAttribute('aria-label')).toContain('checking your organization access');
+    });
+
     // Not disabled for a viewer who lacks signing authority. The CLA service decides that per
     // project and organization and explains its refusal in words; this layer cannot know it, and
     // guessing would hide the control from people who do hold the authority.

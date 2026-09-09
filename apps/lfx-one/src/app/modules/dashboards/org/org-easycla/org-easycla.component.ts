@@ -83,6 +83,10 @@ export class OrgEasyclaComponent {
    */
   protected readonly signClaAriaLabel = computed(() => {
     if (this.hasNoOrgAccess()) return 'Sign a corporate CLA — Organization Lens is not available for your account';
+    // Every reason the control is disabled needs a branch here, or assistive technology announces
+    // "disabled" with no explanation. Loading sits above the company check because it is why the
+    // company is not known yet.
+    if (!this.orgContextLoaded()) return 'Sign a corporate CLA — checking your organization access';
     if (!this.hasCompany()) return 'Sign a corporate CLA — select an organization first';
     if (this.signingOpen()) return 'Sign a corporate CLA — a signing request is already open';
     return 'Sign a corporate CLA';
