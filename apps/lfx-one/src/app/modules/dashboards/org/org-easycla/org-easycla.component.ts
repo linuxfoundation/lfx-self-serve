@@ -5,13 +5,13 @@ import { isPlatformBrowser } from '@angular/common';
 import { ChangeDetectionStrategy, Component, computed, DestroyRef, inject, PLATFORM_ID, signal, Signal } from '@angular/core';
 import { takeUntilDestroyed, toObservable, toSignal } from '@angular/core/rxjs-interop';
 import { FormControl, FormGroup } from '@angular/forms';
-import { RouterLink } from '@angular/router';
-import { CCLA_SIGN_COPY } from '@lfx-one/shared/constants';
-import type { OrgClaGroup, OrgClaGroupList, OrgClaGroupPickerResult, OrgClaSignAttestations } from '@lfx-one/shared/interfaces';
+import { ActivatedRoute, Router, RouterLink } from '@angular/router';
+import { CCLA_SIGN_COPY, ORG_EASYCLA_RETURN_ORG_PARAM } from '@lfx-one/shared/constants';
+import type { Account, OrgClaGroup, OrgClaGroupList, OrgClaGroupPickerResult, OrgClaSignAttestations } from '@lfx-one/shared/interfaces';
 import { orgClaOpenLabel } from '@lfx-one/shared/utils';
 import { DialogService, DynamicDialogRef } from 'primeng/dynamicdialog';
 import { SkeletonModule } from 'primeng/skeleton';
-import { catchError, distinctUntilChanged, filter, of, skip, switchMap, take, tap } from 'rxjs';
+import { catchError, combineLatest, distinctUntilChanged, filter, map, of, skip, switchMap, take, tap } from 'rxjs';
 
 import { ButtonComponent } from '@components/button/button.component';
 import { EmptyStateComponent } from '@components/empty-state/empty-state.component';
@@ -48,6 +48,8 @@ export class OrgEasyclaComponent {
   private readonly dialogService = inject(DialogService);
   private readonly destroyRef = inject(DestroyRef);
   private readonly platformId = inject(PLATFORM_ID);
+  private readonly router = inject(Router);
+  private readonly route = inject(ActivatedRoute);
 
   /** One hand-off at a time. Also what disables the Sign CLA control while a flow is open. */
   protected readonly signingOpen = signal(false);
@@ -226,6 +228,8 @@ export class OrgEasyclaComponent {
     // Separate from the reset above because it listens on the unfiltered stream: a cleared
     // selection has no list to re-filter but does have a signing flow to abandon.
     this.orgChanged$.pipe(takeUntilDestroyed()).subscribe(() => this.abandonUncommittedSigning());
+
+    this.adoptOrganizationFromReturnAddress();
   }
 
   protected changePage(delta: number): void {
@@ -367,6 +371,54 @@ export class OrgEasyclaComponent {
     }) as DynamicDialogRef;
 
     handoffRef.onClose.pipe(takeUntilDestroyed(this.destroyRef)).subscribe(() => this.signingOpen.set(false));
+  }
+
+  /**
+   * Selects the organization EasyCLA named on the return address after a corporate signing.
+   *
+   * The signatory comes back through a cross-site navigation, and which organization is selected
+   * survives that only in a `SameSite=Lax` cookie. When it does not come back, bootstrap falls to
+   * the first organization in the viewer's list — so signing for one company returns them looking
+   * at another, with their new agreement nowhere in sight. The return address names the
+   * organization the session was opened for so this page does not have to guess.
+   *
+   * **The parameter names an organization; it does not grant one.** It is resolved against the
+   * viewer's own authorized accounts and anything absent from that list is ignored, so a crafted
+   * link cannot select a company they do not hold. Deliberately no stub is built from the value —
+   * that is how the cookie path hydrates an id it trusts, and doing it here would render an
+   * arbitrary organization's name from the URL.
+   */
+  private adoptOrganizationFromReturnAddress(): void {
+    // The address is only followed in a browser, and the strip below is a browser navigation.
+    if (!isPlatformBrowser(this.platformId)) return;
+
+    const named = this.route.snapshot.queryParamMap.get(ORG_EASYCLA_RETURN_ORG_PARAM);
+    if (!named) return;
+
+    // The authorized list arrives after this component is constructed, so resolving immediately
+    // would discard a legitimate hand-off against an empty list. Waits for whichever comes first:
+    // the organization appearing, or the org context settling without it.
+    combineLatest([toObservable(this.accountContext.availableAccounts), toObservable(this.orgContextLoaded)])
+      .pipe(
+        map(([accounts, loaded]) => ({ match: accounts.find((account: Account) => account.uid === named) ?? null, loaded })),
+        filter(({ match, loaded }) => !!match || loaded),
+        take(1),
+        takeUntilDestroyed(this.destroyRef)
+      )
+      .subscribe(({ match }) => {
+        // `setAccount` also rewrites the cookie, so the round trip repairs the selection that went
+        // missing rather than leaving the next reload to fall back all over again.
+        if (match) this.accountContext.setAccount(match);
+
+        // Stripped whether or not it matched. Left in place it would pin a stale organization on
+        // reload and on any copied link, and would contradict the viewer the moment they switch.
+        void this.router.navigate([], {
+          relativeTo: this.route,
+          queryParams: { [ORG_EASYCLA_RETURN_ORG_PARAM]: null },
+          queryParamsHandling: 'merge',
+          replaceUrl: true,
+        });
+      });
   }
 
   private initSearchTerm(): Signal<string> {

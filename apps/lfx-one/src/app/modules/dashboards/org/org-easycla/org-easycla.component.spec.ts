@@ -3,10 +3,10 @@
 
 import '@angular/compiler';
 
-import { signal } from '@angular/core';
+import { ApplicationRef, signal } from '@angular/core';
 import { ComponentFixture, TestBed } from '@angular/core/testing';
 import { provideNoopAnimations } from '@angular/platform-browser/animations';
-import { provideRouter } from '@angular/router';
+import { ActivatedRoute, convertToParamMap, provideRouter, Router } from '@angular/router';
 import type { OrgClaGroup } from '@lfx-one/shared/interfaces';
 import { AccountContextService } from '@services/account-context.service';
 import { OrgLensClaService } from '@services/org-lens-cla.service';
@@ -944,6 +944,119 @@ describe('OrgEasyclaComponent', () => {
       await switchOrg(fixture);
 
       expect(byTestId(fixture, 'org-easycla-page-label')?.textContent).toContain('Showing 1–8 of 11');
+    });
+  });
+  /**
+   * Returning from DocuSign, where the organization is named on the address.
+   *
+   * The signatory comes back through a cross-site navigation carrying only a `SameSite=Lax`
+   * cookie; when it does not come back, bootstrap selects the first organization in their list, so
+   * signing for one company returns them looking at another.
+   */
+  describe('when EasyCLA returns the signatory with an organization named on the address', () => {
+    const MICROSOFT = { uid: '0014100000Te0OKAAZ', accountName: 'Microsoft Corporation', accountId: 'acct-microsoft' };
+    const CONTAINERSHIP = { uid: '0014100000Te2QjAAJ', accountName: 'ContainerShip, Inc.', accountId: 'acct-containership' };
+
+    async function renderReturnedFrom(namedOrg: string | null, authorized = [CONTAINERSHIP, MICROSOFT]) {
+      const setAccount = vi.fn();
+      const navigate = vi.fn();
+      const availableAccounts = signal(authorized);
+
+      selectedAccount.set(CONTAINERSHIP);
+      getClaGroups.mockReturnValue(of({ orgUid: CONTAINERSHIP.uid, claGroups: [] }));
+
+      TestBed.resetTestingModule();
+      await TestBed.configureTestingModule({
+        imports: [OrgEasyclaComponent],
+        providers: [
+          provideRouter([]),
+          provideNoopAnimations(),
+          { provide: AccountContextService, useValue: { selectedAccount, hasOrgSelectorAccess, availableAccounts, setAccount } },
+          { provide: OrgRoleGrantsService, useValue: { loaded: grantsLoaded } },
+          { provide: PersonaService, useValue: { personaLoaded } },
+          { provide: OrgNavigationService, useValue: { loaded: navLoaded } },
+          { provide: OrgLensClaService, useValue: { getClaGroups } },
+          { provide: ActivatedRoute, useValue: { snapshot: { queryParamMap: convertToParamMap(namedOrg ? { org: namedOrg } : {}) } } },
+          MessageService,
+        ],
+      })
+        .overrideComponent(OrgEasyclaComponent, { set: { providers: [{ provide: DialogService, useValue: { open: openDialog } }] } })
+        .compileComponents();
+
+      const fixture = TestBed.createComponent(OrgEasyclaComponent);
+      vi.spyOn(TestBed.inject(Router), 'navigate').mockImplementation(navigate);
+      fixture.detectChanges();
+      await fixture.whenStable();
+      fixture.detectChanges();
+      await fixture.whenStable();
+
+      return { fixture, setAccount, navigate, availableAccounts };
+    }
+
+    it('selects the organization the signature was made for, not the first in the list', async () => {
+      const { setAccount } = await renderReturnedFrom(MICROSOFT.uid);
+
+      // `setAccount` also rewrites the cookie, so the selection that went missing is repaired.
+      expect(setAccount).toHaveBeenCalledWith(MICROSOFT);
+    });
+
+    /**
+     * The parameter names an organization; it does not grant one.
+     *
+     * A crafted link must not select a company the viewer does not hold — and specifically must
+     * not render its name, which is what building a stub from the value (the way the cookie path
+     * hydrates an id it trusts) would do.
+     */
+    it('ignores an organization the viewer does not hold rather than selecting it', async () => {
+      const { setAccount, fixture } = await renderReturnedFrom('0014100000TeZZZAAA');
+
+      expect(setAccount).not.toHaveBeenCalled();
+      expect(fixture.nativeElement.textContent).not.toContain('0014100000TeZZZAAA');
+    });
+
+    it('strips the parameter once adopted, so a reload or a copied link cannot pin a stale organization', async () => {
+      const { navigate } = await renderReturnedFrom(MICROSOFT.uid);
+
+      expect(navigate).toHaveBeenCalledWith([], expect.objectContaining({ queryParams: { org: null }, replaceUrl: true }));
+    });
+
+    // Left in place it would keep re-asserting an organization the viewer cannot have, on a page
+    // that has already settled without it.
+    it('strips the parameter even when it named an organization it could not use', async () => {
+      const { navigate } = await renderReturnedFrom('0014100000TeZZZAAA');
+
+      expect(navigate).toHaveBeenCalled();
+    });
+
+    // The list arrives after this page is constructed, so resolving against the empty list it starts
+    // with would throw away a legitimate hand-off.
+    it('waits for the authorized list rather than discarding the hand-off against an empty one', async () => {
+      navLoaded.set(false);
+      const { setAccount, availableAccounts } = await renderReturnedFrom(MICROSOFT.uid, []);
+
+      expect(setAccount).not.toHaveBeenCalled();
+
+      availableAccounts.set([CONTAINERSHIP, MICROSOFT]);
+      navLoaded.set(true);
+      await TestBed.inject(ApplicationRef).whenStable();
+
+      expect(setAccount).toHaveBeenCalledWith(MICROSOFT);
+    });
+
+    // The mirror of the wait above: once the organization list has genuinely settled without it,
+    // there is nothing left to wait for and the page stops trying.
+    it('gives up once the organization context has settled without that organization', async () => {
+      const { setAccount, navigate } = await renderReturnedFrom(MICROSOFT.uid, []);
+
+      expect(setAccount).not.toHaveBeenCalled();
+      expect(navigate).toHaveBeenCalled();
+    });
+
+    it('touches nothing on an ordinary visit that carries no organization', async () => {
+      const { setAccount, navigate } = await renderReturnedFrom(null);
+
+      expect(setAccount).not.toHaveBeenCalled();
+      expect(navigate).not.toHaveBeenCalled();
     });
   });
 });

@@ -172,6 +172,36 @@ describe('claReturnUrl', () => {
   it('refuses a protocol that is neither http nor https', () => {
     expect(() => claReturnUrl(reqWithHost('app.lfx.dev', 'javascript'))).toThrow(MicroserviceError);
   });
+
+  it('leaves the URL unchanged when no query is asked for', () => {
+    expect(claReturnUrl(reqWithHost('app.lfx.dev'), '/org/easycla')).toBe('https://app.lfx.dev/org/easycla');
+  });
+
+  it('names the organization on the address, so the page does not have to guess it', () => {
+    expect(claReturnUrl(reqWithHost('app.lfx.dev'), '/org/easycla', { org: '0014100000Te0OKAAZ' })).toBe(
+      'https://app.lfx.dev/org/easycla?org=0014100000Te0OKAAZ'
+    );
+  });
+
+  // The whole point of routing this through `searchParams` rather than concatenating: EasyCLA
+  // stores the value and later redirects to it verbatim, so a value that could close the query and
+  // append its own path would turn the hand-off into an open redirect a second way.
+  it.each([
+    ['0014100000Te0OKAAZ#@evil.example.com', 'evil.example.com'],
+    ['0014100000Te0OKAAZ&next=https://evil.example.com', 'evil.example.com'],
+    ['../../evil', 'evil'],
+  ])('encodes %p so it cannot break out of the query string', (value, smuggled) => {
+    const url = claReturnUrl(reqWithHost('app.lfx.dev'), '/org/easycla', { org: value });
+
+    expect(new URL(url).origin).toBe('https://app.lfx.dev');
+    expect(new URL(url).pathname).toBe('/org/easycla');
+    expect(new URL(url).searchParams.get('org')).toBe(value);
+    expect(url).not.toContain(`/${smuggled}`);
+  });
+
+  it('still refuses an untrusted host when a query is supplied', () => {
+    expect(() => claReturnUrl(reqWithHost('evil.example.com'), '/org/easycla', { org: '0014100000Te0OKAAZ' })).toThrow(MicroserviceError);
+  });
 });
 
 describe('normalizeGithubId', () => {

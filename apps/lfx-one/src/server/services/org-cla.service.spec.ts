@@ -745,7 +745,7 @@ describe('OrgClaService.requestCorporateSignature', () => {
         body: {
           project_sfid: PROJECT_SFID,
           company_sfid: ORG_UID,
-          return_url: 'https://app.lfx.dev/org/easycla',
+          return_url: `https://app.lfx.dev/org/easycla?org=${ORG_UID}`,
           authority_acked: true,
           embargo_acked: true,
         },
@@ -776,8 +776,24 @@ describe('OrgClaService.requestCorporateSignature', () => {
     expect(gatewayFetch).toHaveBeenCalledWith(
       expect.anything(),
       expect.any(String),
-      expect.objectContaining({ body: expect.objectContaining({ return_url: 'https://app.lfx.dev/org/easycla' }) })
+      expect.objectContaining({ body: expect.objectContaining({ return_url: `https://app.lfx.dev/org/easycla?org=${ORG_UID}` }) })
     );
+  });
+
+  // Without this the signatory returns through a cross-site navigation carrying only a
+  // `SameSite=Lax` cookie, and when it does not come back the page selects the first organization
+  // in their list — so signing for one company lands them looking at another.
+  it('names the organization on the return address rather than leaving the page to guess it', async () => {
+    gatewayFetch.mockResolvedValueOnce(upstreamOk);
+
+    await new OrgClaService().requestCorporateSignature(signReq(), ORG_UID, signRequest());
+
+    const body = gatewayFetch.mock.calls[0][2].body as { return_url: string };
+    const returned = new URL(body.return_url);
+
+    expect(returned.pathname).toBe('/org/easycla');
+    // The organization the grant check cleared and the request was made for, not a client value.
+    expect(returned.searchParams.get('org')).toBe(ORG_UID);
   });
 
   // The endpoint accepts these four for the send-by-email and designee paths. This feature

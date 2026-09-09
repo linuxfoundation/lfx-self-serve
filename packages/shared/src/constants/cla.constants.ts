@@ -221,6 +221,22 @@ export const ORG_CLA_NOT_STARTED_COPY = {
 export const ORG_EASYCLA_PATH = '/org/easycla';
 
 /**
+ * Query parameter naming the organization a corporate signing session was opened for, carried on
+ * `ORG_EASYCLA_PATH` when EasyCLA returns the signatory (#1983).
+ *
+ * The return is a cross-site navigation, and which organization is selected survives only in a
+ * `SameSite=Lax` cookie. When that cookie does not come back the page falls to the first
+ * organization in the viewer's list, so a signatory who signed for one company returns looking at
+ * another — reading as though the signature landed on the wrong organization.
+ *
+ * Shared because the BFF writes it and the Org Lens page reads it. **It names an organization; it
+ * does not grant one.** The page resolves it against the viewer's own authorized organizations and
+ * ignores anything absent from that list, so a crafted link cannot select an organization the
+ * viewer does not hold.
+ */
+export const ORG_EASYCLA_RETURN_ORG_PARAM = 'org';
+
+/**
  * Copy for the corporate signing flow (#1983), taken verbatim from the M3 prototype.
  *
  * Held here rather than inlined in the template because this is the first attestation the

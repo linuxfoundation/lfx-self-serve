@@ -161,8 +161,16 @@ const PREVIEW_RETURN_HOSTNAME = /^ui-pr-\d{1,10}\.dev\.v2\.cluster\.linuxfound\.
  * EasyCLA page for the corporate hand-off (#1983). A parameter rather than a second function
  * because the host check above is the security-critical part, and it must exist exactly once.
  * Callers pass a shared path constant, never a request-derived value.
+ *
+ * `query` is the one place a request-derived value may enter, and it is kept out of `path`
+ * deliberately: the corporate hand-off has to name the organization it was opened for, because the
+ * signer comes back through a cross-site navigation and the selected organization survives only in
+ * a `SameSite=Lax` cookie. A bare path leaves the page to guess, and it guesses the first
+ * organization in the viewer's list. Written through `searchParams`, so a value cannot break out of
+ * the query string and append a path or a second origin to a URL that EasyCLA stores and later
+ * redirects to verbatim.
  */
-export function claReturnUrl(req: Request, path: string = MY_CLAS_PATH): string {
+export function claReturnUrl(req: Request, path: string = MY_CLAS_PATH, query?: Readonly<Record<string, string>>): string {
   const host = req.get('host');
   if (!host) {
     throw new MicroserviceError('Cannot derive the CLA return URL: request has no Host header', 500, 'RETURN_URL_UNRESOLVABLE', { service: SERVICE });
@@ -185,7 +193,12 @@ export function claReturnUrl(req: Request, path: string = MY_CLAS_PATH): string 
     throw new MicroserviceError('Cannot derive the CLA return URL: untrusted Host header', 500, 'RETURN_URL_UNTRUSTED', { service: SERVICE });
   }
 
-  return `${req.protocol}://${host}${path}`;
+  const url = new URL(`${req.protocol}://${host}${path}`);
+  for (const [key, value] of Object.entries(query ?? {})) {
+    url.searchParams.set(key, value);
+  }
+
+  return url.toString();
 }
 
 // Identity keys the CLA service reports as `"<type>:<value>"`, both in the verified `identity`
