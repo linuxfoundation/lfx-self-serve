@@ -60,6 +60,8 @@ export class FormationChecklistRowComponent {
   protected readonly completeLabel = computed(() => (this.item().status === 'awaiting_acceptance' && this.item().can_complete ? 'Accept' : 'Mark done'));
   /** `provisionable`/`request` actions change status the same way complete/skip do — hide them once the item is already terminal. */
   protected readonly isActionable = computed(() => this.item().status !== 'done' && this.item().status !== 'skipped');
+  /** `status_only` items are updated by external tooling only — the chip must not offer a menu the server will reject (see `buildStatusMenuItems`). */
+  protected readonly isStatusEditable = computed(() => this.item().action !== 'status_only');
   /** GH-1958 acceptance criteria: surface an "Assigned to you" chip when the viewer is this item's owner. */
   protected readonly isAssignedToViewer = computed(() => {
     const owner = this.item().owner;

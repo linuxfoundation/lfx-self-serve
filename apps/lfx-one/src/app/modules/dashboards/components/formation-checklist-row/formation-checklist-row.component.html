@@ -3,15 +3,23 @@
 
 <div class="flex items-center gap-4 py-3 px-4 border-b border-gray-200 last:border-b-0" [attr.data-testid]="'formation-checklist-row-' + item().uid">
   <div class="w-40 shrink-0" [attr.data-testid]="'formation-checklist-row-status-chip-' + item().uid">
-    <lfx-menu #statusMenu [model]="statusMenuItems" [popup]="true" appendTo="body"></lfx-menu>
-    <button
-      type="button"
-      class="bg-transparent border-none p-0 cursor-pointer"
-      [attr.aria-label]="'Change status for ' + item().title"
-      (click)="toggleStatusMenu($event, statusMenu)"
-      [attr.data-testid]="'formation-checklist-row-status-trigger-' + item().uid">
-      <lfx-tag [value]="statusLabel()" [severity]="statusSeverity()" [outlined]="statusOutlined()" />
-    </button>
+    @if (isStatusEditable()) {
+      <lfx-menu #statusMenu [model]="statusMenuItems" [popup]="true" appendTo="body"></lfx-menu>
+      <button
+        type="button"
+        class="bg-transparent border-none p-0 cursor-pointer"
+        [attr.aria-label]="'Change status for ' + item().title"
+        (click)="toggleStatusMenu($event, statusMenu)"
+        [attr.data-testid]="'formation-checklist-row-status-trigger-' + item().uid">
+        <lfx-tag [value]="statusLabel()" [severity]="statusSeverity()" [outlined]="statusOutlined()" />
+      </button>
+    } @else {
+      <lfx-tag
+        [value]="statusLabel()"
+        [severity]="statusSeverity()"
+        [outlined]="statusOutlined()"
+        [attr.data-testid]="'formation-checklist-row-status-trigger-' + item().uid" />
+    }
   </div>
 
   <div class="flex-1 min-w-0 flex flex-col gap-1">

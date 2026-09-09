@@ -16,7 +16,10 @@ export interface FormationReadinessSummary {
   segments: FormationItemStatus[];
   totalItems: number;
   counts: Record<FormationItemStatus, number>;
-  /** True once every gating item is `done` (mirrors `Formation.is_activating`). */
+  /**
+   * Mirrors `Formation.is_activating`. True once every gating item is `done` or `skipped`, OR
+   * once the announcement date has passed — the latter independent of gating-item completion.
+   */
   isActivating: boolean;
   openGatingItems: number;
   totalGatingItems: number;
