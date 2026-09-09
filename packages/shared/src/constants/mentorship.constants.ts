@@ -2,6 +2,9 @@
 // SPDX-License-Identifier: MIT
 
 import type {
+  MentorshipApplicantAction,
+  MentorshipApplicantDisplayStatus,
+  MentorshipMenteeAction,
   MentorshipMenteeStatus,
   MentorshipMentorStatus,
   MentorshipProgram,
@@ -102,7 +105,105 @@ export const MENTORSHIP_MENTEE_STATUS_BADGE_CLASSES: Record<MentorshipMenteeStat
   accepted: 'bg-emerald-50 text-emerald-700',
   declined: 'bg-red-50 text-red-600',
   withdrawn: 'bg-gray-100 text-gray-600',
-  graduated: 'bg-violet-50 text-violet-700',
+  graduated: 'bg-emerald-50 text-emerald-700',
+};
+
+/**
+ * Statuses the admin Current Mentees tab covers: a live program shows the mentees
+ * taking part, plus any who graduated early. Doubles as the tab's status-filter
+ * options and as the set `mentorshipMenteesForProgram` scopes its rows to, so the
+ * header count and the table can never disagree.
+ */
+export const MENTORSHIP_CURRENT_MENTEE_STATUSES: readonly MentorshipMenteeStatus[] = ['accepted', 'graduated'];
+
+/**
+ * Statuses the Past Mentees tab covers — the three ways a participation ends.
+ * `accepted` is not one of them: a program cannot be completed until every accepted
+ * mentee has been graduated or declined, so that combination never reaches the tab.
+ */
+export const MENTORSHIP_PAST_MENTEE_STATUSES: readonly MentorshipMenteeStatus[] = ['withdrawn', 'declined', 'graduated'];
+
+/**
+ * Statuses the Applicants tab's "Other Active Applications" column lists. Graduating
+ * counts: it says the person saw a program through, which is worth showing an admin
+ * reviewing them. Only the two rejections — declined and withdrawn — are left out.
+ */
+export const MENTORSHIP_ACTIVE_APPLICATION_STATUSES: readonly MentorshipMenteeStatus[] = ['pending', 'accepted', 'graduated'];
+
+/**
+ * Label the `mentees` tab takes on for a completed program. The tab keeps its
+ * `mentees` value so counts, routing, and ARIA wiring are unchanged.
+ */
+export const MENTORSHIP_PAST_MENTEES_TAB_LABEL = 'Past Mentees';
+
+/**
+ * Row actions on the admin Current Mentees tab. Source of the
+ * `MentorshipMenteeAction` union; each action moves the mentee to the
+ * same-named terminal status.
+ */
+export const MENTORSHIP_MENTEE_ACTIONS = ['withdrawn', 'declined', 'graduated'] as const;
+
+/** Menu labels for the Current Mentees row actions — imperative, unlike the status labels. */
+export const MENTORSHIP_MENTEE_ACTION_LABELS: Record<MentorshipMenteeAction, string> = {
+  withdrawn: 'Withdraw',
+  declined: 'Decline',
+  graduated: 'Graduate',
+};
+
+export const MENTORSHIP_MENTEE_ACTION_ICONS: Record<MentorshipMenteeAction, string> = {
+  withdrawn: 'fa-light fa-circle-minus',
+  declined: 'fa-light fa-circle-xmark',
+  graduated: 'fa-light fa-graduation-cap',
+};
+
+/**
+ * Statuses the Applicants tab displays. These are not wire statuses: an application
+ * stays `pending` throughout the prerequisite work, and the tab splits that one status
+ * into `applied` (tasks still outstanding) and `tasks-completed` (all submitted). The
+ * remaining four are the mentee statuses unchanged.
+ */
+export const MENTORSHIP_APPLICANT_DISPLAY_STATUSES = ['applied', 'tasks-completed', 'accepted', 'declined', 'withdrawn', 'graduated'] as const;
+
+export const MENTORSHIP_APPLICANT_STATUS_LABELS: Record<MentorshipApplicantDisplayStatus, string> = {
+  applied: 'Applied',
+  'tasks-completed': 'Tasks Completed',
+  accepted: 'Accepted',
+  declined: 'Declined',
+  withdrawn: 'Withdrawn',
+  graduated: 'Graduated',
+};
+
+/** The four shared statuses reuse the mentee classes so the two palettes can't drift apart. */
+export const MENTORSHIP_APPLICANT_STATUS_BADGE_CLASSES: Record<MentorshipApplicantDisplayStatus, string> = {
+  applied: 'bg-amber-50 text-amber-700',
+  'tasks-completed': 'bg-blue-50 text-blue-700',
+  accepted: MENTORSHIP_MENTEE_STATUS_BADGE_CLASSES.accepted,
+  declined: MENTORSHIP_MENTEE_STATUS_BADGE_CLASSES.declined,
+  withdrawn: MENTORSHIP_MENTEE_STATUS_BADGE_CLASSES.withdrawn,
+  graduated: MENTORSHIP_MENTEE_STATUS_BADGE_CLASSES.graduated,
+};
+
+/** Explains the Applied / Tasks Completed split; rendered above the Applicants table. */
+export const MENTORSHIP_APPLICANT_STATUS_NOTE =
+  'Application status stays “Applied” while a mentee works on prerequisite tasks. When all prerequisites are complete, “Tasks Completed” appears above the status and the program admin is notified by email to review the submission and make the admission decision.';
+
+/**
+ * Row actions on the Applicants tab. Source of the `MentorshipApplicantAction`
+ * union; each action moves the application to the same-named status.
+ */
+export const MENTORSHIP_APPLICANT_ACTIONS = ['accepted', 'declined', 'withdrawn'] as const;
+
+/** Menu labels for the Applicants row actions — imperative, unlike the status labels. */
+export const MENTORSHIP_APPLICANT_ACTION_LABELS: Record<MentorshipApplicantAction, string> = {
+  accepted: 'Accept',
+  declined: 'Decline',
+  withdrawn: 'Withdraw',
+};
+
+export const MENTORSHIP_APPLICANT_ACTION_ICONS: Record<MentorshipApplicantAction, string> = {
+  accepted: 'fa-light fa-circle-check',
+  declined: 'fa-light fa-circle-xmark',
+  withdrawn: 'fa-light fa-circle-minus',
 };
 
 export const MENTORSHIP_TERM_ROW_STATUSES = ['open', 'closed'] as const;

@@ -1,7 +1,7 @@
 // Copyright The Linux Foundation and each contributor to LFX.
 // SPDX-License-Identifier: MIT
 
-import { ChangeDetectionStrategy, Component, computed, inject, input, output, signal } from '@angular/core';
+import { ChangeDetectionStrategy, Component, computed, inject, input, signal } from '@angular/core';
 import { toSignal } from '@angular/core/rxjs-interop';
 import { FormControl, FormGroup, ReactiveFormsModule } from '@angular/forms';
 import { ButtonComponent } from '@components/button/button.component';
@@ -9,66 +9,51 @@ import { InputTextComponent } from '@components/input-text/input-text.component'
 import { SelectComponent } from '@components/select/select.component';
 import { TableComponent } from '@components/table/table.component';
 import {
-  MENTORSHIP_ADD_NOTE_LABEL,
   MENTORSHIP_ALL_STATUSES_OPTION_LABEL,
-  MENTORSHIP_CURRENT_MENTEE_STATUSES,
-  MENTORSHIP_MENTEE_ACTION_ICONS,
-  MENTORSHIP_MENTEE_ACTION_LABELS,
+  MENTORSHIP_ALL_TERMS_OPTION_LABEL,
   MENTORSHIP_MENTEE_STATUS_BADGE_CLASSES,
   MENTORSHIP_MENTEE_STATUS_LABELS,
+  MENTORSHIP_PAST_MENTEE_STATUSES,
   MENTORSHIP_PERSON_PAGE_SIZE,
   MENTORSHIP_PERSON_ROWS_PER_PAGE_OPTIONS,
 } from '@lfx-one/shared/constants';
-import { FilterOption, MentorshipMenteeStatus, MentorshipNoteRequest, MentorshipProgramMentee } from '@lfx-one/shared/interfaces';
-import {
-  formatMentorshipTaskProgress,
-  matchesMentorshipPersonSearch,
-  mentorshipMenteeActionsFor,
-  mentorshipNoteDisplay,
-  mentorshipPersonAvatarClass,
-  mentorshipPersonInitials,
-  mentorshipRowActions,
-} from '@lfx-one/shared/utils';
+import { FilterOption, MentorshipMenteeStatus, MentorshipProgramMentee } from '@lfx-one/shared/interfaces';
+import { matchesMentorshipPersonSearch, mentorshipPersonAvatarClass, mentorshipPersonInitials, mentorshipTermFilterOptions } from '@lfx-one/shared/utils';
 import { startWith, tap } from 'rxjs';
 
 import { MentorshipComingSoonService } from '../../services/mentorship-coming-soon.service';
 import { PersonCellComponent } from '../person-cell/person-cell.component';
-import { RowActionsComponent } from '../row-actions/row-actions.component';
 
 /**
- * Current mentees tab — task progress plus the reviewer note. Lists only the enrolled
- * statuses (accepted / graduated); everyone else belongs to the Applicants tab, and the
- * status filter offers exactly the two it lists. Row actions (withdraw / decline /
- * graduate), Create Task, View Tasks, and the status export all stub to a "coming soon"
- * toast until the backend lands. The reviewer note is the one action that takes effect;
- * the parent owns its state, so it outlives a tab switch.
+ * Past mentees tab — replaces Current Mentees once a program is completed. Finished
+ * participations are read-only history, so unlike the current-mentee table this one
+ * carries no tasks, Create Task, row actions, or reviewer note; it adds the term the
+ * mentee took part in and filters by both status and term.
  */
 @Component({
-  selector: 'lfx-mentorship-current-mentees-tab',
-  imports: [ReactiveFormsModule, ButtonComponent, InputTextComponent, PersonCellComponent, RowActionsComponent, SelectComponent, TableComponent],
-  templateUrl: './current-mentees-tab.component.html',
+  selector: 'lfx-mentorship-past-mentees-tab',
+  imports: [ReactiveFormsModule, ButtonComponent, InputTextComponent, PersonCellComponent, SelectComponent, TableComponent],
+  templateUrl: './past-mentees-tab.component.html',
   changeDetection: ChangeDetectionStrategy.OnPush,
 })
-export class CurrentMenteesTabComponent {
+export class PastMenteesTabComponent {
   private readonly comingSoon = inject(MentorshipComingSoonService);
 
   public readonly mentees = input.required<MentorshipProgramMentee[]>();
-  /** Notes edited this session, keyed by person id; overrides the note a row arrived with. */
-  public readonly noteDrafts = input<Record<string, string>>({});
-  public readonly noteRequested = output<MentorshipNoteRequest>();
 
   protected readonly pageSize = MENTORSHIP_PERSON_PAGE_SIZE;
   protected readonly rowsPerPageOptions = MENTORSHIP_PERSON_ROWS_PER_PAGE_OPTIONS;
 
-  /** Fixed rather than derived from the rows: the two statuses this tab can list. */
+  /** Fixed rather than derived from the rows: the statuses a finished mentee can hold. */
   protected readonly statusOptions: FilterOption<MentorshipMenteeStatus | null>[] = [
     { label: MENTORSHIP_ALL_STATUSES_OPTION_LABEL, value: null },
-    ...MENTORSHIP_CURRENT_MENTEE_STATUSES.map((status) => ({ label: MENTORSHIP_MENTEE_STATUS_LABELS[status], value: status })),
+    ...MENTORSHIP_PAST_MENTEE_STATUSES.map((status) => ({ label: MENTORSHIP_MENTEE_STATUS_LABELS[status], value: status })),
   ];
 
   protected readonly form = new FormGroup({
     search: new FormControl('', { nonNullable: true }),
     status: new FormControl<MentorshipMenteeStatus | null>(null),
+    term: new FormControl<string | null>(null),
   });
 
   /**
@@ -86,22 +71,25 @@ export class CurrentMenteesTabComponent {
     { initialValue: this.form.getRawValue() }
   );
 
-  protected readonly rows = this.initRows();
+  protected readonly termOptions = this.initTermOptions();
 
-  protected onOpenNote(id: string, name: string): void {
-    this.noteRequested.emit({ personId: id, personName: name });
-  }
+  protected readonly rows = this.initRows();
 
   protected onAction(summary: string): void {
     this.comingSoon.notify(summary);
   }
 
+  private initTermOptions() {
+    return computed(() => mentorshipTermFilterOptions(this.mentees(), MENTORSHIP_ALL_TERMS_OPTION_LABEL));
+  }
+
   private initRows() {
     return computed(() => {
-      const { search, status } = this.filters();
+      const { search, status, term } = this.filters();
       return this.mentees()
         .filter((person) => matchesMentorshipPersonSearch(person, search ?? ''))
         .filter((person) => !status || person.status === status)
+        .filter((person) => !term || person.termName === term)
         .map((person) => this.toRow(person));
     });
   }
@@ -113,9 +101,6 @@ export class CurrentMenteesTabComponent {
       avatarStyleClass: mentorshipPersonAvatarClass(person.name),
       statusLabel: MENTORSHIP_MENTEE_STATUS_LABELS[person.status],
       statusBadgeClass: MENTORSHIP_MENTEE_STATUS_BADGE_CLASSES[person.status],
-      taskLabel: formatMentorshipTaskProgress(person.tasksSubmitted, person.tasksTotal),
-      ...mentorshipNoteDisplay(this.noteDrafts(), person, MENTORSHIP_ADD_NOTE_LABEL),
-      actions: mentorshipRowActions(mentorshipMenteeActionsFor(person.status), MENTORSHIP_MENTEE_ACTION_LABELS, MENTORSHIP_MENTEE_ACTION_ICONS),
     };
   }
 }
