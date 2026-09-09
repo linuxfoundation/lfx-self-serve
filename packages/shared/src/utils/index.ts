@@ -71,3 +71,4 @@ export * from './newsletter.utils';
 export * from './event.utils';
 export * from './social-listening.utils';
 export * from './social-listening-filter.utils';
+export * from './formation.utils';
