@@ -20,15 +20,14 @@ import { SidebarComponent } from './sidebar.component';
 
 /**
  * Pins the "Still need Open Profile?" click-tracking delegation (LFXV2-3336): a rename or a
- * dropped call here breaks the click count silently, since the click itself still "works"
- * (Intercom opens via lfxOpenIntercom regardless). This only exercises
- * `trackOpenProfileBannerClick()` at the class level — the template is overridden empty so the
- * class logic runs without instantiating the selector/lens-tab children and their service graph.
- * The DOM-level wiring (that sidebar.component.html's `[show]`/`(linkClick)` bindings correctly
- * connect to `showMeSelector()`/this method) is NOT covered here; that risk now lives in one small,
- * low-risk template binding, and the click → lfxOpenIntercom → show/hide behavior it delegates to
- * is independently covered by OpenProfileBannerComponent's own real-template spec
- * (open-profile-banner.component.spec.ts).
+ * dropped call here breaks the click count silently, since the link itself has no other behavior
+ * to visibly break. This only exercises `trackOpenProfileBannerClick()` at the class level — the
+ * template is overridden empty so the class logic runs without instantiating the selector/lens-tab
+ * children and their service graph. The DOM-level wiring (that sidebar.component.html's
+ * `[show]`/`(linkClick)` bindings correctly connect to `showMeSelector()`/this method) is NOT
+ * covered here; that risk now lives in one small, low-risk template binding, and the link's own
+ * show/hide behavior is independently covered by OpenProfileBannerComponent's own real-template
+ * spec (open-profile-banner.component.spec.ts).
  */
 describe('SidebarComponent — Open Profile banner click tracking (LFXV2-3336)', () => {
   const addAction = vi.fn();

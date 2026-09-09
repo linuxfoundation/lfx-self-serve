@@ -190,8 +190,9 @@ export class SidebarComponent {
     this.profileMenu()?.hide();
   }
 
-  // Tracks clicks on the "Still need Open Profile?" return link (LFXV2-3336). The click itself
-  // opens Intercom via lfxOpenIntercom; this just records who clicked for per-user analytics.
+  // Tracks clicks on the "Still need Open Profile?" return link (LFXV2-3336) for per-user
+  // analytics. The link is a plain DOM element with no click behavior of its own — support tooling
+  // targets it directly by its stable data-testid.
   protected trackOpenProfileBannerClick(): void {
     this.rumService.addAction(OPEN_PROFILE_BANNER_LINK_CLICKED);
   }

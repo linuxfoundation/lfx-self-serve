@@ -1,11 +1,7 @@
 // Copyright The Linux Foundation and each contributor to LFX.
 // SPDX-License-Identifier: MIT
 
-import { TransferState } from '@angular/core';
 import { ComponentFixture, TestBed } from '@angular/core/testing';
-import { DEFAULT_RUNTIME_CONFIG, RUNTIME_CONFIG_KEY } from '@app/shared/providers/runtime-config.provider';
-import { IntercomService } from '@services/intercom.service';
-import { MessageService } from 'primeng/api';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 
 import { OpenProfileBannerComponent } from './open-profile-banner.component';
@@ -13,14 +9,11 @@ import { OpenProfileBannerComponent } from './open-profile-banner.component';
 /**
  * Renders the component's real template (unlike sidebar.component.spec.ts, which stubs it out) so a
  * dropped (click) binding or a `show` regression fails this spec, not just a manual click-through.
- * IntercomService/MessageService are stubbed the same way open-intercom.directive.spec.ts does —
- * this only needs to prove the click reaches lfxOpenIntercom, not re-verify the directive's own
- * toast/boot behavior.
+ * The button has no Intercom wiring of its own — support tooling targets it directly by its stable
+ * data-testid, so this only needs to prove the click reaches linkClick.
  */
 describe('OpenProfileBannerComponent', () => {
   let fixture: ComponentFixture<OpenProfileBannerComponent>;
-  let transferState: TransferState;
-  let openMessenger: ReturnType<typeof vi.fn>;
   let linkClick: ReturnType<typeof vi.fn>;
 
   const link = (): HTMLButtonElement => {
@@ -36,19 +29,11 @@ describe('OpenProfileBannerComponent', () => {
   };
 
   beforeEach(async () => {
-    openMessenger = vi.fn();
     linkClick = vi.fn();
 
     await TestBed.configureTestingModule({
       imports: [OpenProfileBannerComponent],
-      providers: [
-        { provide: MessageService, useValue: { add: vi.fn() } },
-        { provide: IntercomService, useValue: { openMessenger } },
-      ],
     }).compileComponents();
-
-    transferState = TestBed.inject(TransferState);
-    transferState.set(RUNTIME_CONFIG_KEY, { ...DEFAULT_RUNTIME_CONFIG, intercomAppId: 'test-app-id' });
 
     fixture = TestBed.createComponent(OpenProfileBannerComponent);
     fixture.componentInstance.linkClick.subscribe(linkClick);
@@ -77,13 +62,12 @@ describe('OpenProfileBannerComponent', () => {
     expect(slot().classList.contains('hidden')).toBe(false);
   });
 
-  it('clicking the link emits linkClick and opens the Intercom messenger', async () => {
+  it('clicking the link emits linkClick', async () => {
     fixture.componentRef.setInput('show', true);
     await fixture.whenStable();
 
     link().click();
 
     expect(linkClick).toHaveBeenCalledTimes(1);
-    expect(openMessenger).toHaveBeenCalledWith('test-app-id', expect.any(Function));
   });
 });
