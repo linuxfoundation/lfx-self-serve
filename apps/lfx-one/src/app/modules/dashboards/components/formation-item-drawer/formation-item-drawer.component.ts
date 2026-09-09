@@ -264,8 +264,10 @@ export class FormationItemDrawerComponent {
       // `item.due_date` is a bare `YYYY-MM-DD` — `new Date(...)` would parse it as UTC midnight,
       // rendering the previous day in the picker for any viewer west of UTC, and `toLocalDateOnlyString`
       // above would then faithfully save that wrong day back. `parseLocalDateString` reads it as a
-      // local calendar day so the load->save round-trip is symmetric.
-      dueDate: item.due_date ? parseLocalDateString(item.due_date) : null,
+      // local calendar day so the load->save round-trip is symmetric. It throws on anything that
+      // isn't exactly `YYYY-MM-DD`, so guard the shape first — a malformed value should empty the
+      // picker, not fail the whole item load.
+      dueDate: item.due_date && /^\d{4}-\d{2}-\d{2}$/.test(item.due_date) ? parseLocalDateString(item.due_date) : null,
     });
   }
 

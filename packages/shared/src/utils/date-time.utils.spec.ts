@@ -3,7 +3,15 @@
 
 import { afterEach, describe, expect, it, vi } from 'vitest';
 
-import { formatIsoDateLabel, localDateStamp, normalizeSnowflakeTimestamp, parseIsoDateAsUtcMidnight, timeAgo } from './date-time.utils';
+import {
+  formatIsoDateLabel,
+  localDateStamp,
+  normalizeSnowflakeTimestamp,
+  parseIsoDateAsUtcMidnight,
+  parseLocalDateString,
+  timeAgo,
+  toLocalDateOnlyString,
+} from './date-time.utils';
 
 /**
  * The fallback contract is the whole point of this helper: anything that is not a real
@@ -166,5 +174,15 @@ describe('localDateStamp', () => {
     vi.setSystemTime(new Date('2026-01-05T20:00:00Z'));
 
     expect(localDateStamp()).toBe('20260105');
+  });
+});
+
+describe('toLocalDateOnlyString', () => {
+  it('formats a local-calendar date with zero-padded month and day', () => {
+    expect(toLocalDateOnlyString(new Date(2026, 0, 5))).toBe('2026-01-05');
+  });
+
+  it('round-trips with parseLocalDateString', () => {
+    expect(toLocalDateOnlyString(parseLocalDateString('2026-01-31'))).toBe('2026-01-31');
   });
 });

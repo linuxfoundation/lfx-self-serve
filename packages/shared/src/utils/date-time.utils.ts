@@ -584,10 +584,7 @@ export function formatShortDate(date: Date): string {
  * tomorrow's date for any viewer west of UTC exporting in the evening).
  */
 export function localDateStamp(): string {
-  const now = new Date();
-  const month = String(now.getMonth() + 1).padStart(2, '0');
-  const day = String(now.getDate()).padStart(2, '0');
-  return `${now.getFullYear()}${month}${day}`;
+  return toLocalDateOnlyString(new Date()).replace(/-/g, '');
 }
 
 /**
