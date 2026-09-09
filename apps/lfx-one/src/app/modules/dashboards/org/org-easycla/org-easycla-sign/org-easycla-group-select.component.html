@@ -4,7 +4,9 @@ SPDX-License-Identifier: MIT
 -->
 
 <div class="flex flex-col" data-testid="org-easycla-group-select-dialog">
-  <p class="mb-4 text-sm text-slate-600">Choose the project or CLA group you want to sign a corporate CLA for.</p>
+  <p class="mb-4 text-sm text-slate-600">
+    Choose the project, CLA group, or repository source (GitHub, GitLab, or Gerrit) you want to sign a corporate CLA for.
+  </p>
 
   <!--
     The results list is in flow, not an absolutely positioned overlay: inside a DynamicDialog an
@@ -28,7 +30,7 @@ SPDX-License-Identifier: MIT
       type="text"
       size="small"
       icon="fa-light fa-magnifying-glass"
-      placeholder="Search projects, CLA groups, or organizations…"
+      placeholder="Search projects, CLA groups, repo sources, or paste a repo link…"
       autocomplete="off"
       styleClass="w-full"
       role="combobox"
@@ -101,6 +103,19 @@ SPDX-License-Identifier: MIT
             <span class="block text-sm font-medium text-slate-900">{{ option.primaryName }}</span>
             @if (option.secondaryName) {
               <span class="block text-xs text-slate-500">{{ option.secondaryName }}</span>
+            }
+            <!--
+              Shown only for a repository match, where the row would otherwise contain nothing the
+              viewer typed: pasting a repo link resolves to the CLA Group covering it, whose project
+              and group names need share no text with the address. Without this the row reads as an
+              unrelated result. It is inside the option, so it is part of the accessible name and is
+              read when the highlight arrives.
+            -->
+            @if (option.matchedRepositoryName) {
+              <span class="mt-1 flex items-center gap-1.5 text-xs text-slate-500" [attr.data-testid]="'org-easycla-group-matched-repo-' + option.claGroupId">
+                <i class="fa-light fa-code-branch text-slate-400" aria-hidden="true"></i>
+                <span class="truncate">{{ option.matchedRepositoryName }}</span>
+              </span>
             }
             @if (option.disabledReason) {
               <span class="mt-1 block text-xs text-amber-700" [attr.data-testid]="'org-easycla-group-disabled-' + option.claGroupId">

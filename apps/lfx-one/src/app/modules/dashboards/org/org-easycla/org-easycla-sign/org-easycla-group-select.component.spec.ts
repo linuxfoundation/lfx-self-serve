@@ -50,6 +50,19 @@ describe('OrgEasyclaGroupSelectComponent', () => {
     organizations: [],
   };
 
+  /** Reached by pasting a repository address: nothing in the names carries the term that found it. */
+  const repositoryMatch: ClaGroupOption = {
+    claGroupId: '44444444-4444-4444-8444-444444444444',
+    claGroupName: 'Cascade CLA',
+    projectName: 'Cascade',
+    projectSfid: 'a09410000182dD4AAI',
+    cclaEnabled: true,
+    iclaEnabled: true,
+    matchTypes: ['repository'],
+    matchedRepositoryName: 'acme-org/waterfall-sdk',
+    organizations: [],
+  };
+
   /** A CLA Group configured for individual agreements only. */
   const individualOnly: ClaGroupOption = {
     claGroupId: '33333333-3333-4333-8333-333333333333',
@@ -186,6 +199,28 @@ describe('OrgEasyclaGroupSelectComponent', () => {
     const reason = testid(fixture, `org-easycla-group-disabled-${multiProject.claGroupId}`);
     expect(reason?.textContent?.trim()).toBeTruthy();
     expect(row(fixture, multiProject).contains(reason)).toBe(true);
+  });
+
+  it('names the repository a pasted address resolved to, on the row it produced', async () => {
+    getSignOptions.mockReturnValue(of(results([repositoryMatch], false, 'https://github.com/acme-org/waterfall-sdk')));
+
+    const fixture = await render();
+    await search(fixture, 'https://github.com/acme-org/waterfall-sdk');
+
+    // On the row, not merely somewhere in the dialog: it has to be part of the option's accessible
+    // name, so the highlight reads it out along with the names it does not resemble.
+    const matched = testid(fixture, `org-easycla-group-matched-repo-${repositoryMatch.claGroupId}`);
+    expect(matched?.textContent).toContain('acme-org/waterfall-sdk');
+    expect(row(fixture, repositoryMatch).contains(matched)).toBe(true);
+  });
+
+  it('does not claim a repository match on a row found by name', async () => {
+    getSignOptions.mockReturnValue(of(results([signable])));
+
+    const fixture = await render();
+    await search(fixture);
+
+    expect(testid(fixture, `org-easycla-group-matched-repo-${signable.claGroupId}`)).toBeNull();
   });
 
   it('cannot be continued before a CLA group is chosen', async () => {
