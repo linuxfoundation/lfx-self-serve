@@ -12,7 +12,7 @@ vi.mock('@lfx-one/shared/constants', () => ({
   RECONCILIATION_MAX_CONCURRENT_AI_CALLS: 3,
   RECONCILIATION_MAX_PRIOR_OCCURRENCES: 10,
   RECONCILIATION_BOT_NAME_PATTERN:
-    /\bnotetaker\b|\botter\.?ai\b|\bfireflies\.?ai\b|\bfathom\b|\bgong\.?io\b|\btl;?dv\b|\bread\.?ai\b|\bgrain\.?com\b|\bavoma\b/i,
+    /\bnotetaker\b|\botter\.?ai\b|\bfireflies\.?ai\b|\bfathom\.?(ai|video)?\s*notetaker\b|\bgong\.?io\b|\btl;?dv\b|\bread\.?ai\b|\bgrain\.?com\b|\bavoma\b/i,
 }));
 
 const { getPastMeetingParticipants, getPastOccurrencesForMeeting, updatePastMeetingParticipant } = vi.hoisted(() => ({

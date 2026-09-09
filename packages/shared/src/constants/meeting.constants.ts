@@ -726,7 +726,7 @@ export const RECONCILIATION_MAX_CANDIDATES_PER_AI_CALL = 50;
  * offered as a match candidate or queued for admin review against a real attendee.
  */
 export const RECONCILIATION_BOT_NAME_PATTERN =
-  /\bnotetaker\b|\botter\.?ai\b|\bfireflies\.?ai\b|\bfathom\b|\bgong\.?io\b|\btl;?dv\b|\bread\.?ai\b|\bgrain\.?com\b|\bavoma\b/i;
+  /\bnotetaker\b|\botter\.?ai\b|\bfireflies\.?ai\b|\bfathom\.?(ai|video)?\s*notetaker\b|\bgong\.?io\b|\btl;?dv\b|\bread\.?ai\b|\bgrain\.?com\b|\bavoma\b/i;
 
 /**
  * The `AttachmentCategory` (`meeting-attachment.interface.ts`) value CommitteeActivityService's
