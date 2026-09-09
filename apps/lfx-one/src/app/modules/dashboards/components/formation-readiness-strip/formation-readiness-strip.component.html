@@ -16,10 +16,12 @@
 
   <div class="w-px self-stretch bg-gray-200" aria-hidden="true"></div>
 
-  <div class="flex flex-col gap-0.5 w-36" data-testid="formation-readiness-strip-announcement">
-    <span class="text-[11px] text-gray-500">Announcement date</span>
-    <span class="text-sm font-medium text-gray-900">{{ announcementLabel() }}</span>
-  </div>
+  @if (!announcementDateHasError()) {
+    <div class="flex flex-col gap-0.5 w-36" data-testid="formation-readiness-strip-announcement">
+      <span class="text-[11px] text-gray-500">Announcement date</span>
+      <span class="text-sm font-medium text-gray-900">{{ announcementDateLoading() ? '—' : announcementLabel() }}</span>
+    </div>
+  }
 
   <div class="flex flex-col gap-0.5 flex-1 min-w-0" data-testid="formation-readiness-strip-gating">
     @if (summary().isActivating) {

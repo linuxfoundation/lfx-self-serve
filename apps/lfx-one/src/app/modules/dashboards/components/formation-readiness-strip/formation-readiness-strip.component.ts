@@ -2,10 +2,11 @@
 // SPDX-License-Identifier: MIT
 
 import { NgClass } from '@angular/common';
-import { Component, computed, input, Signal } from '@angular/core';
+import { Component, computed, inject, input, Signal } from '@angular/core';
 import type { FormationItem, FormationReadinessSummary } from '@lfx-one/shared/interfaces';
 import { FORMATION_ITEM_SEGMENT_COLORS } from '@lfx-one/shared/constants';
 import { deriveFormationReadinessSummary, formatFormationRelativeDayCount } from '@lfx-one/shared/utils';
+import { ProjectContextService } from '@services/project-context.service';
 
 @Component({
   selector: 'lfx-formation-readiness-strip',
@@ -14,7 +15,10 @@ import { deriveFormationReadinessSummary, formatFormationRelativeDayCount } from
   styleUrl: './formation-readiness-strip.component.scss',
 })
 export class FormationReadinessStripComponent {
+  private readonly projectContextService = inject(ProjectContextService);
+
   public readonly items = input.required<FormationItem[]>();
+  /** Feeds `deriveFormationReadinessSummary`'s `hasAnnounced` gating trigger only — the fixture's own `Formation.announcement_date`, aligned with the server's `refreshFormationReadiness` rollup. Not the displayed label below; see `announcementLabel`. */
   public readonly announcementDate = input<string | null>(null);
 
   // TODO(#1957): once the backend returns a pre-computed readiness_summary, replace this computed
@@ -27,8 +31,23 @@ export class FormationReadinessStripComponent {
     return `${counts.done} of ${this.summary().totalItems} done · ${counts.in_progress} in progress · ${counts.blocked} blocked · ${counts.awaiting_acceptance} with formation team · ${counts.not_started} not started · ${counts.skipped} skipped`;
   });
 
+  /** Shared with `FormationCardComponent`/`ProjectDashboardComponent` via `ProjectContextService` — no duplicate fetch. */
+  protected readonly announcementDateLoading = this.projectContextService.activeProjectAnnouncementDateLoading;
+  protected readonly announcementDateHasError = this.projectContextService.activeProjectAnnouncementDateHasError;
+
+  /**
+   * Deliberately reads `ProjectContextService.activeProjectAnnouncementDate` (the project-settings
+   * date the dashboard subtitle and sidebar card already show), not the `announcementDate` input
+   * above — the checklist previously showed "Not set" here next to a dashboard stating a real date,
+   * because the two were reading different fields. One source, every surface: dashboard subtitle,
+   * sidebar card, and this header. TODO(#1957): once the BFF wires `lfx-v2-formation-service`, the
+   * formation record carries its own announcement date and becomes the source of truth for all of
+   * them — at that point this should go back to reading the (then-real) `announcementDate` input,
+   * and the dashboard/sidebar should switch to reading it from the formation record too. Don't let
+   * this drift back into two readers of two different fields pointing the other way.
+   */
   protected readonly announcementLabel = computed(() => {
-    const date = this.announcementDate();
+    const date = this.projectContextService.activeProjectAnnouncementDate();
     if (!date) return 'Not set';
     const parsed = new Date(date);
     if (Number.isNaN(parsed.getTime())) return 'Not set';
