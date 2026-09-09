@@ -4,7 +4,7 @@
 import { NgClass } from '@angular/common';
 import { Component, computed, input, Signal } from '@angular/core';
 import { HEALTH_METRICS_OVERVIEW_CLASSIFICATIONS } from '@lfx-one/shared/constants';
-import { formatIsoDateLabel } from '@lfx-one/shared/utils';
+import { formatHealthMetricsOverviewAsOfLabel } from '@lfx-one/shared/utils';
 
 import type {
   HealthMetricsFindingVisualBar,
@@ -27,8 +27,10 @@ const MAX_RENDERED_DOTS = 20;
 export class HealthMetricsOverviewFindingItemComponent {
   public readonly finding = input.required<HealthMetricsOverviewFindingViewModel>();
 
-  protected readonly classificationMeta = computed(() => HEALTH_METRICS_OVERVIEW_CLASSIFICATIONS[this.finding().classification]);
-  protected readonly asOfLabel = computed(() => `as of ${formatIsoDateLabel(this.finding().evaluatedAt)}`);
+  protected readonly classificationMeta = computed(
+    () => HEALTH_METRICS_OVERVIEW_CLASSIFICATIONS[this.finding().classification] ?? HEALTH_METRICS_OVERVIEW_CLASSIFICATIONS.none
+  );
+  protected readonly asOfLabel = computed(() => formatHealthMetricsOverviewAsOfLabel(this.finding().evaluatedAt));
 
   protected readonly sentenceSegments: Signal<HealthMetricsSentenceSegment[]> = this.initSentenceSegments();
   protected readonly dotGroupsVisual: Signal<HealthMetricsFindingVisualDotsGroupViewModel[] | null> = this.initDotGroupsVisual();
@@ -100,7 +102,10 @@ export class HealthMetricsOverviewFindingItemComponent {
 
   private static toBarViewModel(bar: HealthMetricsFindingVisualBar): HealthMetricsFindingVisualBarViewModel {
     return {
-      parts: bar.parts.map((part) => ({ ...part, toneClass: HEALTH_METRICS_OVERVIEW_CLASSIFICATIONS[part.tone].dotClass })),
+      parts: bar.parts.map((part) => ({
+        ...part,
+        toneClass: (HEALTH_METRICS_OVERVIEW_CLASSIFICATIONS[part.tone] ?? HEALTH_METRICS_OVERVIEW_CLASSIFICATIONS.none).dotClass,
+      })),
       caption: bar.caption,
     };
   }

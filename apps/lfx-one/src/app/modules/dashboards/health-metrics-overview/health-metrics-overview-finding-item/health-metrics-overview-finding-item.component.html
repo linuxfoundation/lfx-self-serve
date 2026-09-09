@@ -9,10 +9,11 @@
         <span>{{ finding().areaLabel }}</span>
       </div>
       <p class="text-sm font-semibold text-gray-900">{{ finding().title }}</p>
-      <!-- Kept on one line — multi-line @for/@if/@else lets Angular collapse whitespace into stray spaces around interpolations. -->
-      <!-- The `{{{ ... }}}}` is @else's block braces wrapping a `{{ }}` interpolation, not one ambiguous brace run. -->
-      <!-- prettier-ignore -->
-      <p class="text-sm text-gray-600" data-testid="health-metrics-overview-finding-sentence">@for (segment of sentenceSegments(); track $index) {@if (segment.bold) {<b>{{ segment.text }}</b>} @else {{{ segment.text }}}}</p>
+      <p class="text-sm text-gray-600" data-testid="health-metrics-overview-finding-sentence">
+        @for (segment of sentenceSegments(); track $index) {
+          <span [class.font-bold]="segment.bold">{{ segment.text }}</span>
+        }
+      </p>
     </div>
 
     <div class="flex flex-col items-end gap-1 text-right">
@@ -56,6 +57,7 @@
       <div class="flex h-2 w-full overflow-hidden rounded-full bg-gray-100" data-testid="health-metrics-overview-finding-bar">
         @for (part of bar.parts; track part.label) {
           <div
+            role="img"
             [ngClass]="part.toneClass"
             [style.width.%]="part.value"
             [attr.data-classification]="part.tone"
@@ -70,7 +72,7 @@
     <div class="flex flex-col gap-1">
       <div class="relative h-2 w-full rounded-full bg-gray-100">
         <div class="absolute h-2 rounded-full" [ngClass]="classificationMeta().dotClass" [style.left.%]="band.low" [style.width.%]="band.high - band.low"></div>
-        <div class="absolute -top-0.5 h-3 w-0.5 bg-gray-400" [style.left.%]="band.goal" aria-hidden="true"></div>
+        <div class="absolute -top-0.5 h-3 w-0.5 -translate-x-1/2 bg-gray-400" [style.left.%]="band.goal" aria-hidden="true"></div>
       </div>
       @if (band.caption) {
         <span class="text-xs text-gray-500">{{ band.caption }}</span>

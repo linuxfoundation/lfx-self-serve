@@ -114,6 +114,12 @@ export interface HealthMetricsOverviewFindingGroup {
   findings: HealthMetricsOverviewFindingViewModel[];
 }
 
+/** Raw-{@link HealthMetricsFinding} counterpart of {@link HealthMetricsOverviewFindingGroup}, returned by `groupHealthMetricsOverviewFindings` before per-finding view-model mapping (link resolution needs foundation context the pure grouping function doesn't have). */
+export interface HealthMetricsOverviewFindingGroupRows {
+  group: string;
+  findings: HealthMetricsFinding[];
+}
+
 /** One segment of a finding's `sentence`, split around its optional `emphasis` substring — lets the template render bold text via interpolation instead of `[innerHTML]`. */
 export interface HealthMetricsSentenceSegment {
   text: string;

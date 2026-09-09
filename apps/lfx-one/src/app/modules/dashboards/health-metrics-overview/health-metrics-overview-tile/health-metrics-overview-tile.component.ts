@@ -4,7 +4,7 @@
 import { NgClass } from '@angular/common';
 import { Component, computed, input } from '@angular/core';
 import { HEALTH_METRICS_OVERVIEW_CLASSIFICATIONS } from '@lfx-one/shared/constants';
-import { formatIsoDateLabel } from '@lfx-one/shared/utils';
+import { formatHealthMetricsOverviewAsOfLabel } from '@lfx-one/shared/utils';
 
 import type { HealthMetricsOverviewTileViewModel } from '@lfx-one/shared/interfaces';
 
@@ -17,6 +17,8 @@ import type { HealthMetricsOverviewTileViewModel } from '@lfx-one/shared/interfa
 export class HealthMetricsOverviewTileComponent {
   public readonly tile = input.required<HealthMetricsOverviewTileViewModel>();
 
-  protected readonly classificationMeta = computed(() => HEALTH_METRICS_OVERVIEW_CLASSIFICATIONS[this.tile().classification]);
-  protected readonly asOfLabel = computed(() => `as of ${formatIsoDateLabel(this.tile().evaluatedAt)}`);
+  protected readonly classificationMeta = computed(
+    () => HEALTH_METRICS_OVERVIEW_CLASSIFICATIONS[this.tile().classification] ?? HEALTH_METRICS_OVERVIEW_CLASSIFICATIONS.none
+  );
+  protected readonly asOfLabel = computed(() => formatHealthMetricsOverviewAsOfLabel(this.tile().evaluatedAt));
 }

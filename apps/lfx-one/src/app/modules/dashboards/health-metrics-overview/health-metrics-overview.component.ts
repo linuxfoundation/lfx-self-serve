@@ -1,14 +1,14 @@
 // Copyright The Linux Foundation and each contributor to LFX.
 // SPDX-License-Identifier: MIT
 
-import { Component, computed, inject, Signal } from '@angular/core';
+import { Component, computed, inject, input, Signal } from '@angular/core';
+import { HEALTH_METRICS_OVERVIEW_AREAS, HEALTH_METRICS_OVERVIEW_INSIGHTS_LINK_TARGET } from '@lfx-one/shared/constants';
 import {
-  HEALTH_METRICS_OVERVIEW_AREAS,
-  HEALTH_METRICS_OVERVIEW_CLASSIFICATIONS,
-  HEALTH_METRICS_OVERVIEW_GROUP_ORDER,
-  HEALTH_METRICS_OVERVIEW_INSIGHTS_LINK_TARGET,
-} from '@lfx-one/shared/constants';
-import { buildHealthMetricsOverviewPccUrl, buildLensAwareInsightsUrl } from '@lfx-one/shared/utils';
+  buildHealthMetricsOverviewPccUrl,
+  buildHealthMetricsOverviewTiles,
+  buildLensAwareInsightsUrl,
+  groupHealthMetricsOverviewFindings,
+} from '@lfx-one/shared/utils';
 import { ProjectContextService } from '@services/project-context.service';
 import { environment } from '@environments/environment';
 
@@ -17,6 +17,7 @@ import { HealthMetricsOverviewFindingItemComponent } from './health-metrics-over
 import { HealthMetricsOverviewTileComponent } from './health-metrics-overview-tile/health-metrics-overview-tile.component';
 
 import type {
+  HealthMetricsAreaState,
   HealthMetricsFinding,
   HealthMetricsOverviewFindingGroup,
   HealthMetricsOverviewFindingViewModel,
@@ -33,39 +34,23 @@ import type {
 export class HealthMetricsOverviewComponent {
   private readonly projectContextService = inject(ProjectContextService);
 
+  // Default to the temporary fixture (LFXV2-3364 will replace it); overridable via setInput so
+  // specs can pin the empty/missing-area/unsorted branches the fixture itself can't exercise.
+  public readonly areaStates = input<HealthMetricsAreaState[]>(HEALTH_METRICS_OVERVIEW_FIXTURE_AREA_STATE);
+  public readonly findings = input<HealthMetricsFinding[]>(HEALTH_METRICS_OVERVIEW_FIXTURE_FINDINGS);
+
   protected readonly tiles: Signal<HealthMetricsOverviewTileViewModel[]> = this.initTiles();
   protected readonly findingGroups: Signal<HealthMetricsOverviewFindingGroup[]> = this.initFindingGroups();
 
   protected readonly hasFindings = computed(() => this.findingGroups().length > 0);
 
-  private static readonly areaStateByKey = new Map(HEALTH_METRICS_OVERVIEW_FIXTURE_AREA_STATE.map((state) => [state.area, state]));
   private static readonly areaNameByKey = new Map(HEALTH_METRICS_OVERVIEW_AREAS.map((areaMeta) => [areaMeta.key, areaMeta.name]));
 
   private initTiles(): Signal<HealthMetricsOverviewTileViewModel[]> {
     return computed(() => {
       const foundation = this.projectContextService.selectedFoundation();
-
-      // Areas with no fixture row (e.g. Training when the foundation runs no training) are
-      // omitted entirely from the strip — hidden, not shown as a grey "no data" tile.
-      return HEALTH_METRICS_OVERVIEW_AREAS.map((areaMeta) => {
-        const state = HealthMetricsOverviewComponent.areaStateByKey.get(areaMeta.key);
-        if (!state) {
-          return null;
-        }
-
-        const isCodeArea = areaMeta.key === 'code';
-        const tile: HealthMetricsOverviewTileViewModel = {
-          area: state.area,
-          name: areaMeta.name,
-          icon: areaMeta.icon,
-          statValue: state.statValue,
-          statLabel: state.statLabel,
-          classification: state.classification,
-          evaluatedAt: state.evaluatedAt,
-          insightsUrl: isCodeArea ? buildLensAwareInsightsUrl(foundation?.slug, true) : undefined,
-        };
-        return tile;
-      }).filter((tile): tile is HealthMetricsOverviewTileViewModel => tile !== null);
+      const insightsUrl = buildLensAwareInsightsUrl(foundation?.slug, true);
+      return buildHealthMetricsOverviewTiles(this.areaStates(), insightsUrl);
     });
   }
 
@@ -74,14 +59,10 @@ export class HealthMetricsOverviewComponent {
       const foundation = this.projectContextService.selectedFoundation();
       const foundationSfid = this.projectContextService.selectedFoundationSfid();
 
-      // Groups render in the fixed order below regardless of how many findings each has; a group
-      // with no findings this period is hidden rather than rendered empty (never re-sorted).
-      return HEALTH_METRICS_OVERVIEW_GROUP_ORDER.map((group) => ({
-        group,
-        findings: HEALTH_METRICS_OVERVIEW_FIXTURE_FINDINGS.filter((finding) => HEALTH_METRICS_OVERVIEW_CLASSIFICATIONS[finding.classification].group === group)
-          .sort((a, b) => a.sortRank - b.sortRank)
-          .map((finding) => HealthMetricsOverviewComponent.toFindingViewModel(finding, foundation, foundationSfid)),
-      })).filter((groupViewModel) => groupViewModel.findings.length > 0);
+      return groupHealthMetricsOverviewFindings(this.findings()).map((groupRows) => ({
+        group: groupRows.group,
+        findings: groupRows.findings.map((finding) => HealthMetricsOverviewComponent.toFindingViewModel(finding, foundation, foundationSfid)),
+      }));
     });
   }
 

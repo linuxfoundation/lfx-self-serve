@@ -8,7 +8,7 @@ import { describe, expect, it } from 'vitest';
 
 import { HealthMetricsOverviewComponent } from './health-metrics-overview.component';
 
-import type { ProjectContext } from '@lfx-one/shared/interfaces';
+import type { HealthMetricsAreaState, HealthMetricsFinding, ProjectContext } from '@lfx-one/shared/interfaces';
 
 describe('HealthMetricsOverviewComponent', () => {
   let fixture: ComponentFixture<HealthMetricsOverviewComponent>;
@@ -78,5 +78,66 @@ describe('HealthMetricsOverviewComponent', () => {
 
     const pccLinks = fixture.nativeElement.querySelectorAll('a[data-testid^="health-metrics-overview-finding-link-"][target="_self"]');
     expect(pccLinks.length).toBe(0);
+  });
+
+  function areaState(overrides: Partial<HealthMetricsAreaState> = {}): HealthMetricsAreaState {
+    return {
+      area: 'eng',
+      statValue: '8 of 31',
+      statLabel: 'below 50%',
+      statSource: 'engagement',
+      classification: 'act',
+      evaluatedAt: '2026-09-01',
+      ...overrides,
+    };
+  }
+
+  function finding(overrides: Partial<HealthMetricsFinding> = {}): HealthMetricsFinding {
+    return {
+      classification: 'act',
+      area: 'eng',
+      title: 'Some finding',
+      sentence: 'Plain sentence.',
+      keyValue: '8 of 31',
+      keyLabel: 'below 50%',
+      linkTarget: 'eng.participation',
+      sortRank: 10,
+      evaluatedAt: '2026-09-01',
+      ...overrides,
+    };
+  }
+
+  it('renders the all-clear state and no group elements when there are no findings', async () => {
+    await render(null, null);
+    fixture.componentRef.setInput('findings', []);
+    fixture.detectChanges();
+
+    expect(fixture.nativeElement.querySelector('[data-testid="health-metrics-overview-all-clear"]')).not.toBeNull();
+    expect(fixture.nativeElement.querySelectorAll('[data-testid^="health-metrics-overview-findings-group-"]').length).toBe(0);
+  });
+
+  it('renders only the group headers for classifications present in the findings', async () => {
+    await render(null, null);
+    fixture.componentRef.setInput('findings', [finding({ classification: 'act', sortRank: 1 }), finding({ classification: 'ok', sortRank: 2 })]);
+    fixture.detectChanges();
+
+    const groupEls = fixture.nativeElement.querySelectorAll('[data-testid^="health-metrics-overview-findings-group-"]');
+    expect(Array.from<Element>(groupEls).map((el) => el.getAttribute('data-testid'))).toEqual([
+      'health-metrics-overview-findings-group-Needs action',
+      'health-metrics-overview-findings-group-Going well',
+    ]);
+  });
+
+  it('omits a tile for an area with no area-state row', async () => {
+    await render(null, null);
+    fixture.componentRef.setInput(
+      'areaStates',
+      (['eng', 'evt', 'mem', 'non', 'code'] as const).map((area) => areaState({ area }))
+    );
+    fixture.detectChanges();
+
+    const tileStrip = fixture.nativeElement.querySelector('[data-testid="health-metrics-overview-tile-strip"]');
+    expect(tileStrip.children.length).toBe(5);
+    expect(fixture.nativeElement.querySelector('[data-testid="health-metrics-overview-tile-trn"]')).toBeNull();
   });
 });

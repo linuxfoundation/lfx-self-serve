@@ -14,11 +14,14 @@ import { HealthMetricsOverviewComponent } from '../health-metrics-overview/healt
  * `health-metrics-overview-enabled` flips true — a signal-driven `@if` inside one stable route,
  * not a router-level component swap, so hydration never has to reconcile two different trees.
  *
- * Accepted trade-off: on a flag-on load, `HealthMetricsComponent` still mounts and starts its own
- * fetches for one tick before the swap to the overview page. A `CanMatchFn` awaiting flag
- * readiness (the `org-lens-enabled.guard.ts` pattern) would avoid that, but it would also delay
- * the legacy page's SSR-rendered first paint for the ~100% of users the flag is still off for —
- * a worse trade while this page is dark-launched to a small cohort.
+ * Accepted trade-off: on a flag-on load the flag still reads false through SSR and hydration, so
+ * `HealthMetricsComponent` mounts server-side, its data fetches run to completion there (SSR waits
+ * for them before serializing), and the legacy page stays rendered on the client until the flag
+ * resolves post-hydration — only then does the swap happen. A `CanMatchFn` awaiting flag
+ * readiness (the `org-lens-enabled.guard.ts` pattern) would skip that duplicate legacy render, but
+ * it would hold the whole route's client-side render until the provider reports for the ~100% of
+ * users the flag is still off for — a worse trade while this page is dark-launched to a small
+ * cohort; remove this gate rather than ramping the flag to 100% through it.
  */
 @Component({
   selector: 'lfx-health-metrics-gate',
