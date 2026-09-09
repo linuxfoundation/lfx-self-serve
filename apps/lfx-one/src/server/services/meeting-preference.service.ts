@@ -3,7 +3,7 @@
 
 import { NATS_CONFIG } from '@lfx-one/shared/constants';
 import { NatsSubjects } from '@lfx-one/shared/enums';
-import { MeetingInviteEmail, PreferredEmailErrorReply, SetMeetingInviteResult } from '@lfx-one/shared/interfaces';
+import { MeetingInviteEmail, PreferredEmailErrorReply, PreferredEmailErrorType, SetMeetingInviteResult } from '@lfx-one/shared/interfaces';
 import { isMeetingInvitePrimarySentinel, redactEmailAddresses } from '@lfx-one/shared/utils';
 import { Request } from 'express';
 
@@ -54,7 +54,7 @@ export class MeetingPreferenceService {
         return null;
       }
 
-      const getError = this.extractUpstreamError(parsed);
+      const getError = this.extractPreferredEmailError(parsed)?.error ?? null;
       if (getError !== null) {
         // Upstream error copy can embed the mailbox (e.g. validation messages) — redact before
         // it reaches the WARN log, which persists in production.
@@ -156,18 +156,13 @@ export class MeetingPreferenceService {
   // valid JSON can also decode to null, a primitive, or `{ error: <non-string> }`, and accessing
   // `.error` on the former or handing the latter to the string-only redactor would throw, turning
   // a handled contract failure into an uncaught exception. Anything that doesn't match falls
-  // through to the shape-validation branch below instead.
-  private extractUpstreamError(value: unknown): string | null {
-    if (typeof value !== 'object' || value === null) {
-      return null;
-    }
-    const { error } = value as Record<string, unknown>;
-    return typeof error === 'string' ? error : null;
-  }
-
-  // Same shape guard as extractUpstreamError, but also carries the optional `type`/`code` fields
-  // the meeting-service envelope may add (#2269) — only `set` classifies on them, so `get` keeps
-  // using the simpler extractUpstreamError above.
+  // through to the shape-validation branch below instead. Shared by both `get` and `set` — `get`
+  // only needs `.error`; `set` also classifies on `type`/`code` (#2269).
+  //
+  // `type`/`code` are normalized to `undefined` unless they match a value classifyPreferredEmailError
+  // actually recognizes today, rather than trusting any string the wire sends: a meeting-service that
+  // adds a new `domain.ErrorType` (or a malformed reply) must fall through to the message-matching
+  // fallback below, not get bucketed by an unrecognized value as if it were a known one.
   private extractPreferredEmailError(value: unknown): PreferredEmailErrorReply | null {
     if (typeof value !== 'object' || value === null) {
       return null;
@@ -176,7 +171,12 @@ export class MeetingPreferenceService {
     if (typeof error !== 'string') {
       return null;
     }
-    return { error, type: typeof type === 'string' ? type : undefined, code: typeof code === 'string' ? code : undefined };
+    return { error, type: this.asKnownErrorType(type), code: code === 'email_not_synced' ? code : undefined };
+  }
+
+  private asKnownErrorType(value: unknown): PreferredEmailErrorType | undefined {
+    const KNOWN_TYPES: PreferredEmailErrorType[] = ['validation', 'not_found', 'conflict', 'internal', 'unavailable'];
+    return KNOWN_TYPES.includes(value as PreferredEmailErrorType) ? (value as PreferredEmailErrorType) : undefined;
   }
 
   // The upstream contract always emits both keys as strings (an override) or both as null (no
@@ -196,8 +196,10 @@ export class MeetingPreferenceService {
 
   // Classify the upstream error so the controller can map it to an HTTP status: validation → 4xx,
   // sync_pending/unavailable → 503, anything else → 503. `type`/`code` (see #2269) are trusted
-  // first when present; `error` message-matching is kept only as a fallback for a meeting-service
-  // deploy that hasn't shipped them yet, so behavior never regresses below what it is today.
+  // first when present; `error` message-matching is kept as a fallback both for a meeting-service
+  // deploy that hasn't shipped them yet and for a `type` extractPreferredEmailError didn't
+  // recognize (already normalized to `undefined` there), so behavior never regresses below what
+  // it is today.
   private classifyPreferredEmailError({ error, type, code }: PreferredEmailErrorReply): SetMeetingInviteResult['reason'] {
     // `code` is the finer signal — it's only set for the retryable "email not yet synced from
     // Auth0 to SFDC" case, which otherwise shares `type: 'unavailable'` with a generic outage.

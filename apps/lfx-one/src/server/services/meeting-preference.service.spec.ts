@@ -239,6 +239,12 @@ describe('MeetingPreferenceService', () => {
       ['type: internal maps to unavailable', { error: 'boom', type: 'internal' }, 'unavailable'],
       ['type: not_found maps to unavailable', { error: 'boom', type: 'not_found' }, 'unavailable'],
       ['type: conflict maps to unavailable', { error: 'boom', type: 'conflict' }, 'unavailable'],
+      // A `type` outside the 5 values above (a future meeting-service ErrorType self-serve doesn't
+      // know about yet, or a non-string wire value) must not be trusted as "generically unavailable"
+      // — it's normalized away in extractPreferredEmailError so this falls through to the message
+      // heuristics below, same as no `type` at all.
+      ['unrecognized type falls through to the message heuristics', { error: 'is not an active, verified address', type: 'invalid_request' }, 'validation'],
+      ['non-string type falls through to the message heuristics', { error: 'is not an active, verified address', type: 123 }, 'validation'],
     ])('classifies %s', async (_label, body, reason) => {
       natsRequest.mockResolvedValue(reply(body));
 

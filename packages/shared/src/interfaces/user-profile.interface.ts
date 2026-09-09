@@ -55,18 +55,24 @@ export interface MeetingInviteEmail {
   email: string | null;
 }
 
+// The upstream `domain.ErrorType` values (#2269), stringified. Not exhaustive forever — the
+// meeting-service may add a value before self-serve knows about it — so callers must treat an
+// unrecognized wire string as absent rather than trust it, see extractPreferredEmailError.
+export type PreferredEmailErrorType = 'validation' | 'not_found' | 'conflict' | 'internal' | 'unavailable';
+
+// The one case that needs finer resolution than `type` gives: "email not yet synced from Auth0
+// to SFDC" otherwise shares `type: 'unavailable'` with a generic outage.
+export type PreferredEmailErrorCode = 'email_not_synced';
+
 /**
  * Error reply from the meeting-service `preferred_email.set` NATS RPC. `type` and `code` are
  * optional because an older meeting-service deploy (or a malformed reply) may only send `error`
- * — see #2269/#2270. `type` mirrors the upstream `domain.ErrorType` (e.g. `'validation'`,
- * `'unavailable'`); `code` is a finer signal set only for the retryable "email not yet synced
- * from Auth0 to SFDC" case (`'email_not_synced'`), which otherwise shares `type` with a generic
- * unavailable error.
+ * — see #2269/#2270.
  */
 export interface PreferredEmailErrorReply {
   error: string;
-  type?: string;
-  code?: string;
+  type?: PreferredEmailErrorType;
+  code?: PreferredEmailErrorCode;
 }
 
 /**
