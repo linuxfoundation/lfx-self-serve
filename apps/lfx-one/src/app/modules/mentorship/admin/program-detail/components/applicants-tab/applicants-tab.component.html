@@ -63,7 +63,7 @@
     <span class="font-semibold text-gray-900">Note:</span> {{ statusNote }}
   </p>
 
-  <div class="overflow-hidden rounded-xl border border-gray-200 bg-white">
+  <div class="overflow-x-auto rounded-xl border border-gray-200 bg-white">
     <lfx-table
       [value]="rows()"
       dataKey="id"
@@ -73,7 +73,7 @@
       [rowsPerPageOptions]="rowsPerPageOptions"
       [showCurrentPageReport]="true"
       currentPageReportTemplate="Showing {first} to {last} of {totalRecords}"
-      tableStyleClass="table-fixed"
+      tableStyleClass="table-fixed min-w-[56rem]"
       paginatorDropdownAppendTo="body"
       ariaLabel="Applicants">
       <ng-template #header>
@@ -90,27 +90,15 @@
       <ng-template #body let-row>
         <tr [attr.data-testid]="'mentorship-applicant-row-' + row.id">
           <td class="px-4 py-3 max-w-[26%]">
-            <div class="flex items-center gap-3 min-w-0 w-full">
-              <lfx-avatar
-                [image]="row.avatarUrl ?? ''"
-                [label]="row.initials"
-                shape="circle"
-                size="normal"
-                [styleClass]="row.avatarStyleClass"
-                [ariaLabel]="row.name" />
-              <div class="flex flex-col min-w-0 w-[calc(100%-2rem)]">
-                <span class="max-w-full block truncate text-sm font-medium text-blue-600" [title]="row.name">{{ row.name }}</span>
-                <button
-                  type="button"
-                  class="max-w-full block truncate text-xs text-gray-500 text-left transition-colors hover:text-blue-600"
-                  [title]="row.hasNote ? row.noteLabel : 'Add a reviewer note for ' + row.name"
-                  [attr.aria-label]="(row.hasNote ? 'Edit' : 'Add') + ' reviewer note for ' + row.name"
-                  (click)="onOpenNote(row.id, row.name)"
-                  [attr.data-testid]="'mentorship-applicant-note-' + row.id">
-                  {{ row.noteLabel }}
-                </button>
-              </div>
-            </div>
+            <lfx-mentorship-person-cell
+              [name]="row.name"
+              [initials]="row.initials"
+              [avatarStyleClass]="row.avatarStyleClass"
+              [avatarUrl]="row.avatarUrl"
+              [noteLabel]="row.noteLabel"
+              [hasNote]="row.hasNote"
+              [noteTestId]="'mentorship-applicant-note-' + row.id"
+              (noteClick)="onOpenNote(row.id, row.name)" />
           </td>
           <td class="px-4 py-3 max-w-[11%]">
             <span class="max-w-full block truncate text-sm text-gray-700" [title]="row.termName">{{ row.termName }}</span>

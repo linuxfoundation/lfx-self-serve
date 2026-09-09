@@ -50,7 +50,7 @@
     </div>
   </div>
 
-  <div class="overflow-hidden rounded-xl border border-gray-200 bg-white">
+  <div class="overflow-x-auto rounded-xl border border-gray-200 bg-white">
     <lfx-table
       [value]="rows()"
       dataKey="id"
@@ -60,7 +60,7 @@
       [rowsPerPageOptions]="rowsPerPageOptions"
       [showCurrentPageReport]="true"
       currentPageReportTemplate="Showing {first} to {last} of {totalRecords}"
-      tableStyleClass="table-fixed"
+      tableStyleClass="table-fixed min-w-[36rem]"
       paginatorDropdownAppendTo="body"
       ariaLabel="Past mentees">
       <ng-template #header>
@@ -74,18 +74,7 @@
       <ng-template #body let-row>
         <tr [attr.data-testid]="'mentorship-past-mentee-row-' + row.id">
           <td class="px-4 py-3 max-w-[46%]">
-            <div class="flex items-center gap-3 min-w-0 w-full">
-              <lfx-avatar
-                [image]="row.avatarUrl ?? ''"
-                [label]="row.initials"
-                shape="circle"
-                size="normal"
-                [styleClass]="row.avatarStyleClass"
-                [ariaLabel]="row.name" />
-              <div class="flex flex-col min-w-0 w-[calc(100%-2rem)]">
-                <span class="max-w-full block truncate text-sm font-medium text-blue-600" [title]="row.name">{{ row.name }}</span>
-              </div>
-            </div>
+            <lfx-mentorship-person-cell [name]="row.name" [initials]="row.initials" [avatarStyleClass]="row.avatarStyleClass" [avatarUrl]="row.avatarUrl" />
           </td>
           <td class="px-4 py-3">
             <span class="inline-flex items-center text-xs font-semibold px-2 py-0.5 rounded-lg" [class]="row.statusBadgeClass">

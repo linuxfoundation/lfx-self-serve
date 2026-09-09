@@ -4,7 +4,6 @@
 import { ChangeDetectionStrategy, Component, computed, inject, input } from '@angular/core';
 import { toSignal } from '@angular/core/rxjs-interop';
 import { FormControl, FormGroup, ReactiveFormsModule } from '@angular/forms';
-import { AvatarComponent } from '@components/avatar/avatar.component';
 import { ButtonComponent } from '@components/button/button.component';
 import { InputTextComponent } from '@components/input-text/input-text.component';
 import { SelectComponent } from '@components/select/select.component';
@@ -23,6 +22,7 @@ import { matchesMentorshipPersonSearch, mentorshipPersonAvatarClass, mentorshipP
 import { startWith } from 'rxjs';
 
 import { MentorshipComingSoonService } from '../../services/mentorship-coming-soon.service';
+import { PersonCellComponent } from '../person-cell/person-cell.component';
 
 /**
  * Past mentees tab — replaces Current Mentees once a program is completed. Finished
@@ -32,7 +32,7 @@ import { MentorshipComingSoonService } from '../../services/mentorship-coming-so
  */
 @Component({
   selector: 'lfx-mentorship-past-mentees-tab',
-  imports: [ReactiveFormsModule, AvatarComponent, ButtonComponent, InputTextComponent, SelectComponent, TableComponent],
+  imports: [ReactiveFormsModule, ButtonComponent, InputTextComponent, PersonCellComponent, SelectComponent, TableComponent],
   templateUrl: './past-mentees-tab.component.html',
   changeDetection: ChangeDetectionStrategy.OnPush,
 })
@@ -69,23 +69,18 @@ export class PastMenteesTabComponent {
   }
 
   private initTermOptions() {
-    return computed(() => mentorshipTermFilterOptions(this.rowSource(), MENTORSHIP_ALL_TERMS_OPTION_LABEL));
+    return computed(() => mentorshipTermFilterOptions(this.mentees(), MENTORSHIP_ALL_TERMS_OPTION_LABEL));
   }
 
   private initRows() {
     return computed(() => {
       const { search, status, term } = this.filters();
-      return this.rowSource()
+      return this.mentees()
         .filter((person) => matchesMentorshipPersonSearch(person, search ?? ''))
         .filter((person) => !status || person.status === status)
         .filter((person) => !term || person.termName === term)
         .map((person) => this.toRow(person));
     });
-  }
-
-  /** Only finished participations belong here; anyone still pending is an applicant. */
-  private rowSource(): MentorshipProgramMentee[] {
-    return this.mentees().filter((person) => MENTORSHIP_PAST_MENTEE_STATUSES.includes(person.status));
   }
 
   private toRow(person: MentorshipProgramMentee) {

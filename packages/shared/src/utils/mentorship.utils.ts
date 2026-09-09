@@ -16,7 +16,13 @@ import {
   MENTORSHIP_MAX_OPEN_TERMS_MESSAGE,
   MENTORSHIP_TERM_NAME_MAX,
 } from '../constants/mentorship-enroll.constants';
-import { MENTORSHIP_APPLICANT_ACTIONS, MENTORSHIP_MENTEE_ACTIONS, MENTORSHIP_PROGRAM_AVATAR_PALETTE } from '../constants/mentorship.constants';
+import {
+  MENTORSHIP_APPLICANT_ACTIONS,
+  MENTORSHIP_CURRENT_MENTEE_STATUSES,
+  MENTORSHIP_MENTEE_ACTIONS,
+  MENTORSHIP_PAST_MENTEE_STATUSES,
+  MENTORSHIP_PROGRAM_AVATAR_PALETTE,
+} from '../constants/mentorship.constants';
 import type {
   MentorshipApplicantAction,
   MentorshipApplicantDisplayStatus,
@@ -308,11 +314,30 @@ export function buildMentorshipProgramTabCounts(lists: MentorshipProgramLists): 
   };
 }
 
+/**
+ * The mentees the program's first tab can show. A live program lists the enrolled
+ * ones and a completed program lists finished participations, so anyone still
+ * `pending` belongs to the Applicants tab rather than either mentee tab.
+ */
+export function mentorshipMenteesForProgram(mentees: MentorshipProgramMentee[], isCompleted: boolean): MentorshipProgramMentee[] {
+  const statuses = isCompleted ? MENTORSHIP_PAST_MENTEE_STATUSES : MENTORSHIP_CURRENT_MENTEE_STATUSES;
+  return mentees.filter((person) => statuses.includes(person.status));
+}
+
+/**
+ * Scopes the mentee list to the tab that will render it *before* the counts are
+ * taken, so the badge can never promise a row the tab does not show.
+ */
 export function buildMentorshipProgramDetail(program: MentorshipProgram, lists: MentorshipProgramLists): MentorshipProgramDetail {
+  const scoped: MentorshipProgramLists = {
+    ...lists,
+    mentees: mentorshipMenteesForProgram(lists.mentees, program.status === 'completed'),
+  };
+
   return {
     program,
-    tabCounts: buildMentorshipProgramTabCounts(lists),
-    ...lists,
+    tabCounts: buildMentorshipProgramTabCounts(scoped),
+    ...scoped,
   };
 }
 

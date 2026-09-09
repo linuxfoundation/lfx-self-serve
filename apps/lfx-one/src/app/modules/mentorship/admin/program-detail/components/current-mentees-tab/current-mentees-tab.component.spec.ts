@@ -58,15 +58,6 @@ describe('CurrentMenteesTabComponent', () => {
     expect(fixture.componentInstance['statusOptions'].map((option) => option.label)).toEqual(['All statuses', 'Accepted', 'Graduated']);
   });
 
-  it('lists only enrolled mentees, leaving the rest to the Applicants tab', () => {
-    fixture.componentRef.setInput('mentees', [mentee(), mentee({ id: 'mnt_3', name: 'Sam Okoro', status: 'pending' })]);
-    fixture.detectChanges();
-
-    const element = fixture.nativeElement as HTMLElement;
-    expect(element.querySelector('[data-testid="mentorship-mentee-row-mnt_1"]')).toBeTruthy();
-    expect(element.querySelector('[data-testid="mentorship-mentee-row-mnt_3"]')).toBeNull();
-  });
-
   it('asks the parent to open the note rather than owning the dialog itself', () => {
     const requests: MentorshipNoteRequest[] = [];
     fixture.componentInstance.noteRequested.subscribe((request) => requests.push(request));

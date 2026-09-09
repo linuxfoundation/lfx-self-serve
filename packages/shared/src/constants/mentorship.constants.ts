@@ -121,6 +121,13 @@ export const MENTORSHIP_CURRENT_MENTEE_STATUSES: readonly MentorshipMenteeStatus
 export const MENTORSHIP_PAST_MENTEE_STATUSES: readonly MentorshipMenteeStatus[] = ['withdrawn', 'declined', 'graduated'];
 
 /**
+ * Statuses the Applicants tab's "Other Active Applications" column lists. Graduating
+ * counts: it says the person saw a program through, which is worth showing an admin
+ * reviewing them. Only the two rejections — declined and withdrawn — are left out.
+ */
+export const MENTORSHIP_ACTIVE_APPLICATION_STATUSES: readonly MentorshipMenteeStatus[] = ['pending', 'accepted', 'graduated'];
+
+/**
  * Label the `mentees` tab takes on for a completed program. The tab keeps its
  * `mentees` value so counts, routing, and ARIA wiring are unchanged.
  */

@@ -5,13 +5,13 @@ import { ChangeDetectionStrategy, Component, computed, inject, input, output } f
 import { toSignal } from '@angular/core/rxjs-interop';
 import { FormControl, FormGroup, ReactiveFormsModule } from '@angular/forms';
 import { RouterLink } from '@angular/router';
-import { AvatarComponent } from '@components/avatar/avatar.component';
 import { ButtonComponent } from '@components/button/button.component';
 import { InputTextComponent } from '@components/input-text/input-text.component';
 import { MenuComponent } from '@components/menu/menu.component';
 import { SelectComponent } from '@components/select/select.component';
 import { TableComponent } from '@components/table/table.component';
 import {
+  MENTORSHIP_ACTIVE_APPLICATION_STATUSES,
   MENTORSHIP_ADD_NOTE_LABEL,
   MENTORSHIP_ALL_STATUSES_OPTION_LABEL,
   MENTORSHIP_ALL_TERMS_OPTION_LABEL,
@@ -38,6 +38,7 @@ import { MenuItem } from 'primeng/api';
 import { startWith } from 'rxjs';
 
 import { MentorshipComingSoonService } from '../../services/mentorship-coming-soon.service';
+import { PersonCellComponent } from '../person-cell/person-cell.component';
 
 /**
  * Applicants tab — one row per application, filtered by search, display status, and term.
@@ -47,7 +48,7 @@ import { MentorshipComingSoonService } from '../../services/mentorship-coming-so
  */
 @Component({
   selector: 'lfx-mentorship-applicants-tab',
-  imports: [ReactiveFormsModule, RouterLink, AvatarComponent, ButtonComponent, InputTextComponent, MenuComponent, SelectComponent, TableComponent],
+  imports: [ReactiveFormsModule, RouterLink, ButtonComponent, InputTextComponent, MenuComponent, PersonCellComponent, SelectComponent, TableComponent],
   templateUrl: './applicants-tab.component.html',
   changeDetection: ChangeDetectionStrategy.OnPush,
 })
@@ -125,10 +126,13 @@ export class ApplicantsTabComponent {
       statusBadgeClass: MENTORSHIP_APPLICANT_STATUS_BADGE_CLASSES[displayStatus],
       createdLabel: formatIsoDateLabel(person.createdOn),
       updatedLabel: formatIsoDateLabel(person.updatedOn),
-      otherApplications: (person.otherApplications ?? []).map((application) => ({
-        ...application,
-        statusLabel: MENTORSHIP_APPLICANT_STATUS_LABELS[mentorshipApplicantDisplayStatus(application)],
-      })),
+      // The column is headed "Other Active Applications", so declined and withdrawn ones drop out.
+      otherApplications: (person.otherApplications ?? [])
+        .filter((application) => MENTORSHIP_ACTIVE_APPLICATION_STATUSES.includes(application.status))
+        .map((application) => ({
+          ...application,
+          statusLabel: MENTORSHIP_APPLICANT_STATUS_LABELS[mentorshipApplicantDisplayStatus(application)],
+        })),
       hasNote: note.length > 0,
       noteLabel: note.length > 0 ? note : MENTORSHIP_ADD_NOTE_LABEL,
       menuItems: this.menuItemsFor(person),

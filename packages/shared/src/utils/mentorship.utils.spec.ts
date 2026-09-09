@@ -27,6 +27,7 @@ import {
   mentorshipApplicantActionsFor,
   mentorshipApplicantDisplayStatus,
   mentorshipMenteeActionsFor,
+  mentorshipMenteesForProgram,
   mentorshipMonthYearToStartDate,
   mentorshipPersonInitials,
   mentorshipProgramSlug,
@@ -383,6 +384,47 @@ describe('program detail helpers', () => {
     );
 
     expect(detail.tabCounts).toEqual({ mentees: 1, applicants: 0, mentors: 2, terms: 0 });
+  });
+
+  it('scopes mentees to the tab that will render them, so the badge never over-counts', () => {
+    const program = {
+      id: 'mp_test',
+      slug: 'test',
+      name: 'Test',
+      projectName: 'LF Energy',
+      term: 'Fall 2026',
+      stats: { mentors: 0, mentees: 0, graduated: 0 },
+      createdOn: '2026-01-01T00:00:00.000Z',
+      updatedOn: '2026-01-01T00:00:00.000Z',
+    };
+    const mentees: MentorshipProgramMentee[] = [
+      { id: '1', name: 'A', email: 'a@example.com', status: 'accepted', termName: 'Fall 2026' },
+      // Still an applicant, so it belongs to neither mentee tab.
+      { id: '2', name: 'B', email: 'b@example.com', status: 'pending', termName: 'Fall 2026' },
+      { id: '3', name: 'C', email: 'c@example.com', status: 'withdrawn', termName: 'Fall 2026' },
+    ];
+    const lists = { mentees, applicants: [], mentors: [], terms: [] };
+
+    const open = buildMentorshipProgramDetail({ ...program, status: 'open' as const }, lists);
+    expect(open.mentees.map((person) => person.id)).toEqual(['1']);
+    expect(open.tabCounts.mentees).toBe(open.mentees.length);
+
+    const completed = buildMentorshipProgramDetail({ ...program, status: 'completed' as const }, lists);
+    expect(completed.mentees.map((person) => person.id)).toEqual(['3']);
+    expect(completed.tabCounts.mentees).toBe(completed.mentees.length);
+  });
+
+  it('splits mentees between the live and completed tabs', () => {
+    const mentees: MentorshipProgramMentee[] = [
+      { id: '1', name: 'A', email: 'a@example.com', status: 'accepted', termName: 'Fall 2026' },
+      { id: '2', name: 'B', email: 'b@example.com', status: 'pending', termName: 'Fall 2026' },
+      { id: '3', name: 'C', email: 'c@example.com', status: 'graduated', termName: 'Fall 2026' },
+      { id: '4', name: 'D', email: 'd@example.com', status: 'declined', termName: 'Fall 2026' },
+    ];
+
+    expect(mentorshipMenteesForProgram(mentees, false).map((person) => person.id)).toEqual(['1', '3']);
+    expect(mentorshipMenteesForProgram(mentees, true).map((person) => person.id)).toEqual(['3', '4']);
+    expect(mentorshipMenteesForProgram([], false)).toEqual([]);
   });
 
   it('matches people by name or email, but not by term', () => {

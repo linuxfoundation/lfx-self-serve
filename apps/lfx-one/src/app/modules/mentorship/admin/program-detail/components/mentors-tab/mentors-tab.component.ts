@@ -8,12 +8,13 @@ import { AvatarComponent } from '@components/avatar/avatar.component';
 import { ButtonComponent } from '@components/button/button.component';
 import { InputTextComponent } from '@components/input-text/input-text.component';
 import { SelectComponent } from '@components/select/select.component';
-import { MENTORSHIP_MENTOR_STATUS_BADGE_CLASSES, MENTORSHIP_MENTOR_STATUS_LABELS, MENTORSHIP_PROGRAM_DETAIL_COMING_SOON } from '@lfx-one/shared/constants';
+import { MENTORSHIP_MENTOR_STATUS_BADGE_CLASSES, MENTORSHIP_MENTOR_STATUS_LABELS } from '@lfx-one/shared/constants';
 import { MentorshipInvitableUser, MentorshipProgramMentor } from '@lfx-one/shared/interfaces';
 import { formatIsoDateLabel, matchesMentorshipPersonSearch, mentorshipPersonAvatarClass, mentorshipPersonInitials } from '@lfx-one/shared/utils';
 import { MentorshipService } from '@services/mentorship.service';
-import { MessageService } from 'primeng/api';
 import { map, startWith } from 'rxjs';
+
+import { MentorshipComingSoonService } from '../../services/mentorship-coming-soon.service';
 
 /**
  * Mentors tab — invitation status, dates, and profile-created flag. The toolbar
@@ -28,10 +29,10 @@ import { map, startWith } from 'rxjs';
   changeDetection: ChangeDetectionStrategy.OnPush,
 })
 export class MentorsTabComponent {
-  public readonly mentors = input.required<MentorshipProgramMentor[]>();
-
-  private readonly messageService = inject(MessageService);
+  private readonly comingSoon = inject(MentorshipComingSoonService);
   private readonly mentorshipService = inject(MentorshipService);
+
+  public readonly mentors = input.required<MentorshipProgramMentor[]>();
 
   protected readonly form = new FormGroup({
     search: new FormControl('', { nonNullable: true }),
@@ -59,29 +60,20 @@ export class MentorsTabComponent {
     const inviteeId = this.form.controls.invitee.value;
     if (!inviteeId) return;
     const invitee = this.invitableUsers().find((user) => user.id === inviteeId);
-    this.toastComingSoon(`Invite ${invitee?.name ?? 'mentor'}`);
+    this.comingSoon.notify(`Invite ${invitee?.name ?? 'mentor'}`);
     this.form.controls.invitee.reset(null);
   }
 
   protected onAcceptMentor(name: string): void {
-    this.toastComingSoon(`Accept ${name}`);
+    this.comingSoon.notify(`Accept ${name}`);
   }
 
   protected onDeclineMentor(name: string): void {
-    this.toastComingSoon(`Decline ${name}`);
+    this.comingSoon.notify(`Decline ${name}`);
   }
 
   protected onDeleteMentor(name: string): void {
-    this.toastComingSoon(`Remove ${name}`);
-  }
-
-  private toastComingSoon(summary: string): void {
-    this.messageService.add({
-      severity: 'info',
-      summary,
-      detail: MENTORSHIP_PROGRAM_DETAIL_COMING_SOON,
-      life: 4000,
-    });
+    this.comingSoon.notify(`Remove ${name}`);
   }
 
   private toRow(person: MentorshipProgramMentor) {

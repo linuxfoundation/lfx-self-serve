@@ -4,7 +4,6 @@
 import { ChangeDetectionStrategy, Component, computed, inject, input, output } from '@angular/core';
 import { toSignal } from '@angular/core/rxjs-interop';
 import { FormControl, FormGroup, ReactiveFormsModule } from '@angular/forms';
-import { AvatarComponent } from '@components/avatar/avatar.component';
 import { ButtonComponent } from '@components/button/button.component';
 import { InputTextComponent } from '@components/input-text/input-text.component';
 import { MenuComponent } from '@components/menu/menu.component';
@@ -33,6 +32,7 @@ import { MenuItem } from 'primeng/api';
 import { startWith } from 'rxjs';
 
 import { MentorshipComingSoonService } from '../../services/mentorship-coming-soon.service';
+import { PersonCellComponent } from '../person-cell/person-cell.component';
 
 /**
  * Current mentees tab — task progress plus the reviewer note. Lists only the enrolled
@@ -44,7 +44,7 @@ import { MentorshipComingSoonService } from '../../services/mentorship-coming-so
  */
 @Component({
   selector: 'lfx-mentorship-current-mentees-tab',
-  imports: [ReactiveFormsModule, AvatarComponent, ButtonComponent, InputTextComponent, MenuComponent, SelectComponent, TableComponent],
+  imports: [ReactiveFormsModule, ButtonComponent, InputTextComponent, MenuComponent, PersonCellComponent, SelectComponent, TableComponent],
   templateUrl: './current-mentees-tab.component.html',
   changeDetection: ChangeDetectionStrategy.OnPush,
 })
@@ -88,7 +88,6 @@ export class CurrentMenteesTabComponent {
     return computed(() => {
       const { search, status } = this.filters();
       return this.mentees()
-        .filter((person) => MENTORSHIP_CURRENT_MENTEE_STATUSES.includes(person.status))
         .filter((person) => matchesMentorshipPersonSearch(person, search ?? ''))
         .filter((person) => !status || person.status === status)
         .map((person) => this.toRow(person));

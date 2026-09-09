@@ -70,6 +70,25 @@ describe('ApplicantsTabComponent', () => {
     expect(rowText('app_1')).toContain('— Applied');
   });
 
+  it('lists only still-active other applications, dropping the rejections', () => {
+    fixture.componentRef.setInput('applicants', [
+      applicant({
+        otherApplications: [
+          { programId: 'mp_apicurio_winter26', programName: 'Apicurio Registry', status: 'pending', tasksSubmitted: 1, tasksTotal: 3 },
+          { programId: 'mp_thanos_summer26', programName: 'Thanos', status: 'graduated' },
+          { programId: 'mp_declined', programName: 'Declined Program', status: 'declined' },
+          { programId: 'mp_withdrawn', programName: 'Withdrawn Program', status: 'withdrawn' },
+        ],
+      }),
+    ]);
+    fixture.detectChanges();
+
+    const shown = Array.from(element().querySelectorAll('[data-testid^="mentorship-applicant-other-application-"]')).map((link) =>
+      (link.textContent ?? '').trim()
+    );
+    expect(shown).toEqual(['Apicurio Registry', 'Thanos']);
+  });
+
   it('explains the Applied / Tasks Completed split above the table', () => {
     const note = element().querySelector('[data-testid="mentorship-applicants-note"]')?.textContent ?? '';
 

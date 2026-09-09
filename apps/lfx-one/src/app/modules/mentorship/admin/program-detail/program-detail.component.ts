@@ -82,14 +82,17 @@ export class ProgramDetailComponent {
   }
 
   protected onNoteRequested(request: MentorshipNoteRequest): void {
-    const dialogRef = this.dialogService.open(MenteeNoteDialogComponent, {
+    // `open()` returns null when a dialog of the same component is still registered,
+    // which a quick second click on another row's note can do.
+    const dialogRef: DynamicDialogRef | null = this.dialogService.open(MenteeNoteDialogComponent, {
       header: MENTORSHIP_NOTE_DIALOG_HEADER,
       width: '34rem',
       modal: true,
       closable: true,
       dismissableMask: true,
       data: { menteeId: request.personId, menteeName: request.personName, note: this.noteFor(request.personId) },
-    }) as DynamicDialogRef;
+    });
+    if (!dialogRef) return;
 
     dialogRef.onClose.pipe(take(1)).subscribe((note: string | undefined) => {
       // Dismissing the dialog resolves to `undefined` and must leave the note untouched;
@@ -97,15 +100,6 @@ export class ProgramDetailComponent {
       if (note === undefined) return;
       this.noteDrafts.update((drafts) => ({ ...drafts, [request.personId]: note }));
     });
-  }
-
-  /** The draft if this session edited one, otherwise whatever the row arrived with. */
-  private noteFor(personId: string): string {
-    const draft = this.noteDrafts()[personId];
-    if (draft !== undefined) return draft;
-
-    const person = [...this.mentees(), ...this.applicants()].find((candidate) => candidate.id === personId);
-    return person?.note ?? '';
   }
 
   private initDetail(): Signal<MentorshipProgramDetail | null> {
@@ -117,5 +111,14 @@ export class ProgramDetailComponent {
       ),
       { initialValue: null }
     );
+  }
+
+  /** The draft if this session edited one, otherwise whatever the row arrived with. */
+  private noteFor(personId: string): string {
+    const draft = this.noteDrafts()[personId];
+    if (draft !== undefined) return draft;
+
+    const person = [...this.mentees(), ...this.applicants()].find((candidate) => candidate.id === personId);
+    return person?.note ?? '';
   }
 }
