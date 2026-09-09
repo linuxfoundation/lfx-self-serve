@@ -2,10 +2,26 @@
 // SPDX-License-Identifier: MIT
 
 import { Component, inject } from '@angular/core';
-import type { OrgClaCoverageDialogData, OrgClaGroupProject } from '@lfx-one/shared/interfaces';
+import type { OrgClaCoverageDialogData, OrgClaGroup, OrgClaGroupProject } from '@lfx-one/shared/interfaces';
 import { DynamicDialogConfig, DynamicDialogRef } from 'primeng/dynamicdialog';
 
 import { ButtonComponent } from '@components/button/button.component';
+
+/**
+ * How this dialog is opened, owned here rather than by each caller.
+ *
+ * Two surfaces open it — a list card and the agreement detail header — and they must present the
+ * same agreement identically. Left to the call sites, the header string and the width are two more
+ * things that can drift apart, and the drift would only ever be visible to whoever opened both.
+ */
+export function orgClaCoverageDialogConfig(group: OrgClaGroup): DynamicDialogConfig<OrgClaCoverageDialogData> {
+  return {
+    header: `Projects covered by ${group.claGroupName}`,
+    modal: true,
+    width: '28rem',
+    data: { claGroupName: group.claGroupName, foundationName: group.foundationName, projects: group.projects },
+  };
+}
 
 @Component({
   selector: 'lfx-org-easycla-coverage-dialog',

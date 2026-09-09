@@ -26,7 +26,7 @@ import { PersonaService } from '@services/persona.service';
 import { OpenIntercomDirective } from '@shared/directives/open-intercom.directive';
 import { OrgNavigationService } from '@shared/services/org-navigation.service';
 
-import { OrgEasyclaCoverageDialogComponent } from './org-easycla-coverage-dialog.component';
+import { orgClaCoverageDialogConfig, OrgEasyclaCoverageDialogComponent } from '../org-easycla-coverage-dialog/org-easycla-coverage-dialog.component';
 
 @Component({
   selector: 'lfx-org-easycla-detail',
@@ -161,12 +161,7 @@ export class OrgEasyclaDetailComponent {
     const group = this.claGroup();
     if (!group) return;
 
-    this.dialogService.open(OrgEasyclaCoverageDialogComponent, {
-      header: `Projects covered by ${group.claGroupName}`,
-      modal: true,
-      width: '28rem',
-      data: { claGroupName: group.claGroupName, foundationName: group.foundationName, projects: group.projects },
-    });
+    this.dialogService.open(OrgEasyclaCoverageDialogComponent, orgClaCoverageDialogConfig(group));
   }
 
   protected onDownload(): void {
