@@ -56,6 +56,20 @@ export interface MeetingInviteEmail {
 }
 
 /**
+ * Error reply from the meeting-service `preferred_email.set` NATS RPC. `type` and `code` are
+ * optional because an older meeting-service deploy (or a malformed reply) may only send `error`
+ * — see #2269/#2270. `type` mirrors the upstream `domain.ErrorType` (e.g. `'validation'`,
+ * `'unavailable'`); `code` is a finer signal set only for the retryable "email not yet synced
+ * from Auth0 to SFDC" case (`'email_not_synced'`), which otherwise shares `type` with a generic
+ * unavailable error.
+ */
+export interface PreferredEmailErrorReply {
+  error: string;
+  type?: string;
+  code?: string;
+}
+
+/**
  * Email-settings state loaded as one unit. The address list and the meeting-invitation
  * preference must land together — a partially-loaded pair briefly guards the wrong
  * address (stale badge, stale delete guard).

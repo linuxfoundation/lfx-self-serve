@@ -218,13 +218,34 @@ describe('MeetingPreferenceService', () => {
       // real permanent failure, so unrecognized text also falls to the retryable default (Copilot
       // review, PR #1073): this only changes which "please try again" copy the user sees.
       ['something else broke', 'unavailable'],
-    ])('classifies the upstream error %j as %s', async (upstreamError, reason) => {
+    ])('classifies the upstream error %j as %s when the reply has no type/code (pre-#2269 fallback)', async (upstreamError, reason) => {
       natsRequest.mockResolvedValue(reply({ error: upstreamError }));
 
       await expect(service.setMeetingInviteEmail(req, V1_TOKEN, ALTERNATE_EMAIL)).resolves.toEqual({
         success: false,
         reason,
         error: upstreamError,
+      });
+    });
+
+    // #2269/#2270: once the meeting-service reply carries `type`/`code`, those are authoritative
+    // over the message text — even text that would otherwise match a different heuristic above.
+    it.each([
+      ['code: email_not_synced overrides an unrelated message', { error: 'boom', code: 'email_not_synced' }, 'sync_pending'],
+      ['type: validation overrides an unrelated message', { error: 'boom', type: 'validation' }, 'validation'],
+      // "not yet available" would match the sync_pending fallback by text, but a bare `type` of
+      // unavailable (no `code`) is the generic-outage case, not the finer sync-pending one.
+      ['type: unavailable wins over a sync_pending-sounding message', { error: 'not yet available', type: 'unavailable' }, 'unavailable'],
+      ['type: internal maps to unavailable', { error: 'boom', type: 'internal' }, 'unavailable'],
+      ['type: not_found maps to unavailable', { error: 'boom', type: 'not_found' }, 'unavailable'],
+      ['type: conflict maps to unavailable', { error: 'boom', type: 'conflict' }, 'unavailable'],
+    ])('classifies %s', async (_label, body, reason) => {
+      natsRequest.mockResolvedValue(reply(body));
+
+      await expect(service.setMeetingInviteEmail(req, V1_TOKEN, ALTERNATE_EMAIL)).resolves.toEqual({
+        success: false,
+        reason,
+        error: body.error,
       });
     });
 

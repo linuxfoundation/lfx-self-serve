@@ -3,7 +3,7 @@
 
 import { NATS_CONFIG } from '@lfx-one/shared/constants';
 import { NatsSubjects } from '@lfx-one/shared/enums';
-import { MeetingInviteEmail, SetMeetingInviteResult } from '@lfx-one/shared/interfaces';
+import { MeetingInviteEmail, PreferredEmailErrorReply, SetMeetingInviteResult } from '@lfx-one/shared/interfaces';
 import { isMeetingInvitePrimarySentinel, redactEmailAddresses } from '@lfx-one/shared/utils';
 import { Request } from 'express';
 
@@ -18,7 +18,7 @@ import { NatsService } from './nats.service';
  * API-gateway token in the `token` field of the payload (the service forwards it as a Bearer
  * token to v1 /v1/me). The reply is the selected email directly (`{ email_id, email }`), with
  * both fields null when the user has no override (meeting invitations fall back to primary),
- * or `{ error }` on failure.
+ * or `{ error }` on failure — `set` failures may also carry `type`/`code` (see #2269/#2270).
  */
 export class MeetingPreferenceService {
   private natsService: NatsService;
@@ -129,15 +129,15 @@ export class MeetingPreferenceService {
       return { success: false, reason: 'upstream', error: 'Internal server error' };
     }
 
-    const setError = this.extractUpstreamError(parsed);
+    const setError = this.extractPreferredEmailError(parsed);
     if (setError !== null) {
       // Warning-level logs are emitted in production; redact the address the validation copy
       // can embed rather than persisting it as PII. The returned `error` stays raw — the
       // controller substitutes fixed user-facing copy per `reason`, so nothing leaks to the client.
       logger.warning(req, 'set_meeting_invite_email', 'NATS preferred_email.set returned an error', {
-        error: redactEmailAddresses(setError),
+        error: redactEmailAddresses(setError.error),
       });
-      return { success: false, reason: this.classifyPreferredEmailError(setError), error: setError };
+      return { success: false, reason: this.classifyPreferredEmailError(setError), error: setError.error };
     }
 
     if (!this.isValidMeetingInviteReply(parsed)) {
@@ -165,6 +165,20 @@ export class MeetingPreferenceService {
     return typeof error === 'string' ? error : null;
   }
 
+  // Same shape guard as extractUpstreamError, but also carries the optional `type`/`code` fields
+  // the meeting-service envelope may add (#2269) — only `set` classifies on them, so `get` keeps
+  // using the simpler extractUpstreamError above.
+  private extractPreferredEmailError(value: unknown): PreferredEmailErrorReply | null {
+    if (typeof value !== 'object' || value === null) {
+      return null;
+    }
+    const { error, type, code } = value as Record<string, unknown>;
+    if (typeof error !== 'string') {
+      return null;
+    }
+    return { error, type: typeof type === 'string' ? type : undefined, code: typeof code === 'string' ? code : undefined };
+  }
+
   // The upstream contract always emits both keys as strings (an override) or both as null (no
   // override) on a non-error reply. Anything else — a missing key, a wrong type, or a mixed
   // null/string pair — is a contract break, not a valid "no override": callers must fail rather
@@ -180,10 +194,24 @@ export class MeetingPreferenceService {
     return typeof email_id === 'string' && typeof email === 'string';
   }
 
-  // Classify the upstream error string (the NATS reply carries only `{ error }`, no code) so the
-  // controller can map it to an HTTP status: validation → 4xx, sync_pending/unavailable → 503,
-  // anything else → 503 (see the fallback comment below for why unrecognized text lands there too).
-  private classifyPreferredEmailError(error: string): SetMeetingInviteResult['reason'] {
+  // Classify the upstream error so the controller can map it to an HTTP status: validation → 4xx,
+  // sync_pending/unavailable → 503, anything else → 503. `type`/`code` (see #2269) are trusted
+  // first when present; `error` message-matching is kept only as a fallback for a meeting-service
+  // deploy that hasn't shipped them yet, so behavior never regresses below what it is today.
+  private classifyPreferredEmailError({ error, type, code }: PreferredEmailErrorReply): SetMeetingInviteResult['reason'] {
+    // `code` is the finer signal — it's only set for the retryable "email not yet synced from
+    // Auth0 to SFDC" case, which otherwise shares `type: 'unavailable'` with a generic outage.
+    if (code === 'email_not_synced') {
+      return 'sync_pending';
+    }
+    if (type === 'validation') {
+      return 'validation';
+    }
+    if (type !== undefined) {
+      return 'unavailable';
+    }
+
+    // No structured signal on this reply — fall back to the original message-matching heuristics.
     const normalized = error.toLowerCase();
     if (normalized.includes('not an active, verified address')) {
       return 'validation';
@@ -192,16 +220,15 @@ export class MeetingPreferenceService {
       return 'sync_pending';
     }
     // The meeting-service's user-service client maps network failures and HTTP 429/502/503/504 to
-    // a retryable error, but the NATS envelope only carries `err.Error()` — no error-type field —
-    // so recognize its known message shapes here rather than falling through to the default below.
+    // a retryable error, but pre-#2269 the NATS envelope only carries `err.Error()` — no error-type
+    // field — so recognize its known message shapes here rather than falling through to the default.
     if (normalized.includes('user-service request failed') || /\bhttp (429|502|503|504)\b/.test(normalized)) {
       return 'unavailable';
     }
     // A structured user-service error body (e.g. `{"Message":"boom"}`) reaches here as opaque text
-    // with none of the markers above — matching it by string is fundamentally unreliable without an
-    // upstream envelope change (tracked separately). Default to the retryable path: an unrecognized
-    // failure from a downstream write is more often transient than a validation problem we'd have
-    // already caught above, so this only changes which "please try again" copy the user sees.
+    // with none of the markers above. Default to the retryable path: an unrecognized failure from a
+    // downstream write is more often transient than a validation problem we'd have already caught
+    // above, so this only changes which "please try again" copy the user sees.
     return 'unavailable';
   }
 }
