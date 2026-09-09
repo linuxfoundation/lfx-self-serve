@@ -1,0 +1,37 @@
+<!-- Copyright The Linux Foundation and each contributor to LFX. -->
+<!-- SPDX-License-Identifier: MIT -->
+
+<div data-testid="committee-charter-edit-dialog">
+  <label for="committee-charter-url" class="text-gray-950 block text-sm font-medium mb-2">Charter URL</label>
+  <!-- [id] (bound), not a static id=: a static attribute on a custom element lands on both the
+       <lfx-input-text> host and (via its id input()) the native <input> it renders -- two elements
+       sharing one id, with label[for] resolving to the first (the non-labelable host) in document
+       order. Binding it keeps the id off the host entirely. -->
+  <lfx-input-text
+    [form]="charterForm"
+    control="url"
+    [id]="'committee-charter-url'"
+    type="url"
+    placeholder="https://example.org/charter.pdf"
+    styleClass="!w-full"
+    dataTest="committee-view-charter-input"></lfx-input-text>
+  @if (charterForm.get('url')?.invalid && charterForm.get('url')?.dirty) {
+    <p role="alert" class="text-xs text-red-600 mt-1" data-testid="committee-charter-url-error">
+      @if (charterForm.get('url')?.errors?.['maxCodePoints']) {
+        URL is too long (max 2,048 characters).
+      } @else {
+        Enter a valid http(s) URL, or leave blank to remove the charter.
+      }
+    </p>
+  }
+  <div class="flex justify-end gap-2 mt-4">
+    <lfx-button label="Cancel" severity="secondary" [outlined]="true" size="small" (onClick)="cancel()" data-testid="charter-dialog-cancel"></lfx-button>
+    <lfx-button
+      label="Save"
+      severity="info"
+      size="small"
+      (onClick)="save()"
+      [disabled]="!charterForm.dirty || charterForm.invalid"
+      data-testid="charter-dialog-save"></lfx-button>
+  </div>
+</div>
