@@ -1,0 +1,23 @@
+<!-- Copyright The Linux Foundation and each contributor to LFX. -->
+<!-- SPDX-License-Identifier: MIT -->
+
+<h3 class="sr-only" data-testid="org-easycla-coverage-title">Projects covered by {{ claGroupName }}</h3>
+@if (projects.length) {
+  <p class="mb-3 text-xs text-gray-500" data-testid="org-easycla-coverage-hint">{{ coverageHint }}</p>
+  <ul class="flex flex-col gap-2" data-testid="org-easycla-coverage-list">
+    @for (project of projects; track project.projectName) {
+      <li class="text-sm text-gray-800" data-testid="org-easycla-coverage-project">{{ project.projectName }}</li>
+    }
+  </ul>
+} @else {
+  <p class="text-sm text-gray-600" data-testid="org-easycla-coverage-empty">No individual projects are listed. This agreement covers the foundation.</p>
+}
+
+<!--
+  An explicit dismiss, as the survey-preview dialog does it. The header's icon and click-outside
+  both already close this, but neither is a control a keyboard or touch user can find by looking —
+  and this dialog's body is a scrolling list, so on a long one the header icon is off screen.
+-->
+<div class="flex justify-end pt-4">
+  <lfx-button label="Close" severity="secondary" [outlined]="true" (onClick)="close()" data-testid="org-easycla-coverage-close" />
+</div>

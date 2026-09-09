@@ -2,8 +2,9 @@
 // SPDX-License-Identifier: MIT
 
 import { ChangeDetectionStrategy, Component, computed, input } from '@angular/core';
-import type { OrgClaGroup } from '@lfx-one/shared/interfaces';
-import type { TagSeverity } from '@lfx-one/shared/interfaces';
+import type { OrgClaCoverageChip, OrgClaGroup } from '@lfx-one/shared/interfaces';
+import { ORG_CLA_STATUS_DISPLAY } from '@lfx-one/shared/constants';
+import { orgClaCoverageChips } from '@lfx-one/shared/utils';
 
 import { TagComponent } from '@components/tag/tag.component';
 
@@ -20,38 +21,20 @@ import { TagComponent } from '@components/tag/tag.component';
   changeDetection: ChangeDetectionStrategy.OnPush,
 })
 export class OrgEasyclaCardComponent {
-  /** Status label and severity, keyed by the server-derived status. */
-  private static readonly statusDisplay: Record<OrgClaGroup['status'], { label: string; severity: TagSeverity }> = {
-    signed: { label: 'Signed', severity: 'success' },
-    'not-started': { label: 'Not started', severity: 'secondary' },
-    sanctioned: { label: 'Sanctioned', severity: 'danger' },
-  };
-
   public readonly claGroup = input.required<OrgClaGroup>();
 
-  protected readonly status = computed(() => OrgEasyclaCardComponent.statusDisplay[this.claGroup().status]);
+  protected readonly status = computed(() => ORG_CLA_STATUS_DISPLAY[this.claGroup().status]);
 
   /**
    * Coverage as the approved design frames it: name the project when there is exactly one,
    * otherwise name the foundation and say how many projects are covered.
    *
-   * Static text, not a link. The design's chip opens a coverage dialog that ships with the
-   * agreement detail view; a chip styled as actionable that does nothing reads as a bug, so it
-   * stays plain until there is somewhere for it to go.
+   * Static text, not a link, even for the chip whose `opensCoverage` says otherwise. The dialog it
+   * would open now exists on the detail page, but this card sits under a stretched link that
+   * swallows its pointer events, so wiring it is delivered separately. A chip styled as actionable
+   * that navigates somewhere else instead reads as a bug.
    */
-  protected readonly coverageChips = computed<string[]>(() => {
-    const { projects, foundationName } = this.claGroup();
-
-    // An empty project list is the foundation-wide case, not an absence of coverage. The source
-    // omits the entry whose project is the foundation itself, so an agreement covering a whole
-    // foundation arrives with no projects and only its foundation name — and naming nothing would
-    // leave a card that search can match on that name while never showing it.
-    if (projects.length === 0) return foundationName ? [foundationName] : [];
-    if (projects.length === 1) return [projects[0].projectName];
-
-    const projectsChip = `Covers ${projects.length} projects`;
-    return foundationName ? [foundationName, projectsChip] : [projectsChip];
-  });
+  protected readonly coverageChips = computed<OrgClaCoverageChip[]>(() => orgClaCoverageChips(this.claGroup()));
 
   /**
    * Names the signing entity, and says it signed only where the status says so.

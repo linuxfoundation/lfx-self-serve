@@ -3,7 +3,7 @@
 
 import { HttpClient } from '@angular/common/http';
 import { inject, Injectable } from '@angular/core';
-import type { OrgClaGroupList } from '@lfx-one/shared/interfaces';
+import type { OrgClaGroupList, PdfUrlResponse } from '@lfx-one/shared/interfaces';
 import { Observable } from 'rxjs';
 
 /**
@@ -22,5 +22,9 @@ export class OrgLensClaService {
 
   public getClaGroups(orgUid: string): Observable<OrgClaGroupList> {
     return this.http.get<OrgClaGroupList>(`/api/orgs/${encodeURIComponent(orgUid)}/lens/cla-groups`);
+  }
+
+  public getPdfUrl(orgUid: string, signatureId: string): Observable<PdfUrlResponse> {
+    return this.http.get<PdfUrlResponse>(`/api/orgs/${encodeURIComponent(orgUid)}/lens/cla-groups/${encodeURIComponent(signatureId)}/pdf-url`);
   }
 }

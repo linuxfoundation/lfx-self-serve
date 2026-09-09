@@ -333,8 +333,8 @@ app.use('/api/meetings', meetingsRouter);
 app.use('/api/meetups', meetupsRouter);
 app.use('/api/organizations', organizationsRouter);
 // Ahead of orgsRouter deliberately: both mount on /api/orgs, and orgsRouter's
-// `/:orgUid/lens` guard matches the CLA path, so mounting second would run the grant
-// lookup before the module's kill switch and answer 403/503 where 409 is promised.
+// `/:orgUid/lens` guard matches the CLA path without owning a route for it, so mounting
+// second would run the grant lookup there and again on the route that finally handles it.
 app.use('/api/orgs', orgClasRouter);
 app.use('/api/orgs', orgsRouter);
 app.use('/api/past-meetings', pastMeetingsRouter);

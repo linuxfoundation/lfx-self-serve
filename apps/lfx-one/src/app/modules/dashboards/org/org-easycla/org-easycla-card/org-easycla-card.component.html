@@ -16,9 +16,12 @@
   </header>
 
   <div class="flex flex-wrap items-center gap-2">
-    <!-- Static by design: the coverage dialog ships with the agreement detail view. -->
-    @for (chip of coverageChips(); track chip) {
-      <span class="rounded-full bg-gray-100 px-2.5 py-0.5 text-xs text-gray-700" data-testid="org-easycla-card-coverage">{{ chip }}</span>
+    <!-- Every chip is static here, including the projects one the design makes a link: the card sits
+         under a stretched link, so opening a dialog from it needs pointer events and propagation
+         handled, which is delivered separately. `chip.opensCoverage` is deliberately ignored rather
+         than absent. -->
+    @for (chip of coverageChips(); track chip.label) {
+      <span class="rounded-full bg-gray-100 px-2.5 py-0.5 text-xs text-gray-700" data-testid="org-easycla-card-coverage">{{ chip.label }}</span>
     }
 
     <lfx-tag [value]="status().label" [severity]="status().severity" data-testid="org-easycla-card-status" />
@@ -27,11 +30,15 @@
       <!-- Not in the approved design's card, which carries no unmanaged-group indicator at all.
            Added because an unmanaged CLA Group silently blocks every contributor approval under it
            and nothing else on this page would reveal it. -->
+      <!-- `pointer-events-auto` because the list wraps this card in a stretched link that turns
+           pointer events off for the card's own content. Without it the overlay anchor swallows
+           hover and the tooltip never opens for mouse users. -->
       <lfx-tag
         value="Needs a CLA Manager"
         severity="warn"
         icon="fa-light fa-triangle-exclamation"
         tooltip="No one can approve contributors for this CLA Group until a CLA Manager is added."
+        styleClass="pointer-events-auto"
         data-testid="org-easycla-card-needs-manager" />
     }
   </div>

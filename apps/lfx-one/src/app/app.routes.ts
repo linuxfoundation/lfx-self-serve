@@ -154,6 +154,12 @@ export const routes: Routes = [
                 path: '',
                 loadComponent: () => import('./modules/dashboards/org/org-easycla/org-easycla.component').then((m) => m.OrgEasyclaComponent),
               },
+              {
+                path: ':signatureId',
+                data: { title: 'CLA Group', description: 'Corporate CLA your organization has signed.' },
+                loadComponent: () =>
+                  import('./modules/dashboards/org/org-easycla/org-easycla-detail/org-easycla-detail.component').then((m) => m.OrgEasyclaDetailComponent),
+              },
             ],
           },
           {

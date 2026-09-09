@@ -38,6 +38,7 @@ describe('OrgEasyclaComponent', () => {
       claGroupId: 'cla-group-uuid-1',
       foundationName: 'Nimbus Foundation',
       projects: [{ projectName: 'Cascade' }, { projectName: 'Driftwood' }],
+      signed: true,
       status: 'signed',
       needsClaManager: false,
       claManagersCount: 2,
@@ -194,6 +195,48 @@ describe('OrgEasyclaComponent', () => {
 
       expect(allByTestId(fixture, 'org-easycla-card')).toHaveLength(3);
       expect(byTestId(fixture, 'org-easycla-empty-state')).toBeNull();
+      const link = byTestId(fixture, 'org-easycla-card-link') as HTMLAnchorElement | null;
+      expect(link?.getAttribute('href')).toContain('/org/easycla/a');
+    });
+
+    it('overlays the card link rather than wrapping the card in it', async () => {
+      getClaGroups.mockReturnValue(of({ orgUid: SELECTED_ACCOUNT.uid, claGroups: [claGroup({ needsClaManager: true, claManagersCount: 0 })] }));
+
+      const fixture = await render();
+      const link = byTestId(fixture, 'org-easycla-card-link') as HTMLAnchorElement;
+
+      // The "Needs a CLA Manager" tag carries a tooltip and so takes `tabindex="0"`. Inside the
+      // anchor it would be a second tab stop within the link, and a click on it would be
+      // ambiguous with following the agreement.
+      expect(link.querySelector('[data-testid="org-easycla-card"]')).toBeNull();
+      expect(link.querySelector('[tabindex]')).toBeNull();
+      expect(link.getAttribute('aria-label')).toBe('Open Nimbus Foundation CLA');
+
+      // Layering per the me-selector in sidebar.component.html: the anchor sits beneath the card,
+      // the card's content has pointer events off so a click anywhere reaches the link, and the
+      // tooltip'd tag re-enables them so hovering it still opens the tooltip.
+      const card = byTestId(fixture, 'org-easycla-card') as HTMLElement;
+      expect(card.closest('.pointer-events-none')).not.toBeNull();
+      expect(byTestId(fixture, 'org-easycla-card-needs-manager')?.querySelector('.pointer-events-auto')).not.toBeNull();
+    });
+
+    // The card shows the signing entity as a visible subline precisely because the CLA Group name is
+    // not unique — an organization signing under several entities gets one row per entity. A link
+    // naming only the group reproduces on the accessibility tree the ambiguity the subline resolves
+    // on screen, leaving two identical "Open …" links.
+    it('distinguishes the links of two rows that share a CLA Group name', async () => {
+      getClaGroups.mockReturnValue(
+        of({
+          orgUid: SELECTED_ACCOUNT.uid,
+          claGroups: [claGroup({ id: 'a', signingEntityName: 'Acme Motors GmbH' }), claGroup({ id: 'b', signingEntityName: 'Acme Robotics Ltd' })],
+        })
+      );
+
+      const fixture = await render();
+      const labels = allByTestId(fixture, 'org-easycla-card-link').map((link) => link.getAttribute('aria-label'));
+
+      expect(labels).toEqual(['Open Nimbus Foundation CLA, Acme Motors GmbH', 'Open Nimbus Foundation CLA, Acme Robotics Ltd']);
+      expect(new Set(labels).size).toBe(2);
     });
 
     it('fetches once for the selected organization', async () => {
