@@ -28,9 +28,12 @@
   <!-- Flat icon + value rows: the design carries no field labels here, so an unset row reads as a bar -->
   <ul class="flex flex-col gap-2">
     <li class="flex items-center gap-2">
-      <i class="w-3.5 shrink-0 text-center text-[11px] font-light text-gray-400 fa-light fa-hexagon" aria-hidden="true"></i>
-      @if (typeLabel(); as type) {
-        <span class="truncate text-[11px] text-gray-700" data-testid="meeting-composer-preview-type">{{ type }}</span>
+      <!-- The chosen type's own icon, with the neutral hexagon standing in until a type is picked: the
+           row used to carry that hexagon for every type, which said nothing the label wasn't already
+           saying. -->
+      <i class="w-3.5 shrink-0 text-center text-[11px] font-light text-gray-400" [ngClass]="typeRow()?.icon ?? 'fa-light fa-hexagon'" aria-hidden="true"></i>
+      @if (typeRow(); as type) {
+        <span class="truncate text-[11px] text-gray-700" data-testid="meeting-composer-preview-type">{{ type.label }}</span>
       } @else {
         <span class="sr-only">Meeting type not set</span>
         <span class="h-[7px] w-[65%] rounded-full bg-gray-100" aria-hidden="true"></span>

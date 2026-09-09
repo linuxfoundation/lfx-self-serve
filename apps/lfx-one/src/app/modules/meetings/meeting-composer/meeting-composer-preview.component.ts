@@ -32,7 +32,7 @@ export class MeetingComposerPreviewComponent {
   protected readonly dateChip: Signal<MeetingComposerPreviewDateChip> = this.initDateChip();
   protected readonly title: Signal<string> = this.initTitle();
   protected readonly whenSummary: Signal<string | null> = this.initWhenSummary();
-  protected readonly typeLabel: Signal<string | null> = this.initTypeLabel();
+  protected readonly typeRow: Signal<MeetingComposerPreviewRow | null> = this.initTypeRow();
   protected readonly visibility: Signal<MeetingComposerPreviewRow | null> = this.initVisibility();
   protected readonly recurrenceLabel: Signal<string | null> = this.initRecurrenceLabel();
   protected readonly platformLabel: Signal<string | null> = this.initPlatformLabel();
@@ -78,11 +78,23 @@ export class MeetingComposerPreviewComponent {
     });
   }
 
-  private initTypeLabel(): Signal<string | null> {
+  /**
+   * Type row, carrying the selected type's own icon rather than one glyph for every type.
+   * @description Sourced from `MEETING_TYPE_OPTIONS`, which is where the section's type select and the
+   * meeting card's tag also read their icons, so the preview names the choice with the same glyph the
+   * organizer just clicked. No `color`: visibility is the one row the design tints, and giving the type
+   * its scale colour as well would turn the panel into a swatch.
+   */
+  private initTypeRow(): Signal<MeetingComposerPreviewRow | null> {
     return computed(() => {
       const meetingType = this.controlValue('meeting_type');
+      const option = MEETING_TYPE_OPTIONS.find((candidate) => candidate.value === meetingType);
 
-      return MEETING_TYPE_OPTIONS.find((option) => option.value === meetingType)?.label ?? null;
+      if (!option?.info?.icon) {
+        return null;
+      }
+
+      return { label: option.label, icon: option.info.icon };
     });
   }
 
