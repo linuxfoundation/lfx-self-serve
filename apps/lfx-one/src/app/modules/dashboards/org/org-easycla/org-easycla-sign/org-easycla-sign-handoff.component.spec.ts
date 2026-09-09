@@ -283,6 +283,50 @@ describe('OrgEasyclaSignHandoffComponent', () => {
   });
 
   /**
+   * The preparing → ready transition happens on its own, with no user action behind it: the
+   * request is issued as the dialog opens and the panel is rewritten when it lands. A sighted
+   * user watches the spinner become a Review CCLA button. Without a live region a screen-reader
+   * user hears the preparing message and then nothing at all, so the control that carries the
+   * whole flow forward arrives with no event to announce it.
+   */
+  describe('announcing the asynchronous transition', () => {
+    it('holds the dialog content in a polite live region', async () => {
+      requestCorporateSignature.mockReturnValue(new Observable<OrgClaSignResponse>(() => undefined));
+
+      const fixture = await render();
+
+      const panel = testid(fixture, 'org-easycla-sign-handoff-dialog');
+      expect(panel?.getAttribute('aria-live')).toBe('polite');
+      expect(panel?.getAttribute('role')).toBe('status');
+    });
+
+    // The region has to be the container that survives the switch. Placed on a per-state branch it
+    // would be created at the same moment as the content it is meant to announce, and a live
+    // region that appears together with its text announces nothing.
+    it('keeps the region mounted across the transition, so the change is what is announced', async () => {
+      requestCorporateSignature.mockReturnValue(of(response));
+
+      const fixture = await render();
+
+      const panel = testid(fixture, 'org-easycla-sign-handoff-dialog');
+      expect(panel?.getAttribute('aria-live')).toBe('polite');
+      expect(testid(fixture, 'org-easycla-sign-ready')).toBeTruthy();
+      // The ready branch itself must not carry a competing region, or the swap is announced twice.
+      expect(testid(fixture, 'org-easycla-sign-ready')?.getAttribute('aria-live')).toBeNull();
+    });
+
+    // A refusal interrupts rather than waits its turn, and the nested role overrides the polite
+    // ancestor for its own subtree.
+    it('leaves the failure branch assertive', async () => {
+      requestCorporateSignature.mockReturnValue(throwError(() => bffError(500, { error: 'nope' })));
+
+      const fixture = await render();
+
+      expect(testid(fixture, 'org-easycla-sign-failed')?.getAttribute('role')).toBe('alert');
+    });
+  });
+
+  /**
    * The shell dialog's title is PrimeNG's, and it is a static string at the call site. Left alone
    * it keeps saying "Configuring CLA Manager Settings…" above a panel that says the session is
    * ready, or that it failed.

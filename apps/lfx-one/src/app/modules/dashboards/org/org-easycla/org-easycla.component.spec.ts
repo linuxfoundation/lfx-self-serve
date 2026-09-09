@@ -297,6 +297,145 @@ describe('OrgEasyclaComponent', () => {
 
       expect(byTestId(fixture, 'org-easycla-sign-cla')?.querySelector('button')?.disabled).toBe(false);
     });
+
+    /**
+     * Switching organizations with a signing flow part-way open.
+     *
+     * These need dialogs that stay open, so they use a harness whose `onClose` is a Subject the
+     * test controls. The one above emits synchronously, which closes every dialog the instant it
+     * opens — fine for asserting what gets passed along, useless for asserting what happens while
+     * one is still standing.
+     */
+    describe('when the organization changes part-way through', () => {
+      interface OpenDialog {
+        component: unknown;
+        config: DialogHarnessConfig;
+        close: ReturnType<typeof vi.fn>;
+        /** Emit to drive this dialog's own close, which is how the flow advances a step. */
+        onClose: Subject<unknown>;
+      }
+
+      function openDialogHarness() {
+        const opened: OpenDialog[] = [];
+        const open = vi.fn((component: unknown, config: DialogHarnessConfig = {}) => {
+          const dialog: OpenDialog = { component, config, close: vi.fn(), onClose: new Subject<unknown>() };
+          opened.push(dialog);
+          return { onClose: dialog.onClose, close: dialog.close };
+        });
+        return { opened, open };
+      }
+
+      async function renderWithOpenDialogs() {
+        const harness = openDialogHarness();
+        TestBed.resetTestingModule();
+        await TestBed.configureTestingModule({
+          imports: [OrgEasyclaComponent],
+          providers: [
+            provideRouter([]),
+            provideNoopAnimations(),
+            { provide: AccountContextService, useValue: { selectedAccount, hasOrgSelectorAccess } },
+            { provide: OrgRoleGrantsService, useValue: { loaded: grantsLoaded } },
+            { provide: PersonaService, useValue: { personaLoaded } },
+            { provide: OrgNavigationService, useValue: { loaded: navLoaded } },
+            { provide: OrgLensClaService, useValue: { getClaGroups } },
+            MessageService,
+          ],
+        })
+          .overrideComponent(OrgEasyclaComponent, { set: { providers: [{ provide: DialogService, useValue: { open: harness.open } }] } })
+          .compileComponents();
+
+        const fixture = TestBed.createComponent(OrgEasyclaComponent);
+        fixture.detectChanges();
+        await fixture.whenStable();
+        fixture.detectChanges();
+        return { fixture, harness };
+      }
+
+      /**
+       * The load-bearing one, and the reason the close exists at all.
+       *
+       * `orgUid` is read once when the flow starts and carried through all three dialogs, and
+       * switching organizations does not destroy this component. So a picker left standing lists
+       * the previous organization's CLA groups, and choosing one would open a signing session
+       * against a company the viewer is no longer looking at — the detail page's stale-download
+       * failure, arriving at a corporate legal agreement instead of a PDF.
+       */
+      it('closes the CLA group picker rather than letting it sign for the organization just left', async () => {
+        const { fixture, harness } = await renderWithOpenDialogs();
+
+        byTestId(fixture, 'org-easycla-sign-cla')?.querySelector('button')?.click();
+        expect(harness.opened).toHaveLength(1);
+
+        selectedAccount.set({ uid: '0014100000Te2QjAAJ', accountName: 'Meridian Systems' });
+        fixture.detectChanges();
+        await fixture.whenStable();
+
+        expect(harness.opened[0].close).toHaveBeenCalled();
+      });
+
+      /**
+       * Clearing the organization, not just switching to another one.
+       *
+       * This is the half the detail page's download stream originally missed: the cancellation
+       * derived from the non-empty selection, so clearing emitted nothing and the stale request
+       * survived. The same filter sits in this component's `orgUid$`, which is why the signing
+       * close listens on the unfiltered stream instead. Without that, this case leaves a picker
+       * open over a page showing no organization at all.
+       */
+      it('closes the picker when the organization is cleared, not only when it is switched', async () => {
+        const { fixture, harness } = await renderWithOpenDialogs();
+
+        byTestId(fixture, 'org-easycla-sign-cla')?.querySelector('button')?.click();
+        expect(harness.opened).toHaveLength(1);
+
+        selectedAccount.set(null);
+        fixture.detectChanges();
+        await fixture.whenStable();
+
+        expect(harness.opened[0].close).toHaveBeenCalled();
+      });
+
+      // Nothing has been created at this point either, and the confirmations are about a specific
+      // organization's authority and export position — they cannot carry over to another company.
+      it('closes the attestation step as well, since no signature has been asked for yet', async () => {
+        const { fixture, harness } = await renderWithOpenDialogs();
+
+        byTestId(fixture, 'org-easycla-sign-cla')?.querySelector('button')?.click();
+        // Choosing a CLA group closes the picker and opens the attestation dialog behind it.
+        harness.opened[0].onClose.next(chosen);
+        expect(harness.opened).toHaveLength(2);
+
+        selectedAccount.set({ uid: '0014100000Te2QjAAJ', accountName: 'Meridian Systems' });
+        fixture.detectChanges();
+        await fixture.whenStable();
+
+        expect(harness.opened[1].close).toHaveBeenCalled();
+      });
+
+      /**
+       * The hand-off is deliberately not closed.
+       *
+       * By the time it is open the request has been issued and a signature record and DocuSign
+       * envelope exist for the organization that was selected when the viewer confirmed — which
+       * is the one they meant to sign for. The address that comes back is the only thing that
+       * reaches them, so closing this on a switch would orphan an envelope to save nothing. It is
+       * also why the field holding the closeable ref is named for the uncommitted half.
+       */
+      it('leaves the hand-off standing, because a signing session already exists behind it', async () => {
+        const { fixture, harness } = await renderWithOpenDialogs();
+
+        byTestId(fixture, 'org-easycla-sign-cla')?.querySelector('button')?.click();
+        harness.opened[0].onClose.next(chosen);
+        harness.opened[1].onClose.next({ authorityAcked: true, embargoAcked: true });
+        expect(harness.opened).toHaveLength(3);
+
+        selectedAccount.set({ uid: '0014100000Te2QjAAJ', accountName: 'Meridian Systems' });
+        fixture.detectChanges();
+        await fixture.whenStable();
+
+        expect(harness.opened[2].close).not.toHaveBeenCalled();
+      });
+    });
   });
 
   describe('access and org-selection states', () => {
@@ -310,6 +449,26 @@ describe('OrgEasyclaComponent', () => {
 
       expect(byTestId(fixture, 'org-easycla-no-access-state')).toBeTruthy();
       expect(byTestId(fixture, 'org-easycla-empty-state')).toBeNull();
+    });
+
+    /**
+     * The organization stays selected here on purpose.
+     *
+     * That combination is what the page actually renders for a caller whose account carries a
+     * company but no Org Lens grant, and it is the one the other no-access cases miss by clearing
+     * `selectedAccount` — which disables the control for the unrelated reason that there is
+     * nothing to sign for. With the company left in place, only an access term can disable it.
+     * Without one, the page offered "Organization Lens is not available" and a live Sign CLA
+     * button together, and every request the flow made would be refused by the server.
+     */
+    it('does not offer Sign CLA to a caller with a company but no org access', async () => {
+      hasOrgSelectorAccess.set(false);
+
+      const fixture = await render();
+
+      const button = byTestId(fixture, 'org-easycla-sign-cla')?.querySelector('button');
+      expect(button?.disabled).toBe(true);
+      expect(button?.getAttribute('aria-label')).toContain('Organization Lens is not available');
     });
 
     it('withholds both answers until the grant and persona fetches have returned', async () => {

@@ -15,10 +15,10 @@ import { CheckboxComponent } from '@components/checkbox/checkbox.component';
  * The authorization and export-compliance confirmations, ahead of the corporate signing hand-off
  * (#1983).
  *
- * Every string it renders comes from `CCLA_SIGN_COPY.attestation`, verbatim from the approved
- * design. This is the first attestation the product renders itself — every earlier CLA surface
- * handed off to another product before any attestation appeared — so the wording is a reviewed
- * artifact, not copy. Do not paraphrase it here, and do not inline a variant.
+ * Every string it renders comes from `CCLA_SIGN_COPY.attestation`, verbatim from the M3
+ * prototype. This is the first attestation the product renders itself — every earlier CLA surface
+ * handed off to another product before any attestation appeared — so the wording is a single
+ * defined artifact, not copy. Do not paraphrase it here, and do not inline a variant.
  *
  * Closes with the two confirmations as the signatory actually left them, or `null` if they backed
  * out. It deliberately does **not** close with a bare "confirmed" signal: the values are what the

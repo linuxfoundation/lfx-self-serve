@@ -221,7 +221,7 @@ export const ORG_CLA_NOT_STARTED_COPY = {
 export const ORG_EASYCLA_PATH = '/org/easycla';
 
 /**
- * Copy for the corporate signing flow (#1983), taken verbatim from the approved design.
+ * Copy for the corporate signing flow (#1983), taken verbatim from the M3 prototype.
  *
  * Held here rather than inlined in the template because this is the first attestation the
  * product renders itself — every earlier CLA surface handed off to another product before any

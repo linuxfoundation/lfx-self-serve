@@ -124,7 +124,7 @@ describe('OrgEasyclaAttestationComponent', () => {
     expect(close).toHaveBeenCalledWith(null);
   });
 
-  it('renders the approved wording verbatim', async () => {
+  it('renders the attestation wording verbatim', async () => {
     const fixture = await render();
     const text = (fixture.nativeElement as HTMLElement).textContent ?? '';
 

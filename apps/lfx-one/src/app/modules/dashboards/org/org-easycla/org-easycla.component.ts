@@ -52,6 +52,13 @@ export class OrgEasyclaComponent {
   /** One hand-off at a time. Also what disables the Sign CLA control while a flow is open. */
   protected readonly signingOpen = signal(false);
 
+  /**
+   * Whichever signing dialog is open before a signature has been asked for — the picker, then the
+   * attestation. Held so an organization switch can close it; see `abandonUncommittedSigning`.
+   * Never holds the hand-off, which is why the field is named for the uncommitted half.
+   */
+  private uncommittedSigningDialog: DynamicDialogRef | null = null;
+
   // ── Search (client-side; the upstream list takes no search parameter) ──────
   protected readonly orgClaOpenLabel = orgClaOpenLabel;
 
@@ -69,9 +76,13 @@ export class OrgEasyclaComponent {
 
   /**
    * Names the reason when Sign CLA is disabled, so a screen reader hears one instead of a bare
-   * "disabled". Computed rather than a template ternary — the control has two distinct reasons.
+   * "disabled". Computed rather than a template ternary — the control has three distinct reasons.
+   *
+   * No-access is checked first: it is the one reason the viewer can do nothing about, and it also
+   * subsumes the others, since a viewer without access has no organization to select either.
    */
   protected readonly signClaAriaLabel = computed(() => {
+    if (this.hasNoOrgAccess()) return 'Sign a corporate CLA — Organization Lens is not available for your account';
     if (!this.hasCompany()) return 'Sign a corporate CLA — select an organization first';
     if (this.signingOpen()) return 'Sign a corporate CLA — a signing request is already open';
     return 'Sign a corporate CLA';
@@ -107,11 +118,22 @@ export class OrgEasyclaComponent {
   // ── Data ──────────────────────────────────────────────────────────────────
   private readonly searchTerm: Signal<string> = this.initSearchTerm();
 
+  // Every selection the viewer makes, including clearing it.
+  private readonly selectedOrgUid$ = toObservable(computed(() => this.accountContext.selectedAccount()?.uid)).pipe(distinctUntilChanged());
+
   // Shared with the constructor's org-switch reset below — mirrors org-groups' orgUid$.
-  private readonly orgUid$ = toObservable(computed(() => this.accountContext.selectedAccount()?.uid)).pipe(
-    filter((uid): uid is string => !!uid),
-    distinctUntilChanged()
-  );
+  private readonly orgUid$ = this.selectedOrgUid$.pipe(filter((uid): uid is string => !!uid));
+
+  /**
+   * Emits when the viewer leaves the organization a signing flow was started for, skipping the
+   * value present at subscribe time.
+   *
+   * Derived from the unfiltered stream, not `orgUid$`, for the reason the CLA Group detail page
+   * found on its download stream: clearing the selection empties the page just as switching does,
+   * and the non-empty filter would swallow it — leaving exactly the stale thing the stream exists
+   * to cancel. Here that stale thing is a signing flow still pointed at the previous company.
+   */
+  private readonly orgChanged$ = this.selectedOrgUid$.pipe(skip(1));
 
   private readonly claData: Signal<OrgClaGroupList | null | undefined> = this.initClaData();
 
@@ -196,6 +218,10 @@ export class OrgEasyclaComponent {
       this.filterForm.reset({ search: '' });
       this.page.set(0);
     });
+
+    // Separate from the reset above because it listens on the unfiltered stream: a cleared
+    // selection has no list to re-filter but does have a signing flow to abandon.
+    this.orgChanged$.pipe(takeUntilDestroyed()).subscribe(() => this.abandonUncommittedSigning());
   }
 
   protected changePage(delta: number): void {
@@ -239,13 +265,35 @@ export class OrgEasyclaComponent {
       data: { orgUid },
     }) as DynamicDialogRef;
 
+    this.uncommittedSigningDialog = pickerRef;
+
     pickerRef.onClose.pipe(takeUntilDestroyed(this.destroyRef)).subscribe((chosen: OrgClaGroupPickerResult | null | undefined) => {
+      this.uncommittedSigningDialog = null;
       if (!chosen) {
         this.signingOpen.set(false);
         return;
       }
       this.confirmThenHandOff(orgUid, chosen);
     });
+  }
+
+  /**
+   * Closes a signing flow that has not yet asked for a signature, on an organization switch.
+   *
+   * `orgUid` is read once when the flow starts and threaded through all three dialogs, and
+   * switching organizations does not destroy this component — it re-drives the list fetch. So
+   * without this, the picker and the attestation dialog stay open over a page that has moved on,
+   * still carrying the organization the viewer left, and confirming would open a signing session
+   * against that company's legal position. This is the download path's stale-response failure on
+   * the detail page, arriving at a legal agreement instead of a PDF.
+   *
+   * Only the two dialogs before the request is issued. The hand-off is deliberately left alone:
+   * by the time it is open a signing session exists for the organization that was selected when
+   * the viewer confirmed, which is the one they meant, and the address it returns is the only
+   * thing that reaches them. Closing it on a switch would orphan an envelope to save nothing.
+   */
+  private abandonUncommittedSigning(): void {
+    this.uncommittedSigningDialog?.close();
   }
 
   private confirmThenHandOff(orgUid: string, chosen: OrgClaGroupPickerResult): void {
@@ -257,7 +305,10 @@ export class OrgEasyclaComponent {
       dismissableMask: true,
     }) as DynamicDialogRef;
 
+    this.uncommittedSigningDialog = attestationRef;
+
     attestationRef.onClose.pipe(takeUntilDestroyed(this.destroyRef)).subscribe((attestations: OrgClaSignAttestations | null | undefined) => {
+      this.uncommittedSigningDialog = null;
       if (!attestations) {
         this.signingOpen.set(false);
         return;

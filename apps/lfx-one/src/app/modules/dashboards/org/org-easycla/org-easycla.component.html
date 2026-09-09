@@ -14,16 +14,20 @@
       <p class="text-sm text-gray-500" data-testid="org-easycla-subtitle">The corporate CLAs your organization holds across Linux Foundation projects.</p>
     </div>
 
-    <!-- Disabled only while no organization is selected — there would be nothing to sign for —
-         and while a hand-off is already open, which is the single-flight guard.
+    <!-- Disabled while no organization is selected — there would be nothing to sign for — while a
+         hand-off is already open, which is the single-flight guard, and while the viewer has no
+         Org Lens access, since every request the flow makes would be refused by the server and the
+         page is already saying the module is unavailable beneath this control.
 
-         Deliberately not disabled for a viewer who lacks signing authority: the CLA service is
-         the only party that knows, it decides per project and organization, and it explains its
-         refusal in words worth reading. Hiding the control for those viewers is #1980. -->
+         Deliberately not disabled for a viewer who lacks signing authority: that is a different
+         thing and not known here. The CLA service is the only party that knows, it decides per
+         project and organization, and it explains its refusal in words worth reading. Hiding the
+         control for those viewers is #1980. Lacking Org Lens access is known locally, which is
+         why it belongs in this expression and signing authority does not. -->
     <lfx-button
       label="Sign CLA"
       icon="fa-light fa-file-signature"
-      [disabled]="!hasCompany() || signingOpen()"
+      [disabled]="!hasCompany() || signingOpen() || hasNoOrgAccess()"
       [ariaLabel]="signClaAriaLabel()"
       styleClass="shrink-0"
       (onClick)="startSigning()"

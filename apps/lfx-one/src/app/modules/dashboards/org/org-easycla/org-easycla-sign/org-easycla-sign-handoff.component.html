@@ -3,7 +3,23 @@ Copyright The Linux Foundation and each contributor to LFX.
 SPDX-License-Identifier: MIT
 -->
 
-<div class="flex flex-col" data-testid="org-easycla-sign-handoff-dialog">
+<!--
+  A polite live region around the whole switch, because the state changes on its own: the signing
+  request is issued as the dialog opens, and when it lands the message is replaced and the Review
+  CCLA control appears. Sighted users see that happen. Without this, a screen-reader user is told
+  the dialog is preparing and then nothing further — the controls arrive silently, and there is no
+  event to prompt them to go looking.
+
+  Focus is deliberately NOT moved to Review CCLA when it appears. That control opens the signing
+  session in this same tab, so auto-focusing it puts a page-leaving action under the next Enter or
+  Space the user happens to press, and it would also cut off the announcement that just told them
+  why focus moved. The dialog already holds focus, so the polite announcement is enough to say the
+  control now exists and can be reached by Tab.
+
+  The failure branch below keeps its own role="alert" and so stays assertive: it interrupts, which
+  a refusal should, and a nested live region overrides this one for its own subtree.
+-->
+<div class="flex flex-col" role="status" aria-live="polite" data-testid="org-easycla-sign-handoff-dialog">
   @switch (state()) {
     @case ('preparing') {
       <div class="flex flex-col items-center gap-3 py-6 text-center" data-testid="org-easycla-sign-preparing">

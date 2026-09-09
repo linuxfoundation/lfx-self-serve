@@ -29,6 +29,13 @@ export interface GatewayFetchOptions {
    * the error handler's own log line. A caller using this owes it to drop the body once it has
    * taken the message out (`withoutUpstreamBody`), or the leak simply moves one layer up.
    *
+   * Also covers a 2xx whose body does not parse. Nothing relays a refusal from that path — there
+   * is no producer sentence in a malformed success — so the body is dropped there rather than
+   * attached, from the log line and from the thrown error alike. It has to be both: leaving it on
+   * the error would put it back in the log through `getLogContext`. This matters most on the one
+   * call where the *success* payload is the sensitive thing, the corporate signing hand-off, whose
+   * body carries the signing address and the signature identifier.
+   *
    * Ignored when `redactResponseBody` is set, which discards the body outright.
    */
   redactResponseBodyFromLogs?: boolean;
@@ -134,11 +141,22 @@ export async function gatewayFetch<T>(req: Request, url: string, options: Gatewa
     return JSON.parse(rawBody) as T;
   } catch (error: unknown) {
     const message = error instanceof Error ? error.message : String(error);
-    const truncatedBody = options.redactResponseBody ? undefined : rawBody.slice(0, UPSTREAM_ERROR_BODY_LIMIT);
+    // Either option withholds the body here. `redactResponseBodyFromLogs` keeps a non-OK body on
+    // the error so a refusal can be relayed, but a malformed 2xx has no refusal in it and nothing
+    // reads this one — so it is dropped from the error as well, not merely from the line below.
+    // Kept on the error, `getLogContext` would log it at the handler and undo the redaction.
+    const withheldBody = options.redactResponseBody || options.redactResponseBodyFromLogs;
+    const truncatedBody = withheldBody ? undefined : rawBody.slice(0, UPSTREAM_ERROR_BODY_LIMIT);
     const logContext = {
       status: upstream.status,
       status_text: upstream.statusText,
-      ...(truncatedBody === undefined ? { body_redacted: true } : { body: truncatedBody, error: message }),
+      // Under redaction the parse message is withheld along with the body, because it quotes the
+      // body: V8 reports `Unexpected token 'S', "SECRET-COUPON" is not valid JSON`, so logging it
+      // would hand over the first of exactly the content being redacted. The exception name is
+      // safe — it is a class name — and still distinguishes a parse failure from anything else.
+      ...(truncatedBody === undefined
+        ? { body_redacted: true, error_name: error instanceof Error ? error.name : 'Error' }
+        : { body: truncatedBody, error: message }),
     };
 
     logger.warning(req, options.operation, 'Upstream returned invalid JSON response', logContext);

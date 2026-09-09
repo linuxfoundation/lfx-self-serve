@@ -142,100 +142,20 @@ describe('org-clas router', () => {
     expect(getPdfUrl).toHaveBeenCalled();
     expect(await res.json()).toEqual({ url: 'https://s3.example.org/ccla.pdf' });
   });
-});
-
-/**
- * The corporate signing routes (#1983).
- *
- * These assert the guards that stand between a request and a legal document, at the layer where
- * they are actually wired. A controller test cannot see any of this: it is handed a request that
- * has already passed everything the router put in front of it, so a guard deleted from the route
- * line leaves every controller test green.
- *
- * There is no environment gate to assert. The module's server-side feature flag was removed
- * before this work merged, leaving the LaunchDarkly flag as the only gate — and that one hides
- * the route and the nav without closing the BFF. So what protects these two routes is entirely
- * what is asserted here: the Org Lens grant on both, and on the write the impersonation guard,
- * with the CLA service's own signing-authority check beyond them. That is a shorter list than it
- * was, which makes these cases more load-bearing rather than less.
- */
-describe('org-clas router — the corporate signing routes', () => {
-  it('refuses the CLA Group search for an org the caller holds no grant on', async () => {
-    const res = await fetch(`${baseUrl}/api/orgs/${UNGRANTED}/lens/cla-groups/sign-options?search=cascade`);
-
-    expect(res.status).toBe(403);
-    expect(getSignOptions).not.toHaveBeenCalled();
-  });
-
-  it('admits the CLA Group search for a granted org', async () => {
-    const res = await fetch(`${baseUrl}/api/orgs/${GRANTED}/lens/cla-groups/sign-options?search=cascade`);
-
-    expect(res.status).toBe(200);
-    expect(getSignOptions).toHaveBeenCalled();
-  });
-
-  it('refuses the signature request for an org the caller holds no grant on', async () => {
-    const res = await fetch(`${baseUrl}/api/orgs/${UNGRANTED}/lens/cla-groups/sign`, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ projectSfid: 'a09410000182dD2AAI', claGroupId: 'aaaaaaaa-1111-4111-8111-111111111111', authorityAcked: true, embargoAcked: true }),
-    });
-
-    expect(res.status).toBe(403);
-    expect(requestCorporateSignature).not.toHaveBeenCalled();
-  });
 
   /**
-   * The one that matters most on this router.
+   * The corporate signing routes (#1983), asserted at the layer where their guards are wired. A
+   * controller test cannot see any of this: it is handed a request that has already passed
+   * everything the router put in front of it, so a guard deleted from a route line would leave
+   * every controller test green.
    *
-   * The request carries no signatory in its payload — the CLA service records whoever the token
-   * names. Under impersonation that is the wrong person, on a document that cannot be unsigned.
-   * So the guard has to run *before* the controller, not inside it: `not.toHaveBeenCalled()` is
-   * the assertion, and a version that rejected after doing the work would fail it.
+   * There is no environment gate to assert. The module's server-side flag was removed on the
+   * parent branch, leaving the LaunchDarkly `org-lens-cla-m3-enabled` flag as the only one — and
+   * that hides the route and the nav without closing the BFF. So what stands in front of these
+   * two routes is exactly what is asserted below: the Org Lens grant on both, the impersonation
+   * guard on the write, and the CLA service's own signing-authority check past them. A shorter
+   * list than it was, which makes each of these cases more load-bearing rather than less.
    */
-  it('refuses the signature request while impersonating, before the controller runs', async () => {
-    isImpersonating.mockReturnValue(true);
-
-    const res = await fetch(`${baseUrl}/api/orgs/${GRANTED}/lens/cla-groups/sign`, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ projectSfid: 'a09410000182dD2AAI', claGroupId: 'aaaaaaaa-1111-4111-8111-111111111111', authorityAcked: true, embargoAcked: true }),
-    });
-
-    expect(res.status).toBe(403);
-    expect(requestCorporateSignature).not.toHaveBeenCalled();
-  });
-
-  // The asymmetry is deliberate: choosing a CLA Group is a read and stays available to someone
-  // supporting a customer. Only the write is withheld.
-  it('leaves the CLA Group search available while impersonating', async () => {
-    isImpersonating.mockReturnValue(true);
-
-    const res = await fetch(`${baseUrl}/api/orgs/${GRANTED}/lens/cla-groups/sign-options?search=cascade`);
-
-    expect(res.status).toBe(200);
-    expect(getSignOptions).toHaveBeenCalled();
-  });
-
-  it('admits the signature request for a granted, non-impersonating caller', async () => {
-    const res = await fetch(`${baseUrl}/api/orgs/${GRANTED}/lens/cla-groups/sign`, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ projectSfid: 'a09410000182dD2AAI', claGroupId: 'aaaaaaaa-1111-4111-8111-111111111111', authorityAcked: true, embargoAcked: true }),
-    });
-
-    expect(res.status).toBe(200);
-    expect(requestCorporateSignature).toHaveBeenCalled();
-  });
-
-  // `/sign` and `/sign-options` are literal segments declared ahead of `/:signatureId/pdf-url`.
-  // Declared after it, both would be captured as a signature id and answered by the wrong handler.
-  it('does not let the pdf-url route capture the literal signing segments', async () => {
-    await fetch(`${baseUrl}/api/orgs/${GRANTED}/lens/cla-groups/sign-options?search=cascade`);
-
-    expect(getSignOptions).toHaveBeenCalled();
-    expect(getPdfUrl).not.toHaveBeenCalled();
-  });
 
   /**
    * Choosing a CLA Group to sign for. A read, so impersonation stays allowed — exactly as on the
@@ -258,16 +178,6 @@ describe('org-clas router — the corporate signing routes', () => {
       expect(res.status).toBe(200);
       expect(getSignOptions).toHaveBeenCalled();
       expect(getPdfUrl).not.toHaveBeenCalled();
-    });
-
-    it('refuses a search when the server flag is off, before any grant lookup', async () => {
-      delete process.env['LFX_ORG_LENS_CLA_M3_ENABLED'];
-
-      const res = await fetch(`${baseUrl}/api/orgs/${GRANTED}/lens/cla-groups/sign-options?search=cascade`);
-
-      expect(res.status).toBe(409);
-      expect(getSignOptions).not.toHaveBeenCalled();
-      expect(getAccessAwareOrgs).not.toHaveBeenCalled();
     });
 
     it('stays available while impersonating, because it reads nothing and writes nothing', async () => {
@@ -315,18 +225,6 @@ describe('org-clas router — the corporate signing routes', () => {
 
       expect(res.status).toBe(200);
       expect(requestCorporateSignature).toHaveBeenCalled();
-    });
-
-    // The kill switch has to cover the write, not only the reads: a flag that hides the page while
-    // leaving this route live would let a signature be created in an environment it is off in.
-    it('refuses a signing request when the server flag is off, before any grant lookup', async () => {
-      delete process.env['LFX_ORG_LENS_CLA_M3_ENABLED'];
-
-      const res = await sign(GRANTED);
-
-      expect(res.status).toBe(409);
-      expect(requestCorporateSignature).not.toHaveBeenCalled();
-      expect(getAccessAwareOrgs).not.toHaveBeenCalled();
     });
 
     /**

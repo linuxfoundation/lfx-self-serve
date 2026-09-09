@@ -159,4 +159,84 @@ describe('gatewayFetch log-only redaction', () => {
 
     expect(error.errorBody).toBeUndefined();
   });
+
+  /**
+   * A 2xx whose body does not parse.
+   *
+   * The option was written for refusals and so was only ever consulted on the non-OK branch,
+   * which left it silently unhonoured on the one path where the *success* payload is the
+   * sensitive thing. On the corporate signing call that body is the signing address and the
+   * signature identifier, so a single malformed response wrote both to the logs of a caller that
+   * had explicitly opted out of exactly that.
+   *
+   * Both surfaces are asserted, because the body reaches the logs by two routes: the helper's own
+   * warning, and `getLogContext()` on the thrown error, which the API error handler logs. Closing
+   * only the first moves the leak one layer up instead of fixing it — which is how the same
+   * finding came back twice before.
+   */
+  describe('a 2xx whose body does not parse', () => {
+    const SIGN_URL = 'https://demo.docusign.example/signing/envelope-SENSITIVE-ADDRESS';
+    const SIGNATURE_ID = 'signature-SENSITIVE-IDENTIFIER';
+
+    function malformedSuccess(): void {
+      vi.stubGlobal(
+        'fetch',
+        vi.fn(async () => new Response(`{"sign_url":"${SIGN_URL}","signature_id":"${SIGNATURE_ID}" <<truncated`, { status: 200 }))
+      );
+    }
+
+    it('keeps the unparsed body out of the log line', async () => {
+      malformedSuccess();
+
+      await gatewayFetch(req, 'https://gateway.example.test/sign', options).catch(() => undefined);
+
+      const emitted = JSON.stringify(logger.warning.mock.calls);
+      expect(emitted).not.toContain('SENSITIVE-ADDRESS');
+      expect(emitted).not.toContain('SENSITIVE-IDENTIFIER');
+      expect(emitted).not.toContain('docusign');
+    });
+
+    /**
+     * The redaction must not cost the diagnosis — but the parse message cannot be what preserves
+     * it. V8 quotes the offending input (`Unexpected token 'S', "SECRET-COUPON" is not valid
+     * JSON`), so logging the message hands over the leading edge of the very body being withheld.
+     * The exception name carries the useful half without the payload.
+     */
+    it('still says what happened and on which operation, without quoting the body', async () => {
+      malformedSuccess();
+
+      await gatewayFetch(req, 'https://gateway.example.test/sign', options).catch(() => undefined);
+
+      expect(logger.warning).toHaveBeenCalledWith(
+        req,
+        'org_cla_request_corporate_signature',
+        'Upstream returned invalid JSON response',
+        expect.objectContaining({ status: 200, body_redacted: true, error_name: 'SyntaxError' })
+      );
+    });
+
+    // Nothing relays a producer sentence out of a malformed success, so unlike the non-OK branch
+    // there is nothing here to keep the body for — and keeping it would re-log it at the handler.
+    it('does not carry the body out on the thrown error either', async () => {
+      malformedSuccess();
+
+      const error = (await gatewayFetch(req, 'https://gateway.example.test/sign', options).catch((caught: unknown) => caught)) as MicroserviceError;
+
+      expect(error.errorBody).toBeUndefined();
+      expect(JSON.stringify(error.getLogContext())).not.toContain('SENSITIVE-ADDRESS');
+      expect(JSON.stringify(error.getLogContext())).not.toContain('SENSITIVE-IDENTIFIER');
+    });
+
+    // The counterpart: a caller that has not opted out still gets the body, or this change would
+    // have quietly removed a diagnostic from every other consumer of the helper.
+    it('leaves the body in place for a caller that did not ask for redaction', async () => {
+      malformedSuccess();
+
+      const plain = { ...options, redactResponseBodyFromLogs: false };
+      const error = (await gatewayFetch(req, 'https://gateway.example.test/sign', plain).catch((caught: unknown) => caught)) as MicroserviceError;
+
+      expect(error.errorBody).toContain('SENSITIVE-ADDRESS');
+      expect(JSON.stringify(logger.warning.mock.calls)).toContain('SENSITIVE-ADDRESS');
+    });
+  });
 });
