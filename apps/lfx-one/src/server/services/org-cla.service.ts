@@ -235,6 +235,13 @@ export class OrgClaService {
           service: SERVICE,
           errorMessage: 'Failed to fetch signed document URL',
           errorCode: 'UPSTREAM_ERROR',
+          // As the list call above, and this path needs it more. A 403 here is expected rather
+          // than exceptional — the producer authorizes the document by project scope, which an
+          // organization-only viewer can lack for an agreement they can see listed — and its body
+          // names the authenticated user. On a non-OK status or an unparseable body the fetch
+          // helper logs the raw payload, so without this the routine case writes an identity into
+          // application logs. A malformed success would put the presigned URL there too.
+          redactResponseBody: true,
           bearerToken: isImpersonating(req) ? req.bearerToken : undefined,
         }
       );

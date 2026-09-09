@@ -406,6 +406,19 @@ describe('OrgEasyclaDetailComponent', () => {
       expect(byTestId(fixture, 'org-easycla-detail-tab-managers')?.getAttribute('tabindex')).toBe('-1');
     });
 
+    it('points only the selected tab at a panel, since only its panel exists', async () => {
+      const fixture = await render();
+
+      const panelId = byTestId(fixture, 'org-easycla-detail-tab-overview')?.getAttribute('aria-controls');
+      expect(panelId).toBe('org-easycla-detail-tab-panel-overview');
+      expect(fixture.nativeElement.querySelector(`#${panelId}`)).not.toBeNull();
+
+      // The unselected tabs carry no `aria-controls` at all. One panel is in the DOM at a time, so
+      // an unselected tab advertising one names an id that does not exist — worse than an absent
+      // attribute, because a screen reader following it lands nowhere.
+      expect(fixture.nativeElement.querySelectorAll('[role="tab"][aria-selected="false"][aria-controls]')).toHaveLength(0);
+    });
+
     it('moves to the next tab on ArrowRight and claims the keystroke', async () => {
       const fixture = await render();
 

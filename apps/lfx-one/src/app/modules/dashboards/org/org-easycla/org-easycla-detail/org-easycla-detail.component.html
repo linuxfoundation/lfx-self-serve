@@ -78,13 +78,20 @@
       class="flex flex-wrap gap-4 border-b border-gray-200"
       data-testid="org-easycla-detail-tabs"
       (keydown)="onTabKeydown($event)">
+      <!--
+        `aria-controls` is set only on the SELECTED tab, deliberately. One panel is in the DOM at a
+        time, so setting it on every tab would point assistive technology at element ids that do
+        not exist. ARIA 1.2 makes aria-controls optional on a tab for this reason, and a dangling
+        reference is worse than an absent attribute — a screen reader following it lands nowhere.
+        Same call, and the same rationale, as the campaign tablists.
+      -->
       @for (tab of tabs(); track tab.id) {
         <button
           type="button"
           role="tab"
           [id]="'org-easycla-detail-tab-trigger-' + tab.id"
           [attr.aria-selected]="activeTab() === tab.id"
-          [attr.aria-controls]="'org-easycla-detail-tab-panel-' + tab.id"
+          [attr.aria-controls]="activeTab() === tab.id ? 'org-easycla-detail-tab-panel-' + tab.id : null"
           [attr.tabindex]="activeTab() === tab.id ? 0 : -1"
           class="border-b-2 px-0.5 pb-2 text-sm"
           [class.border-brand-500]="activeTab() === tab.id"

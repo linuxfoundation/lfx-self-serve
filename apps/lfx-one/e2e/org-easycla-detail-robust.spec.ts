@@ -89,6 +89,11 @@ test.describe('Org Lens EasyCLA detail — structure', () => {
     const panel = page.locator(`#${panelId}`);
     await expect(panel).toHaveAttribute('role', 'tabpanel');
     await expect(panel).toHaveAttribute('aria-labelledby', (await selected.getAttribute('id')) ?? '');
+
+    // And the unselected tabs point nowhere at all. One panel is in the DOM at a time, so a tab
+    // that advertises `aria-controls` while unselected names an id that does not exist — which is
+    // worse than carrying no attribute, because a screen reader following it lands nowhere.
+    await expect(page.locator('[role="tab"][aria-selected="false"][aria-controls]')).toHaveCount(0);
   });
 
   test('moves the selection with the arrow keys, leaving one tab stop behind', async ({ page }) => {

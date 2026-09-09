@@ -576,6 +576,22 @@ describe('OrgClaService.getPdfUrl', () => {
     await expect(new OrgClaService().getPdfUrl(req(), ORG_UID, 'signature-uuid-1')).rejects.toMatchObject({ statusCode: 403 });
   });
 
+  // The 403 above is routine here, not exceptional: the producer authorizes the document by
+  // project scope, which an organization-only viewer can lack for an agreement they can see
+  // listed. Its body names the authenticated user, and the fetch helper logs the raw payload on a
+  // non-OK status — so without redaction the ordinary case writes an identity into the logs.
+  it('redacts the response body so a refusal cannot log who was refused', async () => {
+    stageDocument({ signed_cla_url: 'https://s3.example.org/ccla.pdf' });
+
+    await new OrgClaService().getPdfUrl(req(), ORG_UID, 'signature-uuid-1');
+
+    expect(gatewayFetch).toHaveBeenCalledWith(
+      expect.anything(),
+      expect.stringContaining('/v4/signatures/signature-uuid-1/signed-document'),
+      expect.objectContaining({ redactResponseBody: true })
+    );
+  });
+
   it('authorizes the document read with the target token during impersonation', async () => {
     isImpersonating.mockReturnValue(true);
     stageDocument({ signed_cla_url: 'https://s3.example.org/ccla.pdf' });
