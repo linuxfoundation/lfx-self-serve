@@ -4,6 +4,7 @@
 import type { FormationItem, FormationItemStatus, FormationTemplateSection } from '../interfaces/formation.interface';
 import type { FormationReadinessSummary, FormationRenderedSection } from '../interfaces/formation-checklist.interface';
 import { FORMATION_ORPHAN_SECTION } from '../constants/formation.constants';
+import { parseIsoDateAsUtcMidnight } from './date-time.utils';
 
 const EMPTY_COUNTS: Record<FormationItemStatus, number> = {
   not_started: 0,
@@ -93,11 +94,41 @@ export function groupFormationItemsBySection(items: FormationItem[], sections: F
   return rendered;
 }
 
-/** `FormationReadinessStripComponent`'s "N days" / "N days ago" / "today" label for an announcement date, relative to now. */
+/**
+ * `FormationReadinessStripComponent`'s "N days" / "N days ago" / "today" label for an announcement
+ * date, relative to now.
+ *
+ * Diffs UTC calendar-day components on both sides, not raw elapsed milliseconds against
+ * `Date.now()` — a whole-day gap between two calendar dates would otherwise drift by one as the
+ * current instant ticks past the halfway point of "today" (e.g. a date exactly 170 calendar days
+ * ago reads "171 days ago" once more than 12 hours of today have elapsed). Calendar-day diffing
+ * anchors both `date` and "now" to UTC midnight first, so the result only ever changes at a day
+ * boundary, never within a day.
+ */
 export function formatFormationRelativeDayCount(date: Date): string {
-  const diffDays = Math.round((date.getTime() - Date.now()) / 86_400_000);
+  const dateUtcMidnight = Date.UTC(date.getUTCFullYear(), date.getUTCMonth(), date.getUTCDate());
+  const now = new Date();
+  const todayUtcMidnight = Date.UTC(now.getUTCFullYear(), now.getUTCMonth(), now.getUTCDate());
+  const diffDays = Math.round((dateUtcMidnight - todayUtcMidnight) / 86_400_000);
   if (diffDays === 0) return 'today';
   if (diffDays > 0) return `${diffDays} day${diffDays === 1 ? '' : 's'}`;
   const past = Math.abs(diffDays);
   return `${past} day${past === 1 ? '' : 's'} ago`;
+}
+
+/**
+ * `FormationReadinessStripComponent`'s "Sun, Mar 23 · 170 days ago" announcement label for a
+ * date-only announcement date, or `null` when there is none / it doesn't parse.
+ *
+ * Parses through `parseIsoDateAsUtcMidnight` — the same UTC-anchored parse `formatIsoDateLabel`
+ * uses for the dashboard subtitle and sidebar card — and derives the day count from that same
+ * parsed instant, so the calendar day shown here can never disagree with the dashboard's, and the
+ * count next to it can never disagree with the date it's counting from.
+ */
+export function formatFormationAnnouncementLabel(iso: string | null | undefined): string | null {
+  if (!iso) return null;
+  const parsed = parseIsoDateAsUtcMidnight(iso);
+  if (!parsed) return null;
+  const dateLabel = parsed.toLocaleDateString('en-US', { weekday: 'short', month: 'short', day: 'numeric', timeZone: 'UTC' });
+  return `${dateLabel} · ${formatFormationRelativeDayCount(parsed)}`;
 }

@@ -8,6 +8,7 @@ import type { FormationItem, FormationItemStatus, FormationTemplateSection } fro
 import {
   collectFormationOrphanItems,
   deriveFormationReadinessSummary,
+  formatFormationAnnouncementLabel,
   formatFormationRelativeDayCount,
   groupFormationItemsBySection,
 } from './formation-checklist.utils';
@@ -241,5 +242,70 @@ describe('formatFormationRelativeDayCount', () => {
 
   it('rounds a date 12 hours in the future to "1 day"', () => {
     expect(formatFormationRelativeDayCount(new Date(NOW.getTime() + 12 * 60 * 60 * 1000))).toBe('1 day');
+  });
+
+  // GH-1958 follow-up: the checklist header showed "171 days ago" for an announcement date that
+  // was calendar-exactly 170 days in the past, because the old implementation diffed raw elapsed
+  // milliseconds against the exact current instant (170 days + 17h23m past UTC midnight rounds up
+  // to 171). Anchoring both sides to UTC midnight makes the count depend only on the calendar gap,
+  // not on what time of day "now" happens to be.
+  it('reads a calendar-exact day count regardless of what time of day it currently is', () => {
+    vi.setSystemTime(new Date('2026-09-09T17:23:00.000Z'));
+    const announced = new Date(Date.UTC(2026, 2, 23)); // 2026-03-23, UTC midnight
+    expect(formatFormationRelativeDayCount(announced)).toBe('170 days ago');
+  });
+});
+
+/**
+ * GH-1958 follow-up: the checklist header read "Sun, Mar 22 · 171 days ago" for the same
+ * announcement date the dashboard showed as "Mar 23, 2026" — a UTC-vs-local parse divergence.
+ * Pinned against a fixture whose UTC and local calendar days differ (2026-03-23T00:00:00.000Z is
+ * still Mar 22 anywhere west of UTC), so this fails on a negative-offset host without the fix,
+ * not just in principle.
+ */
+describe('formatFormationAnnouncementLabel', () => {
+  const NOW = new Date('2026-09-09T17:23:00.000Z');
+
+  beforeEach(() => {
+    vi.useFakeTimers();
+    vi.setSystemTime(NOW);
+  });
+
+  afterEach(() => {
+    vi.useRealTimers();
+  });
+
+  it('renders the same calendar day formatIsoDateLabel would, with a calendar-accurate day count', () => {
+    // formatIsoDateLabel('2026-03-23') renders 'Mar 23, 2026' — the dashboard's exact call site.
+    // The strip's "Mar 23" here must agree with that "Mar 23", never fall back to "Mar 22".
+    expect(formatFormationAnnouncementLabel('2026-03-23')).toBe('Mon, Mar 23 · 170 days ago');
+  });
+
+  it('returns null for an absent or unparseable date, letting the caller supply its own "Not set"', () => {
+    expect(formatFormationAnnouncementLabel(null)).toBeNull();
+    expect(formatFormationAnnouncementLabel(undefined)).toBeNull();
+    expect(formatFormationAnnouncementLabel('not-a-date')).toBeNull();
+  });
+
+  it('pins timeZone UTC on the formatter itself, so the guard binds on a UTC runner too', () => {
+    // A literal-string comparison alone would pass on a UTC CI runner whether or not the fix is
+    // present, since local and UTC calendar days coincide there. Observing the option directly
+    // binds the assertion to what the implementation actually requests, on any host.
+    const seen: (Intl.DateTimeFormatOptions | undefined)[] = [];
+    const original = Date.prototype.toLocaleDateString;
+    // eslint-disable-next-line no-extend-native
+    Date.prototype.toLocaleDateString = function (locales?: unknown, options?: Intl.DateTimeFormatOptions): string {
+      seen.push(options);
+      return original.call(this, locales as string, options);
+    };
+    try {
+      formatFormationAnnouncementLabel('2026-03-23');
+    } finally {
+      // eslint-disable-next-line no-extend-native
+      Date.prototype.toLocaleDateString = original;
+    }
+
+    expect(seen.length).toBeGreaterThan(0);
+    expect(seen.every((o) => o?.timeZone === 'UTC')).toBe(true);
   });
 });

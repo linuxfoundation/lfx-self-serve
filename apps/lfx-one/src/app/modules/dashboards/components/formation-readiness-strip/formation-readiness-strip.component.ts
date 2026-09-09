@@ -5,7 +5,7 @@ import { NgClass } from '@angular/common';
 import { Component, computed, inject, input, Signal } from '@angular/core';
 import type { FormationItem, FormationReadinessSummary } from '@lfx-one/shared/interfaces';
 import { FORMATION_ITEM_SEGMENT_COLORS } from '@lfx-one/shared/constants';
-import { deriveFormationReadinessSummary, formatFormationRelativeDayCount } from '@lfx-one/shared/utils';
+import { deriveFormationReadinessSummary, formatFormationAnnouncementLabel } from '@lfx-one/shared/utils';
 import { ProjectContextService } from '@services/project-context.service';
 
 @Component({
@@ -40,19 +40,18 @@ export class FormationReadinessStripComponent {
    * date the dashboard subtitle and sidebar card already show), not the `announcementDate` input
    * above — the checklist previously showed "Not set" here next to a dashboard stating a real date,
    * because the two were reading different fields. One source, every surface: dashboard subtitle,
-   * sidebar card, and this header. TODO(#1957): once the BFF wires `lfx-v2-formation-service`, the
-   * formation record carries its own announcement date and becomes the source of truth for all of
-   * them — at that point this should go back to reading the (then-real) `announcementDate` input,
-   * and the dashboard/sidebar should switch to reading it from the formation record too. Don't let
-   * this drift back into two readers of two different fields pointing the other way.
+   * sidebar card, and this header. Rendered via the shared `formatFormationAnnouncementLabel` —
+   * the same UTC-anchored parse `formatIsoDateLabel` uses for the other two surfaces — rather than
+   * a `new Date(date)` built and formatted locally here, so this header's calendar day and day
+   * count can never drift a day off the dashboard's. TODO(#1957): once the BFF wires
+   * `lfx-v2-formation-service`, the formation record carries its own announcement date and becomes
+   * the source of truth for all of them — at that point this should go back to reading the
+   * (then-real) `announcementDate` input, and the dashboard/sidebar should switch to reading it
+   * from the formation record too. Don't let this drift back into two readers of two different
+   * fields pointing the other way.
    */
   protected readonly announcementLabel = computed(() => {
-    const date = this.projectContextService.activeProjectAnnouncementDate();
-    if (!date) return 'Not set';
-    const parsed = new Date(date);
-    if (Number.isNaN(parsed.getTime())) return 'Not set';
-    const dateLabel = parsed.toLocaleDateString('en-US', { weekday: 'short', month: 'short', day: 'numeric' });
-    return `${dateLabel} · ${formatFormationRelativeDayCount(parsed)}`;
+    return formatFormationAnnouncementLabel(this.projectContextService.activeProjectAnnouncementDate()) ?? 'Not set';
   });
 
   /** Exposed directly so the template does a plain lookup, never a method call — see frontend-checklist §4. */
