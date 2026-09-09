@@ -12,6 +12,7 @@ import { getFormationSubStageLabel, isBoardScopedPersona, isFormationStage, isSa
 import { SsrCookieService } from 'ngx-cookie-service-ssr';
 import { catchError, combineLatest, filter, map, of, startWith, switchMap, tap } from 'rxjs';
 
+import { hasMeetingWriteAccess } from '../utils/write-access.util';
 import { CookieRegistryService } from './cookie-registry.service';
 import { FeatureFlagService } from './feature-flag.service';
 import { LensService } from './lens.service';
@@ -401,7 +402,7 @@ export class ProjectContextService {
               }
               return this.projectService
                 .getProject(ctx.slug, false, { meetingCoordinator: true })
-                .pipe(map((coordinatorProject) => coordinatorProject?.writer === true || coordinatorProject?.meetingCoordinator === true));
+                .pipe(map((coordinatorProject) => hasMeetingWriteAccess(coordinatorProject)));
             }),
             catchError(() => of(false))
           );

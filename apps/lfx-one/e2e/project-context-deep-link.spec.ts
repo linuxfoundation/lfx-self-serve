@@ -293,7 +293,7 @@ async function stubMeetingEditDetail(page: Page, meeting: ReturnType<typeof buil
 
 /**
  * Same route shapes as stubMeetingEditDetail, but the detail GET fulfills an error status —
- * exercises meeting-manage's non-404 inline error state and 404 eject (GH-2037).
+ * exercises the composer's inline load-error state and its not-found toast (GH-2037).
  */
 async function stubMeetingEditDetailError(page: Page, status: number): Promise<void> {
   await page.route('**/api/meetings*', (route) => {
@@ -509,8 +509,7 @@ function skipWhenAuthMissing(): void {
  *
  * A full `page.goto()` of an entity URL SSRs the route on the Express server — server-side
  * data fetches bypass `page.route` stubs and hit the real BFF, where the stubbed entity does
- * not exist, so the component's error path (e.g. meeting-manage's navigateBack) redirects away
- * before the client ever boots. Booting on `/` first and then navigating via
+ * not exist, so the component's error path redirects away before the client ever boots. Booting on `/` first and then navigating via
  * pushState + popstate keeps the router client-side, where every fetch is intercepted.
  *
  * Also note Playwright glob semantics: `*` does not cross `/`, so `**\/api/meetings*` matches
@@ -642,7 +641,7 @@ test.describe('Meeting edit deep-link resolves the meeting’s project context (
       name: 'Other Project',
       foundation: false,
     });
-    await expect(page.getByTestId('meeting-manage-title')).toBeVisible({ timeout: PAGE_LOAD_TIMEOUT });
+    await expect(page.getByTestId('meeting-composer-header')).toBeVisible({ timeout: PAGE_LOAD_TIMEOUT });
 
     // The sync derives context from the loaded meeting (Test Foundation), replacing the
     // cookie-restored Other Project — the selector and sidebar links follow the correction.
@@ -676,10 +675,13 @@ test.describe('Meeting edit deep-link resolves the meeting’s project context (
       name: 'Other Project',
       foundation: false,
     });
-    await expect(page.getByTestId('meeting-manage-title')).toBeVisible({ timeout: PAGE_LOAD_TIMEOUT });
+    await expect(page.getByTestId('meeting-composer-header')).toBeVisible({ timeout: PAGE_LOAD_TIMEOUT });
 
-    // Still on the edit page (no access-denied redirect), and the context follows the meeting.
-    expect(page.url()).toContain(`/project/meetings/${MOCK_MEETING_UID}/edit`);
+    // No access-denied redirect (that would land on /project/overview?_notice=...) — the composer
+    // route hands off to the meetings list and opens the drawer over it, so the list URL plus a
+    // visible drawer is what "the guard let us through" looks like now.
+    expect(page.url()).toContain('/project/meetings');
+    expect(page.url()).not.toContain('/overview');
     await expect(page.getByTestId('project-selector')).toContainText('Test Foundation', { timeout: ELEMENT_TIMEOUT });
   });
 
@@ -707,7 +709,7 @@ test.describe('Meeting edit deep-link resolves the meeting’s project context (
       name: 'Other Project',
       foundation: false,
     });
-    await expect(page.getByTestId('meeting-manage-title')).toBeVisible({ timeout: PAGE_LOAD_TIMEOUT });
+    await expect(page.getByTestId('meeting-composer-header')).toBeVisible({ timeout: PAGE_LOAD_TIMEOUT });
 
     await expect(page.getByTestId('project-selector')).toContainText('Test Foundation', { timeout: ELEMENT_TIMEOUT });
     await expect(page.getByTestId('sidebar-item-meetings')).toHaveAttribute('href', /[?&]project=test-foundation/, { timeout: ELEMENT_TIMEOUT });
@@ -739,14 +741,16 @@ test.describe('Meeting edit load failure (GH-2037)', () => {
       foundation: false,
     });
 
-    // Inline error state replaces the skeleton; no "not found" toast; URL stays on /edit.
-    await expect(page.getByTestId('meeting-manage-retry')).toBeVisible({ timeout: PAGE_LOAD_TIMEOUT });
-    await expect(page.getByTestId('meeting-manage-back')).toBeVisible();
-    await expect(page.getByTestId('meeting-manage-loading')).not.toBeVisible();
-    // Give a (never-fired) toast a render window — negative assertions pass instantly otherwise.
-    await page.waitForTimeout(500);
-    await expect(page.locator('.p-toast')).not.toBeVisible();
-    expect(page.url()).toContain(`/project/meetings/${MOCK_MEETING_UID}/edit`);
+    // Inline error state replaces the skeleton, and the drawer stays open with a way out.
+    await expect(page.getByTestId('meeting-composer-load-error')).toBeVisible({ timeout: PAGE_LOAD_TIMEOUT });
+    await expect(page.getByTestId('meeting-composer-load-retry')).toBeVisible();
+    // Cancel, not Back: the composer's Back button is create-mode only, so Cancel is the single
+    // exit an edit-mode load failure offers.
+    await expect(page.getByTestId('meeting-composer-cancel')).toBeVisible();
+    await expect(page.getByTestId('meeting-composer-loading')).not.toBeVisible();
+    // The composer route redirects to the list and opens the drawer over it, so the surviving URL
+    // assertion is that nothing ejected us out of the meetings section entirely.
+    expect(page.url()).toContain('/project/meetings');
   });
 
   test('Retry after a transient failure re-fetches the meeting and renders the form (AC-1, AC-3)', async ({ page }) => {
@@ -758,16 +762,16 @@ test.describe('Meeting edit load failure (GH-2037)', () => {
       name: 'Other Project',
       foundation: false,
     });
-    await expect(page.getByTestId('meeting-manage-retry')).toBeVisible({ timeout: PAGE_LOAD_TIMEOUT });
+    await expect(page.getByTestId('meeting-composer-load-retry')).toBeVisible({ timeout: PAGE_LOAD_TIMEOUT });
 
     // "Backend recovered": re-registering the detail route takes precedence over the error
     // stub (Playwright matches in reverse registration order), so the retry fetch gets a 200.
     await stubMeetingEditDetail(page, buildMeetingStub(true));
-    await page.getByTestId('meeting-manage-retry').click();
+    await page.getByTestId('meeting-composer-load-retry').click();
 
-    await expect(page.getByTestId('meeting-manage-stepper')).toBeVisible({ timeout: PAGE_LOAD_TIMEOUT });
-    await expect(page.getByTestId('meeting-manage-load-error')).not.toBeVisible();
-    expect(page.url()).toContain(`/project/meetings/${MOCK_MEETING_UID}/edit`);
+    await expect(page.getByTestId('meeting-composer-rail')).toBeVisible({ timeout: PAGE_LOAD_TIMEOUT });
+    await expect(page.getByTestId('meeting-composer-load-error')).not.toBeVisible();
+    expect(page.url()).toContain('/project/meetings');
   });
 
   test('a real 404 still ejects to the meetings list with the not-found toast (AC-2)', async ({ page }) => {

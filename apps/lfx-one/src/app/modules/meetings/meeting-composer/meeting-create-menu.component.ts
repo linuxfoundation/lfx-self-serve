@@ -43,6 +43,13 @@ export class MeetingCreateMenuComponent {
   public readonly projectUid = input<string | undefined>(undefined);
 
   /**
+   * Which of the trigger's edges the panel lines up with.
+   * @description Defaults to `'right'`, for a trigger that is itself the right edge of its layout —
+   * the case that made the dropdown position itself in the first place.
+   */
+  public readonly align = input<MeetingCreateMenuAlign>('right');
+
+  /**
    * Quick start per meeting type, then the full drawer.
    * @description The trigger has no default action of its own — creating a meeting always starts by
    * choosing one of these rows, so this model is the only entry point into either composer surface.
@@ -51,13 +58,6 @@ export class MeetingCreateMenuComponent {
    * could seed a type here that the select then hides, leaving it set but uneditable.
    */
   protected readonly createMenuItems: Signal<MenuItem[]> = this.initCreateMenuItems();
-
-  /**
-   * Which of the trigger's edges the panel lines up with.
-   * @description Defaults to `'right'`, for a trigger that is itself the right edge of its layout —
-   * the case that made the dropdown position itself in the first place.
-   */
-  public readonly align = input<MeetingCreateMenuAlign>('right');
 
   /** Smallest gap left between the popup and either viewport edge, in px. */
   private readonly viewportGutter = 8;

@@ -2,7 +2,14 @@
 <!-- SPDX-License-Identifier: MIT -->
 
 <!-- No nested card or heading: this panel only ever renders under the "Custom" cadence chip, inside the
-     recurring card that already frames and titles it. A rule stands in for the border it used to draw. -->
+     recurring card that already frames and titles it. A rule stands in for the border it used to draw.
+
+     Every choice below is a native `<input>` visually hidden inside its `<label>` chip rather than an
+     `lfx-radio-button`: the wrapper renders PrimeNG's radio dot plus a text label with no styleClass
+     passthrough, so it cannot become the outlined pill this row is specified as. Hiding the real control
+     keeps native radiogroup semantics (arrow-key traversal, one tab stop per group) and the chip carries
+     its focus ring through `has-[:focus-visible]` — see `chipSelectedClass` in the component. The values
+     still write through the same `monthlyTypeUI` / `endTypeUI` controls the wrapper bound. -->
 <div class="flex flex-col gap-4 border-t border-gray-200 pt-3" [formGroup]="recurrenceForm()">
   <!-- Interval -->
   <div class="flex flex-col gap-1.5">

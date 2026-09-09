@@ -110,6 +110,80 @@
     </div>
   }
 
+  <!-- Meeting organizer (owner) -->
+  @if (showOrganizer()) {
+    <div class="flex flex-col gap-1.5">
+      <label for="composer-organizer" class="text-sm font-medium text-gray-900">
+        Meeting organizer <span class="font-normal text-gray-400">(optional)</span>
+      </label>
+      @if (!ownerManualEntry()) {
+        <lfx-user-search
+          [form]="form()"
+          searchType="committee_member"
+          emailControl="ownerEmail"
+          usernameControl="ownerUsername"
+          [displayValue]="selectedOwnerLabel()"
+          [showClear]="true"
+          inputId="composer-organizer"
+          placeholder="Search for a user…"
+          styleClass="w-full"
+          inputStyleClass="w-full text-sm"
+          panelStyleClass="w-full"
+          dataTestId="composer-organizer-search"
+          (onUserSelect)="handleOwnerSelection($event)"
+          (onClear)="clearOwnerSelection()"
+          (onManualEntry)="switchToOwnerManualEntry()" />
+      } @else {
+        <div class="flex flex-col gap-3" data-testid="composer-organizer-manual">
+          <button
+            type="button"
+            class="self-start text-sm text-primary hover:underline"
+            (click)="backToOwnerSearch()"
+            data-testid="composer-organizer-back-to-search">
+            ← Back to search
+          </button>
+          <div class="flex flex-col gap-1">
+            <label for="composer-organizer-name" class="text-sm text-gray-900">Name</label>
+            <lfx-input-text
+              [form]="form()"
+              size="small"
+              control="ownerName"
+              id="composer-organizer-name"
+              placeholder="Enter organizer name"
+              styleClass="w-full"
+              data-testid="composer-organizer-name-input" />
+          </div>
+          <div class="flex flex-col gap-1">
+            <label for="composer-organizer-email" class="text-sm text-gray-900">Email</label>
+            <lfx-input-text
+              [form]="form()"
+              size="small"
+              control="ownerEmail"
+              id="composer-organizer-email"
+              placeholder="Enter organizer email"
+              styleClass="w-full"
+              data-testid="composer-organizer-email-input" />
+            @if (form().get('ownerEmail')?.errors?.['email'] && form().get('ownerEmail')?.touched) {
+              <p class="text-sm text-red-600" role="alert" data-testid="composer-organizer-email-error">Enter a valid email address</p>
+            }
+          </div>
+        </div>
+      }
+
+      @if (showSavedOwnerRevert()) {
+        <div class="flex flex-wrap items-center gap-2">
+          <p class="text-xs text-gray-600" data-testid="composer-organizer-saved">Saved organizer: {{ savedOwnerLabel() }} — clearing reverts to this.</p>
+          <button type="button" class="text-xs text-primary hover:underline" (click)="clearOwnerSelection()" data-testid="composer-organizer-revert">
+            Revert
+          </button>
+        </div>
+      }
+      @if (!savedOwner()) {
+        <p class="text-xs text-gray-500">Defaults to the meeting creator.</p>
+      }
+    </div>
+  }
+
   <!-- Visibility + join restriction: two independent API fields, so two labelled cards rather than one
        card with internal legends — the heading reads as the question and the card as its answers. -->
   <fieldset>

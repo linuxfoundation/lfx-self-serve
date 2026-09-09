@@ -8,6 +8,7 @@ import { FormGroup, ReactiveFormsModule } from '@angular/forms';
 import { InputTextComponent } from '@components/input-text/input-text.component';
 import { RadioButtonComponent } from '@components/radio-button/radio-button.component';
 import { SelectComponent } from '@components/select/select.component';
+import { UserSearchComponent } from '@components/user-search/user-search.component';
 import {
   lfxColors,
   MEETING_JOIN_RESTRICTION_OPTIONS,
@@ -16,7 +17,7 @@ import {
   YOUTUBE_MEETING_TITLE_WARNING_LENGTH,
 } from '@lfx-one/shared/constants';
 import { MeetingType } from '@lfx-one/shared/enums';
-import type { CardSelectorOption } from '@lfx-one/shared/interfaces';
+import type { CardSelectorOption, UserSearchResult } from '@lfx-one/shared/interfaces';
 import { getSelectableMeetingTypeOptions } from '@lfx-one/shared/utils';
 import { PersonaService } from '@services/persona.service';
 import { map, of, startWith, switchMap } from 'rxjs';
@@ -31,7 +32,7 @@ import { MeetingComposerFormService } from '../meeting-composer-form.service';
  */
 @Component({
   selector: 'lfx-composer-details-access',
-  imports: [NgClass, ReactiveFormsModule, InputTextComponent, SelectComponent, RadioButtonComponent],
+  imports: [NgClass, ReactiveFormsModule, InputTextComponent, SelectComponent, RadioButtonComponent, UserSearchComponent],
   templateUrl: './composer-details-access.component.html',
 })
 export class ComposerDetailsAccessComponent {
@@ -44,12 +45,23 @@ export class ComposerDetailsAccessComponent {
   /** Quick create renders the type as its own chip row above these fields, so the select would duplicate it. */
   public readonly showTypeSelect = input(true);
   /**
+   * Whether to offer the optional organizer picker.
+   * @description Off in quick create: it defaults to whoever is creating the meeting, which is the right
+   * answer for the fast path, and the drawer covers the rarer case of scheduling on someone else's behalf.
+   */
+  public readonly showOrganizer = input(true);
+  /**
    * Hint text for a title that was written by something other than the organizer.
    * @description Passed in rather than derived here because only quick create prefills from the meeting
    * type. It renders directly under the input and is wired through `aria-describedby`, so the hint is
    * reachable from the field it is about instead of sitting at the bottom of the column.
    */
   public readonly titleHint = input<string | null>(null);
+
+  /** Whether the organizer picker is hand-typing rather than searching. Lives on the form service so a section switch can't reset it. */
+  protected readonly ownerManualEntry = this.formService.ownerManualEntry;
+  /** The stored organizer this edit started from; absent on create and on meetings that never had one. */
+  protected readonly savedOwner = this.formService.hydratedOwner;
 
   protected readonly visibilityOptions = MEETING_VISIBILITY_OPTIONS;
   protected readonly joinRestrictionOptions = MEETING_JOIN_RESTRICTION_OPTIONS;
@@ -79,8 +91,90 @@ export class ComposerDetailsAccessComponent {
    * into one list instead of overwriting each other.
    */
   protected readonly titleDescribedBy: Signal<string | null> = this.initTitleDescribedBy();
+  /** Feeds the picker's own display box, so it renders whatever is committed — hydrated or freshly picked. */
+  protected readonly selectedOwnerLabel: Signal<string> = this.initSelectedOwnerLabel();
+  protected readonly savedOwnerLabel: Signal<string> = this.initSavedOwnerLabel();
+  protected readonly showSavedOwnerRevert: Signal<boolean> = this.initShowSavedOwnerRevert();
   private readonly hydratedMeetingType: Signal<MeetingType | null> = this.initHydratedMeetingType();
   protected readonly meetingTypeOptions: Signal<CardSelectorOption<MeetingType>[]> = this.initMeetingTypeOptions();
+
+  /**
+   * Composes the organizer's display name from a directory pick.
+   * @description `lfx-user-search` patches `ownerEmail` and `ownerUsername` through its own control
+   * bindings, but the name is composed here rather than bound through `firstNameControl` /
+   * `lastNameControl` — those are two separate writes and would clobber each other in the single
+   * `ownerName` control.
+   */
+  protected handleOwnerSelection(user: UserSearchResult): void {
+    this.form()
+      .get('ownerName')
+      ?.setValue([user.first_name, user.last_name].filter(Boolean).join(' ').trim() || null);
+  }
+
+  protected switchToOwnerManualEntry(): void {
+    this.formService.switchToOwnerManualEntry();
+  }
+
+  protected backToOwnerSearch(): void {
+    this.formService.backToOwnerSearch();
+  }
+
+  /**
+   * Handles both clear affordances: the search box's own cross and the saved-organizer Revert button.
+   * @description `lfx-user-search` binds `ownerEmail` and `ownerUsername` but not `ownerName`, so its
+   * built-in clear would leave a stale name behind. The form service owns the revert-or-empty rule for
+   * all three controls together.
+   */
+  protected clearOwnerSelection(): void {
+    this.formService.revertOwnerToSaved();
+  }
+
+  private initSelectedOwnerLabel(): Signal<string> {
+    return computed(() => {
+      this.formService.revision();
+      const form = this.form();
+      return this.formatOwnerLabel(form.get('ownerName')?.value as string | null, form.get('ownerEmail')?.value as string | null);
+    });
+  }
+
+  private initSavedOwnerLabel(): Signal<string> {
+    return computed(() => {
+      const saved = this.savedOwner();
+      return saved ? this.formatOwnerLabel(saved.name, saved.email) : '';
+    });
+  }
+
+  /**
+   * Whether to offer reverting to the stored organizer.
+   * @description Only once one exists, and only while the picker shows someone else — after a revert the
+   * row would just restate what the field already says. Username is compared alongside the label so two
+   * people who share a display name still trip it, matching `prepareOwnerData()`'s identity check.
+   */
+  private initShowSavedOwnerRevert(): Signal<boolean> {
+    return computed(() => {
+      const savedLabel = this.savedOwnerLabel();
+      if (!savedLabel) {
+        return false;
+      }
+
+      this.formService.revision();
+      const currentUsername = ((this.form().get('ownerUsername')?.value as string | null) || null) ?? null;
+
+      return savedLabel !== this.selectedOwnerLabel() || (this.savedOwner()?.username || null) !== currentUsername;
+    });
+  }
+
+  /** "Name (email)" where both are known, otherwise whichever one is — used for the picker and the saved row alike. */
+  private formatOwnerLabel(rawName: string | null | undefined, rawEmail: string | null | undefined): string {
+    const name = (rawName || '').trim();
+    const email = (rawEmail || '').trim();
+
+    if (name && email) {
+      return `${name} (${email})`;
+    }
+
+    return name || email;
+  }
 
   private initSelectedVisibility(): Signal<string | null> {
     return computed(() => {

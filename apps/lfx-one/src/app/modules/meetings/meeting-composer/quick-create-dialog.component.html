@@ -4,12 +4,26 @@
 <!-- Quick create dialog (GH-1460) -->
 
 <!-- Declarative `<p-dialog>` rather than `DialogService.open()`, which `docs/reviews/frontend-checklist.md`
-     marks as the rule: this dialog is one of two surfaces the composer opens — the drawer is the other —
-     and both are driven off the same `MeetingComposerService` signals from a single always-mounted host,
-     so the open/close state has one owner and one lifecycle. `DialogService.open()` is imperative and
-     returns its own ref, which would split that ownership in two and leave the service's `isOpen()` and
-     the ref's lifetime to be kept in step by hand. Called out here so the deviation reads as a decision;
-     it is not the only one in the app (eight other templates mount `<p-dialog>` directly today). -->
+     § 3 marks as the rule. Two reasons, in order of weight:
+
+     1. Dependency scope. `MeetingComposerFormService` is `@Injectable()` (not `providedIn: 'root'`) and is
+        supplied by `MeetingComposerHostComponent`'s own `providers`, so each open gets a fresh form and no
+        draft leaks between sessions. This dialog and three of its children inject it. `DialogService.open()`
+        builds the dynamic component with `elementInjector: new DynamicDialogInjector(this.injector, map)` —
+        `this.injector` being the one *DialogService* was provided in, not the caller's (see
+        `primeng/fesm2022/primeng-dynamicdialog.mjs`). A component opened that way therefore cannot resolve a
+        provider declared on the host, and the only way to make it resolve is to root-provide the form
+        service — turning per-session scoped state into app-wide mutable state. That trade is worse than the
+        deviation.
+     2. State ownership. This dialog is one of two surfaces the composer opens — the drawer is the other —
+        and both are driven off the same `MeetingComposerService` signals from a single always-mounted host.
+        `DialogService.open()` is imperative and returns its own ref, which would split that ownership and
+        leave the service's `isOpen()` and the ref's lifetime to be kept in step by hand.
+
+     Called out here so the deviation reads as a decision, not an oversight; it is not the only one in the
+     app (eight other templates mount `<p-dialog>` directly today). Note that where the scope constraint
+     does not apply, this feature does use the rule: `AddLinkDialogComponent` and `ManualGuestDialogComponent`
+     are both opened with `DialogService.open()`. -->
 <!-- `blockScroll` is on for the same reason it is on the drawer: PrimeNG appends the agenda popovers to
      `body` and positions them in document coordinates, so scrolling the page behind a fixed dialog slides
      an open panel off the button it hangs from. -->
@@ -63,6 +77,7 @@
         [form]="formService.form()"
         [showHeading]="false"
         [showTypeSelect]="false"
+        [showOrganizer]="false"
         [titleHint]="prefilledTitle() ? 'Pre-filled for this meeting type — edit freely.' : null" />
 
       <lfx-composer-agenda-field

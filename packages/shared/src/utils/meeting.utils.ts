@@ -20,7 +20,7 @@ import {
   VOTE_COLOR,
 } from '../constants';
 import { lfxColors } from '../constants/colors.constants';
-import { RecurrenceType, CommitteeMemberVotingStatus, MeetingType } from '../enums';
+import { CommitteeMemberVotingStatus, MeetingType, RecurrenceType } from '../enums';
 import { PollStatus } from '../enums/poll.enum';
 import type {
   BuildMeetingOccurrenceRouteOptions,

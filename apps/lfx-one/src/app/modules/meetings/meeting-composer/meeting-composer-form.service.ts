@@ -22,7 +22,7 @@ import {
   MIN_EMAIL_REMINDER_HOURS,
   YOUTUBE_MAX_MEETING_TITLE_LENGTH,
 } from '@lfx-one/shared/constants';
-import { MeetingType, MeetingVisibility } from '@lfx-one/shared/enums';
+import { CancelOnCommitteeRemoval, MeetingType, MeetingVisibility } from '@lfx-one/shared/enums';
 import {
   BatchRegistrantOperationResponse,
   Committee,
@@ -36,10 +36,12 @@ import {
   MeetingComposerMode,
   MeetingComposerSection,
   MeetingComposerSectionId,
+  MeetingOwnerInput,
   MeetingRecurrence,
   MeetingRegistrant,
   MeetingRegistrantOperationResult,
   MeetingRegistrantWithState,
+  MeetingUserInfo,
   PendingAttachment,
   RegistrantPendingChanges,
   UpdateMeetingRequest,
@@ -52,6 +54,7 @@ import {
   getUserTimezone,
   isRecurrenceNeverEndSentinel,
   mapRecurrenceToFormValue,
+  resolveMeetingOwner,
 } from '@lfx-one/shared/utils';
 import { editModeDateTimeValidator, futureDateTimeValidator } from '@lfx-one/shared/validators';
 import { CommitteeService } from '@services/committee.service';
@@ -67,6 +70,7 @@ import {
   forkJoin,
   from,
   map,
+  merge,
   mergeMap,
   Observable,
   of,
@@ -124,6 +128,24 @@ export class MeetingComposerFormService {
 
   public readonly committeeContext = signal<Committee | null>(null);
   public readonly originalStartTime = signal<string | null>(null);
+
+  /**
+   * Owner hydrated from the loaded meeting, and the baseline the save diffs the picker against.
+   * @description Upstream replaces `owner` as a whole object, so re-sending an unchanged one would drop
+   * the stored `profile_picture` — the form carries no control for it (`UserSearchResult` has no avatar
+   * field). `prepareOwnerData()` compares against this and omits the key when the picker is untouched.
+   * Null on create, and for a stored owner that resolves to a service account or a zero-valued record.
+   */
+  public readonly hydratedOwner = signal<MeetingUserInfo | null>(null);
+
+  /**
+   * Whether the organizer picker is in hand-typed mode rather than directory search.
+   * @description Owned here for the same reason `guests` is: the host's `@switch` destroys the Details &
+   * Access section on every section change, so a section-local flag would silently drop the organizer
+   * back into search mode — and out of the only inputs that can reach a non-committee-member — the first
+   * time they stepped away and back.
+   */
+  public readonly ownerManualEntry = signal<boolean>(false);
 
   /**
    * Project the composer was opened against, when the entry point knew it.
@@ -211,6 +233,8 @@ export class MeetingComposerFormService {
     this.guestsLoadFailed.set(false);
     this.suppressedGuestEmails.set(new Set());
     this.committeeContext.set(null);
+    this.hydratedOwner.set(null);
+    this.ownerManualEntry.set(false);
     this.contextProjectUid.set(context.projectUid ?? null);
     this.submitting.set(false);
     this.loading.set(false);
@@ -286,7 +310,14 @@ export class MeetingComposerFormService {
 
     switch (section) {
       case 'details-access':
-        return !!(form.get('title')?.value && form.get('title')?.valid && form.get('meeting_type')?.value);
+        return !!(
+          form.get('title')?.value &&
+          form.get('title')?.valid &&
+          form.get('meeting_type')?.value &&
+          // Optional field, so `?? true` rather than `.valid`: absent means nothing to block on. Only a
+          // hand-typed organizer email can fail it, and the error only renders in manual-entry mode.
+          (form.get('ownerEmail')?.valid ?? true)
+        );
 
       case 'date-schedule':
         return !!(
@@ -493,6 +524,52 @@ export class MeetingComposerFormService {
     );
   }
 
+  /**
+   * Switches the organizer picker to hand-typed name/email.
+   * @description The search pool is the committee-member directory Invite Guests uses, so manual entry
+   * is what covers anyone outside it — an external organizer, say. Any lingering username is dropped on
+   * the first manual edit (see `wireFormSubscriptions`), not here, so switching modes without typing
+   * anything stays side-effect free and still saves as "unchanged".
+   */
+  public switchToOwnerManualEntry(): void {
+    this.ownerManualEntry.set(true);
+  }
+
+  /** Returns the organizer picker to directory search, discarding an invalid hand-typed email. */
+  public backToOwnerSearch(): void {
+    // An invalid manual email would keep gating the section invisibly after the switch: its error
+    // message only renders in manual mode, and the remounted search box is a separate control that
+    // cannot edit `ownerEmail`. A typed name stays — name-only owners are valid upstream — and remains
+    // visible and clearable through the picker's own display value.
+    const ownerEmailControl = this.form().get('ownerEmail');
+    if (ownerEmailControl?.invalid) {
+      ownerEmailControl.setValue(null);
+    }
+
+    this.ownerManualEntry.set(false);
+  }
+
+  /**
+   * Clears the organizer picker, reverting to the stored owner when there is one.
+   * @description On an edit with a saved organizer, "clearing" restores it rather than emptying the
+   * field: upstream has no owner-removal path, so once an owner is saved there is no true empty state to
+   * revert to. Without one (create, or an edit whose owner was never set) this empties all three
+   * controls, and the save omits the `owner` key either way.
+   */
+  public revertOwnerToSaved(): void {
+    const form = this.form();
+    const saved = this.hydratedOwner();
+
+    // Also the manual-entry mode's only clear affordance (no autocomplete there, so no in-field cross),
+    // so flip the mode *before* patching. The manual-edit guard in `wireFormSubscriptions` only drops
+    // `ownerUsername` while `ownerManualEntry()` is true; patching name and email first would make it
+    // read this programmatic revert as a hand edit and wipe the username it just restored.
+    this.ownerManualEntry.set(false);
+    form.get('ownerUsername')?.setValue(saved?.username || null);
+    form.get('ownerName')?.setValue(saved?.name || null);
+    form.get('ownerEmail')?.setValue(saved?.email || null);
+  }
+
   public deleteAttachment(attachmentId: string): void {
     this.pendingAttachmentDeletions.update((current) => [...current, attachmentId]);
   }
@@ -660,6 +737,11 @@ export class MeetingComposerFormService {
         restricted: new FormControl(false),
 
         title: new FormControl('', [Validators.required]),
+        // Optional meeting organizer (owner). No profile_picture control — `UserSearchResult` carries no
+        // avatar; upstream keeps the stored one as long as the `owner` key is omitted from the payload.
+        ownerUsername: new FormControl<string | null>(null),
+        ownerName: new FormControl<string | null>(null),
+        ownerEmail: new FormControl<string | null>(null, [Validators.email]),
         description: new FormControl('', [Validators.maxLength(MEETING_AGENDA_MAX_LENGTH)]),
         // Deliberately carries no validator, and must stay that way. `aiPrompt` is a scratch field
         // that never reaches the save payload, but it lives in the group `validateForSubmit()` reads,
@@ -703,6 +785,11 @@ export class MeetingComposerFormService {
         zoom_ai_enabled: new FormControl(false),
         require_ai_summary_approval: new FormControl(false),
         artifact_visibility: new FormControl(DEFAULT_ARTIFACT_VISIBILITY),
+        // Only ever rendered by `lfx-meeting-committee-manager`, which both composer surfaces mount and
+        // which binds this name unconditionally once a group is linked on a public meeting. It has to
+        // exist in the group whether or not that block is on screen: `lfx-select` binds through
+        // `formControlName`, so a missing control throws rather than degrading.
+        cancel_on_committee_removal: new FormControl(CancelOnCommitteeRemoval.INHERIT),
         auto_email_reminder_enabled: new FormControl(false),
         reminderHours: new FormControl({ value: DEFAULT_EMAIL_REMINDER_HOURS, disabled: true }, [
           Validators.required,
@@ -758,6 +845,25 @@ export class MeetingComposerFormService {
     if (durationControl) {
       this.syncCustomDurationValidators(form, durationControl.value);
       this.formSubscriptions.add(durationControl.valueChanges.subscribe((value) => this.syncCustomDurationValidators(form, value)));
+    }
+
+    // A hand-edited name or email can no longer be tied to an LFID, so the first actual edit in manual
+    // mode drops any username left over from a search pick or from hydration. Clearing on edit rather
+    // than on the mode switch keeps an accidental "manual -> back to search" round trip a no-op:
+    // `prepareOwnerData()` still sees the hydrated owner unchanged and omits the key. Wired here rather
+    // than in the Details & Access section because `@switch` destroys that section on every section
+    // change, which would take the subscription with it.
+    const ownerNameControl = form.get('ownerName');
+    const ownerEmailControl = form.get('ownerEmail');
+    const ownerUsernameControl = form.get('ownerUsername');
+    if (ownerNameControl && ownerEmailControl && ownerUsernameControl) {
+      this.formSubscriptions.add(
+        merge(ownerNameControl.valueChanges, ownerEmailControl.valueChanges).subscribe(() => {
+          if (this.ownerManualEntry() && ownerUsernameControl.value) {
+            ownerUsernameControl.setValue(null);
+          }
+        })
+      );
     }
 
     // When Board meeting type is selected, default to private + restricted access.
@@ -910,6 +1016,13 @@ export class MeetingComposerFormService {
       ai_summary_enabled: formValue.zoom_ai_enabled || false,
       require_ai_summary_approval: formValue.zoom_ai_enabled ? formValue.require_ai_summary_approval || false : false,
       artifact_visibility: formValue.recording_enabled || formValue.zoom_ai_enabled ? formValue.artifact_visibility || DEFAULT_ARTIFACT_VISIBILITY : null,
+      // Upstream reads this only for public meetings with linked groups; anywhere else the override has
+      // nothing to act on, so a stale non-inherit value left over from an earlier edit is sent back as
+      // `inherit` rather than being carried forward invisibly.
+      cancel_on_committee_removal:
+        formValue.visibility === MeetingVisibility.PUBLIC && formValue.committees?.length
+          ? formValue.cancel_on_committee_removal || CancelOnCommitteeRemoval.INHERIT
+          : CancelOnCommitteeRemoval.INHERIT,
       auto_email_reminder_enabled: formValue.auto_email_reminder_enabled || false,
       // Total whole minutes before start, clamped to the upstream 120-1440 range. Omitted when disabled:
       // ITX resets the stored time to 0 whenever enabled is explicitly false, so no time value is needed.
@@ -917,6 +1030,37 @@ export class MeetingComposerFormService {
       recurrence: recurrenceObject,
       platform: formValue.platform || DEFAULT_MEETING_TOOL,
       committees: formValue.committees || [],
+      ...this.prepareOwnerData(formValue),
+    };
+  }
+
+  /**
+   * Contributes `owner` to the payload only when the picker was actually used.
+   * @description Empty controls omit the key entirely: on create upstream defaults the owner to the
+   * creator, and on update the stored owner is preserved (there is no unset path). An edit whose picker
+   * still matches `hydratedOwner` omits it too, so upstream keeps the stored owner object intact —
+   * including the `profile_picture` this form never carries and would otherwise blank out.
+   */
+  private prepareOwnerData(formValue: Record<string, any>): { owner?: MeetingOwnerInput } {
+    const username = ((formValue['ownerUsername'] as string | null) || '').trim();
+    const name = ((formValue['ownerName'] as string | null) || '').trim();
+    const email = ((formValue['ownerEmail'] as string | null) || '').trim();
+
+    if (!username && !name && !email) {
+      return {};
+    }
+
+    const hydrated = this.hydratedOwner();
+    if (hydrated && hydrated.username === username && hydrated.name === name && hydrated.email === email) {
+      return {};
+    }
+
+    return {
+      owner: {
+        ...(username ? { username } : {}),
+        ...(name ? { name } : {}),
+        ...(email ? { email } : {}),
+      },
     };
   }
 
@@ -1000,8 +1144,17 @@ export class MeetingComposerFormService {
       }
     }
 
+    // Hydrate the organizer picker from the stored owner. Zero-valued records (meetings that predate
+    // the field) and service accounts resolve to null, so the picker shows empty and `prepareOwnerData()`
+    // omits the key on save rather than overwriting whatever upstream holds.
+    const ownerInfo = resolveMeetingOwner(meeting);
+    this.hydratedOwner.set(ownerInfo);
+
     form.patchValue({
       title: meeting.title,
+      ownerUsername: ownerInfo?.username || null,
+      ownerName: ownerInfo?.name || null,
+      ownerEmail: ownerInfo?.email || null,
       description: meeting.description,
       // Blank the legacy `None` sentinel so the required validator fires and the field shows its own
       // error instead of silently blocking save. Any other stored value is kept verbatim and the
@@ -1022,6 +1175,7 @@ export class MeetingComposerFormService {
       zoom_ai_enabled: meeting.ai_summary_enabled || false,
       require_ai_summary_approval: meeting.require_ai_summary_approval ?? false,
       artifact_visibility: meeting.artifact_visibility ?? DEFAULT_ARTIFACT_VISIBILITY,
+      cancel_on_committee_removal: meeting.cancel_on_committee_removal ?? CancelOnCommitteeRemoval.INHERIT,
       auto_email_reminder_enabled: meeting.auto_email_reminder_enabled ?? false,
       reminderHours: reminderHours,
       reminderMinutes: reminderTotalMinutes % 60,

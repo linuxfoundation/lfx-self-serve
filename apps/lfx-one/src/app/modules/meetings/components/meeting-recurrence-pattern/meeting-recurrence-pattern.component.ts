@@ -41,12 +41,14 @@ export class MeetingRecurrencePatternComponent implements OnInit {
    * Outlined-pill styling for every choice in this panel.
    * @description Same shape as the meeting-type, duration and cadence chips the panel sits under, so the
    * whole schedule column reads as one control language. Whole class strings rather than a toggled
-   * fragment because Tailwind only emits what it can see literally.
+   * fragment because Tailwind only emits what it can see literally. The real radio/checkbox is `sr-only`
+   * inside the label, so the chip carries the keyboard focus ring on its behalf via `has-[:focus-visible]`
+   * — without it the panel is keyboard-navigable but invisibly so (WCAG 2.4.7).
    */
   protected readonly chipSelectedClass =
-    'cursor-pointer rounded-full border border-blue-500 bg-blue-50 px-2.5 py-1 text-sm font-medium text-blue-700 transition-colors';
+    'cursor-pointer rounded-full border border-blue-500 bg-blue-50 px-2.5 py-1 text-sm font-medium text-blue-700 transition-colors has-[:focus-visible]:ring-2 has-[:focus-visible]:ring-blue-500 has-[:focus-visible]:ring-offset-2';
   protected readonly chipUnselectedClass =
-    'cursor-pointer rounded-full border border-gray-200 px-2.5 py-1 text-sm text-gray-700 transition-colors hover:bg-gray-50';
+    'cursor-pointer rounded-full border border-gray-200 px-2.5 py-1 text-sm text-gray-700 transition-colors hover:bg-gray-50 has-[:focus-visible]:ring-2 has-[:focus-visible]:ring-blue-500 has-[:focus-visible]:ring-offset-2';
 
   // Get the recurrence FormGroup from parent
   public readonly recurrenceForm = computed(() => this.form().get('recurrence') as FormGroup);

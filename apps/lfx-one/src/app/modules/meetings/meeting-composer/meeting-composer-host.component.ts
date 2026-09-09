@@ -2,18 +2,21 @@
 // SPDX-License-Identifier: MIT
 
 import { NgClass } from '@angular/common';
-import { Component, computed, inject, type Signal } from '@angular/core';
+import { Component, computed, DestroyRef, inject, type Signal } from '@angular/core';
 import { takeUntilDestroyed, toObservable } from '@angular/core/rxjs-interop';
-import { RouterLink } from '@angular/router';
+import { Router, RouterLink } from '@angular/router';
 import { ButtonComponent } from '@components/button/button.component';
 import { MEETING_COMPOSER_SECTIONS, MEETING_COMPOSER_TOAST_KEY, MEETING_COMPOSER_TOAST_POSITION } from '@lfx-one/shared/constants';
-import type { Meeting, MeetingComposerSection, MeetingComposerToastData } from '@lfx-one/shared/interfaces';
+import type { EntityWithProject, Meeting, MeetingComposerSection, MeetingComposerToastData } from '@lfx-one/shared/interfaces';
+import { MeetingService } from '@services/meeting.service';
 import { ProjectContextService } from '@services/project-context.service';
+import { ProjectService } from '@services/project.service';
+import { syncEntityProjectContext, syncEntityProjectContextFallback } from '@shared/utils/entity-project-context.util';
 import { MessageService } from 'primeng/api';
 import { DrawerModule } from 'primeng/drawer';
 import { ToastModule } from 'primeng/toast';
 import type { ToastPositionType } from 'primeng/types/toast';
-import { filter, pairwise } from 'rxjs';
+import { filter, pairwise, take } from 'rxjs';
 
 import { MeetingComposerFormService } from './meeting-composer-form.service';
 import { MeetingComposerPreviewComponent } from './meeting-composer-preview.component';
@@ -57,6 +60,10 @@ import { ComposerPlatformFeaturesComponent } from './sections/composer-platform-
 export class MeetingComposerHostComponent {
   private readonly messageService = inject(MessageService);
   private readonly projectContextService = inject(ProjectContextService);
+  private readonly projectService = inject(ProjectService);
+  private readonly meetingService = inject(MeetingService);
+  private readonly router = inject(Router);
+  private readonly destroyRef = inject(DestroyRef);
 
   protected readonly composer = inject(MeetingComposerService);
   protected readonly formService = inject(MeetingComposerFormService);
@@ -120,6 +127,10 @@ export class MeetingComposerHostComponent {
    * composer would discard that draft, and reopening after write access was lost would only fail on save.
    */
   protected readonly editFromToastBlockedReason: Signal<string | null> = this.initEditFromToastBlockedReason();
+  /**
+   * The open meeting reshaped for the project-context syncs, or `null` when nothing should drive them.
+   */
+  private readonly meetingEntityContext: Signal<EntityWithProject | null> = this.initMeetingEntityContext();
 
   public constructor() {
     toObservable(this.composer.context)
@@ -140,6 +151,20 @@ export class MeetingComposerHostComponent {
         takeUntilDestroyed()
       )
       .subscribe(() => this.composer.close());
+
+    // Derive the project context from the meeting being edited so a context-less edit link
+    // (/project/meetings/:id/edit) lands in the meeting's project, not the cookie-restored
+    // last-visited project. The route component redirects to the meetings list and opens the
+    // composer over it, so nothing else on that navigation carries the meeting's project.
+    // The fallback covers BFF project-enrichment failure.
+    // preferEntityKind: a foundation-owned meeting can be edited under a /project/* URL, so the
+    // meeting's own is_foundation (not the route prefix) picks the slot and re-points the route
+    // lens kind. Opt-in — the other syncEntityProjectContext callers keep URL-prefix behavior.
+    syncEntityProjectContext(this.meetingEntityContext, this.projectContextService, this.router, this.destroyRef, { preferEntityKind: true });
+    syncEntityProjectContextFallback(this.meetingEntityContext, this.projectService, this.projectContextService, this.router, this.destroyRef, {
+      entityKind: 'meeting',
+      freshFetch: (uid) => this.meetingService.getMeetingDetail(uid, { skipCache: true }),
+    });
   }
 
   protected onVisibleChange(visible: boolean): void {
@@ -188,17 +213,21 @@ export class MeetingComposerHostComponent {
     const wasEditMode = this.formService.isEditMode();
 
     // `submit()` completes without emitting when the save outlived its open, so reaching here always
-    // means the current open is the one that was saved.
-    this.formService.submit().subscribe((meeting) => {
-      if (wasEditMode) {
-        this.messageService.add({ severity: 'success', summary: 'Meeting updated', detail: 'Your changes have been saved.' });
-      } else {
-        this.announceCreatedMeeting(meeting);
-      }
+    // means the current open is the one that was saved. `take(1)` because the stream is single-shot and
+    // this handler closes the composer: nothing downstream should ever run twice.
+    this.formService
+      .submit()
+      .pipe(take(1))
+      .subscribe((meeting) => {
+        if (wasEditMode) {
+          this.messageService.add({ severity: 'success', summary: 'Meeting updated', detail: 'Your changes have been saved.' });
+        } else {
+          this.announceCreatedMeeting(meeting);
+        }
 
-      this.composer.notifySaved();
-      this.composer.close();
-    });
+        this.composer.notifySaved();
+        this.composer.close();
+      });
   }
 
   /**
@@ -217,6 +246,32 @@ export class MeetingComposerHostComponent {
 
   protected onDismissToast(): void {
     this.messageService.clear(this.toastKey);
+  }
+
+  /**
+   * Maps the meeting being edited to the {@link EntityWithProject} shape the project-context syncs
+   * consume — Meeting carries `id`, not `uid`, and pre-enrichment payloads can lack the project
+   * fields entirely, so absent values map to null there.
+   * @description Gated on the composer being open in edit mode, which the route-scoped page this
+   * replaced got for free from its own lifetime. This host is mounted once and retained, and both
+   * syncs re-apply on every NavigationEnd for as long as they live — without the gate the last
+   * meeting edited would keep re-pointing the project context long after its composer closed.
+   */
+  private initMeetingEntityContext(): Signal<EntityWithProject | null> {
+    return computed(() => {
+      const meeting = this.formService.meeting();
+      if (!meeting || !this.composer.isOpen() || !this.formService.isEditMode()) {
+        return null;
+      }
+
+      return {
+        uid: meeting.id,
+        project_uid: meeting.project_uid,
+        project_slug: meeting.project_slug,
+        project_name: meeting.project_name,
+        is_foundation: meeting.is_foundation ?? null,
+      };
+    });
   }
 
   private initEditFromToastBlockedReason(): Signal<string | null> {

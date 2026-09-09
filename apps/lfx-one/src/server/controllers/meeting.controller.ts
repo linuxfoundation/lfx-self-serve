@@ -1953,14 +1953,20 @@ export class MeetingController {
    * whatever SFID it receives. That would route around the meeting-scoped allowlist the create path
    * enforces, using the edit endpoint instead. Attribution is set when a guest is added and never
    * edited, so stripping costs nothing.
+   *
+   * Generic over the body shape so both callers get their own type back: the update path keeps
+   * `UpdateMeetingRegistrantRequest` for the spread, and `hasRegistrantChanges` — which reads straight
+   * off `req.body` and so starts from `unknown` — gets an indexable record it can enumerate. A fixed
+   * return type forced that second caller through `as unknown as`, which erases whatever the first one
+   * declared and would have hidden a later signature change from the compiler.
    */
-  private static stripCommitteeUid(changes: UpdateMeetingRegistrantRequest | undefined): UpdateMeetingRegistrantRequest {
+  private static stripCommitteeUid<T extends object>(changes: T | undefined): Omit<T, 'committee_uid'> {
     if (!changes) {
-      return {} as UpdateMeetingRegistrantRequest;
+      return {} as Omit<T, 'committee_uid'>;
     }
 
     // eslint-disable-next-line @typescript-eslint/no-unused-vars -- destructure-to-strip: the key is deleted, not read
-    const { committee_uid: _dropped, ...rest } = changes as UpdateMeetingRegistrantRequest & { committee_uid?: unknown };
+    const { committee_uid: _dropped, ...rest } = changes as T & { committee_uid?: unknown };
 
     return rest;
   }
@@ -1992,7 +1998,7 @@ export class MeetingController {
       return false;
     }
 
-    const stripped = MeetingController.stripCommitteeUid(changes as UpdateMeetingRegistrantRequest) as unknown as Record<string, unknown>;
+    const stripped = MeetingController.stripCommitteeUid(changes as Record<string, unknown>);
 
     return Object.entries(stripped).some(([key, value]) => {
       // Widened for the lookups only: both arrays are typed by their registrant key unions, so
