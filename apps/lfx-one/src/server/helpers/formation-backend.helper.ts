@@ -6,7 +6,10 @@
  * a formation-only base-URL override is configured (`LFX_V2_FORMATION_SERVICE`, e.g. pointing the
  * BFF at dev while everything else still talks to prod) or the operator opts in explicitly
  * (`FORMATION_BACKEND=live`). Both are env-driven rather than a hardcoded flip so the same build can
- * be pointed at either backend per-environment.
+ * be pointed at either backend per-environment — but `LFX_V2_FORMATION_SERVICE` is effectively
+ * local-dev-only: `charts/lfx-self-serve/templates/_helpers.tpl`'s `gatewayOnlyValidate` deny-list
+ * now `fail()`s Helm rendering if it's set, so `FORMATION_BACKEND=live` is the only arm reachable in
+ * any Helm-deployed environment (staging/prod). Keep the two in sync if either changes.
  *
  * This is the **only** switch — `getFormationsQueue`, every item mutation
  * (`completeFormationItem`/`skipFormationItem`/`requestFormationItem`/`updateFormationItem`/

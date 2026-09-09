@@ -16,10 +16,12 @@ import { isRelativeInAppPath, isValidUrl } from '@lfx-one/shared/utils';
 /**
  * Maps `lfx-v2-formation-service`'s wire shapes (GH-2267 Phase 0's contract table, source of truth
  * `cmd/formation-api/design/design.go` at `linuxfoundation/lfx-v2-formation-service@main`) onto
- * this repo's `Formation`/`FormationItem` shared types. Every field this file derives rather than
- * copies verbatim (`section_title`, `action`, `action_href`, `links`, `detail`) has no upstream
- * source at all — see the GH-2267 plan's Phase 5 "checklist read" section for why each one is
- * derived from the seeded `FORMATION_TEMPLATE` instead. The raw upstream shapes themselves
+ * this repo's `FormationItem` shared type — `mapUpstreamFormationItem`, one upstream item at a time.
+ * Formation-level mapping (`UpstreamFormationChecklist` → `Formation`) is deferred; see the trailing
+ * note at the bottom of this file. Every field this file derives rather than copies verbatim
+ * (`section_title`, `action`, `action_href`, `links`, `detail`) has no upstream source at all — see
+ * the GH-2267 plan's Phase 5 "checklist read" section for why each one is derived from the seeded
+ * `FORMATION_TEMPLATE` instead. The raw upstream shapes themselves
  * (`UpstreamFormationItem`/`UpstreamFormationChecklist`/`FormationItemMapContext`) live in
  * `@lfx-one/shared/interfaces` rather than here, per this repo's "no local interface in
  * apps/lfx-one" convention.

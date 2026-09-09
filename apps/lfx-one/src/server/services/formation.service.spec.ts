@@ -714,6 +714,103 @@ describe('FormationService', () => {
       expect(postCall![6]).toEqual({ 'If-Match': '3' });
     });
 
+    it('clears note/assignee/due_date with empty strings (not null) and sends due_date as YYYY-MM-DD, not a full ISO datetime', async () => {
+      const item = rawItem({ status: 'in_progress', note: 'old note', assignee: 'sam.chen', due_date: '2026-01-01' });
+      proxyRequest.mockImplementation((_req, _service, _path: string, method: string) => {
+        if (method === 'GET') return Promise.resolve(checklist([item]));
+        if (method === 'PATCH') return Promise.resolve({ ...item, note: null, assignee: null, due_date: null, version: 4 });
+        throw new Error('unexpected call');
+      });
+
+      await service.updateFormationItem(buildReq(), 'live-project-1', 'item-key-1', {
+        notes: '',
+        owner_username: '',
+        due_date: null,
+      });
+
+      const patchCall = proxyRequest.mock.calls.find((call) => call[3] === 'PATCH');
+      expect(patchCall![5]).toEqual({ note: '', assignee: '', due_date: '' });
+    });
+
+    it('sends a full ISO due_date truncated to YYYY-MM-DD, never the full datetime', async () => {
+      const item = rawItem({ status: 'in_progress', due_date: '2026-01-01' });
+      proxyRequest.mockImplementation((_req, _service, _path: string, method: string) => {
+        if (method === 'GET') return Promise.resolve(checklist([item]));
+        if (method === 'PATCH') return Promise.resolve({ ...item, due_date: '2026-03-31', version: 4 });
+        throw new Error('unexpected call');
+      });
+
+      await service.updateFormationItem(buildReq(), 'live-project-1', 'item-key-1', { due_date: '2026-03-31T00:00:00.000Z' });
+
+      const patchCall = proxyRequest.mock.calls.find((call) => call[3] === 'PATCH');
+      expect(patchCall![5]).toEqual({ due_date: '2026-03-31' });
+    });
+
+    it('percent-encodes itemKey (not just projectUid) in both the PATCH and the accept/reject/reopen path templates', async () => {
+      const item = rawItem({ item_key: 'item key/weird', status: 'in_progress', gate: false });
+      proxyRequest.mockImplementation((_req, _service, _path: string, method: string) => {
+        if (method === 'GET') return Promise.resolve(checklist([item]));
+        if (method === 'PATCH') return Promise.resolve({ ...item, notes: 'x', version: 4 });
+        throw new Error('unexpected call');
+      });
+
+      await service.updateFormationItem(buildReq(), 'live-project-1', 'item key/weird', { notes: 'x' });
+
+      const patchCall = proxyRequest.mock.calls.find((call) => call[3] === 'PATCH');
+      expect(patchCall![2]).toBe(`/formations/live-project-1/items/${encodeURIComponent('item key/weird')}`);
+    });
+
+    it('propagates a failOnPartial pagination failure from getFormationsQueue instead of returning partial rows', async () => {
+      const row = {
+        formation_uid: 'formation:live-project-1',
+        project_uid: 'live-project-1',
+        project_name: 'Live Project',
+        project_slug: 'live-project',
+        is_foundation: false,
+        parent_uid: null,
+        sub_stage: 'engaged' as const,
+        lifecycle: 'formation',
+        gates_cleared: false,
+        is_activating: false,
+        announcement_date: null,
+        progress: {},
+        blocked_item_titles: [],
+        assignees: [],
+      };
+      proxyRequest
+        .mockResolvedValueOnce({
+          resources: [{ type: 'formation', id: row.formation_uid, data: row }],
+          page_token: 'next-page',
+        } satisfies QueryServiceResponse<typeof row>)
+        .mockRejectedValueOnce(new Error('query service unavailable'));
+
+      await expect(service.getFormationsQueue(buildReq())).rejects.toThrow(/query service unavailable/);
+    });
+
+    it('defaults a row missing progress/assignees/blocked_item_titles/announcement_date instead of throwing', async () => {
+      const row = {
+        formation_uid: 'formation:live-project-1',
+        project_uid: 'live-project-1',
+        project_name: 'Live Project',
+        project_slug: 'live-project',
+        is_foundation: false,
+        parent_uid: '',
+        sub_stage: 'engaged' as const,
+        lifecycle: 'formation',
+        gates_cleared: false,
+        is_activating: false,
+      };
+      proxyRequest.mockResolvedValue({ resources: [{ type: 'formation', id: row.formation_uid, data: row }] } satisfies QueryServiceResponse<typeof row>);
+
+      const result = await service.getFormationsQueue(buildReq());
+
+      expect(result.rows[0].parent_uid).toBeNull();
+      expect(result.rows[0].announcement_date).toBeNull();
+      expect(result.rows[0].progress).toEqual({});
+      expect(result.rows[0].blocked_item_titles).toEqual([]);
+      expect(result.rows[0].assignees).toEqual([]);
+    });
+
     it('getFormationsQueue reads from the query service and collapses ROOT into null', async () => {
       const row = {
         formation_uid: 'formation:live-project-1',

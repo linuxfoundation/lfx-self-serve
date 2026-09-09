@@ -393,13 +393,17 @@ export class FormationService {
     const dueDateChanged = patch.due_date !== undefined && patch.due_date !== item.due_date;
 
     if (isFormationServiceLive()) {
-      // Explicit `null`, never `undefined` — ApiClientService's JSON.stringify drops undefined keys,
-      // so a clear (empty notes, unassign, clear due date) would otherwise send an empty PATCH that
-      // silently leaves the upstream field unchanged.
+      // Upstream's `note`/`assignee`/`due_date` are all plain (non-nullable) `string` fields whose
+      // clear sentinel is `''`, not `null` — `item_mutator.go` decodes them as `*string` and treats
+      // a wholly-omitted key as "leave unchanged", so a clear must still send the key, just with an
+      // empty string rather than `null` (a JSON `null` unmarshals into a nil `*string`, indistinguishable
+      // from omission, and a clear-only PATCH would then 409 `no_fields_to_update` instead of clearing).
+      // `due_date` additionally must be `YYYY-MM-DD` — upstream parses with that exact layout and
+      // 400s `due_date_invalid` on a full ISO datetime, which is what the drawer's `toISOString()` sends.
       const body: Record<string, unknown> = {};
-      if (notesChanged) body['note'] = nextNotes;
-      if (ownerChanged) body['assignee'] = nextOwnerUsername;
-      if (dueDateChanged) body['due_date'] = patch.due_date ?? null;
+      if (notesChanged) body['note'] = nextNotes ?? '';
+      if (ownerChanged) body['assignee'] = nextOwnerUsername ?? '';
+      if (dueDateChanged) body['due_date'] = patch.due_date ? patch.due_date.slice(0, 10) : '';
       const raw = await this.mutateLiveItem(req, projectUid, itemKey, item.version, body, 'update_formation_item');
       const updated = await this.mapLiveItem(req, projectUid, raw);
       logger.debug(req, 'update_formation_item', 'Formation item updated', { item_uid: updated.uid });
@@ -590,8 +594,9 @@ export class FormationService {
     );
 
     const rootUid = await resolveRootProjectUid(req, this.natsService);
-    // The indexed projection's key set isn't fully confirmed upstream (FormationQueueRow's own doc) —
-    // default the array/object fields so a row missing one doesn't throw downstream (queue tiles,
+    // The projection's key set is confirmed (indexer_publisher.go's projectionData always emits all
+    // six FormationItemStatus keys) — these defaults guard against a malformed document only, not an
+    // open contract question, so a row missing one doesn't throw downstream (queue tiles,
     // formations-table.component.ts's progress/blocked-title rendering).
     const normalizedRows = rawRows.map((row) => ({
       ...row,
@@ -669,7 +674,7 @@ export class FormationService {
       return await this.microserviceProxy.proxyRequest<UpstreamFormationItem>(
         req,
         'LFX_V2_FORMATION_SERVICE',
-        `/formations/${encodeURIComponent(projectUid)}/items/${itemKey}`,
+        `/formations/${encodeURIComponent(projectUid)}/items/${encodeURIComponent(itemKey)}`,
         'PATCH',
         undefined,
         body,
@@ -694,7 +699,7 @@ export class FormationService {
       return await this.microserviceProxy.proxyRequest<UpstreamFormationItem>(
         req,
         'LFX_V2_FORMATION_SERVICE',
-        `/formations/${encodeURIComponent(projectUid)}/items/${itemKey}/${action}`,
+        `/formations/${encodeURIComponent(projectUid)}/items/${encodeURIComponent(itemKey)}/${action}`,
         'POST',
         undefined,
         body,

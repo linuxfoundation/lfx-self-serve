@@ -324,8 +324,13 @@ export interface FormationQueueRow {
   gates_cleared: boolean;
   is_activating: boolean;
   announcement_date: string | null;
-  /** Six named progress counters (e.g. per-section or per-status breakdown) as published by the indexer — kept as a loose record until the projection's exact key set is confirmed upstream. */
-  progress: Record<string, number>;
+  /**
+   * Per-status item counts published by the indexer (`indexer_publisher.go`'s `projectionData`
+   * always emits all six {@link FormationItemStatus} keys). Still `Record<...>` rather than a
+   * required-keys type, and defaulted defensively where consumed, as protection against a
+   * malformed document rather than an open contract question.
+   */
+  progress: Record<FormationItemStatus, number>;
   blocked_item_titles: string[];
   /** Bare usernames, as published by the indexer (`internal/domain/port/ports.go`'s `Assignees []string`) — not `FormationUser` objects. */
   assignees: string[];
