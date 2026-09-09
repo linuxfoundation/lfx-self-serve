@@ -738,9 +738,13 @@ export const RECONCILIATION_MAX_CANDIDATES_PER_AI_CALL = 50;
  * whole string still catches the bot while not excluding, e.g., an attendee named "Grain Adeyemi".
  * Grain's default Zoom display name is "Grain Recorder", so "recorder" is accepted alongside
  * "notetaker" as the optional suffix for these three.
+ *
+ * Otter.ai/Fireflies.ai/Read.ai allow optional whitespace around the dot (`\s*\.?\s*`) rather than
+ * just an optional dot — Read AI's own bot joins Zoom as "Read AI Notetaker" (space-separated, no
+ * dot at all), which a dot-only pattern misses entirely.
  */
 export const RECONCILIATION_BOT_NAME_PATTERN =
-  /['’]s\s+notetaker\b|\botter\.?ai\b|\bfireflies\.?ai\b|\btl;?dv\b|\bread\.?ai\b|\bavoma\b|^fathom(\.?(ai|video))?\s*(notetaker|recorder)?$|^gong(\.?io)?\s*(notetaker|recorder)?$|^grain(\.?com)?\s*(notetaker|recorder)?$/i;
+  /['’]s\s+notetaker\b|\botter\s*\.?\s*ai\b|\bfireflies\s*\.?\s*ai\b|\btl;?dv\b|\bread\s*\.?\s*ai\b|\bavoma\b|^fathom(\.?(ai|video))?\s*(notetaker|recorder)?$|^gong(\.?io)?\s*(notetaker|recorder)?$|^grain(\.?com)?\s*(notetaker|recorder)?$/i;
 
 /**
  * The `AttachmentCategory` (`meeting-attachment.interface.ts`) value CommitteeActivityService's

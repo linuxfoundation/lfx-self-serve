@@ -133,6 +133,8 @@ describe('AttendanceReconciliationService', () => {
       ['Gong Notetaker', 'Gong notetaker suffix'],
       ['tl;dv', 'tl;dv'],
       ['Read.ai', 'Read.ai'],
+      ['Read AI Notetaker', 'Read AI (space-separated, no dot)'],
+      ['Read AI', 'bare Read AI (space-separated, no dot)'],
       ['Grain', 'bare Grain'],
       ['Grain Recorder', 'Grain recorder suffix (default Zoom name)'],
       ['Avoma', 'Avoma'],
