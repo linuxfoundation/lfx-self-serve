@@ -11,6 +11,7 @@ import type {
   FormationQueueRow,
   FormationsQueueResponse,
   FormationSubStage,
+  Project,
   UpstreamFormationChecklist,
   UpstreamFormationItem,
 } from '@lfx-one/shared/interfaces';
@@ -19,7 +20,7 @@ import { QueryServiceResponse } from '@lfx-one/shared/interfaces';
 import { deriveFormationEntityType, isFormationStageGate } from '@lfx-one/shared/utils';
 import { Request } from 'express';
 
-import { isMicroserviceError, PreconditionFailedError, ResourceNotFoundError, AuthorizationError, ServiceValidationError } from '../errors';
+import { isMicroserviceError, PreconditionFailedError, ResourceNotFoundError, AuthorizationError, ServiceValidationError, ConflictError } from '../errors';
 import { isFormationServiceLive } from '../helpers/formation-backend.helper';
 import { generateMockFormation, SEEDED_FORMATION_TEMPLATE, STATIC_QUEUE_FORMATIONS } from '../helpers/formation-fixture.helper';
 import { mapUpstreamFormationItem } from '../helpers/formation-mapper.helper';
@@ -59,6 +60,11 @@ export class FormationService {
   private readonly natsService = new NatsService();
   private readonly microserviceProxy = new MicroserviceProxyService();
   private static readonly plainStatusTransitions: ReadonlySet<FormationItemStatus> = new Set(['not_started', 'in_progress', 'blocked']);
+  // Per-request cache, keyed off the request object itself so it never outlives one HTTP call.
+  // {@link mapLiveItem} is invoked at least twice per live mutation (the pre-read via
+  // getFormationItemOrThrow, then the mutation result) purely to read project.slug — this avoids
+  // fanning that into two-plus NATS project reads for one user action.
+  private readonly projectByRequestCache = new WeakMap<Request, Map<string, Project>>();
 
   public async getProjectFormation(req: Request, projectSlug: string): Promise<FormationChecklistResponse> {
     logger.debug(req, 'get_project_formation', 'Fetching formation checklist', { projectSlug });
@@ -410,6 +416,13 @@ export class FormationService {
       if (notesChanged) body['note'] = nextNotes ?? '';
       if (ownerChanged) body['assignee'] = nextOwnerUsername ?? '';
       if (dueDateChanged) body['due_date'] = patch.due_date ?? '';
+      if (Object.keys(body).length === 0) {
+        // Upstream 409s an empty PATCH body (`no_fields_to_update`) — a no-op save is a reachable
+        // path (open the drawer, hit Save without editing), so match the fixture branch below and
+        // return the item unchanged rather than issuing a request upstream can only reject.
+        logger.debug(req, 'update_formation_item', 'No-op update, skipping upstream call', { item_uid: item.uid });
+        return this.enrichSingle(req, item);
+      }
       const raw = await this.mutateLiveItem(req, projectUid, itemKey, item.version, body, 'update_formation_item');
       const updated = await this.mapLiveItem(req, projectUid, raw);
       logger.debug(req, 'update_formation_item', 'Formation item updated', { item_uid: updated.uid });
@@ -678,9 +691,24 @@ export class FormationService {
    * generator's own `formation:<project_uid>` convention so both backends agree on the shape.
    */
   private async mapLiveItem(req: Request, projectUid: string, raw: UpstreamFormationItem): Promise<FormationItem> {
-    const project = await this.projectService.getProjectById(req, projectUid, false);
+    const project = await this.getProjectByIdCached(req, projectUid);
     const ctx: FormationItemMapContext = { formationUid: `formation:${projectUid}`, projectUid, projectSlug: project.slug };
     return mapUpstreamFormationItem(raw, ctx);
+  }
+
+  /** Request-scoped memoization of {@link ProjectService.getProjectById} — see {@link projectByRequestCache}. */
+  private async getProjectByIdCached(req: Request, projectUid: string): Promise<Project> {
+    let byUid = this.projectByRequestCache.get(req);
+    if (!byUid) {
+      byUid = new Map<string, Project>();
+      this.projectByRequestCache.set(req, byUid);
+    }
+    let project = byUid.get(projectUid);
+    if (!project) {
+      project = await this.projectService.getProjectById(req, projectUid, false);
+      byUid.set(projectUid, project);
+    }
+    return project;
   }
 
   /**
@@ -737,9 +765,26 @@ export class FormationService {
     }
   }
 
+  /**
+   * `acceptFormationItem`/`rejectFormationItem`/`reopenFormationItem`'s local status guards
+   * intentionally permit a superset of upstream's own preconditions (e.g. reopen allows
+   * `skipped`/`awaiting_acceptance` in addition to `done`, matching the fixture-era behavior
+   * documented on {@link reopenFormationItem}) — so the live path must still be prepared for
+   * upstream's own 409 `Conflict` (`internal/service/acceptance.go`'s `wrongStatusReason`) on a
+   * status this BFF's guard let through. Mapped the same shape as the fixture branch's own
+   * conflict errors, not left as a raw `MicroserviceError`.
+   */
   private mapLivePreconditionError(error: unknown, req: Request, operation: string): unknown {
     if (isMicroserviceError(error) && error.statusCode === 412) {
       return new PreconditionFailedError(error.errorBody?.message, { operation, service: 'formation_service', path: req.path });
+    }
+    if (isMicroserviceError(error) && error.statusCode === 409) {
+      const reason = typeof error.errorBody?.reason === 'string' ? error.errorBody.reason : 'conflict';
+      return new ConflictError(error.errorBody?.message ?? "The requested change conflicts with the item's current state", reason.toUpperCase(), {
+        operation,
+        service: 'formation_service',
+        path: req.path,
+      });
     }
     return error;
   }

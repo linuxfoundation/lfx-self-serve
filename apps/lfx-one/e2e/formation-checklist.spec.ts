@@ -32,7 +32,7 @@ test.describe('Formation Checklist section (GH-1958)', () => {
     // Both seeded-template sections render with at least one row.
     await expect(section.getByText('Legal and entity')).toBeVisible();
     await expect(section.getByText('Community and launch')).toBeVisible();
-    await expect(page.getByTestId('formation-checklist-row-title-formation-item:cascade-data-alliance:draft-project-record')).toBeVisible();
+    await expect(page.getByTestId('formation-checklist-row-title-formation-item:cascade-data-alliance:draft_project_record')).toBeVisible();
   });
 
   test('redirects to project overview for a project not in a Formation stage', async ({ page }) => {
@@ -59,7 +59,7 @@ test.describe('Formation Checklist section (GH-1958)', () => {
     await mockFormationChecklistApis(page, { project: buildBaseProject(FORMATION_PROJECT_SLUG) });
     await gotoProjectFormation(page, FORMATION_PROJECT_SLUG);
 
-    const rowTitle = page.getByTestId('formation-checklist-row-title-formation-item:cascade-data-alliance:contribution-agreement-executed');
+    const rowTitle = page.getByTestId('formation-checklist-row-title-formation-item:cascade-data-alliance:contribution_agreement_executed');
     await expect(rowTitle).toBeVisible({ timeout: DATA_LOAD_TIMEOUT });
     await rowTitle.click();
 

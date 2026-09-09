@@ -20,7 +20,32 @@ import { describe, expect, it, vi } from 'vitest';
 // undefined -> string | undefined) is directly, exhaustively pinned by name.
 vi.mock('@lfx-one/shared/utils', () => ({}));
 
-import { getStringQueryParam } from './validation.helper';
+import { getStringQueryParam, validateItemKeyParameter } from './validation.helper';
+
+describe('validateItemKeyParameter', () => {
+  const req = {} as any;
+  const options = { operation: 'test_operation' };
+
+  it('accepts a snake_case item key', () => {
+    const next = vi.fn();
+    expect(validateItemKeyParameter('domain_dns', req, next, options)).toBe(true);
+    expect(next).not.toHaveBeenCalled();
+  });
+
+  it('rejects a hyphenated key shape (the pre-GH-2267 e2e fixture grammar) with a 400 validation error', () => {
+    const next = vi.fn();
+    expect(validateItemKeyParameter('domain-and-dns-transfer', req, next, options)).toBe(false);
+    expect(next).toHaveBeenCalledTimes(1);
+    const error = next.mock.calls[0][0];
+    expect(error.statusCode).toBe(400);
+  });
+
+  it('rejects a non-string value', () => {
+    const next = vi.fn();
+    expect(validateItemKeyParameter(undefined, req, next, options)).toBe(false);
+    expect(next).toHaveBeenCalledTimes(1);
+  });
+});
 
 describe('getStringQueryParam', () => {
   it('returns the string value for a plain query param', () => {

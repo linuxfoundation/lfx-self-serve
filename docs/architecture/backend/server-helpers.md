@@ -13,17 +13,19 @@ All helpers follow consistent patterns: stateless functions, request parameter f
 
 The helpers directory contains files organized by responsibility:
 
-| File                      | Purpose                                                                           |
-| ------------------------- | --------------------------------------------------------------------------------- |
-| `api-gateway.helper.ts`   | API Gateway base URL resolution (`getApiGatewayBaseUrl`, `getUserServiceBaseUrl`) |
-| `error-serializer.ts`     | Pino error serializer configuration                                               |
-| `http-status.helper.ts`   | HTTP status code to message/code mappings                                         |
-| `ics.helper.ts`           | iCalendar (`.ics`) generation for meeting invites                                 |
-| `meeting.helper.ts`       | Meeting invitation checks with M2M tokens                                         |
-| `poll-endpoint.helper.ts` | Generic retry/polling with callback injection                                     |
-| `query-service.helper.ts` | Cursor-based pagination with automatic page following                             |
-| `url-validation.ts`       | URL and cookie domain validation with allowlists                                  |
-| `validation.helper.ts`    | TypeScript type guard validators for request parameters                           |
+| File                         | Purpose                                                                                                                         |
+| ---------------------------- | ------------------------------------------------------------------------------------------------------------------------------- |
+| `api-gateway.helper.ts`      | API Gateway base URL resolution (`getApiGatewayBaseUrl`, `getUserServiceBaseUrl`)                                               |
+| `error-serializer.ts`        | Pino error serializer configuration                                                                                             |
+| `formation-mapper.helper.ts` | Maps upstream `lfx-v2-formation-service` shapes (checklist, items, queue rows) onto the BFF's `@lfx-one/shared` formation types |
+| `http-status.helper.ts`      | HTTP status code to message/code mappings                                                                                       |
+| `ics.helper.ts`              | iCalendar (`.ics`) generation for meeting invites                                                                               |
+| `meeting.helper.ts`          | Meeting invitation checks with M2M tokens                                                                                       |
+| `poll-endpoint.helper.ts`    | Generic retry/polling with callback injection                                                                                   |
+| `query-service.helper.ts`    | Cursor-based pagination with automatic page following                                                                           |
+| `root-project.helper.ts`     | TTL-cached ROOT-project uid resolution and `parent_uid` collapse for top-level projects                                         |
+| `url-validation.ts`          | URL and cookie domain validation with allowlists                                                                                |
+| `validation.helper.ts`       | TypeScript type guard validators for request parameters                                                                         |
 
 ## Common Patterns
 
@@ -177,7 +179,7 @@ function isRetryableError(error: unknown): boolean {
 
 ## Validation Helper Reference
 
-The validation helper provides four type guard functions sharing a common interface:
+The validation helper provides five type guard functions sharing a common interface:
 
 ```typescript
 interface ValidationOptions {
@@ -187,12 +189,13 @@ interface ValidationOptions {
 }
 ```
 
-| Function                       | Validates                      | Type Predicate  |
-| ------------------------------ | ------------------------------ | --------------- |
-| `validateUidParameter`         | Non-empty string UID           | `uid is string` |
-| `validateRequiredParameter<T>` | Non-null/undefined/empty value | `value is T`    |
-| `validateArrayParameter<T>`    | Non-empty array                | `array is T[]`  |
-| `validateRequestBody<T>`       | Non-empty request body         | `body is T`     |
+| Function                       | Validates                                         | Type Predicate      |
+| ------------------------------ | ------------------------------------------------- | ------------------- |
+| `validateUidParameter`         | Non-empty string UID                              | `uid is string`     |
+| `validateItemKeyParameter`     | Formation `item_key` shape (lowercase snake_case) | `itemKey is string` |
+| `validateRequiredParameter<T>` | Non-null/undefined/empty value                    | `value is T`        |
+| `validateArrayParameter<T>`    | Non-empty array                                   | `array is T[]`      |
+| `validateRequestBody<T>`       | Non-empty request body                            | `body is T`         |
 
 All validators:
 

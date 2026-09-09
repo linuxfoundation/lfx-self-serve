@@ -34,7 +34,7 @@ export const mockFormations: Record<string, Formation> = {
     announcement_date: new Date(Date.now() + 3 * 24 * 60 * 60 * 1000).toISOString(),
     is_activating: false,
     // Mirrors mockFormationItems['formation:cascade-data-alliance']: 2 gating items
-    // (draft-project-record=done, contribution-agreement-executed=in_progress) — this same fixture
+    // (draft_project_record=done, contribution_agreement_executed=in_progress) — this same fixture
     // backs both the checklist (counts derived from items) and the queue (counts read from this
     // row), so a mismatch here would render two different "N of M open" numbers for one formation.
     gating_items_open: 1,
@@ -66,8 +66,8 @@ export const mockFormationsQueue: FormationQueueRow[] = [
     gates_cleared: false,
     is_activating: false,
     announcement_date: mockFormations['cascade-data-alliance'].announcement_date,
-    // Mirrors mockFormationItems['formation:cascade-data-alliance']: draft-project-record=done,
-    // contribution-agreement-executed=in_progress.
+    // Mirrors mockFormationItems['formation:cascade-data-alliance']: draft_project_record=done,
+    // contribution_agreement_executed=in_progress.
     progress: { not_started: 0, in_progress: 1, blocked: 0, awaiting_acceptance: 0, done: 1, skipped: 0 },
     blocked_item_titles: ['Contribution agreement executed'],
     assignees: [],

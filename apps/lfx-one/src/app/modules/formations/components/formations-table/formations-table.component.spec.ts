@@ -70,6 +70,18 @@ describe('FormationsTableComponent', () => {
     expect(fixture.nativeElement.querySelector('[data-testid="formations-sort-readiness"]').getAttribute('aria-sort')).toBe('descending');
   });
 
+  it('counts a skipped item as resolved in the progress column and readiness sort', async () => {
+    await render([
+      buildRow({
+        formation_uid: 'formation:all-skipped',
+        progress: { not_started: 0, in_progress: 0, blocked: 0, awaiting_acceptance: 0, done: 0, skipped: 3 },
+      }),
+    ]);
+
+    const progressText = fixture.nativeElement.querySelector('[data-testid="formations-table-row-formation:all-skipped"] td:nth-child(4) span').textContent;
+    expect(progressText.trim()).toBe('3 of 3');
+  });
+
   it('sorts by announcement date ascending by default, with rows lacking a date always last', async () => {
     await render([
       buildRow({ formation_uid: 'formation:no-date', announcement_date: null }),

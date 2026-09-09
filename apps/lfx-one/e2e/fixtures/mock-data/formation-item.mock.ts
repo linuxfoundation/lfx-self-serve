@@ -12,11 +12,11 @@ import { FormationActivity, FormationItem } from '@lfx-one/shared/interfaces';
 export const mockFormationItems: Record<string, FormationItem[]> = {
   'formation:cascade-data-alliance': [
     {
-      uid: 'formation-item:cascade-data-alliance:draft-project-record',
+      uid: 'formation-item:cascade-data-alliance:draft_project_record',
       formation_uid: 'formation:cascade-data-alliance',
       project_uid: 'e19f1234-f567-4abc-b890-1234567890de',
       version: 1,
-      template_item_key: 'draft-project-record',
+      template_item_key: 'draft_project_record',
       section_key: 'legal_and_entity',
       section_title: 'Legal and entity',
       title: 'Draft project record (Prospect)',
@@ -37,11 +37,11 @@ export const mockFormationItems: Record<string, FormationItem[]> = {
       updated_at: new Date(0).toISOString(),
     },
     {
-      uid: 'formation-item:cascade-data-alliance:contribution-agreement-executed',
+      uid: 'formation-item:cascade-data-alliance:contribution_agreement_executed',
       formation_uid: 'formation:cascade-data-alliance',
       project_uid: 'e19f1234-f567-4abc-b890-1234567890de',
       version: 1,
-      template_item_key: 'contribution-agreement-executed',
+      template_item_key: 'contribution_agreement_executed',
       section_key: 'legal_and_entity',
       section_title: 'Legal and entity',
       title: 'Contribution agreement executed',
@@ -62,11 +62,11 @@ export const mockFormationItems: Record<string, FormationItem[]> = {
       updated_at: new Date(0).toISOString(),
     },
     {
-      uid: 'formation-item:cascade-data-alliance:domain-and-dns-transfer',
+      uid: 'formation-item:cascade-data-alliance:domain_and_dns_transfer',
       formation_uid: 'formation:cascade-data-alliance',
       project_uid: 'e19f1234-f567-4abc-b890-1234567890de',
       version: 1,
-      template_item_key: 'domain-and-dns-transfer',
+      template_item_key: 'domain_and_dns_transfer',
       section_key: 'community_and_launch',
       section_title: 'Community and launch',
       title: 'Domain and DNS transfer',
@@ -87,11 +87,11 @@ export const mockFormationItems: Record<string, FormationItem[]> = {
       updated_at: new Date(0).toISOString(),
     },
     {
-      uid: 'formation-item:cascade-data-alliance:mailing-lists',
+      uid: 'formation-item:cascade-data-alliance:mailing_lists',
       formation_uid: 'formation:cascade-data-alliance',
       project_uid: 'e19f1234-f567-4abc-b890-1234567890de',
       version: 1,
-      template_item_key: 'mailing-lists',
+      template_item_key: 'mailing_lists',
       section_key: 'community_and_launch',
       section_title: 'Community and launch',
       title: 'Mailing lists',
@@ -115,11 +115,11 @@ export const mockFormationItems: Record<string, FormationItem[]> = {
       updated_at: new Date(0).toISOString(),
     },
     {
-      uid: 'formation-item:cascade-data-alliance:formation-sets-active',
+      uid: 'formation-item:cascade-data-alliance:formation_sets_active',
       formation_uid: 'formation:cascade-data-alliance',
       project_uid: 'e19f1234-f567-4abc-b890-1234567890de',
       version: 1,
-      template_item_key: 'formation-sets-active',
+      template_item_key: 'formation_sets_active',
       section_key: 'community_and_launch',
       section_title: 'Community and launch',
       title: 'Formation sets stage to Active',
@@ -143,11 +143,11 @@ export const mockFormationItems: Record<string, FormationItem[]> = {
 };
 
 export const mockFormationActivity: Record<string, FormationActivity[]> = {
-  'formation-item:cascade-data-alliance:contribution-agreement-executed': [
+  'formation-item:cascade-data-alliance:contribution_agreement_executed': [
     {
       uid: 'formation-activity:1',
       formation_uid: 'formation:cascade-data-alliance',
-      formation_item_uid: 'formation-item:cascade-data-alliance:contribution-agreement-executed',
+      formation_item_uid: 'formation-item:cascade-data-alliance:contribution_agreement_executed',
       type: 'note_added',
       actor: { username: 'sam.chen', name: 'Sam Chen' },
       message: 'updated notes',
