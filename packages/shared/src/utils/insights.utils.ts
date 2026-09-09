@@ -59,8 +59,9 @@ export function buildLensAwareInsightsUrl(
  * `get_health_score_category_v2` macro and the Insights primary project Health Score component
  * (`health-score.vue`): `>= 85` Excellent, `>= 70` Healthy, `>= 50` Fair, `>= 30` Concerning, else
  * Critical. The `unavailable` state (no score) is handled by callers, so this returns only the five
- * scored bands and is the single source both the Org Lens Projects table and the project-detail hero
- * classify through (they must never disagree).
+ * scored bands. LFXV2-3379 removed the Org Lens Projects table's and project-detail hero's calls to
+ * this legacy v1 classifier in favor of the warehouse-computed `health_score_category_v2` (see
+ * `normalizeHealthScoreCategoryV2` below).
  */
 export function classifyHealthScore(score: number): Exclude<HealthScore, 'unavailable'> {
   if (score >= 85) {
@@ -93,8 +94,8 @@ const HEALTH_SCORE_CATEGORIES = new Set<Exclude<HealthScore, 'unavailable'>>(['e
 /**
  * Normalizes the warehouse-computed `health_score_category_v2` column (lf-dbt's `get_health_score_category_v2`
  * macro, e.g. "Excellent"/"Fair"/"Concerning") into the lowercase `HealthScore` band. Returns `null` for
- * unset/unrecognized values so callers can fall back to `classifyHealthScore` on the v1 score for projects
- * the warehouse hasn't backfilled with a v2 category yet.
+ * unset/unrecognized values — callers must treat that as "no score" (`unavailable`), never fall back to
+ * `classifyHealthScore` on the legacy v1 score; the warehouse is the sole source of truth for the label.
  */
 export function normalizeHealthScoreCategoryV2(category: string | null | undefined): Exclude<HealthScore, 'unavailable'> | null {
   if (!category) {
