@@ -44,6 +44,7 @@ describe('OrgEasyclaDetailComponent', () => {
       foundationName: 'Nimbus Foundation',
       projects: [{ projectName: 'Cascade' }, { projectName: 'Driftwood' }],
       signedOn: '2024-03-11',
+      signed: true,
       status: 'signed',
       needsClaManager: false,
       claManagersCount: 2,
@@ -172,7 +173,7 @@ describe('OrgEasyclaDetailComponent', () => {
   });
 
   it('withholds the download from an agreement that was never signed', async () => {
-    getClaGroups.mockReturnValue(of({ orgUid: SELECTED_ACCOUNT.uid, claGroups: [claGroup({ status: 'not-started', signedOn: undefined })] }));
+    getClaGroups.mockReturnValue(of({ orgUid: SELECTED_ACCOUNT.uid, claGroups: [claGroup({ status: 'not-started', signed: false, signedOn: undefined })] }));
 
     const fixture = await render();
 
@@ -180,12 +181,22 @@ describe('OrgEasyclaDetailComponent', () => {
     expect(byTestId(fixture, 'org-easycla-detail-download')).toBeNull();
   });
 
-  it('keeps the download on a sanctioned agreement', async () => {
+  it('keeps the download on a signed agreement that is also sanctioned', async () => {
     getClaGroups.mockReturnValue(of({ orgUid: SELECTED_ACCOUNT.uid, claGroups: [claGroup({ status: 'sanctioned' })] }));
 
     const fixture = await render();
 
     expect(byTestId(fixture, 'org-easycla-detail-download')).not.toBeNull();
+  });
+
+  it('withholds the download from a sanctioned agreement that was never signed', async () => {
+    getClaGroups.mockReturnValue(of({ orgUid: SELECTED_ACCOUNT.uid, claGroups: [claGroup({ status: 'sanctioned', signed: false, signedOn: undefined })] }));
+
+    const fixture = await render();
+
+    // Sanctions win the single status slot, so `sanctioned` says nothing about signedness. This
+    // row has no document, and reading the status alone would offer one.
+    expect(byTestId(fixture, 'org-easycla-detail-download')).toBeNull();
   });
 
   it('opens Overview by default and leaves other tabs empty', async () => {
@@ -318,6 +329,46 @@ describe('OrgEasyclaDetailComponent', () => {
     // cancellation stream that filters out the empty selection would let this one through.
     expect(clickSpy).not.toHaveBeenCalled();
     clickSpy.mockRestore();
+  });
+
+  it('abandons a download when the viewer opens another agreement mid-request', async () => {
+    const clickSpy = vi.spyOn(HTMLAnchorElement.prototype, 'click').mockImplementation(() => undefined);
+    const pdf = new Subject<{ url: string; expiresInSeconds?: number }>();
+    getPdfUrl.mockReturnValue(pdf);
+    getClaGroups.mockReturnValue(
+      of({ orgUid: SELECTED_ACCOUNT.uid, claGroups: [claGroup(), claGroup({ id: 'signature-uuid-2', claGroupName: 'Other CLA' })] })
+    );
+
+    const fixture = await render();
+    (byTestId(fixture, 'org-easycla-detail-download')?.querySelector('button') ?? byTestId(fixture, 'org-easycla-detail-download'))?.click();
+    fixture.detectChanges();
+    await fixture.whenStable();
+
+    expect(getPdfUrl).toHaveBeenCalledTimes(1);
+
+    // Angular reuses this component when only `:signatureId` changes, so the organization never
+    // changes and an org-only cancellation stream would not fire.
+    paramMap.next(convertToParamMap({ signatureId: 'signature-uuid-2' }));
+    fixture.detectChanges();
+    await fixture.whenStable();
+
+    pdf.next({ url: 'https://s3.example.org/ccla.pdf' });
+    fixture.detectChanges();
+    await fixture.whenStable();
+
+    // The response is the first agreement's document, and the page is now showing the second.
+    expect(clickSpy).not.toHaveBeenCalled();
+    clickSpy.mockRestore();
+  });
+
+  it('holds the skeleton while the loaded list still belongs to the previous organization', async () => {
+    getClaGroups.mockReturnValue(of({ orgUid: '0014100000OtherOrgAA', claGroups: [claGroup()] }));
+
+    const fixture = await render();
+
+    // The response names a different organization than the one selected. Rendering it would show
+    // that organization's agreement, signer and covered projects under this organization's name.
+    expect(byTestId(fixture, 'org-easycla-detail-ccla-title')).toBeNull();
   });
 
   describe('tab bar keyboard navigation', () => {

@@ -75,19 +75,35 @@ export class OrgEasyclaDetailComponent {
 
   private readonly orgUid$ = this.selectedOrgUid$.pipe(filter((uid): uid is string => !!uid));
 
-  // Emits when the selected organization changes, skipping the value present at subscribe time.
-  // Switching organizations does not destroy this component — it re-drives the list fetch — so
-  // `takeUntilDestroyed` alone leaves an in-flight download running against the organization the
-  // viewer has left, and its response would hand them that organization's agreement while the
-  // page shows another. Cancelling drops the response and the request with it.
+  // Emits when what the page is showing changes — the selected organization, or the agreement in
+  // the route — skipping the value present at subscribe time. Neither change destroys this
+  // component: switching organizations re-drives the list fetch, and Angular reuses the component
+  // when `:signatureId` changes. So `takeUntilDestroyed` alone leaves an in-flight download
+  // running against a context the viewer has left, and its response would hand them one
+  // organization's or agreement's document while the page shows another. Cancelling drops the
+  // response and the request with it.
   //
-  // Derived from the unfiltered stream, not `orgUid$`: clearing the selection empties the page
-  // just as switching does, so it must cancel too, and the non-empty filter would swallow it.
-  private readonly orgChanged$ = this.selectedOrgUid$.pipe(skip(1));
+  // The organization arm is the unfiltered stream, not `orgUid$`: clearing the selection empties
+  // the page just as switching does, so it must cancel too, and the non-empty filter would
+  // swallow it.
+  private readonly contextChanged$ = combineLatest([this.selectedOrgUid$, toObservable(this.signatureId)]).pipe(skip(1));
 
   private readonly claData: Signal<OrgClaGroupList | null | undefined> = this.initClaData();
 
-  protected readonly claLoading = computed(() => this.hasCompany() && (this.claData() === undefined || this.claLoadingState()) && !this.fetchError());
+  /**
+   * `toSignal` holds the previous organization's response until the new one arrives, so the
+   * selection changes before the data does. Rendering that window would show one organization's
+   * agreement, signer and covered projects under another organization's name. Mirrors the list
+   * page, which folds the same mismatch into its loading state.
+   */
+  private readonly claDataIsForSelectedOrg = computed(() => {
+    const data = this.claData();
+    return !data || data.orgUid === this.accountContext.selectedAccount()?.uid;
+  });
+
+  protected readonly claLoading = computed(
+    () => this.hasCompany() && (this.claData() === undefined || this.claLoadingState() || !this.claDataIsForSelectedOrg()) && !this.fetchError()
+  );
 
   protected readonly claGroup: Signal<OrgClaGroup | undefined> = computed(() => this.initClaGroup());
 
@@ -101,9 +117,10 @@ export class OrgEasyclaDetailComponent {
 
   protected readonly coverageHint = computed(() => this.initCoverageHint());
 
-  // The design offers the document on the signed and sanctioned bodies only. A not-started
-  // agreement has no signed document, so the control could do nothing but fail.
-  protected readonly canDownload = computed(() => !!this.claGroup() && this.claGroup()?.status !== 'not-started');
+  // Read from `signed` rather than the status: sanctions win the single status slot, so a
+  // `sanctioned` row may be signed or unsigned, and offering the document on an unsigned one
+  // gives the viewer a control that can only fail.
+  protected readonly canDownload = computed(() => this.claGroup()?.signed === true);
 
   protected readonly signedOnLabel = computed(() => this.initSignedOnLabel());
 
@@ -163,7 +180,7 @@ export class OrgEasyclaDetailComponent {
       // would otherwise leave the button spinning for the rest of the page's life.
       .pipe(
         finalize(() => this.downloading.set(false)),
-        takeUntil(this.orgChanged$),
+        takeUntil(this.contextChanged$),
         takeUntilDestroyed(this.destroyRef)
       )
       .subscribe({

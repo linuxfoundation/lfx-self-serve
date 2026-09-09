@@ -53,11 +53,15 @@ export class OrgClasController {
 
       const pdf = await this.orgClaService.getPdfUrl(req, orgUid, signatureId);
       if (!pdf) {
+        // A handled outcome, not an error: absent is what the service returns for a signature
+        // this organization does not hold, an unsigned agreement, or a document upstream has
+        // no URL for. It still closes the operation, so request duration stays balanced.
+        logger.success(req, 'get_org_cla_pdf_url', startTime, { org_uid: orgUid, signature_id: signatureId, found: false });
         res.status(404).json({ message: 'Signed document not found' });
         return;
       }
 
-      logger.success(req, 'get_org_cla_pdf_url', startTime, { org_uid: orgUid, signature_id: signatureId });
+      logger.success(req, 'get_org_cla_pdf_url', startTime, { org_uid: orgUid, signature_id: signatureId, found: true });
       res.setHeader('Cache-Control', 'no-store');
       res.json(pdf);
     } catch (error) {

@@ -18,6 +18,7 @@ describe('OrgEasyclaCardComponent', () => {
       claGroupId: 'cla-group-uuid-1',
       foundationName: 'Nimbus Foundation',
       projects: [{ projectName: 'Cascade' }, { projectName: 'Driftwood' }],
+      signed: true,
       status: 'signed',
       needsClaManager: false,
       claManagersCount: 2,

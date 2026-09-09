@@ -558,6 +558,17 @@ describe('OrgClaService.getPdfUrl', () => {
     expect(await new OrgClaService().getPdfUrl(req(), ORG_UID, 'signature-uuid-1')).toBeNull();
   });
 
+  it('answers absent for an unsigned agreement without asking upstream for a document', async () => {
+    // Only the list is staged: reaching the document endpoint at all is the failure this guards.
+    gatewayFetch.mockResolvedValueOnce(upstreamList(upstreamEntry({ signatureID: 'signature-uuid-1', signed: false, sanctioned: true })));
+
+    expect(await new OrgClaService().getPdfUrl(req(), ORG_UID, 'signature-uuid-1')).toBeNull();
+
+    // Upstream presigns the expected key without checking that a document was ever written
+    // there, so asking would hand back a URL to nothing.
+    expect(gatewayFetch).toHaveBeenCalledTimes(1);
+  });
+
   it('propagates a 403 rather than turning it into a missing document', async () => {
     const { MicroserviceError } = await import('../errors');
     stageDocumentFailure(new MicroserviceError('forbidden', 403, 'FORBIDDEN', { service: 'cla_service' }));

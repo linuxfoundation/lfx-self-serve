@@ -20,6 +20,7 @@ vi.mock('../services/logger.service', () => ({
 }));
 
 import { AuthenticationError } from '../errors';
+import { logger } from '../services/logger.service';
 import { OrgClasController } from './org-clas.controller';
 
 function buildRes() {
@@ -103,6 +104,9 @@ describe('OrgClasController.getPdfUrl', () => {
 
     expect(res.status).toHaveBeenCalledWith(404);
     expect(res.json).toHaveBeenCalledWith({ message: 'Signed document not found' });
+    // A handled outcome still closes the operation, or the endpoint's duration and completion
+    // telemetry counts drift apart from its request count.
+    expect(logger.success).toHaveBeenCalledWith(expect.anything(), 'get_org_cla_pdf_url', expect.anything(), expect.objectContaining({ found: false }));
   });
 
   it('returns the url and marks the response no-store', async () => {

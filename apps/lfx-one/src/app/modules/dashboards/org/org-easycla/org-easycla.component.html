@@ -115,9 +115,19 @@
     } @else {
       <section class="grid grid-cols-1 gap-4 md:grid-cols-2" data-testid="org-easycla-grid">
         @for (claGroup of pagedClaGroups(); track claGroup.id) {
-          <a [routerLink]="['/org/easycla', claGroup.id]" class="block text-inherit no-underline" data-testid="org-easycla-card-link">
+          <!-- Stretched link: the anchor overlays the card as a SIBLING of it rather than wrapping
+               it. Wrapping nested the "Needs a CLA Manager" tag — which carries a tooltip and so
+               takes `tabindex="0"` — inside the link, giving a second tab stop within the card and
+               making a click on the tag ambiguous with following the agreement. As a sibling the
+               anchor is the card's only activation target and owns the whole surface. -->
+          <div class="relative">
             <lfx-org-easycla-card [claGroup]="claGroup" />
-          </a>
+            <a
+              [routerLink]="['/org/easycla', claGroup.id]"
+              class="absolute inset-0 rounded-lg focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-brand-500"
+              [attr.aria-label]="'Open ' + claGroup.claGroupName"
+              data-testid="org-easycla-card-link"></a>
+          </div>
         }
       </section>
 

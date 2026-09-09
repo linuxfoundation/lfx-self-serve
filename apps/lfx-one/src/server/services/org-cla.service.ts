@@ -80,6 +80,7 @@ function toOrgClaGroup(entry: EasyClaCompanyClaGroup & { signatureID: string }, 
     // name — a deployment predating the field, or a signature whose signatory name is blank. Both
     // read as "the signer is not known", which the overview answers by naming nobody.
     ...(entry.signed === true && entry.signedBy ? { signedBy: entry.signedBy } : {}),
+    signed: entry.signed === true,
     status: toStatus(entry),
     needsClaManager: entry.needsClaManager === true,
     claManagersCount: entry.claManagersCount ?? 0,
@@ -203,9 +204,19 @@ export class OrgClaService {
     const startTime = logger.startOperation(req, 'org_cla_get_pdf_url', { signature_id: signatureId });
 
     const { claGroups } = await this.listClaGroups(req, orgUid);
-    if (!claGroups.some((group) => group.id === signatureId)) {
+    const match = claGroups.find((group) => group.id === signatureId);
+    if (!match) {
       logger.warning(req, 'org_cla_get_pdf_url', 'signature is not on this organization CLA list', { org_uid: orgUid, signature_id: signatureId });
       logger.success(req, 'org_cla_get_pdf_url', startTime, { outcome: 'not_on_organization_list' });
+      return null;
+    }
+
+    // Membership is not signedness. A sanctioned row may be unsigned, and upstream presigns the
+    // expected S3 key without checking that anything was ever written there — so calling it for
+    // an unsigned agreement hands back a URL to a document that does not exist. Absent is the
+    // honest answer, and it is the one the caller already handles.
+    if (!match.signed) {
+      logger.success(req, 'org_cla_get_pdf_url', startTime, { outcome: 'agreement_not_signed' });
       return null;
     }
 

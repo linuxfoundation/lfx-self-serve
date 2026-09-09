@@ -643,6 +643,16 @@ export interface OrgClaGroup {
    * naming one here would attribute the signature to somebody who did not make it.
    */
   signedBy?: string;
+  /**
+   * Whether a signed CCLA actually exists, taken from upstream's own flag.
+   *
+   * Deliberately separate from `status`, which cannot answer this: sanctions win the single
+   * status slot, so a `sanctioned` row may be signed or unsigned. Anything deciding whether
+   * there is a document to fetch must read this rather than infer from the status, and
+   * `signedOn` is not a stand-in either — it is additionally conditional on upstream sending
+   * a date, so a signed agreement can carry no date and still have a document.
+   */
+  signed: boolean;
   status: OrgClaGroupStatus;
   /**
    * Upstream's own `needsClaManager` — signed with zero CLA managers — taken verbatim.
