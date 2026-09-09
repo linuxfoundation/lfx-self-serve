@@ -91,6 +91,17 @@ export const parseLocalDateString = (dateString: string): Date => {
 };
 
 /**
+ * Nullable counterpart to {@link parseLocalDateString} for callers reading a date-only field they
+ * cannot fail on — a malformed value comes back as `null` instead of throwing.
+ */
+export function tryParseLocalDateString(dateString: string | null | undefined): Date | null {
+  if (!dateString || !/^\d{4}-\d{2}-\d{2}$/.test(dateString)) {
+    return null;
+  }
+  return parseLocalDateString(dateString);
+}
+
+/**
  * Formats a `Date` as a local-calendar `YYYY-MM-DD` string — the write-side counterpart to
  * {@link parseLocalDateString}. Built from local getters rather than `toISOString().slice(0, 10)`,
  * which reports the UTC calendar day and is a different day than the one a date picker showed for

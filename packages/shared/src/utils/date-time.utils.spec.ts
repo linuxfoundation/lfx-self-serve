@@ -11,6 +11,7 @@ import {
   parseLocalDateString,
   timeAgo,
   toLocalDateOnlyString,
+  tryParseLocalDateString,
 } from './date-time.utils';
 
 /**
@@ -184,5 +185,19 @@ describe('toLocalDateOnlyString', () => {
 
   it('round-trips with parseLocalDateString', () => {
     expect(toLocalDateOnlyString(parseLocalDateString('2026-01-31'))).toBe('2026-01-31');
+  });
+});
+
+describe('tryParseLocalDateString', () => {
+  it('parses a valid YYYY-MM-DD string', () => {
+    expect(tryParseLocalDateString('2026-01-31')).toEqual(parseLocalDateString('2026-01-31'));
+  });
+
+  it('returns null instead of throwing for null, undefined, empty, or malformed input', () => {
+    expect(tryParseLocalDateString(null)).toBeNull();
+    expect(tryParseLocalDateString(undefined)).toBeNull();
+    expect(tryParseLocalDateString('')).toBeNull();
+    expect(tryParseLocalDateString('not-a-date')).toBeNull();
+    expect(tryParseLocalDateString('2026-1-5')).toBeNull();
   });
 });
