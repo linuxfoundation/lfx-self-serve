@@ -129,7 +129,7 @@
             <a
               [routerLink]="['/org/easycla', claGroup.id]"
               class="absolute inset-0 z-0 rounded-lg focus:outline-none focus-visible:ring-2 focus-visible:ring-blue-500"
-              [attr.aria-label]="'Open ' + claGroup.claGroupName"
+              [attr.aria-label]="orgClaOpenLabel(claGroup)"
               data-testid="org-easycla-card-link"></a>
             <div class="relative z-10 pointer-events-none">
               <lfx-org-easycla-card [claGroup]="claGroup" />

@@ -220,6 +220,25 @@ describe('OrgEasyclaComponent', () => {
       expect(byTestId(fixture, 'org-easycla-card-needs-manager')?.querySelector('.pointer-events-auto')).not.toBeNull();
     });
 
+    // The card shows the signing entity as a visible subline precisely because the CLA Group name is
+    // not unique — an organization signing under several entities gets one row per entity. A link
+    // naming only the group reproduces on the accessibility tree the ambiguity the subline resolves
+    // on screen, leaving two identical "Open …" links.
+    it('distinguishes the links of two rows that share a CLA Group name', async () => {
+      getClaGroups.mockReturnValue(
+        of({
+          orgUid: SELECTED_ACCOUNT.uid,
+          claGroups: [claGroup({ id: 'a', signingEntityName: 'Acme Motors GmbH' }), claGroup({ id: 'b', signingEntityName: 'Acme Robotics Ltd' })],
+        })
+      );
+
+      const fixture = await render();
+      const labels = allByTestId(fixture, 'org-easycla-card-link').map((link) => link.getAttribute('aria-label'));
+
+      expect(labels).toEqual(['Open Nimbus Foundation CLA, Acme Motors GmbH', 'Open Nimbus Foundation CLA, Acme Robotics Ltd']);
+      expect(new Set(labels).size).toBe(2);
+    });
+
     it('fetches once for the selected organization', async () => {
       getClaGroups.mockReturnValue(of({ orgUid: SELECTED_ACCOUNT.uid, claGroups: [claGroup()] }));
 

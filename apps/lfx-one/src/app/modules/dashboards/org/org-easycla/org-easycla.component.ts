@@ -7,6 +7,7 @@ import { takeUntilDestroyed, toObservable, toSignal } from '@angular/core/rxjs-i
 import { FormControl, FormGroup } from '@angular/forms';
 import { RouterLink } from '@angular/router';
 import type { OrgClaGroup, OrgClaGroupList } from '@lfx-one/shared/interfaces';
+import { orgClaOpenLabel } from '@lfx-one/shared/utils';
 import { SkeletonModule } from 'primeng/skeleton';
 import { catchError, distinctUntilChanged, filter, of, skip, switchMap, tap } from 'rxjs';
 
@@ -40,6 +41,8 @@ export class OrgEasyclaComponent {
   private readonly platformId = inject(PLATFORM_ID);
 
   // ── Search (client-side; the upstream list takes no search parameter) ──────
+  protected readonly orgClaOpenLabel = orgClaOpenLabel;
+
   protected readonly filterForm = new FormGroup({
     search: new FormControl<string>('', { nonNullable: true }),
   });

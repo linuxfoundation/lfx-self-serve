@@ -3,7 +3,28 @@
 
 import { describe, expect, it } from 'vitest';
 
-import { orgClaCoverageChips, orgClaCoverageSummary } from './org-cla-view.utils';
+import { orgClaCoverageChips, orgClaCoverageSummary, orgClaOpenLabel } from './org-cla-view.utils';
+
+describe('orgClaOpenLabel', () => {
+  it('names the agreement alone when nothing else distinguishes it', () => {
+    expect(orgClaOpenLabel({ claGroupName: 'Nimbus Foundation CLA' })).toBe('Open Nimbus Foundation CLA');
+  });
+
+  // The case the label exists for: an organization signing under several entities gets one row per
+  // entity, all carrying the same CLA Group name. Naming only the group leaves a screen-reader user
+  // with identical links and no way to tell which entity each opens.
+  it('distinguishes two rows that share a CLA Group name by their signing entity', () => {
+    const first = orgClaOpenLabel({ claGroupName: 'Nimbus Foundation CLA', signingEntityName: 'Acme Motors GmbH' });
+    const second = orgClaOpenLabel({ claGroupName: 'Nimbus Foundation CLA', signingEntityName: 'Acme Robotics Ltd' });
+
+    expect(first).toBe('Open Nimbus Foundation CLA, Acme Motors GmbH');
+    expect(second).not.toBe(first);
+  });
+
+  it('names the agreement alone when the entity is the empty string upstream sends for no entity', () => {
+    expect(orgClaOpenLabel({ claGroupName: 'Nimbus Foundation CLA', signingEntityName: '' })).toBe('Open Nimbus Foundation CLA');
+  });
+});
 
 describe('orgClaCoverageChips', () => {
   it('names the single project', () => {

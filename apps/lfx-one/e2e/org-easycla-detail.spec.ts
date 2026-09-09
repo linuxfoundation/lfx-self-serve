@@ -74,8 +74,10 @@ test.describe('Org Lens EasyCLA detail — content', () => {
 
     // By accessible name rather than by scoping the link under its card: the overlay anchor is a
     // sibling of the card, not a descendant, so a descendant locator would match nothing. The name
-    // is also what a screen-reader user picks the link by, which is the thing worth pinning.
-    const link = page.getByRole('link', { name: 'Open Lumen CLA' });
+    // is also what a screen-reader user picks the link by, which is the thing worth pinning — and
+    // it carries the signing entity, because two rows can share a CLA Group name and the entity is
+    // the only thing telling them apart.
+    const link = page.getByRole('link', { name: 'Open Lumen CLA, Acme Motors GmbH' });
     await expect(link).toHaveCount(1, { timeout: PAGE_LOAD_TIMEOUT });
     await link.click();
 
