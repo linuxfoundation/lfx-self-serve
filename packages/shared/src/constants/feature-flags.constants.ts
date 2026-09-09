@@ -109,15 +109,20 @@ export const FEATURE_FLAG_OVERRIDE_STORAGE_KEY = 'lfx-feature-flag-overrides';
 
 /**
  * Gates the Formation Checklist Epic 1 surfaces (GH-1955/1958/1959/1962) — the project dashboard's
- * Formation badge/subtitle/sidebar card, and the project selector's Formation tag. (A stage-scoped
- * Formation nav item was tried and removed on review — see the comment on `projectLensItems` in
- * `sidebar-nav.service.ts` — since it had nowhere distinct to route to.) LaunchDarkly targets a
- * small internal audience while the formation flow is validated; default false so an unflagged
- * evaluation renders the pre-Formation UI.
+ * Formation badge/subtitle/sidebar card, the project selector's Formation tag, the Formation
+ * checklist section, and the Formations queue (epic #1965). (A stage-scoped Formation nav item was
+ * tried and removed on review — see the comment on `projectLensItems` in `sidebar-nav.service.ts`
+ * — since it had nowhere distinct to route to.) Staged targeting (named users, then LF Staff, then
+ * all), same rule as MARKETING_OPS_FGA_ENABLED_FLAG — never "all users" in one step. Default false
+ * so an unflagged evaluation renders the pre-Formation UI. The checklist and queue are built
+ * against fixtures ahead of the real backend (`lfx-v2-formation-service`, #1957); this flag is what
+ * keeps that fixture-backed UI dark until the pieces are ready together.
  *
  * **UI-only** — evaluated through `FeatureFlagService.getBooleanFlag`. Does not gate the BFF or any
  * endpoint: the underlying `stage`/formation fields on `/api/projects/:slugOrUid` are already
- * visible to anyone authorized to view the project regardless of this flag — it only controls
- * whether Self Serve *renders* Formation-specific UI around already-reachable data.
+ * visible to anyone authorized to view the project regardless of this flag, and the formation
+ * endpoints' writes are fixture-only and never reach a real record (see
+ * `formation-backend.helper.ts`) — this flag only controls whether Self Serve *renders*
+ * Formation-specific UI around already-reachable data.
  */
 export const FORMATION_ENABLED_FLAG = 'formation-enabled';

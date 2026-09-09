@@ -209,6 +209,7 @@ export class LensService {
       isOrgLensEnabled: this.isOrgLensEnabled(),
       isLFStaff: this.personaService.isLFStaff(),
       hasMarketingGrant: this.isMarketingOpsFgaEnabled() && (this.personaService.isMarketingAuditor() || this.personaService.isCampaignManager()),
+      isRootAuditor: this.personaService.isAuditor(),
     }));
   }
 

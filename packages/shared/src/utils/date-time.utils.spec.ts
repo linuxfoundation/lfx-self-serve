@@ -3,7 +3,7 @@
 
 import { afterEach, describe, expect, it, vi } from 'vitest';
 
-import { formatIsoDateLabel, localDateStamp, normalizeSnowflakeTimestamp, timeAgo } from './date-time.utils';
+import { formatIsoDateLabel, localDateStamp, normalizeSnowflakeTimestamp, parseIsoDateAsUtcMidnight, timeAgo } from './date-time.utils';
 
 /**
  * The fallback contract is the whole point of this helper: anything that is not a real
@@ -45,6 +45,33 @@ describe('formatIsoDateLabel', () => {
   // time — a day early for anyone west of Greenwich.
   it('does not drift across time zones', () => {
     expect(formatIsoDateLabel('2026-01-01')).toBe('Jan 1, 2026');
+  });
+});
+
+/**
+ * The shared parse `formatIsoDateLabel` and `FormationReadinessStripComponent`'s announcement
+ * label both build on (GH-1958 follow-up: the checklist header and the dashboard subtitle were
+ * a calendar day apart because the strip built its own unpinned `new Date(iso)` instead of
+ * sharing this parse).
+ */
+describe('parseIsoDateAsUtcMidnight', () => {
+  it('parses a date-only string to UTC midnight, not local midnight', () => {
+    const parsed = parseIsoDateAsUtcMidnight('2026-03-23');
+    expect(parsed).not.toBeNull();
+    expect(parsed?.toISOString()).toBe('2026-03-23T00:00:00.000Z');
+  });
+
+  it('returns null for a date that does not exist', () => {
+    expect(parseIsoDateAsUtcMidnight('2026-02-31')).toBeNull();
+  });
+
+  it('returns null for out-of-range parts', () => {
+    expect(parseIsoDateAsUtcMidnight('2026-13-45')).toBeNull();
+  });
+
+  it('returns null when the string is not exactly YYYY-MM-DD', () => {
+    expect(parseIsoDateAsUtcMidnight('not-a-date')).toBeNull();
+    expect(parseIsoDateAsUtcMidnight('')).toBeNull();
   });
 });
 

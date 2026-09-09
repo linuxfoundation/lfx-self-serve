@@ -47,6 +47,13 @@ export class PersonaService {
   public readonly isRootWriter: WritableSignal<boolean> = signal<boolean>(false);
   /** Member of the lf-staff team — unlocks executive-tier dashboards without granting the ED persona */
   public readonly isLFStaff: WritableSignal<boolean> = signal<boolean>(false);
+  /**
+   * `auditor` FGA grant on the tenant ROOT project — the Formations queue's (`foundation/formations`,
+   * GH-1958) authorization boundary. Unlike {@link isMarketingAuditor}/{@link isCampaignManager},
+   * `auditor` has no project-scoped variant to race against, so it rides the same simple, ungated
+   * write as {@link isRootWriter}/{@link isLFStaff} rather than the probe-recency machinery below.
+   */
+  public readonly isAuditor: WritableSignal<boolean> = signal<boolean>(false);
   /** Root- or project-scoped `marketing_auditor` FGA grant (project scope applies when the request carries `?project=`) (LFXV2-2235/LFXV2-2236). Always false while `ServerFeatureFlag.MarketingOpsFga` is off. */
   public readonly isMarketingAuditor: WritableSignal<boolean> = signal<boolean>(false);
   /** Root- or project-scoped `campaign_manager` FGA grant. Same flag caveat as {@link isMarketingAuditor}. */
@@ -456,6 +463,7 @@ export class PersonaService {
     this.detectedProjects.set(response.projects);
     this.isRootWriter.set(response.isRootWriter ?? false);
     this.isLFStaff.set(response.isLFStaff ?? false);
+    this.isAuditor.set(response.isAuditor ?? false);
     // Only apply grant fields from a probe that is at least as new as the last one that actually
     // wrote these signals — a slower response for a foundation the user has already navigated
     // away from must not clobber the grant a newer, faster-resolving probe already wrote for the

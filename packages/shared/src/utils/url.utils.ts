@@ -65,6 +65,17 @@ export function isValidUrl(urlString: string): boolean {
 }
 
 /**
+ * True for an in-app relative path (e.g. `/project/{{project.uid}}/committees/new`), false for a
+ * protocol-relative value (`//host/...`) — a browser resolves that as a same-scheme cross-origin
+ * URL, not a safe in-app route, so it must not be treated as one.
+ * @param value - The candidate path string
+ * @returns true if the value is a same-origin relative path
+ */
+export function isRelativeInAppPath(value: string): boolean {
+  return value.startsWith('/') && !value.startsWith('//');
+}
+
+/**
  * Trailing characters that are almost never part of an intended URL when found at the end
  * of a regex match — sentence punctuation and quotes (e.g. `Visit https://example.com.`
  * should link `https://example.com`, not the trailing period).

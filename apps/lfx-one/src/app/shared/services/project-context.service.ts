@@ -127,6 +127,17 @@ export class ProjectContextService {
   public readonly activeProjectAnnouncementDateLoading: Signal<boolean> = this.announcementDateLoading.asReadonly();
   public readonly activeProjectAnnouncementDateHasError: Signal<boolean> = this.announcementDateHasError.asReadonly();
 
+  /**
+   * The active context's project `stage` (e.g. `"Formation - Exploratory"`). `ProjectContext`
+   * itself never carries `stage` — `projectQueryParamGuard` builds it from a `Project` response but
+   * drops that field — so this reads it via a separate `ProjectService.getProject` call keyed off
+   * `activeContext`, not a derivation of it. That call is cached per slug for the service's
+   * lifetime (shared with `projectQueryParamGuard`'s own read), so the value reflects the project's
+   * stage as of its first fetch this session, not a live re-check on every context change. `null`
+   * while resolving, absent, or unauthenticated.
+   */
+  public readonly activeProjectStage: Signal<string | null> = this.initActiveProjectStage();
+
   /** Salesforce 18-char ID for the active foundation — resolves PCC deep-link targets. `null` while resolving or unavailable. */
   public readonly selectedFoundationSfid: Signal<string | null> = this.initSelectedFoundationSfid();
 
@@ -341,6 +352,20 @@ export class ProjectContextService {
             })
           )
         )
+      ),
+      { initialValue: null }
+    );
+  }
+
+  private initActiveProjectStage(): Signal<string | null> {
+    return toSignal(
+      combineLatest([toObservable(this.activeContext), toObservable(this.userService.authenticated)]).pipe(
+        switchMap(([ctx, authenticated]) => {
+          if (!ctx?.slug || !authenticated) {
+            return of(null);
+          }
+          return this.projectService.getProject(ctx.slug, false).pipe(map((project) => project?.stage ?? null));
+        })
       ),
       { initialValue: null }
     );

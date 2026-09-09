@@ -8,6 +8,9 @@ import { authGuard } from './shared/guards/auth.guard';
 import { authenticatedMatchGuard } from './shared/guards/authenticated-match.guard';
 import { dashboardAccessGuard } from './shared/guards/dashboard-access.guard';
 import { campaignAccessGuard } from './shared/guards/campaign-access.guard';
+import { formationEnabledGuard } from './shared/guards/formation-enabled.guard';
+import { formationProjectEnabledGuard } from './shared/guards/formation-project-enabled.guard';
+import { formationsQueueAuditorGuard } from './shared/guards/formations-queue-auditor.guard';
 import { lensRedirectGuard } from './shared/guards/lens-redirect.guard';
 import { marketingImpactAccessGuard } from './shared/guards/marketing-impact-access.guard';
 import { newsletterAccessGuard } from './shared/guards/newsletter-access.guard';
@@ -84,6 +87,16 @@ export const routes: Routes = [
         data: { lens: 'project' },
         canActivate: [projectQueryParamGuard],
         loadComponent: () => import('./modules/dashboards/dashboard.component').then((m) => m.DashboardComponent),
+      },
+      // Formation checklist (GH-1958) — its own project-scoped route, not a dashboard section: dark-launched
+      // behind `formation-enabled` plus a Formation sub-stage check on `?project=` (CanMatch), so it's
+      // invisible for a non-formation project or with the flag off.
+      {
+        path: 'project/formation',
+        data: { lens: 'project' },
+        canMatch: [formationProjectEnabledGuard],
+        canActivate: [projectQueryParamGuard],
+        loadComponent: () => import('./modules/dashboards/formation/formation-page/formation-page.component').then((m) => m.FormationPageComponent),
       },
       // Org Lens — dark-launched behind `org-lens-enabled` (CanMatch); /org/* is invisible when the flag is off.
       {
@@ -284,6 +297,17 @@ export const routes: Routes = [
         data: { lens: 'foundation' },
         canActivate: [projectQueryParamGuard],
         loadChildren: () => import('./modules/documents/documents.routes').then((m) => m.DOCUMENT_ROUTES),
+      },
+      // Formations queue (GH-1958) — dark-launched behind `formation-enabled` (CanMatch), auditor-only
+      // (CanActivate). Deliberately no projectQueryParamGuard and no `:id`/`:slug` child — the queue is
+      // locked to the LF root, not scoped by `?project=`, and has no nested per-formation drill-down.
+      // Linked from the dashboard's FormationEntryCardComponent (GH-1955), not from any nav item.
+      {
+        path: 'foundation/formations',
+        data: { lens: 'foundation' },
+        canMatch: [formationEnabledGuard],
+        canActivate: [formationsQueueAuditorGuard],
+        loadComponent: () => import('./modules/formations/formations-queue/formations-queue.component').then((m) => m.FormationsQueueComponent),
       },
       // Marketing OS agents — dark-launched behind `mktg-os-agents-enabled` (CanMatch); invisible when the flag is off.
       {
