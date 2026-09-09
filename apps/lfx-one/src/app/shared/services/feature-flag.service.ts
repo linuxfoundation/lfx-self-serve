@@ -6,6 +6,7 @@ import { toObservable } from '@angular/core/rxjs-interop';
 import { environment } from '@environments/environment';
 import { FEATURE_FLAG_OVERRIDE_STORAGE_KEY, FEATURE_FLAG_READY_TIMEOUT_MS, User } from '@lfx-one/shared';
 import { FeatureFlagGuardContext } from '@lfx-one/shared/interfaces';
+import { LaunchDarklyClientProvider } from '@openfeature/launchdarkly-client-provider';
 import { Client, EvaluationContext, JsonValue, OpenFeature, ProviderEvents, ProviderStatus } from '@openfeature/web-sdk';
 import { catchError, filter, firstValueFrom, of, timeout } from 'rxjs';
 
@@ -91,7 +92,7 @@ export class FeatureFlagService {
       // bootstrap). Setting the signal twice is idempotent.
       this.setupEventHandlers();
 
-      if (this.client.providerStatus === ProviderStatus.READY) {
+      if (this.rawProviderStatus() === ProviderStatus.READY) {
         this.isProviderReady.set(true);
       }
     } catch (error) {
@@ -122,18 +123,23 @@ export class FeatureFlagService {
    * Reports once per call, not deduped across calls — intentional: per-navigation frequency is
    * the signal (a sustained outage should show as sustained RUM volume, not a single flat line).
    *
-   * Short-circuits on a provider already in ERROR status instead of waiting out `timeoutMs` again —
-   * the pinned `@openfeature/launchdarkly-client-provider` (0.3.3) sets ERROR when its own bootstrap
-   * `initializationTimeout` elapses but never emits a later `Ready`/`Error` event for that attempt, so
-   * without this check every guard would burn its own full budget on top of the bootstrap wait that
-   * already failed, turning a real outage into a stall of roughly double `FEATURE_FLAG_READY_TIMEOUT_MS`.
+   * Short-circuits on the provider already in ERROR status instead of waiting out `timeoutMs`
+   * again. Checks `rawProviderStatus()` (the provider instance's own status), not
+   * `OpenFeature.getClient().providerStatus`: the pinned `@openfeature/launchdarkly-client-provider`
+   * (0.3.3) catches its own bootstrap `initializationTimeout` failure internally and resolves
+   * instead of rejecting, so the OpenFeature SDK sees a successful `initialize()` and marks its own
+   * wrapper READY — `client.providerStatus` can never observe this failure, it would always read
+   * READY. Without reading the provider's own status here, every guard would burn its own full
+   * budget on top of the bootstrap wait that already failed, turning a real outage into a stall of
+   * roughly double `FEATURE_FLAG_READY_TIMEOUT_MS` — or, worse, proceed as if ready at all (see
+   * `rawProviderStatus()`).
    */
   public async waitForReady(context: FeatureFlagGuardContext, timeoutMs = FEATURE_FLAG_READY_TIMEOUT_MS): Promise<boolean> {
     if (this.isProviderReady()) {
       return true;
     }
 
-    if (OpenFeature.getClient().providerStatus === ProviderStatus.ERROR) {
+    if (this.rawProviderStatus() === ProviderStatus.ERROR) {
       this.dataDogRumService.addError(new Error('Feature flag provider not ready before guard timeout'), context);
       return false;
     }
@@ -272,6 +278,12 @@ export class FeatureFlagService {
 
     // Set up event handlers for flag changes
     this.client.addHandler(ProviderEvents.Ready, () => {
+      // The SDK fires this even when the pinned LaunchDarkly provider swallowed its own bootstrap
+      // timeout and resolved instead of rejecting — see rawProviderStatus(). Don't trust it blindly.
+      if (this.rawProviderStatus() === ProviderStatus.ERROR) {
+        return;
+      }
+
       this.isProviderReady.set(true);
       forceSignalUpdate();
     });
@@ -292,5 +304,21 @@ export class FeatureFlagService {
     if (current) {
       this.context.set({ ...current });
     }
+  }
+
+  /**
+   * The registered provider's own status, not the OpenFeature SDK's wrapper-tracked status.
+   *
+   * The pinned `@openfeature/launchdarkly-client-provider` (0.3.3) catches its own bootstrap
+   * `initializationTimeout` failure internally and resolves instead of rejecting, so the SDK's
+   * `setAwaitableProvider` sees a successful `initialize()` and marks its wrapper READY (firing a
+   * `Ready` event) regardless of whether LaunchDarkly actually initialized. `client.providerStatus`
+   * reads that wrapper state, not the provider's own — it can never observe this failure. The
+   * provider instance itself is the only thing that knows: its own `initialize()` sets its own
+   * `status` field to ERROR in this exact path. `OpenFeature.getProvider()` returns that instance.
+   */
+  private rawProviderStatus(): ProviderStatus | undefined {
+    const provider = OpenFeature.getProvider();
+    return provider instanceof LaunchDarklyClientProvider ? provider.status : undefined;
   }
 }

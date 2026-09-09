@@ -3,7 +3,8 @@
 
 import { TestBed } from '@angular/core/testing';
 import { FEATURE_FLAG_READY_TIMEOUT_MS } from '@lfx-one/shared';
-import { Client, OpenFeature, ProviderStatus } from '@openfeature/web-sdk';
+import { LaunchDarklyClientProvider } from '@openfeature/launchdarkly-client-provider';
+import { OpenFeature, Provider, ProviderStatus } from '@openfeature/web-sdk';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
 import { DataDogRumService } from './datadog-rum.service';
@@ -89,9 +90,12 @@ describe('FeatureFlagService', () => {
     expect(addError).toHaveBeenCalledTimes(1);
   });
 
-  it('resolves false immediately, without waiting out timeoutMs, when the provider is in ERROR status', async () => {
+  it('resolves false immediately, without waiting out timeoutMs, when the raw LaunchDarkly provider is in ERROR status', async () => {
     vi.useFakeTimers();
-    vi.spyOn(OpenFeature, 'getClient').mockReturnValue({ providerStatus: ProviderStatus.ERROR } as unknown as Client);
+    const rawProvider = Object.create(LaunchDarklyClientProvider.prototype, {
+      status: { value: ProviderStatus.ERROR },
+    }) as Provider;
+    vi.spyOn(OpenFeature, 'getProvider').mockReturnValue(rawProvider);
 
     const pending = service.waitForReady(context, 5000);
     // No timers advanced — a pending promise here would mean this path fell through to the rxjs wait.
@@ -99,5 +103,41 @@ describe('FeatureFlagService', () => {
 
     expect(result).toBe(false);
     expect(addError).toHaveBeenCalledTimes(1);
+  });
+
+  it('does not seed isProviderReady from client.providerStatus when the raw LaunchDarkly provider is in ERROR status', async () => {
+    const rawProvider = Object.create(LaunchDarklyClientProvider.prototype, {
+      status: { value: ProviderStatus.ERROR },
+    }) as Provider;
+    vi.spyOn(OpenFeature, 'getProvider').mockReturnValue(rawProvider);
+    vi.spyOn(OpenFeature, 'getClient').mockReturnValue({
+      providerStatus: ProviderStatus.READY,
+      addHandler: vi.fn(),
+    } as never);
+
+    await service.initialize({ name: 'Test User', email: 'test@example.com', username: 'test' } as never);
+
+    expect((service as unknown as { isProviderReady: () => boolean }).isProviderReady()).toBe(false);
+  });
+
+  it('ignores a Ready event fired while the raw LaunchDarkly provider is in ERROR status', async () => {
+    const handlers: Record<string, () => void> = {};
+    vi.spyOn(OpenFeature, 'getClient').mockReturnValue({
+      providerStatus: ProviderStatus.STALE,
+      addHandler: vi.fn((event: string, handler: () => void) => {
+        handlers[event] = handler;
+      }),
+    } as never);
+
+    await service.initialize({ name: 'Test User', email: 'test@example.com', username: 'test' } as never);
+
+    const rawProvider = Object.create(LaunchDarklyClientProvider.prototype, {
+      status: { value: ProviderStatus.ERROR },
+    }) as Provider;
+    vi.spyOn(OpenFeature, 'getProvider').mockReturnValue(rawProvider);
+
+    handlers['PROVIDER_READY']?.();
+
+    expect((service as unknown as { isProviderReady: () => boolean }).isProviderReady()).toBe(false);
   });
 });
