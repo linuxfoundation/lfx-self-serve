@@ -4,9 +4,17 @@
 <div class="flex flex-col gap-4" data-testid="composer-add-link-dialog">
   <div class="flex flex-col gap-2">
     <label for="composer-link-title" class="text-sm font-medium text-gray-900">Title</label>
-    <lfx-input-text [form]="form" control="title" id="composer-link-title" placeholder="Design doc" dataTest="composer-link-title-input" styleClass="w-full" />
+    <lfx-input-text
+      [form]="form"
+      control="title"
+      inputId="composer-link-title"
+      placeholder="Design doc"
+      dataTest="composer-link-title-input"
+      styleClass="w-full"
+      [describedBy]="form.controls.title.touched && form.controls.title.invalid ? 'composer-link-title-error' : null"
+      [invalid]="form.controls.title.touched && form.controls.title.invalid" />
     @if (form.controls.title.touched && form.controls.title.invalid) {
-      <p class="text-xs text-red-600" data-testid="composer-link-title-error">A title is required.</p>
+      <p id="composer-link-title-error" class="text-xs text-red-600" data-testid="composer-link-title-error">A title is required.</p>
     }
   </div>
 
@@ -15,13 +23,15 @@
     <lfx-input-text
       [form]="form"
       control="url"
-      id="composer-link-url"
+      inputId="composer-link-url"
       type="url"
       placeholder="https://example.com/doc"
       dataTest="composer-link-url-input"
-      styleClass="w-full" />
+      styleClass="w-full"
+      [describedBy]="form.controls.url.touched && form.controls.url.invalid ? 'composer-link-url-error' : null"
+      [invalid]="form.controls.url.touched && form.controls.url.invalid" />
     @if (form.controls.url.touched && form.controls.url.invalid) {
-      <p class="text-xs text-red-600" data-testid="composer-link-url-error">Enter a full URL starting with https://</p>
+      <p id="composer-link-url-error" class="text-xs text-red-600" data-testid="composer-link-url-error">Enter a full URL starting with https://</p>
     }
   </div>
 

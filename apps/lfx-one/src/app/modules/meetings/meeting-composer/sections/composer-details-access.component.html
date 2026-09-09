@@ -16,10 +16,11 @@
       [form]="form()"
       size="small"
       control="title"
-      id="composer-meeting-title"
+      inputId="composer-meeting-title"
       placeholder="Enter meeting title"
       styleClass="w-full"
       [describedBy]="titleDescribedBy()"
+      [invalid]="titleInvalid()"
       data-testid="composer-title-input" />
 
     @if (titleHint(); as hint) {
@@ -46,7 +47,8 @@
     <!-- `aria-describedby` on the input reaches the two title errors below, so each is read the next time
          the field takes focus rather than when it appears — no composer error message is in a live region
          yet. Matters for both: `required` only shows after blur, and `maxlength` typically shows while the
-         field still has focus. -->
+         field still has focus. The `error && touched` gates here and the ones building the id list are the
+         same predicate on purpose — see `initTitleDescribedBy`. -->
     @if (form().get('title')?.errors?.['required'] && form().get('title')?.touched) {
       <p id="composer-title-required-error" class="text-sm text-red-600" data-testid="composer-title-required-error">Meeting title is required</p>
     }
@@ -148,7 +150,7 @@
               [form]="form()"
               size="small"
               control="ownerName"
-              id="composer-organizer-name"
+              inputId="composer-organizer-name"
               placeholder="Enter organizer name"
               styleClass="w-full"
               data-testid="composer-organizer-name-input" />
@@ -159,12 +161,16 @@
               [form]="form()"
               size="small"
               control="ownerEmail"
-              id="composer-organizer-email"
+              inputId="composer-organizer-email"
               placeholder="Enter organizer email"
               styleClass="w-full"
+              [describedBy]="ownerEmailInvalid() ? 'composer-organizer-email-error' : null"
+              [invalid]="ownerEmailInvalid()"
               data-testid="composer-organizer-email-input" />
-            @if (form().get('ownerEmail')?.errors?.['email'] && form().get('ownerEmail')?.touched) {
-              <p class="text-sm text-red-600" role="alert" data-testid="composer-organizer-email-error">Enter a valid email address</p>
+            @if (ownerEmailInvalid()) {
+              <p id="composer-organizer-email-error" class="text-sm text-red-600" role="alert" data-testid="composer-organizer-email-error">
+                Enter a valid email address
+              </p>
             }
           </div>
         </div>

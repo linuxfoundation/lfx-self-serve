@@ -80,27 +80,38 @@
       <div class="flex flex-col gap-1.5">
         <div class="flex items-center gap-2">
           <!-- Visually hidden: the chip group's "Duration" label names the group, and the adjacent
-               "minutes" is a unit — neither gives this input an accessible name of its own. `id`
-               lands on the real <input> in `InputNumberComponent`, so `for` associates correctly. -->
+               "minutes" is a unit — neither gives this input an accessible name of its own. `inputId`
+               is what puts the id on the real <input>; a plain `id` would also stay on the
+               `lfx-input-number` host, and `for` resolves to that first. -->
           <label class="sr-only" for="composer-custom-duration">Custom duration in minutes</label>
           <lfx-input-number
             [form]="form()"
             control="customDuration"
             size="small"
-            id="composer-custom-duration"
+            inputId="composer-custom-duration"
             [placeholder]="minCustomDuration + '–' + maxCustomDuration"
             styleClass="w-[7.5rem]"
+            [describedBy]="customDurationDescribedBy()"
+            [invalid]="customDurationInvalid()"
             data-testid="composer-custom-duration" />
           <span class="text-sm text-gray-500">minutes</span>
         </div>
+        <!-- Each paragraph carries the id `customDurationDescribedBy` names for the same error, and the
+             same `error && touched` gate, so the attribute never points at something unrendered. -->
         @if (form().get('customDuration')?.errors?.['required'] && form().get('customDuration')?.touched) {
-          <p class="text-sm text-red-600" data-testid="composer-custom-duration-required-error">Custom duration is required</p>
+          <p id="composer-custom-duration-required-error" class="text-sm text-red-600" data-testid="composer-custom-duration-required-error">
+            Custom duration is required
+          </p>
         }
         @if (form().get('customDuration')?.errors?.['min'] && form().get('customDuration')?.touched) {
-          <p class="text-sm text-red-600" data-testid="composer-custom-duration-min-error">Custom duration must be at least {{ minCustomDuration }} minutes</p>
+          <p id="composer-custom-duration-min-error" class="text-sm text-red-600" data-testid="composer-custom-duration-min-error">
+            Custom duration must be at least {{ minCustomDuration }} minutes
+          </p>
         }
         @if (form().get('customDuration')?.errors?.['max'] && form().get('customDuration')?.touched) {
-          <p class="text-sm text-red-600" data-testid="composer-custom-duration-max-error">Custom duration cannot exceed {{ maxCustomDuration }} minutes</p>
+          <p id="composer-custom-duration-max-error" class="text-sm text-red-600" data-testid="composer-custom-duration-max-error">
+            Custom duration cannot exceed {{ maxCustomDuration }} minutes
+          </p>
         }
       </div>
     }

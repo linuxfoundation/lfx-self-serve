@@ -24,8 +24,10 @@ import {
 } from '@lfx-one/shared/constants';
 import { RecurrenceType } from '@lfx-one/shared/enums';
 import { getTimezoneUtcOffsetString, getWeekOfMonth } from '@lfx-one/shared/utils';
+import { controlTouchedSignal } from '@shared/utils/control-touched.util';
 import { TooltipModule } from 'primeng/tooltip';
 
+import { MeetingComposerFormService } from '../meeting-composer-form.service';
 import { MeetingRecurrencePatternComponent } from '../../components/meeting-recurrence-pattern/meeting-recurrence-pattern.component';
 
 /**
@@ -52,6 +54,10 @@ import { MeetingRecurrencePatternComponent } from '../../components/meeting-recu
 })
 export class ComposerDateScheduleComponent implements OnInit {
   private readonly destroyRef = inject(DestroyRef);
+  // Only for `revision`: `FormGroup` validity is not reactive, so the two computeds below would
+  // latch their first value without it. Provided by the composer host, which is also this
+  // component's injector inside the quick create dialog.
+  private readonly formService = inject(MeetingComposerFormService);
 
   public readonly form = input.required<FormGroup>();
   /** Quick create renders these fields under its own dialog header, where a section heading only repeats it. */
@@ -117,6 +123,35 @@ export class ComposerDateScheduleComponent implements OnInit {
     yesterday.setDate(yesterday.getDate() - 1);
     yesterday.setHours(0, 0, 0, 0);
     return yesterday;
+  });
+
+  // `markAsTouched()` bumps neither `valueChanges` nor `statusChanges`, so `revision` cannot carry
+  // the blur these two gates turn on — see `controlTouchedSignal`.
+  private readonly customDurationTouched = controlTouchedSignal(this.form, 'customDuration');
+
+  /**
+   * Ids of the custom-duration errors on screen, for the input's `aria-describedby`.
+   * @description One list rather than one binding per message, because the attribute takes a single
+   * value. The `touched` half of each gate matches the paragraphs below in the template: an id here
+   * that named an unrendered paragraph would describe the field with nothing.
+   */
+  protected readonly customDurationDescribedBy = computed<string | null>(() => {
+    this.formService.revision();
+    if (!this.customDurationTouched()) return null;
+
+    const errors = this.form().get('customDuration')?.errors;
+    const ids = [
+      errors?.['required'] ? 'composer-custom-duration-required-error' : null,
+      errors?.['min'] ? 'composer-custom-duration-min-error' : null,
+      errors?.['max'] ? 'composer-custom-duration-max-error' : null,
+    ].filter((id): id is string => id !== null);
+
+    return ids.length ? ids.join(' ') : null;
+  });
+
+  protected readonly customDurationInvalid = computed<boolean>(() => {
+    this.formService.revision();
+    return this.customDurationTouched() && (this.form().get('customDuration')?.invalid ?? false);
   });
 
   public ngOnInit(): void {

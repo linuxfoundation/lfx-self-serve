@@ -2,7 +2,7 @@
 // SPDX-License-Identifier: MIT
 
 import { ComponentFixture, TestBed } from '@angular/core/testing';
-import { WEEKDAY_CODES } from '@lfx-one/shared/constants';
+import { MAX_CUSTOM_DURATION, MIN_CUSTOM_DURATION, WEEKDAY_CODES } from '@lfx-one/shared/constants';
 import { RecurrenceType } from '@lfx-one/shared/enums';
 import { CommitteeService } from '@services/committee.service';
 import { MeetingService } from '@services/meeting.service';
@@ -208,5 +208,111 @@ describe('ComposerDateScheduleComponent', () => {
       // and must not be blanked out under the organizer.
       expect(recurrence()?.get('weekly_days')?.value).toBe('5');
     });
+  });
+});
+
+/**
+ * Covers the custom-duration input's `aria-describedby` and `aria-invalid`, read off the rendered DOM.
+ * @description The chip group is labelled and the adjacent "minutes" is a unit, so this input's whole
+ * accessible story — its name, its validity, and which of three messages applies — is carried by
+ * attributes. All three error paragraphs are gated on `touched`, which `markAsTouched()` publishes on
+ * neither `valueChanges` nor `statusChanges`; the template is rendered here rather than stubbed so a
+ * gate that went stale on blur would show up as an attribute naming a paragraph that is not there.
+ */
+describe('ComposerDateScheduleComponent — custom duration description ids', () => {
+  let fixture: ComponentFixture<ComposerDateScheduleComponent>;
+  let formService: MeetingComposerFormService;
+
+  const durationInput = (): HTMLInputElement => fixture.nativeElement.querySelector('#composer-custom-duration') as HTMLInputElement;
+
+  /** The attribute a screen reader would find, with every id it names resolved against the page. */
+  const describedBy = (): string | null => {
+    fixture.detectChanges();
+    const value = durationInput().getAttribute('aria-describedby');
+
+    for (const id of value?.split(' ') ?? []) {
+      expect(fixture.nativeElement.querySelector(`#${id}`), `aria-describedby names "${id}", which is not on the page`).not.toBeNull();
+    }
+
+    return value;
+  };
+
+  const ariaInvalid = (): string | null => {
+    fixture.detectChanges();
+    return durationInput().getAttribute('aria-invalid');
+  };
+
+  beforeEach(async () => {
+    TestBed.configureTestingModule({
+      providers: [
+        MeetingComposerFormService,
+        { provide: MessageService, useValue: { add: vi.fn() } },
+        { provide: CommitteeService, useValue: {} },
+        { provide: MeetingService, useValue: {} },
+        { provide: ProjectContextService, useValue: { activeContextUid: () => null } },
+      ],
+    });
+
+    formService = TestBed.inject(MeetingComposerFormService);
+    formService.initialize({ mode: 'create', projectUid: 'project-1' });
+
+    fixture = TestBed.createComponent(ComposerDateScheduleComponent);
+    fixture.componentRef.setInput('form', formService.form());
+    fixture.detectChanges();
+    await fixture.whenStable();
+
+    // The whole block is behind the custom chip; picking it is also what attaches the validators.
+    formService.form().get('duration')?.setValue('custom');
+    fixture.detectChanges();
+  });
+
+  it('carries the id a `<label for>` can target, on the real input rather than the wrapper host', () => {
+    // `inputId`, not `id`: a static `id` on the component would also stay on the `lfx-input-number`
+    // host, and `for` resolves to that first — a label pointing at an element nothing can focus.
+    expect(durationInput().tagName).toBe('INPUT');
+    expect(fixture.nativeElement.querySelector('label[for="composer-custom-duration"]')).not.toBeNull();
+  });
+
+  it('says nothing while the field is untouched', () => {
+    expect(describedBy()).toBeNull();
+    expect(ariaInvalid()).toBeNull();
+  });
+
+  it('names the required error once the empty field is blurred', () => {
+    expect(describedBy()).toBeNull();
+
+    formService.form().get('customDuration')?.markAsTouched();
+
+    expect(describedBy()).toBe('composer-custom-duration-required-error');
+    expect(ariaInvalid()).toBe('true');
+  });
+
+  it('names the min error for a duration under the floor', () => {
+    const control = formService.form().get('customDuration');
+    control?.setValue(MIN_CUSTOM_DURATION - 1);
+    control?.markAsTouched();
+
+    expect(describedBy()).toBe('composer-custom-duration-min-error');
+    expect(ariaInvalid()).toBe('true');
+  });
+
+  it('names the max error for a duration over the ceiling', () => {
+    const control = formService.form().get('customDuration');
+    control?.setValue(MAX_CUSTOM_DURATION + 1);
+    control?.markAsTouched();
+
+    expect(describedBy()).toBe('composer-custom-duration-max-error');
+    expect(ariaInvalid()).toBe('true');
+  });
+
+  it('drops both once the duration is in range', () => {
+    const control = formService.form().get('customDuration');
+    control?.markAsTouched();
+    expect(describedBy()).toBe('composer-custom-duration-required-error');
+
+    control?.setValue(MIN_CUSTOM_DURATION + 5);
+
+    expect(describedBy()).toBeNull();
+    expect(ariaInvalid()).toBeNull();
   });
 });

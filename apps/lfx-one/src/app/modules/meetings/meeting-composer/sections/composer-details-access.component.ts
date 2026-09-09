@@ -20,6 +20,7 @@ import { MeetingType } from '@lfx-one/shared/enums';
 import type { CardSelectorOption, UserSearchResult } from '@lfx-one/shared/interfaces';
 import { getSelectableMeetingTypeOptions } from '@lfx-one/shared/utils';
 import { PersonaService } from '@services/persona.service';
+import { controlTouchedSignal } from '@shared/utils/control-touched.util';
 import { map, of, startWith, switchMap } from 'rxjs';
 
 import { MeetingComposerFormService } from '../meeting-composer-form.service';
@@ -91,6 +92,12 @@ export class ComposerDetailsAccessComponent {
    * into one list instead of overwriting each other.
    */
   protected readonly titleDescribedBy: Signal<string | null> = this.initTitleDescribedBy();
+  /** Drives `aria-invalid`, on the same `error && touched` terms as the visible error text. */
+  protected readonly titleInvalid: Signal<boolean> = this.initTitleInvalid();
+  /** Gates the manual organizer email error, its id, and `aria-invalid` from one predicate. */
+  protected readonly ownerEmailInvalid: Signal<boolean> = this.initOwnerEmailInvalid();
+  private readonly titleTouched: Signal<boolean> = controlTouchedSignal(this.form, 'title');
+  private readonly ownerEmailTouched: Signal<boolean> = controlTouchedSignal(this.form, 'ownerEmail');
   /** Feeds the picker's own display box, so it renders whatever is committed — hydrated or freshly picked. */
   protected readonly selectedOwnerLabel: Signal<string> = this.initSelectedOwnerLabel();
   protected readonly savedOwnerLabel: Signal<string> = this.initSavedOwnerLabel();
@@ -219,21 +226,32 @@ export class ComposerDetailsAccessComponent {
       this.formService.revision();
 
       const title = this.form().get('title');
-      // Deliberately not gated on `touched`, unlike the paragraphs themselves: a blur-driven
-      // `markAsTouched()` emits on neither `valueChanges` nor `statusChanges`, so this would keep a stale
-      // list through exactly the case the errors exist for — tabbing out of an empty title. An id whose
-      // element isn't rendered yet is ignored when the accessibility tree resolves the list, so listing it
-      // early is inert; the cost is that the attribute can name an id no element has yet, which linters
-      // like axe report even though assistive tech doesn't care. Keeping both sides gated would mean
-      // bumping `revision` on blur, and the form service owns that signal for the whole composer — a
-      // per-field blur writing to it is a wider change than the association it would buy.
+      // The two error ids carry the same `error && touched` gate as the paragraphs they name, so the
+      // attribute never points at an element the template has not rendered. `touched` comes from
+      // `initTouched` rather than from `revision`, which a blur does not bump. The hint has no such
+      // gate — it renders whenever there is one.
+      const touched = this.titleTouched();
       const ids = [
         this.titleHint() ? 'composer-title-hint' : null,
-        title?.errors?.['required'] ? 'composer-title-required-error' : null,
-        title?.errors?.['maxlength'] ? 'composer-title-maxlength-error' : null,
+        touched && title?.errors?.['required'] ? 'composer-title-required-error' : null,
+        touched && title?.errors?.['maxlength'] ? 'composer-title-maxlength-error' : null,
       ].filter((id): id is string => id !== null);
 
       return ids.length ? ids.join(' ') : null;
+    });
+  }
+
+  private initTitleInvalid(): Signal<boolean> {
+    return computed(() => {
+      this.formService.revision();
+      return this.titleTouched() && (this.form().get('title')?.invalid ?? false);
+    });
+  }
+
+  private initOwnerEmailInvalid(): Signal<boolean> {
+    return computed(() => {
+      this.formService.revision();
+      return this.ownerEmailTouched() && !!this.form().get('ownerEmail')?.errors?.['email'];
     });
   }
 

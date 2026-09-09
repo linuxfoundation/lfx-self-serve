@@ -1,5 +1,13 @@
 <!-- Copyright The Linux Foundation and each contributor to LFX. -->
 <!-- SPDX-License-Identifier: MIT -->
+
+<!--
+  The id is written with `[attr.id]` rather than `[id]`. A property binding assigns whatever the
+  expression evaluates to, and both inputs are `undefined` for a caller that passes neither — which
+  the DOM stringifies, leaving every such textarea sharing a single `id="undefined"`. An attribute
+  binding drops the attribute instead.
+-->
+
 <ng-container [formGroup]="form()">
   <textarea
     pTextarea
@@ -8,7 +16,7 @@
     [rows]="rows()"
     [cols]="cols()"
     [placeholder]="placeholder() || ''"
-    [id]="inputId() || id()"
+    [attr.id]="inputId() || id() || null"
     [readonly]="readonly()"
     [class]="styleClass()"
     [autoResize]="autoResize()"

@@ -10,7 +10,7 @@
         icon="fa-light fa-list"
         size="small"
         [text]="true"
-        [ariaPressed]="showTemplates()"
+        [ariaExpanded]="showTemplates()"
         (onClick)="onToggleTemplates($event, templatesPopover)"
         [attr.data-testid]="inputId() + '-templates-toggle'" />
       <lfx-button
@@ -18,7 +18,7 @@
         icon="fa-light fa-wand-magic-sparkles"
         size="small"
         [text]="true"
-        [ariaPressed]="showAiHelper()"
+        [ariaExpanded]="showAiHelper()"
         (onClick)="aiPopover.toggle($event)"
         [attr.data-testid]="inputId() + '-ai-toggle'" />
     </div>
