@@ -32,7 +32,7 @@
         size="small"
         [outlined]="true"
         styleClass="whitespace-nowrap !py-2.5"
-        (onClick)="onDownloadByStatus()"
+        (onClick)="onAction('Download by status')"
         data-testid="mentorship-mentees-download" />
     </div>
   </div>
@@ -78,7 +78,7 @@
                   class="max-w-full block truncate text-xs text-gray-500 text-left transition-colors hover:text-blue-600"
                   [title]="row.hasNote ? row.noteLabel : 'Add a reviewer note for ' + row.name"
                   [attr.aria-label]="(row.hasNote ? 'Edit' : 'Add') + ' reviewer note for ' + row.name"
-                  (click)="onOpenNote(row.id)"
+                  (click)="onOpenNote(row.id, row.name)"
                   [attr.data-testid]="'mentorship-mentee-note-' + row.id">
                   {{ row.noteLabel }}
                 </button>
@@ -86,7 +86,7 @@
             </div>
           </td>
           <td class="px-4 py-3">
-            <span class="inline-flex items-center text-xs font-semibold px-2 py-0.5 rounded-full" [class]="row.statusBadgeClass">
+            <span class="inline-flex items-center text-xs font-semibold px-2 py-0.5 rounded-lg" [class]="row.statusBadgeClass">
               {{ row.statusLabel }}
             </span>
           </td>
@@ -96,7 +96,7 @@
                 type="button"
                 class="max-w-full block truncate text-sm text-blue-600 transition-colors hover:text-blue-700 hover:underline"
                 [attr.aria-label]="'View tasks for ' + row.name"
-                (click)="onViewTasks(row.name)"
+                (click)="onAction('View tasks for ' + row.name)"
                 [attr.data-testid]="'mentorship-mentee-tasks-' + row.id">
                 {{ row.taskLabel }}
               </button>
@@ -113,7 +113,7 @@
               size="small"
               [outlined]="true"
               [ariaLabel]="'Create a task for ' + row.name"
-              (onClick)="onCreateTask(row.name)"
+              (onClick)="onAction('Create a task for ' + row.name)"
               [attr.data-testid]="'mentorship-mentee-create-task-' + row.id" />
           </td>
           <td class="px-4 py-3">

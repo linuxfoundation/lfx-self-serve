@@ -10,17 +10,19 @@ import { InputTextComponent } from '@components/input-text/input-text.component'
 import { SelectComponent } from '@components/select/select.component';
 import { TableComponent } from '@components/table/table.component';
 import {
-  MENTORSHIP_PERSON_PAGE_SIZE,
-  MENTORSHIP_PERSON_ROWS_PER_PAGE_OPTIONS,
+  MENTORSHIP_ALL_STATUSES_OPTION_LABEL,
+  MENTORSHIP_ALL_TERMS_OPTION_LABEL,
   MENTORSHIP_MENTEE_STATUS_BADGE_CLASSES,
   MENTORSHIP_MENTEE_STATUS_LABELS,
   MENTORSHIP_PAST_MENTEE_STATUSES,
-  MENTORSHIP_PROGRAM_DETAIL_COMING_SOON,
+  MENTORSHIP_PERSON_PAGE_SIZE,
+  MENTORSHIP_PERSON_ROWS_PER_PAGE_OPTIONS,
 } from '@lfx-one/shared/constants';
 import { MentorshipMenteeStatus, MentorshipProgramMentee } from '@lfx-one/shared/interfaces';
-import { matchesMentorshipPersonSearch, mentorshipPersonAvatarClass, mentorshipPersonInitials } from '@lfx-one/shared/utils';
-import { MessageService } from 'primeng/api';
+import { matchesMentorshipPersonSearch, mentorshipPersonAvatarClass, mentorshipPersonInitials, mentorshipTermFilterOptions } from '@lfx-one/shared/utils';
 import { startWith } from 'rxjs';
+
+import { MentorshipComingSoonService } from '../../services/mentorship-coming-soon.service';
 
 /**
  * Past mentees tab — replaces Current Mentees once a program is completed. Finished
@@ -35,16 +37,16 @@ import { startWith } from 'rxjs';
   changeDetection: ChangeDetectionStrategy.OnPush,
 })
 export class PastMenteesTabComponent {
-  public readonly mentees = input.required<MentorshipProgramMentee[]>();
+  private readonly comingSoon = inject(MentorshipComingSoonService);
 
-  private readonly messageService = inject(MessageService);
+  public readonly mentees = input.required<MentorshipProgramMentee[]>();
 
   protected readonly pageSize = MENTORSHIP_PERSON_PAGE_SIZE;
   protected readonly rowsPerPageOptions = MENTORSHIP_PERSON_ROWS_PER_PAGE_OPTIONS;
 
   /** Fixed rather than derived from the rows: the statuses a finished mentee can hold. */
   protected readonly statusOptions = [
-    { label: 'All statuses', value: null },
+    { label: MENTORSHIP_ALL_STATUSES_OPTION_LABEL, value: null },
     ...MENTORSHIP_PAST_MENTEE_STATUSES.map((status) => ({ label: MENTORSHIP_MENTEE_STATUS_LABELS[status], value: status })),
   ];
 
@@ -62,32 +64,28 @@ export class PastMenteesTabComponent {
 
   protected readonly rows = this.initRows();
 
-  protected onDownloadByStatus(): void {
-    this.messageService.add({
-      severity: 'info',
-      summary: 'Download by status',
-      detail: MENTORSHIP_PROGRAM_DETAIL_COMING_SOON,
-      life: 4000,
-    });
+  protected onAction(summary: string): void {
+    this.comingSoon.notify(summary);
   }
 
-  /** Derived from the rows: a completed program's terms are whatever its mentees ran in. */
   private initTermOptions() {
-    return computed(() => {
-      const terms = [...new Set(this.mentees().map((person) => person.termName))];
-      return [{ label: 'All terms', value: null }, ...terms.map((term) => ({ label: term, value: term }))];
-    });
+    return computed(() => mentorshipTermFilterOptions(this.rowSource(), MENTORSHIP_ALL_TERMS_OPTION_LABEL));
   }
 
   private initRows() {
     return computed(() => {
       const { search, status, term } = this.filters();
-      return this.mentees()
+      return this.rowSource()
         .filter((person) => matchesMentorshipPersonSearch(person, search ?? ''))
         .filter((person) => !status || person.status === status)
         .filter((person) => !term || person.termName === term)
         .map((person) => this.toRow(person));
     });
+  }
+
+  /** Only finished participations belong here; anyone still pending is an applicant. */
+  private rowSource(): MentorshipProgramMentee[] {
+    return this.mentees().filter((person) => MENTORSHIP_PAST_MENTEE_STATUSES.includes(person.status));
   }
 
   private toRow(person: MentorshipProgramMentee) {

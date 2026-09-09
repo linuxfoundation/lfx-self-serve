@@ -17,7 +17,7 @@
         size="small"
         [outlined]="true"
         styleClass="whitespace-nowrap !py-2.5"
-        (onClick)="onDeclineByTerm()"
+        (onClick)="onAction('Decline by term')"
         data-testid="mentorship-applicants-decline-by-term" />
 
       <div class="w-full md:w-44">
@@ -54,7 +54,7 @@
         size="small"
         [outlined]="true"
         styleClass="whitespace-nowrap !py-2.5"
-        (onClick)="onDownloadByStatus()"
+        (onClick)="onAction('Download by status')"
         data-testid="mentorship-applicants-download" />
     </div>
   </div>
@@ -105,7 +105,7 @@
                   class="max-w-full block truncate text-xs text-gray-500 text-left transition-colors hover:text-blue-600"
                   [title]="row.hasNote ? row.noteLabel : 'Add a reviewer note for ' + row.name"
                   [attr.aria-label]="(row.hasNote ? 'Edit' : 'Add') + ' reviewer note for ' + row.name"
-                  (click)="onOpenNote(row.id)"
+                  (click)="onOpenNote(row.id, row.name)"
                   [attr.data-testid]="'mentorship-applicant-note-' + row.id">
                   {{ row.noteLabel }}
                 </button>
@@ -126,14 +126,16 @@
               <span>Updated: {{ row.updatedLabel }}</span>
             </div>
           </td>
-          <td class="px-4 py-3 max-w-[18%]">
+          <td class="px-4 py-3 max-w-[22%]">
             @if (row.otherApplications.length > 0) {
               <div class="flex flex-col gap-0.5 w-full">
                 @for (application of row.otherApplications; track application.programId) {
                   <div class="text-sm w-full flex items-center flex-wrap">
                     <a
                       class="max-w-full block truncate text-blue-600 transition-colors hover:text-blue-700 hover:underline"
-                      [routerLink]="['/mentorship/admin', application.programId]">
+                      [routerLink]="['/mentorship/admin', application.programId]"
+                      [title]="application.programName + ' — ' + application.statusLabel"
+                      [attr.data-testid]="'mentorship-applicant-other-application-' + application.programId">
                       {{ application.programName }}
                     </a>
                     <span class="text-gray-500"> — {{ application.statusLabel }}</span>

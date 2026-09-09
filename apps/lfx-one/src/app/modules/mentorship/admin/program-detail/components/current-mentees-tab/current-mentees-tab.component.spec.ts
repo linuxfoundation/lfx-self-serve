@@ -3,11 +3,9 @@
 
 import { ComponentFixture, TestBed } from '@angular/core/testing';
 import { provideNoopAnimations } from '@angular/platform-browser/animations';
-import { MentorshipProgramMentee } from '@lfx-one/shared/interfaces';
+import { MentorshipNoteRequest, MentorshipProgramMentee } from '@lfx-one/shared/interfaces';
 import { MessageService } from 'primeng/api';
-import { DialogService } from 'primeng/dynamicdialog';
-import { of } from 'rxjs';
-import { beforeEach, describe, expect, it, vi } from 'vitest';
+import { beforeEach, describe, expect, it } from 'vitest';
 
 import { CurrentMenteesTabComponent } from './current-mentees-tab.component';
 
@@ -24,15 +22,12 @@ describe('CurrentMenteesTabComponent', () => {
   });
 
   let fixture: ComponentFixture<CurrentMenteesTabComponent>;
-  let dialogOpen: ReturnType<typeof vi.fn>;
 
   beforeEach(() => {
-    dialogOpen = vi.fn(() => ({ onClose: of('a saved note') }));
-
     TestBed.resetTestingModule();
     TestBed.configureTestingModule({
       imports: [CurrentMenteesTabComponent],
-      providers: [provideNoopAnimations(), MessageService, { provide: DialogService, useValue: { open: dialogOpen } }],
+      providers: [provideNoopAnimations(), MessageService],
     });
 
     fixture = TestBed.createComponent(CurrentMenteesTabComponent);
@@ -63,18 +58,33 @@ describe('CurrentMenteesTabComponent', () => {
     expect(fixture.componentInstance['statusOptions'].map((option) => option.label)).toEqual(['All statuses', 'Accepted', 'Graduated']);
   });
 
-  it('stores the note returned by the dialog against the row it was opened for', () => {
-    const element = fixture.nativeElement as HTMLElement;
-    const noteButton = element.querySelector<HTMLButtonElement>('[data-testid="mentorship-mentee-note-mnt_2"]');
-
-    expect(noteButton?.textContent?.trim()).toBe('Add note');
-
-    noteButton?.click();
+  it('lists only enrolled mentees, leaving the rest to the Applicants tab', () => {
+    fixture.componentRef.setInput('mentees', [mentee(), mentee({ id: 'mnt_3', name: 'Sam Okoro', status: 'pending' })]);
     fixture.detectChanges();
 
-    expect(dialogOpen).toHaveBeenCalledTimes(1);
+    const element = fixture.nativeElement as HTMLElement;
+    expect(element.querySelector('[data-testid="mentorship-mentee-row-mnt_1"]')).toBeTruthy();
+    expect(element.querySelector('[data-testid="mentorship-mentee-row-mnt_3"]')).toBeNull();
+  });
+
+  it('asks the parent to open the note rather than owning the dialog itself', () => {
+    const requests: MentorshipNoteRequest[] = [];
+    fixture.componentInstance.noteRequested.subscribe((request) => requests.push(request));
+
+    const element = fixture.nativeElement as HTMLElement;
+    element.querySelector<HTMLButtonElement>('[data-testid="mentorship-mentee-note-mnt_2"]')?.click();
+
+    expect(requests).toEqual([{ personId: 'mnt_2', personName: 'Priya Shah' }]);
+  });
+
+  it('renders the parent note draft in place of the note the row arrived with', () => {
+    fixture.componentRef.setInput('mentees', [mentee({ note: 'from the server' }), mentee({ id: 'mnt_2', name: 'Priya Shah', status: 'graduated' })]);
+    fixture.componentRef.setInput('noteDrafts', { mnt_2: 'a saved note' });
+    fixture.detectChanges();
+
+    const element = fixture.nativeElement as HTMLElement;
     expect(element.querySelector('[data-testid="mentorship-mentee-note-mnt_2"]')?.textContent?.trim()).toBe('a saved note');
-    // The note must land on the row it was opened for, not leak across rows.
-    expect(element.querySelector('[data-testid="mentorship-mentee-note-mnt_1"]')?.textContent?.trim()).toBe('Add note');
+    // A row without a draft keeps whatever it arrived with, rather than picking up a neighbour's.
+    expect(element.querySelector('[data-testid="mentorship-mentee-note-mnt_1"]')?.textContent?.trim()).toBe('from the server');
   });
 });

@@ -27,6 +27,15 @@ export const MENTORSHIP_INVITABLE_USER_PAGE_SIZE = 50;
 export const MENTORSHIP_PERSON_PAGE_SIZE = 10;
 export const MENTORSHIP_PERSON_ROWS_PER_PAGE_OPTIONS = [10, 25, 50];
 
+/** How long the stubbed-action toasts stay up, in milliseconds. */
+export const MENTORSHIP_COMING_SOON_TOAST_LIFE = 4000;
+
+/** Shared filter/table copy — inlining these let the three people tabs drift apart. */
+export const MENTORSHIP_ALL_STATUSES_OPTION_LABEL = 'All statuses';
+export const MENTORSHIP_ALL_TERMS_OPTION_LABEL = 'All terms';
+export const MENTORSHIP_ADD_NOTE_LABEL = 'Add note';
+export const MENTORSHIP_NOTE_DIALOG_HEADER = 'Reviewer note';
+
 /** Character cap on the reviewer note, mirrored by the dialog's counter. */
 export const MENTORSHIP_MENTEE_NOTE_MAX = 2000;
 
@@ -74,8 +83,8 @@ const gridflowApplicants: MentorshipProgramApplicant[] = [
     tasksSubmitted: 2,
     tasksTotal: 5,
     otherApplications: [
-      { programId: 'mp_apicurio_winter26', programName: 'Apicurio Registry', status: 'applied' },
-      { programId: 'mp_janusgraph_fall26', programName: 'JanusGraph', status: 'applied' },
+      { programId: 'mp_apicurio_winter26', programName: 'Apicurio Registry', status: 'pending', tasksSubmitted: 1, tasksTotal: 3 },
+      { programId: 'mp_janusgraph_fall26', programName: 'JanusGraph', status: 'pending', tasksSubmitted: 0, tasksTotal: 6 },
     ],
   },
   {
@@ -88,7 +97,7 @@ const gridflowApplicants: MentorshipProgramApplicant[] = [
     updatedOn: '2026-07-12',
     tasksSubmitted: 5,
     tasksTotal: 5,
-    otherApplications: [{ programId: 'mp_thanos_summer26', programName: 'Thanos', status: 'applied' }],
+    otherApplications: [{ programId: 'mp_thanos_summer26', programName: 'Thanos', status: 'pending', tasksSubmitted: 2, tasksTotal: 4 }],
   },
   {
     id: 'app_nadia_rahman',

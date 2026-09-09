@@ -20,6 +20,7 @@ import { MENTORSHIP_APPLICANT_ACTIONS, MENTORSHIP_MENTEE_ACTIONS, MENTORSHIP_PRO
 import type {
   MentorshipApplicantAction,
   MentorshipApplicantDisplayStatus,
+  MentorshipApplicationProgress,
   MentorshipEnrollFieldErrors,
   MentorshipEnrollRequest,
   MentorshipEnrollStep,
@@ -323,28 +324,34 @@ export function matchesMentorshipPersonSearch(person: MentorshipProgramMentee | 
 }
 
 /**
- * Row actions offered for a mentee's current status on the Current Mentees tab.
- * Each action moves the mentee to the same-named status, so the status a mentee is
- * already in is never offered. `graduated` is terminal, and only an accepted mentee
- * can graduate.
- */
-/**
  * Whether every prerequisite task has been submitted. A person with no tasks assigned
  * has not completed anything, so an empty assignment is never "complete".
  */
-export function mentorshipPrerequisitesComplete(person: Pick<MentorshipProgramMentee, 'tasksSubmitted' | 'tasksTotal'>): boolean {
+function mentorshipPrerequisitesComplete(person: MentorshipApplicationProgress): boolean {
   const total = person.tasksTotal ?? 0;
   return total > 0 && (person.tasksSubmitted ?? 0) >= total;
 }
 
 /**
- * Status to show for an applicant row. An application stays `pending` while the mentee
+ * Status to show for an application. It stays `pending` on the wire while the mentee
  * works through the prerequisites, so the tab reads that as `applied` until every task
  * is in and `tasks-completed` once they are. Every other status displays as-is.
+ *
+ * Takes the progress fields rather than a whole row so a cross-program application,
+ * which carries the same three fields and nothing else, derives its label the same way.
  */
-export function mentorshipApplicantDisplayStatus(applicant: MentorshipProgramMentee): MentorshipApplicantDisplayStatus {
-  if (applicant.status !== 'pending') return applicant.status;
-  return mentorshipPrerequisitesComplete(applicant) ? 'tasks-completed' : 'applied';
+export function mentorshipApplicantDisplayStatus(application: MentorshipApplicationProgress): MentorshipApplicantDisplayStatus {
+  if (application.status !== 'pending') return application.status;
+  return mentorshipPrerequisitesComplete(application) ? 'tasks-completed' : 'applied';
+}
+
+/**
+ * Term filter options for a program-detail tab, derived from the rows themselves — a
+ * program's terms are whichever ones its people took part in.
+ */
+export function mentorshipTermFilterOptions(people: { termName: string }[], allLabel: string): { label: string; value: string | null }[] {
+  const terms = [...new Set(people.map((person) => person.termName))];
+  return [{ label: allLabel, value: null }, ...terms.map((term) => ({ label: term, value: term }))];
 }
 
 /**
@@ -359,6 +366,12 @@ export function mentorshipApplicantActionsFor(status: MentorshipMenteeStatus): M
   });
 }
 
+/**
+ * Row actions offered for a mentee's current status on the Current Mentees tab.
+ * Each action moves the mentee to the same-named status, so the status a mentee is
+ * already in is never offered. `graduated` is terminal, and only an accepted mentee
+ * can graduate.
+ */
 export function mentorshipMenteeActionsFor(status: MentorshipMenteeStatus): MentorshipMenteeAction[] {
   if (status === 'graduated') return [];
   return MENTORSHIP_MENTEE_ACTIONS.filter((action) => {

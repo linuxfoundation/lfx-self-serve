@@ -4,11 +4,9 @@
 import { ComponentFixture, TestBed } from '@angular/core/testing';
 import { provideNoopAnimations } from '@angular/platform-browser/animations';
 import { provideRouter } from '@angular/router';
-import { MentorshipProgramApplicant } from '@lfx-one/shared/interfaces';
+import { MentorshipNoteRequest, MentorshipProgramApplicant } from '@lfx-one/shared/interfaces';
 import { MessageService } from 'primeng/api';
-import { DialogService } from 'primeng/dynamicdialog';
-import { of } from 'rxjs';
-import { beforeEach, describe, expect, it, vi } from 'vitest';
+import { beforeEach, describe, expect, it } from 'vitest';
 
 import { ApplicantsTabComponent } from './applicants-tab.component';
 
@@ -27,21 +25,18 @@ describe('ApplicantsTabComponent', () => {
   });
 
   let fixture: ComponentFixture<ApplicantsTabComponent>;
-  let dialogOpen: ReturnType<typeof vi.fn>;
 
   beforeEach(() => {
-    dialogOpen = vi.fn(() => ({ onClose: of('a saved note') }));
-
     TestBed.resetTestingModule();
     TestBed.configureTestingModule({
       imports: [ApplicantsTabComponent],
-      providers: [provideNoopAnimations(), provideRouter([]), MessageService, { provide: DialogService, useValue: { open: dialogOpen } }],
+      providers: [provideNoopAnimations(), provideRouter([]), MessageService],
     });
 
     fixture = TestBed.createComponent(ApplicantsTabComponent);
     fixture.componentRef.setInput('applicants', [
       applicant({
-        otherApplications: [{ programId: 'mp_apicurio_winter26', programName: 'Apicurio Registry', status: 'applied' }],
+        otherApplications: [{ programId: 'mp_apicurio_winter26', programName: 'Apicurio Registry', status: 'pending', tasksSubmitted: 1, tasksTotal: 3 }],
       }),
       // Same `pending` status, but every prerequisite is in.
       applicant({ id: 'app_2', name: 'Diego Souza', tasksSubmitted: 5, tasksTotal: 5 }),
@@ -69,7 +64,7 @@ describe('ApplicantsTabComponent', () => {
     expect(rowText('app_1')).toContain('Created: Jun 28, 2026');
     expect(rowText('app_1')).toContain('Updated: Jul 2, 2026');
 
-    const link = element().querySelector<HTMLAnchorElement>('[data-testid="mentorship-applicant-row-app_1"] a');
+    const link = element().querySelector<HTMLAnchorElement>('[data-testid="mentorship-applicant-other-application-mp_apicurio_winter26"]');
     expect(link?.textContent?.trim()).toBe('Apicurio Registry');
     expect(link?.getAttribute('href')).toBe('/mentorship/admin/mp_apicurio_winter26');
     expect(rowText('app_1')).toContain('— Applied');
@@ -118,15 +113,19 @@ describe('ApplicantsTabComponent', () => {
     expect(labelsFor('app_3')).toEqual(['Decline', 'Withdraw']);
   });
 
-  it('stores the note returned by the dialog against the row it was opened for', () => {
-    const noteButton = element().querySelector<HTMLButtonElement>('[data-testid="mentorship-applicant-note-app_2"]');
+  it('asks the parent to open the note rather than owning the dialog itself', () => {
+    const requests: MentorshipNoteRequest[] = [];
+    fixture.componentInstance.noteRequested.subscribe((request) => requests.push(request));
 
-    expect(noteButton?.textContent?.trim()).toBe('Add note');
+    element().querySelector<HTMLButtonElement>('[data-testid="mentorship-applicant-note-app_2"]')?.click();
 
-    noteButton?.click();
+    expect(requests).toEqual([{ personId: 'app_2', personName: 'Diego Souza' }]);
+  });
+
+  it('renders the parent note draft in place of the note the row arrived with', () => {
+    fixture.componentRef.setInput('noteDrafts', { app_2: 'a saved note' });
     fixture.detectChanges();
 
-    expect(dialogOpen).toHaveBeenCalledTimes(1);
     expect(element().querySelector('[data-testid="mentorship-applicant-note-app_2"]')?.textContent?.trim()).toBe('a saved note');
     expect(element().querySelector('[data-testid="mentorship-applicant-note-app_1"]')?.textContent?.trim()).toBe('Add note');
   });

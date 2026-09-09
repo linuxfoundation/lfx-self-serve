@@ -16,6 +16,7 @@ import {
   lfxFontSizes,
   MENTION_PLATFORM_CONFIG,
   MENTION_SENTIMENT_CONFIG,
+  MENTORSHIP_APPLICANT_STATUS_BADGE_CLASSES,
   MENTORSHIP_MENTEE_STATUS_BADGE_CLASSES,
   MENTORSHIP_MENTOR_STATUS_BADGE_CLASSES,
   MENTORSHIP_PROGRAM_AVATAR_PALETTE,
@@ -47,6 +48,7 @@ export default {
     // spreads are what guarantees they survive purging regardless of usage elsewhere.
     ...Object.values(MENTORSHIP_MENTOR_STATUS_BADGE_CLASSES).flatMap((classes) => classes.split(' ')),
     ...Object.values(MENTORSHIP_MENTEE_STATUS_BADGE_CLASSES).flatMap((classes) => classes.split(' ')),
+    ...Object.values(MENTORSHIP_APPLICANT_STATUS_BADGE_CLASSES).flatMap((classes) => classes.split(' ')),
     ...Object.values(MENTORSHIP_TERM_ROW_STATUS_BADGE_CLASSES).flatMap((classes) => classes.split(' ')),
     // Social Listening platform icon colors (MENTION_PLATFORM_CONFIG in @lfx-one/shared, not scanned here)
     ...Object.values(MENTION_PLATFORM_CONFIG).map((c) => c.colorClass),

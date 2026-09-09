@@ -217,12 +217,8 @@ export interface MentorshipProgramMentor extends MentorshipProgramPersonBase {
 }
 
 /** Mentee row on the Current Mentees / Past Mentees / Applicants tabs. */
-export interface MentorshipProgramMentee extends MentorshipProgramPersonBase {
-  status: MentorshipMenteeStatus;
+export interface MentorshipProgramMentee extends MentorshipProgramPersonBase, MentorshipApplicationProgress {
   termName: string;
-  /** Tasks the mentee has submitted out of `tasksTotal`. Only accepted mentees carry tasks. */
-  tasksSubmitted?: number;
-  tasksTotal?: number;
   /** Reviewer note shared with the program's admins and mentors. */
   note?: string;
 }
@@ -246,13 +242,30 @@ export type MentorshipApplicantDisplayStatus = (typeof MENTORSHIP_APPLICANT_DISP
 /** Row action on the Applicants tab. Each maps to the same-named application status. */
 export type MentorshipApplicantAction = (typeof MENTORSHIP_APPLICANT_ACTIONS)[number];
 
+/**
+ * The stored status of an application plus the prerequisite progress that splits its
+ * `pending` state into Applied / Tasks Completed. Every application-shaped row derives
+ * its display status from these three fields and nothing else.
+ */
+export interface MentorshipApplicationProgress {
+  status: MentorshipMenteeStatus;
+  /** Prerequisite tasks the applicant has submitted out of `tasksTotal`. */
+  tasksSubmitted?: number;
+  tasksTotal?: number;
+}
+
 /** An application the same person holds on another program, listed alongside this one. */
-export interface MentorshipApplicantOtherApplication {
+export interface MentorshipApplicantOtherApplication extends MentorshipApplicationProgress {
   /** Target of the row's link — `/mentorship/admin/:programId`. */
   programId: string;
   /** Short program name; the full name is too long for the column. */
   programName: string;
-  status: MentorshipApplicantDisplayStatus;
+}
+
+/** Emitted by a program-detail tab when a row asks to open its reviewer note. */
+export interface MentorshipNoteRequest {
+  personId: string;
+  personName: string;
 }
 
 /** Applicant row on the Applicants tab — a mentee row plus its application metadata. */
