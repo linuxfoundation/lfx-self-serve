@@ -370,8 +370,8 @@ describe('program detail helpers', () => {
         mentees: [{ id: '1', name: 'A', email: 'a@example.com', status: 'accepted', termName: 'Fall 2026' }],
         applicants: [],
         mentors: [
-          { id: '2', name: 'B', email: 'b@example.com', status: 'invited', termName: 'Fall 2026' },
-          { id: '3', name: 'C', email: 'c@example.com', status: 'accepted', termName: 'Fall 2026' },
+          { id: '2', name: 'B', email: 'b@example.com', status: 'pending' },
+          { id: '3', name: 'C', email: 'c@example.com', status: 'accepted' },
         ],
         terms: [],
       }

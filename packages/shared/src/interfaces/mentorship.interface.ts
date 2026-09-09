@@ -2,7 +2,8 @@
 // SPDX-License-Identifier: MIT
 
 import type {
-  MENTORSHIP_PERSON_STATUSES,
+  MENTORSHIP_MENTEE_STATUSES,
+  MENTORSHIP_MENTOR_STATUSES,
   MENTORSHIP_PROGRAM_DETAIL_TABS,
   MENTORSHIP_PROGRAM_STATUSES,
   MENTORSHIP_TERM_ROW_STATUSES,
@@ -143,6 +144,14 @@ export type MentorshipLfProjectsResponse = {
   total: number;
 };
 
+/** LFX user option surfaced in the admin Mentors tab "invite mentor" picker. */
+export interface MentorshipInvitableUser {
+  id: string;
+  name: string;
+  email: string;
+  avatarUrl?: string;
+}
+
 /** Result of the mock unique-name check. */
 export interface MentorshipNameAvailability {
   available: boolean;
@@ -177,22 +186,34 @@ export interface MentorshipProgramTabCounts {
   terms: number;
 }
 
-/** Person row status on mentees / applicants / mentors tabs. */
-export type MentorshipPersonStatus = (typeof MENTORSHIP_PERSON_STATUSES)[number];
+/** Mentor lifecycle on the Mentors tab. No `graduated` (mentors don't graduate). */
+export type MentorshipMentorStatus = (typeof MENTORSHIP_MENTOR_STATUSES)[number];
 
-/** Mentee, applicant, or mentor row on the admin program-detail tabs. */
-export interface MentorshipProgramPerson {
+/** Mentee lifecycle on the Current Mentees / Applicants tabs. Adds `graduated`. */
+export type MentorshipMenteeStatus = (typeof MENTORSHIP_MENTEE_STATUSES)[number];
+
+/** Shared row fields consumed by the admin program-detail people tables. */
+interface MentorshipProgramPersonBase {
   id: string;
   name: string;
   email: string;
   avatarUrl?: string;
-  status: MentorshipPersonStatus;
-  termName: string;
-  /** ISO `YYYY-MM-DD` invitation date — mentors tab. */
+}
+
+/** Mentor row on the Mentors tab. */
+export interface MentorshipProgramMentor extends MentorshipProgramPersonBase {
+  status: MentorshipMentorStatus;
+  /** ISO `YYYY-MM-DD` invitation date. */
   invitedOn?: string;
-  /** ISO `YYYY-MM-DD` application date — applicants / mentors tab. */
-  appliedOn?: string;
   profileCreated?: boolean;
+}
+
+/** Mentee row on the Current Mentees / Applicants tabs. */
+export interface MentorshipProgramMentee extends MentorshipProgramPersonBase {
+  status: MentorshipMenteeStatus;
+  /** ISO `YYYY-MM-DD` application date. */
+  appliedOn?: string;
+  termName: string;
 }
 
 /** Term lifecycle on the admin program-detail Terms tab. */
@@ -215,9 +236,9 @@ export interface MentorshipProgramTermRow {
 
 /** Tab lists returned with a program-detail payload. */
 export interface MentorshipProgramLists {
-  mentees: MentorshipProgramPerson[];
-  applicants: MentorshipProgramPerson[];
-  mentors: MentorshipProgramPerson[];
+  mentees: MentorshipProgramMentee[];
+  applicants: MentorshipProgramMentee[];
+  mentors: MentorshipProgramMentor[];
   terms: MentorshipProgramTermRow[];
 }
 
