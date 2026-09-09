@@ -1,7 +1,7 @@
 // Copyright The Linux Foundation and each contributor to LFX.
 // SPDX-License-Identifier: MIT
 
-import { Component, inject } from '@angular/core';
+import { afterNextRender, Component, computed, inject, signal } from '@angular/core';
 import { HEALTH_METRICS_OVERVIEW_ENABLED_FLAG } from '@lfx-one/shared/constants';
 import { FeatureFlagService } from '@services/feature-flag.service';
 
@@ -22,6 +22,12 @@ import { HealthMetricsOverviewComponent } from '../health-metrics-overview/healt
  * it would hold the whole route's client-side render until the provider reports for the ~100% of
  * users the flag is still off for — a worse trade while this page is dark-launched to a small
  * cohort; remove this gate rather than ramping the flag to 100% through it.
+ *
+ * `overviewEnabled` is forced false until `hydrated` latches true in `afterNextRender` (a no-op on
+ * the server, so this never fires there). Without the latch, the non-production localStorage flag
+ * override in `FeatureFlagService` reads synchronously ahead of `isInitialized()`, so a pre-seeded
+ * override (as e2e helpers for other flags do) would swap pages on the very first client render
+ * and mismatch the SSR-rendered legacy DOM.
  */
 @Component({
   selector: 'lfx-health-metrics-gate',
@@ -32,5 +38,12 @@ import { HealthMetricsOverviewComponent } from '../health-metrics-overview/healt
 export class HealthMetricsGateComponent {
   private readonly featureFlagService = inject(FeatureFlagService);
 
-  protected readonly overviewEnabled = this.featureFlagService.getBooleanFlag(HEALTH_METRICS_OVERVIEW_ENABLED_FLAG, false);
+  private readonly hydrated = signal(false);
+  private readonly rawOverviewEnabled = this.featureFlagService.getBooleanFlag(HEALTH_METRICS_OVERVIEW_ENABLED_FLAG, false);
+
+  protected readonly overviewEnabled = computed(() => this.hydrated() && this.rawOverviewEnabled());
+
+  public constructor() {
+    afterNextRender(() => this.hydrated.set(true));
+  }
 }

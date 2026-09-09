@@ -29,6 +29,9 @@ describe('HealthMetricsGateComponent', () => {
 
     fixture = TestBed.createComponent(HealthMetricsGateComponent);
     fixture.detectChanges();
+    // Flushes the component's `afterNextRender` hydration latch — before it fires, `overviewEnabled`
+    // is forced false regardless of the flag signal, matching the SSR-safe behavior under test.
+    await fixture.whenStable();
   }
 
   it('renders the legacy page when the flag is off', async () => {
