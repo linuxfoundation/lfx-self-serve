@@ -280,6 +280,7 @@ export function getRuntimeConfig(transferState: TransferState): RuntimeConfig {
 ```typescript
 import { EnvironmentProviders, inject, provideAppInitializer, TransferState } from '@angular/core';
 import { environment } from '@environments/environment';
+import { FEATURE_FLAG_READY_TIMEOUT_MS } from '@lfx-one/shared';
 import { LaunchDarklyClientProvider } from '@openfeature/launchdarkly-client-provider';
 import { OpenFeature } from '@openfeature/web-sdk';
 import { basicLogger } from 'launchdarkly-js-client-sdk';
