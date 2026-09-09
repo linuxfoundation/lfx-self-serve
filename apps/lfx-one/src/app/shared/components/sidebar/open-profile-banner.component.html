@@ -1,7 +1,8 @@
 <!-- Copyright The Linux Foundation and each contributor to LFX. -->
 <!-- SPDX-License-Identifier: MIT -->
 
-<!-- Arbitrary px, not standard scale: matches sibling org/me-selector slots' 12/16/8px gutters (14px root undershoots rem). -->
+<!-- Arbitrary px (14px root undershoots rem): px-[12px]/mb-[16px] match sibling 12/16px gutters;
+     -mt-[8px] tightens me-card's mb-[16px] gap to 8px; icon's text-[10px] is the same font-size deviation. -->
 <div class="px-[12px] mb-[16px] -mt-[8px] w-full" [class.hidden]="!show()" data-testid="open-profile-banner-slot">
   <p class="text-xs text-gray-500 leading-5">
     Still need Open Profile?
