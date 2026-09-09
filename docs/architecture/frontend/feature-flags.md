@@ -191,11 +191,12 @@ export class FeatureFlagService {
   private readonly providerReady$ = toObservable(this.isProviderReady);
 
   /**
-   * Wait for the provider to reach READY, up to `timeoutMs` (default 5000). Every flag-gated
-   * route guard uses this so the provider being slow to initialize (or stuck, if LaunchDarkly
-   * was unreachable during bootstrap) doesn't produce a silent, unexplained redirect when a user
-   * navigates — the timeout path is reported to Datadog RUM exactly once here rather than
-   * duplicated per guard (see GH-1351).
+   * Wait for the provider to reach READY, up to `timeoutMs` (default `FEATURE_FLAG_READY_TIMEOUT_MS`,
+   * 10000). Every flag-gated route guard uses this so the provider being slow to initialize (or
+   * stuck, if LaunchDarkly was unreachable during bootstrap) doesn't produce a silent, unexplained
+   * redirect when a user navigates — the timeout path is reported to Datadog RUM exactly once here
+   * rather than duplicated per guard (see GH-1351; the default was raised from 5000 in a follow-up
+   * after DEV/PROD reproductions showed LD occasionally taking longer than 5s to stream READY).
    *
    * Safe to call from any async context — `providerReady$` is built once as a field, so this no
    * longer needs the injection context that building it per-call would have required.
@@ -203,7 +204,7 @@ export class FeatureFlagService {
    * Reports once per call, not deduped across calls — intentional: per-navigation frequency is
    * the signal (a sustained outage should show as sustained RUM volume, not a single flat line).
    */
-  public async waitForReady(context: FeatureFlagGuardContext, timeoutMs = 5000): Promise<boolean> {
+  public async waitForReady(context: FeatureFlagGuardContext, timeoutMs = FEATURE_FLAG_READY_TIMEOUT_MS): Promise<boolean> {
     if (this.isProviderReady()) {
       return true;
     }
@@ -307,7 +308,10 @@ async function initializeOpenFeature(): Promise<void> {
 
   try {
     const provider = new LaunchDarklyClientProvider(clientId, {
-      initializationTimeout: 5,
+      // Shares FEATURE_FLAG_READY_TIMEOUT_MS with FeatureFlagService.waitForReady() so the
+      // bootstrap wait and every guard's post-bootstrap wait use one tunable budget. This SDK
+      // option takes seconds.
+      initializationTimeout: FEATURE_FLAG_READY_TIMEOUT_MS / 1000,
       streaming: true,
       logger: basicLogger({ level: environment.production ? 'none' : 'info' }),
     });
@@ -760,7 +764,7 @@ The provider is configured in `feature-flag.provider.ts`:
 
 ```typescript
 const provider = new LaunchDarklyClientProvider(clientId, {
-  initializationTimeout: 5, // seconds
+  initializationTimeout: FEATURE_FLAG_READY_TIMEOUT_MS / 1000, // seconds; shares the budget with FeatureFlagService.waitForReady()
   streaming: true,
   logger: basicLogger({ level: environment.production ? 'none' : 'info' }),
 });
@@ -770,13 +774,13 @@ Note: `clientId` comes from runtime configuration via TransferState, not from en
 
 **Configuration Options:**
 
-| Option                       | Type    | Default | Description                                     |
-| ---------------------------- | ------- | ------- | ----------------------------------------------- |
-| `initializationTimeout`      | number  | 5       | Max seconds to wait for initial flag fetch      |
-| `streaming`                  | boolean | true    | Enable real-time updates via Server-Sent Events |
-| `logger`                     | object  | none    | LaunchDarkly logger for debugging               |
-| `bootstrap`                  | object  | -       | Pre-populate flags (useful for SSR)             |
-| `sendEventsOnlyForVariation` | boolean | false   | Reduce analytics events sent to LaunchDarkly    |
+| Option                       | Type    | Default                                     | Description                                     |
+| ---------------------------- | ------- | ------------------------------------------- | ----------------------------------------------- |
+| `initializationTimeout`      | number  | 10 (`FEATURE_FLAG_READY_TIMEOUT_MS / 1000`) | Max seconds to wait for initial flag fetch      |
+| `streaming`                  | boolean | true                                        | Enable real-time updates via Server-Sent Events |
+| `logger`                     | object  | none                                        | LaunchDarkly logger for debugging               |
+| `bootstrap`                  | object  | -                                           | Pre-populate flags (useful for SSR)             |
+| `sendEventsOnlyForVariation` | boolean | false                                       | Reduce analytics events sent to LaunchDarkly    |
 
 **Logger Levels:**
 
@@ -788,18 +792,20 @@ Note: `clientId` comes from runtime configuration via TransferState, not from en
 
 **Production Recommendations:**
 
+`initializationTimeout` is not split per environment — both prod and dev derive it from the single shared `FEATURE_FLAG_READY_TIMEOUT_MS` constant (10s), so the bootstrap wait and every guard's `waitForReady()` wait move together. Only the logger level differs by environment:
+
 ```typescript
-// Production: Minimal logging, conservative timeout
+// Production: minimal logging, shared timeout
 {
-  initializationTimeout: 3,
+  initializationTimeout: FEATURE_FLAG_READY_TIMEOUT_MS / 1000,
   streaming: true,
   logger: basicLogger({ level: 'none' }),
   sendEventsOnlyForVariation: true,
 }
 
-// Development: Verbose logging, longer timeout for debugging
+// Development: verbose logging, same shared timeout
 {
-  initializationTimeout: 10,
+  initializationTimeout: FEATURE_FLAG_READY_TIMEOUT_MS / 1000,
   streaming: true,
   logger: basicLogger({ level: 'info' }),
 }
@@ -1077,7 +1083,7 @@ The service handles initialization failures gracefully:
 ```typescript
 try {
   const provider = new LaunchDarklyClientProvider(environment.launchDarklyClientId, {
-    initializationTimeout: 5,
+    initializationTimeout: FEATURE_FLAG_READY_TIMEOUT_MS / 1000,
     streaming: true,
   });
 

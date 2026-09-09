@@ -4,7 +4,7 @@
 import { computed, inject, Injectable, Signal, signal } from '@angular/core';
 import { toObservable } from '@angular/core/rxjs-interop';
 import { environment } from '@environments/environment';
-import { FEATURE_FLAG_OVERRIDE_STORAGE_KEY, User } from '@lfx-one/shared';
+import { FEATURE_FLAG_OVERRIDE_STORAGE_KEY, FEATURE_FLAG_READY_TIMEOUT_MS, User } from '@lfx-one/shared';
 import { FeatureFlagGuardContext } from '@lfx-one/shared/interfaces';
 import { Client, EvaluationContext, JsonValue, OpenFeature, ProviderEvents, ProviderStatus } from '@openfeature/web-sdk';
 import { catchError, filter, firstValueFrom, of, timeout } from 'rxjs';
@@ -110,13 +110,19 @@ export class FeatureFlagService {
    * way to tell it happened after the fact (see GH-1351); LD's own logger is disabled in
    * production and a `console.*` call isn't forwarded to RUM.
    *
+   * Default is `FEATURE_FLAG_READY_TIMEOUT_MS`, not a guard-local literal — DEV/PROD
+   * reproductions after the initial GH-1351 fix showed LaunchDarkly occasionally taking longer
+   * than the original 5s to stream READY, which the fail-closed guards surfaced as a user-visible
+   * redirect even though LD wasn't actually down. Raising the shared budget reduces false
+   * fail-closed/fail-open outcomes for every guard at once.
+   *
    * Safe to call from any async context — `providerReady$` is built once as a field, so this no
    * longer needs the injection context that building it per-call would have required.
    *
    * Reports once per call, not deduped across calls — intentional: per-navigation frequency is
    * the signal (a sustained outage should show as sustained RUM volume, not a single flat line).
    */
-  public async waitForReady(context: FeatureFlagGuardContext, timeoutMs = 5000): Promise<boolean> {
+  public async waitForReady(context: FeatureFlagGuardContext, timeoutMs = FEATURE_FLAG_READY_TIMEOUT_MS): Promise<boolean> {
     if (this.isProviderReady()) {
       return true;
     }

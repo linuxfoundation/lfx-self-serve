@@ -104,3 +104,15 @@ export const MENTORSHIP_ENABLED_FLAG = 'mentorship-enabled';
  * lands.
  */
 export const FEATURE_FLAG_OVERRIDE_STORAGE_KEY = 'lfx-feature-flag-overrides';
+
+/**
+ * Default budget `FeatureFlagService.waitForReady()` gives the OpenFeature provider to reach
+ * READY before a flag-gated guard falls back to its no-ready path (fail-open for
+ * `myClasEnabledGuard`, fail-closed for the dark-launch guards). Doubled from the original 5s
+ * (GH-1351 follow-up) after DEV/PROD reproductions showed LaunchDarkly occasionally taking longer
+ * than 5s to stream READY, which the fail-closed guards were surfacing as a user-visible redirect
+ * even though LD wasn't actually down — just slow. Also drives
+ * `initializeOpenFeature()`'s LaunchDarkly `initializationTimeout` (in seconds) so the bootstrap
+ * wait and the guard-level wait share one tunable budget instead of two independent magic numbers.
+ */
+export const FEATURE_FLAG_READY_TIMEOUT_MS = 10_000;
