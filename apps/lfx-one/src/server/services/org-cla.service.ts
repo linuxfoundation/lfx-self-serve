@@ -201,13 +201,13 @@ export class OrgClaService {
    * button press, not a render.
    */
   public async getPdfUrl(req: Request, orgUid: string, signatureId: string): Promise<PdfUrlResponse | null> {
-    const startTime = logger.startOperation(req, 'org_cla_get_pdf_url', { signature_id: signatureId });
-
+    // No `startOperation` here: the HTTP lifecycle belongs to the controller, which already opens
+    // and closes one for this endpoint. A second timer would double the completion telemetry and
+    // measure a different span than the request it is attributed to.
     const { claGroups } = await this.listClaGroups(req, orgUid);
     const match = claGroups.find((group) => group.id === signatureId);
     if (!match) {
       logger.warning(req, 'org_cla_get_pdf_url', 'signature is not on this organization CLA list', { org_uid: orgUid, signature_id: signatureId });
-      logger.success(req, 'org_cla_get_pdf_url', startTime, { outcome: 'not_on_organization_list' });
       return null;
     }
 
@@ -216,7 +216,7 @@ export class OrgClaService {
     // an unsigned agreement hands back a URL to a document that does not exist. Absent is the
     // honest answer, and it is the one the caller already handles.
     if (!match.signed) {
-      logger.success(req, 'org_cla_get_pdf_url', startTime, { outcome: 'agreement_not_signed' });
+      logger.warning(req, 'org_cla_get_pdf_url', 'agreement is not signed, so no document exists', { org_uid: orgUid, signature_id: signatureId });
       return null;
     }
 
@@ -231,20 +231,21 @@ export class OrgClaService {
       });
     } catch (error) {
       if (error instanceof MicroserviceError && error.statusCode === 404) {
-        logger.success(req, 'org_cla_get_pdf_url', startTime, { outcome: 'document_absent' });
+        logger.warning(req, 'org_cla_get_pdf_url', 'upstream holds no signed document for this signature', { signature_id: signatureId });
         return null;
       }
-      logger.error(req, 'org_cla_get_pdf_url', startTime, error, { signature_id: signatureId });
+      // Rethrown unlogged: `apiErrorHandler` logs every error centrally with the request context,
+      // and the signature id is in the path it records.
       throw error;
     }
 
     const url = result?.signed_cla_url?.trim() || result?.signedClaUrl?.trim() || '';
     if (!url) {
-      logger.success(req, 'org_cla_get_pdf_url', startTime, { outcome: 'no_url_on_document' });
+      logger.warning(req, 'org_cla_get_pdf_url', 'signed document carries no url', { signature_id: signatureId });
       return null;
     }
 
-    logger.success(req, 'org_cla_get_pdf_url', startTime, { outcome: 'resolved' });
+    logger.debug(req, 'org_cla_get_pdf_url', 'resolved a signed document url', { signature_id: signatureId });
     // No expiry reported: the signed-document response carries only the URL, so any number here
     // would be invented. The URL is presigned and short-lived, but its lifetime is upstream's to
     // state, and `0` would read to a consumer as already expired.

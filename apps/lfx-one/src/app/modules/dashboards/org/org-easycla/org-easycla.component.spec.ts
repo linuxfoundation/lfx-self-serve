@@ -211,6 +211,13 @@ describe('OrgEasyclaComponent', () => {
       expect(link.querySelector('[data-testid="org-easycla-card"]')).toBeNull();
       expect(link.querySelector('[tabindex]')).toBeNull();
       expect(link.getAttribute('aria-label')).toBe('Open Nimbus Foundation CLA');
+
+      // Layering per the me-selector in sidebar.component.html: the anchor sits beneath the card,
+      // the card's content has pointer events off so a click anywhere reaches the link, and the
+      // tooltip'd tag re-enables them so hovering it still opens the tooltip.
+      const card = byTestId(fixture, 'org-easycla-card') as HTMLElement;
+      expect(card.closest('.pointer-events-none')).not.toBeNull();
+      expect(byTestId(fixture, 'org-easycla-card-needs-manager')?.querySelector('.pointer-events-auto')).not.toBeNull();
     });
 
     it('fetches once for the selected organization', async () => {

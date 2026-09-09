@@ -44,7 +44,9 @@ function nineClaGroups() {
     claGroup({ id: 'sig-2', claGroupName: 'Cascade Project CLA', claManagersCount: 1, approvalCriteriaCount: 1 }),
     claGroup({ id: 'sig-3', claGroupName: 'Driftwood CLA', needsClaManager: true, claManagersCount: 0 }),
     claGroup({ id: 'sig-4', claGroupName: 'Meridian CLA', status: 'sanctioned' }),
-    claGroup({ id: 'sig-5', claGroupName: 'Lumen CLA', status: 'not-started' }),
+    // `signed: false` alongside the status, or the fixture models an impossible row: a
+    // not-started agreement that nonetheless has a signed document to download.
+    claGroup({ id: 'sig-5', claGroupName: 'Lumen CLA', status: 'not-started', signed: false, signedOn: undefined }),
     claGroup({ id: 'sig-6', claGroupName: 'Harbor CLA', approvalCriteriaCount: undefined }),
     claGroup({ id: 'sig-7', claGroupName: 'Quarry CLA' }),
     claGroup({ id: 'sig-8', claGroupName: 'Ridgeway CLA' }),

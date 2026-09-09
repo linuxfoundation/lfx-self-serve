@@ -44,6 +44,7 @@ export function claGroup(overrides: Partial<OrgClaGroup> = {}): OrgClaGroup {
     signingEntityName: 'Acme Motors GmbH',
     foundationName: 'Nimbus Foundation',
     projects: [{ projectSfid: 'a09410000182dD3AAI', projectName: 'Cascade' }],
+    signed: true,
     status: 'signed',
     signedOn: '2024-03-11T09:20:00Z',
     needsClaManager: false,

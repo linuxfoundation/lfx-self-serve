@@ -27,11 +27,15 @@
       <!-- Not in the approved design's card, which carries no unmanaged-group indicator at all.
            Added because an unmanaged CLA Group silently blocks every contributor approval under it
            and nothing else on this page would reveal it. -->
+      <!-- `pointer-events-auto` because the list wraps this card in a stretched link that turns
+           pointer events off for the card's own content. Without it the overlay anchor swallows
+           hover and the tooltip never opens for mouse users. -->
       <lfx-tag
         value="Needs a CLA Manager"
         severity="warn"
         icon="fa-light fa-triangle-exclamation"
         tooltip="No one can approve contributors for this CLA Group until a CLA Manager is added."
+        styleClass="pointer-events-auto"
         data-testid="org-easycla-card-needs-manager" />
     }
   </div>
