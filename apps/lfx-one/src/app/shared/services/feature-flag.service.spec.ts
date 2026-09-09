@@ -141,14 +141,10 @@ describe('FeatureFlagService', () => {
     expect((service as unknown as { isProviderReady: () => boolean }).isProviderReady()).toBe(false);
   });
 
-  it('recovers once the raw LaunchDarkly client reports a late "initialized" event after a bootstrap ERROR', async () => {
-    const initializedHandlers: (() => void)[] = [];
+  it("recovers once the raw LaunchDarkly client's waitForInitialization() settles after a bootstrap ERROR", async () => {
+    let resolveInit: (() => void) | undefined;
     const rawClient = {
-      on: vi.fn((event: string, callback: () => void) => {
-        if (event === 'initialized') {
-          initializedHandlers.push(callback);
-        }
-      }),
+      waitForInitialization: vi.fn(() => new Promise<void>((resolve) => (resolveInit = resolve))),
     };
     const rawProvider = Object.create(LaunchDarklyClientProvider.prototype, {
       status: { value: ProviderStatus.ERROR },
@@ -165,12 +161,41 @@ describe('FeatureFlagService', () => {
     // The bootstrap ERROR still fails the first wait — recovery only affects later calls.
     const first = await service.waitForReady(context, 5000);
     expect(first).toBe(false);
-    expect(initializedHandlers).toHaveLength(1);
+    expect(rawClient.waitForInitialization).toHaveBeenCalledTimes(1);
 
-    initializedHandlers[0]();
+    resolveInit?.();
+    await Promise.resolve();
+    await Promise.resolve();
 
     expect((service as unknown as { isProviderReady: () => boolean }).isProviderReady()).toBe(true);
     const second = await service.waitForReady(context, 5000);
     expect(second).toBe(true);
+  });
+
+  it('recovers immediately when the raw LaunchDarkly client already finished initializing before recovery was registered', async () => {
+    // Models the race the fix closes: the client's connection completed in the background before
+    // attachErrorRecoveryListener() was ever called, so there is no live event left to listen for —
+    // only waitForInitialization()'s already-settled Promise can still report the outcome.
+    const rawClient = {
+      waitForInitialization: vi.fn(() => Promise.resolve()),
+    };
+    const rawProvider = Object.create(LaunchDarklyClientProvider.prototype, {
+      status: { value: ProviderStatus.ERROR },
+      client: { value: rawClient },
+    }) as Provider;
+    vi.spyOn(OpenFeature, 'getProvider').mockReturnValue(rawProvider);
+    vi.spyOn(OpenFeature, 'getClient').mockReturnValue({
+      providerStatus: ProviderStatus.STALE,
+      addHandler: vi.fn(),
+    } as never);
+
+    await service.initialize({ name: 'Test User', email: 'test@example.com', username: 'test' } as never);
+
+    // Unlike the still-connecting case above, an already-settled waitForInitialization() resolves
+    // recovery within the same microtask flush as initialize() itself — isProviderReady is already
+    // true by the time initialize() returns, so even the very first waitForReady() call succeeds.
+    expect((service as unknown as { isProviderReady: () => boolean }).isProviderReady()).toBe(true);
+    const result = await service.waitForReady(context, 5000);
+    expect(result).toBe(true);
   });
 });

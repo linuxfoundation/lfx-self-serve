@@ -256,15 +256,21 @@ export class FeatureFlagService {
    * client's real connection rather than cancelling it — a slow (not broken) connection keeps
    * trying in the background after the provider gives up and records ERROR, and that field is
    * never written again. The wrapper's own `Ready` event doesn't help either: it fires exactly
-   * once, tied to that same already-resolved `initialize()` call. Only the underlying LaunchDarkly
-   * client's own `initialized` event — which fires if and when the connection actually completes,
-   * independent of our timeout — can still report a late success.
+   * once, tied to that same already-resolved `initialize()` call.
+   *
+   * The underlying LaunchDarkly client's own `initialized`/`failed` events fire if and when the
+   * connection actually settles, but an event listener attached here can miss one that already
+   * fired in the background before this method ran — Angular only calls `initialize()` (and thus
+   * this method) after its app initializer's own bootstrap wait, so that gap is real. The client's
+   * `waitForInitialization()` promise doesn't have that gap: like any Promise, it keeps its settled
+   * value for any `.then()` attached after the fact, so calling it here — whether the client is
+   * still connecting, already succeeded, or already failed — always observes the outcome correctly.
+   * A rejection means initialization irrevocably failed (e.g. an invalid environment ID); that must
+   * stay fail-closed, since flags can never be evaluated in that case.
    *
    * `client` is `private` in this pinned provider version's own `.d.ts`, but that's a compile-time
    * annotation only; the getter is a plain runtime property. Reaching through it is the only way to
-   * observe this. `initialized` (not the more general `ready`, which also fires on a permanent
-   * failure like an invalid environment ID) is used deliberately: a genuine failure must stay
-   * fail-closed, since flags can never be evaluated in that case.
+   * observe this.
    */
   private attachErrorRecoveryListener(): void {
     if (this.errorRecoveryListenerAttached) {
@@ -277,11 +283,17 @@ export class FeatureFlagService {
     }
 
     try {
-      (provider as unknown as { client: { on: (event: 'initialized', callback: () => void) => void } }).client.on('initialized', () => {
-        this.isProviderReady.set(true);
-        this.refreshFlags();
-      });
+      const rawClient = (provider as unknown as { client: { waitForInitialization: () => Promise<void> } }).client;
       this.errorRecoveryListenerAttached = true;
+      rawClient.waitForInitialization().then(
+        () => {
+          this.isProviderReady.set(true);
+          this.refreshFlags();
+        },
+        () => {
+          // Irrevocable initialization failure — stay fail-closed, nothing to recover from.
+        }
+      );
     } catch {
       // Provider recorded ERROR before ever creating its underlying client — nothing to recover from.
     }
@@ -297,7 +309,7 @@ export class FeatureFlagService {
 - **Lazy Initialization**: Service doesn't initialize in constructor; waits for explicit `initialize()` call
 - **Idempotent**: Multiple `initialize()` calls are safe (checks `isInitialized()` first)
 - **Instrumented readiness wait**: `waitForReady()` centralizes the guard-facing timeout so every flag-gated route — both `CanMatch` guards and the two `CanActivateFn` guards (`campaignAccessGuard`, `marketingImpactAccessGuard`) — reports the same way to RUM on failure, instead of each guard duplicating its own wait/timeout/log logic
-- **Self-healing ERROR status**: the raw LaunchDarkly provider's `status` field is sticky — once it records `ERROR` (e.g. losing the bootstrap timeout race), nothing in the provider ever resets it, even if the underlying connection succeeds moments later. `attachErrorRecoveryListener()` listens for the LaunchDarkly client's own late `initialized` event and flips `isProviderReady` when a merely-slow connection eventually completes, so a transient bootstrap timeout doesn't fail-close every guard for the rest of the session. A genuine permanent failure (e.g. invalid environment ID) never fires `initialized`, so it correctly stays fail-closed
+- **Self-healing ERROR status**: the raw LaunchDarkly provider's `status` field is sticky — once it records `ERROR` (e.g. losing the bootstrap timeout race), nothing in the provider ever resets it, even if the underlying connection succeeds moments later. `attachErrorRecoveryListener()` awaits the LaunchDarkly client's own `waitForInitialization()` promise and flips `isProviderReady` when a merely-slow connection eventually completes — including when it already completed before this method was ever called, since a Promise keeps its settled value for any `.then()` attached after the fact (a plain event listener would miss that case). A genuine permanent failure (e.g. invalid environment ID) rejects that promise instead, so it correctly stays fail-closed
 
 ### Provider Setup
 
