@@ -30,7 +30,7 @@ class StubDashboardSidebarComponent {
 class StubDashboardCastDrawerHostComponent {
   public readonly voteSubmitted = output<string>();
 
-  public open(voteUid: string): void {
+  public open(): void {
     // no-op: exercised only by real vote-casting flows, not these specs
   }
 }

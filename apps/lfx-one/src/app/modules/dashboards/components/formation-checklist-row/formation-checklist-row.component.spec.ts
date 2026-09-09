@@ -15,6 +15,7 @@ function buildItem(overrides: Partial<FormationItem>): FormationItem {
   return {
     uid: 'formation-item:test',
     formation_uid: 'formation:test',
+    project_uid: 'project:test',
     template_item_key: 'test-item',
     section_key: 'legal',
     section_title: 'Legal and entity',

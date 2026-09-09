@@ -6,7 +6,7 @@ import { inject, PLATFORM_ID } from '@angular/core';
 import { toObservable } from '@angular/core/rxjs-interop';
 import { CanMatchFn, Router, UrlTree } from '@angular/router';
 import { FORMATION_ENABLED_FLAG } from '@lfx-one/shared/constants';
-import { isFormationStage } from '@lfx-one/shared/utils';
+import { isFormationStageGate } from '@lfx-one/shared/utils';
 import { catchError, filter, firstValueFrom, of, timeout } from 'rxjs';
 
 import { FeatureFlagService } from '../services/feature-flag.service';
@@ -86,5 +86,5 @@ export const formationProjectEnabledGuard: CanMatchFn = async () => {
   }
 
   const project = await firstValueFrom(projectService.getProject(slug, false));
-  return isFormationStage(project?.stage) ? true : deniedOverview(router, slug);
+  return isFormationStageGate(project?.stage) ? true : deniedOverview(router, slug);
 };

@@ -12,6 +12,9 @@ import { describe, expect, it } from 'vitest';
 // Vitest environment. A plain import (not `vi.mock`) is enough: formation-fixture.helper.ts itself
 // never imports `@lfx-one/shared/utils`, so there's nothing here for a mock to intercept.
 import { isValidUrl } from '@lfx-one/shared/utils/url.utils';
+// Same Angular-independence reasoning as the isValidUrl deep-import above — formation.utils.ts is
+// a pure file (only imports a type), so this is safe under plain-Node Vitest.
+import { deriveFormationEntityType } from '@lfx-one/shared/utils/formation.utils';
 
 import { generateMockFormation, SEEDED_FORMATION_TEMPLATE, STATIC_QUEUE_FORMATIONS } from './formation-fixture.helper';
 
@@ -60,8 +63,8 @@ describe('generateMockFormation', () => {
 });
 
 describe('STATIC_QUEUE_FORMATIONS', () => {
-  it('covers exactly the three known entity_type values', () => {
-    const entityTypes = new Set(STATIC_QUEUE_FORMATIONS.map((row) => row.entity_type));
+  it('covers exactly the three known entity types', () => {
+    const entityTypes = new Set(STATIC_QUEUE_FORMATIONS.map((row) => deriveFormationEntityType(row)));
 
     expect(entityTypes).toEqual(new Set(['foundation', 'child_project', 'project']));
   });

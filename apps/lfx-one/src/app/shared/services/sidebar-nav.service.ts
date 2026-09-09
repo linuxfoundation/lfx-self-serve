@@ -20,7 +20,7 @@ import {
   VOTE_LABEL,
 } from '@lfx-one/shared/constants';
 import { SidebarMenuItem } from '@lfx-one/shared/interfaces';
-import { isFormationStage } from '@lfx-one/shared/utils';
+import { isFormationStageGate } from '@lfx-one/shared/utils';
 import { AnalyticsService } from '@services/analytics.service';
 import { FeatureFlagService } from '@services/feature-flag.service';
 import { LensService } from '@services/lens.service';
@@ -104,7 +104,7 @@ export class SidebarNavService {
         // Formation (GH-1958) is dark-launched behind its own flag plus a Formation sub-stage check on
         // the active project — inserted directly under Dashboard, ahead of Meetings, hence the
         // head/tail split of projectLensItems rather than an append like mktgOsItems above.
-        const showFormationNav = this.isFormationEnabled() && isFormationStage(this.projectContextService.activeProjectStage());
+        const showFormationNav = this.isFormationEnabled() && isFormationStageGate(this.projectContextService.activeProjectStage());
         const formationItems = showFormationNav ? [this.formationNavItem] : [];
         const base = [...this.projectLensItemsHead, ...formationItems, ...this.projectLensItemsTail, ...mktgOsItems, this.projectGovernanceSection];
         const withComms = this.canSeeNewsletters() ? [...base, this.projectCommunicationsSection] : base;

@@ -4,6 +4,7 @@
 import '@angular/compiler';
 
 import type { Formation, FormationItem } from '@lfx-one/shared/interfaces';
+import { deriveFormationEntityType } from '@lfx-one/shared/utils';
 import type { Request } from 'express';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 
@@ -40,7 +41,8 @@ function buildFormation(overrides: Partial<Formation> = {}): Formation {
     parent_project_uid: overrides.parent_project_uid ?? `project-${uidCounter}`,
     parent_project_slug: 'osaia',
     parent_project_name: 'OSAIA',
-    entity_type: 'foundation',
+    is_foundation: true,
+    parent_uid: null,
     template_uid: 'template-1',
     template_version: 1,
     sub_stage: 'engaged',
@@ -61,6 +63,7 @@ function buildItem(formationUid: string, overrides: Partial<FormationItem> = {})
   return {
     uid: overrides.uid ?? `formation-item:test-${uidCounter}`,
     formation_uid: formationUid,
+    project_uid: `project-${uidCounter}`,
     template_item_key: 'some-key',
     section_key: 'section',
     section_title: 'Section',
@@ -495,12 +498,12 @@ describe('FormationService', () => {
       expect(result.tiles.total).toBe(STATIC_QUEUE_FORMATIONS.length);
     });
 
-    it('the foundations/child_projects tile breakdown sums to total — a bare "project" entity rolls into child_projects rather than being dropped', async () => {
-      expect(STATIC_QUEUE_FORMATIONS.some((row) => row.entity_type === 'project')).toBe(true);
+    it('the foundations/projects tile breakdown sums to total — a bare "project" entity rolls into projects rather than being dropped', async () => {
+      expect(STATIC_QUEUE_FORMATIONS.some((row) => deriveFormationEntityType(row) === 'project')).toBe(true);
 
       const result = await service.getFormationsQueue(buildReq());
 
-      expect(result.tiles.foundations + result.tiles.child_projects).toBe(result.tiles.total);
+      expect(result.tiles.foundations + result.tiles.projects).toBe(result.tiles.total);
     });
   });
 });

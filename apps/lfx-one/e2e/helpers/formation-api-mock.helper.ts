@@ -2,6 +2,7 @@
 // SPDX-License-Identifier: MIT
 
 import { FormationItem, FormationsQueueResponse } from '@lfx-one/shared/interfaces';
+import { deriveFormationEntityType } from '@lfx-one/shared/utils';
 import { Page } from '@playwright/test';
 
 import { getMockFormation, getMockFormationItems, mockFormationActivity, mockFormationsQueue, mockFormationTemplate } from '../fixtures/mock-data';
@@ -76,10 +77,10 @@ export class FormationApiMockHelper {
         engaged: rows.filter((row) => row.sub_stage === 'engaged').length,
         on_hold: rows.filter((row) => row.sub_stage === 'on_hold').length,
         total: rows.length,
-        foundations: rows.filter((row) => row.entity_type === 'foundation').length,
+        foundations: rows.filter((row) => deriveFormationEntityType(row) === 'foundation').length,
         // Mirrors formation.service.ts's buildQueueTiles — a bare 'project' entity rolls into the
-        // child_projects count so it isn't dropped from the breakdown while still counting toward total.
-        child_projects: rows.filter((row) => row.entity_type === 'child_project' || row.entity_type === 'project').length,
+        // projects count so it isn't dropped from the breakdown while still counting toward total.
+        projects: rows.filter((row) => deriveFormationEntityType(row) !== 'foundation').length,
       };
 
       await route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify({ tiles, rows: filtered, data_source: 'fixture' }) });

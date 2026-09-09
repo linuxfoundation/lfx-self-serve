@@ -14,7 +14,8 @@ function buildRow(overrides: Partial<Formation>): Formation {
     parent_project_uid: 'project:test',
     parent_project_slug: 'test-project',
     parent_project_name: 'Test Project',
-    entity_type: 'project',
+    is_foundation: false,
+    parent_uid: null,
     template_uid: 'template:test',
     template_version: 1,
     sub_stage: 'engaged',
@@ -55,8 +56,14 @@ describe('FormationsTableComponent', () => {
 
   it('indents a child row whose parent formation is present in the current result', async () => {
     await render([
-      buildRow({ uid: 'formation:foundation', parent_project_name: 'Acme Foundation', entity_type: 'foundation' }),
-      buildRow({ uid: 'formation:child', parent_project_name: 'Acme Child Project', parent_formation_name: 'Acme Foundation', entity_type: 'child_project' }),
+      buildRow({ uid: 'formation:foundation', parent_project_name: 'Acme Foundation', is_foundation: true, parent_uid: null }),
+      buildRow({
+        uid: 'formation:child',
+        parent_project_name: 'Acme Child Project',
+        parent_formation_name: 'Acme Foundation',
+        is_foundation: false,
+        parent_uid: 'project:acme-foundation',
+      }),
     ]);
 
     expect(nameCell('formation:foundation')?.classList.contains('pl-4')).toBe(false);

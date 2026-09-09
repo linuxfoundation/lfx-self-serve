@@ -90,7 +90,7 @@ export const FORMATION_EMPTY_QUEUE_TILES = {
   on_hold: 0,
   total: 0,
   foundations: 0,
-  child_projects: 0,
+  projects: 0,
 } as const satisfies FormationQueueTiles;
 
 /**

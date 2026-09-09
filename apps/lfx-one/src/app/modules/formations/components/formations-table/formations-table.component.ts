@@ -14,6 +14,7 @@ import { TableComponent } from '@components/table/table.component';
 import { TagComponent } from '@components/tag/tag.component';
 import { FORMATION_ENTITY_TYPE_LABELS, FORMATION_QUEUE_SUB_STAGES, FORMATION_SUB_STAGE_LABELS, FORMATION_SUB_STAGE_SEVERITY } from '@lfx-one/shared/constants';
 import type { FilterPillOption, Formation, FormationsQueueFilterState, FormationSubStage, FormationTableRow } from '@lfx-one/shared/interfaces';
+import { deriveFormationEntityType } from '@lfx-one/shared/utils';
 import { debounceTime, distinctUntilChanged, map } from 'rxjs';
 
 /** Column-local sort aria state — mirrors `meetups-table.component.ts`'s `MeetupSortAria` pattern; not a shared domain type since sorting here is purely client-side (no server sort param). */
@@ -126,7 +127,7 @@ export class FormationsTableComponent {
         ...row,
         stageLabel: FORMATION_SUB_STAGE_LABELS[row.sub_stage],
         stageSeverity: FORMATION_SUB_STAGE_SEVERITY[row.sub_stage],
-        entityTypeLabel: FORMATION_ENTITY_TYPE_LABELS[row.entity_type],
+        entityTypeLabel: FORMATION_ENTITY_TYPE_LABELS[deriveFormationEntityType(row)],
         isChildRow: !!row.parent_formation_name && namesInResult.has(row.parent_formation_name),
       }));
       return this.sortDisplayRows(displayRows);

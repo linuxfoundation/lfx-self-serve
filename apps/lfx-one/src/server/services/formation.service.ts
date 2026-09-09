@@ -10,7 +10,7 @@ import type {
   FormationSubStage,
 } from '@lfx-one/shared/interfaces';
 import { FORMATION_QUEUE_SUB_STAGES } from '@lfx-one/shared/constants';
-import { isFormationStage } from '@lfx-one/shared/utils';
+import { deriveFormationEntityType, isFormationStageGate } from '@lfx-one/shared/utils';
 import { Request } from 'express';
 
 import { AuthorizationError, ResourceNotFoundError, ServiceValidationError } from '../errors';
@@ -59,7 +59,7 @@ export class FormationService {
     // downstream of this branch needs to change.
     if (!isFormationServiceLive()) {
       const project = await this.projectService.getProjectById(req, uid, false);
-      if (!isFormationStage(project.stage)) {
+      if (!isFormationStageGate(project.stage)) {
         throw new ResourceNotFoundError('Formation', projectSlug, { operation: 'get_project_formation', service: 'formation_service', path: req.path });
       }
       const { formation, items } = generateMockFormation({
@@ -333,14 +333,14 @@ export class FormationService {
       bySubStage[row.sub_stage] = (bySubStage[row.sub_stage] ?? 0) + 1;
     }
 
-    // The tile subLine only has room for a foundations/child_projects split — a bare 'project'
-    // entity (no foundation/child_project formation ceremony) rolls into the child_projects count
-    // so it isn't silently dropped from the breakdown while still counting toward `total`.
+    // The tile subLine only has room for a foundations/projects split — a bare 'project' entity (no
+    // foundation/child_project formation ceremony) rolls into the projects count so it isn't
+    // silently dropped from the breakdown while still counting toward `total`.
     return {
       ...bySubStage,
       total: rows.length,
-      foundations: rows.filter((row) => row.entity_type === 'foundation').length,
-      child_projects: rows.filter((row) => row.entity_type === 'child_project' || row.entity_type === 'project').length,
+      foundations: rows.filter((row) => deriveFormationEntityType(row) === 'foundation').length,
+      projects: rows.filter((row) => deriveFormationEntityType(row) !== 'foundation').length,
     };
   }
 

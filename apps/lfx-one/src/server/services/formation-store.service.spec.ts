@@ -28,7 +28,8 @@ function buildFormation(overrides: Partial<Formation> = {}): Formation {
     parent_project_uid: `project-${counter}`,
     parent_project_slug: `slug-${counter}`,
     parent_project_name: `Project ${counter}`,
-    entity_type: 'foundation',
+    is_foundation: true,
+    parent_uid: null,
     template_uid: 'template-1',
     template_version: 1,
     sub_stage: 'engaged',
@@ -49,6 +50,7 @@ function buildItem(formationUid: string, overrides: Partial<FormationItem> = {})
   return {
     uid: `formation-item:store-test-${counter}`,
     formation_uid: formationUid,
+    project_uid: `project-${counter}`,
     template_item_key: `key-${counter}`,
     section_key: 'section',
     section_title: 'Section',
