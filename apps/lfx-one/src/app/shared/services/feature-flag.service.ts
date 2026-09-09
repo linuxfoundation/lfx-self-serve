@@ -7,7 +7,7 @@ import { environment } from '@environments/environment';
 import { FEATURE_FLAG_OVERRIDE_STORAGE_KEY, FEATURE_FLAG_READY_TIMEOUT_MS, User } from '@lfx-one/shared';
 import { FeatureFlagGuardContext } from '@lfx-one/shared/interfaces';
 import { LaunchDarklyClientProvider } from '@openfeature/launchdarkly-client-provider';
-import { Client, EvaluationContext, JsonValue, OpenFeature, ProviderEvents, ProviderStatus } from '@openfeature/web-sdk';
+import { Client, EvaluationContext, GeneralError, JsonValue, OpenFeature, ProviderEvents, ProviderStatus } from '@openfeature/web-sdk';
 import { catchError, filter, firstValueFrom, of, timeout } from 'rxjs';
 
 import { DataDogRumService } from './datadog-rum.service';
@@ -377,8 +377,15 @@ export class FeatureFlagService {
           // Irrevocable initialization failure — stay fail-closed, nothing to recover from.
         }
       );
-    } catch {
-      // Provider recorded ERROR before ever creating its underlying client — nothing to recover from.
+    } catch (error) {
+      // GeneralError = provider recorded ERROR before creating its client; nothing to recover.
+      // Anything else means the provider's internals moved — report it rather than silently
+      // fail-closing every guard for the session.
+      if (!(error instanceof GeneralError)) {
+        this.dataDogRumService.addError(error instanceof Error ? error : new Error(String(error)), {
+          source: 'attachErrorRecoveryListener',
+        });
+      }
     }
   }
 }
