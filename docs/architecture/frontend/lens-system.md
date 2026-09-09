@@ -113,6 +113,16 @@ class ProjectContextService {
   isFoundationContext: Signal<boolean>; // true when the active context is a foundation
   canWrite: Signal<boolean>; // resolved via ProjectService.getProject()
 
+  // Formation signals (GH-1955) — derived off the same activeProject fetch as canWrite, so
+  // consumers (e.g. FormationCardComponent, ProjectDashboardComponent) share one call instead
+  // of each fetching the active project independently.
+  isActiveProjectInFormation: Signal<boolean>;
+  activeProjectFormationSubStage: Signal<string | null>;
+  isActiveProjectConfidential: Signal<boolean>; // true only for ProjectStage.FormationConfidential
+  activeProjectAnnouncementDate: Signal<string | null>; // via PermissionsService.getProjectSettings
+  activeProjectAnnouncementDateLoading: Signal<boolean>;
+  activeProjectAnnouncementDateHasError: Signal<boolean>;
+
   setFoundation(ctx: ProjectContext): void;
   setProject(ctx: ProjectContext): void;
   clearFoundation(): void;

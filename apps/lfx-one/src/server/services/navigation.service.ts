@@ -10,10 +10,17 @@ import { logger } from './logger.service';
 import { MicroserviceProxyService } from './microservice-proxy.service';
 
 /**
- * Stages eligible for the project lens — Active plus supported pre-launch formation stages.
- * `FormationConfidential` is intentionally excluded (GH-1955): the name implies pre-announcement
- * secrecy, so a Confidential project should not be listed by name in the shared project picker.
- * Its own dashboard page still renders normally for anyone already authorized to view it.
+ * Stages eligible for the project lens **listing** — Active plus supported pre-launch formation
+ * stages. `FormationConfidential` is intentionally excluded from this listing set (GH-1955): the
+ * name implies pre-announcement secrecy, so a Confidential project should not be listed by name
+ * in the shared project picker's general (unfiltered) results.
+ *
+ * This set gates `buildQuery`'s listing/search results only. `fetchSelectedItem` — which exists
+ * to preserve an *already-selected* item that didn't come back on the first listing page, e.g. a
+ * deep link — deliberately also admits `FormationConfidential` alongside this set: a Confidential
+ * project must not be evicted from an explicit prior selection just because it's hidden from the
+ * general listing. Its own dashboard page renders normally for anyone already authorized to view
+ * it, so the selection must survive too.
  *
  * `FormationOnHold`/`FormationDisengaged` are an accepted rollout trade-off: this set is server-side
  * and un-flagged (unlike `FORMATION_ENABLED_FLAG`, which only gates client-rendered UI), so these two
@@ -108,11 +115,12 @@ export class NavigationService {
       });
       const project = response?.resources?.[0]?.data;
       if (!project) return null;
-      // Mirror the main-pipeline contract so an archived selection doesn't get re-injected.
+      // Mirror the main-pipeline contract so an archived selection doesn't get re-injected —
+      // except FormationConfidential, which the listing hides but a prior selection must survive.
       if (lens === 'foundation') {
         if (!computeIsFoundation(project)) return null;
       } else {
-        if (!PROJECT_LENS_ALLOWED_STAGES.has(project.stage)) return null;
+        if (!PROJECT_LENS_ALLOWED_STAGES.has(project.stage) && project.stage !== ProjectStage.FormationConfidential) return null;
       }
       return this.toLensItem(project);
     } catch (error) {

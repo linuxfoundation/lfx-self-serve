@@ -5,10 +5,9 @@ import { Component, input, signal, WritableSignal } from '@angular/core';
 import { ComponentFixture, TestBed } from '@angular/core/testing';
 import { ProjectContext, ProjectSettings } from '@lfx-one/shared/interfaces';
 import { FeatureFlagService } from '@services/feature-flag.service';
-import { PermissionsService } from '@services/permissions.service';
 import { ProjectContextService } from '@services/project-context.service';
 import { ProjectService } from '@services/project.service';
-import { Observable, of, Subject, throwError } from 'rxjs';
+import { catchError, map, Observable, of, Subject, tap, throwError } from 'rxjs';
 import { describe, expect, it } from 'vitest';
 
 import { DashboardCastDrawerHostComponent } from '../components/dashboard-cast-drawer-host/dashboard-cast-drawer-host.component';
@@ -65,11 +64,31 @@ describe('ProjectDashboardComponent — Formation badge/subtitle (GH-1955)', () 
   async function render(isFormation: boolean, settingsResult: Observable<ProjectSettings> = of(settings('2026-09-01')), subStage = 'Engaged'): Promise<void> {
     flagEnabled = signal(true);
     TestBed.resetTestingModule();
+
+    // Mirrors ProjectContextService's own tri-state pipeline so the mock behaves like the real
+    // shared signals (loading flips false, hasError flips true) rather than hardcoding both false.
+    const announcementDateLoading = signal(true);
+    const announcementDateHasError = signal(false);
+    const announcementDate = signal<string | null>(null);
+    settingsResult
+      .pipe(
+        map((s) => s.announcement_date || null),
+        tap((date) => {
+          announcementDate.set(date);
+          announcementDateLoading.set(false);
+        }),
+        catchError(() => {
+          announcementDateLoading.set(false);
+          announcementDateHasError.set(true);
+          return of(null);
+        })
+      )
+      .subscribe();
+
     await TestBed.configureTestingModule({
       imports: [ProjectDashboardComponent],
       providers: [
         { provide: FeatureFlagService, useValue: { getBooleanFlag: () => flagEnabled } },
-        { provide: PermissionsService, useValue: { getProjectSettings: () => settingsResult } },
         { provide: ProjectService, useValue: { getPendingActions: () => of([]) } },
         {
           provide: ProjectContextService,
@@ -77,6 +96,10 @@ describe('ProjectDashboardComponent — Formation badge/subtitle (GH-1955)', () 
             activeContext: signal(CONTEXT),
             isActiveProjectInFormation: signal(isFormation),
             activeProjectFormationSubStage: signal(isFormation ? subStage : null),
+            isActiveProjectConfidential: signal(isFormation && subStage === 'Confidential'),
+            activeProjectAnnouncementDate: announcementDate,
+            activeProjectAnnouncementDateLoading: announcementDateLoading,
+            activeProjectAnnouncementDateHasError: announcementDateHasError,
           },
         },
       ],

@@ -5,26 +5,13 @@ import type { LensItemsQuery, Project, QueryServiceResponse } from '@lfx-one/sha
 import type { Request } from 'express';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 
-// Mirrors project.service.spec.ts / org-navigation.service.spec.ts: the `@lfx-one/shared/*`
-// alias isn't wired into this app's vitest config, so every runtime (non-type-only) import
-// needs a stub.
 const { proxyRequest } = vi.hoisted(() => ({ proxyRequest: vi.fn() }));
 
-vi.mock('@lfx-one/shared/enums', () => ({
-  // Real enum, not a stub: PROJECT_LENS_ALLOWED_STAGES and getFormationSubStageLabel both
-  // compare against actual string values.
-  ProjectStage: {
-    FormationExploratory: 'Formation - Exploratory',
-    FormationEngaged: 'Formation - Engaged',
-    FormationOnHold: 'Formation - On Hold',
-    FormationDisengaged: 'Formation - Disengaged',
-    FormationConfidential: 'Formation - Confidential',
-    Active: 'Active',
-    Archived: 'Archived',
-    Prospect: 'Prospect',
-  },
-  ProjectFunding: { Funded: 'Funded' },
-}));
+// `@lfx-one/shared/enums` needs no stub: it resolves through the real barrel via the
+// `@lfx-one/shared` alias in vitest.config.ts (no Angular-dependent code lives under enums/), so
+// PROJECT_LENS_ALLOWED_STAGES and getFormationSubStageLabel compare against the real ProjectStage.
+// `@lfx-one/shared/utils` still needs the stub below — that barrel re-exports Angular-dependent
+// utils that throw at module-load time under this plain-Node Vitest environment.
 // computeIsFoundation and getFormationSubStageLabel are pulled from the REAL implementation
 // (not hand-copied), so stage-classification drift fails these tests too — see
 // packages/shared/src/utils/project.utils.spec.ts for the exhaustive per-stage coverage.
@@ -103,8 +90,8 @@ describe('NavigationService — PROJECT_LENS_ALLOWED_STAGES', () => {
     expect(lastQuerySent().filters_or).not.toContain('stage:Formation - Confidential');
   });
 
-  it('excludes a Confidential-stage selection from fetchSelectedItem re-injection', async () => {
-    // First page: normal query returns nothing.
+  it('re-injects a Confidential-stage selection via fetchSelectedItem despite being hidden from the general listing', async () => {
+    // First page: normal query returns nothing — Confidential is excluded from the listing filter.
     proxyRequest.mockResolvedValueOnce(pageOf([]));
     // Second call: fetchSelectedItem's uid-scoped lookup returns the Confidential project.
     proxyRequest.mockResolvedValueOnce(
@@ -113,6 +100,7 @@ describe('NavigationService — PROJECT_LENS_ALLOWED_STAGES', () => {
 
     const response = await new NavigationService().getLensItems(req, { lens: 'project', selectedUid: 'confidential-1' });
 
-    expect(response.items).toHaveLength(0);
+    expect(response.items).toHaveLength(1);
+    expect(response.items[0].uid).toBe('confidential-1');
   });
 });

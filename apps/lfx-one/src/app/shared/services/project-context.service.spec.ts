@@ -9,7 +9,7 @@ import { Router } from '@angular/router';
 import { Project, ProjectContext } from '@lfx-one/shared/interfaces';
 import { MessageService } from 'primeng/api';
 import { SsrCookieService } from 'ngx-cookie-service-ssr';
-import { of, Subject } from 'rxjs';
+import { of, Subject, throwError } from 'rxjs';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 
 import { CookieRegistryService } from './cookie-registry.service';
@@ -22,10 +22,17 @@ import { UserService } from './user.service';
 
 const CONTEXT: ProjectContext = { uid: 'proj-1', name: 'Project One', slug: 'project-one' };
 
-/** Minimal fixture; only `stage` matters for the assertions below. */
-function project(stage: string): Project {
+/**
+ * Minimal fixture; `stage` is what most assertions care about. `uid` defaults to the shared
+ * `proj-1` but must be overridden with a fresh value in any test that also asserts on
+ * `activeProjectAnnouncementDate`/`Loading`/`HasError` — `PermissionsService.getProjectSettings`
+ * caches per uid (`shareReplay(1)`), so reusing `proj-1` would replay the *first* call this suite
+ * ever made for that uid (in the outer `beforeEach`, against the default `{}` HTTP mock) instead of
+ * hitting the test's own overridden mock.
+ */
+function project(stage: string, uid = 'proj-1'): Project {
   return {
-    uid: 'proj-1',
+    uid,
     slug: 'project-one',
     description: '',
     name: 'Project One',
@@ -107,6 +114,44 @@ describe('ProjectContextService — Formation signals (GH-1955)', () => {
 
     expect(service.activeProjectFormationSubStage()).toBeNull();
     expect(service.isActiveProjectInFormation()).toBe(false);
+  });
+
+  it('reports isActiveProjectConfidential only for the Confidential stage', () => {
+    getProject.mockReturnValue(of(project('Formation - Confidential')));
+    service.setProject({ ...CONTEXT, uid: 'confidential-project' }, false);
+    TestBed.inject(ApplicationRef).tick();
+
+    expect(service.isActiveProjectConfidential()).toBe(true);
+    expect(service.activeProjectFormationSubStage()).toBe('Confidential');
+
+    getProject.mockReturnValue(of(project('Formation - Engaged')));
+    service.setProject({ ...CONTEXT, uid: 'engaged-project' }, false);
+    TestBed.inject(ApplicationRef).tick();
+
+    expect(service.isActiveProjectConfidential()).toBe(false);
+  });
+
+  it('resolves the announcement date via PermissionsService, triggered by the active-project fetch', () => {
+    const httpGet = TestBed.inject(HttpClient).get as ReturnType<typeof vi.fn>;
+    httpGet.mockReturnValue(of({ announcement_date: '2026-09-01' }));
+    getProject.mockReturnValue(of(project('Formation - Engaged', 'announce-project')));
+    service.setProject({ ...CONTEXT, uid: 'announce-project' }, false);
+    TestBed.inject(ApplicationRef).tick();
+
+    expect(service.activeProjectAnnouncementDate()).toBe('2026-09-01');
+    expect(service.activeProjectAnnouncementDateLoading()).toBe(false);
+    expect(service.activeProjectAnnouncementDateHasError()).toBe(false);
+  });
+
+  it('reports the announcement-date error state independently of the Formation signals', () => {
+    const httpGet = TestBed.inject(HttpClient).get as ReturnType<typeof vi.fn>;
+    httpGet.mockReturnValue(throwError(() => new Error('network error')));
+    getProject.mockReturnValue(of(project('Formation - Engaged', 'error-project')));
+    service.setProject({ ...CONTEXT, uid: 'error-project' }, false);
+    TestBed.inject(ApplicationRef).tick();
+
+    expect(service.activeProjectAnnouncementDateHasError()).toBe(true);
+    expect(service.activeProjectFormationSubStage()).toBe('Engaged');
   });
 
   it('stays false with no active project fetched when unauthenticated (LFXV2-3266 auth gate)', () => {

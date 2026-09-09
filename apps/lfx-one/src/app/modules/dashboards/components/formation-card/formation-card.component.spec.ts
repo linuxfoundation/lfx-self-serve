@@ -5,10 +5,9 @@ import { ComponentFixture, TestBed } from '@angular/core/testing';
 import { signal } from '@angular/core';
 import { Project, ProjectSettings } from '@lfx-one/shared/interfaces';
 import { getFormationSubStageLabel } from '@lfx-one/shared/utils';
-import { PermissionsService } from '@services/permissions.service';
 import { ProjectContextService } from '@services/project-context.service';
 import { ProjectService } from '@services/project.service';
-import { Observable, of, throwError } from 'rxjs';
+import { catchError, map, Observable, of, tap, throwError } from 'rxjs';
 import { describe, expect, it, vi } from 'vitest';
 
 import { FormationCardComponent } from './formation-card.component';
@@ -71,6 +70,27 @@ describe('FormationCardComponent', () => {
     const { sfid = 'sfid-1', settingsResult = of(settings()), projectOverrides = {}, getProjectResult } = options;
     TestBed.resetTestingModule();
     getProjectSpy = vi.fn(() => of(project(stage, { ...projectOverrides, auditor, ...getProjectResult })));
+
+    // Mirrors ProjectContextService's own tri-state pipeline so the mock behaves like the real
+    // shared signals (loading flips false, hasError flips true) rather than hardcoding both false.
+    const announcementDateLoading = signal(true);
+    const announcementDateHasError = signal(false);
+    const announcementDate = signal<string | null>(null);
+    settingsResult
+      .pipe(
+        map((s) => s.announcement_date || null),
+        tap((date) => {
+          announcementDate.set(date);
+          announcementDateLoading.set(false);
+        }),
+        catchError(() => {
+          announcementDateLoading.set(false);
+          announcementDateHasError.set(true);
+          return of(null);
+        })
+      )
+      .subscribe();
+
     await TestBed.configureTestingModule({
       imports: [FormationCardComponent],
       providers: [
@@ -81,12 +101,14 @@ describe('FormationCardComponent', () => {
             getProject: getProjectSpy,
           },
         },
-        { provide: PermissionsService, useValue: { getProjectSettings: () => settingsResult } },
         {
           provide: ProjectContextService,
           useValue: {
             activeProject: signal(project(stage, projectOverrides)),
             activeProjectFormationSubStage: signal(getFormationSubStageLabel(stage)),
+            activeProjectAnnouncementDate: announcementDate,
+            activeProjectAnnouncementDateLoading: announcementDateLoading,
+            activeProjectAnnouncementDateHasError: announcementDateHasError,
           },
         },
       ],

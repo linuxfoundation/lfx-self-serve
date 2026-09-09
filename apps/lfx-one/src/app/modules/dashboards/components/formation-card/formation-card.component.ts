@@ -1,17 +1,15 @@
 // Copyright The Linux Foundation and each contributor to LFX.
 // SPDX-License-Identifier: MIT
 
-import { Component, computed, inject, signal, Signal } from '@angular/core';
+import { Component, computed, inject, Signal } from '@angular/core';
 import { toObservable, toSignal } from '@angular/core/rxjs-interop';
 import { TagComponent } from '@components/tag/tag.component';
 import { environment } from '@environments/environment';
-import { ProjectSettings } from '@lfx-one/shared/interfaces';
 import { formatAnnouncementDateLabel } from '@lfx-one/shared/utils';
-import { PermissionsService } from '@services/permissions.service';
 import { ProjectContextService } from '@services/project-context.service';
 import { ProjectService } from '@services/project.service';
 import { SkeletonModule } from 'primeng/skeleton';
-import { catchError, filter, map, of, switchMap, tap } from 'rxjs';
+import { filter, map, switchMap } from 'rxjs';
 
 /**
  * The Formation sidebar card (GH-1955) — sub-stage pill, announcement date, slug, and — for
@@ -40,9 +38,19 @@ import { catchError, filter, map, of, switchMap, tap } from 'rxjs';
  *
  * Reads `ProjectContextService.activeProject` for project fields and its own `uid` (no
  * `projectUid` input) — this card only ever renders for the currently active project, so there's
- * no other project it could mean. The `auditor` gate is the one exception: it needs a flag
- * `activeProject` doesn't carry, so `initIsAuditor` makes its own dedicated
+ * no other project it could mean. The announcement date rides `ProjectContextService`'s shared
+ * `activeProjectAnnouncementDate`/`Loading`/`HasError` signals (GH-1955) rather than a fetch of its
+ * own. The `auditor` gate is the one exception that still needs its own fetch: it requires a flag
+ * `activeProject` doesn't carry, so `initIsAuditorState` makes its own dedicated
  * `getProject(uid, false, { auditor: true })` call.
+ *
+ * `isAuditor`/`sfid` are derived from uid-tagged resolved state (`isAuditorState`/`sfidState`),
+ * not read directly off the raw `toSignal` result: during a project switch, `activeProject` (and
+ * therefore `projectUid`) can advance to the new project before this card's own in-flight
+ * `getProject`/`getProjectSfid` calls for the *previous* uid resolve. Gating on `state.uid ===
+ * projectUid()` suppresses that stale window instead of briefly showing the previous project's
+ * admin-tool link/SFID — mirrors the uid-tagging pattern in `committee-view.component.ts`'s
+ * `meetingCoordinatorState`.
  */
 @Component({
   selector: 'lfx-formation-card',
@@ -50,59 +58,32 @@ import { catchError, filter, map, of, switchMap, tap } from 'rxjs';
   templateUrl: './formation-card.component.html',
 })
 export class FormationCardComponent {
-  private readonly permissionsService = inject(PermissionsService);
   private readonly projectContextService = inject(ProjectContextService);
   private readonly projectService = inject(ProjectService);
 
-  // `loading`/`hasError` track the settings fetch only (it backs the announcement date). The
-  // sub-stage pill and slug come from `project()`, which is already resolved by the time this card
-  // can render at all (the sidebar only mounts it once `isActiveProjectInFormation()` is true, which
-  // requires a non-null `activeProject`) — the admin links additionally wait on `sfid()`, its own
-  // independent fetch that starts `null`. The template renders all of that independently of this
-  // two-state gate.
-  protected readonly loading = signal(true);
-  protected readonly hasError = signal(false);
-
   protected readonly project = this.projectContextService.activeProject;
   protected readonly formationSubStage = this.projectContextService.activeProjectFormationSubStage;
+  protected readonly loading = this.projectContextService.activeProjectAnnouncementDateLoading;
+  protected readonly hasError = this.projectContextService.activeProjectAnnouncementDateHasError;
   private readonly projectUid = computed(() => this.project()?.uid ?? null);
 
-  protected readonly settings: Signal<ProjectSettings | null> = this.initSettings();
-  protected readonly announcementDateLabel: Signal<string> = this.initAnnouncementDateLabel();
+  protected readonly announcementDateLabel: Signal<string> = computed(() =>
+    formatAnnouncementDateLabel(this.projectContextService.activeProjectAnnouncementDate())
+  );
 
-  protected readonly isAuditor: Signal<boolean> = this.initIsAuditor();
-  protected readonly sfid: Signal<string | null> = this.initSfid();
+  private readonly isAuditorState: Signal<{ uid: string; isAuditor: boolean } | null> = this.initIsAuditorState();
+  protected readonly isAuditor: Signal<boolean> = computed(() => {
+    const state = this.isAuditorState();
+    return state !== null && state.uid === this.projectUid() ? state.isAuditor : false;
+  });
+
+  private readonly sfidState: Signal<{ uid: string; sfid: string | null } | null> = this.initSfidState();
+  protected readonly sfid: Signal<string | null> = computed(() => {
+    const state = this.sfidState();
+    return state !== null && state.uid === this.projectUid() ? state.sfid : null;
+  });
+
   protected readonly adminToolUrl: Signal<string> = this.initAdminToolUrl();
-
-  private initSettings(): Signal<ProjectSettings | null> {
-    return toSignal(
-      toObservable(this.projectUid).pipe(
-        filter((uid): uid is string => !!uid),
-        tap(() => {
-          this.loading.set(true);
-          this.hasError.set(false);
-        }),
-        switchMap((uid) =>
-          this.permissionsService.getProjectSettings(uid).pipe(
-            tap(() => {
-              this.loading.set(false);
-            }),
-            catchError((error) => {
-              console.error('Formation card: failed to load project settings', error);
-              this.loading.set(false);
-              this.hasError.set(true);
-              return of(null);
-            })
-          )
-        )
-      ),
-      { initialValue: null }
-    );
-  }
-
-  private initAnnouncementDateLabel(): Signal<string> {
-    return computed(() => formatAnnouncementDateLabel(this.settings()?.announcement_date));
-  }
 
   // Dedicated `auditor` FGA check (GH-1955) — independent of `ProjectContextService.activeProject`,
   // which doesn't request this flag. `writer === true` is load-bearing, not redundant: the server
@@ -112,14 +93,17 @@ export class FormationCardComponent {
   // No catchError here — ProjectService.getProject already resolves any HTTP failure to `null`
   // internally (logging as it does so), so `project?.writer`/`project?.auditor` on a failed fetch
   // are both `undefined`, and the map below already yields `false` for that case.
-  private initIsAuditor(): Signal<boolean> {
+  private initIsAuditorState(): Signal<{ uid: string; isAuditor: boolean } | null> {
     return toSignal(
       toObservable(this.projectUid).pipe(
         filter((uid): uid is string => !!uid),
-        switchMap((uid) => this.projectService.getProject(uid, false, { auditor: true })),
-        map((project) => project?.writer === true || project?.auditor === true)
+        switchMap((uid) =>
+          this.projectService
+            .getProject(uid, false, { auditor: true })
+            .pipe(map((project) => ({ uid, isAuditor: project?.writer === true || project?.auditor === true })))
+        )
       ),
-      { initialValue: false }
+      { initialValue: null }
     );
   }
 
@@ -127,11 +111,11 @@ export class FormationCardComponent {
   // this resolves for, so a non-auditor viewer shouldn't pay for the round trip.
   // `ProjectService.getProjectSfid` already logs and resolves to `null` on failure — no additional
   // catchError needed here.
-  private initSfid(): Signal<string | null> {
+  private initSfidState(): Signal<{ uid: string; sfid: string | null } | null> {
     return toSignal(
       toObservable(computed(() => (this.isAuditor() ? this.projectUid() : null))).pipe(
         filter((uid): uid is string => !!uid),
-        switchMap((uid) => this.projectService.getProjectSfid(uid))
+        switchMap((uid) => this.projectService.getProjectSfid(uid).pipe(map((sfid) => ({ uid, sfid }))))
       ),
       { initialValue: null }
     );
