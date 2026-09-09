@@ -720,9 +720,6 @@ export const MEETING_AGENDA_WARNING_LENGTH = 1800;
  */
 export const MEETING_AGENDA_PROMPT_MAX_LENGTH = 1000;
 
-/** Prompt length at which the character counter turns amber — same 90% of cap as the agenda's */
-export const MEETING_AGENDA_PROMPT_WARNING_LENGTH = 900;
-
 /**
  * Character ceiling for each free-text field a caller may set on itself when registering for a public
  * meeting (`POST /public/api/meetings/register`).

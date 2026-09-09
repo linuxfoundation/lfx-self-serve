@@ -1,0 +1,21 @@
+/* Copyright The Linux Foundation and each contributor to LFX. */
+/* SPDX-License-Identifier: MIT */
+
+/* The popovers are `appendTo="body"`, so they land outside this component's DOM — `::ng-deep` without
+   a host prefix is the only way to reach them, scoped by the `composer-popover` styleClass instead. */
+::ng-deep {
+  .composer-popover.p-popover {
+    /* The theme draws the arrow twice — `::before` is the 10px border ring, `::after` the 8px fill.
+       Both have to go: PrimeNG positions the arrow from `--p-popover-arrow-left`, which is measured
+       against the target's left edge, so it points into empty space as soon as the panel right-aligns
+       to stay inside the viewport. The design has no arrow on either panel. */
+    &::before,
+    &::after {
+      display: none !important;
+    }
+
+    /* Nothing separates the panel from the button once the arrow is gone, so keep the 8px the arrow
+       used to occupy. */
+    margin-top: 0.5rem;
+  }
+}

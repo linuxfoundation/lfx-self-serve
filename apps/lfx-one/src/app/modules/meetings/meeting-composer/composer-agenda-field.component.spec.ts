@@ -2,7 +2,7 @@
 // SPDX-License-Identifier: MIT
 
 import { ComponentFixture, TestBed } from '@angular/core/testing';
-import { MEETING_AGENDA_PROMPT_MAX_LENGTH, MEETING_AGENDA_PROMPT_WARNING_LENGTH } from '@lfx-one/shared/constants';
+import { MEETING_AGENDA_PROMPT_MAX_LENGTH } from '@lfx-one/shared/constants';
 import { CommitteeService } from '@services/committee.service';
 import { MeetingService } from '@services/meeting.service';
 import { PersonaService } from '@services/persona.service';
@@ -13,8 +13,8 @@ import { Popover } from 'primeng/popover';
 import { of } from 'rxjs';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 
-import { MeetingComposerFormService } from '../meeting-composer-form.service';
-import { ComposerAgendaResourcesComponent } from './composer-agenda-resources.component';
+import { ComposerAgendaFieldComponent } from './composer-agenda-field.component';
+import { MeetingComposerFormService } from './meeting-composer-form.service';
 
 /**
  * Covers the AI helper's request guard, which is deliberately presence-only: the server truncates an
@@ -26,9 +26,9 @@ import { ComposerAgendaResourcesComponent } from './composer-agenda-resources.co
  * payload, but it lives in the FormGroup `validateForSubmit()` reads over, so a validator here would
  * disable Save with no error UI to explain why.
  */
-describe('ComposerAgendaResourcesComponent — AI helper guard', () => {
-  let fixture: ComponentFixture<ComposerAgendaResourcesComponent>;
-  let component: ComposerAgendaResourcesComponent;
+describe('ComposerAgendaFieldComponent — AI helper guard', () => {
+  let fixture: ComponentFixture<ComposerAgendaFieldComponent>;
+  let component: ComposerAgendaFieldComponent;
   let formService: MeetingComposerFormService;
   let generateAgenda: ReturnType<typeof vi.fn>;
   let messageAdd: ReturnType<typeof vi.fn>;
@@ -52,12 +52,12 @@ describe('ComposerAgendaResourcesComponent — AI helper guard', () => {
         { provide: DialogService, useValue: { open: vi.fn() } },
       ],
     });
-    TestBed.overrideComponent(ComposerAgendaResourcesComponent, { set: { template: '', imports: [] } });
+    TestBed.overrideComponent(ComposerAgendaFieldComponent, { set: { template: '', imports: [] } });
 
     formService = TestBed.inject(MeetingComposerFormService);
     formService.initialize({ mode: 'create', projectUid: 'project-1' });
 
-    fixture = TestBed.createComponent(ComposerAgendaResourcesComponent);
+    fixture = TestBed.createComponent(ComposerAgendaFieldComponent);
     fixture.componentRef.setInput('form', formService.form());
     component = fixture.componentInstance;
     await fixture.whenStable();
@@ -97,24 +97,5 @@ describe('ComposerAgendaResourcesComponent — AI helper guard', () => {
 
     expect(formService.form().get('aiPrompt')?.errors).toBeNull();
     expect(formService.form().get('aiPrompt')?.valid).toBe(true);
-  });
-
-  it('counts the prompt characters for the cap indicator', () => {
-    formService.form().get('aiPrompt')?.setValue('Plan the Q3 release');
-
-    expect(component['aiPromptLength']()).toBe('Plan the Q3 release'.length);
-  });
-
-  it('escalates the prompt counter colour toward the cap', () => {
-    const prompt = formService.form().get('aiPrompt');
-
-    prompt?.setValue('x'.repeat(10));
-    expect(component['aiPromptCounterClass']()).toBe('text-gray-500');
-
-    prompt?.setValue('x'.repeat(MEETING_AGENDA_PROMPT_WARNING_LENGTH));
-    expect(component['aiPromptCounterClass']()).toBe('text-amber-600');
-
-    prompt?.setValue('x'.repeat(MEETING_AGENDA_PROMPT_MAX_LENGTH));
-    expect(component['aiPromptCounterClass']()).toBe('text-red-600');
   });
 });

@@ -1,0 +1,100 @@
+<!-- Copyright The Linux Foundation and each contributor to LFX. -->
+<!-- SPDX-License-Identifier: MIT -->
+
+<div class="flex flex-col gap-1.5">
+  <div class="flex items-center justify-between gap-3">
+    <label [for]="inputId()" class="text-sm font-medium text-gray-900">Agenda</label>
+    <div class="flex items-center gap-2">
+      <lfx-button
+        label="Templates"
+        icon="fa-light fa-list"
+        size="small"
+        [text]="true"
+        [ariaPressed]="showTemplates()"
+        (onClick)="onToggleTemplates($event, templatesPopover)"
+        [attr.data-testid]="inputId() + '-templates-toggle'" />
+      <lfx-button
+        label="Help me write"
+        icon="fa-light fa-wand-magic-sparkles"
+        size="small"
+        [text]="true"
+        [ariaPressed]="showAiHelper()"
+        (onClick)="aiPopover.toggle($event)"
+        [attr.data-testid]="inputId() + '-ai-toggle'" />
+    </div>
+  </div>
+
+  <!-- Both header actions open popovers anchored to their button, per the design. `p-popover` is used
+       raw because the design system has no wrapper for it yet. `composer-popover` drops the theme's
+       arrow — the design draws these as plain panels hanging off the button, and the arrow points at
+       the panel's own left edge rather than the button whenever the panel right-aligns to fit. -->
+  <p-popover
+    #templatesPopover
+    appendTo="body"
+    styleClass="composer-popover w-[26rem] max-w-[calc(100vw-2rem)]"
+    (onShow)="showTemplates.set(true)"
+    (onHide)="showTemplates.set(false)">
+    @if (meetingType(); as type) {
+      <lfx-agenda-template-selector [meetingType]="type" (templateSelected)="onApplyTemplate($event, templatesPopover)" />
+    }
+  </p-popover>
+
+  <p-popover
+    #aiPopover
+    appendTo="body"
+    styleClass="composer-popover w-[26rem] max-w-[calc(100vw-2rem)]"
+    (onShow)="showAiHelper.set(true)"
+    (onHide)="onAiHelperHide()">
+    <div class="flex flex-col gap-3" [attr.data-testid]="inputId() + '-ai-panel'">
+      <div class="flex items-start gap-2.5">
+        <span class="flex h-7 w-7 shrink-0 items-center justify-center rounded-full bg-blue-600 text-xs text-white" aria-hidden="true">
+          <i class="fa-light fa-lightbulb"></i>
+        </span>
+        <div class="flex flex-col gap-0.5">
+          <h3 class="text-sm font-semibold text-gray-900">AI agenda generator</h3>
+          <p class="text-xs text-gray-500">Tell me the goal and I'll draft a structured agenda.</p>
+        </div>
+      </div>
+
+      <lfx-textarea
+        [form]="form()"
+        control="aiPrompt"
+        [id]="inputId() + '-ai-prompt'"
+        placeholder="e.g. Review Q3 roadmap progress and agree on the release date"
+        styleClass="w-full"
+        [rows]="3"
+        [maxlength]="promptMaxLength"
+        [attr.data-testid]="inputId() + '-ai-prompt'" />
+
+      <div class="flex items-center justify-end gap-2">
+        <lfx-button label="Cancel" size="small" severity="secondary" [text]="true" (onClick)="aiPopover.hide()" [attr.data-testid]="inputId() + '-ai-cancel'" />
+        <lfx-button
+          [label]="isGeneratingAgenda() ? 'Generating…' : 'Generate agenda'"
+          size="small"
+          severity="info"
+          [loading]="isGeneratingAgenda()"
+          [disabled]="isGeneratingAgenda()"
+          (onClick)="onGenerateAgenda(aiPopover)"
+          [attr.data-testid]="inputId() + '-ai-generate'" />
+      </div>
+    </div>
+  </p-popover>
+
+  <lfx-textarea
+    [form]="form()"
+    control="description"
+    [id]="inputId()"
+    placeholder="Enter meeting agenda and key discussion points"
+    [styleClass]="textareaClass()"
+    [rows]="rows()"
+    [maxlength]="agendaMaxLength"
+    [ariaDescribedBy]="hint() ? inputId() + '-hint' : undefined"
+    [attr.data-testid]="inputId() + '-textarea'" />
+
+  <div class="flex items-center justify-between gap-2">
+    @if (hint(); as agendaHint) {
+      <p [id]="inputId() + '-hint'" class="text-xs text-gray-500" [attr.data-testid]="inputId() + '-hint'">{{ agendaHint }}</p>
+    }
+    <p class="ml-auto text-xs" [ngClass]="agendaCounterClass()">{{ agendaLength() }}/{{ agendaMaxLength }}</p>
+  </div>
+</div>
