@@ -4,19 +4,19 @@
 import { ComponentFixture, TestBed } from '@angular/core/testing';
 import { provideNoopAnimations } from '@angular/platform-browser/animations';
 import { MENTORSHIP_MENTEE_NOTE_MAX } from '@lfx-one/shared/constants';
-import { MentorshipMenteeNoteDialogData } from '@lfx-one/shared/interfaces';
+import { MentorshipNoteDialogData } from '@lfx-one/shared/interfaces';
 import { DynamicDialogConfig, DynamicDialogRef } from 'primeng/dynamicdialog';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 
 import { MenteeNoteDialogComponent } from './mentee-note-dialog.component';
 
 describe('MenteeNoteDialogComponent', () => {
-  const data: MentorshipMenteeNoteDialogData = { menteeId: 'mnt_1', menteeName: 'Alex Rivera', note: 'the existing note' };
+  const data: MentorshipNoteDialogData = { personName: 'Alex Rivera', note: 'the existing note' };
 
   let fixture: ComponentFixture<MenteeNoteDialogComponent>;
   let close: ReturnType<typeof vi.fn>;
 
-  const build = (overrides: Partial<MentorshipMenteeNoteDialogData> = {}): void => {
+  const build = (overrides: Partial<MentorshipNoteDialogData> = {}): void => {
     close = vi.fn();
 
     TestBed.resetTestingModule();

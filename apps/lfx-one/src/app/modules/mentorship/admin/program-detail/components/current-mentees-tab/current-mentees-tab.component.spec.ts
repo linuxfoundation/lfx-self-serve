@@ -58,6 +58,33 @@ describe('CurrentMenteesTabComponent', () => {
     expect(fixture.componentInstance['statusOptions'].map((option) => option.label)).toEqual(['All statuses', 'Accepted', 'Graduated']);
   });
 
+  it('narrows the rows to the chosen status, and back again when cleared', () => {
+    const component = fixture.componentInstance;
+
+    component['form'].controls.status.setValue('graduated');
+    fixture.detectChanges();
+    expect(component['rows']().map((row) => row.id)).toEqual(['mnt_2']);
+
+    component['form'].controls.status.setValue('accepted');
+    fixture.detectChanges();
+    expect(component['rows']().map((row) => row.id)).toEqual(['mnt_1']);
+
+    component['form'].controls.status.reset(null);
+    fixture.detectChanges();
+    expect(component['rows']().map((row) => row.id)).toEqual(['mnt_1', 'mnt_2']);
+  });
+
+  it('returns to the first page when a filter narrows the list', () => {
+    const component = fixture.componentInstance;
+    component['first'].set(10);
+
+    component['form'].controls.search.setValue('Priya');
+    fixture.detectChanges();
+
+    // Otherwise the table stays on an offset the filtered list no longer reaches.
+    expect(component['first']()).toBe(0);
+  });
+
   it('asks the parent to open the note rather than owning the dialog itself', () => {
     const requests: MentorshipNoteRequest[] = [];
     fixture.componentInstance.noteRequested.subscribe((request) => requests.push(request));

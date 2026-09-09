@@ -223,10 +223,14 @@ export interface MentorshipProgramMentee extends MentorshipProgramPersonBase, Me
   note?: string;
 }
 
-/** Payload for the Current Mentees reviewer-note dialog. */
-export interface MentorshipMenteeNoteDialogData {
-  menteeId: string;
-  menteeName: string;
+/**
+ * Payload for the reviewer-note dialog, which serves any program-detail person row —
+ * Current Mentees and Applicants both open it. Carries no id: the parent opens the
+ * dialog and already holds the person it asked about, so echoing an id back would only
+ * offer a second, divergent source for the same fact.
+ */
+export interface MentorshipNoteDialogData {
+  personName: string;
   note: string;
 }
 
@@ -266,6 +270,23 @@ export interface MentorshipApplicantOtherApplication extends MentorshipApplicati
 export interface MentorshipNoteRequest {
   personId: string;
   personName: string;
+}
+
+/**
+ * One entry in a program-detail row's action menu, already resolved to what the menu
+ * renders. The tabs' action unions differ, so they map their own labels and icons and
+ * hand over this shape rather than the status the action came from.
+ */
+export interface MentorshipRowAction {
+  label: string;
+  icon: string;
+}
+
+/** Display fields for a row's reviewer-note line, resolved from the session's drafts. */
+export interface MentorshipNoteDisplay {
+  hasNote: boolean;
+  /** The note itself when there is one, otherwise the "Add note" prompt. */
+  noteLabel: string;
 }
 
 /** Applicant row on the Applicants tab — a mentee row plus its application metadata. */

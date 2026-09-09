@@ -1,7 +1,7 @@
 // Copyright The Linux Foundation and each contributor to LFX.
 // SPDX-License-Identifier: MIT
 
-import { ChangeDetectionStrategy, Component, computed, inject, input } from '@angular/core';
+import { ChangeDetectionStrategy, Component, computed, inject, input, signal } from '@angular/core';
 import { toSignal } from '@angular/core/rxjs-interop';
 import { FormControl, FormGroup, ReactiveFormsModule } from '@angular/forms';
 import { ButtonComponent } from '@components/button/button.component';
@@ -19,7 +19,7 @@ import {
 } from '@lfx-one/shared/constants';
 import { FilterOption, MentorshipMenteeStatus, MentorshipProgramMentee } from '@lfx-one/shared/interfaces';
 import { matchesMentorshipPersonSearch, mentorshipPersonAvatarClass, mentorshipPersonInitials, mentorshipTermFilterOptions } from '@lfx-one/shared/utils';
-import { startWith } from 'rxjs';
+import { startWith, tap } from 'rxjs';
 
 import { MentorshipComingSoonService } from '../../services/mentorship-coming-soon.service';
 import { PersonCellComponent } from '../person-cell/person-cell.component';
@@ -56,9 +56,20 @@ export class PastMenteesTabComponent {
     term: new FormControl<string | null>(null),
   });
 
-  private readonly filters = toSignal(this.form.valueChanges.pipe(startWith(this.form.getRawValue())), {
-    initialValue: this.form.getRawValue(),
-  });
+  /**
+   * Paginator offset. Tracked so that narrowing the list can send the table back to the
+   * first page — PrimeNG keeps its own offset when the value array shrinks underneath it,
+   * which would otherwise leave the admin on a page that no longer exists.
+   */
+  protected readonly first = signal(0);
+
+  private readonly filters = toSignal(
+    this.form.valueChanges.pipe(
+      tap(() => this.first.set(0)),
+      startWith(this.form.getRawValue())
+    ),
+    { initialValue: this.form.getRawValue() }
+  );
 
   protected readonly termOptions = this.initTermOptions();
 

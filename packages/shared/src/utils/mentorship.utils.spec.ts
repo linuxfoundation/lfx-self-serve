@@ -4,6 +4,7 @@
 import { describe, expect, it } from 'vitest';
 
 import { createDefaultMentorshipTerm, createEmptyMentorshipEnrollForm } from '../constants/mentorship-enroll.constants';
+import { MENTORSHIP_PROGRAM_AVATAR_PALETTE } from '../constants/mentorship.constants';
 import type { MentorshipProgramMentee } from '../interfaces/mentorship.interface';
 import {
   buildMentorshipProgramDetail,
@@ -29,8 +30,11 @@ import {
   mentorshipMenteeActionsFor,
   mentorshipMenteesForProgram,
   mentorshipMonthYearToStartDate,
+  mentorshipNoteDisplay,
+  mentorshipPersonAvatarClass,
   mentorshipPersonInitials,
   mentorshipProgramSlug,
+  mentorshipRowActions,
   parseMentorshipDateOnly,
   parseMentorshipMonthYear,
   toMentorshipDateOnly,
@@ -432,6 +436,48 @@ describe('program detail helpers', () => {
     // decline appears. `pending` is an applicant either way.
     expect(mentorshipMenteesForProgram(mentees, true).map((person) => person.id)).toEqual(['3', '4']);
     expect(mentorshipMenteesForProgram([], false)).toEqual([]);
+  });
+
+  it('tints an avatar deterministically, and survives an empty name', () => {
+    // The guard matters: without it an empty name indexes the palette by NaN and the
+    // avatar renders with an undefined class.
+    expect(mentorshipPersonAvatarClass('')).toBe(MENTORSHIP_PROGRAM_AVATAR_PALETTE[0]);
+
+    expect(MENTORSHIP_PROGRAM_AVATAR_PALETTE).toContain(mentorshipPersonAvatarClass('Alex Rivera'));
+    expect(MENTORSHIP_PROGRAM_AVATAR_PALETTE).toContain(mentorshipPersonAvatarClass('Ifeoma Adeyemi'));
+
+    // Same person, same colour on every tab that renders them.
+    expect(mentorshipPersonAvatarClass('Alex Rivera')).toBe(mentorshipPersonAvatarClass('Alex Rivera'));
+  });
+
+  it('resolves a row note, preferring this session draft over the stored one', () => {
+    const addLabel = 'Add note';
+
+    expect(mentorshipNoteDisplay({}, { id: 'mnt_1' }, addLabel)).toEqual({ hasNote: false, noteLabel: addLabel });
+    expect(mentorshipNoteDisplay({}, { id: 'mnt_1', note: 'from the server' }, addLabel)).toEqual({ hasNote: true, noteLabel: 'from the server' });
+    expect(mentorshipNoteDisplay({ mnt_1: 'edited here' }, { id: 'mnt_1', note: 'from the server' }, addLabel)).toEqual({
+      hasNote: true,
+      noteLabel: 'edited here',
+    });
+    // An explicit clear is a draft too, so it must beat the stored note.
+    expect(mentorshipNoteDisplay({ mnt_1: '' }, { id: 'mnt_1', note: 'from the server' }, addLabel)).toEqual({ hasNote: false, noteLabel: addLabel });
+    // Whitespace is not a note.
+    expect(mentorshipNoteDisplay({ mnt_1: '   ' }, { id: 'mnt_1' }, addLabel)).toEqual({ hasNote: false, noteLabel: addLabel });
+    // A neighbour's draft never leaks into this row.
+    expect(mentorshipNoteDisplay({ mnt_2: 'theirs' }, { id: 'mnt_1' }, addLabel)).toEqual({ hasNote: false, noteLabel: addLabel });
+  });
+
+  it('resolves row actions against the caller label and icon maps', () => {
+    const labels = { accepted: 'Accept', declined: 'Decline' };
+    const icons = { accepted: 'fa-check', declined: 'fa-xmark' };
+
+    expect(mentorshipRowActions(['accepted', 'declined'], labels, icons)).toEqual([
+      { label: 'Accept', icon: 'fa-check' },
+      { label: 'Decline', icon: 'fa-xmark' },
+    ]);
+    // Order follows the caller's list, and an empty list means the row shows no menu.
+    expect(mentorshipRowActions(['declined'], labels, icons)).toEqual([{ label: 'Decline', icon: 'fa-xmark' }]);
+    expect(mentorshipRowActions([], labels, icons)).toEqual([]);
   });
 
   it('matches people by name or email, but not by term', () => {

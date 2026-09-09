@@ -1,13 +1,12 @@
 // Copyright The Linux Foundation and each contributor to LFX.
 // SPDX-License-Identifier: MIT
 
-import { ChangeDetectionStrategy, Component, computed, inject, input, output } from '@angular/core';
+import { ChangeDetectionStrategy, Component, computed, inject, input, output, signal } from '@angular/core';
 import { toSignal } from '@angular/core/rxjs-interop';
 import { FormControl, FormGroup, ReactiveFormsModule } from '@angular/forms';
 import { RouterLink } from '@angular/router';
 import { ButtonComponent } from '@components/button/button.component';
 import { InputTextComponent } from '@components/input-text/input-text.component';
-import { MenuComponent } from '@components/menu/menu.component';
 import { SelectComponent } from '@components/select/select.component';
 import { TableComponent } from '@components/table/table.component';
 import {
@@ -30,15 +29,17 @@ import {
   matchesMentorshipPersonSearch,
   mentorshipApplicantActionsFor,
   mentorshipApplicantDisplayStatus,
+  mentorshipNoteDisplay,
   mentorshipPersonAvatarClass,
   mentorshipPersonInitials,
+  mentorshipRowActions,
   mentorshipTermFilterOptions,
 } from '@lfx-one/shared/utils';
-import { MenuItem } from 'primeng/api';
-import { startWith } from 'rxjs';
+import { startWith, tap } from 'rxjs';
 
 import { MentorshipComingSoonService } from '../../services/mentorship-coming-soon.service';
 import { PersonCellComponent } from '../person-cell/person-cell.component';
+import { RowActionsComponent } from '../row-actions/row-actions.component';
 
 /**
  * Applicants tab — one row per application, filtered by search, display status, and term.
@@ -48,7 +49,7 @@ import { PersonCellComponent } from '../person-cell/person-cell.component';
  */
 @Component({
   selector: 'lfx-mentorship-applicants-tab',
-  imports: [ReactiveFormsModule, RouterLink, ButtonComponent, InputTextComponent, MenuComponent, PersonCellComponent, SelectComponent, TableComponent],
+  imports: [ReactiveFormsModule, RouterLink, ButtonComponent, InputTextComponent, PersonCellComponent, RowActionsComponent, SelectComponent, TableComponent],
   templateUrl: './applicants-tab.component.html',
   changeDetection: ChangeDetectionStrategy.OnPush,
 })
@@ -76,9 +77,20 @@ export class ApplicantsTabComponent {
     term: new FormControl<string | null>(null),
   });
 
-  private readonly filters = toSignal(this.form.valueChanges.pipe(startWith(this.form.getRawValue())), {
-    initialValue: this.form.getRawValue(),
-  });
+  /**
+   * Paginator offset. Tracked so that narrowing the list can send the table back to the
+   * first page — PrimeNG keeps its own offset when the value array shrinks underneath it,
+   * which would otherwise leave the admin on a page that no longer exists.
+   */
+  protected readonly first = signal(0);
+
+  private readonly filters = toSignal(
+    this.form.valueChanges.pipe(
+      tap(() => this.first.set(0)),
+      startWith(this.form.getRawValue())
+    ),
+    { initialValue: this.form.getRawValue() }
+  );
 
   protected readonly termOptions = this.initTermOptions();
 
@@ -107,17 +119,8 @@ export class ApplicantsTabComponent {
     });
   }
 
-  private menuItemsFor(person: MentorshipProgramApplicant): MenuItem[] {
-    return mentorshipApplicantActionsFor(person.status).map((action) => ({
-      label: MENTORSHIP_APPLICANT_ACTION_LABELS[action],
-      icon: MENTORSHIP_APPLICANT_ACTION_ICONS[action],
-      command: () => this.comingSoon.notify(`${MENTORSHIP_APPLICANT_ACTION_LABELS[action]} ${person.name}`),
-    }));
-  }
-
   private toRow(person: MentorshipProgramApplicant) {
     const displayStatus = mentorshipApplicantDisplayStatus(person);
-    const note = (this.noteDrafts()[person.id] ?? person.note ?? '').trim();
     return {
       ...person,
       initials: mentorshipPersonInitials(person.name),
@@ -133,9 +136,8 @@ export class ApplicantsTabComponent {
           ...application,
           statusLabel: MENTORSHIP_APPLICANT_STATUS_LABELS[mentorshipApplicantDisplayStatus(application)],
         })),
-      hasNote: note.length > 0,
-      noteLabel: note.length > 0 ? note : MENTORSHIP_ADD_NOTE_LABEL,
-      menuItems: this.menuItemsFor(person),
+      ...mentorshipNoteDisplay(this.noteDrafts(), person, MENTORSHIP_ADD_NOTE_LABEL),
+      actions: mentorshipRowActions(mentorshipApplicantActionsFor(person.status), MENTORSHIP_APPLICANT_ACTION_LABELS, MENTORSHIP_APPLICANT_ACTION_ICONS),
     };
   }
 }

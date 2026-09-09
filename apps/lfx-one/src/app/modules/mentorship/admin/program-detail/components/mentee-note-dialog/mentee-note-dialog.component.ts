@@ -7,13 +7,13 @@ import { FormControl, FormGroup, ReactiveFormsModule, Validators } from '@angula
 import { ButtonComponent } from '@components/button/button.component';
 import { TextareaComponent } from '@components/textarea/textarea.component';
 import { MENTORSHIP_MENTEE_NOTE_MAX, MENTORSHIP_MENTEE_NOTE_PLACEHOLDER, MENTORSHIP_MENTEE_NOTE_VISIBILITY } from '@lfx-one/shared/constants';
-import { MentorshipMenteeNoteDialogData } from '@lfx-one/shared/interfaces';
+import { MentorshipNoteDialogData } from '@lfx-one/shared/interfaces';
 import { DynamicDialogConfig, DynamicDialogRef } from 'primeng/dynamicdialog';
 
 /**
- * Reviewer-note dialog for a Current Mentees row. Closes with the trimmed note so
- * the caller can store it — an empty string clears the note, `undefined` (dismissed)
- * leaves it untouched.
+ * Reviewer-note dialog for a program-detail person row — both the Current Mentees and
+ * Applicants tabs open it. Closes with the trimmed note so the caller can store it: an
+ * empty string clears the note, `undefined` (dismissed) leaves it untouched.
  */
 @Component({
   selector: 'lfx-mentorship-mentee-note-dialog',
@@ -23,9 +23,9 @@ import { DynamicDialogConfig, DynamicDialogRef } from 'primeng/dynamicdialog';
 })
 export class MenteeNoteDialogComponent {
   private readonly dialogRef = inject(DynamicDialogRef);
-  private readonly dialogConfig = inject<DynamicDialogConfig<MentorshipMenteeNoteDialogData>>(DynamicDialogConfig);
+  private readonly dialogConfig = inject<DynamicDialogConfig<MentorshipNoteDialogData>>(DynamicDialogConfig);
 
-  protected readonly data: MentorshipMenteeNoteDialogData = this.dialogConfig.data ?? { menteeId: '', menteeName: '', note: '' };
+  protected readonly data: MentorshipNoteDialogData = this.dialogConfig.data ?? { personName: '', note: '' };
   protected readonly noteMax = MENTORSHIP_MENTEE_NOTE_MAX;
   protected readonly notePlaceholder = MENTORSHIP_MENTEE_NOTE_PLACEHOLDER;
   protected readonly noteVisibility = MENTORSHIP_MENTEE_NOTE_VISIBILITY;

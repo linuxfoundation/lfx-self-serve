@@ -1,12 +1,11 @@
 // Copyright The Linux Foundation and each contributor to LFX.
 // SPDX-License-Identifier: MIT
 
-import { ChangeDetectionStrategy, Component, computed, inject, input, output } from '@angular/core';
+import { ChangeDetectionStrategy, Component, computed, inject, input, output, signal } from '@angular/core';
 import { toSignal } from '@angular/core/rxjs-interop';
 import { FormControl, FormGroup, ReactiveFormsModule } from '@angular/forms';
 import { ButtonComponent } from '@components/button/button.component';
 import { InputTextComponent } from '@components/input-text/input-text.component';
-import { MenuComponent } from '@components/menu/menu.component';
 import { SelectComponent } from '@components/select/select.component';
 import { TableComponent } from '@components/table/table.component';
 import {
@@ -25,14 +24,16 @@ import {
   formatMentorshipTaskProgress,
   matchesMentorshipPersonSearch,
   mentorshipMenteeActionsFor,
+  mentorshipNoteDisplay,
   mentorshipPersonAvatarClass,
   mentorshipPersonInitials,
+  mentorshipRowActions,
 } from '@lfx-one/shared/utils';
-import { MenuItem } from 'primeng/api';
-import { startWith } from 'rxjs';
+import { startWith, tap } from 'rxjs';
 
 import { MentorshipComingSoonService } from '../../services/mentorship-coming-soon.service';
 import { PersonCellComponent } from '../person-cell/person-cell.component';
+import { RowActionsComponent } from '../row-actions/row-actions.component';
 
 /**
  * Current mentees tab — task progress plus the reviewer note. Lists only the enrolled
@@ -44,7 +45,7 @@ import { PersonCellComponent } from '../person-cell/person-cell.component';
  */
 @Component({
   selector: 'lfx-mentorship-current-mentees-tab',
-  imports: [ReactiveFormsModule, ButtonComponent, InputTextComponent, MenuComponent, PersonCellComponent, SelectComponent, TableComponent],
+  imports: [ReactiveFormsModule, ButtonComponent, InputTextComponent, PersonCellComponent, RowActionsComponent, SelectComponent, TableComponent],
   templateUrl: './current-mentees-tab.component.html',
   changeDetection: ChangeDetectionStrategy.OnPush,
 })
@@ -70,9 +71,20 @@ export class CurrentMenteesTabComponent {
     status: new FormControl<MentorshipMenteeStatus | null>(null),
   });
 
-  private readonly filters = toSignal(this.form.valueChanges.pipe(startWith(this.form.getRawValue())), {
-    initialValue: this.form.getRawValue(),
-  });
+  /**
+   * Paginator offset. Tracked so that narrowing the list can send the table back to the
+   * first page — PrimeNG keeps its own offset when the value array shrinks underneath it,
+   * which would otherwise leave the admin on a page that no longer exists.
+   */
+  protected readonly first = signal(0);
+
+  private readonly filters = toSignal(
+    this.form.valueChanges.pipe(
+      tap(() => this.first.set(0)),
+      startWith(this.form.getRawValue())
+    ),
+    { initialValue: this.form.getRawValue() }
+  );
 
   protected readonly rows = this.initRows();
 
@@ -94,16 +106,7 @@ export class CurrentMenteesTabComponent {
     });
   }
 
-  private menuItemsFor(person: MentorshipProgramMentee): MenuItem[] {
-    return mentorshipMenteeActionsFor(person.status).map((action) => ({
-      label: MENTORSHIP_MENTEE_ACTION_LABELS[action],
-      icon: MENTORSHIP_MENTEE_ACTION_ICONS[action],
-      command: () => this.comingSoon.notify(`${MENTORSHIP_MENTEE_ACTION_LABELS[action]} ${person.name}`),
-    }));
-  }
-
   private toRow(person: MentorshipProgramMentee) {
-    const note = (this.noteDrafts()[person.id] ?? person.note ?? '').trim();
     return {
       ...person,
       initials: mentorshipPersonInitials(person.name),
@@ -111,9 +114,8 @@ export class CurrentMenteesTabComponent {
       statusLabel: MENTORSHIP_MENTEE_STATUS_LABELS[person.status],
       statusBadgeClass: MENTORSHIP_MENTEE_STATUS_BADGE_CLASSES[person.status],
       taskLabel: formatMentorshipTaskProgress(person.tasksSubmitted, person.tasksTotal),
-      hasNote: note.length > 0,
-      noteLabel: note.length > 0 ? note : MENTORSHIP_ADD_NOTE_LABEL,
-      menuItems: this.menuItemsFor(person),
+      ...mentorshipNoteDisplay(this.noteDrafts(), person, MENTORSHIP_ADD_NOTE_LABEL),
+      actions: mentorshipRowActions(mentorshipMenteeActionsFor(person.status), MENTORSHIP_MENTEE_ACTION_LABELS, MENTORSHIP_MENTEE_ACTION_ICONS),
     };
   }
 }

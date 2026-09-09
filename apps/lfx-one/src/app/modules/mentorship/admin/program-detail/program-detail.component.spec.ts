@@ -12,6 +12,7 @@ import { DialogService } from 'primeng/dynamicdialog';
 import { Observable, of } from 'rxjs';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 
+import { MenteeNoteDialogComponent } from './components/mentee-note-dialog/mentee-note-dialog.component';
 import { ProgramDetailComponent } from './program-detail.component';
 
 describe('ProgramDetailComponent', () => {
@@ -49,7 +50,7 @@ describe('ProgramDetailComponent', () => {
 
   // Takes the observable rather than the value: a dismissed dialog closes with `undefined`,
   // and passing that through a defaulted parameter would silently restore the default.
-  const buildWith = (onClose: Observable<string | undefined>): void => {
+  const buildWith = (onClose: Observable<string | undefined>, program: MentorshipProgramDetail = detail()): void => {
     dialogOpen = vi.fn(() => ({ onClose }));
 
     TestBed.resetTestingModule();
@@ -64,7 +65,7 @@ describe('ProgramDetailComponent', () => {
           provide: MentorshipService,
           // The Mentors tab loads its invite picker on construction, and the persistence
           // test renders that tab to prove notes survive one being destroyed.
-          useValue: { getProgram: () => of(detail()), getInvitableUsers: () => of(EMPTY_MENTORSHIP_INVITABLE_USERS_RESPONSE) },
+          useValue: { getProgram: () => of(program), getInvitableUsers: () => of(EMPTY_MENTORSHIP_INVITABLE_USERS_RESPONSE) },
         },
         { provide: ActivatedRoute, useValue: { paramMap: of(new Map([['programId', 'mp_gridflow_fall26']]) as never) } },
       ],
@@ -119,5 +120,79 @@ describe('ProgramDetailComponent', () => {
 
     expect(fixture.componentInstance['noteDrafts']()).toEqual({});
     expect(element().querySelector('[data-testid="mentorship-mentee-note-mnt_1"]')?.textContent?.trim()).toBe('Add note');
+  });
+
+  it('swaps the mentees tab for past mentees once the program is completed', () => {
+    const completed = detail('completed');
+    completed.mentees = [{ id: 'mnt_1', name: 'Alex Rivera', email: 'alex.rivera@example.com', status: 'withdrawn', termName: 'Fall 2026' }];
+    buildWith(of('a saved note'), completed);
+
+    expect(element().querySelector('[data-testid="mentorship-past-mentees-tab"]')).not.toBeNull();
+    expect(element().querySelector('[data-testid="mentorship-current-mentees-tab"]')).toBeNull();
+    // Past mentees are history, so none of the live tab's write affordances come with them.
+    expect(element().querySelector('[data-testid="mentorship-mentee-note-mnt_1"]')).toBeNull();
+    expect(element().querySelector('[data-testid="mentorship-mentee-actions-mnt_1"]')).toBeNull();
+  });
+
+  it('renders the live mentees tab while the program is open', () => {
+    expect(element().querySelector('[data-testid="mentorship-current-mentees-tab"]')).not.toBeNull();
+    expect(element().querySelector('[data-testid="mentorship-past-mentees-tab"]')).toBeNull();
+  });
+
+  it('seeds the dialog with the row note, then with the draft once one exists', () => {
+    const withNote = detail();
+    withNote.mentees = [
+      { id: 'mnt_1', name: 'Alex Rivera', email: 'alex.rivera@example.com', status: 'accepted', termName: 'Fall 2026', note: 'from the server' },
+    ];
+    buildWith(of('a saved note'), withNote);
+
+    element().querySelector<HTMLButtonElement>('[data-testid="mentorship-mentee-note-mnt_1"]')?.click();
+    fixture.detectChanges();
+
+    expect(dialogOpen).toHaveBeenLastCalledWith(
+      MenteeNoteDialogComponent,
+      expect.objectContaining({ data: { personName: 'Alex Rivera', note: 'from the server' } })
+    );
+
+    // Reopening the same row must offer the draft, not the note it started with.
+    element().querySelector<HTMLButtonElement>('[data-testid="mentorship-mentee-note-mnt_1"]')?.click();
+    fixture.detectChanges();
+
+    expect(dialogOpen).toHaveBeenLastCalledWith(
+      MenteeNoteDialogComponent,
+      expect.objectContaining({ data: { personName: 'Alex Rivera', note: 'a saved note' } })
+    );
+  });
+
+  it('survives the dialog service declining to open a second dialog', () => {
+    // PrimeNG returns null when a dialog of the same component is still registered,
+    // which a quick second click on another row can do.
+    dialogOpen = vi.fn(() => null);
+
+    TestBed.resetTestingModule();
+    TestBed.configureTestingModule({
+      imports: [ProgramDetailComponent],
+      providers: [
+        provideNoopAnimations(),
+        provideRouter([]),
+        MessageService,
+        { provide: DialogService, useValue: { open: dialogOpen } },
+        {
+          provide: MentorshipService,
+          useValue: { getProgram: () => of(detail()), getInvitableUsers: () => of(EMPTY_MENTORSHIP_INVITABLE_USERS_RESPONSE) },
+        },
+        { provide: ActivatedRoute, useValue: { paramMap: of(new Map([['programId', 'mp_gridflow_fall26']]) as never) } },
+      ],
+    });
+
+    fixture = TestBed.createComponent(ProgramDetailComponent);
+    fixture.detectChanges();
+
+    expect(() => {
+      element().querySelector<HTMLButtonElement>('[data-testid="mentorship-mentee-note-mnt_1"]')?.click();
+      fixture.detectChanges();
+    }).not.toThrow();
+
+    expect(fixture.componentInstance['noteDrafts']()).toEqual({});
   });
 });

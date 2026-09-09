@@ -91,7 +91,7 @@ export class ProgramDetailComponent {
       modal: true,
       closable: true,
       dismissableMask: true,
-      data: { menteeId: request.personId, menteeName: request.personName, note: this.noteFor(request.personId) },
+      data: { personName: request.personName, note: this.noteFor(request.personId) },
     });
     if (!dialogRef) return;
 

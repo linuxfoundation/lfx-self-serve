@@ -33,6 +33,7 @@ import type {
   MentorshipEnrollStep,
   MentorshipMenteeAction,
   MentorshipMenteeStatus,
+  MentorshipNoteDisplay,
   MentorshipProgram,
   MentorshipProgramDetail,
   MentorshipProgramLists,
@@ -41,6 +42,7 @@ import type {
   MentorshipProgramTabCounts,
   MentorshipProgramTerm,
   MentorshipProgramTermRow,
+  MentorshipRowAction,
   MentorshipTermDateErrors,
 } from '../interfaces/mentorship.interface';
 import { formatIsoDateLabel, monthYearToIsoDate } from './date-time.utils';
@@ -449,6 +451,25 @@ export function mentorshipOpenTermCount(terms: ReadonlyArray<Pick<MentorshipProg
 
 export function mentorshipTermHasApplications(term: Pick<MentorshipProgramTermRow, 'pending' | 'declined' | 'accepted' | 'graduated'>): boolean {
   return term.pending + term.declined + term.accepted + term.graduated > 0;
+}
+
+/**
+ * Resolves a row's action statuses into what its menu renders. Each tab has its own
+ * action union and its own label and icon maps, so this takes them as arguments rather
+ * than choosing; the shape it returns is what `lfx-mentorship-row-actions` consumes.
+ */
+export function mentorshipRowActions<T extends string>(actions: readonly T[], labels: Record<T, string>, icons: Record<T, string>): MentorshipRowAction[] {
+  return actions.map((action) => ({ label: labels[action], icon: icons[action] }));
+}
+
+/**
+ * The reviewer-note line for a row. A draft edited this session wins over the note the
+ * row arrived with, whitespace alone counts as no note, and an absent note falls back
+ * to the "Add note" prompt. Shared so the tabs cannot disagree on what a note is.
+ */
+export function mentorshipNoteDisplay(drafts: Record<string, string>, person: { id: string; note?: string }, addLabel: string): MentorshipNoteDisplay {
+  const note = (drafts[person.id] ?? person.note ?? '').trim();
+  return { hasNote: note.length > 0, noteLabel: note.length > 0 ? note : addLabel };
 }
 
 /**

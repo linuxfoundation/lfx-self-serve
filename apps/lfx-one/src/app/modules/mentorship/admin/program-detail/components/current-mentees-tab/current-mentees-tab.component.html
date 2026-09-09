@@ -43,6 +43,8 @@
       dataKey="id"
       size="small"
       [paginator]="true"
+      [first]="first()"
+      (onPage)="first.set($event.first)"
       [rows]="pageSize"
       [rowsPerPageOptions]="rowsPerPageOptions"
       [showCurrentPageReport]="true"
@@ -106,23 +108,7 @@
               [attr.data-testid]="'mentorship-mentee-create-task-' + row.id" />
           </td>
           <td class="px-4 py-3">
-            <div class="flex items-center justify-end">
-              @if (row.menuItems.length > 0) {
-                <div class="relative inline-block">
-                  <lfx-button
-                    icon="fa-light fa-ellipsis"
-                    severity="secondary"
-                    size="small"
-                    [outlined]="true"
-                    [ariaLabel]="'Actions for ' + row.name"
-                    (onClick)="actionMenu.toggle($event)"
-                    [attr.data-testid]="'mentorship-mentee-actions-' + row.id" />
-                  <lfx-menu #actionMenu [model]="row.menuItems" [popup]="true" appendTo="body" styleClass="!min-w-[10rem]" />
-                </div>
-              } @else {
-                <span class="text-sm text-gray-500">-</span>
-              }
-            </div>
+            <lfx-mentorship-row-actions [personName]="row.name" [actions]="row.actions" [testId]="'mentorship-mentee-actions-' + row.id" />
           </td>
         </tr>
       </ng-template>

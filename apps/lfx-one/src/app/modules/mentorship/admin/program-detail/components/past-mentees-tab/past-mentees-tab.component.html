@@ -56,6 +56,8 @@
       dataKey="id"
       size="small"
       [paginator]="true"
+      [first]="first()"
+      (onPage)="first.set($event.first)"
       [rows]="pageSize"
       [rowsPerPageOptions]="rowsPerPageOptions"
       [showCurrentPageReport]="true"

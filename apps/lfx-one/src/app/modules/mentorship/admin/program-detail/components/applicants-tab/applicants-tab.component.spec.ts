@@ -126,7 +126,7 @@ describe('ApplicantsTabComponent', () => {
     const labelsFor = (id: string): string[] =>
       component['rows']()
         .find((row) => row.id === id)
-        ?.menuItems.map((item) => item.label ?? '') ?? [];
+        ?.actions.map((action) => action.label) ?? [];
 
     expect(labelsFor('app_1')).toEqual(['Accept', 'Decline', 'Withdraw']);
     expect(labelsFor('app_3')).toEqual(['Decline', 'Withdraw']);
