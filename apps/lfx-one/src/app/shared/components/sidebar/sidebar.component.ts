@@ -10,10 +10,11 @@ import { LensTabsComponent } from '@components/lens-tabs/lens-tabs.component';
 import { OrgSelectorComponent } from '@components/org-selector/org-selector.component';
 import { ProjectSelectorComponent } from '@components/project-selector/project-selector.component';
 import { environment } from '@environments/environment';
-import { MY_CLAS_ENABLED_FLAG, ORG_LENS_ENABLED_FLAG, PERSONA_OPTIONS, PERSONA_PRIORITY } from '@lfx-one/shared/constants';
+import { MY_CLAS_ENABLED_FLAG, OPEN_PROFILE_BANNER_LINK_CLICKED, ORG_LENS_ENABLED_FLAG, PERSONA_OPTIONS, PERSONA_PRIORITY } from '@lfx-one/shared/constants';
 import { LensItem, NavLens, PersonaType, ProfileTab, ProjectContext, SidebarMenuItem } from '@lfx-one/shared/interfaces';
 import { buildProfileTabs, lensItemToProjectContext, toTitleCase } from '@lfx-one/shared/utils';
 import { AccountContextService } from '@services/account-context.service';
+import { DataDogRumService } from '@services/datadog-rum.service';
 import { FeatureFlagService } from '@services/feature-flag.service';
 import { LensService } from '@services/lens.service';
 import { NavigationService } from '@services/navigation.service';
@@ -23,6 +24,8 @@ import { UserService } from '@services/user.service';
 import { Popover, PopoverModule } from 'primeng/popover';
 import { SkeletonModule } from 'primeng/skeleton';
 import { TooltipModule } from 'primeng/tooltip';
+
+import { OpenProfileBannerComponent } from './open-profile-banner.component';
 
 const PERSONA_ICONS: Partial<Record<PersonaType, string>> = {
   'executive-director': 'fa-light fa-briefcase',
@@ -40,6 +43,7 @@ const PERSONA_ICONS: Partial<Record<PersonaType, string>> = {
     AvatarComponent,
     BadgeComponent,
     LensTabsComponent,
+    OpenProfileBannerComponent,
     OrgSelectorComponent,
     ProjectSelectorComponent,
     PopoverModule,
@@ -58,6 +62,7 @@ export class SidebarComponent {
   private readonly userService = inject(UserService);
   private readonly accountContextService = inject(AccountContextService);
   private readonly featureFlagService = inject(FeatureFlagService);
+  private readonly rumService = inject(DataDogRumService);
 
   public readonly items = input.required<SidebarMenuItem[]>();
   public readonly footerItems = input<SidebarMenuItem[]>([]);
@@ -183,6 +188,13 @@ export class SidebarComponent {
 
   protected closeProfileMenu(): void {
     this.profileMenu()?.hide();
+  }
+
+  // Tracks clicks on the "Still need Open Profile?" return link (LFXV2-3336) for per-user
+  // analytics. The link is a plain DOM element with no click behavior of its own — support tooling
+  // targets it directly by its stable data-testid.
+  protected trackOpenProfileBannerClick(): void {
+    this.rumService.addAction(OPEN_PROFILE_BANNER_LINK_CLICKED);
   }
 
   protected onItemSelected(item: LensItem): void {
