@@ -146,13 +146,29 @@ describe('OrgEasyclaApprovalEntriesDialogComponent', () => {
       expect(fixture.nativeElement.querySelector('[data-testid="org-easycla-approval-dialog-remove-row-0"]')).toBeNull();
     });
 
+    // The row that reaches the cap is added through the button, so the control that has to
+    // disappear is the one that was actually used. The 98 before it go straight to `addRow`:
+    // clicking each re-rendered a form that grew every pass, which cost quadratic time and timed
+    // the test out. `rows.length` is a getter, not a signal, so those direct calls leave this
+    // OnPush component clean until the click marks it — which is the other reason the last one
+    // has to be a real click.
     it('stops offering more rows at the cap', async () => {
       const fixture = await render(addMode());
+      while (fixture.componentInstance['rows'].length < 99) fixture.componentInstance['addRow']();
 
-      for (let i = 1; i < 100; i++) click(fixture, 'org-easycla-approval-dialog-add-row');
+      click(fixture, 'org-easycla-approval-dialog-add-row');
 
       expect(fixture.componentInstance['rows'].length).toBe(100);
       expect(fixture.nativeElement.querySelector('[data-testid="org-easycla-approval-dialog-add-row"]')).toBeNull();
+    });
+
+    it('refuses a further row once the cap is reached', async () => {
+      const fixture = await render(addMode());
+      while (fixture.componentInstance['rows'].length < 100) fixture.componentInstance['addRow']();
+
+      fixture.componentInstance['addRow']();
+
+      expect(fixture.componentInstance['rows'].length).toBe(100);
     });
   });
 

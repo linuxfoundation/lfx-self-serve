@@ -136,6 +136,34 @@ describe('validateOrgClaApprovalValue', () => {
     it('rejects a url on another host', () => {
       expect(validateOrgClaApprovalValue('gitlab-group', 'https://github.com/example-group')).not.toBeNull();
     });
+
+    // The optional subdomain group was rewritten to remove backtracking, so these pin the language
+    // it accepts: three characters or more, starting and ending on a word character, hyphens and
+    // underscores in between.
+    it('accepts a subdomain in front of gitlab.com', () => {
+      expect(validateOrgClaApprovalValue('gitlab-group', 'https://sub.gitlab.com/example-group')).toBeNull();
+      expect(validateOrgClaApprovalValue('gitlab-group', 'https://my-sub.gitlab.com/example-group')).toBeNull();
+      expect(validateOrgClaApprovalValue('gitlab-group', 'https://a_b.gitlab.com/example-group')).toBeNull();
+    });
+
+    it('rejects a subdomain that is too short or edged with a hyphen', () => {
+      expect(validateOrgClaApprovalValue('gitlab-group', 'https://ab.gitlab.com/example-group')).not.toBeNull();
+      expect(validateOrgClaApprovalValue('gitlab-group', 'https://-ab.gitlab.com/example-group')).not.toBeNull();
+      expect(validateOrgClaApprovalValue('gitlab-group', 'https://ab-.gitlab.com/example-group')).not.toBeNull();
+    });
+
+    // A CLA manager supplies this value, so the cost of rejecting one has to stay flat in its
+    // length. The pattern this was ported from is fine in Go, whose engine does not backtrack;
+    // spelled the same way in JavaScript it took ~25s to reject 4,000 characters. The bound is
+    // deliberately loose — it is here to catch the quadratic shape coming back, not to time it.
+    it('rejects a long non-matching value promptly rather than backtracking over it', () => {
+      const hostile = `a${'0'.repeat(20_000)}!`;
+
+      const startedAt = performance.now();
+      expect(validateOrgClaApprovalValue('gitlab-group', hostile)).not.toBeNull();
+
+      expect(performance.now() - startedAt).toBeLessThan(1000);
+    });
   });
 });
 
