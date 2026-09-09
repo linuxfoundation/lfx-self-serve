@@ -18,7 +18,13 @@ export function orgClaCoverageDialogConfig(group: OrgClaGroup): DynamicDialogCon
   return {
     header: `Projects covered by ${group.claGroupName}`,
     modal: true,
-    width: '28rem',
+    // The approved design gives this dialog 560px, and it needs the room: the header carries a CLA
+    // Group name, and below 36rem a typical one wraps to two lines and takes the subset caveat with
+    // it. 36rem is the nearest width the application already uses, so this asks for no new value.
+    width: '36rem',
+    // The Aura dialog preset caps nothing, so a fixed width alone runs off a 360–390px phone,
+    // taking the list's right edge and the Close control with it.
+    style: { maxWidth: '90vw' },
     data: { claGroupName: group.claGroupName, foundationName: group.foundationName, projects: group.projects },
   };
 }

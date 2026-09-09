@@ -4,7 +4,12 @@
 <h3 class="sr-only" data-testid="org-easycla-coverage-title">Projects covered by {{ claGroupName }}</h3>
 @if (projects.length) {
   <p class="mb-3 text-xs text-gray-500" data-testid="org-easycla-coverage-hint">{{ coverageHint }}</p>
-  <ul class="flex flex-col gap-2" data-testid="org-easycla-coverage-list">
+  <!--
+    The list scrolls inside the dialog rather than growing it, as the design has it. A foundation-wide
+    agreement can name a dozen projects or more, and without this the Close control below is pushed
+    off the bottom on the rows most likely to be opened.
+  -->
+  <ul class="flex max-h-80 flex-col gap-2 overflow-y-auto" data-testid="org-easycla-coverage-list">
     @for (project of projects; track project.projectName) {
       <li class="text-sm text-gray-800" data-testid="org-easycla-coverage-project">{{ project.projectName }}</li>
     }
