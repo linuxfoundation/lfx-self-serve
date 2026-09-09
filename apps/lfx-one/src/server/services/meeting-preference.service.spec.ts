@@ -231,7 +231,14 @@ describe('MeetingPreferenceService', () => {
     // #2269/#2270: once the meeting-service reply carries `type`/`code`, those are authoritative
     // over the message text — even text that would otherwise match a different heuristic above.
     it.each([
-      ['code: email_not_synced overrides an unrelated message', { error: 'boom', code: 'email_not_synced' }, 'sync_pending'],
+      // The real upstream envelope sends `type: 'unavailable'` alongside `code: 'email_not_synced'`
+      // (they share the same domain.ErrorType) — include both so this locks down `code` taking
+      // precedence over `type`, not just "code alone works".
+      [
+        'code: email_not_synced overrides type: unavailable and an unrelated message',
+        { error: 'boom', type: 'unavailable', code: 'email_not_synced' },
+        'sync_pending',
+      ],
       ['type: validation overrides an unrelated message', { error: 'boom', type: 'validation' }, 'validation'],
       // "not yet available" would match the sync_pending fallback by text, but a bare `type` of
       // unavailable (no `code`) is the generic-outage case, not the finer sync-pending one.
