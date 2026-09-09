@@ -1,17 +1,28 @@
 // Copyright The Linux Foundation and each contributor to LFX.
 // SPDX-License-Identifier: MIT
 
+// The service reaches the shared utils barrel for the approval-list sort, and that barrel pulls in
+// Angular-dependent siblings. Without the compiler the suite fails to collect at all.
+import '@angular/compiler';
+
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 
 import type { Request } from 'express';
 
-import type { EasyClaCompanyClaGroup, EasyClaCompanyClaGroupList } from '../types/cla.types';
+import type { EasyClaApprovalItem, EasyClaCompanyClaGroup, EasyClaCompanyClaGroupList, EasyClaCorporateSignature } from '../types/cla.types';
 
-const { gatewayFetch, isImpersonating } = vi.hoisted(() => ({ gatewayFetch: vi.fn(), isImpersonating: vi.fn(() => false) }));
+// `getUsernameFromAuth` is a spy because the approval list's `canEdit` is decided by matching the
+// signed-in username against the agreement's CLA manager roster, so the caller's identity is an
+// input to these tests rather than a fixture.
+const { gatewayFetch, isImpersonating, getUsernameFromAuth } = vi.hoisted(() => ({
+  gatewayFetch: vi.fn(),
+  isImpersonating: vi.fn(() => false),
+  getUsernameFromAuth: vi.fn(async () => 'aporter' as string | null),
+}));
 
 vi.mock('../helpers/gateway-fetch.helper', () => ({ gatewayFetch }));
 vi.mock('../helpers/cla-service-url.helper', () => ({ claServiceBaseUrl: () => 'https://gw.example.org/cla-service' }));
-vi.mock('../utils/auth-helper', () => ({ isImpersonating }));
+vi.mock('../utils/auth-helper', () => ({ isImpersonating, getUsernameFromAuth }));
 vi.mock('./logger.service', () => ({
   logger: { startOperation: vi.fn(() => 0), success: vi.fn(), warning: vi.fn(), error: vi.fn(), debug: vi.fn(), info: vi.fn() },
 }));
@@ -62,6 +73,7 @@ function req(overrides: Partial<Request> = {}): Request {
 beforeEach(() => {
   vi.clearAllMocks();
   isImpersonating.mockReturnValue(false);
+  getUsernameFromAuth.mockResolvedValue('aporter');
 });
 
 describe('OrgClaService.listClaGroups — the upstream call', () => {
@@ -636,5 +648,584 @@ describe('OrgClaService.getPdfUrl — the organization scope gate', () => {
       `https://gw.example.org/cla-service/v4/company/external/${ORG_UID}/cla-groups`,
       expect.objectContaining({ operation: 'org_cla_list_cla_groups' })
     );
+  });
+});
+
+// ---------------------------------------------------------------------------
+// Approval list (#1985)
+// ---------------------------------------------------------------------------
+
+/**
+ * Stages the two upstream calls a read makes, in order: the organization's own agreement list
+ * (which is what binds the signature to the caller's organization), then the CCLA the approval
+ * list lives on.
+ */
+function stageApprovalRead(signature: unknown, entries: EasyClaCompanyClaGroup[] = [upstreamEntry()]): void {
+  gatewayFetch.mockResolvedValueOnce(upstreamList(...entries)).mockResolvedValueOnce({ signatures: signature === null ? [] : [signature] });
+}
+
+/** One read-path approval item: a value plus the date the producer stamped it with. */
+function item(value: string, dateAdded?: string): EasyClaApprovalItem {
+  return { approval_item: value, ...(dateAdded ? { date_added: dateAdded } : {}) };
+}
+
+function corporateSignature(overrides: Partial<EasyClaCorporateSignature> = {}): EasyClaCorporateSignature {
+  return { signatureID: 'signature-uuid-1', claType: 'ccla', signatureSigned: true, signatureApproved: true, ...overrides };
+}
+
+describe('OrgClaService.getApprovalList — the upstream calls', () => {
+  it('addresses the CCLA read by the project and company ids resolved from the list', async () => {
+    stageApprovalRead(corporateSignature());
+
+    await new OrgClaService().getApprovalList(req(), ORG_UID, 'signature-uuid-1');
+
+    expect(gatewayFetch).toHaveBeenNthCalledWith(
+      2,
+      expect.anything(),
+      'https://gw.example.org/cla-service/v4/signatures/project/a09410000182dD3AAI/company/company-uuid-1',
+      expect.objectContaining({ operation: 'org_cla_get_approval_list', service: 'org_cla_service' })
+    );
+  });
+
+  // The response carries `signatureACL` (the managers by name) and the approval list itself, which
+  // is a list of contributors' addresses and domains. The fetch helper logs raw payloads on a
+  // non-OK status, so without redaction a routine 403 writes both into application logs.
+  it('redacts the response body, which is contributor addresses and a manager roster', async () => {
+    stageApprovalRead(corporateSignature());
+
+    await new OrgClaService().getApprovalList(req(), ORG_UID, 'signature-uuid-1');
+
+    expect(gatewayFetch).toHaveBeenNthCalledWith(2, expect.anything(), expect.any(String), expect.objectContaining({ redactResponseBody: true }));
+  });
+
+  it("reads with the target user's token while impersonating", async () => {
+    isImpersonating.mockReturnValue(true);
+    stageApprovalRead(corporateSignature());
+
+    await new OrgClaService().getApprovalList(req({ bearerToken: 'target-token' }), ORG_UID, 'signature-uuid-1');
+
+    expect(gatewayFetch).toHaveBeenNthCalledWith(2, expect.anything(), expect.any(String), expect.objectContaining({ bearerToken: 'target-token' }));
+  });
+});
+
+// Same gate as the document read, for the same reason: the org grant proves which organization the
+// caller may view as, not which signatures belong to it. Without the list lookup the signature id
+// alone selects an approval list — and here that list is contributors' email addresses.
+describe('OrgClaService.getApprovalList — the organization scope gate', () => {
+  it('answers absent for a signature that is not on the organization list', async () => {
+    gatewayFetch.mockResolvedValueOnce(upstreamList(upstreamEntry({ signatureID: 'signature-this-org-signed' })));
+
+    expect(await new OrgClaService().getApprovalList(req(), ORG_UID, 'signature-another-org-signed')).toBeNull();
+  });
+
+  it('never reaches the approval endpoint for a signature the organization does not hold', async () => {
+    gatewayFetch.mockResolvedValueOnce(upstreamList(upstreamEntry({ signatureID: 'signature-this-org-signed' })));
+
+    await new OrgClaService().getApprovalList(req(), ORG_UID, 'signature-another-org-signed');
+
+    expect(gatewayFetch).toHaveBeenCalledTimes(1);
+  });
+
+  // The endpoint is keyed on (project, company), and one company can hold several CCLAs there
+  // under different signing entities — the same reason the list page is keyed on the signature and
+  // not the CLA Group. Taking the first result would show one entity's approval list under
+  // another's name.
+  it('picks the CCLA by signature id rather than taking the first one returned', async () => {
+    gatewayFetch.mockResolvedValueOnce(upstreamList(upstreamEntry({ signatureID: 'signature-uuid-2' }))).mockResolvedValueOnce({
+      signatures: [
+        corporateSignature({ signatureID: 'signature-uuid-1', emailApprovalList: [item('wrong@example.com')] }),
+        corporateSignature({ signatureID: 'signature-uuid-2', emailApprovalList: [item('right@example.com')] }),
+      ],
+    });
+
+    const list = await new OrgClaService().getApprovalList(req(), ORG_UID, 'signature-uuid-2');
+
+    expect(list?.entries.map((entry) => entry.value)).toEqual(['right@example.com']);
+  });
+});
+
+describe('OrgClaService.getApprovalList — flattening the six lists', () => {
+  it('flattens all six upstream lists into one, tagged by criteria type', async () => {
+    stageApprovalRead(
+      corporateSignature({
+        emailApprovalList: [item('contributor@example.com')],
+        domainApprovalList: [item('example.com')],
+        githubUsernameApprovalList: [item('octocat')],
+        githubOrgApprovalList: [item('example-org')],
+        gitlabUsernameApprovalList: [item('example-user')],
+        gitlabOrgApprovalList: [item('https://gitlab.com/example-group')],
+      })
+    );
+
+    const list = await new OrgClaService().getApprovalList(req(), ORG_UID, 'signature-uuid-1');
+
+    expect(list?.entries).toEqual([
+      { kind: 'domain', value: 'example.com' },
+      { kind: 'email', value: 'contributor@example.com' },
+      { kind: 'github-org', value: 'example-org' },
+      { kind: 'github-username', value: 'octocat' },
+      { kind: 'gitlab-group', value: 'https://gitlab.com/example-group' },
+      { kind: 'gitlab-username', value: 'example-user' },
+    ]);
+  });
+
+  // GitLab calls the thing a group and the producer's field calls it an org. The shared contract
+  // follows GitLab's noun because that is the word on the screen, so the two names meet in the
+  // service's field table — and a swap there would put GitLab groups under the GitHub org label.
+  it('reads a GitLab group from the upstream field spelled "org"', async () => {
+    stageApprovalRead(corporateSignature({ gitlabOrgApprovalList: [item('https://gitlab.com/example-group')] }));
+
+    const list = await new OrgClaService().getApprovalList(req(), ORG_UID, 'signature-uuid-1');
+
+    expect(list?.entries).toEqual([{ kind: 'gitlab-group', value: 'https://gitlab.com/example-group' }]);
+  });
+
+  it('carries the date the producer stamped an entry with', async () => {
+    stageApprovalRead(corporateSignature({ emailApprovalList: [item('contributor@example.com', '2026-03-04T10:00:00Z')] }));
+
+    const list = await new OrgClaService().getApprovalList(req(), ORG_UID, 'signature-uuid-1');
+
+    expect(list?.entries[0].addedOn).toBe('2026-03-04T10:00:00Z');
+  });
+
+  // An absent date must stay absent: the column renders it as unknown, whereas a substituted date
+  // would state that the rule was added today.
+  it('omits the date when the producer has none for the entry', async () => {
+    stageApprovalRead(corporateSignature({ emailApprovalList: [item('contributor@example.com')] }));
+
+    const list = await new OrgClaService().getApprovalList(req(), ORG_UID, 'signature-uuid-1');
+
+    expect(list?.entries[0].addedOn).toBeUndefined();
+    expect('addedOn' in list!.entries[0]).toBe(false);
+  });
+
+  // `x-nullable: true` upstream, so an empty list arrives as `null` rather than `[]`.
+  it('reads a null list as empty rather than failing', async () => {
+    stageApprovalRead(corporateSignature({ emailApprovalList: null, domainApprovalList: [item('example.com')] }));
+
+    const list = await new OrgClaService().getApprovalList(req(), ORG_UID, 'signature-uuid-1');
+
+    expect(list?.entries).toEqual([{ kind: 'domain', value: 'example.com' }]);
+  });
+
+  // Not a rule: it cannot be matched against, and it cannot be removed either, since the producer
+  // validates a removal by the same rules as an addition and would reject the empty string. A row
+  // whose only control is guaranteed to fail is worse than no row.
+  it('drops an entry with no value rather than rendering an unremovable row', async () => {
+    stageApprovalRead(corporateSignature({ emailApprovalList: [item(''), item('   '), item('contributor@example.com')] }));
+
+    const list = await new OrgClaService().getApprovalList(req(), ORG_UID, 'signature-uuid-1');
+
+    expect(list?.entries).toEqual([{ kind: 'email', value: 'contributor@example.com' }]);
+  });
+
+  it('answers an empty list for an agreement whose CCLA the read path did not return', async () => {
+    // The producer selects the signed and approved CCLA for the project, and a signature that is
+    // signed but not approved legitimately matches nothing there. That is an empty list, not a
+    // failure — and not a 404 either, since the agreement itself exists.
+    stageApprovalRead(null);
+
+    const list = await new OrgClaService().getApprovalList(req(), ORG_UID, 'signature-uuid-1');
+
+    expect(list).toEqual({ signatureId: 'signature-uuid-1', entries: [], canEdit: true });
+  });
+});
+
+describe('OrgClaService.getApprovalList — an unsigned agreement', () => {
+  it('answers an empty, uneditable list without asking upstream for one', async () => {
+    // Only the list is staged: reaching the approval endpoint at all is the failure this guards.
+    // There is no CCLA for the producer to attach a rule to, so the list is not editable either.
+    gatewayFetch.mockResolvedValueOnce(upstreamList(upstreamEntry({ signed: false })));
+
+    const list = await new OrgClaService().getApprovalList(req(), ORG_UID, 'signature-uuid-1');
+
+    expect(list).toEqual({ signatureId: 'signature-uuid-1', entries: [], canEdit: false });
+    expect(gatewayFetch).toHaveBeenCalledTimes(1);
+  });
+
+  // The truthful empty rather than a 404, which would read to a direct caller as "no such
+  // agreement" when the agreement is real and simply unsigned.
+  it('does not answer absent for an unsigned agreement', async () => {
+    gatewayFetch.mockResolvedValueOnce(upstreamList(upstreamEntry({ signed: false })));
+
+    expect(await new OrgClaService().getApprovalList(req(), ORG_UID, 'signature-uuid-1')).not.toBeNull();
+  });
+
+  // A sanctioned entity may still have signed. Gating the list on the display status would hide a
+  // signed agreement's rules behind "sign this CLA first", which is untrue — sanctions messaging
+  // is a separate surface.
+  it('serves the list of a signed agreement whose entity is sanctioned', async () => {
+    stageApprovalRead(corporateSignature({ emailApprovalList: [item('contributor@example.com')] }), [upstreamEntry({ signed: true, sanctioned: true })]);
+
+    const list = await new OrgClaService().getApprovalList(req(), ORG_UID, 'signature-uuid-1');
+
+    expect(list?.entries).toHaveLength(1);
+  });
+});
+
+/**
+ * The producer's rule is membership of the CCLA's own ACL, matched on LF username, and it
+ * explicitly refuses to let an organization-level admin scope stand in for it. So an org admin who
+ * can load this page is not thereby able to write, and the client cannot work that out for itself.
+ */
+describe('OrgClaService.getApprovalList — who may write', () => {
+  it('grants write access to a caller named on the agreement roster', async () => {
+    getUsernameFromAuth.mockResolvedValue('aporter');
+    stageApprovalRead(corporateSignature());
+
+    expect((await new OrgClaService().getApprovalList(req(), ORG_UID, 'signature-uuid-1'))?.canEdit).toBe(true);
+  });
+
+  it('withholds write access from an org viewer who is not a CLA manager on it', async () => {
+    getUsernameFromAuth.mockResolvedValue('someone-else');
+    stageApprovalRead(corporateSignature());
+
+    expect((await new OrgClaService().getApprovalList(req(), ORG_UID, 'signature-uuid-1'))?.canEdit).toBe(false);
+  });
+
+  it('matches the roster case-insensitively, since the two sources spell usernames differently', async () => {
+    getUsernameFromAuth.mockResolvedValue('APorter');
+    stageApprovalRead(corporateSignature());
+
+    expect((await new OrgClaService().getApprovalList(req(), ORG_UID, 'signature-uuid-1'))?.canEdit).toBe(true);
+  });
+
+  it('withholds write access when the caller has no resolvable username', async () => {
+    getUsernameFromAuth.mockResolvedValue(null);
+    stageApprovalRead(corporateSignature());
+
+    expect((await new OrgClaService().getApprovalList(req(), ORG_UID, 'signature-uuid-1'))?.canEdit).toBe(false);
+  });
+
+  // Deliberately open, not closed: the producer is the authority and rejects the write regardless,
+  // so failing open costs a CLA manager one clear error message where failing closed would hide
+  // the only approval-list controls Self Serve has from someone entitled to use them.
+  it('fails open when upstream sent no roster at all', async () => {
+    getUsernameFromAuth.mockResolvedValue('someone-else');
+    stageApprovalRead(corporateSignature(), [upstreamEntry({ claManagers: undefined })]);
+
+    expect((await new OrgClaService().getApprovalList(req(), ORG_UID, 'signature-uuid-1'))?.canEdit).toBe(true);
+  });
+
+  // An empty roster is upstream stating that nobody may write, which is different from not having
+  // told us — so this one closes where the case above opens.
+  it('withholds write access when the roster is empty', async () => {
+    stageApprovalRead(corporateSignature(), [upstreamEntry({ claManagers: [] })]);
+
+    expect((await new OrgClaService().getApprovalList(req(), ORG_UID, 'signature-uuid-1'))?.canEdit).toBe(false);
+  });
+
+  // The roster is what `canEdit` is computed from, and it is also the thing the list mapper drops.
+  // Computing the flag must not be what puts the identities back on the wire.
+  it('carries no manager identity into the approval-list response', async () => {
+    stageApprovalRead(corporateSignature());
+
+    const list = await new OrgClaService().getApprovalList(req(), ORG_UID, 'signature-uuid-1');
+
+    const serialized = JSON.stringify(list);
+    expect(serialized).not.toContain('aporter');
+    expect(serialized).not.toContain('user-uuid-1');
+  });
+});
+
+/**
+ * Stages the three upstream calls a write makes: the organization's list (which resolves the ids
+ * and binds the signature to the caller's organization), the PUT itself, then the CCLA re-read
+ * that recovers the dates the write response drops.
+ *
+ * Three and not four: the re-read reuses the context the resolution already produced rather than
+ * fetching the organization's list a second time.
+ */
+function stageApprovalWrite(writeResult: unknown, refreshed: unknown = corporateSignature(), entries: EasyClaCompanyClaGroup[] = [upstreamEntry()]): void {
+  gatewayFetch
+    .mockResolvedValueOnce(upstreamList(...entries))
+    .mockResolvedValueOnce(writeResult)
+    .mockResolvedValueOnce({ signatures: refreshed === null ? [] : [refreshed] });
+}
+
+const ADD_ONE = { add: [{ kind: 'email' as const, value: 'contributor@example.com' }], remove: [] };
+
+describe('OrgClaService.updateApprovalList — the upstream call', () => {
+  it('addresses the write by all three resolved ids', async () => {
+    stageApprovalWrite({});
+
+    await new OrgClaService().updateApprovalList(req(), ORG_UID, 'signature-uuid-1', ADD_ONE);
+
+    expect(gatewayFetch).toHaveBeenNthCalledWith(
+      2,
+      expect.anything(),
+      'https://gw.example.org/cla-service/v4/signatures/project/a09410000182dD3AAI/company/company-uuid-1/clagroup/cla-group-uuid-1/approval-list',
+      expect.objectContaining({ method: 'PUT', operation: 'org_cla_update_approval_list' })
+    );
+  });
+
+  // The success body is the whole CCLA signature, which carries the agreement's ACL — every CLA
+  // manager by id and LF username. A non-OK body names the authenticated user instead. A 403 here
+  // is an expected outcome rather than an exceptional one, so the routine case is the one that
+  // would be writing identities into the logs.
+  it('redacts the response body on the write too', async () => {
+    stageApprovalWrite({});
+
+    await new OrgClaService().updateApprovalList(req(), ORG_UID, 'signature-uuid-1', ADD_ONE);
+
+    expect(gatewayFetch).toHaveBeenNthCalledWith(2, expect.anything(), expect.any(String), expect.objectContaining({ redactResponseBody: true }));
+  });
+
+  // The route blocks this path during impersonation, so there is no impersonated identity to
+  // forward. Reads forward one; a write must not — an approval-list change is recorded in the
+  // agreement's activity log, and forwarding would attribute it to the impersonated manager.
+  it('forwards no bearer token on the write', async () => {
+    isImpersonating.mockReturnValue(true);
+    stageApprovalWrite({});
+
+    await new OrgClaService().updateApprovalList(req({ bearerToken: 'target-token' }), ORG_UID, 'signature-uuid-1', ADD_ONE);
+
+    const [, , options] = gatewayFetch.mock.calls[1];
+    expect(options.bearerToken).toBeUndefined();
+  });
+
+  it('lets an upstream refusal propagate rather than reporting a write that did not happen', async () => {
+    gatewayFetch.mockResolvedValueOnce(upstreamList(upstreamEntry())).mockRejectedValueOnce(new Error('forbidden'));
+
+    await expect(new OrgClaService().updateApprovalList(req(), ORG_UID, 'signature-uuid-1', ADD_ONE)).rejects.toThrow('forbidden');
+  });
+});
+
+/**
+ * The producer's body is PascalCase (`json:"AddEmailApprovalList"`), which is not a detail that can
+ * be got approximately right: a camelCase key arrives absent, so every array would be empty and
+ * the producer would reject the request as empty — or, worse for a removal, silently do nothing.
+ */
+describe('OrgClaService.updateApprovalList — the request body', () => {
+  /** The body of the PUT, which is the second of the four staged calls. */
+  function sentBody(): Record<string, string[]> {
+    return gatewayFetch.mock.calls[1][2].body;
+  }
+
+  it('sends an addition on the Add array of its criteria type', async () => {
+    stageApprovalWrite({});
+
+    await new OrgClaService().updateApprovalList(req(), ORG_UID, 'signature-uuid-1', ADD_ONE);
+
+    expect(sentBody()).toEqual({ AddEmailApprovalList: ['contributor@example.com'] });
+  });
+
+  it('maps each of the six criteria types onto its own upstream array', async () => {
+    stageApprovalWrite({});
+
+    await new OrgClaService().updateApprovalList(req(), ORG_UID, 'signature-uuid-1', {
+      add: [
+        { kind: 'domain', value: 'example.com' },
+        { kind: 'email', value: 'contributor@example.com' },
+        { kind: 'github-org', value: 'example-org' },
+        { kind: 'github-username', value: 'octocat' },
+        { kind: 'gitlab-group', value: 'https://gitlab.com/example-group' },
+        { kind: 'gitlab-username', value: 'example-user' },
+      ],
+      remove: [],
+    });
+
+    expect(sentBody()).toEqual({
+      AddDomainApprovalList: ['example.com'],
+      AddEmailApprovalList: ['contributor@example.com'],
+      AddGithubOrgApprovalList: ['example-org'],
+      AddGithubUsernameApprovalList: ['octocat'],
+      AddGitlabOrgApprovalList: ['https://gitlab.com/example-group'],
+      AddGitlabUsernameApprovalList: ['example-user'],
+    });
+  });
+
+  // A GitLab group goes on `AddGitlabOrgApprovalList`, not `AddGitlabGroupApprovalList`. A field
+  // name the producer does not recognise is dropped from the body rather than rejected, so this
+  // mistake would look like a successful no-op.
+  it('sends a GitLab group on the upstream array spelled "org"', async () => {
+    stageApprovalWrite({});
+
+    await new OrgClaService().updateApprovalList(req(), ORG_UID, 'signature-uuid-1', {
+      add: [{ kind: 'gitlab-group', value: 'https://gitlab.com/example-group' }],
+      remove: [],
+    });
+
+    expect(sentBody()).toEqual({ AddGitlabOrgApprovalList: ['https://gitlab.com/example-group'] });
+  });
+
+  // An edit is a removal and an addition in one request — the removal half is what invalidates the
+  // acknowledgements, and sending them separately would leave the list briefly missing a rule.
+  it('sends an edit as a removal and an addition in one request', async () => {
+    stageApprovalWrite({});
+
+    await new OrgClaService().updateApprovalList(req(), ORG_UID, 'signature-uuid-1', {
+      add: [{ kind: 'domain', value: 'new.example.com' }],
+      remove: [{ kind: 'domain', value: 'old.example.com' }],
+    });
+
+    expect(gatewayFetch).toHaveBeenCalledTimes(3);
+    expect(sentBody()).toEqual({
+      AddDomainApprovalList: ['new.example.com'],
+      RemoveDomainApprovalList: ['old.example.com'],
+    });
+  });
+
+  it('trims values, so a pasted trailing space is not stored as part of the rule', async () => {
+    stageApprovalWrite({});
+
+    await new OrgClaService().updateApprovalList(req(), ORG_UID, 'signature-uuid-1', {
+      add: [{ kind: 'email', value: '  contributor@example.com  ' }],
+      remove: [],
+    });
+
+    expect(sentBody()).toEqual({ AddEmailApprovalList: ['contributor@example.com'] });
+  });
+
+  // The producer appends adds to the stored list without de-duplicating against the request
+  // itself, so a value sent twice is a rule stored twice — and then needs removing twice.
+  it('deduplicates a value repeated within one request', async () => {
+    stageApprovalWrite({});
+
+    await new OrgClaService().updateApprovalList(req(), ORG_UID, 'signature-uuid-1', {
+      add: [
+        { kind: 'email', value: 'contributor@example.com' },
+        { kind: 'email', value: ' contributor@example.com ' },
+      ],
+      remove: [],
+    });
+
+    expect(sentBody()).toEqual({ AddEmailApprovalList: ['contributor@example.com'] });
+  });
+
+  // Every field is optional upstream and the producer requires at least one non-empty array, so an
+  // untouched list must not appear in the body at all.
+  it('sends no array for a criteria type the delta does not touch', async () => {
+    stageApprovalWrite({});
+
+    await new OrgClaService().updateApprovalList(req(), ORG_UID, 'signature-uuid-1', ADD_ONE);
+
+    expect(Object.keys(sentBody())).toEqual(['AddEmailApprovalList']);
+  });
+});
+
+describe('OrgClaService.updateApprovalList — what it answers with', () => {
+  // The write response carries values without dates, so the list is re-read to recover them.
+  // One extra upstream GET on a button press, not on a render.
+  // The re-read reuses the context the write already resolved. Re-resolving it would refetch the
+  // organization's whole agreement list to arrive at three ids that were already in hand.
+  it('costs three upstream calls, not four', async () => {
+    stageApprovalWrite({});
+
+    await new OrgClaService().updateApprovalList(req(), ORG_UID, 'signature-uuid-1', ADD_ONE);
+
+    expect(gatewayFetch).toHaveBeenCalledTimes(3);
+    expect(gatewayFetch.mock.calls.filter(([, url]) => String(url).endsWith('/cla-groups'))).toHaveLength(1);
+  });
+
+  it('re-reads the list so the new rows carry their dates', async () => {
+    stageApprovalWrite(
+      { emailApprovalList: ['contributor@example.com'] },
+      corporateSignature({ emailApprovalList: [item('contributor@example.com', '2026-03-04T10:00:00Z')] })
+    );
+
+    const result = await new OrgClaService().updateApprovalList(req(), ORG_UID, 'signature-uuid-1', ADD_ONE);
+
+    expect(result).toEqual({
+      outcome: 'updated',
+      list: { signatureId: 'signature-uuid-1', entries: [{ kind: 'email', value: 'contributor@example.com', addedOn: '2026-03-04T10:00:00Z' }], canEdit: true },
+    });
+  });
+
+  // The write already succeeded. Reporting the re-read's failure as a failed write would invite a
+  // CLA manager to retry a removal that has already invalidated acknowledgements — so the fallback
+  // is the write's own post-update lists, dateless.
+  it('still reports success when the re-read fails, falling back to the write response', async () => {
+    gatewayFetch
+      .mockResolvedValueOnce(upstreamList(upstreamEntry()))
+      .mockResolvedValueOnce({ emailApprovalList: ['contributor@example.com'] })
+      .mockRejectedValueOnce(new Error('re-read exploded'));
+
+    const result = await new OrgClaService().updateApprovalList(req(), ORG_UID, 'signature-uuid-1', ADD_ONE);
+
+    expect(result).toEqual({
+      outcome: 'updated',
+      list: { signatureId: 'signature-uuid-1', entries: [{ kind: 'email', value: 'contributor@example.com' }], canEdit: true },
+    });
+  });
+
+  it('reports success with an empty list when upstream answers the write with no body', async () => {
+    gatewayFetch.mockResolvedValueOnce(upstreamList(upstreamEntry())).mockResolvedValueOnce(null).mockRejectedValueOnce(new Error('re-read exploded'));
+
+    const result = await new OrgClaService().updateApprovalList(req(), ORG_UID, 'signature-uuid-1', ADD_ONE);
+
+    expect(result).toEqual({ outcome: 'updated', list: { signatureId: 'signature-uuid-1', entries: [], canEdit: true } });
+  });
+
+  it('flattens the write response, whose lists are flat strings rather than dated objects', async () => {
+    gatewayFetch
+      .mockResolvedValueOnce(upstreamList(upstreamEntry()))
+      .mockResolvedValueOnce({ emailApprovalList: ['b@example.com', 'a@example.com'], domainApprovalList: ['example.com'] })
+      .mockRejectedValueOnce(new Error('re-read exploded'));
+
+    const result = await new OrgClaService().updateApprovalList(req(), ORG_UID, 'signature-uuid-1', ADD_ONE);
+
+    expect(result.outcome === 'updated' && result.list.entries).toEqual([
+      { kind: 'domain', value: 'example.com' },
+      { kind: 'email', value: 'a@example.com' },
+      { kind: 'email', value: 'b@example.com' },
+    ]);
+  });
+});
+
+// Three outcomes, because they map to three different HTTP answers and two of them are ordinary.
+describe('OrgClaService.updateApprovalList — the outcomes that are not failures', () => {
+  it('reports not-found for a signature this organization does not hold', async () => {
+    gatewayFetch.mockResolvedValueOnce(upstreamList(upstreamEntry({ signatureID: 'signature-this-org-signed' })));
+
+    expect(await new OrgClaService().updateApprovalList(req(), ORG_UID, 'signature-another-org-signed', ADD_ONE)).toEqual({ outcome: 'not-found' });
+  });
+
+  it('never reaches the write endpoint for a signature the organization does not hold', async () => {
+    gatewayFetch.mockResolvedValueOnce(upstreamList(upstreamEntry({ signatureID: 'signature-this-org-signed' })));
+
+    await new OrgClaService().updateApprovalList(req(), ORG_UID, 'signature-another-org-signed', ADD_ONE);
+
+    expect(gatewayFetch).toHaveBeenCalledTimes(1);
+  });
+
+  it('reports not-signed for an agreement with no CCLA to attach a rule to', async () => {
+    gatewayFetch.mockResolvedValueOnce(upstreamList(upstreamEntry({ signed: false })));
+
+    expect(await new OrgClaService().updateApprovalList(req(), ORG_UID, 'signature-uuid-1', ADD_ONE)).toEqual({ outcome: 'not-signed' });
+    expect(gatewayFetch).toHaveBeenCalledTimes(1);
+  });
+});
+
+// The row is real and the caller may see it; it simply cannot be addressed on the approval-list
+// endpoints. A 502 rather than a 404, because that is an upstream data problem and not something
+// the caller can fix by asking differently.
+describe('OrgClaService — an approval list that cannot be addressed', () => {
+  it.each([
+    ['the CLA Group id', { claGroupID: undefined }],
+    ['the internal company id', { companyID: undefined }],
+    ['any project SFID', { projects: [{ projectName: 'Cascade' }] }],
+  ])('rejects a read when upstream omits %s', async (_case, overrides) => {
+    gatewayFetch.mockResolvedValueOnce(upstreamList(upstreamEntry(overrides)));
+
+    await expect(new OrgClaService().getApprovalList(req(), ORG_UID, 'signature-uuid-1')).rejects.toMatchObject({ code: 'UPSTREAM_INVALID_RESPONSE' });
+  });
+
+  it('rejects a write before calling upstream when the ids cannot be resolved', async () => {
+    gatewayFetch.mockResolvedValueOnce(upstreamList(upstreamEntry({ companyID: undefined })));
+
+    await expect(new OrgClaService().updateApprovalList(req(), ORG_UID, 'signature-uuid-1', ADD_ONE)).rejects.toMatchObject({
+      code: 'UPSTREAM_INVALID_RESPONSE',
+    });
+    expect(gatewayFetch).toHaveBeenCalledTimes(1);
+  });
+
+  // A foundation id is not a project id, and the producer's lookup would 404 on it — so falling
+  // back to it would turn a clear 502 into a confusing not-found.
+  it('does not fall back to the foundation id when no project SFID is present', async () => {
+    gatewayFetch.mockResolvedValueOnce(upstreamList(upstreamEntry({ projects: [{ projectName: 'Cascade' }] })));
+
+    await expect(new OrgClaService().getApprovalList(req(), ORG_UID, 'signature-uuid-1')).rejects.toThrow();
+    expect(gatewayFetch).not.toHaveBeenCalledWith(expect.anything(), expect.stringContaining('a09410000182dD2AAI'), expect.anything());
   });
 });

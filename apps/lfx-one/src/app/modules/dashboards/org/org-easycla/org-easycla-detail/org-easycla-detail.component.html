@@ -190,6 +190,14 @@
             data-testid="org-easycla-detail-download" />
         }
       </section>
+    } @else if (activeTab() === 'approval' && claGroup()) {
+      <section
+        role="tabpanel"
+        id="org-easycla-detail-tab-panel-approval"
+        aria-labelledby="org-easycla-detail-tab-trigger-approval"
+        data-testid="org-easycla-detail-approval">
+        <lfx-org-easycla-approval-list [claGroup]="claGroup()!" (countChanged)="onApprovalCountChanged($event)" />
+      </section>
     } @else {
       <section
         role="tabpanel"

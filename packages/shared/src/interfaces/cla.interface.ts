@@ -1,7 +1,7 @@
 // Copyright The Linux Foundation and each contributor to LFX.
 // SPDX-License-Identifier: MIT
 
-import type { CLA_MANAGER_REQUEST_TYPES, ORG_CLA_DETAIL_TABS } from '../constants/cla.constants';
+import type { CLA_MANAGER_REQUEST_TYPES, ORG_CLA_APPROVAL_CRITERIA, ORG_CLA_DETAIL_TABS } from '../constants/cla.constants';
 import type { TagSeverity } from './components.interface';
 
 // UI-facing shapes for the read-only "CLAs" view (Me lens → Profile tab).
@@ -718,4 +718,114 @@ export interface OrgClaCoverageDialogData {
   claGroupName: string;
   foundationName?: string;
   projects: OrgClaGroupProject[];
+}
+
+// ---------------------------------------------------------------------------
+// Approval list (#1985)
+//
+// The approval list is the set of *rules* deciding who may be covered by a CCLA — not the
+// people covered by it. That distinction is the one this surface exists to keep straight:
+// `approvalCriteriaCount` above counts these entries, and `approvedContributorsCount` (never
+// mapped into the shared contract) counts the acknowledgements they produce.
+// ---------------------------------------------------------------------------
+
+/**
+ * Which of the six lists an entry belongs to.
+ *
+ * Derived from `ORG_CLA_APPROVAL_CRITERIA`, so the six exist once: adding a seventh upstream
+ * list is a compile error at every exhaustive switch until it is handled. The ids are this
+ * repo's own — the upstream field names are PascalCase and split across `Add*`/`Remove*` pairs,
+ * a shape that belongs to the server's upstream types and not to a client contract.
+ */
+export type OrgClaApprovalCriteriaKind = (typeof ORG_CLA_APPROVAL_CRITERIA)[number]['kind'];
+
+/** One approval-list entry as the table renders it. */
+export interface OrgClaApprovalEntry {
+  kind: OrgClaApprovalCriteriaKind;
+  /** The rule itself — an address, a domain, an org or a username. */
+  value: string;
+  /**
+   * When the entry was added, as the producer reported it.
+   *
+   * Optional because the producer falls back to the signature's modified date and omits the
+   * field where it holds neither, and an absent date must render as unknown rather than as
+   * today. Not a reliable audit timestamp: a fallback value dates the entry to the last change
+   * of any kind on the signature, so the activity log (#1987) remains the record of who
+   * changed what.
+   */
+  addedOn?: string;
+}
+
+/**
+ * The whole approval list of one agreement.
+ *
+ * Flat rather than grouped by kind, because the table is one list sorted for reading and the
+ * kind is a column in it. Grouping would put the presentation decision in the contract and
+ * force every consumer to flatten it back.
+ */
+export interface OrgClaApprovalList {
+  /** The CCLA signature the list belongs to — the same row key the detail route carries. */
+  signatureId: string;
+  entries: OrgClaApprovalEntry[];
+  /**
+   * Whether the caller may change the list, as opposed to only read it.
+   *
+   * Server-decided rather than inferred client-side, because the answer is upstream's: the
+   * producer requires the caller to be named on the CCLA's own ACL and rejects an
+   * organization-level admin scope outright. The client has no way to know that, and a
+   * write UI offered to someone who cannot write is a control that can only fail.
+   */
+  canEdit: boolean;
+}
+
+/** One entry being added or removed. Carries no date: the producer stamps additions itself. */
+export interface OrgClaApprovalEntryInput {
+  kind: OrgClaApprovalCriteriaKind;
+  value: string;
+}
+
+/**
+ * A change to the approval list, expressed as a delta.
+ *
+ * Delta rather than the full desired list, mirroring the only write upstream offers. A
+ * replace-the-list contract would read better here and be actively dangerous: the server would
+ * have to compute the removals itself, and every removal invalidates the acknowledgements that
+ * matched the removed rule. Two concurrent editors would then silently revoke each other's
+ * additions. Naming the removals explicitly keeps that consequence in the caller's hands.
+ *
+ * Editing an entry is a `remove` and an `add` in one request. There is no edit primitive
+ * upstream, and the removal half carries the invalidation — which is why the UI warns on an
+ * edit exactly as it warns on a delete.
+ */
+export interface OrgClaApprovalListUpdate {
+  add: OrgClaApprovalEntryInput[];
+  remove: OrgClaApprovalEntryInput[];
+}
+
+/** One selectable criteria type, with the copy the picker and the table column need. */
+export interface OrgClaApprovalCriteriaOption {
+  kind: OrgClaApprovalCriteriaKind;
+  label: string;
+  /** Shown in the value field, so the expected shape is visible before validation fires. */
+  placeholder: string;
+}
+
+/** What the add/edit dialog is opened with. */
+export interface OrgClaApprovalEntriesDialogData {
+  /**
+   * `add` takes any number of new entries; `edit` reworks exactly one.
+   *
+   * Edit is not a distinct upstream operation — it is the removal of the old entry and the
+   * addition of the new one in a single request — so the dialog warns about the removal half.
+   */
+  mode: 'add' | 'edit';
+  /** The entry being reworked. Present only in `edit` mode. */
+  entry?: OrgClaApprovalEntry;
+  /**
+   * The list as it currently stands, so a duplicate can be named as one.
+   *
+   * Without it a re-added rule is a silent no-op: the producer de-duplicates on its side and
+   * answers 200, which would report success for a change that did not happen.
+   */
+  existing: OrgClaApprovalEntry[];
 }

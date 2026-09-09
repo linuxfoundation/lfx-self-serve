@@ -13,7 +13,8 @@ import { OrgLensClaService } from '@services/org-lens-cla.service';
 import { OrgRoleGrantsService } from '@services/org-role-grants.service';
 import { PersonaService } from '@services/persona.service';
 import { OrgNavigationService } from '@shared/services/org-navigation.service';
-import { MessageService } from 'primeng/api';
+import type { Confirmation } from 'primeng/api';
+import { ConfirmationService, MessageService } from 'primeng/api';
 import { DialogService } from 'primeng/dynamicdialog';
 import { BehaviorSubject, of, Subject, throwError } from 'rxjs';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
@@ -33,6 +34,8 @@ describe('OrgEasyclaDetailComponent', () => {
 
   const getClaGroups = vi.fn();
   const getPdfUrl = vi.fn();
+  const getApprovalList = vi.fn();
+  const updateApprovalList = vi.fn();
   const addMessage = vi.fn();
   const openDialog = vi.fn();
 
@@ -65,7 +68,7 @@ describe('OrgEasyclaDetailComponent', () => {
         { provide: OrgRoleGrantsService, useValue: { loaded: grantsLoaded } },
         { provide: PersonaService, useValue: { personaLoaded } },
         { provide: OrgNavigationService, useValue: { loaded: navLoaded } },
-        { provide: OrgLensClaService, useValue: { getClaGroups, getPdfUrl } },
+        { provide: OrgLensClaService, useValue: { getClaGroups, getPdfUrl, getApprovalList, updateApprovalList } },
         { provide: MessageService, useValue: { add: addMessage } },
       ],
     }).compileComponents();
@@ -96,6 +99,10 @@ describe('OrgEasyclaDetailComponent', () => {
     getPdfUrl.mockReset();
     getClaGroups.mockReturnValue(of({ orgUid: SELECTED_ACCOUNT.uid, claGroups: [claGroup()] }));
     getPdfUrl.mockReturnValue(of({ url: 'https://s3.example.org/ccla.pdf', expiresInSeconds: 0 }));
+    getApprovalList.mockReset();
+    updateApprovalList.mockReset();
+    getApprovalList.mockReturnValue(of({ signatureId: 'signature-uuid-1', entries: [], canEdit: true }));
+    updateApprovalList.mockReturnValue(of({ signatureId: 'signature-uuid-1', entries: [], canEdit: true }));
     addMessage.mockReset();
     openDialog.mockReset();
   });
@@ -502,5 +509,152 @@ describe('OrgEasyclaDetailComponent', () => {
         },
       })
     );
+  });
+});
+
+/**
+ * The approval tab's badge (#1985).
+ *
+ * The count on the tab is the CLA Group row's `approvalCriteriaCount`, which came from the list
+ * fetch and does not move when the tab below writes. So the tab reports its own size after a
+ * write, and this is where the two are reconciled.
+ */
+describe('OrgEasyclaDetailComponent — the approval tab', () => {
+  const SELECTED_ACCOUNT = { uid: '0014100000AcmeOrgAAA', accountName: 'Acme' };
+
+  const selectedAccount = signal<{ uid?: string; accountName: string } | null>(SELECTED_ACCOUNT);
+  const paramMap = new BehaviorSubject(convertToParamMap({ signatureId: 'signature-uuid-1' }));
+
+  const getClaGroups = vi.fn();
+  const getApprovalList = vi.fn();
+  const updateApprovalList = vi.fn();
+
+  let confirmations: Confirmation[];
+
+  function row(overrides: Partial<OrgClaGroup> = {}): OrgClaGroup {
+    return {
+      id: 'signature-uuid-1',
+      claGroupName: 'Nimbus Foundation CLA',
+      projects: [{ projectName: 'Cascade' }],
+      signed: true,
+      status: 'signed',
+      needsClaManager: false,
+      claManagersCount: 2,
+      approvalCriteriaCount: 7,
+      ...overrides,
+    };
+  }
+
+  async function render(claGroup: OrgClaGroup = row()): Promise<ComponentFixture<OrgEasyclaDetailComponent>> {
+    getClaGroups.mockReturnValue(of({ orgUid: SELECTED_ACCOUNT.uid, claGroups: [claGroup] }));
+
+    TestBed.resetTestingModule();
+    await TestBed.configureTestingModule({
+      imports: [OrgEasyclaDetailComponent],
+      providers: [
+        provideRouter([]),
+        provideNoopAnimations(),
+        { provide: ActivatedRoute, useValue: { paramMap, snapshot: { paramMap: paramMap.value } } },
+        { provide: AccountContextService, useValue: { selectedAccount, hasOrgSelectorAccess: signal(true) } },
+        { provide: OrgRoleGrantsService, useValue: { loaded: signal(true) } },
+        { provide: PersonaService, useValue: { personaLoaded: signal(true) } },
+        { provide: OrgNavigationService, useValue: { loaded: signal(true) } },
+        { provide: OrgLensClaService, useValue: { getClaGroups, getPdfUrl: vi.fn(), getApprovalList, updateApprovalList } },
+        { provide: MessageService, useValue: { add: vi.fn() } },
+        ConfirmationService,
+      ],
+    }).compileComponents();
+
+    // The delete path inside the panel raises a confirmation; collected here so the test can
+    // accept it, exactly as the panel's own spec does.
+    confirmations = [];
+    TestBed.inject(ConfirmationService).requireConfirmation$.subscribe((confirmation) => {
+      if (confirmation) confirmations.push(confirmation);
+    });
+
+    const fixture = TestBed.createComponent(OrgEasyclaDetailComponent);
+    fixture.detectChanges();
+    await fixture.whenStable();
+    fixture.detectChanges();
+    return fixture;
+  }
+
+  function byTestId(fixture: ComponentFixture<unknown>, id: string): HTMLElement | null {
+    return fixture.nativeElement.querySelector(`[data-testid="${id}"]`);
+  }
+
+  async function openApprovalTab(fixture: ComponentFixture<OrgEasyclaDetailComponent>): Promise<void> {
+    byTestId(fixture, 'org-easycla-detail-tab-approval')?.click();
+    fixture.detectChanges();
+    await fixture.whenStable();
+    fixture.detectChanges();
+  }
+
+  beforeEach(() => {
+    selectedAccount.set(SELECTED_ACCOUNT);
+    paramMap.next(convertToParamMap({ signatureId: 'signature-uuid-1' }));
+    getClaGroups.mockReset();
+    getApprovalList.mockReset();
+    updateApprovalList.mockReset();
+    getApprovalList.mockReturnValue(of({ signatureId: 'signature-uuid-1', entries: [{ kind: 'domain', value: 'example.com' }], canEdit: true }));
+    updateApprovalList.mockReturnValue(of({ signatureId: 'signature-uuid-1', entries: [], canEdit: true }));
+  });
+
+  it('renders the approval list panel when the tab is selected', async () => {
+    const fixture = await render();
+
+    await openApprovalTab(fixture);
+
+    expect(byTestId(fixture, 'org-easycla-approval-list')).not.toBeNull();
+    expect(byTestId(fixture, 'org-easycla-detail-tab-empty')).toBeNull();
+  });
+
+  // One request, on the tab, not on the detail page's first paint.
+  it('does not load the approval list until the tab is opened', async () => {
+    const fixture = await render();
+
+    expect(getApprovalList).not.toHaveBeenCalled();
+
+    await openApprovalTab(fixture);
+
+    expect(getApprovalList).toHaveBeenCalledWith(SELECTED_ACCOUNT.uid, 'signature-uuid-1');
+  });
+
+  it('shows the row count until the tab reports its own', async () => {
+    const fixture = await render();
+
+    expect(byTestId(fixture, 'org-easycla-detail-tab-badge-approval')?.textContent?.trim()).toBe('7');
+  });
+
+  it('takes the count the tab reports after a write', async () => {
+    updateApprovalList.mockReturnValue(
+      of({
+        signatureId: 'signature-uuid-1',
+        entries: [
+          { kind: 'domain', value: 'example.com' },
+          { kind: 'domain', value: 'other.example.com' },
+        ],
+        canEdit: true,
+      })
+    );
+    const fixture = await render();
+    await openApprovalTab(fixture);
+
+    byTestId(fixture, 'org-easycla-approval-delete')?.querySelector('button')?.click();
+    fixture.detectChanges();
+    confirmations[0].accept?.();
+    fixture.detectChanges();
+    await fixture.whenStable();
+    fixture.detectChanges();
+
+    expect(byTestId(fixture, 'org-easycla-detail-tab-badge-approval')?.textContent?.trim()).toBe('2');
+  });
+
+  // The row's own count is absent on a deployment predating the producer field. A dash says the
+  // deployment cannot tell us, which is not the same as reporting zero rules.
+  it('shows a dash when the row carries no count', async () => {
+    const fixture = await render(row({ approvalCriteriaCount: undefined }));
+
+    expect(byTestId(fixture, 'org-easycla-detail-tab-badge-approval')?.textContent?.trim()).toBe('—');
   });
 });
