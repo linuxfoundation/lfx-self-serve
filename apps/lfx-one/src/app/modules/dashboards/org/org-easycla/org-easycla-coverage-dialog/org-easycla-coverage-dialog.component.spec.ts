@@ -246,6 +246,29 @@ describe('OrgEasyclaCoverageDialogComponent', () => {
       expect(label?.textContent?.trim()).toBe('Search covered projects');
     });
 
+    it('announces what the filter did, since focus stays in the field', async () => {
+      const fixture = await render({ claGroupName: 'Acme CLA', projects });
+      const region = () => fixture.nativeElement.querySelector('[data-testid="org-easycla-coverage-announcement"]') as HTMLElement | null;
+
+      // Mounted and silent before a term is typed. Both halves matter: a region created alongside
+      // its text is frequently not announced, and a count nobody asked for is noise on open.
+      expect(region()).not.toBeNull();
+      expect(region()?.getAttribute('aria-live')).toBe('polite');
+      expect(region()?.textContent?.trim()).toBe('');
+
+      search(fixture, 'casc');
+      expect(region()?.textContent?.trim()).toBe('2 projects match your search.');
+
+      search(fixture, 'wood');
+      expect(region()?.textContent?.trim()).toBe('1 project matches your search.');
+
+      search(fixture, 'nimbus');
+      expect(region()?.textContent?.trim()).toBe('No covered projects match your search.');
+
+      search(fixture, '');
+      expect(region()?.textContent?.trim()).toBe('');
+    });
+
     it('offers no search where there is no list to search', async () => {
       const fixture = await render({ claGroupName: 'Acme CLA', foundationName: 'Acme Foundation', projects: [] });
 

@@ -41,8 +41,6 @@ export class OrgEasyclaCoverageDialogComponent {
   private readonly dialogConfig = inject<DynamicDialogConfig<OrgClaCoverageDialogData>>(DynamicDialogConfig);
   private readonly dialogRef = inject(DynamicDialogRef);
 
-  protected readonly searchForm = new FormGroup({ search: new FormControl('', { nonNullable: true }) });
-
   protected readonly claGroupName = this.dialogConfig.data?.claGroupName ?? '';
   protected readonly projects: OrgClaGroupProject[] = this.dialogConfig.data?.projects ?? [];
 
@@ -52,11 +50,14 @@ export class OrgEasyclaCoverageDialogComponent {
     ? `Part of ${this.dialogConfig.data.foundationName} — this CLA covers the projects below, not necessarily every project in the foundation.`
     : 'This CLA covers the projects below.';
 
+  protected readonly searchForm = new FormGroup({ search: new FormControl('', { nonNullable: true }) });
+
   // Undebounced, unlike the org pages' search fields. Those debounce a filter over a roster or a
   // server query; this one filters an array the dialog was handed at construction, so the work per
   // keystroke is a substring test over a handful of names and a delay would only be felt as lag.
   private readonly searchTerm = toSignal(this.searchForm.controls.search.valueChanges, { initialValue: '' });
   protected readonly filteredProjects = this.initFilteredProjects();
+  protected readonly filterAnnouncement = this.initFilterAnnouncement();
 
   protected close(): void {
     this.dialogRef.close();
@@ -66,6 +67,27 @@ export class OrgEasyclaCoverageDialogComponent {
     return computed(() => {
       const term = this.searchTerm().trim().toLowerCase();
       return term ? this.projects.filter((project) => project.projectName.toLowerCase().includes(term)) : this.projects;
+    });
+  }
+
+  /**
+   * What the filter did, for assistive tech.
+   *
+   * Focus stays in the search field while the list behind it changes, so nothing about the result
+   * reaches a screen reader otherwise — the rows are not focusable and the no-match line is inserted
+   * already populated, which is exactly the case a live region is frequently not announced for.
+   *
+   * Computed from the filtered set rather than assigned per keystroke, so the narration cannot
+   * disagree with the rows on screen. Silent until a term is typed: announcing the full count when
+   * the view opens states something the viewer never asked.
+   */
+  private initFilterAnnouncement(): Signal<string> {
+    return computed(() => {
+      if (!this.searchTerm().trim()) return '';
+
+      const count = this.filteredProjects().length;
+      if (count === 0) return 'No covered projects match your search.';
+      return count === 1 ? '1 project matches your search.' : `${count} projects match your search.`;
     });
   }
 }

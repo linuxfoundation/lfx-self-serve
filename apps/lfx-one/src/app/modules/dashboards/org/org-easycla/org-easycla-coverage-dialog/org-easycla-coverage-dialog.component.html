@@ -21,6 +21,13 @@
     autocomplete="off"
     dataTest="org-easycla-coverage-search" />
 
+  <!--
+    Always rendered, with only its text changing. Wrapped in an `@if` it would be created together
+    with its content, and a region that does not pre-exist its content is frequently not announced —
+    which is also why the no-match line below cannot serve as one.
+  -->
+  <div class="sr-only" role="status" aria-live="polite" aria-atomic="true" data-testid="org-easycla-coverage-announcement">{{ filterAnnouncement() }}</div>
+
   @if (filteredProjects().length) {
     <!--
       Bounded and rule-separated, as `person-detail-drawer` renders its own lists — which is also what
