@@ -16,7 +16,7 @@ const V1_COMMITTEE_SFID = 'a09v1SFIDaaaa';
 const USER_TOKEN = 'user-bearer-token';
 const M2M_TOKEN = 'm2m-bearer-token';
 
-const { meetingSvc, aiSvc, committeeSvc, resolveCommitteeV2UidsToV1IdsMock, generateM2MTokenMock } = vi.hoisted(() => ({
+const { meetingSvc, aiSvc, committeeSvc, resolveCommitteeV2UidsToV1IdsMock, resolveCommitteeV2UidMappingsMock, generateM2MTokenMock } = vi.hoisted(() => ({
   meetingSvc: {
     getMeetingById: vi.fn(),
     getMeetingRegistrants: vi.fn(),
@@ -28,6 +28,7 @@ const { meetingSvc, aiSvc, committeeSvc, resolveCommitteeV2UidsToV1IdsMock, gene
   aiSvc: { generateMeetingAgenda: vi.fn() },
   committeeSvc: { getCommitteeById: vi.fn(), getCommitteeMembers: vi.fn() },
   resolveCommitteeV2UidsToV1IdsMock: vi.fn(),
+  resolveCommitteeV2UidMappingsMock: vi.fn(),
   generateM2MTokenMock: vi.fn(),
 }));
 
@@ -71,6 +72,7 @@ vi.mock('../helpers/meeting.helper', () => ({
 }));
 vi.mock('../helpers/committee-v1-mapping.helper', () => ({
   resolveCommitteeV2UidsToV1Ids: resolveCommitteeV2UidsToV1IdsMock,
+  resolveCommitteeV2UidMappings: resolveCommitteeV2UidMappingsMock,
 }));
 vi.mock('../utils/auth-helper', () => ({ getEffectiveEmail: vi.fn(() => 'user@example.com') }));
 vi.mock('../utils/m2m-token.util', () => ({ generateM2MToken: generateM2MTokenMock }));
@@ -120,7 +122,18 @@ class FakeValidationError extends Error {
     super(message);
   }
 }
+/** Only the fields the assertions read; the real class adds serialization the controller never touches. */
+class FakeMicroserviceError extends Error {
+  public constructor(
+    message: string,
+    public readonly statusCode: number,
+    public readonly code: string
+  ) {
+    super(message);
+  }
+}
 vi.mock('../errors', () => ({
+  MicroserviceError: FakeMicroserviceError,
   ServiceValidationError: {
     forField: (field: string, message: string) =>
       new FakeValidationError(`Validation failed for ${field}`, [{ field, message, code: 'FIELD_VALIDATION_ERROR' }]),
@@ -304,7 +317,7 @@ describe('MeetingController', () => {
     // GH-1463: upstream stores a v1 SFID and derives type: 'committee' from it. Forwarding the v2
     // UID the picker works in would persist a bogus committee reference.
     it('rewrites a group guest committee_uid from the v2 UID to the v1 SFID', async () => {
-      resolveCommitteeV2UidsToV1IdsMock.mockResolvedValue(new Map([[V2_COMMITTEE_UID, V1_COMMITTEE_SFID]]));
+      resolveCommitteeV2UidMappingsMock.mockResolvedValue({ resolved: new Map([[V2_COMMITTEE_UID, V1_COMMITTEE_SFID]]), confirmedUnresolved: new Set() });
       const req = buildReq({ body: [{ email: 'a@example.com', committee_uid: V2_COMMITTEE_UID }] });
 
       await controller.addMeetingRegistrants(req, buildRes(), next);
@@ -319,7 +332,7 @@ describe('MeetingController', () => {
 
       await controller.addMeetingRegistrants(req, buildRes(), next);
 
-      expect(resolveCommitteeV2UidsToV1IdsMock).not.toHaveBeenCalled();
+      expect(resolveCommitteeV2UidMappingsMock).not.toHaveBeenCalled();
       const [, forwarded] = meetingSvc.addMeetingRegistrant.mock.calls[0];
       expect(forwarded).not.toHaveProperty('committee_uid');
     });
@@ -340,14 +353,28 @@ describe('MeetingController', () => {
 
     // The key is deleted, not nulled: upstream declares `committee_uid` a non-nullable optional
     // `string`, so omission is on-contract and an explicit `null` is not.
-    it('strips an unresolvable committee_uid rather than forwarding a v2 UID upstream', async () => {
-      resolveCommitteeV2UidsToV1IdsMock.mockResolvedValue(new Map());
+    it('strips a confirmed-unresolvable committee_uid rather than forwarding a v2 UID upstream', async () => {
+      resolveCommitteeV2UidMappingsMock.mockResolvedValue({ resolved: new Map(), confirmedUnresolved: new Set([V2_COMMITTEE_UID]) });
       const req = buildReq({ body: [{ email: 'a@example.com', committee_uid: V2_COMMITTEE_UID }] });
 
       await controller.addMeetingRegistrants(req, buildRes(), next);
 
       const [, forwarded] = meetingSvc.addMeetingRegistrant.mock.calls[0];
       expect(forwarded).not.toHaveProperty('committee_uid');
+    });
+
+    // The counterpart to the test above, and the reason the two are told apart at all: "no v1
+    // counterpart exists" is permanent and degrades, while "the lookup didn't answer" is transient.
+    // Downgrading the second writes a `direct` row and answers 201, and the update contract declares
+    // no `committee_uid` to repair it with — so it has to fail before the first write instead.
+    it('fails the batch when an allowlisted committee_uid lookup is indeterminate', async () => {
+      resolveCommitteeV2UidMappingsMock.mockResolvedValue({ resolved: new Map(), confirmedUnresolved: new Set() });
+      const req = buildReq({ body: [{ email: 'a@example.com', committee_uid: V2_COMMITTEE_UID }] });
+
+      await controller.addMeetingRegistrants(req, buildRes(), next);
+
+      expect(meetingSvc.addMeetingRegistrant).not.toHaveBeenCalled();
+      expect(next).toHaveBeenCalledWith(expect.objectContaining({ statusCode: 503 }));
     });
 
     it('drops a client-sent null committee_uid instead of proxying it upstream', async () => {
@@ -364,7 +391,7 @@ describe('MeetingController', () => {
 
       await controller.addMeetingRegistrants(req, buildRes(), next);
 
-      expect(resolveCommitteeV2UidsToV1IdsMock).not.toHaveBeenCalled();
+      expect(resolveCommitteeV2UidMappingsMock).not.toHaveBeenCalled();
       expect(meetingSvc.addMeetingRegistrant).toHaveBeenCalledWith(req, expect.objectContaining({ email: 'a@example.com' }));
     });
 

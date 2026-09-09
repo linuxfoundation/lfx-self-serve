@@ -3,8 +3,15 @@
 
 import { TestBed } from '@angular/core/testing';
 import { FormArray, FormControl, FormGroup } from '@angular/forms';
-import { MeetingType, MeetingVisibility } from '@lfx-one/shared/enums';
-import type { Meeting, MeetingComposerSection, MeetingComposerSectionId, MeetingRegistrant, MeetingRegistrantWithState } from '@lfx-one/shared/interfaces';
+import { CommitteeMemberRole, CommitteeMemberVotingStatus, MeetingType, MeetingVisibility } from '@lfx-one/shared/enums';
+import type {
+  CommitteeMember,
+  Meeting,
+  MeetingComposerSection,
+  MeetingComposerSectionId,
+  MeetingRegistrant,
+  MeetingRegistrantWithState,
+} from '@lfx-one/shared/interfaces';
 import { CommitteeService } from '@services/committee.service';
 import { MeetingService } from '@services/meeting.service';
 import { ProjectContextService } from '@services/project-context.service';
@@ -676,5 +683,237 @@ describe('MeetingComposerFormService — switch to advanced', () => {
     // The same open continuing, not a new one: the submit pipeline drops anything whose generation
     // moved under it, so bumping it here would make the organizer's own save land silently.
     expect(emissions).toEqual([{ id: 'meeting-1' }]);
+  });
+});
+/**
+ * Covers the reconciliation pass the Guests section runs whenever the group multi-select emits.
+ *
+ * All three of these are save-path regressions rather than display bugs: what the pass writes into
+ * `guests()` is what `registrantUpdates()` derives the create/update/delete batches from, and a wrong
+ * row here is a wrong invitation, a lost removal, or an attribution the update endpoint cannot repair
+ * afterwards (`UpdateMeetingRegistrantRequest` declares no `committee_uid`).
+ */
+describe('MeetingComposerFormService — group reconciliation', () => {
+  let service: MeetingComposerFormService;
+
+  /** A member of `committee_uid`, with the attribution fields the "via [Group]" chip reads. */
+  const member = (committeeUid: string, committeeName: string, email = 'chair@example.com'): CommitteeMember => ({
+    uid: `member-${committeeUid}`,
+    committee_uid: committeeUid,
+    committee_name: committeeName,
+    email,
+    first_name: 'Ada',
+    last_name: 'Lovelace',
+    role: { name: CommitteeMemberRole.CHAIR },
+    voting: { status: CommitteeMemberVotingStatus.VOTING_REP },
+    created_at: '2026-01-01T00:00:00Z',
+    updated_at: '2026-01-01T00:00:00Z',
+  });
+
+  beforeEach(() => {
+    TestBed.configureTestingModule({
+      providers: [
+        MeetingComposerFormService,
+        { provide: MessageService, useValue: { add: vi.fn() } },
+        { provide: CommitteeService, useValue: {} },
+        { provide: ProjectContextService, useValue: { activeContextUid: () => null } },
+        {
+          provide: MeetingService,
+          useValue: {
+            stripMetadata: (meetingUid: string, guest: MeetingRegistrantWithState) => ({
+              meeting_id: meetingUid,
+              email: guest.email,
+              committee_uid: guest.committee_uid,
+            }),
+            getChangedFields: (guest: MeetingRegistrantWithState) => ({ email: guest.email }),
+          },
+        },
+      ],
+    });
+
+    service = TestBed.inject(MeetingComposerFormService);
+    service.initialize({ mode: 'create', projectUid: 'project-1' });
+  });
+
+  it('adds an uninvited group member with that group attribution', () => {
+    service.syncCommitteeMembers([member('committee-board', 'Board')]);
+
+    expect(service.guests()).toHaveLength(1);
+    expect(service.guests()[0]).toMatchObject({
+      email: 'chair@example.com',
+      state: 'new',
+      type: 'committee',
+      committee_uid: 'committee-board',
+      committee_name: 'Board',
+      committee_role: CommitteeMemberRole.CHAIR,
+      committee_voting_status: CommitteeMemberVotingStatus.VOTING_REP,
+    });
+  });
+
+  // GH-1463: someone who sits on two selected groups matches the existing row on the second pass, so
+  // deselecting the group that first added them used to leave that group's `committee_uid` on the row.
+  // The create write then hits `resolveRegistrantCommitteeUids`, which strips a UID no longer attached
+  // to the meeting — the guest lands as `direct` and loses attribution outright.
+  it('re-reads a matched guest attribution from the group still emitting them', () => {
+    service.syncCommitteeMembers([member('committee-board', 'Board')]);
+    service.syncCommitteeMembers([member('committee-tac', 'TAC')]);
+
+    expect(service.guests()).toHaveLength(1);
+    expect(service.guests()[0]).toMatchObject({
+      state: 'new',
+      committee_uid: 'committee-tac',
+      committee_name: 'TAC',
+    });
+    // The batch is what actually reaches the API, so assert the refresh survives `stripMetadata`.
+    expect(service.registrantUpdates().toAdd).toEqual([{ meeting_id: '', email: 'chair@example.com', committee_uid: 'committee-tac' }]);
+  });
+
+  // The refresh is deliberately client-side only. A saved row's attribution is repaired in place for
+  // the sake of a later re-add, but it queues no PUT — `registrantUpdates` keys on `state`, and the
+  // server strips `committee_uid` from update bodies anyway so `PUT` cannot route around the create
+  // path's meeting-scoped allowlist.
+  it('refreshes a saved guest attribution without queueing an update for it', () => {
+    service.setGuests([
+      {
+        uid: 'registrant-1',
+        email: 'chair@example.com',
+        state: 'existing',
+        type: 'committee',
+        committee_uid: 'committee-board',
+        committee_name: 'Board',
+      } as MeetingRegistrantWithState,
+    ]);
+
+    service.syncCommitteeMembers([member('committee-tac', 'TAC')]);
+
+    expect(service.guests()[0]).toMatchObject({ state: 'existing', committee_uid: 'committee-tac', committee_name: 'TAC' });
+    expect(service.registrantUpdates()).toEqual({ toAdd: [], toUpdate: [], toDelete: [] });
+  });
+
+  it('queues a guest for deletion once no selected group emits them', () => {
+    service.setGuests([
+      { uid: 'registrant-1', email: 'chair@example.com', state: 'existing', type: 'committee', committee_uid: 'committee-board' } as MeetingRegistrantWithState,
+    ]);
+
+    service.syncCommitteeMembers([]);
+
+    expect(service.guests()[0]).toMatchObject({ state: 'deleted' });
+    expect(service.registrantUpdates().toDelete).toEqual(['registrant-1']);
+  });
+
+  it('restores a guest a re-selected group emits again', () => {
+    service.setGuests([
+      { uid: 'registrant-1', email: 'chair@example.com', state: 'existing', type: 'committee', committee_uid: 'committee-board' } as MeetingRegistrantWithState,
+    ]);
+    service.syncCommitteeMembers([]);
+
+    service.syncCommitteeMembers([member('committee-board', 'Board')]);
+
+    expect(service.guests()[0]).toMatchObject({ state: 'existing' });
+    expect(service.registrantUpdates().toDelete).toEqual([]);
+  });
+
+  it('keeps a hand-removed guest removed when their group emits again', () => {
+    service.setGuests([
+      { uid: 'registrant-1', email: 'chair@example.com', state: 'deleted', type: 'committee', committee_uid: 'committee-board' } as MeetingRegistrantWithState,
+    ]);
+    service.suppressGuestEmail('Chair@Example.com');
+
+    service.syncCommitteeMembers([member('committee-board', 'Board')]);
+
+    expect(service.guests()[0]).toMatchObject({ state: 'deleted' });
+    expect(service.registrantUpdates().toDelete).toEqual(['registrant-1']);
+  });
+
+  it('leaves a directly-added guest untouched by the group pass', () => {
+    service.setGuests([{ email: 'direct@example.com', state: 'new', type: 'direct' } as MeetingRegistrantWithState]);
+
+    service.syncCommitteeMembers([]);
+
+    expect(service.guests()).toHaveLength(1);
+    expect(service.guests()[0]).toMatchObject({ email: 'direct@example.com', state: 'new' });
+  });
+});
+
+/**
+ * Covers what the group pass and a load retry do while the saved guest list is missing.
+ *
+ * Both are the same hazard from opposite ends: an empty `guests()` that means "not loaded" rather
+ * than "nobody invited". Reconciling against it re-invites people who are already registered, and
+ * re-hydrating over it un-removes people the organizer has already taken off the list.
+ */
+describe('MeetingComposerFormService — group reconciliation after a failed guest load', () => {
+  let service: MeetingComposerFormService;
+  let getMeetingRegistrants: ReturnType<typeof vi.fn>;
+
+  beforeEach(() => {
+    getMeetingRegistrants = vi.fn().mockReturnValue(throwError(() => new Error('boom')));
+
+    TestBed.configureTestingModule({
+      providers: [
+        MeetingComposerFormService,
+        { provide: MessageService, useValue: { add: vi.fn() } },
+        { provide: CommitteeService, useValue: {} },
+        { provide: ProjectContextService, useValue: { activeContextUid: () => null } },
+        {
+          provide: MeetingService,
+          useValue: {
+            getMeeting: vi.fn().mockReturnValue(of({ id: 'meeting-1', title: 'Saved meeting' } as Meeting)),
+            getMeetingAttachments: vi.fn().mockReturnValue(of([])),
+            getMeetingRegistrants,
+            stripMetadata: (meetingUid: string, guest: MeetingRegistrantWithState) => ({ meeting_id: meetingUid, email: guest.email }),
+            getChangedFields: (guest: MeetingRegistrantWithState) => ({ email: guest.email }),
+          },
+        },
+      ],
+    });
+
+    service = TestBed.inject(MeetingComposerFormService);
+    service.initialize({ mode: 'edit', meetingUid: 'meeting-1' });
+  });
+
+  it('does not queue invitations for a group while the saved guests are unknown', () => {
+    expect(service.guestsLoadFailed()).toBe(true);
+
+    service.syncCommitteeMembers([
+      {
+        uid: 'member-1',
+        committee_uid: 'committee-board',
+        committee_name: 'Board',
+        email: 'chair@example.com',
+        first_name: 'Ada',
+        last_name: 'Lovelace',
+        created_at: '2026-01-01T00:00:00Z',
+        updated_at: '2026-01-01T00:00:00Z',
+      },
+    ]);
+
+    // Everyone in the group is already registered upstream; the fetch just didn't come back. Queueing
+    // them as `new` would re-invite the whole group on save.
+    expect(service.guests()).toEqual([]);
+    expect(service.registrantUpdates().toAdd).toEqual([]);
+  });
+
+  it('hydrates the saved guests as already persisted once the retry succeeds', () => {
+    getMeetingRegistrants.mockReturnValue(of([{ uid: 'registrant-1', email: 'chair@example.com' } as MeetingRegistrant]));
+
+    service.retryLoadMeeting();
+
+    expect(service.guestsLoadFailed()).toBe(false);
+    expect(service.guests()[0]).toMatchObject({ uid: 'registrant-1', state: 'existing' });
+    expect(service.registrantUpdates()).toEqual({ toAdd: [], toUpdate: [], toDelete: [] });
+  });
+
+  // The retry re-fetches rows the organizer may have removed in the meantime. Hydrating those as
+  // `existing` drops the removal from the pending batch with nothing on screen saying so, so a
+  // suppressed email comes back queued for deletion rather than silently un-removed.
+  it('keeps a removal the organizer made before the retry', () => {
+    service.suppressGuestEmail('Chair@Example.com');
+    getMeetingRegistrants.mockReturnValue(of([{ uid: 'registrant-1', email: 'chair@example.com' } as MeetingRegistrant]));
+
+    service.retryLoadMeeting();
+
+    expect(service.guests()[0]).toMatchObject({ uid: 'registrant-1', state: 'deleted' });
+    expect(service.registrantUpdates().toDelete).toEqual(['registrant-1']);
   });
 });

@@ -54,7 +54,9 @@ import {
   getUserTimezone,
   isRecurrenceNeverEndSentinel,
   mapRecurrenceToFormValue,
+  normalizeMeetingApiVotingStatuses,
   resolveMeetingOwner,
+  sanitizeMeetingCommittees,
 } from '@lfx-one/shared/utils';
 import { editModeDateTimeValidator, futureDateTimeValidator } from '@lfx-one/shared/validators';
 import { CommitteeService } from '@services/committee.service';
@@ -617,6 +619,15 @@ export class MeetingComposerFormService {
    * Lives here rather than in the Guests section because the quick create dialog selects groups too.
    */
   public syncCommitteeMembers(members: CommitteeMember[]): void {
+    // A failed guest load leaves `guests()` empty while the meeting still has saved registrants
+    // upstream. Reconciling against that empty list reads every group member as uninvited and queues
+    // them as `state: 'new'`, so saving would re-invite people who are already registered. Skip the
+    // pass entirely until a retry populates the list — the section already surfaces the failure and
+    // offers "Try again", and the group selection is re-applied once that succeeds.
+    if (this.guestsLoadFailed()) {
+      return;
+    }
+
     const memberByEmail = new Map<string, CommitteeMember>();
     members.forEach((member) => {
       if (member.email) {
@@ -634,13 +645,23 @@ export class MeetingComposerFormService {
         }
 
         const email = guest.email?.toLowerCase() ?? '';
-        if (memberByEmail.has(email)) {
+        const member = memberByEmail.get(email);
+        if (member) {
           memberByEmail.delete(email);
           // Reconciliation has to be idempotent: a guest queued for deletion because they left every
           // selected group is restored when they turn up in one again. A guest the organizer removed by
           // hand is suppressed, so their deletion survives re-emission.
           const restore = guest.state === 'deleted' && !suppressed.has(email);
-          kept.push(restore ? { ...guest, state: 'existing' } : guest);
+          // Re-read the attribution off the member the *current* selection emitted. Someone who belongs
+          // to two groups matches here after the group that first added them is deselected, and keeping
+          // the row verbatim would carry that group's `committee_uid` into the create write — where
+          // `resolveRegistrantCommitteeUids` strips a UID no longer attached to the meeting and the
+          // guest lands as `direct`, losing attribution outright.
+          kept.push({
+            ...guest,
+            ...this.groupAttribution(member),
+            ...(restore ? { state: 'existing' as const } : {}),
+          });
           return kept;
         }
 
@@ -720,6 +741,26 @@ export class MeetingComposerFormService {
       username: member.username || null,
       linkedin_profile: member.linkedin_profile || null,
       type: 'committee',
+      ...this.groupAttribution(member),
+    };
+  }
+
+  /**
+   * The four fields that say which group a guest came in through.
+   *
+   * Shared by the add path and the re-match path in `syncCommitteeMembers` so a guest who moves
+   * between two selected groups ends up with exactly the attribution a freshly added one would get.
+   *
+   * Note this repairs the *pending* write only. An already-saved registrant keeps whatever upstream
+   * stored, because the edit endpoint deliberately refuses to carry attribution:
+   * `UpdateMeetingRegistrantRequest` declares no `committee_uid` and `MeetingController` strips one
+   * that arrives anyway, so `PUT` cannot route around the meeting-scoped allowlist the create path
+   * enforces. Re-attributing a saved guest means removing and re-adding them.
+   */
+  private groupAttribution(
+    member: CommitteeMember
+  ): Pick<MeetingRegistrantWithState, 'committee_uid' | 'committee_name' | 'committee_role' | 'committee_voting_status'> {
+    return {
       committee_uid: member.committee_uid,
       committee_name: member.committee_name,
       committee_role: member.role?.name || null,
@@ -963,7 +1004,16 @@ export class MeetingComposerFormService {
         // Guests added while the fetch was in flight keep their place ahead of the saved rows, unless the
         // fetch turns out to have already returned them — a group emission can add someone mid-flight.
         const pending = this.guests().filter((guest) => guest.state === 'new' && !loadedEmails.has(guest.email?.toLowerCase() ?? ''));
-        this.setGuests([...pending, ...loaded.map((registrant) => ({ ...registrant, state: 'existing' as const, originalData: { ...registrant } }))]);
+        // A retry after a failed load re-fetches rows the organizer may have removed since. Hydrating
+        // those as `existing` would silently drop the removal from the pending changes, so a suppressed
+        // email comes back queued for deletion instead of un-removed.
+        const suppressed = this.suppressedGuestEmails();
+        const restored = loaded.map((registrant) => ({
+          ...registrant,
+          state: suppressed.has(registrant.email?.toLowerCase() ?? '') ? ('deleted' as const) : ('existing' as const),
+          originalData: { ...registrant },
+        }));
+        this.setGuests([...pending, ...restored]);
       });
   }
 
@@ -1029,7 +1079,12 @@ export class MeetingComposerFormService {
       auto_email_reminder_time: formValue.auto_email_reminder_enabled ? this.clampReminderTime(formValue.reminderHours, formValue.reminderMinutes) : undefined,
       recurrence: recurrenceObject,
       platform: formValue.platform || DEFAULT_MEETING_TOOL,
-      committees: formValue.committees || [],
+      // Canonicalize stored voting statuses at the save boundary: the form hydrates committees verbatim,
+      // so a legacy row would otherwise resubmit display values ('Voting Rep') on an unrelated edit (GH-1796).
+      committees: sanitizeMeetingCommittees(formValue.committees).map((committee) => ({
+        ...committee,
+        allowed_voting_statuses: normalizeMeetingApiVotingStatuses(committee.allowed_voting_statuses),
+      })),
       ...this.prepareOwnerData(formValue),
     };
   }
@@ -1180,7 +1235,7 @@ export class MeetingComposerFormService {
       reminderHours: reminderHours,
       reminderMinutes: reminderTotalMinutes % 60,
       recurrenceType: finalRecurrenceValue,
-      committees: meeting.committees || [],
+      committees: sanitizeMeetingCommittees(meeting.committees),
     });
 
     // Duration is set through `setDuration()` rather than patched, because it lives in two controls.

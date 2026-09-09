@@ -24,8 +24,8 @@ import { truncateToUtf16Units } from '@lfx-one/shared/utils';
 import { NextFunction, Request, Response } from 'express';
 
 import { NULLISH_DROPPED_REGISTRANT_KEYS, UNCONDITIONALLY_DROPPED_REGISTRANT_KEYS } from '../constants';
-import { resolveCommitteeV2UidsToV1Ids } from '../helpers/committee-v1-mapping.helper';
-import { AuthorizationError, ServiceValidationError } from '../errors';
+import { resolveCommitteeV2UidMappings, resolveCommitteeV2UidsToV1Ids } from '../helpers/committee-v1-mapping.helper';
+import { AuthorizationError, MicroserviceError, ServiceValidationError } from '../errors';
 import {
   addInvitedStatusToMeeting,
   applyOrganizerAndHostKeyResult,
@@ -2043,6 +2043,16 @@ export class MeetingController {
    * as a non-nullable optional `string`, so an explicit `null` is off-contract even though omission
    * is fine. A `null` arriving from the client is dropped for the same reason.
    *
+   * "Unresolvable" means *confirmed* unresolvable — the lookup answered, and this committee has no v1
+   * counterpart. An allowlisted UID the lookup could not answer for (a NATS timeout, an `error:`
+   * reply, the batch budget cutting the loop short) fails the whole request instead, for the same
+   * reason `getMeetingCommitteeUids` lets its own read error out: nothing has been written yet, so
+   * failing here is recoverable by a retry, whereas downgrading writes a `direct` row and answers
+   * 201, and `UpdateMeetingRegistrantRequest` declares no `committee_uid` to repair it with. Two
+   * outcomes that read identically as "absent from the map" are opposite decisions once a write
+   * depends on them, which is why this path reads the batch's `confirmedUnresolved` set rather than
+   * the map-only wrapper the read paths use.
+   *
    * `allowedV2Uids` is the meeting's own `committees[].uid` set, and a UID outside it is stripped
    * before any lookup. Without that gate the resolver would happily resolve any committee UID the
    * caller cared to send — `resolveCommitteeV2UidsToV1Ids` goes over NATS with the BFF's own
@@ -2073,10 +2083,29 @@ export class MeetingController {
 
     // Still fall through to the map when there's nothing to resolve — a client that sent an explicit
     // `committee_uid: null` needs the key dropped, and only the map below does that.
-    const v2ToV1Map = v2Uids.length > 0 ? await resolveCommitteeV2UidsToV1Ids(req, this.natsService, v2Uids) : new Map<string, string>();
+    const { resolved: v2ToV1Map, confirmedUnresolved } =
+      v2Uids.length > 0
+        ? await resolveCommitteeV2UidMappings(req, this.natsService, v2Uids)
+        : { resolved: new Map<string, string>(), confirmedUnresolved: new Set<string>() };
 
-    if (v2ToV1Map.size < v2Uids.length) {
-      logger.warning(req, 'resolve_registrant_committee_uids', 'Some committee UIDs could not be resolved to v1 SFIDs', {
+    const indeterminate = v2Uids.filter((uid) => !v2ToV1Map.has(uid) && !confirmedUnresolved.has(uid));
+
+    if (indeterminate.length > 0) {
+      logger.warning(req, 'resolve_registrant_committee_uids', 'Committee UID lookup did not answer; failing before any registrant write', {
+        requested: v2Uids.length,
+        resolved: v2ToV1Map.size,
+        // Counts only, for the same reason as the allowlist warning above.
+        indeterminate_count: indeterminate.length,
+      });
+
+      throw new MicroserviceError('Could not confirm group attribution for these guests. Please try again.', 503, 'SERVICE_UNAVAILABLE', {
+        operation: 'resolve_registrant_committee_uids',
+        service: 'committee-service',
+      });
+    }
+
+    if (confirmedUnresolved.size > 0) {
+      logger.warning(req, 'resolve_registrant_committee_uids', 'Some committee UIDs have no v1 SFID; adding those guests without attribution', {
         requested: v2Uids.length,
         resolved: v2ToV1Map.size,
       });
