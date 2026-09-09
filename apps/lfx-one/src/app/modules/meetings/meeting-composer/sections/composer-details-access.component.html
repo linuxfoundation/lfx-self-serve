@@ -76,9 +76,15 @@
         data-testid="composer-meeting-type-select">
         <!-- `checkmark` is off: PrimeNG puts its own tick on the left, and the design marks the
              selected row on the right, past the description -->
+        <!-- Neutral tile, not the type's scale colour: this is the same `bg-gray-50 text-gray-700` tile the
+             Create Meeting dropdown renders for the same six types, and the quick dialog's chips carry the
+             glyph at their own text colour too. Six accent hues down one list turned the select into a
+             palette and pulled the eye off the labels, which are what is actually being chosen between.
+             The colours still do their job where the design asks for them — the visibility and join
+             chips below, which are filled with `option.info.color` when selected. -->
         <ng-template #item let-option>
           <div class="flex w-full items-start gap-2.5">
-            <span class="flex h-7 w-7 shrink-0 items-center justify-center rounded-md bg-gray-50 text-xs" [style.color]="option.info.color">
+            <span class="flex h-7 w-7 shrink-0 items-center justify-center rounded-md bg-gray-50 text-xs text-gray-700">
               <i [class]="option.info.icon" aria-hidden="true"></i>
             </span>
             <span class="flex min-w-0 flex-col">
@@ -92,7 +98,7 @@
         </ng-template>
         <ng-template #selectedItem let-option>
           <span class="flex items-center gap-2">
-            <i [class]="option.info.icon" [style.color]="option.info.color" aria-hidden="true"></i>
+            <i class="text-gray-700" [class]="option.info.icon" aria-hidden="true"></i>
             <span class="text-sm text-gray-900">{{ option.label }}</span>
           </span>
         </ng-template>

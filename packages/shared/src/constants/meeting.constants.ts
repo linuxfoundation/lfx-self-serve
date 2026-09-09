@@ -126,14 +126,20 @@ export const CANCEL_ON_COMMITTEE_REMOVAL_OPTIONS = [
 
 /**
  * Meeting visibility card-selector options
- * @description Controls who can find the meeting in calendars and listings (maps to the `visibility` API field)
+ * @description Controls who can find the meeting in calendars and listings (maps to the `visibility` API field).
+ * `fa-solid` rather than the app's usual `fa-light`: these render as ~10px glyphs inside a tinted chip —
+ * white-on-colour when selected — and at that size the light stroke thins out until the shape stops being
+ * readable. Solid is the only heavier weight actually available: the Font Awesome kit loaded in
+ * `index.html` ships the Light (300) and Solid (900) faces only, so `fa-regular` sets no font-weight of
+ * its own and falls back to the Light face — a no-op here. Same reason applies to
+ * {@link MEETING_JOIN_RESTRICTION_OPTIONS}.
  */
 export const MEETING_VISIBILITY_OPTIONS: CardSelectorOption<MeetingVisibility>[] = [
   {
     label: 'Public',
     value: MeetingVisibility.PUBLIC,
     info: {
-      icon: 'fa-light fa-globe',
+      icon: 'fa-solid fa-globe',
       description: 'Listed on the public project calendar and discoverable in the app',
       color: lfxColors.emerald[500],
     },
@@ -142,7 +148,7 @@ export const MEETING_VISIBILITY_OPTIONS: CardSelectorOption<MeetingVisibility>[]
     label: 'Private',
     value: MeetingVisibility.PRIVATE,
     info: {
-      icon: 'fa-light fa-eye-slash',
+      icon: 'fa-solid fa-eye-slash',
       description: 'Hidden from the public calendar; only guests with the meeting link can find it',
       color: lfxColors.gray[500],
     },
@@ -158,7 +164,7 @@ export const MEETING_JOIN_RESTRICTION_OPTIONS: CardSelectorOption<boolean>[] = [
     label: 'Anyone with the link',
     value: false,
     info: {
-      icon: 'fa-light fa-link',
+      icon: 'fa-solid fa-link',
       description: 'Anyone who has the meeting link can join',
       color: lfxColors.blue[500],
     },
@@ -167,7 +173,7 @@ export const MEETING_JOIN_RESTRICTION_OPTIONS: CardSelectorOption<boolean>[] = [
     label: 'Invited guests only',
     value: true,
     info: {
-      icon: 'fa-light fa-lock',
+      icon: 'fa-solid fa-lock',
       description: 'Only invited guests can join',
       color: lfxColors.amber[500],
     },
