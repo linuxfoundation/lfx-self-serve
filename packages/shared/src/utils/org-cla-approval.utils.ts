@@ -31,8 +31,19 @@ const EMAIL_PATTERN = /^[a-zA-Z0-9.!#$%&'*+/=?^_`{|}~-]+@[a-zA-Z0-9](?:[a-zA-Z0-
  */
 const HANDLE_PATTERN = /^[a-zA-Z0-9._-]*$/;
 
-/** `utils.ValidGitlabOrg` — a gitlab.com URL, with the scheme and `www.` both optional. */
-const GITLAB_ORG_PATTERN = /^(?:http(s)?:\/\/)?(?:www\.)?(\w+[\w-]+\w+\.)?gitlab\.com[\w\-._~:/?#[\]@!$&'()*+,;=.]{3,100}$/;
+/**
+ * `utils.ValidGitlabOrg` — a gitlab.com URL, with the scheme and `www.` both optional.
+ *
+ * The subdomain group is written `\w[\w-]+\w` where the original has `\w+[\w-]+\w+`. The two accept
+ * exactly the same strings — any run of word characters and hyphens, at least three long, starting
+ * and ending on a word character — but the original spells it with three adjacent quantifiers over
+ * overlapping classes, leaving the engine an exponential number of ways to divide one run between
+ * them. Go's RE2 does not backtrack and so pays nothing for that; JavaScript does, and takes
+ * quadratic time to reject a long non-matching value: a 4,000-character one costs ~25s on this
+ * machine, and this validator runs on input a caller supplies. One quantifier instead of three
+ * makes the division unambiguous and the rejection immediate.
+ */
+const GITLAB_ORG_PATTERN = /^(?:http(s)?:\/\/)?(?:www\.)?(\w[\w-]+\w\.)?gitlab\.com[\w\-._~:/?#[\]@!$&'()*+,;=.]{3,100}$/;
 
 /** Minimum length the producer enforces on every handle-shaped value (`<= 2` is rejected). */
 const HANDLE_MIN_LENGTH = 3;
