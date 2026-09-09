@@ -113,6 +113,10 @@ export class FormationChecklistRowComponent {
 
   private buildStatusMenuItems(): MenuItem[] {
     const item = this.item();
+    // status_only items are updated by external tooling only (see formation.service.ts's
+    // completeFormationItem/skipFormationItem/updateFormationItemStatus rejection for the same
+    // rule enforced server-side) — the status menu must not offer a write the server will reject.
+    if (item.action === 'status_only') return [];
     // A gating item's `done`/`awaiting_acceptance` status is a gate decision — reversing it
     // requires the same `can_complete` privilege the server now enforces for that transition.
     const reversingGateDecision = item.is_gating && (item.status === 'done' || item.status === 'awaiting_acceptance');
@@ -154,19 +158,27 @@ export class FormationChecklistRowComponent {
 
   private buildOverflowMenuItems(): MenuItem[] {
     const item = this.item();
-    return [
+    const items: MenuItem[] = [
       { label: 'Assign', icon: 'fa-light fa-user', command: () => this.openDrawer.emit(item) },
       { label: 'Set due date', icon: 'fa-light fa-calendar', command: () => this.openDrawer.emit(item) },
-      { separator: true },
-      {
-        label: 'Skip with reason',
-        icon: 'fa-light fa-forward',
-        // Mirrors the drawer's Skip button gating (formation-item-drawer.component.html) — the
-        // overflow menu must not offer a write the rest of the UI treats as unauthorized/terminal.
-        disabled: !item.can_complete || item.status === 'done' || item.status === 'skipped',
-        command: () => this.skipRequested.emit(item),
-      },
     ];
+    // status_only items are updated by external tooling only (see formation.service.ts's
+    // completeFormationItem/skipFormationItem/updateFormationItemStatus rejection for the same
+    // rule enforced server-side) — skip isn't a write the server will accept for this action kind.
+    if (item.action !== 'status_only') {
+      items.push(
+        { separator: true },
+        {
+          label: 'Skip with reason',
+          icon: 'fa-light fa-forward',
+          // Mirrors the drawer's Skip button gating (formation-item-drawer.component.html) — the
+          // overflow menu must not offer a write the rest of the UI treats as unauthorized/terminal.
+          disabled: !item.can_complete || item.status === 'done' || item.status === 'skipped',
+          command: () => this.skipRequested.emit(item),
+        }
+      );
+    }
+    return items;
   }
 
   private emitStatusChange(status: Extract<FormationItem['status'], 'not_started' | 'in_progress'>): void {

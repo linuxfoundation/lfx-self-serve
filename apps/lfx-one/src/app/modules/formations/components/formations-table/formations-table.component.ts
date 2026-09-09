@@ -50,7 +50,9 @@ export class FormationsTableComponent {
 
   protected readonly statusTab = signal<string>('all');
   private readonly searchValue = signal('');
-  protected readonly sortField = signal<FormationSortableField | null>(null);
+  // Defaults to announcement date so the queue opens with its most actionable column sorted —
+  // rows with no announcement date set (comparator below) always sort last regardless of direction.
+  protected readonly sortField = signal<FormationSortableField | null>('announcement_date');
   protected readonly sortOrder = signal<'ASC' | 'DESC'>('ASC');
 
   protected readonly statusTabOptions: Signal<FilterPillOption[]> = computed(() => [

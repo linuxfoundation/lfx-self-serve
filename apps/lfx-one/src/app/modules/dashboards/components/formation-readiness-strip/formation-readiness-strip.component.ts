@@ -26,6 +26,13 @@ export class FormationReadinessStripComponent {
   // template binding below already reads FormationReadinessSummary-shaped data, so nothing else changes.
   protected readonly summary: Signal<FormationReadinessSummary> = computed(() => deriveFormationReadinessSummary(this.items(), this.announcementDate()));
 
+  /**
+   * Segment-bar `@for` track source — `segment` values (item statuses) repeat across the array, so
+   * tracking the raw status string would violate `@for`'s unique-track-value requirement; this pairs
+   * each status with a stable per-position `id` so the template can track that instead of `$index`.
+   */
+  protected readonly indexedSegments = computed(() => this.summary().segments.map((status, index) => ({ id: index, status })));
+
   protected readonly countsLabel = computed(() => {
     const counts = this.summary().counts;
     return `${counts.done} of ${this.summary().totalItems} done · ${counts.in_progress} in progress · ${counts.blocked} blocked · ${counts.awaiting_acceptance} with formation team · ${counts.not_started} not started · ${counts.skipped} skipped`;

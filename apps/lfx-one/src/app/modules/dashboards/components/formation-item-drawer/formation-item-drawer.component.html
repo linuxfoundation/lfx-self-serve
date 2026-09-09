@@ -48,7 +48,7 @@
       <div class="flex flex-col gap-2">
         <!-- status_only items are updated by external tooling only — see formation.service.ts's
              completeFormationItem rejection for the same rule enforced server-side. -->
-        @if (currentItem.status !== 'done' && currentItem.action !== 'status_only') {
+        @if (currentItem.status !== 'done' && currentItem.status !== 'skipped' && currentItem.action !== 'status_only') {
           <div class="flex items-center gap-2">
             <lfx-button
               [label]="completeLabel()"
@@ -70,9 +70,17 @@
                 data-testid="formation-item-drawer-skip" />
             }
           </div>
-          @if (!currentItem.can_complete) {
-            <!-- A disabled button isn't focusable, so a hover-only tooltip would never reach a keyboard/screen-reader user — render the reason as visible text instead. -->
-            <span class="text-xs text-gray-500">Requires gate_writer access</span>
+          @if (currentItem.is_gating && !currentItem.can_complete) {
+            <!-- A disabled button isn't focusable, so a hover-only tooltip would never reach a keyboard/screen-reader user — render the reason as visible text instead. `can_complete` only ever
+                 gates *accepting* an already-awaiting-acceptance item (formation.service.ts's completeFormationItem) — a non-gate-writer can still submit the item, so the copy must not
+                 imply they can't act at all. -->
+            <span class="text-xs text-gray-500">
+              @if (currentItem.status === 'awaiting_acceptance') {
+                Accepting this item requires gate_writer access.
+              } @else {
+                Accepting this item once submitted will require gate_writer access.
+              }
+            </span>
           }
         }
       </div>

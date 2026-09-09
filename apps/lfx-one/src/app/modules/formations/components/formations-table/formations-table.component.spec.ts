@@ -93,20 +93,28 @@ describe('FormationsTableComponent', () => {
     expect(fixture.nativeElement.querySelector('[data-testid="formations-sort-readiness"]').getAttribute('aria-sort')).toBe('descending');
   });
 
-  it('sorts by announcement date with rows lacking a date always last', async () => {
+  it('sorts by announcement date ascending by default, with rows lacking a date always last', async () => {
     await render([
       buildRow({ uid: 'formation:no-date', announcement_date: null }),
       buildRow({ uid: 'formation:later', announcement_date: '2026-06-01' }),
       buildRow({ uid: 'formation:earlier', announcement_date: '2026-01-01' }),
     ]);
 
-    announcementHeaderButton()?.click();
-    fixture.detectChanges();
-
     expect(rowUidsInOrder()).toEqual([
       'formations-table-row-formation:earlier',
       'formations-table-row-formation:later',
       'formations-table-row-formation:no-date',
     ]);
+    expect(fixture.nativeElement.querySelector('[data-testid="formations-sort-announcement"]').getAttribute('aria-sort')).toBe('ascending');
+
+    announcementHeaderButton()?.click();
+    fixture.detectChanges();
+
+    expect(rowUidsInOrder()).toEqual([
+      'formations-table-row-formation:later',
+      'formations-table-row-formation:earlier',
+      'formations-table-row-formation:no-date',
+    ]);
+    expect(fixture.nativeElement.querySelector('[data-testid="formations-sort-announcement"]').getAttribute('aria-sort')).toBe('descending');
   });
 });

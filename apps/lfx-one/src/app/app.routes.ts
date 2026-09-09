@@ -300,7 +300,7 @@ export const routes: Routes = [
       // Formations queue (GH-1958) — dark-launched behind `formation-enabled` (CanMatch), auditor-only
       // (CanActivate). Deliberately no projectQueryParamGuard and no `:id`/`:slug` child — the queue is
       // locked to the LF root, not scoped by `?project=`, and has no nested per-formation drill-down.
-      // No nav item from this ticket either — a separate ticket (#1955) links here.
+      // Linked from the dashboard's FormationEntryCardComponent (GH-1955), not from any nav item.
       {
         path: 'foundation/formations',
         data: { lens: 'foundation' },

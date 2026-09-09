@@ -149,6 +149,13 @@ export class FormationService {
     this.assertValidReason(reason, 'A reason is required to skip a gating item', req, 'skip_formation_item');
 
     const item = await this.getFormationItemOrThrow(req, itemUid);
+    if (item.action === 'status_only') {
+      throw ServiceValidationError.forField('action', 'status_only items are updated by external tooling and cannot be skipped manually', {
+        operation: 'skip_formation_item',
+        service: 'formation_service',
+        path: req.path,
+      });
+    }
     await this.assertItemProjectWriteAccess(req, item);
     await this.assertCanComplete(req, item, 'skip_formation_item');
     const updated: FormationItem = { ...item, status: 'skipped', skip_reason: reason, updated_at: new Date().toISOString() };
@@ -217,6 +224,13 @@ export class FormationService {
     }
 
     const item = await this.getFormationItemOrThrow(req, itemUid);
+    if (item.action === 'status_only') {
+      throw ServiceValidationError.forField('action', 'status_only items are updated by external tooling and cannot have their status changed manually', {
+        operation: 'update_formation_item_status',
+        service: 'formation_service',
+        path: req.path,
+      });
+    }
     await this.assertItemProjectWriteAccess(req, item);
     if (item.is_gating && (item.status === 'done' || item.status === 'awaiting_acceptance')) {
       await this.assertCanComplete(req, item, 'update_formation_item_status');
