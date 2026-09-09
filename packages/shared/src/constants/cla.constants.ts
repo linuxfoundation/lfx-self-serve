@@ -185,6 +185,33 @@ export const CLA_MANAGER_MODAL_COPY = {
 } as const;
 
 /**
+ * The Overview body for an agreement the organization has not signed.
+ *
+ * The list is not exclusively signed agreements — a row's status is read from the producer's
+ * `signed` flag — so this state is reached from the list itself, without going near the signing
+ * flow. Before this copy existed the tab rendered a heading and then nothing.
+ *
+ * Taken verbatim from the M3 prototype, steps and all. The three steps are the only place the
+ * consequence of signing is spelled out before it happens: that whoever signs becomes the initial
+ * CLA Manager, and what that role then controls. Paraphrasing them would quietly change what the
+ * organization is told it is agreeing to arrange.
+ */
+export const ORG_CLA_NOT_STARTED_COPY = {
+  /** `company` and `claGroup` are the organization's and the agreement's names. */
+  lead: (company: string, claGroup: string): string => `${company} has not yet signed a CLA for ${claGroup}.`,
+  stepsHeading: "Here's what the process looks like:",
+  steps: [
+    {
+      label: 'Step 1:',
+      body: 'You will identify who should be the initial CLA Manager. The CLA Manager is the person who manages the list of approved contributors. This might be you, or might be someone else at your company.',
+    },
+    { label: 'Step 2:', body: 'That person will be able to sign the CLA (or send it to someone else for signature).' },
+    { label: 'Step 3:', body: 'Finally, the CLA Manager will be able to start approving contributors and adding other CLA Managers.' },
+  ],
+  startLabel: 'Start the CLA process',
+} as const;
+
+/**
  * Tab order of the Organization Lens CLA Group detail page. `OrgClaDetailTab` is derived from
  * this, so the set exists once: a tab added here is a compile error everywhere that switches on
  * the union until it is handled.

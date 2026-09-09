@@ -7,6 +7,7 @@ import { signal } from '@angular/core';
 import { ComponentFixture, TestBed } from '@angular/core/testing';
 import { provideNoopAnimations } from '@angular/platform-browser/animations';
 import { ActivatedRoute, convertToParamMap, provideRouter } from '@angular/router';
+import { ORG_CLA_NOT_STARTED_COPY } from '@lfx-one/shared/constants';
 import type { OrgClaGroup } from '@lfx-one/shared/interfaces';
 import { AccountContextService } from '@services/account-context.service';
 import { OrgLensClaService } from '@services/org-lens-cla.service';
@@ -183,6 +184,73 @@ describe('OrgEasyclaDetailComponent', () => {
     const fixture = await render();
 
     expect(byTestId(fixture, 'org-easycla-detail-ccla-hint')?.textContent?.trim()).toBe("Covers Cascade for Acme's employees.");
+  });
+
+  describe('an agreement the organization has not signed', () => {
+    const notStarted = { status: 'not-started' as const, signed: false, signedOn: undefined };
+
+    it('explains the process instead of leaving the tab empty', async () => {
+      getClaGroups.mockReturnValue(of({ orgUid: SELECTED_ACCOUNT.uid, claGroups: [claGroup(notStarted)] }));
+
+      const fixture = await render();
+
+      const panel = byTestId(fixture, 'org-easycla-detail-not-started');
+      expect(panel).not.toBeNull();
+      // All three steps, not merely the heading: the steps are where the consequence of signing —
+      // that the signer becomes the initial CLA Manager — is stated before it happens.
+      expect(panel?.querySelectorAll('li').length).toBe(3);
+      expect(panel?.textContent).toContain(ORG_CLA_NOT_STARTED_COPY.stepsHeading);
+      for (const step of ORG_CLA_NOT_STARTED_COPY.steps) {
+        expect(panel?.textContent).toContain(step.body);
+      }
+    });
+
+    it('names the organization and the agreement it has not signed', async () => {
+      getClaGroups.mockReturnValue(of({ orgUid: SELECTED_ACCOUNT.uid, claGroups: [claGroup({ ...notStarted, claGroupName: 'Cascade CLA' })] }));
+
+      const fixture = await render();
+
+      expect(byTestId(fixture, 'org-easycla-detail-not-started-lead')?.textContent?.trim()).toBe('Acme has not yet signed a CLA for Cascade CLA.');
+    });
+
+    it('numbers the steps as a list, so their order and count are announced', async () => {
+      getClaGroups.mockReturnValue(of({ orgUid: SELECTED_ACCOUNT.uid, claGroups: [claGroup(notStarted)] }));
+
+      const fixture = await render();
+
+      expect(byTestId(fixture, 'org-easycla-detail-not-started')?.querySelector('ol')).not.toBeNull();
+    });
+
+    it('offers the start control, and says why it does nothing yet', async () => {
+      getClaGroups.mockReturnValue(of({ orgUid: SELECTED_ACCOUNT.uid, claGroups: [claGroup(notStarted)] }));
+
+      const fixture = await render();
+
+      // The reason has to be in the accessible name, not the tooltip alone: the tooltip host is
+      // not focusable while the button is disabled, so it never opens on focus.
+      const start = byTestId(fixture, 'org-easycla-detail-start-cla');
+      expect(start).not.toBeNull();
+      expect(start?.querySelector('button')?.disabled).toBe(true);
+      expect(start?.querySelector('button')?.getAttribute('aria-label')).toContain('coming soon');
+    });
+
+    it('does not explain the process on a signed agreement', async () => {
+      getClaGroups.mockReturnValue(of({ orgUid: SELECTED_ACCOUNT.uid, claGroups: [claGroup()] }));
+
+      const fixture = await render();
+
+      expect(byTestId(fixture, 'org-easycla-detail-not-started')).toBeNull();
+    });
+
+    it('does not walk a sanctioned agreement through how to start signing', async () => {
+      // Sanctions take the same status slot, and that viewer's obstacle is not a missing signature
+      // — telling them how to begin would talk past the reason they cannot.
+      getClaGroups.mockReturnValue(of({ orgUid: SELECTED_ACCOUNT.uid, claGroups: [claGroup({ status: 'sanctioned', signed: false, signedOn: undefined })] }));
+
+      const fixture = await render();
+
+      expect(byTestId(fixture, 'org-easycla-detail-not-started')).toBeNull();
+    });
   });
 
   it('withholds the download from an agreement that was never signed', async () => {

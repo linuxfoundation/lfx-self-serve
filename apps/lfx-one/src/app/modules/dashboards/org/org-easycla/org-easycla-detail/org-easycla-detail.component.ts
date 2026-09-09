@@ -7,7 +7,7 @@ import { takeUntilDestroyed, toObservable, toSignal } from '@angular/core/rxjs-i
 import { ActivatedRoute } from '@angular/router';
 import { HttpErrorResponse } from '@angular/common/http';
 import type { OrgClaCoverageChip, OrgClaDetailTab, OrgClaDetailTabView, OrgClaGroup, OrgClaGroupList, OrgClaStatusDisplay } from '@lfx-one/shared/interfaces';
-import { ORG_CLA_DETAIL_TABS, ORG_CLA_HEADING_STATUS, ORG_CLA_STATUS_DISPLAY } from '@lfx-one/shared/constants';
+import { ORG_CLA_DETAIL_TABS, ORG_CLA_HEADING_STATUS, ORG_CLA_NOT_STARTED_COPY, ORG_CLA_STATUS_DISPLAY } from '@lfx-one/shared/constants';
 import { downloadFromUrl, formatClaSignedOnInstant, orgClaCoverageChips, orgClaCoverageSummary } from '@lfx-one/shared/utils';
 import { MenuItem, MessageService } from 'primeng/api';
 import { DialogService } from 'primeng/dynamicdialog';
@@ -123,6 +123,18 @@ export class OrgEasyclaDetailComponent {
   // gives the viewer a control that can only fail.
   protected readonly canDownload = computed(() => this.claGroup()?.signed === true);
 
+  protected readonly notStartedCopy = ORG_CLA_NOT_STARTED_COPY;
+
+  /**
+   * Read from the status rather than from `signed` being false, unlike `canDownload` above.
+   * Sanctions occupy the same status slot, and a sanctioned agreement carries its own explanatory
+   * body in the design — walking that viewer through how to start signing would talk past the
+   * reason they cannot.
+   */
+  protected readonly notStarted = computed(() => this.claGroup()?.status === 'not-started');
+
+  protected readonly notStartedLead = computed(() => this.initNotStartedLead());
+
   protected readonly signedOnLabel = computed(() => this.initSignedOnLabel());
 
   protected readonly signedByName = computed(() => this.initSignedByName());
@@ -223,6 +235,17 @@ export class OrgEasyclaDetailComponent {
     const summary = orgClaCoverageSummary(group);
     const company = this.companyName();
     return summary && company ? `Covers ${summary} for ${company}'s employees.` : '';
+  }
+
+  /**
+   * Withheld until both names are known rather than filled with a placeholder. The sentence names
+   * the organization being bound and the agreement it would be bound to, so a gap in either is the
+   * part that carries the meaning, and "— has not yet signed a CLA for —" states nothing.
+   */
+  private initNotStartedLead(): string {
+    const group = this.claGroup();
+    const company = this.companyName();
+    return group && company ? this.notStartedCopy.lead(company, group.claGroupName) : '';
   }
 
   private initSignedOnLabel(): string {

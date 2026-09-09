@@ -172,6 +172,51 @@
             </ng-template>
           </lfx-message>
         }
+        <!--
+          The body for an agreement the organization has not signed. Reached from the list, not
+          only from the signing flow: a row's status comes from the producer's `signed` flag, so an
+          unsigned agreement is an ordinary list entry. Without this the tab rendered its heading
+          and then stopped, which reads as a page that failed to load rather than as a state.
+        -->
+        @if (notStarted()) {
+          <div class="flex flex-col gap-3" data-testid="org-easycla-detail-not-started">
+            @if (notStartedLead()) {
+              <p class="text-sm text-gray-700" data-testid="org-easycla-detail-not-started-lead">{{ notStartedLead() }}</p>
+            }
+            <p class="font-semibold text-sm text-gray-900">{{ notStartedCopy.stepsHeading }}</p>
+            <!--
+              An ordered list, not three paragraphs as the prototype draws them. The steps are a
+              sequence and are numbered in their own text, so the markup that says so is what lets
+              assistive technology announce the position and count. The prototype's numbering is
+              kept in the visible text rather than generated, so the wording stays verbatim.
+            -->
+            <ol class="flex list-none flex-col gap-2 p-0">
+              @for (step of notStartedCopy.steps; track step.label) {
+                <li class="text-sm text-gray-700">
+                  <span class="font-semibold text-gray-900">{{ step.label }}</span> {{ step.body }}
+                </li>
+              }
+            </ol>
+            <!--
+              Inoperable for now, exactly as the list header's Sign CLA control ships: enabling it
+              belongs to the signing feature, and there is deliberately no click handler to leave
+              behind. The reason is in the accessible name as well as the tooltip, because the
+              tooltip sits on the non-focusable host while the button inside is disabled, so it
+              opens on hover and never on focus — without it, assistive technology announces only
+              "Start the CLA process, disabled" and the viewer cannot tell whether the control is
+              unavailable to them or to everyone.
+            -->
+            <div>
+              <lfx-button
+                [label]="notStartedCopy.startLabel"
+                icon="fa-light fa-file-signature"
+                [disabled]="true"
+                [ariaLabel]="notStartedCopy.startLabel + ' — signing a new CLA from the Organization Lens is coming soon.'"
+                tooltip="Signing a new CLA from the Organization Lens is coming soon."
+                data-testid="org-easycla-detail-start-cla" />
+            </div>
+          </div>
+        }
         @if (canDownload()) {
           <!--
             `severity="secondary"` with `outlined`, the pairing the survey-preview and profile
