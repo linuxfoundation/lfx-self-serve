@@ -109,6 +109,7 @@ export class MentorsTabComponent {
       statusBadgeClass: MENTORSHIP_MENTOR_STATUS_BADGE_CLASSES[person.status],
       invitationLabel: person.invitedOn ? formatIsoDateLabel(person.invitedOn) : '—',
       profileCreatedLabel: person.profileCreated ? 'Yes' : 'No',
+      profileCreatedClass: person.profileCreated ? 'text-emerald-600' : 'text-red-600',
       canAccept: person.status === 'pending' || person.status === 'declined',
       canDecline: person.status === 'pending' || person.status === 'accepted',
     };

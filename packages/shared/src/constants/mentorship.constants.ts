@@ -64,8 +64,8 @@ export const MENTORSHIP_PROGRAM_DETAIL_TABS = [
 ] as const;
 
 /**
- * Mentor lifecycle statuses on the admin Mentors tab. Ordered by lifecycle so
- * `.sort` on this array yields the filter-dropdown order.
+ * Mentor lifecycle statuses on the admin Mentors tab. Source of the
+ * `MentorshipMentorStatus` union; declaration order is the lifecycle order.
  */
 export const MENTORSHIP_MENTOR_STATUSES = ['pending', 'accepted', 'declined', 'withdrawn'] as const;
 
@@ -94,15 +94,15 @@ export const MENTORSHIP_MENTOR_STATUS_BADGE_CLASSES: Record<MentorshipMentorStat
   pending: 'bg-amber-50 text-amber-700',
   accepted: 'bg-emerald-50 text-emerald-700',
   declined: 'bg-red-50 text-red-600',
-  withdrawn: 'bg-slate-100 text-slate-600',
+  withdrawn: 'bg-gray-100 text-gray-600',
 };
 
 export const MENTORSHIP_MENTEE_STATUS_BADGE_CLASSES: Record<MentorshipMenteeStatus, string> = {
   pending: 'bg-amber-50 text-amber-700',
   accepted: 'bg-emerald-50 text-emerald-700',
   declined: 'bg-red-50 text-red-600',
-  withdrawn: 'bg-slate-100 text-slate-600',
-  graduated: 'bg-teal-50 text-teal-700',
+  withdrawn: 'bg-gray-100 text-gray-600',
+  graduated: 'bg-violet-50 text-violet-700',
 };
 
 export const MENTORSHIP_TERM_ROW_STATUSES = ['open', 'closed'] as const;

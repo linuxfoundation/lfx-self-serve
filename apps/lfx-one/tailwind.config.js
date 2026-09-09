@@ -43,8 +43,8 @@ export default {
     ...Object.values(MENTORSHIP_PROGRAM_STATUS_BADGE_CLASSES).flatMap((classes) => classes.split(' ')),
     // Mentorship program-detail tabs: mentor/mentee status badges (Mentors / Applicants / Current
     // Mentees) and term-row status badges come from shared constants, also outside `content`.
-    // `bg-red-50` (declined) and `bg-slate-100`/`text-slate-600` (withdrawn) don't appear in scanned
-    // source, so they are purged without these entries.
+    // The class strings are assembled in @lfx-one/shared, which Tailwind never scans, so these
+    // spreads are what guarantees they survive purging regardless of usage elsewhere.
     ...Object.values(MENTORSHIP_MENTOR_STATUS_BADGE_CLASSES).flatMap((classes) => classes.split(' ')),
     ...Object.values(MENTORSHIP_MENTEE_STATUS_BADGE_CLASSES).flatMap((classes) => classes.split(' ')),
     ...Object.values(MENTORSHIP_TERM_ROW_STATUS_BADGE_CLASSES).flatMap((classes) => classes.split(' ')),

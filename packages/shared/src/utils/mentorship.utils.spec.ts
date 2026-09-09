@@ -380,13 +380,15 @@ describe('program detail helpers', () => {
     expect(detail.tabCounts).toEqual({ mentees: 1, applicants: 0, mentors: 2, terms: 0 });
   });
 
-  it('matches people by name, email, or term', () => {
+  it('matches people by name or email, but not by term', () => {
     const person = { id: '1', name: 'Alex Rivera', email: 'alex.rivera@example.com', status: 'accepted' as const, termName: 'Fall 2026' };
 
     expect(matchesMentorshipPersonSearch(person, '')).toBe(true);
     expect(matchesMentorshipPersonSearch(person, 'rivera')).toBe(true);
     expect(matchesMentorshipPersonSearch(person, 'ALEX.RIVERA')).toBe(true);
-    expect(matchesMentorshipPersonSearch(person, 'fall')).toBe(true);
+    // Term search was dropped deliberately: mentors carry no `termName`, so the shared
+    // helper only matches the two fields both person shapes always have.
+    expect(matchesMentorshipPersonSearch(person, 'fall')).toBe(false);
     expect(matchesMentorshipPersonSearch(person, 'winter')).toBe(false);
   });
 
