@@ -2,15 +2,15 @@
 <!-- SPDX-License-Identifier: MIT -->
 
 <div class="flex flex-col gap-4" data-testid="mentorship-applicants-tab">
-  <div class="flex flex-col gap-3 sm:flex-row sm:items-center">
+  <div class="flex flex-col gap-3 md:flex-row md:items-center">
     <!-- min-w-0 + flex-1: the search takes the leftover width without squeezing the
          filter and export controls, which otherwise wrap their labels. -->
-    <label class="w-full min-w-0 sm:flex-1">
+    <label class="w-full min-w-0 md:flex-1">
       <span class="sr-only">Search applicants</span>
       <lfx-input-text [form]="form" control="search" placeholder="Search" icon="fa-light fa-magnifying-glass" dataTest="mentorship-applicants-search" />
     </label>
 
-    <div class="flex shrink-0 items-center gap-2">
+    <div class="flex shrink-0 items-center gap-2 flex-wrap">
       <lfx-button
         label="Decline by Term"
         severity="warn"
@@ -20,7 +20,7 @@
         (onClick)="onDeclineByTerm()"
         data-testid="mentorship-applicants-decline-by-term" />
 
-      <div class="w-full sm:w-44">
+      <div class="w-full md:w-44">
         <lfx-select
           [form]="form"
           control="status"
@@ -33,7 +33,7 @@
           dataTest="mentorship-applicants-status" />
       </div>
 
-      <div class="w-full sm:w-40">
+      <div class="w-full md:w-40">
         <lfx-select
           [form]="form"
           control="term"
@@ -89,8 +89,8 @@
 
       <ng-template #body let-row>
         <tr [attr.data-testid]="'mentorship-applicant-row-' + row.id">
-          <td class="px-4 py-3">
-            <div class="flex items-center gap-3 min-w-0">
+          <td class="px-4 py-3 max-w-[26%]">
+            <div class="flex items-center gap-3 min-w-0 w-full">
               <lfx-avatar
                 [image]="row.avatarUrl ?? ''"
                 [label]="row.initials"
@@ -98,11 +98,11 @@
                 size="normal"
                 [styleClass]="row.avatarStyleClass"
                 [ariaLabel]="row.name" />
-              <div class="flex flex-col min-w-0">
-                <span class="text-sm font-medium text-blue-600 truncate" [title]="row.name">{{ row.name }}</span>
+              <div class="flex flex-col min-w-0 w-[calc(100%-2rem)]">
+                <span class="max-w-full block truncate text-sm font-medium text-blue-600" [title]="row.name">{{ row.name }}</span>
                 <button
                   type="button"
-                  class="text-xs text-gray-500 truncate text-left transition-colors hover:text-blue-600"
+                  class="max-w-full block truncate text-xs text-gray-500 text-left transition-colors hover:text-blue-600"
                   [title]="row.hasNote ? row.noteLabel : 'Add a reviewer note for ' + row.name"
                   [attr.aria-label]="(row.hasNote ? 'Edit' : 'Add') + ' reviewer note for ' + row.name"
                   (click)="onOpenNote(row.id)"
@@ -112,28 +112,32 @@
               </div>
             </div>
           </td>
-          <td class="px-4 py-3 text-sm text-gray-700">{{ row.termName }}</td>
+          <td class="px-4 py-3 max-w-[11%]">
+            <span class="max-w-full block truncate text-sm text-gray-700" [title]="row.termName">{{ row.termName }}</span>
+          </td>
           <td class="px-4 py-3">
-            <span class="inline-flex items-center text-xs font-semibold px-2 py-0.5 rounded-full" [class]="row.statusBadgeClass">
+            <span class="inline-flex items-center text-xs font-semibold px-2 py-0.5 rounded-lg" [class]="row.statusBadgeClass">
               {{ row.statusLabel }}
             </span>
           </td>
-          <td class="px-4 py-3 text-sm text-gray-500">
-            <div class="flex flex-col gap-0.5">
+          <td class="px-4 py-3">
+            <div class="flex flex-col gap-0.5 text-sm text-gray-500">
               <span>Created: {{ row.createdLabel }}</span>
               <span>Updated: {{ row.updatedLabel }}</span>
             </div>
           </td>
-          <td class="px-4 py-3">
+          <td class="px-4 py-3 max-w-[18%]">
             @if (row.otherApplications.length > 0) {
-              <div class="flex flex-col gap-0.5">
+              <div class="flex flex-col gap-0.5 w-full">
                 @for (application of row.otherApplications; track application.programId) {
-                  <span class="text-sm truncate">
-                    <a class="text-blue-600 transition-colors hover:text-blue-700 hover:underline" [routerLink]="['/mentorship/admin', application.programId]">
+                  <div class="text-sm w-full flex items-center flex-wrap">
+                    <a
+                      class="max-w-full block truncate text-blue-600 transition-colors hover:text-blue-700 hover:underline"
+                      [routerLink]="['/mentorship/admin', application.programId]">
                       {{ application.programName }}
                     </a>
                     <span class="text-gray-500"> — {{ application.statusLabel }}</span>
-                  </span>
+                  </div>
                 }
               </div>
             } @else {

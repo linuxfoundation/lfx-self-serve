@@ -124,6 +124,7 @@
           size="small"
           [disabled]="!draftTechnology()"
           (onClick)="addTechnology()"
+          styleClass="whitespace-nowrap !py-2.5"
           data-testid="mentorship-enroll-add-technology" />
       </div>
       @if (technologies().length) {

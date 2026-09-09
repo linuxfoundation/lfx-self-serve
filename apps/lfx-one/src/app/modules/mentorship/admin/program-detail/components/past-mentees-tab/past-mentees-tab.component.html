@@ -73,8 +73,8 @@
 
       <ng-template #body let-row>
         <tr [attr.data-testid]="'mentorship-past-mentee-row-' + row.id">
-          <td class="px-4 py-3">
-            <div class="flex items-center gap-3 min-w-0">
+          <td class="px-4 py-3 max-w-[46%]">
+            <div class="flex items-center gap-3 min-w-0 w-full">
               <lfx-avatar
                 [image]="row.avatarUrl ?? ''"
                 [label]="row.initials"
@@ -82,9 +82,8 @@
                 size="normal"
                 [styleClass]="row.avatarStyleClass"
                 [ariaLabel]="row.name" />
-              <div class="flex flex-col min-w-0">
-                <span class="text-sm font-medium text-blue-600 truncate" [title]="row.name">{{ row.name }}</span>
-                <span class="text-xs text-gray-500 truncate" [title]="row.email">{{ row.email }}</span>
+              <div class="flex flex-col min-w-0 w-[calc(100%-2rem)]">
+                <span class="max-w-full block truncate text-sm font-medium text-blue-600" [title]="row.name">{{ row.name }}</span>
               </div>
             </div>
           </td>
@@ -93,7 +92,9 @@
               {{ row.statusLabel }}
             </span>
           </td>
-          <td class="px-4 py-3 text-sm text-gray-700">{{ row.termName }}</td>
+          <td class="px-4 py-3 max-w-[27%]">
+            <span class="max-w-full block truncate text-sm text-gray-700" [title]="row.termName">{{ row.termName }}</span>
+          </td>
         </tr>
       </ng-template>
 

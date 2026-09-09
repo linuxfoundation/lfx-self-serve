@@ -62,8 +62,8 @@
 
       <ng-template #body let-row>
         <tr [attr.data-testid]="'mentorship-mentee-row-' + row.id">
-          <td class="px-4 py-3">
-            <div class="flex items-center gap-3 min-w-0">
+          <td class="px-4 py-3 max-w-[32%]">
+            <div class="flex items-center gap-3 min-w-0 w-full">
               <lfx-avatar
                 [image]="row.avatarUrl ?? ''"
                 [label]="row.initials"
@@ -71,11 +71,11 @@
                 size="normal"
                 [styleClass]="row.avatarStyleClass"
                 [ariaLabel]="row.name" />
-              <div class="flex flex-col min-w-0">
-                <span class="text-sm font-medium text-blue-600 truncate" [title]="row.name">{{ row.name }}</span>
+              <div class="flex flex-col min-w-0 w-[calc(100%-2rem)]">
+                <span class="max-w-full block truncate text-sm font-medium text-blue-600" [title]="row.name">{{ row.name }}</span>
                 <button
                   type="button"
-                  class="text-xs text-gray-500 truncate text-left transition-colors hover:text-blue-600"
+                  class="max-w-full block truncate text-xs text-gray-500 text-left transition-colors hover:text-blue-600"
                   [title]="row.hasNote ? row.noteLabel : 'Add a reviewer note for ' + row.name"
                   [attr.aria-label]="(row.hasNote ? 'Edit' : 'Add') + ' reviewer note for ' + row.name"
                   (click)="onOpenNote(row.id)"
@@ -90,18 +90,18 @@
               {{ row.statusLabel }}
             </span>
           </td>
-          <td class="px-4 py-3">
+          <td class="px-4 py-3 max-w-[20%]">
             @if (row.taskLabel) {
               <button
                 type="button"
-                class="text-sm text-blue-600 transition-colors hover:text-blue-700 hover:underline"
+                class="max-w-full block truncate text-sm text-blue-600 transition-colors hover:text-blue-700 hover:underline"
                 [attr.aria-label]="'View tasks for ' + row.name"
                 (click)="onViewTasks(row.name)"
                 [attr.data-testid]="'mentorship-mentee-tasks-' + row.id">
                 {{ row.taskLabel }}
               </button>
             } @else {
-              <span class="text-sm text-gray-500">No tasks assigned</span>
+              <span class="max-w-full block truncate text-sm text-gray-500">No tasks assigned</span>
             }
           </td>
           <td class="px-4 py-3">
