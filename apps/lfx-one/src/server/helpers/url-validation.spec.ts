@@ -6,6 +6,7 @@ import type https from 'node:https';
 import type { AddressInfo } from 'node:net';
 import { afterAll, beforeAll, describe, expect, it, vi } from 'vitest';
 
+import { ServiceValidationError } from '../errors';
 import { encodePathSegment } from './url-validation';
 
 /**
@@ -97,9 +98,9 @@ describe('fetchSafeUrl response byte ceiling', () => {
 });
 
 /**
- * `encodePathSegment` is a one-line alias for `encodeURIComponent`, and that is exactly why it is
+ * `encodePathSegment` is a thin wrapper around `encodeURIComponent`, and that is exactly why it is
  * tested: the thing worth pinning is not the encoding itself but the property the call sites depend
- * on — that whatever an attacker puts in an identifier, the result is still one path segment.
+ * on — that whatever an attacker puts in an identifier, the result is still one *inert* path segment.
  *
  * Without this, the function reads like a pointless wrapper and the obvious "simplification" is to
  * inline it or drop it, silently un-fixing a traversal that reaches an internal service under the
@@ -116,8 +117,29 @@ describe('encodePathSegment', () => {
 
     expect(encoded).not.toContain('/');
     // The URL parser resolves `.` and `..` only between separators, so removing the separators is
-    // what defuses the traversal — the dots themselves are harmless.
+    // what defuses a traversal *embedded* in a longer value. A value that is nothing but dots has no
+    // separator to remove and is refused outright instead — see below.
     expect(new URL(`https://svc.example/itx/meetings/${encoded}/registrants`).pathname).toBe(`/itx/meetings/${encoded}/registrants`);
+  });
+
+  it.each([
+    ['the parent directory', '..'],
+    ['the current directory', '.'],
+  ])('refuses %s, which encoding cannot neutralize', (_label, hostile) => {
+    // The reason this arm is a rejection and not more encoding: percent-decoding happens before path
+    // normalization, so the encoded form climbs the path exactly as the literal one does. Asserted
+    // rather than described, because the whole guard rests on it.
+    const encoded = encodeURIComponent(hostile);
+
+    expect(new URL(`https://svc.example/itx/meetings/${encoded}/registrants`).pathname).not.toBe(`/itx/meetings/${encoded}/registrants`);
+
+    expect(() => encodePathSegment(hostile)).toThrow(ServiceValidationError);
+  });
+
+  it('answers 400 rather than letting the traversal reach upstream', () => {
+    // A refusal that surfaced as a 500 would read as a bug in the app rather than a bad request, and
+    // would page whoever owns the service instead of telling the caller what it did wrong.
+    expect(() => encodePathSegment('..')).toThrow(expect.objectContaining({ statusCode: 400 }));
   });
 
   it('strips the query and fragment delimiters that would otherwise truncate the path', () => {

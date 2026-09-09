@@ -1995,8 +1995,8 @@ export class MeetingController {
     const stripped = MeetingController.stripCommitteeUid(changes as UpdateMeetingRegistrantRequest) as unknown as Record<string, unknown>;
 
     return Object.entries(stripped).some(([key, value]) => {
-      // Widened for the lookups only: `includes` on a `readonly ['org_name', ...]` won't accept an
-      // arbitrary string, and the keys here come off untyped JSON.
+      // Widened for the lookups only: both arrays are typed by their registrant key unions, so
+      // `includes` won't accept an arbitrary string, and the keys here come off untyped JSON.
       if ((UNCONDITIONALLY_DROPPED_REGISTRANT_KEYS as readonly string[]).includes(key)) {
         return false;
       }
@@ -2169,6 +2169,16 @@ export class MeetingController {
     // defined as `1*DIGIT`, but `Number` also accepts forms no HTTP client sends and this field can't
     // represent honestly, and a range check runs too late to catch them: `'0x10'` becomes 16 and
     // `'1e3'` becomes 1000, both of which are non-negative integers and would have been logged.
-    return raw && /^\d+$/.test(raw) ? Number(raw) : null;
+    if (!raw || !/^\d+$/.test(raw)) {
+      return null;
+    }
+
+    const parsed = Number(raw);
+
+    // Digits alone are not enough to land on a number worth logging: a long enough run of them
+    // overflows to `Infinity`, which `JSON.stringify` writes as `null` — indistinguishable in the log
+    // from the absent header — and anything past `2^53 - 1` has already lost precision, so the value
+    // recorded is not the one the header carried.
+    return Number.isSafeInteger(parsed) ? parsed : null;
   }
 }

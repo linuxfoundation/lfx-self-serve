@@ -23,6 +23,7 @@ const { meetingSvc, aiSvc, committeeSvc, resolveCommitteeV2UidsToV1IdsMock, gene
     getMeetingRegistrantsByEmail: vi.fn(),
     addMeetingRegistrant: vi.fn(),
     updateMeetingRegistrant: vi.fn(),
+    createMeetingRsvp: vi.fn(),
   },
   aiSvc: { generateMeetingAgenda: vi.fn() },
   committeeSvc: { getCommitteeById: vi.fn(), getCommitteeMembers: vi.fn() },
@@ -101,11 +102,15 @@ vi.mock('../services/logger.service', () => ({
  * shape of its own lets an assertion pin a contract that exists nowhere but this file: it would keep
  * passing after the production error changed.
  *
- * The two factories' `message` strings are mirrored too, including the detail that `forField`
- * *discards* the message it is handed and reports `Validation failed for <field>` instead, putting
- * the caller's message only inside `validationErrors`. An earlier version of this double passed the
- * message straight to `super()`, which would have let a handler that reads `err.message` pass here
- * and report something else in production.
+ * The two factories' `message` strings are mirrored too, and they do not agree with each other:
+ * `forField` *discards* the message it is handed and reports `Validation failed for <field>`
+ * instead, putting the caller's message only inside `validationErrors`, while `fromFieldErrors`
+ * takes the message as its own second parameter and defaults it to `Validation failed`. Both halves
+ * matter — an earlier version of this double passed `forField`'s message straight to `super()`, and
+ * hard-coded `fromFieldErrors`' — so a handler reading `err.message` could pass here and report
+ * something else in production, in either direction. Every `fromFieldErrors` call in this controller
+ * names its own message (`RSVP data validation failed`, and so on), so the default is the arm that
+ * is never taken.
  */
 class FakeValidationError extends Error {
   public constructor(
@@ -119,9 +124,9 @@ vi.mock('../errors', () => ({
   ServiceValidationError: {
     forField: (field: string, message: string) =>
       new FakeValidationError(`Validation failed for ${field}`, [{ field, message, code: 'FIELD_VALIDATION_ERROR' }]),
-    fromFieldErrors: (fieldErrors: Record<string, string | string[]>) =>
+    fromFieldErrors: (fieldErrors: Record<string, string | string[]>, message = 'Validation failed') =>
       new FakeValidationError(
-        'Validation failed',
+        message,
         Object.entries(fieldErrors).map(([field, messages]) => ({
           field,
           message: Array.isArray(messages) ? messages.join(', ') : messages,
@@ -409,6 +414,11 @@ describe('MeetingController', () => {
     // silently — `Number('')` is `0`, so a header that arrives blank lands on exactly the value the
     // `null` exists to stay distinct from — and the malformed cases would otherwise log a byte count
     // no real request can produce.
+    //
+    // The last two rows are all digits, so they clear a shape check and still can't be logged
+    // honestly: past `2^53 - 1` the parsed number is no longer the one the header carried, and a long
+    // enough run overflows to `Infinity`, which `JSON.stringify` writes as `null` anyway — the same
+    // log line as an absent header, arrived at by accident rather than by the guard.
     it.each([
       ['declares none', undefined],
       ['sends an empty header', ''],
@@ -419,6 +429,8 @@ describe('MeetingController', () => {
       ['sends a hexadecimal header', '0x10'],
       ['sends an exponent-notation header', '1e3'],
       ['sends a signed header', '+8'],
+      ['sends a header past the safe integer range', '9007199254740993'],
+      ['sends a header long enough to overflow to Infinity', '9'.repeat(400)],
     ])('records a null content length when the request %s', async (_label, header) => {
       const req = buildReq({ body: [{ email: 'a@example.com' }] }, header === undefined ? {} : { 'content-length': header });
 
@@ -659,6 +671,26 @@ describe('MeetingController', () => {
 
         expect('bearerToken' in req).toBe(false);
       });
+    });
+  });
+
+  // The one handler covered here that raises through `fromFieldErrors` rather than `forField`, which
+  // is why it is tested at all: the two factories treat their `message` argument differently, and only
+  // this one reports it as the error's own message. Without a case here the double is free to
+  // hard-code a message the real class would never produce.
+  describe('createMeetingRsvp', () => {
+    it("reports the caller's own message when required RSVP fields are missing", async () => {
+      const req = buildReq({ body: { scope: 'occurrence' } });
+
+      await controller.createMeetingRsvp(req, buildRes(), next);
+
+      expect(next).toHaveBeenCalledWith(
+        expect.objectContaining({
+          message: 'RSVP data validation failed',
+          validationErrors: expect.arrayContaining([expect.objectContaining({ field: 'response', message: 'Response is required' })]),
+        })
+      );
+      expect(meetingSvc.createMeetingRsvp).not.toHaveBeenCalled();
     });
   });
 });

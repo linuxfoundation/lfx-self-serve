@@ -39,8 +39,12 @@ export const RENAMED_REGISTRANT_KEYS = {
 } as const satisfies Partial<Record<keyof CreateMeetingRegistrantRequest & keyof UpdateMeetingRegistrantRequest, string>>;
 
 /**
- * The app-side names of {@link RENAMED_REGISTRANT_KEYS} — the keys dropped when, and only when, the
- * value is nullish.
+ * The app-side names of {@link RENAMED_REGISTRANT_KEYS}.
+ *
+ * "Nullish-dropped" is about what reaches upstream, not about the outbound body: the app-side key is
+ * always deleted from it. What the value decides is whether it is re-emitted under the upstream name
+ * — a nullish one is not, so the pair leaves nothing behind, and that is the case
+ * `MeetingController.hasRegistrantChanges` has to treat as no change at all.
  */
 export const NULLISH_DROPPED_REGISTRANT_KEYS = Object.keys(RENAMED_REGISTRANT_KEYS) as (keyof typeof RENAMED_REGISTRANT_KEYS)[];
 

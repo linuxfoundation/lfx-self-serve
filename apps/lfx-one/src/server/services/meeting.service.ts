@@ -223,7 +223,7 @@ export class MeetingService {
       throw new ResourceNotFoundError('Meeting', meetingUid, {
         operation: 'get_meeting_by_id',
         service: 'meeting_service',
-        path: `/itx/meetings/${meetingUid}`,
+        path: `/itx/meetings/${encodePathSegment(meetingUid)}`,
       });
     }
 
@@ -328,7 +328,7 @@ export class MeetingService {
       throw new ResourceNotFoundError('Past Meeting', pastMeetingUid, {
         operation: 'get_past_meeting_by_id',
         service: 'meeting_service',
-        path: `/itx/past_meetings/${pastMeetingUid}`,
+        path: `/itx/past_meetings/${encodePathSegment(pastMeetingUid)}`,
       });
     }
 
