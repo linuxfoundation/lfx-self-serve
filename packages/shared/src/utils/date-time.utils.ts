@@ -4,10 +4,12 @@
 import { fromZonedTime, getTimezoneOffset, toZonedTime } from 'date-fns-tz';
 
 // Direct file imports (not the '../constants' barrel): unlike activity-feed.utils.ts (see its
-// comment, and constants/index.spec.ts for the invariant), this isn't just defensive — a live path
-// already reaches this file from constants (constants/index.ts -> committees.constants.ts ->
-// '../utils/committee.utils' -> './date-time.utils'), so importing the constants barrel here would
-// close an actual cycle today. The two underlying constant files sidestep that entirely.
+// comment, and constants/index.spec.ts for the invariant), this isn't just defensive — live paths
+// already reach this file from constants, both indirectly (constants/index.ts ->
+// committees.constants.ts -> '../utils/committee.utils' -> './date-time.utils') and directly
+// (constants/index.ts -> mentorship-enroll.constants.ts -> './date-time.utils'), so importing the
+// constants barrel here would close an actual cycle today. The two underlying constant files
+// sidestep that entirely.
 import { DAYS_IN_WEEK, DEFAULT_REPEAT_INTERVAL, MINUTES_IN_HOUR, MS_IN_DAY, TIME_ROUNDING_MINUTES, WEEKDAY_CODES } from '../constants/meeting.constants';
 import { TIMEZONES } from '../constants/timezones.constants';
 import { RecurrenceType } from '../enums';
@@ -68,6 +70,9 @@ export const parseISODateString = (dateString: string | null | undefined): Date 
   return new Date(dateString);
 };
 
+/** Shape guard shared by {@link parseLocalDateString} and {@link tryParseLocalDateString} — keep the two in sync by referencing this rather than restating the pattern. */
+const LOCAL_DATE_ONLY_PATTERN = /^\d{4}-\d{2}-\d{2}$/;
+
 /**
  * Parse a date string in YYYY-MM-DD format as a local date (not UTC)
  * This avoids timezone shifting issues when displaying dates from analytics data
@@ -76,7 +81,7 @@ export const parseISODateString = (dateString: string | null | undefined): Date 
  * @throws Error if the date string is not in the expected format or is invalid
  */
 export const parseLocalDateString = (dateString: string): Date => {
-  if (!dateString || !/^\d{4}-\d{2}-\d{2}$/.test(dateString)) {
+  if (!dateString || !LOCAL_DATE_ONLY_PATTERN.test(dateString)) {
     throw new Error(`Invalid date string format. Expected YYYY-MM-DD, got: ${dateString}`);
   }
 
@@ -95,7 +100,7 @@ export const parseLocalDateString = (dateString: string): Date => {
  * cannot fail on — a malformed value comes back as `null` instead of throwing.
  */
 export function tryParseLocalDateString(dateString: string | null | undefined): Date | null {
-  if (!dateString || !/^\d{4}-\d{2}-\d{2}$/.test(dateString)) {
+  if (!dateString || !LOCAL_DATE_ONLY_PATTERN.test(dateString)) {
     return null;
   }
   return parseLocalDateString(dateString);
