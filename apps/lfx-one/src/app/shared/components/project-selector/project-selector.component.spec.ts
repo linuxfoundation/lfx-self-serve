@@ -23,9 +23,9 @@ describe('ProjectSelectorComponent ordering', () => {
   // Deliberately not alphabetical, and every entry matches "cloud" so the search assertion is
   // about ordering rather than filtering.
   const items: LensItem[] = [
-    { uid: 'u1', slug: 'zeta-cloud', name: 'Zeta Cloud', logoUrl: null, isFoundation: false },
-    { uid: 'u2', slug: 'alpha-cloud', name: 'Alpha Cloud', logoUrl: null, isFoundation: false },
-    { uid: 'u3', slug: 'mid-cloud', name: 'Mid Cloud', logoUrl: null, isFoundation: false },
+    { uid: 'u1', slug: 'zeta-cloud', name: 'Zeta Cloud', logoUrl: null, isFoundation: false, formationSubStage: null },
+    { uid: 'u2', slug: 'alpha-cloud', name: 'Alpha Cloud', logoUrl: null, isFoundation: false, formationSubStage: null },
+    { uid: 'u3', slug: 'mid-cloud', name: 'Mid Cloud', logoUrl: null, isFoundation: false, formationSubStage: null },
   ];
 
   let fixture: ComponentFixture<ProjectSelectorComponent>;
@@ -105,12 +105,12 @@ describe('ProjectSelectorComponent ordering', () => {
  */
 describe('ProjectSelectorComponent nav-backed ordering', () => {
   const foundations: LensItem[] = [
-    { uid: 'f2', slug: 'zeta-foundation', name: 'Zeta Foundation', logoUrl: null, isFoundation: true },
-    { uid: 'f1', slug: 'alpha-foundation', name: 'Alpha Foundation', logoUrl: null, isFoundation: true },
+    { uid: 'f2', slug: 'zeta-foundation', name: 'Zeta Foundation', logoUrl: null, isFoundation: true, formationSubStage: null },
+    { uid: 'f1', slug: 'alpha-foundation', name: 'Alpha Foundation', logoUrl: null, isFoundation: true, formationSubStage: null },
   ];
   const projects: LensItem[] = [
-    { uid: 'p2', slug: 'zeta-project', name: 'Zeta Project', logoUrl: null, isFoundation: false },
-    { uid: 'p1', slug: 'alpha-project', name: 'Alpha Project', logoUrl: null, isFoundation: false },
+    { uid: 'p2', slug: 'zeta-project', name: 'Zeta Project', logoUrl: null, isFoundation: false, formationSubStage: null },
+    { uid: 'p1', slug: 'alpha-project', name: 'Alpha Project', logoUrl: null, isFoundation: false, formationSubStage: null },
   ];
 
   let fixture: ComponentFixture<ProjectSelectorComponent>;

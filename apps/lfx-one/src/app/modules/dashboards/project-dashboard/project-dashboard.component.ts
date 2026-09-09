@@ -3,9 +3,13 @@
 
 import { Component, computed, inject, Signal } from '@angular/core';
 import { toObservable, toSignal } from '@angular/core/rxjs-interop';
+import { FORMATION_ENABLED_FLAG } from '@lfx-one/shared/constants';
 import { PendingActionItem } from '@lfx-one/shared/interfaces';
+import { formatAnnouncementDateLabel } from '@lfx-one/shared/utils';
+import { FeatureFlagService } from '@services/feature-flag.service';
 import { ProjectContextService } from '@services/project-context.service';
 import { ProjectService } from '@services/project.service';
+import { TagComponent } from '@components/tag/tag.component';
 import { SkeletonModule } from 'primeng/skeleton';
 import { BehaviorSubject, combineLatest, of, switchMap } from 'rxjs';
 
@@ -17,11 +21,20 @@ import { RecentProgressComponent } from '../components/recent-progress/recent-pr
 
 @Component({
   selector: 'lfx-project-dashboard',
-  imports: [RecentProgressComponent, MyMeetingsComponent, PendingActionsComponent, SkeletonModule, DashboardSidebarComponent, DashboardCastDrawerHostComponent],
+  imports: [
+    RecentProgressComponent,
+    MyMeetingsComponent,
+    PendingActionsComponent,
+    SkeletonModule,
+    DashboardSidebarComponent,
+    DashboardCastDrawerHostComponent,
+    TagComponent,
+  ],
   templateUrl: './project-dashboard.component.html',
   styleUrl: './project-dashboard.component.scss',
 })
 export class ProjectDashboardComponent {
+  private readonly featureFlagService = inject(FeatureFlagService);
   private readonly projectContextService = inject(ProjectContextService);
   private readonly projectService = inject(ProjectService);
 
@@ -29,6 +42,19 @@ export class ProjectDashboardComponent {
 
   public readonly selectedProject = computed(() => this.projectContextService.activeContext());
   protected readonly staffHeading = 'Project Staff';
+
+  /** GH-1955 — see `FORMATION_ENABLED_FLAG`'s doc comment for what this does and doesn't gate. */
+  protected readonly formationFlagEnabled = this.featureFlagService.getBooleanFlag(FORMATION_ENABLED_FLAG, false);
+  protected readonly isFormation = this.projectContextService.isActiveProjectInFormation;
+  protected readonly formationSubStage = this.projectContextService.activeProjectFormationSubStage;
+  protected readonly isConfidential = this.projectContextService.isActiveProjectConfidential;
+
+  /** Shared with `FormationCardComponent` via `ProjectContextService` — no duplicate fetch. */
+  protected readonly announcementDateLoading = this.projectContextService.activeProjectAnnouncementDateLoading;
+  protected readonly announcementDateHasError = this.projectContextService.activeProjectAnnouncementDateHasError;
+  protected readonly announcementDateLabel: Signal<string> = computed(() =>
+    formatAnnouncementDateLabel(this.projectContextService.activeProjectAnnouncementDate())
+  );
 
   public readonly pendingActions: Signal<PendingActionItem[]>;
 

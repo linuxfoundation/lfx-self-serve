@@ -5,12 +5,14 @@ import { isPlatformBrowser, NgClass } from '@angular/common';
 import { Component, computed, ElementRef, inject, input, model, output, PLATFORM_ID, signal, Signal, viewChild } from '@angular/core';
 import { takeUntilDestroyed } from '@angular/core/rxjs-interop';
 import { FormControl, ReactiveFormsModule } from '@angular/forms';
-import { BOARD_SCOPED_PERSONA_PRIORITY, PROJECT_SCOPED_PERSONA_PRIORITY } from '@lfx-one/shared/constants';
+import { BOARD_SCOPED_PERSONA_PRIORITY, FORMATION_ENABLED_FLAG, PROJECT_SCOPED_PERSONA_PRIORITY } from '@lfx-one/shared/constants';
 import { DisplayLensItem, LensItem, NavLens, PersonaType, ProjectContext, SelectorTab } from '@lfx-one/shared/interfaces';
+import { FeatureFlagService } from '@services/feature-flag.service';
 import { NavigationService } from '@services/navigation.service';
 import { PersonaService } from '@services/persona.service';
 import { ProjectContextService } from '@services/project-context.service';
 import { OnRenderDirective } from '@shared/directives/on-render.directive';
+import { TagComponent } from '@components/tag/tag.component';
 import { AutoFocus } from 'primeng/autofocus';
 import { InputTextModule } from 'primeng/inputtext';
 import { Popover, PopoverModule } from 'primeng/popover';
@@ -18,15 +20,19 @@ import { TooltipModule } from 'primeng/tooltip';
 
 @Component({
   selector: 'lfx-project-selector',
-  imports: [NgClass, ReactiveFormsModule, PopoverModule, InputTextModule, AutoFocus, OnRenderDirective, TooltipModule],
+  imports: [NgClass, ReactiveFormsModule, PopoverModule, InputTextModule, AutoFocus, OnRenderDirective, TooltipModule, TagComponent],
   templateUrl: './project-selector.component.html',
   styleUrl: './project-selector.component.scss',
 })
 export class ProjectSelectorComponent {
+  private readonly featureFlagService = inject(FeatureFlagService);
   private readonly navigationService = inject(NavigationService);
   private readonly personaService = inject(PersonaService);
   private readonly projectContextService = inject(ProjectContextService);
   private readonly platformId = inject(PLATFORM_ID);
+
+  /** GH-1955 — see `FORMATION_ENABLED_FLAG`'s doc comment for what this does and doesn't gate. */
+  protected readonly formationFlagEnabled = this.featureFlagService.getBooleanFlag(FORMATION_ENABLED_FLAG, false);
 
   private readonly popoverRef = viewChild<Popover>('popover');
   private readonly triggerRef = viewChild<ElementRef<HTMLElement>>('selectorTrigger');
