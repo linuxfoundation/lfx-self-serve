@@ -23,6 +23,7 @@ import {
   MENTORSHIP_PAST_MENTEE_STATUSES,
   MENTORSHIP_PROGRAM_AVATAR_PALETTE,
 } from '../constants/mentorship.constants';
+import type { FilterOption } from '../interfaces/filter.interface';
 import type {
   MentorshipApplicantAction,
   MentorshipApplicantDisplayStatus,
@@ -374,7 +375,7 @@ export function mentorshipApplicantDisplayStatus(application: MentorshipApplicat
  * Term filter options for a program-detail tab, derived from the rows themselves — a
  * program's terms are whichever ones its people took part in.
  */
-export function mentorshipTermFilterOptions(people: { termName: string }[], allLabel: string): { label: string; value: string | null }[] {
+export function mentorshipTermFilterOptions(people: { termName: string }[], allLabel: string): FilterOption[] {
   const terms = [...new Set(people.map((person) => person.termName))];
   return [{ label: allLabel, value: null }, ...terms.map((term) => ({ label: term, value: term }))];
 }

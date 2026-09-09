@@ -20,7 +20,7 @@ import {
   MENTORSHIP_PERSON_PAGE_SIZE,
   MENTORSHIP_PERSON_ROWS_PER_PAGE_OPTIONS,
 } from '@lfx-one/shared/constants';
-import { MentorshipMenteeStatus, MentorshipNoteRequest, MentorshipProgramMentee } from '@lfx-one/shared/interfaces';
+import { FilterOption, MentorshipMenteeStatus, MentorshipNoteRequest, MentorshipProgramMentee } from '@lfx-one/shared/interfaces';
 import {
   formatMentorshipTaskProgress,
   matchesMentorshipPersonSearch,
@@ -60,7 +60,7 @@ export class CurrentMenteesTabComponent {
   protected readonly rowsPerPageOptions = MENTORSHIP_PERSON_ROWS_PER_PAGE_OPTIONS;
 
   /** Fixed rather than derived from the rows: the two statuses this tab can list. */
-  protected readonly statusOptions = [
+  protected readonly statusOptions: FilterOption<MentorshipMenteeStatus | null>[] = [
     { label: MENTORSHIP_ALL_STATUSES_OPTION_LABEL, value: null },
     ...MENTORSHIP_CURRENT_MENTEE_STATUSES.map((status) => ({ label: MENTORSHIP_MENTEE_STATUS_LABELS[status], value: status })),
   ];

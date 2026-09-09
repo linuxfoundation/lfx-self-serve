@@ -17,7 +17,7 @@ import {
   MENTORSHIP_PERSON_PAGE_SIZE,
   MENTORSHIP_PERSON_ROWS_PER_PAGE_OPTIONS,
 } from '@lfx-one/shared/constants';
-import { MentorshipMenteeStatus, MentorshipProgramMentee } from '@lfx-one/shared/interfaces';
+import { FilterOption, MentorshipMenteeStatus, MentorshipProgramMentee } from '@lfx-one/shared/interfaces';
 import { matchesMentorshipPersonSearch, mentorshipPersonAvatarClass, mentorshipPersonInitials, mentorshipTermFilterOptions } from '@lfx-one/shared/utils';
 import { startWith } from 'rxjs';
 
@@ -45,7 +45,7 @@ export class PastMenteesTabComponent {
   protected readonly rowsPerPageOptions = MENTORSHIP_PERSON_ROWS_PER_PAGE_OPTIONS;
 
   /** Fixed rather than derived from the rows: the statuses a finished mentee can hold. */
-  protected readonly statusOptions = [
+  protected readonly statusOptions: FilterOption<MentorshipMenteeStatus | null>[] = [
     { label: MENTORSHIP_ALL_STATUSES_OPTION_LABEL, value: null },
     ...MENTORSHIP_PAST_MENTEE_STATUSES.map((status) => ({ label: MENTORSHIP_MENTEE_STATUS_LABELS[status], value: status })),
   ];

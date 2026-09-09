@@ -24,7 +24,7 @@ import {
   MENTORSHIP_PERSON_PAGE_SIZE,
   MENTORSHIP_PERSON_ROWS_PER_PAGE_OPTIONS,
 } from '@lfx-one/shared/constants';
-import { MentorshipApplicantDisplayStatus, MentorshipNoteRequest, MentorshipProgramApplicant } from '@lfx-one/shared/interfaces';
+import { FilterOption, MentorshipApplicantDisplayStatus, MentorshipNoteRequest, MentorshipProgramApplicant } from '@lfx-one/shared/interfaces';
 import {
   formatIsoDateLabel,
   matchesMentorshipPersonSearch,
@@ -65,7 +65,7 @@ export class ApplicantsTabComponent {
   protected readonly statusNote = MENTORSHIP_APPLICANT_STATUS_NOTE;
 
   /** Fixed rather than derived from the rows: every status an application can display as. */
-  protected readonly statusOptions = [
+  protected readonly statusOptions: FilterOption<MentorshipApplicantDisplayStatus | null>[] = [
     { label: MENTORSHIP_ALL_STATUSES_OPTION_LABEL, value: null },
     ...MENTORSHIP_APPLICANT_DISPLAY_STATUSES.map((status) => ({ label: MENTORSHIP_APPLICANT_STATUS_LABELS[status], value: status })),
   ];

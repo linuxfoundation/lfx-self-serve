@@ -109,15 +109,13 @@ export const MENTORSHIP_MENTEE_STATUS_BADGE_CLASSES: Record<MentorshipMenteeStat
 };
 
 /**
- * Statuses the admin Current Mentees tab can list. The tab covers enrolled mentees
- * only, so its status filter offers these two rather than the full mentee lifecycle.
+ * Status-filter options on the admin Current Mentees tab — the statuses an admin is
+ * most likely to narrow a live program to. These pick what is *shown*, never which
+ * rows exist: scoping the data by them would hide any mentee holding another status.
  */
 export const MENTORSHIP_CURRENT_MENTEE_STATUSES: readonly MentorshipMenteeStatus[] = ['accepted', 'graduated'];
 
-/**
- * Statuses the Past Mentees tab can list. A completed program has no enrolled
- * mentees left, so the first tab shows finished participations instead.
- */
+/** Status-filter options on the Past Mentees tab — the ways a participation ends. */
 export const MENTORSHIP_PAST_MENTEE_STATUSES: readonly MentorshipMenteeStatus[] = ['withdrawn', 'declined', 'graduated'];
 
 /**
