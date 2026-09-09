@@ -34,118 +34,119 @@
       </p>
     </div>
 
-    <lfx-feature-toggle [feature]="recordingFeature" [form]="form()" />
+    <!-- One outlined list rather than five separate cards: these are five answers to the same question,
+         and the design draws them as rows of a single box — the same treatment the Details & Access
+         visibility and join-restriction options get. The container owns the outline and the hairlines;
+         each row drops its own border through `attached`. -->
+    <div class="flex flex-col divide-y divide-gray-200 overflow-hidden rounded-xl border border-gray-200">
+      <lfx-feature-toggle [feature]="recordingFeature" [form]="form()" [attached]="true" />
 
-    <lfx-feature-toggle [feature]="aiSummaryFeature" [form]="form()">
-      @if (form().get('zoom_ai_enabled')?.value) {
-        <div class="mt-4 border-t border-gray-200 pt-4">
-          <lfx-checkbox
-            [form]="form()"
-            control="require_ai_summary_approval"
-            label="Requires host approval before sharing with guests"
-            labelClass="text-sm text-gray-700"
-            data-testid="composer-ai-approval-checkbox" />
-        </div>
-      }
-    </lfx-feature-toggle>
-
-    <lfx-feature-toggle [feature]="transcriptFeature" [form]="form()" />
-
-    <!-- The dependency note lives inside the YouTube card: it's the card whose toggle the requirement gates -->
-    <lfx-feature-toggle [feature]="youtubeFeature" [form]="form()">
-      @if (!form().get('recording_enabled')?.value) {
-        <p class="mt-3 border-t border-gray-200 pt-3 text-xs text-gray-500" data-testid="composer-recording-dependency-hint">
-          Transcripts and YouTube upload need recording enabled.
-        </p>
-      }
-    </lfx-feature-toggle>
-
-    @if (form().get('youtube_upload_enabled')?.value && form().get('title')?.errors?.['maxlength']) {
-      <div class="flex gap-3 rounded-lg border border-amber-300 bg-amber-50 p-4" data-testid="composer-youtube-title-warning">
-        <i class="fa-light fa-triangle-exclamation mt-0.5 flex-shrink-0 text-amber-500" aria-hidden="true"></i>
-        <div class="flex flex-col gap-1">
-          <p class="text-sm font-semibold text-amber-800">Meeting title too long for YouTube</p>
-          <p class="text-sm text-amber-700">
-            The meeting date is appended to the video title on upload, so the title must be {{ youtubeTitleLimit }} characters or fewer. The current title has
-            {{ titleLength() }} characters.
-          </p>
-          <button
-            type="button"
-            class="self-start text-sm font-medium text-amber-800 underline hover:text-amber-900"
-            (click)="goToTitleSection.emit()"
-            data-testid="composer-youtube-title-fix-button">
-            Go back to Details &amp; Access to shorten the title
-          </button>
-        </div>
-      </div>
-    }
-
-    <!-- Email reminder -->
-    <lfx-feature-toggle [feature]="emailReminderFeature" [form]="form()">
-      @if (form().get('auto_email_reminder_enabled')?.value) {
-        <div class="mt-4 flex flex-col gap-2 border-t border-gray-200 pt-4">
-          <div class="flex flex-wrap items-center gap-x-2 gap-y-1" role="group" aria-label="Send reminder before the meeting starts">
-            <div class="flex items-center gap-2">
-              <lfx-input-number
-                class="w-20 flex-none"
-                [form]="form()"
-                control="reminderHours"
-                size="small"
-                id="composer-reminder-hours"
-                data-testid="composer-reminder-hours" />
-              <label for="composer-reminder-hours" class="text-sm text-gray-900">hours</label>
-            </div>
-            <div class="flex items-center gap-2">
-              <lfx-input-number
-                class="w-20 flex-none"
-                [form]="form()"
-                control="reminderMinutes"
-                size="small"
-                id="composer-reminder-minutes"
-                data-testid="composer-reminder-minutes" />
-              <label for="composer-reminder-minutes" class="text-sm text-gray-900">minutes</label>
-            </div>
-            <span class="text-sm text-gray-900">before the meeting starts</span>
-            <button
-              type="button"
-              class="cursor-help text-gray-400"
-              [attr.aria-label]="emailReminderTooltip"
-              [pTooltip]="emailReminderTooltip"
-              tooltipEvent="both"
-              tooltipPosition="right"
-              tooltipStyleClass="text-xs max-w-xs"
-              data-testid="composer-reminder-tooltip">
-              <i class="fa-light fa-info-circle" aria-hidden="true"></i>
-            </button>
+      <lfx-feature-toggle [feature]="aiSummaryFeature" [form]="form()" [attached]="true">
+        @if (form().get('zoom_ai_enabled')?.value) {
+          <div class="mt-4 border-t border-gray-200 pt-4">
+            <lfx-checkbox
+              [form]="form()"
+              control="require_ai_summary_approval"
+              label="Requires host approval before sharing with guests"
+              labelClass="text-sm text-gray-700"
+              data-testid="composer-ai-approval-checkbox" />
           </div>
-          @if (form().get('reminderHours')?.errors?.['required'] && form().get('reminderHours')?.touched) {
-            <p class="text-sm text-red-600" data-testid="composer-reminder-hours-required-error">Reminder hours is required</p>
-          }
-          @if (form().get('reminderHours')?.errors?.['pattern'] && form().get('reminderHours')?.touched) {
-            <p class="text-sm text-red-600" data-testid="composer-reminder-hours-pattern-error">Reminder hours must be a whole number</p>
-          }
-          @if (form().get('reminderHours')?.errors?.['min'] && form().get('reminderHours')?.touched) {
-            <p class="text-sm text-red-600" data-testid="composer-reminder-hours-min-error">
-              Reminder must be at least {{ minReminderHours }} hours before the meeting starts
-            </p>
-          }
-          @if (form().get('reminderHours')?.errors?.['max'] && form().get('reminderHours')?.touched) {
-            <p class="text-sm text-red-600" data-testid="composer-reminder-hours-max-error">
-              Reminder cannot be more than {{ maxReminderHours }} hours before the meeting starts
-            </p>
-          }
-          @if (
-            (form().get('reminderMinutes')?.errors?.['required'] ||
-              form().get('reminderMinutes')?.errors?.['pattern'] ||
-              form().get('reminderMinutes')?.errors?.['min'] ||
-              form().get('reminderMinutes')?.errors?.['max']) &&
-            form().get('reminderMinutes')?.touched
-          ) {
-            <p class="text-sm text-red-600" data-testid="composer-reminder-minutes-error">Minutes must be a whole number between 0 and 59</p>
-          }
-        </div>
-      }
-    </lfx-feature-toggle>
+        }
+      </lfx-feature-toggle>
+
+      <lfx-feature-toggle [feature]="transcriptFeature" [form]="form()" [attached]="true" [toggleNote]="transcriptNote()" />
+
+      <!-- The title-length warning lives inside the YouTube card: it's the card whose upload the limit
+           belongs to. Inset rather than a card of its own, now that the rows share one outline. -->
+      <lfx-feature-toggle [feature]="youtubeFeature" [form]="form()" [attached]="true" [toggleNote]="youtubeNote()">
+        @if (form().get('youtube_upload_enabled')?.value && form().get('title')?.errors?.['maxlength']) {
+          <div class="mt-3 flex gap-3 rounded-lg border border-amber-300 bg-amber-50 p-3" data-testid="composer-youtube-title-warning">
+            <i class="fa-light fa-triangle-exclamation mt-0.5 flex-shrink-0 text-amber-500" aria-hidden="true"></i>
+            <div class="flex flex-col gap-1">
+              <p class="text-sm font-semibold text-amber-800">Meeting title too long for YouTube</p>
+              <p class="text-sm text-amber-700">
+                The meeting date is appended to the video title on upload, so the title must be {{ youtubeTitleLimit }} characters or fewer. The current title
+                has {{ titleLength() }} characters.
+              </p>
+              <button
+                type="button"
+                class="self-start text-sm font-medium text-amber-800 underline hover:text-amber-900"
+                (click)="goToTitleSection.emit()"
+                data-testid="composer-youtube-title-fix-button">
+                Go back to Details &amp; Access to shorten the title
+              </button>
+            </div>
+          </div>
+        }
+      </lfx-feature-toggle>
+
+      <!-- Email reminder -->
+      <lfx-feature-toggle [feature]="emailReminderFeature" [form]="form()" [attached]="true">
+        @if (form().get('auto_email_reminder_enabled')?.value) {
+          <div class="mt-4 flex flex-col gap-2 border-t border-gray-200 pt-4">
+            <div class="flex flex-wrap items-center gap-x-2 gap-y-1" role="group" aria-label="Send reminder before the meeting starts">
+              <div class="flex items-center gap-2">
+                <lfx-input-number
+                  class="w-20 flex-none"
+                  [form]="form()"
+                  control="reminderHours"
+                  size="small"
+                  id="composer-reminder-hours"
+                  data-testid="composer-reminder-hours" />
+                <label for="composer-reminder-hours" class="text-sm text-gray-900">hours</label>
+              </div>
+              <div class="flex items-center gap-2">
+                <lfx-input-number
+                  class="w-20 flex-none"
+                  [form]="form()"
+                  control="reminderMinutes"
+                  size="small"
+                  id="composer-reminder-minutes"
+                  data-testid="composer-reminder-minutes" />
+                <label for="composer-reminder-minutes" class="text-sm text-gray-900">minutes</label>
+              </div>
+              <span class="text-sm text-gray-900">before the meeting starts</span>
+              <button
+                type="button"
+                class="cursor-help text-gray-400"
+                [attr.aria-label]="emailReminderTooltip"
+                [pTooltip]="emailReminderTooltip"
+                tooltipEvent="both"
+                tooltipPosition="right"
+                tooltipStyleClass="text-xs max-w-xs"
+                data-testid="composer-reminder-tooltip">
+                <i class="fa-light fa-info-circle" aria-hidden="true"></i>
+              </button>
+            </div>
+            @if (form().get('reminderHours')?.errors?.['required'] && form().get('reminderHours')?.touched) {
+              <p class="text-sm text-red-600" data-testid="composer-reminder-hours-required-error">Reminder hours is required</p>
+            }
+            @if (form().get('reminderHours')?.errors?.['pattern'] && form().get('reminderHours')?.touched) {
+              <p class="text-sm text-red-600" data-testid="composer-reminder-hours-pattern-error">Reminder hours must be a whole number</p>
+            }
+            @if (form().get('reminderHours')?.errors?.['min'] && form().get('reminderHours')?.touched) {
+              <p class="text-sm text-red-600" data-testid="composer-reminder-hours-min-error">
+                Reminder must be at least {{ minReminderHours }} hours before the meeting starts
+              </p>
+            }
+            @if (form().get('reminderHours')?.errors?.['max'] && form().get('reminderHours')?.touched) {
+              <p class="text-sm text-red-600" data-testid="composer-reminder-hours-max-error">
+                Reminder cannot be more than {{ maxReminderHours }} hours before the meeting starts
+              </p>
+            }
+            @if (
+              (form().get('reminderMinutes')?.errors?.['required'] ||
+                form().get('reminderMinutes')?.errors?.['pattern'] ||
+                form().get('reminderMinutes')?.errors?.['min'] ||
+                form().get('reminderMinutes')?.errors?.['max']) &&
+              form().get('reminderMinutes')?.touched
+            ) {
+              <p class="text-sm text-red-600" data-testid="composer-reminder-minutes-error">Minutes must be a whole number between 0 and 59</p>
+            }
+          </div>
+        }
+      </lfx-feature-toggle>
+    </div>
   </div>
 
   <!-- Artifact access -->

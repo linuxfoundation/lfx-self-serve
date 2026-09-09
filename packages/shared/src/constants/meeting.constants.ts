@@ -464,6 +464,16 @@ export const EMAIL_REMINDER_TOOLTIP =
   'You can set the reminder time between 2 and 24 hours before the meeting. When set to 24 hours, minutes are automatically set to 0.';
 
 /**
+ * Why a recording-gated feature toggle can't be switched on yet, keyed by its form control
+ * @description Transcripts and YouTube upload are both produced from the Zoom recording, so each row
+ * states its own dependency next to the control it disables rather than sharing one line under the list.
+ */
+export const RECORDING_DEPENDENCY_NOTES = {
+  transcript_enabled: 'Transcripts need recording enabled.',
+  youtube_upload_enabled: 'YouTube uploads need recording enabled.',
+} as const;
+
+/**
  * Zoom API codes for weekdays (Monday through Friday)
  * @description String format used by Zoom API: '2,3,4,5,6' where 1=Sunday, 2=Monday, etc.
  */

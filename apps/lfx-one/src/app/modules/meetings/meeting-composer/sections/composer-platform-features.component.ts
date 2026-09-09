@@ -19,6 +19,7 @@ import {
   MEETING_FEATURE_BY_KEY,
   MEETING_PLATFORMS,
   MIN_EMAIL_REMINDER_HOURS,
+  RECORDING_DEPENDENCY_NOTES,
   YOUTUBE_MAX_MEETING_TITLE_LENGTH,
 } from '@lfx-one/shared/constants';
 import { TooltipModule } from 'primeng/tooltip';
@@ -65,6 +66,8 @@ export class ComposerPlatformFeaturesComponent {
 
   protected readonly titleLength: Signal<number> = this.initTitleLength();
   protected readonly platformError: Signal<boolean> = this.initPlatformError();
+  protected readonly transcriptNote: Signal<string | null> = this.initRecordingDependencyNote('transcript_enabled');
+  protected readonly youtubeNote: Signal<string | null> = this.initRecordingDependencyNote('youtube_upload_enabled');
 
   public constructor() {
     // Every subscription is bridged through `form` so it re-binds when `initialize()` swaps the
@@ -99,6 +102,23 @@ export class ComposerPlatformFeaturesComponent {
       // `revision` bumps on every value change; a plain control read would not be reactive.
       this.formService.revision();
       return (this.form().get('title')?.value as string | null)?.length ?? 0;
+    });
+  }
+
+  /**
+   * Why a recording-gated toggle is off, or `null` once recording is on.
+   * @description `syncRecordingDependentControls` disables these two controls whenever recording is
+   * off, so the note appears exactly while its toggle can't be used.
+   */
+  private initRecordingDependencyNote(key: keyof typeof RECORDING_DEPENDENCY_NOTES): Signal<string | null> {
+    return computed(() => {
+      this.formService.revision();
+
+      if (this.form().get('recording_enabled')?.value) {
+        return null;
+      }
+
+      return RECORDING_DEPENDENCY_NOTES[key];
     });
   }
 
