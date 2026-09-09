@@ -715,6 +715,34 @@ describe('FormationService', () => {
       expect(postCall![6]).toEqual({ 'If-Match': '3' });
     });
 
+    it("acceptFormationItem preserves the item's existing note when the caller supplies none", async () => {
+      const item = rawItem({ status: 'awaiting_acceptance', gate: true, note: 'existing note' });
+      proxyRequest.mockImplementation((_req, _service, _path: string, method: string) => {
+        if (method === 'GET') return Promise.resolve(checklist([item]));
+        if (method === 'POST') return Promise.resolve({ ...item, status: 'done', version: 4 });
+        throw new Error('unexpected call');
+      });
+
+      await service.acceptFormationItem(buildReq(), 'live-project-1', 'item-key-1');
+
+      const postCall = proxyRequest.mock.calls.find((call) => call[3] === 'POST');
+      expect(postCall![5]).toEqual({ note: 'existing note' });
+    });
+
+    it("reopenFormationItem preserves the item's existing note when the caller supplies none", async () => {
+      const item = rawItem({ status: 'done', gate: false, note: 'existing note' });
+      proxyRequest.mockImplementation((_req, _service, _path: string, method: string) => {
+        if (method === 'GET') return Promise.resolve(checklist([item]));
+        if (method === 'POST') return Promise.resolve({ ...item, status: 'in_progress', version: 4 });
+        throw new Error('unexpected call');
+      });
+
+      await service.reopenFormationItem(buildReq(), 'live-project-1', 'item-key-1');
+
+      const postCall = proxyRequest.mock.calls.find((call) => call[3] === 'POST');
+      expect(postCall![5]).toEqual({ note: 'existing note' });
+    });
+
     it('clears note/assignee/due_date with empty strings, not null', async () => {
       const item = rawItem({ status: 'in_progress', note: 'old note', assignee: 'sam.chen', due_date: '2026-01-01' });
       proxyRequest.mockImplementation((_req, _service, _path: string, method: string) => {

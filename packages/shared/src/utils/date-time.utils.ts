@@ -91,6 +91,18 @@ export const parseLocalDateString = (dateString: string): Date => {
 };
 
 /**
+ * Formats a `Date` as a local-calendar `YYYY-MM-DD` string — the write-side counterpart to
+ * {@link parseLocalDateString}. Built from local getters rather than `toISOString().slice(0, 10)`,
+ * which reports the UTC calendar day and is a different day than the one a date picker showed for
+ * any viewer not at UTC+0.
+ */
+export function toLocalDateOnlyString(date: Date): string {
+  const month = String(date.getMonth() + 1).padStart(2, '0');
+  const day = String(date.getDate()).padStart(2, '0');
+  return `${date.getFullYear()}-${month}-${day}`;
+}
+
+/**
  * Combines a date and time string into an ISO string in the specified timezone
  * @param date The date object
  * @param time The time string in 12-hour format (e.g., "12:45 AM")

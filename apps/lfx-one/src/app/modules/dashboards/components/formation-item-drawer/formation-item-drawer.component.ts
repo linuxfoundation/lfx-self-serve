@@ -13,7 +13,7 @@ import { TextareaComponent } from '@components/textarea/textarea.component';
 import { FormationService } from '@services/formation.service';
 import type { FormationDrawerData, FormationItem, FormationItemLink } from '@lfx-one/shared/interfaces';
 import { createEmptyFormationDrawerData, FORMATION_ITEM_STATUS_LABELS, FORMATION_ITEM_STATUS_SEVERITY } from '@lfx-one/shared/constants';
-import { isValidUrl } from '@lfx-one/shared/utils';
+import { isValidUrl, parseLocalDateString, toLocalDateOnlyString } from '@lfx-one/shared/utils';
 import { MessageService } from 'primeng/api';
 import { DrawerModule } from 'primeng/drawer';
 import { catchError, finalize, map, merge, of, skip, Subject, switchMap, take, tap } from 'rxjs';
@@ -177,7 +177,7 @@ export class FormationItemDrawerComponent {
       .updateFormationItem(item.project_uid, item.template_item_key, {
         notes: this.editForm.value.notes ?? '',
         owner_username: this.editForm.value.ownerUsername ?? '',
-        due_date: this.editForm.value.dueDate ? this.toDateOnlyString(this.editForm.value.dueDate) : null,
+        due_date: this.editForm.value.dueDate ? toLocalDateOnlyString(this.editForm.value.dueDate) : null,
       })
       .pipe(
         take(1),
@@ -261,7 +261,11 @@ export class FormationItemDrawerComponent {
     this.editForm.setValue({
       notes: item.notes ?? '',
       ownerUsername: item.owner?.username ?? '',
-      dueDate: item.due_date ? new Date(item.due_date) : null,
+      // `item.due_date` is a bare `YYYY-MM-DD` — `new Date(...)` would parse it as UTC midnight,
+      // rendering the previous day in the picker for any viewer west of UTC, and `toLocalDateOnlyString`
+      // above would then faithfully save that wrong day back. `parseLocalDateString` reads it as a
+      // local calendar day so the load->save round-trip is symmetric.
+      dueDate: item.due_date ? parseLocalDateString(item.due_date) : null,
     });
   }
 
@@ -276,17 +280,5 @@ export class FormationItemDrawerComponent {
       next.delete(uid);
       return next;
     });
-  }
-
-  /**
-   * `date.toISOString()` reports the UTC calendar day, which is a different day than the one the
-   * calendar picker shows for any viewer not at UTC+0 — a positive-offset viewer picking the 31st
-   * would send the 30th. `updateFormationItem` requires a `YYYY-MM-DD` day, so build it from the
-   * picker's local date parts instead of converting to a UTC instant first.
-   */
-  private toDateOnlyString(date: Date): string {
-    const month = String(date.getMonth() + 1).padStart(2, '0');
-    const day = String(date.getDate()).padStart(2, '0');
-    return `${date.getFullYear()}-${month}-${day}`;
   }
 }
