@@ -2,6 +2,7 @@
 // SPDX-License-Identifier: MIT
 
 import { TestBed } from '@angular/core/testing';
+import { FEATURE_FLAG_READY_TIMEOUT_MS } from '@lfx-one/shared';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
 import { DataDogRumService } from './datadog-rum.service';
@@ -66,5 +67,24 @@ describe('FeatureFlagService', () => {
     expect(result).toBe(false);
     expect(addError).toHaveBeenCalledTimes(1);
     expect(addError).toHaveBeenCalledWith(expect.any(Error), context);
+  });
+
+  it('defaults to FEATURE_FLAG_READY_TIMEOUT_MS when no timeout is passed', async () => {
+    vi.useFakeTimers();
+
+    const pending = service.waitForReady(context);
+
+    // Still pending just short of the default budget — proves the default isn't a shorter literal.
+    await vi.advanceTimersByTimeAsync(FEATURE_FLAG_READY_TIMEOUT_MS - 1);
+    let settled = false;
+    pending.then(() => (settled = true));
+    await vi.advanceTimersByTimeAsync(0);
+    expect(settled).toBe(false);
+
+    await vi.advanceTimersByTimeAsync(1);
+    const result = await pending;
+
+    expect(result).toBe(false);
+    expect(addError).toHaveBeenCalledTimes(1);
   });
 });
