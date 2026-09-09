@@ -72,9 +72,12 @@ test.describe('Org Lens EasyCLA detail — content', () => {
   test('opens the agreement whose card was clicked, not merely some detail page', async ({ page }) => {
     await gotoEasyclaList(page, stubList());
 
-    const card = page.getByTestId('org-easycla-card').filter({ hasText: 'Lumen CLA' });
-    await expect(card).toHaveCount(1, { timeout: PAGE_LOAD_TIMEOUT });
-    await card.getByTestId('org-easycla-card-link').click();
+    // By accessible name rather than by scoping the link under its card: the overlay anchor is a
+    // sibling of the card, not a descendant, so a descendant locator would match nothing. The name
+    // is also what a screen-reader user picks the link by, which is the thing worth pinning.
+    const link = page.getByRole('link', { name: 'Open Lumen CLA' });
+    await expect(link).toHaveCount(1, { timeout: PAGE_LOAD_TIMEOUT });
+    await link.click();
 
     // Both halves: the URL carries the clicked row's signature id, and the page renders that row.
     // Asserting only the URL would pass while the page showed the first agreement in the list.
@@ -96,11 +99,17 @@ test.describe('Org Lens EasyCLA detail — content', () => {
   test('summarises what the agreement covers, and lists it in full on request', async ({ page }) => {
     await gotoEasyclaDetail(page, 'sig-signed', stubList());
 
-    // The chip counts the projects on the row, so a summary that disagrees with the list behind it
-    // is the failure this pairs the two assertions to catch.
-    await expect(page.getByTestId('org-easycla-detail-coverage')).toContainText('2', { timeout: PAGE_LOAD_TIMEOUT });
+    // Two chips, not one: a named foundation and a multi-project agreement each get their own, and
+    // they say different things — one names what the agreement sits under, the other counts what it
+    // actually covers. Collapsing them would let the foundation stand in for coverage it does not
+    // grant, so both are pinned before either is clicked.
+    const chips = page.getByTestId('org-easycla-detail-coverage');
+    await expect(chips).toHaveCount(2, { timeout: PAGE_LOAD_TIMEOUT });
+    await expect(chips.filter({ hasText: 'Nimbus Foundation' })).toHaveCount(1);
 
-    await page.getByTestId('org-easycla-detail-coverage').click();
+    const projectsChip = chips.filter({ hasText: 'Covers 2 projects' });
+    await expect(projectsChip).toHaveCount(1);
+    await projectsChip.click();
 
     const projects = page.getByTestId('org-easycla-coverage-project');
     await expect(projects).toHaveCount(2, { timeout: PAGE_LOAD_TIMEOUT });
