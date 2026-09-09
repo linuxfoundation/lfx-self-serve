@@ -586,8 +586,11 @@ export interface ClaRow {
  * would be a false statement about the organization's legal position, which is the same
  * failure the sanctions precedence and the empty-versus-failure split exist to prevent.
  *
- * Because signed-ness is folded in here rather than carried separately, copy elsewhere on the
- * card must not assert signing on its own: only `signed` licenses the word.
+ * Signed-ness is folded in here for display, so copy elsewhere on the card must not assert
+ * signing on its own: only a `signed` status licenses the word. It is additionally carried as
+ * the sibling `signed` boolean, which exists for a different question — whether a document can
+ * be fetched — and which this type cannot answer, because a `sanctioned` row may be signed or
+ * unsigned. Read `signed` to decide about the document; read this to decide what to say.
  */
 export type OrgClaGroupStatus = 'signed' | 'not-started' | 'sanctioned';
 

@@ -26,6 +26,16 @@ export const MOCK_ACCOUNT_SLUG = 'acme-motors';
 /** The route the page reads its list from — the one thing each spec stubs differently. */
 export const CLA_GROUPS_ROUTE = '**/api/orgs/*/lens/cla-groups';
 
+/**
+ * The detail page's presigned-URL route.
+ *
+ * Deliberately narrower than `CLA_GROUPS_ROUTE` with a wildcard suffix: the list route is a strict
+ * prefix of this one, so a spec that stubs the list with a trailing `**` would answer the PDF
+ * request with a list envelope and the download would fail on a shape mismatch rather than on
+ * anything the case was about.
+ */
+export const PDF_URL_ROUTE = '**/api/orgs/*/lens/cla-groups/*/pdf-url';
+
 export function fulfillJson(page: Page, glob: string, body: unknown): Promise<void> {
   return page.route(glob, (route) => route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify(body) }));
 }
@@ -118,6 +128,30 @@ export async function gotoEasyclaList(page: Page, stubList: (page: Page) => Prom
 
   // A redirect away from the whole lens means `org-lens-enabled` is off for this user, which is a
   // missing prerequisite rather than a failure of anything these specs are about.
+  if (!page.url().includes('/org/')) {
+    test.skip(true, 'org-lens-enabled appears off — /org/easycla redirected out of the lens');
+  }
+}
+
+/**
+ * Land on `/org/easycla/{signatureId}` with the same context `gotoEasyclaList` establishes.
+ *
+ * Routed to directly rather than by clicking a card, because most detail cases are about what the
+ * page renders for a given row and would otherwise fail on the list. The one case that is about
+ * the card click navigates from the list itself.
+ */
+export async function gotoEasyclaDetail(page: Page, signatureId: string, stubList: (page: Page) => Promise<void>): Promise<void> {
+  await stubFeatureFlags(page, { [ORG_LENS_ENABLED_FLAG]: true, [ORG_LENS_CLA_M3_ENABLED_FLAG]: true });
+  await stubAccountContext(page);
+  await stubList(page);
+
+  await page.goto('/', { waitUntil: 'domcontentloaded' });
+  await expect(page).not.toHaveURL(/auth0\.com/);
+  await page.reload({ waitUntil: 'domcontentloaded' });
+
+  await page.goto(`${EASYCLA_URL}/${signatureId}`, { waitUntil: 'domcontentloaded' });
+  await expect(page).not.toHaveURL(/auth0\.com/);
+
   if (!page.url().includes('/org/')) {
     test.skip(true, 'org-lens-enabled appears off — /org/easycla redirected out of the lens');
   }

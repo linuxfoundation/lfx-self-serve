@@ -39,9 +39,14 @@ const SERVICE = 'org_cla_service';
  *   confuse because the console this replaces labels its rules section as though it listed
  *   contributors. Mapping it here is how it ends up under the wrong label.
  *
- * `autoCreateECLA` and `signed` are likewise not carried: the first belongs to a later
- * feature, the second is folded into `status` so no consumer forms a second opinion about
- * what "signed" means for display.
+ * `autoCreateECLA` is likewise not carried: it belongs to a later feature.
+ *
+ * `signed` is carried, but only as the answer to "is there a document" — never as a display
+ * status. `status` remains the single slot the template reads, because sanctions outrank
+ * signing there and a consumer forming its own opinion from the two booleans would present a
+ * sanctioned entity's agreement as ordinarily signed. What `status` cannot answer is whether a
+ * document exists to fetch, since a `sanctioned` row may be signed or unsigned, and that is the
+ * one question `signed` is here for.
  */
 function toOrgClaGroup(entry: EasyClaCompanyClaGroup & { signatureID: string }, companyName: string): OrgClaGroup {
   const projects: OrgClaGroupProject[] = (entry.projects ?? [])
@@ -222,13 +227,17 @@ export class OrgClaService {
 
     let result: EasyClaSignedDocument | null;
     try {
-      result = await gatewayFetch<EasyClaSignedDocument>(req, `${claServiceBaseUrl()}/v4/signatures/${encodeURIComponent(signatureId)}/signed-document`, {
-        operation: 'org_cla_get_pdf_url',
-        service: SERVICE,
-        errorMessage: 'Failed to fetch signed document URL',
-        errorCode: 'UPSTREAM_ERROR',
-        bearerToken: isImpersonating(req) ? req.bearerToken : undefined,
-      });
+      result = await gatewayFetch<EasyClaSignedDocument>(
+        req,
+        `${claServiceBaseUrl(SERVICE)}/v4/signatures/${encodeURIComponent(signatureId)}/signed-document`,
+        {
+          operation: 'org_cla_get_pdf_url',
+          service: SERVICE,
+          errorMessage: 'Failed to fetch signed document URL',
+          errorCode: 'UPSTREAM_ERROR',
+          bearerToken: isImpersonating(req) ? req.bearerToken : undefined,
+        }
+      );
     } catch (error) {
       if (error instanceof MicroserviceError && error.statusCode === 404) {
         logger.warning(req, 'org_cla_get_pdf_url', 'upstream holds no signed document for this signature', { signature_id: signatureId });

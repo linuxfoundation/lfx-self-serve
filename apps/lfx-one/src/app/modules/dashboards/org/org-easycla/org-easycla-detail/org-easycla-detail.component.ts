@@ -266,19 +266,18 @@ export class OrgEasyclaDetailComponent {
       return signal<OrgClaGroupList | null | undefined>(undefined);
     }
 
+    // Keyed on the organization alone. The response is the org's whole CLA list and `claGroup`
+    // picks this page's row out of it, so `signatureId` must stay out of this stream: Angular
+    // reuses the component when only that param changes, and driving the fetch from it would
+    // raise the skeleton over the full page and re-request a list already in memory to arrive at
+    // the same rows.
     return toSignal(
-      combineLatest([
-        this.orgUid$,
-        toObservable(this.signatureId).pipe(
-          filter((id) => !!id),
-          distinctUntilChanged()
-        ),
-      ]).pipe(
+      this.orgUid$.pipe(
         tap(() => {
           this.claLoadingState.set(true);
           this.fetchError.set(false);
         }),
-        switchMap(([uid]) =>
+        switchMap((uid) =>
           this.claService.getClaGroups(uid).pipe(
             tap(() => this.claLoadingState.set(false)),
             catchError((error: HttpErrorResponse) => {

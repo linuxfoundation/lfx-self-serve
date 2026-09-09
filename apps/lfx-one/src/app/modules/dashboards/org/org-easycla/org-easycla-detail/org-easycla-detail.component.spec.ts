@@ -361,6 +361,24 @@ describe('OrgEasyclaDetailComponent', () => {
     clickSpy.mockRestore();
   });
 
+  it('switches agreement from the list already loaded, without refetching it', async () => {
+    getClaGroups.mockReturnValue(
+      of({ orgUid: SELECTED_ACCOUNT.uid, claGroups: [claGroup(), claGroup({ id: 'signature-uuid-2', claGroupName: 'Other CLA' })] })
+    );
+
+    const fixture = await render();
+    expect(getClaGroups).toHaveBeenCalledTimes(1);
+
+    paramMap.next(convertToParamMap({ signatureId: 'signature-uuid-2' }));
+    fixture.detectChanges();
+    await fixture.whenStable();
+
+    // The response is the organization's whole list, so it already holds the second agreement.
+    // Refetching it would raise the skeleton over the page to arrive at rows it is already showing.
+    expect(getClaGroups).toHaveBeenCalledTimes(1);
+    expect(byTestId(fixture, 'org-easycla-detail-ccla-title')?.textContent).toContain('Other CLA');
+  });
+
   it('holds the skeleton while the loaded list still belongs to the previous organization', async () => {
     getClaGroups.mockReturnValue(of({ orgUid: '0014100000OtherOrgAA', claGroups: [claGroup()] }));
 
