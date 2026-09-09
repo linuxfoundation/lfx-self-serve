@@ -65,8 +65,18 @@
         data-testid="events-past-table" />
     }
   } @else if (activeTab() === 'visa-letters') {
-    <lfx-event-request-list requestType="visa" [searchQuery]="searchQuery()" [status]="status()" data-testid="visa-requests-table" />
+    <lfx-event-request-list
+      requestType="visa"
+      [searchQuery]="searchQuery()"
+      [status]="status()"
+      [initialEventId]="initialEventId()"
+      data-testid="visa-requests-table" />
   } @else if (activeTab() === 'travel-funding') {
-    <lfx-event-request-list requestType="travel-fund" [searchQuery]="searchQuery()" [status]="status()" data-testid="travel-funding-table" />
+    <lfx-event-request-list
+      requestType="travel-fund"
+      [searchQuery]="searchQuery()"
+      [status]="status()"
+      [initialEventId]="initialEventId()"
+      data-testid="travel-funding-table" />
   }
 </div>

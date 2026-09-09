@@ -97,7 +97,7 @@
             severity="primary"
             size="small"
             [disabled]="!isCreateEnabled()"
-            (onClick)="openCurrentRequestDialog()"
+            (onClick)="onNewRequestClick()"
             data-testid="events-new-request-button" />
         }
       </lfx-card-tabs-bar>
@@ -127,6 +127,7 @@
           [searchQuery]="selectedSearchQuery()"
           [role]="selectedRole()"
           [status]="selectedStatus()"
+          [initialEventId]="activeEventId()"
           (resetFilters)="resetFilters()" />
       </div>
     </lfx-card>
