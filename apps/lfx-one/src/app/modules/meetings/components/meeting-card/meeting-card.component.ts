@@ -786,7 +786,22 @@ export class MeetingCardComponent implements OnInit {
       const meeting = this.meetingInput();
 
       if (this.pastMeeting()) {
-        return `/meetings/${getPastMeetingResourceId(meeting)}`;
+        const resourceId = getPastMeetingResourceId(meeting);
+
+        // View-role viewers land on the public join/summary page; Manage-role viewers
+        // (organizer, project writer, or project ED — meeting.organizer already reflects
+        // this broadened check, see #2234) go to the admin details page with Reconcile
+        // Attendance and other admin actions. Lens-prefix mirrors editCommands below.
+        if (!meeting.organizer) {
+          return `/meetings/${resourceId}`;
+        }
+        if (meeting.is_foundation === true) {
+          return `/foundation/meetings/${resourceId}/details`;
+        }
+        if (meeting.is_foundation === false) {
+          return `/project/meetings/${resourceId}/details`;
+        }
+        return `/meetings/${resourceId}/details`;
       }
 
       const params = new URLSearchParams();
