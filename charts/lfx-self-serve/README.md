@@ -217,9 +217,18 @@ JOBS  →  BRIEFS  →  STATUS_TOGGLE  →  CREATE
 ```
 
 The other four flags in the table -- `..._DEMAND_GEN`, `..._INSIGHTS`, `..._KEYWORD_ACTIONS` and
-`..._HUBSPOT_UTM` -- are NOT part of this enable order and all default OFF. They gate later,
-independent moves, each with its own prerequisite noted in the table. The ordering rules below
-are about the create pipeline only; each of these four carries its own note in `values.yaml`.
+`..._HUBSPOT_UTM` -- are NOT part of this enable order. They gate later, independent moves, each
+with its own prerequisite noted in the table. Their defaults now differ, and the difference
+matters to an operator deciding whether an override is needed:
+
+- `..._INSIGHTS` and `..._KEYWORD_ACTIONS` default **ON**. The brokered routes exist in
+  campaign-service, so no override is required to use them — and an override back to `"false"` is
+  NOT a safe rollback wherever the `GADS_*` credentials have been removed, because the legacy arm
+  then calls `getGadsClient()`, which throws before any read.
+- `..._DEMAND_GEN` and `..._HUBSPOT_UTM` default **OFF**. `..._HUBSPOT_UTM` additionally requires a
+  HubSpot connection to exist for the project (or the LF system row) before it does anything but
+  turn one error into another. The ordering rules below
+  are about the create pipeline only; each of these four carries its own note in `values.yaml`.
 
 **This is a deploy constraint, not a merge one.** All four of the create-pipeline flags now
 default to `"true"` in this chart, and nothing in CI staggers them — a single rollout of this chart turns them all on at once, which
