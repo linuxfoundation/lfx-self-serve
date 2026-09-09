@@ -11,7 +11,7 @@ import type { OrgClaGroup, OrgClaGroupList, OrgClaGroupPickerResult, OrgClaSignA
 import { orgClaOpenLabel } from '@lfx-one/shared/utils';
 import { DialogService, DynamicDialogRef } from 'primeng/dynamicdialog';
 import { SkeletonModule } from 'primeng/skeleton';
-import { catchError, distinctUntilChanged, filter, of, skip, switchMap, tap } from 'rxjs';
+import { catchError, distinctUntilChanged, filter, of, skip, switchMap, take, tap } from 'rxjs';
 
 import { ButtonComponent } from '@components/button/button.component';
 import { EmptyStateComponent } from '@components/empty-state/empty-state.component';
@@ -280,7 +280,9 @@ export class OrgEasyclaComponent {
         this.signingOpen.set(false);
         return;
       }
-      this.confirmThenHandOff(orgUid, chosen);
+      // The choice comes from `onClose`, which carries it; the next dialog waits for teardown.
+      // `signingOpen` stays true across that gap, so the control cannot start a second flow in it.
+      this.afterDialogTornDown(pickerRef, () => this.confirmThenHandOff(orgUid, chosen));
     });
   }
 
@@ -301,6 +303,22 @@ export class OrgEasyclaComponent {
    */
   private abandonUncommittedSigning(): void {
     this.uncommittedSigningDialog?.close();
+  }
+
+  /**
+   * Runs `next` once a dialog is not merely closed but torn down.
+   *
+   * `DynamicDialogRef.close()` emits `onClose` synchronously and starts the leave animation from
+   * that same emission, and the end of that animation is what drops `p-overflow-hidden` from the
+   * body. A dialog opened from inside `onClose` therefore has its own scroll lock stripped a
+   * moment after it appears, and the page scrolls behind it. `onDestroy` fires after that
+   * teardown, which is the boundary a follow-on step has to wait for.
+   *
+   * The Me-lens hand-off found this first (#2066) and carries the same helper. This chain opens
+   * two dialogs from inside a close, so it had the defect twice.
+   */
+  private afterDialogTornDown(dialogRef: DynamicDialogRef, next: () => void): void {
+    dialogRef.onDestroy.pipe(take(1), takeUntilDestroyed(this.destroyRef)).subscribe(() => next());
   }
 
   private confirmThenHandOff(orgUid: string, chosen: OrgClaGroupPickerResult): void {
@@ -324,26 +342,31 @@ export class OrgEasyclaComponent {
         return;
       }
 
-      const handoffRef = this.dialogService.open(OrgEasyclaSignHandoffComponent, {
-        // Opened locked, and the component unlocks it — including this header, which it keeps in
-        // step with the state it is showing. A real signing session is opened behind this dialog
-        // as it appears, and the address it returns is the only thing that reaches the signatory:
-        // dismissing it before then, by mask, header control or Escape, leaves an envelope that
-        // exists and that nobody was handed. These three are the initial values only.
-        header: CCLA_SIGN_COPY.preparing.header,
-        width: '40rem',
-        // The Aura dialog preset caps nothing, so a fixed width alone runs off a 360-390px phone,
-        // taking the controls at its edges with it. Same cap the sibling coverage dialog documents.
-        style: { maxWidth: '90vw' },
-        modal: true,
-        closable: false,
-        closeOnEscape: false,
-        dismissableMask: false,
-        data: { orgUid, projectSfid: chosen.projectSfid, claGroupId: chosen.claGroupId, attestations },
-      }) as DynamicDialogRef;
-
-      handoffRef.onClose.pipe(takeUntilDestroyed(this.destroyRef)).subscribe(() => this.signingOpen.set(false));
+      this.afterDialogTornDown(attestationRef, () => this.openHandOff(orgUid, chosen, attestations));
     });
+  }
+
+  /** The last step, opened only once the attestation dialog has finished tearing down. */
+  private openHandOff(orgUid: string, chosen: OrgClaGroupPickerResult, attestations: OrgClaSignAttestations): void {
+    const handoffRef = this.dialogService.open(OrgEasyclaSignHandoffComponent, {
+      // Opened locked, and the component unlocks it — including this header, which it keeps in
+      // step with the state it is showing. A real signing session is opened behind this dialog
+      // as it appears, and the address it returns is the only thing that reaches the signatory:
+      // dismissing it before then, by mask, header control or Escape, leaves an envelope that
+      // exists and that nobody was handed. These three are the initial values only.
+      header: CCLA_SIGN_COPY.preparing.header,
+      width: '40rem',
+      // The Aura dialog preset caps nothing, so a fixed width alone runs off a 360-390px phone,
+      // taking the controls at its edges with it. Same cap the sibling coverage dialog documents.
+      style: { maxWidth: '90vw' },
+      modal: true,
+      closable: false,
+      closeOnEscape: false,
+      dismissableMask: false,
+      data: { orgUid, projectSfid: chosen.projectSfid, claGroupId: chosen.claGroupId, attestations },
+    }) as DynamicDialogRef;
+
+    handoffRef.onClose.pipe(takeUntilDestroyed(this.destroyRef)).subscribe(() => this.signingOpen.set(false));
   }
 
   private initSearchTerm(): Signal<string> {

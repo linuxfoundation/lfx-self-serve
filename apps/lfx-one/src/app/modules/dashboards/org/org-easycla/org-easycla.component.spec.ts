@@ -195,7 +195,9 @@ describe('OrgEasyclaComponent', () => {
       const open = vi.fn((component: unknown, config: DialogHarnessConfig = {}) => {
         opened.push({ component, config });
         const result = closeResults[opened.length - 1];
-        return { onClose: of(result), close: vi.fn() };
+        // `onDestroy` as well as `onClose`: the flow waits for teardown between steps, so a stub
+        // that only closes would stall it at the first dialog.
+        return { onClose: of(result), onDestroy: of(undefined), close: vi.fn() };
       });
       return { opened, open };
     }
@@ -328,14 +330,16 @@ describe('OrgEasyclaComponent', () => {
         close: ReturnType<typeof vi.fn>;
         /** Emit to drive this dialog's own close, which is how the flow advances a step. */
         onClose: Subject<unknown>;
+        /** Emit after `onClose` to finish the leave animation. The next step waits on this. */
+        onDestroy: Subject<void>;
       }
 
       function openDialogHarness() {
         const opened: OpenDialog[] = [];
         const open = vi.fn((component: unknown, config: DialogHarnessConfig = {}) => {
-          const dialog: OpenDialog = { component, config, close: vi.fn(), onClose: new Subject<unknown>() };
+          const dialog: OpenDialog = { component, config, close: vi.fn(), onClose: new Subject<unknown>(), onDestroy: new Subject<void>() };
           opened.push(dialog);
-          return { onClose: dialog.onClose, close: dialog.close };
+          return { onClose: dialog.onClose, onDestroy: dialog.onDestroy, close: dialog.close };
         });
         return { opened, open };
       }
@@ -416,8 +420,9 @@ describe('OrgEasyclaComponent', () => {
         const { fixture, harness } = await renderWithOpenDialogs();
 
         byTestId(fixture, 'org-easycla-sign-cla')?.querySelector('button')?.click();
-        // Choosing a CLA group closes the picker and opens the attestation dialog behind it.
+        // Choosing a CLA group closes the picker and, once it has torn down, opens the attestation.
         harness.opened[0].onClose.next(chosen);
+        harness.opened[0].onDestroy.next();
         expect(harness.opened).toHaveLength(2);
 
         selectedAccount.set({ uid: '0014100000Te2QjAAJ', accountName: 'Meridian Systems' });
@@ -425,6 +430,49 @@ describe('OrgEasyclaComponent', () => {
         await fixture.whenStable();
 
         expect(harness.opened[1].close).toHaveBeenCalled();
+      });
+
+      /**
+       * Each step waits for the previous dialog to be torn down, not merely closed.
+       *
+       * `close()` emits `onClose` synchronously and starts the leave animation from that same
+       * emission, and the end of that animation drops `p-overflow-hidden` from the body. A dialog
+       * opened from inside `onClose` therefore has its own scroll lock stripped a moment after it
+       * appears, and the page scrolls behind it. The Me-lens hand-off found this first (#2066);
+       * this chain opens two dialogs from inside a close, so it had the defect twice.
+       */
+      it.each([
+        { index: 0, step: 'attestation' },
+        { index: 1, step: 'hand-off' },
+      ])('opens no $step dialog until the previous one has torn down', async ({ index }) => {
+        const { fixture, harness } = await renderWithOpenDialogs();
+
+        byTestId(fixture, 'org-easycla-sign-cla')?.querySelector('button')?.click();
+        for (let i = 0; i < index; i++) {
+          harness.opened[i].onClose.next(i === 0 ? chosen : { authorityAcked: true, embargoAcked: true });
+          harness.opened[i].onDestroy.next();
+        }
+
+        const before = harness.opened.length;
+        harness.opened[index].onClose.next(index === 0 ? chosen : { authorityAcked: true, embargoAcked: true });
+        expect(harness.opened).toHaveLength(before);
+
+        harness.opened[index].onDestroy.next();
+        expect(harness.opened).toHaveLength(before + 1);
+      });
+
+      // The gap between one dialog tearing down and the next opening is a window in which the
+      // control is live. It stays disabled across it, or a second click starts a parallel flow.
+      it('starts no second flow in the gap between a teardown and the next dialog', async () => {
+        const { fixture, harness } = await renderWithOpenDialogs();
+
+        byTestId(fixture, 'org-easycla-sign-cla')?.querySelector('button')?.click();
+        harness.opened[0].onClose.next(chosen);
+
+        byTestId(fixture, 'org-easycla-sign-cla')?.querySelector('button')?.click();
+        harness.opened[0].onDestroy.next();
+
+        expect(harness.opened).toHaveLength(2);
       });
 
       /**
@@ -441,7 +489,9 @@ describe('OrgEasyclaComponent', () => {
 
         byTestId(fixture, 'org-easycla-sign-cla')?.querySelector('button')?.click();
         harness.opened[0].onClose.next(chosen);
+        harness.opened[0].onDestroy.next();
         harness.opened[1].onClose.next({ authorityAcked: true, embargoAcked: true });
+        harness.opened[1].onDestroy.next();
         expect(harness.opened).toHaveLength(3);
 
         selectedAccount.set({ uid: '0014100000Te2QjAAJ', accountName: 'Meridian Systems' });

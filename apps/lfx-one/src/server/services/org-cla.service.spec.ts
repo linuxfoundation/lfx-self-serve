@@ -814,6 +814,37 @@ describe('OrgClaService.requestCorporateSignature', () => {
     await expect(new OrgClaService().requestCorporateSignature(signReq(), ORG_UID, signRequest())).rejects.toThrow(/no usable corporate signing session/);
   });
 
+  // The client assigns this value to `document.location.href`, so a scheme that executes rather
+  // than navigates would run in this origin at the moment the signatory expects to be sent away.
+  // The whitespace and mixed-case entries are the ones a written-out comparison misses: the
+  // browser trims and lowercases the scheme before acting on it, so both of those execute.
+  it.each([
+    ['javascript:alert(document.cookie)'],
+    ['  javascript:alert(1)'],
+    ['\tjavascript:alert(1)'],
+    ['JaVaScRiPt:alert(1)'],
+    ['data:text/html,<script>alert(1)</script>'],
+    ['http://docusign.example.org/session/1'],
+    ['/session/1'],
+    ['not a url at all'],
+  ])('refuses a signing address of %p rather than handing it to the browser', async (signUrl) => {
+    gatewayFetch.mockResolvedValueOnce({ ...upstreamOk, sign_url: signUrl });
+
+    await expect(new OrgClaService().requestCorporateSignature(signReq(), ORG_UID, signRequest())).rejects.toThrow(/unusable corporate signing address/);
+  });
+
+  // The address is a capability — it opens a named person's agreement — and a hostile one should
+  // not be written anywhere either. Only its scheme is recorded.
+  it('keeps the refused address out of the logs', async () => {
+    gatewayFetch.mockResolvedValueOnce({ ...upstreamOk, sign_url: 'javascript:alert(document.cookie)' });
+
+    await expect(new OrgClaService().requestCorporateSignature(signReq(), ORG_UID, signRequest())).rejects.toThrow();
+
+    const logged = JSON.stringify(loggerWarning.mock.calls);
+    expect(logged).not.toContain('alert(document.cookie)');
+    expect(logged).toContain('javascript');
+  });
+
   it('fails when upstream returned no signature identifier', async () => {
     gatewayFetch.mockResolvedValueOnce({ ...upstreamOk, signature_id: '' });
 

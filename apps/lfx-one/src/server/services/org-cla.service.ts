@@ -34,6 +34,7 @@ import type {
 import { MicroserviceError } from '../errors';
 import { claServiceBaseUrl } from '../helpers/cla-service-url.helper';
 import { gatewayFetch } from '../helpers/gateway-fetch.helper';
+import { isHttpsUrl } from '../helpers/validation.helper';
 import { claReturnUrl, toClaGroupOption, withoutUpstreamBody, withProducerRefusalMessage } from './cla.service';
 import { logger } from './logger.service';
 import { isImpersonating } from '../utils/auth-helper';
@@ -423,6 +424,27 @@ export class OrgClaService {
     // Receiving one means the request was not fulfilled the way it was made, so it fails loudly.
     // Navigating to an empty address would send the signatory to this application's own root and
     // read as a successful hand-off that silently signed nothing.
+    // The scheme is checked, not just the presence of a string. The client assigns this value
+    // straight to `document.location.href`, so a `javascript:` address coming back from a
+    // malformed or compromised response would execute in this application's origin, with this
+    // application's session — and it would arrive at exactly the moment the signatory is
+    // expecting to be sent somewhere. Nothing downstream of here looks at it again.
+    //
+    // Scheme only, not a host allowlist. The signing addresses are EasyCLA's to choose and it has
+    // not published the set, so pinning hosts here would break the hand-off the first time one
+    // changed. The scheme is the part that carries the execution risk.
+    if (signUrl && !isHttpsUrl(signUrl)) {
+      logger.warning(req, 'org_cla_request_corporate_signature', 'upstream returned a signing address that is not an https URL', {
+        // The address itself is deliberately not logged: it is a capability — anyone holding it can
+        // open a named person's agreement — and if it is hostile it does not belong in a log either.
+        sign_url_scheme: signUrl.split(':', 1)[0]?.slice(0, 20),
+      });
+      throw new MicroserviceError('Upstream returned an unusable corporate signing address', 502, 'CLA_SIGN_URL_INVALID', {
+        operation: 'org_cla_request_corporate_signature',
+        service: SERVICE,
+      });
+    }
+
     if (!signUrl || !signatureId) {
       // The fields, not the severity: the throw below reaches the shared error handler, which logs
       // the failure centrally. Duplicating that here as an error would double-count it.
