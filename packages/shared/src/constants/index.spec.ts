@@ -12,8 +12,9 @@
 // apps/lfx-one's tailwind.config.js loads `@lfx-one/shared/constants` — with a JIT-compiler error
 // that surfaces far from its real cause (e.g. as an unrelated sass error on the global styles
 // entry). The sanctioned constants->utils edges today are dashboard-metrics.constants.ts
-// (color.utils, number.utils), committees.constants.ts (committee.utils), and
-// mentorship-enroll.constants.ts (date-time.utils) — all Angular-free.
+// (color.utils, number.utils), committees.constants.ts (committee.utils),
+// mentorship-enroll.constants.ts (date-time.utils), and org-lens-roi.constants.ts
+// (color.utils) — all Angular-free.
 //
 // This only covers the `/constants` subpath: the package root barrel (`packages/shared/src/index.ts`)
 // still does `export * from './utils'` and is plain-Node-hostile by design — so is the `/utils`
