@@ -104,6 +104,9 @@ describe('OrgClasController.getPdfUrl', () => {
 
     expect(res.status).toHaveBeenCalledWith(404);
     expect(res.json).toHaveBeenCalledWith({ message: 'Signed document not found' });
+    // The 404 is transient — it is also the answer while the document is not yet available — and
+    // a 404 is heuristically cacheable, so a stored copy would outlive the condition.
+    expect(res.setHeader).toHaveBeenCalledWith('Cache-Control', 'no-store');
     // A handled outcome still closes the operation, or the endpoint's duration and completion
     // telemetry counts drift apart from its request count.
     expect(logger.success).toHaveBeenCalledWith(expect.anything(), 'get_org_cla_pdf_url', expect.anything(), expect.objectContaining({ found: false }));

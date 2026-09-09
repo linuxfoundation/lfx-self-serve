@@ -52,6 +52,14 @@ export class OrgClasController {
       }
 
       const pdf = await this.orgClaService.getPdfUrl(req, orgUid, signatureId);
+
+      // Ahead of the branch, so the 404 carries it too, as `sendBlock` in
+      // org-lens-project-detail.controller.ts does. A 404 is heuristically cacheable, and this
+      // one is transient — it is also the answer while a signed document is not yet available
+      // upstream — so a cached copy would keep failing retries after the document exists. The
+      // success body is a short-lived presigned URL, which must not be stored either.
+      res.setHeader('Cache-Control', 'no-store');
+
       if (!pdf) {
         // A handled outcome, not an error: absent is what the service returns for a signature
         // this organization does not hold, an unsigned agreement, or a document upstream has
@@ -62,7 +70,6 @@ export class OrgClasController {
       }
 
       logger.success(req, 'get_org_cla_pdf_url', startTime, { org_uid: orgUid, signature_id: signatureId, found: true });
-      res.setHeader('Cache-Control', 'no-store');
       res.json(pdf);
     } catch (error) {
       next(error);
