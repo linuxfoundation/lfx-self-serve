@@ -158,12 +158,15 @@ Karpenter sample cannot answer the first:
 
 - **The probe budget** can be evaluated from what's already measured here:
   in-process boot (~3-6s) plus corepack/pm2 launch (~2-3s) is well under 310s
-  even in the cold-pull case. Tightening it (a `CrashLoopBackOff`-risk change
-  — see the gating in the parent plan, and the ≥20-sample p99 gate before
-  acting) is justified by this container-start-to-listening data alone, with
-  the arithmetic comment at `values.yaml:199-200` updated in the same change
-  — it would directly shrink the three-sequential-cold-starts-per-rollout
-  window that #1375 traded for.
+  even in the cold-pull case, so a healthy pod already advances on its first
+  successful check — a rollout's duration is governed by actual boot time,
+  not by `failureThreshold`. Tightening the budget therefore would **not**
+  shrink the three-sequential-cold-starts-per-rollout window that #1375
+  traded for; it would only change how quickly a genuinely stuck pod is
+  killed and restarted. If pursued for that reason (a `CrashLoopBackOff`-risk
+  change — see the gating in the parent plan, and the ≥20-sample p99 gate
+  before acting), the arithmetic comment at `values.yaml:199-200` should be
+  updated in the same change.
 - **A genuine Karpenter node-provisioning sample** is still worth capturing,
   but to answer a different question: whether the original ~4 minute
   cold-start belief ever had a basis, not whether the probe budget is sized
