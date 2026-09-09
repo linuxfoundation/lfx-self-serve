@@ -17,6 +17,7 @@ import { catchError, combineLatest, distinctUntilChanged, filter, finalize, map,
 import { BreadcrumbComponent } from '@components/breadcrumb/breadcrumb.component';
 import { ButtonComponent } from '@components/button/button.component';
 import { EmptyStateComponent } from '@components/empty-state/empty-state.component';
+import { MessageComponent } from '@components/message/message.component';
 import { TagComponent } from '@components/tag/tag.component';
 import { AccountContextService } from '@services/account-context.service';
 import { OrgLensClaService } from '@services/org-lens-cla.service';
@@ -29,7 +30,7 @@ import { OrgEasyclaCoverageDialogComponent } from './org-easycla-coverage-dialog
 
 @Component({
   selector: 'lfx-org-easycla-detail',
-  imports: [BreadcrumbComponent, ButtonComponent, EmptyStateComponent, OpenIntercomDirective, SkeletonModule, TagComponent],
+  imports: [BreadcrumbComponent, ButtonComponent, EmptyStateComponent, MessageComponent, OpenIntercomDirective, SkeletonModule, TagComponent],
   providers: [DialogService],
   templateUrl: './org-easycla-detail.component.html',
   changeDetection: ChangeDetectionStrategy.OnPush,

@@ -114,6 +114,19 @@ describe('OrgEasyclaDetailComponent', () => {
     expect(byTestId(fixture, 'org-easycla-detail-signed-on')?.textContent).not.toContain('Signed by');
   });
 
+  // Signed-ness is stated as a token everywhere else on this page — the status pill takes its
+  // severity from ORG_CLA_STATUS_DISPLAY — so the affirmation must not restate it in hex. This
+  // asserts the theme owns the colour, which is what an earlier hand-rolled tinted box did not:
+  // it reached for a Tailwind default scale the theme never defines, and nothing failed.
+  it('leaves the success colour to the theme rather than tinting the line itself', async () => {
+    const fixture = await render();
+    const line = byTestId(fixture, 'org-easycla-detail-signed-on');
+
+    expect(line?.querySelector('p-message')).not.toBeNull();
+    expect(line?.className ?? '').not.toMatch(/(bg|text|border)-(green|emerald)-/);
+    expect(line?.querySelector('[class*="-green-"], [class*="-emerald-"]')).toBeNull();
+  });
+
   it('names the signer and the time of day when the row carries both', async () => {
     getClaGroups.mockReturnValue(
       of({

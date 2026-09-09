@@ -58,10 +58,18 @@
         <p class="text-sm text-gray-500" data-testid="org-easycla-detail-signing-entity">{{ group.signingEntityName }}</p>
       }
       <div class="flex flex-wrap items-center gap-2">
+        <!--
+          `blue-*`, not `brand-*`. The theme extends Tailwind with `lfxColors`, which defines
+          blue/gray/emerald/red/amber/violet and no `brand` scale, so a `brand-` utility emits no CSS
+          at all and the chip renders as inert text — FR-024 unmet, invisibly, because nothing fails.
+          The values are the approved design's own: it uses --blue-100 (#ECF4FF) and --blue-600
+          (#0082D9), which are `blue.100` and `blue.600` here. Hover underlines without changing the
+          fill, as the design does.
+        -->
         @for (chip of coverageChips(); track chip) {
           <button
             type="button"
-            class="flex items-center gap-1 rounded-full bg-brand-50 px-2.5 py-0.5 text-xs font-medium text-brand-700 hover:bg-brand-100 hover:underline"
+            class="flex items-center gap-1 rounded-full border border-blue-100 bg-blue-100 px-2.5 py-0.5 text-xs font-semibold text-blue-600 hover:underline"
             [attr.aria-label]="chip + ' — show the projects this agreement covers'"
             (click)="openCoverage()"
             data-testid="org-easycla-detail-coverage">
@@ -94,7 +102,7 @@
           [attr.aria-controls]="activeTab() === tab.id ? 'org-easycla-detail-tab-panel-' + tab.id : null"
           [attr.tabindex]="activeTab() === tab.id ? 0 : -1"
           class="border-b-2 px-0.5 pb-2 text-sm"
-          [class.border-brand-500]="activeTab() === tab.id"
+          [class.border-blue-600]="activeTab() === tab.id"
           [class.text-gray-900]="activeTab() === tab.id"
           [class.font-medium]="activeTab() === tab.id"
           [class.border-transparent]="activeTab() !== tab.id"
@@ -124,23 +132,29 @@
             <p class="text-sm text-gray-500" data-testid="org-easycla-detail-ccla-hint">{{ coverageHint() }}</p>
           }
         </div>
+        <!--
+          `lfx-message severity="success"` rather than a hand-rolled tinted box. Signed-ness is
+          already expressed semantically on this page — the status pill above reads its severity from
+          ORG_CLA_STATUS_DISPLAY — so a raw success colour here would be the one place the page states
+          in hex what it states as a token everywhere else, and would drift the moment the theme's
+          success colour moves. The projected content carries no colour of its own for the same reason.
+        -->
         @if (signedOnLabel()) {
-          <p
-            class="flex items-center gap-2 rounded-md border border-green-200 bg-green-50 px-3 py-2 text-sm text-green-700"
-            data-testid="org-easycla-detail-signed-on">
-            <i class="fa-light fa-circle-check" aria-hidden="true"></i>
-            @if (signedByName()) {
-              <span
-                >Signed by <strong class="font-semibold">{{ signedByName() }}</strong> on <strong class="font-semibold">{{ signedOnLabel() }}</strong
-                >.</span
-              >
-            } @else {
-              <span
-                >Signed on <strong class="font-semibold">{{ signedOnLabel() }}</strong
-                >.</span
-              >
-            }
-          </p>
+          <lfx-message severity="success" icon="fa-light fa-circle-check" data-testid="org-easycla-detail-signed-on">
+            <ng-template #content>
+              @if (signedByName()) {
+                <span
+                  >Signed by <strong class="font-semibold">{{ signedByName() }}</strong> on <strong class="font-semibold">{{ signedOnLabel() }}</strong
+                  >.</span
+                >
+              } @else {
+                <span
+                  >Signed on <strong class="font-semibold">{{ signedOnLabel() }}</strong
+                  >.</span
+                >
+              }
+            </ng-template>
+          </lfx-message>
         }
         @if (canDownload()) {
           <lfx-button
