@@ -140,4 +140,37 @@ describe('FeatureFlagService', () => {
 
     expect((service as unknown as { isProviderReady: () => boolean }).isProviderReady()).toBe(false);
   });
+
+  it('recovers once the raw LaunchDarkly client reports a late "initialized" event after a bootstrap ERROR', async () => {
+    const initializedHandlers: (() => void)[] = [];
+    const rawClient = {
+      on: vi.fn((event: string, callback: () => void) => {
+        if (event === 'initialized') {
+          initializedHandlers.push(callback);
+        }
+      }),
+    };
+    const rawProvider = Object.create(LaunchDarklyClientProvider.prototype, {
+      status: { value: ProviderStatus.ERROR },
+      client: { value: rawClient },
+    }) as Provider;
+    vi.spyOn(OpenFeature, 'getProvider').mockReturnValue(rawProvider);
+    vi.spyOn(OpenFeature, 'getClient').mockReturnValue({
+      providerStatus: ProviderStatus.STALE,
+      addHandler: vi.fn(),
+    } as never);
+
+    await service.initialize({ name: 'Test User', email: 'test@example.com', username: 'test' } as never);
+
+    // The bootstrap ERROR still fails the first wait — recovery only affects later calls.
+    const first = await service.waitForReady(context, 5000);
+    expect(first).toBe(false);
+    expect(initializedHandlers).toHaveLength(1);
+
+    initializedHandlers[0]();
+
+    expect((service as unknown as { isProviderReady: () => boolean }).isProviderReady()).toBe(true);
+    const second = await service.waitForReady(context, 5000);
+    expect(second).toBe(true);
+  });
 });

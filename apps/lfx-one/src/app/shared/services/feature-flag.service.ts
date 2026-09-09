@@ -49,6 +49,7 @@ export class FeatureFlagService {
   private readonly isInitialized = signal<boolean>(false);
   private readonly isProviderReady = signal<boolean>(false);
   private readonly context = signal<EvaluationContext | null>(null);
+  private errorRecoveryListenerAttached = false;
 
   /**
    * Built once as a field (not per-call) so `waitForReady()` can be awaited from anywhere —
@@ -94,6 +95,8 @@ export class FeatureFlagService {
 
       if (this.rawProviderStatus() === ProviderStatus.READY) {
         this.isProviderReady.set(true);
+      } else if (this.rawProviderStatus() === ProviderStatus.ERROR) {
+        this.attachErrorRecoveryListener();
       }
     } catch (error) {
       console.error('Failed to initialize feature flag service:', error);
@@ -133,6 +136,11 @@ export class FeatureFlagService {
    * budget on top of the bootstrap wait that already failed, turning a real outage into a stall of
    * roughly double `FEATURE_FLAG_READY_TIMEOUT_MS` — or, worse, proceed as if ready at all (see
    * `rawProviderStatus()`).
+   *
+   * ERROR is not treated as permanent: `attachErrorRecoveryListener()` is called here (and from
+   * `initialize()`/the Ready handler) so a LaunchDarkly connection that only lost the race against
+   * `initializationTimeout` — rather than genuinely failing — still flips `isProviderReady` once it
+   * actually completes, instead of fail-closing every guard for the rest of the session.
    */
   public async waitForReady(context: FeatureFlagGuardContext, timeoutMs = FEATURE_FLAG_READY_TIMEOUT_MS): Promise<boolean> {
     if (this.isProviderReady()) {
@@ -140,6 +148,7 @@ export class FeatureFlagService {
     }
 
     if (this.rawProviderStatus() === ProviderStatus.ERROR) {
+      this.attachErrorRecoveryListener();
       this.dataDogRumService.addError(new Error('Feature flag provider not ready before guard timeout'), context);
       return false;
     }
@@ -281,6 +290,7 @@ export class FeatureFlagService {
       // The SDK fires this even when the pinned LaunchDarkly provider swallowed its own bootstrap
       // timeout and resolved instead of rejecting — see rawProviderStatus(). Don't trust it blindly.
       if (this.rawProviderStatus() === ProviderStatus.ERROR) {
+        this.attachErrorRecoveryListener();
         return;
       }
 
@@ -320,5 +330,43 @@ export class FeatureFlagService {
   private rawProviderStatus(): ProviderStatus | undefined {
     const provider = OpenFeature.getProvider();
     return provider instanceof LaunchDarklyClientProvider ? provider.status : undefined;
+  }
+
+  /**
+   * Un-sticks a `rawProviderStatus()` ERROR that turns out to be transient.
+   *
+   * `waitForInitialization(initializationTimeout)` races a timeout against the LaunchDarkly
+   * client's real connection rather than cancelling it — a slow (not broken) connection keeps
+   * trying in the background after the provider gives up and records ERROR, and that field is
+   * never written again (see `rawProviderStatus()`). The wrapper's own `Ready` event doesn't help
+   * either: it fires exactly once, tied to that same already-resolved `initialize()` call. Only the
+   * underlying LaunchDarkly client's own `initialized` event — which fires if and when the
+   * connection actually completes, independent of our timeout — can still report a late success.
+   *
+   * `client` is `private` in this pinned provider version's own `.d.ts`, but that's a compile-time
+   * annotation only; the getter is a plain runtime property. Reaching through it is the only way to
+   * observe this. `initialized` (not the more general `ready`, which also fires on a permanent
+   * failure like an invalid environment ID) is used deliberately: a genuine failure must stay
+   * fail-closed, since flags can never be evaluated in that case.
+   */
+  private attachErrorRecoveryListener(): void {
+    if (this.errorRecoveryListenerAttached) {
+      return;
+    }
+
+    const provider = OpenFeature.getProvider();
+    if (!(provider instanceof LaunchDarklyClientProvider)) {
+      return;
+    }
+
+    try {
+      (provider as unknown as { client: { on: (event: 'initialized', callback: () => void) => void } }).client.on('initialized', () => {
+        this.isProviderReady.set(true);
+        this.refreshFlags();
+      });
+      this.errorRecoveryListenerAttached = true;
+    } catch {
+      // Provider recorded ERROR before ever creating its underlying client — nothing to recover from.
+    }
   }
 }

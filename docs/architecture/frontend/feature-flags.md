@@ -139,6 +139,7 @@ export class FeatureFlagService {
   private readonly isInitialized = signal<boolean>(false);
   private readonly isProviderReady = signal<boolean>(false);
   private readonly context = signal<EvaluationContext | null>(null);
+  private errorRecoveryListenerAttached = false;
 
   // Public readonly signals
   public readonly initialized = this.isInitialized.asReadonly();
@@ -171,11 +172,14 @@ export class FeatureFlagService {
       // Register handlers BEFORE seeding from the current status so a READY transition that
       // lands in the gap can't be missed — the Ready handler covers the slower streaming case,
       // and the status seed below covers the already-READY case (the app initializer awaits
-      // setProviderAndWait before bootstrap).
+      // setProviderAndWait before bootstrap). Seeding is deliberately based on the raw LaunchDarkly
+      // provider's own status, not `client.providerStatus` — see `rawProviderStatus()`.
       this.setupEventHandlers();
 
-      if (this.client.providerStatus === ProviderStatus.READY) {
+      if (this.rawProviderStatus() === ProviderStatus.READY) {
         this.isProviderReady.set(true);
+      } else if (this.rawProviderStatus() === ProviderStatus.ERROR) {
+        this.attachErrorRecoveryListener();
       }
     } catch (error) {
       console.error('Failed to initialize feature flag service:', error);
@@ -209,6 +213,18 @@ export class FeatureFlagService {
       return true;
     }
 
+    // The raw LaunchDarkly provider's own status can report ERROR (e.g. `waitForInitialization`
+    // lost the timeout race during bootstrap) well before `client.providerStatus` catches up, or
+    // even when no Ready event ever fires again. Fail fast instead of waiting out `timeoutMs` for a
+    // signal that will never arrive on its own — but ERROR isn't treated as permanent here:
+    // `attachErrorRecoveryListener()` still gets a chance to flip `isProviderReady` later if the
+    // underlying (slow, not broken) connection eventually completes.
+    if (this.rawProviderStatus() === ProviderStatus.ERROR) {
+      this.attachErrorRecoveryListener();
+      this.dataDogRumService.addError(new Error('Feature flag provider not ready before guard timeout'), context);
+      return false;
+    }
+
     const ready = await firstValueFrom(
       this.providerReady$.pipe(
         filter((isReady): isReady is true => isReady === true),
@@ -223,6 +239,53 @@ export class FeatureFlagService {
 
     return ready;
   }
+
+  /**
+   * Reads the raw LaunchDarkly provider's own `status` field directly, bypassing
+   * `client.providerStatus`, which can lag behind or never reflect ERROR at all.
+   */
+  private rawProviderStatus(): ProviderStatus | undefined {
+    const provider = OpenFeature.getProvider();
+    return provider instanceof LaunchDarklyClientProvider ? provider.status : undefined;
+  }
+
+  /**
+   * Un-sticks a `rawProviderStatus()` ERROR that turns out to be transient.
+   *
+   * `waitForInitialization(initializationTimeout)` races a timeout against the LaunchDarkly
+   * client's real connection rather than cancelling it — a slow (not broken) connection keeps
+   * trying in the background after the provider gives up and records ERROR, and that field is
+   * never written again. The wrapper's own `Ready` event doesn't help either: it fires exactly
+   * once, tied to that same already-resolved `initialize()` call. Only the underlying LaunchDarkly
+   * client's own `initialized` event — which fires if and when the connection actually completes,
+   * independent of our timeout — can still report a late success.
+   *
+   * `client` is `private` in this pinned provider version's own `.d.ts`, but that's a compile-time
+   * annotation only; the getter is a plain runtime property. Reaching through it is the only way to
+   * observe this. `initialized` (not the more general `ready`, which also fires on a permanent
+   * failure like an invalid environment ID) is used deliberately: a genuine failure must stay
+   * fail-closed, since flags can never be evaluated in that case.
+   */
+  private attachErrorRecoveryListener(): void {
+    if (this.errorRecoveryListenerAttached) {
+      return;
+    }
+
+    const provider = OpenFeature.getProvider();
+    if (!(provider instanceof LaunchDarklyClientProvider)) {
+      return;
+    }
+
+    try {
+      (provider as unknown as { client: { on: (event: 'initialized', callback: () => void) => void } }).client.on('initialized', () => {
+        this.isProviderReady.set(true);
+        this.refreshFlags();
+      });
+      this.errorRecoveryListenerAttached = true;
+    } catch {
+      // Provider recorded ERROR before ever creating its underlying client — nothing to recover from.
+    }
+  }
 }
 ```
 
@@ -234,6 +297,7 @@ export class FeatureFlagService {
 - **Lazy Initialization**: Service doesn't initialize in constructor; waits for explicit `initialize()` call
 - **Idempotent**: Multiple `initialize()` calls are safe (checks `isInitialized()` first)
 - **Instrumented readiness wait**: `waitForReady()` centralizes the guard-facing timeout so every flag-gated route — both `CanMatch` guards and the two `CanActivateFn` guards (`campaignAccessGuard`, `marketingImpactAccessGuard`) — reports the same way to RUM on failure, instead of each guard duplicating its own wait/timeout/log logic
+- **Self-healing ERROR status**: the raw LaunchDarkly provider's `status` field is sticky — once it records `ERROR` (e.g. losing the bootstrap timeout race), nothing in the provider ever resets it, even if the underlying connection succeeds moments later. `attachErrorRecoveryListener()` listens for the LaunchDarkly client's own late `initialized` event and flips `isProviderReady` when a merely-slow connection eventually completes, so a transient bootstrap timeout doesn't fail-close every guard for the rest of the session. A genuine permanent failure (e.g. invalid environment ID) never fires `initialized`, so it correctly stays fail-closed
 
 ### Provider Setup
 
