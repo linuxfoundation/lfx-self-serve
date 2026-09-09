@@ -258,13 +258,17 @@ describe('OrgEasyclaCoverageDialogComponent', () => {
       expect(region()?.textContent?.trim()).toBe('');
 
       search(fixture, 'casc');
-      expect(region()?.textContent?.trim()).toBe('2 projects match your search.');
+      expect(region()?.textContent?.trim()).toBe('2 projects match "casc".');
+
+      // Two terms can match the same count; quoting the term is what makes the text node change.
+      search(fixture, 'ca');
+      expect(region()?.textContent?.trim()).toBe('2 projects match "ca".');
 
       search(fixture, 'wood');
-      expect(region()?.textContent?.trim()).toBe('1 project matches your search.');
+      expect(region()?.textContent?.trim()).toBe('1 project matches "wood".');
 
       search(fixture, 'nimbus');
-      expect(region()?.textContent?.trim()).toBe('No covered projects match your search.');
+      expect(region()?.textContent?.trim()).toBe('No covered projects match "nimbus".');
 
       search(fixture, '');
       expect(region()?.textContent?.trim()).toBe('Search cleared. Showing all covered projects.');

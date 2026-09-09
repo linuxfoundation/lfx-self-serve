@@ -109,8 +109,8 @@ export class OrgEasyclaCoverageDialogComponent {
       if (!trimmed) return justCleared ? this.restoredMessage : '';
 
       const count = this.filteredProjects().length;
-      if (count === 0) return this.noMatchMessage;
-      return count === 1 ? '1 project matches your search.' : `${count} projects match your search.`;
+      if (count === 0) return `No covered projects match "${trimmed}".`;
+      return count === 1 ? `1 project matches "${trimmed}".` : `${count} projects match "${trimmed}".`;
     });
   }
 }
