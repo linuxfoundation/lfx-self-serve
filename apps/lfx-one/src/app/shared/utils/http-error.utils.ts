@@ -8,8 +8,9 @@ import { MonoTypeOperatorFunction, retry, throwError, timer } from 'rxjs';
 /**
  * The message an error body offers for display, or `undefined` when it offers none. Every policy the
  * two readers below share lives here rather than in each of them: which key wins, when a 5xx body is
- * discarded (see `getHttpErrorDetail` for why), and what a plain-text body is worth. The only thing
- * left to a caller is `plainString`, which is genuinely a per-caller call.
+ * discarded and the one code that overrides that (see `getHttpErrorDetail` for both), and what a
+ * plain-text body is worth. The only thing left to a caller is `plainString`, which is genuinely a
+ * per-caller call.
  *
  * `error` is read as well as `message` because `error` is the key the envelope actually sends —
  * `BaseApiError.toResponse()` emits `{ error, code }` and no `message`. A handful of controllers do
@@ -78,7 +79,11 @@ import { MonoTypeOperatorFunction, retry, throwError, timer } from 'rxjs';
  * is whatever the proxy in front of us decided to return rather than a key someone chose to fill.
  */
 function readErrorBodyMessage(body: unknown, status: number, plainString: 'read' | 'ignore'): string | undefined {
-  if (status >= 500) {
+  // The one code that survives the 5xx skip — see `getHttpErrorDetail` for why a code, and not a
+  // status, is what can prove the message was written for a reader.
+  const isAdvisory = !!body && typeof body === 'object' && !(body instanceof Error) && (body as { code?: unknown }).code === ERROR_CODES.SERVICE_ADVISORY;
+
+  if (status >= 500 && !isAdvisory) {
     return undefined;
   }
 
@@ -124,15 +129,23 @@ function readErrorBodyMessage(body: unknown, status: number, plainString: 'read'
  * Reading only `message` — a key the envelope does not send — left every branch below on its hard-coded
  * string, so a server reason never reached the committee call sites. See `readErrorBodyMessage`.
  *
- * A 5xx body is deliberately not read. Every 5xx body traced to these call sites is either the
- * envelope's own "Internal server error" or an upstream Go service message that `MicroserviceError`
- * passes through verbatim — neither tells the user anything, and both would displace the caller's
- * fallback, which at least names the action that failed ("Failed to remove member. Please try again.").
- * The skip is by status, not by provenance, so it also discards the hand-written 5xx messages this
- * server mints — including ones written for a person (`ACCESS_CHECK_UNAVAILABLE`,
- * `FORWARD_SET_FAILED`, and `ROLE_GRANTS_UNAVAILABLE` in `org-lens-access.service.ts`). None of those
- * reaches a call site of either reader today, but routing one here would silently trade it for the
- * fallback; a `code` allowlist would be the way to let a chosen few through.
+ * A 5xx body is not read unless it says it was written for a reader. Every 5xx body traced to these
+ * call sites is either the envelope's own "Internal server error" or an upstream Go service message
+ * that `MicroserviceError` passes through verbatim — neither tells the user anything, and both would
+ * displace the caller's fallback, which at least names the action that failed ("Failed to remove
+ * member. Please try again."). That is the default, and it stays.
+ *
+ * The exception is `ERROR_CODES.SERVICE_ADVISORY` — the `code` allowlist this note used to call for,
+ * narrowed to one code. Provenance is what the skip actually wants and a status cannot tell it, but a
+ * code can: `MicroserviceError.fromMicroserviceResponse` always derives its code from the status via
+ * `getCodeForStatus`, so a forwarded 503 is always `SERVICE_UNAVAILABLE` and can never arrive carrying
+ * `SERVICE_ADVISORY`. A body with that code is positive proof this server hand-wrote the message for
+ * the person reading it — the same reasoning `upstream-error.utils.ts` uses to tell a minted failure
+ * from a forwarded one. Setting it is a deliberate act at the throw site; the meeting-invite writes in
+ * `profile.controller.ts` are the first, and every other 5xx, minted or forwarded, is still discarded.
+ * The hand-written messages that stay silent for now (`ACCESS_CHECK_UNAVAILABLE`, `FORWARD_SET_FAILED`,
+ * `ROLE_GRANTS_UNAVAILABLE` in `org-lens-access.service.ts`) reach neither reader today; routing one
+ * here is a matter of setting the code at its throw site.
  *
  * Below 500 the body is usually a validation or permission reason written about the request, which is
  * worth showing. Not always: `MicroserviceError` forwards an upstream Go message verbatim at any
@@ -164,7 +177,9 @@ export function getHttpErrorDetail(err: HttpErrorResponse, fallback: string): st
  *
  * See `readErrorBodyMessage` for which key in the body is read, and why, and for the 5xx skip these two
  * share — "Internal server error" and a forwarded Go-service string tell a user nothing, and the
- * caller's fallback at least names the action that failed.
+ * caller's fallback at least names the action that failed. A body carrying `ERROR_CODES.SERVICE_ADVISORY`
+ * is the one 5xx that gets through, and this reader is where it lands today: the meeting-invite retry
+ * guidance shown by `account-settings.component.ts`.
  *
  * Unlike `getHttpErrorDetail` this one does read a plain-text body: it has no per-status hint layer, so
  * a 4xx sentence written about the request is the best thing on offer. `readErrorBodyMessage` still

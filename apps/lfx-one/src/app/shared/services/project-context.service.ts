@@ -383,9 +383,15 @@ export class ProjectContextService {
 
   private initCanWriteMeetings(): Signal<boolean> {
     return toSignal(
-      toObservable(this.activeContext).pipe(
-        switchMap((ctx) => {
-          if (!ctx?.slug) {
+      combineLatest([toObservable(this.activeContext), toObservable(this.userService.authenticated)]).pipe(
+        switchMap(([ctx, authenticated]) => {
+          // Anonymous/public routes have no session — /api/projects/:slug would just 401 (LFXV2-3266),
+          // same as the two siblings above. It also puts the recompute back: gated on the context
+          // alone this ran once per navigation and never again, so a session that settled after the
+          // context — or was lost mid-visit — left the answer computed against the wrong one. The
+          // unauthenticated result is `false` either way, via the `catchError` below; what changes is
+          // that it is no longer a wasted round trip, and that it re-evaluates when the session does.
+          if (!ctx?.slug || !authenticated) {
             return of(false);
           }
           // Two requests rather than one `?meeting_coordinator=true` fetch, and cheaper than it

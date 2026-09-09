@@ -2,7 +2,7 @@
 // SPDX-License-Identifier: MIT
 
 import { HttpErrorResponse } from '@angular/common/http';
-import { MAX_PLAIN_TEXT_BODY_LENGTH } from '@lfx-one/shared/constants';
+import { ERROR_CODES, MAX_PLAIN_TEXT_BODY_LENGTH } from '@lfx-one/shared/constants';
 import { firstValueFrom, Observable, throwError } from 'rxjs';
 import { describe, expect, it } from 'vitest';
 
@@ -98,6 +98,24 @@ describe('getHttpErrorDetail', () => {
   // the action that failed.
   it('ignores a 5xx body in favour of the caller fallback', () => {
     const error = new HttpErrorResponse({ status: 500, error: { error: 'Internal server error', code: 'INTERNAL_ERROR' } });
+
+    expect(getHttpErrorDetail(error, 'Could not save your changes.')).toBe('Could not save your changes.');
+  });
+
+  // The one 5xx that is read, and it is keyed on the code rather than the status because the code is
+  // the part an upstream pass-through cannot produce: `MicroserviceError.fromMicroserviceResponse`
+  // derives its code from the status, so a forwarded 503 is always `SERVICE_UNAVAILABLE`.
+  it('reads a 5xx body that carries the advisory code', () => {
+    const guidance = 'This email was added recently and is not ready to use yet. Please try again in a few minutes.';
+    const error = new HttpErrorResponse({ status: 503, error: { error: guidance, code: ERROR_CODES.SERVICE_ADVISORY } });
+
+    expect(getHttpErrorDetail(error, 'Could not save your changes.')).toBe(guidance);
+  });
+
+  // The other half of that: a 503 whose code came from its status is still discarded, so the
+  // exception cannot be reached by an upstream outage that happens to share the status.
+  it('still ignores a 5xx body whose code was derived from the status', () => {
+    const error = new HttpErrorResponse({ status: 503, error: { error: 'service unavailable', code: 'SERVICE_UNAVAILABLE' } });
 
     expect(getHttpErrorDetail(error, 'Could not save your changes.')).toBe('Could not save your changes.');
   });
@@ -223,6 +241,24 @@ describe('extractErrorMessage', () => {
 
     expect(extractErrorMessage(envelope, 'Could not save your changes.')).toBe('Could not save your changes.');
     expect(extractErrorMessage(upstreamText, 'Could not save your changes.')).toBe('Could not save your changes.');
+  });
+
+  // The live path for the exception: `profile.controller.ts` mints a 503 whose copy is retry guidance
+  // an organizer can act on, and `account-settings.component.ts` puts it straight in a toast. Before
+  // the code existed the blanket skip traded every one of those for the generic fallback.
+  it('reads a 5xx body that carries the advisory code', () => {
+    const guidance = 'The meeting service is temporarily unavailable. Please try again in a few minutes.';
+    const error = new HttpErrorResponse({ status: 503, error: { error: guidance, code: ERROR_CODES.SERVICE_ADVISORY } });
+
+    expect(extractErrorMessage(error, 'Failed to update meeting invitation email')).toBe(guidance);
+  });
+
+  // A plain-text 5xx carries no code to vouch for it, so the exception can never reach the case the
+  // skip exists for — a proxy's page returned in place of an envelope.
+  it('still ignores a plain-text 5xx body, which has no code to vouch for it', () => {
+    const error = new HttpErrorResponse({ status: 503, error: 'Service Temporarily Unavailable' });
+
+    expect(extractErrorMessage(error, 'Could not save your changes.')).toBe('Could not save your changes.');
   });
 
   it('reads a field reason when the top-level message carries a wire key', () => {

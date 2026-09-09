@@ -200,7 +200,7 @@ describe('ProjectContextService — canWriteMeetings', () => {
   /** Cache keys the stub actually went out for — one entry per HTTP round trip. */
   let fetchedKeys: string[];
 
-  const setup = (responses: { plain: Partial<Project> | null; coordinator?: Partial<Project> | null }): ProjectContextService => {
+  const setup = (responses: { plain: Partial<Project> | null; coordinator?: Partial<Project> | null }, authenticated = true): ProjectContextService => {
     fetchedKeys = [];
     // Memoized per cache key, the way `ProjectService.getProject` is (`shareReplay` behind a
     // `${slug}:${current}[:mc]` map). Without that, two gates reading the same key would look like two
@@ -233,9 +233,10 @@ describe('ProjectContextService — canWriteMeetings', () => {
       ],
     });
 
-    // The gate hangs off `activeContext`, which the auth gate holds closed until the session
-    // resolves — so an unauthenticated fixture would measure the gate's `null` branch, not its answer.
-    TestBed.inject(UserService).authenticated.set(true);
+    // The gate hangs off `activeContext` *and* the session, so the default here is a resolved one —
+    // an unauthenticated fixture would measure the gate's closed branch, not its answer. The two tests
+    // at the bottom pass `false` deliberately to measure exactly that.
+    TestBed.inject(UserService).authenticated.set(authenticated);
 
     const service = TestBed.inject(ProjectContextService);
     service.setRouteLensKind('project');
@@ -290,5 +291,28 @@ describe('ProjectContextService — canWriteMeetings', () => {
     // Both gates read the same cache key, which `projectQueryParamGuard` has already populated on
     // every navigation — so between them they add nothing.
     expect(fetchedKeys).toEqual([`${CONTEXT.slug}:false`]);
+  });
+
+  // `/api/projects/:slug` is session-authenticated, so with no session it answers 401 and the gate
+  // lands on `false` through its `catchError` — after paying for the round trip on the SSR critical
+  // path. The two sibling gates on this service already skip it for exactly that reason.
+  it('asks for nothing while the session is unresolved', () => {
+    const service = setup({ plain: { writer: true } }, false);
+
+    expect(service.canWriteMeetings()).toBe(false);
+    expect(fetchedKeys).toEqual([]);
+  });
+
+  // The half a `catchError` could never cover. Derived from the context alone, the gate resolved once
+  // per navigation and never again — so a session that settled after the context left every meeting
+  // surface reading a `false` computed before there was anyone to compute it for.
+  it('re-resolves once the session lands, rather than staying closed', () => {
+    const service = setup({ plain: { writer: true } }, false);
+    expect(service.canWriteMeetings()).toBe(false);
+
+    TestBed.inject(UserService).authenticated.set(true);
+    TestBed.inject(ApplicationRef).tick();
+
+    expect(service.canWriteMeetings()).toBe(true);
   });
 });

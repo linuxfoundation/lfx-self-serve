@@ -417,8 +417,10 @@ export class AccountSettingsComponent {
             this.meetingInviteError.set(extractErrorMessage(err, 'This email is not an active, verified address on your account yet.'));
             return;
           }
-          // Retryable errors (503 sync_pending/unavailable, etc.) also carry copy under `error`, not
-          // `message` — use extractErrorMessage so the crafted retry guidance reaches the toast.
+          // Retryable errors (503 sync_pending/unavailable) carry their copy under `error`, not
+          // `message`, and under the code `SERVICE_ADVISORY` — which is what lets extractErrorMessage
+          // read a 5xx body at all. It discards every other one, so a 503 without that code shows the
+          // fallback below rather than the guidance the server wrote.
           this.messageService.add({ severity: 'error', summary: 'Error', detail: extractErrorMessage(err, 'Failed to update meeting invitation email') });
         },
       });

@@ -5,7 +5,7 @@ import { HttpErrorResponse } from '@angular/common/http';
 import { PLATFORM_ID, signal } from '@angular/core';
 import { ComponentFixture, TestBed } from '@angular/core/testing';
 import { ActivatedRoute } from '@angular/router';
-import { MEETING_INVITE_PRIMARY_SENTINEL } from '@lfx-one/shared/constants';
+import { ERROR_CODES, MEETING_INVITE_PRIMARY_SENTINEL } from '@lfx-one/shared/constants';
 import { EmailManagementData, MeetingInviteEmail, UserEmail } from '@lfx-one/shared/interfaces';
 import { UserService } from '@services/user.service';
 import { ConfirmationService, MessageService } from 'primeng/api';
@@ -325,10 +325,44 @@ describe('AccountSettingsComponent — meeting-invite selection & delete guard (
     fixture.componentInstance.setMeetingInvite(ALT_EMAIL);
 
     expect(fixture.componentInstance.meetingInviteError()).toBeNull();
-    // The 503's own body is deliberately dropped in favour of the caller's fallback: `extractErrorMessage`
-    // stopped reading 5xx bodies because they are overwhelmingly the envelope's "Internal server error"
-    // or a Go-service string forwarded verbatim, neither of which names the action that failed.
+    // This 503 carries no advisory code, so its body is dropped in favour of the caller's fallback:
+    // `extractErrorMessage` skips 5xx bodies because they are overwhelmingly the envelope's "Internal
+    // server error" or a Go-service string forwarded verbatim, neither of which names the action that
+    // failed. The test below is the one exception.
     expect(messageServiceMock.add).toHaveBeenCalledWith(expect.objectContaining({ severity: 'error', detail: 'Failed to update meeting invitation email' }));
+  });
+
+  // The other end of the advisory code. `profile.controller.ts` mints this 503 with copy telling the
+  // organizer to wait and retry — actionable, and true of nothing else the fallback could say. Without
+  // the code the blanket 5xx skip traded it for "Failed to update meeting invitation email", which reads
+  // as a permanent failure of a write that will succeed on its own in a minute.
+  it('shows the retry guidance a 503 wrote for the organizer, when it says so', async () => {
+    const guidance = 'This email was added recently and is not ready to use yet. Please try again in a few minutes.';
+    const messageServiceMock = { add: vi.fn() };
+    const userServiceMock = makeUserServiceMock({
+      invite: { email_id: null, email: null },
+      setMeetingInviteEmail: () => throwError(() => new HttpErrorResponse({ status: 503, error: { error: guidance, code: ERROR_CODES.SERVICE_ADVISORY } })),
+    });
+    TestBed.configureTestingModule({
+      imports: [AccountSettingsComponent],
+      providers: [
+        { provide: PLATFORM_ID, useValue: 'browser' },
+        { provide: ActivatedRoute, useValue: { snapshot: { data: {} }, fragment: of(null) } },
+        { provide: UserService, useValue: userServiceMock },
+        { provide: ConfirmationService, useValue: { confirm: vi.fn() } },
+        { provide: MessageService, useValue: messageServiceMock },
+        { provide: DialogService, useValue: { open: vi.fn() } },
+      ],
+    });
+    TestBed.overrideComponent(AccountSettingsComponent, { set: { template: '', imports: [], providers: [] } });
+    const fixture = TestBed.createComponent(AccountSettingsComponent);
+    fixture.detectChanges();
+    await fixture.whenStable();
+
+    fixture.componentInstance.setMeetingInvite(ALT_EMAIL);
+
+    expect(fixture.componentInstance.meetingInviteError()).toBeNull();
+    expect(messageServiceMock.add).toHaveBeenCalledWith(expect.objectContaining({ severity: 'error', detail: guidance }));
   });
 
   it('fails closed and skips the delete flow entirely when the invite lookup itself failed', async () => {
