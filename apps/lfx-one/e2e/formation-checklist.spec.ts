@@ -104,7 +104,7 @@ test.describe('Formation Checklist section (GH-1958)', () => {
     await expect(page.getByTestId('formation-checklist-inline-error')).toHaveCount(0);
   });
 
-  test('a link-action row with no safe action_href renders a disabled button and visible "Link unavailable" text', async ({ page }) => {
+  test('a link-action row with no safe action_href renders "View details" instead of a dead Open button', async ({ page }) => {
     await stubFormationFlag(page, true);
     const project = buildBaseProject(FORMATION_PROJECT_SLUG);
     await mockFormationChecklistApis(page, { project });
@@ -124,12 +124,14 @@ test.describe('Formation Checklist section (GH-1958)', () => {
     );
     await gotoProjectFormation(page, FORMATION_PROJECT_SLUG);
 
-    const button = page.getByTestId(`formation-checklist-row-link-${linkItem.uid}`);
+    // `link` with no safe destination falls back to the shared "View details" affordance
+    // (the `manual`-action testid, reused by design — see formation-checklist-row.component.html),
+    // not a disabled "Open" button — there's nothing to open, but the drawer still has detail.
+    const button = page.getByTestId(`formation-checklist-row-manual-${linkItem.uid}`);
     await expect(button).toBeVisible({ timeout: DATA_LOAD_TIMEOUT });
-    // `[disabled]` is a component input on the <lfx-button> host — the native `disabled` attribute
-    // Playwright checks lands on the PrimeNG <button> it renders internally, not the host itself.
-    await expect(button.locator('button')).toBeDisabled();
-    await expect(page.getByTestId(`formation-checklist-row-action-${linkItem.uid}`)).toContainText('Link unavailable');
+    await expect(button.locator('button')).toBeEnabled();
+    await expect(page.getByTestId(`formation-checklist-row-link-${linkItem.uid}`)).toHaveCount(0);
+    await expect(page.getByTestId(`formation-checklist-row-action-${linkItem.uid}`)).not.toContainText('Link unavailable');
   });
 
   test('a drawer write is retired by the uid it was issued for, not by whichever item the drawer currently shows', async ({ page }) => {

@@ -10,6 +10,7 @@ import type {
   FormationSubStage,
 } from '@lfx-one/shared/interfaces';
 import { FORMATION_QUEUE_SUB_STAGES } from '@lfx-one/shared/constants';
+import { isFormationStage } from '@lfx-one/shared/utils';
 import { Request } from 'express';
 
 import { AuthorizationError, ResourceNotFoundError, ServiceValidationError } from '../errors';
@@ -58,6 +59,9 @@ export class FormationService {
     // downstream of this branch needs to change.
     if (!isFormationServiceLive()) {
       const project = await this.projectService.getProjectById(req, uid, false);
+      if (!isFormationStage(project.stage)) {
+        throw new ResourceNotFoundError('Formation', projectSlug, { operation: 'get_project_formation', service: 'formation_service', path: req.path });
+      }
       const { formation, items } = generateMockFormation({
         projectUid: uid,
         projectSlug: project.slug,
@@ -116,6 +120,13 @@ export class FormationService {
   public async completeFormationItem(req: Request, itemUid: string, notes?: unknown): Promise<FormationItem> {
     this.assertValidNotes(notes, req, 'complete_formation_item');
     const item = await this.getFormationItemOrThrow(req, itemUid);
+    if (item.action === 'status_only') {
+      throw ServiceValidationError.forField('action', 'status_only items are updated by external tooling and cannot be completed manually', {
+        operation: 'complete_formation_item',
+        service: 'formation_service',
+        path: req.path,
+      });
+    }
     await this.assertItemProjectWriteAccess(req, item);
     const canComplete = await formationItemAccessService.canComplete(req, item);
     const nextStatus: FormationItemStatus = item.is_gating && !canComplete ? 'awaiting_acceptance' : 'done';
@@ -160,6 +171,13 @@ export class FormationService {
    */
   public async requestFormationItem(req: Request, itemUid: string): Promise<FormationItem> {
     const item = await this.getFormationItemOrThrow(req, itemUid);
+    if (item.action !== 'request') {
+      throw ServiceValidationError.forField('action', 'This item does not support the request action', {
+        operation: 'request_formation_item',
+        service: 'formation_service',
+        path: req.path,
+      });
+    }
     await this.assertItemProjectWriteAccess(req, item);
     // Same gate as complete/skip: `request` also changes `status`, so a gating item's status must
     // not be movable through this action by a caller `complete`/`skip` would deny.
@@ -204,6 +222,8 @@ export class FormationService {
       await this.assertCanComplete(req, item, 'update_formation_item_status');
     }
     const nextStatus = status as FormationItemStatus;
+    // A block reason is filed as activity metadata below, not written into `notes` — that field
+    // is the drawer's free-text note and must survive a status change untouched.
     const blockNote = nextStatus === 'blocked' && typeof note === 'string' ? note : null;
     const updated: FormationItem = {
       ...item,
@@ -357,10 +377,13 @@ export class FormationService {
     const items = getStoredItemsForFormation(formationUid);
     const gatingItems = items.filter((item) => item.is_gating);
     // A skipped gating item is resolved, not open — skipFormationItem is the designed escape hatch
-    // for a gate the project can't complete; treating it as still-open would make isActivating
-    // permanently unreachable for any formation that ever uses it.
+    // for a gate the project can't complete, mirroring deriveFormationReadinessSummary's
+    // client-side rollup (formation-checklist.utils.ts). isActivating also factors in
+    // announcement_date as an independent activation trigger, same as the client util, so the
+    // strip/tiles/queue rollups all agree on when a formation is ready.
     const openGatingItems = gatingItems.filter((item) => item.status !== 'done' && item.status !== 'skipped');
-    const isActivating = gatingItems.length > 0 && openGatingItems.length === 0;
+    const hasAnnounced = !!formation.announcement_date && Date.parse(formation.announcement_date) <= Date.now();
+    const isActivating = (gatingItems.length > 0 && openGatingItems.length === 0) || hasAnnounced;
     // Blocking column reflects items actually in `blocked` status specifically, not "first not-done
     // gating item" — `awaiting_acceptance`/`in_progress`/`not_started` items are open but not blocking.
     const blockedGatingItems = gatingItems.filter((item) => item.status === 'blocked');

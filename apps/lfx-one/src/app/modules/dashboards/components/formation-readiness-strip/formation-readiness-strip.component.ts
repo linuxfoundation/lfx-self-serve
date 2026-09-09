@@ -20,11 +20,11 @@ export class FormationReadinessStripComponent {
   // TODO(#1957): once the backend returns a pre-computed readiness_summary, replace this computed
   // with a direct read of that field and delete the deriveFormationReadinessSummary import — every
   // template binding below already reads FormationReadinessSummary-shaped data, so nothing else changes.
-  protected readonly summary: Signal<FormationReadinessSummary> = computed(() => deriveFormationReadinessSummary(this.items()));
+  protected readonly summary: Signal<FormationReadinessSummary> = computed(() => deriveFormationReadinessSummary(this.items(), this.announcementDate()));
 
   protected readonly countsLabel = computed(() => {
     const counts = this.summary().counts;
-    return `${counts.done} of ${this.summary().totalItems} done · ${counts.in_progress} in progress · ${counts.blocked} blocked · ${counts.awaiting_acceptance} with formation team · ${counts.not_started} not started`;
+    return `${counts.done} of ${this.summary().totalItems} done · ${counts.in_progress} in progress · ${counts.blocked} blocked · ${counts.awaiting_acceptance} with formation team · ${counts.not_started} not started · ${counts.skipped} skipped`;
   });
 
   protected readonly announcementLabel = computed(() => {

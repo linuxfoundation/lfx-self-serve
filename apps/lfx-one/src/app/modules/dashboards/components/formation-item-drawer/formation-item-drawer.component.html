@@ -46,13 +46,15 @@
       </div>
     } @else if (item(); as currentItem) {
       <div class="flex flex-col gap-2">
-        @if (currentItem.status !== 'done') {
+        <!-- status_only items are updated by external tooling only — see formation.service.ts's
+             completeFormationItem rejection for the same rule enforced server-side. -->
+        @if (currentItem.status !== 'done' && currentItem.action !== 'status_only') {
           <div class="flex items-center gap-2">
             <lfx-button
               [label]="completeLabel()"
               size="small"
               severity="primary"
-              [disabled]="!currentItem.can_complete || busy()"
+              [disabled]="(currentItem.status === 'awaiting_acceptance' && !currentItem.can_complete) || busy()"
               [loading]="completing()"
               (onClick)="onMarkComplete()"
               data-testid="formation-item-drawer-mark-complete" />
@@ -76,18 +78,18 @@
       </div>
 
       <div class="flex flex-col gap-2" data-testid="formation-item-drawer-notes">
-        <span class="text-xs font-medium text-gray-500 uppercase tracking-wide">Notes</span>
-        <lfx-textarea [form]="editForm" control="notes" [rows]="4" placeholder="Add notes…" styleClass="w-full" />
+        <label for="formation-item-drawer-notes-input" class="text-xs font-medium text-gray-500 uppercase tracking-wide">Notes</label>
+        <lfx-textarea [form]="editForm" control="notes" [rows]="4" placeholder="Add notes…" styleClass="w-full" inputId="formation-item-drawer-notes-input" />
       </div>
 
       <div class="flex flex-col gap-3 sm:flex-row">
         <div class="flex flex-col gap-2 flex-1" data-testid="formation-item-drawer-assignee">
-          <span class="text-xs font-medium text-gray-500 uppercase tracking-wide">Assignee</span>
-          <lfx-input-text [form]="editForm" control="ownerUsername" placeholder="Username" />
+          <label for="formation-item-drawer-assignee-input" class="text-xs font-medium text-gray-500 uppercase tracking-wide">Assignee</label>
+          <lfx-input-text [form]="editForm" control="ownerUsername" placeholder="Username" inputId="formation-item-drawer-assignee-input" />
         </div>
         <div class="flex flex-col gap-2 flex-1" data-testid="formation-item-drawer-due-date">
-          <span class="text-xs font-medium text-gray-500 uppercase tracking-wide">Due date</span>
-          <lfx-calendar [form]="editForm" control="dueDate" placeholder="Select a date" />
+          <label for="formation-item-drawer-due-date-input" class="text-xs font-medium text-gray-500 uppercase tracking-wide">Due date</label>
+          <lfx-calendar [form]="editForm" control="dueDate" placeholder="Select a date" inputId="formation-item-drawer-due-date-input" />
         </div>
       </div>
 

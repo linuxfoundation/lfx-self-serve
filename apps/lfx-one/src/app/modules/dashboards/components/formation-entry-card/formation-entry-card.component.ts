@@ -53,7 +53,7 @@ export class FormationEntryCardComponent {
           this.loading.set(true);
           this.hasError.set(false);
           return this.formationService.getProjectFormation(slug).pipe(
-            switchMap((response) => of(deriveFormationReadinessSummary(response.items))),
+            switchMap((response) => of(deriveFormationReadinessSummary(response.items, response.formation.announcement_date))),
             catchError((error: unknown) => {
               console.error('[FormationEntryCard] Failed to load formation checklist summary', error);
               this.hasError.set(true);

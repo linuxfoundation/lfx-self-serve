@@ -30,6 +30,8 @@ export interface LensGrantInputs {
   isLFStaff: boolean;
   /** Holds a root- or project-scoped `marketing_auditor`/`campaign_manager` FGA grant, gated behind the marketing-ops-fga-enabled flag by the caller (LFXV2-2235/LFXV2-2236). Grants foundation-lens access without a board persona. */
   hasMarketingGrant: boolean;
+  /** Holds a root `auditor` FGA grant (`PersonaService.isAuditor`) — grants foundation-lens access so a formation-team auditor with no other foundation grant can reach the Formations queue (GH-1958 review). */
+  isRootAuditor: boolean;
 }
 
 /**

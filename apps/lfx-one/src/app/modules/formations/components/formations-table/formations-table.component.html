@@ -39,8 +39,22 @@
             <th class="w-[28%]">Formation</th>
             <th class="w-[12%]">Type</th>
             <th class="w-[18%]">Stage</th>
-            <th class="w-[12%]">Progress</th>
-            <th class="w-[14%]">Announcement</th>
+            <th class="w-[12%]" [attr.aria-sort]="ariaSortMap().readiness" data-testid="formations-sort-readiness">
+              <button
+                type="button"
+                class="flex cursor-pointer select-none items-center gap-1 text-xs text-gray-500 font-medium"
+                (click)="onHeaderClick('readiness')">
+                Progress <i [class]="sortIcons().readiness"></i>
+              </button>
+            </th>
+            <th class="w-[14%]" [attr.aria-sort]="ariaSortMap().announcement_date" data-testid="formations-sort-announcement">
+              <button
+                type="button"
+                class="flex cursor-pointer select-none items-center gap-1 text-xs text-gray-500 font-medium"
+                (click)="onHeaderClick('announcement_date')">
+                Announcement <i [class]="sortIcons().announcement_date"></i>
+              </button>
+            </th>
             <th class="w-[16%]">Blocking</th>
           </tr>
         </ng-template>
@@ -52,6 +66,7 @@
                 [routerLink]="['/project/overview']"
                 [queryParams]="{ project: row.parent_project_slug }"
                 class="flex flex-col gap-0.5 no-underline hover:underline"
+                [class.pl-4]="row.isChildRow"
                 [attr.data-testid]="'formations-table-open-' + row.uid">
                 <span class="text-sm font-medium text-gray-900">{{ row.parent_project_name }}</span>
                 @if (row.subtitle) {

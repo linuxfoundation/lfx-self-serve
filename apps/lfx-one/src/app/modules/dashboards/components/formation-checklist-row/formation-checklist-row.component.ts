@@ -2,7 +2,7 @@
 // SPDX-License-Identifier: MIT
 
 import { NgTemplateOutlet } from '@angular/common';
-import { Component, computed, input, output } from '@angular/core';
+import { Component, computed, inject, input, output } from '@angular/core';
 import { ButtonComponent } from '@components/button/button.component';
 import { MenuComponent } from '@components/menu/menu.component';
 import { TagComponent } from '@components/tag/tag.component';
@@ -14,6 +14,7 @@ import {
   FORMATION_LINK_ROW_ACTIONS,
 } from '@lfx-one/shared/constants';
 import { isRelativeInAppPath, isValidUrl } from '@lfx-one/shared/utils';
+import { UserService } from '@services/user.service';
 import { MenuItem } from 'primeng/api';
 
 @Component({
@@ -23,6 +24,8 @@ import { MenuItem } from 'primeng/api';
   styleUrl: './formation-checklist-row.component.scss',
 })
 export class FormationChecklistRowComponent {
+  private readonly userService = inject(UserService);
+
   public readonly item = input.required<FormationItem>();
   /**
    * True while *any* mutation for this item is in flight — a row action (provisionable/request), a
@@ -57,6 +60,12 @@ export class FormationChecklistRowComponent {
   protected readonly completeLabel = computed(() => (this.item().status === 'awaiting_acceptance' && this.item().can_complete ? 'Accept' : 'Mark done'));
   /** `provisionable`/`request` actions change status the same way complete/skip do — hide them once the item is already terminal. */
   protected readonly isActionable = computed(() => this.item().status !== 'done' && this.item().status !== 'skipped');
+  /** GH-1958 acceptance criteria: surface an "Assigned to you" chip when the viewer is this item's owner. */
+  protected readonly isAssignedToViewer = computed(() => {
+    const owner = this.item().owner;
+    const viewerUsername = this.userService.viewerUsername();
+    return !!owner && !!viewerUsername && owner.username === viewerUsername;
+  });
   protected readonly subItemsSummary = computed(() => {
     const subItems = this.item().sub_items;
     if (subItems.length === 0) return null;
@@ -121,7 +130,10 @@ export class FormationChecklistRowComponent {
       items.push({
         label: this.completeLabel(),
         icon: 'fa-light fa-check',
-        disabled: !item.can_complete,
+        // can_complete gates the acceptance decision, not first-time submission — a non-gate-writer
+        // can still submit a gating item (server responds with 'awaiting_acceptance'); only accepting
+        // an item already awaiting acceptance requires can_complete.
+        disabled: item.status === 'awaiting_acceptance' && !item.can_complete,
         command: () => this.completeRequested.emit(item),
       });
       if (item.status !== 'blocked') {
@@ -146,7 +158,14 @@ export class FormationChecklistRowComponent {
       { label: 'Assign', icon: 'fa-light fa-user', command: () => this.openDrawer.emit(item) },
       { label: 'Set due date', icon: 'fa-light fa-calendar', command: () => this.openDrawer.emit(item) },
       { separator: true },
-      { label: 'Skip with reason', icon: 'fa-light fa-forward', command: () => this.skipRequested.emit(item) },
+      {
+        label: 'Skip with reason',
+        icon: 'fa-light fa-forward',
+        // Mirrors the drawer's Skip button gating (formation-item-drawer.component.html) — the
+        // overflow menu must not offer a write the rest of the UI treats as unauthorized/terminal.
+        disabled: !item.can_complete || item.status === 'done' || item.status === 'skipped',
+        command: () => this.skipRequested.emit(item),
+      },
     ];
   }
 

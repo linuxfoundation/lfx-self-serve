@@ -22,9 +22,14 @@ const EMPTY_COUNTS: Record<FormationItemStatus, number> = {
  * A gating item counts as resolved once it's `done` OR `skipped` — `skipFormationItem` exists
  * specifically as the escape hatch for a gate the project can't complete, so treating a skipped
  * gate as still-open would make `isActivating` permanently unreachable for any formation that
- * ever uses it.
+ * ever uses it. This matches the server's `refreshFormationReadiness` rollup, so all three
+ * representations (this, the fixture generator, and the server refresh) stay aligned.
+ *
+ * `isActivating` also lights up once `announcementDate` has landed, independent of gating-item
+ * completion — a formation can be activating by virtue of its announcement date passing even
+ * before every gating item resolves.
  */
-export function deriveFormationReadinessSummary(items: FormationItem[]): FormationReadinessSummary {
+export function deriveFormationReadinessSummary(items: FormationItem[], announcementDate: string | null): FormationReadinessSummary {
   const counts = { ...EMPTY_COUNTS };
   let openGatingItems = 0;
   let totalGatingItems = 0;
@@ -42,11 +47,13 @@ export function deriveFormationReadinessSummary(items: FormationItem[]): Formati
     }
   }
 
+  const hasAnnounced = !!announcementDate && Date.parse(announcementDate) <= Date.now();
+
   return {
     segments: items.map((item) => item.status),
     totalItems: items.length,
     counts,
-    isActivating: totalGatingItems > 0 && openGatingItems === 0,
+    isActivating: (totalGatingItems > 0 && openGatingItems === 0) || hasAnnounced,
     openGatingItems,
     totalGatingItems,
   };

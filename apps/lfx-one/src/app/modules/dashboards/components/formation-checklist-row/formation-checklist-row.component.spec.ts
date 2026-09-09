@@ -1,10 +1,13 @@
 // Copyright The Linux Foundation and each contributor to LFX.
 // SPDX-License-Identifier: MIT
 
+import { provideHttpClient } from '@angular/common/http';
+import { provideHttpClientTesting } from '@angular/common/http/testing';
 import { ComponentFixture, TestBed } from '@angular/core/testing';
 import { provideRouter } from '@angular/router';
 import { FormationItem } from '@lfx-one/shared/interfaces';
-import { beforeEach, describe, expect, it } from 'vitest';
+import { MessageService } from 'primeng/api';
+import { beforeEach, describe, expect, it, vi } from 'vitest';
 
 import { FormationChecklistRowComponent } from './formation-checklist-row.component';
 
@@ -42,7 +45,7 @@ describe('FormationChecklistRowComponent', () => {
     TestBed.resetTestingModule();
     await TestBed.configureTestingModule({
       imports: [FormationChecklistRowComponent],
-      providers: [provideRouter([])],
+      providers: [provideHttpClient(), provideHttpClientTesting(), provideRouter([]), { provide: MessageService, useValue: { add: vi.fn() } }],
     }).compileComponents();
 
     fixture = TestBed.createComponent(FormationChecklistRowComponent);

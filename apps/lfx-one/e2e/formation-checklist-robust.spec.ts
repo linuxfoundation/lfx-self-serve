@@ -86,22 +86,28 @@ test.describe('Formation checklist section — structural contract', () => {
       await expect(control).toHaveAttribute('href', linkItem.action_href ?? '');
     });
 
-    test('status_only action with a null href renders disabled with unavailable text', async ({ page }) => {
+    test('status_only action with a null href renders "View details", not a dead Open button', async ({ page }) => {
       const statusOnlyItem = ITEMS.find((item) => item.action === 'status_only');
       if (!statusOnlyItem) throw new Error('Expected a seeded status_only-action item.');
       expect(statusOnlyItem.action_href).toBeFalsy();
 
+      // No safe destination falls back to the shared "View details" affordance (the `manual`-action
+      // testid, reused by design — see formation-checklist-row.component.html), not a disabled
+      // "Open" button with "Link unavailable" text.
       const container = page.getByTestId(`formation-checklist-row-action-${statusOnlyItem.uid}`);
-      await expect(container).toContainText('Link unavailable');
-      const control = page.getByTestId(`formation-checklist-row-status-only-${statusOnlyItem.uid}`);
-      await expect(control.locator('button')).toBeDisabled();
+      await expect(container).not.toContainText('Link unavailable');
+      await expect(page.getByTestId(`formation-checklist-row-status-only-${statusOnlyItem.uid}`)).toHaveCount(0);
+      const control = page.getByTestId(`formation-checklist-row-manual-${statusOnlyItem.uid}`);
+      await expect(control.locator('button')).toBeEnabled();
     });
 
     test('manual action renders a real button', async ({ page }) => {
       const manualItem = ITEMS.find((item) => item.action === 'manual');
       if (!manualItem) throw new Error('Expected a seeded manual-action item.');
 
-      const control = page.getByTestId(`formation-checklist-row-manual-${manualItem.uid}`);
+      // `[data-testid]` lands on the `<lfx-button>` host, not the inner native `<button>` it
+      // renders — resolve into the real button before checking its tag name (copilot-pull-request-reviewer).
+      const control = page.getByTestId(`formation-checklist-row-manual-${manualItem.uid}`).locator('button');
       await expect(control).toBeAttached();
       expect(await control.evaluate((el) => el.tagName)).toBe('BUTTON');
     });

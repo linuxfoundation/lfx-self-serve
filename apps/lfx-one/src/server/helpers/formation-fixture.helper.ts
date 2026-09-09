@@ -171,7 +171,7 @@ export function generateMockFormation(input: GenerateFormationInput): { formatio
 
 export const STATIC_QUEUE_FORMATIONS: Formation[] = [
   {
-    uid: 'formation:queue-1',
+    uid: 'formation:queue-project-1',
     parent_project_uid: 'queue-project-1',
     parent_project_slug: 'cascade-data-alliance',
     parent_project_name: 'Cascade Data Alliance',
@@ -189,7 +189,7 @@ export const STATIC_QUEUE_FORMATIONS: Formation[] = [
     updated_at: new Date(0).toISOString(),
   },
   {
-    uid: 'formation:queue-3',
+    uid: 'formation:queue-project-3',
     parent_project_uid: 'queue-project-3',
     parent_project_slug: 'lakeshore-toolkit',
     parent_project_name: 'Lakeshore compartmentalization toolkit',
@@ -207,7 +207,7 @@ export const STATIC_QUEUE_FORMATIONS: Formation[] = [
     updated_at: new Date(0).toISOString(),
   },
   {
-    uid: 'formation:queue-4',
+    uid: 'formation:queue-project-4',
     parent_project_uid: 'queue-project-4',
     parent_project_slug: 'agent-name-service',
     parent_project_name: 'Agent Name Service',
@@ -225,7 +225,7 @@ export const STATIC_QUEUE_FORMATIONS: Formation[] = [
     updated_at: new Date(0).toISOString(),
   },
   {
-    uid: 'formation:queue-5',
+    uid: 'formation:queue-project-5',
     parent_project_uid: 'queue-project-5',
     parent_project_slug: 'appia-foundation',
     parent_project_name: 'Appia Foundation',

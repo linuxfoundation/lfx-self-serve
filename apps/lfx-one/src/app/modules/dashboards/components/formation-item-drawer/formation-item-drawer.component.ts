@@ -144,7 +144,13 @@ export class FormationItemDrawerComponent {
       .subscribe({
         next: (updated) => {
           this.itemChanged.emit(updated);
-          this.messageService.add({ severity: 'success', summary: 'Marked done', detail: `"${updated.title}" is done.` });
+          // A non-gate-writer submitting a gating item lands on 'awaiting_acceptance', not 'done' —
+          // report what actually happened rather than assuming the gate cleared.
+          if (updated.status === 'awaiting_acceptance') {
+            this.messageService.add({ severity: 'success', summary: 'Submitted', detail: `"${updated.title}" is awaiting acceptance by the formation team.` });
+          } else {
+            this.messageService.add({ severity: 'success', summary: 'Marked done', detail: `"${updated.title}" is done.` });
+          }
         },
         error: (error: unknown) => {
           console.error('[FormationItemDrawer] Mark complete failed', error);

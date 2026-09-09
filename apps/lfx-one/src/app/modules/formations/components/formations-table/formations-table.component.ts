@@ -16,6 +16,11 @@ import { FORMATION_ENTITY_TYPE_LABELS, FORMATION_QUEUE_SUB_STAGES, FORMATION_SUB
 import type { FilterPillOption, Formation, FormationsQueueFilterState, FormationSubStage, FormationTableRow } from '@lfx-one/shared/interfaces';
 import { debounceTime, distinctUntilChanged, map } from 'rxjs';
 
+/** Column-local sort aria state — mirrors `meetups-table.component.ts`'s `MeetupSortAria` pattern; not a shared domain type since sorting here is purely client-side (no server sort param). */
+type FormationSortAria = 'ascending' | 'descending' | 'none';
+/** The two GH-1958 sortable columns — "Progress"/readiness and "Announcement". */
+type FormationSortableField = 'readiness' | 'announcement_date';
+
 @Component({
   selector: 'lfx-formations-table',
   imports: [
@@ -44,6 +49,8 @@ export class FormationsTableComponent {
 
   protected readonly statusTab = signal<string>('all');
   private readonly searchValue = signal('');
+  protected readonly sortField = signal<FormationSortableField | null>(null);
+  protected readonly sortOrder = signal<'ASC' | 'DESC'>('ASC');
 
   protected readonly statusTabOptions: Signal<FilterPillOption[]> = computed(() => [
     { id: 'all', label: 'All' },
@@ -52,6 +59,26 @@ export class FormationsTableComponent {
 
   protected readonly isFiltered = computed(() => this.statusTab() !== 'all' || !!this.searchValue().trim());
   protected readonly displayRows: Signal<FormationTableRow[]> = this.initDisplayRows();
+
+  protected readonly ariaSortMap = computed<Record<FormationSortableField, FormationSortAria>>(() => {
+    const field = this.sortField();
+    const order = this.sortOrder();
+    const getAriaSort = (f: FormationSortableField): FormationSortAria => {
+      if (field !== f) return 'none';
+      return order === 'ASC' ? 'ascending' : 'descending';
+    };
+    return { readiness: getAriaSort('readiness'), announcement_date: getAriaSort('announcement_date') };
+  });
+
+  protected readonly sortIcons = computed(() => {
+    const field = this.sortField();
+    const order = this.sortOrder();
+    const getIcon = (f: FormationSortableField): string => {
+      if (field !== f) return 'fa-light fa-sort text-gray-300';
+      return order === 'ASC' ? 'fa-solid fa-caret-up text-blue-500' : 'fa-solid fa-caret-down text-blue-500';
+    };
+    return { readiness: getIcon('readiness'), announcement_date: getIcon('announcement_date') };
+  });
 
   public constructor() {
     // Search is debounced and only re-emits filtersChange from here — the status-tab tab click
@@ -75,16 +102,54 @@ export class FormationsTableComponent {
     this.emitFilters();
   }
 
-  /** PrimeNG types the `#body` row context `any` — precomputing the chip label/severity here lets the template do a plain property read instead of a method call. */
+  /** Sorting is entirely client-side (no server sort param — `rows()` already holds every filtered row), so a repeat click on the active column toggles direction instead of round-tripping. */
+  protected onHeaderClick(field: FormationSortableField): void {
+    if (this.sortField() === field) {
+      this.sortOrder.set(this.sortOrder() === 'ASC' ? 'DESC' : 'ASC');
+    } else {
+      this.sortField.set(field);
+      this.sortOrder.set('ASC');
+    }
+  }
+
+  /**
+   * PrimeNG types the `#body` row context `any` — precomputing the chip label/severity, indentation,
+   * and sort order here lets the template do a plain property read instead of a method call.
+   * `isChildRow` is derived (not stored) per `parent_formation_name`'s doc comment: a row indents
+   * only when its parent formation is also present in the current filtered result.
+   */
   private initDisplayRows(): Signal<FormationTableRow[]> {
-    return computed(() =>
-      this.rows().map((row) => ({
+    return computed(() => {
+      const rows = this.rows();
+      const namesInResult = new Set(rows.map((row) => row.parent_project_name));
+      const displayRows = rows.map((row) => ({
         ...row,
         stageLabel: FORMATION_SUB_STAGE_LABELS[row.sub_stage],
         stageSeverity: FORMATION_SUB_STAGE_SEVERITY[row.sub_stage],
         entityTypeLabel: FORMATION_ENTITY_TYPE_LABELS[row.entity_type],
-      }))
-    );
+        isChildRow: !!row.parent_formation_name && namesInResult.has(row.parent_formation_name),
+      }));
+      return this.sortDisplayRows(displayRows);
+    });
+  }
+
+  private sortDisplayRows(rows: FormationTableRow[]): FormationTableRow[] {
+    const field = this.sortField();
+    if (!field) return rows;
+    const direction = this.sortOrder() === 'ASC' ? 1 : -1;
+    const getSortValue = (row: FormationTableRow): number | null => {
+      if (field === 'readiness') return row.gating_items_open;
+      return row.announcement_date ? new Date(row.announcement_date).getTime() : null;
+    };
+    // Nulls (no announcement date set) always sort last, regardless of direction.
+    return [...rows].sort((a, b) => {
+      const valueA = getSortValue(a);
+      const valueB = getSortValue(b);
+      if (valueA === null && valueB === null) return 0;
+      if (valueA === null) return 1;
+      if (valueB === null) return -1;
+      return (valueA - valueB) * direction;
+    });
   }
 
   private emitFilters(): void {

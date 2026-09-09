@@ -75,6 +75,8 @@ export interface FormationTableRow extends Formation {
   stageLabel: string;
   stageSeverity: TagSeverity;
   entityTypeLabel: string;
+  /** True when `parent_formation_name` matches another row's `parent_project_name` in the current result — drives the queue's one-level indented display (GH-1958 review). */
+  isChildRow: boolean;
 }
 
 /**

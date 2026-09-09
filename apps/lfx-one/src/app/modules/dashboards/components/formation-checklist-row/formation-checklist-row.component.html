@@ -29,6 +29,11 @@
           <lfx-tag [value]="ownerTeam" severity="secondary" />
         </span>
       }
+      @if (isAssignedToViewer()) {
+        <span [attr.data-testid]="'formation-checklist-row-assigned-to-you-chip-' + item().uid">
+          <lfx-tag value="Assigned to you" severity="info" />
+        </span>
+      }
       @if (item().is_gating) {
         <span [attr.data-testid]="'formation-checklist-row-gates-active-chip-' + item().uid">
           <lfx-tag value="Required for Active" severity="warn" />
