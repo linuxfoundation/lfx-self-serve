@@ -27,29 +27,51 @@ describe('orgClaOpenLabel', () => {
 });
 
 describe('orgClaCoverageChips', () => {
-  it('names the single project', () => {
-    expect(orgClaCoverageChips({ projects: [{ projectName: 'Cascade' }], foundationName: 'Nimbus Foundation' })).toEqual(['Cascade']);
+  it('names the single project, with nothing to open — the chip is already the whole coverage', () => {
+    expect(orgClaCoverageChips({ projects: [{ projectName: 'Cascade' }], foundationName: 'Nimbus Foundation' })).toEqual([
+      { label: 'Cascade', opensCoverage: false },
+    ]);
   });
 
-  it('names the foundation and the count when several projects are covered', () => {
+  it('opens from the count and not from the foundation beside it', () => {
     expect(
       orgClaCoverageChips({
         projects: [{ projectName: 'Cascade' }, { projectName: 'Driftwood' }],
         foundationName: 'Nimbus Foundation',
       })
-    ).toEqual(['Nimbus Foundation', 'Covers 2 projects']);
+    ).toEqual([
+      { label: 'Nimbus Foundation', opensCoverage: false },
+      { label: 'Covers 2 projects', opensCoverage: true },
+    ]);
   });
 
   it('names only the count when several projects have no foundation', () => {
-    expect(orgClaCoverageChips({ projects: [{ projectName: 'Cascade' }, { projectName: 'Driftwood' }] })).toEqual(['Covers 2 projects']);
+    expect(orgClaCoverageChips({ projects: [{ projectName: 'Cascade' }, { projectName: 'Driftwood' }] })).toEqual([
+      { label: 'Covers 2 projects', opensCoverage: true },
+    ]);
   });
 
-  it('names the foundation when the project list is empty', () => {
-    expect(orgClaCoverageChips({ projects: [], foundationName: 'Nimbus Foundation' })).toEqual(['Nimbus Foundation']);
+  it('names the foundation when the project list is empty, opening nothing', () => {
+    expect(orgClaCoverageChips({ projects: [], foundationName: 'Nimbus Foundation' })).toEqual([{ label: 'Nimbus Foundation', opensCoverage: false }]);
   });
 
   it('names nothing when there are no projects and no foundation', () => {
     expect(orgClaCoverageChips({ projects: [] })).toEqual([]);
+  });
+
+  // The invariant behind every case above: whatever the row holds, at most one chip is activatable.
+  // Two would leave a viewer guessing which opens the list, and the second would open the same one.
+  it('never marks more than one chip as opening the list', () => {
+    const rows = [
+      { projects: [], foundationName: 'Nimbus Foundation' },
+      { projects: [{ projectName: 'Cascade' }], foundationName: 'Nimbus Foundation' },
+      { projects: [{ projectName: 'Cascade' }, { projectName: 'Driftwood' }], foundationName: 'Nimbus Foundation' },
+      { projects: [{ projectName: 'Cascade' }, { projectName: 'Driftwood' }] },
+    ];
+
+    for (const row of rows) {
+      expect(orgClaCoverageChips(row).filter((chip) => chip.opensCoverage)).toHaveLength(row.projects.length > 1 ? 1 : 0);
+    }
   });
 });
 

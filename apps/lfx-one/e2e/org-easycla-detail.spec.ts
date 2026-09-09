@@ -104,19 +104,24 @@ test.describe('Org Lens EasyCLA detail — content', () => {
     // Two chips, not one: a named foundation and a multi-project agreement each get their own, and
     // they say different things — one names what the agreement sits under, the other counts what it
     // actually covers. Collapsing them would let the foundation stand in for coverage it does not
-    // grant, so both are pinned before either is clicked.
-    const chips = page.getByTestId('org-easycla-detail-coverage');
-    await expect(chips).toHaveCount(2, { timeout: PAGE_LOAD_TIMEOUT });
-    await expect(chips.filter({ hasText: 'Nimbus Foundation' })).toHaveCount(1);
+    // grant, so both are pinned before either is clicked. Only the count is a control; the
+    // foundation is inert, which is why they carry different test ids.
+    const projectsChip = page.getByTestId('org-easycla-detail-coverage');
+    await expect(projectsChip).toHaveCount(1, { timeout: PAGE_LOAD_TIMEOUT });
+    await expect(projectsChip).toHaveText(/Covers 2 projects/);
+    await expect(page.getByTestId('org-easycla-detail-coverage-static')).toHaveText('Nimbus Foundation');
 
-    const projectsChip = chips.filter({ hasText: 'Covers 2 projects' });
-    await expect(projectsChip).toHaveCount(1);
     await projectsChip.click();
 
     const projects = page.getByTestId('org-easycla-coverage-project');
     await expect(projects).toHaveCount(2, { timeout: PAGE_LOAD_TIMEOUT });
     await expect(projects.first()).toHaveText('Cascade');
     await expect(projects.nth(1)).toHaveText('Driftwood');
+
+    // The dialog's own dismiss, not the chrome's icon: on a long list the header scrolls away, so
+    // this is the control a viewer can actually find.
+    await page.getByTestId('org-easycla-coverage-close').click();
+    await expect(projects).toHaveCount(0);
   });
 
   test('asks the server for a presigned url and hands the document to the browser', async ({ page }) => {

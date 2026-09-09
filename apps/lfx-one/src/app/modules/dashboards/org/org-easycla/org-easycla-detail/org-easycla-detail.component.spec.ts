@@ -471,6 +471,20 @@ describe('OrgEasyclaDetailComponent', () => {
     });
   });
 
+  // The fixture row carries a foundation AND two projects, so it renders both kinds of chip. Only
+  // the projects one may be a control: an activatable foundation name promises a list of what the
+  // foundation holds, and would open the list of what this one agreement covers instead.
+  it('offers the foundation as a plain chip and the project count as the only control', async () => {
+    const fixture = await render();
+    const controls = fixture.nativeElement.querySelectorAll('[data-testid="org-easycla-detail-coverage"]');
+    const statics = fixture.nativeElement.querySelectorAll('[data-testid="org-easycla-detail-coverage-static"]');
+
+    expect(Array.from(controls).map((el) => (el as HTMLElement).textContent?.trim())).toEqual(['Covers 2 projects']);
+    expect(Array.from(statics).map((el) => (el as HTMLElement).textContent?.trim())).toEqual(['Nimbus Foundation']);
+    expect((statics[0] as HTMLElement).tagName).toBe('SPAN');
+    expect((statics[0] as HTMLElement).querySelector('a, button')).toBeNull();
+  });
+
   it('opens the coverage dialog from a header chip', async () => {
     const fixture = await render();
 

@@ -12,3 +12,12 @@
 } @else {
   <p class="text-sm text-gray-600" data-testid="org-easycla-coverage-empty">No individual projects are listed. This agreement covers the foundation.</p>
 }
+
+<!--
+  An explicit dismiss, as the survey-preview dialog does it. The header's icon and click-outside
+  both already close this, but neither is a control a keyboard or touch user can find by looking —
+  and this dialog's body is a scrolling list, so on a long one the header icon is off screen.
+-->
+<div class="flex justify-end pt-4">
+  <lfx-button label="Close" severity="secondary" [outlined]="true" (onClick)="close()" data-testid="org-easycla-coverage-close" />
+</div>

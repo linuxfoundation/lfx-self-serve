@@ -2,7 +2,7 @@
 // SPDX-License-Identifier: MIT
 
 import { ChangeDetectionStrategy, Component, computed, input } from '@angular/core';
-import type { OrgClaGroup } from '@lfx-one/shared/interfaces';
+import type { OrgClaCoverageChip, OrgClaGroup } from '@lfx-one/shared/interfaces';
 import { ORG_CLA_STATUS_DISPLAY } from '@lfx-one/shared/constants';
 import { orgClaCoverageChips } from '@lfx-one/shared/utils';
 
@@ -29,11 +29,12 @@ export class OrgEasyclaCardComponent {
    * Coverage as the approved design frames it: name the project when there is exactly one,
    * otherwise name the foundation and say how many projects are covered.
    *
-   * Static text, not a link. The design's chip opens a coverage dialog that ships with the
-   * agreement detail view; a chip styled as actionable that does nothing reads as a bug, so it
-   * stays plain until there is somewhere for it to go.
+   * Static text, not a link, even for the chip whose `opensCoverage` says otherwise. The dialog it
+   * would open now exists on the detail page, but this card sits under a stretched link that
+   * swallows its pointer events, so wiring it is delivered separately. A chip styled as actionable
+   * that navigates somewhere else instead reads as a bug.
    */
-  protected readonly coverageChips = computed<string[]>(() => orgClaCoverageChips(this.claGroup()));
+  protected readonly coverageChips = computed<OrgClaCoverageChip[]>(() => orgClaCoverageChips(this.claGroup()));
 
   /**
    * Names the signing entity, and says it signed only where the status says so.

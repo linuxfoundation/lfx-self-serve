@@ -128,8 +128,9 @@ describe('OrgEasyclaCardComponent', () => {
       expect(allText(fixture, 'org-easycla-card-coverage')).toEqual([]);
     });
 
-    // The coverage dialog ships with the agreement detail view; until then a chip that looks
-    // actionable and does nothing reads as a defect.
+    // The card's chips stay static even though the dialog they would open now exists, because the
+    // card sits under a stretched link that has to be worked around first. A chip that looks
+    // actionable and navigates to the detail page instead reads as a defect either way.
     it('renders coverage as static text, not as a link or a button', async () => {
       const fixture = await render(claGroup());
       const chips = fixture.nativeElement.querySelectorAll('[data-testid="org-easycla-card-coverage"]');

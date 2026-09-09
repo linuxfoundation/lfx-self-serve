@@ -6,7 +6,7 @@ import { ChangeDetectionStrategy, Component, computed, DestroyRef, inject, PLATF
 import { takeUntilDestroyed, toObservable, toSignal } from '@angular/core/rxjs-interop';
 import { ActivatedRoute } from '@angular/router';
 import { HttpErrorResponse } from '@angular/common/http';
-import type { OrgClaDetailTab, OrgClaDetailTabView, OrgClaGroup, OrgClaGroupList, OrgClaStatusDisplay } from '@lfx-one/shared/interfaces';
+import type { OrgClaCoverageChip, OrgClaDetailTab, OrgClaDetailTabView, OrgClaGroup, OrgClaGroupList, OrgClaStatusDisplay } from '@lfx-one/shared/interfaces';
 import { ORG_CLA_DETAIL_TABS, ORG_CLA_HEADING_STATUS, ORG_CLA_STATUS_DISPLAY } from '@lfx-one/shared/constants';
 import { downloadFromUrl, formatClaSignedOnInstant, orgClaCoverageChips, orgClaCoverageSummary } from '@lfx-one/shared/utils';
 import { MenuItem, MessageService } from 'primeng/api';
@@ -209,7 +209,7 @@ export class OrgEasyclaDetailComponent {
     return group ? ORG_CLA_STATUS_DISPLAY[group.status] : undefined;
   }
 
-  private initCoverageChips(): string[] {
+  private initCoverageChips(): OrgClaCoverageChip[] {
     const group = this.claGroup();
     return group ? orgClaCoverageChips(group) : [];
   }

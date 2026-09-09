@@ -708,6 +708,12 @@ export interface OrgClaStatusDisplay {
   severity: TagSeverity;
 }
 
+export interface OrgClaCoverageChip {
+  label: string;
+  /** Whether this chip stands for a project list worth opening. Only the "Covers N projects" chip does. */
+  opensCoverage: boolean;
+}
+
 export interface OrgClaCoverageDialogData {
   claGroupName: string;
   foundationName?: string;

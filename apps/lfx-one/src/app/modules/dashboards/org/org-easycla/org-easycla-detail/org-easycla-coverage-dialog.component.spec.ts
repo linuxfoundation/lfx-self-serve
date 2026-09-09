@@ -5,17 +5,23 @@ import '@angular/compiler';
 
 import { ComponentFixture, TestBed } from '@angular/core/testing';
 import type { OrgClaCoverageDialogData } from '@lfx-one/shared/interfaces';
-import { DynamicDialogConfig } from 'primeng/dynamicdialog';
-import { describe, expect, it } from 'vitest';
+import { DynamicDialogConfig, DynamicDialogRef } from 'primeng/dynamicdialog';
+import { describe, expect, it, vi } from 'vitest';
 
 import { OrgEasyclaCoverageDialogComponent } from './org-easycla-coverage-dialog.component';
 
 describe('OrgEasyclaCoverageDialogComponent', () => {
+  const closeDialog = vi.fn();
+
   async function render(data: OrgClaCoverageDialogData): Promise<ComponentFixture<OrgEasyclaCoverageDialogComponent>> {
+    closeDialog.mockReset();
     TestBed.resetTestingModule();
     await TestBed.configureTestingModule({
       imports: [OrgEasyclaCoverageDialogComponent],
-      providers: [{ provide: DynamicDialogConfig, useValue: { data } }],
+      providers: [
+        { provide: DynamicDialogConfig, useValue: { data } },
+        { provide: DynamicDialogRef, useValue: { close: closeDialog } },
+      ],
     }).compileComponents();
 
     const fixture = TestBed.createComponent(OrgEasyclaCoverageDialogComponent);
@@ -66,5 +72,21 @@ describe('OrgEasyclaCoverageDialogComponent', () => {
     const fixture = await render({ claGroupName: 'Acme CLA', projects: [{ projectName: 'Cascade' }] });
 
     expect(fixture.nativeElement.querySelector('[data-testid="org-easycla-coverage-hint"]')?.textContent?.trim()).toBe('This CLA covers the projects below.');
+  });
+
+  it('offers a dismiss control that closes the dialog', async () => {
+    const fixture = await render({ claGroupName: 'Acme CLA', projects: [{ projectName: 'Cascade' }] });
+    const close = fixture.nativeElement.querySelector('[data-testid="org-easycla-coverage-close"] button') as HTMLButtonElement | null;
+
+    expect(close).not.toBeNull();
+    close?.click();
+
+    expect(closeDialog).toHaveBeenCalledOnce();
+  });
+
+  it('offers the dismiss control even when no projects are listed', async () => {
+    const fixture = await render({ claGroupName: 'Acme CLA', projects: [] });
+
+    expect(fixture.nativeElement.querySelector('[data-testid="org-easycla-coverage-close"]')).not.toBeNull();
   });
 });

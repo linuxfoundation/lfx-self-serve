@@ -59,6 +59,11 @@
       }
       <div class="flex flex-wrap items-center gap-2">
         <!--
+          Only the projects chip is activatable, and only it gets the link treatment — a foundation
+          name and a lone project name open nothing, so the arrow and the blue would be advertising
+          an action that isn't there. The inert branch is the list card's own pill, so a row's chips
+          look the same in both places.
+
           `blue-*`, not `brand-*`. The theme extends Tailwind with `lfxColors`, which defines
           blue/gray/emerald/red/amber/violet and no `brand` scale, so a `brand-` utility emits no CSS
           at all and the chip renders as inert text — FR-024 unmet, invisibly, because nothing fails.
@@ -66,24 +71,35 @@
           (#0082D9), which are `blue.100` and `blue.600` here. Hover underlines without changing the
           fill, as the design does.
         -->
-        @for (chip of coverageChips(); track chip) {
-          <button
-            type="button"
-            class="flex items-center gap-1 rounded-full border border-blue-100 bg-blue-100 px-2.5 py-0.5 text-xs font-semibold text-blue-600 hover:underline"
-            [attr.aria-label]="chip + ' — show the projects this agreement covers'"
-            (click)="openCoverage()"
-            data-testid="org-easycla-detail-coverage">
-            {{ chip }}
-            <i class="fa-light fa-arrow-right" aria-hidden="true"></i>
-          </button>
+        @for (chip of coverageChips(); track chip.label) {
+          @if (chip.opensCoverage) {
+            <button
+              type="button"
+              class="flex items-center gap-1 rounded-full border border-blue-100 bg-blue-100 px-2.5 py-0.5 text-xs font-semibold text-blue-600 hover:underline"
+              [attr.aria-label]="chip.label + ' — show the projects this agreement covers'"
+              (click)="openCoverage()"
+              data-testid="org-easycla-detail-coverage">
+              {{ chip.label }}
+              <i class="fa-light fa-arrow-right" aria-hidden="true"></i>
+            </button>
+          } @else {
+            <span class="rounded-full bg-gray-100 px-2.5 py-0.5 text-xs text-gray-700" data-testid="org-easycla-detail-coverage-static">{{ chip.label }}</span>
+          }
         }
       </div>
     </header>
 
+    <!--
+      Spacing, padding and the active blue are the memberships tablist's, so the lens reads as one
+      app rather than one page per author. Its per-tab icon is deliberately not copied: the approved
+      design shows these five tabs without icons, and picking five would be inventing content.
+      `flex-wrap` is kept over the memberships bar's single line — five labels, some badged, wrap on
+      narrow viewports where three do not.
+    -->
     <div
       role="tablist"
       aria-label="CLA Group sections"
-      class="flex flex-wrap gap-4 border-b border-gray-200"
+      class="flex flex-wrap items-center gap-1 border-b border-gray-200"
       data-testid="org-easycla-detail-tabs"
       (keydown)="onTabKeydown($event)">
       <!--
@@ -101,12 +117,12 @@
           [attr.aria-selected]="activeTab() === tab.id"
           [attr.aria-controls]="activeTab() === tab.id ? 'org-easycla-detail-tab-panel-' + tab.id : null"
           [attr.tabindex]="activeTab() === tab.id ? 0 : -1"
-          class="border-b-2 px-0.5 pb-2 text-sm"
+          class="flex items-center gap-2 border-b-2 px-4 py-2 text-sm font-medium transition-colors"
           [class.border-blue-600]="activeTab() === tab.id"
-          [class.text-gray-900]="activeTab() === tab.id"
-          [class.font-medium]="activeTab() === tab.id"
+          [class.text-blue-600]="activeTab() === tab.id"
           [class.border-transparent]="activeTab() !== tab.id"
           [class.text-gray-500]="activeTab() !== tab.id"
+          [class.hover:text-gray-700]="activeTab() !== tab.id"
           (click)="selectTab(tab.id)"
           [attr.data-testid]="'org-easycla-detail-tab-' + tab.id">
           {{ tab.label }}
@@ -157,9 +173,16 @@
           </lfx-message>
         }
         @if (canDownload()) {
+          <!--
+            `severity="secondary"` with `outlined`, the pairing the survey-preview and profile
+            dialogs use for a bordered action. `outlined` alone takes the primary colour, which
+            rendered this blue — reading as the page's main call to action when the agreement, not
+            its PDF, is the subject.
+          -->
           <lfx-button
             label="Download signed CCLA PDF"
             icon="fa-light fa-download"
+            severity="secondary"
             [outlined]="true"
             [loading]="downloading()"
             [ariaLabel]="downloading() ? 'Preparing the signed CCLA PDF for download' : 'Download signed CCLA PDF'"
