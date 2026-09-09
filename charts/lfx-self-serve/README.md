@@ -198,8 +198,8 @@ changing a value here rather than by shipping a revert.
 | `environment.LFX_CUTOVER_CAMPAIGN_SERVICE_CREATE`          | Creates campaigns through campaign-service instead of the per-platform Express services — deploy only after STATUS_TOGGLE converges                                                                                                                                                                                                                                                                  | No       | `"true"` |
 | `environment.LFX_CUTOVER_CAMPAIGN_SERVICE_DEMAND_GEN`      | Allows Demand Gen Google campaigns. Requires a campaign-service that understands `googleAdsConfig.channel` (LFXV2-3257)                                                                                                                                                                                                                                                                              | No       | off      |
 | `environment.LFX_CUTOVER_CAMPAIGN_SERVICE_STATUS_TOGGLE`   | Serves campaign pause/resume from campaign-service, which is what makes Google Ads and LinkedIn pausable — see below                                                                                                                                                                                                                                                                                 | No       | `"true"` |
-| `environment.LFX_CUTOVER_CAMPAIGN_SERVICE_INSIGHTS`        | Serves the Google Ads keyword and audience reads from campaign-service, scoped to the project's own campaigns — REQUIRES [campaign-service #190](https://github.com/linuxfoundation/lfx-v2-campaign-service/pull/190) deployed first; CHANGES THE NUMBERS — see the flag's own note in `values.yaml`                                                                                                 | No       | off      |
-| `environment.LFX_CUTOVER_CAMPAIGN_SERVICE_KEYWORD_ACTIONS` | Serves keyword pause/remove from campaign-service — REQUIRES [campaign-service #191](https://github.com/linuxfoundation/lfx-v2-campaign-service/pull/191) deployed first; the legacy path is already broken without the GADS\_\* vars. NOTE: two request-boundary changes apply even with this OFF, deliberately — a 50-row cap and a malformed-id refusal on `/keywords/actions`; see `values.yaml` | No       | off      |
+| `environment.LFX_CUTOVER_CAMPAIGN_SERVICE_INSIGHTS`        | Serves the Google Ads keyword and audience reads from campaign-service, scoped to the project's own campaigns — REQUIRES [campaign-service #190](https://github.com/linuxfoundation/lfx-v2-campaign-service/pull/190) deployed first; CHANGES THE NUMBERS — see the flag's own note in `values.yaml`                                                                                                 | No       | on       |
+| `environment.LFX_CUTOVER_CAMPAIGN_SERVICE_KEYWORD_ACTIONS` | Serves keyword pause/remove from campaign-service — REQUIRES [campaign-service #191](https://github.com/linuxfoundation/lfx-v2-campaign-service/pull/191) deployed first; the legacy path is already broken without the GADS\_\* vars. NOTE: two request-boundary changes apply even with this OFF, deliberately — a 50-row cap and a malformed-id refusal on `/keywords/actions`; see `values.yaml` | No       | on       |
 | `environment.LFX_CUTOVER_CAMPAIGN_SERVICE_HUBSPOT_UTM`     | Serves the HubSpot campaign UTM lookup and create from campaign-service — REQUIRES [campaign-service #193](https://github.com/linuxfoundation/lfx-v2-campaign-service/pull/193) deployed first, see below                                                                                                                                                                                            | No       | off      |
 
 `..._JOBS` now defaults to `"true"` (LFXV2-3325), the first step of the enable order below.
@@ -217,9 +217,18 @@ JOBS  →  BRIEFS  →  STATUS_TOGGLE  →  CREATE
 ```
 
 The other four flags in the table -- `..._DEMAND_GEN`, `..._INSIGHTS`, `..._KEYWORD_ACTIONS` and
-`..._HUBSPOT_UTM` -- are NOT part of this enable order and all default OFF. They gate later,
-independent moves, each with its own prerequisite noted in the table. The ordering rules below
-are about the create pipeline only; each of these four carries its own note in `values.yaml`.
+`..._HUBSPOT_UTM` -- are NOT part of this enable order. They gate later, independent moves, each
+with its own prerequisite noted in the table. Their defaults now differ, and the difference
+matters to an operator deciding whether an override is needed:
+
+- `..._INSIGHTS` and `..._KEYWORD_ACTIONS` default **ON**. The brokered routes exist in
+  campaign-service, so no override is required to use them — and an override back to `"false"` is
+  NOT a safe rollback wherever the `GADS_*` credentials have been removed, because the legacy arm
+  then calls `getGadsClient()`, which throws before any read.
+- `..._DEMAND_GEN` and `..._HUBSPOT_UTM` default **OFF**. `..._HUBSPOT_UTM` additionally requires a
+  HubSpot connection to exist for the project (or the LF system row) before it does anything but
+  turn one error into another. The ordering rules below
+  are about the create pipeline only; each of these four carries its own note in `values.yaml`.
 
 **This is a deploy constraint, not a merge one.** All four of the create-pipeline flags now
 default to `"true"` in this chart, and nothing in CI staggers them — a single rollout of this chart turns them all on at once, which

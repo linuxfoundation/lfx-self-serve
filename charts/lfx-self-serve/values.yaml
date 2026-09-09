@@ -658,7 +658,7 @@ environment:
   # story a read does not, so the two are enabled independently and neither implies the other.
   # Same accepted values as the flags above.
   LFX_CUTOVER_CAMPAIGN_SERVICE_INSIGHTS:
-    value: "false"
+    value: "true"
 
   # Routes keyword pause/remove (campaign.controller.ts executeKeywordActions) through
   # campaign-service instead of the BFF's own Google Ads mutate calls.
@@ -716,7 +716,7 @@ environment:
   # valid rows run. The LFX One client cannot produce a malformed id, so this
   # affects direct API callers only.
   LFX_CUTOVER_CAMPAIGN_SERVICE_KEYWORD_ACTIONS:
-    value: "false"
+    value: "true"
 
   # Routes the HubSpot campaign UTM lookup and create (campaign.controller.ts
   # lookupHubSpotUtm / createHubSpotUtm) through campaign-service.
