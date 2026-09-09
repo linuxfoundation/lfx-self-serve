@@ -373,8 +373,12 @@ export class FormationService {
         path: req.path,
       });
     }
-    if (patch.due_date !== undefined && patch.due_date !== null && (typeof patch.due_date !== 'string' || Number.isNaN(Date.parse(patch.due_date)))) {
-      throw ServiceValidationError.forField('due_date', 'due_date must be a valid ISO date string or null', {
+    if (
+      patch.due_date !== undefined &&
+      patch.due_date !== null &&
+      (typeof patch.due_date !== 'string' || !/^\d{4}-\d{2}-\d{2}$/.test(patch.due_date) || Number.isNaN(Date.parse(patch.due_date)))
+    ) {
+      throw ServiceValidationError.forField('due_date', 'due_date must be a YYYY-MM-DD date string or null', {
         operation: 'update_formation_item',
         service: 'formation_service',
         path: req.path,
@@ -399,11 +403,13 @@ export class FormationService {
       // empty string rather than `null` (a JSON `null` unmarshals into a nil `*string`, indistinguishable
       // from omission, and a clear-only PATCH would then 409 `no_fields_to_update` instead of clearing).
       // `due_date` additionally must be `YYYY-MM-DD` — upstream parses with that exact layout and
-      // 400s `due_date_invalid` on a full ISO datetime, which is what the drawer's `toISOString()` sends.
+      // 400s `due_date_invalid` on a full ISO datetime. The validation above already rejects
+      // anything but that shape (or `null`), so `patch.due_date` is safe to send as-is — no `slice`
+      // needed, and no risk of the calendar day shifting a UTC-instant truncation would introduce.
       const body: Record<string, unknown> = {};
       if (notesChanged) body['note'] = nextNotes ?? '';
       if (ownerChanged) body['assignee'] = nextOwnerUsername ?? '';
-      if (dueDateChanged) body['due_date'] = patch.due_date ? patch.due_date.slice(0, 10) : '';
+      if (dueDateChanged) body['due_date'] = patch.due_date ?? '';
       const raw = await this.mutateLiveItem(req, projectUid, itemKey, item.version, body, 'update_formation_item');
       const updated = await this.mapLiveItem(req, projectUid, raw);
       logger.debug(req, 'update_formation_item', 'Formation item updated', { item_uid: updated.uid });
@@ -453,7 +459,19 @@ export class FormationService {
     await this.assertCanComplete(req, item, 'accept_formation_item');
 
     if (isFormationServiceLive()) {
-      const raw = await this.actLiveItem(req, projectUid, itemKey, 'accept', item.version, note !== undefined ? { note } : {}, 'accept_formation_item');
+      // Unlike PATCH, upstream's accept/reject/reopen always overwrite the note column — omitting
+      // it means "the note is now empty", not "leave unchanged" (`acceptance.go`: "Written whether
+      // or not one was supplied, so the column means 'the note on this row now'"). Pass the item's
+      // current note through when the caller didn't supply one, matching the fixture branch below.
+      const raw = await this.actLiveItem(
+        req,
+        projectUid,
+        itemKey,
+        'accept',
+        item.version,
+        { note: note !== undefined ? note : (item.notes ?? '') },
+        'accept_formation_item'
+      );
       const updated = await this.mapLiveItem(req, projectUid, raw);
       logger.info(req, 'accept_formation_item', 'Formation item accepted', { item_uid: updated.uid });
       return this.enrichSingle(req, updated);
@@ -523,7 +541,16 @@ export class FormationService {
     await this.assertCanComplete(req, item, 'reopen_formation_item');
 
     if (isFormationServiceLive()) {
-      const raw = await this.actLiveItem(req, projectUid, itemKey, 'reopen', item.version, note !== undefined ? { note } : {}, 'reopen_formation_item');
+      // Same note-preservation contract as acceptFormationItem — see its comment.
+      const raw = await this.actLiveItem(
+        req,
+        projectUid,
+        itemKey,
+        'reopen',
+        item.version,
+        { note: note !== undefined ? note : (item.notes ?? '') },
+        'reopen_formation_item'
+      );
       const updated = await this.mapLiveItem(req, projectUid, raw);
       logger.info(req, 'reopen_formation_item', 'Formation item reopened', { item_uid: updated.uid });
       return this.enrichSingle(req, updated);
@@ -602,7 +629,7 @@ export class FormationService {
       ...row,
       parent_uid: collapseRootParentUid(row.parent_uid || null, rootUid) ?? null,
       announcement_date: row.announcement_date ?? null,
-      progress: row.progress ?? ({} as FormationQueueRow['progress']),
+      progress: row.progress ?? {},
       blocked_item_titles: row.blocked_item_titles ?? [],
       assignees: row.assignees ?? [],
     }));

@@ -326,11 +326,13 @@ export interface FormationQueueRow {
   announcement_date: string | null;
   /**
    * Per-status item counts published by the indexer (`indexer_publisher.go`'s `projectionData`
-   * always emits all six {@link FormationItemStatus} keys). Still `Record<...>` rather than a
-   * required-keys type, and defaulted defensively where consumed, as protection against a
-   * malformed document rather than an open contract question.
+   * always emits all six {@link FormationItemStatus} keys). Typed `Partial<...>` rather than a
+   * required-keys `Record`, and defaulted defensively where consumed (`formation.service.ts`'s
+   * `??` default, `formations-table.component.ts`'s `?? 0`), as protection against a malformed
+   * document rather than an open contract question — the confirmed six-key shape doesn't need an
+   * unsound cast to express a `{}` fallback.
    */
-  progress: Record<FormationItemStatus, number>;
+  progress: Partial<Record<FormationItemStatus, number>>;
   blocked_item_titles: string[];
   /** Bare usernames, as published by the indexer (`internal/domain/port/ports.go`'s `Assignees []string`) — not `FormationUser` objects. */
   assignees: string[];

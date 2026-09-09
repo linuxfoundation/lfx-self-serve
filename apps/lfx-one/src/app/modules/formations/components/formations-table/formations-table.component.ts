@@ -130,7 +130,7 @@ export class FormationsTableComponent {
         stageSeverity: FORMATION_SUB_STAGE_SEVERITY[row.sub_stage],
         entityTypeLabel: FORMATION_ENTITY_TYPE_LABELS[deriveFormationEntityType(row)],
         doneCount: row.progress['done'] ?? 0,
-        totalCount: Object.values(row.progress).reduce((sum, count) => sum + count, 0),
+        totalCount: Object.values(row.progress).reduce((sum: number, count) => sum + (count ?? 0), 0),
       }));
       return this.sortDisplayRows(displayRows);
     });

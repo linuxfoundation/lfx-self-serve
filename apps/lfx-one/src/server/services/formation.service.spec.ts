@@ -9,6 +9,7 @@ import type { Request } from 'express';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 
 import { MicroserviceError } from '../errors/microservice.error';
+import { ServiceValidationError } from '../errors/service-validation.error';
 
 const getProjectById = vi.fn();
 const getProjectIdBySlug = vi.fn();
@@ -497,7 +498,7 @@ describe('FormationService', () => {
       const before = getActivityForItem(formation.uid, item.uid).length;
       const result = await service.updateFormationItem(buildReq(), item.project_uid, item.template_item_key, {
         notes: '',
-        due_date: '2026-06-01T00:00:00.000Z',
+        due_date: '2026-06-01',
       });
 
       expect(result.notes).toBeNull();
@@ -714,7 +715,7 @@ describe('FormationService', () => {
       expect(postCall![6]).toEqual({ 'If-Match': '3' });
     });
 
-    it('clears note/assignee/due_date with empty strings (not null) and sends due_date as YYYY-MM-DD, not a full ISO datetime', async () => {
+    it('clears note/assignee/due_date with empty strings, not null', async () => {
       const item = rawItem({ status: 'in_progress', note: 'old note', assignee: 'sam.chen', due_date: '2026-01-01' });
       proxyRequest.mockImplementation((_req, _service, _path: string, method: string) => {
         if (method === 'GET') return Promise.resolve(checklist([item]));
@@ -732,7 +733,7 @@ describe('FormationService', () => {
       expect(patchCall![5]).toEqual({ note: '', assignee: '', due_date: '' });
     });
 
-    it('sends a full ISO due_date truncated to YYYY-MM-DD, never the full datetime', async () => {
+    it('sends a YYYY-MM-DD due_date through unchanged', async () => {
       const item = rawItem({ status: 'in_progress', due_date: '2026-01-01' });
       proxyRequest.mockImplementation((_req, _service, _path: string, method: string) => {
         if (method === 'GET') return Promise.resolve(checklist([item]));
@@ -740,13 +741,26 @@ describe('FormationService', () => {
         throw new Error('unexpected call');
       });
 
-      await service.updateFormationItem(buildReq(), 'live-project-1', 'item-key-1', { due_date: '2026-03-31T00:00:00.000Z' });
+      await service.updateFormationItem(buildReq(), 'live-project-1', 'item-key-1', { due_date: '2026-03-31' });
 
       const patchCall = proxyRequest.mock.calls.find((call) => call[3] === 'PATCH');
       expect(patchCall![5]).toEqual({ due_date: '2026-03-31' });
     });
 
-    it('percent-encodes itemKey (not just projectUid) in both the PATCH and the accept/reject/reopen path templates', async () => {
+    it('rejects a full ISO due_date datetime instead of silently truncating it to the wrong calendar day', async () => {
+      const item = rawItem({ status: 'in_progress', due_date: '2026-01-01' });
+      proxyRequest.mockImplementation((_req, _service, _path: string, method: string) => {
+        if (method === 'GET') return Promise.resolve(checklist([item]));
+        throw new Error('unexpected call');
+      });
+
+      await expect(service.updateFormationItem(buildReq(), 'live-project-1', 'item-key-1', { due_date: '2026-03-31T00:00:00.000Z' })).rejects.toThrow(
+        ServiceValidationError
+      );
+      expect(proxyRequest.mock.calls.some((call) => call[3] === 'PATCH')).toBe(false);
+    });
+
+    it('percent-encodes itemKey (not just projectUid) in the PATCH path template', async () => {
       const item = rawItem({ item_key: 'item key/weird', status: 'in_progress', gate: false });
       proxyRequest.mockImplementation((_req, _service, _path: string, method: string) => {
         if (method === 'GET') return Promise.resolve(checklist([item]));
@@ -758,6 +772,20 @@ describe('FormationService', () => {
 
       const patchCall = proxyRequest.mock.calls.find((call) => call[3] === 'PATCH');
       expect(patchCall![2]).toBe(`/formations/live-project-1/items/${encodeURIComponent('item key/weird')}`);
+    });
+
+    it('percent-encodes itemKey (not just projectUid) in the accept/reject/reopen path template', async () => {
+      const item = rawItem({ item_key: 'item key/weird', status: 'awaiting_acceptance', gate: true });
+      proxyRequest.mockImplementation((_req, _service, _path: string, method: string) => {
+        if (method === 'GET') return Promise.resolve(checklist([item]));
+        if (method === 'POST') return Promise.resolve({ ...item, status: 'done', version: 4 });
+        throw new Error('unexpected call');
+      });
+
+      await service.acceptFormationItem(buildReq(), 'live-project-1', 'item key/weird');
+
+      const postCall = proxyRequest.mock.calls.find((call) => call[3] === 'POST');
+      expect(postCall![2]).toBe(`/formations/live-project-1/items/${encodeURIComponent('item key/weird')}/accept`);
     });
 
     it('propagates a failOnPartial pagination failure from getFormationsQueue instead of returning partial rows', async () => {

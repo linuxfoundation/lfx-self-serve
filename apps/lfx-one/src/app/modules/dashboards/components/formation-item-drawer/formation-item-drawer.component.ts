@@ -177,7 +177,7 @@ export class FormationItemDrawerComponent {
       .updateFormationItem(item.project_uid, item.template_item_key, {
         notes: this.editForm.value.notes ?? '',
         owner_username: this.editForm.value.ownerUsername ?? '',
-        due_date: this.editForm.value.dueDate ? this.editForm.value.dueDate.toISOString() : null,
+        due_date: this.editForm.value.dueDate ? this.toDateOnlyString(this.editForm.value.dueDate) : null,
       })
       .pipe(
         take(1),
@@ -276,5 +276,17 @@ export class FormationItemDrawerComponent {
       next.delete(uid);
       return next;
     });
+  }
+
+  /**
+   * `date.toISOString()` reports the UTC calendar day, which is a different day than the one the
+   * calendar picker shows for any viewer not at UTC+0 — a positive-offset viewer picking the 31st
+   * would send the 30th. `updateFormationItem` requires a `YYYY-MM-DD` day, so build it from the
+   * picker's local date parts instead of converting to a UTC instant first.
+   */
+  private toDateOnlyString(date: Date): string {
+    const month = String(date.getMonth() + 1).padStart(2, '0');
+    const day = String(date.getDate()).padStart(2, '0');
+    return `${date.getFullYear()}-${month}-${day}`;
   }
 }
