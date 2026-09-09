@@ -405,16 +405,20 @@ describe('program detail helpers', () => {
     ];
     const lists = { mentees, applicants: [], mentors: [], terms: [] };
 
+    // A live program answers "who is taking part", so the withdrawal is out and the
+    // accepted mentee is in. Whatever the tab renders is what the badge counts.
     const open = buildMentorshipProgramDetail({ ...program, status: 'open' as const }, lists);
     expect(open.mentees.map((person) => person.id)).toEqual(['1']);
     expect(open.tabCounts.mentees).toBe(open.mentees.length);
 
+    // Completing the program inverts it: the withdrawal is now history worth showing,
+    // and no mentee can still be `accepted` by the time a program closes.
     const completed = buildMentorshipProgramDetail({ ...program, status: 'completed' as const }, lists);
     expect(completed.mentees.map((person) => person.id)).toEqual(['3']);
     expect(completed.tabCounts.mentees).toBe(completed.mentees.length);
   });
 
-  it('splits mentees between the live and completed tabs', () => {
+  it('splits mentees between the live and completed tabs, keeping graduates on both', () => {
     const mentees: MentorshipProgramMentee[] = [
       { id: '1', name: 'A', email: 'a@example.com', status: 'accepted', termName: 'Fall 2026' },
       { id: '2', name: 'B', email: 'b@example.com', status: 'pending', termName: 'Fall 2026' },
@@ -422,7 +426,10 @@ describe('program detail helpers', () => {
       { id: '4', name: 'D', email: 'd@example.com', status: 'declined', termName: 'Fall 2026' },
     ];
 
+    // Live: taking part or finished early. The declined mentee waits for completion.
     expect(mentorshipMenteesForProgram(mentees, false).map((person) => person.id)).toEqual(['1', '3']);
+    // Completed: how each participation ended, so the graduate carries over and the
+    // decline appears. `pending` is an applicant either way.
     expect(mentorshipMenteesForProgram(mentees, true).map((person) => person.id)).toEqual(['3', '4']);
     expect(mentorshipMenteesForProgram([], false)).toEqual([]);
   });

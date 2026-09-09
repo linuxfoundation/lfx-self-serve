@@ -316,9 +316,20 @@ export function buildMentorshipProgramTabCounts(lists: MentorshipProgramLists): 
 }
 
 /**
- * The mentees the program's first tab can show. A live program lists the enrolled
- * ones and a completed program lists finished participations, so anyone still
- * `pending` belongs to the Applicants tab rather than either mentee tab.
+ * The mentees the program's first tab can show, which is a narrower set than
+ * "everyone who is not an applicant".
+ *
+ * A live program lists the mentees actually taking part — `accepted`, plus the
+ * `graduated` ones who finished early. A completed program lists how each
+ * participation ended: `withdrawn`, `declined` or `graduated`. `accepted` is
+ * deliberately absent from that second set, because closing a program requires
+ * every accepted mentee to have been graduated or declined first, so an
+ * `accepted` mentee on a completed program is a state the domain does not
+ * produce rather than a row to render.
+ *
+ * A mentee who withdraws or is declined mid-program is therefore not shown while
+ * the program is still running, and appears on Past Mentees once it completes.
+ * That is intended: the live tab answers "who is taking part", not "who ever was".
  */
 export function mentorshipMenteesForProgram(mentees: MentorshipProgramMentee[], isCompleted: boolean): MentorshipProgramMentee[] {
   const statuses = isCompleted ? MENTORSHIP_PAST_MENTEE_STATUSES : MENTORSHIP_CURRENT_MENTEE_STATUSES;

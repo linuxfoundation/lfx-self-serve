@@ -1,8 +1,8 @@
 // Copyright The Linux Foundation and each contributor to LFX.
 // SPDX-License-Identifier: MIT
 
-import { ChangeDetectionStrategy, Component, computed, inject, signal, Signal } from '@angular/core';
-import { toObservable, toSignal } from '@angular/core/rxjs-interop';
+import { ChangeDetectionStrategy, Component, computed, DestroyRef, inject, signal, Signal } from '@angular/core';
+import { takeUntilDestroyed, toObservable, toSignal } from '@angular/core/rxjs-interop';
 import { ActivatedRoute } from '@angular/router';
 import { ButtonComponent } from '@components/button/button.component';
 import { EmptyStateComponent } from '@components/empty-state/empty-state.component';
@@ -52,6 +52,7 @@ export class ProgramDetailComponent {
   private readonly mentorshipService = inject(MentorshipService);
   private readonly dialogService = inject(DialogService);
   private readonly comingSoon = inject(MentorshipComingSoonService);
+  private readonly destroyRef = inject(DestroyRef);
 
   protected readonly isLoading = signal(true);
   protected readonly activeTab = signal<MentorshipProgramDetailTab>('mentees');
@@ -94,7 +95,9 @@ export class ProgramDetailComponent {
     });
     if (!dialogRef) return;
 
-    dialogRef.onClose.pipe(take(1)).subscribe((note: string | undefined) => {
+    // `takeUntilDestroyed` as well as `take(1)`: this is a long-lived page, so navigating
+    // away mid-edit would otherwise leave the handler alive to write to a destroyed host.
+    dialogRef.onClose.pipe(take(1), takeUntilDestroyed(this.destroyRef)).subscribe((note: string | undefined) => {
       // Dismissing the dialog resolves to `undefined` and must leave the note untouched;
       // an empty string is an explicit clear.
       if (note === undefined) return;
