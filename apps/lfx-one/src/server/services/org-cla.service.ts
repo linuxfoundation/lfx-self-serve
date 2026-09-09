@@ -432,6 +432,45 @@ export class OrgClaService {
       });
     }
 
+    // The agreement is requested by project, not by CLA Group: the upstream input takes
+    // `project_sfid` and has no field for a CLA Group, so the group the signatory chose cannot be
+    // bound to the request. It comes back on the response, and that echo is the only place the two
+    // can be compared. Without this check a project whose CLA Group mapping moved between the
+    // search and the confirmation — or a client that posted a mismatched pair — hands the signatory
+    // a session for an agreement they did not choose, and nothing anywhere would say so.
+    //
+    // This necessarily refuses after the envelope exists, leaving one abandoned upstream. That is
+    // the cheaper of the two outcomes by a wide margin: the alternative is a corporate agreement
+    // signed against the wrong CLA Group, which is a legal instrument that cannot be withdrawn by
+    // this application. Binding the group in the request instead needs an upstream field.
+    const returnedClaGroupId = result?.cla_group_id?.trim() ?? '';
+    if (returnedClaGroupId && returnedClaGroupId !== request.claGroupId) {
+      logger.error(req, 'org_cla_request_corporate_signature', startTime, new Error('upstream opened a session for a different CLA Group'), {
+        requested_cla_group_id: request.claGroupId,
+        returned_cla_group_id: returnedClaGroupId,
+        project_sfid: request.projectSfid,
+      });
+      throw new MicroserviceError('Upstream opened a signing session for a different CLA Group', 502, 'CLA_SIGN_GROUP_MISMATCH', {
+        operation: 'org_cla_request_corporate_signature',
+        service: SERVICE,
+      });
+    }
+
+    // An absent echo is not treated as a mismatch. The field is declared always-present upstream,
+    // so its absence is an upstream regression rather than evidence of a wrong group, and failing
+    // here would dead-end every hand-off the moment that field were dropped. It is logged so the
+    // loss of the check is visible rather than silent.
+    if (!returnedClaGroupId) {
+      logger.warning(
+        req,
+        'org_cla_request_corporate_signature',
+        'upstream returned no cla_group_id; could not verify the signing session matches the chosen CLA Group',
+        {
+          requested_cla_group_id: request.claGroupId,
+        }
+      );
+    }
+
     // The signature id is logged for correlation and deliberately not returned: nothing on the
     // client reads it, and it identifies a named person's agreement.
     logger.success(req, 'org_cla_request_corporate_signature', startTime, { org_uid: orgUid, signature_id: signatureId });

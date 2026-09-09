@@ -8,13 +8,17 @@ import type { Request } from 'express';
 import type { MicroserviceError as MicroserviceErrorType } from '../errors';
 import type { EasyClaCompanyClaGroup, EasyClaCompanyClaGroupList } from '../types/cla.types';
 
-const { gatewayFetch, isImpersonating } = vi.hoisted(() => ({ gatewayFetch: vi.fn(), isImpersonating: vi.fn(() => false) }));
+const { gatewayFetch, isImpersonating, loggerWarning } = vi.hoisted(() => ({
+  gatewayFetch: vi.fn(),
+  isImpersonating: vi.fn(() => false),
+  loggerWarning: vi.fn(),
+}));
 
 vi.mock('../helpers/gateway-fetch.helper', () => ({ gatewayFetch }));
 vi.mock('../helpers/cla-service-url.helper', () => ({ claServiceBaseUrl: () => 'https://gw.example.org/cla-service' }));
 vi.mock('../utils/auth-helper', () => ({ isImpersonating }));
 vi.mock('./logger.service', () => ({
-  logger: { startOperation: vi.fn(() => 0), success: vi.fn(), warning: vi.fn(), error: vi.fn(), debug: vi.fn(), info: vi.fn() },
+  logger: { startOperation: vi.fn(() => 0), success: vi.fn(), warning: loggerWarning, error: vi.fn(), debug: vi.fn(), info: vi.fn() },
 }));
 
 const { OrgClaService } = await import('./org-cla.service');
@@ -804,6 +808,36 @@ describe('OrgClaService.requestCorporateSignature', () => {
     gatewayFetch.mockResolvedValueOnce({ ...upstreamOk, signature_id: '' });
 
     await expect(new OrgClaService().requestCorporateSignature(signReq(), ORG_UID, signRequest())).rejects.toThrow(/no usable corporate signing session/);
+  });
+
+  // The agreement is requested by project; the upstream input has no CLA Group field, so the group
+  // the signatory chose cannot be bound to the request and the echoed one is the only way to tell
+  // whether the session that came back is for the agreement they picked. Handing over a mismatched
+  // session would have them sign the wrong corporate agreement with nothing recording it.
+  it('refuses a session opened for a different CLA Group than the one chosen', async () => {
+    gatewayFetch.mockResolvedValueOnce({ ...upstreamOk, cla_group_id: 'a-different-cla-group-uuid' });
+
+    await expect(new OrgClaService().requestCorporateSignature(signReq(), ORG_UID, signRequest())).rejects.toThrow(/different CLA Group/);
+  });
+
+  it('does not hand back the signing address when the CLA Group does not match', async () => {
+    gatewayFetch.mockResolvedValueOnce({ ...upstreamOk, cla_group_id: 'a-different-cla-group-uuid' });
+
+    const outcome = await new OrgClaService().requestCorporateSignature(signReq(), ORG_UID, signRequest()).catch((error: unknown) => error);
+
+    expect(JSON.stringify(outcome)).not.toContain('docusign.example.org');
+  });
+
+  // Absence is not a mismatch. The field is declared always-present upstream, so losing it is an
+  // upstream regression rather than evidence of a wrong group, and failing here would dead-end
+  // every hand-off the moment it were dropped.
+  it.each([[''], ['   '], [undefined]])('proceeds, warning, when the echoed CLA Group is %p', async (claGroupId) => {
+    gatewayFetch.mockResolvedValueOnce({ ...upstreamOk, cla_group_id: claGroupId });
+
+    expect(await new OrgClaService().requestCorporateSignature(signReq(), ORG_UID, signRequest())).toEqual({
+      signUrl: 'https://docusign.example.org/session/1',
+    });
+    expect(JSON.stringify(loggerWarning.mock.calls)).toContain('could not verify');
   });
 
   // The trade-compliance refusal is a 403 whose body is a sentence written for the signatory,
