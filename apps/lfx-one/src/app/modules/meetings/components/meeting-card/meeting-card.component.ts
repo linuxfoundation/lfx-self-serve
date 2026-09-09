@@ -793,7 +793,17 @@ export class MeetingCardComponent implements OnInit {
         // this card. Everyone else sees the public join/details page.
         if (meeting.organizer) {
           const commands = getEntityCommands('meetings', resourceId, meeting.is_foundation, 'details') ?? ['/meetings', resourceId, 'details'];
-          return '/' + commands.filter((segment) => segment !== '/').join('/');
+          // Commands come in two shapes: the tiered form starts with a literal '/' segment
+          // (['/', 'project'|'foundation', ...]), the flat fallback doesn't (['/meetings', ...]).
+          // Stripping any leading/trailing slashes per segment before rejoining normalizes both
+          // without doubling the leading slash.
+          return (
+            '/' +
+            commands
+              .map((segment) => segment.replace(/^\/+|\/+$/g, ''))
+              .filter(Boolean)
+              .join('/')
+          );
         }
 
         return `/meetings/${resourceId}`;
