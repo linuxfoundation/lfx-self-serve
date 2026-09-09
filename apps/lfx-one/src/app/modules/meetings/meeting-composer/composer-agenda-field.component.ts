@@ -101,7 +101,7 @@ export class ComposerAgendaFieldComponent {
   }
 
   protected onApplyTemplate(template: MeetingTemplate, popover: Popover): void {
-    this.form().get('description')?.setValue(template.content);
+    this.writeAgenda(template.content);
     this.applyEstimatedDuration(template.estimatedDuration);
     popover.hide();
   }
@@ -153,7 +153,7 @@ export class ComposerAgendaFieldComponent {
         take(1),
         tap({
           next: (response) => {
-            this.form().get('description')?.setValue(response.agenda);
+            this.writeAgenda(response.agenda);
             this.applyEstimatedDuration(response.estimatedDuration);
             popover.hide();
             this.messageService.add({ severity: 'success', summary: 'Agenda generated', detail: 'Review the draft and edit it as needed.' });
@@ -167,6 +167,21 @@ export class ComposerAgendaFieldComponent {
         finalize(() => this.isGeneratingAgenda.set(false))
       )
       .subscribe();
+  }
+
+  /**
+   * Writes an agenda the organizer asked for, and marks it as theirs.
+   * @description `setValue` alone leaves the control pristine, which two other surfaces read as "still
+   * an untouched default": the quick dialog's type-change prefill would overwrite a template the
+   * organizer deliberately picked, and edit mode's dirty-gated Save would stay disabled over a
+   * generated agenda with nothing saying why. Asking for this content is a deliberate edit, so it is
+   * marked like one.
+   */
+  private writeAgenda(agenda: string): void {
+    const description = this.form().get('description');
+
+    description?.setValue(agenda);
+    description?.markAsDirty();
   }
 
   /**
@@ -193,6 +208,11 @@ export class ComposerAgendaFieldComponent {
     if (this.formService.effectiveDuration() === estimatedDuration) {
       return;
     }
+
+    // Dirty for the same reason the agenda is: `setDuration` writes through `setValue`, and the quick
+    // dialog's prefill only skips controls it can see the organizer has moved.
+    this.form().get('duration')?.markAsDirty();
+    this.form().get('customDuration')?.markAsDirty();
 
     this.formService.setDuration(estimatedDuration);
 

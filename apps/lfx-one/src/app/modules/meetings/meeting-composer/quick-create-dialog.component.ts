@@ -5,7 +5,7 @@ import { NgClass } from '@angular/common';
 import { Component, computed, inject, output, signal, type Signal } from '@angular/core';
 import { takeUntilDestroyed, toObservable } from '@angular/core/rxjs-interop';
 import { ButtonComponent } from '@components/button/button.component';
-import { MEETING_DURATION_CHIP_OPTIONS, MEETING_TEMPLATES } from '@lfx-one/shared/constants';
+import { DEFAULT_DURATION, MEETING_DURATION_CHIP_OPTIONS, MEETING_TEMPLATES } from '@lfx-one/shared/constants';
 import { MeetingType } from '@lfx-one/shared/enums';
 import type { CardSelectorOption, CommitteeMember, MeetingTemplate } from '@lfx-one/shared/interfaces';
 import { getSelectableMeetingTypeOptions } from '@lfx-one/shared/utils';
@@ -172,12 +172,14 @@ export class QuickCreateDialogComponent {
    * scale are skipped, since seeding one would drop this surface into the custom-minutes input.
    */
   private applyTypeTemplate(meetingType: MeetingType | null): void {
+    // Take the previous type's prefill back out first, so a type whose template omits a field — or has
+    // no template at all, which is `Other` — can't leave the last type's title and agenda standing
+    // under it with the "Pre-filled for this meeting type" hint gone.
+    this.clearSeededValues();
+
     const template = this.defaultTemplateFor(meetingType);
 
     if (!template) {
-      this.seededTitle.set(false);
-      this.seededDuration.set(false);
-      this.seededAgenda.set(false);
       return;
     }
 
@@ -207,6 +209,35 @@ export class QuickCreateDialogComponent {
     this.seededTitle.set(seededTitle);
     this.seededDuration.set(seededDuration);
     this.seededAgenda.set(seededAgenda);
+  }
+
+  /**
+   * Returns the controls this dialog seeded to their untouched state.
+   * @description Guarded on `pristine` exactly as the seeding is: a seeded value the organizer has since
+   * edited is theirs, and clearing it would throw the edit away. Nothing else needs guarding, because a
+   * control only reaches here if a previous pass through {@link applyTypeTemplate} wrote it.
+   */
+  private clearSeededValues(): void {
+    const form = this.formService.form();
+    const title = form.get('title');
+    const description = form.get('description');
+    const duration = form.get('duration');
+
+    if (this.seededTitle() && title?.pristine) {
+      title.setValue('');
+    }
+
+    if (this.seededDuration() && duration?.pristine) {
+      this.formService.setDuration(DEFAULT_DURATION);
+    }
+
+    if (this.seededAgenda() && description?.pristine) {
+      description.setValue('');
+    }
+
+    this.seededTitle.set(false);
+    this.seededDuration.set(false);
+    this.seededAgenda.set(false);
   }
 
   /**

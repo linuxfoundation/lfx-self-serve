@@ -56,6 +56,36 @@ describe('MeetingComposerService', () => {
     service.switchToAdvanced();
 
     expect(service.activeSection()).toBe('details-access');
+  });
+
+  // The preview hides `startDate` until Date & Schedule is visited, because that control opens
+  // pre-filled with a default and showing it unvisited would present a date nobody chose. After the
+  // handoff the organizer *has* chosen one — in the dialog — so leaving the section unvisited blanked
+  // the date they were looking at a second earlier.
+  it('marks the dialog own sections visited, so the drawer does not blank what it showed', () => {
+    service.open({ mode: 'create', variant: 'quick' });
+
+    service.switchToAdvanced();
+
+    expect(service.visitedSections()).toEqual(new Set(['details-access', 'date-schedule', 'guests', 'agenda-resources']));
+  });
+
+  // The one section the dialog has no column for. The preview gates its feature rows on this, so
+  // marking it visited would list defaults the organizer has never been shown.
+  it('leaves platform & features unvisited, since the dialog never puts it on screen', () => {
+    service.open({ mode: 'create', variant: 'quick' });
+
+    service.switchToAdvanced();
+
+    expect(service.visitedSections().has('platform-features')).toBe(false);
+  });
+
+  it('clears the carried-over sections on close, so the next open starts fresh', () => {
+    service.open({ mode: 'create', variant: 'quick' });
+    service.switchToAdvanced();
+
+    service.close();
+
     expect(service.visitedSections()).toEqual(new Set(['details-access']));
   });
 

@@ -2,7 +2,7 @@
 // SPDX-License-Identifier: MIT
 
 import { computed, Injectable, signal } from '@angular/core';
-import { MEETING_COMPOSER_SECTIONS } from '@lfx-one/shared/constants';
+import { MEETING_COMPOSER_SECTIONS, MEETING_QUICK_CREATE_SECTIONS } from '@lfx-one/shared/constants';
 import type { MeetingComposerContext, MeetingComposerSectionId, MeetingComposerVariant } from '@lfx-one/shared/interfaces';
 
 const FIRST_SECTION: MeetingComposerSectionId = MEETING_COMPOSER_SECTIONS[0].id;
@@ -74,9 +74,16 @@ export class MeetingComposerService {
    * `MeetingComposerFormService.dropQuickCreateDefaults()`, which the drawer needs so a later type
    * change stops rewriting fields; `MeetingComposerHostComponent` owns that pairing, being the only
    * place that holds both services.
+   *
+   * The dialog's sections carry over as visited. `visitedSections` means "the organizer has seen this",
+   * and they have — the drawer is only a second view of a fill already in progress. Left unset, the
+   * preview blanks the date the organizer just picked (it hides `startDate` until Date & Schedule is
+   * visited, since that control opens pre-filled with a default) and the rail shows four sections they
+   * have already been through as untouched.
    */
   public switchToAdvanced(): void {
     this._variant.set('drawer');
+    this._visitedSections.update((visited) => new Set([...visited, ...MEETING_QUICK_CREATE_SECTIONS]));
   }
 
   public notifySaved(): void {

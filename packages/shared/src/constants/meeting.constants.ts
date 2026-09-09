@@ -345,6 +345,15 @@ export const MEETING_COMPOSER_SECTIONS = [
 ] as const;
 
 /**
+ * Sections the quick create dialog puts in front of the organizer.
+ * @description Everything the dialog's two columns cover — platform and features are the one section
+ * it leaves entirely at its form defaults. "Switch to advanced mode" marks these visited in the drawer
+ * it hands off to, because the rail and the preview both read `visitedSections` as "has the organizer
+ * seen this yet", and the dialog is where they saw it.
+ */
+export const MEETING_QUICK_CREATE_SECTIONS = ['details-access', 'date-schedule', 'guests', 'agenda-resources'] as const;
+
+/**
  * Feature rows the composer preview lists, in display order.
  * @description Only the labels are the preview's own — shorter wording than the section's toggle
  * titles. Controls and icons come from {@link MEETING_FEATURE_BY_KEY}, so renaming a feature key

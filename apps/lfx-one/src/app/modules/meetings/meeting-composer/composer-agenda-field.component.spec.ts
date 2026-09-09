@@ -2,7 +2,10 @@
 // SPDX-License-Identifier: MIT
 
 import { ComponentFixture, TestBed } from '@angular/core/testing';
+import type { AbstractControl } from '@angular/forms';
 import { MEETING_AGENDA_PROMPT_MAX_LENGTH } from '@lfx-one/shared/constants';
+import { MeetingType } from '@lfx-one/shared/enums';
+import type { MeetingTemplate } from '@lfx-one/shared/interfaces';
 import { CommitteeService } from '@services/committee.service';
 import { MeetingService } from '@services/meeting.service';
 import { PersonaService } from '@services/persona.service';
@@ -97,5 +100,88 @@ describe('ComposerAgendaFieldComponent — AI helper guard', () => {
 
     expect(formService.form().get('aiPrompt')?.errors).toBeNull();
     expect(formService.form().get('aiPrompt')?.valid).toBe(true);
+  });
+});
+
+/**
+ * Covers what an applied template or a generated agenda leaves behind on the controls it writes.
+ *
+ * `setValue` alone leaves a control pristine, and two surfaces read pristine as "still an untouched
+ * default": the quick dialog's type-change prefill skips only dirty controls, and edit mode's Save is
+ * dirty-gated. So a template the organizer deliberately picked was free for the next type switch to
+ * overwrite, and a generated agenda in edit mode couldn't be saved.
+ */
+describe('ComposerAgendaFieldComponent — writes count as edits', () => {
+  let fixture: ComponentFixture<ComposerAgendaFieldComponent>;
+  let component: ComposerAgendaFieldComponent;
+  let formService: MeetingComposerFormService;
+
+  const popoverStub = { hide: vi.fn() } as unknown as Popover;
+  // A duration off the form's 60-minute default, so `applyEstimatedDuration` actually writes rather
+  // than short-circuiting on the no-op guard.
+  const template: MeetingTemplate = {
+    id: 'template-1',
+    title: 'Weekly sync',
+    content: '1. Roll call',
+    meetingType: MeetingType.BOARD,
+    estimatedDuration: 30,
+  };
+  const controlOf = (name: string): AbstractControl | null => formService.form().get(name);
+
+  beforeEach(async () => {
+    TestBed.configureTestingModule({
+      providers: [
+        MeetingComposerFormService,
+        { provide: MessageService, useValue: { add: vi.fn() } },
+        { provide: CommitteeService, useValue: {} },
+        { provide: MeetingService, useValue: { generateAgenda: vi.fn(() => of({ agenda: 'Roll call', estimatedDuration: 45 })) } },
+        { provide: ProjectContextService, useValue: { activeContext: () => null, activeContextUid: () => null } },
+        { provide: PersonaService, useValue: { currentPersona: () => null } },
+        { provide: DialogService, useValue: { open: vi.fn() } },
+      ],
+    });
+    TestBed.overrideComponent(ComposerAgendaFieldComponent, { set: { template: '', imports: [] } });
+
+    formService = TestBed.inject(MeetingComposerFormService);
+    formService.initialize({ mode: 'create', projectUid: 'project-1' });
+
+    fixture = TestBed.createComponent(ComposerAgendaFieldComponent);
+    fixture.componentRef.setInput('form', formService.form());
+    component = fixture.componentInstance;
+    await fixture.whenStable();
+  });
+
+  it('marks the agenda dirty when a template is applied', () => {
+    component['onApplyTemplate'](template, popoverStub);
+
+    expect(controlOf('description')?.value).toBe(template.content);
+    expect(controlOf('description')?.dirty).toBe(true);
+  });
+
+  it('marks the duration controls dirty when a template estimate is applied', () => {
+    component['onApplyTemplate'](template, popoverStub);
+
+    expect(controlOf('duration')?.value).toBe(30);
+    expect(controlOf('duration')?.dirty).toBe(true);
+    expect(controlOf('customDuration')?.dirty).toBe(true);
+  });
+
+  it('marks the agenda and duration dirty when the AI helper returns a draft', () => {
+    formService.form().get('title')?.setValue('Quarterly review');
+
+    component['onGenerateAgenda'](popoverStub);
+
+    expect(controlOf('description')?.value).toBe('Roll call');
+    expect(controlOf('description')?.dirty).toBe(true);
+    expect(controlOf('duration')?.dirty).toBe(true);
+  });
+
+  // The estimate is dropped with a warning when it falls outside the custom-duration range, and a
+  // dropped write must not claim the organizer touched the field — that would deaden the quick
+  // dialog's prefill for a duration nobody set.
+  it('leaves the duration pristine when the estimate is out of range and gets dropped', () => {
+    component['onApplyTemplate']({ ...template, estimatedDuration: 100000 }, popoverStub);
+
+    expect(controlOf('duration')?.dirty).toBe(false);
   });
 });

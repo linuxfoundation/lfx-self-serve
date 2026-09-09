@@ -70,14 +70,48 @@ describe('QuickCreateDialogComponent', () => {
     expect(valueOf('description')).toBe('');
   });
 
-  it('leaves an earlier prefill in place when the organizer switches to Other', () => {
+  // The counterpart to the test above. Leaving the previous type's prefill standing put a Board title
+  // and a Board agenda under a meeting typed `Other`, with the "Pre-filled for this meeting type" hint
+  // gone — so nothing on screen said where the text had come from or that it no longer matched.
+  it('takes the previous type prefill back out when the organizer switches to Other', () => {
     selectType(MeetingType.BOARD);
-    const boardAgenda = valueOf('description');
+    expect(valueOf('description')).toBeTruthy();
 
     selectType(MeetingType.OTHER);
 
-    // Clearing here would throw away an agenda the organizer may already have edited; the hint under the
-    // field is what goes quiet, and it reads `seededAgenda`, which the skip resets.
-    expect(valueOf('description')).toBe(boardAgenda);
+    expect(valueOf('title')).toBe('');
+    expect(valueOf('description')).toBe('');
+  });
+
+  // The reason the clear is guarded on `pristine` rather than run unconditionally: once the organizer
+  // has written in the field it is theirs, and switching type must not throw it away.
+  it('keeps an edited agenda when the organizer switches to Other', () => {
+    selectType(MeetingType.BOARD);
+    formService.form().get('description')?.setValue('My own agenda');
+    formService.form().get('description')?.markAsDirty();
+
+    selectType(MeetingType.OTHER);
+
+    expect(valueOf('description')).toBe('My own agenda');
+  });
+
+  it('keeps an edited title when the organizer switches to Other', () => {
+    selectType(MeetingType.BOARD);
+    formService.form().get('title')?.setValue('Q3 planning');
+    formService.form().get('title')?.markAsDirty();
+
+    selectType(MeetingType.OTHER);
+
+    expect(valueOf('title')).toBe('Q3 planning');
+  });
+
+  it('replaces the previous type prefill rather than layering the new one over it', () => {
+    selectType(MeetingType.BOARD);
+    const boardTitle = valueOf('title');
+
+    selectType(MeetingType.TECHNICAL);
+
+    expect(valueOf('title')).not.toBe(boardTitle);
+    expect(valueOf('title')).toBeTruthy();
   });
 });
