@@ -791,17 +791,13 @@ export class MeetingCardComponent implements OnInit {
         // View-role viewers land on the public join/summary page; Manage-role viewers
         // (organizer, project writer, or project ED — meeting.organizer already reflects
         // this broadened check, see #2234) go to the admin details page with Reconcile
-        // Attendance and other admin actions. Lens-prefix mirrors editCommands below.
+        // Attendance and other admin actions. Tier-to-segment mapping reuses the same
+        // canonical utility as editCommands above.
         if (!meeting.organizer) {
           return `/meetings/${resourceId}`;
         }
-        if (meeting.is_foundation === true) {
-          return `/foundation/meetings/${resourceId}/details`;
-        }
-        if (meeting.is_foundation === false) {
-          return `/project/meetings/${resourceId}/details`;
-        }
-        return `/meetings/${resourceId}/details`;
+        const commands = getEntityCommands('meetings', resourceId, meeting.is_foundation, 'details');
+        return commands ? `/${commands.slice(1).join('/')}` : `/meetings/${resourceId}/details`;
       }
 
       const params = new URLSearchParams();

@@ -178,13 +178,14 @@
           </div>
         }
         @if (meeting.organizer) {
-          <div
+          <button
+            type="button"
             class="bg-white border border-gray-200 rounded-lg px-4 py-3 flex items-center gap-3 cursor-pointer hover:border-gray-300 transition-colors"
             (click)="openReconciliationDrawer()"
             data-testid="reconcile-attendance-btn">
             <i class="fa-light fa-user-check text-blue-500 text-sm"></i>
             <span class="text-sm font-medium text-gray-700">Reconcile Attendance</span>
-          </div>
+          </button>
         }
       </div>
     </div>
