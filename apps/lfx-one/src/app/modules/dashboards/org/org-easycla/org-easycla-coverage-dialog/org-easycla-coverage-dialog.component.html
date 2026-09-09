@@ -4,16 +4,42 @@
 <h3 class="sr-only" data-testid="org-easycla-coverage-title">Projects covered by {{ claGroupName }}</h3>
 @if (projects.length) {
   <p class="mb-3 text-xs text-gray-500" data-testid="org-easycla-coverage-hint">{{ coverageHint }}</p>
+
   <!--
-    The list scrolls inside the dialog rather than growing it, as the design has it. A foundation-wide
-    agreement can name a dozen projects or more, and without this the Close control below is pushed
-    off the bottom on the rows most likely to be opened.
+    The dialog header is the visible title, so this field has no label of its own to point at; the
+    placeholder is not one, being unreadable to assistive tech the moment a term is typed.
   -->
-  <ul class="flex max-h-80 flex-col gap-2 overflow-y-auto" data-testid="org-easycla-coverage-list">
-    @for (project of projects; track project.projectName) {
-      <li class="text-sm text-gray-800" data-testid="org-easycla-coverage-project">{{ project.projectName }}</li>
-    }
-  </ul>
+  <label for="org-easycla-coverage-search-input" class="sr-only">Search covered projects</label>
+  <lfx-input-text
+    [form]="searchForm"
+    control="search"
+    inputId="org-easycla-coverage-search-input"
+    placeholder="Search covered projects…"
+    icon="fa-light fa-magnifying-glass"
+    styleClass="w-full"
+    size="small"
+    autocomplete="off"
+    dataTest="org-easycla-coverage-search" />
+
+  @if (filteredProjects().length) {
+    <!--
+      The list scrolls inside the dialog rather than growing it, as the design has it. A foundation-wide
+      agreement can name a dozen projects or more, and without this the Close control below is pushed
+      off the bottom on the rows most likely to be opened.
+
+      `tabindex` because a scroll container holding no focusable content is unreachable by keyboard —
+      the clipped names could not be scrolled into view at all. Unconditional rather than gated on
+      overflowing: whether it overflows is a rendered height, so any project-count threshold standing
+      in for it is a guess that breaks the moment a row's height changes.
+    -->
+    <ul class="mt-3 flex max-h-80 flex-col gap-2 overflow-y-auto" tabindex="0" aria-label="Covered projects" data-testid="org-easycla-coverage-list">
+      @for (project of filteredProjects(); track project.projectName) {
+        <li class="text-sm text-gray-800" data-testid="org-easycla-coverage-project">{{ project.projectName }}</li>
+      }
+    </ul>
+  } @else {
+    <p class="mt-3 text-sm text-gray-700" data-testid="org-easycla-coverage-no-match">No covered projects match your search.</p>
+  }
 } @else {
   <p class="text-sm text-gray-600" data-testid="org-easycla-coverage-empty">No individual projects are listed. This agreement covers the foundation.</p>
 }

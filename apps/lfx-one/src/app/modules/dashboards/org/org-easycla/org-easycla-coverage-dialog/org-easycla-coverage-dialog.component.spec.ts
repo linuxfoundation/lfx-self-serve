@@ -58,6 +58,20 @@ describe('OrgEasyclaCoverageDialogComponent', () => {
     return fixture;
   }
 
+  /** Types into the real field rather than the protected form, so the reactive-forms wiring is under test too. */
+  function search(fixture: ComponentFixture<OrgEasyclaCoverageDialogComponent>, term: string): void {
+    const input = fixture.nativeElement.querySelector('[data-test="org-easycla-coverage-search"]') as HTMLInputElement;
+    input.value = term;
+    input.dispatchEvent(new Event('input'));
+    fixture.detectChanges();
+  }
+
+  function projectNames(fixture: ComponentFixture<OrgEasyclaCoverageDialogComponent>): (string | undefined)[] {
+    return Array.from(fixture.nativeElement.querySelectorAll('[data-testid="org-easycla-coverage-project"]')).map((el) =>
+      (el as HTMLElement).textContent?.trim()
+    );
+  }
+
   it('lists every covered project', async () => {
     const fixture = await render({
       claGroupName: 'Acme CLA',
@@ -128,5 +142,94 @@ describe('OrgEasyclaCoverageDialogComponent', () => {
     const fixture = await render({ claGroupName: 'Acme CLA', projects: [] });
 
     expect(fixture.nativeElement.querySelector('[data-testid="org-easycla-coverage-close"]')).not.toBeNull();
+  });
+
+  it('keeps the scrolling list reachable by keyboard', async () => {
+    const fixture = await render({
+      claGroupName: 'Acme CLA',
+      projects: Array.from({ length: 14 }, (_, i) => ({ projectName: `Project ${i + 1}` })),
+    });
+    const list = fixture.nativeElement.querySelector('[data-testid="org-easycla-coverage-list"]') as HTMLElement | null;
+
+    // The list holds no links or buttons, so without a tab stop of its own the clipped names cannot
+    // be scrolled into view without a pointer.
+    expect(list?.getAttribute('tabindex')).toBe('0');
+    expect(list?.getAttribute('aria-label')).toBe('Covered projects');
+  });
+
+  describe('search', () => {
+    const projects = [{ projectName: 'Cascade' }, { projectName: 'Driftwood' }, { projectName: 'Cascadia Tools' }];
+
+    it('narrows the list to the projects matching the term', async () => {
+      const fixture = await render({ claGroupName: 'Acme CLA', projects });
+
+      search(fixture, 'casc');
+
+      expect(projectNames(fixture)).toEqual(['Cascade', 'Cascadia Tools']);
+    });
+
+    it('matches regardless of case', async () => {
+      const fixture = await render({ claGroupName: 'Acme CLA', projects });
+
+      search(fixture, 'DRIFTWOOD');
+
+      expect(projectNames(fixture)).toEqual(['Driftwood']);
+    });
+
+    it('matches on any part of a name, not only its start', async () => {
+      const fixture = await render({ claGroupName: 'Acme CLA', projects });
+
+      search(fixture, 'wood');
+
+      expect(projectNames(fixture)).toEqual(['Driftwood']);
+    });
+
+    it('says nothing matched rather than showing an empty list', async () => {
+      const fixture = await render({ claGroupName: 'Acme CLA', projects });
+
+      search(fixture, 'nimbus');
+
+      // An empty list with no explanation reads as a load failure, and the caveat above it still
+      // claims the agreement covers projects — so the dialog would contradict itself in silence.
+      expect(fixture.nativeElement.querySelector('[data-testid="org-easycla-coverage-list"]')).toBeNull();
+      expect(fixture.nativeElement.querySelector('[data-testid="org-easycla-coverage-no-match"]')?.textContent?.trim()).toBe(
+        'No covered projects match your search.'
+      );
+    });
+
+    it('restores the full list when the term is cleared', async () => {
+      const fixture = await render({ claGroupName: 'Acme CLA', projects });
+
+      search(fixture, 'nimbus');
+      search(fixture, '');
+
+      expect(projectNames(fixture)).toEqual(['Cascade', 'Driftwood', 'Cascadia Tools']);
+      expect(fixture.nativeElement.querySelector('[data-testid="org-easycla-coverage-no-match"]')).toBeNull();
+    });
+
+    it('treats a whitespace-only term as no term at all', async () => {
+      const fixture = await render({ claGroupName: 'Acme CLA', projects });
+
+      search(fixture, '   ');
+
+      // Without trimming, a stray space matches nothing and the dialog claims the agreement covers
+      // no projects — the worst reading available, produced by the least deliberate input.
+      expect(projectNames(fixture)).toEqual(['Cascade', 'Driftwood', 'Cascadia Tools']);
+    });
+
+    it('gives the field an accessible name, since the dialog header is not its label', async () => {
+      const fixture = await render({ claGroupName: 'Acme CLA', projects });
+      const input = fixture.nativeElement.querySelector('[data-test="org-easycla-coverage-search"]') as HTMLInputElement | null;
+      const label = fixture.nativeElement.querySelector('label[for="org-easycla-coverage-search-input"]') as HTMLElement | null;
+
+      expect(input?.id).toBe('org-easycla-coverage-search-input');
+      expect(label?.textContent?.trim()).toBe('Search covered projects');
+    });
+
+    it('offers no search where there is no list to search', async () => {
+      const fixture = await render({ claGroupName: 'Acme CLA', foundationName: 'Acme Foundation', projects: [] });
+
+      expect(fixture.nativeElement.querySelector('[data-test="org-easycla-coverage-search"]')).toBeNull();
+    });
   });
 });

@@ -1,11 +1,14 @@
 // Copyright The Linux Foundation and each contributor to LFX.
 // SPDX-License-Identifier: MIT
 
-import { Component, inject } from '@angular/core';
+import { Component, computed, inject, Signal } from '@angular/core';
+import { FormControl, FormGroup } from '@angular/forms';
+import { toSignal } from '@angular/core/rxjs-interop';
 import type { OrgClaCoverageDialogData, OrgClaGroup, OrgClaGroupProject } from '@lfx-one/shared/interfaces';
 import { DynamicDialogConfig, DynamicDialogRef } from 'primeng/dynamicdialog';
 
 import { ButtonComponent } from '@components/button/button.component';
+import { InputTextComponent } from '@components/input-text/input-text.component';
 
 /**
  * How this dialog is opened, owned here rather than by each caller.
@@ -31,12 +34,14 @@ export function orgClaCoverageDialogConfig(group: OrgClaGroup): DynamicDialogCon
 
 @Component({
   selector: 'lfx-org-easycla-coverage-dialog',
-  imports: [ButtonComponent],
+  imports: [ButtonComponent, InputTextComponent],
   templateUrl: './org-easycla-coverage-dialog.component.html',
 })
 export class OrgEasyclaCoverageDialogComponent {
   private readonly dialogConfig = inject<DynamicDialogConfig<OrgClaCoverageDialogData>>(DynamicDialogConfig);
   private readonly dialogRef = inject(DynamicDialogRef);
+
+  protected readonly searchForm = new FormGroup({ search: new FormControl('', { nonNullable: true }) });
 
   protected readonly claGroupName = this.dialogConfig.data?.claGroupName ?? '';
   protected readonly projects: OrgClaGroupProject[] = this.dialogConfig.data?.projects ?? [];
@@ -47,7 +52,20 @@ export class OrgEasyclaCoverageDialogComponent {
     ? `Part of ${this.dialogConfig.data.foundationName} — this CLA covers the projects below, not necessarily every project in the foundation.`
     : 'This CLA covers the projects below.';
 
+  // Undebounced, unlike the org pages' search fields. Those debounce a filter over a roster or a
+  // server query; this one filters an array the dialog was handed at construction, so the work per
+  // keystroke is a substring test over a handful of names and a delay would only be felt as lag.
+  private readonly searchTerm = toSignal(this.searchForm.controls.search.valueChanges, { initialValue: '' });
+  protected readonly filteredProjects = this.initFilteredProjects();
+
   protected close(): void {
     this.dialogRef.close();
+  }
+
+  private initFilteredProjects(): Signal<OrgClaGroupProject[]> {
+    return computed(() => {
+      const term = this.searchTerm().trim().toLowerCase();
+      return term ? this.projects.filter((project) => project.projectName.toLowerCase().includes(term)) : this.projects;
+    });
   }
 }
