@@ -6,6 +6,7 @@ import { FormControl, FormGroup } from '@angular/forms';
 import { toSignal } from '@angular/core/rxjs-interop';
 import type { OrgClaCoverageDialogData, OrgClaGroup, OrgClaGroupProject } from '@lfx-one/shared/interfaces';
 import { DynamicDialogConfig, DynamicDialogRef } from 'primeng/dynamicdialog';
+import { scan } from 'rxjs';
 
 import { ButtonComponent } from '@components/button/button.component';
 import { InputTextComponent } from '@components/input-text/input-text.component';
@@ -53,13 +54,30 @@ export class OrgEasyclaCoverageDialogComponent {
   // One source for both ends of the no-match state: the visible line and the announcement below
   // have to say the same thing, and holding the sentence twice is how they stop.
   protected readonly noMatchMessage = 'No covered projects match your search.';
+  protected readonly restoredMessage = 'Search cleared. Showing all covered projects.';
 
   protected readonly searchForm = new FormGroup({ search: new FormControl('', { nonNullable: true }) });
 
   // Undebounced, unlike the org pages' search fields. Those debounce a filter over a roster or a
   // server query; this one filters an array the dialog was handed at construction, so the work per
   // keystroke is a substring test over a handful of names and a delay would only be felt as lag.
-  private readonly searchTerm = toSignal(this.searchForm.controls.search.valueChanges, { initialValue: '' });
+  private readonly searchState = toSignal(
+    this.searchForm.controls.search.valueChanges.pipe(
+      scan(
+        (prev: { trimmed: string; justCleared: boolean }, value: string) => {
+          const trimmed = value.trim();
+          return {
+            trimmed,
+            // Empty on open and empty after a clear are the same value; `justCleared` is the one
+            // event that means the full list came back, not the initial render.
+            justCleared: prev.trimmed.length > 0 && trimmed.length === 0,
+          };
+        },
+        { trimmed: '', justCleared: false }
+      )
+    ),
+    { initialValue: { trimmed: '', justCleared: false } }
+  );
   protected readonly filteredProjects = this.initFilteredProjects();
   protected readonly filterAnnouncement = this.initFilterAnnouncement();
 
@@ -69,7 +87,7 @@ export class OrgEasyclaCoverageDialogComponent {
 
   private initFilteredProjects(): Signal<OrgClaGroupProject[]> {
     return computed(() => {
-      const term = this.searchTerm().trim().toLowerCase();
+      const term = this.searchState().trimmed.toLowerCase();
       return term ? this.projects.filter((project) => project.projectName.toLowerCase().includes(term)) : this.projects;
     });
   }
@@ -82,12 +100,13 @@ export class OrgEasyclaCoverageDialogComponent {
    * already populated, which is exactly the case a live region is frequently not announced for.
    *
    * Computed from the filtered set rather than assigned per keystroke, so the narration cannot
-   * disagree with the rows on screen. Silent until a term is typed: announcing the full count when
-   * the view opens states something the viewer never asked.
+   * disagree with the rows on screen. Silent on open and on a whitespace-only field; announces
+   * when a clear puts the full list back.
    */
   private initFilterAnnouncement(): Signal<string> {
     return computed(() => {
-      if (!this.searchTerm().trim()) return '';
+      const { trimmed, justCleared } = this.searchState();
+      if (!trimmed) return justCleared ? this.restoredMessage : '';
 
       const count = this.filteredProjects().length;
       if (count === 0) return this.noMatchMessage;

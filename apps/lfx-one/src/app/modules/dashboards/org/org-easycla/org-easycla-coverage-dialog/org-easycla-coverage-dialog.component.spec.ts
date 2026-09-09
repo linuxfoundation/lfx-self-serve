@@ -267,11 +267,12 @@ describe('OrgEasyclaCoverageDialogComponent', () => {
       expect(region()?.textContent?.trim()).toBe('No covered projects match your search.');
 
       search(fixture, '');
-      expect(region()?.textContent?.trim()).toBe('');
+      expect(region()?.textContent?.trim()).toBe('Search cleared. Showing all covered projects.');
 
       // The announcement trims separately from the filter, so without this a blank term would
       // narrate "3 projects match your search." over a list correctly showing everything — the
-      // full-count noise the region exists to suppress.
+      // full-count noise the region exists to suppress. Whitespace-only is not a search, so it
+      // stays silent even after a real term was typed and cleared.
       search(fixture, '   ');
       expect(region()?.textContent?.trim()).toBe('');
     });
