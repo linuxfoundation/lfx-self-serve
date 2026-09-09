@@ -121,10 +121,21 @@ export class FeatureFlagService {
    *
    * Reports once per call, not deduped across calls — intentional: per-navigation frequency is
    * the signal (a sustained outage should show as sustained RUM volume, not a single flat line).
+   *
+   * Short-circuits on a provider already in ERROR status instead of waiting out `timeoutMs` again —
+   * the pinned `@openfeature/launchdarkly-client-provider` (0.3.3) sets ERROR when its own bootstrap
+   * `initializationTimeout` elapses but never emits a later `Ready`/`Error` event for that attempt, so
+   * without this check every guard would burn its own full budget on top of the bootstrap wait that
+   * already failed, turning a real outage into a stall of roughly double `FEATURE_FLAG_READY_TIMEOUT_MS`.
    */
   public async waitForReady(context: FeatureFlagGuardContext, timeoutMs = FEATURE_FLAG_READY_TIMEOUT_MS): Promise<boolean> {
     if (this.isProviderReady()) {
       return true;
+    }
+
+    if (OpenFeature.getClient().providerStatus === ProviderStatus.ERROR) {
+      this.dataDogRumService.addError(new Error('Feature flag provider not ready before guard timeout'), context);
+      return false;
     }
 
     const ready = await firstValueFrom(

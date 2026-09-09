@@ -3,6 +3,7 @@
 
 import { TestBed } from '@angular/core/testing';
 import { FEATURE_FLAG_READY_TIMEOUT_MS } from '@lfx-one/shared';
+import { Client, OpenFeature, ProviderStatus } from '@openfeature/web-sdk';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
 import { DataDogRumService } from './datadog-rum.service';
@@ -82,6 +83,18 @@ describe('FeatureFlagService', () => {
     expect(settled).toBe(false);
 
     await vi.advanceTimersByTimeAsync(1);
+    const result = await pending;
+
+    expect(result).toBe(false);
+    expect(addError).toHaveBeenCalledTimes(1);
+  });
+
+  it('resolves false immediately, without waiting out timeoutMs, when the provider is in ERROR status', async () => {
+    vi.useFakeTimers();
+    vi.spyOn(OpenFeature, 'getClient').mockReturnValue({ providerStatus: ProviderStatus.ERROR } as unknown as Client);
+
+    const pending = service.waitForReady(context, 5000);
+    // No timers advanced — a pending promise here would mean this path fell through to the rxjs wait.
     const result = await pending;
 
     expect(result).toBe(false);
