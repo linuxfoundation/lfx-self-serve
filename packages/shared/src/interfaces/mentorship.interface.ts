@@ -152,6 +152,11 @@ export interface MentorshipInvitableUser {
   avatarUrl?: string;
 }
 
+export type MentorshipInvitableUsersResponse = {
+  data: MentorshipInvitableUser[];
+  total: number;
+};
+
 /** Result of the mock unique-name check. */
 export interface MentorshipNameAvailability {
   available: boolean;

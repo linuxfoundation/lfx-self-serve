@@ -3,9 +3,11 @@
 
 import {
   EMPTY_MENTORSHIP_PROGRAM_LISTS,
+  MENTORSHIP_INVITABLE_USER_PAGE_SIZE,
   MENTORSHIP_LF_PROJECT_PAGE_SIZE,
   MENTORSHIP_PROGRAM_STATUSES,
   MENTORSHIP_PROJECT_OPTIONS,
+  MOCK_MENTORSHIP_INVITABLE_USERS,
   MOCK_MENTORSHIP_LF_PROJECTS,
   MOCK_MENTORSHIP_PROGRAM_LISTS,
   MOCK_MENTORSHIP_PROGRAMS,
@@ -13,6 +15,7 @@ import {
 import {
   MentorshipCiiBadge,
   MentorshipEnrollRequest,
+  MentorshipInvitableUsersResponse,
   MentorshipLfProjectsResponse,
   MentorshipNameAvailability,
   MentorshipProgram,
@@ -140,6 +143,23 @@ export class MentorshipService {
     const filtered = needle ? MOCK_MENTORSHIP_LF_PROJECTS.filter((project) => project.name.toLowerCase().includes(needle)) : [...MOCK_MENTORSHIP_LF_PROJECTS];
     const page = paginateOffsetLimit(filtered, options.offset ?? 0, options.limit ?? MENTORSHIP_LF_PROJECT_PAGE_SIZE);
     logger.debug(req, 'mentorship_get_lf_projects', 'LF projects page built', { count: page.data.length, total: page.total });
+    return page;
+  }
+
+  /**
+   * LFX users that can be invited as mentors. Not program-scoped — this is the
+   * general user pool; callers exclude anyone already on their own list.
+   */
+  public async getInvitableUsers(req: Request, options: { search?: string; offset?: number; limit?: number } = {}): Promise<MentorshipInvitableUsersResponse> {
+    logger.debug(req, 'mentorship_get_invitable_users', 'Filtering invitable users', options);
+
+    const needle = options.search?.trim().toLowerCase() ?? '';
+    const filtered = needle
+      ? MOCK_MENTORSHIP_INVITABLE_USERS.filter((user) => user.name.toLowerCase().includes(needle) || user.email.toLowerCase().includes(needle))
+      : [...MOCK_MENTORSHIP_INVITABLE_USERS];
+
+    const page = paginateOffsetLimit(filtered, options.offset ?? 0, options.limit ?? MENTORSHIP_INVITABLE_USER_PAGE_SIZE);
+    logger.debug(req, 'mentorship_get_invitable_users', 'Invitable users page built', { count: page.data.length, total: page.total });
     return page;
   }
 

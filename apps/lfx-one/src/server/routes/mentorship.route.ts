@@ -14,6 +14,7 @@ router.get('/programs/:programId', (req, res, next) => mentorshipController.getP
 router.get('/programs', (req, res, next) => mentorshipController.getPrograms(req, res, next));
 router.post('/programs', blockDuringImpersonation, (req, res, next) => mentorshipController.enrollProgram(req, res, next));
 router.get('/lf-projects', (req, res, next) => mentorshipController.getLfProjects(req, res, next));
+router.get('/invitable-users', (req, res, next) => mentorshipController.getInvitableUsers(req, res, next));
 router.get('/cii/:projectId', (req, res, next) => mentorshipController.getCiiBadge(req, res, next));
 
 export default router;

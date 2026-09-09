@@ -3,6 +3,7 @@
 
 import type {
   MentorshipInvitableUser,
+  MentorshipInvitableUsersResponse,
   MentorshipProgramLists,
   MentorshipProgramMentee,
   MentorshipProgramMentor,
@@ -15,6 +16,11 @@ export const EMPTY_MENTORSHIP_PROGRAM_LISTS: MentorshipProgramLists = {
   mentors: [],
   terms: [],
 };
+
+export const EMPTY_MENTORSHIP_INVITABLE_USERS_RESPONSE: MentorshipInvitableUsersResponse = { data: [], total: 0 };
+
+/** Default page size for the Mentors-tab invite picker. */
+export const MENTORSHIP_INVITABLE_USER_PAGE_SIZE = 50;
 
 const gridflowMentees: MentorshipProgramMentee[] = [
   {
