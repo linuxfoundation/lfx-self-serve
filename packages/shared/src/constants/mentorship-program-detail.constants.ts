@@ -359,7 +359,41 @@ export const MOCK_MENTORSHIP_PROGRAM_LISTS: Record<string, MentorshipProgramList
     ],
   },
   'thanos-fan-out-query-observability': {
-    mentees: [],
+    // Completed program: these surface on the Past Mentees tab rather than Current Mentees.
+    mentees: [
+      {
+        id: 'mnt_thanos_1',
+        name: 'Dilan Ferreira',
+        email: 'dilan.ferreira@example.com',
+        status: 'graduated',
+        termName: 'Summer 2026',
+        appliedOn: '2026-03-20',
+      },
+      {
+        id: 'mnt_thanos_2',
+        name: 'Yuki Tanaka',
+        email: 'yuki.tanaka@example.com',
+        status: 'graduated',
+        termName: 'Summer 2026',
+        appliedOn: '2026-03-22',
+      },
+      {
+        id: 'mnt_thanos_3',
+        name: 'Omar Haddad',
+        email: 'omar.haddad@example.com',
+        status: 'withdrawn',
+        termName: 'Summer 2026',
+        appliedOn: '2026-03-25',
+      },
+      {
+        id: 'mnt_thanos_4',
+        name: 'Ines Duarte',
+        email: 'ines.duarte@example.com',
+        status: 'declined',
+        termName: 'Spring 2026',
+        appliedOn: '2026-01-15',
+      },
+    ],
     applicants: [],
     mentors: [
       {

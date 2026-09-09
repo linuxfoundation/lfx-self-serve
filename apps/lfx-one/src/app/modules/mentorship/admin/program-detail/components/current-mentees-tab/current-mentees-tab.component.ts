@@ -18,11 +18,16 @@ import {
   MENTORSHIP_MENTEE_ROWS_PER_PAGE_OPTIONS,
   MENTORSHIP_MENTEE_STATUS_BADGE_CLASSES,
   MENTORSHIP_MENTEE_STATUS_LABELS,
-  MENTORSHIP_PROGRAM_AVATAR_PALETTE,
   MENTORSHIP_PROGRAM_DETAIL_COMING_SOON,
 } from '@lfx-one/shared/constants';
 import { MentorshipMenteeStatus, MentorshipProgramMentee } from '@lfx-one/shared/interfaces';
-import { formatMentorshipTaskProgress, matchesMentorshipPersonSearch, mentorshipMenteeActionsFor, mentorshipPersonInitials } from '@lfx-one/shared/utils';
+import {
+  formatMentorshipTaskProgress,
+  matchesMentorshipPersonSearch,
+  mentorshipMenteeActionsFor,
+  mentorshipPersonAvatarClass,
+  mentorshipPersonInitials,
+} from '@lfx-one/shared/utils';
 import { MenuItem, MessageService } from 'primeng/api';
 import { DialogService, DynamicDialogRef } from 'primeng/dynamicdialog';
 import { startWith, take } from 'rxjs';
@@ -142,12 +147,11 @@ export class CurrentMenteesTabComponent {
   }
 
   private toRow(person: MentorshipProgramMentee) {
-    const seed = person.name.length > 0 ? person.name.charCodeAt(0) : 0;
     const note = person.note?.trim() ?? '';
     return {
       ...person,
       initials: mentorshipPersonInitials(person.name),
-      avatarStyleClass: MENTORSHIP_PROGRAM_AVATAR_PALETTE[seed % MENTORSHIP_PROGRAM_AVATAR_PALETTE.length],
+      avatarStyleClass: mentorshipPersonAvatarClass(person.name),
       statusLabel: MENTORSHIP_MENTEE_STATUS_LABELS[person.status],
       statusBadgeClass: MENTORSHIP_MENTEE_STATUS_BADGE_CLASSES[person.status],
       taskLabel: formatMentorshipTaskProgress(person.tasksSubmitted, person.tasksTotal),

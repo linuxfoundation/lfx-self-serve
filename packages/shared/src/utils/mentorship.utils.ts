@@ -16,7 +16,7 @@ import {
   MENTORSHIP_MAX_OPEN_TERMS_MESSAGE,
   MENTORSHIP_TERM_NAME_MAX,
 } from '../constants/mentorship-enroll.constants';
-import { MENTORSHIP_MENTEE_ACTIONS } from '../constants/mentorship.constants';
+import { MENTORSHIP_MENTEE_ACTIONS, MENTORSHIP_PROGRAM_AVATAR_PALETTE } from '../constants/mentorship.constants';
 import type {
   MentorshipEnrollFieldErrors,
   MentorshipEnrollRequest,
@@ -366,6 +366,15 @@ export function mentorshipOpenTermCount(terms: ReadonlyArray<Pick<MentorshipProg
 
 export function mentorshipTermHasApplications(term: Pick<MentorshipProgramTermRow, 'pending' | 'declined' | 'accepted' | 'graduated'>): boolean {
   return term.pending + term.declined + term.accepted + term.graduated > 0;
+}
+
+/**
+ * Deterministic avatar tint for a person, seeded from their display name so the
+ * same person keeps the same colour across every program-detail tab.
+ */
+export function mentorshipPersonAvatarClass(name: string): string {
+  const seed = name.length > 0 ? name.charCodeAt(0) : 0;
+  return MENTORSHIP_PROGRAM_AVATAR_PALETTE[seed % MENTORSHIP_PROGRAM_AVATAR_PALETTE.length];
 }
 
 /** Two-letter initials from the first two whitespace-delimited tokens, e.g. "Alex Rivera" → "AR". */

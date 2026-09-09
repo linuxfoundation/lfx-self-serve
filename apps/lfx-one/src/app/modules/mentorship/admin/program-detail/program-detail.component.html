@@ -29,7 +29,11 @@
         [attr.aria-labelledby]="'mentorship-program-detail-tab-trigger-' + activeTab()">
         @switch (activeTab()) {
           @case ('mentees') {
-            <lfx-mentorship-current-mentees-tab [mentees]="mentees()" />
+            @if (isCompleted()) {
+              <lfx-mentorship-past-mentees-tab [mentees]="mentees()" />
+            } @else {
+              <lfx-mentorship-current-mentees-tab [mentees]="mentees()" />
+            }
           }
           @case ('applicants') {
             <lfx-mentorship-applicants-tab [applicants]="applicants()" />

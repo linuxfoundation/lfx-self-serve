@@ -103,7 +103,7 @@ export const MENTORSHIP_MENTEE_STATUS_BADGE_CLASSES: Record<MentorshipMenteeStat
   accepted: 'bg-emerald-50 text-emerald-700',
   declined: 'bg-red-50 text-red-600',
   withdrawn: 'bg-gray-100 text-gray-600',
-  graduated: 'bg-violet-50 text-violet-700',
+  graduated: 'bg-emerald-50 text-emerald-700',
 };
 
 /**
@@ -111,6 +111,18 @@ export const MENTORSHIP_MENTEE_STATUS_BADGE_CLASSES: Record<MentorshipMenteeStat
  * only, so its status filter offers these two rather than the full mentee lifecycle.
  */
 export const MENTORSHIP_CURRENT_MENTEE_STATUSES: readonly MentorshipMenteeStatus[] = ['accepted', 'graduated'];
+
+/**
+ * Statuses the Past Mentees tab can list. A completed program has no enrolled
+ * mentees left, so the first tab shows finished participations instead.
+ */
+export const MENTORSHIP_PAST_MENTEE_STATUSES: readonly MentorshipMenteeStatus[] = ['withdrawn', 'declined', 'graduated'];
+
+/**
+ * Label the `mentees` tab takes on for a completed program. The tab keeps its
+ * `mentees` value so counts, routing, and ARIA wiring are unchanged.
+ */
+export const MENTORSHIP_PAST_MENTEES_TAB_LABEL = 'Past Mentees';
 
 /**
  * Row actions on the admin Current Mentees tab. Source of the
