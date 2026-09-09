@@ -175,7 +175,7 @@ export class MeetingPreferenceService {
   }
 
   private asKnownErrorType(value: unknown): PreferredEmailErrorType | undefined {
-    const KNOWN_TYPES: PreferredEmailErrorType[] = ['validation', 'not_found', 'conflict', 'internal', 'unavailable'];
+    const KNOWN_TYPES: PreferredEmailErrorType[] = ['validation', 'forbidden', 'not_found', 'conflict', 'internal', 'unavailable'];
     return KNOWN_TYPES.includes(value as PreferredEmailErrorType) ? (value as PreferredEmailErrorType) : undefined;
   }
 
