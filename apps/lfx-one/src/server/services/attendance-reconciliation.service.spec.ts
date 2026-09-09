@@ -5,15 +5,21 @@ import { beforeEach, describe, expect, it, vi } from 'vitest';
 
 // Mirrors access-check.service.spec.ts: the `@lfx-one/shared/*` alias isn't wired into this app's
 // vitest config, so runtime collaborators (constants + the services this service instantiates
-// internally) need mocking.
-vi.mock('@lfx-one/shared/constants', () => ({
-  RECONCILIATION_MAX_ATTENDEES_PER_AI_CALL: 30,
-  RECONCILIATION_MAX_CANDIDATES_PER_AI_CALL: 50,
-  RECONCILIATION_MAX_CONCURRENT_AI_CALLS: 3,
-  RECONCILIATION_MAX_PRIOR_OCCURRENCES: 10,
-  RECONCILIATION_BOT_NAME_PATTERN:
-    /\bnotetaker\b|\botter\.?ai\b|\bfireflies\.?ai\b|\bfathom\.?(ai|video)?\s*notetaker\b|\bgong\.?io\b|\btl;?dv\b|\bread\.?ai\b|\bgrain\.?com\b|\bavoma\b/i,
-}));
+// internally) need mocking. RECONCILIATION_BOT_NAME_PATTERN comes from the real module (like
+// committee-activity.service.spec.ts does for its constants) so this suite can't drift from the
+// actual heuristic — a hand-copied regex literal here could stay green even if the real one changed.
+vi.mock('@lfx-one/shared/constants', async () => {
+  const meeting = await vi.importActual<typeof import('../../../../../packages/shared/src/constants/meeting.constants')>(
+    '../../../../../packages/shared/src/constants/meeting.constants'
+  );
+  return {
+    RECONCILIATION_MAX_ATTENDEES_PER_AI_CALL: 30,
+    RECONCILIATION_MAX_CANDIDATES_PER_AI_CALL: 50,
+    RECONCILIATION_MAX_CONCURRENT_AI_CALLS: 3,
+    RECONCILIATION_MAX_PRIOR_OCCURRENCES: 10,
+    RECONCILIATION_BOT_NAME_PATTERN: meeting.RECONCILIATION_BOT_NAME_PATTERN,
+  };
+});
 
 const { getPastMeetingParticipants, getPastOccurrencesForMeeting, updatePastMeetingParticipant } = vi.hoisted(() => ({
   getPastMeetingParticipants: vi.fn(),

@@ -724,9 +724,15 @@ export const RECONCILIATION_MAX_CANDIDATES_PER_AI_CALL = 50;
  * "Fireflies.ai Notetaker") so they can be excluded from reconciliation entirely — a bot is a tool
  * riding along on the call, not a person needing identity verification, and it has no reason to be
  * offered as a match candidate or queued for admin review against a real attendee.
+ *
+ * Fathom/Gong/Grain are matched only when the bare product name is the *entire* (trimmed) display
+ * name — see `isNotetakerBot`'s `.trim()` — rather than as a substring anywhere in it, unlike the
+ * other tools here. Those three are also plausible real first/last names, and these bots' Zoom
+ * display name is typically just the bare product word with nothing else, so anchoring to the
+ * whole string still catches the bot while not excluding, e.g., an attendee named "Grain Adeyemi".
  */
 export const RECONCILIATION_BOT_NAME_PATTERN =
-  /\bnotetaker\b|\botter\.?ai\b|\bfireflies\.?ai\b|\bfathom\.?(ai|video)?\s*notetaker\b|\bgong\.?io\b|\btl;?dv\b|\bread\.?ai\b|\bgrain\.?com\b|\bavoma\b/i;
+  /\bnotetaker\b|\botter\.?ai\b|\bfireflies\.?ai\b|\btl;?dv\b|\bread\.?ai\b|\bavoma\b|^fathom(\.?(ai|video))?\s*(notetaker)?$|^gong(\.?io)?\s*(notetaker)?$|^grain(\.?com)?\s*(notetaker)?$/i;
 
 /**
  * The `AttachmentCategory` (`meeting-attachment.interface.ts`) value CommitteeActivityService's

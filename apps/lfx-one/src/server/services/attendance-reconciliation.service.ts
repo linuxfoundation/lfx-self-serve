@@ -315,7 +315,7 @@ export class AttendanceReconciliationService {
    * pool (see #2253).
    */
   private isNotetakerBot(attendee: PastMeetingParticipant): boolean {
-    return RECONCILIATION_BOT_NAME_PATTERN.test(this.getDisplayName(attendee));
+    return RECONCILIATION_BOT_NAME_PATTERN.test(this.getDisplayName(attendee).trim());
   }
 
   /**
