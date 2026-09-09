@@ -8,12 +8,13 @@ import type {
   FormationItem,
   FormationItemStatus,
   FormationSubItem,
-  FormationSubStage,
   FormationTemplate,
   FormationTemplateSubItem,
   FormationUser,
 } from '@lfx-one/shared/interfaces';
 import crypto from 'crypto';
+
+import { deriveFormationSubStage } from './formation-mapper.helper';
 
 /**
  * Fixture data generators for the Formation Checklist section and Formations queue (GH-1958),
@@ -74,18 +75,6 @@ function deriveSubItems(seed: string, subItems: FormationTemplateSubItem[] | und
   }));
 }
 
-function mapProjectStageToSubStage(stage: ProjectStage | string | undefined): FormationSubStage {
-  switch (stage) {
-    case ProjectStage.FormationExploratory:
-      return 'exploratory';
-    case ProjectStage.FormationOnHold:
-      return 'on_hold';
-    case ProjectStage.FormationEngaged:
-    default:
-      return 'engaged';
-  }
-}
-
 interface GenerateFormationInput {
   projectUid: string;
   projectSlug: string;
@@ -94,8 +83,14 @@ interface GenerateFormationInput {
   stage: ProjectStage | string | undefined;
 }
 
-/** Deterministic per-project fixture generator (SHA-256-seeded off `projectUid`, never `Math.random()`) — same request yields the same response every reload. */
-export function generateMockFormation(input: GenerateFormationInput): { formation: Formation; items: FormationItem[] } {
+/**
+ * Deterministic per-project fixture generator (SHA-256-seeded off `projectUid`, never
+ * `Math.random()`) — same request yields the same response every reload. The returned
+ * `formation.uid` is always set (unlike the checklist read's own optional `Formation.uid` — see
+ * its doc comment) — narrowed here so callers can hand it straight to the write store, which is
+ * keyed by uid.
+ */
+export function generateMockFormation(input: GenerateFormationInput): { formation: Formation & { uid: string }; items: FormationItem[] } {
   const flatItems = FORMATION_TEMPLATE.sections.flatMap((section) => section.items.map((item) => ({ section, item })));
   const total = flatItems.length;
 
@@ -134,6 +129,9 @@ export function generateMockFormation(input: GenerateFormationInput): { formatio
       can_complete: false,
       created_at: new Date(0).toISOString(),
       updated_at: new Date(0).toISOString(),
+      // Fixture items have no real optimistic-locking history — 1 is a fixed starting value, never
+      // incremented, since only the real service (#1957) enforces If-Match.
+      version: 1,
     };
   });
 
@@ -144,7 +142,7 @@ export function generateMockFormation(input: GenerateFormationInput): { formatio
   const blockedGatingItems = gatingItems.filter((item) => item.status === 'blocked');
   const blockingItemTitle = blockedGatingItems.length > 0 ? blockedGatingItems.map((item) => item.title).join(', ') : null;
 
-  const formation: Formation = {
+  const formation: Formation & { uid: string } = {
     uid: `formation:${input.projectUid}`,
     parent_project_uid: input.projectUid,
     parent_project_slug: input.projectSlug,
@@ -153,7 +151,7 @@ export function generateMockFormation(input: GenerateFormationInput): { formatio
     parent_uid: input.parentProjectUid,
     template_uid: SEEDED_FORMATION_TEMPLATE_UID,
     template_version: 1,
-    sub_stage: mapProjectStageToSubStage(input.stage),
+    sub_stage: deriveFormationSubStage(input.stage),
     announcement_date: isActivating ? new Date(Date.now() + 3 * 24 * 60 * 60 * 1000).toISOString() : null,
     is_activating: isActivating,
     gating_items_open: openGatingItems.length,
@@ -171,7 +169,7 @@ export function generateMockFormation(input: GenerateFormationInput): { formatio
 // needs exactly one of each interesting scenario for UI testing, which a generator would fight
 // against (a generator can't guarantee "exactly one Withdrawn row" the way a curated list can).
 
-export const STATIC_QUEUE_FORMATIONS: Formation[] = [
+export const STATIC_QUEUE_FORMATIONS: (Formation & { uid: string })[] = [
   {
     uid: 'formation:queue-project-1',
     parent_project_uid: 'queue-project-1',

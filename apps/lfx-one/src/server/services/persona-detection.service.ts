@@ -8,7 +8,6 @@ import {
   PERSONA_PRIORITY,
   PERSONAS_CACHE_TTL_MS,
   ROOT_PROJECT_SLUG,
-  ROOT_PROJECT_UID_CACHE_TTL_MS,
   VALID_PERSONAS,
 } from '@lfx-one/shared/constants';
 import { NatsSubjects } from '@lfx-one/shared/enums';
@@ -25,6 +24,7 @@ import {
 } from '@lfx-one/shared/interfaces';
 import { Request } from 'express';
 
+import { resolveRootProjectUid } from '../helpers/root-project.helper';
 import { ServerFeatureFlag, isServerFeatureEnabled } from '../helpers/server-feature-flag.helper';
 import { getEffectiveEmail, getEffectiveUsername } from '../utils/auth-helper';
 import { AccessCheckService } from './access-check.service';
@@ -52,7 +52,6 @@ export class PersonaDetectionService {
   // Dedupes the projectSlug -> uid NATS lookup within a single request — checkMarketingAuditorAccess
   // and checkCampaignManagerAccess both resolve the same slug in the same getPersonas Promise.all.
   private readonly projectSlugRequestCache = new WeakMap<Request, Map<string, Promise<{ uid: string; exists: boolean }>>>();
-  private rootProjectUidCache: { uid: string | null; expiresAt: number } | null = null;
 
   public constructor() {
     this.natsService = new NatsService();
@@ -184,7 +183,7 @@ export class PersonaDetectionService {
     if (cached) return cached;
 
     // Degrade to false on failure so transient access-check errors don't 500 callers that rely on this as a bypass hint.
-    const promise = this.resolveRootUid(req)
+    const promise = resolveRootProjectUid(req, this.natsService)
       .then((rootUid) => {
         if (!rootUid) return false;
         return this.accessCheckService.checkSingleAccess(req, { resource: 'project', id: rootUid, access: 'writer' });
@@ -305,7 +304,7 @@ export class PersonaDetectionService {
     const cached = cache.get(req);
     if (cached) return cached;
 
-    const promise = this.resolveRootUid(req)
+    const promise = resolveRootProjectUid(req, this.natsService)
       .then((rootUid) => {
         if (!rootUid) return false;
         return this.accessCheckService.checkSingleAccess(req, { resource: 'project', id: rootUid, access });
@@ -347,28 +346,6 @@ export class PersonaDetectionService {
     );
 
     return promise;
-  }
-
-  private async resolveRootUid(req: Request): Promise<string | null> {
-    if (this.rootProjectUidCache && Date.now() < this.rootProjectUidCache.expiresAt) {
-      return this.rootProjectUidCache.uid;
-    }
-
-    try {
-      const codec = this.natsService.getCodec();
-      const response = await this.natsService.request(NatsSubjects.PROJECT_SLUG_TO_UID, codec.encode(ROOT_PROJECT_SLUG), { timeout: 5000 });
-      const uid = codec.decode(response.data).trim();
-      if (!uid) {
-        // Don't cache empty responses — a transient glitch would disable bypass for ROOT_PROJECT_UID_CACHE_TTL_MS.
-        logger.warning(req, 'resolve_root_uid', 'ROOT slug resolved to empty UID', { slug: ROOT_PROJECT_SLUG });
-        return null;
-      }
-      this.rootProjectUidCache = { uid, expiresAt: Date.now() + ROOT_PROJECT_UID_CACHE_TTL_MS };
-      return uid;
-    } catch (error) {
-      logger.warning(req, 'resolve_root_uid', 'ROOT slug→UID NATS lookup failed', { err: error, slug: ROOT_PROJECT_SLUG });
-      return null;
-    }
   }
 
   private async computePersonaDetections(req: Request, username: string, email: string): Promise<PersonaDetections> {

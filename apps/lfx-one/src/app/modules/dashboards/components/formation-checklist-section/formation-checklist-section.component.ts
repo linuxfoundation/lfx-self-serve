@@ -51,6 +51,8 @@ export class FormationChecklistSectionComponent {
 
   public readonly drawerVisible = signal(false);
   public readonly drawerItemUid = signal<string | null>(null);
+  /** Set alongside `drawerItemUid` in `onOpenDrawer` — the drawer's `itemProjectUid`/`itemKey` inputs read off this, since GH-2267 Phase 2 addresses items by `(project_uid, item_key)`, not by uid. */
+  public readonly drawerItemAddress = signal<{ projectUid: string; itemKey: string } | null>(null);
 
   /**
    * Item uids with a mutation currently in flight, tagged by kind — guards a double-click (or a
@@ -100,12 +102,16 @@ export class FormationChecklistSectionComponent {
 
   protected onOpenDrawer(item: FormationItem): void {
     this.drawerItemUid.set(item.uid);
+    this.drawerItemAddress.set({ projectUid: item.project_uid, itemKey: item.template_item_key });
     this.drawerVisible.set(true);
   }
 
   protected onRowAction(item: FormationItem): void {
     if (!this.beginSubmitting(item.uid, 'row')) return;
-    const call$ = item.action === 'request' ? this.formationService.requestFormationItem(item.uid) : this.formationService.completeFormationItem(item.uid);
+    const call$ =
+      item.action === 'request'
+        ? this.formationService.requestFormationItem(item.project_uid, item.template_item_key)
+        : this.formationService.completeFormationItem(item.project_uid, item.template_item_key);
 
     call$
       .pipe(
@@ -126,7 +132,7 @@ export class FormationChecklistSectionComponent {
     if (!this.beginSubmitting(change.item.uid, 'row')) return;
 
     this.formationService
-      .updateFormationItemStatus(change.item.uid, change.status)
+      .updateFormationItemStatus(change.item.project_uid, change.item.template_item_key, change.status)
       .pipe(
         take(1),
         finalize(() => this.endSubmitting(change.item.uid))
@@ -162,7 +168,7 @@ export class FormationChecklistSectionComponent {
       if (!result?.reason || !this.beginSubmitting(item.uid, 'row')) return;
 
       this.formationService
-        .updateFormationItemStatus(item.uid, 'blocked', result.reason)
+        .updateFormationItemStatus(item.project_uid, item.template_item_key, 'blocked', result.reason)
         .pipe(
           take(1),
           finalize(() => this.endSubmitting(item.uid))
@@ -182,7 +188,7 @@ export class FormationChecklistSectionComponent {
     if (!this.beginSubmitting(item.uid, 'row')) return;
 
     this.formationService
-      .completeFormationItem(item.uid)
+      .completeFormationItem(item.project_uid, item.template_item_key)
       .pipe(
         take(1),
         finalize(() => this.endSubmitting(item.uid))
@@ -249,7 +255,7 @@ export class FormationChecklistSectionComponent {
       if (!result?.reason || !this.beginSubmitting(item.uid, 'skip')) return;
 
       this.formationService
-        .skipFormationItem(item.uid, result.reason)
+        .skipFormationItem(item.project_uid, item.template_item_key, result.reason)
         .pipe(
           take(1),
           finalize(() => this.endSubmitting(item.uid))

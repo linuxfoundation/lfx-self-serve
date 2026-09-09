@@ -21,7 +21,10 @@ import {
 
 let counter = 0;
 
-function buildFormation(overrides: Partial<Formation> = {}): Formation {
+// Every fixture built here sets `uid` explicitly, unlike the checklist-read `Formation` the
+// optional-`uid` doc comment (formation.interface.ts) is scoped to — narrow the return type so
+// call sites below don't have to guard against the `undefined` that type allows in general.
+function buildFormation(overrides: Partial<Formation> = {}): Formation & { uid: string } {
   counter += 1;
   return {
     uid: `formation:store-test-${counter}`,
@@ -70,6 +73,7 @@ function buildItem(formationUid: string, overrides: Partial<FormationItem> = {})
     can_complete: false,
     created_at: '',
     updated_at: '',
+    version: 1,
     ...overrides,
   };
 }

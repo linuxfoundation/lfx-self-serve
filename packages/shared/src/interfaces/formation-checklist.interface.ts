@@ -2,7 +2,14 @@
 // SPDX-License-Identifier: MIT
 
 import type { ButtonSeverity, TagSeverity } from './components.interface';
-import type { Formation, FormationActivity, FormationItem, FormationItemStatus, FormationSubStage, FormationTemplateSection } from './formation.interface';
+import type {
+  FormationActivity,
+  FormationItem,
+  FormationItemStatus,
+  FormationQueueRow,
+  FormationSubStage,
+  FormationTemplateSection,
+} from './formation.interface';
 
 /**
  * Client-derived stand-in for the readiness strip. TODO(#1957): once the backend returns a
@@ -70,16 +77,27 @@ export interface FormationLinkRowActionConfig {
 }
 
 /**
- * `FormationsTableComponent`'s render row — `Formation` plus the pre-resolved stage chip
- * label/severity, so the `#body` template (where PrimeNG types the row context `any`) does a plain
- * property read instead of a method call that re-executes on every change-detection pass.
+ * `FormationsTableComponent`'s render row — {@link FormationQueueRow} plus the pre-resolved stage
+ * chip label/severity/gating summary, so the `#body` template (where PrimeNG types the row context
+ * `any`) does a plain property read instead of a method call that re-executes on every
+ * change-detection pass.
+ *
+ * GH-2267 gap 2: previously extended `Formation` (which carried `gating_items_open`/
+ * `gating_items_total`/`parent_formation_name`/`subtitle`) — the real indexed queue projection
+ * doesn't publish any of those, so this now extends {@link FormationQueueRow} instead and derives
+ * the gating "N of M" summary from `progress` + `gates_cleared`. The one-level indentation this
+ * used to drive off `parent_formation_name` has no data source upstream and is dropped with it —
+ * the Type column (from `deriveFormationEntityType`, unaffected by this gap) still distinguishes a
+ * `child_project` row, just without visual indentation.
  */
-export interface FormationTableRow extends Formation {
+export interface FormationTableRow extends FormationQueueRow {
   stageLabel: string;
   stageSeverity: TagSeverity;
   entityTypeLabel: string;
-  /** True when `parent_formation_name` matches another row's `parent_project_name` in the current result — drives the queue's one-level indented display (GH-1958 review). */
-  isChildRow: boolean;
+  /** `progress.done` — the completed count for the "N of M" gating summary. */
+  doneCount: number;
+  /** Sum of every `progress` bucket — the "M" in the "N of M" gating summary. */
+  totalCount: number;
 }
 
 /**

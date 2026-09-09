@@ -3,30 +3,27 @@
 
 import { ComponentFixture, TestBed } from '@angular/core/testing';
 import { provideRouter } from '@angular/router';
-import { Formation } from '@lfx-one/shared/interfaces';
+import { FormationQueueRow } from '@lfx-one/shared/interfaces';
 import { describe, expect, it } from 'vitest';
 
 import { FormationsTableComponent } from './formations-table.component';
 
-function buildRow(overrides: Partial<Formation>): Formation {
+function buildRow(overrides: Partial<FormationQueueRow>): FormationQueueRow {
   return {
-    uid: 'formation:test',
-    parent_project_uid: 'project:test',
-    parent_project_slug: 'test-project',
-    parent_project_name: 'Test Project',
+    formation_uid: 'formation:test',
+    project_uid: 'project:test',
+    project_slug: 'test-project',
+    project_name: 'Test Project',
     is_foundation: false,
     parent_uid: null,
-    template_uid: 'template:test',
-    template_version: 1,
     sub_stage: 'engaged',
-    announcement_date: null,
+    lifecycle: 'formation',
+    gates_cleared: false,
     is_activating: false,
-    gating_items_open: 1,
-    gating_items_total: 3,
-    blocking_item_title: null,
-    subtitle: null,
-    created_at: '2026-01-01T00:00:00Z',
-    updated_at: '2026-01-01T00:00:00Z',
+    announcement_date: null,
+    progress: { not_started: 1, in_progress: 1, blocked: 0, awaiting_acceptance: 0, done: 1, skipped: 0 },
+    blocked_item_titles: [],
+    assignees: [],
     ...overrides,
   };
 }
@@ -34,7 +31,7 @@ function buildRow(overrides: Partial<Formation>): Formation {
 describe('FormationsTableComponent', () => {
   let fixture: ComponentFixture<FormationsTableComponent>;
 
-  const render = async (rows: Formation[]): Promise<void> => {
+  const render = async (rows: FormationQueueRow[]): Promise<void> => {
     TestBed.resetTestingModule();
     await TestBed.configureTestingModule({
       imports: [FormationsTableComponent],
@@ -48,38 +45,18 @@ describe('FormationsTableComponent', () => {
     fixture.detectChanges();
   };
 
-  const nameCell = (uid: string): HTMLAnchorElement | null => fixture.nativeElement.querySelector(`[data-testid="formations-table-open-${uid}"]`);
   const readinessHeaderButton = (): HTMLButtonElement | null => fixture.nativeElement.querySelector('[data-testid="formations-sort-readiness"] button');
   const announcementHeaderButton = (): HTMLButtonElement | null => fixture.nativeElement.querySelector('[data-testid="formations-sort-announcement"] button');
   const rowUidsInOrder = (): (string | null)[] =>
     Array.from(fixture.nativeElement.querySelectorAll('[data-row-index]')).map((el) => (el as HTMLElement).getAttribute('data-testid'));
 
-  it('indents a child row whose parent formation is present in the current result', async () => {
+  it('sorts by readiness (fewest open items first) ascending, then toggles to descending on repeat click', async () => {
     await render([
-      buildRow({ uid: 'formation:foundation', parent_project_name: 'Acme Foundation', is_foundation: true, parent_uid: null }),
+      buildRow({ formation_uid: 'formation:more-open', progress: { not_started: 3, in_progress: 0, blocked: 0, awaiting_acceptance: 0, done: 0, skipped: 0 } }),
       buildRow({
-        uid: 'formation:child',
-        parent_project_name: 'Acme Child Project',
-        parent_formation_name: 'Acme Foundation',
-        is_foundation: false,
-        parent_uid: 'project:acme-foundation',
+        formation_uid: 'formation:fewer-open',
+        progress: { not_started: 0, in_progress: 0, blocked: 0, awaiting_acceptance: 0, done: 3, skipped: 0 },
       }),
-    ]);
-
-    expect(nameCell('formation:foundation')?.classList.contains('pl-4')).toBe(false);
-    expect(nameCell('formation:child')?.classList.contains('pl-4')).toBe(true);
-  });
-
-  it('does not indent a row whose named parent is absent from the current result', async () => {
-    await render([buildRow({ uid: 'formation:orphan', parent_project_name: 'Orphan Project', parent_formation_name: 'Not In Result' })]);
-
-    expect(nameCell('formation:orphan')?.classList.contains('pl-4')).toBe(false);
-  });
-
-  it('sorts by readiness (fewest open gating items first) ascending, then toggles to descending on repeat click', async () => {
-    await render([
-      buildRow({ uid: 'formation:more-open', gating_items_open: 3, gating_items_total: 3 }),
-      buildRow({ uid: 'formation:fewer-open', gating_items_open: 0, gating_items_total: 3 }),
     ]);
 
     readinessHeaderButton()?.click();
@@ -95,9 +72,9 @@ describe('FormationsTableComponent', () => {
 
   it('sorts by announcement date ascending by default, with rows lacking a date always last', async () => {
     await render([
-      buildRow({ uid: 'formation:no-date', announcement_date: null }),
-      buildRow({ uid: 'formation:later', announcement_date: '2026-06-01' }),
-      buildRow({ uid: 'formation:earlier', announcement_date: '2026-01-01' }),
+      buildRow({ formation_uid: 'formation:no-date', announcement_date: null }),
+      buildRow({ formation_uid: 'formation:later', announcement_date: '2026-06-01' }),
+      buildRow({ formation_uid: 'formation:earlier', announcement_date: '2026-01-01' }),
     ]);
 
     expect(rowUidsInOrder()).toEqual([

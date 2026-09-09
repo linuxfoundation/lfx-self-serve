@@ -96,8 +96,10 @@ export class ResourceNotFoundError extends BaseApiError {
 }
 
 /**
- * Error class for precondition-failed scenarios (e.g. an action requires
- * some dependent resource/configuration that doesn't exist yet).
+ * Error class for state-conflict scenarios (e.g. an action is invalid for the resource's current
+ * state — a read-only checklist, an invalid status transition, self-acceptance). Always 409; the
+ * caller-supplied `code` names the specific conflict (e.g. the upstream `reason` uppercased).
+ * NOT for optimistic-locking version mismatches — see {@link PreconditionFailedError} (412) for those.
  */
 export class ConflictError extends BaseApiError {
   public constructor(
@@ -110,5 +112,24 @@ export class ConflictError extends BaseApiError {
     } = {}
   ) {
     super(message, 409, code, options);
+  }
+}
+
+/**
+ * Error class for optimistic-locking version mismatches (upstream `reason: 'version_mismatch'`,
+ * HTTP 412 on a mutation whose `If-Match` no longer matches the resource's current `version`).
+ * Distinct from {@link ConflictError} (409): a 412 means the caller's local copy is stale and a
+ * reload is needed before retrying, not that the requested transition itself is invalid.
+ */
+export class PreconditionFailedError extends BaseApiError {
+  public constructor(
+    message = 'The resource has changed since it was last read',
+    options: {
+      operation?: string;
+      service?: string;
+      path?: string;
+    } = {}
+  ) {
+    super(message, 412, 'PRECONDITION_FAILED', options);
   }
 }

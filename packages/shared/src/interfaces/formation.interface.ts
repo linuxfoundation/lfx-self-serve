@@ -49,7 +49,14 @@ export interface FormationUser {
 }
 
 export interface Formation {
-  uid: string;
+  /**
+   * Absent on the checklist read (`GET /formations/{project_uid}` doesn't echo the formation's own
+   * uid today — raised upstream on #1957/GH-2267 as a one-line additive fix) — present on the queue
+   * projection ({@link FormationQueueRow.formation_uid}, copied here on that read path). Nothing in
+   * this repo cross-references a checklist-read `Formation` against a queue-read one by uid today,
+   * so the absence is safe to leave as-is until the upstream field lands.
+   */
+  uid?: string;
   /** The project this formation is FOR — not that project's parent; see {@link Formation.parent_uid} for that. */
   parent_project_uid: string;
   parent_project_slug: string;
@@ -95,8 +102,9 @@ export interface Formation {
   /** First not-done gating item's title, precomputed for the queue's "Blocking" column. */
   blocking_item_title: string | null;
   subtitle: string | null;
-  created_at: string;
-  updated_at: string;
+  /** Absent on the checklist read (`GET /formations/{project_uid}` doesn't return either timestamp) — raised upstream on #1957/GH-2267. */
+  created_at?: string;
+  updated_at?: string;
 }
 
 /**
@@ -180,6 +188,14 @@ export interface FormationItem {
   can_complete: boolean;
   created_at: string;
   updated_at: string;
+  /**
+   * Optimistic-locking token (#1957/GH-2267 gap 1). Echoed on every read, sent back as `If-Match`
+   * on every mutation; a stale value 412s upstream (mapped to `PreconditionFailedError` in the BFF)
+   * rather than silently overwriting a concurrent edit. Not present on any fixture-era item created
+   * before this field existed — callers reading an older stored item must treat a missing value as
+   * "unknown", never as "0" or "no lock".
+   */
+  version: number;
 }
 
 export interface FormationItemLink {
@@ -283,9 +299,38 @@ export type FormationQueueTiles = Record<FormationSubStage, number> & {
   projects: number;
 };
 
+/**
+ * One queue row, shaped to exactly what the `formation` indexed document carries
+ * (`internal/infrastructure/nats/indexer_publisher.go`'s hand-written allowlist) — not a subset of
+ * {@link Formation}. The indexer doesn't publish `template_uid`/`template_version`/`created_at`/
+ * `updated_at`/`gating_items_open`/`gating_items_total` (#1957/GH-2267 gap 2, raised upstream), so
+ * this is a deliberately separate shape rather than `Partial<Formation>` or an extension of it.
+ * `gates_cleared` replaces the checklist read's open/total pair — the queue's gating column reads
+ * off `gates_cleared` + `progress`, not `gating_items_open`/`gating_items_total`.
+ */
+export interface FormationQueueRow {
+  formation_uid: string;
+  project_uid: string;
+  project_name: string;
+  project_slug: string;
+  is_foundation: boolean;
+  /** Same ROOT-collapse contract as {@link Formation.parent_uid} — `null` for a top-level project. */
+  parent_uid: string | null;
+  sub_stage: FormationSubStage;
+  lifecycle: string;
+  /** Every gating item done — the projection's own boolean, not derived client-side (unlike {@link Formation.is_activating}, which is #1957-computed on the checklist read but not yet mirrored into the indexed document). */
+  gates_cleared: boolean;
+  is_activating: boolean;
+  announcement_date: string | null;
+  /** Six named progress counters (e.g. per-section or per-status breakdown) as published by the indexer — kept as a loose record until the projection's exact key set is confirmed upstream. */
+  progress: Record<string, number>;
+  blocked_item_titles: string[];
+  assignees: FormationUser[];
+}
+
 /** Response body for `GET /api/formations`. */
 export interface FormationsQueueResponse {
   tiles: FormationQueueTiles;
-  rows: Formation[];
+  rows: FormationQueueRow[];
   data_source: 'fixture' | 'live';
 }

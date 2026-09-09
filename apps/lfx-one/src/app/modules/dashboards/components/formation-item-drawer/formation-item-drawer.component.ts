@@ -30,7 +30,9 @@ export class FormationItemDrawerComponent {
 
   public readonly visible = model<boolean>(false);
 
-  public readonly itemUid = input<string | null>(null);
+  /** Together address the item being shown — the drawer reads via these on open, but every mutation below routes off the loaded `item()`'s own `project_uid`/`template_item_key` (GH-2267 Phase 2). */
+  public readonly itemProjectUid = input<string | null>(null);
+  public readonly itemKey = input<string | null>(null);
   /**
    * True while the section has *any* mutation in flight for this item — a row action
    * (provisionable/request), a submitted skip, or this drawer's own Mark complete/Save (echoed back
@@ -133,7 +135,7 @@ export class FormationItemDrawerComponent {
     this.writeStarted.emit(item.uid);
 
     this.formationService
-      .completeFormationItem(item.uid)
+      .completeFormationItem(item.project_uid, item.template_item_key)
       .pipe(
         take(1),
         finalize(() => {
@@ -172,7 +174,7 @@ export class FormationItemDrawerComponent {
     this.writeStarted.emit(item.uid);
 
     this.formationService
-      .updateFormationItem(item.uid, {
+      .updateFormationItem(item.project_uid, item.template_item_key, {
         notes: this.editForm.value.notes ?? '',
         owner_username: this.editForm.value.ownerUsername ?? '',
         due_date: this.editForm.value.dueDate ? this.editForm.value.dueDate.toISOString() : null,
@@ -192,7 +194,7 @@ export class FormationItemDrawerComponent {
           // but only if the drawer is still showing the item this save was actually for; otherwise
           // the reload would fetch (and overwrite the form of) whatever item the user has since
           // switched to, using this stale save's response as the trigger.
-          if (this.itemUid() === item.uid) this.reload$.next();
+          if (this.itemProjectUid() === item.project_uid && this.itemKey() === item.template_item_key) this.reload$.next();
           this.messageService.add({ severity: 'success', summary: 'Saved', detail: 'Item details updated.' });
         },
         error: (error: unknown) => {
@@ -218,8 +220,9 @@ export class FormationItemDrawerComponent {
     return toSignal(
       merge(openTrigger$, reloadTrigger$).pipe(
         switchMap((trigger) => {
-          const uid = this.itemUid();
-          if (!this.visible() || !uid) {
+          const projectUid = this.itemProjectUid();
+          const itemKey = this.itemKey();
+          if (!this.visible() || !projectUid || !itemKey) {
             lastData = createEmptyFormationDrawerData();
             return of(lastData);
           }
@@ -229,7 +232,7 @@ export class FormationItemDrawerComponent {
             this.loading.set(true);
           }
 
-          return this.formationService.getFormationItem(uid).pipe(
+          return this.formationService.getFormationItem(projectUid, itemKey).pipe(
             tap((data) => {
               this.syncForm(data.item);
               lastData = data;

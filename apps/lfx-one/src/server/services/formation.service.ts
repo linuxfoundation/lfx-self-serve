@@ -2,20 +2,27 @@
 // SPDX-License-Identifier: MIT
 
 import type {
+  Formation,
   FormationActivity,
   FormationChecklistResponse,
   FormationItem,
   FormationItemStatus,
+  FormationQueueRow,
   FormationsQueueResponse,
   FormationSubStage,
+  FormationUser,
 } from '@lfx-one/shared/interfaces';
 import { FORMATION_QUEUE_SUB_STAGES } from '@lfx-one/shared/constants';
+import { QueryServiceResponse } from '@lfx-one/shared/interfaces';
 import { deriveFormationEntityType, isFormationStageGate } from '@lfx-one/shared/utils';
 import { Request } from 'express';
 
-import { AuthorizationError, ResourceNotFoundError, ServiceValidationError } from '../errors';
+import { isMicroserviceError, PreconditionFailedError, ResourceNotFoundError, AuthorizationError, ServiceValidationError } from '../errors';
 import { isFormationServiceLive } from '../helpers/formation-backend.helper';
 import { generateMockFormation, SEEDED_FORMATION_TEMPLATE, STATIC_QUEUE_FORMATIONS } from '../helpers/formation-fixture.helper';
+import { FormationItemMapContext, mapUpstreamFormationItem, UpstreamFormationChecklist, UpstreamFormationItem } from '../helpers/formation-mapper.helper';
+import { fetchAllQueryResources } from '../helpers/query-service.helper';
+import { collapseRootParentUid, resolveRootProjectUid } from '../helpers/root-project.helper';
 import { getEffectiveUsername } from '../utils/auth-helper';
 import { formationItemAccessService } from './formation-item-access.service';
 import {
@@ -30,6 +37,8 @@ import {
   seedFormation,
 } from './formation-store.service';
 import { logger } from './logger.service';
+import { MicroserviceProxyService } from './microservice-proxy.service';
+import { NatsService } from './nats.service';
 import { ProjectService } from './project.service';
 
 /**
@@ -44,6 +53,8 @@ import { ProjectService } from './project.service';
  */
 export class FormationService {
   private readonly projectService = new ProjectService();
+  private readonly natsService = new NatsService();
+  private readonly microserviceProxy = new MicroserviceProxyService();
   private static readonly plainStatusTransitions: ReadonlySet<FormationItemStatus> = new Set(['not_started', 'in_progress', 'blocked']);
 
   public async getProjectFormation(req: Request, projectSlug: string): Promise<FormationChecklistResponse> {
@@ -62,11 +73,16 @@ export class FormationService {
       if (!isFormationStageGate(project.stage)) {
         throw new ResourceNotFoundError('Formation', projectSlug, { operation: 'get_project_formation', service: 'formation_service', path: req.path });
       }
+      // ROOT collapse (GH-2267 Phase 4): a top-level project's own parent_uid is upstream's hidden
+      // ROOT project, never null — see root-project.helper.ts's doc comment for why the BFF is the
+      // producer that has to collapse it before it reaches Formation.parent_uid.
+      const rootUid = await resolveRootProjectUid(req, this.natsService);
+      const collapsedParentUid = collapseRootParentUid(project.parent_uid || null, rootUid) ?? null;
       const { formation, items } = generateMockFormation({
         projectUid: uid,
         projectSlug: project.slug,
         projectName: project.name,
-        parentProjectUid: project.parent_uid || null,
+        parentProjectUid: collapsedParentUid,
         stage: project.stage,
       });
       seedFormation(formation, items);
@@ -85,26 +101,53 @@ export class FormationService {
       };
     }
 
+    // TODO(GH-2267 Phase 1 remainder): the checklist read (Formation + FormationTemplate assembly)
+    // is deliberately not wired yet — this pass covers getFormationsQueue and the 8 mutation
+    // methods only (see the GH-2267 plan's PR A §5 for what that live branch still needs: a
+    // FormationTemplate built from the response's sections/items, and the still-open
+    // announcement_date/uid/created_at/updated_at sourcing gaps). getFormationItemOrThrow below is
+    // wired for the mutation pre-read path.
     throw new ResourceNotFoundError('Formation', projectSlug, { operation: 'get_project_formation', service: 'formation_service', path: req.path });
   }
 
   /**
-   * Every `/formation-items/:uid` caller goes through this, which is the sole enforcement point
-   * for per-item project visibility (fixes a real gap: the fixture item store is a flat, guessable-uid
-   * lookup with no access check of its own — see `assertItemProjectAccess`). Do not add a new
-   * `/formation-items/:uid` code path that resolves an item any other way.
+   * Every `/formations/:projectUid/items/:itemKey` caller goes through this, which is the sole
+   * enforcement point for per-item project visibility (fixes a real gap: the fixture item store is
+   * a flat, guessable-uid lookup with no access check of its own — see `assertItemProjectAccess`).
+   * Do not add a new item code path that resolves an item any other way.
+   *
+   * Live mode (GH-2267 Phase 1): the contract has no single-item read, only the full checklist
+   * (`GET /formations/{project_uid}`), so this fetches the whole thing and finds `itemKey` in it —
+   * every mutation method pays this cost on its pre-read too, same as the fixture path's
+   * per-request store lookup.
    */
-  public async getFormationItemOrThrow(req: Request, itemUid: string): Promise<FormationItem> {
-    const item = getStoredItem(itemUid);
-    if (!item) {
-      throw new ResourceNotFoundError('FormationItem', itemUid, { operation: 'get_formation_item', service: 'formation_service', path: req.path });
+  public async getFormationItemOrThrow(req: Request, projectUid: string, itemKey: string): Promise<FormationItem> {
+    const itemAddress = `${projectUid}/${itemKey}`;
+
+    if (!isFormationServiceLive()) {
+      const itemUid = FormationService.itemUidFor(projectUid, itemKey);
+      const item = getStoredItem(itemUid);
+      if (!item) {
+        throw new ResourceNotFoundError('FormationItem', itemAddress, {
+          operation: 'get_formation_item',
+          service: 'formation_service',
+          path: req.path,
+        });
+      }
+      await this.assertItemProjectAccess(req, projectUid, itemAddress);
+      return item;
     }
-    await this.assertItemProjectAccess(req, item, itemUid);
-    return item;
+
+    const checklist = await this.fetchLiveChecklistOrDenyNotFound(req, projectUid, itemAddress);
+    const raw = checklist.items.find((candidate) => candidate.item_key === itemKey);
+    if (!raw) {
+      throw new ResourceNotFoundError('FormationItem', itemAddress, { operation: 'get_formation_item', service: 'formation_service', path: req.path });
+    }
+    return this.mapLiveItem(req, projectUid, raw);
   }
 
-  public async getFormationItemDetail(req: Request, itemUid: string): Promise<{ item: FormationItem; history: FormationActivity[] }> {
-    const item = await this.getFormationItemOrThrow(req, itemUid);
+  public async getFormationItemDetail(req: Request, projectUid: string, itemKey: string): Promise<{ item: FormationItem; history: FormationActivity[] }> {
+    const item = await this.getFormationItemOrThrow(req, projectUid, itemKey);
     const enriched = await this.enrichSingle(req, item);
     return { item: enriched, history: getActivityForItem(item.formation_uid, item.uid) };
   }
@@ -117,9 +160,9 @@ export class FormationService {
    * TODO(#1957): swap the putStoredItem/recordActivity fixture writes below for a real
    * lfx-v2-formation-service mutation call once it ships.
    */
-  public async completeFormationItem(req: Request, itemUid: string, notes?: unknown): Promise<FormationItem> {
+  public async completeFormationItem(req: Request, projectUid: string, itemKey: string, notes?: unknown): Promise<FormationItem> {
     this.assertValidNotes(notes, req, 'complete_formation_item');
-    const item = await this.getFormationItemOrThrow(req, itemUid);
+    const item = await this.getFormationItemOrThrow(req, projectUid, itemKey);
     if (item.action === 'status_only') {
       throw ServiceValidationError.forField('action', 'status_only items are updated by external tooling and cannot be completed manually', {
         operation: 'complete_formation_item',
@@ -127,10 +170,30 @@ export class FormationService {
         path: req.path,
       });
     }
-    await this.assertItemProjectWriteAccess(req, item);
+    await this.assertItemProjectWriteAccess(req, projectUid);
     const canComplete = await formationItemAccessService.canComplete(req, item);
     const nextStatus: FormationItemStatus = item.is_gating && !canComplete ? 'awaiting_acceptance' : 'done';
-    const updated: FormationItem = { ...item, status: nextStatus, skip_reason: null, notes: notes ?? item.notes, updated_at: new Date().toISOString() };
+    const nextNotes = notes ?? item.notes;
+
+    if (isFormationServiceLive()) {
+      const raw = await this.mutateLiveItem(
+        req,
+        projectUid,
+        itemKey,
+        item.version,
+        { status: nextStatus, note: nextNotes ?? undefined },
+        'complete_formation_item'
+      );
+      const updated = await this.mapLiveItem(req, projectUid, raw);
+      logger.info(req, 'complete_formation_item', 'Formation item completion recorded', {
+        item_uid: updated.uid,
+        is_gating: updated.is_gating,
+        status: updated.status,
+      });
+      return this.enrichSingle(req, updated);
+    }
+
+    const updated: FormationItem = { ...item, status: nextStatus, skip_reason: null, notes: nextNotes, updated_at: new Date().toISOString() };
     putStoredItem(updated);
     this.recordActivity(
       req,
@@ -140,15 +203,14 @@ export class FormationService {
     );
     this.refreshFormationReadiness(updated.formation_uid);
 
-    logger.info(req, 'complete_formation_item', 'Formation item completion recorded', { item_uid: itemUid, is_gating: updated.is_gating, status: nextStatus });
+    logger.info(req, 'complete_formation_item', 'Formation item completion recorded', { item_uid: item.uid, is_gating: updated.is_gating, status: nextStatus });
     return this.enrichSingle(req, updated);
   }
 
-  // TODO(#1957): swap the fixture writes below for a real lfx-v2-formation-service mutation call.
-  public async skipFormationItem(req: Request, itemUid: string, reason: unknown): Promise<FormationItem> {
+  public async skipFormationItem(req: Request, projectUid: string, itemKey: string, reason: unknown): Promise<FormationItem> {
     this.assertValidReason(reason, 'A reason is required to skip a gating item', req, 'skip_formation_item');
 
-    const item = await this.getFormationItemOrThrow(req, itemUid);
+    const item = await this.getFormationItemOrThrow(req, projectUid, itemKey);
     if (item.action === 'status_only') {
       throw ServiceValidationError.forField('action', 'status_only items are updated by external tooling and cannot be skipped manually', {
         operation: 'skip_formation_item',
@@ -156,8 +218,16 @@ export class FormationService {
         path: req.path,
       });
     }
-    await this.assertItemProjectWriteAccess(req, item);
+    await this.assertItemProjectWriteAccess(req, projectUid);
     await this.assertCanComplete(req, item, 'skip_formation_item');
+
+    if (isFormationServiceLive()) {
+      const raw = await this.mutateLiveItem(req, projectUid, itemKey, item.version, { status: 'skipped', skip_reason: reason }, 'skip_formation_item');
+      const updated = await this.mapLiveItem(req, projectUid, raw);
+      logger.info(req, 'skip_formation_item', 'Formation item skipped', { item_uid: updated.uid });
+      return this.enrichSingle(req, updated);
+    }
+
     const updated: FormationItem = { ...item, status: 'skipped', skip_reason: reason, updated_at: new Date().toISOString() };
     putStoredItem(updated);
     this.recordActivity(req, updated, 'item_skipped', `skipped "${updated.title}"`, { skip_reason: reason });
@@ -165,7 +235,7 @@ export class FormationService {
 
     // Reason text goes into skip_reason/activity metadata (both already persisted above), not the
     // log line — a free-text field is the wrong shape for a structured log field.
-    logger.info(req, 'skip_formation_item', 'Formation item skipped', { item_uid: itemUid });
+    logger.info(req, 'skip_formation_item', 'Formation item skipped', { item_uid: item.uid });
     return this.enrichSingle(req, updated);
   }
 
@@ -176,8 +246,8 @@ export class FormationService {
    * SLA/target-team object; that richer `request` type is #1957/Epic 2.
    * TODO(#1957): swap the fixture writes below for a real lfx-v2-formation-service mutation call.
    */
-  public async requestFormationItem(req: Request, itemUid: string): Promise<FormationItem> {
-    const item = await this.getFormationItemOrThrow(req, itemUid);
+  public async requestFormationItem(req: Request, projectUid: string, itemKey: string): Promise<FormationItem> {
+    const item = await this.getFormationItemOrThrow(req, projectUid, itemKey);
     if (item.action !== 'request') {
       throw ServiceValidationError.forField('action', 'This item does not support the request action', {
         operation: 'request_formation_item',
@@ -185,10 +255,18 @@ export class FormationService {
         path: req.path,
       });
     }
-    await this.assertItemProjectWriteAccess(req, item);
+    await this.assertItemProjectWriteAccess(req, projectUid);
     // Same gate as complete/skip: `request` also changes `status`, so a gating item's status must
     // not be movable through this action by a caller `complete`/`skip` would deny.
     await this.assertCanComplete(req, item, 'request_formation_item');
+
+    if (isFormationServiceLive()) {
+      const raw = await this.mutateLiveItem(req, projectUid, itemKey, item.version, { status: 'blocked' }, 'request_formation_item');
+      const updated = await this.mapLiveItem(req, projectUid, raw);
+      logger.info(req, 'request_formation_item', 'Formation item request filed', { item_uid: updated.uid });
+      return this.enrichSingle(req, updated);
+    }
+
     const updated: FormationItem = { ...item, status: 'blocked', updated_at: new Date().toISOString() };
     putStoredItem(updated);
     this.recordActivity(req, updated, 'item_requested', `requested "${updated.title}"`);
@@ -196,7 +274,7 @@ export class FormationService {
     // (e.g. a previously-done gating item moved back to blocked reopens is_activating).
     this.refreshFormationReadiness(updated.formation_uid);
 
-    logger.info(req, 'request_formation_item', 'Formation item request filed', { item_uid: itemUid });
+    logger.info(req, 'request_formation_item', 'Formation item request filed', { item_uid: item.uid });
     return this.enrichSingle(req, updated);
   }
 
@@ -211,7 +289,7 @@ export class FormationService {
    * `assertCanComplete` gate as `completeFormationItem`.
    * TODO(#1957): swap the fixture writes below for a real lfx-v2-formation-service mutation call.
    */
-  public async updateFormationItemStatus(req: Request, itemUid: string, status: unknown, note?: unknown): Promise<FormationItem> {
+  public async updateFormationItemStatus(req: Request, projectUid: string, itemKey: string, status: unknown, note?: unknown): Promise<FormationItem> {
     if (typeof status !== 'string' || !FormationService.plainStatusTransitions.has(status as FormationItemStatus)) {
       throw ServiceValidationError.forField('status', 'status must be one of not_started, in_progress, blocked', {
         operation: 'update_formation_item_status',
@@ -223,7 +301,7 @@ export class FormationService {
       this.assertValidNotes(note, req, 'update_formation_item_status');
     }
 
-    const item = await this.getFormationItemOrThrow(req, itemUid);
+    const item = await this.getFormationItemOrThrow(req, projectUid, itemKey);
     if (item.action === 'status_only') {
       throw ServiceValidationError.forField('action', 'status_only items are updated by external tooling and cannot have their status changed manually', {
         operation: 'update_formation_item_status',
@@ -231,7 +309,7 @@ export class FormationService {
         path: req.path,
       });
     }
-    await this.assertItemProjectWriteAccess(req, item);
+    await this.assertItemProjectWriteAccess(req, projectUid);
     if (item.is_gating && (item.status === 'done' || item.status === 'awaiting_acceptance')) {
       await this.assertCanComplete(req, item, 'update_formation_item_status');
     }
@@ -239,6 +317,17 @@ export class FormationService {
     // A block reason is filed as activity metadata below, not written into `notes` — that field
     // is the drawer's free-text note and must survive a status change untouched.
     const blockNote = nextStatus === 'blocked' && typeof note === 'string' ? note : null;
+
+    if (isFormationServiceLive()) {
+      // Deliberately omits `note` from the body — same rationale as the fixture branch below: the
+      // drawer's free-text `notes` field must survive a plain status change untouched, and the
+      // block reason is metadata about the transition, not an item-note update.
+      const raw = await this.mutateLiveItem(req, projectUid, itemKey, item.version, { status: nextStatus }, 'update_formation_item_status');
+      const updated = await this.mapLiveItem(req, projectUid, raw);
+      logger.info(req, 'update_formation_item_status', 'Formation item status changed', { item_uid: updated.uid, status: updated.status });
+      return this.enrichSingle(req, updated);
+    }
+
     const updated: FormationItem = {
       ...item,
       status: nextStatus,
@@ -249,7 +338,7 @@ export class FormationService {
     this.recordActivity(req, updated, 'item_reopened', `moved "${updated.title}" to ${nextStatus}`, blockNote !== null ? { note: blockNote } : null);
     this.refreshFormationReadiness(updated.formation_uid);
 
-    logger.info(req, 'update_formation_item_status', 'Formation item status changed', { item_uid: itemUid, status: nextStatus });
+    logger.info(req, 'update_formation_item_status', 'Formation item status changed', { item_uid: item.uid, status: nextStatus });
     return this.enrichSingle(req, updated);
   }
 
@@ -262,7 +351,8 @@ export class FormationService {
    */
   public async updateFormationItem(
     req: Request,
-    itemUid: string,
+    projectUid: string,
+    itemKey: string,
     patch: { notes?: unknown; owner_username?: string; due_date?: string | null }
   ): Promise<FormationItem> {
     this.assertValidNotes(patch.notes, req, 'update_formation_item');
@@ -288,53 +378,379 @@ export class FormationService {
       });
     }
 
-    const item = await this.getFormationItemOrThrow(req, itemUid);
-    await this.assertItemProjectWriteAccess(req, item);
-    const updated: FormationItem = { ...item, updated_at: new Date().toISOString() };
+    const item = await this.getFormationItemOrThrow(req, projectUid, itemKey);
+    await this.assertItemProjectWriteAccess(req, projectUid);
 
-    // Normalized the same way owner_username is below: the drawer always sends '' for an empty
-    // textarea (formation-item-drawer.component.ts), while a freshly generated item has notes:
-    // null — without normalizing, '' !== null on every first save (even one that only touches
-    // due_date) would spuriously flip notes and record an "updated notes" activity that never happened.
+    // Normalized so the drawer's always-'' empty textarea (formation-item-drawer.component.ts)
+    // doesn't spuriously diff against a freshly generated item's notes: null on every first save.
     const nextNotes = patch.notes || null;
-    if (patch.notes !== undefined && nextNotes !== (item.notes ?? null)) {
+    const nextOwnerUsername = patch.owner_username || null;
+    const notesChanged = patch.notes !== undefined && nextNotes !== (item.notes ?? null);
+    const ownerChanged = patch.owner_username !== undefined && nextOwnerUsername !== (item.owner?.username ?? null);
+    const dueDateChanged = patch.due_date !== undefined && patch.due_date !== item.due_date;
+
+    if (isFormationServiceLive()) {
+      const body: Record<string, unknown> = {};
+      if (notesChanged) body['note'] = nextNotes ?? undefined;
+      if (ownerChanged) body['assignee'] = nextOwnerUsername ?? undefined;
+      if (dueDateChanged) body['due_date'] = patch.due_date ?? undefined;
+      const raw = await this.mutateLiveItem(req, projectUid, itemKey, item.version, body, 'update_formation_item');
+      const updated = await this.mapLiveItem(req, projectUid, raw);
+      logger.debug(req, 'update_formation_item', 'Formation item updated', { item_uid: updated.uid });
+      return this.enrichSingle(req, updated);
+    }
+
+    const updated: FormationItem = { ...item, updated_at: new Date().toISOString() };
+    if (notesChanged) {
       updated.notes = nextNotes;
       this.recordActivity(req, updated, 'note_added', 'updated notes');
     }
-    const nextOwnerUsername = patch.owner_username || null;
-    if (patch.owner_username !== undefined && nextOwnerUsername !== (item.owner?.username ?? null)) {
+    if (ownerChanged) {
       updated.owner = nextOwnerUsername ? { username: nextOwnerUsername, name: nextOwnerUsername } : null;
       this.recordActivity(req, updated, 'assignee_changed', 'changed the assignee');
     }
-    if (patch.due_date !== undefined && patch.due_date !== item.due_date) {
-      updated.due_date = patch.due_date;
+    if (dueDateChanged) {
+      updated.due_date = patch.due_date ?? null;
       this.recordActivity(req, updated, 'due_date_changed', 'changed the due date');
     }
 
     putStoredItem(updated);
-    logger.debug(req, 'update_formation_item', 'Formation item updated', { item_uid: itemUid });
+    logger.debug(req, 'update_formation_item', 'Formation item updated', { item_uid: item.uid });
+    return this.enrichSingle(req, updated);
+  }
+
+  /**
+   * New in GH-2267 Phase 2 — mirrors the upstream `accept` action (design.go item 4), gated there on
+   * `team:formation` membership; Epic 1 has no such team, so this fixture-era implementation reuses
+   * the existing `gate_writer` (`assertCanComplete`) gate instead. Only meaningful on an item
+   * already sitting in `awaiting_acceptance` (i.e. a non-gate-writer already submitted it via
+   * `completeFormationItem`) — accepting anything else is a state-precondition error, not a access
+   * one. TODO(#1957): swap for a real mutation call once the client lands (Phase 1 remainder); the
+   * activity type reused below (`item_completed`) is a placeholder — PR B's activity reconciliation
+   * (gap 4) adds a dedicated accept/reject/reopen vocabulary.
+   */
+  public async acceptFormationItem(req: Request, projectUid: string, itemKey: string, note?: unknown): Promise<FormationItem> {
+    if (note !== undefined) this.assertValidNotes(note, req, 'accept_formation_item');
+    const item = await this.getFormationItemOrThrow(req, projectUid, itemKey);
+    if (item.status !== 'awaiting_acceptance') {
+      throw ServiceValidationError.forField('status', 'Only an item awaiting acceptance can be accepted', {
+        operation: 'accept_formation_item',
+        service: 'formation_service',
+        path: req.path,
+      });
+    }
+    await this.assertItemProjectWriteAccess(req, projectUid);
+    await this.assertCanComplete(req, item, 'accept_formation_item');
+
+    if (isFormationServiceLive()) {
+      const raw = await this.actLiveItem(req, projectUid, itemKey, 'accept', item.version, note !== undefined ? { note } : {}, 'accept_formation_item');
+      const updated = await this.mapLiveItem(req, projectUid, raw);
+      logger.info(req, 'accept_formation_item', 'Formation item accepted', { item_uid: updated.uid });
+      return this.enrichSingle(req, updated);
+    }
+
+    const updated: FormationItem = { ...item, status: 'done', notes: note ?? item.notes, updated_at: new Date().toISOString() };
+    putStoredItem(updated);
+    this.recordActivity(req, updated, 'item_completed', `accepted "${updated.title}"`, note !== undefined ? { note } : null);
+    this.refreshFormationReadiness(updated.formation_uid);
+
+    logger.info(req, 'accept_formation_item', 'Formation item accepted', { item_uid: item.uid });
+    return this.enrichSingle(req, updated);
+  }
+
+  /**
+   * New in GH-2267 Phase 2 — mirrors the upstream `reject` action (design.go item 5), which requires
+   * a non-empty note upstream; sends an `awaiting_acceptance` item back to the submitter as
+   * `in_progress` rather than closing it. Same fixture-era `gate_writer` substitution as
+   * {@link acceptFormationItem}. TODO(#1957): see that method's TODO — applies here too.
+   */
+  public async rejectFormationItem(req: Request, projectUid: string, itemKey: string, note: unknown): Promise<FormationItem> {
+    this.assertValidReason(note, 'A note is required to reject an item', req, 'reject_formation_item');
+    const item = await this.getFormationItemOrThrow(req, projectUid, itemKey);
+    if (item.status !== 'awaiting_acceptance') {
+      throw ServiceValidationError.forField('status', 'Only an item awaiting acceptance can be rejected', {
+        operation: 'reject_formation_item',
+        service: 'formation_service',
+        path: req.path,
+      });
+    }
+    await this.assertItemProjectWriteAccess(req, projectUid);
+    await this.assertCanComplete(req, item, 'reject_formation_item');
+
+    if (isFormationServiceLive()) {
+      const raw = await this.actLiveItem(req, projectUid, itemKey, 'reject', item.version, { note }, 'reject_formation_item');
+      const updated = await this.mapLiveItem(req, projectUid, raw);
+      logger.info(req, 'reject_formation_item', 'Formation item rejected', { item_uid: updated.uid });
+      return this.enrichSingle(req, updated);
+    }
+
+    const updated: FormationItem = { ...item, status: 'in_progress', updated_at: new Date().toISOString() };
+    putStoredItem(updated);
+    this.recordActivity(req, updated, 'item_reopened', `rejected "${updated.title}"`, { rejected: true, note });
+    this.refreshFormationReadiness(updated.formation_uid);
+
+    logger.info(req, 'reject_formation_item', 'Formation item rejected', { item_uid: item.uid });
+    return this.enrichSingle(req, updated);
+  }
+
+  /**
+   * New in GH-2267 Phase 2 — mirrors the upstream `reopen` action (design.go item 6). Reversing a
+   * `done`/`skipped`/`awaiting_acceptance` item undoes a prior gate decision, so this reuses
+   * `assertCanComplete` the same way `updateFormationItemStatus` does for the equivalent reversal.
+   * TODO(#1957): see {@link acceptFormationItem}'s TODO — applies here too.
+   */
+  public async reopenFormationItem(req: Request, projectUid: string, itemKey: string, note?: unknown): Promise<FormationItem> {
+    if (note !== undefined) this.assertValidNotes(note, req, 'reopen_formation_item');
+    const item = await this.getFormationItemOrThrow(req, projectUid, itemKey);
+    if (item.status !== 'done' && item.status !== 'skipped' && item.status !== 'awaiting_acceptance') {
+      throw ServiceValidationError.forField('status', 'Only a done, skipped, or awaiting-acceptance item can be reopened', {
+        operation: 'reopen_formation_item',
+        service: 'formation_service',
+        path: req.path,
+      });
+    }
+    await this.assertItemProjectWriteAccess(req, projectUid);
+    await this.assertCanComplete(req, item, 'reopen_formation_item');
+
+    if (isFormationServiceLive()) {
+      const raw = await this.actLiveItem(req, projectUid, itemKey, 'reopen', item.version, note !== undefined ? { note } : {}, 'reopen_formation_item');
+      const updated = await this.mapLiveItem(req, projectUid, raw);
+      logger.info(req, 'reopen_formation_item', 'Formation item reopened', { item_uid: updated.uid });
+      return this.enrichSingle(req, updated);
+    }
+
+    const updated: FormationItem = { ...item, status: 'in_progress', skip_reason: null, updated_at: new Date().toISOString() };
+    putStoredItem(updated);
+    this.recordActivity(req, updated, 'item_reopened', `reopened "${updated.title}"`, note !== undefined ? { note } : null);
+    this.refreshFormationReadiness(updated.formation_uid);
+
+    logger.info(req, 'reopen_formation_item', 'Formation item reopened', { item_uid: item.uid });
     return this.enrichSingle(req, updated);
   }
 
   public async getFormationsQueue(req: Request, subStage?: FormationSubStage, search?: string): Promise<FormationsQueueResponse> {
     logger.debug(req, 'get_formations_queue', 'Fetching Formations queue', { subStage, search });
 
+    if (isFormationServiceLive()) {
+      return this.getFormationsQueueLive(req, subStage, search);
+    }
+
     // TODO(#1957): swap for a real query-service read once lfx-v2-formation-service ships;
-    // STATIC_QUEUE_FORMATIONS's shape already matches Formation[]. Each row is read through the
-    // write store first, so a completed/skipped item's readiness rollup (refreshFormationReadiness)
-    // is reflected here too, not just on the project-page checklist response.
-    let rows = STATIC_QUEUE_FORMATIONS.map((row) => getStoredFormation(row.uid) ?? row);
+    // the real projection already serves FormationQueueRow's exact shape (gap 2), so this fixture
+    // branch has to build one from the Formation fixture + its items instead of returning the
+    // Formation itself. Each row is read through the write store first, so a completed/skipped
+    // item's readiness rollup (refreshFormationReadiness) is reflected here too, not just on the
+    // project-page checklist response.
+    let formations = STATIC_QUEUE_FORMATIONS.map((row) => getStoredFormation(row.uid) ?? row);
+    if (subStage) {
+      formations = formations.filter((row) => row.sub_stage === subStage);
+    }
+    if (search && search.trim()) {
+      const term = search.trim().toLowerCase();
+      formations = formations.filter((row) => row.parent_project_name.toLowerCase().includes(term));
+    }
+
+    // Resolved once per request, not per row — root-project.helper.ts's cache already amortizes
+    // the NATS lookup across requests, but there's no reason to await it N times per response.
+    const rootUid = await resolveRootProjectUid(req, this.natsService);
+    const rows = formations.map((formation) => this.toQueueRow(formation, rootUid));
+    const tiles = this.buildQueueTiles();
+
+    return { tiles, rows, data_source: 'fixture' };
+  }
+
+  /**
+   * Live branch of {@link getFormationsQueue} — the indexer's `formation` projection already
+   * matches `FormationQueueRow`'s shape verbatim (GH-2267 plan gap 2), so no per-row mapper is
+   * needed, only ROOT collapse and the subStage/search filters the fixture branch also applies.
+   * `search` matches on `project_name`, mirroring the fixture branch's `parent_project_name` match.
+   * Rows the caller can't read are simply absent from `/query/resources` (per-row `auditor`
+   * enforcement upstream), so no additional access filtering is needed here.
+   */
+  private async getFormationsQueueLive(req: Request, subStage?: FormationSubStage, search?: string): Promise<FormationsQueueResponse> {
+    // subStage/search are applied client-side below, not as query-service params — the contract
+    // (GH-2267 plan §7's `getFormationsQueue` row) only documents `type=formation` and an
+    // `assignee:<username>` tag for "Mine"; there's no confirmed server-side sub_stage/name filter.
+    const rawRows = await fetchAllQueryResources<FormationQueueRow>(req, (pageToken) =>
+      this.microserviceProxy.proxyRequest<QueryServiceResponse<FormationQueueRow>>(req, 'LFX_V2_SERVICE', '/query/resources', 'GET', {
+        type: 'formation',
+        ...(pageToken && { page_token: pageToken }),
+      })
+    );
+
+    const rootUid = await resolveRootProjectUid(req, this.natsService);
+    let rows = rawRows.map((row) => ({ ...row, parent_uid: collapseRootParentUid(row.parent_uid, rootUid) ?? null }));
+
     if (subStage) {
       rows = rows.filter((row) => row.sub_stage === subStage);
     }
     if (search && search.trim()) {
       const term = search.trim().toLowerCase();
-      rows = rows.filter((row) => row.parent_project_name.toLowerCase().includes(term));
+      rows = rows.filter((row) => row.project_name.toLowerCase().includes(term));
     }
 
-    const tiles = this.buildQueueTiles();
+    const tiles = this.buildQueueTilesFromRows(rawRows);
 
-    return { tiles, rows, data_source: 'fixture' };
+    return { tiles, rows, data_source: 'live' };
+  }
+
+  /**
+   * Live-mode pre-read for a mutation's project-visibility + item-existence check, and the source of
+   * the item's current `version` for `If-Match` (GH-2267 Phase 1). Mirrors `assertItemProjectAccess`'s
+   * masking invariant: a 403/404 from the auditor-gated `GET /formations/{project_uid}` is
+   * indistinguishable from "no such formation" to the caller — this pre-read doubles as that access
+   * check for the live path, so mutation methods don't call `assertItemProjectAccess` separately.
+   */
+  private async fetchLiveChecklistOrDenyNotFound(req: Request, projectUid: string, itemAddress: string): Promise<UpstreamFormationChecklist> {
+    try {
+      return await this.microserviceProxy.proxyRequest<UpstreamFormationChecklist>(req, 'LFX_V2_FORMATION_SERVICE', `/formations/${projectUid}`, 'GET');
+    } catch (error) {
+      if (isMicroserviceError(error) && (error.statusCode === 403 || error.statusCode === 404)) {
+        logger.debug(req, 'get_formation_item', 'Denying formation-item access', { item_address: itemAddress, err: error });
+        throw new ResourceNotFoundError('FormationItem', itemAddress, { operation: 'get_formation_item', service: 'formation_service', path: req.path });
+      }
+      throw error;
+    }
+  }
+
+  /**
+   * Maps one live checklist item onto `FormationItem`. `formation_uid` has no upstream source on
+   * this path (gap 3) — synthesized deterministically from `projectUid`, mirroring the fixture
+   * generator's own `formation:<project_uid>` convention so both backends agree on the shape.
+   */
+  private async mapLiveItem(req: Request, projectUid: string, raw: UpstreamFormationItem): Promise<FormationItem> {
+    const project = await this.projectService.getProjectById(req, projectUid, false);
+    const ctx: FormationItemMapContext = { formationUid: `formation:${projectUid}`, projectUid, projectSlug: project.slug };
+    return mapUpstreamFormationItem(raw, ctx);
+  }
+
+  /**
+   * Shared PATCH transport for complete/skip/request/status/update (design.go item 3) — `If-Match:
+   * <version>` enforces the optimistic lock. Only the 412 case is mapped to a dedicated error class
+   * here; the fuller 409/400 `reason`-based mapping is deferred (GH-2267 plan's Phase 3 scope note) —
+   * everything else passes through as the generic `MicroserviceError`.
+   */
+  private async mutateLiveItem(
+    req: Request,
+    projectUid: string,
+    itemKey: string,
+    version: number,
+    body: Record<string, unknown>,
+    operation: string
+  ): Promise<UpstreamFormationItem> {
+    try {
+      return await this.microserviceProxy.proxyRequest<UpstreamFormationItem>(
+        req,
+        'LFX_V2_FORMATION_SERVICE',
+        `/formations/${projectUid}/items/${itemKey}`,
+        'PATCH',
+        undefined,
+        body,
+        { 'If-Match': String(version) }
+      );
+    } catch (error) {
+      throw this.mapLivePreconditionError(error, req, operation);
+    }
+  }
+
+  /** Shared POST transport for accept/reject/reopen (design.go items 4-6) — same `If-Match`/412 handling as {@link mutateLiveItem}. */
+  private async actLiveItem(
+    req: Request,
+    projectUid: string,
+    itemKey: string,
+    action: 'accept' | 'reject' | 'reopen',
+    version: number,
+    body: Record<string, unknown>,
+    operation: string
+  ): Promise<UpstreamFormationItem> {
+    try {
+      return await this.microserviceProxy.proxyRequest<UpstreamFormationItem>(
+        req,
+        'LFX_V2_FORMATION_SERVICE',
+        `/formations/${projectUid}/items/${itemKey}/${action}`,
+        'POST',
+        undefined,
+        body,
+        { 'If-Match': String(version) }
+      );
+    } catch (error) {
+      throw this.mapLivePreconditionError(error, req, operation);
+    }
+  }
+
+  private mapLivePreconditionError(error: unknown, req: Request, operation: string): unknown {
+    if (isMicroserviceError(error) && error.statusCode === 412) {
+      return new PreconditionFailedError(error.errorBody?.message, { operation, service: 'formation_service', path: req.path });
+    }
+    return error;
+  }
+
+  /**
+   * Fixture-only address→uid bridge (GH-2267 Phase 2) — the store's flat item map is still keyed by
+   * the fixture uid (`formation-item:<project_uid>:<item_key>`, see `generateMockFormation`'s seed
+   * in `formation-fixture.helper.ts`), but every route/controller/client call above this service now
+   * addresses items by `(project_uid, item_key)`, matching the real service's contract. TODO(#1957):
+   * the real client drops this entirely — items are addressed by `(project_uid, item_key)` all the
+   * way down, with no uid reconstruction needed.
+   */
+  private static itemUidFor(projectUid: string, itemKey: string): string {
+    return `formation-item:${projectUid}:${itemKey}`;
+  }
+
+  /**
+   * Fixture-only adapter from {@link Formation} + its stored items to {@link FormationQueueRow} —
+   * the real client won't need this once `getFormationsQueue`'s live branch reads the indexer's
+   * projection directly (that document already carries this exact shape; see gap 2 in the GH-2267
+   * plan). `lifecycle` has no fixture source (it's a project-service concept the Formation fixture
+   * never modeled) — `'formation'` is a stand-in for every queue row, all of which are pre-Activation.
+   */
+  private toQueueRow(formation: Formation, rootUid: string | null): FormationQueueRow {
+    // Formation.uid is optional only because the checklist read can't source it (see its doc
+    // comment) — every queue-fixture row (STATIC_QUEUE_FORMATIONS, and anything seeded over it in
+    // the write store) sets it explicitly, so it's always present on this path.
+    const formationUid = formation.uid as string;
+    const items = getStoredItemsForFormation(formationUid);
+    const gatingItems = items.filter((item) => item.is_gating);
+    const blockedGatingItems = gatingItems.filter((item) => item.status === 'blocked');
+
+    const progress: Record<FormationItemStatus, number> = {
+      not_started: 0,
+      in_progress: 0,
+      blocked: 0,
+      awaiting_acceptance: 0,
+      done: 0,
+      skipped: 0,
+    };
+    for (const item of items) {
+      progress[item.status] += 1;
+    }
+
+    const assigneesByUsername = new Map<string, FormationUser>();
+    for (const item of items) {
+      if (item.owner) {
+        assigneesByUsername.set(item.owner.username, item.owner);
+      }
+    }
+
+    return {
+      formation_uid: formationUid,
+      project_uid: formation.parent_project_uid,
+      project_name: formation.parent_project_name,
+      project_slug: formation.parent_project_slug,
+      is_foundation: formation.is_foundation,
+      // ROOT collapse (GH-2267 Phase 4) — see root-project.helper.ts. Fixture rows already store
+      // null/a real parent, so this is a no-op for them; it matters once the live projection (which
+      // copies the project service's parent_uid verbatim) is wired in.
+      parent_uid: collapseRootParentUid(formation.parent_uid, rootUid) ?? null,
+      sub_stage: formation.sub_stage,
+      lifecycle: 'formation',
+      gates_cleared: gatingItems.length > 0 && blockedGatingItems.length === 0 && formation.gating_items_open === 0,
+      is_activating: formation.is_activating,
+      announcement_date: formation.announcement_date,
+      progress,
+      blocked_item_titles: blockedGatingItems.map((item) => item.title),
+      assignees: Array.from(assigneesByUsername.values()),
+    };
   }
 
   private buildQueueTiles(): FormationsQueueResponse['tiles'] {
@@ -350,6 +766,26 @@ export class FormationService {
     // The tile subLine only has room for a foundations/projects split — a bare 'project' entity (no
     // foundation/child_project formation ceremony) rolls into the projects count so it isn't
     // silently dropped from the breakdown while still counting toward `total`.
+    return {
+      ...bySubStage,
+      total: rows.length,
+      foundations: rows.filter((row) => deriveFormationEntityType(row) === 'foundation').length,
+      projects: rows.filter((row) => deriveFormationEntityType(row) !== 'foundation').length,
+    };
+  }
+
+  /**
+   * Live counterpart of {@link buildQueueTiles} — tiles are computed from the full unfiltered
+   * `FormationQueueRow[]` (pre-ROOT-collapse, since `deriveFormationEntityType` only needs
+   * `is_foundation`/whether `parent_uid` is set, and collapsing null→null is a no-op either way),
+   * matching the fixture branch's own "tiles reflect the whole queue, not the filtered view" contract.
+   */
+  private buildQueueTilesFromRows(rows: FormationQueueRow[]): FormationsQueueResponse['tiles'] {
+    const bySubStage = Object.fromEntries(FORMATION_QUEUE_SUB_STAGES.map((stage) => [stage, 0])) as Record<FormationSubStage, number>;
+    for (const row of rows) {
+      bySubStage[row.sub_stage] = (bySubStage[row.sub_stage] ?? 0) + 1;
+    }
+
     return {
       ...bySubStage,
       total: rows.length,
@@ -405,6 +841,9 @@ export class FormationService {
 
     putStoredFormation({
       ...formation,
+      // Anything the store hands back was written keyed by uid, so it's always present here even
+      // though `getStoredFormation`'s declared return type doesn't narrow that.
+      uid: formationUid,
       gating_items_open: openGatingItems.length,
       gating_items_total: gatingItems.length,
       is_activating: isActivating,
@@ -421,27 +860,22 @@ export class FormationService {
    * can't see throws here (404/403 from the upstream project service) before any item data or
    * mutation is returned.
    */
-  private async assertItemProjectAccess(req: Request, item: Pick<FormationItem, 'formation_uid'>, itemUid: string): Promise<void> {
-    // Always throws the same "FormationItem not found" shape as the missing-uid branch above,
-    // regardless of which check actually failed (dangling formation reference vs. an upstream
-    // project-visibility denial) — a differentiated error would let a caller distinguish "this
-    // item doesn't exist" from "it exists and you can't see it", an account/resource enumeration
-    // oracle. The real cause is still logged for operators.
-    const denyNotFound = (cause: unknown): never => {
-      logger.debug(req, 'assert_item_project_access', 'Denying formation-item access', { item_uid: itemUid, err: cause });
-      throw new ResourceNotFoundError('FormationItem', itemUid, { operation: 'get_formation_item', service: 'formation_service', path: req.path });
-    };
-
-    const formation = getStoredFormation(item.formation_uid) ?? STATIC_QUEUE_FORMATIONS.find((row) => row.uid === item.formation_uid);
-    if (!formation) {
-      denyNotFound(new Error(`no formation record for formation_uid ${item.formation_uid}`));
-      return;
-    }
-
+  private async assertItemProjectAccess(req: Request, projectUid: string, itemAddress: string): Promise<void> {
+    // Always throws the same "FormationItem not found" shape as the missing-address branch above
+    // (getFormationItemOrThrow), keyed by the same public `${projectUid}/${itemKey}` address rather
+    // than the internal fixture uid — regardless of which check actually failed, a differentiated
+    // error would let a caller distinguish "this item doesn't exist" from "it exists and you can't
+    // see it", an account/resource enumeration oracle. The real cause is still logged for operators.
+    //
+    // Takes `projectUid` directly (GH-2267 Phase 1) rather than resolving it via a formation-record
+    // lookup keyed by `item.formation_uid` — that lookup (`getStoredFormation`/
+    // `STATIC_QUEUE_FORMATIONS`) is fixture-only and has no live equivalent, while every caller
+    // already has `projectUid` in hand. Works identically for both backends.
     try {
-      await this.projectService.getProjectById(req, formation.parent_project_uid, false);
+      await this.projectService.getProjectById(req, projectUid, false);
     } catch (error) {
-      denyNotFound(error);
+      logger.debug(req, 'assert_item_project_access', 'Denying formation-item access', { item_address: itemAddress, err: error });
+      throw new ResourceNotFoundError('FormationItem', itemAddress, { operation: 'get_formation_item', service: 'formation_service', path: req.path });
     }
   }
 
@@ -453,17 +887,9 @@ export class FormationService {
    * masking `assertItemProjectAccess` uses — the caller already legitimately knows this item
    * exists, so there is no existence-oracle risk in saying so.
    */
-  private async assertItemProjectWriteAccess(req: Request, item: Pick<FormationItem, 'formation_uid'>): Promise<void> {
-    const formation = getStoredFormation(item.formation_uid) ?? STATIC_QUEUE_FORMATIONS.find((row) => row.uid === item.formation_uid);
-    if (!formation) {
-      throw new ResourceNotFoundError('Formation', item.formation_uid, {
-        operation: 'assert_item_project_write_access',
-        service: 'formation_service',
-        path: req.path,
-      });
-    }
-
-    const project = await this.projectService.getProjectById(req, formation.parent_project_uid, true);
+  private async assertItemProjectWriteAccess(req: Request, projectUid: string): Promise<void> {
+    // Takes `projectUid` directly, same rationale as `assertItemProjectAccess` above.
+    const project = await this.projectService.getProjectById(req, projectUid, true);
     if (!project.writer) {
       throw new AuthorizationError('Write access required for this project', {
         operation: 'assert_item_project_write_access',

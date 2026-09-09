@@ -14,6 +14,8 @@ export const mockFormationItems: Record<string, FormationItem[]> = {
     {
       uid: 'formation-item:cascade-data-alliance:draft-project-record',
       formation_uid: 'formation:cascade-data-alliance',
+      project_uid: 'e19f1234-f567-4abc-b890-1234567890de',
+      version: 1,
       template_item_key: 'draft-project-record',
       section_key: 'legal_and_entity',
       section_title: 'Legal and entity',
@@ -37,6 +39,8 @@ export const mockFormationItems: Record<string, FormationItem[]> = {
     {
       uid: 'formation-item:cascade-data-alliance:contribution-agreement-executed',
       formation_uid: 'formation:cascade-data-alliance',
+      project_uid: 'e19f1234-f567-4abc-b890-1234567890de',
+      version: 1,
       template_item_key: 'contribution-agreement-executed',
       section_key: 'legal_and_entity',
       section_title: 'Legal and entity',
@@ -60,6 +64,8 @@ export const mockFormationItems: Record<string, FormationItem[]> = {
     {
       uid: 'formation-item:cascade-data-alliance:domain-and-dns-transfer',
       formation_uid: 'formation:cascade-data-alliance',
+      project_uid: 'e19f1234-f567-4abc-b890-1234567890de',
+      version: 1,
       template_item_key: 'domain-and-dns-transfer',
       section_key: 'community_and_launch',
       section_title: 'Community and launch',
@@ -83,6 +89,8 @@ export const mockFormationItems: Record<string, FormationItem[]> = {
     {
       uid: 'formation-item:cascade-data-alliance:mailing-lists',
       formation_uid: 'formation:cascade-data-alliance',
+      project_uid: 'e19f1234-f567-4abc-b890-1234567890de',
+      version: 1,
       template_item_key: 'mailing-lists',
       section_key: 'community_and_launch',
       section_title: 'Community and launch',
@@ -109,6 +117,8 @@ export const mockFormationItems: Record<string, FormationItem[]> = {
     {
       uid: 'formation-item:cascade-data-alliance:formation-sets-active',
       formation_uid: 'formation:cascade-data-alliance',
+      project_uid: 'e19f1234-f567-4abc-b890-1234567890de',
+      version: 1,
       template_item_key: 'formation-sets-active',
       section_key: 'community_and_launch',
       section_title: 'Community and launch',
