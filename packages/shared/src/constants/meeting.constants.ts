@@ -725,6 +725,12 @@ export const RECONCILIATION_MAX_CANDIDATES_PER_AI_CALL = 50;
  * riding along on the call, not a person needing identity verification, and it has no reason to be
  * offered as a match candidate or queued for admin review against a real attendee.
  *
+ * The generic "notetaker" alternative is restricted to the possessive `<Name>'s Notetaker` form
+ * (straight or curly apostrophe) rather than a bare `\bnotetaker\b` substring match — every named
+ * product below already covers its own bot regardless of the word "notetaker", so an unrestricted
+ * match would wrongly exclude a real attendee whose display name merely contains that word, e.g.
+ * "Alice (Notetaker)".
+ *
  * Fathom/Gong/Grain are matched only when the bare product name is the *entire* (trimmed) display
  * name — see `isNotetakerBot`'s `.trim()` — rather than as a substring anywhere in it, unlike the
  * other tools here. Those three are also plausible real first/last names, and these bots' Zoom
@@ -734,7 +740,7 @@ export const RECONCILIATION_MAX_CANDIDATES_PER_AI_CALL = 50;
  * "notetaker" as the optional suffix for these three.
  */
 export const RECONCILIATION_BOT_NAME_PATTERN =
-  /\bnotetaker\b|\botter\.?ai\b|\bfireflies\.?ai\b|\btl;?dv\b|\bread\.?ai\b|\bavoma\b|^fathom(\.?(ai|video))?\s*(notetaker|recorder)?$|^gong(\.?io)?\s*(notetaker|recorder)?$|^grain(\.?com)?\s*(notetaker|recorder)?$/i;
+  /['’]s\s+notetaker\b|\botter\.?ai\b|\bfireflies\.?ai\b|\btl;?dv\b|\bread\.?ai\b|\bavoma\b|^fathom(\.?(ai|video))?\s*(notetaker|recorder)?$|^gong(\.?io)?\s*(notetaker|recorder)?$|^grain(\.?com)?\s*(notetaker|recorder)?$/i;
 
 /**
  * The `AttachmentCategory` (`meeting-attachment.interface.ts`) value CommitteeActivityService's

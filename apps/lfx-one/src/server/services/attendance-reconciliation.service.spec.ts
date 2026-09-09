@@ -121,15 +121,38 @@ describe('AttendanceReconciliationService', () => {
       expect(updatePastMeetingParticipant).not.toHaveBeenCalled();
     });
 
-    it('excludes a notetaker bot attendee from the unverified queue entirely', async () => {
-      getPastMeetingParticipants.mockResolvedValue([
-        buildParticipant({ uid: 'bot-1', zoom_user_name: "Libby's Notetaker (Otter.ai)", is_attended: true, is_verified: false }),
-      ]);
+    it.each([
+      ["Libby's Notetaker (Otter.ai)", 'possessive generic + Otter.ai'],
+      ['Otter.ai', 'bare Otter.ai'],
+      ['Fireflies.ai Notetaker', 'Fireflies.ai'],
+      ['Fathom', 'bare Fathom'],
+      ['Fathom Notetaker', 'Fathom notetaker suffix'],
+      ['Fathom Recorder', 'Fathom recorder suffix'],
+      ['Gong', 'bare Gong'],
+      ['Gong.io', 'Gong.io'],
+      ['Gong Notetaker', 'Gong notetaker suffix'],
+      ['tl;dv', 'tl;dv'],
+      ['Read.ai', 'Read.ai'],
+      ['Grain', 'bare Grain'],
+      ['Grain Recorder', 'Grain recorder suffix (default Zoom name)'],
+      ['Avoma', 'Avoma'],
+    ])('excludes a notetaker bot attendee (%s — %s) from the unverified queue entirely', async (zoomUserName) => {
+      getPastMeetingParticipants.mockResolvedValue([buildParticipant({ uid: 'bot-1', zoom_user_name: zoomUserName, is_attended: true, is_verified: false })]);
 
       const result = await service.reconcilePastMeetingParticipants(req, 'occ-1', pastMeeting);
 
       expect(result).toEqual({ results: [], candidate_pool_size: 0, auto_applied_count: 0, needs_review_count: 0, pool_degraded: false });
       expect(updatePastMeetingParticipant).not.toHaveBeenCalled();
+    });
+
+    it('does not exclude a real attendee whose display name merely contains the word "notetaker"', async () => {
+      getPastMeetingParticipants.mockResolvedValue([
+        buildParticipant({ uid: 'attendee-1', zoom_user_name: 'Alice (Notetaker)', is_attended: true, is_verified: false }),
+      ]);
+
+      const result = await service.reconcilePastMeetingParticipants(req, 'occ-1', pastMeeting);
+
+      expect(result.results).toContainEqual(expect.objectContaining({ attendee_id: 'attendee-1' }));
     });
 
     it('excludes a notetaker bot invitee from the candidate pool so it cannot be matched against', async () => {
