@@ -1,0 +1,88 @@
+<!-- Copyright The Linux Foundation and each contributor to LFX. -->
+<!-- SPDX-License-Identifier: MIT -->
+
+<div class="flex flex-col gap-4" data-testid="org-easycla-approval-dialog">
+  <p class="text-sm text-gray-600" data-testid="org-easycla-approval-dialog-hint">{{ hint() }}</p>
+
+  <!--
+    `severity="warn"` on the edit path only. Editing is a removal and an addition in one request,
+    and the removal half invalidates every acknowledgement that matched the old value — so the
+    consequence is stated before the change is made, not reported after it. The design's copy for
+    this dialog claims the opposite ("existing contributors keep their coverage"); the API is the
+    authority and this is what it actually does.
+  -->
+  @if (isEdit) {
+    <lfx-message severity="warn" icon="fa-light fa-triangle-exclamation" data-testid="org-easycla-approval-dialog-edit-warning">
+      <ng-template #content>
+        <span>Contributors covered only by the previous value will need to acknowledge this CLA again.</span>
+      </ng-template>
+    </lfx-message>
+  }
+
+  <div class="flex flex-col gap-3">
+    @for (row of rows.controls; track row) {
+      <div class="flex flex-col gap-1" [attr.data-testid]="'org-easycla-approval-dialog-row-' + $index">
+        <div class="flex items-start gap-2">
+          <div class="w-48 shrink-0">
+            <lfx-select
+              [form]="rowGroup($index)"
+              control="kind"
+              [options]="criteriaOptions"
+              optionLabel="label"
+              optionValue="value"
+              [attr.data-testid]="'org-easycla-approval-dialog-kind-' + $index" />
+          </div>
+          <div class="flex-1">
+            <lfx-input-text
+              [form]="rowGroup($index)"
+              control="value"
+              [placeholder]="placeholderFor($index)"
+              [invalid]="!!errors()[$index]"
+              [describedBy]="errors()[$index] ? 'org-easycla-approval-dialog-error-' + $index : ''"
+              [dataTest]="'org-easycla-approval-dialog-value-' + $index" />
+          </div>
+          <!--
+            Hidden rather than disabled at one row: a disabled remove button on the only row is a
+            control that can never do anything. Absent in edit mode, which reworks exactly one
+            entry and so has no second row to remove.
+          -->
+          @if (!isEdit && rows.length > 1) {
+            <lfx-button
+              icon="fa-light fa-xmark"
+              severity="secondary"
+              [text]="true"
+              ariaLabel="Remove this entry from the changes"
+              (onClick)="removeRow($index)"
+              [attr.data-testid]="'org-easycla-approval-dialog-remove-row-' + $index" />
+          }
+        </div>
+        @if (errors()[$index]) {
+          <p
+            class="text-xs text-red-600"
+            [id]="'org-easycla-approval-dialog-error-' + $index"
+            role="alert"
+            [attr.data-testid]="'org-easycla-approval-dialog-error-text-' + $index">
+            {{ errors()[$index] }}
+          </p>
+        }
+      </div>
+    }
+  </div>
+
+  @if (!isEdit && rows.length < maxEntries) {
+    <div>
+      <lfx-button
+        label="Add another entry"
+        icon="fa-light fa-plus"
+        severity="secondary"
+        [text]="true"
+        (onClick)="addRow()"
+        data-testid="org-easycla-approval-dialog-add-row" />
+    </div>
+  }
+
+  <div class="flex justify-end gap-2">
+    <lfx-button label="Cancel" severity="secondary" [outlined]="true" (onClick)="cancel()" data-testid="org-easycla-approval-dialog-cancel" />
+    <lfx-button [label]="isEdit ? 'Save changes' : 'Add to approval list'" (onClick)="submit()" data-testid="org-easycla-approval-dialog-submit" />
+  </div>
+</div>

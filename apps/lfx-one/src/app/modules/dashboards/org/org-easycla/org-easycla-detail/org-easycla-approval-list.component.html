@@ -1,0 +1,135 @@
+<!-- Copyright The Linux Foundation and each contributor to LFX. -->
+<!-- SPDX-License-Identifier: MIT -->
+
+<div class="flex flex-col gap-4 rounded-lg border border-gray-200 bg-white p-5" data-testid="org-easycla-approval-list">
+  <div class="flex flex-wrap items-start justify-between gap-3">
+    <h2 class="font-medium text-lg text-gray-900" data-testid="org-easycla-approval-heading">{{ heading }}</h2>
+    <!--
+      Absent rather than disabled when the caller cannot write. The producer's rule is membership
+      of this agreement's own CLA-manager list, and an organization admin who can read this page
+      is routinely not on it — so a disabled button would be permanently disabled for them with no
+      way to explain itself. Also absent while the list is loading, so its enabled state is never
+      decided from a `canEdit` that has not arrived.
+    -->
+    @if (!locked() && !loading() && !fetchError() && canEdit()) {
+      <lfx-button label="Add entries" icon="fa-light fa-plus" [disabled]="saving()" (onClick)="openAdd()" data-testid="org-easycla-approval-add" />
+    }
+  </div>
+
+  @if (locked()) {
+    <!--
+      An unsigned agreement has no approval list to hold rules. The copy points at signing rather
+      than at a search term, and no toolbar is rendered above it — there is nothing to search.
+    -->
+    <lfx-empty-state
+      icon="fa-light fa-file-signature"
+      title="The approval list becomes available once this CLA is signed"
+      subtitle="Sign this CLA first, then add approval list entries to cover matching contributors."
+      [withCard]="false"
+      data-testid="org-easycla-approval-locked" />
+  } @else if (fetchError()) {
+    <lfx-empty-state
+      icon="fa-light fa-triangle-exclamation"
+      title="Could not load the approval list"
+      subtitle="Please refresh the page to try again."
+      [withCard]="false"
+      data-testid="org-easycla-approval-error" />
+  } @else if (loading()) {
+    <div class="flex flex-col gap-2" data-testid="org-easycla-approval-loading">
+      @for (skeleton of loadingRows; track skeleton) {
+        <p-skeleton height="2.5rem" />
+      }
+    </div>
+  } @else {
+    <!--
+      The search box stays with the table and is withheld from both empty states: a filter over
+      nothing is a control that cannot change what is shown. The design keeps it visible on its
+      single empty state, which is the same conflation the two states below separate.
+    -->
+    @if (!showEmptyList()) {
+      <div class="max-w-sm">
+        <!-- The placeholder is not a label: it disappears as soon as anything is typed, leaving a
+             screen reader with an unnamed field.
+
+             `[id]` is bound rather than written as a plain attribute, for the reason the CLA
+             Group list's own search box documents — a static `id` lands on the wrapper's host
+             element as well as its native input, so `for` resolves to the wrapper and labels
+             nothing. -->
+        <label class="sr-only" for="org-easycla-approval-search-input">Search the approval list</label>
+        <lfx-input-text
+          [form]="filterForm"
+          control="search"
+          [id]="'org-easycla-approval-search-input'"
+          placeholder="Search approval list…"
+          icon="fa-light fa-magnifying-glass"
+          class="w-full"
+          dataTest="org-easycla-approval-search" />
+      </div>
+    }
+
+    @if (showEmptyList()) {
+      <lfx-empty-state
+        icon="fa-light fa-list-check"
+        title="No approval list entries yet"
+        subtitle="Add an entry by email, email domain, GitHub org or username, or GitLab group or username to cover matching contributors."
+        [withCard]="false"
+        data-testid="org-easycla-approval-empty" />
+    } @else if (showSearchMiss()) {
+      <lfx-empty-state
+        icon="fa-light fa-magnifying-glass"
+        title="No entries match your search"
+        subtitle="Try a different value or criteria type."
+        [withCard]="false"
+        data-testid="org-easycla-approval-search-empty" />
+    } @else {
+      <table class="w-full text-left text-sm" data-testid="org-easycla-approval-table">
+        <thead>
+          <tr class="border-b border-gray-200 text-xs text-gray-500 uppercase">
+            <th scope="col" class="py-2 pr-4 font-medium">Approved list</th>
+            <th scope="col" class="py-2 pr-4 font-medium">Approval criteria</th>
+            <th scope="col" class="py-2 pr-4 font-medium">Added on</th>
+            <!-- The action column has no heading to announce; an empty `<th>` would be read as one. -->
+            @if (canEdit()) {
+              <th scope="col" class="py-2"><span class="sr-only">Actions</span></th>
+            }
+          </tr>
+        </thead>
+        <tbody>
+          @for (row of visibleRows(); track row.entry.kind + ':' + row.entry.value) {
+            <tr class="border-b border-gray-100 last:border-0" data-testid="org-easycla-approval-row">
+              <td class="py-2 pr-4 break-all text-gray-900" data-testid="org-easycla-approval-value">{{ row.entry.value }}</td>
+              <td class="py-2 pr-4" data-testid="org-easycla-approval-kind">
+                <span class="rounded-full bg-gray-100 px-2 py-0.5 text-xs text-gray-600">{{ row.criteriaLabel }}</span>
+              </td>
+              <td class="py-2 pr-4 text-gray-500" data-testid="org-easycla-approval-added-on">{{ row.addedOnLabel }}</td>
+              @if (canEdit()) {
+                <td class="py-2">
+                  <div class="flex items-center gap-1">
+                    <lfx-button
+                      label="Edit"
+                      severity="secondary"
+                      [text]="true"
+                      [disabled]="saving()"
+                      [ariaLabel]="'Edit approval list entry ' + row.entry.value"
+                      (onClick)="openEdit(row.entry)"
+                      data-testid="org-easycla-approval-edit" />
+                    <lfx-button
+                      label="Delete"
+                      severity="danger"
+                      [text]="true"
+                      [disabled]="saving()"
+                      [ariaLabel]="'Delete approval list entry ' + row.entry.value"
+                      (onClick)="confirmDelete(row.entry)"
+                      data-testid="org-easycla-approval-delete" />
+                  </div>
+                </td>
+              }
+            </tr>
+          }
+        </tbody>
+      </table>
+    }
+  }
+</div>
+
+<p-confirmDialog />
