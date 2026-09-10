@@ -19,9 +19,7 @@
         <div
           class="flex items-center gap-[3px]"
           [attr.role]="dots.caption ? 'img' : null"
-          [attr.aria-labelledby]="
-            dots.caption ? 'health-metrics-overview-finding-' + finding().classification + '-' + finding().sortRank + '-dots-caption' : null
-          "
+          [attr.aria-labelledby]="dots.caption ? 'health-metrics-overview-finding-' + finding().sortRank + '-dots-caption' : null"
           [attr.aria-hidden]="dots.caption ? null : true"
           data-testid="health-metrics-overview-finding-dots">
           @for (filled of dots.dots; track $index) {
@@ -33,9 +31,7 @@
           }
         </div>
         @if (dots.caption) {
-          <span
-            class="text-[11px] text-gray-400"
-            [attr.id]="'health-metrics-overview-finding-' + finding().classification + '-' + finding().sortRank + '-dots-caption'">
+          <span class="text-[11px] text-gray-400" [attr.id]="'health-metrics-overview-finding-' + finding().sortRank + '-dots-caption'">
             {{ dots.caption }}
           </span>
         }
@@ -46,17 +42,13 @@
           [attr.aria-valuenow]="bar.fillPercent"
           aria-valuemin="0"
           aria-valuemax="100"
-          [attr.aria-labelledby]="
-            bar.caption ? 'health-metrics-overview-finding-' + finding().classification + '-' + finding().sortRank + '-bar-caption' : null
-          "
+          [attr.aria-labelledby]="bar.caption ? 'health-metrics-overview-finding-' + finding().sortRank + '-bar-caption' : null"
           [attr.aria-label]="bar.caption ? null : 'Progress'"
           data-testid="health-metrics-overview-finding-bar">
           <div class="h-full rounded-[3px]" [ngClass]="bar.toneClass" [style.width.%]="bar.fillPercent" aria-hidden="true"></div>
         </div>
         @if (bar.caption) {
-          <span
-            class="text-[11px] text-gray-400"
-            [attr.id]="'health-metrics-overview-finding-' + finding().classification + '-' + finding().sortRank + '-bar-caption'">
+          <span class="text-[11px] text-gray-400" [attr.id]="'health-metrics-overview-finding-' + finding().sortRank + '-bar-caption'">
             {{ bar.caption }}
           </span>
         }
