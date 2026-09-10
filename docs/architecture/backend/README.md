@@ -142,7 +142,7 @@ apps/lfx-one/src/server/
 ├── pdf-templates/            # PDF generation templates (e.g., visa letters)
 ├── routes/                   # Express route definitions
 ├── services/                 # Business logic layer
-├── utils/                    # Shared server utilities (auth, lock manager, M2M token, persona, security)
+├── utils/                    # Shared server utilities (auth, lock manager, per-user lock, M2M token, persona, security)
 ├── server.ts                 # Server bootstrap and route registration
 ├── server-logger.ts          # Base Pino logger instance
 └── server-tracer.ts          # OpenTelemetry tracer and SERVICE_NAME

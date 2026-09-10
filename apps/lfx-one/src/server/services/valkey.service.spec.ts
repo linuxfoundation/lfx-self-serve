@@ -120,6 +120,22 @@ describe('ValkeyService — acquireLock / releaseLock (LFXV2 #2241)', () => {
     expect(result).toEqual({ status: 'unavailable' });
     expect(evalMock).toHaveBeenCalledWith(expect.stringContaining('redis.call'), 1, 'lock:key', expect.any(String));
   });
+
+  it('retries the release once after the op-timeout window in case the SET lands just after the immediate attempt', async () => {
+    vi.useFakeTimers();
+    try {
+      setMock.mockRejectedValue(new Error('connection reset'));
+      evalMock.mockResolvedValue(1);
+
+      await ValkeyService.getInstance().acquireLock('lock:key', 25000, 3000);
+      expect(evalMock).toHaveBeenCalledTimes(1);
+
+      await vi.advanceTimersByTimeAsync(3000);
+      expect(evalMock).toHaveBeenCalledTimes(2);
+    } finally {
+      vi.useRealTimers();
+    }
+  });
 });
 
 describe('buildUserLockCacheKey (LFXV2 #2241)', () => {

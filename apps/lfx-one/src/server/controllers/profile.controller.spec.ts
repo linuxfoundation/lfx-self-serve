@@ -11,6 +11,7 @@ const {
   getEffectiveSubMock,
   isImpersonatingMock,
   getLinuxForwardDomainMock,
+  withUserLockMock,
   objectStoreSvc,
   userSvc,
   profileAuthSvc,
@@ -26,6 +27,7 @@ const {
   getEffectiveSubMock: vi.fn(),
   isImpersonatingMock: vi.fn(() => false),
   getLinuxForwardDomainMock: vi.fn(() => 'linux.com'),
+  withUserLockMock: vi.fn((_req: unknown, _username: string, _ttlMs: number, fn: () => Promise<unknown>) => fn()),
   meetingPrefSvc: {
     getMeetingInviteEmail: vi.fn(),
     setMeetingInviteEmail: vi.fn(),
@@ -97,7 +99,7 @@ vi.mock('../utils/m2m-token.util', () => ({ generateM2MToken: generateM2MTokenMo
 // Unit-tested separately in user-lock.spec.ts — here it's a passthrough so controller specs exercise
 // the wrapped logic without needing a real/mocked Valkey backend.
 vi.mock('../utils/user-lock', () => ({
-  withUserLock: vi.fn((_username: string, _ttlMs: number, fn: () => Promise<unknown>) => fn()),
+  withUserLock: withUserLockMock,
 }));
 vi.mock('../helpers/linux-forward.helper', () => ({ getLinuxForwardDomain: getLinuxForwardDomainMock }));
 vi.mock('../services/logger.service', () => ({
@@ -437,6 +439,7 @@ describe('ProfileController.setMeetingInviteEmail', () => {
     expect(res.status).toHaveBeenCalledWith(200);
     expect(res.json).toHaveBeenCalledWith({ email_id: 'id-2', email: 'invite@example.com' });
     expect(next).not.toHaveBeenCalled();
+    expect(withUserLockMock).toHaveBeenCalledWith(expect.anything(), 'testuser', 25000, expect.any(Function));
   });
 
   it('maps a validation failure to a 400 carrying the actionable message, not the raw upstream error', async () => {
@@ -533,6 +536,7 @@ describe('ProfileController.rejectIdentity — meeting-invite guard (Copilot rev
     expect(meetingPrefSvc.getMeetingInviteEmail).not.toHaveBeenCalled();
     expect(res.json).toHaveBeenCalledWith({ success: true });
     expect(next).not.toHaveBeenCalled();
+    expect(withUserLockMock).not.toHaveBeenCalled();
   });
 
   it('blocks removal with a 409 when the address matches the active meeting-invite email (case-insensitive)', async () => {
@@ -585,6 +589,7 @@ describe('ProfileController.rejectIdentity — meeting-invite guard (Copilot rev
 
     expect(res.json).toHaveBeenCalledWith({ success: true });
     expect(next).not.toHaveBeenCalled();
+    expect(withUserLockMock).toHaveBeenCalledWith(expect.anything(), 'testuser', 25000, expect.any(Function));
   });
 });
 

@@ -1,9 +1,11 @@
 // Copyright The Linux Foundation and each contributor to LFX.
 // SPDX-License-Identifier: MIT
 
-// Deep import, not the `@lfx-one/shared/utils` barrel — the barrel re-exports meeting.utils.ts,
-// which imports `@angular/common` and breaks server-side JIT compilation outside Angular's AOT context.
+// Deep import, not the `@lfx-one/shared/utils` barrel: this spec file (unlike valkey.service.spec.ts)
+// doesn't mock the barrel, and it re-exports meeting.utils.ts, whose `@angular/common` import fails
+// to load under vitest's Node environment (no AOT/JIT compiler available there).
 import { isFilterSafeUsername } from '@lfx-one/shared/utils/org-selector.utils';
+import { Request } from 'express';
 
 import { ConflictError } from '../errors';
 import { buildUserLockCacheKey, valkeyService } from '../services/valkey.service';
@@ -23,7 +25,7 @@ const inMemoryLocks = new Map<string, symbol>();
  * `ConflictError` (409) immediately on contention rather than waiting/retrying — callers such as
  * `rejectIdentity` and `setMeetingInviteEmail` are user-initiated and safely retryable client-side.
  */
-export async function withUserLock<T>(username: string, ttlMs: number, fn: () => Promise<T>): Promise<T> {
+export async function withUserLock<T>(req: Request | undefined, username: string, ttlMs: number, fn: () => Promise<T>): Promise<T> {
   // Fail closed on an unsafe username before choosing a backend, so both paths reject it
   // identically rather than the in-memory fallback silently accepting what Valkey would refuse.
   if (!isFilterSafeUsername(username)) {
@@ -52,7 +54,7 @@ export async function withUserLock<T>(username: string, ttlMs: number, fn: () =>
     }
     // `unavailable` — Valkey is enabled but unreachable right now. Degrade to the per-replica
     // in-memory mutex below rather than either blocking the request or running it unguarded.
-    logger.warning(undefined, 'with_user_lock', 'Valkey lock unavailable — degrading to a per-replica in-memory lock', {
+    logger.warning(req, 'with_user_lock', 'Valkey lock unavailable — degrading to a per-replica in-memory lock', {
       operation: 'with_user_lock',
     });
   }

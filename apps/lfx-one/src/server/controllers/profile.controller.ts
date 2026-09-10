@@ -745,7 +745,7 @@ export class ProfileController {
 
       // Serializes against a concurrent `rejectIdentity` guard for the same user (LFXV2 #2241) —
       // see `withUserLock` and the comment on `rejectIdentity`'s meeting-invite guard.
-      const result = await withUserLock(sub, VALKEY_CACHE.MEETING_INVITE_LOCK_TTL_MS, () =>
+      const result = await withUserLock(req, sub, VALKEY_CACHE.MEETING_INVITE_LOCK_TTL_MS, () =>
         this.meetingPreferenceService.setMeetingInviteEmail(req, v1Token, emailAddress)
       );
 
@@ -1424,8 +1424,12 @@ export class ProfileController {
       // (LFXV2 #2241), repointing the preference at this identity between the read and the
       // removal. `withUserLock` serializes both sides of that race per user, so this is a real
       // invariant guard, not just a fail-closed backstop for a client-side race.
+      // Single source of truth for "does this request touch the meeting-invite invariant" — the
+      // guard above and the decision to take the lock below must never drift apart.
+      const isEmailIdentity = typeof email === 'string' && !!email;
+
       const finishRejectIdentity = async (): Promise<void> => {
-        if (typeof email === 'string' && email) {
+        if (isEmailIdentity) {
           const v1Token = req.apiGatewayToken;
           const preference = v1Token ? await this.meetingPreferenceService.getMeetingInviteEmail(req, v1Token) : null;
 
@@ -1495,8 +1499,8 @@ export class ProfileController {
       };
 
       // Only the email-identity path touches the meeting-invite invariant — lock only that path.
-      if (typeof email === 'string' && email) {
-        await withUserLock(sub, VALKEY_CACHE.MEETING_INVITE_LOCK_TTL_MS, finishRejectIdentity);
+      if (isEmailIdentity) {
+        await withUserLock(req, sub, VALKEY_CACHE.MEETING_INVITE_LOCK_TTL_MS, finishRejectIdentity);
       } else {
         await finishRejectIdentity();
       }
