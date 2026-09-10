@@ -128,10 +128,24 @@ export interface OrgLensProject {
   noActivityYet?: boolean;
 }
 
+/** The three fixed Health Score v2 categories, in display order. */
+export type HealthScoreCategoryKey = 'maintainer' | 'security' | 'development';
+
+/** Static descriptor for one Health Score v2 category (name, icon, fixed denominator). */
+export interface HealthScoreCategoryDescriptor {
+  key: HealthScoreCategoryKey;
+  /** Display name (e.g. `Maintainer Health`). */
+  name: string;
+  /** FontAwesome icon name (e.g. `heart-pulse`). */
+  icon: string;
+  /** Fixed denominator (40 / 35 / 25). */
+  max: number;
+}
+
 /** One fixed-denominator category row in the shared Org Lens health popup. */
 export interface OrgLensHealthPopupRow {
-  /** Stable key for testids (`maintainer` | `security` | `development`). */
-  key: 'maintainer' | 'security' | 'development';
+  /** Stable key for testids. */
+  key: HealthScoreCategoryKey;
   /** Display name (e.g. `Maintainer Health`). */
   name: string;
   /** FontAwesome icon name (e.g. `heart-pulse`). */

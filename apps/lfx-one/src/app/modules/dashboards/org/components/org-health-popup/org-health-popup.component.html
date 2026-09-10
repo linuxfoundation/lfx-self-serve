@@ -1,8 +1,16 @@
 <!-- Copyright The Linux Foundation and each contributor to LFX. -->
 <!-- SPDX-License-Identifier: MIT -->
 
-<p-popover #popover [dismissable]="true" appendTo="body" ariaLabel="Health score details" data-testid="org-health-popup">
-  <div class="flex w-64 flex-col gap-3 text-xs" (mouseenter)="cancelHide()" (mouseleave)="scheduleHide()">
+<p-popover #popover [dismissable]="true" appendTo="body" ariaLabel="Health score details" hideTransitionOptions="0ms" data-testid="org-health-popup">
+  <div
+    class="flex w-64 flex-col gap-3 rounded text-xs focus-visible:ring-2 focus-visible:ring-blue-500 focus-visible:outline-none"
+    tabindex="0"
+    role="group"
+    aria-label="Health score details"
+    (mouseenter)="cancelHide()"
+    (mouseleave)="scheduleHide()"
+    (focusin)="cancelHide()"
+    (focusout)="scheduleHide()">
     <div class="flex items-center justify-between gap-2">
       <span class="text-sm font-semibold text-gray-900">Health score</span>
       <a [href]="insightsUrl()" target="_blank" rel="noopener noreferrer" class="font-medium text-blue-600 hover:underline" data-testid="org-health-popup-link">

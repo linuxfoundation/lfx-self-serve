@@ -2,14 +2,21 @@
 // SPDX-License-Identifier: MIT
 
 import { Component, computed, DestroyRef, inject, input, viewChild } from '@angular/core';
-import { HEALTH_SCORE_BAR_FILL, HEALTH_SCORE_LABELS, HEALTH_SCORE_PARTIAL_SUFFIX, ORG_HEALTH_POPUP_UNAVAILABLE_TEXT } from '@lfx-one/shared/constants';
-import { buildInsightsUrl, getHealthScoreDescription, isPartialHealthScore } from '@lfx-one/shared/utils';
-import { Popover, PopoverModule } from 'primeng/popover';
+import {
+  HEALTH_SCORE_BAR_FILL,
+  HEALTH_SCORE_CATEGORIES,
+  HEALTH_SCORE_LABELS,
+  HEALTH_SCORE_PARTIAL_SUFFIX,
+  ORG_HEALTH_POPUP_UNAVAILABLE_TEXT,
+} from '@lfx-one/shared/constants';
+import { getHealthScoreDescription, isPartialHealthScore } from '@lfx-one/shared/utils';
+import { PopoverModule } from 'primeng/popover';
+import type { Popover } from 'primeng/popover';
 
 import type { HealthScore, OrgLensHealthPopupRow } from '@lfx-one/shared/interfaces';
 
 /**
- * Shared Org Lens health popup (#2096) — a PrimeNG popover bound to a health badge on the Projects
+ * Shared Org Lens health popup — a PrimeNG popover bound to a health badge on the Projects
  * table and the project-detail hero. Content ports the Insights health-score pill 1:1 (headline,
  * rescaled bar, generated description, three `/40 /35 /25` rows); the header shell (title + outbound
  * `LFX Insights` link) is Org Lens. Hosts open it on badge hover/focus and schedule-hide on
@@ -28,7 +35,8 @@ export class OrgHealthPopupComponent {
   public readonly maintainer = input<number | null>(null);
   public readonly security = input<number | null>(null);
   public readonly development = input<number | null>(null);
-  public readonly projectSlug = input.required<string>();
+  /** Project's LFX Insights page URL — computed once by the host (BFF `lfxInsightsUrl` / table `insightsUrl`). */
+  public readonly insightsUrl = input.required<string>();
 
   protected readonly unavailableText = ORG_HEALTH_POPUP_UNAVAILABLE_TEXT;
   protected readonly available = computed(() => this.label() != null && this.score() != null);
@@ -53,12 +61,9 @@ export class OrgHealthPopupComponent {
     return band == null ? HEALTH_SCORE_BAR_FILL.healthy : HEALTH_SCORE_BAR_FILL[band];
   });
   protected readonly description = computed(() => getHealthScoreDescription(this.label(), this.maintainer(), this.security(), this.development()));
-  protected readonly rows = computed<OrgLensHealthPopupRow[]>(() => [
-    { key: 'maintainer', name: 'Maintainer Health', icon: 'heart-pulse', display: `${this.maintainer() ?? '-'}/40` },
-    { key: 'security', name: 'Security & Supply Chain', icon: 'shield-check', display: `${this.security() ?? '-'}/35` },
-    { key: 'development', name: 'Development Activity', icon: 'laptop-code', display: `${this.development() ?? '-'}/25` },
-  ]);
-  protected readonly insightsUrl = computed(() => buildInsightsUrl(`/project/${this.projectSlug()}`));
+  protected readonly rows = computed<OrgLensHealthPopupRow[]>(() =>
+    HEALTH_SCORE_CATEGORIES.map((c) => ({ key: c.key, name: c.name, icon: c.icon, display: `${this[c.key]() ?? '-'}/${c.max}` }))
+  );
 
   private readonly popover = viewChild<Popover>('popover');
 

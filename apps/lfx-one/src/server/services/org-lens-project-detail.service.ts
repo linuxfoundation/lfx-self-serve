@@ -1905,8 +1905,8 @@ export class OrgLensProjectDetailService {
 
   private mapHealth(row: Pick<HeroRow, 'HEALTH_SCORE_CATEGORY_V2' | 'HEALTH_OVERALL_SCORE_V2' | 'PROJECT_SLUG'>): OrgLensProjectHealth | null {
     // The warehouse v2 category is the sole source of truth for the health label — never fall back to
-    // classifying the legacy v1 score when the v2 category is null (LFXV2-3379). Available ⇔ normalized
-    // label non-null AND score non-null (#2096); `covered` drives only the ` - Partial` suffix.
+    // classifying the legacy v1 score when the v2 category is null (LFXV2-3379). Availability rule:
+    // see OrgLensProjectHero.health.
     const category = normalizeHealthScoreCategoryV2(row.HEALTH_SCORE_CATEGORY_V2);
     if (row.HEALTH_SCORE_CATEGORY_V2 != null && !category) {
       logger.warning(undefined, 'map_org_project_health', 'Unrecognized warehouse health_score_category_v2; treating as unavailable', {

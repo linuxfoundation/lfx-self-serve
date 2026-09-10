@@ -1,16 +1,9 @@
 // Copyright The Linux Foundation and each contributor to LFX.
 // SPDX-License-Identifier: MIT
 
-/**
- * Health Score v2 summary description, ported verbatim from LFX Insights
- * (`frontend/config/health-breakdown-templates.ts`, `getHealthScoreDescription` + private helpers):
- * same thresholds, templates, category label maps, and redistribution clause. The single nested
- * ternary in the original is an equivalent if-chain here (repo style: never nest ternaries).
- */
+import type { HealthScoreCategoryKey } from '../interfaces';
 
-type HealthCategoryKey = 'maintainer' | 'security' | 'development';
-
-const CATEGORY_LABEL: Record<HealthCategoryKey, string> = {
+const CATEGORY_LABEL: Record<HealthScoreCategoryKey, string> = {
   maintainer: 'maintainer coverage',
   security: 'security posture',
   development: 'development cadence',
@@ -18,7 +11,7 @@ const CATEGORY_LABEL: Record<HealthCategoryKey, string> = {
 
 // Plain-name form for the redistribution clause, distinct from the lowercase CATEGORY_LABEL
 // used inline in strength/gap sentences.
-const CATEGORY_NAME: Record<HealthCategoryKey, string> = {
+const CATEGORY_NAME: Record<HealthScoreCategoryKey, string> = {
   maintainer: 'Maintainer Health',
   security: 'Security & Supply Chain',
   development: 'Development Activity',
@@ -33,8 +26,8 @@ const joinWithAnd = (items: string[]): string => {
   return `${items.slice(0, -1).join(', ')}, and ${items[items.length - 1]}`;
 };
 
-const buildRedistributionClause = (availableKeys: HealthCategoryKey[]): string => {
-  const allKeys: HealthCategoryKey[] = ['maintainer', 'security', 'development'];
+const buildRedistributionClause = (availableKeys: HealthScoreCategoryKey[]): string => {
+  const allKeys: HealthScoreCategoryKey[] = ['maintainer', 'security', 'development'];
   const unavailable = allKeys.filter((key) => !availableKeys.includes(key));
   if (unavailable.length === 0) return '';
   const names = joinWithAnd(unavailable.map((key) => CATEGORY_NAME[key]));
@@ -42,6 +35,13 @@ const buildRedistributionClause = (availableKeys: HealthCategoryKey[]): string =
   return ` ${names} ${verb} unavailable, so weights were redistributed.`;
 };
 
+/**
+ * Health Score v2 summary description, ported verbatim from LFX Insights
+ * (`frontend/config/health-breakdown-templates.ts`, `getHealthScoreDescription` + private helpers):
+ * same thresholds, templates, category phrasing, and redistribution clause. The single nested
+ * ternary in the original is an equivalent if-chain here (repo style: never nest ternaries).
+ * A null label yields the Insights "no scoring data" sentence; callers gate on availability first.
+ */
 export const getHealthScoreDescription = (
   healthLabel: string | null,
   maintainerScore: number | null,
@@ -56,7 +56,7 @@ export const getHealthScoreDescription = (
       { key: 'maintainer', percent: maintainerScore !== null ? maintainerScore / 40 : -1 },
       { key: 'security', percent: securityScore !== null ? securityScore / 35 : -1 },
       { key: 'development', percent: developmentScore !== null ? developmentScore / 25 : -1 },
-    ] as { key: HealthCategoryKey; percent: number }[]
+    ] as { key: HealthScoreCategoryKey; percent: number }[]
   ).filter((c) => c.percent >= 0);
 
   if (categoryPercents.length === 0) {
@@ -67,7 +67,7 @@ export const getHealthScoreDescription = (
   const redistributionClause = buildRedistributionClause(availableKeys);
 
   if (categoryPercents.length === 1) {
-    const only = categoryPercents[0] as { key: HealthCategoryKey; percent: number };
+    const only = categoryPercents[0] as { key: HealthScoreCategoryKey; percent: number };
     const label = CATEGORY_LABEL[only.key];
     let strengthWord = 'Weak';
     if (only.percent >= 0.7) {
@@ -79,8 +79,8 @@ export const getHealthScoreDescription = (
   }
 
   const sorted = [...categoryPercents].sort((a, b) => b.percent - a.percent);
-  const strongest = sorted[0] as { key: HealthCategoryKey; percent: number };
-  const weakest = sorted[sorted.length - 1] as { key: HealthCategoryKey; percent: number };
+  const strongest = sorted[0] as { key: HealthScoreCategoryKey; percent: number };
+  const weakest = sorted[sorted.length - 1] as { key: HealthScoreCategoryKey; percent: number };
   const strengthLabels = sorted.slice(0, -1).map((c) => CATEGORY_LABEL[c.key]);
   const strengthsText = joinWithAnd(strengthLabels);
   const gapLabel = CATEGORY_LABEL[weakest.key];

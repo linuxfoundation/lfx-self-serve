@@ -417,13 +417,14 @@ export class OrgLensProjectsService {
     `;
     const result = await this.snowflakeService.execute<OrgLensProjectRow>(sql, missing);
     // mapProject fills unselected org-relative metrics with placeholders and maps health from the columns above.
-    // metricsState here reflects only health availability (label + score present → 'health-only'; else 'unavailable').
+    // metricsState reflects only health availability — derived from mapProject's `health` so the two can't drift.
+    // Emit both discriminators: metricsState for the new frontend, noActivityYet for a still-running pre-close-out
+    // frontend during a rolling deploy.
     return result.rows.map((row) => {
-      // Available ⇔ normalized label non-null AND score non-null (#2096); `covered` drives only the ` - Partial` suffix.
-      const hasHealthScore = normalizeHealthScoreCategoryV2(row.HEALTH_SCORE_CATEGORY_V2) != null && row.HEALTH_OVERALL_SCORE_V2 != null;
+      const project = this.mapProject(row, []);
       return {
-        ...this.mapProject(row, []),
-        metricsState: hasHealthScore ? ('health-only' as const) : ('unavailable' as const),
+        ...project,
+        metricsState: project.health === 'unavailable' ? ('unavailable' as const) : ('health-only' as const),
         noActivityYet: true,
       };
     });
@@ -499,8 +500,7 @@ export class OrgLensProjectsService {
         category: row.HEALTH_SCORE_CATEGORY_V2,
       });
     }
-    // Available ⇔ normalized label non-null AND score non-null (#2096). `covered` drives only the UI's
-    // ` - Partial` suffix, never availability — a null label is 'unavailable' regardless of covered count.
+    // Availability rule: see OrgLensProject.health.
     const health = category != null && row.HEALTH_OVERALL_SCORE_V2 != null ? category : 'unavailable';
     return {
       slug: row.PROJECT_SLUG,

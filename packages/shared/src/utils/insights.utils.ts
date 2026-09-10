@@ -2,7 +2,7 @@
 // SPDX-License-Identifier: MIT
 
 import { LINKS_CONFIG } from '../constants/links.config';
-import { HEALTH_SCORE_LABELS, HEALTH_SCORE_PARTIAL_SUFFIX } from '../constants/org-lens-projects.constants';
+import { HEALTH_SCORE_CATEGORIES, HEALTH_SCORE_LABELS, HEALTH_SCORE_PARTIAL_SUFFIX } from '../constants/org-lens-projects.constants';
 import type { HealthScore } from '../interfaces';
 
 /**
@@ -65,7 +65,7 @@ export function isPartialHealthScore(coveredCategoryCount: number | null): boole
   return coveredCategoryCount === 2;
 }
 
-const HEALTH_SCORE_CATEGORIES = new Set<Exclude<HealthScore, 'unavailable'>>(['excellent', 'healthy', 'fair', 'concerning', 'critical']);
+const HEALTH_SCORE_BANDS = new Set<Exclude<HealthScore, 'unavailable'>>(['excellent', 'healthy', 'fair', 'concerning', 'critical']);
 
 /**
  * Normalizes the warehouse-computed `health_score_category_v2` column (lf-dbt's `get_health_score_category_v2`
@@ -78,7 +78,7 @@ export function normalizeHealthScoreCategoryV2(category: string | null | undefin
     return null;
   }
   const lower = category.toLowerCase() as Exclude<HealthScore, 'unavailable'>;
-  return HEALTH_SCORE_CATEGORIES.has(lower) ? lower : null;
+  return HEALTH_SCORE_BANDS.has(lower) ? lower : null;
 }
 
 /**
@@ -101,11 +101,7 @@ export function buildHealthAriaLabel(args: {
     return 'Health: Unavailable.';
   }
   const headline = `${HEALTH_SCORE_LABELS[label]}${isPartialHealthScore(args.coveredCount) ? HEALTH_SCORE_PARTIAL_SUFFIX : ''}`;
-  const rows = [
-    `Maintainer Health ${args.maintainer ?? '-'}/40`,
-    `Security & Supply Chain ${args.security ?? '-'}/35`,
-    `Development Activity ${args.development ?? '-'}/25`,
-  ].join(', ');
+  const rows = HEALTH_SCORE_CATEGORIES.map((c) => `${c.name} ${args[c.key] ?? '-'}/${c.max}`).join(', ');
   return `Health: ${headline} (${score}/${args.maxScore ?? 100}). ${rows}.`;
 }
 

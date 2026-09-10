@@ -515,7 +515,7 @@ test.describe('Org Project Detail — hero health popup', () => {
         }),
       })
     );
-    await page.route(/\/api\/orgs\/[^/]+\/lens\/projects\/[^/]+\/hero$/, (route) => {
+    await page.route(/\/api\/orgs\/[^/]+\/lens\/projects\/[^/]+\/hero(?:\?.*)?$/, (route) => {
       if (route.request().method() !== 'GET') return route.fallback();
       return route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify(block) });
     });
