@@ -15,6 +15,7 @@ import {
   MENTORSHIP_MENTOR_RESUME_INTRO,
 } from '@lfx-one/shared/constants';
 import { isMentorshipResumeFileName } from '@lfx-one/shared/utils';
+import { TooltipModule } from 'primeng/tooltip';
 import { startWith, switchMap } from 'rxjs';
 
 /**
@@ -28,7 +29,7 @@ import { startWith, switchMap } from 'rxjs';
  */
 @Component({
   selector: 'lfx-mentorship-mentor-resume-section',
-  imports: [ButtonComponent],
+  imports: [ButtonComponent, TooltipModule],
   templateUrl: './mentor-resume-section.component.html',
   changeDetection: ChangeDetectionStrategy.OnPush,
 })

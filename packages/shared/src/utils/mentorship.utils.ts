@@ -16,7 +16,7 @@ import {
   MENTORSHIP_MAX_OPEN_TERMS_MESSAGE,
   MENTORSHIP_TERM_NAME_MAX,
 } from '../constants/mentorship-enroll.constants';
-import { MENTORSHIP_MENTOR_RESUME_EXTENSIONS } from '../constants/mentorship-mentor.constants';
+import { MENTORSHIP_MENTOR_INTRODUCTION_MAX, MENTORSHIP_MENTOR_RESUME_EXTENSIONS } from '../constants/mentorship-mentor.constants';
 import {
   MENTORSHIP_APPLICANT_ACTIONS,
   MENTORSHIP_CURRENT_MENTEE_STATUSES,
@@ -255,7 +255,11 @@ export function isMentorshipResumeFileName(fileName: string): boolean {
 export function getMentorshipMentorRegisterErrors(form: MentorshipMentorRegisterForm): MentorshipMentorRegisterFieldErrors {
   const errors: MentorshipMentorRegisterFieldErrors = {};
 
-  if (mentorshipDescriptionLength(form.introduction) === 0) errors.introduction = 'Introduction is required.';
+  if (mentorshipDescriptionLength(form.introduction) === 0) {
+    errors.introduction = 'Introduction is required.';
+  } else if (mentorshipDescriptionLength(form.introduction) > MENTORSHIP_MENTOR_INTRODUCTION_MAX) {
+    errors.introduction = `Introduction must be ${MENTORSHIP_MENTOR_INTRODUCTION_MAX} characters or fewer.`;
+  }
   if (!form.skills.length) errors.skills = 'Add at least one skill.';
   if (!isMentorshipTermsAccepted(form.complianceAccepted)) errors.complianceAccepted = 'Please confirm the compliance statement.';
   if (!isMentorshipTermsAccepted(form.termsAccepted)) errors.termsAccepted = 'Please accept the terms and conditions.';

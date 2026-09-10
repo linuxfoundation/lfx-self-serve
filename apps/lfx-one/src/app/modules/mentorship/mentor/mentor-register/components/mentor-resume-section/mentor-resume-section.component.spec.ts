@@ -14,13 +14,27 @@ describe('MentorResumeSectionComponent', () => {
   let form: FormGroup<{ resumeFileName: FormControl<string> }>;
 
   const element = (): HTMLElement => fixture.nativeElement as HTMLElement;
-  const fileName = (): string => element().querySelector('span.flex-1')?.textContent?.trim() ?? '';
+  const fileName = (): string => element().querySelector('[data-testid="mentorship-mentor-resume-name"]')?.textContent?.trim() ?? '';
   const error = (): string | null => element().querySelector('[data-testid="mentorship-mentor-resume-error"]')?.textContent?.trim() ?? null;
 
-  /** Stands in for the change event, so the spec never has to build a real FileList. */
+  /**
+   * A real input carrying a real `File`, so the spec exercises the component against the
+   * shapes the browser hands it. `size` and `value` are redefined rather than assigned
+   * because neither is writable on the genuine article.
+   */
   const select = (name: string, size = 1024): HTMLInputElement => {
-    const input = { files: [{ name, size }], value: name } as unknown as HTMLInputElement;
-    fixture.componentInstance['onFileChange']({ target: input } as unknown as Event);
+    const input = document.createElement('input');
+    input.type = 'file';
+
+    const file = new File([], name);
+    Object.defineProperty(file, 'size', { value: size });
+    Object.defineProperty(input, 'files', { value: [file] });
+    Object.defineProperty(input, 'value', { value: name, writable: true });
+
+    const event = new Event('change');
+    Object.defineProperty(event, 'target', { value: input });
+
+    fixture.componentInstance['onFileChange'](event);
     fixture.detectChanges();
     return input;
   };

@@ -10,11 +10,21 @@
   <div class="flex flex-col gap-1">
     <label class="text-sm font-medium text-gray-700" for="mentorship-mentor-resume-input">Upload Resume</label>
     <div class="flex items-stretch overflow-hidden rounded-lg border border-gray-200 bg-white">
-      <!-- Stays one line to keep the control's height; the title exposes a long file name the truncation hides. -->
+      <!--
+        Stays one line to keep the control's height, so a long file name is truncated. The tooltip
+        exposes the rest, and the name becomes a tab stop while one is chosen so it is reachable on
+        focus as well as hover. `role="status"` announces a newly chosen file to a screen reader.
+      -->
       <span
         class="flex flex-1 min-w-0 items-center truncate px-3 py-2 text-sm"
         [class]="resumeFileName() ? 'text-gray-900' : 'text-gray-500'"
-        [attr.title]="resumeFileName() || null">
+        [attr.tabindex]="resumeFileName() ? 0 : null"
+        [attr.role]="resumeFileName() ? 'status' : null"
+        [pTooltip]="resumeFileName()"
+        [tooltipDisabled]="!resumeFileName()"
+        tooltipEvent="both"
+        tooltipPosition="top"
+        data-testid="mentorship-mentor-resume-name">
         {{ resumeFileName() || emptyLabel }}
       </span>
       @if (resumeFileName()) {
@@ -46,7 +56,7 @@
       data-testid="mentorship-mentor-resume-file" />
     <p class="text-xs text-gray-500 mt-1">{{ helper }}</p>
     @if (fileError()) {
-      <p class="text-xs text-red-600" data-testid="mentorship-mentor-resume-error">{{ fileError() }}</p>
+      <p role="alert" class="text-xs text-red-600" data-testid="mentorship-mentor-resume-error">{{ fileError() }}</p>
     }
   </div>
 </section>

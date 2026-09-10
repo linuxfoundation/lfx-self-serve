@@ -1,7 +1,7 @@
 // Copyright The Linux Foundation and each contributor to LFX.
 // SPDX-License-Identifier: MIT
 
-import type { MentorshipMentorProgramRequest, MentorshipMentorRegisterForm, MentorshipMentorStatus } from '../interfaces/mentorship.interface';
+import type { MentorshipMentorRegisterForm, MentorshipMentorStatus } from '../interfaces/mentorship.interface';
 import { MENTORSHIP_MENTOR_STATUS_LABELS } from './mentorship.constants';
 
 export const MENTORSHIP_MENTOR_REGISTER_TITLE = 'Become a Mentor';
@@ -18,6 +18,9 @@ export const MENTORSHIP_MENTOR_INTRODUCTION_PLACEHOLDER = `What is your current 
 Why are you interested in volunteering as a mentor?
 
 Tell us something that makes you unique.`;
+
+/** Matches `MENTORSHIP_ENROLL_DESCRIPTION_MAX`, since both feed the same kind of rich-text field. */
+export const MENTORSHIP_MENTOR_INTRODUCTION_MAX = 3000;
 
 export const MENTORSHIP_MENTOR_SKILLS_INTRO = 'What are the skills that you are respected and known for? This helps match you with the right candidates.';
 
@@ -51,10 +54,18 @@ const RESUME_DOTTED = MENTORSHIP_MENTOR_RESUME_EXTENSIONS.map((extension) => `.$
 const RESUME_UPPERCASE = MENTORSHIP_MENTOR_RESUME_EXTENSIONS.map((extension) => extension.toUpperCase());
 
 /**
- * The `accept` filter for the hidden file input. Carries `application/pdf` alongside the
- * extensions because macOS Finder filters on MIME type rather than suffix.
+ * MIME type per accepted format, because macOS Finder filters on MIME type rather than
+ * suffix. Typed against the extension list so a new format cannot be added there without
+ * a type on this side too — leaving one out is what made Word documents unselectable.
  */
-export const MENTORSHIP_MENTOR_RESUME_ACCEPT = [...RESUME_DOTTED, 'application/pdf'].join(',');
+const RESUME_MIME_TYPES: Record<(typeof MENTORSHIP_MENTOR_RESUME_EXTENSIONS)[number], string> = {
+  pdf: 'application/pdf',
+  doc: 'application/msword',
+  docx: 'application/vnd.openxmlformats-officedocument.wordprocessingml.document',
+};
+
+/** The `accept` filter for the hidden file input: every extension and its MIME type. */
+export const MENTORSHIP_MENTOR_RESUME_ACCEPT = [...RESUME_DOTTED, ...Object.values(RESUME_MIME_TYPES)].join(',');
 
 export const MENTORSHIP_MENTOR_RESUME_HELPER = `File type: ${RESUME_UPPERCASE.join(', ')} · Max size: ${RESUME_MAX_MB} MB`;
 export const MENTORSHIP_MENTOR_RESUME_TYPE_ERROR = `Please upload a ${RESUME_UPPERCASE.slice(0, -1).join(', ')}, or ${RESUME_UPPERCASE.at(-1)} file.`;
@@ -73,11 +84,7 @@ export const MENTORSHIP_MENTOR_REQUEST_STATUS_LABELS: Record<MentorshipMentorSta
   pending: 'Pending',
 };
 
-/** Seed rows standing in for the mentor's existing requests until the API lands. */
-export const MENTORSHIP_MENTOR_SEED_REQUESTS: MentorshipMentorProgramRequest[] = [
-  { id: 'req_1', programId: 'mp_kubernetes_contributors', programName: 'Kubernetes Contributors', status: 'accepted' },
-  { id: 'req_2', programId: 'mp_apicurio_registry', programName: 'Apicurio Registry: Prompt Template Playground', status: 'pending' },
-];
+export const MENTORSHIP_MENTOR_WITHDRAW_CONFIRM = 'Are you sure you want to withdraw this request?';
 
 export function createEmptyMentorshipMentorForm(): MentorshipMentorRegisterForm {
   return {

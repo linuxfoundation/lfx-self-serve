@@ -16,14 +16,15 @@ import {
   MENTORSHIP_MENTOR_INTRODUCTION_PLACEHOLDER,
   MENTORSHIP_MENTOR_REGISTER_SUBTITLE,
   MENTORSHIP_MENTOR_REGISTER_TITLE,
-  MENTORSHIP_MENTOR_SEED_REQUESTS,
   MENTORSHIP_MENTOR_SKILLS_INTRO,
   MENTORSHIP_MENTOR_TERMS_INTRO,
+  MENTORSHIP_MENTOR_WITHDRAW_CONFIRM,
 } from '@lfx-one/shared/constants';
 import { MentorshipMentorProgramRequest, MentorshipMentorRegisterForm, MentorshipProgram } from '@lfx-one/shared/interfaces';
 import { getMentorshipMentorRegisterErrors } from '@lfx-one/shared/utils';
 import { MentorshipService } from '@services/mentorship.service';
-import { MessageService } from 'primeng/api';
+import { ConfirmationService, MessageService } from 'primeng/api';
+import { ConfirmDialogModule } from 'primeng/confirmdialog';
 import { map, startWith } from 'rxjs';
 
 import { ProfileCardComponent } from '../../components/profile-card/profile-card.component';
@@ -49,6 +50,7 @@ import { MentorResumeSectionComponent } from './components/mentor-resume-section
   imports: [
     ButtonComponent,
     CheckboxComponent,
+    ConfirmDialogModule,
     RichEditorComponent,
     MentorProgramsSectionComponent,
     MentorResumeSectionComponent,
@@ -56,12 +58,14 @@ import { MentorResumeSectionComponent } from './components/mentor-resume-section
     SkillsPickerComponent,
     TermsAcknowledgementComponent,
   ],
+  providers: [ConfirmationService],
   templateUrl: './mentor-register.component.html',
   changeDetection: ChangeDetectionStrategy.OnPush,
 })
 export class MentorRegisterComponent {
   private readonly mentorshipService = inject(MentorshipService);
   private readonly messageService = inject(MessageService);
+  private readonly confirmationService = inject(ConfirmationService);
 
   protected readonly title = MENTORSHIP_MENTOR_REGISTER_TITLE;
   protected readonly subtitle = MENTORSHIP_MENTOR_REGISTER_SUBTITLE;
@@ -82,8 +86,12 @@ export class MentorRegisterComponent {
     termsAccepted: new FormControl(false, { nonNullable: true }),
   });
 
-  /** Seeded with the mentor's existing requests; local until a registration API exists. */
-  protected readonly requests = signal<MentorshipMentorProgramRequest[]>([...MENTORSHIP_MENTOR_SEED_REQUESTS]);
+  /**
+   * The mentor's program requests. Starts empty and stays local: there is no endpoint to
+   * read existing requests from yet, and standing in fake rows would show the mentor
+   * requests they never made.
+   */
+  protected readonly requests = signal<MentorshipMentorProgramRequest[]>([]);
   protected readonly showErrors = signal(false);
 
   private readonly programsState = this.initPrograms();
@@ -104,7 +112,20 @@ export class MentorRegisterComponent {
   }
 
   protected onWithdraw(requestId: string): void {
-    this.requests.update((requests) => requests.filter((request) => request.id !== requestId));
+    // Confirm first, as the enroll wizard does for deleting a term: an accepted request is
+    // not something to drop on a stray click, and this is where the withdraw call will land.
+    this.confirmationService.confirm({
+      header: 'Withdraw Request',
+      message: MENTORSHIP_MENTOR_WITHDRAW_CONFIRM,
+      icon: 'fa-light fa-triangle-exclamation',
+      acceptLabel: 'Withdraw',
+      rejectLabel: 'Cancel',
+      acceptButtonStyleClass: 'p-button-sm p-button-danger',
+      rejectButtonStyleClass: 'p-button-secondary p-button-sm p-button-outlined',
+      accept: () => {
+        this.requests.update((requests) => requests.filter((request) => request.id !== requestId));
+      },
+    });
   }
 
   protected onSubmit(): void {

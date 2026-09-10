@@ -74,7 +74,7 @@ describe('SkillsPickerComponent', () => {
     pick('Go');
     pick('Kubernetes');
 
-    fixture.componentInstance['removeSkill']('Go');
+    element().querySelector<HTMLButtonElement>('[data-testid="picker-remove-skill-Go"]')?.click();
     fixture.detectChanges();
 
     expect(form.controls.skills.value).toEqual(['Kubernetes']);

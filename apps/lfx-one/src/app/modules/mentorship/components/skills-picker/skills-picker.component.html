@@ -35,7 +35,12 @@
       @for (skill of skills(); track skill) {
         <span class="inline-flex items-center gap-1.5 rounded-lg border border-gray-200 bg-neutral-100 text-neutral-600 px-3 py-1 text-xs">
           {{ skill }}
-          <button type="button" class="text-gray-400 hover:text-gray-700" [attr.aria-label]="'Remove ' + skill" (click)="removeSkill(skill)">
+          <button
+            type="button"
+            class="text-gray-400 hover:text-gray-700"
+            [attr.aria-label]="'Remove ' + skill"
+            (click)="removeSkill(skill)"
+            [attr.data-testid]="idPrefix() + '-remove-skill-' + skill">
             <i class="fa-light fa-xmark" aria-hidden="true"></i>
           </button>
         </span>
@@ -43,6 +48,6 @@
     </div>
   }
   @if (error()) {
-    <p class="text-xs text-red-600" [attr.data-testid]="idPrefix() + '-skill-error'">{{ error() }}</p>
+    <p role="alert" class="text-xs text-red-600" [attr.data-testid]="idPrefix() + '-skill-error'">{{ error() }}</p>
   }
 </div>

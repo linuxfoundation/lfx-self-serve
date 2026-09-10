@@ -39,6 +39,7 @@
               <!-- Wraps rather than truncates: a clipped address is unverifiable, and the links below already break the same way. -->
               <span class="min-w-0 break-all text-sm text-gray-500">{{ entry.email }}</span>
               @if (entry.isPrimary) {
+                <!-- Design calls for exactly 10px on this badge; the 14px root font-size makes `text-xs` overshoot it. -->
                 <span class="shrink-0 rounded bg-blue-100 px-1.5 py-0.5 text-[10px] font-semibold uppercase tracking-wide text-blue-600">
                   {{ primaryBadge }}
                 </span>

@@ -30,6 +30,6 @@
     </p>
   </div>
   @if (error()) {
-    <p class="text-xs text-red-600" [attr.data-testid]="idPrefix() + '-terms-error'">{{ error() }}</p>
+    <p role="alert" class="text-xs text-red-600" [attr.data-testid]="idPrefix() + '-terms-error'">{{ error() }}</p>
   }
 </section>

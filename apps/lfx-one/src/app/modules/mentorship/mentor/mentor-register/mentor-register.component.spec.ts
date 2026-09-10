@@ -7,11 +7,10 @@ import { FormGroup } from '@angular/forms';
 import { provideNoopAnimations } from '@angular/platform-browser/animations';
 import { provideRouter } from '@angular/router';
 import { RichEditorComponent } from '@components/rich-editor/rich-editor.component';
-import { MENTORSHIP_MENTOR_SEED_REQUESTS } from '@lfx-one/shared/constants';
-import { MentorshipProgram, MentorshipProgramsResponse } from '@lfx-one/shared/interfaces';
+import { MentorshipMentorProgramRequest, MentorshipProgram, MentorshipProgramsResponse } from '@lfx-one/shared/interfaces';
 import { MentorshipService } from '@services/mentorship.service';
 import { UserService } from '@services/user.service';
-import { MessageService } from 'primeng/api';
+import { Confirmation, ConfirmationService, MessageService } from 'primeng/api';
 import { of } from 'rxjs';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 
@@ -49,9 +48,15 @@ describe('MentorRegisterComponent', () => {
 
   const programs: MentorshipProgramsResponse = { data: [program('mp_gridflow', 'GridFlow Ingestion')], total: 1 };
 
+  /** Stands in for requests the mentor already raised. The component itself starts empty. */
+  const existingRequests: MentorshipMentorProgramRequest[] = [
+    { id: 'req_gridflow', programId: 'mp_gridflow', programName: 'GridFlow Ingestion', status: 'accepted' },
+  ];
+
   let fixture: ComponentFixture<MentorRegisterComponent>;
   let component: MentorRegisterComponent;
   let toast: ReturnType<typeof vi.fn>;
+  let confirm: ReturnType<typeof vi.fn>;
 
   const element = (): HTMLElement => fixture.nativeElement as HTMLElement;
   const errorText = (testId: string): string | null => element().querySelector(`[data-testid="${testId}"]`)?.textContent?.trim() ?? null;
@@ -98,6 +103,17 @@ describe('MentorRegisterComponent', () => {
 
     fixture = TestBed.createComponent(MentorRegisterComponent);
     component = fixture.componentInstance;
+
+    // Stand down only `confirm`, on the page's own instance: the rendered `<p-confirmDialog>`
+    // subscribes to the real service, so replacing the service wholesale breaks the dialog.
+    // Accept by default, so a spec that means to test the cancel path says so explicitly.
+    const confirmationService = fixture.debugElement.injector.get(ConfirmationService);
+    confirm = vi.fn((options: Confirmation) => {
+      options.accept?.();
+      return confirmationService;
+    });
+    confirmationService.confirm = confirm;
+
     fixture.detectChanges();
   });
 
@@ -114,8 +130,9 @@ describe('MentorRegisterComponent', () => {
     expect(sections.indexOf('mentorship-profile-card')).toBeLessThan(sections.indexOf('mentorship-mentor-programs'));
   });
 
-  it('seeds the mentor’s existing program requests', () => {
-    expect(component['requests']()).toEqual(MENTORSHIP_MENTOR_SEED_REQUESTS);
+  it('starts with no program requests, rather than showing requests the mentor never made', () => {
+    expect(component['requests']()).toEqual([]);
+    expect(element().querySelector('[data-testid^="mentorship-mentor-request-row-"]')).toBeNull();
   });
 
   it('keeps errors hidden until the mentor tries to submit', () => {
@@ -167,20 +184,31 @@ describe('MentorRegisterComponent', () => {
   });
 
   it('ignores a program already requested, so it cannot be queued twice', () => {
-    const before = component['requests']().length;
-    const [seeded] = component['requests']();
+    component['requests'].set([...existingRequests]);
+    const [existing] = existingRequests;
 
-    component['onAddProgram'](program(seeded.programId, seeded.programName));
+    component['onAddProgram'](program(existing.programId, existing.programName));
 
-    expect(component['requests']().length).toBe(before);
+    expect(component['requests']().length).toBe(existingRequests.length);
   });
 
-  it('drops a withdrawn request', () => {
-    const [seeded] = component['requests']();
+  it('drops a withdrawn request once the mentor confirms', () => {
+    component['requests'].set([...existingRequests]);
+    const [existing] = existingRequests;
 
-    component['onWithdraw'](seeded.id);
+    component['onWithdraw'](existing.id);
 
-    expect(component['requests']().some((request) => request.id === seeded.id)).toBe(false);
+    expect(confirm).toHaveBeenCalledTimes(1);
+    expect(component['requests']().some((request) => request.id === existing.id)).toBe(false);
+  });
+
+  it('keeps the request when the mentor backs out of the confirmation', () => {
+    confirm.mockImplementationOnce(() => undefined);
+    component['requests'].set([...existingRequests]);
+
+    component['onWithdraw'](existingRequests[0].id);
+
+    expect(component['requests']()).toEqual(existingRequests);
   });
 
   it('sends Cancel back to the mentorship admin page', () => {
