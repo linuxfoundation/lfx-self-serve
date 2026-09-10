@@ -44,7 +44,7 @@ vi.mock('./logger.service', () => ({
 }));
 
 // Imported after the mocks above so the class picks up the mocked `ioredis`.
-import { buildUserLockCacheKey, ValkeyService } from './valkey.service';
+import { buildMeetingInviteLockCacheKey, ValkeyService } from './valkey.service';
 
 describe('ValkeyService — acquireLock / releaseLock (LFXV2 #2241)', () => {
   beforeEach(() => {
@@ -76,12 +76,12 @@ describe('ValkeyService — acquireLock / releaseLock (LFXV2 #2241)', () => {
     expect(result).toEqual({ status: 'contended' });
   });
 
-  it('reports unavailable when the client throws', async () => {
+  it('reports unavailable with the generated token (the SET may have landed) when the client throws', async () => {
     setMock.mockRejectedValue(new Error('connection reset'));
 
     const result = await ValkeyService.getInstance().acquireLock('lock:key', 25000);
 
-    expect(result).toEqual({ status: 'unavailable' });
+    expect(result).toEqual({ status: 'unavailable', token: expect.any(String) });
   });
 
   it('reports unavailable when Valkey is disabled (no VALKEY_URL)', async () => {
@@ -123,7 +123,7 @@ describe('ValkeyService — acquireLock / releaseLock (LFXV2 #2241)', () => {
 
     const result = await ValkeyService.getInstance().acquireLock('lock:key', 25000);
 
-    expect(result).toEqual({ status: 'unavailable' });
+    expect(result).toEqual({ status: 'unavailable', token: expect.any(String) });
     expect(evalMock).toHaveBeenCalledWith(expect.stringContaining('redis.call'), 1, 'lock:key', expect.any(String));
   });
 
@@ -144,12 +144,12 @@ describe('ValkeyService — acquireLock / releaseLock (LFXV2 #2241)', () => {
   });
 });
 
-describe('buildUserLockCacheKey (LFXV2 #2241)', () => {
+describe('buildMeetingInviteLockCacheKey (LFXV2 #2241)', () => {
   it('builds a namespaced key for a filter-safe username', () => {
-    expect(buildUserLockCacheKey('alice')).toBe('lfx-ui:meeting-invite-lock:v1:alice');
+    expect(buildMeetingInviteLockCacheKey('alice')).toBe('lfx-ui:meeting-invite-lock:v1:alice');
   });
 
   it('fails closed (returns null) for an unsafe username', () => {
-    expect(buildUserLockCacheKey('alice:bob')).toBeNull();
+    expect(buildMeetingInviteLockCacheKey('alice:bob')).toBeNull();
   });
 });

@@ -18,16 +18,16 @@ vi.mock('../services/valkey.service', () => ({
   },
   // Mirrors the real `isFilterSafeUsername` gate closely enough to exercise the null-key
   // (unsafe, non-empty username) degrade branch distinctly from the empty-username case.
-  buildUserLockCacheKey: (username: string) => (username && /^[A-Za-z0-9._+\-@|]+$/.test(username) ? `lock:${username}` : null),
+  buildMeetingInviteLockCacheKey: (username: string) => (username && /^[A-Za-z0-9._+\-@|]+$/.test(username) ? `lock:${username}` : null),
 }));
 
 vi.mock('../services/logger.service', () => ({
   logger: { warning: warningMock },
 }));
 
-import { withUserLock } from './user-lock';
+import { withMeetingInviteLock } from './meeting-invite-lock';
 
-describe('withUserLock (LFXV2 #2241)', () => {
+describe('withMeetingInviteLock (LFXV2 #2241)', () => {
   beforeEach(() => {
     isEnabledMock.mockReset();
     acquireLockMock.mockReset();
@@ -44,7 +44,7 @@ describe('withUserLock (LFXV2 #2241)', () => {
       acquireLockMock.mockResolvedValue({ status: 'acquired', token: 'tok-1' });
       const fn = vi.fn().mockResolvedValue('result');
 
-      const result = await withUserLock(undefined, 'alice', 25000, fn);
+      const result = await withMeetingInviteLock(undefined, 'alice', 25000, fn);
 
       expect(result).toBe('result');
       expect(acquireLockMock).toHaveBeenCalledWith('lock:alice', 25000);
@@ -56,7 +56,7 @@ describe('withUserLock (LFXV2 #2241)', () => {
       acquireLockMock.mockResolvedValue({ status: 'acquired', token: 'tok-1' });
       const fn = vi.fn().mockRejectedValue(new Error('boom'));
 
-      await expect(withUserLock(undefined, 'alice', 25000, fn)).rejects.toThrow('boom');
+      await expect(withMeetingInviteLock(undefined, 'alice', 25000, fn)).rejects.toThrow('boom');
 
       expect(releaseLockMock).toHaveBeenCalledWith('lock:alice', 'tok-1');
     });
@@ -65,7 +65,7 @@ describe('withUserLock (LFXV2 #2241)', () => {
       acquireLockMock.mockResolvedValue({ status: 'contended' });
       const fn = vi.fn();
 
-      await expect(withUserLock(undefined, 'alice', 25000, fn)).rejects.toMatchObject({ statusCode: 409, code: 'LOCK_CONTENTION' });
+      await expect(withMeetingInviteLock(undefined, 'alice', 25000, fn)).rejects.toMatchObject({ statusCode: 409, code: 'LOCK_CONTENTION' });
 
       expect(fn).not.toHaveBeenCalled();
       expect(releaseLockMock).not.toHaveBeenCalled();
@@ -75,21 +75,32 @@ describe('withUserLock (LFXV2 #2241)', () => {
       acquireLockMock.mockResolvedValue({ status: 'unavailable' });
       const fn = vi.fn().mockResolvedValue('via-fallback');
 
-      const result = await withUserLock(undefined, 'bob', 25000, fn);
+      const result = await withMeetingInviteLock(undefined, 'bob', 25000, fn);
 
       expect(result).toBe('via-fallback');
       expect(fn).toHaveBeenCalledTimes(1);
       expect(releaseLockMock).not.toHaveBeenCalled();
     });
 
+    it('attempts one more release after fn() when unavailable carries a token (the SET may have landed)', async () => {
+      acquireLockMock.mockResolvedValue({ status: 'unavailable', token: 'tok-maybe' });
+      const fn = vi.fn().mockResolvedValue('via-fallback');
+
+      const result = await withMeetingInviteLock(undefined, 'bob', 25000, fn);
+
+      expect(result).toBe('via-fallback');
+      expect(fn).toHaveBeenCalledTimes(1);
+      expect(releaseLockMock).toHaveBeenCalledWith('lock:bob', 'tok-maybe');
+    });
+
     it('skips the lock entirely (never throws, never takes the in-memory mutex) for an empty username', async () => {
       const fn = vi.fn().mockResolvedValue('via-fallback');
 
-      const result = await withUserLock(undefined, '', 25000, fn);
+      const result = await withMeetingInviteLock(undefined, '', 25000, fn);
 
       expect(result).toBe('via-fallback');
       expect(acquireLockMock).not.toHaveBeenCalled();
-      expect(warningMock).toHaveBeenCalledWith(undefined, 'with_user_lock', expect.any(String), expect.any(Object));
+      expect(warningMock).toHaveBeenCalledWith(undefined, 'with_meeting_invite_lock', expect.any(String), expect.any(Object));
     });
 
     it('never contends two concurrent calls that both have an empty username, unlike a real shared key', async () => {
@@ -100,10 +111,10 @@ describe('withUserLock (LFXV2 #2241)', () => {
       const fn1 = vi.fn(() => first);
       const fn2 = vi.fn().mockResolvedValue('second');
 
-      const call1 = withUserLock(undefined, '', 25000, fn1);
+      const call1 = withMeetingInviteLock(undefined, '', 25000, fn1);
       await Promise.resolve();
 
-      await expect(withUserLock(undefined, '', 25000, fn2)).resolves.toBe('second');
+      await expect(withMeetingInviteLock(undefined, '', 25000, fn2)).resolves.toBe('second');
       expect(fn2).toHaveBeenCalledTimes(1);
 
       releaseFirst();
@@ -113,11 +124,11 @@ describe('withUserLock (LFXV2 #2241)', () => {
     it('degrades to the in-memory lock (never throws) when a non-empty username fails the filter-safe check', async () => {
       const fn = vi.fn().mockResolvedValue('via-fallback');
 
-      const result = await withUserLock(undefined, 'unsafe user!name', 25000, fn);
+      const result = await withMeetingInviteLock(undefined, 'unsafe user!name', 25000, fn);
 
       expect(result).toBe('via-fallback');
       expect(acquireLockMock).not.toHaveBeenCalled();
-      expect(warningMock).toHaveBeenCalledWith(undefined, 'with_user_lock', expect.any(String), expect.any(Object));
+      expect(warningMock).toHaveBeenCalledWith(undefined, 'with_meeting_invite_lock', expect.any(String), expect.any(Object));
     });
 
     it('passes the caller’s req through to the degradation warning for request-correlated logging', async () => {
@@ -125,9 +136,9 @@ describe('withUserLock (LFXV2 #2241)', () => {
       const fn = vi.fn().mockResolvedValue('via-fallback');
       const fakeReq = { id: 'req-1' } as never;
 
-      await withUserLock(fakeReq, 'jill', 25000, fn);
+      await withMeetingInviteLock(fakeReq, 'jill', 25000, fn);
 
-      expect(warningMock).toHaveBeenCalledWith(fakeReq, 'with_user_lock', expect.any(String), expect.any(Object));
+      expect(warningMock).toHaveBeenCalledWith(fakeReq, 'with_meeting_invite_lock', expect.any(String), expect.any(Object));
     });
 
     it('still contends a same-replica second call when Valkey goes unavailable mid-flight (LFXV2 #2241)', async () => {
@@ -137,13 +148,13 @@ describe('withUserLock (LFXV2 #2241)', () => {
         releaseFirst = resolve;
       });
       const fn1 = vi.fn(() => first);
-      const call1 = withUserLock(undefined, 'kate', 25000, fn1);
+      const call1 = withMeetingInviteLock(undefined, 'kate', 25000, fn1);
       await Promise.resolve();
 
       acquireLockMock.mockResolvedValueOnce({ status: 'unavailable' });
       const fn2 = vi.fn().mockResolvedValue('second');
 
-      await expect(withUserLock(undefined, 'kate', 25000, fn2)).rejects.toMatchObject({ statusCode: 409, code: 'LOCK_CONTENTION' });
+      await expect(withMeetingInviteLock(undefined, 'kate', 25000, fn2)).rejects.toMatchObject({ statusCode: 409, code: 'LOCK_CONTENTION' });
       expect(fn2).not.toHaveBeenCalled();
 
       releaseFirst();
@@ -164,11 +175,11 @@ describe('withUserLock (LFXV2 #2241)', () => {
       const fn1 = vi.fn(() => first);
       const fn2 = vi.fn().mockResolvedValue('second');
 
-      const call1 = withUserLock(undefined, 'carol', 25000, fn1);
+      const call1 = withMeetingInviteLock(undefined, 'carol', 25000, fn1);
       // Let the microtask queue settle so call1 has registered its lock before call2 starts.
       await Promise.resolve();
 
-      await expect(withUserLock(undefined, 'carol', 25000, fn2)).rejects.toMatchObject({ statusCode: 409, code: 'LOCK_CONTENTION' });
+      await expect(withMeetingInviteLock(undefined, 'carol', 25000, fn2)).rejects.toMatchObject({ statusCode: 409, code: 'LOCK_CONTENTION' });
       expect(fn2).not.toHaveBeenCalled();
 
       releaseFirst();
@@ -179,8 +190,8 @@ describe('withUserLock (LFXV2 #2241)', () => {
       const fn1 = vi.fn().mockResolvedValue('first');
       const fn2 = vi.fn().mockResolvedValue('second');
 
-      await expect(withUserLock(undefined, 'dave', 25000, fn1)).resolves.toBe('first');
-      await expect(withUserLock(undefined, 'dave', 25000, fn2)).resolves.toBe('second');
+      await expect(withMeetingInviteLock(undefined, 'dave', 25000, fn1)).resolves.toBe('first');
+      await expect(withMeetingInviteLock(undefined, 'dave', 25000, fn2)).resolves.toBe('second');
     });
 
     it('does not let one user’s lock block a different user', async () => {
@@ -191,10 +202,10 @@ describe('withUserLock (LFXV2 #2241)', () => {
       const fn1 = vi.fn(() => first);
       const fn2 = vi.fn().mockResolvedValue('other-user');
 
-      const call1 = withUserLock(undefined, 'erin', 25000, fn1);
+      const call1 = withMeetingInviteLock(undefined, 'erin', 25000, fn1);
       await Promise.resolve();
 
-      await expect(withUserLock(undefined, 'frank', 25000, fn2)).resolves.toBe('other-user');
+      await expect(withMeetingInviteLock(undefined, 'frank', 25000, fn2)).resolves.toBe('other-user');
 
       releaseFirst();
       await call1;
@@ -204,12 +215,12 @@ describe('withUserLock (LFXV2 #2241)', () => {
       vi.useFakeTimers();
       try {
         const hungFn = vi.fn(() => new Promise<void>(() => undefined));
-        void withUserLock(undefined, 'gina', 1000, hungFn);
+        void withMeetingInviteLock(undefined, 'gina', 1000, hungFn);
 
         await vi.advanceTimersByTimeAsync(1000);
 
         const fn2 = vi.fn().mockResolvedValue('after-ttl');
-        await expect(withUserLock(undefined, 'gina', 1000, fn2)).resolves.toBe('after-ttl');
+        await expect(withMeetingInviteLock(undefined, 'gina', 1000, fn2)).resolves.toBe('after-ttl');
       } finally {
         vi.useRealTimers();
       }
@@ -223,7 +234,7 @@ describe('withUserLock (LFXV2 #2241)', () => {
           releaseHung = resolve;
         });
         const hungFn = vi.fn(() => hung);
-        const call1 = withUserLock(undefined, 'hank', 1000, hungFn);
+        const call1 = withMeetingInviteLock(undefined, 'hank', 1000, hungFn);
 
         // The safety net fires and clears call1's entry — a second caller may now acquire.
         await vi.advanceTimersByTimeAsync(1000);
@@ -233,7 +244,7 @@ describe('withUserLock (LFXV2 #2241)', () => {
           releaseSecond = resolve;
         });
         const fn2 = vi.fn(() => second);
-        const call2 = withUserLock(undefined, 'hank', 1000, fn2);
+        const call2 = withMeetingInviteLock(undefined, 'hank', 1000, fn2);
         await Promise.resolve();
 
         // call1's hung fn() finally settles — its `finally` must not delete call2's still-active lock.
@@ -241,7 +252,7 @@ describe('withUserLock (LFXV2 #2241)', () => {
         await call1;
 
         const fn3 = vi.fn();
-        await expect(withUserLock(undefined, 'hank', 1000, fn3)).rejects.toMatchObject({ statusCode: 409, code: 'LOCK_CONTENTION' });
+        await expect(withMeetingInviteLock(undefined, 'hank', 1000, fn3)).rejects.toMatchObject({ statusCode: 409, code: 'LOCK_CONTENTION' });
         expect(fn3).not.toHaveBeenCalled();
 
         releaseSecond();

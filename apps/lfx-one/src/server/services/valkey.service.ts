@@ -161,7 +161,7 @@ export class ValkeyService implements CachePort {
   /**
    * Attempts to acquire a distributed, cross-instance lock via `SET key <token> PX <ttlMs> NX`.
    * Returns a discriminated `LockAcquireResult` rather than a bare token so a caller (e.g.
-   * `withUserLock`) can tell "someone else holds this lock" (`contended` — the request must fail)
+   * `withMeetingInviteLock`) can tell "someone else holds this lock" (`contended` — the request must fail)
    * apart from "the lock backend is unusable right now" (`unavailable` — fall back to an
    * in-process lock instead of either silently proceeding unguarded or blocking every request).
    */
@@ -182,7 +182,10 @@ export class ValkeyService implements CachePort {
       // already quit the client).
       void this.releaseLock(key, token);
       setTimeout(() => void this.releaseLock(key, token), timeoutMs).unref();
-      return { status: 'unavailable' };
+      // Also hand the token back to the caller: if both retries above land before the backend has
+      // recovered, a release attempted after the caller's own (much longer) fn() completes has a
+      // real chance of succeeding, per the `LockAcquireResult` doc.
+      return { status: 'unavailable', token };
     }
   }
 
@@ -455,8 +458,8 @@ export function buildUserCacheKey(namespace: string, username: string): string |
   return `${keyPrefix()}:${namespace}:${username}`;
 }
 
-/** Per-user lock key for the meeting-invite-email guard (LFXV2 #2241); null when the username isn't filter-safe — the caller (`withUserLock`) degrades to a per-replica in-memory-only lock rather than skipping locking entirely. */
-export function buildUserLockCacheKey(username: string): string | null {
+/** Per-user lock key for the meeting-invite-email guard (LFXV2 #2241); null when the username isn't filter-safe — the caller (`withMeetingInviteLock`) degrades to a per-replica in-memory-only lock rather than skipping locking entirely. */
+export function buildMeetingInviteLockCacheKey(username: string): string | null {
   if (!isFilterSafeUsername(username)) return null;
   return `${keyPrefix()}:${VALKEY_CACHE.MEETING_INVITE_LOCK_NAMESPACE}:${username}`;
 }

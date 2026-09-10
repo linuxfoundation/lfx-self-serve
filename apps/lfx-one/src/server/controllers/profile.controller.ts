@@ -60,7 +60,7 @@ import { SocialVerificationService } from '../services/social-verification.servi
 import { UserService } from '../services/user.service';
 import { getEffectiveEmail, getEffectiveSub, getEffectiveUsername, getUsernameFromAuth, isImpersonating } from '../utils/auth-helper';
 import { generateM2MToken } from '../utils/m2m-token.util';
-import { withUserLock } from '../utils/user-lock';
+import { withMeetingInviteLock } from '../utils/meeting-invite-lock';
 
 // Maps auth-service error strings to user-facing responses. First match wins; if
 // none match, the password-change path falls back to a generic 502.
@@ -694,7 +694,7 @@ export class ProfileController {
 
     try {
       // Used only to key the lock below — an unresolvable username skips locking rather than
-      // failing this request outright (`withUserLock` has nothing to lock without an identity,
+      // failing this request outright (`withMeetingInviteLock` has nothing to lock without an identity,
       // and treats an empty username as such rather than a shared cross-user lock key).
       const sub = (await getUsernameFromAuth(req)) ?? '';
 
@@ -737,10 +737,10 @@ export class ProfileController {
       }
 
       // Serializes against a concurrent `rejectIdentity` guard for the same user (LFXV2 #2241) —
-      // see `withUserLock` and the comment on `rejectIdentity`'s meeting-invite guard. Uses the
+      // see `withMeetingInviteLock` and the comment on `rejectIdentity`'s meeting-invite guard. Uses the
       // shorter set-specific TTL since this locked region is a single bounded NATS call, unlike
       // `rejectIdentity`'s longer multi-call chain.
-      const result = await withUserLock(req, sub, VALKEY_CACHE.MEETING_INVITE_SET_LOCK_TTL_MS, () =>
+      const result = await withMeetingInviteLock(req, sub, VALKEY_CACHE.MEETING_INVITE_SET_LOCK_TTL_MS, () =>
         this.meetingPreferenceService.setMeetingInviteEmail(req, v1Token, emailAddress)
       );
 
@@ -1417,7 +1417,7 @@ export class ProfileController {
       // preference, then removes the identity if it doesn't match — a check-then-act sequence
       // that a concurrent PUT /api/profile/emails/meeting-invite could otherwise interleave with
       // (LFXV2 #2241), repointing the preference at this identity between the read and the
-      // removal. `withUserLock` serializes both sides of that race for a well-formed client; it
+      // removal. `withMeetingInviteLock` serializes both sides of that race for a well-formed client; it
       // does not resolve the identity's address server-side, so a request that omits `email`
       // while naming an email `identityId` still bypasses this guard (pre-existing, tracked as
       // follow-up scope beyond #2241).
@@ -1433,7 +1433,7 @@ export class ProfileController {
           if (!preference || emailsEqual(preference.email, email)) {
             // Hand-rolled shape (not ConflictError) to match this handler's other error responses
             // below and the client's `err.error?.error` branching — pre-existing convention, kept
-            // as-is here; only the lock-contention path (withUserLock) uses ConflictError.
+            // as-is here; only the lock-contention path (withMeetingInviteLock) uses ConflictError.
             res.status(409).json({
               error: 'meeting_invite_email_active',
               message: preference
@@ -1497,7 +1497,7 @@ export class ProfileController {
 
       // Only the email-identity path touches the meeting-invite invariant — lock only that path.
       if (isEmailIdentity) {
-        await withUserLock(req, sub, VALKEY_CACHE.MEETING_INVITE_LOCK_TTL_MS, finishRejectIdentity);
+        await withMeetingInviteLock(req, sub, VALKEY_CACHE.MEETING_INVITE_LOCK_TTL_MS, finishRejectIdentity);
       } else {
         await finishRejectIdentity();
       }
