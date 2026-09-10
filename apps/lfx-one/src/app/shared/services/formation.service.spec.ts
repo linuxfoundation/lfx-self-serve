@@ -122,4 +122,34 @@ describe('FormationService', () => {
     expect(filtered.request.params.get('search')).toBe('alliance');
     filtered.flush({});
   });
+
+  it('getMyFormationWork shares one GET across concurrent subscribers', () => {
+    service.getMyFormationWork().subscribe();
+    service.getMyFormationWork().subscribe();
+
+    const req = http.expectOne('/api/user/formation-work');
+    expect(req.request.method).toBe('GET');
+    req.flush({ formations: [], items: [], data_source: 'fixture' });
+  });
+
+  it('getMyFormationWork replays the cached response to a later subscriber without a second GET', () => {
+    service.getMyFormationWork().subscribe();
+    http.expectOne('/api/user/formation-work').flush({ formations: [], items: [], data_source: 'fixture' });
+
+    let replayed: unknown;
+    service.getMyFormationWork().subscribe((response) => (replayed = response));
+    http.expectNone('/api/user/formation-work');
+    expect(replayed).toEqual({ formations: [], items: [], data_source: 'fixture' });
+  });
+
+  it('invalidateMyFormationWork() drops the cache so the next subscriber re-fetches', () => {
+    service.getMyFormationWork().subscribe();
+    http.expectOne('/api/user/formation-work').flush({ formations: [], items: [], data_source: 'fixture' });
+
+    service.invalidateMyFormationWork();
+
+    service.getMyFormationWork().subscribe();
+    const req = http.expectOne('/api/user/formation-work');
+    req.flush({ formations: [], items: [], data_source: 'fixture' });
+  });
 });
