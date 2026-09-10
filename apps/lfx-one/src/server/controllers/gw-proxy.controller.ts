@@ -16,7 +16,42 @@ import { logger } from '../services/logger.service';
 type FetchRequestInit = RequestInit & { duplex?: 'half' };
 
 /** Request headers that must never reach the upstream Gatewaze service. */
-const STRIPPED_REQUEST_HEADERS = new Set(['cookie', 'host', 'content-length', 'connection', 'authorization']);
+/**
+ * Request headers this proxy never forwards upstream.
+ *
+ * `Authorization` is deliberately NOT in here. It carries the embed's Supabase access token, which
+ * is the only credential the Gatewaze API accepts — stripping it makes every proxied call fail with
+ * `{"error":{"code":"invalid_token","message":"JWT verification failed"}}`. The proxy treats the
+ * value as opaque; it is never the LFX/Authelia token, because the embed's fetch layer only attaches
+ * Authorization to `apiBaseUrl`-relative requests.
+ *
+ * `Cookie` is stripped so LFX session cookies can never reach the Gatewaze API (which authenticates
+ * on the bearer alone, so there is no CSRF surface). `Origin` is stripped so the upstream cannot
+ * vary behaviour on a browser-supplied origin through this path, and `Forwarded`/`X-Forwarded-*`
+ * because this proxy does not vouch for them. The rest are hop-by-hop headers, which by definition
+ * must not be forwarded.
+ */
+const STRIPPED_REQUEST_HEADERS = new Set([
+  'cookie',
+  'host',
+  'origin',
+  'content-length',
+  'forwarded',
+  'x-forwarded-for',
+  'x-forwarded-host',
+  'x-forwarded-port',
+  'x-forwarded-proto',
+  'x-forwarded-server',
+  'x-real-ip',
+  'connection',
+  'keep-alive',
+  'transfer-encoding',
+  'upgrade',
+  'proxy-authenticate',
+  'proxy-authorization',
+  'te',
+  'trailer',
+]);
 
 /**
  * BFF proxy in front of the embedded Gatewaze admin pilot's own backend (`GW_API_URL`), mounted
@@ -68,8 +103,16 @@ export class GwProxyController {
         }
         headers.set(name, Array.isArray(value) ? value.join(', ') : value);
       }
-      // Guaranteed present: the gate above already returned 404 when it was absent.
-      headers.set('Authorization', `Bearer ${req.bearerToken}`);
+      // The caller's own Authorization rides through untouched (see STRIPPED_REQUEST_HEADERS).
+      //
+      // Do NOT substitute `req.bearerToken` here. That is the LFX/Authelia token, and the Gatewaze
+      // API only accepts Supabase-issued JWTs — sending it produces
+      // `{"error":{"code":"invalid_token","message":"JWT verification failed"}}` on every call.
+      // It would also hand an LFX credential to a service that has no business holding one.
+      // `req.bearerToken` gates access to this route above; it is not what authenticates upstream.
+      //
+      // A request without Authorization is forwarded without it: some Gatewaze endpoints are
+      // public, and this proxy never synthesizes credentials or a 401 of its own.
 
       const hasRequestBody = req.method !== 'GET' && req.method !== 'HEAD';
 

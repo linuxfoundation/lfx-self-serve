@@ -41,7 +41,7 @@ function buildReq(overrides: Partial<Request> = {}): Request {
     method: 'GET',
     url: '/orgs/123',
     path: '/api/gw/orgs/123',
-    headers: { cookie: 'session=abc', 'x-custom': 'keep-me' },
+    headers: { cookie: 'session=abc', 'x-custom': 'keep-me', authorization: 'Bearer supabase-token', origin: 'http://localhost:4200' },
     bearerToken: 'token-1',
     ...overrides,
   } as unknown as Request;
@@ -113,7 +113,7 @@ describe('GwProxyController', () => {
     expect(fetchMock).not.toHaveBeenCalled();
   });
 
-  it('forwards method/path/query to GW_API_URL, sets Authorization from bearerToken, strips Cookie, and does not follow redirects', async () => {
+  it("forwards method/path/query to GW_API_URL, passes the caller's Authorization through, strips Cookie/Origin, and does not follow redirects", async () => {
     const upstreamHeaders = new Headers({ 'content-type': 'application/json' });
     fetchMock.mockResolvedValue({ status: 200, headers: upstreamHeaders, body: {} });
     const req = buildReq({ url: '/orgs/123?foo=bar' });
@@ -127,8 +127,12 @@ describe('GwProxyController', () => {
     expect(calledInit.method).toBe('GET');
     expect(calledInit.redirect).toBe('manual');
     const headers = calledInit.headers as Headers;
-    expect(headers.get('authorization')).toBe('Bearer token-1');
+    // The embed's Supabase token rides through untouched. It must NOT be replaced by the LFX
+    // session token (`bearerToken: 'token-1'`) — the Gatewaze API only accepts Supabase JWTs, and
+    // forwarding an LFX credential to it would leak one.
+    expect(headers.get('authorization')).toBe('Bearer supabase-token');
     expect(headers.get('cookie')).toBeNull();
+    expect(headers.get('origin')).toBeNull();
     expect(headers.get('x-custom')).toBe('keep-me');
     expect(res.status).toHaveBeenCalledWith(200);
     expect(next).not.toHaveBeenCalled();
