@@ -302,9 +302,13 @@ export class ComposerDateScheduleComponent implements OnInit {
     const { weekOfMonth, isLastWeek } = getWeekOfMonth(newDate);
 
     if ((recurrenceType === 'monthly_nth' && isLastWeek) || (recurrenceType === 'monthly_last' && !isLastWeek)) {
+      // Relabelling the same monthly cadence for a new start date, so the recurrenceType
+      // subscription must not run: it would rebuild the recurrence group from scratch and
+      // discard the end condition the organizer chose. This method already writes
+      // monthly_week / monthly_week_day, and type / repeat_interval stay monthly either way.
       this.form()
         .get('recurrenceType')
-        ?.setValue(isLastWeek ? 'monthly_last' : 'monthly_nth');
+        ?.setValue(isLastWeek ? 'monthly_last' : 'monthly_nth', { emitEvent: false });
     }
 
     recurrence.patchValue({

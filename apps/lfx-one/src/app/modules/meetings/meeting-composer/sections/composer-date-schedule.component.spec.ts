@@ -266,6 +266,33 @@ describe('ComposerDateScheduleComponent', () => {
       expect(recurrence()?.get('monthly_week')?.value).toBe(-1);
     });
 
+    it('keeps the occurrence count when a monthly cadence is relabelled for a later date', () => {
+      control('startDate')?.setValue(SECOND_THURSDAY);
+      control('recurrenceType')?.setValue('monthly_nth');
+      recurrence()?.get('end_times')?.setValue(12);
+
+      control('startDate')?.setValue(LAST_THURSDAY);
+
+      // Relabelling monthly_nth -> monthly_last is the same cadence under a new name. Letting the
+      // recurrenceType subscription see it would rebuild the group and silently drop the organizer's
+      // end condition, turning a 12-occurrence series into one that never ends.
+      expect(control('recurrenceType')?.value).toBe('monthly_last');
+      expect(recurrence()?.get('end_times')?.value).toBe(12);
+    });
+
+    it('keeps the end date when a last-occurrence cadence is relabelled for an earlier date', () => {
+      const endsOn = new Date(2026, 11, 31);
+      control('startDate')?.setValue(LAST_THURSDAY);
+      control('recurrenceType')?.setValue('monthly_last');
+      recurrence()?.get('end_date_time')?.setValue(endsOn);
+
+      control('startDate')?.setValue(SECOND_THURSDAY);
+
+      expect(control('recurrenceType')?.value).toBe('monthly_nth');
+      expect(recurrence()?.get('end_date_time')?.value).toBe(endsOn);
+      expect(recurrence()?.get('monthly_week')?.value).toBe(2);
+    });
+
     it('leaves the cadence alone when the date is cleared', () => {
       control('startDate')?.setValue(SECOND_THURSDAY);
       control('recurrenceType')?.setValue('weekly');
