@@ -4,11 +4,13 @@
 import { CreateMeetingRegistrantRequest, UpdateMeetingRegistrantRequest } from '@lfx-one/shared/interfaces';
 
 /**
- * Registrant fields the outbound mapper drops whatever their value is.
+ * Registrant fields the outbound mapper never forwards, whatever their value is.
  *
  * Only `meeting_id` today: the meeting is addressed by the path, so ITX has no field to put it in.
- * A key here can never reach upstream, which is why `MeetingController.hasRegistrantChanges` treats
- * one as no change at all rather than as a change whose value happens to be nullish.
+ * A key here can never reach upstream — it is absent from
+ * {@link UPSTREAM_PASSTHROUGH_REGISTRANT_KEYS} and has no rename to carry it — which is why
+ * `MeetingController.hasRegistrantChanges` treats one as no change at all rather than as a change
+ * whose value happens to be nullish.
  */
 export const UNCONDITIONALLY_DROPPED_REGISTRANT_KEYS = ['meeting_id'] as const satisfies readonly (keyof CreateMeetingRegistrantRequest &
   keyof UpdateMeetingRegistrantRequest)[];
@@ -22,10 +24,11 @@ export const UNCONDITIONALLY_DROPPED_REGISTRANT_KEYS = ['meeting_id'] as const s
  * unrenamed key is dropped upstream behind a 201.
  *
  * A map rather than a list of names because `MeetingService.toUpstreamRegistrantBody` has to do two
- * things with each of these — delete the app-side key and re-emit the value under the upstream one —
- * and those were previously written out in two places. A fourth key added to a bare list would have
- * been deleted from the outbound body and then never re-emitted: silent data loss, no type error.
- * Here one entry drives both halves.
+ * things with each of these — keep the app-side key out of the outbound body and re-emit the value
+ * under the upstream one — and those were previously written out in two places. A fourth key added
+ * to a bare list would have been withheld from the outbound body and then never re-emitted: silent
+ * data loss, no type error. Here one entry drives both halves, and the same entry is what excludes
+ * the app-side name from {@link UPSTREAM_PASSTHROUGH_REGISTRANT_KEYS}.
  *
  * `MeetingController.hasRegistrantChanges` reads the key side to decide whether an update actually
  * asks for anything: a nullish value on one of these is omitted rather than renamed, so
@@ -41,9 +44,9 @@ export const RENAMED_REGISTRANT_KEYS = {
 /**
  * The app-side names of {@link RENAMED_REGISTRANT_KEYS}.
  *
- * "Nullish-dropped" is about what reaches upstream, not about the outbound body: the app-side key is
- * always deleted from it. What the value decides is whether it is re-emitted under the upstream name
- * — a nullish one is not, so the pair leaves nothing behind, and that is the case
+ * "Nullish-dropped" is about what reaches upstream, not about the outbound body: the app-side key
+ * never appears in it either way. What the value decides is whether it is re-emitted under the
+ * upstream name — a nullish one is not, so the pair leaves nothing behind, and that is the case
  * `MeetingController.hasRegistrantChanges` has to treat as no change at all.
  */
 export const NULLISH_DROPPED_REGISTRANT_KEYS = Object.keys(RENAMED_REGISTRANT_KEYS) as (keyof typeof RENAMED_REGISTRANT_KEYS)[];
@@ -75,7 +78,8 @@ export const NON_NULLABLE_UPSTREAM_REGISTRANT_KEYS = ['job_title', 'username'] a
  *
  * The two halves get there differently — {@link NULLISH_DROPPED_REGISTRANT_KEYS} are dropped
  * because the rename that would carry them upstream is skipped, {@link
- * NON_NULLABLE_UPSTREAM_REGISTRANT_KEYS} are deleted from the body outright — but the consequence
+ * NON_NULLABLE_UPSTREAM_REGISTRANT_KEYS} are allowed through by name but skipped on `null` — but
+ * the consequence
  * is identical, and it is the consequence `MeetingController.hasRegistrantChanges` has to count:
  * a `null` on any of these makes the outbound body no larger, so counting it as a change forwards
  * the empty `PUT` that guard exists to reject.
@@ -85,12 +89,65 @@ export const NULLISH_OMITTED_REGISTRANT_KEYS = [...NULLISH_DROPPED_REGISTRANT_KE
 /**
  * Every registrant field the app carries but ITX does not accept under that name.
  *
- * `MeetingService.toUpstreamRegistrantBody` deletes all of them from the outbound body. Composed
- * from the two halves above rather than written out again, so the mapper and the
- * `hasRegistrantChanges` guard cannot disagree about which keys exist: adding a key to either half
- * updates the delete loop, the upstream re-emit, and the guard in the same edit. Both halves are
+ * `MeetingService.toUpstreamRegistrantBody` forwards none of them under that name: this list is
+ * what {@link UPSTREAM_PASSTHROUGH_REGISTRANT_KEY_MAP} excludes from the allowlist, so a key here is
+ * one the mapper is required *not* to declare. Composed from the two halves above rather than
+ * written out again, so the mapper and the `hasRegistrantChanges` guard cannot disagree about which
+ * keys exist: adding a key to either half updates the allowlist's exclusion, the upstream re-emit,
+ * and the guard in the same edit. Both halves are
  * keyed on the *intersection* of the two request interfaces rather than a union — a union only rejects a key once
  * it is gone from both, so renaming it on one of them would still compile while the delete quietly
  * stopped matching.
  */
 export const APP_ONLY_REGISTRANT_KEYS = [...UNCONDITIONALLY_DROPPED_REGISTRANT_KEYS, ...NULLISH_DROPPED_REGISTRANT_KEYS] as const;
+
+/**
+ * Every registrant key the outbound mapper forwards upstream under its own name.
+ *
+ * `MeetingService.toUpstreamRegistrantBody` picks these out of the submitted body rather than
+ * copying the body wholesale and deleting what it recognises. The two shapes look equivalent for a
+ * body that matches its declared type, and are not for one that doesn't: the registrant routes carry
+ * no express-validator, `req.body` is untyped JSON, and both batch controllers spread it, so a client
+ * can name any key it likes. Under a denylist an unlisted key — `uid` being the one that matters —
+ * reached upstream unexamined; under this allowlist it is simply absent from the outbound body.
+ *
+ * Written as the keys of a `satisfies Record<—, true>` so the check runs in both directions: a
+ * misspelt or removed field is rejected, *and* a field added to either request interface fails to
+ * compile until it is listed here. That second half is the point — an allowlist's failure mode is
+ * silent omission, and the deletion lists above already showed what an unenforced list costs.
+ *
+ * Keyed on the *union* of the two request interfaces, unlike {@link APP_ONLY_REGISTRANT_KEYS} and
+ * the lists it is built from. Those describe keys that must vanish, so they take the intersection —
+ * a union would let a rename on one interface silently stop matching. This one describes keys that
+ * must survive, and a key that exists on only one of the two shapes still has to be accounted for,
+ * so the union is the exhaustive set. `committee_uid` is create-only and `linkedin_profile`
+ * update-only; both are listed for that reason.
+ *
+ * `linkedin_profile` is forwarded even though Goa discards it — it isn't declared upstream under
+ * any name. Listing it keeps the outbound body byte-identical to what the denylist produced and
+ * states the app's intent, so the day upstream declares the field it starts working without a
+ * second edit. See {@link UpdateMeetingRegistrantRequest} for the tracking note.
+ */
+const UPSTREAM_PASSTHROUGH_REGISTRANT_KEY_MAP = {
+  email: true,
+  first_name: true,
+  last_name: true,
+  host: true,
+  job_title: true,
+  username: true,
+  committee_uid: true,
+  linkedin_profile: true,
+} as const satisfies Record<
+  Exclude<keyof CreateMeetingRegistrantRequest | keyof UpdateMeetingRegistrantRequest, (typeof APP_ONLY_REGISTRANT_KEYS)[number]>,
+  true
+>;
+
+/**
+ * The key list of {@link UPSTREAM_PASSTHROUGH_REGISTRANT_KEY_MAP}, in declaration order.
+ *
+ * Same shape as {@link NULLISH_DROPPED_REGISTRANT_KEYS}: the map carries the exhaustiveness check,
+ * this is what the mapper iterates.
+ */
+export const UPSTREAM_PASSTHROUGH_REGISTRANT_KEYS = Object.keys(
+  UPSTREAM_PASSTHROUGH_REGISTRANT_KEY_MAP
+) as (keyof typeof UPSTREAM_PASSTHROUGH_REGISTRANT_KEY_MAP)[];

@@ -6,7 +6,7 @@ import { FormControl, FormGroup, ReactiveFormsModule, Validators } from '@angula
 import { ButtonComponent } from '@components/button/button.component';
 import { InputTextComponent } from '@components/input-text/input-text.component';
 import { OrganizationSearchComponent } from '@components/organization-search/organization-search.component';
-import { MeetingRegistrant, User } from '@lfx-one/shared/interfaces';
+import { PublicMeetingRegistrationResponse, User } from '@lfx-one/shared/interfaces';
 import { markFormControlsAsTouched } from '@lfx-one/shared/utils';
 import { MeetingService } from '@services/meeting.service';
 import { extractErrorMessage } from '@shared/utils/http-error.utils';
@@ -82,7 +82,7 @@ export class PublicRegistrationModalComponent {
           ...(formValue.org_name ? { org_name: formValue.org_name } : {}),
         })
         .subscribe({
-          next: (registrant: MeetingRegistrant) => {
+          next: (registrant: PublicMeetingRegistrationResponse) => {
             this.submitting.set(false);
             this.messageService.add({
               severity: 'success',

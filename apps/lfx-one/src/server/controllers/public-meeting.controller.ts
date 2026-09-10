@@ -2,7 +2,13 @@
 // SPDX-License-Identifier: MIT
 
 import { Meeting } from '@lfx-one/shared';
-import { MEETING_PASSWORD_HEADER, PUBLIC_REGISTRATION_FIELD_LABELS, PUBLIC_REGISTRATION_FIELD_MAX_LENGTH, ROOT_PROJECT_SLUG } from '@lfx-one/shared/constants';
+import {
+  MEETING_PASSWORD_HEADER,
+  PUBLIC_REGISTRATION_FIELD_LABELS,
+  PUBLIC_REGISTRATION_FIELD_MAX_LENGTH,
+  PUBLIC_SELF_REGISTRATION_RESPONSE_KEYS,
+  ROOT_PROJECT_SLUG,
+} from '@lfx-one/shared/constants';
 import { MeetingVisibility, QueryServiceMeetingType } from '@lfx-one/shared/enums';
 import {
   CreateMeetingRegistrantRequest,
@@ -11,6 +17,7 @@ import {
   Project,
   PublicMeetingOccurrencesResponse,
   PublicMeetingProject,
+  PublicMeetingRegistrationResponse,
 } from '@lfx-one/shared/interfaces';
 import { joinAsSentenceList, truncateToUtf16Units } from '@lfx-one/shared/utils';
 import { NextFunction, Request, Response } from 'express';
@@ -742,24 +749,14 @@ export class PublicMeetingController {
    * `fromUpstreamRegistrant` is careful to preserve. The in-app caller
    * (`PublicRegistrationModalComponent`) reads none of these fields; it forwards a `registered: true`
    * flag and discards the row, so narrowing costs the UI nothing.
+   *
+   * The allowlist and the return type both come from `PUBLIC_SELF_REGISTRATION_RESPONSE_KEYS`, so the
+   * client cannot go on typing this as a full `MeetingRegistrant` while the wire carries twelve keys.
    */
-  private toSelfRegistrationResponse(registrant: MeetingRegistrant): Partial<MeetingRegistrant> {
-    const fields = [
-      'uid',
-      'meeting_id',
-      'email',
-      'first_name',
-      'last_name',
-      'host',
-      'job_title',
-      'org_name',
-      'occurrence_id',
-      'avatar_url',
-      'created_at',
-      'updated_at',
-    ] as const satisfies readonly (keyof MeetingRegistrant)[];
-
-    return Object.fromEntries(fields.filter((field) => registrant[field] !== undefined).map((field) => [field, registrant[field]]));
+  private toSelfRegistrationResponse(registrant: MeetingRegistrant): PublicMeetingRegistrationResponse {
+    return Object.fromEntries(
+      PUBLIC_SELF_REGISTRATION_RESPONSE_KEYS.filter((field) => registrant[field] !== undefined).map((field) => [field, registrant[field]])
+    );
   }
 
   /**

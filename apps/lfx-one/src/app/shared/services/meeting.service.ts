@@ -42,6 +42,7 @@ import {
   PresignAttachmentResponse,
   PublicMeetingOccurrencesResponse,
   PublicMeetingProject,
+  PublicMeetingRegistrationResponse,
   PublicPastMeetingResponse,
   PublicProjectMeetingsResponse,
   QueryServiceCountResponse,
@@ -728,8 +729,13 @@ export class MeetingService {
     );
   }
 
-  public registerForPublicMeeting(registrantData: CreateMeetingRegistrantRequest): Observable<MeetingRegistrant> {
-    return this.http.post<MeetingRegistrant>('/public/api/meetings/register', registrantData).pipe(
+  /*
+   * Typed off what the endpoint actually returns, not off the row it was built from: the public
+   * response is an allowlisted subset (`toSelfRegistrationResponse`), and typing it as a full
+   * `MeetingRegistrant` invited a caller to read a field the wire never carried.
+   */
+  public registerForPublicMeeting(registrantData: CreateMeetingRegistrantRequest): Observable<PublicMeetingRegistrationResponse> {
+    return this.http.post<PublicMeetingRegistrationResponse>('/public/api/meetings/register', registrantData).pipe(
       take(1),
       catchError((error) => {
         console.error(`Failed to register for public meeting ${registrantData.meeting_id}:`, error);

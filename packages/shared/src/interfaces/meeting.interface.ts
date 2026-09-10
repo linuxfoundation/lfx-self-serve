@@ -2,6 +2,7 @@
 // SPDX-License-Identifier: MIT
 
 import type { MEETING_ALLOWED_VOTING_STATUSES } from '../constants/committees.constants';
+import type { PUBLIC_SELF_REGISTRATION_RESPONSE_KEYS } from '../constants/meeting-registrant.constants';
 import type { MEETING_COMPOSER_SECTIONS, PAST_MEETING_SORT, MEETING_FEATURE_BY_KEY } from '../constants/meeting.constants';
 import type { ArtifactVisibility, MeetingType, MeetingVisibility, RecurrenceType, CancelOnCommitteeRemoval } from '../enums';
 import type { TagSeverity } from './components.interface';
@@ -638,6 +639,16 @@ export interface MeetingRegistrant {
   /** Registrant's RSVP (only included when include_rsvp=true) */
   rsvp?: MeetingRsvp | null;
 }
+
+/**
+ * What a public self-registration (`POST /public/api/meetings/register`) actually returns.
+ * @description Narrower than `MeetingRegistrant`: the endpoint answers unauthenticated callers, so it
+ * replies with an allowlist of the registrant's own record rather than the whole upstream row
+ * (`PUBLIC_SELF_REGISTRATION_RESPONSE_KEYS`). Every key is optional because the response omits a key
+ * upstream did not return rather than stating it as `undefined` — "the write response didn't say" and
+ * "upstream stored nothing" are different answers, and only omission preserves the distinction.
+ */
+export type PublicMeetingRegistrationResponse = Partial<Pick<MeetingRegistrant, (typeof PUBLIC_SELF_REGISTRATION_RESPONSE_KEYS)[number]>>;
 
 /**
  * Request payload for creating a meeting registrant

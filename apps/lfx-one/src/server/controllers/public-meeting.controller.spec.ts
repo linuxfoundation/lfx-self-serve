@@ -69,7 +69,14 @@ vi.mock('@lfx-one/shared/utils', async () => ({
 }));
 // meeting.helper imports HOST_KEY_* from shared/constants; stub the barrel so the full constants
 // module graph (which re-imports shared/enums for ArtifactVisibility etc.) doesn't load.
-vi.mock('@lfx-one/shared/constants', () => ({
+vi.mock('@lfx-one/shared/constants', async () => ({
+  // The real allowlist rather than a hand-copy, on the same reasoning as `joinAsSentenceList`
+  // below: a duplicate here would let the leak test further down go green against a list the
+  // controller no longer uses. `meeting-registrant.constants.ts` has no runtime imports of its own
+  // (its only import is type-only), so this pulls in none of the aliased barrel graph the mock
+  // exists to avoid.
+  PUBLIC_SELF_REGISTRATION_RESPONSE_KEYS: (await import('../../../../../packages/shared/src/constants/meeting-registrant.constants'))
+    .PUBLIC_SELF_REGISTRATION_RESPONSE_KEYS,
   HOST_KEY_EARLY_MINUTES: 70,
   HOST_KEY_LATE_MINUTES: 40,
   MEETING_PASSWORD_HEADER: 'x-meeting-password',
@@ -800,6 +807,39 @@ describe('PublicMeetingController.registerForPublicMeeting', () => {
       created_at: '2026-01-01T00:00:00Z',
       updated_at: '2026-01-01T00:00:00Z',
     });
+  });
+
+  /*
+   * The allowlist is the whole defence on this route, and it is one line to widen. This asserts the
+   * consequence rather than the list: nothing upstream attaches about *other* people, and nothing
+   * the registrant is not entitled to assert about themselves, reaches an anonymous caller — so
+   * adding any of these keys to `PUBLIC_SELF_REGISTRATION_RESPONSE_KEYS` fails here instead of
+   * shipping.
+   */
+  it('never lets a roster field reach an anonymous caller, whatever upstream attached', async () => {
+    const leakable = {
+      username: 'alice.liddell',
+      committee_uid: 'committee-9',
+      committee_name: 'Technical Steering',
+      type: 'committee',
+      invite_accepted: true,
+      attended: true,
+      org_is_member: true,
+      org_is_project_member: true,
+      created_by: { username: 'roster-admin', email: 'admin@acme-motors.example', name: 'Roster Admin' },
+      updated_by: { username: 'roster-admin', email: 'admin@acme-motors.example', name: 'Roster Admin' },
+      rsvp: { status: 'yes' },
+    };
+    meetingSvc.addMeetingRegistrantSelf.mockResolvedValue({ uid: 'reg-1', meeting_id: MEETING_ID, ...leakable });
+    const { req, res, next } = buildRegisterReq(true);
+
+    await controller.registerForPublicMeeting(req, res, next);
+
+    const body = res.json.mock.calls[0][0] as Record<string, unknown>;
+    expect(Object.keys(body).sort()).toEqual(['meeting_id', 'uid']);
+    for (const key of Object.keys(leakable)) {
+      expect(body).not.toHaveProperty(key);
+    }
   });
 
   it('omits a field the write response never carried rather than stating it as undefined', async () => {

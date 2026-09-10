@@ -14,6 +14,7 @@ import {
   CreateMeetingRsvpRequest,
   GenerateAgendaResponse,
   Meeting,
+  MeetingCommittee,
   MeetingRegistrant,
   PresignAttachmentRequest,
   UpdateMeetingAttachmentRequest,
@@ -23,7 +24,7 @@ import {
 import { truncateToUtf16Units } from '@lfx-one/shared/utils';
 import { NextFunction, Request, Response } from 'express';
 
-import { NULLISH_OMITTED_REGISTRANT_KEYS, UNCONDITIONALLY_DROPPED_REGISTRANT_KEYS } from '../constants';
+import { NULLISH_DROPPED_REGISTRANT_KEYS, NULLISH_OMITTED_REGISTRANT_KEYS, UPSTREAM_PASSTHROUGH_REGISTRANT_KEYS } from '../constants';
 import { resolveCommitteeV2UidMappings, resolveCommitteeV2UidsToV1Ids } from '../helpers/committee-v1-mapping.helper';
 import { AuthorizationError, MicroserviceError, ServiceValidationError } from '../errors';
 import {
@@ -1882,6 +1883,15 @@ export class MeetingController {
     // Build lookup maps keyed by v2 committee UID
     const committeeMap = new Map<string, Committee | null>();
     committees.forEach(({ uid, committee }) => committeeMap.set(uid, committee));
+    // The meeting's own committee entries, which already carry a resolved `name`: `getMeetingById`
+    // fills them from `getCommitteeNameMap`, a query-service read, while `getCommitteeById` above is
+    // a committee-service read gated on the caller being a committee reader. An organizer who is not
+    // one gets `null` from that fetch, and without this fallback the "via [Group]" chip silently
+    // stops rendering for them. Swapping in an M2M token here instead would also hand them the
+    // member-level role, voting status and appointment below, which their own token says they may
+    // not read — the name is the only part of this that is already theirs.
+    const meetingCommitteeMap = new Map<string, MeetingCommittee>();
+    meetingCommittees.forEach((committee) => meetingCommitteeMap.set(committee.uid, committee));
     const memberMap = new Map<string, CommitteeMember[]>();
     membersByCommittee.forEach(({ uid, members }) => memberMap.set(uid, members));
 
@@ -1911,7 +1921,7 @@ export class MeetingController {
         // same field carries two identifier spaces depending on which direction it was travelling.
         committee_uid: v2Uid,
         // Committee details
-        committee_name: committee?.name || null,
+        committee_name: committee?.name || meetingCommitteeMap.get(v2Uid)?.name || null,
         committee_category: committee?.category || null,
         // Member details
         committee_role: member?.role?.name || null,
@@ -1948,11 +1958,12 @@ export class MeetingController {
    * Drops a runtime `committee_uid` from a registrant update body.
    *
    * `UpdateMeetingRegistrantRequest` declares no such field, but that is a compile-time guarantee
-   * only: `req.body` is untyped JSON and `toUpstreamRegistrantBody` forwards every key it doesn't
-   * recognize, so an extra one here would reach upstream — which derives `type: 'committee'` from
-   * whatever SFID it receives. That would route around the meeting-scoped allowlist the create path
-   * enforces, using the edit endpoint instead. Attribution is set when a guest is added and never
-   * edited, so stripping costs nothing.
+   * only: `req.body` is untyped JSON. `committee_uid` *is* on `toUpstreamRegistrantBody`'s allowlist
+   * — `CreateMeetingRegistrantRequest` declares it, and the allowlist is keyed on the union of the
+   * two request shapes — so an extra one here would be forwarded verbatim to upstream, which
+   * derives `type: 'committee'` from whatever SFID it receives. That would route around the
+   * meeting-scoped allowlist the create path enforces, using the edit endpoint instead. Attribution
+   * is set when a guest is added and never edited, so stripping costs nothing.
    *
    * Generic over the body shape so both callers get their own type back: the update path keeps
    * `UpdateMeetingRegistrantRequest` for the spread, and `hasRegistrantChanges` — which reads straight
@@ -1979,20 +1990,22 @@ export class MeetingController {
    * rather than counted — `Object.keys('ab')` is `['0', '1']`, which would otherwise pass as two
    * changes.
    *
-   * The count is taken over the keys that survive the outbound mapper, not over the raw ones,
-   * because every key the mapper drops is a key that cannot reach upstream:
+   * The count is taken over the keys that reach upstream, not over the raw ones, because a key the
+   * mapper never forwards cannot make the `PUT` do anything:
    * - `committee_uid` — `stripCommitteeUid` removes it here, before the body is forwarded.
-   * - {@link UNCONDITIONALLY_DROPPED_REGISTRANT_KEYS} — `toUpstreamRegistrantBody` deletes these
-   *   whatever their value is.
-   * - {@link NULLISH_OMITTED_REGISTRANT_KEYS} — a `null` on one of these contributes nothing to the
-   *   outbound body: the mapper skips the rename for the renamed three, and deletes the two ITX
-   *   declares non-nullable under their own name.
+   * - Anything absent from both {@link UPSTREAM_PASSTHROUGH_REGISTRANT_KEYS} and
+   *   {@link NULLISH_DROPPED_REGISTRANT_KEYS} — `toUpstreamRegistrantBody` builds the outbound body
+   *   out of those two lists alone, so `meeting_id`, and any key a client invents, is simply absent.
+   * - {@link NULLISH_OMITTED_REGISTRANT_KEYS} on a nullish value — the mapper skips the rename for
+   *   the renamed three and skips the copy for the two ITX declares non-nullable under their own
+   *   name, so the outbound body is no larger for having received them.
    *
    * Counting the raw keys instead let `{ "meeting_id": "M1" }` and `{ "org_name": null }` through
-   * the guard and straight into the empty `PUT` it exists to prevent. The two lists are the same
-   * ones `toUpstreamRegistrantBody`'s delete loop reads — it consumes their union as
-   * `APP_ONLY_REGISTRANT_KEYS` — so a key added to either half reaches the mapper and this guard in
-   * one edit, and neither can be updated without the other.
+   * the guard and straight into the empty `PUT` it exists to prevent. The two membership lists are
+   * exactly the two the mapper's own loops iterate, so a key added to either reaches the mapper and
+   * this guard in one edit and neither can be updated without the other — and because the mapper
+   * is an allowlist, a key nobody has declared fails this test by default rather than by someone
+   * remembering to deny it.
    */
   private static hasRegistrantChanges(changes: unknown): boolean {
     if (typeof changes !== 'object' || changes === null || Array.isArray(changes)) {
@@ -2002,9 +2015,13 @@ export class MeetingController {
     const stripped = MeetingController.stripCommitteeUid(changes as Record<string, unknown>);
 
     return Object.entries(stripped).some(([key, value]) => {
-      // Widened for the lookups only: both arrays are typed by their registrant key unions, so
-      // `includes` won't accept an arbitrary string, and the keys here come off untyped JSON.
-      if ((UNCONDITIONALLY_DROPPED_REGISTRANT_KEYS as readonly string[]).includes(key)) {
+      // Widened for the lookups only: every one of these arrays is typed by its registrant key
+      // union, so `includes` won't accept an arbitrary string, and the keys here come off untyped
+      // JSON. The two membership tests mirror the mapper's two loops, in the same order.
+      const reachesUpstream =
+        (UPSTREAM_PASSTHROUGH_REGISTRANT_KEYS as readonly string[]).includes(key) || (NULLISH_DROPPED_REGISTRANT_KEYS as readonly string[]).includes(key);
+
+      if (!reachesUpstream) {
         return false;
       }
 

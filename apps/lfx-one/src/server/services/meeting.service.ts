@@ -56,7 +56,7 @@ import { Request } from 'express';
 import { ResourceNotFoundError, AuthorizationError, ServiceValidationError } from '../errors';
 import { fetchEntityProject, toEntityProjectFields } from '../helpers/entity-project-enrichment.helper';
 import { attachRsvpsToRegistrants, filterRsvpsToActiveRegistrants } from '../helpers/meeting-rsvp.helper';
-import { APP_ONLY_REGISTRANT_KEYS, NON_NULLABLE_UPSTREAM_REGISTRANT_KEYS, RENAMED_REGISTRANT_KEYS } from '../constants';
+import { NON_NULLABLE_UPSTREAM_REGISTRANT_KEYS, RENAMED_REGISTRANT_KEYS, UPSTREAM_PASSTHROUGH_REGISTRANT_KEYS } from '../constants';
 import { pollEndpoint } from '../helpers/poll-endpoint.helper';
 import { fetchAllQueryResources } from '../helpers/query-service.helper';
 import { encodePathSegment } from '../helpers/url-validation';
@@ -2280,7 +2280,14 @@ export class MeetingService {
   }
 
   /**
-   * Renames the three registrant fields whose app-side names differ from the upstream ITX contract.
+   * Builds the ITX registrant body from a submitted create or update payload.
+   *
+   * An allowlist — {@link UPSTREAM_PASSTHROUGH_REGISTRANT_KEYS} plus the renamed three below —
+   * rather than a copy of the body with the app-only keys deleted. The parameter type says what a
+   * well-behaved caller sends, not what arrives: `req.body` is untyped JSON and both batch
+   * controllers spread it, so under a denylist any key the app had no opinion about — `uid` above
+   * all — reached upstream unexamined. Goa ignores keys it doesn't declare, which bounds the blast
+   * radius but does not make forwarding them correct.
    *
    * `CreateItxRegistrantRequestBody` (reused verbatim for the PUT) declares `org`, `profile_picture`
    * and `occurrence`; the app's read model — which comes from the v1 query-service index, not from
@@ -2288,8 +2295,8 @@ export class MeetingService {
    * doesn't declare, so without this rename the organization an organizer types, the avatar, and a
    * single-occurrence invite were all dropped on the way upstream, behind a 201.
    *
-   * `meeting_id` is dropped for the same reason it isn't declared: it's the path parameter, and the
-   * caller has already used it to build the URL.
+   * `meeting_id` is absent from the allowlist for the same reason it isn't declared upstream: it's
+   * the path parameter, and the caller has already used it to build the URL.
    *
    * A `null` on one of the three renamed fields is omitted rather than renamed.
    * `UpdateMeetingRegistrantRequest` uses `null` to erase a stored value, but all three targets are
@@ -2301,8 +2308,9 @@ export class MeetingService {
    *
    * {@link NON_NULLABLE_UPSTREAM_REGISTRANT_KEYS} gets the same treatment for the same reason,
    * without the rename: `job_title` and `username` are declared upstream under the app's own name and
-   * are equally non-nullable, and `getChangedFields` nulls them too. `linkedin_profile` is left
-   * alone — it isn't declared upstream at all, so Goa discards the key rather than the value.
+   * are equally non-nullable, and `getChangedFields` nulls them too — so a `null` on either is
+   * skipped even though the key itself is allowed through. `linkedin_profile` is left alone: it
+   * isn't declared upstream at all, so Goa discards the key rather than the value.
    *
    * Cost: clearing an organization on an edit leaves the stored value in place. It did before this
    * rename too, so nothing regresses — but it stays unfixed until upstream states how these fields are
@@ -2310,32 +2318,43 @@ export class MeetingService {
    * ("blank = all occurrences"), so a wrong guess silently rescopes an invite.
    */
   private toUpstreamRegistrantBody(body: CreateMeetingRegistrantRequest | UpdateMeetingRegistrantRequest): Record<string, unknown> {
-    const upstream: Record<string, unknown> = { ...body };
+    // Spread rather than cast: the declared parameter types are interfaces with no index
+    // signature, and the runtime object is exactly what a client posted, extra keys included.
+    const submitted: Record<string, unknown> = { ...body };
+    const upstream: Record<string, unknown> = {};
 
-    // Shared with `MeetingController.hasRegistrantChanges`, which has to know exactly which keys
-    // vanish here to tell an empty update apart from a real one — see the constant's own docs for
-    // why it's keyed on the intersection of the two request interfaces.
-    for (const appOnlyKey of APP_ONLY_REGISTRANT_KEYS) {
-      delete upstream[appOnlyKey];
+    // Built up key by key rather than spread-and-deleted. The declared parameter type is a
+    // compile-time guarantee only — the registrant routes carry no express-validator and both batch
+    // controllers spread `req.body` — so a client can name any key it likes, and a denylist forwarded
+    // every one it didn't recognise. Shared with `MeetingController.hasRegistrantChanges`, which has
+    // to know exactly which keys survive here to tell an empty update apart from a real one.
+    for (const passthroughKey of UPSTREAM_PASSTHROUGH_REGISTRANT_KEYS) {
+      const value = submitted[passthroughKey];
+
+      // Absent stays absent: a key the caller never sent must not appear upstream as `undefined`,
+      // which `getChangedFields` would otherwise turn into a declared-but-empty field.
+      if (value === undefined) {
+        continue;
+      }
+
+      // These keep their own name, so there is no rename to skip — the `null` has to be left out
+      // outright. The field is declared non-nullable upstream, and `getChangedFields` nulls it on
+      // an ordinary edit.
+      if (value === null && (NON_NULLABLE_UPSTREAM_REGISTRANT_KEYS as readonly string[]).includes(passthroughKey)) {
+        continue;
+      }
+
+      upstream[passthroughKey] = value;
     }
 
-    // Driven off the same map the delete loop's second half is derived from, so a key can't be
-    // deleted here and then forgotten on the way back in — which would be silent data loss with no
-    // type error to catch it.
+    // Driven off the same map {@link APP_ONLY_REGISTRANT_KEYS}' second half is derived from, so a key
+    // can't be excluded from the allowlist above and then forgotten on the way back in — which would
+    // be silent data loss with no type error to catch it.
     for (const [appKey, upstreamKey] of Object.entries(RENAMED_REGISTRANT_KEYS)) {
-      const value = body[appKey as keyof typeof body];
+      const value = submitted[appKey];
 
       if (value != null) {
         upstream[upstreamKey] = value;
-      }
-    }
-
-    // These keep their own name, so there is no rename to skip — the `null` has to be deleted
-    // outright. Same reason as above: the field is declared non-nullable upstream, and
-    // `getChangedFields` nulls it on an ordinary edit.
-    for (const nonNullableKey of NON_NULLABLE_UPSTREAM_REGISTRANT_KEYS) {
-      if (upstream[nonNullableKey] == null) {
-        delete upstream[nonNullableKey];
       }
     }
 
@@ -2396,8 +2415,14 @@ export class MeetingService {
    * would otherwise claim a field the object doesn't carry; an empty string is falsy, so a caller's
    * `if (registrant.uid)` still routes to the read-back, whereas an absent one would reach a template
    * or a URL segment as the literal `"undefined"`.
+   *
+   * It is written *after* the spread, not before it. `registrantData` comes from `req.body`, so a
+   * client that names a `uid` of its own would otherwise have it win over the empty one and be
+   * echoed back as the created registrant's identity — a UID upstream never minted, presented as
+   * though it had. Same ordering rule as `updateMeetingRegistrant`'s fallback, where the routed
+   * `uid` and `meeting_id` are written last for the same reason.
    */
   private static registrantFromSubmittedPayload(registrantData: CreateMeetingRegistrantRequest): MeetingRegistrant {
-    return { uid: '', ...registrantData } as MeetingRegistrant;
+    return { ...registrantData, uid: '' } as MeetingRegistrant;
   }
 }

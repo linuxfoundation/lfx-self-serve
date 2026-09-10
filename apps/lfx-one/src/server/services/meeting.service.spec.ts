@@ -1,7 +1,15 @@
 // Copyright The Linux Foundation and each contributor to LFX.
 // SPDX-License-Identifier: MIT
 
-import type { Meeting, MeetingRegistrant, MeetingRsvp, MeetingUserInfo, QueryServiceResponse } from '@lfx-one/shared/interfaces';
+import type {
+  CreateMeetingRegistrantRequest,
+  Meeting,
+  MeetingRegistrant,
+  MeetingRsvp,
+  MeetingUserInfo,
+  QueryServiceResponse,
+  UpdateMeetingRegistrantRequest,
+} from '@lfx-one/shared/interfaces';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 
 // This app's vitest config resolves plain Node modules only — the `@lfx-one/shared/*` tsconfig
@@ -1087,6 +1095,28 @@ describe('MeetingService registrant write payloads', () => {
     });
 
     expect(result).toMatchObject({ email: 'a@example.com', first_name: 'A', last_name: 'B' });
+    // The identity is the routed one, not the body's. `uid` isn't in the update body at all and
+    // `MeetingRegistrant` declares it required, so an unasserted fallback could drop it and still
+    // type-check; `meeting_id` is in the body, and the routed meeting is the authoritative one.
+    expect(result).toMatchObject({ uid: 'reg-1', meeting_id: 'meeting-1' });
+  });
+
+  // The routed identity is written after the spread for the same reason the create fallback's is:
+  // the batch endpoint reads `changes` straight off `req.body`, so a client can name a `uid` and a
+  // `meeting_id` of its own. Spread last, they would overwrite the ones the request actually routed
+  // on and be echoed back as the updated registrant's identity.
+  it('does not let a body-supplied identity override the routed one in the update fallback', async () => {
+    proxyRequest.mockResolvedValue(null);
+
+    const result = await service.updateMeetingRegistrant(req, 'meeting-1', 'reg-1', {
+      meeting_id: 'other-meeting',
+      uid: 'other-registrant',
+      email: 'a@example.com',
+      first_name: 'A',
+      last_name: 'B',
+    } as UpdateMeetingRegistrantRequest & { uid: string });
+
+    expect(result).toMatchObject({ uid: 'reg-1', meeting_id: 'meeting-1' });
   });
 
   // Where upstream did answer, its body is the whole answer: merging the request underneath it would
@@ -1127,6 +1157,45 @@ describe('MeetingService registrant write payloads', () => {
 
     expect(result).toMatchObject({ email: 'a@example.com', first_name: 'A', last_name: 'B' });
     expect(result.uid).toBe('');
+  });
+
+  // `registrantData` comes from `req.body` and the create route carries no express-validator, so a
+  // client can name a `uid`. Spread over the placeholder it would be echoed back as the created
+  // registrant's identity — a UID upstream never minted, presented as though it had, and falsy
+  // checks like `if (registrant.uid)` would route past the read-back that exists to find the real
+  // one.
+  it('does not let a body-supplied uid stand in for the one upstream never minted', async () => {
+    proxyRequest.mockResolvedValue(null);
+
+    const result = await service.addMeetingRegistrant(req, {
+      meeting_id: 'meeting-1',
+      uid: 'client-chosen',
+      email: 'a@example.com',
+      first_name: 'A',
+      last_name: 'B',
+    } as CreateMeetingRegistrantRequest & { uid: string });
+
+    expect(result.uid).toBe('');
+  });
+
+  // The outbound mapper is an allowlist, not a copy-with-deletions. `req.body` is untyped JSON and
+  // both batch controllers spread it, so a key no request shape declares used to be forwarded
+  // unexamined — `uid` being the one that matters, since ITX derives the registrant's identity from
+  // the path and an extra body key is exactly the kind of thing a proxy should not be relaying.
+  it('forwards no key that neither request shape declares', async () => {
+    await service.addMeetingRegistrant(req, {
+      meeting_id: 'meeting-1',
+      uid: 'client-chosen',
+      email: 'a@example.com',
+      first_name: 'A',
+      last_name: 'B',
+      totally_made_up: 'x',
+    } as CreateMeetingRegistrantRequest & { uid: string; totally_made_up: string });
+
+    expect(bodyOf()).toMatchObject({ email: 'a@example.com', first_name: 'A', last_name: 'B' });
+    for (const key of ['uid', 'totally_made_up', 'meeting_id']) {
+      expect(bodyOf()).not.toHaveProperty(key);
+    }
   });
 
   // Self-registration is the path a registrant drives from the public meeting page, so the same

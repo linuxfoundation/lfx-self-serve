@@ -517,11 +517,17 @@ describe('MeetingController', () => {
       // forwards an empty write.
       ['sends only a committee_uid', [{ uid: 'reg-1', changes: { committee_uid: V1_COMMITTEE_SFID } }]],
       // The three keys below survive `stripCommitteeUid` but not `toUpstreamRegistrantBody`:
-      // `meeting_id` is deleted outright, and the renamed fields are dropped when nullish. Counting
-      // raw keys let all three through the guard and into the empty `PUT` it exists to reject.
+      // `meeting_id` is absent from its allowlist, and the renamed fields are dropped when nullish.
+      // Counting raw keys let all three through the guard and into the empty `PUT` it exists to
+      // reject.
       ['sends only a meeting_id', [{ uid: 'reg-1', changes: { meeting_id: MEETING_ID } }]],
       ['sends only a null org_name', [{ uid: 'reg-1', changes: { org_name: null } }]],
       ['sends only nullish renamed fields', [{ uid: 'reg-1', changes: { org_name: null, avatar_url: undefined, occurrence_id: null } }]],
+      // Undeclared keys are the case the allowlist added: `req.body` is untyped JSON, so a client
+      // can name anything. Under the old denylist the mapper forwarded whatever it didn't recognise
+      // and this guard counted it, so `{ uid: 'other' }` produced a `PUT` carrying a client-chosen
+      // identity. Now neither list contains the key and both agree it changes nothing.
+      ['sends only keys no request shape declares', [{ uid: 'reg-1', changes: { uid: 'other', totally_made_up: 'x' } }]],
     ])('rejects an entry that %s instead of forwarding an empty write', async (_label, body) => {
       const req = buildReq({ body });
 
@@ -614,6 +620,36 @@ describe('MeetingController', () => {
 
       expect(next).not.toHaveBeenCalled();
       expect(res.json).toHaveBeenCalledWith([registrant]);
+    });
+
+    // `getCommitteeById` is a committee-service read gated on the caller being a committee reader,
+    // so an organizer who is not one gets nothing back from it. The meeting's own committee entry
+    // already carries the name (`getMeetingById` resolves it off the query service), which is what
+    // keeps the "via [Group]" chip rendering for them.
+    it('names the group from the meeting when the caller cannot read the committee itself', async () => {
+      meetingSvc.getMeetingById.mockResolvedValue({ uid: MEETING_ID, committees: [{ uid: V2_COMMITTEE_UID, name: 'TAC' }] });
+      committeeSvc.getCommitteeById.mockRejectedValue(new Error('forbidden'));
+      const res = buildRes();
+
+      await controller.getMeetingRegistrants(buildReq({ query: { include_committee: 'true' } }), res, next);
+
+      expect(res.json).toHaveBeenCalledWith([expect.objectContaining({ committee_name: 'TAC' })]);
+    });
+
+    // The fallback is a name only. Role, voting status and appointment come off the committee's
+    // member records, and those stay gated on the caller's own token — a chip that says which group
+    // someone came in with is not a licence to read that group's roster.
+    it('leaves the member-level committee fields empty for that same caller', async () => {
+      meetingSvc.getMeetingById.mockResolvedValue({ uid: MEETING_ID, committees: [{ uid: V2_COMMITTEE_UID, name: 'TAC' }] });
+      committeeSvc.getCommitteeById.mockRejectedValue(new Error('forbidden'));
+      committeeSvc.getCommitteeMembers.mockRejectedValue(new Error('forbidden'));
+      const res = buildRes();
+
+      await controller.getMeetingRegistrants(buildReq({ query: { include_committee: 'true' } }), res, next);
+
+      expect(res.json).toHaveBeenCalledWith([
+        expect.objectContaining({ committee_name: 'TAC', committee_role: null, committee_voting_status: null, committee_appointed_by: null }),
+      ]);
     });
   });
 
