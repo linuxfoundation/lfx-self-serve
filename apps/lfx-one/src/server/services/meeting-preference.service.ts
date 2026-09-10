@@ -25,7 +25,10 @@ import { NatsService } from './nats.service';
  * reading the preference and then acting on a since-changed value. A caller like
  * `rejectIdentity` that reads `getMeetingInviteEmail` and then conditionally mutates elsewhere
  * (or calls `setMeetingInviteEmail`) must wrap that whole read-then-act sequence in
- * `withUserLock` (see `utils/user-lock.ts`) to avoid the check-then-act race fixed in LFXV2 #2241.
+ * `withUserLock` (see `utils/user-lock.ts`) to close the check-then-act race from LFXV2 #2241.
+ * That lock only serializes requests within this BFF's replica set and Valkey key namespace —
+ * it is not a cross-service or cross-deployment invariant, and it is never renewed, so a caller
+ * whose locked region outlives the lock's TTL can still reopen the window.
  */
 export class MeetingPreferenceService {
   private natsService: NatsService;

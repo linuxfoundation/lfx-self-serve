@@ -1422,8 +1422,10 @@ export class ProfileController {
       // preference, then removes the identity if it doesn't match — a check-then-act sequence
       // that a concurrent PUT /api/profile/emails/meeting-invite could otherwise interleave with
       // (LFXV2 #2241), repointing the preference at this identity between the read and the
-      // removal. `withUserLock` serializes both sides of that race per user, so this is a real
-      // invariant guard, not just a fail-closed backstop for a client-side race.
+      // removal. `withUserLock` serializes both sides of that race for a well-formed client; it
+      // does not resolve the identity's address server-side, so a request that omits `email`
+      // while naming an email `identityId` still bypasses this guard (pre-existing, tracked as
+      // follow-up scope beyond #2241).
       // Single source of truth for "does this request touch the meeting-invite invariant" — the
       // guard above and the decision to take the lock below must never drift apart.
       const isEmailIdentity = typeof email === 'string' && !!email;
