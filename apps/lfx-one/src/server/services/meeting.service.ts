@@ -804,6 +804,40 @@ export class MeetingService {
   }
 
   /**
+   * Fetches a meeting's complete registrant roster for a caller who is authorized to edit that
+   * meeting — the composer's Guests section, which needs the saved list to be whole before it
+   * reconciles the organizer's edits against it.
+   *
+   * Completeness is the thing that needs authorizing, not the listing. The upstream query-service
+   * applies no per-user grant filtering to v1_meeting_registrant, so a strict, unpaginated roster
+   * is every registrant's PII for any meeting whose uid the caller can name — authentication alone
+   * does not earn it. `organizer` is the right relation to require rather than mere registrant
+   * membership: it is the same access the composer's edit mode is gated on client-side, so the
+   * check refuses exactly the callers who could not have opened the section in the first place.
+   *
+   * The committee "import registrants" flow has its own, wider rules — see
+   * `getAuthorizedRegistrantsForImport`.
+   *
+   * @throws AuthorizationError if the caller is not an organizer of the meeting.
+   */
+  public async getAuthorizedCompleteRegistrants(
+    req: Request,
+    meetingUid: string,
+    includeRsvp: boolean = false,
+    occurrenceId?: string
+  ): Promise<MeetingRegistrant[]> {
+    const isOrganizer = await this.accessCheckService.checkSingleAccess(req, { resource: 'meeting', id: meetingUid, access: 'organizer' });
+    if (!isOrganizer) {
+      throw new AuthorizationError('Not authorized to read the complete registrant roster for this meeting', {
+        operation: 'get_authorized_complete_registrants',
+        service: 'meeting_service',
+      });
+    }
+
+    return this.getMeetingRegistrants(req, meetingUid, includeRsvp, occurrenceId, true);
+  }
+
+  /**
    * Fetches all registrants for a meeting by email
    */
   public async getMeetingRegistrantsByEmail(req: Request, meetingUid: string, email: string, m2mToken?: string): Promise<MeetingRegistrant[]> {

@@ -714,6 +714,56 @@ describe('MeetingService.getAuthorizedRegistrantsForImport', () => {
   });
 });
 
+describe('MeetingService.getAuthorizedCompleteRegistrants', () => {
+  let service: MeetingService;
+
+  const MEETING_UID = 'meeting-1';
+  const registrantRecord = (id: string) => ({ id: `v1_meeting_registrant:${id}`, data: { uid: id, email: `${id}@example.com` } as MeetingRegistrant });
+
+  beforeEach(() => {
+    proxyRequest.mockReset();
+    accessCheckSvc.checkSingleAccess.mockReset();
+    service = new MeetingService();
+  });
+
+  // The guard, not the listing, is the security property: upstream applies no per-user filtering
+  // to v1_meeting_registrant, so an unauthorized caller reaching the walk at all is the leak.
+  it('refuses a non-organizer with a 403 before any registrant is fetched', async () => {
+    accessCheckSvc.checkSingleAccess.mockResolvedValue(false);
+
+    await expect(service.getAuthorizedCompleteRegistrants(req, MEETING_UID)).rejects.toMatchObject({ statusCode: 403 });
+    expect(proxyRequest).not.toHaveBeenCalled();
+  });
+
+  it('checks organizer access on the meeting itself, not writer access on some other resource', async () => {
+    accessCheckSvc.checkSingleAccess.mockResolvedValue(true);
+    proxyRequest.mockResolvedValueOnce({ resources: [registrantRecord('a')] });
+
+    await service.getAuthorizedCompleteRegistrants(req, MEETING_UID);
+
+    expect(accessCheckSvc.checkSingleAccess).toHaveBeenCalledWith(req, { resource: 'meeting', id: MEETING_UID, access: 'organizer' });
+  });
+
+  it('returns the roster for an organizer', async () => {
+    accessCheckSvc.checkSingleAccess.mockResolvedValue(true);
+    proxyRequest.mockResolvedValueOnce({ resources: [registrantRecord('a')] });
+
+    const result = await service.getAuthorizedCompleteRegistrants(req, MEETING_UID);
+
+    expect(result).toEqual([{ uid: 'a', email: 'a@example.com' }]);
+  });
+
+  // Strictness is the whole reason this path exists — a short list reads to the composer as
+  // "these people are not registered yet", and the organizer re-invites guests who already have
+  // an invite. It must surface as an error, so failOnPartial cannot be left to the caller.
+  it('fetches strictly, so a mid-walk page failure throws instead of returning a short roster', async () => {
+    accessCheckSvc.checkSingleAccess.mockResolvedValue(true);
+    proxyRequest.mockResolvedValueOnce({ resources: [registrantRecord('a')], page_token: 'next' }).mockRejectedValueOnce(new Error('query service down'));
+
+    await expect(service.getAuthorizedCompleteRegistrants(req, MEETING_UID)).rejects.toThrow();
+  });
+});
+
 describe('MeetingService.getPastMeetingParticipants', () => {
   let service: MeetingService;
 

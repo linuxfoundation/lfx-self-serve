@@ -419,17 +419,19 @@ export class MeetingController {
         return;
       }
 
-      // A complete roster scoped to a committee is the committee "import registrants" flow — a
-      // privileged, business-logic-heavy path (authorization, size cap), so it's delegated to
-      // MeetingService.getAuthorizedRegistrantsForImport per the three-file pattern
-      // (docs/reviews/backend-checklist.md). Every other caller goes through the normal listing on
-      // its own bearer token, which forwards fail_on_partial so a truncated upstream page surfaces
-      // as an error rather than a silently short list. That includes the composer's Guests section,
-      // which wants completeness without a committee in scope: it gets strictness, not the
-      // privileged path, and not a 403.
+      // `fail_on_partial` asks for a *complete* roster, and the upstream query-service applies no
+      // per-user grant filtering to v1_meeting_registrant — so both strict paths are authorized
+      // in MeetingService per the three-file pattern (docs/reviews/backend-checklist.md), never
+      // taken on the caller's word. Scoped to a committee it is the committee "import registrants"
+      // flow, with that flow's own rules and size cap; unscoped it is the composer's Guests
+      // section, which has to be an organizer of the meeting it is editing. Only the tolerant
+      // listing — the one that may come back short — goes straight through on the caller's own
+      // bearer token.
       let registrants: MeetingRegistrant[];
       if (failOnPartial && committeeUid) {
         registrants = await this.meetingService.getAuthorizedRegistrantsForImport(req, uid, committeeUid);
+      } else if (failOnPartial) {
+        registrants = await this.meetingService.getAuthorizedCompleteRegistrants(req, uid, includeRsvp, occurrenceId);
       } else {
         registrants = await this.meetingService.getMeetingRegistrants(req, uid, includeRsvp, occurrenceId, failOnPartial);
       }

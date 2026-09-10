@@ -421,13 +421,15 @@ export class MeetingService {
   /**
    * @param failOnPartial - If true, the request fails instead of returning a truncated roster
    *   when a later page fails server-side. Callers that rely on the complete list for
-   *   correctness (e.g. importing every registrant) should set this.
+   *   correctness (e.g. importing every registrant) should set this. A complete roster is a
+   *   privileged read, so the server authorizes it on either path — see `committeeUid` below.
    * @param committeeUid - Scopes the request to the committee "import registrants" flow, which
    *   reads a privileged roster: the server verifies the committee belongs to the same project as
    *   the meeting, and that the caller either has writer access on the committee or is a member of
    *   it when the committee is invite_only (mirroring canSendMemberInvites() client-side) — see
-   *   meeting.controller.ts. Omitting it is not an error: `failOnPartial` alone just asks the
-   *   caller's own registrant listing to be strict about a truncated page.
+   *   meeting.controller.ts. Omitting it is not an error, but it does not skip authorization
+   *   either: an unscoped `failOnPartial` is authorized as an organizer read of that meeting's
+   *   full roster (`MeetingService.getAuthorizedCompleteRegistrants`), and answers 403 otherwise.
    * @param includeCommittee - Opts into committee enrichment (`committee_name`, `committee_role`,
    *   `committee_category`, `committee_voting_status`, `committee_appointed_by`), and normalizes
    *   `committee_uid` from the upstream v1 SFID to the v2 UID. It costs the BFF a per-committee

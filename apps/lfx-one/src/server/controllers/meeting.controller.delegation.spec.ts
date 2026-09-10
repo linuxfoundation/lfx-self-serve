@@ -11,6 +11,7 @@ const { meetingSvc, getEffectiveEmailMock, generateM2MTokenMock, addInvitedStatu
   meetingSvc: {
     getMeetingRegistrants: vi.fn(),
     getAuthorizedRegistrantsForImport: vi.fn(),
+    getAuthorizedCompleteRegistrants: vi.fn(),
     getMeetingById: vi.fn(),
     getMeetingHostKey: vi.fn(),
     getMeetingRegistrantsByEmail: vi.fn(),
@@ -90,9 +91,12 @@ function buildRes(): any {
 }
 
 // Authorization, membership, project-match, and size-cap rules are business logic tested at
-// their source — MeetingService.getAuthorizedRegistrantsForImport (meeting.service.spec.ts) —
-// per the three-file pattern (docs/reviews/backend-checklist.md). This spec covers only the
-// controller's HTTP-layer responsibility: parsing params and delegating to the right service call.
+// their source — MeetingService.getAuthorizedRegistrantsForImport and
+// getAuthorizedCompleteRegistrants (meeting.service.spec.ts) — per the three-file pattern
+// (docs/reviews/backend-checklist.md). This spec covers only the controller's HTTP-layer
+// responsibility: parsing params and delegating to the right service call. Which of the three it
+// picks is the security boundary here: routing a strict request to the unauthorized listing is how
+// the whole roster leaks, so each branch is pinned.
 describe('MeetingController.getMeetingRegistrants — delegation', () => {
   let controller: MeetingController;
 
@@ -114,20 +118,45 @@ describe('MeetingController.getMeetingRegistrants — delegation', () => {
     expect(next).not.toHaveBeenCalled();
   });
 
-  // Completeness without a committee is the composer's Guests section, not the import flow. It has
-  // no privileged roster to read, so it stays on the caller's own token and only asks the normal
-  // listing to be strict about truncation. Turning that into a 403 broke the section outright.
-  it('sends a complete-roster request with no committee_uid down the normal listing, still strict', async () => {
-    meetingSvc.getMeetingRegistrants.mockResolvedValue([{ uid: 'r1', email: 'a@example.com' }]);
+  // Completeness without a committee is the composer's Guests section, not the import flow — but
+  // "not the import flow" is not "no authorization". The unpaginated roster is every registrant's
+  // PII and upstream filters none of it per-user, so this must never reach the plain listing,
+  // which would hand it to any authenticated caller who can name the meeting uid.
+  it('routes a complete-roster request with no committee_uid through the authorized organizer read', async () => {
+    meetingSvc.getAuthorizedCompleteRegistrants.mockResolvedValue([{ uid: 'r1', email: 'a@example.com' }]);
     const res = buildRes();
     const next = vi.fn();
 
     await controller.getMeetingRegistrants(buildReq({ fail_on_partial: 'true' }), res, next);
 
-    expect(meetingSvc.getMeetingRegistrants).toHaveBeenCalledWith(expect.anything(), MEETING_UID, false, undefined, true);
+    expect(meetingSvc.getAuthorizedCompleteRegistrants).toHaveBeenCalledWith(expect.anything(), MEETING_UID, false, undefined);
+    expect(meetingSvc.getMeetingRegistrants).not.toHaveBeenCalled();
     expect(meetingSvc.getAuthorizedRegistrantsForImport).not.toHaveBeenCalled();
     expect(res.json).toHaveBeenCalledWith([{ uid: 'r1', email: 'a@example.com' }]);
     expect(next).not.toHaveBeenCalled();
+  });
+
+  // include_rsvp and occurrence_id are forwarded on this branch too — the authorized read is the
+  // same listing with a gate in front, not a reduced one.
+  it('forwards include_rsvp and occurrence_id on the authorized complete-roster branch', async () => {
+    meetingSvc.getAuthorizedCompleteRegistrants.mockResolvedValue([]);
+    const res = buildRes();
+
+    await controller.getMeetingRegistrants(buildReq({ fail_on_partial: 'true', include_rsvp: 'true', occurrence_id: 'occ-1' }), res, vi.fn());
+
+    expect(meetingSvc.getAuthorizedCompleteRegistrants).toHaveBeenCalledWith(expect.anything(), MEETING_UID, true, 'occ-1');
+  });
+
+  it('propagates a 403 from the authorized complete-roster read via next, without responding', async () => {
+    const authError = Object.assign(new Error('Not authorized'), { statusCode: 403 });
+    meetingSvc.getAuthorizedCompleteRegistrants.mockRejectedValue(authError);
+    const res = buildRes();
+    const next = vi.fn();
+
+    await controller.getMeetingRegistrants(buildReq({ fail_on_partial: 'true' }), res, next);
+
+    expect(next).toHaveBeenCalledWith(authError);
+    expect(res.json).not.toHaveBeenCalled();
   });
 
   it('delegates a complete-roster request to getAuthorizedRegistrantsForImport with the parsed uid and committee_uid', async () => {
