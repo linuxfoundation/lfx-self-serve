@@ -1,0 +1,124 @@
+<!-- Copyright The Linux Foundation and each contributor to LFX. -->
+<!-- SPDX-License-Identifier: MIT -->
+
+<section class="rounded-2xl border border-gray-200 bg-white p-6 flex flex-col gap-4" data-testid="mentorship-profile-card">
+  <div class="flex items-start justify-between gap-4">
+    <div class="flex flex-col gap-1">
+      <h2 class="text-base font-bold text-gray-900" data-testid="mentorship-profile-card-title">{{ title }}</h2>
+      <p class="max-w-md text-xs text-gray-500 leading-5">{{ subtitle }}</p>
+    </div>
+    <div class="shrink-0">
+      <lfx-button
+        [label]="editLabel"
+        icon="fa-light fa-pen"
+        iconPos="right"
+        severity="secondary"
+        size="small"
+        [outlined]="true"
+        (onClick)="onEdit()"
+        data-testid="mentorship-profile-card-edit" />
+    </div>
+  </div>
+
+  @if (summary(); as profile) {
+    <div class="flex items-start gap-3">
+      <lfx-avatar
+        [image]="avatarUrl()"
+        [label]="profile.name"
+        shape="circle"
+        size="normal"
+        styleClass="shrink-0 w-10 h-10 bg-blue-50 text-blue-700 text-sm font-semibold"
+        [ariaLabel]="profile.name"
+        data-testid="mentorship-profile-card-avatar" />
+
+      <div class="min-w-0 flex flex-col gap-0.5">
+        <p class="text-sm font-semibold text-gray-900" data-testid="mentorship-profile-card-name">{{ profile.name || placeholder }}</p>
+        <div class="flex flex-col gap-0.5" data-testid="mentorship-profile-card-emails">
+          @for (entry of profile.emails; track entry.email) {
+            <span class="flex items-center gap-2">
+              <span class="min-w-0 truncate text-sm text-gray-500">{{ entry.email }}</span>
+              @if (entry.isPrimary) {
+                <span class="shrink-0 rounded bg-blue-100 px-1.5 py-0.5 text-[10px] font-semibold uppercase tracking-wide text-blue-600">
+                  {{ primaryBadge }}
+                </span>
+              }
+            </span>
+          } @empty {
+            <span class="text-sm text-gray-400">{{ placeholder }}</span>
+          }
+        </div>
+      </div>
+    </div>
+
+    <div class="h-px bg-gray-100"></div>
+
+    <dl class="grid grid-cols-1 gap-x-8 gap-y-4 sm:grid-cols-2">
+      <div class="flex flex-col gap-1">
+        <dt class="text-xs text-gray-400">{{ labels.address }}</dt>
+        <dd class="flex flex-col" data-testid="mentorship-profile-card-address">
+          @for (line of profile.addressLines; track line) {
+            <span class="text-sm text-gray-900">{{ line }}</span>
+          } @empty {
+            <span class="text-sm text-gray-400">{{ placeholder }}</span>
+          }
+        </dd>
+      </div>
+
+      <div class="flex flex-col gap-1">
+        <dt class="text-xs text-gray-400">{{ labels.phone }}</dt>
+        <dd data-testid="mentorship-profile-card-phone">
+          @if (profile.phone) {
+            <span class="text-sm text-gray-900">{{ profile.phone }}</span>
+          } @else {
+            <span class="text-sm text-gray-400">{{ placeholder }}</span>
+          }
+        </dd>
+      </div>
+
+      <div class="flex flex-col gap-1">
+        <dt class="text-xs text-gray-400">{{ labels.github }}</dt>
+        <dd data-testid="mentorship-profile-card-github">
+          @if (profile.github) {
+            <a [href]="profile.github.url" target="_blank" rel="noopener noreferrer" class="text-sm text-blue-600 hover:underline break-all">
+              {{ profile.github.label }}
+            </a>
+          } @else {
+            <span class="text-sm text-gray-400">{{ placeholder }}</span>
+          }
+        </dd>
+      </div>
+
+      <div class="flex flex-col gap-1">
+        <dt class="text-xs text-gray-400">{{ labels.linkedin }}</dt>
+        <dd data-testid="mentorship-profile-card-linkedin">
+          @if (profile.linkedin) {
+            <a [href]="profile.linkedin.url" target="_blank" rel="noopener noreferrer" class="text-sm text-blue-600 hover:underline break-all">
+              {{ profile.linkedin.label }}
+            </a>
+          } @else {
+            <span class="text-sm text-gray-400">{{ placeholder }}</span>
+          }
+        </dd>
+      </div>
+    </dl>
+  } @else {
+    <div class="flex flex-col gap-4" data-testid="mentorship-profile-card-loading">
+      <div class="flex items-start gap-3">
+        <p-skeleton shape="circle" size="1.75rem" />
+        <div class="flex flex-col gap-1">
+          <p-skeleton width="10rem" height="0.875rem" />
+          <p-skeleton width="14rem" height="0.875rem" />
+        </div>
+      </div>
+      <div class="h-px bg-gray-100"></div>
+      <div class="grid grid-cols-1 gap-x-8 gap-y-4 sm:grid-cols-2">
+        @for (row of loadingRows; track row) {
+          <div class="flex flex-col gap-1">
+            <p-skeleton width="5rem" height="0.75rem" />
+            <p-skeleton width="11rem" height="0.875rem" />
+          </div>
+        }
+      </div>
+    </div>
+  }
+</section>

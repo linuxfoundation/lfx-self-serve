@@ -1,0 +1,47 @@
+<!-- Copyright The Linux Foundation and each contributor to LFX. -->
+<!-- SPDX-License-Identifier: MIT -->
+
+<div class="flex flex-col gap-1">
+  <label class="text-sm font-medium text-gray-700">{{ label() }} <span class="text-red-500">*</span></label>
+  @if (helper()) {
+    <p class="text-sm text-gray-500 mb-1">{{ helper() }}</p>
+  }
+  <div class="flex flex-col gap-3 sm:flex-row sm:items-center">
+    <div class="flex-1">
+      <lfx-select
+        [form]="draftForm"
+        control="skill"
+        [options]="availableSkills()"
+        optionLabel="label"
+        optionValue="value"
+        placeholder="Skill Name"
+        [filter]="true"
+        styleClass="w-full"
+        [dataTest]="idPrefix() + '-skill'" />
+    </div>
+    <lfx-button
+      label="Add Skill"
+      icon="fa-light fa-plus"
+      severity="primary"
+      size="small"
+      [disabled]="!draftValue()"
+      (onClick)="addSkill()"
+      styleClass="whitespace-nowrap !py-2.5"
+      [attr.data-testid]="idPrefix() + '-add-skill'" />
+  </div>
+  @if (skills().length) {
+    <div class="mt-1 flex flex-wrap gap-2 rounded-xl border border-gray-200 p-3" [attr.data-testid]="idPrefix() + '-skill-list'">
+      @for (skill of skills(); track skill) {
+        <span class="inline-flex items-center gap-1.5 rounded-lg border border-gray-200 bg-neutral-100 text-neutral-600 px-3 py-1 text-xs">
+          {{ skill }}
+          <button type="button" class="text-gray-400 hover:text-gray-700" [attr.aria-label]="'Remove ' + skill" (click)="removeSkill(skill)">
+            <i class="fa-light fa-xmark" aria-hidden="true"></i>
+          </button>
+        </span>
+      }
+    </div>
+  }
+  @if (error()) {
+    <p class="text-xs text-red-600" [attr.data-testid]="idPrefix() + '-skill-error'">{{ error() }}</p>
+  }
+</div>

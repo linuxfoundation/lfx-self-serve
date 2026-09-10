@@ -2,7 +2,7 @@
 // SPDX-License-Identifier: MIT
 
 import { TestBed } from '@angular/core/testing';
-import { MENTORSHIP_COMING_SOON_TOAST_LIFE, MENTORSHIP_PROGRAM_DETAIL_COMING_SOON } from '@lfx-one/shared/constants';
+import { MENTORSHIP_COMING_SOON_DETAIL, MENTORSHIP_COMING_SOON_TOAST_LIFE } from '@lfx-one/shared/constants';
 import { MessageService } from 'primeng/api';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 
@@ -29,7 +29,7 @@ describe('MentorshipComingSoonService', () => {
     expect(add).toHaveBeenCalledWith({
       severity: 'info',
       summary: 'Decline Alex Rivera',
-      detail: MENTORSHIP_PROGRAM_DETAIL_COMING_SOON,
+      detail: MENTORSHIP_COMING_SOON_DETAIL,
       life: MENTORSHIP_COMING_SOON_TOAST_LIFE,
     });
   });
