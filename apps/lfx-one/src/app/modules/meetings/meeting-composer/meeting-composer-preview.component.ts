@@ -113,15 +113,18 @@ export class MeetingComposerPreviewComponent {
   }
 
   /**
-   * Recurrence row, or `null` while Date & Schedule is still incomplete.
-   * @description "Does not repeat" is a real answer, but only once the organizer has actually settled
-   * the schedule — showing it against an empty section would be stating the default back at them.
+   * Recurrence row, or `null` while Date & Schedule is unvisited.
+   * @description "Does not repeat" is a real answer, but only once the organizer has actually seen the
+   * section — showing it against an untouched one would be stating the default back at them. Gated on
+   * having been visited, like the start date and the platform rows above, rather than on the section
+   * being valid: the recurrence controls are answered independently of the date and time, so a schedule
+   * that is merely unfinished should not blank a cadence the organizer has already chosen.
    */
   private initRecurrenceLabel(): Signal<string | null> {
     return computed(() => {
       this.formService.revision();
 
-      if (!this.formService.isSectionValid('date-schedule')) {
+      if (!this.composer.visitedSections().has('date-schedule')) {
         return null;
       }
 

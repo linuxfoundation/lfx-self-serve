@@ -2,7 +2,7 @@
 // SPDX-License-Identifier: MIT
 
 import { HttpErrorResponse } from '@angular/common/http';
-import { computed, DestroyRef, inject, Injectable, signal, type Signal } from '@angular/core';
+import { computed, DestroyRef, inject, Injectable, linkedSignal, signal, type Signal } from '@angular/core';
 import { takeUntilDestroyed } from '@angular/core/rxjs-interop';
 import { FormArray, FormControl, FormGroup, Validators } from '@angular/forms';
 import {
@@ -89,6 +89,8 @@ import {
   toArray,
 } from 'rxjs';
 
+import { MeetingComposerService } from './meeting-composer.service';
+
 /**
  * Form state and persistence for the meeting composer (GH-1452).
  * @description Owns the single meeting FormGroup, edit-mode hydration, the create/update request
@@ -101,11 +103,22 @@ export class MeetingComposerFormService {
   private readonly messageService = inject(MessageService);
   private readonly committeeService = inject(CommitteeService);
   private readonly projectContextService = inject(ProjectContextService);
+  private readonly composer = inject(MeetingComposerService);
   private readonly destroyRef = inject(DestroyRef);
   private readonly youtubeMaxLengthValidator = Validators.maxLength(YOUTUBE_MAX_MEETING_TITLE_LENGTH);
 
   public readonly form = signal<FormGroup>(this.createMeetingFormGroup());
-  public readonly mode = signal<MeetingComposerMode>('create');
+  /**
+   * Create or edit, tracking the context the entry point opened with.
+   * @description Derived rather than plain, because {@link initialize} runs from a `toObservable`
+   * subscription and so lands a tick after `open()` writes the context. Everything the host renders
+   * from this — the title, the footer buttons, the rail — spent that tick showing the previous
+   * open's mode: reopening in create mode straight after an edit flashed "Edit meeting" and a "Save
+   * changes" button over an empty form. A `linkedSignal` recomputes synchronously with the context
+   * and stays writable, so `initialize`'s own `set` below is still what settles it, and a test that
+   * drives the mode directly still can.
+   */
+  public readonly mode = linkedSignal<MeetingComposerMode>(() => this.composer.context()?.mode ?? 'create');
   public readonly meetingId = signal<string | null>(null);
   public readonly isEditMode = computed(() => this.mode() === 'edit');
 
@@ -221,6 +234,16 @@ export class MeetingComposerFormService {
    * different meeting's form. Covered in `meeting-composer-form.service.spec.ts`.
    */
   private generation = 0;
+
+  /**
+   * Incremented on every guest fetch, so a response that is no longer the newest one is dropped.
+   * @description `generation` above covers a close and reopen; this covers two fetches inside a single
+   * open. "Try again" fires a second `loadGuests` for the same meeting while the first may still be in
+   * flight, and nothing orders two upstream responses — so without a stamp the slow first attempt can
+   * land on top of the retry that replaced it, and its `finalize` can clear the loading flag while the
+   * newer fetch is still running.
+   */
+  private guestsLoadGeneration = 0;
 
   public constructor() {
     this.destroyRef.onDestroy(() => {
@@ -1022,8 +1045,17 @@ export class MeetingComposerFormService {
       });
   }
 
-  /** Loads the saved guests for an edit-mode open, tagging each row as already persisted. */
+  /**
+   * Loads the saved guests for an edit-mode open, merging them over whatever the organizer has already
+   * done to the list.
+   * @description A plain replace would be correct only for the first fetch of an open. "Try again"
+   * re-runs this against a list the organizer has meanwhile added to, removed from and edited, so every
+   * loaded row is reconciled against its local counterpart rather than overwriting it: the fetch is the
+   * authority on what is *saved*, the local row is the authority on what the organizer has *changed*.
+   */
   private loadGuests(meetingUid: string): void {
+    const generation = ++this.guestsLoadGeneration;
+
     this.guestsLoading.set(true);
     this.guestsLoadFailed.set(false);
 
@@ -1035,29 +1067,80 @@ export class MeetingComposerFormService {
         take(1),
         catchError((error: unknown) => {
           console.error('Error getting meeting guests:', error);
-          this.guestsLoadFailed.set(true);
+          // A superseded fetch failing says nothing about the one that replaced it — reporting it
+          // would put the retry banner back over a load that is still running, or one that succeeded.
+          if (generation === this.guestsLoadGeneration) {
+            this.guestsLoadFailed.set(true);
+          }
+
           return of([] as MeetingRegistrant[]);
         }),
-        finalize(() => this.guestsLoading.set(false)),
+        finalize(() => {
+          if (generation === this.guestsLoadGeneration) {
+            this.guestsLoading.set(false);
+          }
+        }),
         takeUntil(this.reset$),
         takeUntilDestroyed(this.destroyRef)
       )
       .subscribe((loaded) => {
-        const loadedEmails = new Set(loaded.map((registrant) => registrant.email?.toLowerCase() ?? ''));
-        // Guests added while the fetch was in flight keep their place ahead of the saved rows, unless the
-        // fetch turns out to have already returned them — a group emission can add someone mid-flight.
-        const pending = this.guests().filter((guest) => guest.state === 'new' && !loadedEmails.has(guest.email?.toLowerCase() ?? ''));
-        // A retry after a failed load re-fetches rows the organizer may have removed since. Hydrating
-        // those as `existing` would silently drop the removal from the pending changes, so a suppressed
-        // email comes back queued for deletion instead of un-removed.
-        const suppressed = this.suppressedGuestEmails();
-        const restored = loaded.map((registrant) => ({
-          ...registrant,
-          state: suppressed.has(registrant.email?.toLowerCase() ?? '') ? ('deleted' as const) : ('existing' as const),
-          originalData: { ...registrant },
-        }));
-        this.setGuests([...pending, ...restored]);
+        if (generation !== this.guestsLoadGeneration) {
+          return;
+        }
+
+        this.setGuests(this.mergeLoadedGuests(loaded));
       });
+  }
+
+  /**
+   * Reconciles a guest fetch against the rows already on screen.
+   * @description Keyed on the saved row's `uid`, falling back to a lowercased email for a local row a
+   * fetch has not given a `uid` yet. What each local state contributes:
+   *
+   * - `new` — kept, ahead of the saved rows, unless the fetch turns out to have returned it after all.
+   *   A group emission can add someone mid-flight, and a retry then loads them as saved.
+   * - `deleted` — stays deleted. The organizer removed a saved guest; hydrating the freshly loaded
+   *   copy as `existing` would drop that removal from `registrantUpdates` without saying so. A
+   *   suppressed email counts as removed too, which covers a group guest removed while still unsaved.
+   * - `modified` — the organizer's edits win, but `originalData` is refreshed from the loaded copy so
+   *   `getChangedFields` diffs against what is stored now rather than against a stale snapshot.
+   * - anything else, or no local row at all — hydrated from the fetch as `existing`.
+   */
+  private mergeLoadedGuests(loaded: MeetingRegistrant[]): MeetingRegistrantWithState[] {
+    const localByUid = new Map<string, MeetingRegistrantWithState>();
+    const localByEmail = new Map<string, MeetingRegistrantWithState>();
+    this.guests().forEach((guest) => {
+      if (guest.uid) {
+        localByUid.set(guest.uid, guest);
+      }
+
+      const email = guest.email?.toLowerCase();
+      if (email) {
+        localByEmail.set(email, guest);
+      }
+    });
+
+    const suppressed = this.suppressedGuestEmails();
+    const loadedEmails = new Set(loaded.map((registrant) => registrant.email?.toLowerCase() ?? ''));
+    const pending = this.guests().filter((guest) => guest.state === 'new' && !loadedEmails.has(guest.email?.toLowerCase() ?? ''));
+
+    const restored = loaded.map((registrant) => {
+      const email = registrant.email?.toLowerCase() ?? '';
+      const local = (registrant.uid ? localByUid.get(registrant.uid) : undefined) ?? localByEmail.get(email);
+      const originalData = { ...registrant };
+
+      if (local?.state === 'deleted' || suppressed.has(email)) {
+        return { ...registrant, state: 'deleted' as const, originalData };
+      }
+
+      if (local?.state === 'modified') {
+        return { ...local, originalData };
+      }
+
+      return { ...registrant, state: 'existing' as const, originalData };
+    });
+
+    return [...pending, ...restored];
   }
 
   /** Pre-populates the committees field from the opening group context and locks it. */
@@ -1188,7 +1271,16 @@ export class MeetingComposerFormService {
       return this.stripRecurrenceUiKeys(recurrence);
     }
 
-    return generateRecurrenceObject(recurrenceType, formValue['startDate']) ?? null;
+    // `generateRecurrenceObject` reads the weekday and week-of-month straight off the start date, so
+    // a null one throws. The date is no longer seeded on a new meeting, and the live preview asks for
+    // this payload on every keystroke — long before anyone picks a date — so an unset date has to
+    // read as "no recurrence yet" rather than take the composer down.
+    const startDate = formValue['startDate'] as Date | null;
+    if (!startDate) {
+      return null;
+    }
+
+    return generateRecurrenceObject(recurrenceType, startDate) ?? null;
   }
 
   /** Drops empty values and the `*UI` helper controls, which are form-only and not part of the API. */

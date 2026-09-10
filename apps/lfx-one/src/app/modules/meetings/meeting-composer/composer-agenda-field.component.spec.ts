@@ -3,7 +3,7 @@
 
 import { ComponentFixture, TestBed } from '@angular/core/testing';
 import type { AbstractControl } from '@angular/forms';
-import { MEETING_AGENDA_PROMPT_MAX_LENGTH } from '@lfx-one/shared/constants';
+import { DEFAULT_DURATION, MAX_CUSTOM_DURATION, MEETING_AGENDA_PROMPT_MAX_LENGTH, MIN_CUSTOM_DURATION } from '@lfx-one/shared/constants';
 import { MeetingType } from '@lfx-one/shared/enums';
 import type { MeetingTemplate } from '@lfx-one/shared/interfaces';
 import { CommitteeService } from '@services/committee.service';
@@ -183,5 +183,150 @@ describe('ComposerAgendaFieldComponent — writes count as edits', () => {
     component['onApplyTemplate']({ ...template, estimatedDuration: 100000 }, popoverStub);
 
     expect(controlOf('duration')?.dirty).toBe(false);
+  });
+});
+
+/**
+ * The two popover affordances and the estimate arithmetic behind them. Both popovers are opened from
+ * the field's own header rather than the section, so nothing else in the composer can put them right
+ * when they misbehave: a templates popover opened with no meeting type has nothing to list, and a
+ * prompt left behind after a close reappears pre-filled the next time the helper is opened.
+ */
+describe('ComposerAgendaFieldComponent — popovers and the estimated duration', () => {
+  let fixture: ComponentFixture<ComposerAgendaFieldComponent>;
+  let component: ComposerAgendaFieldComponent;
+  let formService: MeetingComposerFormService;
+  let messageAdd: ReturnType<typeof vi.fn>;
+  let popover: { toggle: ReturnType<typeof vi.fn>; hide: ReturnType<typeof vi.fn> };
+
+  const template: MeetingTemplate = {
+    id: 'template-1',
+    title: 'Weekly sync',
+    content: '1. Roll call',
+    meetingType: MeetingType.BOARD,
+    estimatedDuration: 30,
+  };
+  const applyEstimate = (estimatedDuration: number): void => component['onApplyTemplate']({ ...template, estimatedDuration }, popover as unknown as Popover);
+  const toastsOfSeverity = (severity: string): unknown[] => messageAdd.mock.calls.filter(([message]) => message.severity === severity);
+
+  beforeEach(async () => {
+    messageAdd = vi.fn();
+    popover = { toggle: vi.fn(), hide: vi.fn() };
+
+    TestBed.configureTestingModule({
+      providers: [
+        MeetingComposerFormService,
+        { provide: MessageService, useValue: { add: messageAdd } },
+        { provide: CommitteeService, useValue: {} },
+        { provide: MeetingService, useValue: { generateAgenda: vi.fn(() => of({ agenda: 'Roll call', estimatedDuration: 45 })) } },
+        { provide: ProjectContextService, useValue: { activeContext: () => null, activeContextUid: () => null } },
+        { provide: PersonaService, useValue: { currentPersona: () => null } },
+        { provide: DialogService, useValue: { open: vi.fn() } },
+      ],
+    });
+    TestBed.overrideComponent(ComposerAgendaFieldComponent, { set: { template: '', imports: [] } });
+
+    formService = TestBed.inject(MeetingComposerFormService);
+    formService.initialize({ mode: 'create', projectUid: 'project-1' });
+
+    fixture = TestBed.createComponent(ComposerAgendaFieldComponent);
+    fixture.componentRef.setInput('form', formService.form());
+    component = fixture.componentInstance;
+    await fixture.whenStable();
+  });
+
+  describe('onToggleTemplates', () => {
+    it('says why instead of opening an empty popover when no meeting type is chosen', () => {
+      component['onToggleTemplates'](new MouseEvent('click'), popover as unknown as Popover);
+
+      expect(popover.toggle).not.toHaveBeenCalled();
+      expect(messageAdd).toHaveBeenCalledWith(expect.objectContaining({ severity: 'warn', summary: 'Pick a meeting type' }));
+    });
+
+    it('opens the popover once a meeting type is chosen', () => {
+      const event = new MouseEvent('click');
+      formService.form().get('meeting_type')?.setValue(MeetingType.BOARD);
+
+      component['onToggleTemplates'](event, popover as unknown as Popover);
+
+      // The event is forwarded, not swallowed — PrimeNG anchors the overlay off its target.
+      expect(popover.toggle).toHaveBeenCalledWith(event);
+      expect(messageAdd).not.toHaveBeenCalled();
+    });
+  });
+
+  describe('onAiHelperHide', () => {
+    it('clears the prompt so the next open starts empty', () => {
+      formService.form().get('aiPrompt')?.setValue('Focus on the release checklist');
+
+      component['onAiHelperHide']();
+
+      expect(formService.form().get('aiPrompt')?.value).toBe('');
+    });
+
+    it('runs on any close, including one the component did not initiate', () => {
+      component['showAiHelper'].set(true);
+
+      component['onAiHelperHide']();
+
+      expect(component['showAiHelper']()).toBe(false);
+    });
+  });
+
+  describe('applyEstimatedDuration', () => {
+    it('writes a whole-minute estimate and says the duration moved', () => {
+      applyEstimate(30);
+
+      expect(formService.effectiveDuration()).toBe(30);
+      expect(messageAdd).toHaveBeenCalledWith(expect.objectContaining({ severity: 'info', summary: 'Duration updated' }));
+    });
+
+    it('rounds a fractional estimate rather than handing the controls a fraction', () => {
+      // Only the AI path produces these, but both callers share this helper.
+      applyEstimate(30.4);
+
+      expect(formService.effectiveDuration()).toBe(30);
+    });
+
+    it('routes an off-scale estimate through the custom control', () => {
+      applyEstimate(125);
+
+      expect(formService.form().get('duration')?.value).toBe('custom');
+      expect(formService.effectiveDuration()).toBe(125);
+    });
+
+    it('stays silent when the estimate already matches the current duration', () => {
+      // 60 is the form's own default, so this is the common case for a template built around it.
+      applyEstimate(DEFAULT_DURATION);
+
+      expect(formService.effectiveDuration()).toBe(DEFAULT_DURATION);
+      expect(messageAdd).not.toHaveBeenCalled();
+      expect(formService.form().get('duration')?.dirty).toBe(false);
+    });
+
+    it.each([
+      ['below', MIN_CUSTOM_DURATION - 1],
+      ['above', MAX_CUSTOM_DURATION + 1],
+    ] as const)('drops an estimate %s the allowed range and leaves the duration alone', (_label, estimate) => {
+      applyEstimate(estimate);
+
+      expect(formService.effectiveDuration()).toBe(DEFAULT_DURATION);
+      expect(messageAdd).toHaveBeenCalledWith(expect.objectContaining({ severity: 'warn', summary: 'Duration left unchanged' }));
+      expect(toastsOfSeverity('info')).toHaveLength(0);
+    });
+
+    it('still applies the agenda when the estimate is dropped', () => {
+      // The two writes are independent: a duration the organizer has to set themselves is no reason
+      // to withhold the agenda they asked for.
+      applyEstimate(MAX_CUSTOM_DURATION + 1);
+
+      expect(formService.form().get('description')?.value).toBe(template.content);
+    });
+
+    it('closes the templates popover whichever way the estimate lands', () => {
+      applyEstimate(MAX_CUSTOM_DURATION + 1);
+
+      expect(popover.hide).toHaveBeenCalled();
+    });
   });
 });

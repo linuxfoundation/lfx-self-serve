@@ -1023,6 +1023,116 @@ describe('MeetingComposerFormService — group reconciliation after a failed gue
 });
 
 /**
+ * Covers the second guest fetch of an open — the one "Try again" fires. The first fetch lands on an
+ * empty list, so only a retry can reach a list the organizer has already changed, or race a fetch that
+ * is still in flight.
+ */
+describe('MeetingComposerFormService — guest load merge', () => {
+  let service: MeetingComposerFormService;
+  let getMeetingRegistrants: ReturnType<typeof vi.fn>;
+
+  /** The saved row every case below reloads, so a divergence between fetches is the test's own doing. */
+  const savedChair = { uid: 'registrant-1', email: 'chair@acme-motors.example', first_name: 'Ada' } as MeetingRegistrant;
+
+  beforeEach(() => {
+    getMeetingRegistrants = vi.fn().mockReturnValue(throwError(() => new Error('boom')));
+
+    TestBed.configureTestingModule({
+      providers: [
+        MeetingComposerFormService,
+        { provide: MessageService, useValue: { add: vi.fn() } },
+        { provide: CommitteeService, useValue: {} },
+        { provide: ProjectContextService, useValue: { activeContextUid: () => null } },
+        {
+          provide: MeetingService,
+          useValue: {
+            getMeeting: vi.fn().mockReturnValue(of({ id: 'meeting-1', title: 'Saved meeting' } as Meeting)),
+            getMeetingAttachments: vi.fn().mockReturnValue(of([])),
+            getMeetingRegistrants,
+            stripMetadata: (meetingUid: string, guest: MeetingRegistrantWithState) => ({ meeting_id: meetingUid, email: guest.email }),
+            getChangedFields: (guest: MeetingRegistrantWithState) => ({ first_name: guest.first_name }),
+          },
+        },
+      ],
+    });
+
+    service = TestBed.inject(MeetingComposerFormService);
+    // The opening fetch fails, so the list is the organizer's to change before the retry runs.
+    service.initialize({ mode: 'edit', meetingUid: 'meeting-1' });
+  });
+
+  // Only group guests are suppressed on removal, so a removed *direct* guest is nothing but a local
+  // row carrying `state: 'deleted'`. Reading the fetch as the authority on that row would drop the
+  // deletion out of `registrantUpdates` with nothing on screen saying it had been undone.
+  it('keeps a removed direct guest deleted when the retry reloads them', () => {
+    service.setGuests([{ ...savedChair, state: 'deleted', originalData: { ...savedChair } }]);
+    getMeetingRegistrants.mockReturnValue(of([savedChair]));
+
+    service.retryLoadMeeting();
+
+    expect(service.guests()).toHaveLength(1);
+    expect(service.guests()[0]).toMatchObject({ uid: 'registrant-1', state: 'deleted' });
+    expect(service.registrantUpdates().toDelete).toEqual(['registrant-1']);
+  });
+
+  // `toUpdate` has no producer in the composer yet, but the merge is what would silently discard the
+  // organizer's typing the moment one is added, so the reconciliation is pinned now rather than later.
+  it("keeps an edited guest's own values and re-bases them on what upstream now stores", () => {
+    service.setGuests([{ ...savedChair, first_name: 'Adaline', state: 'modified', originalData: { ...savedChair } }]);
+    // Upstream moved on underneath the edit: someone else renamed the same row between the two fetches.
+    getMeetingRegistrants.mockReturnValue(of([{ ...savedChair, first_name: 'Augusta' } as MeetingRegistrant]));
+
+    service.retryLoadMeeting();
+
+    expect(service.guests()[0]).toMatchObject({ uid: 'registrant-1', first_name: 'Adaline', state: 'modified' });
+    // Re-based, so the pending change is measured against the stored row rather than a stale snapshot.
+    expect(service.guests()[0].originalData).toMatchObject({ first_name: 'Augusta' });
+    expect(service.registrantUpdates().toUpdate).toEqual([{ uid: 'registrant-1', changes: { first_name: 'Adaline' } }]);
+  });
+
+  // "Try again" is a button, so two clicks can leave two fetches in flight with nothing ordering their
+  // responses. The stamp is what keeps the slower, older one from landing on top of the newer answer.
+  it('drops a response that a later fetch has already superseded', () => {
+    const first = new Subject<MeetingRegistrant[]>();
+    const second = new Subject<MeetingRegistrant[]>();
+    getMeetingRegistrants.mockReturnValueOnce(first).mockReturnValueOnce(second);
+
+    service.retryLoadMeeting();
+    // `guestsLoadFailed` is cleared by the fetch above, so the second retry needs it set again to pass
+    // the guard — which is exactly the state a failing first attempt leaves behind.
+    service.guestsLoadFailed.set(true);
+    service.retryLoadMeeting();
+
+    second.next([savedChair]);
+    second.complete();
+    first.next([{ uid: 'registrant-stale', email: 'stale@acme-motors.example' } as MeetingRegistrant]);
+    first.complete();
+
+    expect(service.guests()).toHaveLength(1);
+    expect(service.guests()[0]).toMatchObject({ uid: 'registrant-1' });
+    // The superseded fetch completing must not report the newer one as finished, or failed, either.
+    expect(service.guestsLoading()).toBe(false);
+    expect(service.guestsLoadFailed()).toBe(false);
+  });
+
+  it('leaves the newest fetch running when a superseded one fails', () => {
+    const inFlight = new Subject<MeetingRegistrant[]>();
+    const doomed = new Subject<MeetingRegistrant[]>();
+    getMeetingRegistrants.mockReturnValueOnce(doomed).mockReturnValueOnce(inFlight);
+
+    service.retryLoadMeeting();
+    service.guestsLoadFailed.set(true);
+    service.retryLoadMeeting();
+
+    doomed.error(new Error('boom'));
+
+    // The retry banner belongs to the fetch that is still running, not to the one it replaced.
+    expect(service.guestsLoadFailed()).toBe(false);
+    expect(service.guestsLoading()).toBe(true);
+  });
+});
+
+/**
  * Covers what an edit-mode open puts in the form: the stored meeting type, and the guest list a group
  * emission can race. Both hydrate through `initialize({ mode: 'edit' })`, so each case configures its
  * own upstream responses rather than sharing one `beforeEach`.
@@ -1296,5 +1406,80 @@ describe('MeetingComposerFormService \u2014 cancel on committee removal', () => 
     service.submit().subscribe();
 
     expect(sentOverride()).toBe(CancelOnCommitteeRemoval.INHERIT);
+  });
+});
+
+/**
+ * `effectiveDuration` is the only reader that knows duration lives in two controls, and the agenda
+ * field's "apply the estimate" affordance gates on it, so a wrong answer there silently offers to
+ * change a duration that is already correct — or refuses to offer when it isn't.
+ */
+describe('MeetingComposerFormService — effective duration', () => {
+  let service: MeetingComposerFormService;
+
+  beforeEach(() => {
+    TestBed.configureTestingModule({
+      providers: [
+        MeetingComposerFormService,
+        { provide: MessageService, useValue: { add: vi.fn() } },
+        { provide: CommitteeService, useValue: {} },
+        { provide: ProjectContextService, useValue: { activeContextUid: () => null } },
+        { provide: MeetingService, useValue: {} },
+      ],
+    });
+
+    service = TestBed.inject(MeetingComposerFormService);
+    service.initialize({ mode: 'create', projectUid: 'project-1' });
+  });
+
+  it('reads the chip control when it holds a preset', () => {
+    service.form().get('duration')?.setValue(30);
+
+    expect(service.effectiveDuration()).toBe(30);
+  });
+
+  it('ignores a stale custom value while a preset chip is selected', () => {
+    // `setDuration` clears the companion, but a form patched from elsewhere need not have, and the
+    // chip is what the user sees selected.
+    service.form().patchValue({ customDuration: 125, duration: 45 });
+
+    expect(service.effectiveDuration()).toBe(45);
+  });
+
+  it('reads the custom control once the chip control says custom', () => {
+    service.setDuration(125);
+
+    expect(service.form().get('duration')?.value).toBe('custom');
+    expect(service.effectiveDuration()).toBe(125);
+  });
+
+  it('coerces the numeric input string the custom control actually holds', () => {
+    service.form().patchValue({ customDuration: '125', duration: 'custom' });
+
+    expect(service.effectiveDuration()).toBe(125);
+  });
+
+  it('returns null for the empty custom control the form starts with', () => {
+    // The trap this guards: `Number('')` is 0, not `NaN`, so an emptied input would otherwise read
+    // as a real zero-minute duration rather than "not answered yet".
+    service.form().get('duration')?.setValue('custom');
+
+    expect(service.effectiveDuration()).toBeNull();
+  });
+
+  it.each([
+    ['zero', 0],
+    ['a negative number', -30],
+    ['a non-numeric string', 'soon'],
+  ] as const)('returns null when the custom control holds %s', (_label, value) => {
+    service.form().patchValue({ customDuration: value, duration: 'custom' });
+
+    expect(service.effectiveDuration()).toBeNull();
+  });
+
+  it('returns null when the chip control itself is cleared', () => {
+    service.form().get('duration')?.setValue(null);
+
+    expect(service.effectiveDuration()).toBeNull();
   });
 });

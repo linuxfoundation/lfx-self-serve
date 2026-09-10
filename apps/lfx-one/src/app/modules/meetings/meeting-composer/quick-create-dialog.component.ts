@@ -112,8 +112,17 @@ export class QuickCreateDialogComponent {
       .subscribe((meetingType: MeetingType | null) => this.applyTypeTemplate(meetingType));
   }
 
+  /**
+   * Closes the whole composer when the dialog is dismissed.
+   * @description Gated on the dialog still being the composer's surface. Handing off to the advanced
+   * drawer flips the variant and unmounts this dialog with the composer deliberately left open, so a
+   * `visibleChange(false)` arriving from that teardown would throw the draft away instead of handing
+   * it over. PrimeNG 20.4.0's `Dialog` happens not to emit on destroy — it emits only from `close()`,
+   * the mask click and Escape — but that is its internal detail, not a contract, and this handler
+   * should mean "the user dismissed me", not "I went away".
+   */
   protected onVisibleChange(visible: boolean): void {
-    if (!visible) {
+    if (!visible && this.composer.isQuickCreate()) {
       this.composer.close();
     }
   }

@@ -2,7 +2,8 @@
 // SPDX-License-Identifier: MIT
 
 import { NgClass } from '@angular/common';
-import { Component, computed, inject, input, signal, type Signal } from '@angular/core';
+import { Component, computed, DestroyRef, inject, input, signal, type Signal } from '@angular/core';
+import { takeUntilDestroyed } from '@angular/core/rxjs-interop';
 import { FormGroup } from '@angular/forms';
 import { ButtonComponent } from '@components/button/button.component';
 import { TextareaComponent } from '@components/textarea/textarea.component';
@@ -39,6 +40,7 @@ import { MeetingComposerFormService } from './meeting-composer-form.service';
   styleUrl: './composer-agenda-field.component.scss',
 })
 export class ComposerAgendaFieldComponent {
+  private readonly destroyRef = inject(DestroyRef);
   private readonly meetingService = inject(MeetingService);
   private readonly messageService = inject(MessageService);
   private readonly projectContextService = inject(ProjectContextService);
@@ -175,19 +177,16 @@ export class ComposerAgendaFieldComponent {
           },
         }),
         catchError(() => EMPTY),
-        finalize(() => this.isGeneratingAgenda.set(false))
+        finalize(() => this.isGeneratingAgenda.set(false)),
+        // The section is destroyed on every rail change and the whole host on every successful save,
+        // so an in-flight generation regularly outlives the component that asked for it. Without this
+        // the late response would write an agenda into a form the organizer has already moved on from
+        // — or, after a save, into the next meeting's blank one.
+        takeUntilDestroyed(this.destroyRef)
       )
       .subscribe();
   }
 
-  /**
-   * Writes an agenda the organizer asked for, and marks it as theirs.
-   * @description `setValue` alone leaves the control pristine, which two other surfaces read as "still
-   * an untouched default": the quick dialog's type-change prefill would overwrite a template the
-   * organizer deliberately picked, and edit mode's dirty-gated Save would stay disabled over a
-   * generated agenda with nothing saying why. Asking for this content is a deliberate edit, so it is
-   * marked like one.
-   */
   /** Names only the paragraphs the template is currently rendering, so no id ever dangles. */
   private initAgendaDescribedBy(): Signal<string | undefined> {
     return computed(() => {
@@ -199,6 +198,14 @@ export class ComposerAgendaFieldComponent {
     });
   }
 
+  /**
+   * Writes an agenda the organizer asked for, and marks it as theirs.
+   * @description `setValue` alone leaves the control pristine, which two other surfaces read as "still
+   * an untouched default": the quick dialog's type-change prefill would overwrite a template the
+   * organizer deliberately picked, and edit mode's dirty-gated Save would stay disabled over a
+   * generated agenda with nothing saying why. Asking for this content is a deliberate edit, so it is
+   * marked like one.
+   */
   private writeAgenda(agenda: string): void {
     const description = this.form().get('description');
 
