@@ -48,7 +48,7 @@ import type {
   OrgProjectsWorkspaceId,
   SortDirection,
 } from '@lfx-one/shared/interfaces';
-import { buildInsightsUrl, downloadCsv, isPartialHealthScore, localDateStamp } from '@lfx-one/shared/utils';
+import { buildHealthAriaLabel, buildInsightsUrl, downloadCsv, isPartialHealthScore, localDateStamp } from '@lfx-one/shared/utils';
 import { MenuItem, MessageService } from 'primeng/api';
 import { DialogModule } from 'primeng/dialog';
 import { PopoverModule } from 'primeng/popover';
@@ -67,6 +67,7 @@ import { MultiSelectComponent } from '@components/multi-select/multi-select.comp
 import { SelectComponent } from '@components/select/select.component';
 import { TableComponent } from '@components/table/table.component';
 import { OpenIntercomDirective } from '@shared/directives/open-intercom.directive';
+import { OrgHealthPopupComponent } from '../components/org-health-popup/org-health-popup.component';
 import { AccountContextService } from '@shared/services/account-context.service';
 import { OrgNavigationService } from '@shared/services/org-navigation.service';
 import { OrgLensProjectsService } from '@shared/services/org-lens-projects.service';
@@ -92,6 +93,7 @@ import { PersonaService } from '@shared/services/persona.service';
     SkeletonModule,
     TableComponent,
     TooltipModule,
+    OrgHealthPopupComponent,
   ],
   templateUrl: './org-projects.component.html',
   styleUrl: './org-projects.component.scss',
@@ -539,7 +541,7 @@ export class OrgProjectsComponent {
       const orgMetricsUnavailable = this.isOrgMetricsUnavailable(p);
       return [
         p.name,
-        HEALTH_SCORE_LABELS[this.normalizeHealth(p.health)],
+        this.healthLabelFor(p),
         orgMetricsUnavailable ? ORG_PROJECTS_METRIC_UNAVAILABLE_LABEL : INFLUENCE_BAND_LABELS[p.technicalInfluence],
         orgMetricsUnavailable ? ORG_PROJECTS_METRIC_UNAVAILABLE_LABEL : INFLUENCE_BAND_LABELS[p.ecosystemInfluence],
         orgMetricsUnavailable ? ORG_PROJECTS_METRIC_UNAVAILABLE_LABEL : p.trend.deltaPct,
@@ -593,10 +595,18 @@ export class OrgProjectsComponent {
     const fmt = (v: number): string => `${v > 0 ? '+' : ''}${v}%`;
     return `Influence trend over the past year — combined ${fmt(t.deltaPct)}, technical ${fmt(t.technicalDeltaPct)}, ecosystem ${fmt(t.ecosystemDeltaPct)}.`;
   }
-  // Full health summary (rating + sub-scores) so keyboard/screen-reader users get the popover's content without a mouse.
+  // Full health summary so keyboard/screen-reader users get the popup's content without a mouse —
+  // one shared rule, same text the hero badge uses.
   protected healthAriaLabel(project: OrgLensProject): string {
-    const metrics = project.healthMetrics.map((m) => `${m.label} ${m.value}`).join(', ');
-    return `Health: ${this.healthLabelFor(project)}. ${metrics}.`;
+    return buildHealthAriaLabel({
+      label: project.health === 'unavailable' ? null : project.health,
+      score: project.healthOverallScore,
+      maxScore: project.healthMaxScore,
+      coveredCount: project.healthCoveredCategoryCount,
+      maintainer: project.healthMaintainer,
+      security: project.healthSecurity,
+      development: project.healthDevelopment,
+    });
   }
   /** The "Add project(s)" multi-select filter box drives the debounced server-side project search. */
   protected onAddProjectsFilter(query: string): void {
@@ -1038,9 +1048,13 @@ export class OrgProjectsComponent {
   }
 
   // Bare band label, plus " - Partial" when the BFF-sourced coveredCategoryCount marks a 2-of-3 score
-  // (never recomputed locally — see OrgLensProject.healthCoveredCategoryCount).
+  // (never recomputed locally — see OrgLensProject.healthCoveredCategoryCount). Gated on available:
+  // an unavailable badge never carries the suffix.
   private healthLabelFor(project: OrgLensProject): string {
     const label = HEALTH_SCORE_LABELS[this.normalizeHealth(project.health)];
+    if (project.health === 'unavailable') {
+      return label;
+    }
     return isPartialHealthScore(project.healthCoveredCategoryCount) ? `${label}${HEALTH_SCORE_PARTIAL_SUFFIX}` : label;
   }
 
