@@ -1,6 +1,8 @@
 // Copyright The Linux Foundation and each contributor to LFX.
 // SPDX-License-Identifier: MIT
 
+import { PREFERRED_EMAIL_ERROR_CODE, PREFERRED_EMAIL_ERROR_TYPE } from '../constants/user-profile.constants';
+
 /**
  * Minimal user identity fields for displaying initials
  */
@@ -53,6 +55,31 @@ export interface EmailManagementData {
 export interface MeetingInviteEmail {
   email_id: string | null;
   email: string | null;
+}
+
+// Derived from PREFERRED_EMAIL_ERROR_TYPE (single source of truth shared with the runtime
+// allow-list in asKnownErrorType). Not exhaustive forever — the meeting-service may add a value
+// before self-serve knows about it — so callers must treat an unrecognized wire string as absent
+// rather than trust it, see extractPreferredEmailError.
+export type PreferredEmailErrorType = (typeof PREFERRED_EMAIL_ERROR_TYPE)[keyof typeof PREFERRED_EMAIL_ERROR_TYPE];
+
+// Derived from PREFERRED_EMAIL_ERROR_CODE (single source of truth shared with the runtime checks
+// in extractPreferredEmailError/classifyPreferredEmailError). The one case that needs finer
+// resolution than `type` gives: "email not yet synced from Auth0 to SFDC" otherwise shares
+// `type: 'unavailable'` with a generic outage.
+export type PreferredEmailErrorCode = (typeof PREFERRED_EMAIL_ERROR_CODE)[keyof typeof PREFERRED_EMAIL_ERROR_CODE];
+
+/**
+ * Error reply from the meeting-service `preferred_email.get`/`.set` NATS RPCs. `type` and `code`
+ * are optional because an older meeting-service deploy (or a malformed reply) may only send
+ * `error` — see #2269/#2270. Self-serve currently classifies on `type`/`code` for the `set` path
+ * only (see `classifyPreferredEmailError`); `get` failures are logged and treated as failure
+ * regardless of `type`/`code`.
+ */
+export interface PreferredEmailErrorReply {
+  error: string;
+  type?: PreferredEmailErrorType;
+  code?: PreferredEmailErrorCode;
 }
 
 /**
