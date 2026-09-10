@@ -10,14 +10,16 @@
  * - leaderboard ranking, score/metric toggles with ?metric= persistence,
  *   Activity Count hiding the band tags, and server-side pagination + search over the full ranked set
  * - not-found (404) panel for an unknown slug
+ * - hero health badge popup (hover / keyboard / unavailable) against a stubbed `/hero` response
  *
  * Prerequisites:
  * - Dev server running on the Playwright baseURL
  * - User authenticated with the `org-lens-enabled` flag on and an organization selected
  *
- * Data semantics (v1): the page is served from live Snowflake platinum via the BFF. `k8s` is the real
- * catalog slug for the Kubernetes project (the earlier `kubernetes` was only the removed demo-fixture
- * key); a slug with no catalog row for the selected org returns null → the not-found panel.
+ * Data semantics: the live suites are served from Snowflake platinum via the BFF. `k8s` is the real
+ * catalog slug for the Kubernetes project; a slug with no catalog row for the selected org returns null →
+ * the not-found panel. The hero-popup suite stubs the BFF instead (synthetic org + fixed v2 scores) so
+ * headline/rows/aria can be asserted exactly.
  */
 
 import { expect, Page, test } from '@playwright/test';
