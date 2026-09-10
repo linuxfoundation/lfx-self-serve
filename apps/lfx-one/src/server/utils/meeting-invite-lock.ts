@@ -69,29 +69,26 @@ async function runWithValkeyLock<T>(req: Request | undefined, username: string, 
   if (result.status === 'contended') {
     throw lockContentionError();
   }
-  if (result.status === 'acquired') {
-    try {
-      return await fn();
-    } finally {
-      await valkeyService.releaseLock(key, result.token);
-    }
+  if (result.status === 'unavailable') {
+    // Valkey is enabled but unreachable right now. The in-memory mutex already wrapping this call
+    // covers the current replica; just run fn() rather than blocking.
+    logger.warning(req, 'with_meeting_invite_lock', 'Valkey lock unavailable — degrading to a per-replica in-memory lock', {
+      operation: 'with_meeting_invite_lock',
+    });
   }
-  // `unavailable` — Valkey is enabled but unreachable right now. The in-memory mutex already
-  // wrapping this call covers the current replica; just run fn() rather than blocking.
-  logger.warning(req, 'with_meeting_invite_lock', 'Valkey lock unavailable — degrading to a per-replica in-memory lock', {
-    operation: 'with_meeting_invite_lock',
-  });
-  if (!result.token) {
+  const token = result.token;
+  if (!token) {
     return fn();
   }
-  // The SET may have actually landed despite the timeout (see `acquireLock`). Its own immediate
-  // and delayed release retries already ran; try once more after fn() — by which point the
-  // backend has had the longest possible window to recover — so the key doesn't outlive its TTL
-  // unnecessarily and lock out this user's own next request.
+  // `token` is set here for both `acquired` and an `unavailable` that may have still landed its SET
+  // (see `acquireLock`) — in the latter case, its own immediate and delayed release retries already
+  // ran; this is one more attempt after fn(), by which point the backend has had the longest
+  // possible window to recover, so the key doesn't outlive its TTL unnecessarily and lock out this
+  // user's own next request.
   try {
     return await fn();
   } finally {
-    await valkeyService.releaseLock(key, result.token);
+    await valkeyService.releaseLock(key, token);
   }
 }
 

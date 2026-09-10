@@ -145,6 +145,16 @@ describe('ValkeyService — acquireLock / releaseLock (LFXV2 #2241)', () => {
 });
 
 describe('buildMeetingInviteLockCacheKey (LFXV2 #2241)', () => {
+  beforeEach(() => {
+    // Pin the deployment namespace segment so this doesn't flake under a developer/CI
+    // environment that happens to export VALKEY_KEY_NAMESPACE (see `cacheKeyNamespace`).
+    vi.stubEnv('VALKEY_KEY_NAMESPACE', '');
+  });
+
+  afterEach(() => {
+    vi.unstubAllEnvs();
+  });
+
   it('builds a namespaced key for a filter-safe username', () => {
     expect(buildMeetingInviteLockCacheKey('alice')).toBe('lfx-ui:meeting-invite-lock:v1:alice');
   });
