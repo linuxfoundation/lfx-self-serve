@@ -354,3 +354,48 @@ export interface EasyClaSignedDocument {
   signatureID?: string;
   signedClaUrl?: string;
 }
+
+/**
+ * Request body for `POST /v4/self-serve/request-corporate-signature`
+ * (`#/definitions/self-serve-corporate-signature-input`).
+ *
+ * **snake_case in both directions**, unlike the sibling `prepare-sign` endpoint, which is
+ * camelCase in both. Mirrored exactly as it goes on the wire so the spelling boundary sits in
+ * one place — the mapping in `OrgClaService.requestCorporateSignature` — rather than leaking
+ * into the shared contract.
+ *
+ * Four properties the schema defines are deliberately absent: `signing_entity_name`,
+ * `send_as_email`, `authority_name` and `authority_email`. They belong to the send-by-email and
+ * designee paths, which are not implemented here; omitting them from the type is what stops one
+ * being set by accident.
+ */
+export interface EasyClaSelfServeCorporateSignatureInput {
+  project_sfid: string;
+  company_sfid: string;
+  /** Absolute https URL. EasyCLA stores it and later redirects to it verbatim. */
+  return_url: string;
+  /**
+   * Both attestations must be literally `true` or the CLA service refuses ahead of any signing
+   * work. Required as non-optional booleans here so the value has to be supplied by the caller
+   * and cannot default in.
+   */
+  authority_acked: boolean;
+  embargo_acked: boolean;
+}
+
+/**
+ * Response for `POST /v4/self-serve/request-corporate-signature`
+ * (`#/definitions/self-serve-corporate-signature-output`).
+ *
+ * Every field is `x-omitempty: false` upstream, so a present-but-empty string is what a missing
+ * value looks like — hence `sign_url` is checked for content, not for presence.
+ */
+export interface EasyClaSelfServeCorporateSignatureOutput {
+  signature_id?: string;
+  /** Empty when the request was sent as an email to a named signatory — never on this path. */
+  sign_url?: string;
+  cla_group_id?: string;
+  project_sfid?: string;
+  company_id?: string;
+  company_sfid?: string;
+}
