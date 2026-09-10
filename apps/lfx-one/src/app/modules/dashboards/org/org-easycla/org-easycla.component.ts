@@ -101,6 +101,15 @@ export class OrgEasyclaComponent {
   });
 
   protected readonly fetchError = signal(false);
+
+  /**
+   * The organization whose list request failed, which `claData` cannot say.
+   *
+   * A failure is stored as `null`, and a `null` carries no `orgUid` — so on a return trip, where
+   * one request is in flight for the organization being left and another for the one signed with,
+   * the failure of either is indistinguishable from the failure of the other.
+   */
+  private readonly failedOrgUid = signal<string | null>(null);
   private readonly claLoadingState = signal(false);
   private readonly page = signal(0);
 
@@ -568,16 +577,28 @@ export class OrgEasyclaComponent {
     // interleave. From here the parameter is this method's to remove.
     this.returnLandingPending = true;
 
-    combineLatest([toObservable(this.claData), toObservable(this.accountContext.availableAccounts), toObservable(this.orgContextLoaded)])
+    combineLatest([
+      toObservable(this.claData),
+      toObservable(this.accountContext.availableAccounts),
+      toObservable(this.orgContextLoaded),
+      toObservable(this.failedOrgUid),
+    ])
       .pipe(
-        map(([data, accounts, loaded]) => ({
+        map(([data, accounts, loaded, failedFor]) => ({
           list: data?.orgUid === named ? data : null,
           // A failed request answers nothing about the row, but it does answer the question of
           // whether to keep waiting. The page fetches once per organization, so nothing is coming
           // to replace the failure, and a wait for the list it did not return never ends — leaving
           // the signatory on an error page with the parameter still on the address and the stash
           // already spent, so not even a reload could recover the landing.
-          failed: data === null,
+          //
+          // Only this organization's failure counts, which is why it is read from the request's own
+          // record of what it asked for rather than inferred from `claData`. Two requests are made
+          // on a return trip — one for the organization being left, one for the organization signed
+          // with — and a stored `null` belongs to neither in particular. Reading the failure as this
+          // organization's would start the retry while the real request is still in flight, and
+          // before adoption on the trip where the first request is the one that failed.
+          failed: failedFor === named,
           // Nothing will ever fetch a list for an organization the viewer does not hold, so once the
           // context has settled without it there is no list coming and waiting on one would leave
           // the parameter on the address for good.
@@ -664,6 +685,7 @@ export class OrgEasyclaComponent {
         tap(() => {
           this.claLoadingState.set(true);
           this.fetchError.set(false);
+          this.failedOrgUid.set(null);
         }),
         switchMap((uid) =>
           this.claService.getClaGroups(uid).pipe(
@@ -675,6 +697,7 @@ export class OrgEasyclaComponent {
               // one of those is a claim about the company's legal position.
               console.error('Failed to load organization CLA groups:', error);
               this.fetchError.set(true);
+              this.failedOrgUid.set(uid);
               this.claLoadingState.set(false);
               return of(null);
             })

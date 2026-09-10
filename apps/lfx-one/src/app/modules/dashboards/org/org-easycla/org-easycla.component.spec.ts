@@ -26,7 +26,7 @@ import { OrgEasyclaComponent } from './org-easycla.component';
 describe('OrgEasyclaComponent', () => {
   const SELECTED_ACCOUNT = { uid: '0014100000Te2ovAAB', accountName: 'Vertex Robotics' };
 
-  const selectedAccount = signal<{ uid?: string; accountName: string } | null>(null);
+  const selectedAccount = signal<{ uid?: string | null; accountName: string } | null>(null);
   const hasOrgSelectorAccess = signal(true);
   const grantsLoaded = signal(true);
   const personaLoaded = signal(true);
@@ -1180,8 +1180,16 @@ describe('OrgEasyclaComponent', () => {
   describe('when EasyCLA returns the signatory after a signing ceremony', () => {
     const SIGNED = ['/org/easycla', 'signature-uuid-1'];
 
-    async function renderAfterSigning(options: { stash?: string; org?: string | null; listOrgUid?: string; claGroups?: OrgClaGroup[] } = {}) {
-      const { stash = 'signature-uuid-1', org = SELECTED_ACCOUNT.uid, listOrgUid = SELECTED_ACCOUNT.uid, claGroups = [claGroup()] } = options;
+    async function renderAfterSigning(
+      options: { stash?: string; org?: string | null; listOrgUid?: string; claGroups?: OrgClaGroup[]; authorized?: Partial<Account>[] } = {}
+    ) {
+      const {
+        stash = 'signature-uuid-1',
+        org = SELECTED_ACCOUNT.uid,
+        listOrgUid = SELECTED_ACCOUNT.uid,
+        claGroups = [claGroup()],
+        authorized = [SELECTED_ACCOUNT],
+      } = options;
 
       if (stash) sessionStorage.setItem(ORG_CLA_SIGNED_SIGNATURE_KEY, stash);
       selectedAccount.set(SELECTED_ACCOUNT);
@@ -1195,7 +1203,15 @@ describe('OrgEasyclaComponent', () => {
           provideNoopAnimations(),
           {
             provide: AccountContextService,
-            useValue: { selectedAccount, hasOrgSelectorAccess, availableAccounts: signal([SELECTED_ACCOUNT]), setAccount: vi.fn() },
+            // Adoption really moves the selection, as it does in the browser: a stub that records
+            // the call and changes nothing leaves the page fetching for the organization being
+            // left, and every ordering that depends on the selection catching up goes untested.
+            useValue: {
+              selectedAccount,
+              hasOrgSelectorAccess,
+              availableAccounts: signal(authorized),
+              setAccount: (account: Account) => selectedAccount.set(account),
+            },
           },
           { provide: OrgRoleGrantsService, useValue: { loaded: grantsLoaded } },
           { provide: PersonaService, useValue: { personaLoaded } },
@@ -1276,6 +1292,24 @@ describe('OrgEasyclaComponent', () => {
       } finally {
         vi.useRealTimers();
       }
+    });
+
+    /**
+     * Two requests are made on a return trip — one for the organization being left, one for the
+     * organization signed with — and a stored failure belongs to neither in particular. Reading
+     * the first one as this organization's answer starts asking upstream while the real request is
+     * still in flight, and on this trip before the adoption has even happened.
+     *
+     * No timers are advanced here on purpose: the named organization's own response is what should
+     * land the signatory, and needing the retry to rescue it is the failure this asserts against.
+     */
+    it('waits for the named organization rather than acting on a failure from the one being left', async () => {
+      const NAMED = { uid: '0014100000Te0OKAAZ', accountId: '0014100000Te0OKAAZ', accountName: 'Microsoft Corporation' };
+      getClaGroups.mockReturnValueOnce(throwError(() => new Error('upstream')));
+
+      const { navigate } = await renderAfterSigning({ org: NAMED.uid, listOrgUid: NAMED.uid, authorized: [SELECTED_ACCOUNT, NAMED] });
+
+      expect(navigate).toHaveBeenCalledWith(SIGNED, { replaceUrl: true });
     });
 
     /**
