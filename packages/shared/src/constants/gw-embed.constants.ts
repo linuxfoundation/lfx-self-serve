@@ -124,3 +124,21 @@ export const GW_EMBED_STORAGE_KEY_PREFIX = 'gatewaze-admin-auth-token-';
  * sign-in prompt, so a session the embed rejects for some other reason cannot reload forever.
  */
 export const GW_EMBED_SESSION_RECOVERY_COOLDOWN_MS = 30_000;
+
+/**
+ * Destinations shown in the host's nav strip above the embed.
+ *
+ * The embed compiles in module routes only — it renders no admin shell, so nothing inside it links
+ * to `newsletters/sends` and that page is unreachable despite `newsletters.sending` being enabled.
+ * The host supplies the navigation instead, which is also the right split: LFX owns chrome, the
+ * embed owns content.
+ *
+ * Paths are relative to `GW_EMBED_ROUTE_PREFIX` and must match routes the compiled modules
+ * actually declare, or the embed's catch-all will hand them straight back to the host.
+ */
+export const GW_EMBED_NAV_ITEMS: readonly { readonly label: string; readonly path: string }[] = [
+  { label: 'Newsletters', path: '/newsletters' },
+  { label: 'Sends', path: '/newsletters/sends' },
+  { label: 'Templates', path: '/newsletters/templates' },
+  { label: 'Content inbox', path: '/inbox' },
+];
