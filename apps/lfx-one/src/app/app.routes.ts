@@ -46,12 +46,14 @@ export const routes: Routes = [
         canActivate: [projectQueryParamGuard],
         loadComponent: () => import('./modules/dashboards/dashboard.component').then((m) => m.DashboardComponent),
       },
-      // Foundation Lens — Health Metrics page (ED + LF Staff)
+      // Foundation Lens — Health Metrics page (ED + LF Staff). Renders the LFXV2-3365 overview
+      // replacement once health-metrics-overview-enabled is on; a single stable route/component
+      // keeps SSR and the post-hydration flag decision on the same DOM tree (see HealthMetricsGateComponent).
       {
         path: 'foundation/health-metrics',
         data: { lens: 'foundation' },
         canActivate: [dashboardAccessGuard, projectQueryParamGuard],
-        loadComponent: () => import('./modules/dashboards/health-metrics/health-metrics.component').then((m) => m.HealthMetricsComponent),
+        loadComponent: () => import('./modules/dashboards/health-metrics-gate/health-metrics-gate.component').then((m) => m.HealthMetricsGateComponent),
       },
       // Foundation Lens — Campaign Impact page (ED + LF Staff always; marketing_auditor when marketing-ops-fga-enabled is on — LF Staff still see only the Social Listening tab)
       {

@@ -97,6 +97,19 @@ export const MARKETING_OPS_FGA_ENABLED_FLAG = 'marketing-ops-fga-enabled';
 export const MENTORSHIP_ENABLED_FLAG = 'mentorship-enabled';
 
 /**
+ * Dark-launch gate for the LFXV2-3365 Health Metrics Overview replacement page (tiles + findings
+ * list). Default false: `foundation/health-metrics` keeps rendering the existing card-based page
+ * until this is on. **UI-only**, evaluated through `FeatureFlagService.getBooleanFlag` inside
+ * `HealthMetricsGateComponent`'s template `@if` — on SSR no OpenFeature provider is ever
+ * registered (it initializes in the browser only), and on the client `getBooleanFlag` keeps
+ * returning the default until `FeatureFlagService.initialize(user)` applies the user context and
+ * the provider re-identifies, both of which land after the first render — so SSR and first client
+ * render both see the `false` default and agree on the legacy page; the swap to the overview page,
+ * if any, happens client-side after hydration.
+ */
+export const HEALTH_METRICS_OVERVIEW_ENABLED_FLAG = 'health-metrics-overview-enabled';
+
+/**
  * `localStorage` key holding a `Record<string, boolean>` of locally-forced flag values, read by
  * `FeatureFlagService.getBooleanFlag` in **non-production builds only**.
  *
