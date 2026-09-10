@@ -4,7 +4,7 @@
 import type { ChartData, ChartOptions, ChartType } from 'chart.js';
 
 import type { CommitteeOrganizationReference } from './committee.interface';
-import type { FormationItemStatus } from './formation.interface';
+import type { FormationItemAction, FormationItemStatus } from './formation.interface';
 import type { Meeting } from './meeting.interface';
 import type { Vote } from './poll.interface';
 
@@ -580,12 +580,33 @@ export interface PendingActionItem {
   /** Whether the item is gating (set on FormationItem action types) — drives the "Required for Active" marker. */
   formationIsGating?: boolean;
   /**
+   * The item's action kind (set on FormationItem action types) — `assertItemProjectWriteAccess`
+   * aside, `FormationService.updateFormationItemStatus` rejects every manual status transition for
+   * `status_only` items regardless of write access, so Claim/Block must never render for them; the
+   * row falls back to Open/the link only.
+   */
+  formationItemAction?: FormationItemAction;
+  /**
    * Whether the caller has project `writer` access (set on FormationItem action types) —
    * Claim/Block both hard-require `project.writer` server-side (`assertItemProjectWriteAccess`),
    * so an `auditor`-only assignee would otherwise see an actionable button that always 403s.
    * Drives whether the row's Claim/Block controls render as clickable vs. disabled-with-tooltip.
    */
   formationCanWrite?: boolean;
+}
+
+/**
+ * Payload emitted when a Pending Actions row's Open action requests the shared
+ * `formation-item-drawer` (GH-1956) — carried from `pending-actions`/`pending-actions-drawer` through
+ * `dashboard-formation-item-drawer-host.open()`. `canWrite` mirrors `PendingActionItem.formationCanWrite`
+ * so the host can render the drawer's Mark complete/Save/Skip controls read-only for an auditor-only
+ * assignee — those mutations hard-require project `writer` server-side, and the drawer's own
+ * `can_complete` gate does not account for that (it only encodes the gating-item LF-staff check).
+ */
+export interface FormationItemOpenRequest {
+  projectUid: string;
+  itemKey: string;
+  canWrite?: boolean;
 }
 
 /**

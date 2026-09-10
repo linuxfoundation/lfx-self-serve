@@ -5,7 +5,7 @@ import '@angular/compiler';
 
 import crypto from 'crypto';
 
-import type { Formation, FormationItem, QueryServiceResponse, UpstreamFormationChecklist, UpstreamFormationItem } from '@lfx-one/shared/interfaces';
+import type { Formation, FormationItem, Project, QueryServiceResponse, UpstreamFormationChecklist, UpstreamFormationItem } from '@lfx-one/shared/interfaces';
 import { deriveFormationEntityType } from '@lfx-one/shared/utils';
 import type { Request } from 'express';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
@@ -15,6 +15,7 @@ import { ServiceValidationError } from '../errors/service-validation.error';
 
 const getProjectById = vi.fn();
 const getProjectIdBySlug = vi.fn();
+const getProjects = vi.fn();
 const canComplete = vi.fn();
 const natsRequest = vi.fn();
 const proxyRequest = vi.fn();
@@ -24,6 +25,7 @@ vi.mock('./project.service', () => ({
   ProjectService: class {
     public getProjectById = getProjectById;
     public getProjectIdBySlug = getProjectIdBySlug;
+    public getProjects = getProjects;
   },
 }));
 vi.mock('./microservice-proxy.service', () => ({
@@ -149,6 +151,23 @@ function findProbeUsername(itemUid: string, assigned: boolean): string {
   throw new Error(`Could not find a probe username with assigned=${assigned} for item ${itemUid}`);
 }
 
+/**
+ * `getMyFormationWork` sources its project list from `ProjectService.getProjects`, not
+ * `getProjectById` (GH-1956) — this builds the caller-accessible project row that stands in for a
+ * `STATIC_QUEUE_FORMATIONS` entry so `formation:${project.uid}` resolves the already-seeded
+ * formation instead of triggering the lazy-generate branch.
+ */
+function buildCallerProject(formationRow: Formation & { uid: string }, writer: boolean): Project {
+  return {
+    uid: formationRow.parent_project_uid,
+    slug: formationRow.parent_project_slug,
+    name: formationRow.parent_project_name,
+    parent_uid: formationRow.parent_uid ?? '',
+    stage: 'Formation - Engaged',
+    writer,
+  } as Project;
+}
+
 /** Seeds a formation + item and returns both, for tests that don't care about the specific uids. */
 function seedItem(itemOverrides: Partial<FormationItem> = {}): { formation: Formation & { uid: string }; item: FormationItem } {
   const formation = buildFormation();
@@ -164,6 +183,7 @@ describe('FormationService', () => {
     resetFormationStoreForTests();
     getProjectById.mockReset();
     getProjectIdBySlug.mockReset();
+    getProjects.mockReset();
     canComplete.mockReset();
     vi.mocked(logger.info).mockClear();
     natsRequest.mockReset();
@@ -924,8 +944,8 @@ describe('FormationService', () => {
     // formation (~30% chance per item). Assertions below scope to the target formation/item uid
     // rather than asserting on the response's total length, so they don't flake on that overlap.
     it('groups a caller-assigned open item into both the formation summary and the items list', async () => {
-      getProjectById.mockResolvedValue({ writer: true });
       const formationRow = STATIC_QUEUE_FORMATIONS[0];
+      getProjects.mockResolvedValue([buildCallerProject(formationRow, true)]);
       const item = buildItem(formationRow.uid, { project_uid: formationRow.parent_project_uid, status: 'not_started', is_gating: true });
       seedFormation(formationRow, [item]);
       const username = findProbeUsername(item.uid, true);
@@ -940,8 +960,8 @@ describe('FormationService', () => {
     });
 
     it('sets can_write false for an item on a project the caller can only read, not write (auditor-only assignee)', async () => {
-      getProjectById.mockResolvedValue({ writer: false });
       const formationRow = STATIC_QUEUE_FORMATIONS[0];
+      getProjects.mockResolvedValue([buildCallerProject(formationRow, false)]);
       const item = buildItem(formationRow.uid, { project_uid: formationRow.parent_project_uid, status: 'not_started' });
       seedFormation(formationRow, [item]);
       const username = findProbeUsername(item.uid, true);
@@ -950,12 +970,12 @@ describe('FormationService', () => {
 
       const returnedItem = result.items.find((i) => i.item_uid === item.uid);
       expect(returnedItem?.can_write).toBe(false);
-      expect(getProjectById).toHaveBeenCalledWith(expect.anything(), formationRow.parent_project_uid, true);
+      expect(getProjects).toHaveBeenCalledWith(expect.anything());
     });
 
     it('excludes done/skipped assigned items from the items list but still counts them in the formation summary', async () => {
-      getProjectById.mockResolvedValue({ writer: true });
       const formationRow = STATIC_QUEUE_FORMATIONS[0];
+      getProjects.mockResolvedValue([buildCallerProject(formationRow, true)]);
       const item = buildItem(formationRow.uid, { project_uid: formationRow.parent_project_uid, status: 'done' });
       seedFormation(formationRow, [item]);
       const username = findProbeUsername(item.uid, true);
@@ -970,8 +990,8 @@ describe('FormationService', () => {
     });
 
     it('retains an awaiting_acceptance item in the items list (assignee never sets status, GH-1956 decision 3)', async () => {
-      getProjectById.mockResolvedValue({ writer: true });
       const formationRow = STATIC_QUEUE_FORMATIONS[0];
+      getProjects.mockResolvedValue([buildCallerProject(formationRow, true)]);
       const item = buildItem(formationRow.uid, { project_uid: formationRow.parent_project_uid, status: 'awaiting_acceptance' });
       seedFormation(formationRow, [item]);
       const username = findProbeUsername(item.uid, true);
@@ -985,8 +1005,8 @@ describe('FormationService', () => {
     });
 
     it('omits a formation with no item assigned to the caller', async () => {
-      getProjectById.mockResolvedValue({ writer: true });
       const formationRow = STATIC_QUEUE_FORMATIONS[0];
+      getProjects.mockResolvedValue([buildCallerProject(formationRow, true)]);
       const item = buildItem(formationRow.uid, { project_uid: formationRow.parent_project_uid, status: 'not_started' });
       seedFormation(formationRow, [item]);
       const username = findProbeUsername(item.uid, false);

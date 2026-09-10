@@ -70,7 +70,11 @@
                 data-testid="formation-item-drawer-skip" />
             }
           </div>
-          @if (currentItem.is_gating && !currentItem.can_complete) {
+          @if (!canWrite()) {
+            <!-- A disabled button isn't focusable, so a hover-only tooltip would never reach a keyboard/screen-reader user — render the reason as visible text instead, same pattern as the
+                 gate_writer message below. Takes priority over that message since it blocks every action here (Mark complete, Save, Skip), not just accepting a gating item. -->
+            <span class="text-xs text-gray-500" data-testid="formation-item-drawer-no-write-access">You need write access to this project to make changes here.</span>
+          } @else if (currentItem.is_gating && !currentItem.can_complete) {
             <!-- A disabled button isn't focusable, so a hover-only tooltip would never reach a keyboard/screen-reader user — render the reason as visible text instead. `can_complete` only ever
                  gates *accepting* an already-awaiting-acceptance item (formation.service.ts's completeFormationItem) — a non-gate-writer can still submit the item, so the copy must not
                  imply they can't act at all. -->

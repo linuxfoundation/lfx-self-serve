@@ -37,6 +37,7 @@ import { take, timer } from 'rxjs';
 
 import type {
   DecoratedPendingAction,
+  FormationItemOpenRequest,
   Meeting,
   MeetingRsvp,
   PendingActionItem,
@@ -99,7 +100,7 @@ export class PendingActionsComponent {
   // Emits {projectUid, itemKey} when a FormationItem row's Open (or Block with note's underlying
   // item) needs the existing formation-item-drawer (GH-1956) — the parent dashboard hosts
   // `dashboard-formation-item-drawer-host` and opens it on this event.
-  public readonly formationItemRequested = output<{ projectUid: string; itemKey: string }>();
+  public readonly formationItemRequested = output<FormationItemOpenRequest>();
 
   protected readonly drawerVisible = model<boolean>(false);
 
@@ -413,7 +414,7 @@ export class PendingActionsComponent {
     const projectUid = item.formationProjectUid;
     const itemKey = item.formationItemKey;
     if (!projectUid || !itemKey) return;
-    this.formationItemRequested.emit({ projectUid, itemKey });
+    this.formationItemRequested.emit({ projectUid, itemKey, canWrite: item.formationCanWrite });
   }
 
   protected openDrawer(): void {

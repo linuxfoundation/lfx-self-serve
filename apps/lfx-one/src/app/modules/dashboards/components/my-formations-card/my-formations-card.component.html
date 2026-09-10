@@ -38,7 +38,7 @@
                 class="h-full bg-blue-600 rounded-full"
                 [style.width.%]="formation.progressPercent"
                 role="progressbar"
-                [attr.aria-label]="formation.project_name + ' checklist progress'"
+                [attr.aria-label]="formation.project_name + ' checklist progress: ' + formation.items_done + ' of ' + formation.items_total + ' done'"
                 [attr.aria-valuenow]="formation.progressPercent"
                 aria-valuemin="0"
                 aria-valuemax="100"></div>

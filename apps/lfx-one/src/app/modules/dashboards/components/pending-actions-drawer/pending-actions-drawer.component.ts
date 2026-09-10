@@ -20,7 +20,7 @@ import { DialogService } from 'primeng/dynamicdialog';
 import { SkeletonModule } from 'primeng/skeleton';
 import { filter, take, timer } from 'rxjs';
 
-import type { DrawerActionRow, Meeting, MeetingRsvp, PendingActionItem, ReasonPromptDialogResult, RsvpResponse } from '@lfx-one/shared/interfaces';
+import type { DrawerActionRow, FormationItemOpenRequest, Meeting, MeetingRsvp, PendingActionItem, ReasonPromptDialogResult, RsvpResponse } from '@lfx-one/shared/interfaces';
 
 @Component({
   selector: 'lfx-pending-actions-drawer',
@@ -55,7 +55,7 @@ export class PendingActionsDrawerComponent {
   // Emits {projectUid, itemKey} when a FormationItem row's Open action needs the existing
   // formation-item-drawer (GH-1956) — mirrors `pending-actions.component.ts`'s own output;
   // the parent dashboard hosts `dashboard-formation-item-drawer-host` and opens it on this event.
-  public readonly formationItemRequested = output<{ projectUid: string; itemKey: string }>();
+  public readonly formationItemRequested = output<FormationItemOpenRequest>();
   // Emits after a successful Claim/Block-with-note so the parent (`pending-actions.component.ts`)
   // can re-fetch the server-truth pending actions list — mirroring its own `actionClick` output for
   // the same two actions on the main inline list. `actionCompleted` above only drives the local
@@ -200,7 +200,7 @@ export class PendingActionsDrawerComponent {
     const projectUid = item.formationProjectUid;
     const itemKey = item.formationItemKey;
     if (!projectUid || !itemKey) return;
-    this.formationItemRequested.emit({ projectUid, itemKey });
+    this.formationItemRequested.emit({ projectUid, itemKey, canWrite: item.formationCanWrite });
   }
 
   protected handleRsvpSubmit(item: DrawerActionRow, rsvp: MeetingRsvp): void {

@@ -635,27 +635,38 @@ export class FormationService {
     const formations: MyFormationSummary[] = [];
     const items: MyFormationItemRow[] = [];
 
-    for (const staticRow of STATIC_QUEUE_FORMATIONS) {
-      // Formation.uid is optional only because the checklist read can't source it (see its doc
-      // comment) — every STATIC_QUEUE_FORMATIONS row (and anything seeded over it) sets it
-      // explicitly, so it's always present here; same narrowing as `toQueueRow`'s `formationUid`.
-      const formationRow = (getStoredFormation(staticRow.uid) ?? staticRow) as Formation & { uid: string };
-      let formationItems = getStoredItemsForFormation(formationRow.uid);
-      if (formationItems.length === 0) {
+    // Built from the caller's own real accessible projects (via getProjects's access-scoped
+    // /query/resources read), not STATIC_QUEUE_FORMATIONS' synthetic queue-project-* rows. The
+    // queue rows exist only to populate the staff Formations queue with a fixed demo set — using
+    // them here meant `getProjectById` could never resolve `parent_project_uid` (it isn't a real
+    // project), so `can_write` silently defaulted to read-only for every row and Open/Claim
+    // resolved a different item store than the one `getProjectFormation(projectSlug)` seeds for
+    // that same project. Sourcing from real formation-stage projects the caller can already read
+    // keeps this response, the checklist page, and the write-access check all pointed at the same
+    // project uid and the same seeded item store.
+    const rootUid = await resolveRootProjectUid(req, this.natsService);
+    const callerProjects = await this.projectService.getProjects(req);
+    const formationProjects = callerProjects.filter((project) => isFormationStageGate(project.stage));
+
+    for (const project of formationProjects) {
+      const formationUid = `formation:${project.uid}`;
+      let formationRow = getStoredFormation(formationUid) as (Formation & { uid: string }) | undefined;
+      let formationItems = formationRow ? getStoredItemsForFormation(formationRow.uid) : [];
+      if (!formationRow || formationItems.length === 0) {
         // Never visited via getProjectFormation — generate + seed exactly as that path does, so a
         // claim made from this response's rows is visible on the project's own checklist afterward
         // (and vice versa; see formation-store.service.ts's `seedFormation`, which no-ops if the
-        // formation/items are already present). Only `.items` is used below — `formationRow` already
-        // carries STATIC_QUEUE_FORMATIONS's curated fields (blocking_item_title, gating counts,
-        // subtitle), which a freshly generated Formation object would overwrite with placeholders.
+        // formation/items are already present).
+        const collapsedParentUid = collapseRootParentUid(project.parent_uid || null, rootUid) ?? null;
         const generated = generateMockFormation({
-          projectUid: formationRow.parent_project_uid,
-          projectSlug: formationRow.parent_project_slug,
-          projectName: formationRow.parent_project_name,
-          parentProjectUid: formationRow.parent_uid,
-          stage: undefined,
+          projectUid: project.uid,
+          projectSlug: project.slug,
+          projectName: project.name,
+          parentProjectUid: collapsedParentUid,
+          stage: project.stage,
         });
-        seedFormation(formationRow, generated.items);
+        seedFormation(generated.formation, generated.items);
+        formationRow = (getStoredFormation(generated.formation.uid) as (Formation & { uid: string }) | undefined) ?? generated.formation;
         formationItems = getStoredItemsForFormation(formationRow.uid);
       }
 
@@ -665,19 +676,11 @@ export class FormationService {
       // Same check `assertItemProjectWriteAccess` runs before actually allowing the mutation — an
       // `auditor`-only assignee is a valid GH-1956 assignee (decision 1: partner contacts are
       // invited as `auditor` or `writer`) but Claim/Block would 403 for them; see `can_write`'s
-      // doc comment on `MyFormationItemRow`. Caught rather than awaited bare: this talks to the live
-      // project service even on the fixture branch, and one formation's 404/upstream error must not
-      // abort the whole response — default to false (Claim/Block disabled) and keep going.
-      const canWrite = await this.projectService
-        .getProjectById(req, formationRow.parent_project_uid, true)
-        .then((project) => project.writer === true)
-        .catch((error) => {
-          logger.warning(req, 'get_my_formation_work', 'Failed to resolve write access; defaulting to read-only', {
-            project_uid: formationRow.parent_project_uid,
-            error: error instanceof Error ? error.message : String(error),
-          });
-          return false;
-        });
+      // doc comment on `MyFormationItemRow`. Read directly off `project.writer` — `getProjects`
+      // already ran the access check for every row above, so there's no second network round trip
+      // (and no per-formation failure mode to catch: an upstream error here would already have
+      // failed the whole `getProjects` call, consistent with every other real-project read).
+      const canWrite = project.writer === true;
 
       const doneOrSkipped = (item: FormationItem): boolean => item.status === 'done' || item.status === 'skipped';
       const gatingItems = formationItems.filter((item) => item.is_gating);

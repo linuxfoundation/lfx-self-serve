@@ -11,7 +11,7 @@ import { take } from 'rxjs';
 
 import { FormationItemDrawerComponent } from '../formation-item-drawer/formation-item-drawer.component';
 
-import type { FormationItem, ReasonPromptDialogResult } from '@lfx-one/shared/interfaces';
+import type { FormationItem, FormationItemOpenRequest, ReasonPromptDialogResult } from '@lfx-one/shared/interfaces';
 
 /**
  * Dashboard-level host for the existing `formation-item-drawer` (GH-1956) — same precedent as
@@ -56,10 +56,16 @@ export class DashboardFormationItemDrawerHostComponent {
   // drawer's `mutationInFlight` input, so its buttons disable for either write kind.
   protected readonly writeInFlight = signal<boolean>(false);
   protected readonly mutationInFlight = computed(() => this.writeInFlight() || this.skipInFlight());
+  // Mirrors `PendingActionItem.formationCanWrite` from the row that triggered `open()` — the drawer's
+  // own `can_complete` gate has no relationship to real project write access (copilot review: an
+  // auditor-only assignee would otherwise see an enabled Mark complete/Save that 403s server-side via
+  // `assertItemProjectWriteAccess`). Defaults `true` so a future caller that omits it stays permissive.
+  protected readonly canWrite = signal<boolean>(true);
 
-  public open(request: { projectUid: string; itemKey: string }): void {
+  public open(request: FormationItemOpenRequest): void {
     this.projectUid.set(request.projectUid);
     this.itemKey.set(request.itemKey);
+    this.canWrite.set(request.canWrite ?? true);
     this.visible.set(true);
   }
 

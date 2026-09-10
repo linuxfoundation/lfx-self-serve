@@ -79,6 +79,11 @@ export function formatMyFormationSubtitle(summary: MyFormationBucketCounts): str
  * hard-require it server-side via `assertItemProjectWriteAccess`; without this flag such a caller
  * would see an actionable button that always 403s). The template renders Claim/Block
  * disabled-with-tooltip when false.
+ *
+ * `formationItemAction` carries `item.action` through unchanged (copilot review: `status_only`
+ * items are rejected unconditionally by `FormationService.updateFormationItemStatus`, independent
+ * of write access — the template must render only Open/the link, never Claim/Block, when this is
+ * `'status_only'`).
  */
 export function buildFormationItemActions(items: MyFormationItemRow[]): PendingActionItem[] {
   return items.map((item) => ({
@@ -96,5 +101,6 @@ export function buildFormationItemActions(items: MyFormationItemRow[]): PendingA
     formationItemStatus: item.status,
     formationIsGating: item.is_gating,
     formationCanWrite: item.can_write,
+    formationItemAction: item.action,
   }));
 }
