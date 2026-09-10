@@ -17,6 +17,20 @@ export const LFX_PROFILE_CARD_EMPTY = 'Not provided';
 export const LFX_PROFILE_CARD_CONNECT_LABEL = 'Connect';
 
 /**
+ * Outcome copy for the account-link round trip that Connect starts. The OAuth callback returns
+ * to whichever page opened the dialog and reports itself in `?success=` / `?error=`, and the
+ * mentorship forms mount outside the profile shell that would otherwise announce those, so the
+ * card says them itself.
+ */
+export const LFX_PROFILE_CARD_LINK_SUCCESS_DETAIL = 'Identity linked successfully.';
+/** In neither shared error map, and the likeliest real failure — so it gets its own copy. */
+export const LFX_PROFILE_CARD_LINK_ALREADY_LINKED_DETAIL =
+  'That account is already linked to another LFX profile. Open Profile & Account → Identities to sort it out.';
+/** Authorization succeeded but the link never ran — see the `profile_token_obtained` branch. */
+export const LFX_PROFILE_CARD_LINK_INCOMPLETE_DETAIL = 'Authorization finished, but the account was not linked. Select Connect to try again.';
+export const LFX_PROFILE_CARD_LINK_ERROR_FALLBACK = 'An error occurred. Please try again.';
+
+/**
  * The card's labelled fields, in the order the design lays them out across two
  * columns. Name and emails are deliberately absent: they sit unlabelled beside
  * the avatar rather than in this grid.

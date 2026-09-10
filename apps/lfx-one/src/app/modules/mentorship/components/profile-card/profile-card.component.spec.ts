@@ -3,7 +3,17 @@
 
 import { ComponentFixture, TestBed } from '@angular/core/testing';
 import { provideNoopAnimations } from '@angular/platform-browser/animations';
-import { LFX_PROFILE_CARD_CONNECT_LABEL, LFX_PROFILE_CARD_EDIT_LABEL } from '@lfx-one/shared/constants';
+import { ActivatedRoute } from '@angular/router';
+import {
+  IDENTITY_LINK_ERROR_MESSAGES,
+  LFX_PROFILE_CARD_CONNECT_LABEL,
+  LFX_PROFILE_CARD_EDIT_LABEL,
+  LFX_PROFILE_CARD_LINK_ALREADY_LINKED_DETAIL,
+  LFX_PROFILE_CARD_LINK_ERROR_FALLBACK,
+  LFX_PROFILE_CARD_LINK_INCOMPLETE_DETAIL,
+  LFX_PROFILE_CARD_LINK_SUCCESS_DETAIL,
+  PROFILE_AUTH_ERROR_MESSAGES,
+} from '@lfx-one/shared/constants';
 import { CombinedProfile, EmailManagementData, EnrichedIdentity } from '@lfx-one/shared/interfaces';
 import { UserService } from '@services/user.service';
 import { MessageService } from 'primeng/api';
@@ -64,8 +74,11 @@ describe('ProfileCardComponent', () => {
     element().querySelector<HTMLButtonElement>(`[data-testid="mentorship-profile-card-${platform}-connect"] button`)?.click();
   };
 
-  /** Boots the card against whatever the three profile endpoints return for this spec. */
-  const render = (userService: Partial<Record<keyof UserService, unknown>>): void => {
+  /**
+   * Boots the card against whatever the three profile endpoints return for this spec.
+   * `queryParams` stands in for what the identity-link callback returns the mentor with.
+   */
+  const render = (userService: Partial<Record<keyof UserService, unknown>>, queryParams: Record<string, string> = {}): void => {
     toast = vi.fn();
     refreshUserIdentities = vi.fn();
     dialogClose = new Subject<unknown>();
@@ -77,6 +90,7 @@ describe('ProfileCardComponent', () => {
       providers: [
         provideNoopAnimations(),
         { provide: MessageService, useValue: { add: toast } },
+        { provide: ActivatedRoute, useValue: { snapshot: { queryParams } } },
         // Every spec's fetches run off `identitiesRefresh$`, so it belongs to the harness rather
         // than to each fixture; a spec still overrides any of it by passing the key itself.
         { provide: UserService, useValue: { identitiesRefresh$: new Subject<void>(), refreshUserIdentities, ...userService } },
@@ -228,5 +242,75 @@ describe('ProfileCardComponent', () => {
 
     expect(toast).toHaveBeenCalledTimes(1);
     expect(toast.mock.calls[0][0]).toMatchObject({ severity: 'info', summary: LFX_PROFILE_CARD_EDIT_LABEL });
+  });
+
+  /**
+   * The mentorship forms mount under the main layout, so neither the Identities tab nor
+   * `ProfileLayoutComponent` is around to read the callback's query params. Without the card
+   * doing it, a mentor finishes the Auth0 handshake and is told nothing at all.
+   */
+  describe('when the identity-link callback returns the mentor here', () => {
+    const profile = {
+      getCurrentUserProfile: () => of(combined),
+      getUserEmails: () => of(emails),
+      getIdentities: () => of(identities),
+      effectiveAvatarUrl: () => '',
+    };
+
+    it('says nothing on an ordinary visit, so the card is silent unless something happened', () => {
+      render(profile);
+
+      expect(toast).not.toHaveBeenCalled();
+    });
+
+    it('confirms a linked account and re-reads the profile, so the new row is not stale', () => {
+      render(profile, { success: 'identity_linked' });
+
+      expect(toast).toHaveBeenCalledTimes(1);
+      expect(toast.mock.calls[0][0]).toMatchObject({ severity: 'success', detail: LFX_PROFILE_CARD_LINK_SUCCESS_DETAIL });
+      expect(refreshUserIdentities).toHaveBeenCalledTimes(1);
+    });
+
+    it('strips the params it consumed, so a reload does not replay the message', () => {
+      window.history.replaceState(null, '', '/mentorship/mentor?success=identity_linked');
+
+      render(profile, { success: 'identity_linked' });
+
+      expect(window.location.search).toBe('');
+      expect(window.location.pathname).toBe('/mentorship/mentor');
+    });
+
+    it('names the conflict when the account belongs to another profile, the likeliest real failure', () => {
+      render(profile, { error: 'already_linked' });
+
+      // In neither shared map, so a generic fallback here would strand the mentor with no next step.
+      expect(toast.mock.calls[0][0]).toMatchObject({ severity: 'error', detail: LFX_PROFILE_CARD_LINK_ALREADY_LINKED_DETAIL });
+    });
+
+    it('reports an identity-link failure with its own message', () => {
+      render(profile, { error: 'social_auth_failed' });
+
+      expect(toast.mock.calls[0][0]).toMatchObject({ severity: 'error', detail: IDENTITY_LINK_ERROR_MESSAGES['social_auth_failed'] });
+    });
+
+    it('reports a Flow C failure too, since no profile shell mounts here to own those codes', () => {
+      render(profile, { error: 'invalid_state' });
+
+      expect(toast.mock.calls[0][0]).toMatchObject({ severity: 'error', detail: PROFILE_AUTH_ERROR_MESSAGES['invalid_state'] });
+    });
+
+    it('does not read an inherited Object.prototype key as an error message', () => {
+      // `error` is unvalidated URL input: an unguarded lookup resolves `toString` to a function.
+      render(profile, { error: 'toString' });
+
+      expect(toast.mock.calls[0][0]).toMatchObject({ severity: 'error', detail: LFX_PROFILE_CARD_LINK_ERROR_FALLBACK });
+    });
+
+    it('does not claim an account was linked when Flow C only minted a token', () => {
+      render(profile, { success: 'profile_token_obtained' });
+
+      expect(toast.mock.calls[0][0]).toMatchObject({ severity: 'info', detail: LFX_PROFILE_CARD_LINK_INCOMPLETE_DETAIL });
+      expect(refreshUserIdentities).not.toHaveBeenCalled();
+    });
   });
 });

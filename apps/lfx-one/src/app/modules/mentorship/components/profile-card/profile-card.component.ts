@@ -1,22 +1,31 @@
 // Copyright The Linux Foundation and each contributor to LFX.
 // SPDX-License-Identifier: MIT
 
-import { ChangeDetectionStrategy, Component, computed, inject } from '@angular/core';
+import { isPlatformBrowser } from '@angular/common';
+import { ChangeDetectionStrategy, Component, computed, inject, OnInit, PLATFORM_ID } from '@angular/core';
 import { toSignal } from '@angular/core/rxjs-interop';
+import { ActivatedRoute } from '@angular/router';
 import { AvatarComponent } from '@components/avatar/avatar.component';
 import { ButtonComponent } from '@components/button/button.component';
 import {
+  IDENTITY_LINK_ERROR_MESSAGES,
   LFX_PROFILE_CARD_CONNECT_LABEL,
   LFX_PROFILE_CARD_EDIT_LABEL,
   LFX_PROFILE_CARD_EMPTY,
   LFX_PROFILE_CARD_LABELS,
+  LFX_PROFILE_CARD_LINK_ALREADY_LINKED_DETAIL,
+  LFX_PROFILE_CARD_LINK_ERROR_FALLBACK,
+  LFX_PROFILE_CARD_LINK_INCOMPLETE_DETAIL,
+  LFX_PROFILE_CARD_LINK_SUCCESS_DETAIL,
   LFX_PROFILE_CARD_PRIMARY_BADGE,
   LFX_PROFILE_CARD_SUBTITLE,
   LFX_PROFILE_CARD_TITLE,
+  PROFILE_AUTH_ERROR_MESSAGES,
 } from '@lfx-one/shared/constants';
 import { AddAccountDialogData, EnrichedIdentity, IdentityProvider, LfxProfileSummary } from '@lfx-one/shared/interfaces';
 import { buildLfxProfileSummary } from '@lfx-one/shared/utils';
 import { UserService } from '@services/user.service';
+import { MessageService } from 'primeng/api';
 import { DialogService, DynamicDialogRef } from 'primeng/dynamicdialog';
 import { SkeletonModule } from 'primeng/skeleton';
 import { catchError, forkJoin, map, Observable, of, startWith, switchMap, take } from 'rxjs';
@@ -40,6 +49,9 @@ import { MentorshipComingSoonService } from '../../services/mentorship-coming-so
  * on the card. Anything typed into the form is still lost to that redirect, which is why the
  * card offers the dialog rather than opening it for them.
  *
+ * Reporting the result of that round trip is the card's job too — see `ngOnInit`. The callback
+ * answers in query params, and the page it returns to here has no profile shell to read them.
+ *
  * The card owns its own fetch rather than taking the data as an input, so it can be
  * dropped onto any mentorship form without that page learning about three profile
  * endpoints.
@@ -51,10 +63,13 @@ import { MentorshipComingSoonService } from '../../services/mentorship-coming-so
   templateUrl: './profile-card.component.html',
   changeDetection: ChangeDetectionStrategy.OnPush,
 })
-export class ProfileCardComponent {
+export class ProfileCardComponent implements OnInit {
   private readonly userService = inject(UserService);
   private readonly comingSoon = inject(MentorshipComingSoonService);
   private readonly dialogService = inject(DialogService);
+  private readonly messageService = inject(MessageService);
+  private readonly route = inject(ActivatedRoute);
+  private readonly platformId = inject(PLATFORM_ID);
 
   protected readonly title = LFX_PROFILE_CARD_TITLE;
   protected readonly subtitle = LFX_PROFILE_CARD_SUBTITLE;
@@ -86,6 +101,44 @@ export class ProfileCardComponent {
     const profile = this.summary();
     return [profile?.github ? 'github' : null, profile?.linkedin ? 'linkedin' : null].filter((provider): provider is IdentityProvider => provider !== null);
   });
+
+  /**
+   * Reports how the account-link round trip ended.
+   *
+   * `handleSocialCallback` returns to whichever page opened the dialog and says what happened in
+   * `?success=` / `?error=`. Under `/profile` those are read by the Identities tab and by
+   * `ProfileLayoutComponent`; the mentorship forms mount under the main layout, where neither
+   * exists — so without this the mentor completes the whole Auth0 handshake, lands back on the
+   * form, and is told nothing while a stale `?error=` sits in the address bar.
+   *
+   * Read from the route snapshot rather than the `queryParams` observable because
+   * `clearCallbackParams` strips them with `history.replaceState`, which the Router never sees.
+   */
+  public ngOnInit(): void {
+    const params = this.route.snapshot.queryParams;
+
+    if (params['success'] === 'identity_linked') {
+      // Re-reads the summary off `identitiesRefresh$`, so the account appears without a reload.
+      this.userService.refreshUserIdentities();
+      this.announce('success', 'Success', LFX_PROFILE_CARD_LINK_SUCCESS_DETAIL);
+      return;
+    }
+
+    // Flow C minted a management token but the pending social connect was gone by the time it
+    // returned, so the handshake stopped one step short of linking anything. Say that, rather
+    // than let a bare `?success=` read as an account that was connected.
+    if (params['success'] === 'profile_token_obtained') {
+      this.announce('info', 'Not linked yet', LFX_PROFILE_CARD_LINK_INCOMPLETE_DETAIL);
+      return;
+    }
+
+    const errorCode = params['error'];
+    if (typeof errorCode !== 'string' || !errorCode) {
+      return;
+    }
+
+    this.announce('error', 'Error', this.linkErrorDetail(errorCode));
+  }
 
   protected onEdit(): void {
     this.comingSoon.notify(this.editLabel);
@@ -143,6 +196,46 @@ export class ProfileCardComponent {
       ),
       { initialValue: null }
     );
+  }
+
+  /**
+   * Both shared maps are consulted, unlike the Identities tab which defers half of them:
+   * `PROFILE_AUTH_ERROR_MESSAGES` is `ProfileLayoutComponent`'s to own under `/profile`, and
+   * nothing owns it here, so skipping those codes would go silent instead of avoiding a double
+   * toast. `already_linked` is in neither map and points at the tab that can resolve it.
+   *
+   * Every lookup is `Object.hasOwn`-guarded because `errorCode` is unvalidated URL input: an
+   * inherited key such as `toString` would otherwise resolve to a truthy non-message.
+   */
+  private linkErrorDetail(errorCode: string): string {
+    if (errorCode === 'already_linked') {
+      return LFX_PROFILE_CARD_LINK_ALREADY_LINKED_DETAIL;
+    }
+    if (Object.hasOwn(IDENTITY_LINK_ERROR_MESSAGES, errorCode)) {
+      return IDENTITY_LINK_ERROR_MESSAGES[errorCode];
+    }
+    if (Object.hasOwn(PROFILE_AUTH_ERROR_MESSAGES, errorCode)) {
+      return PROFILE_AUTH_ERROR_MESSAGES[errorCode];
+    }
+    return LFX_PROFILE_CARD_LINK_ERROR_FALLBACK;
+  }
+
+  /** Toasts the outcome, then drops the params so a reload can't replay the message. */
+  private announce(severity: 'success' | 'info' | 'error', summary: string, detail: string): void {
+    this.messageService.add({ severity, summary, detail });
+    this.clearCallbackParams();
+  }
+
+  /**
+   * `history.replaceState` rather than a router navigation, so stripping the params cannot
+   * re-run this route and tear down the registration form beneath the card. The fragment is
+   * kept: it belongs to the page, not to the callback.
+   */
+  private clearCallbackParams(): void {
+    if (!isPlatformBrowser(this.platformId)) {
+      return;
+    }
+    window.history.replaceState(window.history.state, '', window.location.pathname + window.location.hash);
   }
 
   /** Records which of the three sources dropped out, then yields its per-field fallback. */
