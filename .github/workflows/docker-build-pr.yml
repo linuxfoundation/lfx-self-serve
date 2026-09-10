@@ -66,6 +66,7 @@ jobs:
         with:
           context: .
           push: true
+          load: true
           tags: ${{ steps.meta.outputs.tags }}
           labels: ${{ steps.meta.outputs.labels }}
           platforms: linux/amd64
@@ -74,6 +75,9 @@ jobs:
           build-args: |
             BUILD_ENV=dev-cluster
             APP_VERSION=pr-${{ github.event.pull_request.number }}
+
+      - name: Smoke test runtime container
+        run: .github/scripts/smoke-test-image.sh "$(echo '${{ steps.meta.outputs.tags }}' | head -n1)"
 
       - name: Comment deployment URL on PR
         uses: actions/github-script@v7

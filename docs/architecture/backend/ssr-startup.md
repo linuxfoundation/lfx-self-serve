@@ -143,10 +143,23 @@ Both acceptance criteria are partially addressed:
 - **(b) Measurable reduction, or a finding that it's irreducible** — the
   measured, reproducible parts of cold start (in-process boot, corepack/pm2
   launch, image pull, warm/cold-pull-on-existing-node end-to-end) are already
-  well under the 2-minute target — under 45 seconds in every sample. Code-level
-  changes (multi-stage Dockerfile, `pm2` fork mode, `NODE_COMPILE_CACHE`) would
-  only shave seconds off a process that's already seconds long; none of them
-  clears a bar that isn't the actual bottleneck.
+  well under the 2-minute target — under 45 seconds in every sample.
+
+  These fall into two independent phases, and code-level changes only move
+  one of them:
+  - **Image pull** (31-33s of the 45s cold-pull sample, the dominant term) is
+    what Phase 3a's multi-stage Dockerfile split targets, and it is now
+    implemented (see [`deployment.md`'s Container image
+    section](../deployment.md#container-image)): dropping devDependencies,
+    the source tree, and the yarn/npm build caches from the shipped image
+    leaves less to pull. Its effect on pull duration hasn't been isolated
+    yet — that needs a fresh set of prod cold-pull samples taken after this
+    image shipped, following the same procedure as the samples above.
+  - **In-process boot** (3-6s) is what `pm2` fork mode and
+    `NODE_COMPILE_CACHE` would target, and neither is implemented. Both are
+    already seconds-long, so even a full win here is a small fraction of the
+    45s end-to-end window — nowhere near what the dominant image-pull term
+    could yield, and neither clears a bar that isn't the actual bottleneck.
 
 **Recommendation:** the `startupProbe`'s 310s budget only covers the window
 from container start to `/livez` responding — kubelet doesn't begin probing
