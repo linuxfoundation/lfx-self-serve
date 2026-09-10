@@ -10,6 +10,13 @@ export const LFX_PROFILE_CARD_PRIMARY_BADGE = 'Primary';
 export const LFX_PROFILE_CARD_EMPTY = 'Not provided';
 
 /**
+ * Replaces the placeholder on the GitHub and LinkedIn rows. Unlike the card's other fields, an
+ * unconnected account is something the mentor can act on without leaving for the profile editor,
+ * so those rows offer the link rather than telling them the value is missing.
+ */
+export const LFX_PROFILE_CARD_CONNECT_LABEL = 'Connect';
+
+/**
  * The card's labelled fields, in the order the design lays them out across two
  * columns. Name and emails are deliberately absent: they sit unlabelled beside
  * the avatar rather than in this grid.

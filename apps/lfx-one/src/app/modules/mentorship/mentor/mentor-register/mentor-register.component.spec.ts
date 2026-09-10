@@ -12,7 +12,7 @@ import { MentorshipMentorProgramRequest, MentorshipProgram, MentorshipProgramsRe
 import { MentorshipService } from '@services/mentorship.service';
 import { UserService } from '@services/user.service';
 import { Confirmation, ConfirmationService, MessageService } from 'primeng/api';
-import { of } from 'rxjs';
+import { of, Subject } from 'rxjs';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 
 import { MentorRegisterComponent } from './mentor-register.component';
@@ -85,10 +85,12 @@ describe('MentorRegisterComponent', () => {
         provideRouter([]),
         { provide: MessageService, useValue: { add: toast } },
         { provide: MentorshipService, useValue: { getPrograms: () => of(programs) } },
-        // The profile card at the top of the page fetches these three itself.
+        // The profile card at the top of the page fetches these three itself, off the refresh
+        // subject it shares with the profile shell.
         {
           provide: UserService,
           useValue: {
+            identitiesRefresh$: new Subject<void>(),
             getCurrentUserProfile: () => of(null),
             getUserEmails: () => of(null),
             getIdentities: () => of([]),

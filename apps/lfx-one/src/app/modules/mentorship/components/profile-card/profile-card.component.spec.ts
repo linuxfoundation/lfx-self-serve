@@ -3,13 +3,15 @@
 
 import { ComponentFixture, TestBed } from '@angular/core/testing';
 import { provideNoopAnimations } from '@angular/platform-browser/animations';
-import { LFX_PROFILE_CARD_EDIT_LABEL, LFX_PROFILE_CARD_EMPTY } from '@lfx-one/shared/constants';
+import { LFX_PROFILE_CARD_CONNECT_LABEL, LFX_PROFILE_CARD_EDIT_LABEL } from '@lfx-one/shared/constants';
 import { CombinedProfile, EmailManagementData, EnrichedIdentity } from '@lfx-one/shared/interfaces';
 import { UserService } from '@services/user.service';
 import { MessageService } from 'primeng/api';
-import { of, throwError } from 'rxjs';
+import { DialogService } from 'primeng/dynamicdialog';
+import { of, Subject, throwError } from 'rxjs';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 
+import { AddAccountDialogComponent } from '../../../profile/components/add-account-dialog/add-account-dialog.component';
 import { ProfileCardComponent } from './profile-card.component';
 
 describe('ProfileCardComponent', () => {
@@ -49,20 +51,38 @@ describe('ProfileCardComponent', () => {
 
   let fixture: ComponentFixture<ProfileCardComponent>;
   let toast: ReturnType<typeof vi.fn>;
+  let openDialog: ReturnType<typeof vi.fn>;
+  let refreshUserIdentities: ReturnType<typeof vi.fn>;
+  /** Stands in for the dialog's `onClose`, so a spec can close it with or without a result. */
+  let dialogClose: Subject<unknown>;
 
   const element = (): HTMLElement => fixture.nativeElement as HTMLElement;
   const text = (testId: string): string | null => element().querySelector(`[data-testid="${testId}"]`)?.textContent?.replace(/\s+/g, ' ').trim() ?? null;
   const avatarImage = (): Element | null => element().querySelector('[data-testid="mentorship-profile-card-avatar"] img');
 
+  const clickConnect = (platform: 'github' | 'linkedin'): void => {
+    element().querySelector<HTMLButtonElement>(`[data-testid="mentorship-profile-card-${platform}-connect"] button`)?.click();
+  };
+
   /** Boots the card against whatever the three profile endpoints return for this spec. */
   const render = (userService: Partial<Record<keyof UserService, unknown>>): void => {
     toast = vi.fn();
+    refreshUserIdentities = vi.fn();
+    dialogClose = new Subject<unknown>();
+    openDialog = vi.fn(() => ({ onClose: dialogClose.asObservable() }));
 
     TestBed.resetTestingModule();
     TestBed.configureTestingModule({
       imports: [ProfileCardComponent],
-      providers: [provideNoopAnimations(), { provide: MessageService, useValue: { add: toast } }, { provide: UserService, useValue: userService }],
+      providers: [
+        provideNoopAnimations(),
+        { provide: MessageService, useValue: { add: toast } },
+        // Every spec's fetches run off `identitiesRefresh$`, so it belongs to the harness rather
+        // than to each fixture; a spec still overrides any of it by passing the key itself.
+        { provide: UserService, useValue: { identitiesRefresh$: new Subject<void>(), refreshUserIdentities, ...userService } },
+      ],
     });
+    TestBed.overrideProvider(DialogService, { useValue: { open: openDialog } });
 
     fixture = TestBed.createComponent(ProfileCardComponent);
     fixture.detectChanges();
@@ -94,12 +114,45 @@ describe('ProfileCardComponent', () => {
     expect(rows.map((row) => row.textContent?.replace(/\s+/g, ' ').trim())).toEqual(['ada@example.org Primary', 'ada@work.example']);
   });
 
-  it('links a connected account and leaves the unconnected one as a placeholder', () => {
+  it('links a connected account, and offers to connect the one that is missing', () => {
     const github = element().querySelector('[data-testid="mentorship-profile-card-github"] a');
 
     expect(github?.getAttribute('href')).toBe('https://github.com/ada');
     expect(github?.textContent?.trim()).toBe('github.com/ada');
-    expect(text('mentorship-profile-card-linkedin')).toBe(LFX_PROFILE_CARD_EMPTY);
+    // A placeholder here would be a dead end: connecting LinkedIn is something the mentor can do.
+    expect(text('mentorship-profile-card-linkedin')).toBe(LFX_PROFILE_CARD_CONNECT_LABEL);
+    expect(element().querySelector('[data-testid="mentorship-profile-card-github-connect"]')).toBeNull();
+  });
+
+  it('opens the Add-identity dialog in place, so the mentor keeps the form behind it', () => {
+    clickConnect('linkedin');
+
+    expect(openDialog).toHaveBeenCalledTimes(1);
+    expect(openDialog.mock.calls[0][0]).toBe(AddAccountDialogComponent);
+    // Tells the dialog GitHub is already linked in this fixture, and LinkedIn is not.
+    expect(openDialog.mock.calls[0][1]).toMatchObject({ header: 'Add identity', data: { existingProviders: ['github'] } });
+  });
+
+  it('names the platform for a screen reader, since "Connect" alone says nothing', () => {
+    const connect = element().querySelector('[data-testid="mentorship-profile-card-linkedin-connect"] button');
+
+    expect(connect?.getAttribute('aria-label')).toBe('Connect your LinkedIn account');
+  });
+
+  it('re-reads the profile once an identity is linked, rather than leaving a stale row', () => {
+    clickConnect('linkedin');
+
+    dialogClose.next({ provider: 'linkedin' });
+
+    expect(refreshUserIdentities).toHaveBeenCalledTimes(1);
+  });
+
+  it('leaves the card alone when the mentor dismisses the dialog without linking anything', () => {
+    clickConnect('linkedin');
+
+    dialogClose.next(null);
+
+    expect(refreshUserIdentities).not.toHaveBeenCalled();
   });
 
   it('opens an external profile in a new tab without leaking the referrer', () => {
@@ -165,7 +218,9 @@ describe('ProfileCardComponent', () => {
     expect(text('mentorship-profile-card-phone')).toBe('+44 20 7946 0000');
     // The signed-in address survives an email outage; the linked accounts cannot.
     expect(text('mentorship-profile-card-emails')).toBe('ada@example.org Primary');
-    expect(text('mentorship-profile-card-github')).toBe(LFX_PROFILE_CARD_EMPTY);
+    // An identities outage is indistinguishable from an unconnected account from here, so the
+    // row offers Connect either way rather than asserting the account does not exist.
+    expect(text('mentorship-profile-card-github')).toBe(LFX_PROFILE_CARD_CONNECT_LABEL);
   });
 
   it('tells the user editing is not wired up yet rather than failing silently', () => {

@@ -153,7 +153,11 @@ export class AddAccountDialogComponent {
   }
 
   private handleSocialConnect(provider: IdentityProviderOption): void {
-    // Navigate to social connect endpoint which handles the OAuth flow
-    window.location.href = `/api/profile/identities/social/connect?provider=${provider.id}`;
+    // Navigate to social connect endpoint which handles the OAuth flow. Linking is an OAuth
+    // handshake, so this leaves the page; hand the server the page we're leaving so it returns
+    // here rather than to the Identities tab, which is only one of the places this dialog opens
+    // from. The path is allowlisted server-side, and only its pathname is kept.
+    const returnTo = encodeURIComponent(window.location.pathname);
+    window.location.href = `/api/profile/identities/social/connect?provider=${provider.id}&returnTo=${returnTo}`;
   }
 }

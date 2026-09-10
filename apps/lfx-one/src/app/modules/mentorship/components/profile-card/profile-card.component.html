@@ -85,7 +85,14 @@
               {{ profile.github.label }}
             </a>
           } @else {
-            <span class="text-sm text-gray-400">{{ placeholder }}</span>
+            <!-- The row's `dt` names the platform, so the button reads "Connect"; `ariaLabel` says which. -->
+            <lfx-button
+              [label]="connectLabel"
+              size="small"
+              [link]="true"
+              (onClick)="onConnect()"
+              [ariaLabel]="'Connect your ' + labels.github + ' account'"
+              data-testid="mentorship-profile-card-github-connect" />
           }
         </dd>
       </div>
@@ -98,7 +105,13 @@
               {{ profile.linkedin.label }}
             </a>
           } @else {
-            <span class="text-sm text-gray-400">{{ placeholder }}</span>
+            <lfx-button
+              [label]="connectLabel"
+              size="small"
+              [link]="true"
+              (onClick)="onConnect()"
+              [ariaLabel]="'Connect your ' + labels.linkedin + ' account'"
+              data-testid="mentorship-profile-card-linkedin-connect" />
           }
         </dd>
       </div>
