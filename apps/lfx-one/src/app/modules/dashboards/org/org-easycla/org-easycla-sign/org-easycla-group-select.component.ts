@@ -9,10 +9,10 @@ import type {
   ClaGroupOption,
   ClaGroupSearchResponse,
   OrgClaGroupOptionView,
-  OrgClaGroupPickerResult,
   OrgClaGroupSelectDialogData,
+  OrgClaSignSelection,
 } from '@lfx-one/shared/interfaces';
-import { toClaGroupOptionView } from '@lfx-one/shared/utils';
+import { isSameClaGroup, toClaGroupOptionView } from '@lfx-one/shared/utils';
 import { OrgLensClaService } from '@services/org-lens-cla.service';
 import { DynamicDialogConfig, DynamicDialogRef } from 'primeng/dynamicdialog';
 import { catchError, debounceTime, map, of, Subject, switchMap } from 'rxjs';
@@ -25,11 +25,13 @@ import { InputTextComponent } from '@components/input-text/input-text.component'
  *
  * **A deliberate second picker, not an oversight.** The Me-lens `ClaGroupSelectComponent` was
  * considered and rejected as a base. It reads its results from `MyClasService` — a route that is
- * neither dark-launch gated for this section nor organization-scoped — and it takes the
- * contributor's own held agreements as dialog input so it can annotate rows they have already
- * signed. Neither applies here, and the annotation this picker needs is the inverse: why a row
- * *cannot* be signed corporately. Parameterising the data source, the annotation source and the
- * selectability rule would rewrite the component the Me-lens signing flow depends on, inside a
+ * neither dark-launch gated for this section nor organization-scoped — and where a contributor
+ * already holds an agreement it annotates the row and leaves it choosable, because signing the
+ * same CLA Group under a second identity is something a contributor legitimately does. Both
+ * pickers are handed the already-held agreements; they disagree about what the overlap means.
+ * Here it is a refusal, because this flow signs as one party — the selected organization — and
+ * offers no second identity to sign as. Parameterising the data source, the annotation source and
+ * the selectability rule would rewrite the component the Me-lens signing flow depends on, inside a
  * slice whose risk is already spent on a write path and legal copy.
  *
  * What is genuinely shared is shared: the debounce and minimum-term constants, and
@@ -51,6 +53,9 @@ export class OrgEasyclaGroupSelectComponent {
   private readonly config = inject<DynamicDialogConfig<OrgClaGroupSelectDialogData>>(DynamicDialogConfig);
 
   private readonly orgUid = this.config.data?.orgUid ?? '';
+
+  /** The organization's corporate CLAs, against which a search hit is refused as already signed. */
+  private readonly heldClaGroups = this.config.data?.claGroups ?? [];
 
   protected readonly copy = CCLA_SIGN_COPY.picker;
   protected readonly minChars = CLA_GROUP_SEARCH_MIN_CHARS;
@@ -257,10 +262,14 @@ export class OrgEasyclaGroupSelectComponent {
     // being asserted is the key of a request that creates a legal document.
     if (!option?.projectSfid) return;
 
-    const result: OrgClaGroupPickerResult = {
+    const result: OrgClaSignSelection = {
       claGroupId: option.claGroupId,
       projectSfid: option.projectSfid,
       projectName: option.primaryName,
+      // The CLA Group's own name where search gave one, and the primary line otherwise — the project
+      // name, or the unnamed literal when search could name neither. The preview page heads itself
+      // with this and cannot look it up again, so it must never come through blank.
+      claGroupName: option.claGroupName || option.primaryName,
     };
     this.ref.close(result);
   }
@@ -306,12 +315,29 @@ export class OrgEasyclaGroupSelectComponent {
    * A row that cannot be signed stays on screen with its reason, rather than being filtered out.
    *
    * Dropping it would leave a viewer searching repeatedly for a CLA Group they can see in the
-   * legacy console, with nothing to explain the absence. Leaving it selectable would send a
-   * request that is certain to fail.
+   * legacy console, with nothing to explain the absence. Leaving it selectable would carry the
+   * viewer into a preview that states something untrue about the agreement, and from there into a
+   * request that either fails or duplicates one the organization already has.
    */
   private toOrgOptionView(option: ClaGroupOption): OrgClaGroupOptionView {
     const view = toClaGroupOptionView(option);
 
+    // Ahead of the two below because it is the more useful answer where both apply: a CLA Group
+    // signed through the legacy console can still be one this flow could not have signed itself.
+    //
+    // Matched canonically, not with `===`. EasyCLA accepts hyphenated, unhyphenated and mixed-case
+    // spellings of the same UUID, so a raw string compare silently misses real matches — and a
+    // missed match here is the failure this check exists to prevent.
+    //
+    // The refusal is narrower than it looks. The upstream grain is (signing entity x CLA Group), so
+    // an organization can legitimately hold two rows for one CLA Group under different signing
+    // entities, and signing this group again for a *different* legal entity would be a real flow.
+    // It is safe to refuse today only because this flow always signs for the selected organization
+    // — `company_sfid` is the grant-checked `orgUid` — and offers no signing-entity choice. The day
+    // it does, this becomes a check on the entity rather than on the group.
+    if (this.heldClaGroups.some((held) => isSameClaGroup(held.claGroupId, option.claGroupId))) {
+      return { ...view, disabledReason: this.copy.alreadySignedDisabledReason };
+    }
     if (!option.projectSfid) {
       return { ...view, disabledReason: this.copy.multiProjectDisabledReason };
     }

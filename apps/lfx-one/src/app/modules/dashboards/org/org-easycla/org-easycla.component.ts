@@ -6,8 +6,14 @@ import { ChangeDetectionStrategy, Component, computed, DestroyRef, inject, PLATF
 import { takeUntilDestroyed, toObservable, toSignal } from '@angular/core/rxjs-interop';
 import { FormControl, FormGroup } from '@angular/forms';
 import { ActivatedRoute, Router, RouterLink } from '@angular/router';
-import { CCLA_SIGN_COPY, ORG_EASYCLA_RETURN_ORG_PARAM } from '@lfx-one/shared/constants';
-import type { Account, OrgClaGroup, OrgClaGroupList, OrgClaGroupPickerResult, OrgClaSignAttestations } from '@lfx-one/shared/interfaces';
+import {
+  CCLA_SIGN_COPY,
+  ORG_CLA_SIGN_SELECTION_STATE,
+  ORG_EASYCLA_NEW_SEGMENT,
+  ORG_EASYCLA_PATH,
+  ORG_EASYCLA_RETURN_ORG_PARAM,
+} from '@lfx-one/shared/constants';
+import type { Account, OrgClaGroup, OrgClaGroupList, OrgClaSignSelection } from '@lfx-one/shared/interfaces';
 import { orgClaOpenLabel } from '@lfx-one/shared/utils';
 import { DialogService, DynamicDialogRef } from 'primeng/dynamicdialog';
 import { SkeletonModule } from 'primeng/skeleton';
@@ -22,12 +28,11 @@ import { OrgRoleGrantsService } from '@services/org-role-grants.service';
 import { PersonaService } from '@services/persona.service';
 import { OpenIntercomDirective } from '@shared/directives/open-intercom.directive';
 import { OrgNavigationService } from '@shared/services/org-navigation.service';
+import { takeStashedSignedSignatureId } from '@shared/utils/org-cla-signed-signature.util';
 
 import { OrgEasyclaCardComponent } from './org-easycla-card/org-easycla-card.component';
 import { orgClaCoverageDialogConfig, OrgEasyclaCoverageDialogComponent } from './org-easycla-coverage-dialog/org-easycla-coverage-dialog.component';
-import { OrgEasyclaAttestationComponent } from './org-easycla-sign/org-easycla-attestation.component';
 import { OrgEasyclaGroupSelectComponent } from './org-easycla-sign/org-easycla-group-select.component';
-import { OrgEasyclaSignHandoffComponent } from './org-easycla-sign/org-easycla-sign-handoff.component';
 
 @Component({
   selector: 'lfx-org-easycla',
@@ -55,11 +60,14 @@ export class OrgEasyclaComponent {
   protected readonly signingOpen = signal(false);
 
   /**
-   * Whichever signing dialog is open before a signature has been asked for — the picker, then the
-   * attestation. Held so an organization switch can close it; see `abandonUncommittedSigning`.
-   * Never holds the hand-off, which is why the field is named for the uncommitted half.
+   * The CLA Group picker, while it is open. Held so an organization switch can close it; see
+   * `abandonOpenPicker`.
+   *
+   * The only signing dialog this page owns. The steps that follow — the attestation and the
+   * hand-off — belong to the preview page the picker navigates to, which names the agreement they
+   * are about.
    */
-  private uncommittedSigningDialog: DynamicDialogRef | null = null;
+  private openPickerDialog: DynamicDialogRef | null = null;
 
   // ── Search (client-side; the upstream list takes no search parameter) ──────
   protected readonly orgClaOpenLabel = orgClaOpenLabel;
@@ -227,9 +235,10 @@ export class OrgEasyclaComponent {
 
     // Separate from the reset above because it listens on the unfiltered stream: a cleared
     // selection has no list to re-filter but does have a signing flow to abandon.
-    this.orgChanged$.pipe(takeUntilDestroyed()).subscribe(() => this.abandonUncommittedSigning());
+    this.orgChanged$.pipe(takeUntilDestroyed()).subscribe(() => this.abandonOpenPicker());
 
     this.adoptOrganizationFromReturnAddress();
+    this.landOnSignedAgreement();
   }
 
   protected changePage(delta: number): void {
@@ -248,14 +257,13 @@ export class OrgEasyclaComponent {
   }
 
   /**
-   * Starts the corporate signing flow (#1983): pick a CLA Group, confirm authorization and export
-   * compliance, then hand off.
+   * Starts the corporate signing flow (#1983): pick a CLA Group, then hand that choice to the
+   * preview page, where the signatory reads what they are about to sign.
    *
-   * Three dialogs in sequence rather than one stepped component, matching the Me-lens hand-off:
-   * each step closes with what the next one needs, so no step can read a value another step was
-   * responsible for collecting. In particular the attestation dialog closes with the two
-   * confirmations themselves, and this method passes them straight through — it never
-   * reconstructs them from the fact that the dialog closed with something.
+   * This page stops at the picker. The attestation and the hand-off follow on the preview page,
+   * which is the arrangement the M3 prototype draws and also the one that puts the two legally
+   * operative steps — the confirmations, and the request that opens a real envelope — on a page
+   * that names the agreement they apply to rather than in a dialog stack over a list.
    */
   protected startSigning(): void {
     const orgUid = this.accountContext.selectedAccount()?.uid;
@@ -263,6 +271,16 @@ export class OrgEasyclaComponent {
     if (!orgUid || this.signingOpen()) return;
 
     this.signingOpen.set(true);
+
+    // The agreements this organization already holds, so the picker can refuse a CLA Group it has
+    // one for. Handed down rather than fetched: this page has the list, and a second request would
+    // be a second answer to the same question.
+    //
+    // Keyed on the `orgUid` the server echoed, not on the response merely being present. A response
+    // that belongs to the organization the viewer just left would refuse rows this organization has
+    // never signed, and an empty list is the safe reading of "not known yet".
+    const claData = this.claData();
+    const claGroups = claData?.orgUid === orgUid ? claData.claGroups : [];
 
     const pickerRef = this.dialogService.open(OrgEasyclaGroupSelectComponent, {
       header: CCLA_SIGN_COPY.picker.header,
@@ -273,35 +291,52 @@ export class OrgEasyclaComponent {
       modal: true,
       closable: true,
       dismissableMask: true,
-      data: { orgUid },
+      data: { orgUid, claGroups },
     }) as DynamicDialogRef;
 
-    this.uncommittedSigningDialog = pickerRef;
+    this.openPickerDialog = pickerRef;
 
-    this.whenSigningDialogEnds(pickerRef, (chosen: OrgClaGroupPickerResult) => {
-      // The choice comes from `onClose`, which carries it; the next dialog waits for teardown.
+    this.whenSigningDialogEnds(pickerRef, (chosen: OrgClaSignSelection) => {
+      // The choice comes from `onClose`, which carries it; the navigation waits for teardown.
       // `signingOpen` stays true across that gap, so the control cannot start a second flow in it.
-      this.afterDialogTornDown(pickerRef, () => this.confirmThenHandOff(orgUid, chosen));
+      this.afterDialogTornDown(pickerRef, () => this.openPreview(chosen));
     });
   }
 
   /**
-   * Closes a signing flow that has not yet asked for a signature, on an organization switch.
+   * Closes the CLA Group picker on an organization switch.
    *
-   * `orgUid` is read once when the flow starts and threaded through all three dialogs, and
-   * switching organizations does not destroy this component — it re-drives the list fetch. So
-   * without this, the picker and the attestation dialog stay open over a page that has moved on,
-   * still carrying the organization the viewer left, and confirming would open a signing session
-   * against that company's legal position. This is the download path's stale-response failure on
-   * the detail page, arriving at a legal agreement instead of a PDF.
+   * The picker is opened for one organization — `orgUid` is read once when the flow starts and
+   * handed to it as dialog data — and switching organizations does not destroy this component; it
+   * re-drives the list fetch. So without this the picker stays open over a page that has moved on,
+   * still listing the previous organization's CLA Groups, and choosing one would carry that company
+   * into a signing session. This is the download path's stale-response failure on the detail page,
+   * arriving at a legal agreement instead of a PDF.
    *
-   * Only the two dialogs before the request is issued. The hand-off is deliberately left alone:
-   * by the time it is open a signing session exists for the organization that was selected when
-   * the viewer confirmed, which is the one they meant, and the address it returns is the only
-   * thing that reaches them. Closing it on a switch would orphan an envelope to save nothing.
+   * The steps that can actually create something are past the navigation and are not this page's to
+   * close: the preview page leaves for the list on a switch of its own accord, and the hand-off is
+   * deliberately left standing once a session exists behind it.
    */
-  private abandonUncommittedSigning(): void {
-    this.uncommittedSigningDialog?.close();
+  private abandonOpenPicker(): void {
+    this.openPickerDialog?.close();
+  }
+
+  /**
+   * Hands the chosen CLA Group to the preview page.
+   *
+   * The choice travels in the navigation's state rather than the address. The CLA service exposes
+   * no fetch-a-CLA-group-by-id endpoint, so ids in a URL could not be resolved back into the
+   * agreement the preview has to name — the display names would have to ride along in the URL too,
+   * leaving that page to render its heading from text taken out of the address.
+   */
+  private openPreview(selection: OrgClaSignSelection): void {
+    void this.router
+      .navigate([ORG_EASYCLA_PATH, ORG_EASYCLA_NEW_SEGMENT], { state: { [ORG_CLA_SIGN_SELECTION_STATE]: selection } })
+      // Released at the navigation rather than at the dialog's close, so the control stays disabled
+      // across the teardown gap and a navigation that never lands — refused by a guard, or
+      // superseded by another — cannot leave Sign CLA disabled until a reload. On the ordinary path
+      // this page is already gone by the time this runs.
+      .finally(() => this.signingOpen.set(false));
   }
 
   /**
@@ -320,49 +355,6 @@ export class OrgEasyclaComponent {
     dialogRef.onDestroy.pipe(take(1), takeUntilDestroyed(this.destroyRef)).subscribe(() => next());
   }
 
-  private confirmThenHandOff(orgUid: string, chosen: OrgClaGroupPickerResult): void {
-    const attestationRef = this.dialogService.open(OrgEasyclaAttestationComponent, {
-      header: CCLA_SIGN_COPY.attestation.header,
-      width: '42rem',
-      // The Aura dialog preset caps nothing, so a fixed width alone runs off a 360-390px phone,
-      // taking the controls at its edges with it. Same cap the sibling coverage dialog documents.
-      style: { maxWidth: '90vw' },
-      modal: true,
-      closable: true,
-      dismissableMask: true,
-    }) as DynamicDialogRef;
-
-    this.uncommittedSigningDialog = attestationRef;
-
-    this.whenSigningDialogEnds(attestationRef, (attestations: OrgClaSignAttestations) => {
-      this.afterDialogTornDown(attestationRef, () => this.openHandOff(orgUid, chosen, attestations));
-    });
-  }
-
-  /** The last step, opened only once the attestation dialog has finished tearing down. */
-  private openHandOff(orgUid: string, chosen: OrgClaGroupPickerResult, attestations: OrgClaSignAttestations): void {
-    const handoffRef = this.dialogService.open(OrgEasyclaSignHandoffComponent, {
-      // Opened locked, and the component unlocks it — including this header, which it keeps in
-      // step with the state it is showing. A real signing session is opened behind this dialog
-      // as it appears, and the address it returns is the only thing that reaches the signatory:
-      // dismissing it before then, by mask, header control or Escape, leaves an envelope that
-      // exists and that nobody was handed. These three are the initial values only.
-      header: CCLA_SIGN_COPY.preparing.header,
-      width: '40rem',
-      // The Aura dialog preset caps nothing, so a fixed width alone runs off a 360-390px phone,
-      // taking the controls at its edges with it. Same cap the sibling coverage dialog documents.
-      style: { maxWidth: '90vw' },
-      modal: true,
-      closable: false,
-      closeOnEscape: false,
-      dismissableMask: false,
-      data: { orgUid, projectSfid: chosen.projectSfid, claGroupId: chosen.claGroupId, attestations },
-    }) as DynamicDialogRef;
-
-    // No successor, so any teardown — `close()` or PrimeNG's header/Escape `destroy()` — releases.
-    this.whenSigningDialogEnds(handoffRef);
-  }
-
   /**
    * Releases Sign CLA when a dialog ends, unless `onAdvance` is taking the lock to the next step.
    *
@@ -374,7 +366,7 @@ export class OrgEasyclaComponent {
     let handedOff = false;
 
     dialogRef.onClose.pipe(takeUntilDestroyed(this.destroyRef)).subscribe((value: T | null | undefined) => {
-      if (this.uncommittedSigningDialog === dialogRef) this.uncommittedSigningDialog = null;
+      if (this.openPickerDialog === dialogRef) this.openPickerDialog = null;
       if (value && onAdvance) {
         handedOff = true;
         onAdvance(value);
@@ -425,6 +417,13 @@ export class OrgEasyclaComponent {
         // missing rather than leaving the next reload to fall back all over again.
         if (match) this.accountContext.setAccount(match);
 
+        // Not once the signatory is already on their signed agreement. `landOnSignedAgreement`
+        // races this — it waits on the CLA list where this waits on the authorized accounts, and
+        // either can settle first — and the address it leaves for carries no parameter to strip.
+        // The navigation below is relative to this route, so arriving second it would take them
+        // straight back off the agreement they had just been landed on.
+        if (this.router.url.startsWith(`${ORG_EASYCLA_PATH}/`)) return;
+
         // Stripped whether or not it matched. Left in place it would pin a stale organization on
         // reload and on any copied link, and would contradict the viewer the moment they switch.
         void this.router.navigate([], {
@@ -433,6 +432,54 @@ export class OrgEasyclaComponent {
           queryParamsHandling: 'merge',
           replaceUrl: true,
         });
+      });
+  }
+
+  /**
+   * Lands the signatory on the agreement they just signed, instead of the list they left.
+   *
+   * The return address cannot name it: `return_url` is an *input* to the upstream signing request
+   * and so is fixed before a signature exists, while the signature id only comes back on the
+   * response. The client carries it across the trip in `sessionStorage`, and this spends it.
+   *
+   * Three conditions, each of which is a way of not being wrong:
+   *
+   * - **Only when the return parameter is present**, so an abandoned ceremony followed by an
+   *   ordinary visit to the list does not teleport the viewer into a detail page. The stash is
+   *   spent either way, which is what makes it single-use whichever visit finds it.
+   * - **Only once the named organization's own list has landed.** Whichever organization was
+   *   selected at boot settles first and cannot contain the new agreement, so a decision taken
+   *   against that list would spend the trip on a row that was never going to be in it.
+   * - **Only if the row is actually there.** EasyCLA may not have finished processing the DocuSign
+   *   callback by the time the signatory is back, and navigating blind would land them on "This CLA
+   *   was not found" — strictly worse than the list, which shows the agreement once it appears.
+   *
+   * Matching the row by the CLA Group instead would need none of the stash, and is not equivalent:
+   * the upstream grain is (signing entity x CLA Group), so one organization can hold two rows for
+   * the same CLA Group, and the match is ambiguous exactly where it matters.
+   */
+  private landOnSignedAgreement(): void {
+    // Same browser-only boundary the return-address adoption above documents: `sessionStorage` is
+    // one, and the navigation below is the other.
+    if (!isPlatformBrowser(this.platformId)) return;
+
+    const signatureId = takeStashedSignedSignatureId();
+    const named = this.route.snapshot.queryParamMap.get(ORG_EASYCLA_RETURN_ORG_PARAM);
+    if (!signatureId || !named) return;
+
+    toObservable(this.claData)
+      .pipe(
+        filter((data): data is OrgClaGroupList => data?.orgUid === named),
+        take(1),
+        takeUntilDestroyed(this.destroyRef)
+      )
+      .subscribe((data) => {
+        if (!data.claGroups.some((group) => group.id === signatureId)) return;
+
+        // Replaces rather than pushes: the address being left behind is the return address, and an
+        // entry for it in the viewer's history is one Back re-enters, spending nothing and stripping
+        // a parameter all over again.
+        void this.router.navigate([ORG_EASYCLA_PATH, signatureId], { replaceUrl: true });
       });
   }
 

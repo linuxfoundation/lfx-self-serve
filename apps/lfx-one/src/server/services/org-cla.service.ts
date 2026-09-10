@@ -66,8 +66,8 @@ const SERVICE = 'org_cla_service';
  * status. `status` remains the single slot the template reads, because sanctions outrank
  * signing there and a consumer forming its own opinion from the two booleans would present a
  * sanctioned entity's agreement as ordinarily signed. What `status` cannot answer is whether a
- * document exists to fetch, since a `sanctioned` row may be signed or unsigned, and that is the
- * one question `signed` is here for.
+ * document exists to fetch, since `sanctioned` describes the entity and not the agreement, and
+ * that is the one question `signed` is here for.
  */
 function toOrgClaGroup(entry: EasyClaCompanyClaGroup & { signatureID: string }, companyName: string): OrgClaGroup {
   const projects: OrgClaGroupProject[] = (entry.projects ?? [])
@@ -126,15 +126,18 @@ function toOrgClaGroup(entry: EasyClaCompanyClaGroup & { signatureID: string }, 
  * sanctioned entity's agreement as ordinarily signed is the more damaging of the two errors
  * available here.
  *
- * An unsigned agreement is a real case, and it is read from the flag rather than assumed
- * away. The producer sets each row's signed flag from the signature it was built from, and
- * its own tests pin a returned row whose flag is false, so the list is not exclusively
- * signed agreements. Defaulting to `signed` would state that an organization has signed
- * something it has not — the same class of false claim the precedence above avoids, and the
- * reason the flag is checked explicitly rather than treated as always true.
+ * `not-started` cannot come out of this endpoint. Upstream builds every row from a CCLA
+ * signature and copies that signature's own signed flag onto it, and the query it draws those
+ * signatures from appends `signature_signed == true` to its filter unconditionally, with no
+ * parameter to bypass it. So `entry.signed` is true on every row the list returns, and the two
+ * statuses reachable from here are `signed` and `sanctioned`.
  *
- * Sanctions still win over an unsigned agreement, for the same reason they win over a signed
- * one: the sanctions fact is the one a viewer must not miss.
+ * The branch stays, and is read from the flag rather than assumed away, because the status type
+ * is not this endpoint's alone: the pre-signing preview builds an `OrgClaGroup` for an agreement
+ * nobody has signed, and `not-started` is the whole of what that page renders. Defaulting to
+ * `signed` here would additionally mean that the day upstream relaxes that filter, the list
+ * states an organization has signed something it has not — the same class of false claim the
+ * precedence above avoids.
  */
 function toStatus(entry: EasyClaCompanyClaGroup): OrgClaGroupStatus {
   if (entry.sanctioned === true) return 'sanctioned';
@@ -237,10 +240,11 @@ export class OrgClaService {
       return null;
     }
 
-    // Membership is not signedness. A sanctioned row may be unsigned, and upstream presigns the
-    // expected S3 key without checking that anything was ever written there — so calling it for
-    // an unsigned agreement hands back a URL to a document that does not exist. Absent is the
-    // honest answer, and it is the one the caller already handles.
+    // Membership is not signedness, and this checks rather than assumes. Upstream's list filters
+    // to signed signatures, so no row reaching here should fail this — but the document endpoint
+    // presigns the expected S3 key without checking that anything was ever written there, so if
+    // that ever stopped holding the caller would get a URL to a file that does not exist rather
+    // than an error. Absent is the honest answer, and it is the one the caller already handles.
     if (!match.signed) {
       logger.warning(req, 'org_cla_get_pdf_url', 'agreement is not signed, so no document exists', { org_uid: orgUid, signature_id: signatureId });
       return null;
@@ -508,11 +512,13 @@ export class OrgClaService {
     }
 
     // A corporate agreement was just opened — the notable business event on this path, and the only
-    // record tying this request to the signature it created. The signature id is logged for that
-    // correlation and deliberately not returned: nothing on the client reads it, and it identifies
-    // a named person's agreement.
+    // record tying this request to the signature it created.
     logger.info(req, 'org_cla_request_corporate_signature', 'opened a corporate signing session', { org_uid: orgUid, signature_id: signatureId });
 
-    return { signUrl };
+    // The signature id goes back with the address because the address cannot carry it: `return_url`
+    // is an input to the request above and is therefore fixed before a signature exists, so the
+    // client is the only place the two are ever held together — and landing the signatory back on
+    // the agreement they signed needs both.
+    return { signUrl, signatureId };
   }
 }

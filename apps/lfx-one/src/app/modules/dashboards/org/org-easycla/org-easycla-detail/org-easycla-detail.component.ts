@@ -4,7 +4,7 @@
 import { isPlatformBrowser } from '@angular/common';
 import { ChangeDetectionStrategy, Component, computed, DestroyRef, inject, PLATFORM_ID, signal, Signal } from '@angular/core';
 import { takeUntilDestroyed, toObservable, toSignal } from '@angular/core/rxjs-interop';
-import { ActivatedRoute } from '@angular/router';
+import { ActivatedRoute, Router } from '@angular/router';
 import { HttpErrorResponse } from '@angular/common/http';
 import type {
   OrgClaCoverageChip,
@@ -14,10 +14,20 @@ import type {
   OrgClaGroupList,
   OrgClaGroupPickerResult,
   OrgClaSignAttestations,
+  OrgClaSignSelection,
   OrgClaStatusDisplay,
 } from '@lfx-one/shared/interfaces';
-import { CCLA_SIGN_COPY, ORG_CLA_DETAIL_TABS, ORG_CLA_HEADING_STATUS, ORG_CLA_NOT_STARTED_COPY, ORG_CLA_STATUS_DISPLAY } from '@lfx-one/shared/constants';
-import { downloadFromUrl, formatClaSignedOnInstant, orgClaCoverageChips, orgClaCoverageSummary } from '@lfx-one/shared/utils';
+import {
+  CCLA_SIGN_COPY,
+  ORG_CLA_DETAIL_TABS,
+  ORG_CLA_HEADING_STATUS,
+  ORG_CLA_LOCKED_TAB_COPY,
+  ORG_CLA_NOT_STARTED_COPY,
+  ORG_CLA_SIGN_SELECTION_STATE,
+  ORG_CLA_STATUS_DISPLAY,
+  ORG_EASYCLA_PATH,
+} from '@lfx-one/shared/constants';
+import { downloadFromUrl, formatClaSignedOnInstant, orgClaCoverageChips, orgClaCoverageSummary, orgClaPreviewGroup } from '@lfx-one/shared/utils';
 import { MenuItem, MessageService } from 'primeng/api';
 import { DialogService, DynamicDialogRef } from 'primeng/dynamicdialog';
 import { SkeletonModule } from 'primeng/skeleton';
@@ -48,6 +58,7 @@ import { OrgEasyclaSignHandoffComponent } from '../org-easycla-sign/org-easycla-
 })
 export class OrgEasyclaDetailComponent {
   private readonly route = inject(ActivatedRoute);
+  private readonly router = inject(Router);
   private readonly accountContext = inject(AccountContextService);
   private readonly orgRoleGrantsService = inject(OrgRoleGrantsService);
   private readonly personaService = inject(PersonaService);
@@ -92,6 +103,22 @@ export class OrgEasyclaDetailComponent {
     { initialValue: (this.route.snapshot.paramMap.get('signatureId') ?? '').trim() }
   );
 
+  /**
+   * The CLA Group the picker chose, when this page was opened as the preview a signatory reads
+   * before starting a corporate CLA (#1983). Null on an ordinary agreement route, and on the server.
+   *
+   * Carried by the navigation rather than by the address because an address holds nothing that
+   * could be resolved: the CLA service exposes no fetch-a-CLA-group-by-id endpoint, so ids in the
+   * URL could not be turned back into the agreement this page has to name, and the names would
+   * have to ride along in the URL for the heading to render at all. Angular copies the non-router
+   * keys of a restored `history.state` onto the navigation it synthesises, so in-app back and
+   * forward arrive here with the choice still attached.
+   */
+  private readonly previewSelection: OrgClaSignSelection | null = this.readPreviewSelection();
+
+  /** Previewing an agreement nobody has signed, so there is no list row to find and none is fetched. */
+  private readonly previewing = !!this.previewSelection;
+
   // Every selection the viewer makes, including clearing it.
   private readonly selectedOrgUid$ = toObservable(computed(() => this.accountContext.selectedAccount()?.uid)).pipe(distinctUntilChanged());
 
@@ -123,8 +150,12 @@ export class OrgEasyclaDetailComponent {
     return !data || data.orgUid === this.accountContext.selectedAccount()?.uid;
   });
 
+  // `previewing` first: no list is requested in that mode, so `claData()` stays undefined for the
+  // life of the page and every other term here would hold the skeleton over a page that has
+  // everything it needs.
   protected readonly claLoading = computed(
-    () => this.hasCompany() && (this.claData() === undefined || this.claLoadingState() || !this.claDataIsForSelectedOrg()) && !this.fetchError()
+    () =>
+      !this.previewing && this.hasCompany() && (this.claData() === undefined || this.claLoadingState() || !this.claDataIsForSelectedOrg()) && !this.fetchError()
   );
 
   protected readonly claGroup: Signal<OrgClaGroup | undefined> = computed(() => this.initClaGroup());
@@ -139,9 +170,10 @@ export class OrgEasyclaDetailComponent {
 
   protected readonly coverageHint = computed(() => this.initCoverageHint());
 
-  // Read from `signed` rather than the status: sanctions win the single status slot, so a
-  // `sanctioned` row may be signed or unsigned, and offering the document on an unsigned one
-  // gives the viewer a control that can only fail.
+  // Read from `signed` rather than the status, because this component serves two sources and only
+  // the flag answers both: the preview builds an agreement nobody has signed, and `status` there
+  // is `not-started` while on a sanctioned list row it says nothing about whether a document
+  // exists. Offering the download on an agreement without one is a control that can only fail.
   protected readonly canDownload = computed(() => this.claGroup()?.signed === true);
 
   protected readonly notStartedCopy = ORG_CLA_NOT_STARTED_COPY;
@@ -198,10 +230,26 @@ export class OrgEasyclaDetailComponent {
 
   protected readonly tabs = computed(() => this.initTabs());
 
+  protected readonly lockedTab = computed(() => this.initLockedTab());
+
   public constructor() {
     // Switching organizations does not destroy this component — it re-drives the list fetch — so
     // without this the attestation stays open over a page that has moved on.
-    this.selectedOrgUid$.pipe(skip(1), takeUntilDestroyed(this.destroyRef)).subscribe(() => this.uncommittedSigningDialog?.close());
+    this.selectedOrgUid$.pipe(skip(1), takeUntilDestroyed(this.destroyRef)).subscribe(() => {
+      this.uncommittedSigningDialog?.close();
+
+      // On the preview the switch invalidates the page and not merely an open dialog. The choice
+      // was made under the organization the viewer has just left, and Start would open a session
+      // against the one they arrived at; nothing here can be re-derived for it either, since the
+      // CLA Group named may not be one the new organization can sign. So the page leaves rather
+      // than re-render itself under a company the choice was never about.
+      if (this.previewing) this.leaveForList();
+    });
+
+    // A pasted or bookmarked preview address, or one whose selection did not survive the trip.
+    // Nothing can be rehydrated — see `previewSelection` — and the list is where the picker lives,
+    // so this is a redirect rather than an empty state offering to start again.
+    if (isPlatformBrowser(this.platformId) && !this.previewing && !this.signatureId()) this.leaveForList();
   }
 
   protected selectTab(tab: OrgClaDetailTab): void {
@@ -353,6 +401,9 @@ export class OrgEasyclaDetailComponent {
   }
 
   private initClaGroup(): OrgClaGroup | undefined {
+    // The preview's agreement does not exist yet, so there is no row keyed by signature id to find.
+    if (this.previewSelection) return orgClaPreviewGroup(this.previewSelection);
+
     const id = this.signatureId();
     if (!id) return undefined;
     return this.claData()?.claGroups.find((group) => group.id === id);
@@ -421,14 +472,61 @@ export class OrgEasyclaDetailComponent {
     return ORG_CLA_DETAIL_TABS.map((tab) => ({ ...tab, badge: this.tabBadge(tab.id) }));
   }
 
+  /**
+   * Why the open tab holds nothing, when signing is what would fill it. Null on every other tab
+   * and on a signed agreement, where the panel is simply unbuilt.
+   *
+   * Read from `signed` rather than the status, as `canDownload` is and for the same reason:
+   * sanctions occupy the single status slot, so a `sanctioned` agreement may be signed — and its
+   * CLA Managers are real people who would be told they do not exist yet.
+   */
+  private initLockedTab(): { title: string; subtitle: string } | null {
+    const group = this.claGroup();
+    if (!group || group.signed) return null;
+    return ORG_CLA_LOCKED_TAB_COPY[this.activeTab()] ?? null;
+  }
+
   private tabBadge(tab: OrgClaDetailTab): string {
     if (tab === 'managers') return this.managersBadge();
     if (tab === 'approval') return this.approvalBadge();
     return '';
   }
 
+  /**
+   * The picker's choice, validated, or null when this is not the preview route.
+   *
+   * Validated rather than trusted: the value comes back out of a history entry, so it can be a
+   * shape written by an earlier deployment or one truncated on the way. Left unchecked, a partial
+   * selection would head the page with an undefined name — and it would still offer Start, because
+   * a missing project SFID only disables signing once something reads it.
+   */
+  private readPreviewSelection(): OrgClaSignSelection | null {
+    if (!isPlatformBrowser(this.platformId)) return null;
+
+    const state = this.router.getCurrentNavigation()?.extras?.state;
+    const selection = state?.[ORG_CLA_SIGN_SELECTION_STATE] as OrgClaSignSelection | undefined;
+    if (!selection?.claGroupId || !selection.claGroupName || !selection.projectSfid || !selection.projectName) return null;
+
+    return selection;
+  }
+
+  /**
+   * Leaves the preview for the list, replacing the address rather than pushing over it.
+   *
+   * Replacing is what actually closes the page: the choice lives in the history entry, so an entry
+   * left behind is one Back re-renders — under whichever organization is selected by then, which on
+   * the organization-switch path is precisely the wrong one.
+   */
+  private leaveForList(): void {
+    void this.router.navigate([ORG_EASYCLA_PATH], { replaceUrl: true });
+  }
+
   private initClaData(): Signal<OrgClaGroupList | null | undefined> {
-    if (!isPlatformBrowser(this.platformId)) {
+    // Not requested while previewing: `claGroup` comes from the selection, so the response would be
+    // fetched and never read. That absence is also what keeps `notFound` and `fetchError` off this
+    // page — neither can be reached without a list in hand — and `notFound` firing over a preview
+    // would tell a signatory the agreement they are about to sign does not exist.
+    if (this.previewing || !isPlatformBrowser(this.platformId)) {
       return signal<OrgClaGroupList | null | undefined>(undefined);
     }
 

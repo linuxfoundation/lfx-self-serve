@@ -661,11 +661,16 @@ export interface OrgClaGroup {
   /**
    * Whether a signed CCLA actually exists, taken from upstream's own flag.
    *
-   * Deliberately separate from `status`, which cannot answer this: sanctions win the single
-   * status slot, so a `sanctioned` row may be signed or unsigned. Anything deciding whether
-   * there is a document to fetch must read this rather than infer from the status, and
-   * `signedOn` is not a stand-in either — it is additionally conditional on upstream sending
-   * a date, so a signed agreement can carry no date and still have a document.
+   * Deliberately separate from `status`, which asks a different question: `status` collapses a
+   * fact about the entity (sanctions) and a fact about the agreement (signing) into one slot, so
+   * `status !== 'signed'` cannot be read as "there is no document".
+   *
+   * The list endpoint cannot currently produce a row where the two disagree — it builds every row
+   * from a signature its own query has already filtered to signed — but this shape is not the
+   * list's alone. The pre-signing preview constructs one for an agreement nobody has signed, and
+   * the detail page's download gate serves both sources from this field. `signedOn` is not a
+   * stand-in for it either: that field is additionally conditional on upstream sending a date, so
+   * a signed agreement can carry no date and still have a document.
    */
   signed: boolean;
   status: OrgClaGroupStatus;
@@ -755,10 +760,14 @@ export interface OrgClaSignRequest {
 /**
  * The signing session EasyCLA opened, as the client consumes it (#1983).
  *
- * Deliberately just the address. Upstream also returns the signature, CLA group, project and
- * company identifiers, and none of them has a consumer here — the hand-off navigates and the
- * page is replaced. The signature id in particular is a pointer to a named person's agreement,
- * so shipping it to the browser unread would be handing out a reference for nothing.
+ * The address and the signature it belongs to, and nothing else. Upstream also returns the CLA
+ * group, project and company identifiers, none of which has a consumer here — the hand-off
+ * navigates and the page is replaced.
+ *
+ * The signature id is carried because the return address cannot name it. `return_url` is an
+ * *input* to the upstream request, fixed before a signature exists, so the only place the id and
+ * the address are ever held together is this response — and landing the signatory back on the
+ * agreement they just signed needs both.
  */
 export interface OrgClaSignResponse {
   /**
@@ -769,6 +778,14 @@ export interface OrgClaSignResponse {
    * a state to render.
    */
   signUrl: string;
+  /**
+   * The corporate signature this session will complete — the id that keys its row on the
+   * organization's CLA list, so the return can land on that agreement.
+   *
+   * A pointer to a named organization's agreement, and held accordingly: the client stashes it
+   * for the length of the round trip, spends it once, and never puts it in an address.
+   */
+  signatureId: string;
 }
 
 /**
@@ -785,6 +802,15 @@ export interface OrgClaSignAttestations {
 /** What the Org Lens CLA group picker is given. */
 export interface OrgClaGroupSelectDialogData {
   orgUid: string;
+  /**
+   * The organization's corporate CLAs, so the picker can refuse a CLA Group it already holds one
+   * for. The list is the one already loaded on the CLAs page the picker opens over — it is handed
+   * down rather than fetched again, mirroring `ClaGroupSelectDialogData`.
+   *
+   * Empty is a safe value and is what the page passes when its response belongs to a different
+   * organization: no row is refused, which is the behaviour before this check existed.
+   */
+  claGroups: OrgClaGroup[];
 }
 
 /** What the Org Lens CLA group picker closes with. */
@@ -792,6 +818,23 @@ export interface OrgClaGroupPickerResult {
   claGroupId: string;
   projectSfid: string;
   projectName: string;
+}
+
+/**
+ * The chosen CLA Group as it travels from the picker to the pre-signing preview page (#1983).
+ *
+ * A superset of what the signing request needs, because the preview has to *name* the agreement
+ * as well as key it. Nothing on the receiving page can look these names up: the CLA service has
+ * no fetch-a-CLA-group-by-id endpoint, so a page handed only ids could render a heading for an
+ * agreement it cannot describe.
+ */
+export interface OrgClaSignSelection extends OrgClaGroupPickerResult {
+  /**
+   * The CLA Group's own name, which the preview heads the page with — distinct from
+   * `projectName`, the covered project the corporate signature is keyed on. The two differ
+   * routinely ("Cascade CLA" over "Cascade"), and search names them separately.
+   */
+  claGroupName: string;
 }
 
 /**

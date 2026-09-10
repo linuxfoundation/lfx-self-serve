@@ -292,9 +292,10 @@ describe('OrgClaService.listClaGroups — status', () => {
     expect(row.status).toBe('signed');
   });
 
-  // The producer passes the signature's own signed flag through and its tests pin a returned
-  // row whose flag is false, so this list is not exclusively signed agreements. Calling one
-  // signed would state that an organization has signed something it has not.
+  // Upstream's query filters to signed signatures, so this payload is not one the live list
+  // produces — it pins the mapper's rule, not a reachable list state. Worth pinning anyway: the
+  // rule is what makes the same mapper safe for a producer that relaxes the filter, and calling
+  // an unsigned agreement signed would state that an organization has signed something it has not.
   it('maps an unsigned agreement to not-started rather than to signed', async () => {
     gatewayFetch.mockResolvedValue(upstreamList(upstreamEntry({ signed: false, sanctioned: false })));
 
@@ -813,11 +814,13 @@ describe('OrgClaService.requestCorporateSignature', () => {
   it('maps the upstream response onto the shape the client consumes', async () => {
     gatewayFetch.mockResolvedValueOnce(upstreamOk);
 
-    // Just the address. Upstream also returns the signature, CLA group, project and company
-    // identifiers; none has a client consumer, and the signature id points at a named person's
-    // agreement, so none of them crosses to the browser.
+    // The address and the signature it belongs to, and nothing else. Upstream also returns the CLA
+    // group, project and company identifiers, and none of those has a client consumer. The signature
+    // id does: the return address is an input to this request and so cannot name the signature, which
+    // leaves the client as the only place the two are held together.
     expect(await new OrgClaService().requestCorporateSignature(signReq(), ORG_UID, signRequest())).toEqual({
       signUrl: 'https://docusign.example.org/session/1',
+      signatureId: 'signature-uuid-1',
     });
   });
 
@@ -888,6 +891,7 @@ describe('OrgClaService.requestCorporateSignature', () => {
 
     expect(await new OrgClaService().requestCorporateSignature(signReq(), ORG_UID, signRequest({ claGroupId }))).toEqual({
       signUrl: 'https://docusign.example.org/session/1',
+      signatureId: 'signature-uuid-1',
     });
   });
 
@@ -907,6 +911,7 @@ describe('OrgClaService.requestCorporateSignature', () => {
 
     expect(await new OrgClaService().requestCorporateSignature(signReq(), ORG_UID, signRequest())).toEqual({
       signUrl: 'https://docusign.example.org/session/1',
+      signatureId: 'signature-uuid-1',
     });
     expect(JSON.stringify(loggerWarning.mock.calls)).toContain('could not verify');
   });

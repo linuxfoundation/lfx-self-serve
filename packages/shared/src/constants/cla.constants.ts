@@ -1,7 +1,7 @@
 // Copyright The Linux Foundation and each contributor to LFX.
 // SPDX-License-Identifier: MIT
 
-import type { OrgClaGroup, OrgClaStatusDisplay } from '../interfaces/cla.interface';
+import type { OrgClaDetailTab, OrgClaGroup, OrgClaStatusDisplay } from '../interfaces/cla.interface';
 
 /** Long enough to not query on every keystroke, short enough that the CLA-group list feels live. */
 export const CLA_GROUP_SEARCH_DEBOUNCE_MS = 250;
@@ -187,9 +187,10 @@ export const CLA_MANAGER_MODAL_COPY = {
 /**
  * The Overview body for an agreement the organization has not signed.
  *
- * The list is not exclusively signed agreements — a row's status is read from the producer's
- * `signed` flag — so this state is reached from the list itself, without going near the signing
- * flow. Before this copy existed the tab rendered a heading and then nothing.
+ * Reached only through the pre-signing preview, which builds its agreement from the picker's
+ * choice. The organization's own list cannot show this state: upstream draws every row from a
+ * signature its query has already filtered to signed. Before this copy existed the tab rendered a
+ * heading and then nothing.
  *
  * Taken verbatim from the M3 prototype, steps and all. The three steps are the only place the
  * consequence of signing is spelled out before it happens: that whoever signs becomes the initial
@@ -219,6 +220,38 @@ export const ORG_CLA_NOT_STARTED_COPY = {
  * address from the request Host, and the two hand-offs must not disagree on where they land.
  */
 export const ORG_EASYCLA_PATH = '/org/easycla';
+
+/**
+ * Child segment of `ORG_EASYCLA_PATH` holding the preview a signatory reads before starting a
+ * corporate CLA (#1983).
+ *
+ * Shared because the route declares it and the CLA picker navigates to it, and the two cannot be
+ * allowed to disagree: `:signatureId` is declared alongside it, so a segment spelled differently
+ * in one place matches as a signature id and renders the not-found state instead.
+ */
+export const ORG_EASYCLA_NEW_SEGMENT = 'new';
+
+/**
+ * Key the picker's chosen CLA Group travels under, in the router state of the navigation to
+ * `ORG_EASYCLA_NEW_SEGMENT` (#1983).
+ *
+ * State rather than the address, because there is nothing in the address to resolve: the CLA
+ * service exposes no fetch-a-CLA-group-by-id endpoint — `/cla-group/{id}` offers only PUT and
+ * DELETE, and the search takes a term — so ids in the URL would be decorative and the display
+ * names would have to ride along with them, leaving the page to render its heading from text
+ * taken out of the URL.
+ */
+export const ORG_CLA_SIGN_SELECTION_STATE = 'orgClaSignSelection';
+
+/**
+ * `sessionStorage` key holding the signature a corporate signing session just created, so the
+ * signatory returns to the agreement they signed rather than to the list (#1983).
+ *
+ * `sessionStorage` precisely because router state is not available: the return from DocuSign is a
+ * cross-site round trip, which no in-memory or history-bound value survives, and this does — in
+ * the one tab that made the request. The value is single-use and cleared on the way back.
+ */
+export const ORG_CLA_SIGNED_SIGNATURE_KEY = 'lfx.orgCla.signedSignatureId';
 
 /**
  * Query parameter naming the organization a corporate signing session was opened for, carried on
@@ -308,6 +341,11 @@ export const CCLA_SIGN_COPY = {
     /** Why a row cannot be signed. Shown on the row, because the row stays visible. */
     multiProjectDisabledReason: 'This CLA group covers several projects and cannot be signed from here.',
     cclaDisabledReason: 'This CLA group does not offer a corporate CLA.',
+    /**
+     * Names the organization rather than the CLA group, because that is the true scope of the
+     * refusal: the group is not spent, this organization's corporate agreement for it exists.
+     */
+    alreadySignedDisabledReason: 'Your organization has already signed a corporate CLA for this CLA group.',
   },
 } as const;
 
@@ -340,4 +378,30 @@ export const ORG_CLA_HEADING_STATUS: Record<OrgClaGroup['status'], string> = {
   signed: 'Signed',
   'not-started': 'Not yet signed',
   sanctioned: 'Unavailable',
+};
+
+/**
+ * Why the CLA Managers and Approval List tabs hold nothing until the agreement is signed, taken
+ * verbatim from the M3 prototype's locked panels.
+ *
+ * Only these two tabs. Both describe a role and a rule set that come into existence *with* the
+ * signature — the signatory becomes the initial CLA Manager, and approval entries are what that
+ * manager then maintains — so on an unsigned agreement there is nothing to list rather than a list
+ * that failed to load. The remaining tabs are unbuilt for every agreement, signed or not, and
+ * saying "once this CLA is signed" on them would promise content signing does not produce.
+ *
+ * Reached only through the pre-signing preview, since upstream's list draws every row from a
+ * signature its query has already filtered to signed. That makes the preview the sole place these
+ * panels render — which is why they are copy rather than an empty section. This is the same gap
+ * the empty Overview had.
+ */
+export const ORG_CLA_LOCKED_TAB_COPY: Partial<Record<OrgClaDetailTab, { title: string; subtitle: string }>> = {
+  managers: {
+    title: 'CLA Managers become available once this CLA is signed',
+    subtitle: 'The person who coordinates signing becomes the initial CLA Manager once this CLA is signed. Additional managers can be added afterward.',
+  },
+  approval: {
+    title: 'The approval list becomes available once this CLA is signed',
+    subtitle: 'Sign this CLA first, then add approval list entries to automatically cover matching contributors.',
+  },
 };

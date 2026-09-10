@@ -9,6 +9,7 @@ import { CCLA_SIGN_COPY } from '@lfx-one/shared/constants';
 import type { OrgClaSignHandoffDialogData, OrgClaSignResponse } from '@lfx-one/shared/interfaces';
 import { OrgLensClaService } from '@services/org-lens-cla.service';
 import { serverAuthoredMessage } from '@shared/utils/http-error.utils';
+import { stashSignedSignatureId } from '@shared/utils/org-cla-signed-signature.util';
 import { DynamicDialogConfig, DynamicDialogRef } from 'primeng/dynamicdialog';
 
 import { ButtonComponent } from '@components/button/button.component';
@@ -121,6 +122,12 @@ export class OrgEasyclaSignHandoffComponent {
   protected onReviewAndSign(): void {
     const prepared = this.prepared();
     if (!prepared?.signUrl) return;
+
+    // Stashed before the navigation, because after it there is no code of ours left running. The
+    // signatory returns to `/org/easycla` through a cross-site redirect whose address was fixed
+    // before this signature existed, so this is the only moment at which anything in the browser
+    // knows which agreement they are about to sign.
+    stashSignedSignatureId(prepared.signatureId);
 
     // Closed before the navigation, which releases the page's single-flight flag. A full-page
     // navigation is not a teardown: a Back out of DocuSign can restore this page from bfcache

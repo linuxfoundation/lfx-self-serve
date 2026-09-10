@@ -187,6 +187,15 @@ export const SIGN_ROUTE = '**/api/orgs/*/lens/cla-groups/sign';
  */
 export const STUB_SIGN_URL = 'https://signing.example.org/session/e2e-stub';
 
+/**
+ * The signature the stubbed hand-off says it opened.
+ *
+ * Deliberately the `id` of the default `claGroup()` row, because that is what makes the return
+ * landing observable: the page only navigates to an agreement it can see in the organization's own
+ * list, so a stub signature absent from the stubbed list would leave the signatory on it.
+ */
+export const STUB_SIGNATURE_ID = 'signature-uuid-1';
+
 /** A searchable CLA Group, corporate-signable unless a case says otherwise. */
 export function signOption(overrides: Record<string, unknown> = {}) {
   return {
@@ -221,7 +230,7 @@ export async function stubHandoff(page: Page, options: { search?: unknown; sign?
 
   await fulfillJson(page, SIGN_OPTIONS_ROUTE, options.search ?? signOptionsResponse([signOption()]));
 
-  const sign = options.sign ?? { status: 200, body: { signUrl } };
+  const sign = options.sign ?? { status: 200, body: { signUrl, signatureId: STUB_SIGNATURE_ID } };
   await page.route(SIGN_ROUTE, (route) => route.fulfill({ status: sign.status, contentType: 'application/json', body: JSON.stringify(sign.body) }));
 
   await page.route(`${signUrl}**`, (route) =>

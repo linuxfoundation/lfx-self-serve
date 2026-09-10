@@ -6,7 +6,7 @@ import '@angular/compiler';
 import { DOCUMENT } from '@angular/common';
 import { HttpErrorResponse } from '@angular/common/http';
 import { ComponentFixture, TestBed } from '@angular/core/testing';
-import { CCLA_SIGN_COPY } from '@lfx-one/shared/constants';
+import { CCLA_SIGN_COPY, ORG_CLA_SIGNED_SIGNATURE_KEY } from '@lfx-one/shared/constants';
 import type { OrgClaSignHandoffDialogData, OrgClaSignResponse } from '@lfx-one/shared/interfaces';
 import { OrgLensClaService } from '@services/org-lens-cla.service';
 import { DynamicDialogConfig, DynamicDialogRef } from 'primeng/dynamicdialog';
@@ -40,6 +40,7 @@ describe('OrgEasyclaSignHandoffComponent', () => {
 
   const response: OrgClaSignResponse = {
     signUrl: 'https://demo.docusign.net/Signing/StartInSession.aspx?t=abc123',
+    signatureId: '7f1c2f5e-0d44-4a2b-9d61-2c9b8a7e4f30',
   };
 
   // Explicit rather than defaulted: a defaulted parameter would substitute the real selection for
@@ -104,7 +105,10 @@ describe('OrgEasyclaSignHandoffComponent', () => {
   beforeEach(() => {
     requestCorporateSignature.mockReset();
     close.mockClear();
-    setHref.mockClear();
+    // Reset, not clear: one case installs an implementation that reads the stash mid-navigation, and
+    // leaving it in place would have it run for every later case.
+    setHref.mockReset();
+    sessionStorage.clear();
   });
 
   it('opens the signing session as the dialog opens', async () => {
@@ -185,6 +189,39 @@ describe('OrgEasyclaSignHandoffComponent', () => {
 
     expect(testid(fixture, 'org-easycla-sign-failed')).not.toBeNull();
     expect(location.href).toBe('https://example.test/org/easycla');
+  });
+
+  /**
+   * The signatory returns through a cross-site redirect to an address that was composed before this
+   * signature existed, so this dialog is the last place in the browser that knows which agreement
+   * they are about to sign. Stashing it is what lets the return land on that agreement instead of
+   * the list.
+   */
+  it('stashes the signature before leaving, so the return can land on the agreement', async () => {
+    requestCorporateSignature.mockReturnValue(of(response));
+    // Read at the moment of the navigation rather than after it. No code of ours runs once the
+    // browser has left, so a stash written afterwards would never be written at all — and reading it
+    // at the end of the test cannot tell the two orders apart.
+    let stashedOnLeaving: string | null = null;
+    setHref.mockImplementation(() => {
+      stashedOnLeaving = sessionStorage.getItem(ORG_CLA_SIGNED_SIGNATURE_KEY);
+    });
+
+    const fixture = await render();
+    (testid(fixture, 'org-easycla-sign-review')?.querySelector('button') as HTMLButtonElement).click();
+
+    expect(setHref).toHaveBeenCalledWith(response.signUrl);
+    expect(stashedOnLeaving).toBe(response.signatureId);
+  });
+
+  // A stash with no hand-off behind it would send the next visit to the list into a detail page for
+  // an agreement nobody was ever handed.
+  it('stashes nothing when the session came back without an address', async () => {
+    requestCorporateSignature.mockReturnValue(of({ ...response, signUrl: '' }));
+
+    await render();
+
+    expect(sessionStorage.getItem(ORG_CLA_SIGNED_SIGNATURE_KEY)).toBeNull();
   });
 
   // A trade-compliance hold is explained upstream, names how to challenge it, and will change

@@ -6,7 +6,7 @@ import '@angular/compiler';
 import { ComponentFixture, TestBed } from '@angular/core/testing';
 import { provideNoopAnimations } from '@angular/platform-browser/animations';
 import { CCLA_SIGN_COPY, CLA_GROUP_SEARCH_MIN_CHARS } from '@lfx-one/shared/constants';
-import type { ClaGroupOption, ClaGroupSearchResponse } from '@lfx-one/shared/interfaces';
+import type { ClaGroupOption, ClaGroupSearchResponse, OrgClaGroup } from '@lfx-one/shared/interfaces';
 import { OrgLensClaService } from '@services/org-lens-cla.service';
 import { DynamicDialogConfig, DynamicDialogRef } from 'primeng/dynamicdialog';
 import { of, throwError } from 'rxjs';
@@ -79,14 +79,28 @@ describe('OrgEasyclaGroupSelectComponent', () => {
     return { results: options, truncated, searchTerm, resultCount: options.length };
   }
 
-  async function render(): Promise<ComponentFixture<OrgEasyclaGroupSelectComponent>> {
+  /** One row of the organization's own CLA list, as the page hands it down. */
+  function held(claGroupId: string): OrgClaGroup {
+    return {
+      id: 'signature-uuid-1',
+      claGroupId,
+      claGroupName: 'Cascade CLA',
+      projects: [{ projectName: 'Cascade', projectSfid: 'a09410000182dD2AAI' }],
+      signed: true,
+      status: 'signed',
+      needsClaManager: false,
+      claManagersCount: 1,
+    };
+  }
+
+  async function render(claGroups: OrgClaGroup[] = []): Promise<ComponentFixture<OrgEasyclaGroupSelectComponent>> {
     TestBed.resetTestingModule();
     await TestBed.configureTestingModule({
       imports: [OrgEasyclaGroupSelectComponent],
       providers: [
         provideNoopAnimations(),
         { provide: DynamicDialogRef, useValue: { close } },
-        { provide: DynamicDialogConfig, useValue: { data: { orgUid } } },
+        { provide: DynamicDialogConfig, useValue: { data: { orgUid, claGroups } } },
         { provide: OrgLensClaService, useValue: { getSignOptions } },
       ],
     }).compileComponents();
@@ -139,7 +153,7 @@ describe('OrgEasyclaGroupSelectComponent', () => {
     const fixture = await render();
 
     expect(testid(fixture, 'org-easycla-group-select-dialog')?.querySelector('p')?.textContent?.trim()).toBe(CCLA_SIGN_COPY.picker.body);
-    expect(testid(fixture, 'org-easycla-group-select-search')?.querySelector('input')?.getAttribute('placeholder')).toBe(CCLA_SIGN_COPY.picker.placeholder);
+    expect(searchBoxOf(fixture).getAttribute('placeholder')).toBe(CCLA_SIGN_COPY.picker.placeholder);
     expect(testid(fixture, 'org-easycla-group-select-empty')?.textContent?.trim()).toBe(CCLA_SIGN_COPY.picker.empty);
     expect(continueButton(fixture).textContent?.trim()).toBe(CCLA_SIGN_COPY.picker.continueLabel);
   });
@@ -194,6 +208,83 @@ describe('OrgEasyclaGroupSelectComponent', () => {
 
     expect(row(fixture, individualOnly).getAttribute('aria-disabled')).toBe('true');
     expect(testid(fixture, `org-easycla-group-disabled-${individualOnly.claGroupId}`)?.textContent).toContain(CCLA_SIGN_COPY.picker.cclaDisabledReason);
+  });
+
+  /**
+   * A CLA Group the organization already holds a corporate agreement for.
+   *
+   * Left selectable, Continue carries the viewer to a preview headed "«Org» has not yet signed a
+   * CLA for «Group»" — a false statement about an agreement that exists — and offers to sign it
+   * again. The refusal is what stops that, so these cases assert the row, the reason, and that
+   * neither pointer nor keyboard can get past it.
+   */
+  describe('a CLA group the organization has already signed', () => {
+    it('keeps the row visible and says the organization already holds one', async () => {
+      getSignOptions.mockReturnValue(of(results([signable])));
+
+      const fixture = await render([held(signable.claGroupId)]);
+      await search(fixture);
+
+      expect(row(fixture, signable).getAttribute('aria-disabled')).toBe('true');
+      expect(testid(fixture, `org-easycla-group-disabled-${signable.claGroupId}`)?.textContent).toContain(CCLA_SIGN_COPY.picker.alreadySignedDisabledReason);
+    });
+
+    it('cannot be chosen by pointer or by keyboard', async () => {
+      getSignOptions.mockReturnValue(of(results([signable])));
+
+      const fixture = await render([held(signable.claGroupId)]);
+      await search(fixture);
+      row(fixture, signable).click();
+      testid(fixture, 'org-easycla-group-select-results')?.dispatchEvent(new KeyboardEvent('keydown', { key: 'ArrowDown', bubbles: true }));
+      testid(fixture, 'org-easycla-group-select-results')?.dispatchEvent(new KeyboardEvent('keydown', { key: 'Enter', bubbles: true }));
+      fixture.detectChanges();
+
+      expect(continueButton(fixture).disabled).toBe(true);
+      expect(close).not.toHaveBeenCalled();
+    });
+
+    /**
+     * EasyCLA accepts hyphenated, unhyphenated and mixed-case spellings of the same UUID, and the
+     * two sides of this comparison come from different endpoints — the organization's CLA list and
+     * the CLA Group search. A raw `===` passes every test written with one spelling on both sides
+     * and misses the real match in production, which is the whole failure this guards.
+     */
+    it('matches the held agreement across UUID spellings, not by string equality', async () => {
+      getSignOptions.mockReturnValue(of(results([signable])));
+
+      const fixture = await render([held(signable.claGroupId.replaceAll('-', '').toUpperCase())]);
+      await search(fixture);
+
+      expect(row(fixture, signable).getAttribute('aria-disabled')).toBe('true');
+      expect(testid(fixture, `org-easycla-group-disabled-${signable.claGroupId}`)?.textContent).toContain(CCLA_SIGN_COPY.picker.alreadySignedDisabledReason);
+    });
+
+    // The other half of the check: holding *an* agreement must not refuse every row, or the
+    // picker becomes unusable for any organization that has signed anything.
+    it('leaves a CLA group the organization does not hold selectable', async () => {
+      getSignOptions.mockReturnValue(of(results([signable])));
+
+      const fixture = await render([held(individualOnly.claGroupId)]);
+      await search(fixture);
+      row(fixture, signable).click();
+      fixture.detectChanges();
+
+      expect(testid(fixture, `org-easycla-group-disabled-${signable.claGroupId}`)).toBeNull();
+      expect(continueButton(fixture).disabled).toBe(false);
+    });
+
+    // Answered before "covers several projects", which is the less useful of the two: a CLA Group
+    // signed through the legacy console can still be one this flow could not have signed itself.
+    it('names the held agreement ahead of the reason this flow could not have signed it', async () => {
+      getSignOptions.mockReturnValue(of(results([multiProject])));
+
+      const fixture = await render([held(multiProject.claGroupId)]);
+      await search(fixture, 'driftwood');
+
+      const reason = testid(fixture, `org-easycla-group-disabled-${multiProject.claGroupId}`)?.textContent;
+      expect(reason).toContain(CCLA_SIGN_COPY.picker.alreadySignedDisabledReason);
+      expect(reason).not.toContain(CCLA_SIGN_COPY.picker.multiProjectDisabledReason);
+    });
   });
 
   // The reason is visible text inside the option, not a tooltip: a tooltip never reaches anyone
@@ -254,7 +345,27 @@ describe('OrgEasyclaGroupSelectComponent', () => {
       claGroupId: signable.claGroupId,
       projectSfid: signable.projectSfid,
       projectName: signable.projectName,
+      claGroupName: signable.claGroupName,
     });
+  });
+
+  /**
+   * The name the preview page heads itself with, when search named no CLA Group.
+   *
+   * That page cannot look it up again — there is no fetch-a-CLA-group-by-id endpoint — so a blank
+   * here becomes a preview headed by nothing, offering to start a legal agreement it cannot name.
+   */
+  it('falls back to the row’s own primary line when search named no CLA Group', async () => {
+    const unnamed: ClaGroupOption = { ...signable, claGroupName: undefined };
+    getSignOptions.mockReturnValue(of(results([unnamed])));
+
+    const fixture = await render();
+    await search(fixture);
+    row(fixture, unnamed).click();
+    fixture.detectChanges();
+    continueButton(fixture).click();
+
+    expect(close).toHaveBeenCalledWith(expect.objectContaining({ claGroupName: unnamed.projectName }));
   });
 
   // Clicking a disabled row must not select it. The template's own disabled state is not the only
@@ -372,6 +483,7 @@ describe('OrgEasyclaGroupSelectComponent', () => {
         claGroupId: signable.claGroupId,
         projectSfid: signable.projectSfid,
         projectName: signable.projectName,
+        claGroupName: signable.claGroupName,
       });
     });
 
@@ -592,6 +704,7 @@ describe('OrgEasyclaGroupSelectComponent', () => {
         claGroupId: signable.claGroupId,
         projectSfid: signable.projectSfid,
         projectName: signable.projectName,
+        claGroupName: signable.claGroupName,
       });
     });
 

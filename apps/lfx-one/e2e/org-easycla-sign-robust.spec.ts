@@ -38,10 +38,17 @@ import {
 
 const CASCADE = signOption();
 
+// The default budget is one authenticated boot; these cases are a boot plus a four-step chain. The
+// neighbouring Org Lens specs all raise it for the same reason, and the same figure.
+test.setTimeout(120_000);
+
 /** The dialogs, in the order the flow opens them. */
 const PICKER = 'org-easycla-group-select-dialog';
 const ATTESTATION = 'org-easycla-attestation-dialog';
 const HANDOFF = 'org-easycla-sign-handoff-dialog';
+
+/** Start, on the preview page the picker hands the choice to — the step between picker and dialogs. */
+const PREVIEW_START = 'org-easycla-detail-start-cla';
 
 const HANDOFF_STATES = ['org-easycla-sign-preparing', 'org-easycla-sign-ready', 'org-easycla-sign-failed'];
 
@@ -57,13 +64,28 @@ async function onlyState(page: Page, expected: string): Promise<void> {
   }
 }
 
-async function reachAttestation(page: Page): Promise<void> {
-  await page.getByTestId('org-easycla-sign-cla').click();
+/**
+ * Picks the CLA Group, which now lands on the preview page rather than opening the attestation.
+ *
+ * The inner `button`, not the `lfx-button` host the test id sits on. Sign CLA is disabled until the
+ * organization context settles, and Playwright's actionability check reads the element it is given
+ * — a custom element, which is never "disabled" — so a click on the host lands on a dead control
+ * instead of waiting for a live one.
+ */
+async function reachPreview(page: Page): Promise<void> {
+  await page.getByTestId('org-easycla-sign-cla').locator('button').click();
   await expect(page.getByTestId(PICKER)).toBeVisible({ timeout: PAGE_LOAD_TIMEOUT });
 
   await groupSearchInput(page).fill('cascade');
   await page.getByTestId(`org-easycla-group-select-${CASCADE.claGroupId}`).click();
   await page.getByTestId('org-easycla-group-continue').locator('button').click();
+
+  await expect(page.getByTestId(PREVIEW_START)).toBeVisible({ timeout: PAGE_LOAD_TIMEOUT });
+}
+
+async function reachAttestation(page: Page): Promise<void> {
+  await reachPreview(page);
+  await page.getByTestId(PREVIEW_START).locator('button').click();
 }
 
 async function reachHandoff(page: Page): Promise<void> {
@@ -78,16 +100,19 @@ test.describe('Org Lens EasyCLA corporate self-sign — structure', () => {
 
   test.beforeEach(() => skipWithoutCredentials());
 
-  // One dialog at a time. The flow replaces each with the next rather than stacking them, so a
+  // One step at a time. The flow replaces each with the next rather than stacking them, so a
   // regression that leaves the picker mounted behind the attestation would let a signatory change
   // the CLA Group under a confirmation they have already given.
-  test('opens the three dialogs in sequence, one at a time', async ({ page }) => {
+  //
+  // The picker and the two dialogs are separated by a page: the choice is carried to the preview by
+  // a router navigation, and both dialogs are opened by that page rather than by the list.
+  test('opens the picker, the preview, then the two dialogs in sequence', async ({ page }) => {
     await gotoEasyclaList(page, async (p) => {
       await stubPage(p);
       await stubHandoff(p);
     });
 
-    await page.getByTestId('org-easycla-sign-cla').click();
+    await page.getByTestId('org-easycla-sign-cla').locator('button').click();
     await expect(page.getByTestId(PICKER)).toBeVisible({ timeout: PAGE_LOAD_TIMEOUT });
     await expect(page.getByTestId(ATTESTATION)).toHaveCount(0);
     await expect(page.getByTestId(HANDOFF)).toHaveCount(0);
@@ -96,8 +121,17 @@ test.describe('Org Lens EasyCLA corporate self-sign — structure', () => {
     await page.getByTestId(`org-easycla-group-select-${CASCADE.claGroupId}`).click();
     await page.getByTestId('org-easycla-group-continue').locator('button').click();
 
-    await expect(page.getByTestId(ATTESTATION)).toBeVisible();
+    await expect(page).toHaveURL(/\/org\/easycla\/new$/, { timeout: PAGE_LOAD_TIMEOUT });
+    await expect(page.getByTestId(PREVIEW_START)).toBeVisible();
+    // The picker does not survive the navigation, and neither dialog opens before Start is pressed —
+    // so nothing is confirmed by arriving here.
     await expect(page.getByTestId(PICKER)).toHaveCount(0);
+    await expect(page.getByTestId(ATTESTATION)).toHaveCount(0);
+    await expect(page.getByTestId(HANDOFF)).toHaveCount(0);
+
+    await page.getByTestId(PREVIEW_START).locator('button').click();
+
+    await expect(page.getByTestId(ATTESTATION)).toBeVisible();
     await expect(page.getByTestId(HANDOFF)).toHaveCount(0);
 
     await page.locator('label[for="authorityAcked"]').click();
@@ -175,7 +209,7 @@ test.describe('Org Lens EasyCLA corporate self-sign — structure', () => {
       await stubHandoff(p);
     });
 
-    await page.getByTestId('org-easycla-sign-cla').click();
+    await page.getByTestId('org-easycla-sign-cla').locator('button').click();
     const input = groupSearchInput(page);
 
     await expect(input).toHaveAttribute('role', 'combobox');
