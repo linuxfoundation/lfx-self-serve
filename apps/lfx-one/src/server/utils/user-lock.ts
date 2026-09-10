@@ -8,10 +8,11 @@ import { logger } from '../services/logger.service';
 import { buildUserLockCacheKey, valkeyService } from '../services/valkey.service';
 
 /**
- * Per-replica mutex, held unconditionally around every call (see `withUserLock`) so a same-replica
- * race is always caught even if Valkey flips from available to unreachable mid-flight. When Valkey
- * is enabled and reachable it adds cross-replica coverage on top; when it isn't, this is the only
- * protection in effect, for as long as that lasts.
+ * Per-replica mutex, held around every call with a resolvable username (see `withUserLock`) so a
+ * same-replica race is always caught even if Valkey flips from available to unreachable mid-flight.
+ * An empty username skips this entirely (see `withUserLock`) rather than sharing one entry across
+ * unrelated callers. When Valkey is enabled and reachable it adds cross-replica coverage on top;
+ * when it isn't, this is the only protection in effect, for as long as that lasts.
  */
 const inMemoryLocks = new Map<string, symbol>();
 
@@ -60,9 +61,7 @@ async function runWithValkeyLock<T>(req: Request | undefined, username: string, 
 
   const result = await valkeyService.acquireLock(key, ttlMs);
   if (result.status === 'contended') {
-    throw new ConflictError('This account has a conflicting request in progress. Please try again.', 'LOCK_CONTENTION', {
-      operation: 'with_user_lock',
-    });
+    throw lockContentionError();
   }
   if (result.status === 'acquired') {
     try {
@@ -79,11 +78,16 @@ async function runWithValkeyLock<T>(req: Request | undefined, username: string, 
   return fn();
 }
 
+/** Shared 409 for both the Valkey-contended and in-memory-contended branches below. */
+function lockContentionError(): ConflictError {
+  return new ConflictError('This account has a conflicting request in progress. Please try again.', 'LOCK_CONTENTION', {
+    operation: 'with_user_lock',
+  });
+}
+
 async function withInMemoryLock<T>(username: string, ttlMs: number, fn: () => Promise<T>): Promise<T> {
   if (inMemoryLocks.has(username)) {
-    throw new ConflictError('This account has a conflicting request in progress. Please try again.', 'LOCK_CONTENTION', {
-      operation: 'with_user_lock',
-    });
+    throw lockContentionError();
   }
 
   // Token-gated, mirroring ValkeyService's compare-and-delete release: if fn() outlives ttlMs, the
