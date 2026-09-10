@@ -84,6 +84,21 @@ function healthOnlyProject(slug: string, name: string) {
   };
 }
 
+// Partial v2 score with a consistent same-row shape: maintainer 30/40 + development 22/25 = 52,
+// security uncovered, so the max is 65 (40 + 25).
+function partialProject(slug: string, name: string) {
+  return {
+    ...project(slug, name),
+    health: 'healthy',
+    healthOverallScore: 52,
+    healthMaxScore: 65,
+    healthCoveredCategoryCount: 2,
+    healthMaintainer: 30,
+    healthSecurity: null,
+    healthDevelopment: 22,
+  };
+}
+
 // Ecosystem-only participation: a project the org participates in through non-code channels (no trailing-24-month
 // code activity) but which the org dashboard still lists with real bands/health/trend. metricsState stays `full`
 // (org-dashboard parity), so the row renders as a real, linkable project — NOT an Unavailable fallback.
@@ -474,6 +489,71 @@ test.describe('Org Projects', () => {
     await expect(page.getByTestId('org-projects-health-kubernetes')).toHaveAttribute('aria-label', /Health: Excellent/);
     await expect(page.getByTestId('org-projects-trend-kubernetes')).toHaveText('Unavailable');
     await expect(row.getByText('Unavailable').first()).toBeVisible();
+  });
+
+  test('opens the health popup on hover with headline, description, and rows', async ({ page }) => {
+    await gotoOrgProjectsPage(page);
+    await expect(page.getByTestId('org-projects-row-kubernetes')).toBeVisible({ timeout: DATA_LOAD_TIMEOUT });
+
+    await page.getByTestId('org-projects-health-kubernetes').hover();
+    await expect(page.getByTestId('org-health-popup-headline')).toHaveText('Excellent (88/100)');
+    await expect(page.getByTestId('org-health-popup-description')).toContainText('Strong development cadence');
+    await expect(page.getByTestId('org-health-popup-row-maintainer')).toContainText('35/40');
+    await expect(page.getByTestId('org-health-popup-row-security')).toContainText('30/35');
+    await expect(page.getByTestId('org-health-popup-row-development')).toContainText('23/25');
+    await expect(page.getByTestId('org-health-popup-link')).toHaveAttribute('href', /\/project\/kubernetes/);
+  });
+
+  test('opens the health popup on focus with badge, popup, and aria in agreement', async ({ page }) => {
+    await stubOrgContext(page);
+    await page.route(/\/api\/orgs\/[^/]+\/lens\/projects(?:\?.*)?$/, (route) => {
+      if (route.request().method() !== 'GET') return route.fallback();
+      return fulfillJson(route, projectsResponse([partialProject('seapath', 'SEAPATH')]));
+    });
+
+    await page.goto('/', { waitUntil: 'domcontentloaded' });
+    skipWhenAuthMissing(page);
+    await page.reload({ waitUntil: 'domcontentloaded' });
+    await page.goto(ORG_PROJECTS_URL, { waitUntil: 'domcontentloaded' });
+    skipWhenAuthMissing(page);
+    if (!page.url().includes('/org/projects')) {
+      test.skip(true, 'org-lens-enabled flag appears off — /org/projects redirected away');
+    }
+
+    const badge = page.getByTestId('org-projects-health-seapath');
+    await expect(badge).toBeVisible({ timeout: DATA_LOAD_TIMEOUT });
+    await expect(badge).toHaveText('Healthy - Partial');
+    await badge.focus();
+    await expect(page.getByTestId('org-health-popup-headline')).toHaveText('Healthy - Partial (52/65)');
+    await expect(page.getByTestId('org-health-popup-row-security')).toContainText('-/35');
+    await expect(badge).toHaveAttribute(
+      'aria-label',
+      'Health: Healthy - Partial (52/65). Maintainer Health 30/40, Security & Supply Chain -/35, Development Activity 22/25.'
+    );
+    await expect(page.getByTestId('org-health-popup-link')).toHaveAttribute('href', /\/project\/seapath/);
+  });
+
+  test('renders the unavailable popup block for projects without a v2 score', async ({ page }) => {
+    await stubOrgContext(page);
+    await page.route(/\/api\/orgs\/[^/]+\/lens\/projects(?:\?.*)?$/, (route) => {
+      if (route.request().method() !== 'GET') return route.fallback();
+      return fulfillJson(route, projectsResponse([unavailableProject('cnab', 'CNAB')]));
+    });
+
+    await page.goto('/', { waitUntil: 'domcontentloaded' });
+    skipWhenAuthMissing(page);
+    await page.reload({ waitUntil: 'domcontentloaded' });
+    await page.goto(ORG_PROJECTS_URL, { waitUntil: 'domcontentloaded' });
+    skipWhenAuthMissing(page);
+    if (!page.url().includes('/org/projects')) {
+      test.skip(true, 'org-lens-enabled flag appears off — /org/projects redirected away');
+    }
+
+    const badge = page.getByTestId('org-projects-health-cnab');
+    await expect(badge).toBeVisible({ timeout: DATA_LOAD_TIMEOUT });
+    await expect(badge).toHaveAttribute('aria-label', 'Health: Unavailable.');
+    await badge.hover();
+    await expect(page.getByTestId('org-health-popup-unavailable')).toHaveText('Health score is unavailable for this project.');
   });
 
   test('shows the already-in-workspace empty state when a search matches only existing projects', async ({ page }) => {

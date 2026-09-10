@@ -541,7 +541,7 @@ export class OrgProjectsComponent {
       const orgMetricsUnavailable = this.isOrgMetricsUnavailable(p);
       return [
         p.name,
-        HEALTH_SCORE_LABELS[this.normalizeHealth(p.health)],
+        this.healthLabelFor(p),
         orgMetricsUnavailable ? ORG_PROJECTS_METRIC_UNAVAILABLE_LABEL : INFLUENCE_BAND_LABELS[p.technicalInfluence],
         orgMetricsUnavailable ? ORG_PROJECTS_METRIC_UNAVAILABLE_LABEL : INFLUENCE_BAND_LABELS[p.ecosystemInfluence],
         orgMetricsUnavailable ? ORG_PROJECTS_METRIC_UNAVAILABLE_LABEL : p.trend.deltaPct,
