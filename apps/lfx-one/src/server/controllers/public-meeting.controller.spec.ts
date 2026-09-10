@@ -115,9 +115,9 @@ vi.mock('../services/logger.service', () => ({
     info: vi.fn(),
   },
 }));
-// `stripAuthPrefix` is kept real rather than stubbed: the controller's prefix stripping only matters
-// because it has to agree with what the read paths do, and a stand-in here would assert agreement with
-// the stand-in instead.
+// Only the two session accessors are stubbed — they are what these tests steer. `stripAuthPrefix` is
+// passed through real so anything else the module graph pulls in keeps its actual behaviour rather
+// than a stand-in's.
 vi.mock('../utils/auth-helper', async () => {
   const actual = await vi.importActual<typeof import('../utils/auth-helper')>('../utils/auth-helper');
 
@@ -751,9 +751,6 @@ describe('PublicMeetingController.registerForPublicMeeting', () => {
     generateM2MTokenMock.mockResolvedValue('m2m-token');
     meetingSvc.getMeetingById.mockResolvedValue(buildMeeting());
     meetingSvc.addMeetingRegistrantSelf.mockResolvedValue({ uid: 'reg-1' });
-    // `clearAllMocks` leaves return values from earlier suites in place, so pin the session username
-    // rather than inherit one.
-    getEffectiveUsernameMock.mockReturnValue(null);
   });
 
   it('calls addMeetingRegistrantSelf with user token and returns 201', async () => {
@@ -1007,10 +1004,22 @@ describe('PublicMeetingController.registerForPublicMeeting', () => {
     expect(meetingSvc.addMeetingRegistrantSelf.mock.calls[0][2].occurrence_id).toBe('1666848600');
   });
 
-  // Derived from the session, never from the body. The provider prefix is stripped because a
-  // registrant record stores the plain LFID — every read path strips before matching, so a prefixed
-  // row would be invisible to the join-URL lookup.
-  it('takes username from the session, strips its provider prefix, and ignores the body', async () => {
+  // The address is narrowed here even though upstream reads the real one off the caller's JWT: the
+  // over-length guard measures this value and the shared request type requires it, so a padded,
+  // differently-cased submission must still normalise rather than reach the guard as typed.
+  it('trims and lowercases the submitted email', async () => {
+    const { req, res, next } = buildRegisterReq(true, { email: '  A@Example.COM  ' });
+
+    await controller.registerForPublicMeeting(req, res, next);
+
+    expect(next).not.toHaveBeenCalled();
+    expect(meetingSvc.addMeetingRegistrantSelf.mock.calls[0][2].email).toBe('a@example.com');
+  });
+
+  // Identity belongs to the `self` endpoint, which takes it off the caller's token. Forwarding a
+  // username would be this handler asserting an identity on the registrant's behalf — the exact
+  // thing that endpoint exists to prevent — and `addMeetingRegistrantSelf` drops it regardless.
+  it('never forwards a username, whoever the session belongs to', async () => {
     getEffectiveUsernameMock.mockReturnValue('auth0|realuser');
     getEffectiveEmailMock.mockReturnValue('a@example.com');
     const { req, res, next } = buildRegisterReq(true, { email: 'a@example.com', username: 'someone-else' });
@@ -1018,37 +1027,6 @@ describe('PublicMeetingController.registerForPublicMeeting', () => {
     await controller.registerForPublicMeeting(req, res, next);
 
     expect(next).not.toHaveBeenCalled();
-    expect(meetingSvc.addMeetingRegistrantSelf.mock.calls[0][2].username).toBe('realuser');
-  });
-
-  // The LFID is what makes a row *this* person's, so it may only be stamped on a row that carries an
-  // address the session owns. Without this, one signed-in visitor could register a colleague's email
-  // and silently own the resulting RSVP.
-  it('omits the session username when the submitted email is not the session email', async () => {
-    getEffectiveUsernameMock.mockReturnValue('auth0|realuser');
-    getEffectiveEmailMock.mockReturnValue('someone-else@example.com');
-    const { req, res, next } = buildRegisterReq(true, { email: 'a@example.com' });
-
-    await controller.registerForPublicMeeting(req, res, next);
-
-    expect(next).not.toHaveBeenCalled();
     expect(meetingSvc.addMeetingRegistrantSelf.mock.calls[0][2]).not.toHaveProperty('username');
-  });
-
-  // Ownership is an address comparison, not a string comparison: the IdP hands back a lowercased
-  // address and the registrant types whatever they type.
-  it('treats a differently-cased and padded submitted email as the session email', async () => {
-    getEffectiveUsernameMock.mockReturnValue('auth0|realuser');
-    getEffectiveEmailMock.mockReturnValue('a@example.com');
-    const { req, res, next } = buildRegisterReq(true, { email: '  A@Example.COM  ' });
-
-    await controller.registerForPublicMeeting(req, res, next);
-
-    expect(next).not.toHaveBeenCalled();
-
-    const forwarded = meetingSvc.addMeetingRegistrantSelf.mock.calls[0][2];
-
-    expect(forwarded.username).toBe('realuser');
-    expect(forwarded.email).toBe('a@example.com');
   });
 });

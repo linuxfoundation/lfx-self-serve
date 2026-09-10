@@ -984,7 +984,11 @@ export class MeetingService {
     // hands the result back to the client as the updated row. The submitted payload is the closest available
     // description of what upstream now stores. It inherits the two caveats above: a cleared
     // organization and a `linkedin_profile` both echo back as if they had been written.
-    return { ...updateData } as MeetingRegistrant;
+    // `uid` is required on `MeetingRegistrant` and is not part of the update body, so the cast would
+    // otherwise promise a field the object doesn't have. It is already known here — it addressed the
+    // request — so it is stated rather than asserted. `meeting_id` is in the body, but the meeting the
+    // request routed on is the authoritative one, so both are written after the spread.
+    return { ...updateData, uid: registrantUid, meeting_id: meetingUid } as MeetingRegistrant;
   }
 
   /**
@@ -2030,10 +2034,12 @@ export class MeetingService {
 
     logger.success(req, 'add_meeting_registrant_self', startTime, {
       meeting_id: meetingId,
-      // `?? null` rather than leaving it `undefined`: Pino drops undefined values, so a create whose
+      // `|| null` rather than leaving it as it comes: Pino drops undefined values, so a create whose
       // upstream body carried no UID logged as a success line with no `registrant_uid` field at all,
-      // indistinguishable from a log-shape change. `has_upstream_body` says which branch produced it.
-      registrant_uid: newRegistrant.uid ?? null,
+      // indistinguishable from a log-shape change — and the fallback's own placeholder `''` would read
+      // as a UID that is empty rather than one upstream never minted. `has_upstream_body` says which
+      // branch produced it.
+      registrant_uid: newRegistrant.uid || null,
       has_upstream_body: hasUpstreamBody,
     });
 
@@ -2376,8 +2382,13 @@ export class MeetingService {
    * `{}` with no fields at all, and the M2M path's success log says which branch it came from.
    * Deliberately not thrown: the write already succeeded, and throwing here would report a created
    * registrant as a failure. Callers that need the UID have to read the registrant back.
+   *
+   * `uid` is stated as `''` rather than left off. `MeetingRegistrant` declares it required, so the cast
+   * would otherwise claim a field the object doesn't carry; an empty string is falsy, so a caller's
+   * `if (registrant.uid)` still routes to the read-back, whereas an absent one would reach a template
+   * or a URL segment as the literal `"undefined"`.
    */
   private static registrantFromSubmittedPayload(registrantData: CreateMeetingRegistrantRequest): MeetingRegistrant {
-    return { ...registrantData } as MeetingRegistrant;
+    return { uid: '', ...registrantData } as MeetingRegistrant;
   }
 }

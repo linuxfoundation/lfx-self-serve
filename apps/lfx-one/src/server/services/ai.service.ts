@@ -132,7 +132,9 @@ export class AiService {
       return result;
     } catch (error) {
       logger.error(req, 'generate_meeting_agenda', startTime, error);
-      throw new Error('Failed to generate meeting agenda');
+      // The upstream failure is logged above and the message stays generic for the caller; the cause
+      // rides along so a handler that inspects `error.cause` still reaches the original stack.
+      throw new Error('Failed to generate meeting agenda', { cause: error });
     }
   }
 
@@ -204,7 +206,7 @@ export class AiService {
       return result;
     } catch (error) {
       logger.error(req, 'generate_newsletter', startTime, error);
-      throw new Error('Failed to generate newsletter');
+      throw new Error('Failed to generate newsletter', { cause: error });
     }
   }
 

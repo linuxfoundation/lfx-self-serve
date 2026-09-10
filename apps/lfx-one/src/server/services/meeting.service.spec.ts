@@ -1109,7 +1109,9 @@ describe('MeetingService registrant write payloads', () => {
   // Same reasoning as the update fallback above, on the two create paths: `ApiClientService` maps an
   // empty response body to `null`, and a 201 carrying a literal `{}` is truthy — so both were mapped
   // straight through and reported a created registrant with every field missing. The submitted payload
-  // is the closest description of what upstream now holds; `uid` is the one thing it can't supply.
+  // is the closest description of what upstream now holds; `uid` is the one thing it can't supply, so
+  // it is stated as `''` — falsy, so a caller's `if (uid)` still routes to a read-back, and present,
+  // so the `MeetingRegistrant` cast isn't claiming a required field the object lacks.
   it.each([
     ['null', null],
     ['an empty object', {}],
@@ -1124,13 +1126,13 @@ describe('MeetingService registrant write payloads', () => {
     });
 
     expect(result).toMatchObject({ email: 'a@example.com', first_name: 'A', last_name: 'B' });
-    expect(result.uid).toBeUndefined();
+    expect(result.uid).toBe('');
   });
 
   // Self-registration is the path a registrant drives from the public meeting page, so the same
   // unusable body used to surface to them as a `{}` "created" record. Its success line has to say
-  // which branch produced the result — without `has_upstream_body` and an explicit `null` uid, Pino
-  // drops the undefined `uid` and the line is indistinguishable from a create whose log shape changed.
+  // which branch produced the result — without `has_upstream_body` and an explicit `null` uid, the
+  // fallback's placeholder would log as an empty UID rather than as one upstream never minted.
   it('logs which branch the self-registration create returned from when upstream sends no body', async () => {
     proxyRequest.mockResolvedValue(null);
 

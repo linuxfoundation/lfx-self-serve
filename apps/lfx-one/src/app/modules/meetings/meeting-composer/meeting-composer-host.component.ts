@@ -164,10 +164,14 @@ export class MeetingComposerHostComponent {
       .subscribe((context) => this.formService.initialize(context));
 
     // Losing write access while the composer is open would make submit fail upstream; close it instead
-    // of evicting the user from the page underneath. Only a true -> false transition counts: `canWrite`
-    // starts false and reports false while the project grants request is unresolved, so reacting to any
-    // false would close a composer opened from a deep link before write access ever resolved.
-    toObservable(this.projectContextService.canWrite)
+    // of evicting the user from the page underneath. `canWriteMeetings`, not `canWrite`: the latter is
+    // writer-only, so a meeting coordinator — who may open this composer and whose submit upstream
+    // accepts — reads as false on it throughout and would never produce the transition below anyway.
+    // Only a true -> false transition counts: it starts false and reports false while the grants
+    // request is unresolved, so reacting to any false would close a composer opened from a deep link
+    // before access ever resolved. A project switch holds the previous value rather than emitting a
+    // transient false, so the guard doesn't fire on navigation either.
+    toObservable(this.projectContextService.canWriteMeetings)
       .pipe(
         pairwise(),
         filter(([hadWriteAccess, canWrite]) => hadWriteAccess && !canWrite && this.composer.isOpen()),

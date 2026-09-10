@@ -31,7 +31,6 @@ describe('MeetingComposerHostComponent', () => {
   let composer: MeetingComposerService;
   let formService: MeetingComposerFormService;
   let messageService: { add: ReturnType<typeof vi.fn>; clear: ReturnType<typeof vi.fn> };
-  let canWrite: WritableSignal<boolean>;
   let canWriteMeetings: WritableSignal<boolean>;
   let meetingWriteAccessFor: ReturnType<typeof vi.fn>;
 
@@ -70,7 +69,6 @@ describe('MeetingComposerHostComponent', () => {
 
   beforeEach(async () => {
     messageService = { add: vi.fn(), clear: vi.fn() };
-    canWrite = signal(false);
     canWriteMeetings = signal(true);
     meetingWriteAccessFor = vi.fn().mockReturnValue(of(true));
 
@@ -87,8 +85,9 @@ describe('MeetingComposerHostComponent', () => {
             getMeetingDetail: vi.fn(() => of(null)),
           },
         },
-        // `canWrite` is fed to `toObservable`, so it has to be a real signal rather than a plain getter.
-        { provide: ProjectContextService, useValue: { canWrite, canWriteMeetings, activeContextUid: () => 'project-1', meetingWriteAccessFor } },
+        // `canWriteMeetings` is fed to `toObservable`, so it has to be a real signal rather than a plain
+        // getter. The host reads no other write-access signal off this service.
+        { provide: ProjectContextService, useValue: { canWriteMeetings, activeContextUid: () => 'project-1', meetingWriteAccessFor } },
         // Only reached by the project-context fallback, which never runs while no meeting is loaded.
         { provide: ProjectService, useValue: {} },
         { provide: Router, useValue: { events: new Subject(), url: '/meetings', parseUrl: () => ({ queryParams: {} }) } },
@@ -189,22 +188,23 @@ describe('MeetingComposerHostComponent', () => {
     });
 
     it('closes an open composer when write access is lost', async () => {
-      canWrite.set(true);
-      await flush();
       await openCreate();
 
-      canWrite.set(false);
+      canWriteMeetings.set(false);
       await flush();
 
       expect(composer.isOpen()).toBe(false);
     });
 
     it('leaves the composer open when write access only resolves late', async () => {
+      // `canWriteMeetings` starts false in production and stays false while the grants request is
+      // unresolved, so a deep-linked open would be closed under the organizer if any false counted
+      // rather than only a true -> false. Drop to false before opening to reach that state.
+      canWriteMeetings.set(false);
+      await flush();
       await openCreate();
 
-      // `canWrite` starts false and stays false while the grants request is unresolved, so a deep-linked
-      // open would be closed under the organizer if any false counted rather than only a true -> false.
-      canWrite.set(true);
+      canWriteMeetings.set(true);
       await flush();
 
       expect(composer.isOpen()).toBe(true);

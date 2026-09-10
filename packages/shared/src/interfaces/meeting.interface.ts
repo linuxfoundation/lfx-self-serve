@@ -768,11 +768,11 @@ export interface ComposerGuestRow {
   trackId: string;
   /** Avatar initials, from the name when known and the email otherwise. */
   initials: string;
-  /** `first last`, as typed — no fallback, since both are required to add a guest. */
+  /** `first last` with empty parts dropped; `''` for a hydrated registrant that has neither name. */
   displayName: string;
   /** `email · org`, collapsing to just the email when the org is unknown. */
   secondaryLine: string;
-  /** The remove button's accessible name, which always identifies *which* guest it removes. */
+  /** The remove button's accessible name: the display name, or the email when there is no name. */
   removeLabel: string;
 }
 

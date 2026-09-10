@@ -29,7 +29,7 @@ import { validateUidParameter } from '../helpers/validation.helper';
 import { AccessCheckService } from '../services/access-check.service';
 import { logger } from '../services/logger.service';
 import { MeetingService } from '../services/meeting.service';
-import { getEffectiveEmail, getEffectiveUsername, stripAuthPrefix } from '../utils/auth-helper';
+import { getEffectiveEmail, getEffectiveUsername } from '../utils/auth-helper';
 import { ProjectService } from '../services/project.service';
 import { generateM2MToken } from '../utils/m2m-token.util';
 import { validatePassword } from '../utils/security.util';
@@ -482,7 +482,7 @@ export class PublicMeetingController {
    * requests receive 401.
    */
   public async registerForPublicMeeting(req: Request, res: Response, next: NextFunction): Promise<void> {
-    const registrantData = this.toSelfRegistration(req, req.body);
+    const registrantData = this.toSelfRegistration(req.body);
     const meetingId = registrantData.meeting_id;
 
     // Reject an over-length identifier rather than truncating it. `toSelfRegistration` caps the
@@ -653,9 +653,10 @@ export class PublicMeetingController {
   /**
    * Narrows a self-registration request body to the fields a person may state about themselves.
    *
-   * `/public/api` is `auth: 'optional'`, so this runs both with and without a session — but it always
-   * forwards upstream under an M2M token, so whatever survives this function is written with
-   * application-level credentials. The body used to be assigned wholesale, which let a caller set
+   * `/public/api` is `auth: 'optional'`, but `registerForPublicMeeting` requires a session of its own
+   * and sends the write under the registrant's *own* bearer token — the M2M token it mints covers the
+   * meeting lookup and is swapped back before the write. So what survives this function is written as
+   * the caller, not as the application. The body used to be assigned wholesale, which let a caller set
    * `host: true` — upstream documents that as "access to host key for the meeting" — or claim
    * membership of a committee by passing `committee_uid`. Neither is the caller's to decide, so both
    * are dropped here rather than left to upstream's discretion.
@@ -668,53 +669,40 @@ export class PublicMeetingController {
    * shape nothing produced. Anything that isn't a string is dropped, which is what stops an object or
    * array from clearing the caller's `if (!registrantData.email …)` gate and reaching upstream.
    *
-   * `username` is taken from the session and never from the body, and only when the submitted email
-   * is the one that session belongs to. That second condition is what keeps LFID attribution honest:
-   * the row is written with application credentials, so upstream applies no ownership check of its
-   * own, and `getMeetingRegistrantsForUser` matches on email OR username. A row carrying one person's
-   * LFID against another person's address would therefore match both of them, and `createMeetingRsvp`
-   * takes `registrants[0]` from an unordered result — so either party's RSVP could land on it. Only
-   * stamping self-registrations removes that ambiguity at the source. It's stripped of any provider
-   * prefix because a registrant record stores the plain LFID: every read path strips before matching
-   * (`getMeetingRegistrantsByUsername`), so an `auth0|`-prefixed row would be invisible to the
-   * join-URL lookup that the username is stamped for in the first place. `email` is lowercased for the
-   * same reason, since query-service matching is case-sensitive and every read path lowercases.
+   * Identity is not this function's to set. The write lands on `/itx/meetings/:id/registrants/self`,
+   * and `addMeetingRegistrantSelf` sends neither `email` nor `username` — the meeting service reads
+   * both off the caller's JWT, which is the only reason a route reachable this way can attribute a
+   * row at all. This helper used to derive a prefix-stripped LFID from the session and hand it over;
+   * the service dropped it on the way out, so attribution was decided twice and applied once. Deriving
+   * it here is gone rather than plumbed through: a payload field would be the caller asserting an
+   * identity, which is exactly what the `self` endpoint exists to stop. `email` is still narrowed and
+   * lowercased because the caller's length guard measures it and the shared request type requires it.
    *
    * The three identifiers — `meeting_id`, `email` and `occurrence_id` — are trimmed but not truncated,
    * unlike the free-text fields, because truncating one would turn an unusable value into a different,
    * valid-looking one. The caller rejects an over-length one by name instead, so the response says
    * what was actually wrong.
    *
-   * What this doesn't close: `email` is the one field here that can't be self-asserted, so anyone can
-   * still register a third party's address for a public meeting and trigger an invite to it.
-   * `publicApiRateLimiter` caps the volume, not the primitive. Such a row is now unattributed, so it
-   * no longer collides with that person's own registration — the invite is the whole of the abuse.
-   * Nothing here checks `email_verified` either, so an IdP that admits an unverified address would
-   * still let an attacker who set their own account email to the victim's earn the stamp.
+   * Registering someone else's address is not reachable through this route: the handler rejects an
+   * anonymous caller, and the row upstream stores carries the session's address whatever the body
+   * said. A paragraph describing that abuse used to sit here, from when the endpoint accepted the
+   * submitted address as the registrant's.
    *
-   * What it costs: the registration form prefills the session email but leaves it editable, and
-   * ownership is decided against the session's single primary address. A signed-in user who registers
-   * with a secondary address of theirs now gets an unattributed row, so `createMeetingRsvp` — which
-   * resolves on session-email-OR-username — won't find it, and the RSVP controls read as
-   * "not invited". Closing that means comparing against the user's *verified* address set rather than
-   * the primary, which is an Auth0 Management round trip on an anonymous-capable route; deliberately
-   * left for its own change rather than bolted onto the identity fix.
+   * What it costs: the registration form still prefills the session address and still lets it be
+   * edited, and a registrant who types a second address of theirs is registered under their primary
+   * one with nothing saying the field was overridden. That belongs to the form, which has a value to
+   * stop offering; this helper has no address to honour.
    */
-  private toSelfRegistration(req: Request, body: unknown): CreateMeetingRegistrantRequest {
+  private toSelfRegistration(body: unknown): CreateMeetingRegistrantRequest {
     const raw = (body ?? {}) as Record<string, unknown>;
     const text = (key: string): string =>
       typeof raw[key] === 'string' ? truncateToUtf16Units((raw[key] as string).trim(), PUBLIC_REGISTRATION_FIELD_MAX_LENGTH) : '';
     // Identifiers are narrowed and trimmed but never truncated — see the length branch in
     // `registerForPublicMeeting`, which rejects them by name instead.
     const identity = (key: string): string => (typeof raw[key] === 'string' ? (raw[key] as string).trim() : '');
+    // Normalised for the caller's over-length guard and because the shared request type requires the
+    // field, not because upstream reads it — `/registrants/self` takes the address off the JWT.
     const submittedEmail = identity('email').toLowerCase();
-    // The LFID is only stamped when the caller is registering the address their own session is for.
-    // Registering a third party's address stays allowed, but it produces an unattributed row rather
-    // than one that a downstream email-OR-username lookup would match for two different people.
-    const sessionUsername = getEffectiveUsername(req);
-    const sessionEmail = getEffectiveEmail(req)?.trim().toLowerCase() || '';
-    const ownsSubmittedEmail = !!sessionEmail && sessionEmail === submittedEmail;
-    const username = sessionUsername && ownsSubmittedEmail ? stripAuthPrefix(sessionUsername) : '';
     const jobTitle = text('job_title');
     const orgName = text('org_name');
     const occurrenceId = identity('occurrence_id');
@@ -730,7 +718,6 @@ export class PublicMeetingController {
       // Which occurrences the registration covers is part of what a registrant states about their own
       // attendance, so it stays allowlisted even though no in-app caller sends it yet.
       ...(occurrenceId ? { occurrence_id: occurrenceId } : {}),
-      ...(username ? { username } : {}),
     };
   }
 
