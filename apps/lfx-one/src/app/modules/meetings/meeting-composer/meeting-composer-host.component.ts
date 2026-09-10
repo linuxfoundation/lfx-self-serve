@@ -2,7 +2,7 @@
 // SPDX-License-Identifier: MIT
 
 import { NgClass } from '@angular/common';
-import { Component, computed, DestroyRef, inject, type Signal } from '@angular/core';
+import { Component, computed, DestroyRef, inject, signal, type Signal } from '@angular/core';
 import { takeUntilDestroyed, toObservable } from '@angular/core/rxjs-interop';
 import { Router, RouterLink } from '@angular/router';
 import { ButtonComponent } from '@components/button/button.component';
@@ -94,10 +94,23 @@ export class MeetingComposerHostComponent {
 
   protected readonly activeIndex: Signal<number> = computed(() => this.sections.findIndex((section) => section.id === this.composer.activeSection()));
   protected readonly isLastSection: Signal<boolean> = computed(() => this.activeIndex() === this.sections.length - 1);
+  /**
+   * Whether the footer's Next may advance from the section on screen.
+   * @description Two conditions, not one. The section in front of the organizer has to be valid,
+   * and — in create mode — the one they would land on has to be inside the same window the rail
+   * locks: an earlier required section can go invalid without them touching it (turning on YouTube
+   * auto-upload adds a title-length rule to Details & access), and Next used to walk straight past
+   * a step the rail had already greyed out.
+   */
   protected readonly canProceed: Signal<boolean> = computed(() => {
     // `revision` makes this recompute on every form value/status change — FormGroup validity is not a signal.
     this.formService.revision();
-    return this.formService.isSectionValid(this.composer.activeSection());
+
+    if (!this.formService.isSectionValid(this.composer.activeSection())) {
+      return false;
+    }
+
+    return this.isEditMode() || this.activeIndex() + 1 <= this.formService.sectionAdvanceLimit();
   });
   /**
    * Gated on whole-form validity, which is the same rule `validateForSubmit()` applies.
@@ -110,7 +123,9 @@ export class MeetingComposerHostComponent {
   protected readonly canSubmit: Signal<boolean> = computed(() => {
     // `revision` makes this recompute on every form value/status change — FormGroup validity is not a signal.
     this.formService.revision();
-    return this.formService.form().valid;
+    // A failed edit-mode fetch leaves a valid form full of construction defaults, which would save
+    // over the stored meeting. `validateForSubmit()` refuses it too; this keeps the button honest.
+    return this.formService.isHydrated() && this.formService.form().valid;
   });
   protected readonly activeSectionLabel: Signal<string> = computed(() => this.sections[this.activeIndex()]?.label ?? '');
   /** Whether any required section is flagged as blocking save, on the same rule as the rail's dots. */
@@ -121,6 +136,14 @@ export class MeetingComposerHostComponent {
 
     return this.sections.some((section) => this.formService.sectionNeedsAttention(section, visited));
   });
+  /**
+   * Meeting-authoring permission for the project the toast's meeting belongs to.
+   * @description `null` means "no separate answer" — either the meeting landed in the active project,
+   * where the ambient signal already applies, or no toast is up. Only a cross-project create asks.
+   */
+  private readonly toastProjectWriteAccess = signal<boolean | null>(null);
+  /** Whether that cross-project probe is still in flight, so Edit can say so rather than guess. */
+  private readonly toastProjectWriteAccessLoading = signal<boolean>(false);
   /**
    * Why the toast's Edit action can't act, or `null` when it can.
    * @description Doubles as the enabled check. Reopening while another meeting is part-way through the
@@ -187,6 +210,12 @@ export class MeetingComposerHostComponent {
   }
 
   protected onNext(): void {
+    // The button is bound to the same signal, so this only catches a keyboard activation that
+    // raced the disable — but a create walking past a locked section is exactly what it must not do.
+    if (!this.canProceed()) {
+      return;
+    }
+
     const next = this.sections[this.activeIndex() + 1];
     if (next) {
       this.composer.setSection(next.id);
@@ -280,11 +309,50 @@ export class MeetingComposerHostComponent {
         return 'Close the open composer first';
       }
 
+      if (this.toastProjectWriteAccessLoading()) {
+        return 'Checking your access to that project';
+      }
+
+      // A meeting created into another project — a group-scoped create carries its own `projectUid`
+      // — is not covered by the ambient answer, which is about wherever the organizer is standing
+      // now. When the probe below produced a verdict for that project, it wins.
+      const projectAccess = this.toastProjectWriteAccess();
+
+      if (projectAccess !== null) {
+        return projectAccess ? null : 'You do not have write access to that project';
+      }
+
       // Meeting-authoring permission, not writer-only: a meeting coordinator creates meetings without
       // being a project writer, and `canWrite()` would deny them the edit action on the meeting this
       // toast is announcing. Same signal the dashboard gates the create action on.
       return this.projectContextService.canWriteMeetings() ? null : 'You no longer have write access';
     });
+  }
+
+  /**
+   * Resolves meeting-authoring permission for the project a just-created meeting landed in.
+   * @description Skipped entirely for the common case: when the meeting belongs to the active
+   * project the ambient `canWriteMeetings()` already answers, and it stays live as the session
+   * changes, which a one-shot probe would not. A cross-project create is the case the ambient
+   * signal gets wrong, and the only one worth two extra requests.
+   */
+  private resolveToastProjectWriteAccess(projectUid: string | null): void {
+    this.toastProjectWriteAccess.set(null);
+    this.toastProjectWriteAccessLoading.set(false);
+
+    if (!projectUid || projectUid === this.projectContextService.activeContextUid()) {
+      return;
+    }
+
+    this.toastProjectWriteAccessLoading.set(true);
+
+    this.projectContextService
+      .meetingWriteAccessFor(projectUid)
+      .pipe(take(1), takeUntilDestroyed(this.destroyRef))
+      .subscribe((canWrite) => {
+        this.toastProjectWriteAccess.set(canWrite);
+        this.toastProjectWriteAccessLoading.set(false);
+      });
   }
 
   /**
@@ -303,10 +371,17 @@ export class MeetingComposerHostComponent {
       meetingUid: meeting.id,
       meetingTitle: meeting.title ?? 'Untitled meeting',
       meetingUrl: `/meetings/${meeting.id}`,
+      // `||` not `??`: the field is typed required but arrives empty from a create response that
+      // did not echo it back, and an empty uid is no project rather than a project named "".
+      projectUid: meeting.project_uid || null,
       // The join page rejects a private or restricted meeting without its password and redirects to
       // `/meetings/not-found`, which every BOARD meeting would hit since those are forced private.
       meetingQueryParams: meeting.password ? { password: meeting.password } : {},
     };
+
+    // The Edit action asks whether this meeting may be reopened, which is a question about the
+    // project it was saved into — not about wherever the organizer happens to be standing.
+    this.resolveToastProjectWriteAccess(data.projectUid);
 
     // Only the newest sticky toast survives. Without a lifetime nothing retires these on its own, so
     // creating several meetings in a row stacked permanent multi-line toasts up over the content the

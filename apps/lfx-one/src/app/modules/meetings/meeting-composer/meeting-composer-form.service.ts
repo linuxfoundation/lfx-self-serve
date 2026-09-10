@@ -1,6 +1,7 @@
 // Copyright The Linux Foundation and each contributor to LFX.
 // SPDX-License-Identifier: MIT
 
+import { HttpErrorResponse } from '@angular/common/http';
 import { computed, DestroyRef, inject, Injectable, signal, type Signal } from '@angular/core';
 import { takeUntilDestroyed } from '@angular/core/rxjs-interop';
 import { FormArray, FormControl, FormGroup, Validators } from '@angular/forms';
@@ -16,6 +17,8 @@ import {
   MAX_EMAIL_REMINDER_HOURS,
   MAX_EMAIL_REMINDER_TIME,
   MEETING_AGENDA_MAX_LENGTH,
+  MEETING_ATTACHMENT_WRITE_CONCURRENCY,
+  MEETING_COMPOSER_SECTIONS,
   MEETING_DURATION_CHIP_OPTIONS,
   MIN_CUSTOM_DURATION,
   MIN_EARLY_JOIN_TIME,
@@ -33,6 +36,7 @@ import {
   MeetingAttachment,
   MeetingAttachmentOperationResults,
   MeetingComposerContext,
+  MeetingComposerLoadFailure,
   MeetingComposerMode,
   MeetingComposerSection,
   MeetingComposerSectionId,
@@ -107,8 +111,23 @@ export class MeetingComposerFormService {
 
   public readonly meeting = signal<Meeting | null>(null);
   public readonly loading = signal<boolean>(false);
+  /**
+   * How the edit-mode fetch failed, or `null` when it hasn't.
+   * @description Two outcomes, not one: a 404/403 is permanent, so the drawer explains and stops
+   * there, while anything else keeps its Retry. A single boolean offered "Try again" on a deleted
+   * meeting and labelled a 500 "not found" — the pair of mistakes #2037 fixed on the page this
+   * composer replaced.
+   */
+  public readonly meetingLoadFailure = signal<MeetingComposerLoadFailure | null>(null);
   /** Whether the edit-mode fetch failed, so the drawer can say so instead of showing an empty form. */
-  public readonly meetingLoadFailed = signal<boolean>(false);
+  public readonly meetingLoadFailed: Signal<boolean> = computed(() => this.meetingLoadFailure() !== null);
+  /**
+   * Whether the form is backed by real data.
+   * @description Always true in create mode; in edit mode it takes a loaded meeting. Save writes the
+   * whole form, so submitting one that never hydrated would overwrite the stored meeting with the
+   * group's construction defaults.
+   */
+  public readonly isHydrated: Signal<boolean> = computed(() => !this.isEditMode() || this.meeting() !== null);
   public readonly submitting = signal<boolean>(false);
 
   public readonly attachments = signal<MeetingAttachment[]>([]);
@@ -230,7 +249,7 @@ export class MeetingComposerFormService {
     this.pendingAttachmentDeletions.set([]);
     this.registrantUpdates.set({ toAdd: [], toUpdate: [], toDelete: [] });
     this.guests.set([]);
-    this.meetingLoadFailed.set(false);
+    this.meetingLoadFailure.set(null);
     this.guestsLoading.set(false);
     this.guestsLoadFailed.set(false);
     this.suppressedGuestEmails.set(new Set());
@@ -388,6 +407,21 @@ export class MeetingComposerFormService {
   }
 
   /**
+   * Index of the first section create mode must not advance past, or the section count when none blocks.
+   * @description One rule for two surfaces. The rail locked later sections behind an incomplete
+   * required one while the footer's Next kept walking straight through them, so the lock was a
+   * suggestion: turning on YouTube auto-upload from Platform & features adds a title-length
+   * validator that invalidates Details & access behind the organizer's back, and Next still moved
+   * on. Callers must read `revision` themselves — this is a plain method and carries no reactive
+   * dependency of its own.
+   */
+  public sectionAdvanceLimit(): number {
+    const blocking = MEETING_COMPOSER_SECTIONS.findIndex((section) => section.required && !this.isSectionValid(section.id));
+
+    return blocking === -1 ? MEETING_COMPOSER_SECTIONS.length : blocking;
+  }
+
+  /**
    * Re-runs the edit-mode fetch after a failure, so retrying doesn't mean reopening the composer.
    * @description Edit mode only: `meetingId` is also set by a successful create, and re-fetching there
    * would hydrate a create form from the meeting it just saved. The two fetches are independent, so a
@@ -397,7 +431,9 @@ export class MeetingComposerFormService {
   public retryLoadMeeting(): void {
     const meetingUid = this.meetingId();
 
-    if (!this.isEditMode() || !meetingUid || this.loading()) {
+    // `denied` never retries: the 404/403 that produced it will produce it again, and the drawer
+    // doesn't render the action for it. Guarded here too so a caller can't route around that.
+    if (!this.isEditMode() || !meetingUid || this.loading() || this.meetingLoadFailure() === 'denied') {
       return;
     }
 
@@ -410,6 +446,12 @@ export class MeetingComposerFormService {
 
   /** Marks the whole form touched so validation messages surface; returns whether submit may proceed. */
   public validateForSubmit(): boolean {
+    // An edit whose fetch failed has a form full of defaults, not of the stored meeting. Saving it
+    // would be a silent overwrite, and there is nothing to mark touched that would explain that.
+    if (!this.isHydrated()) {
+      return false;
+    }
+
     const form = this.form();
     Object.keys(form.controls).forEach((key) => {
       const control = form.get(key);
@@ -491,9 +533,14 @@ export class MeetingComposerFormService {
           registrants: this.processRegistrantOperations(meetingId),
         }).pipe(
           switchMap((results) => {
-            // The composer can move on while these requests are in flight. Reporting then would clear the
-            // new open's deletion queue, and emitting would close that open with a toast for the old meeting.
+            // The composer can move on while these requests are in flight. Emitting then would close that
+            // open with a toast for the old meeting, so this branch never returns the meeting. What it
+            // does still owe the organizer is the bad news: guests and resources that failed to save are
+            // failures either way, and swallowing them meant a meeting quietly missing half its invitees.
+            // The wording says which meeting, since the drawer on screen is now a different one.
             if (generation !== this.generation) {
+              this.reportStaleDependentResults(results.attachments, results.registrants, wasEditMode);
+
               return EMPTY;
             }
 
@@ -947,7 +994,7 @@ export class MeetingComposerFormService {
 
   private loadMeeting(meetingUid: string): void {
     this.loading.set(true);
-    this.meetingLoadFailed.set(false);
+    this.meetingLoadFailure.set(null);
 
     forkJoin({
       meeting: this.meetingService.getMeeting(meetingUid),
@@ -967,14 +1014,24 @@ export class MeetingComposerFormService {
         },
         error: (error: unknown) => {
           console.error('Error getting meeting:', error);
-          // The toast is transient, so the drawer keeps its own flag — otherwise the organizer is left
-          // with an empty form and a disabled Save and nothing saying why.
-          this.meetingLoadFailed.set(true);
-          this.messageService.add({
-            severity: 'error',
-            summary: 'Error',
-            detail: 'Meeting not found or you do not have permission to access it',
-          });
+          // 404/403 is the permanent pair: the meeting is gone, or write access went away
+          // mid-session and no retry here can restore it. Everything else — a 5xx, a dropped
+          // connection — is worth another attempt, and saying "not found" about it would send the
+          // organizer looking for a meeting that is still there.
+          const denied = error instanceof HttpErrorResponse && (error.status === 404 || error.status === 403);
+
+          this.meetingLoadFailure.set(denied ? 'denied' : 'retryable');
+
+          // The toast is transient, so the drawer keeps its own state either way — otherwise the
+          // organizer is left with an empty form and a disabled Save and nothing saying why. Only
+          // the permanent case gets a toast on top: the retryable one has an action on screen.
+          if (denied) {
+            this.messageService.add({
+              severity: 'error',
+              summary: 'Error',
+              detail: 'Meeting not found or you do not have permission to access it',
+            });
+          }
         },
       });
   }
@@ -1408,6 +1465,7 @@ export class MeetingComposerFormService {
     // Snapshot every collection up front. These steps run between HTTP round-trips, and `initialize()`
     // swaps in a fresh FormGroup — re-reading per step would upload a later open's files and links
     // against this meeting's id, and would silently drop this open's own queue.
+    const generation = this.generation;
     const attachmentIdsToDelete = this.pendingAttachmentDeletions();
     const attachmentsToUpload = this.unsavedAttachments();
     const linksToSave = this.unsavedLinks();
@@ -1418,7 +1476,13 @@ export class MeetingComposerFormService {
 
     // Deletions before uploads before links, so a removed link isn't re-created in the same pass.
     return this.deletePendingAttachments(meetingId, attachmentIdsToDelete).pipe(
-      tap((deletions) => this.dropDeletedFromQueue(attachmentIdsToDelete, deletions.failures)),
+      // Same reason the snapshot exists: by the time the deletes come back the composer may have been
+      // reopened, and the queue this would edit belongs to that new open, not to this save.
+      tap((deletions) => {
+        if (generation === this.generation) {
+          this.dropDeletedFromQueue(attachmentIdsToDelete, deletions.failures);
+        }
+      }),
       switchMap((deletions) =>
         this.savePendingAttachments(meetingId, attachmentsToUpload).pipe(
           switchMap((uploads) => this.saveLinkAttachments(meetingId, linksToSave).pipe(map((links) => ({ deletions, uploads, links }))))
@@ -1434,11 +1498,13 @@ export class MeetingComposerFormService {
     }
 
     return from(attachmentIdsToDelete).pipe(
-      mergeMap((attachmentId) =>
-        this.meetingService.deleteMeetingAttachment(meetingId, attachmentId).pipe(
-          map(() => ({ success: attachmentId, failure: null as string | null })),
-          catchError(() => of({ success: null as string | null, failure: attachmentId }))
-        )
+      mergeMap(
+        (attachmentId) =>
+          this.meetingService.deleteMeetingAttachment(meetingId, attachmentId).pipe(
+            map(() => ({ success: attachmentId, failure: null as string | null })),
+            catchError(() => of({ success: null as string | null, failure: attachmentId }))
+          ),
+        MEETING_ATTACHMENT_WRITE_CONCURRENCY
       ),
       toArray(),
       map((results) => ({
@@ -1455,17 +1521,19 @@ export class MeetingComposerFormService {
     }
 
     return from(attachmentsToSave).pipe(
-      mergeMap((attachment) =>
-        this.meetingService
-          .uploadMeetingFile(meetingId, attachment.file, {
-            name: attachment.fileName,
-            file_size: attachment.fileSize,
-            file_type: attachment.mimeType,
-          })
-          .pipe(
-            map((result) => ({ success: result, failure: null })),
-            catchError((error: unknown) => of({ success: null, failure: { fileName: attachment.fileName, error } }))
-          )
+      mergeMap(
+        (attachment) =>
+          this.meetingService
+            .uploadMeetingFile(meetingId, attachment.file, {
+              name: attachment.fileName,
+              file_size: attachment.fileSize,
+              file_type: attachment.mimeType,
+            })
+            .pipe(
+              map((result) => ({ success: result, failure: null })),
+              catchError((error: unknown) => of({ success: null, failure: { fileName: attachment.fileName, error } }))
+            ),
+        MEETING_ATTACHMENT_WRITE_CONCURRENCY
       ),
       toArray(),
       map((results) => ({
@@ -1513,11 +1581,13 @@ export class MeetingComposerFormService {
     }
 
     return from(linksToSave).pipe(
-      mergeMap((link) =>
-        this.meetingService.createMeetingAttachment(meetingId, { type: 'link', category: 'Other', name: link.title, link: link.url }).pipe(
-          map((result) => ({ success: result, failure: null })),
-          catchError((error: unknown) => of({ success: null, failure: { linkName: link.title, error } }))
-        )
+      mergeMap(
+        (link) =>
+          this.meetingService.createMeetingAttachment(meetingId, { type: 'link', category: 'Other', name: link.title, link: link.url }).pipe(
+            map((result) => ({ success: result, failure: null })),
+            catchError((error: unknown) => of({ success: null, failure: { linkName: link.title, error } }))
+          ),
+        MEETING_ATTACHMENT_WRITE_CONCURRENCY
       ),
       toArray(),
       map((results) => ({
@@ -1548,6 +1618,50 @@ export class MeetingComposerFormService {
     registrants: MeetingRegistrantOperationResult[],
     wasEditMode: boolean
   ): void {
+    const failures = this.describeDependentFailures(attachments, registrants);
+
+    if (!failures) {
+      return;
+    }
+
+    this.messageService.add({
+      severity: 'warn',
+      summary: wasEditMode ? 'Meeting Updated' : 'Meeting Created',
+      detail: `${failures} could not be saved. You can manage them later.`,
+    });
+  }
+
+  /**
+   * Warns about a partial save whose composer has already moved on.
+   * @description Same failures, different framing. The drawer on screen belongs to another meeting by
+   * now, so "you can manage them later" would point at the wrong form; this says which meeting the
+   * warning is about and that the open draft is untouched. Nothing here reads or writes the current
+   * open's state — the queues it would have mutated are the new open's.
+   */
+  private reportStaleDependentResults(
+    attachments: MeetingAttachmentOperationResults | null,
+    registrants: MeetingRegistrantOperationResult[],
+    wasEditMode: boolean
+  ): void {
+    const failures = this.describeDependentFailures(attachments, registrants);
+
+    if (!failures) {
+      return;
+    }
+
+    this.messageService.add({
+      severity: 'warn',
+      summary: 'Partially saved',
+      detail: `The meeting you ${wasEditMode ? 'updated' : 'created'} saved, but ${failures} did not. Your current draft is unaffected.`,
+    });
+  }
+
+  /**
+   * Tallies and logs the guest and resource failures from one save, or `null` when there were none.
+   * @description The counting and the `console.error` calls are shared by both reporters, so the two
+   * can't drift into disagreeing about what counts as a failure.
+   */
+  private describeDependentFailures(attachments: MeetingAttachmentOperationResults | null, registrants: MeetingRegistrantOperationResult[]): string | null {
     const registrantFailures = registrants.reduce((sum, result) => sum + result.failed, 0);
     let attachmentFailures = 0;
 
@@ -1560,17 +1674,13 @@ export class MeetingComposerFormService {
     }
 
     if (registrantFailures === 0 && attachmentFailures === 0) {
-      return;
+      return null;
     }
 
     const failureParts: string[] = [];
     if (registrantFailures > 0) failureParts.push(`${registrantFailures} guest(s)`);
     if (attachmentFailures > 0) failureParts.push(`${attachmentFailures} resource(s)`);
 
-    this.messageService.add({
-      severity: 'warn',
-      summary: wasEditMode ? 'Meeting Updated' : 'Meeting Created',
-      detail: `${failureParts.join(' and ')} could not be saved. You can manage them later.`,
-    });
+    return failureParts.join(' and ');
   }
 }

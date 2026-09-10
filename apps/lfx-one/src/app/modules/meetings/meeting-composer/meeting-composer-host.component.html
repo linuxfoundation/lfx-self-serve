@@ -104,21 +104,30 @@
 
       @if (formService.loading()) {
         <p class="py-5 text-sm text-gray-500" data-testid="meeting-composer-loading">Loading meeting…</p>
-      } @else if (formService.meetingLoadFailed()) {
-        <!-- Without this the failed fetch leaves an empty form and a disabled Save with nothing saying why -->
+      } @else if (formService.meetingLoadFailure(); as loadFailure) {
+        <!-- Without this the failed fetch leaves an empty form and a disabled Save with nothing saying why.
+             The two outcomes read differently on purpose: a 404/403 will fail the same way every time, so it
+             gets no Retry, while a server error keeps one rather than being mislabelled "not found". -->
         <div class="flex min-w-0 flex-1 flex-col items-start gap-3 py-5" data-testid="meeting-composer-load-error">
-          <div class="flex flex-col gap-1">
-            <span class="text-sm font-semibold text-gray-900">Couldn't load this meeting</span>
-            <span class="text-sm text-gray-600">It may have been deleted, or you may not have permission to edit it.</span>
-          </div>
+          @if (loadFailure === 'denied') {
+            <div class="flex flex-col gap-1">
+              <span class="text-sm font-semibold text-gray-900">Couldn't load this meeting</span>
+              <span class="text-sm text-gray-600">It may have been deleted, or you may not have permission to edit it.</span>
+            </div>
+          } @else {
+            <div class="flex flex-col gap-1">
+              <span class="text-sm font-semibold text-gray-900">Something went wrong loading this meeting</span>
+              <span class="text-sm text-gray-600">The meeting is still there — the request didn't get through.</span>
+            </div>
 
-          <lfx-button
-            label="Try again"
-            severity="secondary"
-            [outlined]="true"
-            size="small"
-            data-testid="meeting-composer-load-retry"
-            (onClick)="formService.retryLoadMeeting()" />
+            <lfx-button
+              label="Try again"
+              severity="secondary"
+              [outlined]="true"
+              size="small"
+              data-testid="meeting-composer-load-retry"
+              (onClick)="formService.retryLoadMeeting()" />
+          }
         </div>
       } @else {
         <div class="flex min-w-0 flex-1 flex-col gap-6 overflow-y-auto py-5">

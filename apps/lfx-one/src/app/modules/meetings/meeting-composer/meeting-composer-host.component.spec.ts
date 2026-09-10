@@ -33,6 +33,7 @@ describe('MeetingComposerHostComponent', () => {
   let messageService: { add: ReturnType<typeof vi.fn>; clear: ReturnType<typeof vi.fn> };
   let canWrite: WritableSignal<boolean>;
   let canWriteMeetings: WritableSignal<boolean>;
+  let meetingWriteAccessFor: ReturnType<typeof vi.fn>;
 
   const createdMeeting = { id: 'meeting-1', title: 'Weekly sync' } as Meeting;
 
@@ -45,6 +46,11 @@ describe('MeetingComposerHostComponent', () => {
   const openCreate = async (): Promise<void> => {
     composer.open({ mode: 'create', projectUid: 'project-1' });
     await flush();
+  };
+
+  /** The minimum that clears `details-access`, which create mode now requires before Next moves. */
+  const fillDetailsAccess = (): void => {
+    formService.form().patchValue({ title: 'Weekly sync', meeting_type: 'Technical' });
   };
 
   /** The smallest set that satisfies every required control plus the group-level future-date validator. */
@@ -66,6 +72,7 @@ describe('MeetingComposerHostComponent', () => {
     messageService = { add: vi.fn(), clear: vi.fn() };
     canWrite = signal(false);
     canWriteMeetings = signal(true);
+    meetingWriteAccessFor = vi.fn().mockReturnValue(of(true));
 
     TestBed.configureTestingModule({
       providers: [
@@ -81,7 +88,7 @@ describe('MeetingComposerHostComponent', () => {
           },
         },
         // `canWrite` is fed to `toObservable`, so it has to be a real signal rather than a plain getter.
-        { provide: ProjectContextService, useValue: { canWrite, canWriteMeetings, activeContextUid: () => '' } },
+        { provide: ProjectContextService, useValue: { canWrite, canWriteMeetings, activeContextUid: () => 'project-1', meetingWriteAccessFor } },
         // Only reached by the project-context fallback, which never runs while no meeting is loaded.
         { provide: ProjectService, useValue: {} },
         { provide: Router, useValue: { events: new Subject(), url: '/meetings', parseUrl: () => ({ queryParams: {} }) } },
@@ -115,10 +122,20 @@ describe('MeetingComposerHostComponent', () => {
     });
 
     it('advances one section and records the visit', () => {
+      fillDetailsAccess();
+
       component['onNext']();
 
       expect(composer.activeSection()).toBe(MEETING_COMPOSER_SECTIONS[1].id);
       expect(composer.visitedSections().has(MEETING_COMPOSER_SECTIONS[1].id)).toBe(true);
+    });
+
+    it('refuses to advance past a required section that still has holes in it', () => {
+      component['onNext']();
+
+      // The footer disables Next here, but the handler is also the keyboard path, and the rail
+      // locks the same rows off the same number — neither control may be a way around the other.
+      expect(composer.activeSection()).toBe('details-access');
     });
 
     it('does nothing when Next is reached on the last section', () => {
@@ -248,7 +265,7 @@ describe('MeetingComposerHostComponent', () => {
         detail: 'Weekly sync',
         sticky: true,
         closable: true,
-        data: { meetingUid: 'meeting-1', meetingTitle: 'Weekly sync', meetingUrl: '/meetings/meeting-1', meetingQueryParams: {} },
+        data: { meetingUid: 'meeting-1', meetingTitle: 'Weekly sync', meetingUrl: '/meetings/meeting-1', meetingQueryParams: {}, projectUid: null },
       });
     });
 
@@ -338,17 +355,77 @@ describe('MeetingComposerHostComponent', () => {
     it('does nothing when the action is blocked', async () => {
       await openCreate();
 
-      component['onEditCreatedMeeting']({ meetingUid: 'meeting-1', meetingTitle: 'Weekly sync', meetingUrl: '/meetings/meeting-1', meetingQueryParams: {} });
+      component['onEditCreatedMeeting']({
+        meetingUid: 'meeting-1',
+        meetingTitle: 'Weekly sync',
+        meetingUrl: '/meetings/meeting-1',
+        meetingQueryParams: {},
+        projectUid: null,
+      });
 
       // Reopening here would silently discard the draft in the open composer.
       expect(composer.context()).toMatchObject({ mode: 'create' });
     });
 
     it('clears the toast and reopens the composer in edit mode', () => {
-      component['onEditCreatedMeeting']({ meetingUid: 'meeting-1', meetingTitle: 'Weekly sync', meetingUrl: '/meetings/meeting-1', meetingQueryParams: {} });
+      component['onEditCreatedMeeting']({
+        meetingUid: 'meeting-1',
+        meetingTitle: 'Weekly sync',
+        meetingUrl: '/meetings/meeting-1',
+        meetingQueryParams: {},
+        projectUid: null,
+      });
 
       expect(messageService.clear).toHaveBeenCalledWith(MEETING_COMPOSER_TOAST_KEY);
       expect(composer.context()).toEqual({ mode: 'edit', meetingUid: 'meeting-1' });
+    });
+  });
+
+  /**
+   * A group-scoped create saves into the project it was handed, not the one the organizer is
+   * looking at, and the toast outlives that open. Asking whether they may write meetings *here*
+   * is then the wrong question — it can offer an Edit that fails, or withhold one that would work.
+   */
+  describe('editing a meeting created in another project', () => {
+    const announce = (projectUid: string | undefined): void => {
+      component['announceCreatedMeeting']({ ...createdMeeting, project_uid: projectUid } as Meeting);
+    };
+
+    it('asks about the project the meeting actually landed in', () => {
+      announce('other-project');
+
+      expect(meetingWriteAccessFor).toHaveBeenCalledWith('other-project');
+    });
+
+    it('refuses the reopen when that project is not writable', () => {
+      meetingWriteAccessFor.mockReturnValue(of(false));
+
+      announce('other-project');
+
+      expect(component['editFromToastBlockedReason']()).toBe('You do not have write access to that project');
+    });
+
+    it('says the check is running rather than guessing from the ambient project', () => {
+      meetingWriteAccessFor.mockReturnValue(new Subject<boolean>());
+
+      announce('other-project');
+
+      expect(component['editFromToastBlockedReason']()).toBe('Checking your access to that project');
+    });
+
+    it('allows the reopen on the answer for that project, not the ambient one', () => {
+      canWriteMeetings.set(false);
+
+      announce('other-project');
+
+      expect(component['editFromToastBlockedReason']()).toBeNull();
+    });
+
+    it('does not re-ask for a meeting created in the project already on screen', () => {
+      announce('project-1');
+
+      expect(meetingWriteAccessFor).not.toHaveBeenCalled();
+      expect(component['editFromToastBlockedReason']()).toBeNull();
     });
   });
 

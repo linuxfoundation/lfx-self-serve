@@ -1986,6 +1986,15 @@ export interface MeetingComposerContext {
 export type MeetingComposerVariant = 'drawer' | 'quick';
 
 /**
+ * Why an edit-mode hydration failed, and therefore whether retrying can help.
+ * @description `denied` is a 404 or a 403: the meeting is gone or access was lost, and the same
+ * request will keep failing, so the drawer must not offer a retry. `retryable` is everything else
+ * — a 5xx or a network blip — where the fetch is worth running again and calling it "not found"
+ * would be a lie. Restores the split the full-page editor carried for #2037.
+ */
+export type MeetingComposerLoadFailure = 'retryable' | 'denied';
+
+/**
  * What the post-create toast needs to render its actions.
  * @description Carried on the PrimeNG message's `data`, since creating no longer navigates anywhere —
  * the toast is the only route back to the meeting that was just created.
@@ -1997,6 +2006,14 @@ export interface MeetingComposerToastData {
   meetingUrl: string;
   /** Query params that page needs — the access password, for a private or restricted meeting. */
   meetingQueryParams: Record<string, string>;
+  /**
+   * Project the meeting was created under, or `null` when the response carried none.
+   * @description The composer can save into a project other than the active one — a group-scoped
+   * create passes its own `projectUid` — and the toast outlives that open. Without it the Edit
+   * action can only ask whether the organizer may write meetings *here*, which is the wrong
+   * question for a meeting created somewhere else.
+   */
+  projectUid: string | null;
 }
 
 /** Dialog data for the composer's manual guest entry dialog. */

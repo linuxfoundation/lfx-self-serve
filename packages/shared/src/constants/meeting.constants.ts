@@ -851,6 +851,16 @@ export const LATEST_PAST_MEETINGS_RETURN_LIMIT = 5;
  */
 export const MEETING_RECORDING_COUNT_FETCH_CONCURRENCY = 8;
 
+/**
+ * Max concurrent attachment writes — deletes, file uploads, link creates — in one composer save.
+ * @description These fan out over whatever the organizer queued, with no upper bound of their own:
+ * a save carrying twenty documents opened twenty simultaneous multipart uploads against the
+ * gateway. Matches `DOCUMENT_UPLOAD_CONCURRENCY`, which caps the same upload endpoint from the
+ * documents module; kept as its own name because it also covers the delete and link-create passes,
+ * which are not uploads.
+ */
+export const MEETING_ATTACHMENT_WRITE_CONCURRENCY = 3;
+
 /** Session cache TTL for past-meeting recording fetches; balances dedupe vs post-processing staleness. */
 export const PAST_MEETING_RECORDING_CACHE_TTL_MS = 5 * 60 * 1000;
 

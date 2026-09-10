@@ -10,7 +10,7 @@ import { ProjectStage } from '@lfx-one/shared/enums';
 import { Project, ProjectContext } from '@lfx-one/shared/interfaces';
 import { getFormationSubStageLabel, isBoardScopedPersona, isFormationStage, isSameProjectContext } from '@lfx-one/shared/utils';
 import { SsrCookieService } from 'ngx-cookie-service-ssr';
-import { catchError, combineLatest, filter, map, of, startWith, switchMap, tap } from 'rxjs';
+import { catchError, combineLatest, filter, map, Observable, of, startWith, switchMap, tap } from 'rxjs';
 
 import { hasMeetingWriteAccess } from '../utils/write-access.util';
 import { CookieRegistryService } from './cookie-registry.service';
@@ -221,6 +221,30 @@ export class ProjectContextService {
   }
 
   /**
+   * Whether the signed-in user may author meetings in one named project.
+   * @description The ambient `canWriteMeetings` answers this for the active context only, which is
+   * the wrong question whenever a surface acts on a project it isn't currently sitting in — a
+   * group-scoped meeting create, or a toast offering to reopen a meeting saved somewhere else. Same
+   * two-step writer -> meeting-coordinator probe, exposed for an explicit slug or uid.
+   * @param slugOrUid Project slug or uid; `ProjectService.getProject` accepts either.
+   */
+  public meetingWriteAccessFor(slugOrUid: string): Observable<boolean> {
+    // Upstream skips the `meeting_coordinator` FGA check outright for writers, so the second request
+    // could only echo the first for them. Only a non-writer actually needs it.
+    return this.projectService.getProject(slugOrUid, false).pipe(
+      switchMap((project) => {
+        if (project?.writer === true) {
+          return of(true);
+        }
+        return this.projectService
+          .getProject(slugOrUid, false, { meetingCoordinator: true })
+          .pipe(map((coordinatorProject) => hasMeetingWriteAccess(coordinatorProject)));
+      }),
+      catchError(() => of(false))
+    );
+  }
+
+  /**
    * Updates the ?project= query param in the current URL via Location.replaceState —
    * no Angular navigation is triggered, so guards and resolvers are not re-evaluated.
    * Skipped when a navigation is already in flight: the URL already carries the correct
@@ -398,20 +422,8 @@ export class ProjectContextService {
           // looks: the plain `getProject(slug, false)` response is already in ProjectService's
           // cache on every navigation — `projectQueryParamGuard` fetches that exact key — while
           // `:mc` is a separate cache entry and so a genuine extra round trip on the SSR critical
-          // path of every page. Upstream skips the `meeting_coordinator` FGA check outright for
-          // writers (`project.service.ts:344`), so for a writer that second request could only
-          // echo back what the first already said. Only a non-writer actually needs it.
-          return this.projectService.getProject(ctx.slug, false).pipe(
-            switchMap((project) => {
-              if (project?.writer === true) {
-                return of(true);
-              }
-              return this.projectService
-                .getProject(ctx.slug, false, { meetingCoordinator: true })
-                .pipe(map((coordinatorProject) => hasMeetingWriteAccess(coordinatorProject)));
-            }),
-            catchError(() => of(false))
-          );
+          // path of every page.
+          return this.meetingWriteAccessFor(ctx.slug);
         })
       ),
       { initialValue: false }

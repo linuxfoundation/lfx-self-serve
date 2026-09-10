@@ -1,8 +1,10 @@
 // Copyright The Linux Foundation and each contributor to LFX.
 // SPDX-License-Identifier: MIT
 
+import { HttpErrorResponse } from '@angular/common/http';
 import { TestBed } from '@angular/core/testing';
 import { FormArray, FormControl, FormGroup } from '@angular/forms';
+import { MEETING_ATTACHMENT_WRITE_CONCURRENCY, MEETING_COMPOSER_SECTIONS } from '@lfx-one/shared/constants';
 import { CommitteeMemberRole, CommitteeMemberVotingStatus, MeetingType, MeetingVisibility } from '@lfx-one/shared/enums';
 import type {
   CommitteeMember,
@@ -101,7 +103,33 @@ describe('MeetingComposerFormService — submit generation guard', () => {
     registrants.complete();
 
     expect(emissions).toEqual([]);
-    expect(messageAdd).not.toHaveBeenCalled();
+  });
+
+  it('still reports guest failures that landed after the composer reopened', () => {
+    const registrants = new Subject<unknown>();
+    createMeeting.mockReturnValue(of({ id: 'meeting-1' } as Meeting));
+    addMeetingRegistrants.mockReturnValue(registrants);
+    service.registrantUpdates.set({ toAdd: [REGISTRANT], toUpdate: [], toDelete: [] });
+
+    service.submit().subscribe();
+    service.initialize({ mode: 'create', projectUid: 'project-1' });
+    const reopened = { toAdd: [REGISTRANT], toUpdate: [], toDelete: [] };
+    service.registrantUpdates.set(reopened);
+
+    registrants.next({ summary: { successful: 0, failed: 1 } });
+    registrants.complete();
+
+    // The guests belonged to the meeting that was already saved: staying silent would tell the
+    // organizer the save was clean when a guest never made it.
+    expect(messageAdd).toHaveBeenCalledWith(
+      expect.objectContaining({
+        severity: 'warn',
+        summary: 'Partially saved',
+        detail: 'The meeting you created saved, but 1 guest(s) did not. Your current draft is unaffected.',
+      })
+    );
+    // The warning is about the previous open, so the queues the reopened composer is holding stay put.
+    expect(service.registrantUpdates()).toBe(reopened);
   });
 
   it('stays silent about partial saves when nothing was queued to attach', () => {
@@ -286,6 +314,36 @@ describe('MeetingComposerFormService — attachment deletion queue', () => {
     expect(service.pendingAttachmentDeletions()).toEqual([]);
     expect(messageAdd).not.toHaveBeenCalled();
   });
+
+  // A save carrying twenty documents used to open twenty simultaneous requests against the
+  // gateway, because every attachment pass fanned out over whatever the organizer had queued.
+  it('caps how many attachment writes are in flight at once', () => {
+    deleteMeetingAttachment.mockReturnValue(new Subject<void>());
+    for (let index = 0; index < MEETING_ATTACHMENT_WRITE_CONCURRENCY + 3; index += 1) {
+      service.deleteAttachment(`doc-${index}`);
+    }
+
+    service.submit().subscribe();
+
+    expect(deleteMeetingAttachment).toHaveBeenCalledTimes(MEETING_ATTACHMENT_WRITE_CONCURRENCY);
+  });
+
+  it('leaves the reopened composer\u2019s deletion queue alone when a stale pass lands', () => {
+    const firstDelete = new Subject<void>();
+    deleteMeetingAttachment.mockReturnValue(firstDelete);
+    service.deleteAttachment('doc-1');
+
+    service.submit().subscribe();
+
+    service.initialize({ mode: 'create', projectUid: 'project-1' });
+    service.deleteAttachment('doc-1');
+    firstDelete.next();
+    firstDelete.complete();
+
+    // Same id, different open: dropping it here would silently un-queue a removal the organizer
+    // just asked for on a meeting the finished pass knows nothing about.
+    expect(service.pendingAttachmentDeletions()).toEqual(['doc-1']);
+  });
 });
 
 /**
@@ -348,15 +406,17 @@ describe('MeetingComposerFormService — load retry', () => {
   let service: MeetingComposerFormService;
   let getMeeting: ReturnType<typeof vi.fn>;
   let getMeetingRegistrants: ReturnType<typeof vi.fn>;
+  let messageAdd: ReturnType<typeof vi.fn>;
 
   beforeEach(() => {
     getMeeting = vi.fn().mockReturnValue(throwError(() => new Error('not found')));
     getMeetingRegistrants = vi.fn().mockReturnValue(of([] as MeetingRegistrant[]));
+    messageAdd = vi.fn();
 
     TestBed.configureTestingModule({
       providers: [
         MeetingComposerFormService,
-        { provide: MessageService, useValue: { add: vi.fn() } },
+        { provide: MessageService, useValue: { add: messageAdd } },
         { provide: CommitteeService, useValue: {} },
         { provide: ProjectContextService, useValue: { activeContextUid: () => null } },
         {
@@ -471,6 +531,46 @@ describe('MeetingComposerFormService — load retry', () => {
 
     expect(getMeeting).not.toHaveBeenCalled();
   });
+
+  // GH-2037 split these two apart on the full-page editor, and the composer flattened them back
+  // into one not-found toast: a 5xx was announced as a missing meeting, and a genuinely missing
+  // one still offered a Try again that could only fail the same way.
+  it('treats a request that never got through as retryable, and does not call it not found', () => {
+    getMeeting.mockReturnValue(throwError(() => new HttpErrorResponse({ status: 503 })));
+
+    service.initialize({ mode: 'edit', meetingUid: 'meeting-1' });
+
+    expect(service.meetingLoadFailure()).toBe('retryable');
+    expect(messageAdd).not.toHaveBeenCalled();
+
+    service.retryLoadMeeting();
+
+    expect(getMeeting).toHaveBeenCalledTimes(2);
+  });
+
+  it.each([404, 403])('treats a %i as denied, says so once, and refuses the retry', (status) => {
+    getMeeting.mockReturnValue(throwError(() => new HttpErrorResponse({ status })));
+
+    service.initialize({ mode: 'edit', meetingUid: 'meeting-1' });
+
+    expect(service.meetingLoadFailure()).toBe('denied');
+    expect(messageAdd).toHaveBeenCalledWith(
+      expect.objectContaining({ severity: 'error', detail: 'Meeting not found or you do not have permission to access it' })
+    );
+
+    service.retryLoadMeeting();
+
+    expect(getMeeting).toHaveBeenCalledTimes(1);
+  });
+
+  it('refuses to submit an edit form that never hydrated', () => {
+    service.initialize({ mode: 'edit', meetingUid: 'meeting-1' });
+
+    // The form is empty because the fetch failed, not because the organizer emptied it. Saving it
+    // would write those blanks over the meeting that is still there.
+    expect(service.isHydrated()).toBe(false);
+    expect(service.validateForSubmit()).toBe(false);
+  });
 });
 
 /**
@@ -567,6 +667,23 @@ describe('MeetingComposerFormService — save gate', () => {
 
     expect(service.form().get('duration')?.value).toBe(30);
     expect(service.form().get('customDuration')?.value).toBeNull();
+  });
+
+  // The rail and the footer both read this one number, so a create-mode organizer cannot use
+  // one control to step around the other. It counts required sections that already validate.
+  it('stops the advance frontier at the first required section with holes in it', () => {
+    // `details-access` is filled by the beforeEach; `date-schedule` is still empty.
+    expect(service.sectionAdvanceLimit()).toBe(1);
+
+    service.form().patchValue({ title: '' });
+
+    expect(service.sectionAdvanceLimit()).toBe(0);
+  });
+
+  it('lets every section through once the required ones are clear', () => {
+    service.form().patchValue({ startDate: new Date('2099-01-01'), startTime: '10:00', timezone: 'America/New_York' });
+
+    expect(service.sectionAdvanceLimit()).toBe(MEETING_COMPOSER_SECTIONS.length);
   });
 
   it('resolves the effective project from the open context before the ambient one', () => {

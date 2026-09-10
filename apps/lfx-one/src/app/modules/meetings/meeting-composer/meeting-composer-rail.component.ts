@@ -104,9 +104,9 @@ export class MeetingComposerRailComponent {
       // furthest one visited. Edit mode has no order to respect.
       const frontier = sections.reduce((furthest, section, index) => (visited.has(section.id) ? index : furthest), 0) + 1;
       // Nothing past the first required section that still has holes in it: the rail can't be a way
-      // around the footer's disabled Next.
-      const firstBlocking = sections.findIndex((section) => section.required && !validById.get(section.id));
-      const blockedAt = firstBlocking === -1 ? sections.length : firstBlocking;
+      // around the footer's disabled Next. The footer asks the same service for the same number, so
+      // neither control can be a way around the other.
+      const blockedAt = this.formService.sectionAdvanceLimit();
       const isEditMode = this.isEditMode();
 
       return sections.map((section, index) => {
