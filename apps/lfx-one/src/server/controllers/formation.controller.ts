@@ -8,6 +8,8 @@ import { NextFunction, Request, Response } from 'express';
 import { validateItemKeyParameter, validateUidParameter } from '../helpers/validation.helper';
 import { formationService } from '../services/formation.service';
 import { logger } from '../services/logger.service';
+import { getUsernameFromAuth } from '../utils/auth-helper';
+import { ServiceValidationError } from '../errors';
 
 export const getProjectFormation = async (req: Request, res: Response, next: NextFunction) => {
   const { slug } = req.params;
@@ -229,6 +231,34 @@ export const getFormationsQueue = async (req: Request, res: Response, next: Next
   try {
     const result = await formationService.getFormationsQueue(req, subStage, search);
     logger.success(req, 'get_formations_queue', startTime, { row_count: result.rows.length });
+    return res.json(result);
+  } catch (error) {
+    return next(error);
+  }
+};
+
+/**
+ * `GET /api/user/formation-work` (GH-1956, Me lens) — self-scoped, so no `requireAuditor` gate
+ * unlike `getFormationsQueue`, which is LF-root auditor-gated and unusable for a partner's own view.
+ */
+export const getMyFormationWork = async (req: Request, res: Response, next: NextFunction) => {
+  const startTime = logger.startOperation(req, 'get_my_formation_work');
+
+  try {
+    const username = await getUsernameFromAuth(req);
+    if (!username) {
+      return next(
+        ServiceValidationError.forField('user_id', 'User authentication required', {
+          operation: 'get_my_formation_work',
+          service: 'formation_controller',
+          path: req.path,
+        })
+      );
+    }
+
+    const result = await formationService.getMyFormationWork(req, username);
+    res.set('Cache-Control', 'private, no-cache');
+    logger.success(req, 'get_my_formation_work', startTime, { formation_count: result.formations.length, item_count: result.items.length });
     return res.json(result);
   } catch (error) {
     return next(error);

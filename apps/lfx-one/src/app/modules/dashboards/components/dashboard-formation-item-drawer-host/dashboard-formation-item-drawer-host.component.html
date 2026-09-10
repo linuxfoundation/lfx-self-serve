@@ -1,0 +1,11 @@
+<!-- Copyright The Linux Foundation and each contributor to LFX. -->
+<!-- SPDX-License-Identifier: MIT -->
+
+<lfx-formation-item-drawer
+  [itemProjectUid]="projectUid()"
+  [itemKey]="itemKey()"
+  [skipInFlight]="skipInFlight()"
+  [(visible)]="visible"
+  (itemChanged)="onItemChanged()"
+  (skipRequested)="onSkipRequested($event)"
+  data-testid="dashboard-formation-item-drawer-host" />

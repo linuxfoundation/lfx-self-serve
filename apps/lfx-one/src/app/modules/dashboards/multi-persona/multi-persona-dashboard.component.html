@@ -42,7 +42,11 @@
       </section>
     } @else {
       @defer (on idle) {
-        <lfx-pending-actions [pendingActions]="pendingActions()" (actionClick)="handleActionClick()" (castVoteRequested)="castDrawerHost.open($event)" />
+        <lfx-pending-actions
+          [pendingActions]="pendingActions()"
+          (actionClick)="handleActionClick()"
+          (castVoteRequested)="castDrawerHost.open($event)"
+          (formationItemRequested)="formationDrawerHost.open($event)" />
       } @placeholder {
         <section class="flex flex-1 flex-col" data-testid="multi-persona-pending-actions-placeholder">
           <div class="mb-4 flex h-8 items-center gap-2">
@@ -55,6 +59,13 @@
           </div>
         </section>
       }
+    }
+
+    <!-- My formations (GH-1956) -->
+    @defer (on idle) {
+      <lfx-my-formations-card />
+    } @placeholder {
+      <p-skeleton width="100%" height="6rem" borderRadius="16px" />
     }
 
     <!-- My Foundations and Projects Section -->
@@ -73,9 +84,10 @@
         <lfx-card styleClass="[&_.p-card-body]:p-0 [&_.p-card-content]:p-0">
           <div
             class="grid w-full grid-cols-1 divide-y sm:divide-y-0 sm:divide-x divide-gray-200"
-            [class.sm:grid-cols-4]="hasFoundations() && hasProjects()"
-            [class.sm:grid-cols-3]="hasFoundations() !== hasProjects()"
-            [class.sm:grid-cols-2]="!hasFoundations() && !hasProjects()">
+            [class.sm:grid-cols-2]="summaryStatsTileCount() === 2"
+            [class.sm:grid-cols-3]="summaryStatsTileCount() === 3"
+            [class.sm:grid-cols-4]="summaryStatsTileCount() === 4"
+            [class.sm:grid-cols-5]="summaryStatsTileCount() === 5">
             @if (hasFoundations()) {
               <div class="flex items-center gap-3 p-4">
                 <div class="flex items-center justify-center w-11 h-11 rounded-full bg-purple-100 text-purple-600 flex-shrink-0">
@@ -130,6 +142,17 @@
                 <p class="text-sm font-normal text-gray-900">Meetings This Week</p>
               </div>
             </div>
+            @if (formationTileVisible()) {
+              <div class="flex items-center gap-3 p-4" data-testid="multi-persona-formation-tile">
+                <div class="flex items-center justify-center w-11 h-11 rounded-full bg-blue-50 text-blue-600 flex-shrink-0">
+                  <i class="fa-light fa-diagram-project text-xl"></i>
+                </div>
+                <div class="flex flex-col gap-0.5">
+                  <p class="text-xl font-medium text-gray-900">{{ formationCount() }}</p>
+                  <p class="text-sm font-normal text-gray-900">In formation</p>
+                </div>
+              </div>
+            }
           </div>
         </lfx-card>
       </div>
@@ -229,3 +252,6 @@
 
 <!-- Inline ballot cast drawer launched from a Vote pending action — same drawer used on /votes. -->
 <lfx-dashboard-cast-drawer-host #castDrawerHost (voteSubmitted)="handleVoteSubmitted()" />
+
+<!-- Formation item drawer launched from a FormationItem pending action's Open action (GH-1956). -->
+<lfx-dashboard-formation-item-drawer-host #formationDrawerHost />

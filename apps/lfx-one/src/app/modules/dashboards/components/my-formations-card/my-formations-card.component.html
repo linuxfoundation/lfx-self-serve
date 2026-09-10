@@ -1,0 +1,64 @@
+<!-- Copyright The Linux Foundation and each contributor to LFX. -->
+<!-- SPDX-License-Identifier: MIT -->
+
+@if (showSkeleton()) {
+  <section class="bg-white rounded-2xl border border-gray-200 shadow-sm p-5 flex flex-col gap-3" data-testid="me-formations-card-loading">
+    <p-skeleton width="10rem" height="1.25rem" />
+    <p-skeleton width="100%" height="4.5rem" borderRadius="8px" />
+  </section>
+} @else if (visible()) {
+  <section class="bg-white rounded-2xl border border-gray-200 shadow-sm p-5 flex flex-col gap-4" data-testid="me-formations-card">
+    <h2 class="font-display font-light text-lg m-0">My formations</h2>
+
+    <div class="flex flex-col divide-y divide-gray-100">
+      @for (formation of visibleFormations(); track formation.formation_uid) {
+        <div class="flex flex-col gap-2 py-3 first:pt-0 last:pb-0" [attr.data-testid]="'me-formations-card-row-' + formation.formation_uid">
+          <div class="flex items-center justify-between gap-3 flex-wrap">
+            <a
+              [routerLink]="['/project/overview']"
+              [queryParams]="{ project: formation.project_slug }"
+              class="text-sm font-medium text-gray-900 no-underline hover:underline"
+              [attr.data-testid]="'me-formations-card-open-' + formation.formation_uid">
+              {{ formation.project_name }}
+            </a>
+            <lfx-tag [value]="stageLabels[formation.sub_stage]" [severity]="stageSeverities[formation.sub_stage]" />
+          </div>
+
+          <p class="text-xs text-gray-500 m-0" data-testid="me-formations-card-subtitle">{{ subtitleFor(formation) }}</p>
+
+          <div class="flex flex-col gap-1">
+            <div class="flex items-center justify-between text-xs text-gray-600">
+              <span>{{ formation.items_done }} of {{ formation.items_total }} done</span>
+              @if (formation.gating_total > 0) {
+                <span>{{ formation.gating_done }} of {{ formation.gating_total }} required for Active</span>
+              }
+            </div>
+            <div class="h-1.5 bg-gray-200 rounded-full overflow-hidden w-full">
+              <div
+                class="h-full bg-blue-600 rounded-full"
+                [style.width.%]="progressPercentFor(formation)"
+                role="progressbar"
+                [attr.aria-valuenow]="progressPercentFor(formation)"
+                aria-valuemin="0"
+                aria-valuemax="100"></div>
+            </div>
+          </div>
+
+          <div class="flex items-center justify-between gap-3 flex-wrap text-xs text-gray-500">
+            @if (announcementLabelFor(formation); as announcementLabel) {
+              <span data-testid="me-formations-card-announcement">Announcement: {{ announcementLabel }}</span>
+            } @else {
+              <span>Announcement date not set</span>
+            }
+            @if (formation.blocking_item_title) {
+              <span class="text-amber-600" data-testid="me-formations-card-blocking">
+                <i class="fa-light fa-triangle-exclamation" aria-hidden="true"></i>
+                Blocked on: {{ formation.blocking_item_title }}
+              </span>
+            }
+          </div>
+        </div>
+      }
+    </div>
+  </section>
+}

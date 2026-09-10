@@ -19,11 +19,13 @@ import {
   ProjectContext,
   Meeting,
 } from '@lfx-one/shared/interfaces';
-import { PERSONA_PRIORITY, ROLE_PRIORITY, VOTING_STATUS_PRIORITY } from '@lfx-one/shared/constants';
+import { FORMATION_ENABLED_FLAG, PERSONA_PRIORITY, ROLE_PRIORITY, VOTING_STATUS_PRIORITY } from '@lfx-one/shared/constants';
 import { SurveyStatus } from '@lfx-one/shared/enums';
 import { getActiveOccurrences, getSurveyDisplayStatus } from '@lfx-one/shared/utils';
 
 import { AnalyticsService } from '@services/analytics.service';
+import { FeatureFlagService } from '@services/feature-flag.service';
+import { FormationService } from '@services/formation.service';
 import { LensService } from '@services/lens.service';
 import { PersonaService } from '@services/persona.service';
 import { ProjectContextService } from '@services/project-context.service';
@@ -36,12 +38,23 @@ import { BehaviorSubject, catchError, combineLatest, filter, map, of, switchMap,
 import { CardComponent } from '@components/card/card.component';
 import { TableComponent } from '@components/table/table.component';
 import { DashboardCastDrawerHostComponent } from '../components/dashboard-cast-drawer-host/dashboard-cast-drawer-host.component';
+import { DashboardFormationItemDrawerHostComponent } from '../components/dashboard-formation-item-drawer-host/dashboard-formation-item-drawer-host.component';
+import { MyFormationsCardComponent } from '../components/my-formations-card/my-formations-card.component';
 import { MyMeetingsComponent } from '../components/my-meetings/my-meetings.component';
 import { PendingActionsComponent } from '../components/pending-actions/pending-actions.component';
 
 @Component({
   selector: 'lfx-multi-persona-dashboard',
-  imports: [SkeletonModule, MyMeetingsComponent, PendingActionsComponent, CardComponent, TableComponent, DashboardCastDrawerHostComponent],
+  imports: [
+    SkeletonModule,
+    MyMeetingsComponent,
+    PendingActionsComponent,
+    MyFormationsCardComponent,
+    CardComponent,
+    TableComponent,
+    DashboardCastDrawerHostComponent,
+    DashboardFormationItemDrawerHostComponent,
+  ],
   templateUrl: './multi-persona-dashboard.component.html',
   styleUrl: './multi-persona-dashboard.component.scss',
 })
@@ -51,9 +64,13 @@ export class MultiPersonaDashboardComponent {
   private readonly surveyService = inject(SurveyService);
   private readonly userService = inject(UserService);
   private readonly projectService = inject(ProjectService);
+  private readonly formationService = inject(FormationService);
+  private readonly featureFlagService = inject(FeatureFlagService);
   private readonly projectContextService = inject(ProjectContextService);
   private readonly lensService = inject(LensService);
   private readonly router = inject(Router);
+
+  protected readonly formationFlagEnabled = this.featureFlagService.getBooleanFlag(FORMATION_ENABLED_FLAG, false);
 
   private readonly refresh$ = new BehaviorSubject<void>(undefined);
 
@@ -100,6 +117,19 @@ export class MultiPersonaDashboardComponent {
   });
   protected readonly pendingActionsLoading = signal(true);
   protected readonly pendingActions: Signal<PendingActionItem[]> = this.initPendingActions();
+  // "In formation" tile (GH-1956) — its own independent-loading signal per the section's per-tile
+  // convention; only visible once the flag is on and the caller actually has a formation to show,
+  // so it vanishes along with `lfx-my-formations-card` once the caller's last formation goes Active.
+  protected readonly formationTileLoading = signal(true);
+  protected readonly formationCount: Signal<number> = this.initFormationCount();
+  protected readonly formationTileVisible: Signal<boolean> = computed(() => this.formationFlagEnabled() && !this.formationTileLoading() && this.formationCount() > 0);
+  // Tile count for the summary-stat strip — 2 fixed tiles (Surveys, Meetings) plus whichever of
+  // Foundations / Projects / In formation are visible, so the row always divides evenly. Template
+  // binds this to literal `sm:grid-cols-N` classes (not a computed string) so Tailwind's content
+  // scanner still finds them.
+  protected readonly summaryStatsTileCount: Signal<number> = computed(
+    () => 2 + (this.hasFoundations() ? 1 : 0) + (this.hasProjects() ? 1 : 0) + (this.formationTileVisible() ? 1 : 0)
+  );
 
   public constructor() {
     // Fetch enriched persona projects so role-group lists show project names instead of slugs.
@@ -255,6 +285,17 @@ export class MultiPersonaDashboardComponent {
         tap(() => this.pendingActionsLoading.set(false))
       ),
       { initialValue: [] }
+    );
+  }
+
+  private initFormationCount(): Signal<number> {
+    return toSignal(
+      this.formationService.getMyFormationWork().pipe(
+        map((response) => response.formations.length),
+        catchError(() => of(0)),
+        tap(() => this.formationTileLoading.set(false))
+      ),
+      { initialValue: 0 }
     );
   }
 

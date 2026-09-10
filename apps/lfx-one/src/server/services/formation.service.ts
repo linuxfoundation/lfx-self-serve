@@ -11,13 +11,17 @@ import type {
   FormationQueueRow,
   FormationsQueueResponse,
   FormationSubStage,
+  MyFormationItemRow,
+  MyFormationSummary,
+  MyFormationWorkResponse,
   Project,
   UpstreamFormationChecklist,
   UpstreamFormationItem,
 } from '@lfx-one/shared/interfaces';
 import { FORMATION_QUEUE_SUB_STAGES } from '@lfx-one/shared/constants';
 import { QueryServiceResponse } from '@lfx-one/shared/interfaces';
-import { deriveFormationEntityType, isFormationStageGate } from '@lfx-one/shared/utils';
+import { deriveFormationEntityType, isAssignedItemOpen, isFormationStageGate, summarizeMyFormationItems } from '@lfx-one/shared/utils';
+import crypto from 'crypto';
 import { Request } from 'express';
 
 import { isMicroserviceError, PreconditionFailedError, ResourceNotFoundError, AuthorizationError, ServiceValidationError, ConflictError } from '../errors';
@@ -610,6 +614,100 @@ export class FormationService {
   }
 
   /**
+   * GH-1956 Me lens: "My formations" = every formation with at least one checklist item assigned to
+   * the caller (decision 2 in the ticket's third comment — a direct-grant-only definition can't be
+   * satisfied by the permission model, since it can't distinguish a direct grant from one inherited
+   * via a parent project or `lf-staff`/`lf-contractor`). The item index this needs ("which items are
+   * assigned to me", one access-filtered query with an assignee filter) doesn't exist upstream yet —
+   * see {@link MyFormationItemRow}'s doc comment.
+   */
+  public async getMyFormationWork(req: Request, username: string): Promise<MyFormationWorkResponse> {
+    logger.debug(req, 'get_my_formation_work', 'Fetching formation work assigned to caller', { username });
+
+    if (isFormationServiceLive()) {
+      // TODO(#1957): swap for a real read against the item index once it ships (see the interface
+      // doc comment above). Returning empty rather than fabricating fixture rows under a live flag
+      // is the honest degradation — the card/tile simply don't render until the index exists.
+      logger.warning(req, 'get_my_formation_work', 'Live formation-work read not supported upstream yet, returning empty', { username });
+      return { formations: [], items: [], data_source: 'live' };
+    }
+
+    const formations: MyFormationSummary[] = [];
+    const items: MyFormationItemRow[] = [];
+
+    for (const staticRow of STATIC_QUEUE_FORMATIONS) {
+      // Formation.uid is optional only because the checklist read can't source it (see its doc
+      // comment) — every STATIC_QUEUE_FORMATIONS row (and anything seeded over it) sets it
+      // explicitly, so it's always present here; same narrowing as `toQueueRow`'s `formationUid`.
+      const formationRow = (getStoredFormation(staticRow.uid) ?? staticRow) as Formation & { uid: string };
+      let formationItems = getStoredItemsForFormation(formationRow.uid);
+      if (formationItems.length === 0) {
+        // Never visited via getProjectFormation — generate + seed exactly as that path does, so a
+        // claim made from this response's rows is visible on the project's own checklist afterward
+        // (and vice versa; see formation-store.service.ts's `seedFormation`, which no-ops if the
+        // formation/items are already present). Only `.items` is used below — `formationRow` already
+        // carries STATIC_QUEUE_FORMATIONS's curated fields (blocking_item_title, gating counts,
+        // subtitle), which a freshly generated Formation object would overwrite with placeholders.
+        const generated = generateMockFormation({
+          projectUid: formationRow.parent_project_uid,
+          projectSlug: formationRow.parent_project_slug,
+          projectName: formationRow.parent_project_name,
+          parentProjectUid: formationRow.parent_uid,
+          stage: undefined,
+        });
+        seedFormation(formationRow, generated.items);
+        formationItems = getStoredItemsForFormation(formationRow.uid);
+      }
+
+      const assignedItems = formationItems.filter((item) => FormationService.isAssignedToCaller(username, item));
+      if (assignedItems.length === 0) continue;
+
+      const doneOrSkipped = (item: FormationItem): boolean => item.status === 'done' || item.status === 'skipped';
+      const gatingItems = formationItems.filter((item) => item.is_gating);
+
+      formations.push({
+        formation_uid: formationRow.uid,
+        project_uid: formationRow.parent_project_uid,
+        project_slug: formationRow.parent_project_slug,
+        project_name: formationRow.parent_project_name,
+        sub_stage: formationRow.sub_stage,
+        announcement_date: formationRow.announcement_date,
+        ...summarizeMyFormationItems(assignedItems),
+        items_done: formationItems.filter(doneOrSkipped).length,
+        items_total: formationItems.length,
+        gating_done: gatingItems.filter(doneOrSkipped).length,
+        gating_total: gatingItems.length,
+        blocking_item_title: formationRow.blocking_item_title,
+      });
+
+      for (const item of assignedItems.filter((assignedItem) => isAssignedItemOpen(assignedItem.status))) {
+        items.push({
+          item_uid: item.uid,
+          template_item_key: item.template_item_key,
+          project_uid: item.project_uid,
+          project_slug: formationRow.parent_project_slug,
+          project_name: formationRow.parent_project_name,
+          title: item.title,
+          status: item.status,
+          is_gating: item.is_gating,
+          due_date: item.due_date,
+          action: item.action,
+          action_href: item.action_href,
+          version: item.version,
+        });
+      }
+    }
+
+    logger.debug(req, 'get_my_formation_work', 'Returning fixture formation work', {
+      username,
+      formation_count: formations.length,
+      item_count: items.length,
+    });
+
+    return { formations, items, data_source: 'fixture' };
+  }
+
+  /**
    * Live branch of {@link getFormationsQueue} — the indexer's `formation` projection already
    * matches `FormationQueueRow`'s shape verbatim (GH-2267 plan gap 2), so no per-row mapper is
    * needed, only ROOT collapse and the subStage/search filters the fixture branch also applies.
@@ -659,6 +757,19 @@ export class FormationService {
     const tiles = this.buildQueueTilesFromRows(normalizedRows);
 
     return { tiles, rows, data_source: 'live' };
+  }
+  /**
+   * Deterministic SHA-256-seeded "is this item assigned to the caller" check (never `Math.random()`)
+   * — a fixture item's real `owner` is drawn from a synthetic staff pool
+   * (`formation-fixture.helper.ts`'s `SYNTHETIC_STAFF`) that never matches a real signed-in username,
+   * so GH-1956 assignment is derived independently of `owner` rather than gated on it. ~30% of a
+   * caller's items land in their own queue — enough to populate "My formations" for demo purposes
+   * without every formation landing on every caller, satisfying the ticket's acceptance criterion
+   * that a staff member does not see every formation here.
+   */
+  private static isAssignedToCaller(username: string, item: FormationItem): boolean {
+    const digest = crypto.createHash('sha256').update(`${username}:${item.uid}`).digest();
+    return digest.readUInt32BE(0) / 0xffffffff < 0.3;
   }
 
   /**

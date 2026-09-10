@@ -4,12 +4,16 @@
 import { Router } from 'express';
 
 import { UserController } from '../controllers/user.controller';
+import { getMyFormationWork } from '../controllers/formation.controller';
 
 const router = Router();
 const userController = new UserController();
 
 // GET /api/user/pending-actions - Get all pending actions for the authenticated user
 router.get('/pending-actions', (req, res, next) => userController.getPendingActions(req, res, next));
+
+// GET /api/user/formation-work - Formation checklist items assigned to the caller (GH-1956, Me lens)
+router.get('/formation-work', getMyFormationWork);
 
 // GET /api/user/pending-invitations - Get the authenticated user's pending committee invitations
 router.get('/pending-invitations', (req, res, next) => userController.getPendingInvitations(req, res, next));

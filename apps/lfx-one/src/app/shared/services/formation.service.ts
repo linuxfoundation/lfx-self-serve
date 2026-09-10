@@ -10,6 +10,7 @@ import type {
   FormationItemStatus,
   FormationSubStage,
   FormationsQueueResponse,
+  MyFormationWorkResponse,
 } from '@lfx-one/shared/interfaces';
 import { Observable, take } from 'rxjs';
 
@@ -75,5 +76,10 @@ export class FormationService {
     if (subStage) params = params.set('sub_stage', subStage);
     if (search) params = params.set('search', search);
     return this.http.get<FormationsQueueResponse>('/api/formations', { params });
+  }
+
+  /** GH-1956 Me lens — formations with at least one checklist item assigned to the caller. */
+  public getMyFormationWork(): Observable<MyFormationWorkResponse> {
+    return this.http.get<MyFormationWorkResponse>('/api/user/formation-work');
   }
 }
