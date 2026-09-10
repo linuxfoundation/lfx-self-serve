@@ -135,7 +135,12 @@ export class OrgEasyclaGroupSelectComponent {
    * about to be replaced by a fresher answer, which will carry the announcement worth reading.
    */
   protected readonly liveAnnouncement: Signal<string> = computed(() => {
-    if (this.error()) return "Couldn't load CLA groups. Retry available.";
+    // The visible error panel already carries `role="alert"`, which announces its own text
+    // assertively when it appears. Returning the failure here as well would queue it in this
+    // polite region and read the same failure out twice — once through the alert, once through
+    // the status — which is exactly the kind of duplicated speech `polite` is meant to avoid.
+    // The alert owns the failure announcement; this region falls silent for it.
+    if (this.error()) return '';
     if (this.queryBand() !== 'searchable') return '';
     // `loading` before `stale` on purpose. `stale` is true from the moment the query changes,
     // so the debounce and the request that follows are both "stale" \u2014 including the fresh case

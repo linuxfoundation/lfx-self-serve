@@ -872,13 +872,24 @@ describe('OrgEasyclaGroupSelectComponent', () => {
       expect(live(fixture).textContent?.trim()).toBe('No matching CLA groups.');
     });
 
-    it('names a load failure so the Retry offer is not silent', async () => {
+    /**
+     * The visible error panel already has `role="alert"`, which assistive technology announces
+     * assertively. Repeating the same text in the polite region would have a screen reader read
+     * the failure twice \u2014 once from the alert, once from the status \u2014 for one event. The alert
+     * owns the failure; the polite region stays silent for it.
+     */
+    it('leaves the failure announcement to the visible alert panel, so it is not read twice', async () => {
       getSignOptions.mockReturnValue(throwError(() => new Error('gateway')));
 
       const fixture = await render();
       await search(fixture);
 
-      expect(live(fixture).textContent?.trim()).toBe("Couldn't load CLA groups. Retry available.");
+      // The alert exists (and carries the failure text), so the announcement is not being lost.
+      const errorPanel = testid(fixture, 'org-easycla-group-select-error');
+      expect(errorPanel).not.toBeNull();
+      expect(errorPanel?.getAttribute('role')).toBe('alert');
+      // But the polite region does not repeat it.
+      expect(live(fixture).textContent?.trim()).toBe('');
     });
 
     // "Keep typing" would fire on every keystroke below the minimum, and the visual copy already
