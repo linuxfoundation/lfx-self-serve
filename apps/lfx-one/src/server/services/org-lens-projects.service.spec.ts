@@ -97,21 +97,55 @@ describe('OrgLensProjectsService health score mapping', () => {
     expect(response.projects[0]?.health).toBe('unavailable');
   });
 
-  it('marks health unavailable when no v2 category is present', async () => {
+  it('marks health unavailable when no v2 category is present, or when the category has no score', async () => {
     mockProjectsRow(projectsRow());
 
-    const response = await service.getProjects(ACCOUNT_ID, ORG_NAME, null);
+    let response = await service.getProjects(ACCOUNT_ID, ORG_NAME, null);
 
     expect(response.projects[0]?.health).toBe('unavailable');
+
+    // Split row: label without a same-row score is unavailable and every health field is nulled.
+    mockProjectsRow(
+      projectsRow({
+        HEALTH_SCORE_CATEGORY_V2: 'Healthy',
+        HEALTH_OVERALL_SCORE_V2: null,
+        COVERED_CATEGORY_COUNT_V2: 2,
+        HEALTH_MAX_SCORE_V2: 65,
+        HEALTH_MAINTAINER_V2: 30,
+      })
+    );
+
+    response = await service.getProjects(ACCOUNT_ID, ORG_NAME, null);
+
+    expect(response.projects[0]?.health).toBe('unavailable');
+    expect(response.projects[0]?.healthOverallScore).toBeNull();
+    expect(response.projects[0]?.healthMaxScore).toBeNull();
+    expect(response.projects[0]?.healthCoveredCategoryCount).toBeNull();
+    expect(response.projects[0]?.healthMaintainer).toBeNull();
   });
 
-  it('passes healthMaxScore and healthCoveredCategoryCount straight through from the warehouse', async () => {
-    mockProjectsRow(projectsRow({ HEALTH_OVERALL_SCORE_V2: 52, HEALTH_SCORE_CATEGORY_V2: 'Healthy', COVERED_CATEGORY_COUNT_V2: 2, HEALTH_MAX_SCORE_V2: 75 }));
+  it('passes the v2 score, max, covered count and category scores straight through from the warehouse', async () => {
+    mockProjectsRow(
+      projectsRow({
+        HEALTH_OVERALL_SCORE_V2: 52,
+        HEALTH_SCORE_CATEGORY_V2: 'Healthy',
+        COVERED_CATEGORY_COUNT_V2: 2,
+        HEALTH_MAX_SCORE_V2: 65,
+        HEALTH_MAINTAINER_V2: 30,
+        HEALTH_SECURITY_V2: null,
+        HEALTH_DEVELOPMENT_V2: 22,
+      })
+    );
 
     const response = await service.getProjects(ACCOUNT_ID, ORG_NAME, null);
 
+    expect(response.projects[0]?.health).toBe('healthy');
     expect(response.projects[0]?.healthCoveredCategoryCount).toBe(2);
-    expect(response.projects[0]?.healthMaxScore).toBe(75);
+    expect(response.projects[0]?.healthMaxScore).toBe(65);
+    expect(response.projects[0]?.healthOverallScore).toBe(52);
+    expect(response.projects[0]?.healthMaintainer).toBe(30);
+    expect(response.projects[0]?.healthSecurity).toBeNull();
+    expect(response.projects[0]?.healthDevelopment).toBe(22);
   });
 
   it('passes through a full (3-category) score unchanged, not marked partial', async () => {
@@ -121,6 +155,7 @@ describe('OrgLensProjectsService health score mapping', () => {
 
     const response = await service.getProjects(ACCOUNT_ID, ORG_NAME, null);
 
+    expect(response.projects[0]?.health).toBe('excellent');
     expect(response.projects[0]?.healthCoveredCategoryCount).toBe(3);
     expect(response.projects[0]?.healthMaxScore).toBe(100);
   });

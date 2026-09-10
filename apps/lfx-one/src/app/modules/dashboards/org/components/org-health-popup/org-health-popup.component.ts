@@ -77,9 +77,11 @@ export class OrgHealthPopupComponent {
   // itself cancel it first (same pattern as org-spend-bar's "others" popover).
   private hidePopoverTimeoutId: ReturnType<typeof setTimeout> | undefined;
   // Keyboard activation moves focus into the popup so the Insights link is reachable; the badge
-  // that opened it gets focus back on hide. Hover/focus opens never steal focus.
+  // that opened it gets focus back on hide. Hover/focus opens never steal focus. Restoring focus
+  // fires the badge's own `(focus)` → `show()`, which must not reopen what the user just closed.
   private focusOnShow = false;
   private returnFocusTo: HTMLElement | null = null;
+  private suppressNextFocusShow = false;
 
   public constructor() {
     // Navigating away mid-hover would otherwise leave the pending hide holding a destroyed component.
@@ -87,6 +89,10 @@ export class OrgHealthPopupComponent {
   }
 
   public show(event: Event): void {
+    if (event.type === 'focus' && this.suppressNextFocusShow) {
+      this.suppressNextFocusShow = false;
+      return;
+    }
     this.cancelHide();
     this.popover()?.show(event);
   }
@@ -120,8 +126,17 @@ export class OrgHealthPopupComponent {
   protected onHide(): void {
     this.isOpen.set(false);
     this.focusOnShow = false;
-    this.returnFocusTo?.focus();
+    const badge = this.returnFocusTo;
     this.returnFocusTo = null;
+    // Restore focus only when the close left it nowhere useful (Escape / click-outside → body, or still inside the
+    // popup). A Tab-away already moved focus on purpose; yanking it back would trap the user.
+    const active = document.activeElement;
+    const focusStranded = active === null || active === document.body || (this.content()?.nativeElement.contains(active) ?? false);
+    if (badge && focusStranded) {
+      this.suppressNextFocusShow = true;
+      badge.focus();
+      this.suppressNextFocusShow = false;
+    }
   }
 
   private focusContent(): void {
