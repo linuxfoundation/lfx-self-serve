@@ -203,6 +203,7 @@ export class FeatureFlagService {
    * initializer already runs inside one.
    */
   private readonly providerReady$ = toObservable(this.isProviderReady);
+  private readonly initialized$ = toObservable(this.isInitialized);
 
   /**
    * Wait for the provider to reach READY, up to `timeoutMs` (default `FEATURE_FLAG_READY_TIMEOUT_MS`,
@@ -304,9 +305,34 @@ export class FeatureFlagService {
       const rawClient = (provider as unknown as { client: { waitForInitialization: () => Promise<void> } }).client;
       this.errorRecoveryListenerAttached = true;
       rawClient.waitForInitialization().then(
-        () => {
-          this.isProviderReady.set(true);
-          this.refreshFlags();
+        async () => {
+          // This can fire before initialize() itself has assigned client/context (it's called
+          // without awaiting from AppComponent) — wait for it to finish first.
+          if (!this.isInitialized()) {
+            await firstValueFrom(this.initialized$.pipe(filter((initialized): initialized is true => initialized === true)));
+          }
+
+          // Resolving here only proves the raw (anonymous) bootstrap connection came up — it says
+          // nothing about whether the authenticated context from initialize() was ever applied, so
+          // it must be re-applied and readiness gated on the wrapper reaching READY afterward,
+          // exactly like initialize() itself does.
+          const context = this.context();
+          if (context) {
+            try {
+              await OpenFeature.setContext(context);
+            } catch {
+              // Checked via client.providerStatus below regardless of outcome.
+            }
+          }
+
+          if (this.client?.providerStatus === ProviderStatus.READY) {
+            this.isProviderReady.set(true);
+            this.refreshFlags();
+          } else {
+            this.dataDogRumService.addError(new Error('Feature flag provider context reapplication failed after recovery'), {
+              source: 'attachErrorRecoveryListener',
+            });
+          }
         },
         () => {
           // Irrevocable initialization failure — stay fail-closed, nothing to recover from.

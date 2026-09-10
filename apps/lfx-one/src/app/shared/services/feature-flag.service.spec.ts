@@ -276,4 +276,42 @@ describe('FeatureFlagService', () => {
     expect((service as unknown as { isProviderReady: () => boolean }).isProviderReady()).toBe(false);
     expect(addError).toHaveBeenCalledWith(expect.any(Error), { source: 'attachErrorRecoveryListener' });
   });
+
+  it('waits for initialize() to assign client/context before reapplying when recovery is triggered first', async () => {
+    // Regression test for the ordering race: AppComponent calls initialize() without awaiting it,
+    // so waitForReady() (and thus attachErrorRecoveryListener()) can run before initialize() has
+    // assigned client/context. If the raw client's waitForInitialization() had already settled by
+    // then, reading context()/client immediately would see them still null, permanently failing
+    // the one-shot recovery listener for the rest of the session even though initialize() goes on
+    // to succeed moments later.
+    const rawClient = {
+      waitForInitialization: vi.fn(() => Promise.resolve()),
+    };
+    const rawProvider = Object.create(LaunchDarklyClientProvider.prototype, {
+      status: { value: ProviderStatus.ERROR },
+      client: { value: rawClient },
+    }) as Provider;
+    vi.spyOn(OpenFeature, 'getProvider').mockReturnValue(rawProvider);
+    const clientMock = { providerStatus: ProviderStatus.STALE, addHandler: vi.fn() };
+    vi.spyOn(OpenFeature, 'getClient').mockReturnValue(clientMock as never);
+    vi.spyOn(OpenFeature, 'setContext').mockImplementation(async () => {
+      clientMock.providerStatus = ProviderStatus.READY;
+    });
+
+    // Triggers attachErrorRecoveryListener() while isInitialized() is still false — client/context
+    // are still null at this point, unlike every other recovery test above.
+    const recovering = service.waitForReady(context, 5000);
+    expect(await recovering).toBe(false);
+
+    // initialize() now completes, assigning client/context and flipping isInitialized afterward.
+    await service.initialize({ name: 'Test User', email: 'test@example.com', username: 'test' } as never);
+    TestBed.tick();
+    await Promise.resolve();
+    await Promise.resolve();
+    await Promise.resolve();
+
+    expect((service as unknown as { isProviderReady: () => boolean }).isProviderReady()).toBe(true);
+    const result = await service.waitForReady(context, 5000);
+    expect(result).toBe(true);
+  });
 });

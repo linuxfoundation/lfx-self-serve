@@ -58,6 +58,13 @@ export class FeatureFlagService {
    */
   private readonly providerReady$ = toObservable(this.isProviderReady);
 
+  /**
+   * Built alongside `providerReady$` for the same reason — lets `attachErrorRecoveryListener()`
+   * await `initialize()` finishing from a callback that can fire before `initialize()` itself
+   * assigns `client`/`context` (see that method's docstring).
+   */
+  private readonly initialized$ = toObservable(this.isInitialized);
+
   // Public readonly signals
   public readonly initialized = this.isInitialized.asReadonly();
 
@@ -388,6 +395,14 @@ export class FeatureFlagService {
    * context is re-applied once the raw client recovers, and readiness is only seeded once that
    * re-application leaves the wrapper itself in READY — mirroring the same both-statuses-READY
    * requirement `initialize()` already enforces.
+   *
+   * This method can be called (via `waitForReady()`) before `initialize()` itself has finished —
+   * `AppComponent` starts `initialize()` without awaiting it, and `initialize()` only assigns
+   * `client`/`context` after its own `await OpenFeature.setContext()` resolves. If the raw client's
+   * `waitForInitialization()` had already settled by then, reading `this.context()`/`this.client`
+   * immediately would see them still null, permanently reporting a false reapplication failure —
+   * `errorRecoveryListenerAttached` is one-shot, so this would never get another chance to run for
+   * the rest of the session. Waiting for `this.isInitialized()` first closes that gap.
    */
   private attachErrorRecoveryListener(): void {
     if (this.errorRecoveryListenerAttached) {
@@ -404,6 +419,10 @@ export class FeatureFlagService {
       this.errorRecoveryListenerAttached = true;
       rawClient.waitForInitialization().then(
         async () => {
+          if (!this.isInitialized()) {
+            await firstValueFrom(this.initialized$.pipe(filter((initialized): initialized is true => initialized === true)));
+          }
+
           const context = this.context();
           if (context) {
             try {
