@@ -61,3 +61,12 @@ export const GW_EMBED_ENABLED_FEATURES: readonly string[] = [
  * the `fileName` given for the JS entry. Whatever ships it to `public/assets/gw/` renames it.
  */
 export const GW_EMBED_STYLESHEET_PATH = '/assets/gw/admin-embed.css';
+
+/**
+ * What the embed resolves an empty `apiBaseUrl` to — the same-origin BFF proxy mount.
+ *
+ * Duplicated from the embed's own `mount()` rather than left implicit, because the host has to
+ * pre-seed the runtime-config global before the chunk evaluates and must use the identical value,
+ * or the pre-seed and `mount()`'s own write would disagree for the window between them.
+ */
+export const GW_EMBED_DEFAULT_API_BASE_URL = '/api/gw';

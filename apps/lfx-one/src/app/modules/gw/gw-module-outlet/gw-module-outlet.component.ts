@@ -4,8 +4,8 @@
 import { isPlatformBrowser } from '@angular/common';
 import { afterNextRender, Component, DestroyRef, ElementRef, inject, PLATFORM_ID, signal, TransferState, viewChild } from '@angular/core';
 import { Router } from '@angular/router';
-import { GW_EMBED_ENABLED_FEATURES, GW_EMBED_ENABLED_MODULE_IDS, GW_EMBED_STYLESHEET_PATH } from '@lfx-one/shared/constants';
-import { GwEmbedFatalError, GwHostContext } from '@lfx-one/shared/interfaces';
+import { GW_EMBED_DEFAULT_API_BASE_URL, GW_EMBED_ENABLED_FEATURES, GW_EMBED_ENABLED_MODULE_IDS, GW_EMBED_STYLESHEET_PATH } from '@lfx-one/shared/constants';
+import { GwEmbedFatalError, GwHostContext, GwRuntimeConfig } from '@lfx-one/shared/interfaces';
 
 import { getRuntimeConfig } from '../../../shared/providers/runtime-config.provider';
 
@@ -16,6 +16,14 @@ import { getRuntimeConfig } from '../../../shared/providers/runtime-config.provi
  */
 interface GwEmbedMountHandle {
   unmount: () => void;
+}
+
+/**
+ * Writes the embed's runtime-config global. Kept as a narrow function so the one `globalThis` cast
+ * in this file lives in a single place rather than inline at the call site.
+ */
+function setGwRuntimeConfig(config: GwRuntimeConfig): void {
+  (globalThis as unknown as { __GATEWAZE_CONFIG__?: GwRuntimeConfig }).__GATEWAZE_CONFIG__ = config;
 }
 
 /**
@@ -115,10 +123,24 @@ export class GwModuleOutletComponent {
       // (much larger) chunk rather than after it.
       this.ensureStylesheet();
 
-      // `mount()` sets `globalThis.__GATEWAZE_CONFIG__` itself, in the VITE_-prefixed shape its
-      // build-time `define` rewrite expects (`VITE_SUPABASE_URL` and friends) — not this
-      // `GwHostContext`. The host must not pre-set it: the shapes differ, and doing so would only
-      // put a value the embed never reads in a global it overwrites a moment later.
+      // The global has to exist BEFORE the chunk evaluates, not just before `mount()` runs.
+      //
+      // The embed's build rewrites every `import.meta.env.VITE_X` to a bare
+      // `globalThis.__GATEWAZE_CONFIG__.X` — no optional chaining, because esbuild's `define`
+      // only accepts literals or identifier paths. So any module-level read during import
+      // evaluation throws `Cannot read properties of undefined` if the global is unset, and
+      // `mount()` setting it is already too late by then.
+      //
+      // Set it in the VITE_-prefixed shape the rewrite expects (NOT `GwHostContext`), with the
+      // same three values and the same `apiBaseUrl` defaulting `mount()` itself applies, so this
+      // pre-set and the one inside `mount()` are identical and re-setting is a no-op. The embed's
+      // other VITE_ references stay undefined here exactly as they do after `mount()`.
+      setGwRuntimeConfig({
+        VITE_SUPABASE_URL: ctx.supabase.url,
+        VITE_SUPABASE_ANON_KEY: ctx.supabase.anonKey,
+        VITE_API_URL: ctx.apiBaseUrl === '' ? GW_EMBED_DEFAULT_API_BASE_URL : ctx.apiBaseUrl,
+      });
+
       const mod = await import('@gatewaze/admin-embed');
 
       // The component may have been torn down while the import was in flight (fast navigation away

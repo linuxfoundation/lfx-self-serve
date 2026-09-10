@@ -41,3 +41,22 @@ export interface GwEmbedFatalError {
   field?: string;
   recoverable: boolean;
 }
+
+/**
+ * Shape of `globalThis.__GATEWAZE_CONFIG__`, the embed's runtime-config global.
+ *
+ * The embed's Vite build rewrites every `import.meta.env.VITE_X` reference in its source to a bare
+ * `globalThis.__GATEWAZE_CONFIG__.X` — esbuild's `define` only accepts literals or identifier
+ * paths, so the rewrite cannot include an optional chain or a fallback. That makes the global a
+ * hard requirement rather than an optimization: it must be an object before the embed chunk
+ * evaluates, or module-level reads throw.
+ *
+ * These three are the keys the embed's own `mount()` writes. Its source references far more
+ * `VITE_*` names than this; the rest read as `undefined` both here and after `mount()`, so the
+ * host deliberately does not invent values for them.
+ */
+export interface GwRuntimeConfig {
+  VITE_SUPABASE_URL: string;
+  VITE_SUPABASE_ANON_KEY: string;
+  VITE_API_URL: string;
+}
