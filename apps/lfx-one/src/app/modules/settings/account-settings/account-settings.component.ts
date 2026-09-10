@@ -18,7 +18,7 @@ import { OpenIntercomDirective } from '@shared/directives/open-intercom.directiv
 import { ActivatedRoute } from '@angular/router';
 import { useResendCooldown } from '@shared/utils/resend-cooldown';
 import { clearPendingProfileSave } from '@shared/utils/pending-profile-save.util';
-import { extractErrorMessage } from '@shared/utils/http-error.utils';
+import { extractErrorMessage, serverAuthoredMessage } from '@shared/utils/http-error.utils';
 import { ChangePasswordRequest, EmailManagementData, EmailSettingsState, MeetingInviteEmail, PasswordStrength, UserEmail } from '@lfx-one/shared/interfaces';
 import { UserService } from '@services/user.service';
 import { ConfirmationService, MenuItem, MessageService } from 'primeng/api';
@@ -501,9 +501,9 @@ export class AccountSettingsComponent {
                     this.redirectToProfileAuth(err.error.authorize_url);
                     return;
                   }
-                  // extractErrorMessage reads both `message` (the hand-rolled 409) and `error`
-                  // (ConflictError's lock-contention 409, which carries no `message` key).
-                  this.messageService.add({ severity: 'error', summary: 'Error', detail: extractErrorMessage(err, 'Failed to delete email address') });
+                  // Unlike extractErrorMessage, this falls back to the copy below instead of
+                  // Angular's synthesized "Http failure response for ..." text when body-less.
+                  this.messageService.add({ severity: 'error', summary: 'Error', detail: serverAuthoredMessage(err, 'Failed to delete email address') });
                 },
               });
           },
