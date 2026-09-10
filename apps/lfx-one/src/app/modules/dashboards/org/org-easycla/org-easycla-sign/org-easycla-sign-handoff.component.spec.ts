@@ -335,6 +335,40 @@ describe('OrgEasyclaSignHandoffComponent', () => {
       expect(config.closable).toBe(true);
       expect(config.closeOnEscape).toBe(true);
     });
+
+    /**
+     * The key itself, not the flag that is supposed to enable it.
+     *
+     * The shell decides its Escape handling once, as it becomes visible, from the values it holds
+     * then — and this dialog opens sealed. Asserting only the flag would report a dismissible
+     * failure state that a keyboard user cannot actually leave.
+     */
+    describe('pressing Escape', () => {
+      function pressEscape(): void {
+        globalThis.document.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape', bubbles: true }));
+      }
+
+      it.each([
+        ['in flight', () => new Observable<OrgClaSignResponse>(() => undefined)],
+        ['open', () => of(response)],
+      ])('does not leave a session that is %s', async (_state, source) => {
+        requestCorporateSignature.mockReturnValue(source());
+
+        await render();
+        pressEscape();
+
+        expect(close).not.toHaveBeenCalled();
+      });
+
+      it('leaves a failure', async () => {
+        requestCorporateSignature.mockReturnValue(throwError(() => bffError(500, { error: 'nope' })));
+
+        await render();
+        pressEscape();
+
+        expect(close).toHaveBeenCalledWith(null);
+      });
+    });
   });
 
   /**

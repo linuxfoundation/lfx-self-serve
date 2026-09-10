@@ -3,7 +3,7 @@
 
 import { DOCUMENT } from '@angular/common';
 import { HttpErrorResponse } from '@angular/common/http';
-import { ChangeDetectionStrategy, Component, DestroyRef, inject, signal } from '@angular/core';
+import { ChangeDetectionStrategy, Component, DestroyRef, HostListener, inject, signal } from '@angular/core';
 import { takeUntilDestroyed } from '@angular/core/rxjs-interop';
 import { CCLA_SIGN_COPY } from '@lfx-one/shared/constants';
 import type { OrgClaSignHandoffDialogData, OrgClaSignResponse } from '@lfx-one/shared/interfaces';
@@ -120,6 +120,23 @@ export class OrgEasyclaSignHandoffComponent {
   }
 
   protected onCancel(): void {
+    this.ref.close(null);
+  }
+
+  /**
+   * Escape, in the one state that permits leaving.
+   *
+   * Handled here because the shell's own Escape handling is decided once, when it becomes visible,
+   * from the values it holds at that moment — and this dialog opens sealed. Turning the flag on
+   * afterwards puts the close control on the frame but installs no key listener, so the state that
+   * is meant to be dismissible would be dismissible only by pointer.
+   *
+   * Guarded on the state rather than on the flag it sets, so a frame that is somehow drawn ahead
+   * of the panel cannot become an exit from a session that is open.
+   */
+  @HostListener('document:keydown.escape')
+  protected onEscape(): void {
+    if (this.state() !== 'failed') return;
     this.ref.close(null);
   }
 
