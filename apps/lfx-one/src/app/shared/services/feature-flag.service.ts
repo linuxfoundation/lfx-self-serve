@@ -379,6 +379,15 @@ export class FeatureFlagService {
    * `client` is `private` in this pinned provider version's own `.d.ts`, but that's a compile-time
    * annotation only; the getter is a plain runtime property. Reaching through it is the only way to
    * observe this.
+   *
+   * Resolving `waitForInitialization()` only proves the raw client's own (anonymous) bootstrap
+   * connection came up — it says nothing about whether the authenticated user context from
+   * `initialize()` was ever successfully applied. If `setContext()` also failed while the raw
+   * provider was down (the raw-ERROR/wrapper-ERROR combination `initialize()` handles), marking
+   * ready here would let guards evaluate flags against the wrong (anonymous) context. So the stored
+   * context is re-applied once the raw client recovers, and readiness is only seeded once that
+   * re-application leaves the wrapper itself in READY — mirroring the same both-statuses-READY
+   * requirement `initialize()` already enforces.
    */
   private attachErrorRecoveryListener(): void {
     if (this.errorRecoveryListenerAttached) {
@@ -394,9 +403,24 @@ export class FeatureFlagService {
       const rawClient = (provider as unknown as { client: { waitForInitialization: () => Promise<void> } }).client;
       this.errorRecoveryListenerAttached = true;
       rawClient.waitForInitialization().then(
-        () => {
-          this.isProviderReady.set(true);
-          this.refreshFlags();
+        async () => {
+          const context = this.context();
+          if (context) {
+            try {
+              await OpenFeature.setContext(context);
+            } catch {
+              // Checked via client.providerStatus below regardless of outcome.
+            }
+          }
+
+          if (this.client?.providerStatus === ProviderStatus.READY) {
+            this.isProviderReady.set(true);
+            this.refreshFlags();
+          } else {
+            this.dataDogRumService.addError(new Error('Feature flag provider context reapplication failed after recovery'), {
+              source: 'attachErrorRecoveryListener',
+            });
+          }
         },
         () => {
           // Irrevocable initialization failure — stay fail-closed, nothing to recover from.

@@ -189,10 +189,12 @@ describe('FeatureFlagService', () => {
       client: { value: rawClient },
     }) as Provider;
     vi.spyOn(OpenFeature, 'getProvider').mockReturnValue(rawProvider);
-    vi.spyOn(OpenFeature, 'getClient').mockReturnValue({
-      providerStatus: ProviderStatus.STALE,
-      addHandler: vi.fn(),
-    } as never);
+    const clientMock = { providerStatus: ProviderStatus.STALE, addHandler: vi.fn() };
+    vi.spyOn(OpenFeature, 'getClient').mockReturnValue(clientMock as never);
+    // Models the context successfully reapplying once the raw client recovers.
+    vi.spyOn(OpenFeature, 'setContext').mockImplementation(async () => {
+      clientMock.providerStatus = ProviderStatus.READY;
+    });
 
     await service.initialize({ name: 'Test User', email: 'test@example.com', username: 'test' } as never);
 
@@ -202,6 +204,7 @@ describe('FeatureFlagService', () => {
     expect(rawClient.waitForInitialization).toHaveBeenCalledTimes(1);
 
     resolveInit?.();
+    await Promise.resolve();
     await Promise.resolve();
     await Promise.resolve();
 
@@ -222,18 +225,55 @@ describe('FeatureFlagService', () => {
       client: { value: rawClient },
     }) as Provider;
     vi.spyOn(OpenFeature, 'getProvider').mockReturnValue(rawProvider);
-    vi.spyOn(OpenFeature, 'getClient').mockReturnValue({
-      providerStatus: ProviderStatus.STALE,
-      addHandler: vi.fn(),
-    } as never);
+    const clientMock = { providerStatus: ProviderStatus.STALE, addHandler: vi.fn() };
+    vi.spyOn(OpenFeature, 'getClient').mockReturnValue(clientMock as never);
+    vi.spyOn(OpenFeature, 'setContext').mockImplementation(async () => {
+      clientMock.providerStatus = ProviderStatus.READY;
+    });
 
     await service.initialize({ name: 'Test User', email: 'test@example.com', username: 'test' } as never);
 
     // Unlike the still-connecting case above, an already-settled waitForInitialization() resolves
-    // recovery within the same microtask flush as initialize() itself — isProviderReady is already
-    // true by the time initialize() returns, so even the very first waitForReady() call succeeds.
+    // recovery within the same microtask flush as initialize() itself. The recovery callback now also
+    // awaits reapplying the context, so a couple more microtask flushes are needed before it settles.
+    await Promise.resolve();
+    await Promise.resolve();
+
     expect((service as unknown as { isProviderReady: () => boolean }).isProviderReady()).toBe(true);
     const result = await service.waitForReady(context, 5000);
     expect(result).toBe(true);
+  });
+
+  it('does not mark ready when raw recovery succeeds but the reapplied context still leaves the wrapper in ERROR', async () => {
+    // Regression test for the finding that recovery previously trusted the raw client's anonymous
+    // bootstrap connection alone, without confirming the authenticated user context — reapplied via
+    // OpenFeature.setContext() once the raw client recovers — actually took effect on the wrapper.
+    const rawClient = {
+      waitForInitialization: vi.fn(() => Promise.resolve()),
+    };
+    const rawProvider = Object.create(LaunchDarklyClientProvider.prototype, {
+      status: { value: ProviderStatus.ERROR },
+      client: { value: rawClient },
+    }) as Provider;
+    vi.spyOn(OpenFeature, 'getProvider').mockReturnValue(rawProvider);
+    const clientMock = { providerStatus: ProviderStatus.ERROR, addHandler: vi.fn() };
+    vi.spyOn(OpenFeature, 'getClient').mockReturnValue(clientMock as never);
+    // The reapplied setContext() call still fails to bring the wrapper to READY.
+    const setContextSpy = vi.spyOn(OpenFeature, 'setContext').mockResolvedValue(undefined);
+
+    await service.initialize({ name: 'Test User', email: 'test@example.com', username: 'test' } as never);
+    addError.mockClear();
+
+    // Initial raw+wrapper ERROR combination — recovery arms, isProviderReady stays false.
+    expect((service as unknown as { isProviderReady: () => boolean }).isProviderReady()).toBe(false);
+    await Promise.resolve();
+    await Promise.resolve();
+    await Promise.resolve();
+
+    // Raw client recovered and reapplied the stored context, but the wrapper is still ERROR —
+    // must NOT be marked ready, and the failure must be reported.
+    expect(setContextSpy).toHaveBeenCalledTimes(2); // once in initialize(), once on recovery
+    expect((service as unknown as { isProviderReady: () => boolean }).isProviderReady()).toBe(false);
+    expect(addError).toHaveBeenCalledWith(expect.any(Error), { source: 'attachErrorRecoveryListener' });
   });
 });
