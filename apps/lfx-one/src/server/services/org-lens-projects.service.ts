@@ -50,8 +50,8 @@ export class OrgLensProjectsService {
 
   public async getProjects(accountId: string, orgName: string, slugs: string[] | null): Promise<OrgLensProjectsResponse> {
     // `v6` bump: health now carries the v2 breakdown (`healthOverallScore` + Maintainer/Security/Development) mapped
-    // from the same snapshot row, replacing the v1 `healthMetrics` percentages (#2096) — bump drops cache entries
-    // computed under the old percentage shape.
+    // from the same snapshot row, replacing the v1 percentage columns (#2096) — bump drops cache entries computed
+    // under the old percentage shape.
     const cacheKey = `projects:v6:${this.paramSignature([orgName, ...(slugs ?? ['__top__'])])}`;
     const key = buildOrgCacheKey(accountId, cacheKey);
     if (key !== null) {
