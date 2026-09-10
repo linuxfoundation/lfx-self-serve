@@ -11,6 +11,7 @@ import { ButtonComponent } from '@components/button/button.component';
 import { TagComponent } from '@components/tag/tag.component';
 import { ToastMessageComponent } from '@components/toast-message/toast-message.component';
 import {
+  FORMATION_ENABLED_FLAG,
   PENDING_ACTION_BUTTON_ICON,
   PENDING_ACTION_EMPTY_GRACE_MS,
   PENDING_ACTION_FADE_OUT_MS,
@@ -19,6 +20,7 @@ import {
   VOTE_INLINE_BALLOT_MAX_COMMENT_PROMPTS,
 } from '@lfx-one/shared/constants';
 import { PollType } from '@lfx-one/shared/enums';
+import { FeatureFlagService } from '@services/feature-flag.service';
 import { MeetingService } from '@services/meeting.service';
 import { VoteService } from '@services/vote.service';
 import { HiddenActionsService } from '@shared/services/hidden-actions.service';
@@ -79,9 +81,14 @@ export class PendingActionsComponent {
   private readonly messageService = inject(MessageService);
   private readonly destroyRef = inject(DestroyRef);
   private readonly router = inject(Router);
+  private readonly featureFlagService = inject(FeatureFlagService);
 
   protected readonly buttonIcons = PENDING_ACTION_BUTTON_ICON;
   protected readonly typeLabels = PENDING_ACTION_LABEL;
+  /** GH-1956 — mirrors the flag gate on `lfx-my-formations-card` / the "In formation" tile so a
+   *  user with the flag off never sees FormationItem rows here either, even though the server
+   *  aggregator itself is unflagged (see `FORMATION_ENABLED_FLAG`'s doc comment). */
+  protected readonly formationFlagEnabled = this.featureFlagService.getBooleanFlag(FORMATION_ENABLED_FLAG, false);
 
   public readonly pendingActions = input.required<PendingActionItem[]>();
   public readonly displayLimit = input<number>(2);
@@ -677,7 +684,11 @@ export class PendingActionsComponent {
       const pinned = new Set<string>();
       this.completingRowKeys().forEach((k) => pinned.add(k));
       this.swappingRowKeys().forEach((k) => pinned.add(k));
+      const formationEnabled = this.formationFlagEnabled();
       return this.pendingActions().filter((item) => {
+        if (item.type === 'FormationItem' && !formationEnabled) {
+          return false;
+        }
         if (item.type === 'Invitation' && !!item.inviteUid && resolvedInvites.has(item.inviteUid)) {
           return false;
         }

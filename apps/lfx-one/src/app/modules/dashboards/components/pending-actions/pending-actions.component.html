@@ -129,12 +129,14 @@
                         }
                       </div>
                     } @else {
-                      <p
-                        class="text-sm font-medium text-gray-900 sm:flex-1 sm:min-w-0 sm:truncate sm:px-4"
-                        [attr.title]="item.text"
-                        data-testid="dashboard-pending-actions-title">
-                        {{ item.text }}
-                      </p>
+                      <div class="flex flex-col gap-0.5 sm:flex-1 sm:min-w-0 sm:px-4">
+                        <p class="text-sm font-medium text-gray-900 sm:truncate" [attr.title]="item.text" data-testid="dashboard-pending-actions-title">
+                          {{ item.text }}
+                        </p>
+                        @if (item.isFormationItem && item.formationIsGating) {
+                          <span class="text-xs text-amber-600" data-testid="dashboard-pending-actions-formation-gating">Required for Active</span>
+                        }
+                      </div>
                     }
                     <!-- Action button — right-aligned, fixed by content -->
                     <div class="self-start sm:self-auto sm:shrink-0 sm:flex sm:justify-end">

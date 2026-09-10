@@ -451,3 +451,15 @@ export interface MyFormationWorkResponse {
   items: MyFormationItemRow[];
   data_source: 'fixture' | 'live';
 }
+
+/**
+ * `MyFormationSummary` decorated with pre-derived display fields for `my-formations-card` — mirrors
+ * `DecoratedPendingAction` in `components.interface.ts`. Templates may only read signals/computed
+ * values, never call a method, so `subtitle`/`progressPercent`/`announcementLabel` must be computed
+ * once per row up front rather than via template-called functions.
+ */
+export interface DecoratedMyFormation extends MyFormationSummary {
+  subtitle: string;
+  progressPercent: number;
+  announcementLabel: string | null;
+}

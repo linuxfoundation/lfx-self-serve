@@ -292,7 +292,10 @@ export class MultiPersonaDashboardComponent {
     return toSignal(
       this.formationService.getMyFormationWork().pipe(
         map((response) => response.formations.length),
-        catchError(() => of(0)),
+        catchError((error: unknown) => {
+          console.error('[MultiPersonaDashboard] Failed to load formation work', error);
+          return of(0);
+        }),
         tap(() => this.formationTileLoading.set(false))
       ),
       { initialValue: 0 }

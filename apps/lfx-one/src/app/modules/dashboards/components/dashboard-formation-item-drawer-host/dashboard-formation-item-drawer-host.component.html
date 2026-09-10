@@ -4,6 +4,7 @@
 <lfx-formation-item-drawer
   [itemProjectUid]="projectUid()"
   [itemKey]="itemKey()"
+  [mutationInFlight]="skipInFlight()"
   [skipInFlight]="skipInFlight()"
   [(visible)]="visible"
   (itemChanged)="onItemChanged()"

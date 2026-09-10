@@ -5,7 +5,7 @@ import { Component, computed, inject, Signal, signal } from '@angular/core';
 import { toSignal } from '@angular/core/rxjs-interop';
 import { RouterLink } from '@angular/router';
 import { FORMATION_ENABLED_FLAG, FORMATION_SUB_STAGE_LABELS, FORMATION_SUB_STAGE_SEVERITY } from '@lfx-one/shared/constants';
-import type { MyFormationSummary } from '@lfx-one/shared/interfaces';
+import type { DecoratedMyFormation, MyFormationSummary } from '@lfx-one/shared/interfaces';
 import { formatFormationAnnouncementLabel, formatMyFormationSubtitle } from '@lfx-one/shared/utils';
 import { TagComponent } from '@components/tag/tag.component';
 import { FeatureFlagService } from '@services/feature-flag.service';
@@ -41,26 +41,24 @@ export class MyFormationsCardComponent {
   private readonly formations: Signal<MyFormationSummary[]> = this.initFormations();
   protected readonly visible = computed(() => this.formationFlagEnabled() && !this.loading() && !this.hasError() && this.formations().length > 0);
   protected readonly showSkeleton = computed(() => this.formationFlagEnabled() && this.loading());
-  protected readonly visibleFormations = this.formations;
+  protected readonly visibleFormations: Signal<DecoratedMyFormation[]> = this.initVisibleFormations();
 
   protected readonly stageLabels = FORMATION_SUB_STAGE_LABELS;
   protected readonly stageSeverities = FORMATION_SUB_STAGE_SEVERITY;
 
-  protected subtitleFor(formation: MyFormationSummary): string {
-    return formatMyFormationSubtitle({
-      assigned_to_do: formation.assigned_to_do,
-      assigned_with_team: formation.assigned_with_team,
-      assigned_done: formation.assigned_done,
-    });
-  }
-
-  protected announcementLabelFor(formation: MyFormationSummary): string | null {
-    return formatFormationAnnouncementLabel(formation.announcement_date);
-  }
-
-  protected progressPercentFor(formation: MyFormationSummary): number {
-    if (formation.items_total <= 0) return 0;
-    return Math.round((formation.items_done / formation.items_total) * 100);
+  private initVisibleFormations(): Signal<DecoratedMyFormation[]> {
+    return computed(() =>
+      this.formations().map((formation) => ({
+        ...formation,
+        subtitle: formatMyFormationSubtitle({
+          assigned_to_do: formation.assigned_to_do,
+          assigned_with_team: formation.assigned_with_team,
+          assigned_done: formation.assigned_done,
+        }),
+        progressPercent: formation.items_total > 0 ? Math.round((formation.items_done / formation.items_total) * 100) : 0,
+        announcementLabel: formatFormationAnnouncementLabel(formation.announcement_date),
+      }))
+    );
   }
 
   private initFormations(): Signal<MyFormationSummary[]> {

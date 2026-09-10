@@ -62,10 +62,12 @@
     }
 
     <!-- My formations (GH-1956) -->
-    @defer (on idle) {
-      <lfx-my-formations-card />
-    } @placeholder {
-      <p-skeleton width="100%" height="6rem" borderRadius="16px" />
+    @if (formationFlagEnabled()) {
+      @defer (on idle) {
+        <lfx-my-formations-card />
+      } @placeholder {
+        <p-skeleton width="100%" height="6rem" borderRadius="16px" />
+      }
     }
 
     <!-- My Foundations and Projects Section -->

@@ -9,7 +9,7 @@ import { validateItemKeyParameter, validateUidParameter } from '../helpers/valid
 import { formationService } from '../services/formation.service';
 import { logger } from '../services/logger.service';
 import { getUsernameFromAuth } from '../utils/auth-helper';
-import { ServiceValidationError } from '../errors';
+import { AuthenticationError } from '../errors';
 
 export const getProjectFormation = async (req: Request, res: Response, next: NextFunction) => {
   const { slug } = req.params;
@@ -247,13 +247,7 @@ export const getMyFormationWork = async (req: Request, res: Response, next: Next
   try {
     const username = await getUsernameFromAuth(req);
     if (!username) {
-      return next(
-        ServiceValidationError.forField('user_id', 'User authentication required', {
-          operation: 'get_my_formation_work',
-          service: 'formation_controller',
-          path: req.path,
-        })
-      );
+      return next(new AuthenticationError('User authentication required', { operation: 'get_my_formation_work' }));
     }
 
     const result = await formationService.getMyFormationWork(req, username);

@@ -622,13 +622,13 @@ export class FormationService {
    * see {@link MyFormationItemRow}'s doc comment.
    */
   public async getMyFormationWork(req: Request, username: string): Promise<MyFormationWorkResponse> {
-    logger.debug(req, 'get_my_formation_work', 'Fetching formation work assigned to caller', { username });
+    logger.debug(req, 'get_my_formation_work', 'Fetching formation work assigned to caller');
 
     if (isFormationServiceLive()) {
       // TODO(#1957): swap for a real read against the item index once it ships (see the interface
       // doc comment above). Returning empty rather than fabricating fixture rows under a live flag
       // is the honest degradation — the card/tile simply don't render until the index exists.
-      logger.warning(req, 'get_my_formation_work', 'Live formation-work read not supported upstream yet, returning empty', { username });
+      logger.warning(req, 'get_my_formation_work', 'Live formation-work read not supported upstream yet, returning empty');
       return { formations: [], items: [], data_source: 'live' };
     }
 
@@ -699,7 +699,6 @@ export class FormationService {
     }
 
     logger.debug(req, 'get_my_formation_work', 'Returning fixture formation work', {
-      username,
       formation_count: formations.length,
       item_count: items.length,
     });

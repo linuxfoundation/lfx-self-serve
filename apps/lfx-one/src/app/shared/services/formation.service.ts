@@ -12,7 +12,7 @@ import type {
   FormationsQueueResponse,
   MyFormationWorkResponse,
 } from '@lfx-one/shared/interfaces';
-import { Observable, take } from 'rxjs';
+import { Observable, shareReplay, take } from 'rxjs';
 
 /** Builds the `/api/formations/:projectUid/items/:itemKey` base path shared by every item route (GH-2267 Phase 2). */
 function itemPath(projectUid: string, itemKey: string): string {
@@ -22,6 +22,7 @@ function itemPath(projectUid: string, itemKey: string): string {
 @Injectable({ providedIn: 'root' })
 export class FormationService {
   private readonly http = inject(HttpClient);
+  private myFormationWork$: Observable<MyFormationWorkResponse> | null = null;
 
   public getProjectFormation(projectSlug: string): Observable<FormationChecklistResponse> {
     return this.http.get<FormationChecklistResponse>(`/api/projects/${encodeURIComponent(projectSlug)}/formation`);
@@ -78,8 +79,17 @@ export class FormationService {
     return this.http.get<FormationsQueueResponse>('/api/formations', { params });
   }
 
-  /** GH-1956 Me lens — formations with at least one checklist item assigned to the caller. */
+  /**
+   * GH-1956 Me lens — formations with at least one checklist item assigned to the caller.
+   * `my-formations-card` and the multi-persona "In formation" tile both call this independently on
+   * the same dashboard; `shareReplay` collapses that into one HTTP request per navigation instead of
+   * two. Not a `signal`/store cache — `refCount: true` drops the buffered response and re-fetches once
+   * every subscriber has unsubscribed (e.g. after navigating away and back).
+   */
   public getMyFormationWork(): Observable<MyFormationWorkResponse> {
-    return this.http.get<MyFormationWorkResponse>('/api/user/formation-work');
+    if (!this.myFormationWork$) {
+      this.myFormationWork$ = this.http.get<MyFormationWorkResponse>('/api/user/formation-work').pipe(shareReplay({ bufferSize: 1, refCount: true }));
+    }
+    return this.myFormationWork$;
   }
 }

@@ -3,8 +3,10 @@
 
 import { Component, computed, inject, Signal } from '@angular/core';
 import { takeUntilDestroyed, toSignal } from '@angular/core/rxjs-interop';
+import { FORMATION_ENABLED_FLAG } from '@lfx-one/shared/constants';
 import { PendingActionItem } from '@lfx-one/shared/interfaces';
 import { isBoardScopedPersona } from '@lfx-one/shared/utils';
+import { FeatureFlagService } from '@services/feature-flag.service';
 import { PersonaService } from '@services/persona.service';
 import { ProjectService } from '@services/project.service';
 import { SkeletonModule } from 'primeng/skeleton';
@@ -34,11 +36,13 @@ import { RecentProgressComponent } from '../components/recent-progress/recent-pr
   styleUrl: './user-dashboard.component.scss',
 })
 export class UserDashboardComponent {
+  private readonly featureFlagService = inject(FeatureFlagService);
   private readonly personaService = inject(PersonaService);
   private readonly projectService = inject(ProjectService);
 
   public readonly refresh$ = new BehaviorSubject<void>(undefined);
 
+  protected readonly formationFlagEnabled = this.featureFlagService.getBooleanFlag(FORMATION_ENABLED_FLAG, false);
   protected readonly isBoardScoped = computed(() => isBoardScopedPersona(this.personaService.currentPersona()));
   protected readonly activityRoleLabel = computed(() => {
     const persona = this.personaService.currentPersona();

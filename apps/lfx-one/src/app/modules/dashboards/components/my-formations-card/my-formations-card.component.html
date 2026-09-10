@@ -24,7 +24,7 @@
             <lfx-tag [value]="stageLabels[formation.sub_stage]" [severity]="stageSeverities[formation.sub_stage]" />
           </div>
 
-          <p class="text-xs text-gray-500 m-0" data-testid="me-formations-card-subtitle">{{ subtitleFor(formation) }}</p>
+          <p class="text-xs text-gray-500 m-0" data-testid="me-formations-card-subtitle">{{ formation.subtitle }}</p>
 
           <div class="flex flex-col gap-1">
             <div class="flex items-center justify-between text-xs text-gray-600">
@@ -36,16 +36,16 @@
             <div class="h-1.5 bg-gray-200 rounded-full overflow-hidden w-full">
               <div
                 class="h-full bg-blue-600 rounded-full"
-                [style.width.%]="progressPercentFor(formation)"
+                [style.width.%]="formation.progressPercent"
                 role="progressbar"
-                [attr.aria-valuenow]="progressPercentFor(formation)"
+                [attr.aria-valuenow]="formation.progressPercent"
                 aria-valuemin="0"
                 aria-valuemax="100"></div>
             </div>
           </div>
 
           <div class="flex items-center justify-between gap-3 flex-wrap text-xs text-gray-500">
-            @if (announcementLabelFor(formation); as announcementLabel) {
+            @if (formation.announcementLabel; as announcementLabel) {
               <span data-testid="me-formations-card-announcement">Announcement: {{ announcementLabel }}</span>
             } @else {
               <span>Announcement date not set</span>
