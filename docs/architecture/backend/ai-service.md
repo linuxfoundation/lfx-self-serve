@@ -61,13 +61,36 @@ Defaults are empty strings, not placeholder URLs/keys — so missing env never s
 
 ```typescript
 export interface GenerateAgendaRequest {
-  meetingType: MeetingType; // Meeting type enum (BOARD, TECHNICAL, etc.)
-  title: string; // Meeting title/topic
-  projectName: string; // Project name for context
-  context?: string; // Additional context from user
-  maxCharacters?: number; // Max agenda length (default: 2000)
+  meetingType?: MeetingType; // Meeting type enum (BOARD, TECHNICAL, etc.)
+  title?: string; // Meeting title/topic
+  projectName?: string; // Project name for context
+  context?: string; // Additional context from user — required when `title` is absent
+  maxCharacters?: number; // Max agenda length (default: MEETING_AGENDA_MAX_LENGTH)
 }
 ```
+
+Every descriptor is optional, and that is deliberate rather than lax: the composer's Agenda &
+Resources section is reachable before a type is chosen, edit mode drops the rail's section locking so
+the organizer can ask for an agenda having just cleared the title, and the client's project context
+resolves asynchronously. What the endpoint does require is **enough signal to write a useful agenda —
+a title or a free-text goal**. `MeetingController.generateAgenda` rejects a body carrying neither with
+a `400` naming both fields; the prompt builder omits whatever else is missing.
+
+Server-side normalization runs before the prompt is built, so a caller cannot rely on sending the
+values through untouched:
+
+| Input                             | Handling                                                                                                                                                                                                                                                                              |
+| --------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `meetingType`                     | Narrowed to the `MeetingType` enum, or **dropped**. It has a closed value set, so an unrecognized value carries no signal — `AiService.getMeetingTypeDescription` already falls back to a generic descriptor.                                                                         |
+| `title`, `context`, `projectName` | Trimmed; dropped when empty; **truncated** to `MEETING_AGENDA_PROMPT_MAX_LENGTH` (1000). Truncated rather than dropped so an over-budget title with no goal can still satisfy the title-or-context rule. Truncation is logged (field and lengths only — the values are user content). |
+| `maxCharacters`                   | Floored; anything non-finite or outside `1..MEETING_AGENDA_MAX_LENGTH` (2000) **falls back to the default** rather than being pinned to the nearest bound. The value reaches the model twice — as `maxLength` in the response schema and interpolated into the prompt.                |
+
+The route also carries a **per-user AI limiter** (`aiRateLimiter`, `middleware/rate-limit.middleware.ts`)
+on top of the global `/api` one: 10 generations per minute, keyed on the OIDC `sub` and falling back
+to a masked IP for anonymous callers, because every call costs a LiteLLM completion. The counter lives
+in the default in-process store, so the effective ceiling is `limit × replicas`. The limiter is not
+applied to the other LiteLLM callers (newsletter generation, weekly-brief extraction) — those are
+reached from different modules and are bounded only by the global limiter.
 
 #### Generate Agenda Response
 
@@ -124,7 +147,9 @@ response_format: {
 
 **Authentication**: Required (Bearer token)
 
-**Request Body**:
+**Rate limit**: `aiRateLimiter` — 10 requests per minute per user
+
+**Request Body** — every field is optional, but at least one of `title` / `context` must be present:
 
 ```json
 {
@@ -133,6 +158,12 @@ response_format: {
   "projectName": "LFX Platform",
   "context": "Review microservices architecture and discuss scaling plans"
 }
+```
+
+A body carrying only a goal is equally valid:
+
+```json
+{ "context": "Agree on the release date and unblock the remaining Q3 roadmap items" }
 ```
 
 **Response**:
@@ -146,9 +177,10 @@ response_format: {
 
 **Error Responses**:
 
-- `400 Bad Request`: Missing required fields
+- `400 Bad Request`: Neither `title` nor `context` was supplied (both fields are named in the error)
 - `401 Unauthorized`: Invalid or missing authentication
-- `500 Internal Server Error`: AI service failure
+- `429 Too Many Requests`: Per-user AI limiter exhausted
+- `500 Internal Server Error`: AI service failure (including an unconfigured `AI_PROXY_URL` / `AI_API_KEY`, which is surfaced generically and logged server-side)
 
 ## 🔐 Security & Authentication
 
@@ -225,11 +257,15 @@ Focus on transparency, collaboration, and effective time management.`;
 ### Frontend Integration
 
 ```typescript
-// Meeting Form Component
+// Composer agenda field
 public async generateAiAgenda(): Promise<void> {
+  // Every descriptor is sent as-is, including the ones that are still empty — the server treats an
+  // absent title or type as "not chosen yet" rather than as a bad request. The client mirrors the
+  // server's one hard rule (a title or a goal) so the button is disabled rather than the request
+  // failing.
   const request: GenerateAgendaRequest = {
     meetingType: this.form().get('meeting_type')?.value,
-    title: this.form().get('topic')?.value,
+    title: this.form().get('title')?.value,
     projectName: this.projectService.project()?.name,
     context: this.form().get('aiPrompt')?.value
   };
