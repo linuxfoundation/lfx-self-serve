@@ -99,10 +99,10 @@ export class DashboardFormationItemDrawerHostComponent {
       if (!result?.reason) return;
       this.skipInFlight.set(true);
 
-      this.formationService
-        .skipFormationItem(item.project_uid, item.template_item_key, result.reason)
-        .pipe(takeUntilDestroyed(this.destroyRef))
-        .subscribe({
+      // No takeUntilDestroyed here (unlike the dialog's onClose above) — this is a write that must
+      // complete once sent; unsubscribing on host destroy would cancel the in-flight HTTP request
+      // and leave the item in an inconsistent state relative to what the server actually persisted.
+      this.formationService.skipFormationItem(item.project_uid, item.template_item_key, result.reason).subscribe({
           next: () => {
             this.skipInFlight.set(false);
             this.visible.set(false);

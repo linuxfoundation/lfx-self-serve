@@ -142,20 +142,20 @@ export class PendingActionsDrawerComponent {
     if (this.formationMutationRowKeys().has(rowKey)) return;
     this.formationMutationRowKeys.update((s) => new Set(s).add(rowKey));
 
-    this.formationService
-      .updateFormationItemStatus(projectUid, itemKey, 'in_progress')
-      .pipe(takeUntilDestroyed(this.destroyRef))
-      .subscribe({
-        next: () => {
-          this.formationMutationRowKeys.update((s) => this.removeFromSet(s, rowKey));
-          this.messageService.add({ key: 'pending-actions-toast', severity: 'success', summary: 'Claimed', detail: `You claimed "${item.text}"`, life: 5000 });
-          this.formationItemMutated.emit(item);
-        },
-        error: () => {
-          this.formationMutationRowKeys.update((s) => this.removeFromSet(s, rowKey));
-          this.messageService.add({ key: 'pending-actions-toast', severity: 'error', summary: "Couldn't claim — try again.", life: 5000 });
-        },
-      });
+    // No takeUntilDestroyed on the write itself — this must complete once sent; unsubscribing on
+    // destroy (e.g. the drawer closing or the dashboard navigating away) would cancel the in-flight
+    // HTTP request and leave the item in an inconsistent state relative to what the server persisted.
+    this.formationService.updateFormationItemStatus(projectUid, itemKey, 'in_progress').subscribe({
+      next: () => {
+        this.formationMutationRowKeys.update((s) => this.removeFromSet(s, rowKey));
+        this.messageService.add({ key: 'pending-actions-toast', severity: 'success', summary: 'Claimed', detail: `You claimed "${item.text}"`, life: 5000 });
+        this.formationItemMutated.emit(item);
+      },
+      error: () => {
+        this.formationMutationRowKeys.update((s) => this.removeFromSet(s, rowKey));
+        this.messageService.add({ key: 'pending-actions-toast', severity: 'error', summary: "Couldn't claim — try again.", life: 5000 });
+      },
+    });
   }
 
   // Block with note (GH-1956), mirroring `pending-actions.component.ts`'s `onBlockFormationItemRequested`.
@@ -180,20 +180,18 @@ export class PendingActionsDrawerComponent {
       if (!result?.reason || this.formationMutationRowKeys().has(rowKey)) return;
       this.formationMutationRowKeys.update((s) => new Set(s).add(rowKey));
 
-      this.formationService
-        .updateFormationItemStatus(projectUid, itemKey, 'blocked', result.reason)
-        .pipe(takeUntilDestroyed(this.destroyRef))
-        .subscribe({
-          next: () => {
-            this.formationMutationRowKeys.update((s) => this.removeFromSet(s, rowKey));
-            this.messageService.add({ key: 'pending-actions-toast', severity: 'success', summary: 'Marked blocked', life: 5000 });
-            this.formationItemMutated.emit(item);
-          },
-          error: () => {
-            this.formationMutationRowKeys.update((s) => this.removeFromSet(s, rowKey));
-            this.messageService.add({ key: 'pending-actions-toast', severity: 'error', summary: "Couldn't mark this item blocked — try again.", life: 5000 });
-          },
-        });
+      // No takeUntilDestroyed on the write itself — see the matching comment on onClaimFormationItem.
+      this.formationService.updateFormationItemStatus(projectUid, itemKey, 'blocked', result.reason).subscribe({
+        next: () => {
+          this.formationMutationRowKeys.update((s) => this.removeFromSet(s, rowKey));
+          this.messageService.add({ key: 'pending-actions-toast', severity: 'success', summary: 'Marked blocked', life: 5000 });
+          this.formationItemMutated.emit(item);
+        },
+        error: () => {
+          this.formationMutationRowKeys.update((s) => this.removeFromSet(s, rowKey));
+          this.messageService.add({ key: 'pending-actions-toast', severity: 'error', summary: "Couldn't mark this item blocked — try again.", life: 5000 });
+        },
+      });
     });
   }
 

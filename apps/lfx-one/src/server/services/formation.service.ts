@@ -665,8 +665,19 @@ export class FormationService {
       // Same check `assertItemProjectWriteAccess` runs before actually allowing the mutation — an
       // `auditor`-only assignee is a valid GH-1956 assignee (decision 1: partner contacts are
       // invited as `auditor` or `writer`) but Claim/Block would 403 for them; see `can_write`'s
-      // doc comment on `MyFormationItemRow`.
-      const canWrite = (await this.projectService.getProjectById(req, formationRow.parent_project_uid, true)).writer === true;
+      // doc comment on `MyFormationItemRow`. Caught rather than awaited bare: this talks to the live
+      // project service even on the fixture branch, and one formation's 404/upstream error must not
+      // abort the whole response — default to false (Claim/Block disabled) and keep going.
+      const canWrite = await this.projectService
+        .getProjectById(req, formationRow.parent_project_uid, true)
+        .then((project) => project.writer === true)
+        .catch((error) => {
+          logger.warning(req, 'get_my_formation_work', 'Failed to resolve write access; defaulting to read-only', {
+            project_uid: formationRow.parent_project_uid,
+            error: error instanceof Error ? error.message : String(error),
+          });
+          return false;
+        });
 
       const doneOrSkipped = (item: FormationItem): boolean => item.status === 'done' || item.status === 'skipped';
       const gatingItems = formationItems.filter((item) => item.is_gating);
