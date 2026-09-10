@@ -473,6 +473,9 @@ app.use('/**', async (req: Request, res: Response, next: NextFunction) => {
           email: targetClaims['http://lfx.dev/claims/email'] || '',
           username: targetClaims['http://lfx.dev/claims/username'] || '',
           'https://sso.linuxfoundation.org/claims/username': targetClaims['http://lfx.dev/claims/username'] || '',
+          // Must be overwritten too — Authelia admins carry a stale `preferred_username` from their own
+          // session, and it wins the targeting-key `||` chain in FeatureFlagService if left untouched (#2316).
+          preferred_username: targetClaims['http://lfx.dev/claims/username'] || '',
           name: impersonationUser?.name || targetClaims['http://lfx.dev/claims/username'] || '',
           nickname: targetClaims['http://lfx.dev/claims/username'] || '',
           // Do NOT fall back to the impersonator's picture — when the target has no picture, leave it
