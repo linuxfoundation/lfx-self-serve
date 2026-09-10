@@ -3,11 +3,12 @@
 
 import '@angular/compiler';
 
-import { signal } from '@angular/core';
+import { ApplicationRef, signal } from '@angular/core';
 import { ComponentFixture, TestBed } from '@angular/core/testing';
 import { provideNoopAnimations } from '@angular/platform-browser/animations';
 import { ActivatedRoute, convertToParamMap, provideRouter, Router } from '@angular/router';
-import type { OrgClaGroup } from '@lfx-one/shared/interfaces';
+import { ORG_CLA_SIGNED_SIGNATURE_KEY } from '@lfx-one/shared/constants';
+import type { Account, OrgClaGroup } from '@lfx-one/shared/interfaces';
 import { AccountContextService } from '@services/account-context.service';
 import { OrgLensClaService } from '@services/org-lens-cla.service';
 import { OrgRoleGrantsService } from '@services/org-role-grants.service';
@@ -25,7 +26,7 @@ import { OrgEasyclaComponent } from './org-easycla.component';
 describe('OrgEasyclaComponent', () => {
   const SELECTED_ACCOUNT = { uid: '0014100000Te2ovAAB', accountName: 'Vertex Robotics' };
 
-  const selectedAccount = signal<{ uid?: string; accountName: string } | null>(null);
+  const selectedAccount = signal<{ uid?: string | null; accountName: string } | null>(null);
   const hasOrgSelectorAccess = signal(true);
   const grantsLoaded = signal(true);
   const personaLoaded = signal(true);
@@ -999,6 +1000,566 @@ describe('OrgEasyclaComponent', () => {
       await switchOrg(fixture);
 
       expect(byTestId(fixture, 'org-easycla-page-label')?.textContent).toContain('Showing 1–8 of 11');
+    });
+  });
+  /**
+   * Returning from DocuSign, where the organization is named on the address.
+   *
+   * The signatory comes back through a cross-site navigation carrying only a `SameSite=Lax`
+   * cookie; when it does not come back, bootstrap selects the first organization in their list, so
+   * signing for one company returns them looking at another.
+   */
+  describe('when EasyCLA returns the signatory with an organization named on the address', () => {
+    const MICROSOFT = { uid: '0014100000Te0OKAAZ', accountName: 'Microsoft Corporation', accountId: 'acct-microsoft' };
+    const CONTAINERSHIP = { uid: '0014100000Te2QjAAJ', accountName: 'ContainerShip, Inc.', accountId: 'acct-containership' };
+
+    async function renderReturnedFrom(namedOrg: string | null, authorized: Partial<Account>[] = [CONTAINERSHIP, MICROSOFT]) {
+      const setAccount = vi.fn();
+      const resetAndReload = vi.fn();
+      const navigate = vi.fn();
+      const availableAccounts = signal(authorized);
+
+      selectedAccount.set(CONTAINERSHIP);
+      getClaGroups.mockReturnValue(of({ orgUid: CONTAINERSHIP.uid, claGroups: [] }));
+
+      TestBed.resetTestingModule();
+      await TestBed.configureTestingModule({
+        imports: [OrgEasyclaComponent],
+        providers: [
+          provideRouter([]),
+          provideNoopAnimations(),
+          { provide: AccountContextService, useValue: { selectedAccount, hasOrgSelectorAccess, availableAccounts, setAccount } },
+          { provide: OrgRoleGrantsService, useValue: { loaded: grantsLoaded } },
+          { provide: PersonaService, useValue: { personaLoaded } },
+          { provide: OrgNavigationService, useValue: { loaded: navLoaded, resetAndReload } },
+          { provide: OrgLensClaService, useValue: { getClaGroups } },
+          { provide: ActivatedRoute, useValue: { snapshot: { queryParamMap: convertToParamMap(namedOrg ? { org: namedOrg } : {}) } } },
+          MessageService,
+        ],
+      })
+        .overrideComponent(OrgEasyclaComponent, { set: { providers: [{ provide: DialogService, useValue: { open: openDialog } }] } })
+        .compileComponents();
+
+      const fixture = TestBed.createComponent(OrgEasyclaComponent);
+      const router = TestBed.inject(Router);
+      vi.spyOn(router, 'navigate').mockImplementation(navigate);
+      fixture.detectChanges();
+      await fixture.whenStable();
+      fixture.detectChanges();
+      await fixture.whenStable();
+
+      return { fixture, setAccount, resetAndReload, navigate, availableAccounts };
+    }
+
+    it('selects the organization the signature was made for, not the first in the list', async () => {
+      const { setAccount } = await renderReturnedFrom(MICROSOFT.uid);
+
+      // `setAccount` also rewrites the cookie, so the selection that went missing is repaired.
+      expect(setAccount).toHaveBeenCalledWith(MICROSOFT);
+    });
+
+    /**
+     * The authorized list does not keep the shape it starts with. Persona seeds carry `uid`, and
+     * each is then replaced by the Snowflake-enriched record for the same company, which carries
+     * `accountId` and no `uid` — the two being the same Salesforce id for an organization account.
+     * Recognising only the seed shape means the recognition expires partway through the page's own
+     * bootstrap, and which side of that the return lands on is a race.
+     *
+     * The pinned `uid` is the other half: the enriched record has none, `setAccount` persists the
+     * selection by it, and a selection saved without one clears the cookie the return exists to
+     * repair.
+     */
+    it('selects the organization after its record has been enriched and no longer carries a uid', async () => {
+      const enriched = { accountId: MICROSOFT.uid, accountName: MICROSOFT.accountName };
+
+      const { setAccount, resetAndReload } = await renderReturnedFrom(MICROSOFT.uid, [CONTAINERSHIP, enriched]);
+
+      expect(setAccount).toHaveBeenCalledWith(expect.objectContaining({ accountName: MICROSOFT.accountName, uid: MICROSOFT.uid }));
+      expect(resetAndReload).toHaveBeenCalledWith(MICROSOFT.uid);
+    });
+
+    /**
+     * Selecting it is not enough to keep it.
+     *
+     * The org selector requests its first page for whichever organization was current at bootstrap,
+     * which on a cold return is still the stale cookie. When that page lands, the pending default
+     * selection reassigns to its first row unless the current selection is on it — so adopting
+     * without re-pinning is overwritten a beat later by a page requested before the adoption
+     * happened, and the signatory lands back on the organization they did not sign for.
+     */
+    it('re-pins the catalogue on the adopted organization, so the pending default selection cannot reassign it', async () => {
+      const { resetAndReload } = await renderReturnedFrom(MICROSOFT.uid);
+
+      expect(resetAndReload).toHaveBeenCalledWith(MICROSOFT.uid);
+    });
+
+    // The mirror of ignoring it above: an organization that was not adopted must not be pinned
+    // either, or a crafted link would reorder the viewer's catalogue around a company it named.
+    it('does not re-pin an organization the viewer does not hold', async () => {
+      const { resetAndReload } = await renderReturnedFrom('0014100000TeZZZAAA');
+
+      expect(resetAndReload).not.toHaveBeenCalled();
+    });
+
+    /**
+     * The parameter names an organization; it does not grant one.
+     *
+     * A crafted link must not select a company the viewer does not hold — and specifically must
+     * not render its name, which is what building a stub from the value (the way the cookie path
+     * hydrates an id it trusts) would do.
+     */
+    it('ignores an organization the viewer does not hold rather than selecting it', async () => {
+      const { setAccount, fixture } = await renderReturnedFrom('0014100000TeZZZAAA');
+
+      expect(setAccount).not.toHaveBeenCalled();
+      expect(fixture.nativeElement.textContent).not.toContain('0014100000TeZZZAAA');
+    });
+
+    it('strips the parameter once adopted, so a reload or a copied link cannot pin a stale organization', async () => {
+      const { navigate } = await renderReturnedFrom(MICROSOFT.uid);
+
+      expect(navigate).toHaveBeenCalledWith([], expect.objectContaining({ queryParams: { org: null }, replaceUrl: true }));
+    });
+
+    // Left in place it would keep re-asserting an organization the viewer cannot have, on a page
+    // that has already settled without it.
+    it('strips the parameter even when it named an organization it could not use', async () => {
+      const { navigate } = await renderReturnedFrom('0014100000TeZZZAAA');
+
+      expect(navigate).toHaveBeenCalled();
+    });
+
+    /**
+     * The strip and the landing on the signed agreement race each other — this one waits on the
+     * authorized accounts, the other on the CLA list — and this one navigates *relative to this
+     * route*. Arriving second, it would take the signatory straight back off the agreement they
+     * had just been landed on, which reads as the landing being broken rather than the strip.
+     *
+     * There is nothing left to strip in that case either: the agreement's address carries no
+     * parameter.
+     */
+    // The list arrives after this page is constructed, so resolving against the empty list it starts
+    // with would throw away a legitimate hand-off.
+    it('waits for the authorized list rather than discarding the hand-off against an empty one', async () => {
+      navLoaded.set(false);
+      const { setAccount, availableAccounts } = await renderReturnedFrom(MICROSOFT.uid, []);
+
+      expect(setAccount).not.toHaveBeenCalled();
+
+      availableAccounts.set([CONTAINERSHIP, MICROSOFT]);
+      navLoaded.set(true);
+      await TestBed.inject(ApplicationRef).whenStable();
+
+      expect(setAccount).toHaveBeenCalledWith(MICROSOFT);
+    });
+
+    // The mirror of the wait above: once the organization list has genuinely settled without it,
+    // there is nothing left to wait for and the page stops trying.
+    it('gives up once the organization context has settled without that organization', async () => {
+      const { setAccount, navigate } = await renderReturnedFrom(MICROSOFT.uid, []);
+
+      expect(setAccount).not.toHaveBeenCalled();
+      expect(navigate).toHaveBeenCalled();
+    });
+
+    it('touches nothing on an ordinary visit that carries no organization', async () => {
+      const { setAccount, navigate } = await renderReturnedFrom(null);
+
+      expect(setAccount).not.toHaveBeenCalled();
+      expect(navigate).not.toHaveBeenCalled();
+    });
+  });
+
+  /**
+   * Landing on the agreement just signed, rather than on the list the signatory left.
+   *
+   * The return address cannot name it: `return_url` is an input to the upstream signing request and
+   * so is fixed before a signature exists. The signature crosses in `sessionStorage` instead, and
+   * this page spends it.
+   */
+  describe('when EasyCLA returns the signatory after a signing ceremony', () => {
+    const SIGNED = ['/org/easycla', 'signature-uuid-1'];
+
+    async function renderAfterSigning(
+      options: { stash?: string; org?: string | null; listOrgUid?: string; claGroups?: OrgClaGroup[]; authorized?: Partial<Account>[] } = {}
+    ) {
+      const {
+        stash = 'signature-uuid-1',
+        org = SELECTED_ACCOUNT.uid,
+        listOrgUid = SELECTED_ACCOUNT.uid,
+        claGroups = [claGroup()],
+        authorized = [SELECTED_ACCOUNT],
+      } = options;
+
+      if (stash) sessionStorage.setItem(ORG_CLA_SIGNED_SIGNATURE_KEY, stash);
+      selectedAccount.set(SELECTED_ACCOUNT);
+      getClaGroups.mockReturnValue(of({ orgUid: listOrgUid, claGroups }));
+
+      TestBed.resetTestingModule();
+      await TestBed.configureTestingModule({
+        imports: [OrgEasyclaComponent],
+        providers: [
+          provideRouter([]),
+          provideNoopAnimations(),
+          {
+            provide: AccountContextService,
+            // Adoption really moves the selection, as it does in the browser: a stub that records
+            // the call and changes nothing leaves the page fetching for the organization being
+            // left, and every ordering that depends on the selection catching up goes untested.
+            useValue: {
+              selectedAccount,
+              hasOrgSelectorAccess,
+              availableAccounts: signal(authorized),
+              setAccount: (account: Account) => selectedAccount.set(account),
+            },
+          },
+          { provide: OrgRoleGrantsService, useValue: { loaded: grantsLoaded } },
+          { provide: PersonaService, useValue: { personaLoaded } },
+          { provide: OrgNavigationService, useValue: { loaded: navLoaded, resetAndReload: vi.fn() } },
+          { provide: OrgLensClaService, useValue: { getClaGroups } },
+          { provide: ActivatedRoute, useValue: { snapshot: { queryParamMap: convertToParamMap(org ? { org } : {}) } } },
+          MessageService,
+        ],
+      })
+        .overrideComponent(OrgEasyclaComponent, { set: { providers: [{ provide: DialogService, useValue: { open: openDialog } }] } })
+        .compileComponents();
+
+      const navigate = vi.spyOn(TestBed.inject(Router), 'navigate').mockResolvedValue(true);
+
+      const fixture = TestBed.createComponent(OrgEasyclaComponent);
+      fixture.detectChanges();
+      await fixture.whenStable();
+      fixture.detectChanges();
+      await fixture.whenStable();
+
+      return { fixture, navigate };
+    }
+
+    beforeEach(() => sessionStorage.clear());
+
+    // Replaces rather than pushes: the address left behind is the return address, and an entry for
+    // it is one Back re-enters — spending nothing and stripping a parameter all over again.
+    it('lands on the agreement just signed, without leaving the return address in history', async () => {
+      const { navigate } = await renderAfterSigning();
+
+      expect(navigate).toHaveBeenCalledWith(SIGNED, { replaceUrl: true });
+    });
+
+    /**
+     * EasyCLA may not have finished processing the DocuSign callback by the time the signatory is
+     * back. Navigating blind would land them on "This CLA was not found", which is strictly worse
+     * than the list — so the first answer without the row is treated as too early, not as no.
+     */
+    it('asks again rather than giving up when the signed agreement is not in the list yet', async () => {
+      vi.useFakeTimers();
+      try {
+        getClaGroups.mockReturnValueOnce(of({ orgUid: SELECTED_ACCOUNT.uid, claGroups: [] }));
+        const { fixture, navigate } = await renderAfterSigning({ claGroups: [] });
+        expect(navigate).not.toHaveBeenCalledWith(SIGNED, expect.anything());
+
+        // The callback lands between the first answer and the retry.
+        getClaGroups.mockReturnValue(of({ orgUid: SELECTED_ACCOUNT.uid, claGroups: [claGroup()] }));
+        await vi.advanceTimersByTimeAsync(2000);
+        fixture.detectChanges();
+        await fixture.whenStable();
+
+        expect(navigate).toHaveBeenCalledWith(SIGNED, { replaceUrl: true });
+      } finally {
+        vi.useRealTimers();
+      }
+    });
+
+    /**
+     * A failed request answers nothing about the row, but it does answer whether to keep waiting.
+     * The page fetches once per organization, so nothing arrives to replace the failure — and a
+     * wait on the list it did not return never ends. Left there, a transient outage strands the
+     * signatory on an error page with the organization still on the address and the stash already
+     * spent, so not even a reload recovers the landing.
+     */
+    it('asks again rather than waiting for ever when the list request fails', async () => {
+      vi.useFakeTimers();
+      try {
+        getClaGroups.mockReturnValueOnce(throwError(() => new Error('upstream')));
+
+        const { fixture, navigate } = await renderAfterSigning();
+        expect(navigate).not.toHaveBeenCalledWith(SIGNED, expect.anything());
+
+        await vi.advanceTimersByTimeAsync(2000);
+        fixture.detectChanges();
+        await fixture.whenStable();
+
+        expect(navigate).toHaveBeenCalledWith(SIGNED, { replaceUrl: true });
+      } finally {
+        vi.useRealTimers();
+      }
+    });
+
+    /**
+     * Two requests are made on a return trip — one for the organization being left, one for the
+     * organization signed with — and a stored failure belongs to neither in particular. Reading
+     * the first one as this organization's answer starts asking upstream while the real request is
+     * still in flight, and on this trip before the adoption has even happened.
+     *
+     * No timers are advanced here on purpose: the named organization's own response is what should
+     * land the signatory, and needing the retry to rescue it is the failure this asserts against.
+     */
+    it('waits for the named organization rather than acting on a failure from the one being left', async () => {
+      const NAMED = { uid: '0014100000Te0OKAAZ', accountId: '0014100000Te0OKAAZ', accountName: 'Microsoft Corporation' };
+      getClaGroups.mockReturnValueOnce(throwError(() => new Error('upstream')));
+
+      const { navigate } = await renderAfterSigning({ org: NAMED.uid, listOrgUid: NAMED.uid, authorized: [SELECTED_ACCOUNT, NAMED] });
+
+      expect(navigate).toHaveBeenCalledWith(SIGNED, { replaceUrl: true });
+    });
+
+    /**
+     * Bounded, because past a few seconds the likelier explanations are ones no amount of waiting
+     * fixes — and a page that keeps asking for ever is worse than one that leaves them on the list.
+     *
+     * Clearing the address is this flow's job by then. The sibling adoption stands down as soon as
+     * a landing is intended, so nothing else will do it, and the organization surviving the visit
+     * is the one thing it must not do.
+     */
+    it('gives up on a budget, leaving the signatory on the list with a clean address', async () => {
+      vi.useFakeTimers();
+      try {
+        const { fixture, navigate } = await renderAfterSigning({ claGroups: [] });
+
+        await vi.advanceTimersByTimeAsync(30_000);
+        fixture.detectChanges();
+        await fixture.whenStable();
+
+        expect(navigate).not.toHaveBeenCalledWith(SIGNED, expect.anything());
+        expect(navigate).toHaveBeenCalledWith([], expect.objectContaining({ queryParams: { org: null } }));
+      } finally {
+        vi.useRealTimers();
+      }
+    });
+
+    /**
+     * Adoption is itself a change of selection, and the page learns of it a beat after it happens.
+     * A wait that gave up on any change would therefore give up on the one that put it there,
+     * ending the trip on the list for the very organization it was waiting for.
+     */
+    it('keeps waiting through the adoption that moved the signatory to the named organization', async () => {
+      vi.useFakeTimers();
+      try {
+        const NAMED = { uid: '0014100000Te0OKAAZ', accountId: '0014100000Te0OKAAZ', accountName: 'Microsoft Corporation' };
+        const { fixture, navigate } = await renderAfterSigning({
+          org: NAMED.uid,
+          listOrgUid: NAMED.uid,
+          claGroups: [],
+          authorized: [SELECTED_ACCOUNT, NAMED],
+        });
+        expect(navigate).not.toHaveBeenCalledWith(SIGNED, expect.anything());
+
+        getClaGroups.mockReturnValue(of({ orgUid: NAMED.uid, claGroups: [claGroup()] }));
+        await vi.advanceTimersByTimeAsync(2000);
+        fixture.detectChanges();
+        await fixture.whenStable();
+
+        expect(navigate).toHaveBeenCalledWith(SIGNED, { replaceUrl: true });
+      } finally {
+        vi.useRealTimers();
+      }
+    });
+
+    /**
+     * This page survives an organization switch, so a retry left running would answer for a company
+     * the viewer has deliberately left — taking them to an agreement the detail page then looks up
+     * under the new selection and reports missing.
+     *
+     * The trip is spent either way, so the address is cleaned up rather than left to pull the
+     * viewer back to the old organization on reload.
+     */
+    it('gives up when the viewer selects another organization while it is still waiting', async () => {
+      vi.useFakeTimers();
+      try {
+        const { fixture, navigate } = await renderAfterSigning({ claGroups: [] });
+
+        selectedAccount.set({ uid: '0014100000Te2QjAAJ', accountName: 'ContainerShip, Inc.' });
+        fixture.detectChanges();
+        await fixture.whenStable();
+
+        // The callback lands, but for the organization no longer being looked at.
+        getClaGroups.mockReturnValue(of({ orgUid: SELECTED_ACCOUNT.uid, claGroups: [claGroup()] }));
+        await vi.advanceTimersByTimeAsync(30_000);
+        fixture.detectChanges();
+        await fixture.whenStable();
+
+        expect(navigate).not.toHaveBeenCalledWith(SIGNED, expect.anything());
+        expect(navigate).toHaveBeenCalledWith([], expect.objectContaining({ queryParams: { org: null } }));
+      } finally {
+        vi.useRealTimers();
+      }
+    });
+
+    /**
+     * `resetAndReload` clears the selected account when its own page comes back empty or upstream
+     * fails, so a return trip whose reload does not succeed loses the selection after adoption.
+     * The wait treats an empty selection the same as a switch: an answer arriving afterwards would
+     * still take the signatory to the detail page, which — keyed on the now-cleared selection —
+     * would greet them with "no company selected".
+     */
+    it('gives up when the selection is cleared after the return-trip adoption', async () => {
+      const { fixture, navigate } = await renderAfterSigning({ claGroups: [] });
+
+      // The retry would eventually strip the address itself once its budget was spent, so the
+      // observation must be that stripping happens promptly on the clear — not after the retries.
+      selectedAccount.set({ uid: undefined, accountName: '' } as unknown as { accountName: string });
+      fixture.detectChanges();
+      await fixture.whenStable();
+
+      expect(navigate).not.toHaveBeenCalledWith(SIGNED, expect.anything());
+      expect(navigate).toHaveBeenCalledWith([], expect.objectContaining({ queryParams: { org: null } }));
+    });
+
+    /**
+     * The list and the selection feed the same take(1), and rxjs picks a winner when both change in
+     * one flush. If the list-with-row wins, the row-bearing outcome fires while the selection has
+     * already moved — and reading it as "safe to land" would take the signatory to the detail page
+     * keyed on nothing. The re-check happens at the moment of landing, not at the moment of
+     * subscribing, so the outcome observer that fires with the row must ask "is the selection this
+     * organization now?" before it calls `landOn`.
+     *
+     * Reached through the private method rather than a subject race, because rxjs's own microtask
+     * scheduling makes the "one flush" the reviewer described hard to reproduce deterministically —
+     * whichever branch of `merge(outcome$, cancelled$)` is queued first wins take(1), and vitest's
+     * queue happens to cancel first here. The re-check is what the reviewer asked for, and this
+     * asserts it holds.
+     */
+    it('does not land if the selection is no longer the named organization when the row arrives', async () => {
+      const NAMED = { uid: '0014100000Te0OKAAZ', accountId: '0014100000Te0OKAAZ', accountName: 'Microsoft Corporation' };
+      const { fixture, navigate } = await renderAfterSigning({
+        org: NAMED.uid,
+        listOrgUid: NAMED.uid,
+        authorized: [SELECTED_ACCOUNT, NAMED],
+      });
+      const component = fixture.componentInstance as unknown as { landOnIfSelectionMatches: (n: string, s: string) => void };
+      navigate.mockClear();
+
+      // The row was in hand and the outcome fired — but the selection has moved on. The guard is
+      // the only reason the address is stripped instead of navigating to the detail page for a
+      // company that is no longer selected.
+      selectedAccount.set({ uid: undefined, accountName: '' } as unknown as { accountName: string });
+      component.landOnIfSelectionMatches(NAMED.uid, 'signature-uuid-1');
+      fixture.detectChanges();
+      await fixture.whenStable();
+
+      expect(navigate).not.toHaveBeenCalledWith(SIGNED, expect.anything());
+      expect(navigate).toHaveBeenCalledWith([], expect.objectContaining({ queryParams: { org: null } }));
+    });
+
+    /**
+     * The retry budget is count-bounded, but each attempt talks to the BFF and the BFF's own
+     * gateway timeout is 30 seconds. `concatMap` runs the retries in series, so a stalled BFF
+     * would leave three attempts waiting the full 30 seconds each — about 90 seconds against a
+     * doc comment that describes a few-second budget. The per-attempt `timeout()` bounds the
+     * whole poll in wall-clock time as well as in count.
+     *
+     * A hanging request that neither errors nor completes is what the fixture models: a Subject
+     * that is never fed. Without the timeout, `concatMap` waits for it for ever and even
+     * `advanceTimersByTimeAsync(30_000)` cannot spend the budget. With the timeout, the first
+     * attempt gives up at `perAttemptTimeoutMs`, the poll moves on, and the trip is cleaned up
+     * within the retryCount × (retryDelayMs + perAttemptTimeoutMs) window.
+     */
+    it('bounds the poll in wall-clock time when each attempt hangs, not only in count', async () => {
+      vi.useFakeTimers();
+      try {
+        // A retry-delay + per-attempt-timeout window is (2000 + 3000)ms = 5000ms; three attempts
+        // is 15_000ms. Sizing the wait a beat past that so a fix off by one attempt still fails.
+        const perTripBudgetMs = 3 * (2000 + 3000);
+
+        const { fixture, navigate } = await renderAfterSigning({ claGroups: [] });
+        // From the first retry onwards the mock hangs, so nothing but the timeout can advance it.
+        getClaGroups.mockReturnValue(new Subject());
+
+        await vi.advanceTimersByTimeAsync(perTripBudgetMs + 1000);
+        fixture.detectChanges();
+        await fixture.whenStable();
+
+        expect(navigate).not.toHaveBeenCalledWith(SIGNED, expect.anything());
+        expect(navigate).toHaveBeenCalledWith([], expect.objectContaining({ queryParams: { org: null } }));
+      } finally {
+        vi.useRealTimers();
+      }
+    });
+
+    /**
+     * A retry that succeeds without the row is still an answer about the list — and the one the
+     * page will show once the trip is spent. Without preserving it, the initial failure's error
+     * state stays on the template even though the list is now in hand.
+     */
+    it('preserves a list that a retry recovered when the row is still missing at the end', async () => {
+      vi.useFakeTimers();
+      try {
+        getClaGroups.mockReturnValueOnce(throwError(() => new Error('upstream')));
+        getClaGroups.mockReturnValue(of({ orgUid: SELECTED_ACCOUNT.uid, claGroups: [] }));
+
+        const { fixture } = await renderAfterSigning({ claGroups: [] });
+        await vi.advanceTimersByTimeAsync(2000);
+        fixture.detectChanges();
+        await fixture.whenStable();
+
+        const component = fixture.componentInstance as unknown as { fetchError: () => boolean; claGroups: () => OrgClaGroup[] };
+        expect(component.fetchError()).toBe(false);
+        expect(component.claGroups()).toEqual([]);
+      } finally {
+        vi.useRealTimers();
+      }
+    });
+
+    /**
+     * Whichever organization was selected at boot settles first and cannot contain the new
+     * agreement, so a decision taken against that list would spend the trip on a row that was never
+     * going to be in it.
+     */
+    it('waits for the named organization’s own list rather than deciding on the one in hand', async () => {
+      const { navigate } = await renderAfterSigning({ listOrgUid: '0014100000Te2QjAAJ' });
+
+      expect(navigate).not.toHaveBeenCalledWith(SIGNED, expect.anything());
+    });
+
+    // Otherwise an abandoned ceremony leaves a signature behind that hijacks an ordinary visit to
+    // the list, days later, on whatever return trip finds it.
+    it('does not divert an ordinary visit, and spends the signature anyway', async () => {
+      const { navigate } = await renderAfterSigning({ org: null });
+
+      expect(navigate).not.toHaveBeenCalledWith(SIGNED, expect.anything());
+      // Spent either way, which is what makes it single-use whichever visit finds it.
+      expect(sessionStorage.getItem(ORG_CLA_SIGNED_SIGNATURE_KEY)).toBeNull();
+    });
+
+    it('stays on the list when no ceremony left a signature behind', async () => {
+      const { navigate } = await renderAfterSigning({ stash: '' });
+
+      expect(navigate).not.toHaveBeenCalledWith(SIGNED, expect.anything());
+    });
+
+    /**
+     * Both return flows navigate, and Angular cancels an in-flight navigation when another begins,
+     * so the address has to be arbitrated rather than stripped by both. Landing wins; the parameter
+     * leaves with the route it sat on.
+     *
+     * Asserted as the ONLY navigation, because the defect this pins was not a wrong destination. It
+     * was a second, entirely correct-looking strip back to the list, which cancelled the landing and
+     * left the signatory exactly where they would have been with no feature at all. Asserting only
+     * that the landing was requested passes against it — the request was always made.
+     */
+    it('does not strip the address back to the list while landing on the agreement', async () => {
+      const { navigate } = await renderAfterSigning();
+
+      expect(navigate).toHaveBeenCalledTimes(1);
+      expect(navigate).toHaveBeenCalledWith(SIGNED, { replaceUrl: true });
+    });
+
+    // No list is ever fetched for an organization the viewer does not hold, so waiting on one would
+    // wait for ever and strand the organization on the address.
+    it('gives up, and still clears the address, when the named organization is not the viewer’s', async () => {
+      const { navigate } = await renderAfterSigning({ org: 'not-an-organization-they-hold' });
+
+      expect(navigate).not.toHaveBeenCalledWith(SIGNED, expect.anything());
+      expect(navigate).toHaveBeenCalledWith([], expect.objectContaining({ queryParams: { org: null } }));
     });
   });
 });
