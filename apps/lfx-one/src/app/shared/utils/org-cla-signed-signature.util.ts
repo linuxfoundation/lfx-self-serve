@@ -22,9 +22,11 @@ import { ORG_CLA_SIGNED_SIGNATURE_KEY } from '@lfx-one/shared/constants';
  * landing costs them one click from the list.
  */
 export function stashSignedSignatureId(signatureId: string): void {
-  if (typeof sessionStorage === 'undefined') return;
-
   try {
+    // `typeof sessionStorage` covers SSR (the identifier is undeclared), and the try covers both
+    // Safari private mode (`setItem` throws) and the policy-denied Window storage getter that
+    // itself throws `SecurityError` before the try — which is why the `typeof` probe is inside it.
+    if (typeof sessionStorage === 'undefined') return;
     sessionStorage.setItem(ORG_CLA_SIGNED_SIGNATURE_KEY, signatureId);
   } catch {
     // Deliberately silent: there is no recovery and nothing for the signatory to do about it.
@@ -39,9 +41,12 @@ export function stashSignedSignatureId(signatureId: string): void {
  * and it would send the *next* visit to the list into a detail page nobody asked for.
  */
 export function takeStashedSignedSignatureId(): string {
-  if (typeof sessionStorage === 'undefined') return '';
-
   try {
+    // The `typeof` probe is inside the try for the same reason as the sibling above: SSR wants
+    // the check, and a policy-denied Window storage getter throws `SecurityError` on the probe
+    // itself in some browsers. Running under the try means an affected browser falls back to the
+    // list rather than losing the page during the constructor.
+    if (typeof sessionStorage === 'undefined') return '';
     const signatureId = sessionStorage.getItem(ORG_CLA_SIGNED_SIGNATURE_KEY) ?? '';
     sessionStorage.removeItem(ORG_CLA_SIGNED_SIGNATURE_KEY);
     return signatureId.trim();

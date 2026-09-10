@@ -51,4 +51,31 @@ describe('the signed-signature stash', () => {
 
     expect(takeStashedSignedSignatureId()).toBe('');
   });
+
+  /**
+   * A policy-denied `Window.sessionStorage` getter throws `SecurityError` from the getter itself,
+   * not from `setItem`/`getItem`. `typeof sessionStorage` triggers that getter, so the probe has to
+   * be inside the try. Otherwise the constructor read that both functions do would drag the whole
+   * EasyCLA page down instead of falling back to the list.
+   */
+  it('lets the hand-off continue when the storage getter itself throws', () => {
+    const originalDescriptor = Object.getOwnPropertyDescriptor(globalThis, 'sessionStorage');
+    Object.defineProperty(globalThis, 'sessionStorage', {
+      configurable: true,
+      get() {
+        throw new DOMException('Access denied by policy.', 'SecurityError');
+      },
+    });
+
+    try {
+      expect(() => stashSignedSignatureId('signature-uuid-1')).not.toThrow();
+      expect(takeStashedSignedSignatureId()).toBe('');
+    } finally {
+      if (originalDescriptor) {
+        Object.defineProperty(globalThis, 'sessionStorage', originalDescriptor);
+      } else {
+        delete (globalThis as unknown as { sessionStorage?: Storage }).sessionStorage;
+      }
+    }
+  });
 });
