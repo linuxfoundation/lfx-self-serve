@@ -430,17 +430,20 @@ describe('MeetingComposerHostComponent', () => {
   });
 
   describe('switching a quick create to the drawer', () => {
-    it('drops the quick-create defaults before moving surfaces', async () => {
+    it('moves the surface without touching what was already entered', async () => {
       composer.open({ mode: 'create', projectUid: 'project-1', variant: 'quick' });
       await flush();
-      const dropDefaults = vi.spyOn(formService, 'dropQuickCreateDefaults');
+      const form = formService.form();
+      form.patchValue({ title: 'Quarterly sync' });
 
       component['onSwitchToAdvanced']();
+      await flush();
 
-      // Order matters only in that both run: the drawer must stop rewriting fields the organizer
-      // already answered in the dialog.
-      expect(dropDefaults).toHaveBeenCalledOnce();
+      // One form service instance feeds both surfaces, so the handoff has nothing to copy \u2014 what it
+      // must not do is re-initialize, which would hand the organizer back an empty drawer.
       expect(composer.isQuickCreate()).toBe(false);
+      expect(formService.form()).toBe(form);
+      expect(formService.form().get('title')?.value).toBe('Quarterly sync');
     });
   });
 });

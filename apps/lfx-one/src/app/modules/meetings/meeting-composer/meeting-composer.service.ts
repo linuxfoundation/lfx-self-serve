@@ -70,10 +70,9 @@ export class MeetingComposerService {
    * Moves an open quick create dialog into the full drawer, keeping the form exactly as it stands.
    * @description The two surfaces are fed by one `MeetingComposerFormService` instance, so the values
    * already entered need no copying — what they need is for nothing to reset them, which is why this
-   * writes the surface alone and leaves `context` untouched. Pair it with
-   * `MeetingComposerFormService.dropQuickCreateDefaults()`, which the drawer needs so a later type
-   * change stops rewriting fields; `MeetingComposerHostComponent` owns that pairing, being the only
-   * place that holds both services.
+   * writes the surface alone and leaves `context` untouched. The form needs nothing done to it either:
+   * the meeting type's access defaults belong to create mode rather than to the dialog, so the drawer
+   * carries on with the same subscriptions.
    *
    * The dialog's sections carry over as visited. `visitedSections` means "the organizer has seen this",
    * and they have — the drawer is only a second view of a fill already in progress. Left unset, the

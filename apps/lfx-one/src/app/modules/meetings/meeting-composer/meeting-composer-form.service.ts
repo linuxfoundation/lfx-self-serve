@@ -261,7 +261,7 @@ export class MeetingComposerFormService {
     this.loading.set(false);
     this.form.set(this.createMeetingFormGroup());
     this.revision.set(0);
-    this.wireFormSubscriptions(context.variant === 'quick');
+    this.wireFormSubscriptions(context.mode === 'create');
 
     // Create only: the group context pre-fills and locks the committees field. In edit mode the saved
     // meeting owns that field, and locking it to a single committee would drop the others on save.
@@ -274,25 +274,10 @@ export class MeetingComposerFormService {
       this.loadGuests(context.meetingUid);
     }
 
-    // Set after the subscriptions are wired so quick create's visibility/restriction defaults still apply.
+    // Set after the subscriptions are wired so the type's visibility/restriction defaults still apply.
     if (context.mode === 'create' && context.meetingType) {
       this.form().get('meeting_type')?.setValue(context.meetingType);
     }
-  }
-
-  /**
-   * Re-wires the form for the advanced drawer, leaving every value already entered in place.
-   * @description The counterpart to `MeetingComposerService.switchToAdvanced()`. Quick create wires one
-   * subscription the drawer must not have — the Board type's visibility/restriction default — and the
-   * form instance the organizer has been typing into is the one carrying it, so the subscriptions are
-   * rebuilt against that same instance rather than through `initialize()`, which would replace the form.
-   * Deliberately does not touch `reset$` or `generation`: this is the same open continuing, so an
-   * in-flight committee-context load still belongs to it.
-   */
-  public dropQuickCreateDefaults(): void {
-    this.formSubscriptions.unsubscribe();
-    this.formSubscriptions = new Subscription();
-    this.wireFormSubscriptions(false);
   }
 
   /**
@@ -959,8 +944,9 @@ export class MeetingComposerFormService {
     // user isn't left with Board-level settings silently applied to a non-Board meeting.
     // The user can freely override visibility and restriction after the default is applied.
     //
-    // Quick create only: prefilling from the meeting type is that dialog's whole premise, whereas the
-    // drawer walks every field explicitly and must not move one the organizer hasn't reached yet.
+    // Both create surfaces, so a board meeting is private whichever one the organizer used. Not edit
+    // mode: hydration writes `meeting_type` like any other field, so the subscription would fire
+    // mid-patch and overwrite the access settings the meeting was actually saved with.
     const meetingTypeControl = appliesTypeDefaults ? form.get('meeting_type') : null;
     if (meetingTypeControl) {
       let previousType = meetingTypeControl.value as string;

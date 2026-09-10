@@ -702,104 +702,66 @@ describe('MeetingComposerFormService — save gate', () => {
 });
 
 /**
- * Covers the re-wire that "Switch to advanced mode" performs on the form the organizer is already
- * typing into. Quick create wires one subscription the drawer must not have — the Board type's
- * visibility/restriction default — and the only way to drop it without discarding the entered values
- * is to rebuild the subscriptions against the same FormGroup instance, which is what these assert.
+ * Covers the meeting type's access defaults, which belong to create mode rather than to one surface:
+ * a board meeting opens private and invite-only whether the organizer used the quick dialog or walked
+ * the drawer, so switching between the two mid-fill changes nothing about them.
  */
-describe('MeetingComposerFormService — switch to advanced', () => {
+describe('MeetingComposerFormService \u2014 meeting type access defaults', () => {
   let service: MeetingComposerFormService;
-  let createMeeting: ReturnType<typeof vi.fn>;
 
   beforeEach(() => {
-    createMeeting = vi.fn();
-
     TestBed.configureTestingModule({
       providers: [
         MeetingComposerFormService,
         { provide: MessageService, useValue: { add: vi.fn() } },
         { provide: CommitteeService, useValue: {} },
         { provide: ProjectContextService, useValue: { activeContextUid: () => null } },
-        { provide: MeetingService, useValue: { createMeeting } },
+        { provide: MeetingService, useValue: {} },
       ],
     });
 
     service = TestBed.inject(MeetingComposerFormService);
-    service.initialize({ mode: 'create', variant: 'quick', projectUid: 'project-1' });
   });
 
-  it('keeps the same form instance and everything entered into it', () => {
-    const form = service.form();
-    form.patchValue({ title: 'Quarterly sync', description: 'Roll call' });
+  it('turns a board meeting private and invite-only in the drawer', () => {
+    service.initialize({ mode: 'create', projectUid: 'project-1' });
 
-    service.dropQuickCreateDefaults();
-
-    // Identity as well as values: the dialog's sections and the drawer's sections both read
-    // `formService.form()`, so a replacement would blank the drawer even with the values copied over.
-    expect(service.form()).toBe(form);
-    expect(service.form().get('title')?.value).toBe('Quarterly sync');
-    expect(service.form().get('description')?.value).toBe('Roll call');
-  });
-
-  it('stops the meeting type from rewriting visibility and join restriction', () => {
-    service.form().patchValue({ visibility: MeetingVisibility.PUBLIC, restricted: false });
-
-    service.dropQuickCreateDefaults();
     service.form().get('meeting_type')?.setValue(MeetingType.BOARD);
 
-    // The drawer walks every field explicitly, so it must not move one the organizer hasn't reached.
-    expect(service.form().get('visibility')?.value).toBe(MeetingVisibility.PUBLIC);
-    expect(service.form().get('restricted')?.value).toBe(false);
-  });
-
-  it('leaves a Board default already applied in the dialog in place', () => {
-    service.form().get('meeting_type')?.setValue(MeetingType.BOARD);
-
-    service.dropQuickCreateDefaults();
-
-    // Dropping the subscription is not undoing it: the organizer saw Private/Invited-only in the
-    // dialog, so the drawer has to open showing the same thing.
     expect(service.form().get('visibility')?.value).toBe(MeetingVisibility.PRIVATE);
     expect(service.form().get('restricted')?.value).toBe(true);
   });
 
-  it('keeps the subscriptions both surfaces need', () => {
-    service.dropQuickCreateDefaults();
-    const revision = service.revision();
+  it('applies the same default in the quick dialog', () => {
+    service.initialize({ mode: 'create', variant: 'quick', projectUid: 'project-1' });
 
-    service.form().get('title')?.setValue('Re-wired');
+    service.form().get('meeting_type')?.setValue(MeetingType.BOARD);
 
-    // `revision` is what makes FormGroup value/validity reactive for every computed in both surfaces —
-    // the chip selections, the agenda counter, the save gate. Rebuilding the subscription set has to
-    // rebuild that one too.
-    expect(service.revision()).toBeGreaterThan(revision);
+    expect(service.form().get('visibility')?.value).toBe(MeetingVisibility.PRIVATE);
+    expect(service.form().get('restricted')?.value).toBe(true);
   });
 
-  it('re-applies the custom-duration validators against the current value', () => {
-    service.setDuration(37);
+  it('hands the access settings back when the type moves off Board', () => {
+    service.initialize({ mode: 'create', projectUid: 'project-1' });
+    service.form().get('meeting_type')?.setValue(MeetingType.BOARD);
 
-    service.dropQuickCreateDefaults();
-    service.form().get('customDuration')?.setValue(null);
+    service.form().get('meeting_type')?.setValue(MeetingType.TECHNICAL);
 
-    // Wired from `duration`'s current value on every re-wire, not only on a later change: a switch made
-    // while Custom is selected would otherwise leave the minutes input unvalidated for the rest of the open.
-    expect(service.form().get('customDuration')?.valid).toBe(false);
+    // Otherwise one mis-click on Board leaves a technical meeting silently invite-only.
+    expect(service.form().get('visibility')?.value).toBe(MeetingVisibility.PUBLIC);
+    expect(service.form().get('restricted')?.value).toBe(false);
   });
 
-  it('does not disown a save already in flight for this open', () => {
-    const created = new Subject<Meeting>();
-    createMeeting.mockReturnValue(created);
-    service.form().patchValue({ title: 'Quarterly sync', meeting_type: MeetingType.TECHNICAL });
-    const emissions: (Meeting | null)[] = [];
-    service.submit().subscribe((meeting) => emissions.push(meeting));
+  it('leaves the saved access settings alone in edit mode', () => {
+    service.initialize({ mode: 'edit', projectUid: 'project-1' });
 
-    service.dropQuickCreateDefaults();
-    created.next({ id: 'meeting-1' } as Meeting);
-    created.complete();
+    // Hydration writes `meeting_type` like any other field, so a wired subscription would fire
+    // mid-patch and overwrite what the meeting was actually saved with. The type is patched last here
+    // precisely so that overwrite would be visible rather than patched back over.
+    service.form().patchValue({ visibility: MeetingVisibility.PUBLIC, restricted: false, meeting_type: MeetingType.BOARD });
 
-    // The same open continuing, not a new one: the submit pipeline drops anything whose generation
-    // moved under it, so bumping it here would make the organizer's own save land silently.
-    expect(emissions).toEqual([{ id: 'meeting-1' }]);
+    expect(service.form().get('visibility')?.value).toBe(MeetingVisibility.PUBLIC);
+    expect(service.form().get('restricted')?.value).toBe(false);
   });
 });
 /**
