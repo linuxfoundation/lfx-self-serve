@@ -8,8 +8,8 @@ import {
   CreateMeetingRegistrantRequest,
   MeetingOccurrenceSummary,
   MeetingRegistrant,
-  PublicMeetingOccurrencesResponse,
   Project,
+  PublicMeetingOccurrencesResponse,
   PublicMeetingProject,
 } from '@lfx-one/shared/interfaces';
 import { joinAsSentenceList, truncateToUtf16Units } from '@lfx-one/shared/utils';
