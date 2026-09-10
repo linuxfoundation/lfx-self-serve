@@ -24,9 +24,12 @@
  *       old "auto-select the sole eligible project" behavior is intentionally dropped: the tree
  *       no longer knows the full eligible set upfront (that was the enumeration this ticket
  *       removes), so there is nothing to safely auto-select
- * - S6: Continue routes into the create flow — lands on the lens-prefixed create URL carrying
- *       ?project=<slug>. `setContextLens()` replaces `setLens()`'s persona-gated alignment but
- *       preserves the same external URL-prefix contract, so this assertion is unchanged
+ * - S6: Continue opens the meeting composer over the page the rail was on, leaving the URL
+ *       exactly where it was (#1452). The composer is an overlay every entry point raises in
+ *       place; `/meetings/create` survives only as a deep link, which is the one caller with
+ *       nowhere else to land. The non-meeting types still route, and S6b covers that split by
+ *       asserting Newsletter leaves the page and raises no composer — deliberately not which
+ *       page it lands on, since that is the writerGuard's call and outside this suite's boundary
  * - S7: typing a nonsense search term (≥2 chars) surfaces the fail-closed empty state — no
  *       post-selection permission error is possible because the empty state renders before any
  *       row could be picked
@@ -190,9 +193,10 @@ test.describe('Create Quick-Link — rail popover + dialog smoke set', () => {
     await expect(continueButton(page)).toBeEnabled();
   });
 
-  // S6 — Continue exercises the create-navigation path: lands on the lens-prefixed create URL
-  test('S6: Continue navigates to the lens-prefixed create page carrying ?project=', async ({ page }) => {
+  // S6 — Continue raises the composer in place: the quick create dialog opens and the URL holds
+  test('S6: Continue opens the meeting composer without leaving the page', async ({ page }) => {
     await openDialogForType(page, 'meeting');
+    const urlBefore = page.url();
 
     const firstNode = pickerResults(page).locator('[data-testid^="create-target-node-"]').first();
     await expect(firstNode).toBeVisible({ timeout: 10_000 });
@@ -200,17 +204,33 @@ test.describe('Create Quick-Link — rail popover + dialog smoke set', () => {
 
     await continueButton(page).click();
 
-    // onContinue calls setContextLens() then navigates; lensRedirectGuard-equivalent prefixing is
-    // preserved by construction (setContextLens aligns the same underlying signal setLens did).
-    // Require the lens prefix explicitly (foundation|project) — a bare /meetings would mean
-    // the alignment didn't happen, so it must NOT match. `/meetings/create` opens the composer drawer
-    // and replaces itself with the list URL, keeping the lens prefix and `?project=`.
-    await expect(page).toHaveURL(/\/(foundation|project)\/meetings\?.*project=/, { timeout: 15_000 });
-    await expect(page.getByTestId('meeting-composer-header')).toBeVisible({ timeout: 15_000 });
-    // The regex above matches `project=` with an empty value too — assert the param actually
-    // carries a usable slug, since an empty one is exactly what a mis-resolved target would produce.
-    const project = new URL(page.url()).searchParams.get('project');
-    expect(project).toBeTruthy();
+    // The composer is an overlay, so the page underneath is the answer to "where am I": routing
+    // to `/meetings/create` would push a history entry that immediately replaces itself with the
+    // meetings list, throwing away whatever the organizer was reading to reach a list they never
+    // asked for. The quick dialog is the surface `/meetings/create` opened, so this is the same
+    // composer the deep link raises — only without the detour.
+    await expect(page.getByTestId('quick-create-body')).toBeVisible({ timeout: 15_000 });
+    expect(page.url()).toBe(urlBefore);
+    // The picker dialog is the thing that closed; the composer is what replaced it on screen.
+    await expect(page.getByTestId('create-target-picker')).toBeHidden();
+  });
+
+  // S6b — the split: everything that is not a meeting still navigates away rather than overlaying
+  test('S6b: Continue for a non-meeting type leaves the page and raises no composer', async ({ page }) => {
+    await openDialogForType(page, 'newsletter');
+    const urlBefore = page.url();
+
+    const firstNode = pickerResults(page).locator('[data-testid^="create-target-node-"]').first();
+    await expect(firstNode).toBeVisible({ timeout: 10_000 });
+    await firstNode.click();
+
+    await continueButton(page).click();
+
+    // Only the meeting path is an in-place overlay, so leaving the page is the assertion — not
+    // which page it lands on, which is the newsletter route's writerGuard call and past the
+    // dialog boundary this suite keeps to.
+    await expect.poll(() => page.url(), { timeout: 15_000 }).not.toBe(urlBefore);
+    await expect(page.getByTestId('quick-create-body')).toBeHidden();
   });
 
   // S7 — fail-closed empty state: a nonsense search term surfaces "no matches", not an error
