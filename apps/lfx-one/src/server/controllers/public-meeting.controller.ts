@@ -603,7 +603,7 @@ export class PublicMeetingController {
         registrant_uid: newRegistrant.uid,
       });
 
-      res.status(201).json(newRegistrant);
+      res.status(201).json(this.toSelfRegistrationResponse(newRegistrant));
     } catch (error) {
       // Error handler will log
       next(error);
@@ -719,6 +719,47 @@ export class PublicMeetingController {
       // attendance, so it stays allowlisted even though no in-app caller sends it yet.
       ...(occurrenceId ? { occurrence_id: occurrenceId } : {}),
     };
+  }
+
+  /**
+   * Narrows a self-registration write response to the registrant's own row.
+   *
+   * The upstream write response is passed through `fromUpstreamRegistrant`, which renames four keys
+   * and spreads the rest — so whatever `/registrants/self` chose to return travels out of this route
+   * unread. That is fine on the authenticated registrant routes, whose callers already hold committee
+   * read access; it is not fine here. `/public/api/meetings/register` is the one registrant write an
+   * anonymous-by-default route serves, and upstream's row carries audit fields (`created_by`,
+   * `updated_by`) that are nested user objects, not identifier strings — a full name, an address and
+   * a username belonging to whoever last edited the meeting's roster.
+   *
+   * An allowlist rather than a denylist, on the same reasoning as `toSelfRegistration`: a field added
+   * to the upstream row later has to be named here before a public caller can see it, instead of
+   * leaking until someone notices. What survives is the registrant's own record — the identifiers
+   * they submitted, the timestamps of their own row, and the avatar the page shows them.
+   *
+   * A key upstream did not return is dropped rather than stated as `undefined`, so the response still
+   * reads as "the write response didn't say" rather than "upstream stored nothing" — the distinction
+   * `fromUpstreamRegistrant` is careful to preserve. The in-app caller
+   * (`PublicRegistrationModalComponent`) reads none of these fields; it forwards a `registered: true`
+   * flag and discards the row, so narrowing costs the UI nothing.
+   */
+  private toSelfRegistrationResponse(registrant: MeetingRegistrant): Partial<MeetingRegistrant> {
+    const fields = [
+      'uid',
+      'meeting_id',
+      'email',
+      'first_name',
+      'last_name',
+      'host',
+      'job_title',
+      'org_name',
+      'occurrence_id',
+      'avatar_url',
+      'created_at',
+      'updated_at',
+    ] as const satisfies readonly (keyof MeetingRegistrant)[];
+
+    return Object.fromEntries(fields.filter((field) => registrant[field] !== undefined).map((field) => [field, registrant[field]]));
   }
 
   /**

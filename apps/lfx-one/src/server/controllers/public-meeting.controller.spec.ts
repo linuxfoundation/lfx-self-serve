@@ -768,6 +768,52 @@ describe('PublicMeetingController.registerForPublicMeeting', () => {
     expect(res.json).toHaveBeenCalledWith({ uid: 'reg-1' });
   });
 
+  it("answers with the registrant's own row and drops the audit fields upstream attached", async () => {
+    meetingSvc.addMeetingRegistrantSelf.mockResolvedValue({
+      uid: 'reg-1',
+      meeting_id: MEETING_ID,
+      email: 'alice@acme-motors.example',
+      first_name: 'Alice',
+      last_name: 'Liddell',
+      host: false,
+      avatar_url: 'https://avatars.example/alice.png',
+      created_at: '2026-01-01T00:00:00Z',
+      updated_at: '2026-01-01T00:00:00Z',
+      // Upstream attaches these as nested user objects, not identifier strings. This route is the one
+      // registrant write an anonymous-by-default surface serves, so a roster editor's name, address
+      // and username must not ride the response back out.
+      created_by: { username: 'roster-admin', email: 'admin@acme-motors.example', name: 'Roster Admin' },
+      updated_by: { username: 'roster-admin', email: 'admin@acme-motors.example', name: 'Roster Admin' },
+    });
+    const { req, res, next } = buildRegisterReq(true);
+
+    await controller.registerForPublicMeeting(req, res, next);
+
+    expect(res.json).toHaveBeenCalledWith({
+      uid: 'reg-1',
+      meeting_id: MEETING_ID,
+      email: 'alice@acme-motors.example',
+      first_name: 'Alice',
+      last_name: 'Liddell',
+      host: false,
+      avatar_url: 'https://avatars.example/alice.png',
+      created_at: '2026-01-01T00:00:00Z',
+      updated_at: '2026-01-01T00:00:00Z',
+    });
+  });
+
+  it('omits a field the write response never carried rather than stating it as undefined', async () => {
+    meetingSvc.addMeetingRegistrantSelf.mockResolvedValue({ uid: 'reg-1', job_title: null });
+    const { req, res, next } = buildRegisterReq(true);
+
+    await controller.registerForPublicMeeting(req, res, next);
+
+    // `null` is a value upstream stated; a missing key means the write response didn't say.
+    const payload = res.json.mock.calls[0][0];
+    expect(payload).toEqual({ uid: 'reg-1', job_title: null });
+    expect('org_name' in payload).toBe(false);
+  });
+
   it('fetches meeting with M2M token then restores user token for self-register', async () => {
     const { req, res, next } = buildRegisterReq(true);
     let tokenAtMeetingFetch: string | undefined;

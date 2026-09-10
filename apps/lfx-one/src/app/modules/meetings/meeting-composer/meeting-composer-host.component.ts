@@ -378,7 +378,11 @@ export class MeetingComposerHostComponent {
       projectUid: meeting.project_uid || null,
       // The join page rejects a private or restricted meeting without its password and redirects to
       // `/meetings/not-found`, which every BOARD meeting would hit since those are forced private.
-      meetingQueryParams: meeting.password ? { password: meeting.password } : {},
+      // Carried as router state rather than a query param so the password never reaches the address
+      // bar, the history entry's URL, an outbound `Referer`, or a proxy log — see
+      // {@link MeetingComposerToastData.meetingLinkState}. The organizer's click is always a
+      // client-side navigation, which is the only journey this link is for.
+      ...(meeting.password ? { meetingLinkState: { password: meeting.password } } : {}),
     };
 
     // The Edit action asks whether this meeting may be reopened, which is a question about the

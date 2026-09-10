@@ -19,7 +19,7 @@ import {
 } from '@angular/core';
 import { takeUntilDestroyed, toObservable, toSignal } from '@angular/core/rxjs-interop';
 import { FormControl, FormGroup, ReactiveFormsModule, Validators } from '@angular/forms';
-import { ActivatedRoute, Router } from '@angular/router';
+import { ActivatedRoute, ParamMap, Router } from '@angular/router';
 import { MeetingOrganizerComponent } from '@app/modules/meetings/components/meeting-organizer/meeting-organizer.component';
 import { MeetingRegistrantsDisplayComponent } from '@app/modules/meetings/components/meeting-registrants-display/meeting-registrants-display.component';
 import { MeetingSummaryModalComponent } from '@app/modules/meetings/components/meeting-summary-modal/meeting-summary-modal.component';
@@ -400,7 +400,7 @@ export class MeetingJoinComponent implements OnInit {
     // `initializeSeriesOccurrences()` subscribes to `meeting` immediately and would otherwise
     // read `password` before the debounced pipeline (line ~755) gets a chance to set it,
     // sending a password-gated recurring meeting's occurrences request with no password.
-    this.password.set(this.activatedRoute.snapshot.queryParamMap.get('password'));
+    this.password.set(this.readPassword(this.activatedRoute.snapshot.queryParamMap));
 
     this.meeting = this.initializeMeeting(transferredMeeting);
     this.currentOccurrence = this.initializeCurrentOccurrence();
@@ -810,7 +810,7 @@ export class MeetingJoinComponent implements OnInit {
       debounceTime(0), // Coalesce rapid SSR hydration emissions so the fallback chain isn't canceled
       switchMap(([params, queryParams]) => {
         const meetingId = params.get('id');
-        this.password.set(queryParams.get('password'));
+        this.password.set(this.readPassword(queryParams));
 
         if (!meetingId) {
           this.router.navigate(['/meetings/not-found']);
@@ -927,6 +927,23 @@ export class MeetingJoinComponent implements OnInit {
         meetingLoadFailed: true,
       });
     }
+  }
+
+  // Prefers the `?password=` query param, falling back to the router navigation state that the
+  // composer's post-create toast link carries. The composer keeps the password out of the URL --
+  // a query param writes a shared secret into the address bar, the history entry, the `Referer`
+  // header of anything this page later loads, and every proxy log in between -- but the param
+  // remains the shared shape everywhere else (meeting cards, copied join links), so it still wins
+  // when present. `history` is browser-only, so the state read is guarded; on the server the
+  // param is the only source.
+  private readPassword(queryParams: ParamMap): string | null {
+    const fromQuery = queryParams.get('password');
+    if (fromQuery || !isPlatformBrowser(this.platformId)) {
+      return fromQuery;
+    }
+
+    const stated = (history.state as { password?: unknown } | null)?.password;
+    return typeof stated === 'string' && stated ? stated : null;
   }
 
   private initializeCurrentOccurrence(): Signal<MeetingOccurrence | null> {

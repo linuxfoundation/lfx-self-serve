@@ -699,15 +699,26 @@ export interface UpdateMeetingRegistrantRequest {
    * The PUT reuses `CreateItxRegistrantRequestBody`, so the BFF renames `org_name`, `avatar_url` and
    * `occurrence_id` on the way out (see `MeetingService.toUpstreamRegistrantBody`).
    *
-   * Two known gaps, both pre-dating that rename:
+   * Three known gaps, all pre-dating that rename:
    *
-   * - `null` does not erase. Every target is declared non-nullable, and `MeetingService.getChangedFields`
-   *   nulls each of these whenever it's blank, so the BFF omits a `null` rather than sending one.
-   *   Clearing a stored organization therefore doesn't take effect. Fixing it needs upstream to say how
-   *   these fields are erased — don't guess between `null` and `''`; `occurrence` already gives blank
-   *   its own meaning ("blank = all occurrences").
+   * - `null` does not erase. Every field upstream declares is declared non-nullable, and
+   *   `MeetingService.getChangedFields` nulls each of these whenever it's blank, so the BFF omits a
+   *   `null` rather than sending one — for `job_title` and `username` under their own name, for the
+   *   three renamed fields by skipping the rename. Clearing a stored organization or job title
+   *   therefore doesn't take effect. Fixing it needs upstream to say how these fields are erased —
+   *   don't guess between `null` and `''`; `occurrence` already gives blank its own meaning
+   *   ("blank = all occurrences").
    * - `linkedin_profile` is not declared upstream at all, under this or any other name, so Goa discards
    *   it. The registrant form still validates it and still reports success. Tracked separately.
+   * - There is no `committee_uid`, deliberately, and the omission is not symmetric with
+   *   {@link CreateMeetingRegistrantRequest}. Attribution is settled when a registrant is added and
+   *   an update cannot move one between groups: `MeetingController.stripCommitteeUid` removes the key
+   *   before forwarding, and `updateMeetingRegistrants` resolves no v2 → v1 UID, so a client that
+   *   sent one anyway would at best have it dropped and at worst store a v2 UID upstream. The
+   *   consequence is that a group downgrade is one-way — a guest whose `committee_uid` was lost on
+   *   the way in cannot be re-attributed by re-saving, only by removing and re-adding them, which is
+   *   why `getMeetingCommitteeUids` fails the whole batch rather than letting one through as
+   *   `direct`.
    */
   /** UUID of the meeting (required) */
   meeting_id: string;
@@ -2003,8 +2014,16 @@ export interface MeetingComposerToastData {
   meetingTitle: string;
   /** Router link to the meeting's public join page. */
   meetingUrl: string;
-  /** Query params that page needs — the access password, for a private or restricted meeting. */
-  meetingQueryParams: Record<string, string>;
+  /**
+   * Router navigation state that page needs — the access password, for a private or restricted meeting.
+   * @description Navigation state rather than a query param: the join page turns a private or
+   * restricted meeting away without its password, but the password is a shared secret and a query
+   * param writes it into the address bar, the browser history, the `Referer` header of anything the
+   * page later loads, and any proxy log in between. Router state travels in the History API entry
+   * instead, so the organizer's click still opens the meeting while the secret stays out of the URL.
+   * Absent when the meeting has no password.
+   */
+  meetingLinkState?: Record<string, string>;
   /**
    * Project the meeting was created under, or `null` when the response carried none.
    * @description The composer can save into a project other than the active one — a group-scoped

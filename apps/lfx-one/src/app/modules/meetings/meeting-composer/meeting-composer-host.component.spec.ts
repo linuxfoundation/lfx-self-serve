@@ -265,8 +265,10 @@ describe('MeetingComposerHostComponent', () => {
         detail: 'Weekly sync',
         sticky: true,
         closable: true,
-        data: { meetingUid: 'meeting-1', meetingTitle: 'Weekly sync', meetingUrl: '/meetings/meeting-1', meetingQueryParams: {}, projectUid: null },
+        data: { meetingUid: 'meeting-1', meetingTitle: 'Weekly sync', meetingUrl: '/meetings/meeting-1', projectUid: null },
       });
+      // A meeting with no password carries no navigation state at all, so the link is a plain route.
+      expect(lastToast().data.meetingLinkState).toBeUndefined();
     });
 
     it('retires the previous announcement before raising its own', () => {
@@ -284,7 +286,8 @@ describe('MeetingComposerHostComponent', () => {
       component['onSubmit']();
 
       // Without it the join page bounces every private or restricted meeting to /meetings/not-found.
-      expect(lastToast().data.meetingQueryParams).toEqual({ password: 'secret' });
+      // Router state, not a query param, so the shared secret never reaches the address bar.
+      expect(lastToast().data.meetingLinkState).toEqual({ password: 'secret' });
     });
 
     it('names an untitled meeting rather than showing a blank toast', () => {
@@ -359,7 +362,6 @@ describe('MeetingComposerHostComponent', () => {
         meetingUid: 'meeting-1',
         meetingTitle: 'Weekly sync',
         meetingUrl: '/meetings/meeting-1',
-        meetingQueryParams: {},
         projectUid: null,
       });
 
@@ -372,7 +374,6 @@ describe('MeetingComposerHostComponent', () => {
         meetingUid: 'meeting-1',
         meetingTitle: 'Weekly sync',
         meetingUrl: '/meetings/meeting-1',
-        meetingQueryParams: {},
         projectUid: null,
       });
 
