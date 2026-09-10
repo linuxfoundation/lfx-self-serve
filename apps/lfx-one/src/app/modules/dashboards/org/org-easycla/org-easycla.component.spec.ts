@@ -1395,6 +1395,57 @@ describe('OrgEasyclaComponent', () => {
     });
 
     /**
+     * `resetAndReload` clears the selected account when its own page comes back empty or upstream
+     * fails, so a return trip whose reload does not succeed loses the selection after adoption.
+     * Left counted as still-this-one, a list response arriving afterwards would still take the
+     * signatory to the detail page — which, keyed on the now-cleared selection, would then greet
+     * them with "no company selected".
+     */
+    /**
+     * `resetAndReload` clears the selected account when its own page comes back empty or upstream
+     * fails, so a return trip whose reload does not succeed loses the selection after adoption.
+     * The wait treats an empty selection the same as a switch: an answer arriving afterwards would
+     * still take the signatory to the detail page, which — keyed on the now-cleared selection —
+     * would greet them with "no company selected".
+     */
+    it('gives up when the selection is cleared after the return-trip adoption', async () => {
+      const { fixture, navigate } = await renderAfterSigning({ claGroups: [] });
+
+      // The retry would eventually strip the address itself once its budget was spent, so the
+      // observation must be that stripping happens promptly on the clear — not after the retries.
+      selectedAccount.set({ uid: undefined, accountName: '' } as unknown as { accountName: string });
+      fixture.detectChanges();
+      await fixture.whenStable();
+
+      expect(navigate).not.toHaveBeenCalledWith(SIGNED, expect.anything());
+      expect(navigate).toHaveBeenCalledWith([], expect.objectContaining({ queryParams: { org: null } }));
+    });
+
+    /**
+     * A retry that succeeds without the row is still an answer about the list — and the one the
+     * page will show once the trip is spent. Without preserving it, the initial failure's error
+     * state stays on the template even though the list is now in hand.
+     */
+    it('preserves a list that a retry recovered when the row is still missing at the end', async () => {
+      vi.useFakeTimers();
+      try {
+        getClaGroups.mockReturnValueOnce(throwError(() => new Error('upstream')));
+        getClaGroups.mockReturnValue(of({ orgUid: SELECTED_ACCOUNT.uid, claGroups: [] }));
+
+        const { fixture } = await renderAfterSigning({ claGroups: [] });
+        await vi.advanceTimersByTimeAsync(2000);
+        fixture.detectChanges();
+        await fixture.whenStable();
+
+        const component = fixture.componentInstance as unknown as { fetchError: () => boolean; claGroups: () => OrgClaGroup[] };
+        expect(component.fetchError()).toBe(false);
+        expect(component.claGroups()).toEqual([]);
+      } finally {
+        vi.useRealTimers();
+      }
+    });
+
+    /**
      * Whichever organization was selected at boot settles first and cannot contain the new
      * agreement, so a decision taken against that list would spend the trip on a row that was never
      * going to be in it.

@@ -25,6 +25,7 @@ import {
   filter,
   first,
   map,
+  merge,
   Observable,
   of,
   skip,
@@ -201,7 +202,15 @@ export class OrgEasyclaComponent {
    */
   private readonly orgChanged$ = this.selectedOrgUid$.pipe(skip(1));
 
-  private readonly claData: Signal<OrgClaGroupList | null | undefined> = this.initClaData();
+  /**
+   * The organization's CLA list.
+   *
+   * Written from two places: the main fetch keyed on `orgUid$`, and the return-trip retry which
+   * asks upstream directly and pushes what it hears back in. Without the second the retry could
+   * recover the list without the row and still leave "we couldn't load your CLAs" on screen — the
+   * error state having been set by the failed initial attempt and never cleared.
+   */
+  private readonly claData = signal<OrgClaGroupList | null | undefined>(undefined);
 
   /**
    * True while the response in hand does not belong to the organization named in the header.
@@ -300,6 +309,7 @@ export class OrgEasyclaComponent {
     // selection has no list to re-filter but does have a signing flow to abandon.
     this.orgChanged$.pipe(takeUntilDestroyed()).subscribe(() => this.abandonOpenPicker());
 
+    this.subscribeClaData();
     this.adoptOrganizationFromReturnAddress();
     this.landOnSignedAgreement();
   }
@@ -594,47 +604,60 @@ export class OrgEasyclaComponent {
     // interleave. From here the parameter is this method's to remove.
     this.returnLandingPending = true;
 
-    combineLatest([
+    type Outcome =
+      | { kind: 'list'; list: OrgClaGroupList | null }
+      | { kind: 'failed' }
+      | { kind: 'unreachable' }
+      | { kind: 'cancelled' };
+
+    const outcome$ = combineLatest([
       toObservable(this.claData),
       toObservable(this.accountContext.availableAccounts),
       toObservable(this.orgContextLoaded),
       toObservable(this.failedOrgUid),
-    ])
-      .pipe(
-        map(([data, accounts, loaded, failedFor]) => ({
-          list: data?.orgUid === named ? data : null,
-          // A failed request answers nothing about the row, but it does answer the question of
-          // whether to keep waiting. The page fetches once per organization, so nothing is coming
-          // to replace the failure, and a wait for the list it did not return never ends — leaving
-          // the signatory on an error page with the parameter still on the address and the stash
-          // already spent, so not even a reload could recover the landing.
-          //
-          // Only this organization's failure counts, which is why it is read from the request's own
-          // record of what it asked for rather than inferred from `claData`. Two requests are made
-          // on a return trip — one for the organization being left, one for the organization signed
-          // with — and a stored `null` belongs to neither in particular. Reading the failure as this
-          // organization's would start the retry while the real request is still in flight, and
-          // before adoption on the trip where the first request is the one that failed.
-          failed: failedFor === named,
-          // Nothing will ever fetch a list for an organization the viewer does not hold, so once the
-          // context has settled without it there is no list coming and waiting on one would leave
-          // the parameter on the address for good.
-          unreachable: loaded && !this.authorizedAccountNamed(accounts, named),
-        })),
-        filter(({ list, failed, unreachable }) => !!list || failed || unreachable),
-        take(1),
-        takeUntilDestroyed(this.destroyRef)
-      )
-      .subscribe(({ list, unreachable }) => {
-        if (list?.claGroups.some((group) => group.id === signatureId)) {
+    ]).pipe(
+      map(([data, accounts, loaded, failedFor]): Outcome | null => {
+        // A failed request answers nothing about the row, but it does answer the question of
+        // whether to keep waiting. The page fetches once per organization, so nothing is coming
+        // to replace the failure, and a wait for the list it did not return never ends — leaving
+        // the signatory on an error page with the parameter still on the address and the stash
+        // already spent, so not even a reload could recover the landing.
+        //
+        // Only this organization's failure counts, which is why it is read from the request's own
+        // record of what it asked for rather than inferred from `claData`. Two requests are made
+        // on a return trip — one for the organization being left, one for the organization signed
+        // with — and a stored `null` belongs to neither in particular. Reading the failure as this
+        // organization's would start the retry while the real request is still in flight, and
+        // before adoption on the trip where the first request is the one that failed.
+        if (failedFor === named) return { kind: 'failed' };
+        // Nothing will ever fetch a list for an organization the viewer does not hold, so once the
+        // context has settled without it there is no list coming and waiting on one would leave
+        // the parameter on the address for good.
+        if (loaded && !this.authorizedAccountNamed(accounts, named)) return { kind: 'unreachable' };
+        if (data?.orgUid === named) return { kind: 'list', list: data };
+        return null;
+      }),
+      filter((outcome): outcome is Outcome => outcome !== null)
+    );
+
+    // A "selection moved off" that fires post-adoption is `resetAndReload` clearing the account
+    // after its own upstream call came back empty or failed, or the viewer walking away while the
+    // list is in flight. Either way the wait is over, and reading a later list response would land
+    // the signatory on a detail page with no context.
+    const cancelled$ = this.selectionMovedOff(named).pipe(map((): Outcome => ({ kind: 'cancelled' })));
+
+    merge(outcome$, cancelled$)
+      .pipe(take(1), takeUntilDestroyed(this.destroyRef))
+      .subscribe((outcome) => {
+        if (outcome.kind === 'list' && outcome.list?.claGroups.some((group) => group.id === signatureId)) {
           this.landOn(signatureId);
           return;
         }
 
-        // An organization the viewer does not hold is the one case no amount of asking again can
-        // fix. Staying on the list, so the address still has to be cleaned up — the sibling flow
-        // stood down on the strength of the flag and will not do it.
-        if (unreachable) {
+        // An organization the viewer does not hold, or one the viewer has moved off, is a case no
+        // amount of asking again can fix. Staying on the list, so the address still has to be
+        // cleaned up — the sibling flow stood down on the strength of the flag and will not do it.
+        if (outcome.kind === 'unreachable' || outcome.kind === 'cancelled') {
           this.stripReturnOrganizationFromAddress();
           return;
         }
@@ -669,6 +692,15 @@ export class OrgEasyclaComponent {
       .pipe(
         take(OrgEasyclaComponent.signedAgreementRetries),
         concatMap(() => this.claService.getClaGroups(orgUid).pipe(catchError(() => of(null)))),
+        // A retry that succeeds without the row is still an answer about the list, and the one the
+        // page will show once this trip is spent. Without this, an initial failure followed by a
+        // recovery leaves the error state on the template even though the list is now in hand.
+        tap((list) => {
+          if (!list) return;
+          this.claData.set(list);
+          this.fetchError.set(false);
+          this.failedOrgUid.set(null);
+        }),
         map((list) => !!list?.claGroups.some((group) => group.id === signatureId)),
         takeUntil(this.selectionMovedOff(orgUid)),
         first((found) => found, false),
@@ -685,15 +717,21 @@ export class OrgEasyclaComponent {
   }
 
   /**
-   * Fires once the viewer has selected an organization other than this one.
+   * Fires once the selection has moved off this organization, whether onto a different one or onto
+   * nothing at all.
    *
    * Waits for the selection to be this organization first. Adoption on a return trip is itself a
    * change of selection, and one arriving late would otherwise read as the viewer walking away
    * from the very organization being adopted.
+   *
+   * An empty selection is treated the same as a switch, because `resetAndReload` clears the account
+   * when its own page comes back empty or upstream fails. Left counted as still-this-one, the
+   * signatory would be landed on the detail page for the organization they signed for, then read as
+   * having no context there and greeted with the very "no company selected" message the return trip
+   * exists to avoid.
    */
-  private selectionMovedOff(orgUid: string): Observable<string> {
+  private selectionMovedOff(orgUid: string): Observable<string | null | undefined> {
     return this.selectedOrgUid$.pipe(
-      filter((uid): uid is string => !!uid),
       skipWhile((uid) => uid !== orgUid),
       filter((uid) => uid !== orgUid)
     );
@@ -714,13 +752,11 @@ export class OrgEasyclaComponent {
     return computed(() => value().trim().toLowerCase());
   }
 
-  private initClaData(): Signal<OrgClaGroupList | null | undefined> {
-    if (!isPlatformBrowser(this.platformId)) {
-      return signal<OrgClaGroupList | null | undefined>(undefined);
-    }
+  private subscribeClaData(): void {
+    if (!isPlatformBrowser(this.platformId)) return;
 
-    return toSignal(
-      this.orgUid$.pipe(
+    this.orgUid$
+      .pipe(
         tap(() => {
           this.claLoadingState.set(true);
           this.fetchError.set(false);
@@ -742,9 +778,9 @@ export class OrgEasyclaComponent {
             })
           )
         ),
-        takeUntilDestroyed()
+        takeUntilDestroyed(this.destroyRef)
       )
-    );
+      .subscribe((list) => this.claData.set(list));
   }
 
   /**
