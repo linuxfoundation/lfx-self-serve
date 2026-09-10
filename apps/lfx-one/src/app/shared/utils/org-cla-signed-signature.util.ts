@@ -13,10 +13,22 @@ import { ORG_CLA_SIGNED_SIGNATURE_KEY } from '@lfx-one/shared/constants';
  *
  * SSR-safe: both functions no-op when `sessionStorage` is unavailable, as the sibling
  * `clearPendingProfileSave` does.
+ *
+ * Best-effort in both directions, because the whole feature is a convenience and the caller is
+ * not. Access throws outright in a browser where storage is disabled or the origin is denied it —
+ * Safari's private mode and a locked-down enterprise profile both do this — and the write happens
+ * *after* EasyCLA has created the signature and the DocuSign envelope. An exception there would
+ * strand the signatory in the hand-off dialog holding an agreement that already exists. Losing the
+ * landing costs them one click from the list.
  */
 export function stashSignedSignatureId(signatureId: string): void {
   if (typeof sessionStorage === 'undefined') return;
-  sessionStorage.setItem(ORG_CLA_SIGNED_SIGNATURE_KEY, signatureId);
+
+  try {
+    sessionStorage.setItem(ORG_CLA_SIGNED_SIGNATURE_KEY, signatureId);
+  } catch {
+    // Deliberately silent: there is no recovery and nothing for the signatory to do about it.
+  }
 }
 
 /**
@@ -29,7 +41,12 @@ export function stashSignedSignatureId(signatureId: string): void {
 export function takeStashedSignedSignatureId(): string {
   if (typeof sessionStorage === 'undefined') return '';
 
-  const signatureId = sessionStorage.getItem(ORG_CLA_SIGNED_SIGNATURE_KEY) ?? '';
-  sessionStorage.removeItem(ORG_CLA_SIGNED_SIGNATURE_KEY);
-  return signatureId.trim();
+  try {
+    const signatureId = sessionStorage.getItem(ORG_CLA_SIGNED_SIGNATURE_KEY) ?? '';
+    sessionStorage.removeItem(ORG_CLA_SIGNED_SIGNATURE_KEY);
+    return signatureId.trim();
+  } catch {
+    // Nothing was readable, so there is nothing to spend and nowhere to land: the ordinary list.
+    return '';
+  }
 }

@@ -3,6 +3,7 @@
 
 import '@angular/compiler';
 
+import { Location } from '@angular/common';
 import { signal } from '@angular/core';
 import { ComponentFixture, TestBed } from '@angular/core/testing';
 import { provideNoopAnimations } from '@angular/platform-browser/animations';
@@ -66,7 +67,7 @@ describe('OrgEasyclaDetailComponent', () => {
    * reading it back out of the navigation is the part under test: the address holds nothing, so a
    * selection handed in directly would pass on a page that renders blank in the browser.
    */
-  async function render(previewState?: Record<string, unknown>): Promise<ComponentFixture<OrgEasyclaDetailComponent>> {
+  async function render(previewState?: Record<string, unknown>, restoredState?: Record<string, unknown>): Promise<ComponentFixture<OrgEasyclaDetailComponent>> {
     TestBed.resetTestingModule();
     await TestBed.configureTestingModule({
       imports: [OrgEasyclaDetailComponent],
@@ -95,6 +96,9 @@ describe('OrgEasyclaDetailComponent', () => {
     vi.spyOn(router, 'getCurrentNavigation').mockReturnValue(
       previewState === undefined ? null : ({ extras: { state: previewState } } as unknown as Navigation)
     );
+    // The history entry, which outlives the navigation that wrote it. Empty by default, as it is on
+    // an address nobody arrived at through the picker.
+    vi.spyOn(TestBed.inject(Location), 'getState').mockReturnValue(restoredState ?? {});
 
     const fixture = TestBed.createComponent(OrgEasyclaDetailComponent);
     fixture.detectChanges();
@@ -419,6 +423,19 @@ describe('OrgEasyclaDetailComponent', () => {
 
       expect(byTestId(fixture, 'org-easycla-detail-title')?.textContent).toContain('Cascade CLA');
       expect(byTestId(fixture, 'org-easycla-detail-status')?.textContent).toContain('Not started');
+    });
+
+    /**
+     * A reload, and any restore, arrives with no navigation in flight to carry the choice — but the
+     * history entry the picker wrote is still there. Reading only the navigation would answer a
+     * refresh by discarding the selection and sending the signatory back to the picker to make it
+     * again.
+     */
+    it('keeps the choice when the page is reloaded onto it', async () => {
+      const fixture = await render(undefined, previewing());
+
+      expect(byTestId(fixture, 'org-easycla-detail-title')?.textContent).toContain('Cascade CLA');
+      expect(navigate).not.toHaveBeenCalled();
     });
 
     // The row-shaped states of a page that fetches a list. Neither can be reached without a list in

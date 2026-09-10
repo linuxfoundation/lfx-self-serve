@@ -1,7 +1,7 @@
 // Copyright The Linux Foundation and each contributor to LFX.
 // SPDX-License-Identifier: MIT
 
-import { isPlatformBrowser } from '@angular/common';
+import { isPlatformBrowser, Location } from '@angular/common';
 import { ChangeDetectionStrategy, Component, computed, DestroyRef, inject, PLATFORM_ID, signal, Signal } from '@angular/core';
 import { takeUntilDestroyed, toObservable, toSignal } from '@angular/core/rxjs-interop';
 import { ActivatedRoute, Router } from '@angular/router';
@@ -59,6 +59,7 @@ import { OrgEasyclaSignHandoffComponent } from '../org-easycla-sign/org-easycla-
 export class OrgEasyclaDetailComponent {
   private readonly route = inject(ActivatedRoute);
   private readonly router = inject(Router);
+  private readonly location = inject(Location);
   private readonly accountContext = inject(AccountContextService);
   private readonly orgRoleGrantsService = inject(OrgRoleGrantsService);
   private readonly personaService = inject(PersonaService);
@@ -507,11 +508,16 @@ export class OrgEasyclaDetailComponent {
    * shape written by an earlier deployment or one truncated on the way. Left unchecked, a partial
    * selection would head the page with an undefined name — and it would still offer Start, because
    * a missing project SFID only disables signing once something reads it.
+   *
+   * Read from the history entry as well as from the navigation that is carrying it. Only the
+   * in-flight navigation exposes `extras.state`, and there is no in-flight navigation on a reload
+   * or a restore — the entry itself survives both, so reading only the former would abandon a
+   * choice the browser still holds and send the signatory back to the list for pressing refresh.
    */
   private readPreviewSelection(): OrgClaSignSelection | null {
     if (!isPlatformBrowser(this.platformId)) return null;
 
-    const state = this.router.getCurrentNavigation()?.extras?.state;
+    const state = this.router.getCurrentNavigation()?.extras?.state ?? (this.location.getState() as Record<string, unknown> | null);
     const selection = state?.[ORG_CLA_SIGN_SELECTION_STATE] as OrgClaSignSelection | undefined;
     if (!selection?.claGroupId || !selection.claGroupName || !selection.projectSfid || !selection.projectName || !selection.orgUid) return null;
 

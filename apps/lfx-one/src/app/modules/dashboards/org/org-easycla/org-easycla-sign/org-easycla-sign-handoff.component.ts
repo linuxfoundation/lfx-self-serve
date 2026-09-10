@@ -3,7 +3,7 @@
 
 import { DOCUMENT } from '@angular/common';
 import { HttpErrorResponse } from '@angular/common/http';
-import { ChangeDetectionStrategy, Component, DestroyRef, effect, inject, signal } from '@angular/core';
+import { ChangeDetectionStrategy, Component, DestroyRef, inject, signal } from '@angular/core';
 import { takeUntilDestroyed } from '@angular/core/rxjs-interop';
 import { CCLA_SIGN_COPY } from '@lfx-one/shared/constants';
 import type { OrgClaSignHandoffDialogData, OrgClaSignResponse } from '@lfx-one/shared/interfaces';
@@ -57,31 +57,11 @@ export class OrgEasyclaSignHandoffComponent {
   };
 
   public constructor() {
-    // The shell dialog is PrimeNG's, and it re-reads `header`, `closable` and `closeOnEscape` from
-    // this config object on every change-detection pass — so driving them from state here is what
-    // keeps the frame honest, rather than fixing them at the call site that cannot see the state.
-    //
-    // The dialog cannot be dismissed while the request is in flight, and still cannot once it
-    // succeeds. The signature record and the DocuSign envelope are created by that one call, and
-    // the address it returns is the only copy — so every exit before the signatory follows it
-    // abandons a real agreement upstream, which this application has no way to cancel or reuse.
-    // Sealing only the in-flight window would close the smaller of the two holes: the request
-    // usually answers in under a second, while `ready` waits for a person.
-    //
-    // `failed` is the one dismissible state. There is no envelope to strand, and trapping someone
-    // in a dialog that reports a failure would leave them no way out at all.
-    effect(() => {
-      const state = this.state();
-      const dismissible = state === 'failed';
-
-      this.config.header = this.headerFor[state];
-      this.config.closable = dismissible;
-      this.config.closeOnEscape = dismissible;
-    });
+    this.enter('preparing');
 
     const data = this.config.data;
     if (!data) {
-      this.state.set('failed');
+      this.enter('failed');
       return;
     }
 
@@ -102,15 +82,15 @@ export class OrgEasyclaSignHandoffComponent {
           // line, because the cost of being wrong is navigating to this application's own root
           // and reading as a completed signature.
           if (!response.signUrl) {
-            this.state.set('failed');
+            this.enter('failed');
             return;
           }
           this.prepared.set(response);
-          this.state.set('ready');
+          this.enter('ready');
         },
         error: (error: unknown) => {
           this.failureMessage.set(this.messageFor(error));
-          this.state.set('failed');
+          this.enter('failed');
         },
       });
   }
@@ -141,6 +121,35 @@ export class OrgEasyclaSignHandoffComponent {
 
   protected onCancel(): void {
     this.ref.close(null);
+  }
+
+  /**
+   * Moves to a state and dresses the shell dialog to match, in one step.
+   *
+   * The shell is PrimeNG's and reads `header`, `closable` and `closeOnEscape` off this config
+   * object as it renders. They are plain properties rather than signals, so nothing re-renders the
+   * shell when they change: written from an effect — which runs *after* the pass that has already
+   * drawn the frame — the title and the dismiss controls would describe the state before this one,
+   * and stay that way until some unrelated event happened to schedule another pass. Writing them
+   * with the state is what keeps the frame from contradicting the panel inside it.
+   *
+   * The dialog cannot be dismissed while the request is in flight, and still cannot once it
+   * succeeds. The signature record and the DocuSign envelope are created by that one call, and
+   * the address it returns is the only copy — so every exit before the signatory follows it
+   * abandons a real agreement upstream, which this application has no way to cancel or reuse.
+   * Sealing only the in-flight window would close the smaller of the two holes: the request
+   * usually answers in under a second, while `ready` waits for a person.
+   *
+   * `failed` is the one dismissible state. There is no envelope to strand, and trapping someone
+   * in a dialog that reports a failure would leave them no way out at all.
+   */
+  private enter(state: 'preparing' | 'ready' | 'failed'): void {
+    const dismissible = state === 'failed';
+
+    this.state.set(state);
+    this.config.header = this.headerFor[state];
+    this.config.closable = dismissible;
+    this.config.closeOnEscape = dismissible;
   }
 
   /**

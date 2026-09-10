@@ -46,7 +46,10 @@ describe('OrgEasyclaSignHandoffComponent', () => {
   // Explicit rather than defaulted: a defaulted parameter would substitute the real selection for
   // the `undefined` the missing-data test means to pass, and that test would silently assert
   // nothing.
-  async function renderWith(dialogData: OrgClaSignHandoffDialogData | undefined): Promise<ComponentFixture<OrgEasyclaSignHandoffComponent>> {
+  async function renderWith(
+    dialogData: OrgClaSignHandoffDialogData | undefined,
+    options: { render: boolean } = { render: true }
+  ): Promise<ComponentFixture<OrgEasyclaSignHandoffComponent>> {
     let href = 'https://example.test/org/easycla';
     location = {
       get href() {
@@ -85,7 +88,7 @@ describe('OrgEasyclaSignHandoffComponent', () => {
     }).compileComponents();
 
     const fixture = TestBed.createComponent(OrgEasyclaSignHandoffComponent);
-    fixture.detectChanges();
+    if (options.render) fixture.detectChanges();
     return fixture;
   }
 
@@ -405,6 +408,33 @@ describe('OrgEasyclaSignHandoffComponent', () => {
 
       expect(testid(fixture, 'org-easycla-sign-ready')).not.toBeNull();
       expect(config.header).not.toBe(CCLA_SIGN_COPY.preparing.header);
+    });
+
+    /**
+     * The shell reads these as it renders, and nothing re-renders it when they change on their own.
+     * Deferring the write to a render pass therefore dresses the frame for the state before this
+     * one — so the assertions below are deliberately made with no pass having run at all. Rendering
+     * first would hide exactly the ordering they exist to hold.
+     */
+    describe('without waiting for a render pass', () => {
+      it('names the state the panel is already in', async () => {
+        requestCorporateSignature.mockReturnValue(of(response));
+
+        await renderWith(data, { render: false });
+
+        expect(config.header).toBe(CCLA_SIGN_COPY.ready.header);
+      });
+
+      // The sealed-on-failure case: a frame still refusing Escape over a panel reporting a failure
+      // traps the signatory in it, and there is no envelope here to justify holding them.
+      it('unseals a failure', async () => {
+        requestCorporateSignature.mockReturnValue(throwError(() => bffError(500, { error: 'nope' })));
+
+        await renderWith(data, { render: false });
+
+        expect(config.closable).toBe(true);
+        expect(config.closeOnEscape).toBe(true);
+      });
     });
   });
 });
