@@ -65,11 +65,10 @@ focus lfx-one-ui --production` before copying `node_modules` into the
 Every workflow also runs a smoke test against the freshly pushed runtime
 image before it ships, as a dedicated `smoke-test` job: a `services:`
 container runs the image standalone, with no upstream config, gated on a
-`--health-cmd` that polls `/livez`; `.github/scripts/smoke-test-image.sh`
-then confirms `/livez` responds. Every environment variable `server.ts`
-reads has a hardcoded fallback, so this catches container-level
-regressions (a missing `pm2` binary, missing `dist-docs`/`pdf-templates`, a
-broken `CMD`) without needing real secrets.
+`--health-cmd` that polls `/livez` until it responds or the job fails.
+Every environment variable `server.ts` reads has a hardcoded fallback, so
+this catches container-level regressions (a missing `pm2` binary, missing
+`dist-docs`/`pdf-templates`, a broken `CMD`) without needing real secrets.
 
 ## Workflow Details
 
