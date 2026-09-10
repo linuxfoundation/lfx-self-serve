@@ -350,7 +350,6 @@ export class PendingActionsComponent {
       .subscribe({
         next: () => {
           this.formationMutationRowKeys.update((s) => this.removeFromSet(s, rowKey));
-          this.formationService.invalidateMyFormationWork();
           this.messageService.add({ key: 'pending-actions-toast', severity: 'success', summary: 'Claimed', detail: `You claimed "${item.text}"`, life: 5000 });
           this.actionClick.emit(item);
         },
@@ -397,7 +396,6 @@ export class PendingActionsComponent {
         .subscribe({
           next: () => {
             this.formationMutationRowKeys.update((s) => this.removeFromSet(s, rowKey));
-            this.formationService.invalidateMyFormationWork();
             this.messageService.add({ key: 'pending-actions-toast', severity: 'success', summary: 'Marked blocked', life: 5000 });
             this.actionClick.emit(item);
           },

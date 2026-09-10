@@ -11,7 +11,7 @@ import { TagComponent } from '@components/tag/tag.component';
 import { FeatureFlagService } from '@services/feature-flag.service';
 import { FormationService } from '@services/formation.service';
 import { SkeletonModule } from 'primeng/skeleton';
-import { catchError, finalize, map, of } from 'rxjs';
+import { catchError, map, of, tap } from 'rxjs';
 
 /**
  * "My formations" card (GH-1956) — one row per formation the caller has at least one checklist item
@@ -61,16 +61,20 @@ export class MyFormationsCardComponent {
     );
   }
 
+  // `getMyFormationWork()` now stays open for the app's lifetime (it re-emits on
+  // `invalidateMyFormationWork()`), so it never completes — `finalize` would never fire. `tap`/
+  // `catchError` clear `loading` on each emission instead.
   private initFormations(): Signal<MyFormationSummary[]> {
     return toSignal(
       this.formationService.getMyFormationWork().pipe(
+        tap(() => this.loading.set(false)),
         map((response) => response.formations),
         catchError((error: unknown) => {
           console.error('[MyFormationsCard] Failed to load formation work', error);
           this.hasError.set(true);
+          this.loading.set(false);
           return of([] as MyFormationSummary[]);
-        }),
-        finalize(() => this.loading.set(false))
+        })
       ),
       { initialValue: [] as MyFormationSummary[] }
     );
