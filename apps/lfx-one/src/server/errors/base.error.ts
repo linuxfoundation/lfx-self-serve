@@ -2,6 +2,22 @@
 // SPDX-License-Identifier: MIT
 
 /**
+ * Where a client-visible message is kept, when it must differ from `message`.
+ *
+ * A symbol, not a string key, and that is the whole mechanism. Two log paths read an error by
+ * enumerating its string keys — `customErrorSerializer` copies everything `Object.keys` returns
+ * onto the log payload, and anything reached by `JSON.stringify` does the same — so a plain
+ * `public clientMessage` would be written into the log line by both, which is the thing this
+ * exists to prevent. Symbol-keyed properties are invisible to `Object.keys`, `JSON.stringify`
+ * and spread alike, so the value cannot reach a log through the generic paths at all.
+ *
+ * Non-enumerable would also work and would be one line shorter. It is rejected because it is a
+ * flag on a property that a later `Object.assign`, clone or refactor can silently drop, whereas
+ * a symbol key cannot be un-symboled by accident.
+ */
+const CLIENT_MESSAGE = Symbol('BaseApiError.clientMessage');
+
+/**
  * Base error class for all API errors with structured metadata
  */
 export abstract class BaseApiError extends Error {
@@ -26,6 +42,7 @@ export abstract class BaseApiError extends Error {
       metadata?: Record<string, any>;
       originalError?: Error;
       transportFailure?: boolean;
+      clientMessage?: string;
     } = {}
   ) {
     super(message);
@@ -40,9 +57,28 @@ export abstract class BaseApiError extends Error {
     this.originalError = options.originalError;
     this.transportFailure = options.transportFailure;
 
+    if (options.clientMessage) {
+      (this as Record<symbol, unknown>)[CLIENT_MESSAGE] = options.clientMessage;
+    }
+
     if (Error.captureStackTrace) {
       Error.captureStackTrace(this, this.constructor);
     }
+  }
+
+  /**
+   * The message written for the client, when that differs from `message`.
+   *
+   * A getter on the prototype rather than an own property, so it is doubly out of reach of the
+   * key-enumerating log paths described at CLIENT_MESSAGE: not an own key to begin with, and its
+   * backing store is keyed by a symbol.
+   *
+   * Set this whenever the sentence the client should read is not one that may be logged —
+   * an upstream refusal that names the caller or their organization's compliance standing being
+   * the case this was built for. `message` then stays generic and is what the log records.
+   */
+  public get clientMessage(): string | undefined {
+    return (this as Record<symbol, unknown>)[CLIENT_MESSAGE] as string | undefined;
   }
 
   /**
@@ -79,7 +115,9 @@ export abstract class BaseApiError extends Error {
    */
   public toResponse(): Record<string, any> {
     return {
-      error: this.message,
+      // `clientMessage` when the throwing site set one, `message` otherwise — so the only errors
+      // whose response text differs from their log text are the ones that asked for it.
+      error: this.clientMessage ?? this.message,
       code: this.code,
       // Whether the BFF raised this as a TRANSPORT failure, declared explicitly by the site that
       // threw it -- not inferred from `originalError`.

@@ -111,3 +111,4 @@ export * from './formation.constants';
 export * from './formation-template.constants';
 export * from './github-url.constants';
 export * from './health-metrics-overview.constants';
+export * from './user-profile.constants';

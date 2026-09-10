@@ -46,6 +46,7 @@ import {
   recordedGithubIdentity,
   toClaGroupSearchResponse,
   toMyClaAgreement,
+  withoutUpstreamBody,
 } from './cla.service';
 
 const req = {} as unknown as Request;
@@ -170,6 +171,36 @@ describe('claReturnUrl', () => {
 
   it('refuses a protocol that is neither http nor https', () => {
     expect(() => claReturnUrl(reqWithHost('app.lfx.dev', 'javascript'))).toThrow(MicroserviceError);
+  });
+
+  it('leaves the URL unchanged when no query is asked for', () => {
+    expect(claReturnUrl(reqWithHost('app.lfx.dev'), '/org/easycla')).toBe('https://app.lfx.dev/org/easycla');
+  });
+
+  it('names the organization on the address, so the page does not have to guess it', () => {
+    expect(claReturnUrl(reqWithHost('app.lfx.dev'), '/org/easycla', { org: '0014100000Te0OKAAZ' })).toBe(
+      'https://app.lfx.dev/org/easycla?org=0014100000Te0OKAAZ'
+    );
+  });
+
+  // The whole point of routing this through `searchParams` rather than concatenating: EasyCLA
+  // stores the value and later redirects to it verbatim, so a value that could close the query and
+  // append its own path would turn the hand-off into an open redirect a second way.
+  it.each([
+    ['0014100000Te0OKAAZ#@evil.example.com', 'evil.example.com'],
+    ['0014100000Te0OKAAZ&next=https://evil.example.com', 'evil.example.com'],
+    ['../../evil', 'evil'],
+  ])('encodes %p so it cannot break out of the query string', (value, smuggled) => {
+    const url = claReturnUrl(reqWithHost('app.lfx.dev'), '/org/easycla', { org: value });
+
+    expect(new URL(url).origin).toBe('https://app.lfx.dev');
+    expect(new URL(url).pathname).toBe('/org/easycla');
+    expect(new URL(url).searchParams.get('org')).toBe(value);
+    expect(url).not.toContain(`/${smuggled}`);
+  });
+
+  it('still refuses an untrusted host when a query is supplied', () => {
+    expect(() => claReturnUrl(reqWithHost('evil.example.com'), '/org/easycla', { org: '0014100000Te0OKAAZ' })).toThrow(MicroserviceError);
   });
 });
 
@@ -1189,7 +1220,32 @@ describe('ClaService.prepareSign', () => {
 
     // The endpoint ships no reason code, so its prose is the only thing there is to say. Relaying
     // "403 Forbidden" instead would tell the contributor nothing they can act on.
-    await expect(new ClaService().prepareSign(prepareReq, '12345', CLA_GROUP_ID)).rejects.toMatchObject({ statusCode: 403, message: refusal });
+    //
+    // It arrives as `clientMessage`, not `message`. The sentence is a statement about who the
+    // caller is, and `message` is what the API error handler formats into its log line — so the
+    // relay writes the part that is shown and leaves the part that is recorded generic.
+    await expect(new ClaService().prepareSign(prepareReq, '12345', CLA_GROUP_ID)).rejects.toMatchObject({
+      statusCode: 403,
+      clientMessage: refusal,
+    });
+  });
+
+  it('keeps the relayed refusal out of the message the log line is built from', async () => {
+    const refusal = 'the provided identity does not belong to the authenticated user';
+    gatewayFetch.mockRejectedValueOnce(
+      new MicroserviceError('Failed to prepare the CLA signing session: 403 Forbidden', 403, 'FORBIDDEN', {
+        service: 'cla_service',
+        errorBody: JSON.stringify({ code: '403', message: refusal }),
+      })
+    );
+
+    const thrown = await new ClaService()
+      .prepareSign(prepareReq, '12345', CLA_GROUP_ID)
+      .then(() => null)
+      .catch((error: unknown) => error as Error);
+
+    expect(thrown?.message).not.toContain(refusal);
+    expect(thrown?.message).toBe('Failed to prepare the CLA signing session: 403 Forbidden');
   });
 
   it('does not derive a reason code from the refusal prose', async () => {
@@ -1405,5 +1461,67 @@ describe('producerMessageFrom', () => {
     expect(producerMessageFrom(JSON.stringify({ code: '403' }))).toBeNull();
     expect(producerMessageFrom(JSON.stringify({ message: '   ' }))).toBeNull();
     expect(producerMessageFrom({ message: 'an object, not the raw text gatewayFetch carries' })).toBeNull();
+  });
+});
+
+/**
+ * The counterpart to reading a message out of an upstream body: getting rid of the body once the
+ * message has been taken out of it.
+ *
+ * It exists because `MicroserviceError#getLogContext` returns `error_body`, and the API error
+ * handler spreads that into the line it logs. An error that still carries an upstream body
+ * therefore logs it wherever it is finally handled, no matter how the fetch that produced it was
+ * configured — so the drop has to happen on the error, not only at the fetch.
+ */
+describe('withoutUpstreamBody', () => {
+  it('keeps the message, status and code while dropping the body', () => {
+    const error = new MicroserviceError('This organization requires additional review', 403, 'UPSTREAM_ERROR', {
+      operation: 'org_cla_request_corporate_signature',
+      service: 'org_cla_service',
+      path: '/v4/self-serve/request-corporate-signature',
+      originalMessage: 'HTTP 403: Forbidden',
+      errorBody: JSON.stringify({ message: 'This organization requires additional review', lf_username: 'SENSITIVE-HANDLE' }),
+    });
+
+    const scrubbed = withoutUpstreamBody(error) as MicroserviceError;
+
+    expect(scrubbed.message).toBe('This organization requires additional review');
+    expect(scrubbed.statusCode).toBe(403);
+    expect(scrubbed.code).toBe('UPSTREAM_ERROR');
+    expect(scrubbed.operation).toBe('org_cla_request_corporate_signature');
+    expect(scrubbed.service).toBe('org_cla_service');
+    expect(scrubbed.path).toBe('/v4/self-serve/request-corporate-signature');
+    expect(scrubbed.originalMessage).toBe('HTTP 403: Forbidden');
+    expect(scrubbed.errorBody).toBeUndefined();
+  });
+
+  // The log line the error handler emits is the thing this protects, so that is what is asserted —
+  // not merely the absence of the field.
+  it('leaves nothing from the body in the log context', () => {
+    const error = new MicroserviceError('Refused', 403, 'UPSTREAM_ERROR', {
+      errorBody: JSON.stringify({ sanction_status: 'pending_review' }),
+    });
+
+    expect(JSON.stringify(error.getLogContext())).toContain('pending_review');
+    expect(JSON.stringify((withoutUpstreamBody(error) as MicroserviceError).getLogContext())).not.toContain('pending_review');
+  });
+
+  // A transport failure is declared by the site that threw it and is read by the client as "our
+  // connection broke" — rebuilding the error must not silently reclassify that.
+  it('preserves a declared transport failure', () => {
+    const error = new MicroserviceError('Gateway unreachable', 502, 'NETWORK_ERROR', {
+      errorBody: 'connection reset',
+      transportFailure: true,
+    });
+
+    expect((withoutUpstreamBody(error) as MicroserviceError).toResponse()['transport']).toBe(true);
+  });
+
+  it('returns anything without a body untouched, rather than rebuilding it', () => {
+    const withoutBody = new MicroserviceError('Refused', 403, 'UPSTREAM_ERROR', { service: 'org_cla_service' });
+    const notOurs = new Error('boom');
+
+    expect(withoutUpstreamBody(withoutBody)).toBe(withoutBody);
+    expect(withoutUpstreamBody(notOurs)).toBe(notOurs);
   });
 });

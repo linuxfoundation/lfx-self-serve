@@ -76,8 +76,15 @@ export { claServiceBaseUrl };
 const KNOWN_MATCH_TYPES = new Set<string>(['claGroup', 'project', 'organization', 'repository']);
 const KNOWN_ORG_SOURCES = new Set<string>(['github', 'gitlab', 'gerrit']);
 
-/** Maps one upstream search result onto the option the picker and the hand-off consume. */
-function toClaGroupOption(result: EasyClaSearchResult): ClaGroupOption {
+/**
+ * Maps one upstream search result onto the option the picker and the hand-off consume.
+ *
+ * Exported for the Org Lens sign-options route (#1983), which wraps rather than replaces it: it
+ * calls this for the shared shape and appends `projectSfid` afterwards, so the Me-lens response
+ * stays byte-identical. Do not add an Org-Lens-only field here — see the note on Salesforce ids
+ * in `toClaGroupSearchResponse` below.
+ */
+export function toClaGroupOption(result: EasyClaSearchResult): ClaGroupOption {
   return {
     claGroupId: result.claGroupID ?? '',
     projectName: result.projectName || undefined,
@@ -103,8 +110,14 @@ function toClaGroupOption(result: EasyClaSearchResult): ClaGroupOption {
  * The envelope is mirrored rather than flattened to an array because `truncated` describes the
  * result *set* — a cap cannot ride inside one of the results. The one field renamed is the
  * identifier (`claGroupID` → `claGroupId`), so Angular is not made to carry two spellings of the
- * same UUID. Salesforce ids are deliberately not carried across. ICLA/CCLA enablement flags are
- * forwarded for Gerrit contract-type routing (#2066); the GitHub prepare-sign path does not branch on them.
+ * same UUID. ICLA/CCLA enablement flags are forwarded for Gerrit contract-type routing (#2066);
+ * the GitHub prepare-sign path does not branch on them.
+ *
+ * Salesforce ids are not carried across *here*, because this envelope's consumer — the Me-lens
+ * picker and its hand-off — is keyed on `claGroupId` alone, and an unread field still ships to
+ * the browser inside the transferred state. The corporate hand-off does need the project id, and
+ * carries it on its own path: `OrgClaService.getSignOptions` appends `projectSfid` after calling
+ * `toClaGroupOption`. Moving it in here would put it in this response too, for no consumer.
  *
  * `searchTerm` falls back to the term the BFF actually sent, so the client can always tell which
  * query a set belongs to even if the producer echoes nothing.
@@ -143,8 +156,21 @@ const PREVIEW_RETURN_HOSTNAME = /^ui-pr-\d{1,10}\.dev\.v2\.cluster\.linuxfound\.
  * Because that makes the origin request-controlled, the host is checked against our own origins
  * before it is handed onward: EasyCLA stores this value and later redirects to it verbatim, so an
  * unchecked forged Host would turn a trusted hand-off into an open redirect.
+ *
+ * `path` selects where the signer lands: the contributor's own CLAs by default, or the Org Lens
+ * EasyCLA page for the corporate hand-off (#1983). A parameter rather than a second function
+ * because the host check above is the security-critical part, and it must exist exactly once.
+ * Callers pass a shared path constant, never a request-derived value.
+ *
+ * `query` is the one place a request-derived value may enter, and it is kept out of `path`
+ * deliberately: the corporate hand-off has to name the organization it was opened for, because the
+ * signer comes back through a cross-site navigation and the selected organization survives only in
+ * a `SameSite=Lax` cookie. A bare path leaves the page to guess, and it guesses the first
+ * organization in the viewer's list. Written through `searchParams`, so a value cannot break out of
+ * the query string and append a path or a second origin to a URL that EasyCLA stores and later
+ * redirects to verbatim.
  */
-export function claReturnUrl(req: Request): string {
+export function claReturnUrl(req: Request, path: string = MY_CLAS_PATH, query?: Readonly<Record<string, string>>): string {
   const host = req.get('host');
   if (!host) {
     throw new MicroserviceError('Cannot derive the CLA return URL: request has no Host header', 500, 'RETURN_URL_UNRESOLVABLE', { service: SERVICE });
@@ -167,7 +193,12 @@ export function claReturnUrl(req: Request): string {
     throw new MicroserviceError('Cannot derive the CLA return URL: untrusted Host header', 500, 'RETURN_URL_UNTRUSTED', { service: SERVICE });
   }
 
-  return `${req.protocol}://${host}${MY_CLAS_PATH}`;
+  const url = new URL(`${req.protocol}://${host}${path}`);
+  for (const [key, value] of Object.entries(query ?? {})) {
+    url.searchParams.set(key, value);
+  }
+
+  return url.toString();
 }
 
 // Identity keys the CLA service reports as `"<type>:<value>"`, both in the verified `identity`
@@ -371,23 +402,66 @@ export function producerMessageFrom(errorBody: unknown): string | null {
 }
 
 /**
- * Re-labels an ownership refusal with the message the CLA service sent, so that message —
- * rather than "403 Forbidden" — is what the contributor is shown.
+ * Carries the CLA service's refusal to the client as `clientMessage`, so that sentence — rather
+ * than "403 Forbidden" — is what the contributor is shown.
  *
  * Scoped to 403 on purpose. That is the one status whose body is a statement about the
  * contributor's own identity and therefore worth repeating verbatim; relaying the prose of a
  * 500 would put upstream internals on screen for something they can do nothing about.
+ *
+ * **`message` is deliberately left alone**, and that is the point of the field. The refusal is
+ * exactly the text that must not be logged — a scope refusal names the caller, a trade-compliance
+ * refusal names the organization's standing — and `message` is logged three ways over: the error
+ * handler formats `API error: ${error.message}`, passes the error itself as `err`, and Pino's
+ * serializer reads `.message` off it. Writing the refusal into `message` therefore published it
+ * to the log line no matter what was done to the body afterwards. `clientMessage` reaches
+ * `toResponse` and nothing else; see `BaseApiError`.
+ *
+ * Exported for the corporate hand-off (#1983), which lands in the same window: the CLA service
+ * answers a trade-compliance refusal with a 403 whose body names the reason and the support
+ * route, and answers a missing signing authority with a 403 too. `operation` and `service` are
+ * parameters so the relabelled error keeps the caller's own log identity.
  */
-function withProducerRefusalMessage(error: unknown): unknown {
+export function withProducerRefusalMessage(error: unknown, operation = 'cla_prepare_sign', service = SERVICE): unknown {
   if (!(error instanceof MicroserviceError) || error.statusCode !== 403) return error;
 
   const message = producerMessageFrom(error.errorBody);
   if (!message) return error;
 
-  return new MicroserviceError(message, error.statusCode, error.code, {
-    operation: 'cla_prepare_sign',
-    service: SERVICE,
+  return new MicroserviceError(error.message, error.statusCode, error.code, {
+    operation,
+    service,
     errorBody: error.errorBody,
+    clientMessage: message,
+  });
+}
+
+/**
+ * The same error with the raw upstream body dropped, keeping its status, code and client message.
+ *
+ * `MicroserviceError#getLogContext` returns `error_body` and the API error handler spreads that
+ * into its log line; Pino's error serializer copies it a second time, since it enumerates the
+ * error's own string keys. So an error carrying an upstream body logs that body wherever it is
+ * finally handled, however carefully the fetch that produced it was configured. Compose this
+ * after anything that needed to read the body (`withProducerRefusalMessage`) and before the
+ * throw, on the paths whose upstream refusals name a person or an organization's standing.
+ *
+ * This drops the body only. It is not on its own sufficient to keep a refusal out of the logs,
+ * because the sentence extracted from the body is the sensitive part and dropping its container
+ * does nothing about it — `withProducerRefusalMessage` putting that sentence in `clientMessage`
+ * rather than `message` is the half that handles it. Both are needed: one for the record, one
+ * for the sentence.
+ */
+export function withoutUpstreamBody(error: unknown): unknown {
+  if (!(error instanceof MicroserviceError) || error.errorBody === undefined) return error;
+
+  return new MicroserviceError(error.message, error.statusCode, error.code, {
+    operation: error.operation,
+    service: error.service,
+    path: error.path,
+    originalMessage: error.originalMessage,
+    transportFailure: error.transportFailure,
+    clientMessage: error.clientMessage,
   });
 }
 

@@ -5,7 +5,7 @@ import { HttpErrorResponse } from '@angular/common/http';
 import { firstValueFrom, Observable, throwError } from 'rxjs';
 import { describe, expect, it } from 'vitest';
 
-import { extractErrorMessage, isTransientHttpError, retryTransientHttpError } from './http-error.utils';
+import { extractErrorMessage, isTransientHttpError, retryTransientHttpError, serverAuthoredMessage } from './http-error.utils';
 
 function httpError(status: number): HttpErrorResponse {
   return new HttpErrorResponse({ status, statusText: 'x', url: '/api/thing' });
@@ -145,5 +145,49 @@ describe('extractErrorMessage', () => {
   it('handles a plain Error and an unknown value', () => {
     expect(extractErrorMessage(new Error('boom'), 'fallback')).toBe('boom');
     expect(extractErrorMessage('not an error', 'fallback')).toBe('fallback');
+  });
+});
+
+/**
+ * The composition for anywhere the fallback is user-facing copy rather than a debugging default.
+ * `extractErrorMessage` alone cannot serve that case: it ends with `error.message || fallback`,
+ * and Angular synthesizes a non-empty `.message` for every failure, so its fallback is unreachable
+ * and "Http failure response for /api/…" reaches the screen instead.
+ */
+describe('serverAuthoredMessage', () => {
+  // Two spellings because the server has two paths: `BaseApiError#toResponse` answers with the
+  // message under `error`, and a controller that validates and replies directly uses `message`. A
+  // reader that knows only one silently loses half the server's replies.
+  it.each([
+    ['error', { error: 'This organization requires additional review' }],
+    ['message', { message: 'This organization requires additional review' }],
+  ])('reads the message the server sent under %s', (_key, body) => {
+    expect(serverAuthoredMessage(httpErrorWithBody(403, body), 'fallback')).toBe('This organization requires additional review');
+  });
+
+  it('prefers a field-level detail, exactly as extractErrorMessage does', () => {
+    const error = httpErrorWithBody(400, { error: 'Validation failed', errors: [{ message: 'The real detail' }] });
+
+    expect(serverAuthoredMessage(error, 'fallback')).toBe('The real detail');
+  });
+
+  it('returns a plain string body directly', () => {
+    expect(serverAuthoredMessage(httpErrorWithBody(502, 'upstream down'), 'fallback')).toBe('upstream down');
+  });
+
+  // The whole reason this exists, and the case `extractErrorMessage` gets wrong.
+  it.each([[{}], [null], [{ code: 'FORBIDDEN' }], [{ message: '   ' }], [{ errors: 'not an array' }], ['   ']])(
+    'answers the fallback, not Angular’s synthesized message, for %p',
+    (body) => {
+      const shown = serverAuthoredMessage(httpErrorWithBody(403, body), 'fallback');
+
+      expect(shown).toBe('fallback');
+      expect(shown).not.toContain('Http failure response');
+    }
+  );
+
+  it('answers the fallback for anything that is not an HTTP failure', () => {
+    expect(serverAuthoredMessage(new Error('boom'), 'fallback')).toBe('fallback');
+    expect(serverAuthoredMessage(undefined, 'fallback')).toBe('fallback');
   });
 });

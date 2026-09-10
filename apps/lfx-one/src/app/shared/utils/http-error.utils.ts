@@ -60,6 +60,46 @@ export function extractErrorMessage(error: unknown, fallback: string): string {
 }
 
 /**
+ * The message the server wrote, or `fallback` when it wrote none.
+ *
+ * `extractErrorMessage` ends with `error.message || fallback`, and Angular always synthesizes a
+ * non-empty `HttpErrorResponse.message` ("Http failure response for …"), so its own fallback is
+ * unreachable for a body-less response — the HTTP debugging string reaches the screen instead.
+ * Anywhere the fallback is user-facing copy, this is the composition that is actually wanted.
+ */
+export function serverAuthoredMessage(error: unknown, fallback: string): string {
+  return hasServerAuthoredMessage(error) ? extractErrorMessage(error, fallback) : fallback;
+}
+
+/**
+ * Whether the response body carries a message the server wrote, in any shape this BFF emits.
+ *
+ * There are two, because the server has two paths: `BaseApiError#toResponse` answers with the
+ * message under `error`, while a controller that answers `res.status(...).json({ message })`
+ * directly answers with it under `message`. A reader that knows only one of them silently loses
+ * half the server's replies.
+ *
+ * **Both are still live and this must stay tolerant of both.** The org-lens sign route was moved
+ * onto the error-class path so it emits only the first, and the temptation is then to narrow this
+ * to `error`. Don't: the second shape is emitted by roughly two dozen surviving call sites across
+ * `clas`, `crowdfunding`, `profile` and `org-lens-project-detail`, including the sibling Me-lens
+ * CLA controller. Narrowing would turn every one of their messages into the generic fallback.
+ * Converting them is worth doing and is not this feature's to do.
+ */
+function hasServerAuthoredMessage(error: unknown): boolean {
+  const body = error instanceof HttpErrorResponse ? error.error : null;
+  if (typeof body === 'string') return body.trim().length > 0;
+  if (!body || typeof body !== 'object') return false;
+
+  const { message, error: errorText, errors } = body as { message?: unknown; error?: unknown; errors?: unknown };
+  const hasTopLevel = [message, errorText].some((value) => typeof value === 'string' && value.trim().length > 0);
+  const hasFieldDetail =
+    Array.isArray(errors) &&
+    errors.some((entry) => typeof (entry as { message?: unknown })?.message === 'string' && (entry as { message: string }).message.trim().length > 0);
+  return hasTopLevel || hasFieldDetail;
+}
+
+/**
  * Whether an error is worth retrying — a beat of time could plausibly fix a network drop (0),
  * rate limit (429), request timeout (408), or upstream 5xx, but not a client error like an
  * expired session (401) or a permission/not-found response (403/404).

@@ -1,7 +1,7 @@
 // Copyright The Linux Foundation and each contributor to LFX.
 // SPDX-License-Identifier: MIT
 
-import type { OrgClaCoverageChip, OrgClaGroup } from '../interfaces/cla.interface';
+import type { OrgClaCoverageChip, OrgClaGroup, OrgClaSignSelection } from '../interfaces/cla.interface';
 
 export function orgClaCoverageSummary(group: Pick<OrgClaGroup, 'projects'>): string {
   const { projects } = group;
@@ -47,4 +47,40 @@ export function orgClaCoverageChips(group: Pick<OrgClaGroup, 'projects' | 'found
 
   const projectsChip: OrgClaCoverageChip = { label: `Covers ${projects.length} projects`, opensCoverage: true };
   return foundationName ? [{ label: foundationName, opensCoverage: false }, projectsChip] : [projectsChip];
+}
+
+/**
+ * The row the pre-signing preview page renders, built from the picker's choice rather than fetched
+ * (#1983).
+ *
+ * The preview describes an agreement that does not exist yet, so there is no list row to find: the
+ * page is keyed on the CCLA signature id, and nobody has signed. Everything the detail page shows
+ * already works off an `OrgClaGroup`, so this is the one place the selection becomes that shape.
+ *
+ * Two fields carry the whole reason this is a function rather than a spread:
+ *
+ * - **`projects` holds exactly the one entry search named.** That single entry is what routes the
+ *   signing scope through the single-covered-project branch, which returns the SFID search gave.
+ * - **`foundationSfid` is left unset**, even though search resolves `projectSfid` to the foundation
+ *   for a foundation-level group. Setting it would *assert* a foundation where search may have
+ *   named a project, and the signing scope reads `foundationSfid` first — so the assertion would
+ *   change the scope the corporate agreement is opened at rather than merely mislabel it.
+ *
+ * `id` is empty because no signature exists. Nothing keys off it here: the document offer reads
+ * `signed`, and the list lookup is bypassed entirely.
+ */
+export function orgClaPreviewGroup(selection: OrgClaSignSelection): OrgClaGroup {
+  return {
+    id: '',
+    claGroupId: selection.claGroupId,
+    claGroupName: selection.claGroupName,
+    projects: [{ projectName: selection.projectName, projectSfid: selection.projectSfid }],
+    signed: false,
+    status: 'not-started',
+    needsClaManager: false,
+    claManagersCount: 0,
+    // 0, not absent. Absence means the deployment did not report a count; this agreement genuinely
+    // has no approval criteria, because it has no signature for them to hang off.
+    approvalCriteriaCount: 0,
+  };
 }
